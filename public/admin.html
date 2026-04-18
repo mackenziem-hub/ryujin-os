@@ -2126,6 +2126,8 @@ async function renderProducts(m) {
 async function renderOffers(m) {
   m.innerHTML='<div class="loading"><div class="spinner"></div>Loading...</div>';
   if (!offersCache) offersCache = await api('/quote?offers=1');
+  // Also fetch full offers with scope templates
+  const fullOffers = await cachedApi('/offers','fullOffers');
   const offers = offersCache.offers || [];
   const groups = {};
   for (const o of offers) { const c = o.system||'other'; if (!groups[c]) groups[c]=[]; groups[c].push(o); }
@@ -2185,6 +2187,7 @@ async function renderOffers(m) {
           ${o.warranty_years ? `<div style="display:flex;align-items:center;gap:3px;font-size:0.7em"><svg viewBox="0 0 24 24" style="width:10px;height:10px;stroke:var(--green);fill:none;stroke-width:2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span style="color:var(--green)">${o.warranty_years}yr</span></div>` : ''}
           <div style="font-size:0.65em;color:var(--text-dim)">${o.pricing_method||'multiplier'}</div>
           ${o.has_estimated_pricing ? '<span class="badge badge-yellow" style="font-size:0.5em">EST</span>' : '<span class="badge badge-green" style="font-size:0.5em">Verified</span>'}
+          ${(() => { const fo = (fullOffers.offers||[]).find(x => x.id === o.id); const sc = fo?.scope_template||[]; return sc.length ? `<span style="font-size:0.6em;color:var(--text-dim)">${sc.length} items</span>` : ''; })()}
           <div style="font-size:0.6em;color:var(--text-dim);margin-left:auto">#${o.sort_order}</div>
         </div>
       </div>`;
@@ -2286,9 +2289,25 @@ async function renderCustomers(m) {
             </div>
           ` : ''}
 
+          <!-- Edit form (hidden by default) -->
+          <div id="custEdit_${c.id}" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid var(--glass-border)">
+            <div class="form-grid" style="gap:6px 10px">
+              <div class="form-group" style="margin:0"><label class="form-label" style="font-size:0.55em">Name</label><input type="text" id="ce_name_${c.id}" value="${esc(name)}" style="padding:5px 8px;font-size:0.78em"></div>
+              <div class="form-group" style="margin:0"><label class="form-label" style="font-size:0.55em">Phone</label><input type="tel" id="ce_phone_${c.id}" value="${esc(c.phone||'')}" style="padding:5px 8px;font-size:0.78em"></div>
+              <div class="form-group" style="margin:0"><label class="form-label" style="font-size:0.55em">Email</label><input type="text" id="ce_email_${c.id}" value="${esc(c.email||'')}" style="padding:5px 8px;font-size:0.78em"></div>
+              <div class="form-group" style="margin:0"><label class="form-label" style="font-size:0.55em">Address</label><input type="text" id="ce_addr_${c.id}" value="${esc(c.address||'')}" style="padding:5px 8px;font-size:0.78em"></div>
+            </div>
+            <div style="display:flex;gap:4px;margin-top:6px">
+              <button class="btn btn-sm btn-primary" onclick="saveCustomerEdit('${c.id}')">Save</button>
+              <button class="btn btn-sm btn-outline" onclick="document.getElementById('custEdit_${c.id}').style.display='none'">Cancel</button>
+              <button class="btn btn-sm btn-danger" onclick="deleteCustomer('${c.id}','${esc(name)}')" style="margin-left:auto">Delete</button>
+            </div>
+          </div>
+
           <!-- Actions -->
           <div style="display:flex;gap:4px;margin-top:8px;padding-top:8px;border-top:1px solid var(--glass-border)">
             <button class="btn btn-sm btn-primary" onclick="quoteState.answers={customerName:'${esc(name)}',address:'${esc(c.address||'')}',customerEmail:'${esc(c.email||'')}',customerPhone:'${esc(c.phone||'')}'};navigate('quote')">New Quote</button>
+            <button class="btn btn-sm btn-outline" onclick="document.getElementById('custEdit_${c.id}').style.display='block'">Edit</button>
           </div>
         </div>
       </details>`;
@@ -2311,7 +2330,42 @@ function showNewCustomer(){
     <div style="display:flex;gap:8px;margin-top:14px"><button class="btn btn-primary" onclick="createCustomer()">Create</button><button class="btn btn-outline" onclick="navigate('customers')">Cancel</button></div></div>`;
 }
 async function createCustomer(){const n=document.getElementById('nc_name').value.trim();if(!n){toast('Name is required','error');return;}
-  await api('/customers',{method:'POST',body:JSON.stringify({full_name:n,email:document.getElementById('nc_email').value.trim()||null,phone:document.getElementById('nc_phone').value.trim()||null,address:document.getElementById('nc_address').value.trim()||null,city:document.getElementById('nc_city').value.trim()||null,province:document.getElementById('nc_province').value.trim()||null,notes:document.getElementById('nc_notes').value.trim()||null})});navigate('customers');}
+  const r = await api('/customers',{method:'POST',body:JSON.stringify({full_name:n,email:document.getElementById('nc_email').value.trim()||null,phone:document.getElementById('nc_phone').value.trim()||null,address:document.getElementById('nc_address').value.trim()||null,city:document.getElementById('nc_city').value.trim()||null,province:document.getElementById('nc_province').value.trim()||null,notes:document.getElementById('nc_notes').value.trim()||null})});
+  toast(r.error ? 'Error: '+r.error : 'Customer created!', r.error ? 'error' : 'success');
+  invalidateCache('customers'); navigate('customers');
+}
+
+async function saveCustomerEdit(id) {
+  const r = await api('/customers', {method:'PUT', body:JSON.stringify({
+    id,
+    full_name: document.getElementById('ce_name_'+id)?.value.trim() || '',
+    phone: document.getElementById('ce_phone_'+id)?.value.trim() || null,
+    email: document.getElementById('ce_email_'+id)?.value.trim() || null,
+    address: document.getElementById('ce_addr_'+id)?.value.trim() || null
+  })});
+  if (r.error) { toast('Error: ' + r.error, 'error'); return; }
+  toast('Customer updated', 'success');
+  invalidateCache('customers');
+  renderCustomers(document.getElementById('main'));
+}
+
+async function deleteCustomer(id, name) {
+  if (!confirm('Delete customer "' + name + '"? This cannot be undone.')) return;
+  const r = await api('/customers?id=' + id, {method:'DELETE'});
+  if (r.error) { toast('Error: ' + r.error, 'error'); return; }
+  toast('Customer deleted', 'success');
+  invalidateCache('customers');
+  renderCustomers(document.getElementById('main'));
+}
+
+async function deleteEstimate(id) {
+  if (!confirm('Delete this estimate? This cannot be undone.')) return;
+  const r = await api('/estimates?id=' + id, {method:'DELETE'});
+  if (r.error) { toast('Error: ' + r.error, 'error'); return; }
+  toast('Estimate deleted', 'success');
+  invalidateCache('estimates');
+  renderEstimates(document.getElementById('main'));
+}
 
 let estFilter = 'all';
 async function renderEstimates(m) {
@@ -2426,6 +2480,7 @@ async function renderEstimates(m) {
             <button class="btn btn-sm btn-outline" onclick="generateEstOutputs('${eid}','proposal')">Proposal</button>
             <button class="btn btn-sm btn-outline" onclick="generateEstOutputs('${eid}','sales_page')">Sales Page</button>
             <button class="btn btn-sm btn-outline" onclick="generateEstOutputs('${eid}','contract')">Contract</button>
+            <button class="btn btn-sm btn-danger" onclick="deleteEstimate('${eid}')" style="margin-left:auto" title="Delete">&#128465;</button>
           </div>
         </div>
       </details>`;
