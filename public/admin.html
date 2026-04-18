@@ -2247,11 +2247,14 @@ async function generateOutputs(type) {
   const renderTypes = ['proposal', 'contract', 'sales_page'];
 
   if (renderTypes.includes(type)) {
+    const typeLabels = {proposal:'Proposal',contract:'Contract',sales_page:'Sales Page'};
+    toast('Generating ' + (typeLabels[type]||type) + '...', 'info', 5000);
     const od = await api(`/outputs?type=${type}`, {method:'POST', body:JSON.stringify(payload)});
     if (od.error) { toast('Output error: ' + od.error, 'error'); return; }
-    const resp = await fetch(`${API}/render?type=${type}&tenant=${TENANT}`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(od)});
-    if (!resp.ok) { toast('Render failed', 'error'); return; }
+    const resp = await fetch(`${API}/render?type=${type}&tenant=${TENANT}&_t=${Date.now()}`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(od)});
+    if (!resp.ok) { toast('Render failed — ' + resp.status, 'error'); return; }
     const html = await resp.text();
+    if (!html || html.length < 100) { toast('Empty render response', 'error'); return; }
     const w = window.open('', '_blank');
     if (!w) { toast('Pop-up blocked — allow pop-ups for this site', 'error'); return; }
     w.document.write(html); w.document.close();
