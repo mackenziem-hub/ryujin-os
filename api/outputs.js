@@ -129,7 +129,7 @@ async function handler(req, res) {
   }
 
   if (outputType === 'sales_page' || outputType === 'all') {
-    outputs.salesPage = generateSalesPageData(quoteResult, {
+    try { outputs.salesPage = generateSalesPageData(quoteResult, {
       ...commonOpts,
       aiRenders: body.ai_renders || [],
       testimonials: body.testimonials || [],
@@ -141,6 +141,7 @@ async function handler(req, res) {
     // Pass through template + salesperson
     if (body.sales_rep) outputs.salesPage.salesRep = body.sales_rep;
     if (body.template) outputs.salesPage.template = body.template;
+    } catch(e) { return res.status(500).json({ error: 'Sales page generation failed: ' + e.message, stack: e.stack?.split('\n').slice(0,3) }); }
   }
 
   // Return single output or all
