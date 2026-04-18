@@ -549,6 +549,10 @@ setTimeout(() => {
       <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
       <div class="tooltip">Estimates</div>
     </div>
+    <div class="nav-icon" data-page="products" onclick="navigate('products')">
+      <svg viewBox="0 0 24 24"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+      <span class="tooltip">Products</span>
+    </div>
     <div class="nav-icon" data-page="settings" onclick="navigate('settings')">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
       <div class="tooltip">Settings</div>
@@ -581,6 +585,10 @@ setTimeout(() => {
   <button class="bot-btn" data-page="offers" onclick="navigate('offers')">
     <svg viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
     <span>Offers</span>
+  </button>
+  <button class="bot-btn" data-page="products" onclick="navigate('products')">
+    <svg viewBox="0 0 24 24"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+    <span>Products</span>
   </button>
   <button class="bot-btn" data-page="settings" onclick="navigate('settings')">
     <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15"/></svg>
@@ -697,6 +705,7 @@ function renderPage() {
     case 'offers': return renderOffers(m);
     case 'customers': return renderCustomers(m);
     case 'estimates': return renderEstimates(m);
+    case 'products': return renderProducts(m);
     case 'settings': return renderSettings(m);
     default: m.innerHTML = '<div class="loading"><div class="spinner"></div>Coming soon</div>';
   }
@@ -1561,6 +1570,97 @@ async function createEstimateFromQuote() {
 // ═══════════════════════════════════════════
 // OFFERS / CUSTOMERS / ESTIMATES / SETTINGS
 // ═══════════════════════════════════════════
+// ═══════════════════════════════════════════
+// PRODUCTS & MERCHANTS
+// ═══════════════════════════════════════════
+let productSearch = '';
+async function renderProducts(m) {
+  m.innerHTML = '<div class="loading"><div class="spinner"></div>Loading product catalog...</div>';
+
+  const [catalogData, merchantData] = await Promise.all([
+    api('/merchants?mode=products'),
+    api('/merchants')
+  ]);
+
+  const categories = catalogData.categories || [];
+  const products = catalogData.products || [];
+  const merchants = merchantData.merchants || [];
+
+  const filtered = productSearch
+    ? products.filter(p => (p.name||'').toLowerCase().includes(productSearch.toLowerCase()) || (p.brand||'').toLowerCase().includes(productSearch.toLowerCase()))
+    : products;
+
+  // Group by category
+  const groups = {};
+  for (const p of filtered) {
+    const catName = p.category?.name || 'Uncategorized';
+    if (!groups[catName]) groups[catName] = [];
+    groups[catName].push(p);
+  }
+
+  let html = `<div class="page-header"><div><h1>Products & Pricing</h1><div class="sub">${products.length} products &bull; ${merchants.length} merchants</div></div></div>`;
+
+  // Stats
+  const withPricing = products.filter(p => p.merchant_count > 0 || p.has_pricing).length;
+  html += `<div class="stat-row" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px">
+    <div class="panel" style="padding:12px 14px">
+      <div style="font-family:'Orbitron',monospace;font-size:1.4em;font-weight:700;color:var(--cyan)">${products.length}</div><div class="mega-label">Products</div></div>
+    <div class="panel" style="padding:12px 14px">
+      <div style="font-family:'Orbitron',monospace;font-size:1.4em;font-weight:700;color:var(--green)">${merchants.length}</div><div class="mega-label">Merchants</div></div>
+    <div class="panel" style="padding:12px 14px">
+      <div style="font-family:'Orbitron',monospace;font-size:1.4em;font-weight:700;color:var(--purple)">${categories.length}</div><div class="mega-label">Categories</div></div>
+    <div class="panel" style="padding:12px 14px">
+      ${progressBar(products.length > 0 ? Math.round(withPricing/products.length*100) : 0, 'cyan', 'Priced', withPricing + '/' + products.length)}
+    </div>
+  </div>`;
+
+  // Search
+  html += `<div class="panel" style="margin-bottom:10px;padding:8px 14px;display:flex;align-items:center;gap:10px">
+    <svg viewBox="0 0 24 24" style="width:16px;height:16px;stroke:var(--text-dim);fill:none;stroke-width:2;flex-shrink:0"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" placeholder="Search products by name or brand..." value="${esc(productSearch)}" onkeyup="productSearch=this.value;clearTimeout(window._prodDebounce);window._prodDebounce=setTimeout(()=>renderProducts(document.getElementById('main')),300)" style="border:none;background:transparent;color:var(--text);font-size:0.88em;width:100%;outline:none">
+    ${productSearch ? `<button class="btn btn-sm btn-outline" onclick="productSearch='';renderProducts(document.getElementById('main'))" style="flex-shrink:0">Clear</button>` : ''}
+  </div>`;
+
+  // Merchants row
+  if (merchants.length > 0) {
+    html += `<div class="panel" style="margin-bottom:10px;padding:10px 14px"><div class="panel-header"><div class="panel-title">Merchants</div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">`;
+    for (const m of merchants) {
+      html += `<div style="padding:6px 12px;border-radius:8px;background:rgba(34,211,238,0.04);border:1px solid var(--glass-border);font-size:0.78em">
+        <span style="font-weight:600">${esc(m.name)}</span>
+        ${m.city ? `<span class="text-dim"> &bull; ${esc(m.city)}</span>` : ''}
+      </div>`;
+    }
+    html += '</div></div>';
+  }
+
+  // Products by category
+  if (Object.keys(groups).length === 0) {
+    html += `<div class="panel" style="text-align:center;padding:40px"><div style="font-size:0.9em;color:var(--text-dim)">${productSearch ? 'No products match your search.' : 'No products in catalog.'}</div></div>`;
+  } else {
+    for (const [catName, items] of Object.entries(groups)) {
+      html += `<div class="panel" style="margin-bottom:8px">
+        <div class="panel-header"><div class="panel-title">${esc(catName)}</div><span class="badge badge-blue">${items.length}</span></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Product</th><th>Brand</th><th>Unit</th><th class="text-right">Price</th><th>Source</th></tr></thead><tbody>`;
+      for (const p of items) {
+        const price = p.best_price || p.price;
+        const source = p.best_source || p.price_source || '';
+        html += `<tr>
+          <td style="font-weight:600;font-size:0.85em">${esc(p.name)}</td>
+          <td class="text-dim" style="font-size:0.82em">${esc(p.brand || '—')}</td>
+          <td class="text-dim" style="font-size:0.78em">${esc(p.unit || 'each')}</td>
+          <td class="text-right" style="font-family:'Orbitron',monospace;font-size:0.85em;color:${price ? 'var(--cyan)' : 'var(--text-dim)'}">${price ? fmt$(price) : '—'}</td>
+          <td class="text-dim" style="font-size:0.7em;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(source)}</td>
+        </tr>`;
+      }
+      html += '</tbody></table></div></div>';
+    }
+  }
+
+  m.innerHTML = html;
+}
+
 async function renderOffers(m) {
   m.innerHTML='<div class="loading"><div class="spinner"></div>Loading...</div>';
   if (!offersCache) offersCache = await api('/quote?offers=1');
