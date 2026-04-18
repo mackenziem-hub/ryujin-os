@@ -298,6 +298,33 @@ tr:hover td{background:rgba(34,211,238,0.02)}
 .line-item .cost{width:90px;text-align:right;font-weight:600;font-family:'Orbitron',monospace;font-size:0.85em}
 .line-item.estimated .name::after{content:" *";color:var(--yellow)}
 
+/* ─── Global Search Overlay ─── */
+.search-overlay{position:fixed;inset:0;z-index:9990;background:rgba(6,10,20,0.7);backdrop-filter:blur(8px);display:none;align-items:flex-start;justify-content:center;padding-top:15vh}
+.search-overlay.open{display:flex}
+.search-box{width:90%;max-width:560px;background:rgba(14,22,40,0.95);border:1px solid var(--glass-border-hi);border-radius:14px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.5)}
+.search-input{width:100%;padding:16px 20px;border:none;background:transparent;color:var(--text);font-family:inherit;font-size:1em;outline:none}
+.search-input::placeholder{color:var(--text-muted)}
+.search-results{max-height:50vh;overflow-y:auto;border-top:1px solid var(--glass-border)}
+.search-item{padding:10px 20px;cursor:pointer;display:flex;align-items:center;gap:10px;font-size:0.88em;transition:background 0.15s}
+.search-item:hover,.search-item.active{background:rgba(34,211,238,0.06)}
+.search-item .type{font-size:0.6em;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--text-dim);width:60px;flex-shrink:0}
+.search-item .name{font-weight:500;flex:1}
+.search-item .meta{font-size:0.75em;color:var(--text-dim)}
+.search-hint{padding:10px 20px;font-size:0.72em;color:var(--text-muted);border-top:1px solid var(--glass-border);display:flex;gap:16px}
+.search-hint kbd{padding:1px 6px;border-radius:4px;background:rgba(34,211,238,0.08);border:1px solid var(--glass-border);font-family:monospace;font-size:0.9em}
+
+/* ─── Toast Notifications ─── */
+.toast-container{position:fixed;bottom:80px;right:16px;z-index:9998;display:flex;flex-direction:column-reverse;gap:8px;pointer-events:none}
+.toast{padding:12px 18px;border-radius:10px;font-size:0.82em;font-weight:500;pointer-events:auto;
+  backdrop-filter:blur(20px);box-shadow:0 4px 20px rgba(0,0,0,0.4);animation:toastIn 0.3s ease;
+  display:flex;align-items:center;gap:8px;max-width:360px}
+.toast.success{background:rgba(16,60,16,0.92);color:var(--green);border:1px solid rgba(74,222,128,0.2)}
+.toast.error{background:rgba(60,16,16,0.92);color:var(--red);border:1px solid rgba(248,113,113,0.2)}
+.toast.info{background:rgba(16,30,60,0.92);color:var(--cyan);border:1px solid rgba(34,211,238,0.2)}
+.toast.out{animation:toastOut 0.3s ease forwards}
+@keyframes toastIn{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:none}}
+@keyframes toastOut{to{opacity:0;transform:translateX(40px)}}
+
 /* ─── Loading ─── */
 .loading{display:flex;align-items:center;justify-content:center;padding:40px;color:var(--text-dim);gap:10px}
 .spinner{width:20px;height:20px;border:2px solid rgba(34,211,238,0.12);border-top-color:var(--cyan);border-radius:50%;animation:spin 0.7s linear infinite;box-shadow:0 0 8px rgba(34,211,238,0.1)}
@@ -621,6 +648,105 @@ async function api(path, opts = {}) {
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 function fmt$(n) { return '$' + (n || 0).toLocaleString(); }
+
+// Toast notifications
+function toast(msg, type='info', duration=3500) {
+  let c = document.getElementById('toastContainer');
+  if (!c) { c = document.createElement('div'); c.id='toastContainer'; c.className='toast-container'; document.body.appendChild(c); }
+  const icons = {success:'&#10003;', error:'&#10007;', info:'&#9432;'};
+  const t = document.createElement('div');
+  t.className = 'toast ' + type;
+  t.innerHTML = `<span style="font-size:1.1em">${icons[type]||''}</span>${esc(msg)}`;
+  c.appendChild(t);
+  setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 300); }, duration);
+}
+
+// ─── Global Search (Ctrl+K) ───
+const globalSearch = {
+  open: false,
+  toggle() {
+    this.open = !this.open;
+    let overlay = document.getElementById('searchOverlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'searchOverlay';
+      overlay.className = 'search-overlay';
+      overlay.innerHTML = `<div class="search-box">
+        <input class="search-input" id="globalSearchInput" placeholder="Search customers, estimates, pages..." oninput="globalSearch.search(this.value)">
+        <div class="search-results" id="searchResults"></div>
+        <div class="search-hint"><span><kbd>Esc</kbd> close</span><span><kbd>Enter</kbd> select</span><span><kbd>D</kbd> dashboard <kbd>Q</kbd> quote <kbd>E</kbd> estimates</span></div>
+      </div>`;
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) globalSearch.toggle(); });
+      document.body.appendChild(overlay);
+    }
+    overlay.classList.toggle('open', this.open);
+    if (this.open) {
+      const inp = document.getElementById('globalSearchInput');
+      inp.value = '';
+      inp.focus();
+      this.search('');
+    }
+  },
+  async search(q) {
+    const results = document.getElementById('searchResults');
+    if (!results) return;
+    const items = [];
+
+    // Pages
+    const pages = [
+      {name:'Dashboard',page:'dashboard',icon:'Command Center'},
+      {name:'Quote Builder',page:'quote',icon:'Calculate quotes'},
+      {name:'Estimates',page:'estimates',icon:'Pipeline'},
+      {name:'Customers',page:'customers',icon:'Database'},
+      {name:'Offers',page:'offers',icon:'Packages'},
+      {name:'Products',page:'products',icon:'Catalog'},
+      {name:'Settings',page:'settings',icon:'Configuration'}
+    ];
+    for (const p of pages) {
+      if (!q || p.name.toLowerCase().includes(q.toLowerCase())) {
+        items.push({type:'Page', name:p.name, meta:p.icon, action:()=>{globalSearch.toggle();navigate(p.page);}});
+      }
+    }
+
+    // Search customers & estimates if query is non-empty
+    if (q && q.length >= 2) {
+      const [custData, estData] = await Promise.all([
+        cachedApi('/customers','customers'),
+        cachedApi('/estimates','estimates')
+      ]);
+      const ql = q.toLowerCase();
+      for (const c of (custData.customers||[]).filter(c => (c.full_name||'').toLowerCase().includes(ql) || (c.email||'').toLowerCase().includes(ql) || (c.phone||'').includes(ql)).slice(0,5)) {
+        items.push({type:'Customer', name:c.full_name||c.name, meta:c.email||c.phone||'', action:()=>{globalSearch.toggle();navigate('customers');}});
+      }
+      for (const e of (estData.estimates||[]).filter(e => (e.customer?.full_name||'').toLowerCase().includes(ql) || (e.address||'').toLowerCase().includes(ql)).slice(0,5)) {
+        items.push({type:'Estimate', name:e.customer?.full_name||'—', meta: (e.total_with_tax?fmt$(e.total_with_tax):'') + ' ' + (e.status||''), action:()=>{globalSearch.toggle();navigate('estimates');}});
+      }
+    }
+
+    results.innerHTML = items.length === 0
+      ? '<div style="padding:20px;text-align:center;color:var(--text-dim);font-size:0.85em">No results</div>'
+      : items.map((item,i) => `<div class="search-item${i===0?' active':''}" onclick="globalSearch._items[${i}].action()">
+          <span class="type">${item.type}</span><span class="name">${esc(item.name)}</span><span class="meta">${esc(item.meta)}</span>
+        </div>`).join('');
+    this._items = items;
+  },
+  _items: []
+};
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+  // Ctrl+K or Cmd+K — global search
+  if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); globalSearch.toggle(); return; }
+  // Escape — close search
+  if (e.key === 'Escape' && globalSearch.open) { globalSearch.toggle(); return; }
+  // Enter — select first search result
+  if (e.key === 'Enter' && globalSearch.open && globalSearch._items.length > 0) { globalSearch._items[0].action(); return; }
+  // Don't trigger shortcuts when typing in inputs
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+  // Page shortcuts
+  const shortcuts = {d:'dashboard',q:'quote',e:'estimates',c:'customers',o:'offers',p:'products',s:'settings'};
+  if (shortcuts[e.key] && !e.ctrlKey && !e.metaKey && !e.altKey) { navigate(shortcuts[e.key]); }
+});
 
 // Cached API for read-heavy endpoints
 async function cachedApi(path, key) {
@@ -1548,19 +1674,19 @@ async function generateOutputs(type) {
 
   if (renderTypes.includes(type)) {
     const od = await api(`/outputs?type=${type}`, {method:'POST', body:JSON.stringify(payload)});
-    if (od.error) { alert('Output error: ' + od.error); return; }
+    if (od.error) { toast('Output error: ' + od.error, 'error'); return; }
     const resp = await fetch(`${API}/render?type=${type}&tenant=${TENANT}`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(od)});
-    if (!resp.ok) { alert('Render failed'); return; }
+    if (!resp.ok) { toast('Render failed', 'error'); return; }
     const html = await resp.text();
     const w = window.open('', '_blank');
-    if (!w) { alert('Pop-up blocked — allow pop-ups for this site'); return; }
+    if (!w) { toast('Pop-up blocked — allow pop-ups for this site', 'error'); return; }
     w.document.write(html); w.document.close();
     return;
   }
 
   if (type === 'all') {
     const ad = await api('/outputs?type=all', {method:'POST', body:JSON.stringify(payload)});
-    if (ad.error) { alert('Output error: ' + ad.error); return; }
+    if (ad.error) { toast('Output error: ' + ad.error, 'error'); return; }
     for (const t of ['proposal', 'contract', 'sales_page']) {
       const data = t === 'sales_page' ? ad.outputs?.salesPage : ad.outputs?.[t];
       if (!data) continue;
@@ -1610,7 +1736,7 @@ async function createEstimateFromQuote() {
     notes: (notes ? notes + ' — ' : '') + 'Generated via Quote Builder — ' + quoteState.result.offer.name
   })});
 
-  if (est.error) { sfx.play('error'); alert('Error: ' + est.error); return; }
+  if (est.error) { sfx.play('error'); toast('Error: ' + est.error, 'error'); return; }
   sfx.play('success');
 
   // Show confirmation inline instead of alert
@@ -1844,24 +1970,57 @@ async function renderCustomers(m) {
       <div style="font-size:0.9em;color:var(--text-dim)">${custSearch ? 'No customers match your search.' : 'No customers yet.'}</div>
       <button class="btn btn-primary btn-sm" style="margin-top:12px" onclick="showNewCustomer()">Add First Customer</button></div>`;
   } else {
+    // Load estimates for linking
+    const estData = await cachedApi('/estimates','estimates');
+    const allEsts = estData.estimates || [];
+
     html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px">';
     for (const c of filtered) {
       const name = c.full_name || c.name || 'Unknown';
-      const hasContact = c.email || c.phone;
-      html += `<div class="panel" style="cursor:default">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-          <div style="width:36px;height:36px;border-radius:50%;background:rgba(167,139,250,0.1);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:700;color:var(--purple);font-size:0.82em">${name.charAt(0).toUpperCase()}</div>
-          <div style="flex:1;min-width:0">
-            <div style="font-weight:700;font-size:0.9em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(name)}</div>
-            ${c.address ? `<div style="font-size:0.72em;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(c.address)}${c.city ? ', ' + esc(c.city) : ''}</div>` : ''}
+      const custEsts = allEsts.filter(e => e.customer_id === c.id);
+      const custTotal = custEsts.reduce((s,e) => s + (e.total_with_tax || e.total_price || 0), 0);
+
+      html += `<details class="panel" style="cursor:default;padding:0">
+        <summary style="padding:12px 14px;cursor:pointer;list-style:none;display:block">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:36px;height:36px;border-radius:50%;background:rgba(167,139,250,0.1);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:700;color:var(--purple);font-size:0.82em">${name.charAt(0).toUpperCase()}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:700;font-size:0.9em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(name)}</div>
+              <div style="display:flex;gap:8px;font-size:0.72em;color:var(--text-dim)">
+                ${c.address ? `<span>${esc(c.address)}${c.city ? ', ' + esc(c.city) : ''}</span>` : ''}
+              </div>
+            </div>
+            ${custEsts.length > 0 ? `<div style="text-align:right"><div style="font-family:'Orbitron',monospace;font-size:0.85em;font-weight:700;color:var(--cyan)">${fmt$(custTotal)}</div><div style="font-size:0.6em;color:var(--text-dim)">${custEsts.length} est.</div></div>` : ''}
+          </div>
+        </summary>
+        <div style="padding:0 14px 14px;border-top:1px solid var(--glass-border)">
+          <!-- Contact info -->
+          <div style="display:flex;gap:12px;font-size:0.78em;padding:8px 0">
+            ${c.email ? `<div style="display:flex;align-items:center;gap:4px;color:var(--cyan)"><svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2;flex-shrink:0"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>${esc(c.email)}</div>` : '<span class="text-dim">No email</span>'}
+            ${c.phone ? `<div style="display:flex;align-items:center;gap:4px;color:var(--green)"><svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72"/></svg>${esc(c.phone)}</div>` : '<span class="text-dim">No phone</span>'}
+          </div>
+          ${c.notes ? `<div style="font-size:0.7em;color:var(--text-dim);padding:4px 0">${esc(c.notes)}</div>` : ''}
+
+          <!-- Estimate history -->
+          ${custEsts.length > 0 ? `
+            <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--glass-border)">
+              <div style="font-size:0.65em;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--text-dim);margin-bottom:6px">Estimates</div>
+              ${custEsts.map(e => {
+                const sc = e.status==='accepted'?'green':e.status==='sent'?'blue':e.status==='declined'?'red':'dim';
+                return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:0.78em">
+                  <div><span class="badge badge-${sc}" style="font-size:0.7em">${e.status||'draft'}</span> <span class="text-dim">${esc(e.package||'')}</span></div>
+                  <span style="font-family:'Orbitron',monospace;color:var(--cyan)">${e.total_with_tax?fmt$(e.total_with_tax):e.total_price?fmt$(e.total_price):'—'}</span>
+                </div>`;
+              }).join('')}
+            </div>
+          ` : ''}
+
+          <!-- Actions -->
+          <div style="display:flex;gap:4px;margin-top:8px;padding-top:8px;border-top:1px solid var(--glass-border)">
+            <button class="btn btn-sm btn-primary" onclick="quoteState.answers={customerName:'${esc(name)}',address:'${esc(c.address||'')}',customerEmail:'${esc(c.email||'')}',customerPhone:'${esc(c.phone||'')}'};navigate('quote')">New Quote</button>
           </div>
         </div>
-        <div style="display:flex;gap:12px;font-size:0.78em;padding-top:8px;border-top:1px solid var(--glass-border)">
-          ${c.email ? `<div style="display:flex;align-items:center;gap:4px;color:var(--cyan);min-width:0"><svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2;flex-shrink:0"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.email)}</span></div>` : '<span class="text-dim" style="font-size:0.85em">No email</span>'}
-          ${c.phone ? `<div style="display:flex;align-items:center;gap:4px;color:var(--green)"><svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72"/></svg>${esc(c.phone)}</div>` : '<span class="text-dim" style="font-size:0.85em">No phone</span>'}
-        </div>
-        ${c.notes ? `<div style="font-size:0.7em;color:var(--text-dim);margin-top:6px;padding-top:6px;border-top:1px solid var(--glass-border)">${esc(c.notes)}</div>` : ''}
-      </div>`;
+      </details>`;
     }
     html += '</div>';
   }
@@ -1880,7 +2039,7 @@ function showNewCustomer(){
     <div class="form-group form-full"><label class="form-label">Notes</label><textarea id="nc_notes" rows="3"></textarea></div></div>
     <div style="display:flex;gap:8px;margin-top:14px"><button class="btn btn-primary" onclick="createCustomer()">Create</button><button class="btn btn-outline" onclick="navigate('customers')">Cancel</button></div></div>`;
 }
-async function createCustomer(){const n=document.getElementById('nc_name').value.trim();if(!n){alert('Name required');return;}
+async function createCustomer(){const n=document.getElementById('nc_name').value.trim();if(!n){toast('Name is required','error');return;}
   await api('/customers',{method:'POST',body:JSON.stringify({full_name:n,email:document.getElementById('nc_email').value.trim()||null,phone:document.getElementById('nc_phone').value.trim()||null,address:document.getElementById('nc_address').value.trim()||null,city:document.getElementById('nc_city').value.trim()||null,province:document.getElementById('nc_province').value.trim()||null,notes:document.getElementById('nc_notes').value.trim()||null})});navigate('customers');}
 
 let estFilter = 'all';
@@ -1997,8 +2156,9 @@ async function renderEstimates(m) {
 
 async function updateEstStatus(id, status) {
   const r = await api('/estimates', {method:'PUT', body:JSON.stringify({id, status})});
-  if (r.error) { alert('Error: ' + r.error); return; }
+  if (r.error) { toast('Error: ' + r.error, 'error'); return; }
   sfx.play('success');
+  toast('Status updated', 'success');
   invalidateCache('estimates');
   renderEstimates(document.getElementById('main'));
 }
@@ -2027,7 +2187,7 @@ async function generateEstOutputs(id, type) {
   // Fetch estimate, build a minimal quote result, generate output
   const data = await api('/estimates?id=' + id);
   const est = data.estimate || data;
-  if (!est || !est.package) { alert('Estimate data incomplete'); return; }
+  if (!est || !est.package) { toast('Estimate data incomplete', 'error'); return; }
 
   // Re-calculate via the API
   const calcPayload = {
@@ -2041,7 +2201,7 @@ async function generateEstOutputs(id, type) {
     }
   };
   const quoteResult = await api('/quote?mode=guided&materials=1', {method:'POST', body:JSON.stringify(calcPayload)});
-  if (quoteResult.error) { alert('Quote error: ' + quoteResult.error); return; }
+  if (quoteResult.error) { toast('Quote error: ' + quoteResult.error, 'error'); return; }
 
   // Generate output
   const sysMap = {residential:'asphalt',metal:'metal',flat:'asphalt',exterior:'exterior',combined:'combined'};
@@ -2057,10 +2217,10 @@ async function generateEstOutputs(id, type) {
   };
 
   const od = await api('/outputs?type=' + type, {method:'POST', body:JSON.stringify(payload)});
-  if (od.error) { alert('Output error: ' + od.error); return; }
+  if (od.error) { toast('Output error: ' + od.error, 'error'); return; }
 
   const resp = await fetch(API + '/render?type=' + type + '&tenant=' + TENANT, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(od)});
-  if (!resp.ok) { alert('Render failed'); return; }
+  if (!resp.ok) { toast('Render failed', 'error'); return; }
   const html = await resp.text();
   const w = window.open('', '_blank');
   if (w) { w.document.write(html); w.document.close(); }
@@ -2104,7 +2264,7 @@ async function renderSettings(m) {
   m.innerHTML=html;
 }
 
-function tryJSON(id){try{return JSON.parse(document.getElementById(id).value);}catch(e){alert('Invalid JSON: '+id);return null;}}
+function tryJSON(id){try{return JSON.parse(document.getElementById(id).value);}catch(e){toast('Invalid JSON in '+id,'error');return null;}}
 async function saveSettings(){
   const jf=['s_labor_roofing','s_labor_exterior','s_distance','s_multipliers','s_margins','s_mobilization','s_remediation'];
   const parsed={};for(const id of jf){const v=tryJSON(id);if(!v)return;parsed[id]=v;}
@@ -2117,7 +2277,7 @@ async function saveSettings(){
     labor_rates_roofing:parsed.s_labor_roofing,labor_rates_exterior:parsed.s_labor_exterior,distance_tiers:parsed.s_distance,
     default_multipliers:parsed.s_multipliers,margin_floors:parsed.s_margins,mobilization_rules:parsed.s_mobilization,remediation_tiers:parsed.s_remediation};
   const r=await api('/settings',{method:'PUT',body:JSON.stringify(u)});
-  alert(r.error?'Error: '+r.error:'Settings saved!');
+  toast(r.error ? 'Error: '+r.error : 'Settings saved!', r.error ? 'error' : 'success');
 }
 
 // ═══════════════════════════════════════════
