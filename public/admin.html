@@ -755,9 +755,40 @@ function miniGaugeHTML(value, max, label, color) {
 // SVG gradient definition for charts (injected once)
 const SVG_DEFS = `<defs><linearGradient id="cg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#22d3ee" stop-opacity="0.55"/><stop offset="100%" stop-color="#22d3ee" stop-opacity="0.02"/></linearGradient><linearGradient id="gg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#4ade80" stop-opacity="0.45"/><stop offset="100%" stop-color="#4ade80" stop-opacity="0.02"/></linearGradient></defs>`;
 
-// Generate fake sparkline data for visual demo
-function sparkPoints(count,min,max,h,w){const pts=[];for(let i=0;i<count;i++){const x=(i/(count-1))*w;const y=h-((Math.random()*(max-min)+min)/max)*h*0.8-h*0.05;pts.push(`${x},${y}`);}return pts;}
-function areaChart(w,h,color){const pts=sparkPoints(12,30,100,h,w);const line=pts.join(' ');const area=`0,${h} ${line} ${w},${h}`;const grad=color==='green'?'url(#gg)':'url(#cg)';const stroke=color==='green'?'var(--green)':'var(--cyan)';return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">${SVG_DEFS}<polygon points="${area}" fill="${grad}"/><polyline points="${line}" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" filter="drop-shadow(0 0 4px ${stroke})"/></svg>`;}
+// Generate chart from real data or fallback to demo
+function dataPoints(values, h, w) {
+  if (!values || values.length === 0) return [];
+  const max = Math.max(...values, 1);
+  return values.map((v, i) => {
+    const x = values.length === 1 ? w/2 : (i / (values.length - 1)) * w;
+    const y = h - (v / max) * h * 0.85 - h * 0.05;
+    return `${x},${y}`;
+  });
+}
+function areaChart(w, h, color, values) {
+  const pts = values && values.length > 1 ? dataPoints(values, h, w) : dataPoints(Array.from({length:12}, () => Math.random()*70+30), h, w);
+  const line = pts.join(' ');
+  const area = `0,${h} ${line} ${w},${h}`;
+  const grad = color === 'green' ? 'url(#gg)' : 'url(#cg)';
+  const stroke = color === 'green' ? 'var(--green)' : 'var(--cyan)';
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">${SVG_DEFS}<polygon points="${area}" fill="${grad}"/><polyline points="${line}" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" filter="drop-shadow(0 0 4px ${stroke})"/></svg>`;
+}
+
+// Build monthly pipeline data from estimates
+function buildMonthlyData(estimates, field, months) {
+  const now = new Date();
+  const data = [];
+  for (let i = months - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const nextD = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+    const val = estimates.filter(e => {
+      const cd = new Date(e.created_at);
+      return cd >= d && cd < nextD;
+    }).reduce((s, e) => s + (e[field] || 0), 0);
+    data.push(val);
+  }
+  return data;
+}
 
 function progressBar(pct,color,label,value){
   return `<div><div class="progress-label"><span>${label}</span><span class="value">${value||pct+'%'}</span></div><div class="progress"><div class="progress-fill ${color}" style="width:${pct}%"></div></div></div>`;
@@ -804,7 +835,7 @@ async function renderDashboard(m) {
     <div class="panel-header"><div class="panel-title">Pipeline</div><span class="badge badge-blue">Live</span></div>
     <div class="mega-num cyan" style="font-size:3.2em">${fmt$(pipelineVal)}</div>
     <div class="mega-label">Total Value</div>
-    <div class="mini-chart" style="height:50px;margin-top:6px">${areaChart(200,50,'cyan')}</div>
+    <div class="mini-chart" style="height:50px;margin-top:6px">${areaChart(200,50,'cyan',buildMonthlyData(estList,'total_price',6))}</div>
   </div>`;
 
   // Panel 2: Estimates count
@@ -856,7 +887,7 @@ async function renderDashboard(m) {
       <div><span style="font-family:'Orbitron',monospace;font-size:2em;font-weight:800;color:var(--green);text-shadow:0 0 20px rgba(74,222,128,0.2)">${acceptedCount}</span><div class="mega-label">Won</div></div>
       <div><span style="font-family:'Orbitron',monospace;font-size:2em;font-weight:800;color:var(--blue);text-shadow:0 0 20px rgba(74,158,255,0.2)">${offerCount}</span><div class="mega-label">Offers</div></div>
     </div>
-    <div style="height:80px">${areaChart(500,80,'cyan')}</div>
+    <div style="height:80px">${areaChart(500,80,'cyan',buildMonthlyData(estList,'total_price',12))}</div>
     <div class="panel-zone" style="display:flex;gap:10px">
       <div style="flex:1">${progressBar(48,'cyan','Quote Rate','47.9%')}</div>
       <div style="flex:1">${progressBar(8,'green','Close Rate','8.3%')}</div>
@@ -950,7 +981,7 @@ async function renderDashboard(m) {
     <div style="display:flex;gap:20px;margin-bottom:6px">
       <div><span style="font-family:'Orbitron',monospace;font-size:1.4em;font-weight:700;color:var(--green)">${fmt$(acceptedCount > 0 ? estList.filter(e=>e.status==='accepted').reduce((s,e)=>s+(e.total_price||0),0) : 0)}</span><div class="mega-label">Accepted Value</div></div>
     </div>
-    <div style="height:60px">${areaChart(400,60,'green')}</div>
+    <div style="height:60px">${areaChart(400,60,'green',buildMonthlyData(estList.filter(e=>e.status==='accepted'),'total_price',6))}</div>
   </div>`;
 
   // ═══ ROW 5: Systems Online (span 1) + Recent Estimates (span 3) ═══
@@ -1902,28 +1933,62 @@ async function renderEstimates(m) {
       const sc = e.status==='accepted'?'green':e.status==='sent'?'blue':e.status==='declined'?'red':'dim';
       const pkg = e.package || e.system || '';
       const created = e.created_at ? new Date(e.created_at).toLocaleDateString() : '';
-      html += `<div class="panel" style="cursor:default">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
-          <div>
-            <div style="font-weight:700;font-size:0.92em">${esc(e.customer?.full_name||'Unknown Customer')}</div>
-            <div style="font-size:0.75em;color:var(--text-dim)">${esc(e.address||'No address')}</div>
+      const custName = e.customer?.full_name || 'Unknown Customer';
+      const hasMeasurements = e.measurements && Object.keys(e.measurements).length > 0;
+      const eid = e.id;
+
+      html += `<details class="panel" style="cursor:default;padding:0">
+        <summary style="padding:12px 14px;cursor:pointer;list-style:none;display:block">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+            <div>
+              <div style="font-weight:700;font-size:0.92em">${esc(custName)}</div>
+              <div style="font-size:0.75em;color:var(--text-dim)">${esc(e.address||'No address')}</div>
+            </div>
+            <span class="badge badge-${sc}">${e.status||'draft'}</span>
           </div>
-          <span class="badge badge-${sc}">${e.status||'draft'}</span>
-        </div>
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid var(--glass-border)">
-          <div>
-            ${pkg ? `<div style="font-size:0.7em;color:var(--text-dim);text-transform:capitalize">${esc(pkg)}</div>` : ''}
-            <div style="font-family:'Orbitron',monospace;font-size:1.2em;font-weight:700;color:var(--cyan)">${e.total_with_tax ? fmt$(e.total_with_tax) : e.total_price ? fmt$(e.total_price) : '—'}</div>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+              ${pkg ? `<span style="font-size:0.68em;color:var(--text-dim);text-transform:capitalize">${esc(pkg)}</span>` : ''}
+              <div style="font-family:'Orbitron',monospace;font-size:1.15em;font-weight:700;color:var(--cyan)">${e.total_with_tax ? fmt$(e.total_with_tax) : e.total_price ? fmt$(e.total_price) : '—'}</div>
+            </div>
+            <div style="font-size:0.68em;color:var(--text-dim)">${created}</div>
           </div>
-          <div style="font-size:0.7em;color:var(--text-dim)">${created}</div>
+        </summary>
+        <div style="padding:0 14px 14px;border-top:1px solid var(--glass-border)">
+          <!-- Measurements summary -->
+          ${hasMeasurements ? `<div style="display:flex;gap:12px;flex-wrap:wrap;padding:10px 0;font-size:0.75em">
+            ${e.measurements.input_sqft ? `<div><span class="text-dim">Area:</span> ${e.measurements.input_sqft} sqft</div>` : ''}
+            ${e.measurements.pitch ? `<div><span class="text-dim">Pitch:</span> ${e.measurements.pitch}</div>` : ''}
+            ${e.measurements.measuredSQ ? `<div><span class="text-dim">SQ:</span> ${e.measurements.measuredSQ}</div>` : ''}
+            ${e.measurements.workdays ? `<div><span class="text-dim">Days:</span> ${e.measurements.workdays}</div>` : ''}
+            ${e.measurements.distanceKM ? `<div><span class="text-dim">Dist:</span> ${e.measurements.distanceKM}km</div>` : ''}
+          </div>` : ''}
+
+          <!-- Price breakdown -->
+          ${e.total_price ? `<div style="display:flex;justify-content:space-between;font-size:0.78em;padding:4px 0">
+            <span class="text-dim">Selling</span><span>${fmt$(e.total_price)}</span></div>` : ''}
+          ${e.total_with_tax && e.total_price ? `<div style="display:flex;justify-content:space-between;font-size:0.78em;padding:4px 0">
+            <span class="text-dim">Tax incl.</span><span style="font-weight:600;color:var(--cyan)">${fmt$(e.total_with_tax)}</span></div>` : ''}
+
+          ${e.notes ? `<div style="font-size:0.72em;color:var(--text-dim);padding:6px 0;border-top:1px solid var(--glass-border);margin-top:6px">${esc(e.notes)}</div>` : ''}
+
+          <!-- Status actions -->
+          <div style="display:flex;gap:4px;margin-top:10px;padding-top:8px;border-top:1px solid var(--glass-border)">
+            ${e.status==='draft' ? `<button class="btn btn-sm btn-primary" onclick="updateEstStatus('${eid}','sent')">Mark Sent</button>` : ''}
+            ${e.status==='sent' ? `<button class="btn btn-sm btn-success" onclick="updateEstStatus('${eid}','accepted')">Accepted</button><button class="btn btn-sm btn-danger" onclick="updateEstStatus('${eid}','declined')">Declined</button>` : ''}
+            ${e.status==='accepted' ? `<span style="font-size:0.72em;color:var(--green);font-weight:600;padding:4px 0">CLOSED</span>` : ''}
+            ${e.status==='declined' ? `<button class="btn btn-sm btn-outline" onclick="updateEstStatus('${eid}','draft')">Reopen</button>` : ''}
+          </div>
+
+          <!-- Output & re-quote actions -->
+          <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">
+            <button class="btn btn-sm btn-outline" onclick="reQuoteEstimate('${eid}','${esc(custName)}','${esc(e.address||'')}','${esc(pkg)}')">Re-Quote</button>
+            <button class="btn btn-sm btn-outline" onclick="generateEstOutputs('${eid}','proposal')">Proposal</button>
+            <button class="btn btn-sm btn-outline" onclick="generateEstOutputs('${eid}','sales_page')">Sales Page</button>
+            <button class="btn btn-sm btn-outline" onclick="generateEstOutputs('${eid}','contract')">Contract</button>
+          </div>
         </div>
-        <div style="display:flex;gap:4px;margin-top:8px;border-top:1px solid var(--glass-border);padding-top:8px">
-          ${e.status==='draft'?`<button class="btn btn-sm btn-outline" onclick="updateEstStatus('${e.id}','sent')">Mark Sent</button>`:''}
-          ${e.status==='sent'?`<button class="btn btn-sm btn-success" onclick="updateEstStatus('${e.id}','accepted')">Accepted</button><button class="btn btn-sm btn-danger" onclick="updateEstStatus('${e.id}','declined')">Declined</button>`:''}
-          ${e.status==='accepted'?`<span style="font-size:0.7em;color:var(--green);font-weight:600">CLOSED</span>`:''}
-          ${e.status==='declined'?`<button class="btn btn-sm btn-outline" onclick="updateEstStatus('${e.id}','draft')">Reopen</button>`:''}
-        </div>
-      </div>`;
+      </details>`;
     }
     html += '</div>';
   }
@@ -1934,7 +1999,71 @@ async function updateEstStatus(id, status) {
   const r = await api('/estimates', {method:'PUT', body:JSON.stringify({id, status})});
   if (r.error) { alert('Error: ' + r.error); return; }
   sfx.play('success');
+  invalidateCache('estimates');
   renderEstimates(document.getElementById('main'));
+}
+
+function reQuoteEstimate(id, name, address, pkg) {
+  // Pre-fill quote builder with saved data
+  quoteState.mode = 'guided';
+  quoteState.answers = { customerName: name, address: address, _offer_slug: pkg };
+  // Try to get the estimate to load measurements
+  api('/estimates?id=' + id).then(data => {
+    const est = data.estimate || data;
+    if (est.measurements) {
+      Object.assign(quoteState.answers, {
+        squareFeet: est.measurements.input_sqft,
+        pitch: est.measurements.pitch,
+        distanceKM: est.measurements.distanceKM,
+        complexity: est.measurements.complexity
+      });
+    }
+    if (est.system) quoteState.system = est.system === 'asphalt' ? 'residential' : est.system;
+    navigate('quote');
+  });
+}
+
+async function generateEstOutputs(id, type) {
+  // Fetch estimate, build a minimal quote result, generate output
+  const data = await api('/estimates?id=' + id);
+  const est = data.estimate || data;
+  if (!est || !est.package) { alert('Estimate data incomplete'); return; }
+
+  // Re-calculate via the API
+  const calcPayload = {
+    system: est.system || 'residential',
+    offer_slug: est.package,
+    answers: {
+      address: est.address || '',
+      ...(est.measurements || {}),
+      squareFeet: est.measurements?.input_sqft || 0,
+      distanceKM: est.measurements?.distanceKM || 10
+    }
+  };
+  const quoteResult = await api('/quote?mode=guided&materials=1', {method:'POST', body:JSON.stringify(calcPayload)});
+  if (quoteResult.error) { alert('Quote error: ' + quoteResult.error); return; }
+
+  // Generate output
+  const sysMap = {residential:'asphalt',metal:'metal',flat:'asphalt',exterior:'exterior',combined:'combined'};
+  const sysOffers = offersCache ? (offersCache.offers||[]).filter(o => o.system === (sysMap[est.system]||'asphalt')).map(o => o.id) : [];
+
+  const payload = {
+    quote_result: quoteResult,
+    customer_name: est.customer?.full_name || '',
+    property_address: est.address || '',
+    prepared_by: 'Mackenzie Mazerolle',
+    compare_offer_ids: sysOffers,
+    measurements: quoteResult.measurements
+  };
+
+  const od = await api('/outputs?type=' + type, {method:'POST', body:JSON.stringify(payload)});
+  if (od.error) { alert('Output error: ' + od.error); return; }
+
+  const resp = await fetch(API + '/render?type=' + type + '&tenant=' + TENANT, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(od)});
+  if (!resp.ok) { alert('Render failed'); return; }
+  const html = await resp.text();
+  const w = window.open('', '_blank');
+  if (w) { w.document.write(html); w.document.close(); }
 }
 
 async function renderSettings(m) {
