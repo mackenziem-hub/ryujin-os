@@ -109,7 +109,8 @@ async function handler(req, res) {
       date: body.date,
       financingAvailable: body.financing !== false,
       mobilizationSettings: mobilizationRules,
-      addOnQuote: body.add_on_quote || null
+      addOnQuote: body.add_on_quote || null,
+      multiOfferResults
     });
   }
 

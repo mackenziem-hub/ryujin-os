@@ -1129,9 +1129,20 @@ async function renderQuoteForm() {
       );
     }
 
-    // ═══ Section 5: Site Conditions ═══
-    html += formSection('Site Conditions', '📋',
-      qField('existingCondition','Existing Roof Condition','select',{default:'fair',options:['good','fair','poor'],labels:{good:'Good — single layer, solid deck',fair:'Fair — some wear, standard tear-off',poor:'Poor — multiple layers, potential deck issues'},hint:'Affects remediation allowance'}) +
+    // ═══ Section 5: Inspection Findings ═══
+    html += formSection('Inspection Findings', '🔍',
+      qField('sheathingCondition','Sheathing / Deck Condition','select',{default:'good',options:['good','fair','poor','unknown'],labels:{good:'Good — solid, no soft spots',fair:'Fair — some wear, may need spot repairs',poor:'Poor — significant damage, likely full redeck',unknown:'Unknown — not yet inspected'},hint:'Gates remediation scope & allowance'}) +
+      qField('flashingCondition','Flashing Condition','select',{default:'fair',options:['good','fair','poor'],labels:{good:'Good — sealed, no rust',fair:'Fair — aging, should replace',poor:'Poor — leaking, corroded, must replace'}}) +
+      qField('gutterCondition','Gutter Condition','select',{default:'fair',options:['good','fair','poor','none'],labels:{good:'Good — functional, minor cleaning',fair:'Fair — sagging or leaking sections',poor:'Poor — needs full replacement',none:'No gutters installed'}}) +
+      qField('soffitFasciaDamage','Soffit / Fascia Damage','select',{default:'none',options:['none','minor','moderate','severe'],labels:{none:'None — intact',minor:'Minor — cosmetic wear',moderate:'Moderate — some rot or holes',severe:'Severe — structural damage'}}) +
+      qField('ventilationAdequate','Ventilation Adequate','select',{default:'yes',options:['yes','no','partial'],labels:{yes:'Yes — proper intake & exhaust',no:'No — needs ventilation work',partial:'Partial — some improvement needed'}}) +
+      qField('iceDamHistory','Ice Dam History','checkbox',{default:false,hint:'Previous ice dam issues — affects ice shield scope'}) +
+      qField('interiorWaterDamage','Interior Water Damage Signs','checkbox',{default:false,hint:'Stains, peeling paint, mold — indicates active leak'})
+    , false);
+
+    // ═══ Section 6: Site Conditions ═══
+    html += formSection('Site & Access', '📋',
+      qField('existingCondition','Overall Roof Condition','select',{default:'fair',options:['good','fair','poor'],labels:{good:'Good — single layer, solid deck',fair:'Fair — some wear, standard tear-off',poor:'Poor — multiple layers, potential deck issues'},hint:'Affects remediation allowance'}) +
       qField('accessDifficulty','Site Access','select',{default:'normal',options:['easy','normal','difficult'],labels:{easy:'Easy — ground level, open lot',normal:'Normal — standard residential',difficult:'Difficult — tight access, steep grade, landscaping'},hint:'Notes for crew planning'}) +
       qField('notes','Job Notes','text',{hint:'Anything crew should know — hazards, pets, parking, etc.'})
     , false);
@@ -1445,11 +1456,17 @@ async function recalcWithOverrides(){
 
 async function generateOutputs(type) {
   if (!quoteState.result) return;
+  // Get the system-specific offer IDs for comparison
+  const sysMap = {residential:'asphalt',metal:'metal',flat:'asphalt',exterior:'exterior',combined:'combined'};
+  const sysOffers = offersCache ? (offersCache.offers||[]).filter(o => o.system === (sysMap[quoteState.system]||'asphalt')).map(o => o.id) : [];
+
   const payload = {
     quote_result: quoteState.result,
     customer_name: quoteState.answers.customerName || '',
     property_address: quoteState.answers.address || '',
-    prepared_by: 'Mackenzie Mazerolle'
+    prepared_by: 'Mackenzie Mazerolle',
+    compare_offer_ids: sysOffers,
+    measurements: quoteState.result.measurements
   };
 
   // Types that render as HTML
