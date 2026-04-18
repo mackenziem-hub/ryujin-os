@@ -1209,10 +1209,12 @@ async function renderDashboard(m) {
       <thead><tr><th>Customer</th><th>Status</th><th class="text-right">Amount</th><th>Date</th></tr></thead><tbody>`;
   for (const e of estList.slice(0, 5)) {
     const sc = e.status==='accepted'?'green':e.status==='sent'?'blue':'dim';
-    html += `<tr><td style="font-weight:600;font-size:0.82em">${esc(e.customer?.full_name||e.customer?.name||'—')}</td>
+    const eAge = e.created_at ? timeAgo(new Date(e.created_at)) : '';
+    html += `<tr style="cursor:pointer" onclick="estFilter='all';navigate('estimates')">
+      <td style="font-weight:600;font-size:0.82em">${esc(e.customer?.full_name||e.customer?.name||'—')}</td>
       <td><span class="badge badge-${sc}">${e.status||'draft'}</span></td>
       <td class="text-right" style="font-family:'Orbitron',monospace;color:var(--cyan);font-size:0.85em">${e.total_price?fmt$(e.total_price):'—'}</td>
-      <td class="text-dim" style="font-size:0.78em">${e.created_at?new Date(e.created_at).toLocaleDateString():'—'}</td></tr>`;
+      <td class="text-dim" style="font-size:0.78em">${eAge}</td></tr>`;
   }
   html += '</tbody></table></div></div>';
 
@@ -2397,6 +2399,28 @@ async function deleteCustomer(id, name) {
   renderCustomers(document.getElementById('main'));
 }
 
+async function duplicateEstimate(id) {
+  const data = await api('/estimates?id=' + id);
+  const est = data.estimate || data;
+  if (!est) { toast('Could not load estimate', 'error'); return; }
+  const newEst = await api('/estimates', {method:'POST', body:JSON.stringify({
+    customer_id: est.customer_id,
+    address: est.address,
+    status: 'draft',
+    system: est.system,
+    package: est.package,
+    total_price: est.total_price,
+    total_with_tax: est.total_with_tax,
+    measurements: est.measurements,
+    choices: est.choices,
+    notes: 'Duplicated from estimate ' + id.substring(0,8)
+  })});
+  if (newEst.error) { toast('Error: ' + newEst.error, 'error'); return; }
+  toast('Estimate duplicated as draft', 'success');
+  invalidateCache('estimates');
+  renderEstimates(document.getElementById('main'));
+}
+
 async function deleteEstimate(id) {
   if (!confirm('Delete this estimate? This cannot be undone.')) return;
   const r = await api('/estimates?id=' + id, {method:'DELETE'});
@@ -2521,6 +2545,7 @@ async function renderEstimates(m) {
             <button class="btn btn-sm btn-outline" onclick="generateEstOutputs('${eid}','proposal')">Proposal</button>
             <button class="btn btn-sm btn-outline" onclick="generateEstOutputs('${eid}','sales_page')">Sales Page</button>
             <button class="btn btn-sm btn-outline" onclick="generateEstOutputs('${eid}','contract')">Contract</button>
+            <button class="btn btn-sm btn-outline" onclick="duplicateEstimate('${eid}')" title="Duplicate">&#128203;</button>
             <button class="btn btn-sm btn-danger" onclick="deleteEstimate('${eid}')" style="margin-left:auto" title="Delete">&#128465;</button>
           </div>
         </div>
