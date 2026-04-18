@@ -330,6 +330,14 @@ tr:hover td{background:rgba(34,211,238,0.02)}
 .spinner{width:20px;height:20px;border:2px solid rgba(34,211,238,0.12);border-top-color:var(--cyan);border-radius:50%;animation:spin 0.7s linear infinite;box-shadow:0 0 8px rgba(34,211,238,0.1)}
 @keyframes spin{to{transform:rotate(360deg)}}
 
+/* ─── Skeleton Loading ─── */
+.skeleton{background:linear-gradient(90deg,rgba(34,211,238,0.03) 25%,rgba(34,211,238,0.06) 50%,rgba(34,211,238,0.03) 75%);background-size:200% 100%;animation:shimmer 1.5s ease infinite;border-radius:8px}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.skel-text{height:12px;margin-bottom:8px;border-radius:4px}
+.skel-text.w60{width:60%}.skel-text.w40{width:40%}.skel-text.w80{width:80%}.skel-text.w100{width:100%}
+.skel-block{height:80px;margin-bottom:8px}
+.skel-circle{width:48px;height:48px;border-radius:50%}
+
 /* ─── Page transitions ─── */
 .main{animation:pageIn 0.35s ease}
 @keyframes pageIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
@@ -743,10 +751,38 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && globalSearch.open && globalSearch._items.length > 0) { globalSearch._items[0].action(); return; }
   // Don't trigger shortcuts when typing in inputs
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+  // ? — show shortcuts help
+  if (e.key === '?' || (e.shiftKey && e.key === '/')) { showShortcutsHelp(); return; }
   // Page shortcuts
   const shortcuts = {d:'dashboard',q:'quote',e:'estimates',c:'customers',o:'offers',p:'products',s:'settings'};
   if (shortcuts[e.key] && !e.ctrlKey && !e.metaKey && !e.altKey) { navigate(shortcuts[e.key]); }
 });
+
+function showShortcutsHelp() {
+  let overlay = document.getElementById('shortcutsOverlay');
+  if (overlay) { overlay.remove(); return; }
+  overlay = document.createElement('div');
+  overlay.id = 'shortcutsOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9990;background:rgba(6,10,20,0.7);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center';
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  overlay.innerHTML = `<div style="background:rgba(14,22,40,0.95);border:1px solid var(--glass-border-hi);border-radius:14px;padding:28px 32px;max-width:400px;width:90%">
+    <div style="font-family:'Orbitron',monospace;font-size:0.8em;font-weight:700;letter-spacing:2px;color:var(--cyan);margin-bottom:16px">KEYBOARD SHORTCUTS</div>
+    <div style="display:grid;grid-template-columns:auto 1fr;gap:8px 16px;font-size:0.82em">
+      <kbd style="padding:2px 8px;border-radius:4px;background:rgba(34,211,238,0.08);border:1px solid var(--glass-border);font-family:monospace;text-align:center">Ctrl+K</kbd><span class="text-dim">Search everything</span>
+      <kbd style="padding:2px 8px;border-radius:4px;background:rgba(34,211,238,0.08);border:1px solid var(--glass-border);font-family:monospace;text-align:center">D</kbd><span class="text-dim">Dashboard</span>
+      <kbd style="padding:2px 8px;border-radius:4px;background:rgba(34,211,238,0.08);border:1px solid var(--glass-border);font-family:monospace;text-align:center">Q</kbd><span class="text-dim">Quote Builder</span>
+      <kbd style="padding:2px 8px;border-radius:4px;background:rgba(34,211,238,0.08);border:1px solid var(--glass-border);font-family:monospace;text-align:center">E</kbd><span class="text-dim">Estimates</span>
+      <kbd style="padding:2px 8px;border-radius:4px;background:rgba(34,211,238,0.08);border:1px solid var(--glass-border);font-family:monospace;text-align:center">C</kbd><span class="text-dim">Customers</span>
+      <kbd style="padding:2px 8px;border-radius:4px;background:rgba(34,211,238,0.08);border:1px solid var(--glass-border);font-family:monospace;text-align:center">O</kbd><span class="text-dim">Offers</span>
+      <kbd style="padding:2px 8px;border-radius:4px;background:rgba(34,211,238,0.08);border:1px solid var(--glass-border);font-family:monospace;text-align:center">P</kbd><span class="text-dim">Products</span>
+      <kbd style="padding:2px 8px;border-radius:4px;background:rgba(34,211,238,0.08);border:1px solid var(--glass-border);font-family:monospace;text-align:center">S</kbd><span class="text-dim">Settings</span>
+      <kbd style="padding:2px 8px;border-radius:4px;background:rgba(34,211,238,0.08);border:1px solid var(--glass-border);font-family:monospace;text-align:center">?</kbd><span class="text-dim">This help</span>
+      <kbd style="padding:2px 8px;border-radius:4px;background:rgba(34,211,238,0.08);border:1px solid var(--glass-border);font-family:monospace;text-align:center">Esc</kbd><span class="text-dim">Close overlays</span>
+    </div>
+    <div style="margin-top:16px;text-align:center"><button class="btn btn-sm btn-outline" onclick="this.closest('#shortcutsOverlay').remove()">Got it</button></div>
+  </div>`;
+  document.body.appendChild(overlay);
+}
 
 // Cached API for read-heavy endpoints
 async function cachedApi(path, key) {
@@ -921,7 +957,13 @@ function progressBar(pct,color,label,value){
 }
 
 async function renderDashboard(m) {
-  m.innerHTML = `<div class="page-header"><div><h1>Command Center</h1><div class="sub">Ryujin OS v3.1</div></div></div><div class="loading"><div class="spinner"></div>Initializing systems...</div>`;
+  m.innerHTML = `<div class="page-header"><div><h1>Command Center</h1><div class="sub">Ryujin OS v3.1</div></div></div>
+    <div class="dash-grid">
+      <div class="panel"><div class="skeleton skel-text w40" style="height:16px;margin-bottom:12px"></div><div class="skeleton skel-text w60" style="height:28px"></div><div class="skeleton skel-block" style="height:40px;margin-top:8px"></div></div>
+      <div class="panel"><div class="skeleton skel-text w40" style="height:16px;margin-bottom:12px"></div><div class="skeleton skel-text w60" style="height:28px"></div></div>
+      <div class="panel"><div class="skeleton skel-text w40" style="height:16px;margin-bottom:12px"></div><div class="skeleton skel-text w60" style="height:28px"></div></div>
+      <div class="panel"><div class="skeleton skel-text w40" style="height:16px;margin-bottom:12px"></div><div class="skeleton skel-text w60" style="height:28px"></div></div>
+    </div>`;
 
   const [offers, estimates, customers, tickets, settings] = await Promise.all([
     offersCache || cachedApi('/quote?offers=1','offers'),
@@ -1203,8 +1245,12 @@ function timeAgo(date) {
 async function renderQuoteBuilder(m) {
   const sysIcons = {residential:'🏠',metal:'⚙️',flat:'🏢',exterior:'🧱',combined:'🔄'};
   const sysColors = {residential:'cyan',metal:'blue',flat:'purple',exterior:'orange',combined:'green'};
+  const todayStr = new Date().toISOString().split('T')[0];
+  const estCache = window['_cache_estimates'];
+  const todayQuotes = estCache ? (estCache.estimates||[]).filter(e => e.created_at && e.created_at.startsWith(todayStr)).length : 0;
+
   m.innerHTML = `
-    <div class="page-header"><div><h1>Quote Builder</h1><div class="sub">Calculate &bull; Compare &bull; Close</div></div>
+    <div class="page-header"><div><h1>Quote Builder</h1><div class="sub">Calculate &bull; Compare &bull; Close${todayQuotes > 0 ? ' &bull; <span style="color:var(--cyan)">'+todayQuotes+' today</span>' : ''}</div></div>
       <div style="display:flex;gap:6px">
         <button class="btn btn-sm btn-outline" onclick="guide.start('quote')" title="Launch tutorial" style="color:var(--cyan);border-color:rgba(34,211,238,0.2)">
           <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
@@ -2310,7 +2356,14 @@ async function renderEstimates(m) {
           ${e.total_with_tax && e.total_price ? `<div style="display:flex;justify-content:space-between;font-size:0.78em;padding:4px 0">
             <span class="text-dim">Tax incl.</span><span style="font-weight:600;color:var(--cyan)">${fmt$(e.total_with_tax)}</span></div>` : ''}
 
-          ${e.notes ? `<div style="font-size:0.72em;color:var(--text-dim);padding:6px 0;border-top:1px solid var(--glass-border);margin-top:6px">${esc(e.notes)}</div>` : ''}
+          <!-- Notes -->
+          <div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--glass-border)">
+            ${e.notes ? `<div style="font-size:0.72em;color:var(--text-dim);margin-bottom:6px;line-height:1.5;white-space:pre-line">${esc(e.notes)}</div>` : ''}
+            <div style="display:flex;gap:4px" id="noteRow_${eid}">
+              <input type="text" placeholder="Add a note..." style="flex:1;padding:5px 8px;font-size:0.75em;border-radius:6px" id="noteInput_${eid}" onkeydown="if(event.key==='Enter')addEstNote('${eid}')">
+              <button class="btn btn-sm btn-outline" onclick="addEstNote('${eid}')" style="padding:5px 10px;font-size:0.7em">Add</button>
+            </div>
+          </div>
 
           <!-- Status actions -->
           <div style="display:flex;gap:4px;margin-top:10px;padding-top:8px;border-top:1px solid var(--glass-border)">
@@ -2333,6 +2386,24 @@ async function renderEstimates(m) {
     html += '</div>';
   }
   m.innerHTML = html;
+}
+
+async function addEstNote(id) {
+  const input = document.getElementById('noteInput_' + id);
+  if (!input || !input.value.trim()) return;
+  const now = new Date().toLocaleString('en-US', {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+  const newNote = `[${now}] ${input.value.trim()}`;
+
+  // Get existing notes and append
+  const estData = await api('/estimates?id=' + id);
+  const existing = estData.estimate?.notes || estData.notes || '';
+  const updated = existing ? existing + '\n' + newNote : newNote;
+
+  const r = await api('/estimates', {method:'PUT', body:JSON.stringify({id, notes: updated})});
+  if (r.error) { toast('Error: ' + r.error, 'error'); return; }
+  toast('Note added', 'success');
+  invalidateCache('estimates');
+  renderEstimates(document.getElementById('main'));
 }
 
 async function updateEstStatus(id, status) {
