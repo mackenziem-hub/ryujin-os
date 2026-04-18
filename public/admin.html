@@ -24,9 +24,9 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .video-bg video{width:100%;height:100%;object-fit:cover;opacity:0.18;filter:saturate(1.4) hue-rotate(-5deg)}
 .video-bg::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(6,10,20,0.3) 0%,rgba(6,10,20,0.6) 100%)}
 
-/* ─── Scanlines ─── */
+/* ─── Scanlines — lightweight ─── */
 body::after{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
-  background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.015) 3px,rgba(0,0,0,0.015) 4px);opacity:0.5}
+  background:repeating-linear-gradient(0deg,transparent,transparent 4px,rgba(0,0,0,0.01) 4px,rgba(0,0,0,0.01) 5px);opacity:0.3;will-change:auto}
 
 /* ─── Layout ─── */
 .layout{display:flex;min-height:100vh;position:relative;z-index:1}
@@ -128,9 +128,8 @@ body::after{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
 .orb{
   width:56px;height:56px;border-radius:50%;flex-shrink:0;
   background:radial-gradient(circle at 35% 30%,rgba(200,230,255,0.3) 0%,rgba(34,211,238,0.2) 30%,rgba(10,20,40,0.6) 70%,rgba(6,10,20,0.85) 100%);
-  box-shadow:0 0 30px rgba(34,211,238,0.2),0 0 60px rgba(34,211,238,0.08),inset 0 -4px 12px rgba(0,0,0,0.3),inset 0 2px 8px rgba(200,230,255,0.12);
-  position:relative;overflow:hidden;animation:orbPulse 4s ease infinite}
-@keyframes orbPulse{0%,100%{box-shadow:0 0 30px rgba(34,211,238,0.2),0 0 60px rgba(34,211,238,0.08),inset 0 -4px 12px rgba(0,0,0,0.3)}50%{box-shadow:0 0 40px rgba(34,211,238,0.3),0 0 80px rgba(34,211,238,0.12),inset 0 -4px 12px rgba(0,0,0,0.3)}}
+  box-shadow:0 0 30px rgba(34,211,238,0.2),inset 0 -4px 12px rgba(0,0,0,0.3),inset 0 2px 8px rgba(200,230,255,0.12);
+  position:relative;overflow:hidden}
 .orb::after{content:'';position:absolute;top:7px;left:12px;width:18px;height:9px;background:rgba(255,255,255,0.2);border-radius:50%;transform:rotate(-20deg);filter:blur(2px)}
 .orb.green{background:radial-gradient(circle at 35% 30%,rgba(200,255,220,0.25) 0%,rgba(74,222,128,0.2) 30%,rgba(10,30,20,0.6) 70%,rgba(6,10,20,0.85) 100%);box-shadow:0 0 30px rgba(74,222,128,0.18),0 0 60px rgba(74,222,128,0.06),inset 0 -4px 12px rgba(0,0,0,0.3)}
 .orb.purple{background:radial-gradient(circle at 35% 30%,rgba(220,200,255,0.25) 0%,rgba(167,139,250,0.2) 30%,rgba(20,10,40,0.6) 70%,rgba(6,10,20,0.85) 100%);box-shadow:0 0 30px rgba(167,139,250,0.18),0 0 60px rgba(167,139,250,0.06),inset 0 -4px 12px rgba(0,0,0,0.3)}
@@ -510,12 +509,19 @@ tr:hover td{background:rgba(34,211,238,0.02)}
   </div>
 </div>
 
-<!-- Video Background -->
+<!-- Video Background — lazy loaded for performance -->
 <div class="video-bg">
-  <video autoplay muted loop playsinline>
-    <source src="/assets/videos/ocean-caustics-bg.mp4" type="video/mp4">
+  <video muted loop playsinline preload="none" id="bgVideo">
+    <source data-src="/assets/videos/ocean-caustics-bg.mp4" type="video/mp4">
   </video>
 </div>
+<script>
+// Lazy load background video after page renders
+setTimeout(() => {
+  const v = document.getElementById('bgVideo');
+  if (v) { const s = v.querySelector('source'); if (s && s.dataset.src) { s.src = s.dataset.src; v.load(); v.play().catch(()=>{}); }}
+}, 1500);
+</script>
 
 <div class="layout">
 <!-- Sidebar — icon rail -->
@@ -589,6 +595,10 @@ let currentPage = 'dashboard';
 let quoteState = { mode: 'guided', system: 'residential', answers: {}, result: null, overrides: {} };
 let offersCache = null;
 let dashCache = null;
+let customersCache = null;
+let estimatesCache = null;
+const CACHE_TTL = 60000; // 1 minute
+let cacheTimestamps = {};
 
 async function api(path, opts = {}) {
   const sep = path.includes('?') ? '&' : '?';
@@ -603,6 +613,17 @@ async function api(path, opts = {}) {
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 function fmt$(n) { return '$' + (n || 0).toLocaleString(); }
+
+// Cached API for read-heavy endpoints
+async function cachedApi(path, key) {
+  const now = Date.now();
+  if (window['_cache_'+key] && cacheTimestamps[key] && (now - cacheTimestamps[key]) < CACHE_TTL) return window['_cache_'+key];
+  const r = await api(path);
+  window['_cache_'+key] = r;
+  cacheTimestamps[key] = now;
+  return r;
+}
+function invalidateCache(key) { delete window['_cache_'+key]; delete cacheTimestamps[key]; }
 
 // ─── Sound system ───
 const sfx = {
@@ -737,11 +758,11 @@ async function renderDashboard(m) {
   m.innerHTML = `<div class="page-header"><div><h1>Command Center</h1><div class="sub">Ryujin OS v3.1</div></div></div><div class="loading"><div class="spinner"></div>Initializing systems...</div>`;
 
   const [offers, estimates, customers, tickets, settings] = await Promise.all([
-    offersCache || api('/quote?offers=1'),
-    api('/estimates'),
-    api('/customers'),
-    api('/tickets?status=open'),
-    api('/settings')
+    offersCache || cachedApi('/quote?offers=1','offers'),
+    cachedApi('/estimates','estimates'),
+    cachedApi('/customers','customers'),
+    cachedApi('/tickets?status=open','tickets'),
+    cachedApi('/settings','settings')
   ]);
   if (!offersCache) offersCache = offers;
 
