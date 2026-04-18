@@ -313,6 +313,21 @@ tr:hover td{background:rgba(34,211,238,0.02)}
 .search-hint{padding:10px 20px;font-size:0.72em;color:var(--text-muted);border-top:1px solid var(--glass-border);display:flex;gap:16px}
 .search-hint kbd{padding:1px 6px;border-radius:4px;background:rgba(34,211,238,0.08);border:1px solid var(--glass-border);font-family:monospace;font-size:0.9em}
 
+/* ─── Floating Action Button ─── */
+.fab{position:fixed;bottom:76px;right:16px;z-index:45}
+.fab-main{width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,var(--cyan),#0891b2);color:#000;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:1.4em;font-weight:900;box-shadow:0 4px 20px rgba(34,211,238,0.3);transition:all 0.3s}
+.fab-main:hover{transform:scale(1.08);box-shadow:0 6px 30px rgba(34,211,238,0.4)}
+.fab-main.open{transform:rotate(45deg);background:rgba(34,211,238,0.2);color:var(--cyan)}
+.fab-menu{position:absolute;bottom:56px;right:0;display:none;flex-direction:column;gap:8px;align-items:flex-end}
+.fab-menu.open{display:flex}
+.fab-item{display:flex;align-items:center;gap:8px;white-space:nowrap;animation:fabIn 0.2s ease both}
+.fab-item:nth-child(1){animation-delay:0s}.fab-item:nth-child(2){animation-delay:0.05s}.fab-item:nth-child(3){animation-delay:0.1s}
+@keyframes fabIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.fab-label{padding:4px 12px;border-radius:6px;background:rgba(6,10,20,0.9);border:1px solid var(--glass-border);font-size:0.72em;font-weight:600;color:var(--text);backdrop-filter:blur(10px)}
+.fab-btn{width:40px;height:40px;border-radius:50%;background:rgba(14,22,40,0.9);border:1px solid var(--glass-border);color:var(--cyan);display:flex;align-items:center;justify-content:center;cursor:pointer;backdrop-filter:blur(10px);transition:all 0.2s}
+.fab-btn:hover{background:rgba(34,211,238,0.1);border-color:var(--cyan)}
+.fab-btn svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2}
+
 /* ─── Toast Notifications ─── */
 .toast-container{position:fixed;bottom:80px;right:16px;z-index:9998;display:flex;flex-direction:column-reverse;gap:8px;pointer-events:none}
 .toast{padding:12px 18px;border-radius:10px;font-size:0.82em;font-weight:500;pointer-events:auto;
@@ -367,6 +382,11 @@ tr:hover td{background:rgba(34,211,238,0.02)}
 /* ─── Responsive ─── */
 @media(max-width:1100px){
   .dash-grid{grid-template-columns:repeat(2,1fr)}
+  .main{padding:10px 12px 76px}
+  .stat-row{grid-template-columns:repeat(3,1fr)!important}
+  .trust-grid{grid-template-columns:1fr 1fr}
+  .feat-grid{grid-template-columns:1fr}
+  .fab{bottom:70px;right:12px}
 }
 @media(max-width:768px){
   .sidebar{display:none}
@@ -442,6 +462,12 @@ tr:hover td{background:rgba(34,211,238,0.02)}
   .cs-activate{padding:12px 32px;font-size:0.75em;letter-spacing:3px}
   .cs-skip{top:16px;right:16px;padding:6px 14px;font-size:0.55em}
   .cs-version{font-size:0.45em}
+
+  /* FAB */
+  .fab{bottom:62px;right:8px}
+  .fab-main{width:44px;height:44px;font-size:1.2em}
+  .fab-btn{width:36px;height:36px}
+  .fab-label{font-size:0.65em}
 
   /* Ryujin chat widget */
   .ryu-orb{width:48px;height:48px;bottom:68px;right:12px}
@@ -631,7 +657,24 @@ setTimeout(() => {
   </button>
 </div>
 
+<!-- Floating Action Button -->
+<div class="fab" id="fabContainer">
+  <div class="fab-menu" id="fabMenu">
+    <div class="fab-item"><span class="fab-label">New Quote</span><button class="fab-btn" onclick="navigate('quote');toggleFab()"><svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/></svg></button></div>
+    <div class="fab-item"><span class="fab-label">New Customer</span><button class="fab-btn" onclick="showNewCustomer();toggleFab()"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg></button></div>
+    <div class="fab-item"><span class="fab-label">Search</span><button class="fab-btn" onclick="globalSearch.toggle();toggleFab()"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button></div>
+  </div>
+  <button class="fab-main" id="fabBtn" onclick="toggleFab()">+</button>
+</div>
+
 <script>
+function toggleFab() {
+  const btn = document.getElementById('fabBtn');
+  const menu = document.getElementById('fabMenu');
+  const isOpen = btn.classList.toggle('open');
+  menu.classList.toggle('open', isOpen);
+}
+
 const API = window.location.origin + '/api';
 const TENANT = 'plus-ultra';
 let currentPage = 'dashboard';
@@ -2520,6 +2563,7 @@ async function deleteEstimate(id) {
 
 let estFilter = 'all';
 let estSort = 'newest';
+let estSearch = '';
 let estSelected = new Set();
 
 function toggleEstSelect(id, checked) {
@@ -2556,6 +2600,10 @@ async function renderEstimates(m) {
   const acceptedVal = accepted.reduce((s,e) => s + (e.total_price||0), 0);
 
   let filtered = estFilter === 'all' ? [...ests] : ests.filter(e => e.status === estFilter);
+  if (estSearch) {
+    const q = estSearch.toLowerCase();
+    filtered = filtered.filter(e => (e.customer?.full_name||'').toLowerCase().includes(q) || (e.address||'').toLowerCase().includes(q) || (e.package||'').toLowerCase().includes(q));
+  }
   // Sort
   if (estSort === 'newest') filtered.sort((a,b) => new Date(b.created_at||0) - new Date(a.created_at||0));
   else if (estSort === 'oldest') filtered.sort((a,b) => new Date(a.created_at||0) - new Date(b.created_at||0));
@@ -2590,6 +2638,13 @@ async function renderEstimates(m) {
   // Conversion progress
   const closeRate = ests.length > 0 ? Math.round((accepted.length / ests.length) * 100) : 0;
   html += `<div class="panel" style="margin-bottom:10px;padding:10px 14px">${progressBar(closeRate, closeRate >= 15 ? 'green' : closeRate >= 8 ? 'cyan' : 'yellow', 'Close Rate', closeRate + '% (' + accepted.length + '/' + ests.length + ')')}</div>`;
+
+  // Search bar
+  html += `<div class="panel" style="margin-bottom:8px;padding:8px 14px;display:flex;align-items:center;gap:10px">
+    <svg viewBox="0 0 24 24" style="width:16px;height:16px;stroke:var(--text-dim);fill:none;stroke-width:2;flex-shrink:0"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" placeholder="Search by customer, address, or package..." value="${esc(estSearch)}" onkeyup="estSearch=this.value;clearTimeout(window._estDebounce);window._estDebounce=setTimeout(()=>renderEstimates(document.getElementById('main')),300)" style="border:none;background:transparent;color:var(--text);font-size:0.88em;width:100%;outline:none">
+    ${estSearch ? `<button class="btn btn-sm btn-outline" onclick="estSearch='';renderEstimates(document.getElementById('main'))" style="flex-shrink:0">Clear</button>` : ''}
+  </div>`;
 
   // Sort control
   html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
