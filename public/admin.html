@@ -1085,6 +1085,27 @@ async function renderDashboard(m) {
   let html = `<div class="page-header"><div><h1>Command Center</h1><div class="sub">${dateStr} &mdash; ${timeStr}</div></div>
     <div style="display:flex;gap:6px"><button class="btn btn-sm btn-outline" onclick="guide.start('dashboard')" style="color:var(--cyan);border-color:rgba(34,211,238,0.2)"><svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button><button class="btn btn-primary btn-sm" onclick="navigate('quote')">+ Quote</button><button class="btn btn-outline btn-sm" onclick="renderDashboard(document.getElementById('main'))">Refresh</button></div></div>`;
 
+  // Weekly summary
+  const weekAgo = Date.now() - 7*86400000;
+  const twoWeeksAgo = Date.now() - 14*86400000;
+  const thisWeekEsts = estList.filter(e => e.created_at && new Date(e.created_at).getTime() > weekAgo);
+  const lastWeekEsts = estList.filter(e => e.created_at && new Date(e.created_at).getTime() > twoWeeksAgo && new Date(e.created_at).getTime() <= weekAgo);
+  const thisWeekSent = thisWeekEsts.filter(e => e.status !== 'draft').length;
+  const lastWeekSent = lastWeekEsts.filter(e => e.status !== 'draft').length;
+  const thisWeekWon = thisWeekEsts.filter(e => e.status === 'accepted').length;
+  const thisWeekVal = thisWeekEsts.reduce((s,e) => s + (e.total_price||0), 0);
+  const lastWeekVal = lastWeekEsts.reduce((s,e) => s + (e.total_price||0), 0);
+  const valDiff = thisWeekVal - lastWeekVal;
+
+  html += `<div style="display:flex;gap:12px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+    <span style="font-size:0.65em;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:1.5px">This Week:</span>
+    <span style="font-size:0.78em"><strong style="color:var(--cyan)">${thisWeekEsts.length}</strong> quoted</span>
+    <span style="font-size:0.78em"><strong style="color:var(--blue)">${thisWeekSent}</strong> sent</span>
+    <span style="font-size:0.78em"><strong style="color:var(--green)">${thisWeekWon}</strong> won</span>
+    <span style="font-size:0.78em"><strong style="color:var(--cyan)">${fmt$(thisWeekVal)}</strong> value</span>
+    ${valDiff !== 0 ? `<span style="font-size:0.72em;color:${valDiff>0?'var(--green)':'var(--red)'}">${valDiff>0?'↑':'↓'} ${fmt$(Math.abs(valDiff))} vs last week</span>` : ''}
+  </div>`;
+
   html += '<div class="dash-grid">';
 
   // ═══ ROW 1: Four hero stat panels ═══
@@ -2453,8 +2474,11 @@ async function renderCustomers(m) {
       const name = c.full_name || c.name || 'Unknown';
       const custEsts = allEsts.filter(e => e.customer_id === c.id);
       const custTotal = custEsts.reduce((s,e) => s + (e.total_with_tax || e.total_price || 0), 0);
+      const lastContactDate = custEsts.length > 0 ? new Date(Math.max(...custEsts.map(e => new Date(e.created_at||0).getTime()))) : (c.created_at ? new Date(c.created_at) : null);
+      const daysSinceContact = lastContactDate ? Math.floor((Date.now() - lastContactDate.getTime()) / 86400000) : 999;
+      const isCold = daysSinceContact > 30;
 
-      html += `<details class="panel" style="cursor:default;padding:0">
+      html += `<details class="panel" style="cursor:default;padding:0;${isCold?'border-color:rgba(251,146,60,0.2)':''}"
         <summary style="padding:12px 14px;cursor:pointer;list-style:none;display:block">
           <div style="display:flex;align-items:center;gap:10px">
             <div style="width:36px;height:36px;border-radius:50%;background:rgba(167,139,250,0.1);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:700;color:var(--purple);font-size:0.82em">${name.charAt(0).toUpperCase()}</div>
@@ -2464,7 +2488,10 @@ async function renderCustomers(m) {
                 ${c.address ? `<span>${esc(c.address)}${c.city ? ', ' + esc(c.city) : ''}</span>` : ''}
               </div>
             </div>
-            ${custEsts.length > 0 ? `<div style="text-align:right"><div style="font-family:'Orbitron',monospace;font-size:0.85em;font-weight:700;color:var(--cyan)">${fmt$(custTotal)}</div><div style="font-size:0.6em;color:var(--text-dim)">${custEsts.length} est.</div></div>` : ''}
+            <div style="text-align:right">
+              ${custEsts.length > 0 ? `<div style="font-family:'Orbitron',monospace;font-size:0.85em;font-weight:700;color:var(--cyan)">${fmt$(custTotal)}</div>` : ''}
+              <div style="font-size:0.58em;color:${isCold?'var(--orange)':'var(--text-dim)'}">${lastContactDate ? (isCold ? '🥶 ' : '') + timeAgo(lastContactDate) : 'new'}</div>
+            </div>
           </div>
         </summary>
         <div style="padding:0 14px 14px;border-top:1px solid var(--glass-border)">
@@ -2775,12 +2802,15 @@ async function renderEstimates(m) {
       const created = e.created_at ? new Date(e.created_at).toLocaleDateString() : '';
       const createdAgo = e.created_at ? timeAgo(new Date(e.created_at)) : '';
       const daysSince = e.created_at ? Math.floor((Date.now() - new Date(e.created_at).getTime()) / 86400000) : 0;
+      const daysRemaining = 30 - daysSince;
+      const isExpired = daysRemaining <= 0 && (e.status === 'sent' || e.status === 'draft');
+      const isExpiringSoon = daysRemaining > 0 && daysRemaining <= 7 && e.status === 'sent';
       const isStale = (e.status === 'draft' && daysSince > 7) || (e.status === 'sent' && daysSince > 3);
       const custName = e.customer?.full_name || 'Unknown Customer';
       const hasMeasurements = e.measurements && Object.keys(e.measurements).length > 0;
       const eid = e.id;
 
-      html += `<details class="panel" style="cursor:default;padding:0;${isStale?'border-color:rgba(250,204,21,0.3)':''}">
+      html += `<details class="panel" style="cursor:default;padding:0;${isExpired?'border-color:rgba(248,113,113,0.3)':isStale||isExpiringSoon?'border-color:rgba(250,204,21,0.3)':''}">
         <summary style="padding:12px 14px;cursor:pointer;list-style:none;display:block">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
             <div style="display:flex;align-items:flex-start;gap:8px">
@@ -2797,7 +2827,9 @@ async function renderEstimates(m) {
               ${pkg ? `<span style="font-size:0.68em;color:var(--text-dim);text-transform:capitalize">${esc(pkg)}</span>` : ''}
               <div style="font-family:'Orbitron',monospace;font-size:1.15em;font-weight:700;color:var(--cyan)">${e.total_with_tax ? fmt$(e.total_with_tax) : e.total_price ? fmt$(e.total_price) : '—'}</div>
             </div>
-            <div style="font-size:0.68em;color:${isStale?'var(--yellow)':'var(--text-dim)'}">${createdAgo}${isStale?' ⚠':''}${e.status==='sent'&&daysSince>3?' follow up!':''}</div>
+            <div style="font-size:0.68em;color:${isExpired?'var(--red)':isExpiringSoon?'var(--yellow)':isStale?'var(--yellow)':'var(--text-dim)'}">
+              ${isExpired ? '⛔ EXPIRED' : isExpiringSoon ? '⚠ '+daysRemaining+'d left' : createdAgo}${!isExpired&&isStale?' ⚠':''}${!isExpired&&e.status==='sent'&&daysSince>3&&!isExpiringSoon?' follow up!':''}
+            </div>
           </div>
         </summary>
         <div style="padding:0 14px 14px;border-top:1px solid var(--glass-border)">
@@ -2831,6 +2863,7 @@ async function renderEstimates(m) {
             ${e.status==='sent' ? `<button class="btn btn-sm btn-success" onclick="updateEstStatus('${eid}','accepted')">Accepted</button><button class="btn btn-sm btn-danger" onclick="updateEstStatus('${eid}','declined')">Declined</button>` : ''}
             ${e.status==='accepted' ? `<span style="font-size:0.72em;color:var(--green);font-weight:600;padding:4px 0">CLOSED</span>` : ''}
             ${e.status==='declined' ? `<button class="btn btn-sm btn-outline" onclick="updateEstStatus('${eid}','draft')">Reopen</button>` : ''}
+            ${isExpired ? `<button class="btn btn-sm btn-outline" onclick="extendEstimate('${eid}')" style="color:var(--yellow)">Extend 30d</button>` : ''}
           </div>
 
           <!-- Output & re-quote actions -->
@@ -2872,6 +2905,16 @@ async function exportEstimatesCSV() {
   a.href = url; a.download = 'ryujin-estimates-' + new Date().toISOString().split('T')[0] + '.csv';
   a.click(); URL.revokeObjectURL(url);
   toast('CSV downloaded', 'success');
+}
+
+async function extendEstimate(id) {
+  // Re-date the estimate by updating created_at to now
+  const now = new Date().toISOString();
+  const r = await api('/estimates', {method:'PUT', body:JSON.stringify({id, created_at: now})});
+  if (r.error) { toast('Error: ' + r.error, 'error'); return; }
+  toast('Estimate extended 30 days', 'success');
+  invalidateCache('estimates');
+  renderEstimates(document.getElementById('main'));
 }
 
 async function addEstNote(id) {
