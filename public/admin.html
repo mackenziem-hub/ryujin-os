@@ -1145,9 +1145,9 @@ async function renderDashboard(m) {
     </div>
     <div style="height:80px">${areaChart(500,80,'cyan',buildMonthlyData(estList,'total_price',12))}</div>
     <div class="panel-zone" style="display:flex;gap:10px">
-      <div style="flex:1">${progressBar(48,'cyan','Quote Rate','47.9%')}</div>
-      <div style="flex:1">${progressBar(8,'green','Close Rate','8.3%')}</div>
-      <div style="flex:1">${progressBar(82,'purple','Efficiency','82%')}</div>
+      <div style="flex:1">${progressBar(estList.length > 0 ? Math.round(estList.filter(e=>e.status!=='draft').length/estList.length*100) : 0,'cyan','Sent Rate',(estList.length > 0 ? Math.round(estList.filter(e=>e.status!=='draft').length/estList.length*100) : 0)+'%')}</div>
+      <div style="flex:1">${progressBar(closeRate,'green','Close Rate',closeRate+'%')}</div>
+      <div style="flex:1">${progressBar(estList.length > 0 ? Math.min(Math.round(acceptedVal/(pipelineVal||1)*100),100) : 0,'purple','Won Value',(estList.length > 0 ? Math.round(acceptedVal/(pipelineVal||1)*100) : 0)+'%')}</div>
     </div>
   </div>`;
 
@@ -1162,6 +1162,18 @@ async function renderDashboard(m) {
       <div><div class="mini-stat-val text-green">${acceptedCount}</div><div class="mini-stat-lbl">Won</div></div></div>
     <div class="mini-stat"><div class="mini-stat-icon orange"><svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div>
       <div><div class="mini-stat-val text-yellow">${fmt$(pipelineVal)}</div><div class="mini-stat-lbl">Value</div></div></div>
+  </div>`;
+
+  // ═══ ROW 2.5: Profit Summary (span 4) ═══
+  const avgDealSize = acceptedCount > 0 ? Math.round(acceptedVal / acceptedCount) : 0;
+  const estProfit = Math.round(acceptedVal * 0.30); // ~30% avg margin estimate
+  html += `<div class="panel span-4" style="padding:12px 16px">
+    <div style="display:flex;gap:16px;justify-content:space-around;flex-wrap:wrap;text-align:center">
+      <div><div style="font-family:'Orbitron',monospace;font-size:1.6em;font-weight:800;color:var(--green);text-shadow:0 0 20px rgba(74,222,128,0.2)">${fmt$(acceptedVal)}</div><div class="mega-label">Revenue (Accepted)</div></div>
+      <div><div style="font-family:'Orbitron',monospace;font-size:1.6em;font-weight:800;color:var(--cyan)">${fmt$(estProfit)}</div><div class="mega-label">Est. Profit (~30%)</div></div>
+      <div><div style="font-family:'Orbitron',monospace;font-size:1.6em;font-weight:800;color:var(--blue)">${fmt$(avgDealSize)}</div><div class="mega-label">Avg Deal Size</div></div>
+      <div><div style="font-family:'Orbitron',monospace;font-size:1.6em;font-weight:800;color:var(--purple)">${fmt$(pipelineVal - acceptedVal)}</div><div class="mega-label">Open Pipeline</div></div>
+    </div>
   </div>`;
 
   // ═══ ROW 3: Dragon Core (span 2) + Active Ops (span 2) ═══
@@ -1533,6 +1545,42 @@ async function renderQuoteForm() {
       qField('accessDifficulty','Site Access','select',{default:'normal',options:['easy','normal','difficult'],labels:{easy:'Easy — ground level, open lot',normal:'Normal — standard residential',difficult:'Difficult — tight access, steep grade, landscaping'},hint:'Notes for crew planning'}) +
       qField('notes','Job Notes','text',{hint:'Anything crew should know — hazards, pets, parking, etc.'})
     , false);
+
+    // ═══ Roof Math Helper ═══
+    if (isRoof) {
+      html += formSection('Roof Math Helper', '🧮',
+        `<div class="form-full">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div>
+              <div style="font-size:0.65em;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Pitch Multipliers</div>
+              <div style="font-size:0.72em;line-height:1.8;font-family:monospace;color:var(--text-dim)">
+                4/12 = 1.054 &nbsp; 5/12 = 1.083<br>
+                6/12 = 1.118 &nbsp; 7/12 = 1.158<br>
+                8/12 = 1.202 &nbsp; 9/12 = 1.250<br>
+                10/12 = 1.302 &nbsp; 11/12 = 1.357<br>
+                12/12 = 1.414 &nbsp; 14/12 = 1.537
+              </div>
+            </div>
+            <div>
+              <div style="font-size:0.65em;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Quick Calculator</div>
+              <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+                <input type="number" placeholder="Sq ft" id="mathSqft" style="width:80px;padding:4px 6px;font-size:0.8em" value="${quoteState.answers.squareFeet||''}">
+                <span style="font-size:0.75em;color:var(--text-dim)">@</span>
+                <select id="mathPitch" style="width:70px;padding:4px;font-size:0.8em">
+                  ${['4/12','5/12','6/12','7/12','8/12','9/12','10/12','12/12'].map(p => `<option value="${p}" ${p===(quoteState.answers.pitch||'5/12')?'selected':''}>${p}</option>`).join('')}
+                </select>
+                <button class="btn btn-sm btn-outline" onclick="calcRoofMath()" style="padding:4px 8px;font-size:0.7em">Calc</button>
+              </div>
+              <div id="mathResult" style="font-size:0.75em;color:var(--cyan);font-family:monospace"></div>
+              <div style="font-size:0.62em;color:var(--text-dim);margin-top:8px">
+                <strong>Waste:</strong> Simple 10% &bull; Medium 15% &bull; Complex 20%<br>
+                <strong>1 SQ</strong> = 100 sq ft &bull; <strong>3 bundles</strong>/SQ (standard)
+              </div>
+            </div>
+          </div>
+        </div>`
+      , false);
+    }
 
     // ═══ Section 6: Package Selection — Visual Cards ═══
     html += `<div class="panel" style="padding:14px"><div class="panel-header"><div class="panel-title">Select Package</div><span class="badge badge-blue">${offers.length} available</span></div>`;
@@ -1950,6 +1998,20 @@ async function recalcWithOverrides(){
   const r=await api('/quote?materials=1',{method:'POST',body:JSON.stringify({offer_id:quoteState.result.offer.id,measurements:quoteState.result.measurements,choices:quoteState.result.choices||{},overrides:quoteState.overrides||{},mode:'override'})});
   if(r.error){rd.innerHTML=`<div class="panel" style="border-color:var(--red)"><div class="panel-title text-red">Error</div><div class="panel-sub">${esc(r.error)}</div></div>`;return;}
   quoteState.result=r;renderQuoteResult(rd,r);renderQuoteForm();
+}
+
+function calcRoofMath() {
+  const sqft = parseFloat(document.getElementById('mathSqft')?.value) || 0;
+  const pitch = document.getElementById('mathPitch')?.value || '5/12';
+  const pitchMults = {'4/12':1.054,'5/12':1.083,'6/12':1.118,'7/12':1.158,'8/12':1.202,'9/12':1.250,'10/12':1.302,'11/12':1.357,'12/12':1.414,'14/12':1.537};
+  const mult = pitchMults[pitch] || 1.083;
+  const adjusted = Math.round(sqft * mult);
+  const measuredSQ = Math.ceil(adjusted / 100);
+  const wasteSQ = Math.ceil(measuredSQ * 1.15); // medium waste
+  const bundles = wasteSQ * 3;
+  const side = Math.round(Math.sqrt(sqft));
+  const el = document.getElementById('mathResult');
+  if (el) el.innerHTML = `Adjusted: <strong>${adjusted.toLocaleString()} sqft</strong><br>Measured: <strong>${measuredSQ} SQ</strong> &bull; w/ waste: <strong>${wasteSQ} SQ</strong><br>Bundles needed: <strong>~${bundles}</strong><br>Est. perimeter: <strong>~${side*4} LF</strong> (${side}ft sides)`;
 }
 
 async function printMaterialList() {
@@ -2638,6 +2700,24 @@ async function renderEstimates(m) {
         <svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> CSV</button>
       <button class="btn btn-primary btn-sm" onclick="navigate('quote')">+ New Quote</button>
     </div></div>`;
+
+  // Monthly value mini chart
+  const monthlyVals = buildMonthlyData(ests, 'total_price', 6);
+  const maxMonthVal = Math.max(...monthlyVals, 1);
+  html += `<div class="panel" style="margin-bottom:8px;padding:10px 14px">
+    <div style="display:flex;align-items:flex-end;gap:4px;height:40px">
+      ${monthlyVals.map((v,i) => {
+        const pct = Math.max((v/maxMonthVal)*100, 3);
+        const isLast = i === monthlyVals.length - 1;
+        const monthLabel = new Date(new Date().getFullYear(), new Date().getMonth() - (5-i), 1).toLocaleDateString('en-US',{month:'short'});
+        return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px" title="${monthLabel}: ${fmt$(v)}">
+          <div style="font-size:0.5em;color:${isLast?'var(--cyan)':'var(--text-dim)'}">${v>0?fmt$(v):''}</div>
+          <div style="width:100%;height:${pct}%;min-height:2px;background:${isLast?'var(--cyan)':'rgba(34,211,238,0.15)'};border-radius:3px 3px 0 0"></div>
+          <div style="font-size:0.45em;color:var(--text-dim)">${monthLabel}</div>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>`;
 
   // Pipeline stat cards
   html += `<div class="stat-row" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:10px">
