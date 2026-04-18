@@ -678,8 +678,26 @@ function toggleFab() {
 const API = window.location.origin + '/api';
 const TENANT = 'plus-ultra';
 let currentPage = 'dashboard';
-let quoteState = { mode: 'guided', system: 'residential', answers: {}, result: null, overrides: {} };
-let quoteHistory = []; // session quote history
+// Restore quote state from localStorage
+const savedQuoteState = localStorage.getItem('ryujin_quote_draft');
+let quoteState = savedQuoteState ? {...JSON.parse(savedQuoteState), result: null, overrides: {}} : { mode: 'guided', system: 'residential', answers: {}, result: null, overrides: {} };
+let quoteHistory = [];
+
+// Auto-save quote form on every change (debounced)
+let _quoteSaveTimer;
+function autoSaveQuote() {
+  clearTimeout(_quoteSaveTimer);
+  _quoteSaveTimer = setTimeout(() => {
+    const toSave = { mode: quoteState.mode, system: quoteState.system, answers: {...quoteState.answers} };
+    delete toSave.answers._photos; // don't save base64 photos to localStorage
+    localStorage.setItem('ryujin_quote_draft', JSON.stringify(toSave));
+  }, 1000);
+}
+// Patch the answers proxy
+const origAnswers = quoteState.answers;
+quoteState.answers = new Proxy(origAnswers, {
+  set(target, key, value) { target[key] = value; autoSaveQuote(); return true; }
+});
 let offersCache = null;
 let dashCache = null;
 let customersCache = null;
@@ -2120,6 +2138,7 @@ async function createEstimateFromQuote() {
 
   if (est.error) { sfx.play('error'); toast('Error: ' + est.error, 'error'); return; }
   sfx.play('success');
+  localStorage.removeItem('ryujin_quote_draft'); // clear auto-saved draft
 
   // Show confirmation inline instead of alert
   const rd = document.getElementById('quoteResult');
