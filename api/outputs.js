@@ -110,7 +110,10 @@ async function handler(req, res) {
       financingAvailable: body.financing !== false,
       mobilizationSettings: mobilizationRules,
       addOnQuote: body.add_on_quote || null,
-      multiOfferResults
+      multiOfferResults,
+      salesRep: body.sales_rep || null,
+      template: body.template || null,
+      templateKey: body.template_key || ''
     });
   }
 
@@ -131,10 +134,13 @@ async function handler(req, res) {
       aiRenders: body.ai_renders || [],
       testimonials: body.testimonials || [],
       multiOfferResults,
-      callToAction: body.cta_label || 'Accept Proposal',
+      callToAction: body.cta_label || 'View Your Proposal',
       acceptUrl: body.accept_url || null,
       declineUrl: body.decline_url || null
     });
+    // Pass through template + salesperson
+    if (body.sales_rep) outputs.salesPage.salesRep = body.sales_rep;
+    if (body.template) outputs.salesPage.template = body.template;
   }
 
   // Return single output or all
