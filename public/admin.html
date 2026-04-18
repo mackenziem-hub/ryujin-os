@@ -855,8 +855,34 @@ function navigate(page) {
   m.offsetHeight;
   m.style.animation = '';
   renderPage();
-  // Auto-launch tutorial if not seen
+  updateNavBadges();
   if (typeof guide !== 'undefined') guide.autoLaunchForPage(page);
+}
+
+async function updateNavBadges() {
+  const estData = window['_cache_estimates'];
+  if (!estData) return;
+  const ests = estData.estimates || [];
+  const staleDrafts = ests.filter(e => e.status === 'draft' && e.created_at && (Date.now() - new Date(e.created_at).getTime()) > 7*86400000).length;
+  const needsFollowUp = ests.filter(e => e.status === 'sent' && e.created_at && (Date.now() - new Date(e.created_at).getTime()) > 3*86400000).length;
+  const actionCount = staleDrafts + needsFollowUp;
+
+  // Update estimate nav badges
+  document.querySelectorAll('[data-page="estimates"]').forEach(el => {
+    let badge = el.querySelector('.nav-badge');
+    if (actionCount > 0) {
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'nav-badge';
+        badge.style.cssText = 'position:absolute;top:4px;right:4px;width:16px;height:16px;border-radius:50%;background:var(--red);color:#fff;font-size:0.5em;font-weight:700;display:flex;align-items:center;justify-content:center;box-shadow:0 0 6px var(--red)';
+        el.style.position = 'relative';
+        el.appendChild(badge);
+      }
+      badge.textContent = actionCount;
+    } else if (badge) {
+      badge.remove();
+    }
+  });
 }
 
 function renderPage() {
@@ -1336,6 +1362,19 @@ async function renderQuoteForm() {
     const isFlat = sys === 'flat';
 
     let html = '';
+
+    // ═══ Quick Start Templates ═══
+    const templates = [
+      {label:'20 SQ Residential',icon:'🏠',sys:'residential',answers:{squareFeet:2000,pitch:'5/12',complexity:'medium',stories:1,extraLayers:1,distanceKM:15,chimneys:0,pipes:3,vents:2,_offer_slug:'gold'}},
+      {label:'30 SQ Large Home',icon:'🏡',sys:'residential',answers:{squareFeet:3000,pitch:'6/12',complexity:'complex',stories:2,extraLayers:1,distanceKM:15,chimneys:1,chimneySize:'small',pipes:4,vents:3,_offer_slug:'platinum'}},
+      {label:'Metal Roof',icon:'⚙️',sys:'metal',answers:{squareFeet:2000,pitch:'5/12',complexity:'medium',distanceKM:15,panelType:'americana',_offer_slug:'metal-americana'}},
+      {label:'Performance Shell',icon:'🧱',sys:'exterior',answers:{wallSqFt:1900,soffitLF:120,fasciaLF:120,gutterLF:120,windowCount:8,distanceKM:15,sidingChoice:'vinyl_standard',_offer_slug:'performance-shell-plus'}},
+      {label:'Gold + Shell',icon:'🔄',sys:'combined',answers:{squareFeet:2000,pitch:'5/12',complexity:'medium',wallSqFt:1900,distanceKM:15,_offer_slug:'gold-shell'}}
+    ];
+    html += `<div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+      <span style="font-size:0.65em;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;font-weight:600">Quick Start:</span>
+      ${templates.map(t => `<button class="btn btn-sm btn-outline" style="font-size:0.7em;padding:4px 10px" onclick="quoteState.system='${t.sys}';quoteState.answers={...quoteState.answers,...${JSON.stringify(t.answers).replace(/"/g,'&quot;')}};renderQuoteBuilder(document.getElementById('main'))">${t.icon} ${t.label}</button>`).join('')}
+    </div>`;
 
     // ═══ Section 1: Property & Customer Info ═══
     html += formSection('Property & Customer', '📍',
@@ -2385,6 +2424,8 @@ async function renderEstimates(m) {
     <div style="display:flex;gap:6px">
       <button class="btn btn-sm btn-outline" onclick="guide.start('estimates')" style="color:var(--cyan);border-color:rgba(34,211,238,0.2)">
         <svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button>
+      <button class="btn btn-sm btn-outline" onclick="exportEstimatesCSV()" title="Export CSV" style="display:flex;align-items:center;gap:4px">
+        <svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> CSV</button>
       <button class="btn btn-primary btn-sm" onclick="navigate('quote')">+ New Quote</button>
     </div></div>`;
 
@@ -2488,6 +2529,30 @@ async function renderEstimates(m) {
     html += '</div>';
   }
   m.innerHTML = html;
+}
+
+async function exportEstimatesCSV() {
+  const data = await cachedApi('/estimates','estimates');
+  const ests = data.estimates || [];
+  if (ests.length === 0) { toast('No estimates to export', 'info'); return; }
+  const headers = ['Customer','Address','Package','System','Status','Selling Price','Total w/Tax','Created'];
+  const rows = ests.map(e => [
+    e.customer?.full_name || '',
+    e.address || '',
+    e.package || '',
+    e.system || '',
+    e.status || 'draft',
+    e.total_price || '',
+    e.total_with_tax || '',
+    e.created_at ? new Date(e.created_at).toLocaleDateString() : ''
+  ]);
+  const csv = [headers, ...rows].map(r => r.map(c => '"' + String(c).replace(/"/g,'""') + '"').join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'ryujin-estimates-' + new Date().toISOString().split('T')[0] + '.csv';
+  a.click(); URL.revokeObjectURL(url);
+  toast('CSV downloaded', 'success');
 }
 
 async function addEstNote(id) {
