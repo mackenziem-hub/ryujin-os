@@ -1,0 +1,2164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#060a14">
+<title>Ryujin OS</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#060a14;--glass:rgba(20,30,50,0.85);--glass2:rgba(22,34,58,0.80);
+  --glass-border:rgba(34,211,238,0.16);--glass-border-hi:rgba(34,211,238,0.35);
+  --text:#d0daf0;--text-dim:rgba(160,190,230,0.55);--text-muted:rgba(140,170,220,0.30);
+  --cyan:#22d3ee;--blue:#4a9eff;--purple:#7c3aed;
+  --green:#4ade80;--yellow:#facc15;--red:#f87171;--orange:#fb923c;
+  --glow:rgba(34,211,238,0.12);--glow-hi:rgba(34,211,238,0.30);
+  --sidebar-w:72px;--radius:12px;--bottom-h:62px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+
+/* ─── Video BG ─── */
+.video-bg{position:fixed;inset:0;z-index:0;overflow:hidden}
+.video-bg video{width:100%;height:100%;object-fit:cover;opacity:0.18;filter:saturate(1.4) hue-rotate(-5deg)}
+.video-bg::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(6,10,20,0.3) 0%,rgba(6,10,20,0.6) 100%)}
+
+/* ─── Scanlines ─── */
+body::after{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
+  background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.015) 3px,rgba(0,0,0,0.015) 4px);opacity:0.5}
+
+/* ─── Layout ─── */
+.layout{display:flex;min-height:100vh;position:relative;z-index:1}
+
+/* ─── Sidebar — icon-only glass rail ─── */
+.sidebar{
+  width:var(--sidebar-w);background:var(--glass);
+  backdrop-filter:blur(40px) saturate(1.8);
+  border-right:1px solid var(--glass-border);
+  display:flex;flex-direction:column;align-items:center;
+  position:fixed;top:0;bottom:0;z-index:50;
+  box-shadow:4px 0 40px rgba(0,0,0,0.5)}
+
+.sidebar-logo{
+  width:44px;height:44px;margin:18px 0 12px;border-radius:12px;
+  background:url('/assets/logo/logo-glow.jpg') center/cover;
+  box-shadow:0 0 20px rgba(34,211,238,0.3);cursor:pointer;
+  transition:box-shadow 0.3s;overflow:hidden}
+.sidebar-logo:hover{box-shadow:0 0 35px rgba(34,211,238,0.5)}
+
+.sidebar-divider{width:32px;height:1px;background:linear-gradient(90deg,transparent,var(--cyan),transparent);opacity:0.3;margin:4px 0 8px}
+
+.sidebar-nav{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 0}
+.nav-icon{
+  width:44px;height:44px;display:flex;align-items:center;justify-content:center;
+  border-radius:12px;border:1px solid transparent;cursor:pointer;
+  color:var(--text-dim);transition:all 0.25s;position:relative}
+.nav-icon:hover{background:rgba(34,211,238,0.06);color:var(--text);border-color:rgba(34,211,238,0.08)}
+.nav-icon.active{
+  background:linear-gradient(135deg,rgba(34,211,238,0.12),rgba(124,58,237,0.06));
+  color:var(--cyan);border-color:rgba(34,211,238,0.2);
+  box-shadow:0 0 20px rgba(34,211,238,0.08)}
+.nav-icon.active::before{content:'';position:absolute;left:-1px;top:25%;bottom:25%;width:3px;background:var(--cyan);border-radius:0 3px 3px 0;box-shadow:0 0 8px var(--cyan)}
+.nav-icon svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.nav-icon .tooltip{
+  position:absolute;left:calc(100% + 12px);top:50%;transform:translateY(-50%);
+  background:rgba(6,10,20,0.95);border:1px solid var(--glass-border);
+  padding:6px 12px;border-radius:8px;font-size:0.75em;font-weight:600;
+  white-space:nowrap;pointer-events:none;opacity:0;transition:opacity 0.2s;
+  letter-spacing:0.5px;box-shadow:0 4px 20px rgba(0,0,0,0.5)}
+.nav-icon:hover .tooltip{opacity:1}
+
+/* ─── Main ─── */
+.main{flex:1;margin-left:var(--sidebar-w);padding:14px 18px 80px;max-width:1440px}
+
+/* ─── Page Header ─── */
+.page-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding:2px 0}
+.page-header h1{font-family:'Orbitron',monospace;font-size:1.1em;font-weight:700;letter-spacing:1.5px;background:linear-gradient(135deg,#e0e6f0 30%,var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.page-header .sub{font-size:0.72em;color:var(--text-dim);margin-top:2px}
+
+/* ─── Glass Panel ─── */
+.panel{
+  background:var(--glass);border:1px solid var(--glass-border);
+  border-radius:var(--radius);padding:14px 16px;
+  backdrop-filter:blur(30px) saturate(1.6);
+  box-shadow:0 4px 30px rgba(0,0,0,0.35);
+  position:relative;overflow:hidden;
+  transition:border-color 0.3s,box-shadow 0.3s}
+.panel:hover{border-color:var(--glass-border-hi);box-shadow:0 8px 40px rgba(0,0,0,0.45),0 0 30px rgba(34,211,238,0.06)}
+/* Top-edge glow — prominent gradient line */
+.panel::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,transparent 5%,var(--cyan) 30%,var(--purple) 70%,transparent 95%);opacity:0.5;transition:opacity 0.3s;z-index:2;
+  border-radius:var(--radius) var(--radius) 0 0}
+.panel:hover::before{opacity:0.75}
+/* Corner brackets */
+.panel::after{content:'';position:absolute;bottom:-1px;right:-1px;width:18px;height:18px;
+  border-bottom:2px solid var(--cyan);border-right:2px solid var(--cyan);border-radius:0 0 var(--radius) 0;opacity:0.15;transition:opacity 0.3s}
+.panel:hover::after{opacity:0.35}
+/* Header bar glow line */
+.panel-header{position:relative;padding-bottom:10px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center}
+.panel-header::after{content:'';position:absolute;bottom:0;left:0;right:0;height:1px;background:linear-gradient(90deg,var(--cyan),transparent 60%);opacity:0.3}
+.panel-title{font-family:'Orbitron',monospace;font-size:0.65em;font-weight:600;letter-spacing:2.5px;text-transform:uppercase;color:var(--text-dim)}
+.panel-sub{font-size:0.75em;color:var(--text-dim);margin-top:2px}
+
+/* ─── Panel internal dividers ─── */
+.panel-zone{border-top:1px solid rgba(34,211,238,0.08);padding-top:14px;margin-top:14px}
+.panel-row{display:flex;gap:16px;align-items:center}
+.panel-col{flex:1}
+
+/* ─── Progress Bar ─── */
+.progress{height:8px;background:rgba(34,211,238,0.08);border-radius:4px;overflow:hidden;position:relative}
+.progress-fill{height:100%;border-radius:4px;transition:width 1.5s ease;position:relative}
+.progress-fill.cyan{background:linear-gradient(90deg,#0891b2,var(--cyan));box-shadow:0 0 12px rgba(34,211,238,0.3)}
+.progress-fill.green{background:linear-gradient(90deg,#16a34a,var(--green));box-shadow:0 0 12px rgba(74,222,128,0.3)}
+.progress-fill.purple{background:linear-gradient(90deg,#6d28d9,var(--purple));box-shadow:0 0 12px rgba(124,58,237,0.3)}
+.progress-fill.orange{background:linear-gradient(90deg,#c2410c,var(--orange));box-shadow:0 0 12px rgba(251,146,60,0.3)}
+.progress-label{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:0.78em}
+.progress-label .value{font-family:'Orbitron',monospace;font-weight:600;color:var(--cyan)}
+
+/* ─── Toggle Switch ─── */
+.toggle{position:relative;width:44px;height:24px;cursor:pointer;display:inline-block}
+.toggle input{opacity:0;width:0;height:0}
+.toggle-track{position:absolute;inset:0;border-radius:12px;background:rgba(34,211,238,0.1);border:1px solid rgba(34,211,238,0.15);transition:all 0.3s}
+.toggle-thumb{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#4a5568;transition:all 0.3s;box-shadow:0 0 4px rgba(0,0,0,0.3)}
+.toggle input:checked+.toggle-track{background:rgba(34,211,238,0.2);border-color:rgba(34,211,238,0.4);box-shadow:0 0 12px rgba(34,211,238,0.15)}
+.toggle input:checked+.toggle-track+.toggle-thumb{left:23px;background:var(--cyan);box-shadow:0 0 10px rgba(34,211,238,0.4)}
+
+/* ─── 3D Glass Orb ─── */
+.orb{
+  width:64px;height:64px;border-radius:50%;flex-shrink:0;
+  background:radial-gradient(circle at 35% 30%,rgba(200,230,255,0.25) 0%,rgba(34,211,238,0.15) 30%,rgba(10,20,40,0.6) 70%,rgba(6,10,20,0.8) 100%);
+  box-shadow:0 0 20px rgba(34,211,238,0.15),inset 0 -4px 12px rgba(0,0,0,0.3),inset 0 2px 8px rgba(200,230,255,0.1);
+  position:relative;overflow:hidden}
+.orb::after{content:'';position:absolute;top:8px;left:14px;width:20px;height:10px;background:rgba(255,255,255,0.15);border-radius:50%;transform:rotate(-20deg);filter:blur(2px)}
+.orb.green{background:radial-gradient(circle at 35% 30%,rgba(200,255,220,0.2) 0%,rgba(74,222,128,0.15) 30%,rgba(10,30,20,0.6) 70%,rgba(6,10,20,0.8) 100%);box-shadow:0 0 20px rgba(74,222,128,0.12),inset 0 -4px 12px rgba(0,0,0,0.3)}
+.orb.purple{background:radial-gradient(circle at 35% 30%,rgba(220,200,255,0.2) 0%,rgba(167,139,250,0.15) 30%,rgba(20,10,40,0.6) 70%,rgba(6,10,20,0.8) 100%);box-shadow:0 0 20px rgba(167,139,250,0.12),inset 0 -4px 12px rgba(0,0,0,0.3)}
+
+/* ─── Mega Number (hero stat) ─── */
+.mega-num{font-family:'Orbitron',monospace;font-size:3.8em;font-weight:900;letter-spacing:-1px;line-height:1;text-shadow:0 0 40px currentColor,0 0 80px currentColor}
+.mega-num.cyan{color:var(--cyan)}
+.mega-num.green{color:var(--green)}
+.mega-num.blue{color:var(--blue)}
+.mega-num.purple{color:var(--purple)}
+.mega-num.orange{color:var(--orange)}
+.mega-num.sm{font-size:2.2em}
+.mega-label{font-size:0.65em;color:var(--text-dim);text-transform:uppercase;letter-spacing:2.5px;margin-top:4px}
+
+/* ─── Mini Area Chart (SVG) ─── */
+.mini-chart{width:100%;height:80px;margin-top:8px}
+.mini-chart svg{width:100%;height:100%}
+.chart-area{fill:url(#chartGrad);opacity:0.6}
+.chart-line{fill:none;stroke:var(--cyan);stroke-width:2;filter:drop-shadow(0 0 4px rgba(34,211,238,0.4))}
+
+/* ─── Dashboard Grid ─── */
+.dash-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px}
+.dash-grid .span-2{grid-column:span 2}
+.dash-grid .span-3{grid-column:span 3}
+.dash-grid .span-4{grid-column:span 4}
+.dash-grid .row-2{grid-row:span 2}
+
+/* ─── Circular Gauge ─── */
+.gauge{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px 10px}
+.gauge-ring{position:relative;width:100px;height:100px}
+.gauge-ring svg{width:100px;height:100px;transform:rotate(-90deg)}
+.gauge-ring circle{fill:none;stroke-width:6;stroke-linecap:round}
+.gauge-ring .track{stroke:rgba(34,211,238,0.06)}
+.gauge-ring .fill{stroke:var(--cyan);transition:stroke-dashoffset 1.5s ease;filter:drop-shadow(0 0 8px rgba(34,211,238,0.4))}
+.gauge-value{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.gauge-number{font-family:'Orbitron',monospace;font-size:1.5em;font-weight:800;color:var(--cyan);text-shadow:0 0 25px rgba(34,211,238,0.4)}
+.gauge-unit{font-size:0.58em;color:var(--text-dim);margin-top:-2px}
+.gauge-label{font-family:'Orbitron',monospace;font-size:0.55em;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);margin-top:8px;text-align:center}
+
+/* ─── Compact Stat ─── */
+.stat{padding:12px 14px}
+.stat-value{font-family:'Orbitron',monospace;font-size:1.3em;font-weight:700;letter-spacing:-0.5px}
+.stat-label{font-size:0.6em;color:var(--text-dim);text-transform:uppercase;letter-spacing:1.5px;margin-top:3px}
+.stat-change{font-size:0.72em;margin-top:4px}
+.stat-change.up{color:var(--green)}
+.stat-change.down{color:var(--red)}
+
+/* ─── Bottom Toolbar ─── */
+.bottom-bar{
+  position:fixed;bottom:0;left:var(--sidebar-w);right:0;height:var(--bottom-h);z-index:50;
+  background:rgba(10,16,32,0.92);backdrop-filter:blur(30px) saturate(1.5);
+  border-top:1px solid var(--glass-border);
+  display:flex;align-items:center;justify-content:center;gap:2px;padding:0 12px;
+  box-shadow:0 -4px 30px rgba(0,0,0,0.4)}
+.bottom-bar::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--cyan),var(--purple),transparent);opacity:0.4}
+.bot-btn{
+  flex:1;max-width:100px;display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:8px 4px;border:none;background:none;color:var(--text-dim);cursor:pointer;
+  border-radius:10px;transition:all 0.25s;position:relative}
+.bot-btn:hover{color:var(--text);background:rgba(34,211,238,0.04)}
+.bot-btn.active{color:var(--cyan)}
+.bot-btn.active::after{content:'';position:absolute;top:0;left:25%;right:25%;height:2px;background:var(--cyan);border-radius:0 0 2px 2px;box-shadow:0 0 8px var(--cyan)}
+.bot-btn svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.bot-btn span{font-size:0.55em;font-weight:600;letter-spacing:1px;text-transform:uppercase}
+
+/* ─── Alert Row ─── */
+.alert-row{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;margin-bottom:4px;font-size:0.78em;
+  background:rgba(248,113,113,0.04);border:1px solid rgba(248,113,113,0.08)}
+.alert-row.warn{background:rgba(250,204,21,0.04);border-color:rgba(250,204,21,0.08)}
+.alert-row.info{background:rgba(34,211,238,0.04);border-color:rgba(34,211,238,0.06)}
+.alert-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.alert-dot.red{background:var(--red);box-shadow:0 0 6px var(--red)}
+.alert-dot.yellow{background:var(--yellow);box-shadow:0 0 6px var(--yellow)}
+.alert-dot.cyan{background:var(--cyan);box-shadow:0 0 6px var(--cyan)}
+
+/* ─── Mini Stat Block ─── */
+.mini-stat{display:flex;align-items:center;gap:10px;padding:6px 0}
+.mini-stat-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.mini-stat-icon.cyan{background:rgba(34,211,238,0.08);color:var(--cyan)}
+.mini-stat-icon.green{background:rgba(74,222,128,0.08);color:var(--green)}
+.mini-stat-icon.purple{background:rgba(167,139,250,0.08);color:#a78bfa}
+.mini-stat-icon.orange{background:rgba(251,146,60,0.08);color:var(--orange)}
+.mini-stat-icon.red{background:rgba(248,113,113,0.08);color:var(--red)}
+.mini-stat-icon svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2}
+.mini-stat-val{font-family:'Orbitron',monospace;font-size:1.1em;font-weight:700}
+.mini-stat-lbl{font-size:0.62em;color:var(--text-dim);letter-spacing:0.5px}
+
+/* ─── Ticket List (compact) ─── */
+.ticket-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(34,211,238,0.04);cursor:pointer;transition:background 0.15s}
+.ticket-row:last-child{border:none}
+.ticket-row:hover{background:rgba(34,211,238,0.03);margin:0 -8px;padding-left:8px;padding-right:8px;border-radius:8px}
+.ticket-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.ticket-dot.open{background:var(--blue);box-shadow:0 0 6px var(--blue)}
+.ticket-dot.active{background:var(--green);box-shadow:0 0 6px var(--green)}
+.ticket-dot.urgent{background:var(--red);box-shadow:0 0 6px var(--red)}
+.ticket-info{flex:1;min-width:0}
+.ticket-name{font-size:0.82em;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ticket-meta{font-size:0.7em;color:var(--text-dim)}
+
+/* ─── Buttons ─── */
+.btn{padding:9px 20px;border:none;border-radius:9px;font-family:inherit;font-weight:600;font-size:0.82em;cursor:pointer;transition:all 0.25s;display:inline-flex;align-items:center;gap:6px;letter-spacing:0.3px}
+.btn-primary{background:linear-gradient(135deg,var(--cyan),#0891b2);color:#000;font-weight:700;box-shadow:0 0 20px rgba(34,211,238,0.2)}
+.btn-primary:hover{box-shadow:0 0 30px rgba(34,211,238,0.4);transform:translateY(-1px)}
+.btn-success{background:linear-gradient(135deg,var(--green),#22c55e);color:#000;box-shadow:0 0 12px rgba(74,222,128,0.15)}
+.btn-outline{background:rgba(34,211,238,0.04);border:1px solid var(--glass-border);color:var(--text);backdrop-filter:blur(10px)}
+.btn-outline:hover{background:rgba(34,211,238,0.08);border-color:rgba(34,211,238,0.2)}
+.btn-sm{padding:5px 12px;font-size:0.75em}
+.btn-danger{background:rgba(248,113,113,0.08);color:var(--red);border:1px solid rgba(248,113,113,0.12)}
+
+/* ─── Forms ─── */
+.form-group{margin-bottom:16px}
+.form-label{display:block;font-size:0.65em;font-weight:600;text-transform:uppercase;letter-spacing:1.5px;color:var(--text-dim);margin-bottom:6px}
+.form-hint{font-size:0.65em;color:var(--text-muted);margin-top:4px}
+input[type="text"],input[type="number"],input[type="email"],input[type="tel"],select,textarea{
+  width:100%;padding:10px 14px;border:1px solid var(--glass-border);border-radius:9px;
+  background:rgba(6,12,24,0.7);color:var(--text);font-family:inherit;font-size:0.88em;
+  backdrop-filter:blur(8px);transition:all 0.25s;outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--cyan);box-shadow:0 0 12px rgba(34,211,238,0.1)}
+select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%2322d3ee' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px}
+textarea{resize:vertical;min-height:80px}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 18px}
+.form-grid.cols-3{grid-template-columns:1fr 1fr 1fr}
+.form-full{grid-column:1 / -1}
+
+/* ─── Badges ─── */
+.badge{display:inline-block;padding:3px 10px;border-radius:16px;font-size:0.65em;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;border:1px solid transparent}
+.badge-blue{background:rgba(34,211,238,0.08);color:var(--cyan);border-color:rgba(34,211,238,0.12)}
+.badge-green{background:rgba(74,222,128,0.08);color:var(--green);border-color:rgba(74,222,128,0.12)}
+.badge-yellow{background:rgba(250,204,21,0.08);color:var(--yellow);border-color:rgba(250,204,21,0.1)}
+.badge-red{background:rgba(248,113,113,0.08);color:var(--red);border-color:rgba(248,113,113,0.12)}
+.badge-purple{background:rgba(167,139,250,0.08);color:#a78bfa;border-color:rgba(167,139,250,0.12)}
+.badge-dim{background:rgba(34,211,238,0.03);color:var(--text-dim);border-color:rgba(34,211,238,0.05)}
+.badge-estimated{background:rgba(250,204,21,0.06);color:var(--yellow);border-color:rgba(250,204,21,0.1)}
+
+/* ─── Tables ─── */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:0.82em}
+th{text-align:left;padding:10px 12px;font-family:'Orbitron',monospace;font-size:0.58em;font-weight:600;text-transform:uppercase;letter-spacing:2px;color:var(--text-dim);border-bottom:1px solid var(--glass-border)}
+td{padding:9px 12px;border-bottom:1px solid rgba(34,211,238,0.03);vertical-align:middle;transition:background 0.15s}
+tr:hover td{background:rgba(34,211,238,0.02)}
+.text-right{text-align:right}
+.text-dim{color:var(--text-dim)}
+.text-green{color:var(--green)}
+.text-red{color:var(--red)}
+.text-yellow{color:var(--yellow)}
+.text-cyan{color:var(--cyan)}
+
+/* ─── Tabs ─── */
+.tab-bar{display:flex;gap:2px;padding:3px;background:var(--glass);border:1px solid var(--glass-border);border-radius:11px;margin-bottom:18px;width:fit-content;backdrop-filter:blur(10px)}
+.tab{padding:7px 16px;border:none;background:none;color:var(--text-dim);font-family:inherit;font-size:0.78em;font-weight:600;border-radius:9px;cursor:pointer;transition:all 0.25s}
+.tab.active{background:linear-gradient(135deg,rgba(34,211,238,0.12),rgba(124,58,237,0.06));color:var(--cyan)}
+.tab:hover:not(.active){color:var(--text)}
+
+/* ─── Quote Result ─── */
+.quote-result{border:1px solid var(--glass-border-hi);border-radius:var(--radius);padding:24px;background:linear-gradient(135deg,rgba(34,211,238,0.05),rgba(124,58,237,0.02));backdrop-filter:blur(20px);position:relative;overflow:hidden}
+.quote-result::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--cyan),var(--purple),transparent);opacity:0.5}
+.quote-total{font-family:'Orbitron',monospace;font-size:2em;font-weight:800;color:var(--cyan);text-shadow:0 0 30px rgba(34,211,238,0.3)}
+.quote-detail{font-size:0.8em;color:var(--text-dim);margin-top:4px}
+.line-items{margin-top:18px}
+.line-item{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid rgba(34,211,238,0.04);font-size:0.85em}
+.line-item:last-child{border:none}
+.line-item:hover{background:rgba(34,211,238,0.02);margin:0 -6px;padding-left:6px;padding-right:6px;border-radius:6px}
+.line-item .name{flex:1}
+.line-item .qty{width:55px;text-align:center;color:var(--text-dim);font-family:'Orbitron',monospace;font-size:0.82em}
+.line-item .cost{width:90px;text-align:right;font-weight:600;font-family:'Orbitron',monospace;font-size:0.85em}
+.line-item.estimated .name::after{content:" *";color:var(--yellow)}
+
+/* ─── Loading ─── */
+.loading{display:flex;align-items:center;justify-content:center;padding:40px;color:var(--text-dim);gap:10px}
+.spinner{width:20px;height:20px;border:2px solid rgba(34,211,238,0.12);border-top-color:var(--cyan);border-radius:50%;animation:spin 0.7s linear infinite;box-shadow:0 0 8px rgba(34,211,238,0.1)}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ─── Page transitions ─── */
+.main{animation:pageIn 0.35s ease}
+@keyframes pageIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* ─── Panel entry stagger ─── */
+.panel{animation:panelIn 0.4s ease both}
+.panel:nth-child(1){animation-delay:0s}
+.panel:nth-child(2){animation-delay:0.05s}
+.panel:nth-child(3){animation-delay:0.1s}
+.panel:nth-child(4){animation-delay:0.15s}
+.panel:nth-child(5){animation-delay:0.2s}
+.panel:nth-child(6){animation-delay:0.25s}
+.panel:nth-child(7){animation-delay:0.3s}
+.panel:nth-child(8){animation-delay:0.35s}
+@keyframes panelIn{from{opacity:0;transform:translateY(10px) scale(0.98)}to{opacity:1;transform:none}}
+
+/* ─── Quick action buttons ─── */
+.action-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.action-btn{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+  padding:16px 10px;border-radius:12px;border:1px solid var(--glass-border);
+  background:rgba(34,211,238,0.03);cursor:pointer;transition:all 0.25s;color:var(--text-dim)}
+.action-btn:hover{background:rgba(34,211,238,0.08);border-color:rgba(34,211,238,0.2);color:var(--cyan)}
+.action-btn svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.action-btn span{font-size:0.68em;font-weight:600;letter-spacing:0.5px}
+
+/* ─── Responsive ─── */
+@media(max-width:1100px){
+  .dash-grid{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:768px){
+  .sidebar{display:none}
+  .main{margin-left:0;padding:10px 8px 80px}
+  .bottom-bar{left:0}
+  .dash-grid{grid-template-columns:1fr}
+  .dash-grid .span-2,.dash-grid .span-3,.dash-grid .span-4{grid-column:span 1}
+
+  /* Page header */
+  .page-header{flex-wrap:wrap;gap:8px}
+  .page-header h1{font-size:0.95em}
+
+  /* Panels */
+  .panel{padding:12px;border-radius:10px}
+
+  /* Mega numbers — smaller on mobile */
+  .mega-num{font-size:2.6em}
+  .mega-num.sm{font-size:1.6em}
+
+  /* Forms */
+  .form-grid{grid-template-columns:1fr}
+  .form-grid.cols-3{grid-template-columns:1fr}
+
+  /* Tables */
+  .table-wrap{margin:0 -12px;padding:0 12px}
+  table{font-size:0.75em}
+  th{font-size:0.5em;padding:8px 6px}
+  td{padding:7px 6px}
+
+  /* Tabs */
+  .tab-bar{width:100%}
+  .tab{flex:1;text-align:center;padding:7px 8px}
+
+  /* Action grid */
+  .action-grid{grid-template-columns:1fr 1fr;gap:6px}
+  .action-btn{padding:12px 8px}
+
+  /* Quote result */
+  .quote-result{padding:16px 12px}
+  .quote-total{font-size:2em!important}
+  .line-item{font-size:0.8em}
+  .line-item .cost{width:70px}
+  .line-item .qty{width:40px}
+
+  /* Bottom bar */
+  .bottom-bar{height:56px;gap:0;padding:0 4px}
+  .bot-btn{padding:6px 2px;gap:2px}
+  .bot-btn svg{width:18px;height:18px}
+  .bot-btn span{font-size:0.48em;letter-spacing:0.5px}
+
+  /* Gauges */
+  .gauge{padding:10px 8px}
+  .gauge-ring{width:80px;height:80px}
+  .gauge-ring svg{width:80px;height:80px}
+  .gauge-number{font-size:1.2em}
+
+  /* Orbs */
+  .orb{width:44px;height:44px}
+
+  /* Guide bubble — full width on mobile */
+  .guide-bubble{width:calc(100vw - 16px)!important;left:8px!important;transform:none!important;
+    bottom:60px!important;height:150px!important;border-radius:12px}
+
+  /* Guide menu */
+  .guide-menu{right:8px;left:8px;bottom:100px;width:auto}
+  .guide-help-btn{bottom:68px;right:12px;width:32px;height:32px;font-size:0.7em}
+
+  /* Cutscene */
+  .cs-terminal{font-size:0.68em;padding:12px;width:95vw}
+  .cs-logo{width:80px;height:80px;border-radius:16px}
+  .cs-wordmark{width:min(200px,55vw)}
+  .cs-tagline{font-size:0.55em;letter-spacing:2px}
+  .cs-activate{padding:12px 32px;font-size:0.75em;letter-spacing:3px}
+  .cs-skip{top:16px;right:16px;padding:6px 14px;font-size:0.55em}
+  .cs-version{font-size:0.45em}
+
+  /* Ryujin chat widget */
+  .ryu-orb{width:48px;height:48px;bottom:68px;right:12px}
+  .ryu-panel{width:calc(100vw - 16px);height:60vh;bottom:68px;right:8px;left:8px;border-radius:16px}
+
+  /* System selector — 5→3 on mobile */
+  .sys-grid{grid-template-columns:repeat(3,1fr)!important}
+
+  /* Stat rows — 4/3 cols → 2 */
+  .stat-row{grid-template-columns:repeat(2,1fr)!important}
+
+  /* Settings side-by-side → stacked */
+  .dash-grid[style*="1fr 1fr"]{grid-template-columns:1fr!important}
+}
+
+/* Small phones */
+@media(max-width:380px){
+  .sys-grid{grid-template-columns:repeat(2,1fr)!important}
+  .mega-num{font-size:2em}
+  .mega-num.sm{font-size:1.3em}
+  .page-header h1{font-size:0.85em}
+  .bot-btn span{display:none}
+  .bottom-bar{height:48px}
+  .main{padding-bottom:60px}
+}
+
+/* ─── Opening Cutscene ─── */
+.cutscene{position:fixed;inset:0;z-index:99999;background:#020408;display:flex;align-items:center;justify-content:center;
+  flex-direction:column;overflow:hidden;transition:opacity 0.8s}
+.cutscene.done{opacity:0;pointer-events:none}
+.cutscene video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+
+.cs-skip{position:fixed;top:24px;right:28px;z-index:100001;padding:8px 18px;border:1px solid rgba(34,211,238,0.2);
+  border-radius:8px;background:rgba(6,10,20,0.7);color:rgba(160,190,230,0.6);font-family:'Orbitron',monospace;
+  font-size:0.65em;font-weight:600;letter-spacing:2px;text-transform:uppercase;cursor:pointer;
+  backdrop-filter:blur(10px);transition:all 0.3s}
+.cs-skip:hover{color:#22d3ee;border-color:rgba(34,211,238,0.4);background:rgba(34,211,238,0.06)}
+
+/* Cutscene phases */
+.cs-phase{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;
+  z-index:1;transition:opacity 1s}
+.cs-phase video{opacity:0.35;filter:saturate(1.3);position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+
+/* Phase 4: Logo + Activate */
+.cs-logo-wrap{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;gap:16px}
+.cs-logo{width:120px;height:120px;border-radius:24px;background:url('/assets/logo/logo-glow.jpg') center/cover;
+  box-shadow:0 0 60px rgba(34,211,238,0.3),0 0 120px rgba(34,211,238,0.1);
+  animation:logoFloat 3s ease infinite;border:2px solid rgba(34,211,238,0.2)}
+@keyframes logoFloat{0%,100%{transform:translateY(0) scale(1);box-shadow:0 0 60px rgba(34,211,238,0.3)}
+  50%{transform:translateY(-8px) scale(1.02);box-shadow:0 0 80px rgba(34,211,238,0.45)}}
+.cs-wordmark{width:min(280px,60vw);opacity:0.9;filter:drop-shadow(0 0 20px rgba(34,211,238,0.3))}
+.cs-tagline{font-family:'Orbitron',monospace;font-size:0.7em;color:rgba(34,211,238,0.5);letter-spacing:3px;
+  text-transform:uppercase;margin-top:4px;text-shadow:0 0 10px rgba(34,211,238,0.2)}
+
+.cs-activate{margin-top:32px;padding:14px 48px;border:2px solid rgba(34,211,238,0.3);border-radius:12px;
+  background:rgba(34,211,238,0.06);color:#22d3ee;font-family:'Orbitron',monospace;font-size:0.9em;
+  font-weight:700;letter-spacing:4px;text-transform:uppercase;cursor:pointer;
+  backdrop-filter:blur(10px);transition:all 0.4s;position:relative;overflow:hidden;
+  box-shadow:0 0 30px rgba(34,211,238,0.1)}
+.cs-activate::before{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(34,211,238,0.1),transparent);
+  transform:translateX(-100%);animation:activateShine 3s ease infinite}
+@keyframes activateShine{0%{transform:translateX(-100%)}60%,100%{transform:translateX(100%)}}
+.cs-activate:hover{background:rgba(34,211,238,0.12);border-color:rgba(34,211,238,0.5);
+  box-shadow:0 0 50px rgba(34,211,238,0.25);transform:scale(1.03)}
+.cs-activate:active{transform:scale(0.98)}
+
+/* Version text */
+.cs-version{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:100001;
+  font-family:'Orbitron',monospace;font-size:0.55em;color:rgba(34,211,238,0.25);letter-spacing:3px}
+</style>
+</head>
+<body>
+
+<!-- ═══ OPENING CUTSCENE ═══ -->
+<div class="cutscene" id="cutscene">
+  <button class="cs-skip" onclick="cutscene.skip()">SKIP &rsaquo;&rsaquo;</button>
+  <div class="cs-version">RYUJIN OS v3.1</div>
+
+  <!-- Intro Video -->
+  <video id="csVideo" autoplay muted playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 1s">
+    <source src="/assets/ryujin tech intro.mp4" type="video/mp4">
+  </video>
+
+  <!-- Activate overlay (appears after video) -->
+  <div class="cs-phase dim" id="csActivatePhase" style="opacity:0;transition:opacity 1s">
+    <video autoplay muted loop playsinline><source src="/assets/videos/ocean-caustics-bg.mp4" type="video/mp4"></video>
+    <div class="cs-logo-wrap">
+      <div class="cs-logo"></div>
+      <img src="/assets/logo/wordmark-glow.jpg" class="cs-wordmark" alt="Ryujin">
+      <div class="cs-tagline">Smart systems designed for you, by you</div>
+      <button class="cs-activate" id="csActivate" onclick="cutscene.activate()">ACTIVATE</button>
+    </div>
+  </div>
+</div>
+
+<!-- Video Background -->
+<div class="video-bg">
+  <video autoplay muted loop playsinline>
+    <source src="/assets/videos/ocean-caustics-bg.mp4" type="video/mp4">
+  </video>
+</div>
+
+<div class="layout">
+<!-- Sidebar — icon rail -->
+<div class="sidebar">
+  <div class="sidebar-logo" onclick="navigate('dashboard')"></div>
+  <div class="sidebar-divider"></div>
+  <nav class="sidebar-nav">
+    <div class="nav-icon active" data-page="dashboard" onclick="navigate('dashboard')">
+      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      <div class="tooltip">Dashboard</div>
+    </div>
+    <div class="nav-icon" data-page="quote" onclick="navigate('quote')">
+      <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+      <div class="tooltip">Quote Builder</div>
+    </div>
+    <div class="nav-icon" data-page="offers" onclick="navigate('offers')">
+      <svg viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+      <div class="tooltip">Offers</div>
+    </div>
+    <div class="nav-icon" data-page="customers" onclick="navigate('customers')">
+      <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+      <div class="tooltip">Customers</div>
+    </div>
+    <div class="nav-icon" data-page="estimates" onclick="navigate('estimates')">
+      <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      <div class="tooltip">Estimates</div>
+    </div>
+    <div class="nav-icon" data-page="settings" onclick="navigate('settings')">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      <div class="tooltip">Settings</div>
+    </div>
+  </nav>
+</div>
+
+<!-- Main -->
+<div class="main" id="main"></div>
+</div>
+
+<!-- Bottom Toolbar -->
+<div class="bottom-bar" id="bottomBar">
+  <button class="bot-btn active" data-page="dashboard" onclick="navigate('dashboard')">
+    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+    <span>Dashboard</span>
+  </button>
+  <button class="bot-btn" data-page="quote" onclick="navigate('quote')">
+    <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+    <span>Quote</span>
+  </button>
+  <button class="bot-btn" data-page="estimates" onclick="navigate('estimates')">
+    <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    <span>Estimates</span>
+  </button>
+  <button class="bot-btn" data-page="customers" onclick="navigate('customers')">
+    <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+    <span>Clients</span>
+  </button>
+  <button class="bot-btn" data-page="offers" onclick="navigate('offers')">
+    <svg viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+    <span>Offers</span>
+  </button>
+  <button class="bot-btn" data-page="settings" onclick="navigate('settings')">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15"/></svg>
+    <span>Settings</span>
+  </button>
+</div>
+
+<script>
+const API = window.location.origin + '/api';
+const TENANT = 'plus-ultra';
+let currentPage = 'dashboard';
+let quoteState = { mode: 'guided', system: 'residential', answers: {}, result: null, overrides: {} };
+let offersCache = null;
+let dashCache = null;
+
+async function api(path, opts = {}) {
+  const sep = path.includes('?') ? '&' : '?';
+  try {
+    const resp = await fetch(`${API}${path}${sep}tenant=${TENANT}`, {
+      ...opts, headers: { 'Content-Type': 'application/json', ...opts.headers }
+    });
+    if (!resp.ok) return await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
+    return resp.json();
+  } catch (e) { return { error: 'Connection failed' }; }
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+function fmt$(n) { return '$' + (n || 0).toLocaleString(); }
+
+// ─── Sound system ───
+const sfx = {
+  ctx: null,
+  init() { if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)(); },
+  play(type) {
+    try {
+      this.init();
+      const ctx = this.ctx;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      gain.gain.value = 0.04;
+
+      if (type === 'click') {
+        osc.frequency.value = 800;
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.08);
+      } else if (type === 'navigate') {
+        osc.frequency.value = 600;
+        osc.frequency.linearRampToValueAtTime(900, ctx.currentTime + 0.12);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.15);
+      } else if (type === 'success') {
+        osc.frequency.value = 523;
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.3);
+        const osc2 = ctx.createOscillator();
+        const gain2 = ctx.createGain();
+        osc2.connect(gain2); gain2.connect(ctx.destination);
+        osc2.frequency.value = 659;
+        gain2.gain.value = 0.04;
+        gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+        osc2.start(ctx.currentTime + 0.12);
+        osc2.stop(ctx.currentTime + 0.35);
+      } else if (type === 'error') {
+        osc.type = 'sawtooth';
+        osc.frequency.value = 200;
+        gain.gain.value = 0.03;
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.2);
+      }
+    } catch(e) {}
+  }
+};
+
+function navigate(page) {
+  currentPage = page;
+  sfx.play('navigate');
+  document.querySelectorAll('.nav-icon').forEach(b => b.classList.toggle('active', b.dataset.page === page));
+  document.querySelectorAll('.bot-btn').forEach(b => b.classList.toggle('active', b.dataset.page === page));
+  const m = document.getElementById('main');
+  m.style.animation = 'none';
+  m.offsetHeight;
+  m.style.animation = '';
+  renderPage();
+  // Auto-launch tutorial if not seen
+  if (typeof guide !== 'undefined') guide.autoLaunchForPage(page);
+}
+
+function renderPage() {
+  const m = document.getElementById('main');
+  switch(currentPage) {
+    case 'dashboard': return renderDashboard(m);
+    case 'quote': return renderQuoteBuilder(m);
+    case 'offers': return renderOffers(m);
+    case 'customers': return renderCustomers(m);
+    case 'estimates': return renderEstimates(m);
+    case 'settings': return renderSettings(m);
+    default: m.innerHTML = '<div class="loading"><div class="spinner"></div>Coming soon</div>';
+  }
+}
+
+// ─── SVG gauge helper (compact) ───
+function gaugeHTML(value, max, label, unit, color) {
+  const pct = Math.min(value / max, 1);
+  const circ = 2 * Math.PI * 42;
+  const offset = circ * (1 - pct);
+  const c = color || 'var(--cyan)';
+  return `<div class="gauge panel">
+    <div class="gauge-ring">
+      <svg viewBox="0 0 100 100">
+        <circle class="track" cx="50" cy="50" r="42"/>
+        <circle class="fill" cx="50" cy="50" r="42" stroke="${c}"
+          stroke-dasharray="${circ}" stroke-dashoffset="${offset}"/>
+      </svg>
+      <div class="gauge-value">
+        <div class="gauge-number" style="color:${c}">${typeof value === 'number' ? value.toLocaleString() : value}</div>
+        ${unit ? `<div class="gauge-unit">${unit}</div>` : ''}
+      </div>
+    </div>
+    <div class="gauge-label">${label}</div>
+  </div>`;
+}
+
+// ─── Mini gauge inline helper ───
+function miniGaugeHTML(value, max, label, color) {
+  const pct = Math.min(value / max, 1);
+  const circ = 2 * Math.PI * 22;
+  const offset = circ * (1 - pct);
+  const c = color || 'var(--cyan)';
+  return `<div style="text-align:center">
+    <div style="position:relative;width:54px;height:54px;margin:0 auto">
+      <svg viewBox="0 0 54 54" style="transform:rotate(-90deg)"><circle cx="27" cy="27" r="22" fill="none" stroke="rgba(34,211,238,0.06)" stroke-width="4"/><circle cx="27" cy="27" r="22" fill="none" stroke="${c}" stroke-width="4" stroke-linecap="round" stroke-dasharray="${circ}" stroke-dashoffset="${offset}" filter="drop-shadow(0 0 3px ${c})"/></svg>
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'Orbitron',monospace;font-size:0.85em;font-weight:700;color:${c}">${value}</div>
+    </div>
+    <div style="font-size:0.55em;color:var(--text-dim);text-transform:capitalize;margin-top:4px;letter-spacing:1px">${label}</div>
+  </div>`;
+}
+
+// ═══════════════════════════════════════════
+// DASHBOARD — Command Center
+// ═══════════════════════════════════════════
+
+// SVG gradient definition for charts (injected once)
+const SVG_DEFS = `<defs><linearGradient id="cg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#22d3ee" stop-opacity="0.4"/><stop offset="100%" stop-color="#22d3ee" stop-opacity="0"/></linearGradient><linearGradient id="gg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#4ade80" stop-opacity="0.3"/><stop offset="100%" stop-color="#4ade80" stop-opacity="0"/></linearGradient></defs>`;
+
+// Generate fake sparkline data for visual demo
+function sparkPoints(count,min,max,h,w){const pts=[];for(let i=0;i<count;i++){const x=(i/(count-1))*w;const y=h-((Math.random()*(max-min)+min)/max)*h*0.8-h*0.05;pts.push(`${x},${y}`);}return pts;}
+function areaChart(w,h,color){const pts=sparkPoints(12,30,100,h,w);const line=pts.join(' ');const area=`0,${h} ${line} ${w},${h}`;const grad=color==='green'?'url(#gg)':'url(#cg)';const stroke=color==='green'?'var(--green)':'var(--cyan)';return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">${SVG_DEFS}<polygon points="${area}" fill="${grad}"/><polyline points="${line}" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" filter="drop-shadow(0 0 4px ${stroke})"/></svg>`;}
+
+function progressBar(pct,color,label,value){
+  return `<div><div class="progress-label"><span>${label}</span><span class="value">${value||pct+'%'}</span></div><div class="progress"><div class="progress-fill ${color}" style="width:${pct}%"></div></div></div>`;
+}
+
+async function renderDashboard(m) {
+  m.innerHTML = `<div class="page-header"><div><h1>Command Center</h1><div class="sub">Ryujin OS v3.1</div></div></div><div class="loading"><div class="spinner"></div>Initializing systems...</div>`;
+
+  const [offers, estimates, customers, tickets, settings] = await Promise.all([
+    offersCache || api('/quote?offers=1'),
+    api('/estimates'),
+    api('/customers'),
+    api('/tickets?status=open'),
+    api('/settings')
+  ]);
+  if (!offersCache) offersCache = offers;
+
+  const offerCount = (offers.offers || []).length;
+  const estList = estimates.estimates || [];
+  const custList = customers.customers || [];
+  const ticketList = tickets.tickets || [];
+  const activeTickets = ticketList.filter(t => t.status === 'active' || t.status === 'open');
+  const urgentTickets = ticketList.filter(t => t.priority === 'urgent');
+  const systems = {};
+  for (const o of (offers.offers || [])) systems[o.system] = (systems[o.system] || 0) + 1;
+
+  const pipelineVal = estList.reduce((s,e) => s + (e.total_price || 0), 0);
+  const acceptedCount = estList.filter(e => e.status === 'accepted').length;
+  const draftCount = estList.filter(e => e.status === 'draft').length;
+  const sentCount = estList.filter(e => e.status === 'sent').length;
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+  const timeStr = now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+
+  let html = `<div class="page-header"><div><h1>Command Center</h1><div class="sub">${dateStr} &mdash; ${timeStr}</div></div>
+    <div style="display:flex;gap:6px"><button class="btn btn-sm btn-outline" onclick="guide.start('dashboard')" style="color:var(--cyan);border-color:rgba(34,211,238,0.2)"><svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button><button class="btn btn-primary btn-sm" onclick="navigate('quote')">+ Quote</button><button class="btn btn-outline btn-sm" onclick="renderDashboard(document.getElementById('main'))">Refresh</button></div></div>`;
+
+  html += '<div class="dash-grid">';
+
+  // ═══ ROW 1: Four hero stat panels ═══
+
+  // Panel 1: Pipeline Value (HERO — biggest number)
+  html += `<div class="panel">
+    <div class="panel-header"><div class="panel-title">Pipeline</div><span class="badge badge-blue">Live</span></div>
+    <div class="mega-num cyan" style="font-size:2.8em">${fmt$(pipelineVal)}</div>
+    <div class="mega-label">Total Value</div>
+    <div class="mini-chart" style="height:50px;margin-top:6px">${areaChart(200,50,'cyan')}</div>
+  </div>`;
+
+  // Panel 2: Estimates count
+  html += `<div class="panel">
+    <div class="panel-header"><div class="panel-title">Estimates</div></div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <div class="orb"></div>
+      <div><div class="mega-num blue sm">${estList.length}</div><div class="mega-label">Generated</div></div>
+    </div>
+    <div class="panel-zone" style="margin-top:10px;padding-top:10px">
+      <div style="display:flex;justify-content:space-between;font-size:0.72em"><span class="text-dim">Draft</span><span>${draftCount}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:0.72em;margin-top:2px"><span class="text-dim">Sent</span><span class="text-cyan">${sentCount}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:0.72em;margin-top:2px"><span class="text-dim">Accepted</span><span class="text-green">${acceptedCount}</span></div>
+    </div>
+  </div>`;
+
+  // Panel 3: Customers
+  html += `<div class="panel">
+    <div class="panel-header"><div class="panel-title">Customers</div></div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <div class="orb purple"></div>
+      <div><div class="mega-num purple sm">${custList.length}</div><div class="mega-label">Database</div></div>
+    </div>
+    <div class="panel-zone" style="margin-top:10px;padding-top:10px">
+      ${progressBar(Math.min(custList.length/100*100,100),'purple','Growth',custList.length+'/100')}
+    </div>
+  </div>`;
+
+  // Panel 4: Crew Ops
+  html += `<div class="panel">
+    <div class="panel-header"><div class="panel-title">Crew Ops</div>${urgentTickets.length?`<span class="badge badge-red">${urgentTickets.length} urgent</span>`:''}</div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <div class="orb ${activeTickets.length>5?'':'green'}"></div>
+      <div><div class="mega-num ${activeTickets.length>5?'orange':'green'} sm">${activeTickets.length}</div><div class="mega-label">Active</div></div>
+    </div>
+    <div class="panel-zone" style="margin-top:10px;padding-top:10px">
+      ${progressBar(Math.min(activeTickets.length/15*100,100),activeTickets.length>5?'orange':'green','Load',activeTickets.length+'/15')}
+    </div>
+  </div>`;
+
+  // ═══ ROW 2: Storm Analytics (span 3) + Conversion Rates (span 1) ═══
+
+  // Panel 5: Storm Analytics (main chart — span 3)
+  html += `<div class="panel span-3">
+    <div class="panel-header"><div class="panel-title">Storm Analytics</div>
+      <div style="display:flex;gap:4px"><span class="badge badge-green">Online</span></div></div>
+    <div style="display:flex;gap:24px;margin-bottom:8px;flex-wrap:wrap">
+      <div><span style="font-family:'Orbitron',monospace;font-size:2em;font-weight:800;color:var(--cyan);text-shadow:0 0 30px rgba(34,211,238,0.3)">${fmt$(pipelineVal)}</span><div class="mega-label">Pipeline</div></div>
+      <div><span style="font-family:'Orbitron',monospace;font-size:2em;font-weight:800;color:var(--green);text-shadow:0 0 20px rgba(74,222,128,0.2)">${acceptedCount}</span><div class="mega-label">Won</div></div>
+      <div><span style="font-family:'Orbitron',monospace;font-size:2em;font-weight:800;color:var(--blue);text-shadow:0 0 20px rgba(74,158,255,0.2)">${offerCount}</span><div class="mega-label">Offers</div></div>
+    </div>
+    <div style="height:80px">${areaChart(500,80,'cyan')}</div>
+    <div class="panel-zone" style="display:flex;gap:10px">
+      <div style="flex:1">${progressBar(48,'cyan','Quote Rate','47.9%')}</div>
+      <div style="flex:1">${progressBar(8,'green','Close Rate','8.3%')}</div>
+      <div style="flex:1">${progressBar(82,'purple','Efficiency','82%')}</div>
+    </div>
+  </div>`;
+
+  // Panel 6: Conversion funnel (span 1)
+  html += `<div class="panel">
+    <div class="panel-header"><div class="panel-title">Funnel</div></div>
+    <div class="mini-stat"><div class="mini-stat-icon cyan"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div>
+      <div><div class="mini-stat-val text-cyan">${custList.length}</div><div class="mini-stat-lbl">Leads</div></div></div>
+    <div class="mini-stat"><div class="mini-stat-icon purple"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+      <div><div class="mini-stat-val" style="color:#a78bfa">${estList.length}</div><div class="mini-stat-lbl">Quoted</div></div></div>
+    <div class="mini-stat"><div class="mini-stat-icon green"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+      <div><div class="mini-stat-val text-green">${acceptedCount}</div><div class="mini-stat-lbl">Won</div></div></div>
+    <div class="mini-stat"><div class="mini-stat-icon orange"><svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div>
+      <div><div class="mini-stat-val text-yellow">${fmt$(pipelineVal)}</div><div class="mini-stat-lbl">Value</div></div></div>
+  </div>`;
+
+  // ═══ ROW 3: Dragon Core (span 2) + Active Ops (span 2) ═══
+
+  // Panel 7: Dragon Core Status
+  html += `<div class="panel span-2">
+    <div class="panel-header"><div class="panel-title">Dragon Core</div>
+      <label class="toggle"><input type="checkbox" checked><span class="toggle-track"></span><span class="toggle-thumb"></span></label></div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center">`;
+  for (const [sys, count] of Object.entries(systems)) {
+    html += miniGaugeHTML(count, 5, sys, 'var(--cyan)');
+  }
+  html += `</div>
+    <div class="panel-zone" style="margin-top:10px;padding-top:10px">
+      <div style="display:flex;justify-content:space-between;font-size:0.72em;margin-bottom:4px"><span class="text-dim">Engine</span><span class="badge badge-green" style="font-size:0.6em">v3.1</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:0.72em"><span class="text-dim">Tenant</span><span style="font-family:'Orbitron',monospace;font-size:0.85em;color:var(--cyan)">plus-ultra</span></div>
+    </div>
+  </div>`;
+
+  // Panel 8: Active Operations (ticket list)
+  html += `<div class="panel span-2">
+    <div class="panel-header"><div class="panel-title">Active Operations</div><span class="badge badge-blue">${activeTickets.length}</span></div>`;
+  if (activeTickets.length === 0) {
+    html += '<div style="text-align:center;padding:16px;color:var(--text-dim);font-size:0.82em">All systems clear.</div>';
+  } else {
+    for (const t of activeTickets.slice(0, 5)) {
+      const dotClass = t.priority === 'urgent' ? 'urgent' : t.status === 'active' ? 'active' : 'open';
+      html += `<div class="ticket-row">
+        <div class="ticket-dot ${dotClass}"></div>
+        <div class="ticket-info"><div class="ticket-name">${esc(t.title)}</div>
+          <div class="ticket-meta">${t.assigned_to_name||'Unassigned'}${t.due_date?' &bull; '+new Date(t.due_date).toLocaleDateString():''}</div></div>
+        <span class="badge badge-${dotClass==='urgent'?'red':dotClass==='active'?'green':'blue'}">${t.status}</span></div>`;
+    }
+    if (activeTickets.length > 5) html += `<div style="text-align:center;padding:6px;font-size:0.72em;color:var(--text-dim)">+${activeTickets.length-5} more</div>`;
+  }
+  html += '</div>';
+
+  // ═══ ROW 4: Quick Actions (span 1) + Alerts (span 1) + Revenue Chart (span 2) ═══
+
+  // Panel 9: Quick Actions (compact)
+  html += `<div class="panel">
+    <div class="panel-header"><div class="panel-title">Actions</div></div>
+    <div class="action-grid">
+      <div class="action-btn" onclick="navigate('quote')">
+        <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/></svg><span>Quote</span></div>
+      <div class="action-btn" onclick="navigate('customers')">
+        <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg><span>Customer</span></div>
+      <div class="action-btn" onclick="navigate('offers')">
+        <svg viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/></svg><span>Offers</span></div>
+      <div class="action-btn" onclick="navigate('settings')">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33"/></svg><span>Config</span></div>
+    </div>
+  </div>`;
+
+  // Panel 10: Alerts & Notifications
+  html += `<div class="panel">
+    <div class="panel-header"><div class="panel-title">Alerts</div></div>`;
+  if (urgentTickets.length > 0) {
+    html += `<div class="alert-row"><div class="alert-dot red"></div><span>${urgentTickets.length} urgent ticket${urgentTickets.length>1?'s':''} need attention</span></div>`;
+  }
+  if (draftCount > 10) {
+    html += `<div class="alert-row warn"><div class="alert-dot yellow"></div><span>${draftCount} drafts pending — send proposals</span></div>`;
+  }
+  html += `<div class="alert-row info"><div class="alert-dot cyan"></div><span>Engine v3.1 online — ${offerCount} offers</span></div>`;
+  if (activeTickets.length === 0 && urgentTickets.length === 0 && draftCount <= 10) {
+    html += `<div style="text-align:center;padding:12px;font-size:0.75em;color:var(--text-dim)">No active alerts</div>`;
+  }
+  html += '</div>';
+
+  // Panel 11: Revenue Trend (span 2)
+  html += `<div class="panel span-2">
+    <div class="panel-header"><div class="panel-title">Revenue Trend</div></div>
+    <div style="display:flex;gap:20px;margin-bottom:6px">
+      <div><span style="font-family:'Orbitron',monospace;font-size:1.4em;font-weight:700;color:var(--green)">${fmt$(acceptedCount > 0 ? estList.filter(e=>e.status==='accepted').reduce((s,e)=>s+(e.total_price||0),0) : 0)}</span><div class="mega-label">Accepted Value</div></div>
+    </div>
+    <div style="height:60px">${areaChart(400,60,'green')}</div>
+  </div>`;
+
+  // ═══ ROW 5: Systems Online (span 1) + Recent Estimates (span 3) ═══
+
+  // Panel 12: Systems Online (compact list)
+  html += `<div class="panel">
+    <div class="panel-header"><div class="panel-title">Systems</div><span class="badge badge-green" style="font-size:0.5em">All OK</span></div>`;
+  for (const [sys, count] of Object.entries(systems)) {
+    html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid rgba(34,211,238,0.04)">
+      <div style="display:flex;align-items:center;gap:6px">
+        <div style="width:5px;height:5px;border-radius:50%;background:var(--green);box-shadow:0 0 4px var(--green)"></div>
+        <span style="font-size:0.75em;text-transform:capitalize">${sys}</span></div>
+      <span class="badge badge-blue" style="font-size:0.55em">${count}</span></div>`;
+  }
+  html += '</div>';
+
+  // Panel 13: Recent Estimates (span 3)
+  html += `<div class="panel span-3">
+    <div class="panel-header"><div class="panel-title">Recent Estimates</div><button class="btn btn-sm btn-outline" onclick="navigate('estimates')">View All</button></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Customer</th><th>Status</th><th class="text-right">Amount</th><th>Date</th></tr></thead><tbody>`;
+  for (const e of estList.slice(0, 5)) {
+    const sc = e.status==='accepted'?'green':e.status==='sent'?'blue':'dim';
+    html += `<tr><td style="font-weight:600;font-size:0.82em">${esc(e.customer?.full_name||e.customer?.name||'—')}</td>
+      <td><span class="badge badge-${sc}">${e.status||'draft'}</span></td>
+      <td class="text-right" style="font-family:'Orbitron',monospace;color:var(--cyan);font-size:0.85em">${e.total_price?fmt$(e.total_price):'—'}</td>
+      <td class="text-dim" style="font-size:0.78em">${e.created_at?new Date(e.created_at).toLocaleDateString():'—'}</td></tr>`;
+  }
+  html += '</tbody></table></div></div>';
+
+  html += '</div>'; // close dash-grid
+  m.innerHTML = html;
+}
+
+
+// ═══════════════════════════════════════════
+// QUOTE BUILDER (preserved from previous)
+// ═══════════════════════════════════════════
+async function renderQuoteBuilder(m) {
+  const sysIcons = {residential:'🏠',metal:'⚙️',flat:'🏢',exterior:'🧱',combined:'🔄'};
+  const sysColors = {residential:'cyan',metal:'blue',flat:'purple',exterior:'orange',combined:'green'};
+  m.innerHTML = `
+    <div class="page-header"><div><h1>Quote Builder</h1><div class="sub">Calculate &bull; Compare &bull; Close</div></div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-sm btn-outline" onclick="guide.start('quote')" title="Launch tutorial" style="color:var(--cyan);border-color:rgba(34,211,238,0.2)">
+          <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          Guide
+        </button>
+        <button class="btn btn-sm ${quoteState.mode==='guided'?'btn-primary':'btn-outline'}" onclick="setQuoteMode('guided')">Guided</button>
+        <button class="btn btn-sm ${quoteState.mode==='advanced'?'btn-primary':'btn-outline'}" onclick="setQuoteMode('advanced')">Advanced</button>
+      </div>
+    </div>
+    <div class="sys-grid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:10px">
+      ${['residential','metal','flat','exterior','combined'].map(s => `
+        <div class="panel" style="cursor:pointer;text-align:center;padding:10px 8px;${quoteState.system===s?'border-color:var(--'+sysColors[s]+');box-shadow:0 0 20px rgba(34,211,238,0.1)':''}" onclick="quoteState.system='${s}';quoteState.answers={};quoteState.result=null;renderQuoteBuilder(document.getElementById('main'))">
+          <div style="font-size:1.4em;margin-bottom:4px">${sysIcons[s]}</div>
+          <div style="font-family:'Orbitron',monospace;font-size:0.55em;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:${quoteState.system===s?'var(--'+sysColors[s]+')':'var(--text-dim)'}">${s==='combined'?'Roof+Shell':s}</div>
+        </div>`).join('')}
+    </div>
+    <div id="quoteForm"></div>
+    <div id="quoteResult"></div>`;
+  renderQuoteForm();
+}
+
+function setQuoteMode(mode) { quoteState.mode = mode; quoteState.result = null; renderQuoteBuilder(document.getElementById('main')); }
+
+async function renderQuoteForm() {
+  const form = document.getElementById('quoteForm');
+  if (!form) return;
+
+  if (quoteState.mode === 'guided') {
+    const data = await api(`/quote?questions=1&system=${quoteState.system}`);
+    if (data.error) { form.innerHTML = `<div class="panel" style="border-color:var(--red)"><div class="panel-header"><div class="panel-title text-red">Connection Error</div></div><div style="font-size:0.85em;color:var(--text-dim);padding:8px 0">${esc(data.error)}<br><br>Check that the API is running and the tenant exists.</div><button class="btn btn-outline btn-sm" onclick="renderQuoteForm()">Retry</button></div>`; return; }
+    const questions = data.questions || [];
+    if (questions.length === 0) { form.innerHTML = `<div class="panel"><div style="text-align:center;padding:20px;color:var(--text-dim);font-size:0.85em">No questions configured for "${quoteState.system}" system.<br>Check offer scope templates in the database.</div></div>`; return; }
+    let html = '<div class="panel"><div class="panel-header"><div class="panel-title">Job Details</div></div><div class="form-grid">';
+    for (const q of questions) {
+      const val = quoteState.answers[q.key] ?? q.default ?? '';
+      if (q.type === 'select') {
+        const options = q.options.map(o => {
+          const label = q.labels ? (q.labels[o] || o) : o;
+          return `<option value="${o}" ${val == o ? 'selected' : ''}>${label}</option>`;
+        }).join('');
+        html += `<div class="form-group"><label class="form-label">${esc(q.label)}${q.required?' *':''}</label>
+          <select data-qkey="${esc(q.key)}" onchange="quoteState.answers[this.dataset.qkey]=this.value">${options}</select>
+          ${q.hint?`<div class="form-hint">${esc(q.hint)}</div>`:''}</div>`;
+      } else {
+        html += `<div class="form-group"><label class="form-label">${esc(q.label)}${q.required?' *':''}</label>
+          <input type="${q.type}" value="${val}" data-qkey="${esc(q.key)}" onchange="quoteState.answers[this.dataset.qkey]=this.type==='number'?Number(this.value):this.value" placeholder="${esc(q.hint||'')}">
+          ${q.hint?`<div class="form-hint">${esc(q.hint)}</div>`:''}</div>`;
+      }
+    }
+    html += '</div>';
+
+    if (!offersCache) offersCache = await api('/quote?offers=1');
+    const sysMap = {residential:'asphalt',metal:'metal',flat:'asphalt',exterior:'exterior',combined:'combined'};
+    const offers = (offersCache.offers||[]).filter(o => o.system === (sysMap[quoteState.system]||'asphalt'));
+    html += `<div class="form-group form-full" style="margin-top:14px"><label class="form-label">Package</label>
+      <select id="qOffer" onchange="quoteState.answers._offer_slug=this.value">
+        ${offers.map(o => `<option value="${o.slug}" ${quoteState.answers._offer_slug===o.slug?'selected':''}>${o.name}${o.badge?' — '+o.badge:''}</option>`).join('')}
+      </select></div>`;
+    html += `<div style="margin-top:18px;display:flex;gap:8px">
+      <button class="btn btn-primary" onclick="runGuidedQuote()">Calculate</button>
+      <button class="btn btn-outline" onclick="runCompare()">Compare All</button>
+    </div></div>`;
+    form.innerHTML = html;
+    if (!quoteState.answers._offer_slug && offers.length) quoteState.answers._offer_slug = offers[0].slug;
+  } else {
+    if (!quoteState.result) {
+      form.innerHTML = `<div class="panel"><div class="panel-title">Advanced Mode</div><div class="panel-sub" style="margin-top:6px">Run a guided quote first, then switch to advanced.</div><div style="margin-top:14px"><button class="btn btn-outline" onclick="setQuoteMode('guided')">Start Guided</button></div></div>`;
+      return;
+    }
+    const items = quoteState.result.lineItems || [];
+    let html = `<div class="panel"><div class="panel-header"><div class="panel-title">Line Item Editor</div></div>
+      <div class="table-wrap"><table><thead><tr><th style="width:28px"></th><th>Item</th><th>Cat</th><th style="width:70px">Qty</th><th style="width:50px">Unit</th><th style="width:90px">Cost</th><th class="text-right" style="width:90px">Total</th><th style="width:100px">Source</th></tr></thead><tbody>`;
+    for (const li of items) {
+      const ovr = quoteState.overrides[li.item_key]||{};
+      const inc = ovr.included!==undefined?ovr.included:li.included;
+      const qty = ovr.quantity!==undefined?ovr.quantity:li.quantity;
+      const uc = ovr.unit_cost!==undefined?ovr.unit_cost:li.unit_cost;
+      const tot = Math.round(qty*uc*100)/100;
+      html += `<tr style="${!inc?'opacity:0.35':''}"><td><input type="checkbox" ${inc?'checked':''} onchange="toggleLineItem('${li.item_key}',this.checked)"></td>
+        <td style="font-weight:500;font-size:0.82em">${esc(li.label)}${li.estimated?'<span class="text-yellow"> *</span>':''}</td>
+        <td><span class="badge badge-dim">${li.category}</span></td>
+        <td><input type="number" value="${qty}" style="width:60px;padding:3px 6px;font-size:0.82em" onchange="overrideQty('${li.item_key}',Number(this.value))"></td>
+        <td class="text-dim" style="font-size:0.75em">${li.unit}</td>
+        <td><input type="number" value="${uc}" step="0.01" style="width:80px;padding:3px 6px;font-size:0.82em" onchange="overrideCost('${li.item_key}',Number(this.value))"></td>
+        <td class="text-right" style="font-weight:600;font-family:'Orbitron',monospace;font-size:0.82em">${fmt$(tot)}</td>
+        <td class="text-dim" style="font-size:0.68em;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${li.price_source||''}</td></tr>`;
+    }
+    html += `</tbody></table></div><div style="display:flex;gap:8px;margin-top:14px">
+      <button class="btn btn-primary" onclick="recalcWithOverrides()">Recalculate</button>
+      <button class="btn btn-outline" onclick="quoteState.overrides={};renderQuoteBuilder(document.getElementById('main'))">Reset</button></div></div>`;
+    form.innerHTML = html;
+  }
+}
+
+async function runGuidedQuote() {
+  const rd = document.getElementById('quoteResult');
+  rd.innerHTML = '<div class="loading"><div class="spinner"></div>Calculating...</div>';
+  const a = {...quoteState.answers}; const slug = a._offer_slug; delete a._offer_slug;
+  const r = await api('/quote?mode=guided&materials=1', {method:'POST',body:JSON.stringify({system:quoteState.system,offer_slug:slug,answers:a})});
+  if (r.error) { rd.innerHTML = `<div class="panel" style="border-color:var(--red)"><div class="panel-title text-red">Error</div><div class="panel-sub">${esc(r.error)}</div></div>`; return; }
+  quoteState.result = r; sfx.play('success'); renderQuoteResult(rd, r);
+  // Chain into result tutorial if guide is running
+  setTimeout(() => guide.onQuoteResult(), 500);
+}
+
+async function runCompare() {
+  const rd = document.getElementById('quoteResult');
+  rd.innerHTML = '<div class="loading"><div class="spinner"></div>Comparing...</div>';
+  const a = {...quoteState.answers}; delete a._offer_slug;
+  const r = await api('/quote?mode=compare', {method:'POST',body:JSON.stringify({measurements:a})});
+  if (r.error) { rd.innerHTML = `<div class="panel" style="border-color:var(--red)"><div class="panel-title text-red">Error</div><div class="panel-sub">${esc(r.error)}</div></div>`; return; }
+  renderCompareResult(rd, r);
+}
+
+function renderQuoteResult(el, r) {
+  const s = r.summary;
+  const includedItems = r.lineItems.filter(li => li.included);
+  const marginPct = parseFloat(s.netMargin) || 0;
+  const marginColor = marginPct >= 30 ? 'green' : marginPct >= 20 ? 'cyan' : marginPct >= 10 ? 'yellow' : 'red';
+
+  let html = `<div class="quote-result" style="margin-top:12px">
+    <!-- Hero Price Row -->
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px">
+      <div style="display:flex;align-items:center;gap:16px">
+        <div class="orb" style="width:52px;height:52px"></div>
+        <div>
+          <div style="font-size:0.72em;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase">${esc(r.offer.name)}${r.offer.badge?' — '+r.offer.badge:''}</div>
+          <div class="quote-total" style="font-size:2.6em">${fmt$(s.totalWithTax)}</div>
+          <div style="font-size:0.78em;color:var(--text-dim)">${fmt$(s.sellingPrice)} + ${fmt$(s.tax)} ${s.taxLabel||'HST'}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:16px;text-align:center">
+        <div><div style="font-family:'Orbitron',monospace;font-size:1.3em;font-weight:700;color:var(--${marginColor})">${s.netMargin}</div><div class="mega-label">Margin</div></div>
+        <div><div style="font-family:'Orbitron',monospace;font-size:1.3em;font-weight:700;color:var(--text-dim)">${s.multiplier}x</div><div class="mega-label">Multi</div></div>
+        ${s.pricePerSQ?`<div><div style="font-family:'Orbitron',monospace;font-size:1.3em;font-weight:700;color:var(--blue)">${fmt$(s.pricePerSQ)}</div><div class="mega-label">/SQ</div></div>`:''}
+      </div>
+    </div>
+
+    ${s.hasEstimatedPricing?'<div style="margin-top:8px"><span class="badge badge-estimated">* Contains estimated pricing</span></div>':''}
+
+    <!-- Margin Progress Bar -->
+    <div style="margin-top:14px">${progressBar(Math.min(marginPct,50)/50*100, marginColor, 'Net Margin', s.netMargin+(s.marginProtected?' (floor)':''))}</div>
+
+    <!-- Line Items -->
+    <div class="line-items" style="margin-top:14px">`;
+  for (const li of includedItems) {
+    html += `<div class="line-item ${li.estimated?'estimated':''}"><div class="name">${esc(li.label)}</div><div class="qty">${li.quantity} ${li.unit}</div><div class="cost">${fmt$(li.total_cost)}</div></div>`;
+  }
+  if (s.byCategory) {
+    html += '<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--glass-border);font-size:0.82em">';
+    for (const [cat,amt] of Object.entries(s.byCategory)) html += `<div style="display:flex;justify-content:space-between;padding:3px 0"><span class="text-dim">${cat}</span><span style="font-family:'Orbitron',monospace;font-size:0.9em">${fmt$(amt)}</span></div>`;
+    html += '</div>';
+  }
+  html += `</div>
+
+    <!-- Action Buttons -->
+    <div style="display:flex;gap:6px;margin-top:16px;flex-wrap:wrap">
+      <button class="btn btn-success" onclick="createEstimateFromQuote()">Save Estimate</button>
+      <button class="btn btn-primary" onclick="generateOutputs('proposal')">Proposal</button>
+      <button class="btn btn-outline" onclick="generateOutputs('contract')">Contract</button>
+      <button class="btn btn-outline" onclick="generateOutputs('all')">All Outputs</button>
+      <button class="btn btn-outline" onclick="setQuoteMode('advanced')">Edit Items</button>
+    </div>
+  </div>`;
+
+  // Materials panel
+  if (r.materialList) {
+    html += `<div class="panel" style="margin-top:10px"><div class="panel-header"><div class="panel-title">Materials</div><span class="badge badge-blue">${r.materialList.itemCount} items</span></div>
+      <div class="table-wrap"><table><thead><tr><th>Item</th><th>Qty</th><th>Unit</th><th class="text-right">Cost</th><th>Source</th></tr></thead><tbody>`;
+    for (const m of r.materialList.items) html += `<tr><td style="font-size:0.82em">${esc(m.item)}${m.estimated?' <span class="text-yellow">*</span>':''}</td><td>${m.quantity}</td><td class="text-dim">${m.unit}</td><td class="text-right" style="font-family:'Orbitron',monospace;font-size:0.82em">${fmt$(m.totalCost)}</td><td class="text-dim" style="font-size:0.68em;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.source)}</td></tr>`;
+    html += `</tbody></table></div>
+      <div style="margin-top:8px;text-align:right;font-weight:700;font-family:'Orbitron',monospace;font-size:1.1em;color:var(--cyan)">Total: ${fmt$(r.materialList.totalMaterialCost)}</div></div>`;
+  }
+  el.innerHTML = html;
+}
+
+function renderCompareResult(el, r) {
+  const offers = r.offers||{};
+  const sorted = Object.entries(offers).sort((a,b) => a[1].summary.sellingPrice - b[1].summary.sellingPrice);
+  let html = `<div class="panel" style="margin-top:12px">
+    <div class="panel-header"><div class="panel-title">Package Comparison</div><span class="badge badge-blue">${sorted.length} packages</span></div>
+    <div class="table-wrap"><table><thead><tr><th>Package</th><th>Badge</th><th class="text-right">Hard</th><th class="text-right">Selling</th><th class="text-right">w/ Tax</th><th class="text-right">Margin</th><th class="text-right">/SQ</th><th>Warranty</th></tr></thead><tbody>`;
+  for (const [slug,q] of sorted) {
+    const s = q.summary;
+    const mp = parseFloat(s.netMargin)||0;
+    const mc = mp >= 30 ? 'green' : mp >= 20 ? 'cyan' : mp >= 10 ? 'yellow' : 'red';
+    html += `<tr style="cursor:pointer" onclick="quoteState.answers._offer_slug='${slug}';runGuidedQuote()">
+      <td style="font-weight:600;font-size:0.85em">${esc(q.offer.name)}</td>
+      <td>${q.offer.badge?`<span class="badge badge-blue">${q.offer.badge}</span>`:''}</td>
+      <td class="text-right text-dim" style="font-family:'Orbitron',monospace;font-size:0.8em">${fmt$(s.hardCost)}</td>
+      <td class="text-right" style="font-family:'Orbitron',monospace;font-size:0.8em">${fmt$(s.sellingPrice)}</td>
+      <td class="text-right" style="font-family:'Orbitron',monospace;font-size:0.9em;font-weight:700;color:var(--cyan)">${fmt$(s.totalWithTax)}</td>
+      <td class="text-right text-${mc}" style="font-weight:600">${s.netMargin}</td>
+      <td class="text-right text-dim" style="font-size:0.78em">${s.pricePerSQ?fmt$(s.pricePerSQ):'—'}</td>
+      <td>${q.offer.warranty_years?q.offer.warranty_years+' yr':'—'}</td></tr>`;
+  }
+  html += '</tbody></table></div></div>';
+  el.innerHTML = html;
+}
+
+// ─── Line item controls ───
+function toggleLineItem(k,v){if(!quoteState.overrides[k])quoteState.overrides[k]={};quoteState.overrides[k].included=v;}
+function overrideQty(k,v){if(!quoteState.overrides[k])quoteState.overrides[k]={};quoteState.overrides[k].quantity=v;}
+function overrideCost(k,v){if(!quoteState.overrides[k])quoteState.overrides[k]={};quoteState.overrides[k].unit_cost=v;}
+async function recalcWithOverrides(){
+  const rd=document.getElementById('quoteResult');rd.innerHTML='<div class="loading"><div class="spinner"></div>Recalculating...</div>';
+  const r=await api('/quote?materials=1',{method:'POST',body:JSON.stringify({offer_id:quoteState.result.offer.id,measurements:quoteState.result.measurements,choices:quoteState.result.choices||{},overrides:quoteState.overrides||{},mode:'override'})});
+  if(r.error){rd.innerHTML=`<div class="panel" style="border-color:var(--red)"><div class="panel-title text-red">Error</div><div class="panel-sub">${esc(r.error)}</div></div>`;return;}
+  quoteState.result=r;renderQuoteResult(rd,r);renderQuoteForm();
+}
+
+async function generateOutputs(type) {
+  if (!quoteState.result) return;
+  const payload = {quote_result:quoteState.result,customer_name:quoteState.answers.customerName||'',property_address:quoteState.answers.address||''};
+  if (type==='proposal'||type==='contract') {
+    const od = await api(`/outputs?type=${type}`,{method:'POST',body:JSON.stringify(payload)});
+    const resp = await fetch(`${API}/render?type=${type}&tenant=${TENANT}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(od)});
+    if(!resp.ok){alert('Render failed');return;}
+    const html=await resp.text();const w=window.open('','_blank');
+    if(!w){alert('Pop-up blocked');return;}w.document.write(html);w.document.close();return;
+  }
+  if (type==='all') {
+    const ad=await api('/outputs?type=all',{method:'POST',body:JSON.stringify(payload)});
+    for (const t of ['proposal','contract']) {
+      const resp=await fetch(`${API}/render?type=${t}&tenant=${TENANT}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(ad.outputs[t])});
+      const html=await resp.text();const w=window.open('','_blank');if(w){w.document.write(html);w.document.close();}
+    }
+    return;
+  }
+  const r=await api(`/outputs?type=${type}`,{method:'POST',body:JSON.stringify(payload)});
+  const w=window.open('','_blank');if(w)w.document.write(`<pre style="background:#060a14;color:#d0daf0;padding:20px;font-family:monospace;font-size:13px;white-space:pre-wrap">${JSON.stringify(r,null,2)}</pre>`);
+}
+
+async function createEstimateFromQuote() {
+  if(!quoteState.result)return;const name=prompt('Customer name:');if(!name)return;const addr=prompt('Property address:');
+  let cid=null;const custs=await api('/customers');const ex=(custs.customers||[]).find(c=>(c.full_name||'').toLowerCase()===name.toLowerCase());
+  if(ex){cid=ex.id;}else{const nc=await api('/customers',{method:'POST',body:JSON.stringify({full_name:name,address:addr})});if(nc.id)cid=nc.id;}
+  const est=await api('/estimates',{method:'POST',body:JSON.stringify({customer_id:cid,address:addr||'',status:'draft',system:quoteState.result.offer.system,package:quoteState.result.offer.slug,total_price:quoteState.result.summary.sellingPrice,total_with_tax:quoteState.result.summary.totalWithTax,measurements:quoteState.result.measurements,choices:quoteState.result.choices,notes:'Generated via Quote Builder — '+quoteState.result.offer.name})});
+  if(est.error){sfx.play('error');alert('Error: '+est.error);return;}sfx.play('success');alert('Estimate saved!');navigate('estimates');
+}
+
+
+// ═══════════════════════════════════════════
+// OFFERS / CUSTOMERS / ESTIMATES / SETTINGS
+// ═══════════════════════════════════════════
+async function renderOffers(m) {
+  m.innerHTML='<div class="loading"><div class="spinner"></div>Loading...</div>';
+  if(!offersCache) offersCache=await api('/quote?offers=1');
+  const offers=offersCache.offers||[];const groups={};
+  for(const o of offers){const c=o.system||'other';if(!groups[c])groups[c]=[];groups[c].push(o);}
+  const sysCount=Object.keys(groups).length;
+
+  let html=`<div class="page-header"><div><h1>Offers</h1><div class="sub">${offers.length} packages &bull; ${sysCount} systems</div></div>
+    <button class="btn btn-sm btn-outline" onclick="guide.start('offers')" style="color:var(--cyan);border-color:rgba(34,211,238,0.2)"><svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button></div>`;
+
+  // System stat row
+  html+=`<div class="dash-grid" style="grid-template-columns:repeat(${Math.min(sysCount,5)},1fr);margin-bottom:10px">`;
+  for(const [sys,items] of Object.entries(groups)){
+    html+=`<div class="panel" style="text-align:center;padding:10px">
+      <div style="font-family:'Orbitron',monospace;font-size:1.5em;font-weight:700;color:var(--cyan)">${items.length}</div>
+      <div class="mega-label">${sys}</div></div>`;
+  }
+  html+='</div>';
+
+  for(const [sys,items] of Object.entries(groups)){
+    html+=`<div class="panel" style="margin-bottom:10px"><div class="panel-header"><div class="panel-title">${sys}</div><span class="badge badge-blue">${items.length}</span></div><div class="table-wrap"><table><thead><tr><th>Name</th><th>Badge</th><th>Warranty</th><th>Estimated</th><th>Sort</th></tr></thead><tbody>`;
+    for(const o of items) html+=`<tr>
+      <td style="font-weight:600;font-size:0.85em">${esc(o.name)}<br><span class="text-dim" style="font-size:0.7em">${esc(o.slug)}</span></td>
+      <td>${o.badge?`<span class="badge badge-blue">${o.badge}</span>`:'—'}</td>
+      <td>${o.warranty_years?o.warranty_years+' yr':'—'}</td>
+      <td>${o.has_estimated_pricing?'<span class="badge badge-yellow">EST</span>':'<span class="badge badge-green">Confirmed</span>'}</td>
+      <td class="text-dim">${o.sort_order}</td></tr>`;
+    html+='</tbody></table></div></div>';
+  }
+  m.innerHTML=html;
+}
+
+async function renderCustomers(m) {
+  m.innerHTML='<div class="loading"><div class="spinner"></div>Loading...</div>';
+  const data=await api('/customers');const custs=data.customers||[];
+  const withEmail=custs.filter(c=>c.email).length;
+  const withPhone=custs.filter(c=>c.phone).length;
+
+  let html=`<div class="page-header"><div><h1>Customers</h1><div class="sub">${custs.length} total</div></div>
+    <div style="display:flex;gap:6px"><button class="btn btn-sm btn-outline" onclick="guide.start('customers')" style="color:var(--cyan);border-color:rgba(34,211,238,0.2)"><svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button><button class="btn btn-primary btn-sm" onclick="showNewCustomer()">+ New</button></div></div>`;
+
+  // Stat row
+  html+=`<div class="stat-row" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">
+    <div class="panel" style="padding:12px 14px;display:flex;align-items:center;gap:10px">
+      <div class="orb purple" style="width:40px;height:40px"></div>
+      <div><div style="font-family:'Orbitron',monospace;font-size:1.6em;font-weight:700;color:var(--purple)">${custs.length}</div><div class="mega-label">Total</div></div></div>
+    <div class="panel" style="padding:12px 14px"><div style="font-family:'Orbitron',monospace;font-size:1.5em;font-weight:700;color:var(--cyan)">${withEmail}</div><div class="mega-label">With Email</div></div>
+    <div class="panel" style="padding:12px 14px"><div style="font-family:'Orbitron',monospace;font-size:1.5em;font-weight:700;color:var(--green)">${withPhone}</div><div class="mega-label">With Phone</div></div>
+  </div>`;
+
+  html+='<div class="panel"><div class="panel-header"><div class="panel-title">Customer Database</div><span class="badge badge-purple">'+custs.length+'</span></div><div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Address</th></tr></thead><tbody>';
+  for(const c of custs) html+=`<tr><td style="font-weight:600;font-size:0.85em">${esc(c.full_name||c.name||'—')}</td><td class="text-dim" style="font-size:0.82em">${esc(c.email||'—')}</td><td class="text-dim" style="font-size:0.82em">${esc(c.phone||'—')}</td><td class="text-dim" style="font-size:0.82em">${esc(c.address||'—')}</td></tr>`;
+  html+='</tbody></table></div></div>';m.innerHTML=html;
+}
+
+function showNewCustomer(){
+  const m=document.getElementById('main');
+  m.innerHTML=`<div class="page-header"><div><h1>New Customer</h1></div></div><div class="panel"><div class="form-grid">
+    <div class="form-group"><label class="form-label">Full Name *</label><input type="text" id="nc_name"></div>
+    <div class="form-group"><label class="form-label">Email</label><input type="email" id="nc_email"></div>
+    <div class="form-group"><label class="form-label">Phone</label><input type="tel" id="nc_phone"></div>
+    <div class="form-group"><label class="form-label">Address</label><input type="text" id="nc_address"></div>
+    <div class="form-group"><label class="form-label">City</label><input type="text" id="nc_city"></div>
+    <div class="form-group"><label class="form-label">Province</label><input type="text" id="nc_province" value="NB"></div>
+    <div class="form-group form-full"><label class="form-label">Notes</label><textarea id="nc_notes" rows="3"></textarea></div></div>
+    <div style="display:flex;gap:8px;margin-top:14px"><button class="btn btn-primary" onclick="createCustomer()">Create</button><button class="btn btn-outline" onclick="navigate('customers')">Cancel</button></div></div>`;
+}
+async function createCustomer(){const n=document.getElementById('nc_name').value.trim();if(!n){alert('Name required');return;}
+  await api('/customers',{method:'POST',body:JSON.stringify({full_name:n,email:document.getElementById('nc_email').value.trim()||null,phone:document.getElementById('nc_phone').value.trim()||null,address:document.getElementById('nc_address').value.trim()||null,city:document.getElementById('nc_city').value.trim()||null,province:document.getElementById('nc_province').value.trim()||null,notes:document.getElementById('nc_notes').value.trim()||null})});navigate('customers');}
+
+async function renderEstimates(m) {
+  m.innerHTML='<div class="loading"><div class="spinner"></div>Loading...</div>';const data=await api('/estimates');const ests=data.estimates||[];
+  const totalVal=ests.reduce((s,e)=>s+(e.total_price||0),0);
+  const draft=ests.filter(e=>e.status==='draft').length;
+  const sent=ests.filter(e=>e.status==='sent').length;
+  const accepted=ests.filter(e=>e.status==='accepted').length;
+
+  let html=`<div class="page-header"><div><h1>Estimates</h1><div class="sub">${ests.length} total</div></div>
+    <div style="display:flex;gap:6px"><button class="btn btn-sm btn-outline" onclick="guide.start('estimates')" style="color:var(--cyan);border-color:rgba(34,211,238,0.2)"><svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button><button class="btn btn-primary btn-sm" onclick="navigate('quote')">+ New Quote</button></div></div>`;
+
+  // Stat row
+  html+=`<div class="stat-row" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px">
+    <div class="panel" style="padding:12px 14px"><div class="mega-num cyan sm" style="font-size:1.8em">${fmt$(totalVal)}</div><div class="mega-label">Pipeline</div></div>
+    <div class="panel" style="padding:12px 14px"><div style="font-family:'Orbitron',monospace;font-size:1.5em;font-weight:700;color:var(--text-dim)">${draft}</div><div class="mega-label">Draft</div></div>
+    <div class="panel" style="padding:12px 14px"><div style="font-family:'Orbitron',monospace;font-size:1.5em;font-weight:700;color:var(--blue)">${sent}</div><div class="mega-label">Sent</div></div>
+    <div class="panel" style="padding:12px 14px"><div style="font-family:'Orbitron',monospace;font-size:1.5em;font-weight:700;color:var(--green)">${accepted}</div><div class="mega-label">Accepted</div></div>
+  </div>`;
+
+  html+='<div class="panel"><div class="panel-header"><div class="panel-title">All Estimates</div><span class="badge badge-blue">'+ests.length+'</span></div><div class="table-wrap"><table><thead><tr><th>Customer</th><th>Address</th><th>Status</th><th class="text-right">Amount</th><th>Created</th></tr></thead><tbody>';
+  for(const e of ests){const sc=e.status==='accepted'?'green':e.status==='sent'?'blue':'dim';
+    html+=`<tr><td style="font-weight:600;font-size:0.85em">${esc(e.customer?.full_name||'—')}</td><td class="text-dim" style="font-size:0.82em">${esc(e.address||'—')}</td><td><span class="badge badge-${sc}">${e.status||'draft'}</span></td><td class="text-right text-cyan" style="font-family:'Orbitron',monospace;font-size:0.85em">${e.total_price?fmt$(e.total_price):'—'}</td><td class="text-dim" style="font-size:0.78em">${e.created_at?new Date(e.created_at).toLocaleDateString():'—'}</td></tr>`;}
+  html+='</tbody></table></div></div>';m.innerHTML=html;
+}
+
+async function renderSettings(m) {
+  m.innerHTML='<div class="loading"><div class="spinner"></div>Loading...</div>';const s=await api('/settings');
+  let html=`<div class="page-header"><div><h1>Settings</h1><div class="sub">Tenant configuration &bull; changes apply on next quote</div></div>
+    <div style="display:flex;gap:6px"><button class="btn btn-sm btn-outline" onclick="guide.start('settings')" style="color:var(--cyan);border-color:rgba(34,211,238,0.2)"><svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button><button class="btn btn-primary btn-sm" onclick="saveSettings()">Save All</button></div></div>`;
+
+  // Branding + Tax side by side
+  html+=`<div class="dash-grid" style="grid-template-columns:1fr 1fr;margin-bottom:10px">
+    <div class="panel"><div class="panel-header"><div class="panel-title">Branding</div></div><div class="form-grid">
+      <div class="form-group"><label class="form-label">Company</label><input type="text" id="s_company_name" value="${esc(s.company_name||'')}"></div>
+      <div class="form-group"><label class="form-label">Phone</label><input type="tel" id="s_company_phone" value="${esc(s.company_phone||'')}"></div>
+      <div class="form-group"><label class="form-label">Email</label><input type="email" id="s_company_email" value="${esc(s.company_email||'')}"></div>
+      <div class="form-group"><label class="form-label">Website</label><input type="text" id="s_company_website" value="${esc(s.company_website||'')}"></div>
+      <div class="form-group"><label class="form-label">Accent Color</label><input type="text" id="s_accent_color" value="${esc(s.accent_color||'#22d3ee')}"></div>
+      <div class="form-group"><label class="form-label">Tagline</label><input type="text" id="s_tagline" value="${esc(s.tagline||'')}"></div></div></div>
+    <div class="panel"><div class="panel-header"><div class="panel-title">Tax & Overhead</div></div><div class="form-grid">
+      <div class="form-group"><label class="form-label">Tax Rate</label><input type="number" id="s_tax_rate" value="${s.tax_rate||0.15}" step="0.01"><div class="form-hint">0.15 = 15%</div></div>
+      <div class="form-group"><label class="form-label">Tax Label</label><input type="text" id="s_tax_label" value="${esc(s.tax_label||'HST')}"></div>
+      <div class="form-group"><label class="form-label">Rounding</label><input type="number" id="s_price_rounding" value="${s.price_rounding||25}"></div>
+      <div class="form-group"><label class="form-label">Daily Overhead</label><input type="number" id="s_daily_overhead" value="${s.daily_overhead||90}"></div>
+      <div class="form-group"><label class="form-label">Crew SQ/Day</label><input type="number" id="s_crew_sq" value="${s.crew_sq_per_day||12}"></div>
+      <div class="form-group"><label class="form-label">Crew SqFt/Day (Ext)</label><input type="number" id="s_crew_ext" value="${s.crew_exterior_sqft_per_day||500}"></div></div></div>
+  </div>`;
+  const jsonFields = [
+    ['Labor — Roofing','s_labor_roofing',s.labor_rates_roofing],
+    ['Labor — Exterior','s_labor_exterior',s.labor_rates_exterior],
+    ['Distance Tiers','s_distance',s.distance_tiers],
+    ['Multipliers','s_multipliers',s.default_multipliers],
+    ['Margin Floors','s_margins',s.margin_floors],
+    ['Mobilization','s_mobilization',s.mobilization_rules],
+    ['Remediation','s_remediation',s.remediation_tiers]
+  ];
+  html+='<div class="dash-grid" style="grid-template-columns:1fr 1fr">';
+  for(const [label,id,val] of jsonFields) html+=`<div class="panel"><div class="panel-header"><div class="panel-title">${label}</div></div><textarea id="${id}" style="font-family:monospace;font-size:0.75em;min-height:100px;line-height:1.4">${esc(JSON.stringify(val||{},null,2))}</textarea></div>`;
+  html+='</div>';
+  html+=`<div style="margin-top:12px;display:flex;gap:8px"><button class="btn btn-primary" onclick="saveSettings()">Save All</button><button class="btn btn-outline" onclick="navigate('settings')">Reset</button></div>`;
+  m.innerHTML=html;
+}
+
+function tryJSON(id){try{return JSON.parse(document.getElementById(id).value);}catch(e){alert('Invalid JSON: '+id);return null;}}
+async function saveSettings(){
+  const jf=['s_labor_roofing','s_labor_exterior','s_distance','s_multipliers','s_margins','s_mobilization','s_remediation'];
+  const parsed={};for(const id of jf){const v=tryJSON(id);if(!v)return;parsed[id]=v;}
+  const u={company_name:document.getElementById('s_company_name').value,company_phone:document.getElementById('s_company_phone').value,
+    company_email:document.getElementById('s_company_email').value,company_website:document.getElementById('s_company_website').value,
+    accent_color:document.getElementById('s_accent_color').value,tagline:document.getElementById('s_tagline').value,
+    tax_rate:parseFloat(document.getElementById('s_tax_rate').value),tax_label:document.getElementById('s_tax_label').value,
+    price_rounding:parseInt(document.getElementById('s_price_rounding').value),daily_overhead:parseFloat(document.getElementById('s_daily_overhead').value),
+    crew_sq_per_day:parseFloat(document.getElementById('s_crew_sq').value),crew_exterior_sqft_per_day:parseFloat(document.getElementById('s_crew_ext').value),
+    labor_rates_roofing:parsed.s_labor_roofing,labor_rates_exterior:parsed.s_labor_exterior,distance_tiers:parsed.s_distance,
+    default_multipliers:parsed.s_multipliers,margin_floors:parsed.s_margins,mobilization_rules:parsed.s_mobilization,remediation_tiers:parsed.s_remediation};
+  const r=await api('/settings',{method:'PUT',body:JSON.stringify(u)});
+  alert(r.error?'Error: '+r.error:'Settings saved!');
+}
+
+// ═══════════════════════════════════════════
+// CUTSCENE ENGINE
+// ═══════════════════════════════════════════
+const cutscene = {
+  done: false,
+
+  shouldPlay() {
+    return !localStorage.getItem('ryujin_cutscene_seen');
+  },
+
+  init() {
+    const el = document.getElementById('cutscene');
+    if (!el) return;
+
+    if (!this.shouldPlay()) {
+      el.remove();
+      renderPage();
+      return;
+    }
+
+    // Hide main UI during cutscene
+    document.querySelector('.layout').style.visibility = 'hidden';
+    document.querySelector('.video-bg').style.visibility = 'hidden';
+    const bottomBar = document.getElementById('bottomBar');
+    if (bottomBar) bottomBar.style.visibility = 'hidden';
+
+    // Play intro video
+    const video = document.getElementById('csVideo');
+    video.style.opacity = '1';
+    video.play().catch(() => {});
+
+    // When video ends (or after 15s fallback), show ACTIVATE
+    const showActivate = () => {
+      if (this.done) return;
+      video.style.transition = 'opacity 1.5s';
+      video.style.opacity = '0.15';
+      document.getElementById('csActivatePhase').style.opacity = '1';
+      sfx.play('success');
+    };
+    video.addEventListener('ended', showActivate, { once: true });
+    setTimeout(showActivate, 15000); // fallback if video loops or is long
+  },
+
+  // Activate pressed
+  activate() {
+    if (this.done) return;
+    this.done = true;
+    sfx.play('success');
+    const btn = document.getElementById('csActivate');
+    btn.textContent = 'INITIALIZING...';
+    btn.style.pointerEvents = 'none';
+    btn.style.boxShadow = '0 0 80px rgba(34,211,238,0.4)';
+
+    setTimeout(() => this.finish(), 800);
+  },
+
+  // Finish: remove cutscene, show app
+  finish() {
+    this.done = true;
+    localStorage.setItem('ryujin_cutscene_seen', '1');
+
+    const el = document.getElementById('cutscene');
+    el.classList.add('done');
+
+    // Show main UI
+    document.querySelector('.layout').style.visibility = '';
+    document.querySelector('.video-bg').style.visibility = '';
+    const bottomBar = document.getElementById('bottomBar');
+    if (bottomBar) bottomBar.style.visibility = '';
+
+    renderPage();
+
+    setTimeout(() => el.remove(), 1000);
+
+    // Launch welcome tutorial after cutscene
+    if (typeof guide !== 'undefined' && !guide.hasSeen('welcome') && guide.isAutoEnabled()) {
+      setTimeout(() => guide.start('welcome'), 1200);
+    }
+  },
+
+  // Skip
+  skip() {
+    this.done = true;
+    this.finish();
+  },
+
+  // Reset (for replay from menu)
+  reset() {
+    localStorage.removeItem('ryujin_cutscene_seen');
+  }
+};
+
+// ─── Init ───
+cutscene.init();
+
+
+// ═══════════════════════════════════════════
+// RYUJIN GUIDE — MTGA-Style Tutorial System
+// ═══════════════════════════════════════════
+
+const guide = {
+  active: false,
+  step: 0,
+  flow: null,
+  overlay: null,
+  bubble: null,
+
+  // ── Tutorial Flows ──
+  flows: {
+    welcome: [
+      { msg: "Commander. Welcome to Ryujin OS — your storm-forged command center.", pos: 'center' },
+      { msg: "Every quote, customer, and dollar flows through here. Use the bottom toolbar to navigate between sections.", pos: 'center' },
+      { msg: "Ready to see it in action? Open the tutorial menu (?) and pick Test Drive — I'll walk you through a real quote.", pos: 'center' },
+    ],
+    testdrive: [
+      { msg: "Let's build a real quote together. I'll take you through the whole cycle — system to close.", pos: 'center',
+        action: () => { quoteState.system='residential'; quoteState.mode='guided'; quoteState.answers={}; quoteState.result=null; navigate('quote'); } },
+      { msg: "I've selected Residential — your bread and butter. This is where most jobs start.", target: '[style*="grid-template-columns:repeat(5"]', pos: 'below', highlight: true },
+      { msg: "Now I'm filling in the job details. 20 squares, 2 layers to strip, 6/12 pitch, standard ridge, no skylights.", pos: 'center',
+        action: () => {
+          quoteState.answers = { roof_sqft: 2000, layers: 2, pitch: '6/12', ridge_lf: 40, valley_lf: 0, skylights: 0, stories: 1, distance_km: 15 };
+          renderQuoteForm();
+          // Actually set the form field values
+          setTimeout(() => {
+            document.querySelectorAll('#quoteForm input, #quoteForm select').forEach(el => {
+              const key = el.dataset?.qkey;
+              if (key && quoteState.answers[key] !== undefined) el.value = quoteState.answers[key];
+            });
+          }, 400);
+        }},
+      { msg: "The form is filled. Now let's pick the Gold package — your best margin-to-value ratio.", target: '#quoteForm', pos: 'above', highlight: true,
+        action: () => {
+          setTimeout(() => {
+            const sel = document.querySelector('#qOffer');
+            if (sel) {
+              const gold = Array.from(sel.options).find(o => o.value.includes('gold'));
+              if (gold) { sel.value = gold.value; quoteState.answers._offer_slug = gold.value; }
+            }
+          }, 300);
+        }},
+      { msg: "Everything's set. Watch — I'm hitting Calculate now. The engine runs materials + labor + multiplier in one pass.", pos: 'center',
+        action: () => { setTimeout(() => runGuidedQuote(), 300); }},
+      { msg: "There's your quote. The big number is what the customer sees — tax included. Check the margin bar below it.", target: '#quoteResult', pos: 'above', highlight: true,
+        wait: 'result' },
+      { msg: "Green margin = money. The line items show each scope element. Every number is backed by merchant pricing or tenant config.", target: '#quoteResult', pos: 'above' },
+      { msg: "From here you can: Save Estimate to lock it in, generate a Proposal (client-ready PDF), or a Contract with signature blocks.", target: '#quoteResult', pos: 'above' },
+      { msg: "Hit Compare All on your next quote to see every package side by side — Economy through Diamond. Let the numbers do the selling.", pos: 'center' },
+      { msg: "That's the full cycle. You're ready. Go build some quotes, Commander.", pos: 'center' },
+    ],
+    quote: [
+      { msg: "This is the Quote Builder. First — pick a roofing system.", target: '.dash-grid', pos: 'below', highlight: true },
+      { msg: "Residential is your bread and butter. Metal, flat, exterior, combined — each has its own pricing engine.", target: '.dash-grid', pos: 'below' },
+      { msg: "Now fill in the job details. Square footage, layers, pitch — the engine needs measurements to calculate.", target: '#quoteForm', pos: 'above', highlight: true, wait: 'form' },
+      { msg: "Pick a package tier. Economy for price-shoppers, Gold for the sweet spot, Platinum and Diamond for the premium close.", target: '#quoteForm', pos: 'above', highlight: true },
+      { msg: "Hit Calculate when you're ready. The engine runs materials + labor + multiplier in one pass.", target: '#quoteForm', pos: 'above', wait: 'calculate' },
+      { msg: "Or hit Compare All to see every package side by side — margin, price per square, warranty. Let the numbers sell.", target: '#quoteForm', pos: 'above' },
+    ],
+    result: [
+      { msg: "Here's your quote. That big number is what the customer sees — tax included, ready to present.", target: '.quote-result', pos: 'above', highlight: true },
+      { msg: "The margin bar tells you if you're making money. Green is good. Yellow means watch it. Red means rework.", target: '.quote-result', pos: 'above' },
+      { msg: "Save Estimate locks it in the database. Proposal generates a print-ready client document. Contract adds scope + signature blocks.", target: '.quote-result', pos: 'above' },
+      { msg: "Edit Items switches to Advanced mode — override any line item, toggle scope in/out, adjust quantities.", target: '.quote-result', pos: 'above' },
+      { msg: "That's the full cycle. Pick system → fill details → calculate → present → close. The dragon handles the math.", pos: 'center' },
+    ],
+    dashboard: [
+      { msg: "This is your Command Center. Every panel is a live readout — pipeline, crew, estimates, systems.", pos: 'center' },
+      { msg: "The top row shows your hero numbers. Pipeline value, estimate count, customer base, active crew tickets.", target: '.dash-grid', pos: 'below', highlight: true },
+      { msg: "Storm Analytics tracks your conversion funnel. Quote rate, close rate, efficiency — all at a glance.", target: '.dash-grid', pos: 'below' },
+      { msg: "The Alerts panel flags anything that needs your attention — urgent tickets, stuck drafts, system warnings.", pos: 'center' },
+      { msg: "Use the bottom toolbar or sidebar to jump between sections. You're in control, Commander.", pos: 'center' },
+    ],
+    estimates: [
+      { msg: "This is your estimate pipeline. Every quote you save lands here — from first draft to signed deal.", pos: 'center' },
+      { msg: "The stat bar up top gives you a snapshot: total pipeline value, how many are still draft, sent, or accepted.", target: '.dash-grid', pos: 'below', highlight: true },
+      { msg: "Draft means it's priced but not sent. Sent means the customer has it. Accepted means you're closing.", pos: 'center' },
+      { msg: "Click + New Quote to start a fresh quote from the builder. Every estimate links back to a customer record.", pos: 'center' },
+      { msg: "Your goal: move drafts to sent, sent to accepted. That's the velocity that drives revenue.", pos: 'center' },
+    ],
+    customers: [
+      { msg: "Your customer database. Everyone you've quoted, closed, or even talked to lives here.", pos: 'center' },
+      { msg: "The header shows your totals — how many contacts you have, how many have email and phone on file.", target: '.dash-grid', pos: 'below', highlight: true },
+      { msg: "Hit + New to add a customer manually. Name is required, everything else is optional but helps with follow-up.", pos: 'center' },
+      { msg: "Every estimate and project links to a customer. Build the database first, quote faster later.", pos: 'center' },
+    ],
+    offers: [
+      { msg: "Offers are your pricing packages — the tiers you present to customers.", pos: 'center' },
+      { msg: "Each system type (residential, metal, flat, exterior, combined) has its own set of offers.", target: '.dash-grid', pos: 'below', highlight: true },
+      { msg: "Economy is your entry point. Gold is the sweet spot. Platinum and Diamond are premium — higher materials, longer warranties, bigger margins.", pos: 'center' },
+      { msg: "Offers marked EST use estimated pricing — they work but the exact costs aren't confirmed from suppliers yet.", pos: 'center' },
+      { msg: "The quote engine pulls scope templates from each offer to decide which line items to include. More offer detail = more accurate quotes.", pos: 'center' },
+    ],
+    settings: [
+      { msg: "This is where you tune the engine. Every rate, margin, and multiplier is configurable per tenant.", pos: 'center' },
+      { msg: "Branding controls what appears on proposals and contracts — company name, phone, email, accent color.", target: '.dash-grid', pos: 'below', highlight: true },
+      { msg: "Tax & Overhead sets your HST rate, daily overhead cost, and crew production rates. These feed directly into quote calculations.", target: '.dash-grid', pos: 'below' },
+      { msg: "The JSON blocks below control labor rates, distance tiers, multipliers, margin floors, mobilization rules, and remediation pricing.", pos: 'center' },
+      { msg: "Every change applies on the next quote — nothing retroactive. Hit Save All when you're done.", pos: 'center' },
+    ],
+  },
+
+  // Flow metadata for the menu
+  flowMeta: {
+    testdrive: { label: 'Test Drive', icon: '🚀', desc: 'Guided walkthrough — builds a real quote' },
+    welcome: { label: 'Welcome Tour', icon: '🐉', desc: 'Full intro walkthrough' },
+    dashboard: { label: 'Dashboard', icon: '📊', desc: 'Command center overview' },
+    quote: { label: 'Quote Builder', icon: '⚡', desc: 'How to build quotes' },
+    result: { label: 'Quote Results', icon: '💰', desc: 'Reading & using results' },
+    estimates: { label: 'Estimates', icon: '📋', desc: 'Pipeline management' },
+    customers: { label: 'Customers', icon: '👥', desc: 'Customer database' },
+    offers: { label: 'Offers', icon: '🏷️', desc: 'Package tiers' },
+    settings: { label: 'Settings', icon: '⚙️', desc: 'Engine configuration' },
+  },
+
+  // ── CSS injection ──
+  injectStyles() {
+    if (document.getElementById('guide-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'guide-styles';
+    style.textContent = `
+      .guide-overlay{position:fixed;inset:0;z-index:8000;pointer-events:none;transition:opacity 0.4s}
+      .guide-backdrop{position:fixed;inset:0;background:rgba(4,8,16,0.45);z-index:7999;transition:opacity 0.5s;cursor:pointer}
+      .guide-backdrop.hidden{opacity:0;pointer-events:none}
+
+      .guide-spotlight{position:absolute;z-index:8001;border-radius:12px;
+        box-shadow:0 0 0 4000px rgba(4,8,16,0.55),0 0 15px rgba(34,211,238,0.15);
+        border:1.5px solid rgba(34,211,238,0.25);transition:all 0.6s cubic-bezier(0.16,1,0.3,1);pointer-events:none}
+
+      .guide-bubble{
+        position:fixed;z-index:8010;
+        bottom:74px;left:50%;transform:translateX(-50%);
+        width:min(440px, calc(100vw - 24px));height:160px;
+        padding:0;
+        background:rgba(10,16,32,0.94);border:1px solid rgba(34,211,238,0.15);
+        border-radius:14px;backdrop-filter:blur(24px) saturate(1.4);
+        box-shadow:0 6px 40px rgba(0,0,0,0.45);
+        pointer-events:auto;overflow:hidden;
+        display:flex;flex-direction:column}
+      .guide-bubble.entering{animation:bubbleIn 0.5s ease both}
+      .guide-bubble::before{content:'';position:absolute;top:0;left:20%;right:20%;height:1px;
+        background:linear-gradient(90deg,transparent,rgba(34,211,238,0.4),transparent);opacity:0.8}
+      @keyframes bubbleIn{from{opacity:0;transform:translateX(-50%) translateY(16px)}to{opacity:1;transform:translateX(-50%)}}
+
+      .guide-mascot{display:flex;align-items:center;gap:8px;padding:12px 14px 0}
+      .guide-mascot-avatar{width:36px;height:36px;border-radius:50%;flex-shrink:0;
+        border:1.5px solid rgba(34,211,238,0.25);
+        box-shadow:0 0 10px rgba(34,211,238,0.15);
+        overflow:hidden;background:#060a14}
+      .guide-mascot-avatar video{width:100%;height:100%;object-fit:cover}
+      .guide-mascot-info{flex:1;display:flex;align-items:center;gap:6px}
+      .guide-mascot-name{font-family:'Orbitron',monospace;font-size:0.6em;font-weight:600;color:rgba(34,211,238,0.7);letter-spacing:1.5px}
+      .guide-mascot-role{font-size:0.55em;color:rgba(160,190,230,0.35)}
+
+      .guide-text{padding:8px 14px 6px;font-size:0.85em;line-height:1.55;color:rgba(208,218,240,0.9);flex:1;overflow:hidden}
+      .guide-text .typing-cursor{display:inline-block;width:1.5px;height:0.9em;background:rgba(34,211,238,0.6);
+        animation:cursorBlink 0.8s step-end infinite;margin-left:1px;vertical-align:text-bottom}
+      @keyframes cursorBlink{0%,100%{opacity:1}50%{opacity:0}}
+
+      .guide-footer{display:flex;align-items:center;justify-content:space-between;padding:0 14px 10px;gap:8px}
+      .guide-dots{display:flex;gap:4px}
+      .guide-dot{width:5px;height:5px;border-radius:50%;background:rgba(34,211,238,0.12);transition:all 0.3s}
+      .guide-dot.active{background:rgba(34,211,238,0.7);width:16px;border-radius:3px}
+      .guide-dot.done{background:rgba(34,211,238,0.3)}
+
+      .guide-btns{display:flex;gap:5px}
+      .guide-btn{padding:5px 12px;border:none;border-radius:7px;font-family:inherit;font-size:0.72em;
+        font-weight:600;cursor:pointer;transition:all 0.2s;letter-spacing:0.3px}
+      .guide-btn-next{background:rgba(34,211,238,0.15);color:#22d3ee;border:1px solid rgba(34,211,238,0.2)}
+      .guide-btn-next:hover{background:rgba(34,211,238,0.25)}
+      .guide-btn-skip{background:none;color:rgba(160,190,230,0.4);border:none}
+      .guide-btn-skip:hover{color:rgba(160,190,230,0.7)}
+
+      .guide-help-btn{position:fixed;bottom:76px;right:90px;z-index:999;width:36px;height:36px;border-radius:50%;
+        background:rgba(34,211,238,0.08);border:1px solid rgba(34,211,238,0.15);color:rgba(34,211,238,0.6);
+        cursor:pointer;display:flex;align-items:center;justify-content:center;
+        font-family:'Orbitron',monospace;font-size:0.8em;font-weight:700;transition:all 0.3s}
+      .guide-help-btn:hover{background:rgba(34,211,238,0.15);color:#22d3ee;box-shadow:0 0 15px rgba(34,211,238,0.15)}
+
+      .guide-menu{position:fixed;bottom:120px;right:70px;z-index:9000;width:280px;
+        background:rgba(12,20,40,0.96);border:1px solid rgba(34,211,238,0.2);
+        border-radius:14px;backdrop-filter:blur(30px) saturate(1.5);
+        box-shadow:0 8px 50px rgba(0,0,0,0.5),0 0 30px rgba(34,211,238,0.06);
+        padding:0;overflow:hidden;animation:bubbleIn 0.3s ease;display:none}
+      .guide-menu.open{display:block}
+      .guide-menu::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;
+        background:linear-gradient(90deg,transparent,#22d3ee,#7c3aed,transparent);opacity:0.5}
+      .guide-menu-head{padding:12px 14px 8px;border-bottom:1px solid rgba(34,211,238,0.08);
+        display:flex;justify-content:space-between;align-items:center}
+      .guide-menu-title{font-family:'Orbitron',monospace;font-size:0.65em;font-weight:600;
+        letter-spacing:2px;text-transform:uppercase;color:var(--text-dim)}
+      .guide-menu-close{width:24px;height:24px;border:none;background:rgba(34,211,238,0.06);
+        color:var(--text-dim);border-radius:6px;cursor:pointer;font-size:0.9em;
+        display:flex;align-items:center;justify-content:center;transition:all 0.2s}
+      .guide-menu-close:hover{background:rgba(34,211,238,0.12);color:#22d3ee}
+
+      .guide-menu-item{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;
+        transition:all 0.15s;border-bottom:1px solid rgba(34,211,238,0.04)}
+      .guide-menu-item:last-child{border:none}
+      .guide-menu-item:hover{background:rgba(34,211,238,0.05)}
+      .guide-menu-item .gmi-icon{font-size:1.1em;width:24px;text-align:center;flex-shrink:0}
+      .guide-menu-item .gmi-info{flex:1;min-width:0}
+      .guide-menu-item .gmi-label{font-size:0.8em;font-weight:600;color:var(--text)}
+      .guide-menu-item .gmi-desc{font-size:0.62em;color:var(--text-dim);margin-top:1px}
+      .guide-menu-item .gmi-seen{font-size:0.55em;color:rgba(74,222,128,0.6);
+        font-family:'Orbitron',monospace;letter-spacing:0.5px}
+
+      .guide-menu-footer{padding:8px 14px;border-top:1px solid rgba(34,211,238,0.08);
+        display:flex;justify-content:space-between;align-items:center}
+      .guide-menu-toggle{display:flex;align-items:center;gap:8px;font-size:0.68em;color:var(--text-dim);cursor:pointer}
+      .guide-menu-toggle input{accent-color:#22d3ee;cursor:pointer}
+      .guide-menu-reset{font-size:0.62em;color:rgba(248,113,113,0.6);cursor:pointer;
+        border:none;background:none;font-family:inherit;padding:4px 8px;border-radius:6px;transition:all 0.2s}
+      .guide-menu-reset:hover{color:var(--red);background:rgba(248,113,113,0.06)}
+    `;
+    document.head.appendChild(style);
+  },
+
+  // ── Start a flow ──
+  start(flowName) {
+    this.injectStyles();
+    const flow = this.flows[flowName];
+    if (!flow) return;
+    this.flow = flow;
+    this.step = 0;
+    this.active = true;
+    sfx.play('navigate');
+
+    // Create overlay container
+    if (!this.overlay) {
+      this.overlay = document.createElement('div');
+      this.overlay.className = 'guide-overlay';
+      this.overlay.id = 'guideOverlay';
+      document.body.appendChild(this.overlay);
+    }
+
+    // Create backdrop
+    let backdrop = document.getElementById('guideBackdrop');
+    if (!backdrop) {
+      backdrop = document.createElement('div');
+      backdrop.className = 'guide-backdrop';
+      backdrop.id = 'guideBackdrop';
+      backdrop.onclick = () => this.next();
+      document.body.appendChild(backdrop);
+    }
+    backdrop.classList.remove('hidden');
+
+    this.showStep();
+  },
+
+  // ── Show current step ──
+  showStep() {
+    if (!this.active || !this.flow) return;
+    const s = this.flow[this.step];
+    if (!s) { this.end(); return; }
+
+    // If step waits for result, don't render yet — onQuoteResult will advance
+    if (s.wait === 'result') {
+      // Poll for result element
+      this._waitForEl('#quoteResult .quote-result', () => this._renderStep(s), 10000);
+      return;
+    }
+
+    // Run action if present
+    if (s.action) {
+      s.action();
+      // Wait for page render
+      setTimeout(() => this._renderStep(s), 500);
+    } else {
+      this._renderStep(s);
+    }
+  },
+
+  // ── Wait for element to appear ──
+  _waitForEl(sel, cb, timeout) {
+    const start = Date.now();
+    const check = () => {
+      if (!this.active) return;
+      const el = document.querySelector(sel);
+      if (el) { cb(); return; }
+      if (Date.now() - start > timeout) { cb(); return; }
+      setTimeout(check, 300);
+    };
+    check();
+  },
+
+  _renderStep(s) {
+    const overlay = this.overlay;
+
+    // ── Spotlight (updates per step) ──
+    let spot = overlay.querySelector('.guide-spotlight');
+    if (s.target && s.highlight) {
+      const el = document.querySelector(s.target);
+      if (el) {
+        const r = el.getBoundingClientRect();
+        const pad = 8;
+        if (!spot) { spot = document.createElement('div'); spot.className = 'guide-spotlight'; overlay.appendChild(spot); }
+        spot.style.cssText = `top:${r.top - pad}px;left:${r.left - pad}px;width:${r.width + pad*2}px;height:${r.height + pad*2}px`;
+      }
+    } else if (spot) {
+      spot.remove();
+    }
+
+    // ── Bubble (create once, reuse) ──
+    if (!this.bubble || !this.bubble.parentNode) {
+      const bubble = document.createElement('div');
+      bubble.className = 'guide-bubble entering';
+      bubble.innerHTML = `
+        <div class="guide-mascot">
+          <div class="guide-mascot-avatar"><video autoplay muted loop playsinline><source src="/assets/Talking head.mp4" type="video/mp4"></video></div>
+          <div class="guide-mascot-info">
+            <span class="guide-mascot-name">RYUJIN</span>
+            <span class="guide-mascot-role" id="guideStep"></span>
+          </div>
+        </div>
+        <div class="guide-text" id="guideText"></div>
+        <div class="guide-footer">
+          <div class="guide-dots" id="guideDots"></div>
+          <div class="guide-btns">
+            <button class="guide-btn guide-btn-skip" onclick="guide.end()">Skip</button>
+            <button class="guide-btn guide-btn-next" id="guideNextBtn" onclick="guide.next()">Next →</button>
+          </div>
+        </div>`;
+      overlay.appendChild(bubble);
+      this.bubble = bubble;
+      // Remove entering class after animation
+      setTimeout(() => bubble.classList.remove('entering'), 600);
+    }
+
+    // ── Update content inside fixed box ──
+    const stepEl = document.getElementById('guideStep');
+    if (stepEl) stepEl.textContent = `${this.step + 1}/${this.flow.length}`;
+
+    const dotsEl = document.getElementById('guideDots');
+    if (dotsEl) dotsEl.innerHTML = this.flow.map((_,i) =>
+      `<div class="guide-dot ${i < this.step ? 'done' : i === this.step ? 'active' : ''}"></div>`
+    ).join('');
+
+    const nextBtn = document.getElementById('guideNextBtn');
+    if (nextBtn) nextBtn.textContent = this.step === this.flow.length - 1 ? 'Done' : 'Next →';
+
+    // Typewriter — clear and retype
+    const textEl = document.getElementById('guideText');
+    if (textEl) {
+      textEl.innerHTML = '';
+      this._typewrite(s.msg, textEl);
+    }
+  },
+
+  // ── Typewriter ──
+  _typewrite(text, el, i = 0) {
+    if (!this.active) return;
+    if (i <= text.length) {
+      el.innerHTML = text.substring(0, i) + (i < text.length ? '<span class="typing-cursor"></span>' : '');
+      this._typeTimer = setTimeout(() => this._typewrite(text, el, i + 1), 22);
+    }
+  },
+
+  // ── Next step ──
+  next() {
+    if (!this.active) return;
+    clearTimeout(this._typeTimer);
+    this.step++;
+    if (this.step >= this.flow.length) {
+      this.end();
+      return;
+    }
+    sfx.play('click');
+    this.showStep();
+  },
+
+  // ── Seen tracking ──
+  _seenKey(name) { return 'ryujin_guide_' + name; },
+  hasSeen(name) { return localStorage.getItem(this._seenKey(name)) === '1'; },
+  markSeen(name) { localStorage.setItem(this._seenKey(name), '1'); },
+  clearSeen(name) { localStorage.removeItem(this._seenKey(name)); },
+  clearAll() { for (const k of Object.keys(this.flows)) this.clearSeen(k); this.setAutoEnabled(true); },
+  isAutoEnabled() { return localStorage.getItem('ryujin_guide_auto') !== '0'; },
+  setAutoEnabled(v) { localStorage.setItem('ryujin_guide_auto', v ? '1' : '0'); },
+
+  // ── End tutorial ──
+  end() {
+    const flowName = this._currentFlowName;
+    this.active = false;
+    this.flow = null;
+    this._currentFlowName = null;
+    this.bubble = null;
+    clearTimeout(this._typeTimer);
+    if (this.overlay) { this.overlay.remove(); this.overlay = null; }
+    const backdrop = document.getElementById('guideBackdrop');
+    if (backdrop) backdrop.classList.add('hidden');
+    sfx.play('success');
+    if (flowName) this.markSeen(flowName);
+  },
+
+  // ── Start (override to track name) ──
+  _origStart: null,
+
+  // ── Continue to result tutorial after quote calculation ──
+  onQuoteResult() {
+    if (this.active && this._currentFlowName === 'quote') {
+      this.end();
+      setTimeout(() => this.start('result'), 600);
+    }
+    // testdrive: the wait:result step will be handled by _waitForEl
+  },
+
+  // ── Auto-launch for current page (if not seen & auto enabled) ──
+  autoLaunchForPage(page) {
+    if (!this.isAutoEnabled()) return;
+    if (this.active) return;
+    const flowName = page === 'quote' ? 'quote' : page;
+    if (this.flows[flowName] && !this.hasSeen(flowName)) {
+      setTimeout(() => this.start(flowName), 600);
+    }
+  },
+
+  // ── Tutorial menu ──
+  menuOpen: false,
+  toggleMenu() {
+    this.menuOpen = !this.menuOpen;
+    const menu = document.getElementById('guideMenu');
+    if (menu) {
+      menu.classList.toggle('open', this.menuOpen);
+      if (this.menuOpen) this._renderMenu();
+    }
+  },
+  closeMenu() {
+    this.menuOpen = false;
+    const menu = document.getElementById('guideMenu');
+    if (menu) menu.classList.remove('open');
+  },
+  _renderMenu() {
+    const list = document.getElementById('guideMenuList');
+    if (!list) return;
+    list.innerHTML = '';
+    for (const [name, meta] of Object.entries(this.flowMeta)) {
+      const seen = this.hasSeen(name);
+      const item = document.createElement('div');
+      item.className = 'guide-menu-item';
+      item.innerHTML = `
+        <div class="gmi-icon">${meta.icon}</div>
+        <div class="gmi-info">
+          <div class="gmi-label">${meta.label}</div>
+          <div class="gmi-desc">${meta.desc}</div>
+        </div>
+        ${seen ? '<div class="gmi-seen">DONE</div>' : ''}`;
+      item.onclick = () => { this.closeMenu(); this.start(name); };
+      list.appendChild(item);
+    }
+    // Update auto toggle
+    const autoChk = document.getElementById('guideAutoToggle');
+    if (autoChk) autoChk.checked = this.isAutoEnabled();
+  },
+
+  // ── Inject help button + menu ──
+  injectHelpButton() {
+    this.injectStyles();
+    if (document.getElementById('guideHelpBtn')) return;
+
+    // Help button
+    const btn = document.createElement('button');
+    btn.className = 'guide-help-btn';
+    btn.id = 'guideHelpBtn';
+    btn.textContent = '?';
+    btn.title = 'Tutorials';
+    btn.onclick = () => this.toggleMenu();
+    document.body.appendChild(btn);
+
+    // Menu panel
+    const menu = document.createElement('div');
+    menu.className = 'guide-menu';
+    menu.id = 'guideMenu';
+    menu.innerHTML = `
+      <div class="guide-menu-head">
+        <div class="guide-menu-title">Tutorials</div>
+        <button class="guide-menu-close" onclick="guide.closeMenu()">&times;</button>
+      </div>
+      <div id="guideMenuList"></div>
+      <div style="padding:4px 14px 8px;border-top:1px solid rgba(34,211,238,0.06)">
+        <div class="guide-menu-item" onclick="guide.closeMenu();cutscene.reset();location.reload()" style="border:none;margin:0 -14px;border-radius:8px">
+          <div class="gmi-icon">🎬</div>
+          <div class="gmi-info"><div class="gmi-label">Replay Opening</div><div class="gmi-desc">Watch the boot cinematic again</div></div>
+        </div>
+      </div>
+      <div class="guide-menu-footer">
+        <label class="guide-menu-toggle">
+          <input type="checkbox" id="guideAutoToggle" onchange="guide.setAutoEnabled(this.checked)">
+          Auto-show on new pages
+        </label>
+        <button class="guide-menu-reset" onclick="guide.clearAll();cutscene.reset();guide._renderMenu()">Reset all</button>
+      </div>`;
+    document.body.appendChild(menu);
+  }
+};
+
+// Patch start to track flow name
+const _origGuideStart = guide.start.bind(guide);
+guide.start = function(flowName) {
+  this._currentFlowName = flowName;
+  this.closeMenu();
+  _origGuideStart(flowName);
+};
+
+// Inject help button + menu
+guide.injectHelpButton();
+
+// Auto-launch welcome is handled by cutscene.finish() — no duplicate here
+// If cutscene was already seen (skipped init), launch welcome if needed
+if (!cutscene.shouldPlay() && !guide.hasSeen('welcome') && guide.isAutoEnabled()) {
+  setTimeout(() => guide.start('welcome'), 800);
+}
+
+
+// ═══════════════════════════════════════════
+// RYUJIN AI — Floating Assistant
+// ═══════════════════════════════════════════
+
+const ryujinChat = {
+  open: false,
+  history: [],
+  init() {
+    // Inject the widget HTML
+    document.body.insertAdjacentHTML('beforeend', `
+      <style>
+        .ryu-orb{position:fixed;bottom:24px;right:24px;z-index:1000;width:60px;height:60px;border-radius:50%;
+          background:radial-gradient(circle at 35% 30%,rgba(200,255,255,0.2),rgba(34,211,238,0.2) 40%,rgba(6,10,20,0.8) 80%);
+          border:2px solid rgba(34,211,238,0.3);cursor:pointer;
+          box-shadow:0 0 30px rgba(34,211,238,0.25),0 0 60px rgba(34,211,238,0.08);
+          transition:all 0.4s;display:flex;align-items:center;justify-content:center;
+          animation:orbFloat 3s ease infinite}
+        .ryu-orb:hover{box-shadow:0 0 40px rgba(34,211,238,0.4),0 0 80px rgba(34,211,238,0.12);transform:scale(1.08)}
+        .ryu-orb.hidden{transform:scale(0);opacity:0;pointer-events:none}
+        .ryu-orb svg{width:28px;height:28px;stroke:#22d3ee;fill:none;stroke-width:1.5;filter:drop-shadow(0 0 4px rgba(34,211,238,0.4))}
+        @keyframes orbFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+
+        .ryu-panel{position:fixed;bottom:24px;right:24px;z-index:1000;width:380px;height:520px;
+          background:rgba(10,18,35,0.92);border:1px solid rgba(34,211,238,0.2);
+          border-radius:20px;backdrop-filter:blur(30px) saturate(1.5);
+          box-shadow:0 8px 60px rgba(0,0,0,0.5),0 0 40px rgba(34,211,238,0.06);
+          display:flex;flex-direction:column;overflow:hidden;
+          transition:all 0.4s cubic-bezier(0.16,1,0.3,1);transform-origin:bottom right}
+        .ryu-panel.closed{transform:scale(0.3);opacity:0;pointer-events:none}
+        .ryu-panel::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;
+          background:linear-gradient(90deg,transparent,#22d3ee,#7c3aed,transparent);opacity:0.6}
+
+        .ryu-head{padding:16px 18px;display:flex;align-items:center;gap:12px;border-bottom:1px solid rgba(34,211,238,0.1)}
+        .ryu-avatar{width:36px;height:36px;border-radius:50%;
+          border:1.5px solid rgba(34,211,238,0.3);overflow:hidden;
+          box-shadow:0 0 12px rgba(34,211,238,0.2);background:#060a14}
+        .ryu-avatar video{width:100%;height:100%;object-fit:cover}
+        .ryu-name{font-family:'Orbitron',monospace;font-size:0.82em;font-weight:700;letter-spacing:1.5px;color:#22d3ee}
+        .ryu-status{font-size:0.65em;color:rgba(160,190,230,0.5);display:flex;align-items:center;gap:5px}
+        .ryu-status::before{content:'';width:6px;height:6px;border-radius:50%;background:#4ade80;box-shadow:0 0 6px #4ade80}
+        .ryu-close{margin-left:auto;width:28px;height:28px;border-radius:8px;border:none;
+          background:rgba(34,211,238,0.06);color:rgba(160,190,230,0.5);cursor:pointer;
+          display:flex;align-items:center;justify-content:center;font-size:1.1em;transition:all 0.2s}
+        .ryu-close:hover{background:rgba(34,211,238,0.12);color:#22d3ee}
+
+        .ryu-messages{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+        .ryu-messages::-webkit-scrollbar{width:4px}
+        .ryu-messages::-webkit-scrollbar-track{background:transparent}
+        .ryu-messages::-webkit-scrollbar-thumb{background:rgba(34,211,238,0.15);border-radius:2px}
+
+        .ryu-msg{max-width:88%;padding:10px 14px;border-radius:14px;font-size:0.84em;line-height:1.55;animation:msgIn 0.3s ease}
+        .ryu-msg.ai{align-self:flex-start;background:rgba(34,211,238,0.08);border:1px solid rgba(34,211,238,0.1);color:#d0daf0;border-bottom-left-radius:4px}
+        .ryu-msg.user{align-self:flex-end;background:rgba(74,158,255,0.12);border:1px solid rgba(74,158,255,0.15);color:#d0daf0;border-bottom-right-radius:4px}
+        .ryu-msg.system{align-self:center;font-size:0.72em;color:rgba(160,190,230,0.4);font-style:italic}
+        @keyframes msgIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+        .ryu-typing{align-self:flex-start;padding:10px 14px;font-size:0.8em;color:rgba(34,211,238,0.5)}
+        .ryu-typing span{animation:blink 1.4s infinite;display:inline-block}
+        .ryu-typing span:nth-child(2){animation-delay:0.2s}
+        .ryu-typing span:nth-child(3){animation-delay:0.4s}
+        @keyframes blink{0%,100%{opacity:0.3}50%{opacity:1}}
+
+        .ryu-input{padding:12px 14px;border-top:1px solid rgba(34,211,238,0.1);display:flex;gap:8px}
+        .ryu-input input{flex:1;padding:10px 14px;border:1px solid rgba(34,211,238,0.12);border-radius:10px;
+          background:rgba(6,12,24,0.7);color:#d0daf0;font-family:inherit;font-size:0.85em;outline:none;
+          transition:border-color 0.2s}
+        .ryu-input input:focus{border-color:rgba(34,211,238,0.3)}
+        .ryu-input input::placeholder{color:rgba(140,170,220,0.3)}
+        .ryu-input button{width:38px;height:38px;border-radius:10px;border:none;
+          background:linear-gradient(135deg,#22d3ee,#0891b2);color:#000;cursor:pointer;
+          display:flex;align-items:center;justify-content:center;transition:all 0.2s;
+          box-shadow:0 0 12px rgba(34,211,238,0.2)}
+        .ryu-input button:hover{box-shadow:0 0 20px rgba(34,211,238,0.35);transform:scale(1.05)}
+        .ryu-input button svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2}
+      </style>
+
+      <!-- Floating Orb -->
+      <div class="ryu-orb" id="ryuOrb" onclick="ryujinChat.toggle()">
+        <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" stroke-width="1"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><circle cx="9" cy="10" r="0.5" fill="#22d3ee"/><circle cx="15" cy="10" r="0.5" fill="#22d3ee"/></svg>
+      </div>
+
+      <!-- Chat Panel -->
+      <div class="ryu-panel closed" id="ryuPanel">
+        <div class="ryu-head">
+          <div class="ryu-avatar">
+            <video autoplay muted loop playsinline><source src="/assets/Talking head.mp4" type="video/mp4"></video>
+          </div>
+          <div>
+            <div class="ryu-name">RYUJIN</div>
+            <div class="ryu-status">Online</div>
+          </div>
+          <button class="ryu-close" onclick="ryujinChat.toggle()">&times;</button>
+        </div>
+        <div class="ryu-messages" id="ryuMessages">
+          <div class="ryu-msg ai">Commander. Ryujin OS is online. All systems operational. How can I help?</div>
+        </div>
+        <div class="ryu-input">
+          <input type="text" id="ryuInput" placeholder="Ask Ryujin anything..." onkeydown="if(event.key==='Enter')ryujinChat.send()">
+          <button onclick="ryujinChat.send()">
+            <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          </button>
+        </div>
+      </div>
+    `);
+
+    // Play greeting audio if available
+    this.playVoice('greeting');
+  },
+
+  toggle() {
+    this.open = !this.open;
+    document.getElementById('ryuOrb').classList.toggle('hidden', this.open);
+    document.getElementById('ryuPanel').classList.toggle('closed', !this.open);
+    if (this.open) {
+      setTimeout(() => document.getElementById('ryuInput').focus(), 400);
+    }
+  },
+
+  async send() {
+    const input = document.getElementById('ryuInput');
+    const msg = input.value.trim();
+    if (!msg) return;
+    input.value = '';
+
+    // Add user message
+    this.addMessage(msg, 'user');
+    this.history.push({ role: 'user', content: msg });
+
+    // Show typing
+    const msgs = document.getElementById('ryuMessages');
+    const typing = document.createElement('div');
+    typing.className = 'ryu-typing';
+    typing.innerHTML = '<span>.</span><span>.</span><span>.</span>';
+    msgs.appendChild(typing);
+    msgs.scrollTop = msgs.scrollHeight;
+
+    // Call assistant API
+    try {
+      const result = await api('/assistant', {
+        method: 'POST',
+        body: JSON.stringify({
+          message: msg,
+          context: {
+            page: currentPage,
+            quoteResult: quoteState.result ? {
+              offer: quoteState.result.offer,
+              summary: quoteState.result.summary
+            } : null
+          },
+          history: this.history.slice(-10)
+        })
+      });
+
+      typing.remove();
+
+      const response = result.response || result.error || "Signal lost. Try again.";
+      this.addMessage(response, 'ai');
+      this.history.push({ role: 'assistant', content: response });
+
+      // Handle actions
+      if (result.action) {
+        if (result.action.type === 'navigate') {
+          setTimeout(() => navigate(result.action.target), 800);
+        }
+      }
+
+      // Voice
+      if (msg.toLowerCase().includes('quote')) this.playVoice('guide-quote');
+      else if (result.action) this.playVoice('confirm');
+
+    } catch (e) {
+      typing.remove();
+      this.addMessage("Connection interrupted. Standing by.", 'ai');
+    }
+  },
+
+  addMessage(text, type) {
+    const msgs = document.getElementById('ryuMessages');
+    const div = document.createElement('div');
+    div.className = `ryu-msg ${type}`;
+    div.textContent = text;
+    msgs.appendChild(div);
+    msgs.scrollTop = msgs.scrollHeight;
+  },
+
+  playVoice(clip) {
+    // Will play pre-scripted voice clips when available
+    // Files expected at /assets/voice/{clip}.mp3
+    try {
+      const audio = new Audio(`/assets/voice/${clip}.mp3`);
+      audio.volume = 0.6;
+      audio.play().catch(() => {}); // Silently fail if not found
+    } catch(e) {}
+  }
+};
+
+// Init the chat widget
+ryujinChat.init();
+</script>
+</body>
+</html>
