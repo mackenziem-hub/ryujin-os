@@ -1071,34 +1071,44 @@ async function renderDashboard(m) {
 
   // ═══ ROW 4: Quick Actions (span 1) + Alerts (span 1) + Revenue Chart (span 2) ═══
 
-  // Panel 9: Quick Actions (compact)
+  // Panel 9: Today's Focus (smart action items)
+  const sentEstimates = estList.filter(e => e.status === 'sent');
+  const staleDrafts = estList.filter(e => e.status === 'draft' && e.created_at && (Date.now() - new Date(e.created_at).getTime()) > 48*3600000);
   html += `<div class="panel">
-    <div class="panel-header"><div class="panel-title">Actions</div></div>
-    <div class="action-grid">
-      <div class="action-btn" onclick="navigate('quote')">
-        <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/></svg><span>Quote</span></div>
-      <div class="action-btn" onclick="navigate('customers')">
-        <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg><span>Customer</span></div>
-      <div class="action-btn" onclick="navigate('offers')">
-        <svg viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/></svg><span>Offers</span></div>
-      <div class="action-btn" onclick="navigate('settings')">
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33"/></svg><span>Config</span></div>
-    </div>
-  </div>`;
+    <div class="panel-header"><div class="panel-title">Today's Focus</div></div>`;
 
-  // Panel 10: Alerts & Notifications
+  if (sentEstimates.length > 0) {
+    html += `<div class="alert-row info" style="cursor:pointer" onclick="estFilter='sent';navigate('estimates')">
+      <div class="alert-dot cyan"></div><span><strong>${sentEstimates.length}</strong> sent — follow up today</span></div>`;
+  }
+  if (staleDrafts.length > 0) {
+    html += `<div class="alert-row warn" style="cursor:pointer" onclick="estFilter='draft';navigate('estimates')">
+      <div class="alert-dot yellow"></div><span><strong>${staleDrafts.length}</strong> stale drafts — send or archive</span></div>`;
+  }
+  if (draftCount > 0 && staleDrafts.length === 0) {
+    html += `<div class="alert-row info" style="cursor:pointer" onclick="estFilter='draft';navigate('estimates')">
+      <div class="alert-dot cyan"></div><span>${draftCount} drafts ready to send</span></div>`;
+  }
+  if (sentEstimates.length === 0 && staleDrafts.length === 0 && draftCount === 0) {
+    html += `<div style="text-align:center;padding:10px;font-size:0.78em;color:var(--text-dim)">Pipeline clear — time to prospect</div>`;
+  }
+
+  html += `<div class="action-grid" style="margin-top:8px">
+    <div class="action-btn" onclick="navigate('quote')">
+      <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/></svg><span>New Quote</span></div>
+    <div class="action-btn" onclick="navigate('customers')">
+      <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg><span>+ Customer</span></div>
+  </div></div>`;
+
+  // Panel 10: System Status & Alerts
   html += `<div class="panel">
-    <div class="panel-header"><div class="panel-title">Alerts</div></div>`;
+    <div class="panel-header"><div class="panel-title">System Status</div></div>`;
   if (urgentTickets.length > 0) {
-    html += `<div class="alert-row"><div class="alert-dot red"></div><span>${urgentTickets.length} urgent ticket${urgentTickets.length>1?'s':''} need attention</span></div>`;
+    html += `<div class="alert-row"><div class="alert-dot red"></div><span>${urgentTickets.length} urgent ticket${urgentTickets.length>1?'s':''}</span></div>`;
   }
-  if (draftCount > 10) {
-    html += `<div class="alert-row warn"><div class="alert-dot yellow"></div><span>${draftCount} drafts pending — send proposals</span></div>`;
-  }
-  html += `<div class="alert-row info"><div class="alert-dot cyan"></div><span>Engine v3.1 online — ${offerCount} offers</span></div>`;
-  if (activeTickets.length === 0 && urgentTickets.length === 0 && draftCount <= 10) {
-    html += `<div style="text-align:center;padding:12px;font-size:0.75em;color:var(--text-dim)">No active alerts</div>`;
-  }
+  html += `<div class="alert-row info"><div class="alert-dot cyan"></div><span>Engine v3.1 &bull; ${offerCount} offers &bull; ${custList.length} customers</span></div>`;
+  const closeRate = estList.length > 0 ? Math.round((acceptedCount / estList.length) * 100) : 0;
+  html += `<div style="margin-top:8px">${progressBar(closeRate, closeRate >= 15 ? 'green' : closeRate >= 8 ? 'cyan' : 'yellow', 'Close Rate', closeRate + '% (' + acceptedCount + '/' + estList.length + ')')}</div>`;
   html += '</div>';
 
   // Panel 11: Revenue Trend (span 2)
