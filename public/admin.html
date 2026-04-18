@@ -1755,6 +1755,10 @@ async function runGuidedQuote() {
   if (r.error) { rd.innerHTML = `<div class="panel" style="border-color:var(--red)"><div class="panel-title text-red">Error</div><div class="panel-sub">${esc(r.error)}</div></div>`; return; }
   quoteState.result = r;
   quoteState._comparison = comp;
+  // Auto-select template based on system
+  const templateMap = {residential:'reroof',metal:'reroof',flat:'flat',exterior:'exterior',combined:'exterior'};
+  selectedTemplate = templateMap[quoteState.system] || 'reroof';
+  if (quoteState.answers.extraLayers === 0 || quoteState.answers.extraLayers === '0') selectedTemplate = 'newconstruction';
   // Save to session history
   quoteHistory.push({ offer: r.offer.name, slug: r.offer.slug, total: r.summary.totalWithTax, margin: r.summary.netMargin, time: new Date() });
   sfx.play('success');
@@ -2233,6 +2237,18 @@ async function generateOutputs(type) {
   // Build payload with template + salesperson
   const rep = SALES_REPS[selectedRep] || SALES_REPS.mackenzie;
   const tmpl = PROPOSAL_TEMPLATES[selectedTemplate] || PROPOSAL_TEMPLATES.reroof;
+  // Build comparison data from parallel quote if available
+  let comparisonData = null;
+  if (quoteState._comparison && quoteState._comparison.offers) {
+    comparisonData = Object.entries(quoteState._comparison.offers).map(([slug, q]) => ({
+      slug, name: q.offer.name, badge: q.offer.badge,
+      total: '$' + (q.summary.totalWithTax||0).toLocaleString(),
+      totalRaw: q.summary.totalWithTax,
+      warranty: q.offer.warranty_years ? q.offer.warranty_years + '-year warranty' : null,
+      isSelected: q.offer.slug === quoteState.result.offer.slug,
+      highlights: []
+    }));
+  }
   const payload = {
     quote_result: quoteState.result,
     customer_name: quoteState.answers.customerName || '',
@@ -2240,7 +2256,8 @@ async function generateOutputs(type) {
     prepared_by: rep.name,
     sales_rep: rep,
     template: tmpl,
-    template_key: selectedTemplate
+    template_key: selectedTemplate,
+    _comparison: comparisonData
   };
 
   // Types that render as HTML
@@ -2262,17 +2279,21 @@ async function generateOutputs(type) {
   }
 
   if (type === 'all') {
+    toast('Generating all outputs...', 'info', 8000);
     const ad = await api('/outputs?type=all', {method:'POST', body:JSON.stringify(payload)});
     if (ad.error) { toast('Output error: ' + ad.error, 'error'); return; }
-    for (const t of ['proposal', 'contract', 'sales_page']) {
+    let opened = 0;
+    for (const t of ['sales_page', 'proposal', 'contract']) {
       const data = t === 'sales_page' ? ad.outputs?.salesPage : ad.outputs?.[t];
       if (!data) continue;
-      const resp = await fetch(`${API}/render?type=${t}&tenant=${TENANT}`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
+      const resp = await fetch(`${API}/render?type=${t}&tenant=${TENANT}&_t=${Date.now()}`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
       if (!resp.ok) continue;
       const html = await resp.text();
+      if (!html || html.length < 100) continue;
       const w = window.open('', '_blank');
-      if (w) { w.document.write(html); w.document.close(); }
+      if (w) { w.document.write(html); w.document.close(); opened++; }
     }
+    toast(opened + ' documents generated', 'success');
     return;
   }
 

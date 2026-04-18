@@ -113,7 +113,8 @@ async function handler(req, res) {
       multiOfferResults,
       salesRep: body.sales_rep || null,
       template: body.template || null,
-      templateKey: body.template_key || ''
+      templateKey: body.template_key || '',
+      inlineComparison: body._comparison || null
     });
   }
 
