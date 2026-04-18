@@ -1605,19 +1605,59 @@ function renderQuoteResult(el, r) {
     <span>Total</span><span style="font-family:'Orbitron',monospace">${fmt$(s.totalWithTax)}</span></div>
     </div>
 
-    <!-- ═══ PROJECT DETAILS ═══ -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+    <!-- ═══ PROJECT DETAILS + FINANCING ═══ -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px">
       <div style="padding:10px 12px;border-radius:8px;background:rgba(34,211,238,0.03);border:1px solid var(--glass-border)">
-        <div style="font-size:0.6em;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Estimated Duration</div>
+        <div style="font-size:0.6em;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Duration</div>
         <div style="font-family:'Orbitron',monospace;font-weight:700;color:var(--cyan)">${workdays} day${workdays>1?'s':''}</div>
       </div>
       <div style="padding:10px 12px;border-radius:8px;background:rgba(34,211,238,0.03);border:1px solid var(--glass-border)">
-        <div style="font-size:0.6em;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Payment Schedule</div>
-        <div style="font-family:'Orbitron',monospace;font-weight:700;color:var(--cyan)">33% deposit</div>
-        <div style="font-size:0.68em;color:var(--text-dim)">Balance on completion</div>
+        <div style="font-size:0.6em;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Deposit</div>
+        <div style="font-family:'Orbitron',monospace;font-weight:700;color:var(--cyan)">${fmt$(Math.round(s.totalWithTax * 0.33))}</div>
+        <div style="font-size:0.62em;color:var(--text-dim)">33% — balance on completion</div>
       </div>
-    </div>
+      <div style="padding:10px 12px;border-radius:8px;background:rgba(124,58,237,0.06);border:1px solid rgba(124,58,237,0.12)">
+        <div style="font-size:0.6em;color:var(--purple);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Monthly Payment</div>
+        <div style="font-family:'Orbitron',monospace;font-weight:700;color:var(--purple)">~${fmt$(Math.round(s.totalWithTax / 120))}/mo</div>
+        <div style="font-size:0.62em;color:var(--text-dim)">Est. 120 months via FinanceIt</div>
+      </div>
+    </div>`;
 
+  // ═══ MOBILIZATION UPSELL — "While We're Here" ═══
+  const isRoofOnly = ['residential','metal','flat'].includes(quoteState.system);
+  if (isRoofOnly) {
+    const shellPrice = Math.round(s.sellingPrice * 0.8); // rough estimate for shell add-on
+    const discountPct = 30;
+    const discountAmt = Math.round(shellPrice * (discountPct / 100));
+    const bundledShell = shellPrice - discountAmt;
+    html += `<div style="padding:14px;border-radius:10px;background:linear-gradient(135deg,rgba(34,211,238,0.04),rgba(124,58,237,0.03));border:1px solid rgba(34,211,238,0.1);margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+        <div>
+          <div style="font-size:0.65em;color:var(--cyan);text-transform:uppercase;letter-spacing:1.5px;font-weight:600">While We're Already Here</div>
+          <div style="font-size:0.88em;font-weight:600;margin-top:4px">Add exterior renovation at a discount</div>
+        </div>
+        <span class="badge badge-green" style="font-size:0.6em">${discountPct}% OFF</span>
+      </div>
+      <div style="font-size:0.78em;color:var(--text-dim);line-height:1.6;margin-bottom:10px">
+        Mobilization, safety setup, and equipment are already paid for. Add siding, soffit, fascia, or gutters now and save on the second trip.
+      </div>
+      <div style="display:flex;gap:12px;align-items:center">
+        <div style="text-align:center">
+          <div style="font-size:0.6em;color:var(--text-dim)">Standalone</div>
+          <div style="font-family:'Orbitron',monospace;font-size:0.9em;text-decoration:line-through;color:var(--text-dim)">${fmt$(shellPrice)}</div>
+        </div>
+        <div style="font-size:1.2em;color:var(--green)">→</div>
+        <div style="text-align:center">
+          <div style="font-size:0.6em;color:var(--green)">Bundled</div>
+          <div style="font-family:'Orbitron',monospace;font-size:1.1em;font-weight:700;color:var(--green)">${fmt$(bundledShell)}</div>
+        </div>
+        <div style="flex:1"></div>
+        <button class="btn btn-sm btn-outline" onclick="quoteState.system='combined';quoteState.answers._offer_slug='gold-shell';navigate('quote');renderQuoteBuilder(document.getElementById('main'))">Build Combined Quote</button>
+      </div>
+    </div>`;
+  }
+
+  html += `
     <!-- ═══ WARRANTY & FINANCING ═══ -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
       ${r.offer.warranty_years ? `<div style="padding:10px 12px;border-radius:8px;background:rgba(74,222,128,0.04);border:1px solid rgba(74,222,128,0.1)">
@@ -1626,7 +1666,7 @@ function renderQuoteResult(el, r) {
       </div>` : ''}
       <div style="padding:10px 12px;border-radius:8px;background:rgba(34,211,238,0.04);border:1px solid rgba(34,211,238,0.08)">
         <div style="font-size:0.6em;color:var(--cyan);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Financing</div>
-        <div style="font-size:0.82em;color:var(--text)">Available through <strong>FinanceIt</strong>. Apply online — approval in minutes. Ask about monthly payment options.</div>
+        <div style="font-size:0.82em;color:var(--text)">Available through <strong>FinanceIt</strong>. Apply online — approval in minutes. As low as <strong>${fmt$(Math.round(s.totalWithTax / 120))}/month</strong>.</div>
       </div>
     </div>
 
