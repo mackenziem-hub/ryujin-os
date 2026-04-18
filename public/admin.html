@@ -1554,6 +1554,18 @@ function renderQuoteResult(el, r) {
       <button class="btn btn-outline" onclick="generateOutputs('all')">All Outputs</button>
       <button class="btn btn-outline" onclick="setQuoteMode('advanced')">Edit Items</button>
     </div>
+    <!-- Share row -->
+    <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+      <button class="btn btn-sm btn-outline" onclick="shareQuoteViaSMS()" style="display:flex;align-items:center;gap:4px">
+        <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg> Text to Client
+      </button>
+      <button class="btn btn-sm btn-outline" onclick="shareQuoteViaEmail()" style="display:flex;align-items:center;gap:4px">
+        <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg> Email
+      </button>
+      <button class="btn btn-sm btn-outline" onclick="copyQuoteSummary()" style="display:flex;align-items:center;gap:4px">
+        <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg> Copy Summary
+      </button>
+    </div>
   </div>`;
 
   // ═══ MATERIALS LIST (internal use) ═══
@@ -1636,6 +1648,42 @@ async function recalcWithOverrides(){
   const r=await api('/quote?materials=1',{method:'POST',body:JSON.stringify({offer_id:quoteState.result.offer.id,measurements:quoteState.result.measurements,choices:quoteState.result.choices||{},overrides:quoteState.overrides||{},mode:'override'})});
   if(r.error){rd.innerHTML=`<div class="panel" style="border-color:var(--red)"><div class="panel-title text-red">Error</div><div class="panel-sub">${esc(r.error)}</div></div>`;return;}
   quoteState.result=r;renderQuoteResult(rd,r);renderQuoteForm();
+}
+
+function getQuoteSummaryText() {
+  if (!quoteState.result) return '';
+  const s = quoteState.result.summary;
+  const name = quoteState.answers.customerName || '';
+  const addr = quoteState.answers.address || '';
+  const pkg = quoteState.result.offer?.name || '';
+  return `${name ? name + ' — ' : ''}${pkg} Package\n${addr ? addr + '\n' : ''}Total: ${fmt$(s.totalWithTax)} (${s.taxLabel || 'HST'} incl.)\n${s.pricePerSQ ? '$/SQ: ' + fmt$(s.pricePerSQ) + '\n' : ''}Warranty: ${quoteState.result.offer?.warranty_years || '—'} years`;
+}
+
+function shareQuoteViaSMS() {
+  const phone = quoteState.answers.customerPhone || '';
+  const text = encodeURIComponent(`Hey ${quoteState.answers.customerName || 'there'}, here's a quick summary of your roofing quote:\n\n${getQuoteSummaryText()}\n\nI'll send the full proposal shortly. Let me know if you have any questions!\n\n— Mackenzie, Plus Ultra Roofing`);
+  window.open(`sms:${phone}?body=${text}`, '_blank');
+  toast('SMS app opened', 'info');
+}
+
+function shareQuoteViaEmail() {
+  const email = quoteState.answers.customerEmail || '';
+  const subject = encodeURIComponent(`Your ${quoteState.result?.offer?.name || 'Roofing'} Quote — Plus Ultra Roofing`);
+  const body = encodeURIComponent(`Hi ${quoteState.answers.customerName || 'there'},\n\nThanks for having us out. Here's a summary of your custom quote:\n\n${getQuoteSummaryText()}\n\nI'll be sending the full proposal with all the details shortly. If you have questions, don't hesitate to reach out.\n\nTalk soon,\nMackenzie Mazerolle\nPlus Ultra Roofing`);
+  window.open(`mailto:${email}?subject=${subject}&body=${body}`, '_blank');
+  toast('Email client opened', 'info');
+}
+
+function copyQuoteSummary() {
+  const text = getQuoteSummaryText();
+  navigator.clipboard.writeText(text).then(() => {
+    toast('Quote summary copied to clipboard', 'success');
+  }).catch(() => {
+    // Fallback for older browsers
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+    toast('Copied to clipboard', 'success');
+  });
 }
 
 async function uploadQuotePhotos(fileList) {
