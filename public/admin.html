@@ -636,6 +636,7 @@ const API = window.location.origin + '/api';
 const TENANT = 'plus-ultra';
 let currentPage = 'dashboard';
 let quoteState = { mode: 'guided', system: 'residential', answers: {}, result: null, overrides: {} };
+let quoteHistory = []; // session quote history
 let offersCache = null;
 let dashCache = null;
 let customersCache = null;
@@ -1547,7 +1548,9 @@ async function runGuidedQuote() {
 
   if (r.error) { rd.innerHTML = `<div class="panel" style="border-color:var(--red)"><div class="panel-title text-red">Error</div><div class="panel-sub">${esc(r.error)}</div></div>`; return; }
   quoteState.result = r;
-  quoteState._comparison = comp; // store for inline display
+  quoteState._comparison = comp;
+  // Save to session history
+  quoteHistory.push({ offer: r.offer.name, slug: r.offer.slug, total: r.summary.totalWithTax, margin: r.summary.netMargin, time: new Date() });
   sfx.play('success');
   renderQuoteResult(rd, r);
   setTimeout(() => guide.onQuoteResult(), 500);
@@ -1796,6 +1799,14 @@ function renderQuoteResult(el, r) {
       </button>
     </div>
   </div>`;
+
+  // ═══ QUOTE SESSION HISTORY ═══
+  if (quoteHistory.length > 1) {
+    html += `<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+      <span style="font-size:0.62em;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px">Session history:</span>
+      ${quoteHistory.map((h,i) => `<button class="btn btn-sm ${h.slug === r.offer.slug && i === quoteHistory.length-1 ? 'btn-primary' : 'btn-outline'}" style="font-size:0.65em;padding:3px 8px" onclick="quoteState.answers._offer_slug='${h.slug}';runGuidedQuote()" title="${h.margin} margin">${h.offer} ${fmt$(h.total)}</button>`).join('')}
+    </div>`;
+  }
 
   // ═══ MATERIALS LIST (internal use) ═══
   if (r.materialList) {
@@ -2255,6 +2266,9 @@ async function renderCustomers(m) {
     <div style="display:flex;gap:6px">
       <button class="btn btn-sm btn-outline" onclick="guide.start('customers')" style="color:var(--cyan);border-color:rgba(34,211,238,0.2)">
         <svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button>
+      <button class="btn btn-sm btn-outline" onclick="document.getElementById('csvImportInput').click()" style="display:flex;align-items:center;gap:4px">
+        <svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Import CSV</button>
+      <input type="file" id="csvImportInput" accept=".csv" style="display:none" onchange="importCustomersCSV(this.files[0])">
       <button class="btn btn-primary btn-sm" onclick="showNewCustomer()">+ New Customer</button>
     </div></div>`;
 
@@ -2376,6 +2390,42 @@ async function createCustomer(){const n=document.getElementById('nc_name').value
   invalidateCache('customers'); navigate('customers');
 }
 
+async function importCustomersCSV(file) {
+  if (!file) return;
+  const text = await file.text();
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+  if (lines.length < 2) { toast('CSV needs a header row + data', 'error'); return; }
+
+  const headers = lines[0].split(',').map(h => h.replace(/"/g,'').trim().toLowerCase());
+  const nameIdx = headers.findIndex(h => h.includes('name'));
+  const emailIdx = headers.findIndex(h => h.includes('email'));
+  const phoneIdx = headers.findIndex(h => h.includes('phone'));
+  const addrIdx = headers.findIndex(h => h.includes('address') || h.includes('addr'));
+  const cityIdx = headers.findIndex(h => h.includes('city'));
+  const noteIdx = headers.findIndex(h => h.includes('note'));
+
+  if (nameIdx === -1) { toast('CSV must have a "name" column', 'error'); return; }
+
+  let imported = 0;
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].match(/(".*?"|[^,]+)/g)?.map(c => c.replace(/^"|"$/g,'').trim()) || [];
+    const name = cols[nameIdx];
+    if (!name) continue;
+    await api('/customers', {method:'POST', body:JSON.stringify({
+      full_name: name,
+      email: emailIdx >= 0 ? cols[emailIdx] || null : null,
+      phone: phoneIdx >= 0 ? cols[phoneIdx] || null : null,
+      address: addrIdx >= 0 ? cols[addrIdx] || null : null,
+      city: cityIdx >= 0 ? cols[cityIdx] || null : null,
+      notes: noteIdx >= 0 ? cols[noteIdx] || null : null
+    })});
+    imported++;
+  }
+  toast(imported + ' customers imported', 'success');
+  invalidateCache('customers');
+  renderCustomers(document.getElementById('main'));
+}
+
 async function saveCustomerEdit(id) {
   const r = await api('/customers', {method:'PUT', body:JSON.stringify({
     id,
@@ -2431,6 +2481,30 @@ async function deleteEstimate(id) {
 }
 
 let estFilter = 'all';
+let estSelected = new Set();
+
+function toggleEstSelect(id, checked) {
+  if (checked) estSelected.add(id); else estSelected.delete(id);
+  const bar = document.getElementById('bulkBar');
+  if (bar) bar.style.display = estSelected.size > 0 ? 'flex' : 'none';
+  const cnt = document.getElementById('bulkCount');
+  if (cnt) cnt.textContent = estSelected.size;
+}
+
+async function bulkEstAction(action) {
+  if (estSelected.size === 0) return;
+  const ids = [...estSelected];
+  if (action === 'delete' && !confirm('Delete ' + ids.length + ' estimates?')) return;
+  for (const id of ids) {
+    if (action === 'delete') await api('/estimates?id=' + id, {method:'DELETE'});
+    else await api('/estimates', {method:'PUT', body:JSON.stringify({id, status: action})});
+  }
+  toast(ids.length + ' estimates updated', 'success');
+  estSelected.clear();
+  invalidateCache('estimates');
+  renderEstimates(document.getElementById('main'));
+}
+
 async function renderEstimates(m) {
   m.innerHTML='<div class="loading"><div class="spinner"></div>Loading...</div>';
   const data = await api('/estimates');
@@ -2472,6 +2546,15 @@ async function renderEstimates(m) {
   const closeRate = ests.length > 0 ? Math.round((accepted.length / ests.length) * 100) : 0;
   html += `<div class="panel" style="margin-bottom:10px;padding:10px 14px">${progressBar(closeRate, closeRate >= 15 ? 'green' : closeRate >= 8 ? 'cyan' : 'yellow', 'Close Rate', closeRate + '% (' + accepted.length + '/' + ests.length + ')')}</div>`;
 
+  // Bulk action bar
+  html += `<div id="bulkBar" style="display:none;gap:8px;align-items:center;padding:8px 14px;background:rgba(34,211,238,0.06);border:1px solid rgba(34,211,238,0.12);border-radius:10px;margin-bottom:10px">
+    <span style="font-size:0.82em;font-weight:600"><span id="bulkCount">0</span> selected</span>
+    <button class="btn btn-sm btn-primary" onclick="bulkEstAction('sent')">Mark Sent</button>
+    <button class="btn btn-sm btn-success" onclick="bulkEstAction('accepted')">Accepted</button>
+    <button class="btn btn-sm btn-danger" onclick="bulkEstAction('delete')">Delete</button>
+    <button class="btn btn-sm btn-outline" onclick="estSelected.clear();renderEstimates(document.getElementById('main'))" style="margin-left:auto">Clear</button>
+  </div>`;
+
   // Estimate cards
   if (filtered.length === 0) {
     html += `<div class="panel" style="text-align:center;padding:40px"><div style="font-size:0.9em;color:var(--text-dim)">No ${estFilter === 'all' ? '' : estFilter + ' '}estimates yet.</div>
@@ -2489,12 +2572,15 @@ async function renderEstimates(m) {
       const hasMeasurements = e.measurements && Object.keys(e.measurements).length > 0;
       const eid = e.id;
 
-      html += `<details class="panel" style="cursor:default;padding:0;${isStale?'border-color:rgba(250,204,21,0.3)':''}"
+      html += `<details class="panel" style="cursor:default;padding:0;${isStale?'border-color:rgba(250,204,21,0.3)':''}">
         <summary style="padding:12px 14px;cursor:pointer;list-style:none;display:block">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
-            <div>
-              <div style="font-weight:700;font-size:0.92em">${esc(custName)}</div>
-              <div style="font-size:0.75em;color:var(--text-dim)">${esc(e.address||'No address')}</div>
+            <div style="display:flex;align-items:flex-start;gap:8px">
+              <input type="checkbox" ${estSelected.has(eid)?'checked':''} onclick="event.stopPropagation();toggleEstSelect('${eid}',this.checked)" style="width:auto;accent-color:var(--cyan);margin-top:3px;cursor:pointer">
+              <div>
+                <div style="font-weight:700;font-size:0.92em">${esc(custName)}</div>
+                <div style="font-size:0.75em;color:var(--text-dim)">${esc(e.address||'No address')}</div>
+              </div>
             </div>
             <span class="badge badge-${sc}">${e.status||'draft'}</span>
           </div>
