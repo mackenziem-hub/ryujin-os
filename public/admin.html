@@ -1810,7 +1810,8 @@ function renderQuoteResult(el, r) {
 
   // ═══ MATERIALS LIST (internal use) ═══
   if (r.materialList) {
-    html += `<div class="panel" style="margin-top:10px"><div class="panel-header"><div class="panel-title">Material Purchase List</div><span class="badge badge-blue">${r.materialList.itemCount} items</span><span class="badge badge-green" style="margin-left:4px">${r.materialList.verifiedCount} verified</span></div>
+    html += `<div class="panel" style="margin-top:10px"><div class="panel-header"><div class="panel-title">Material Purchase List</div><span class="badge badge-blue">${r.materialList.itemCount} items</span><span class="badge badge-green" style="margin-left:4px">${r.materialList.verifiedCount} verified</span>
+      <button class="btn btn-sm btn-outline" onclick="printMaterialList()" style="margin-left:auto;display:flex;align-items:center;gap:4px"><svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg> Print</button></div>
       <div class="table-wrap"><table><thead><tr><th>Item</th><th>Qty</th><th>Unit</th><th class="text-right">Cost</th><th>Source</th></tr></thead><tbody>`;
     for (const m of r.materialList.items) html += `<tr><td style="font-size:0.82em">${esc(m.item)}${m.estimated?' <span class="text-yellow">*</span>':''}</td><td>${m.quantity}</td><td class="text-dim">${m.unit}</td><td class="text-right" style="font-family:'Orbitron',monospace;font-size:0.82em">${fmt$(m.totalCost)}</td><td class="text-dim" style="font-size:0.68em;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.source)}</td></tr>`;
     html += `</tbody></table></div>
@@ -1888,6 +1889,21 @@ async function recalcWithOverrides(){
   const r=await api('/quote?materials=1',{method:'POST',body:JSON.stringify({offer_id:quoteState.result.offer.id,measurements:quoteState.result.measurements,choices:quoteState.result.choices||{},overrides:quoteState.overrides||{},mode:'override'})});
   if(r.error){rd.innerHTML=`<div class="panel" style="border-color:var(--red)"><div class="panel-title text-red">Error</div><div class="panel-sub">${esc(r.error)}</div></div>`;return;}
   quoteState.result=r;renderQuoteResult(rd,r);renderQuoteForm();
+}
+
+async function printMaterialList() {
+  if (!quoteState.result?.materialList) { toast('No material list available', 'error'); return; }
+  const data = {
+    items: quoteState.result.materialList.items,
+    offer: quoteState.result.offer?.name || '',
+    customer: quoteState.answers.customerName || '',
+    address: quoteState.answers.address || ''
+  };
+  const resp = await fetch(API + '/render?type=materials&tenant=' + TENANT, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
+  if (!resp.ok) { toast('Render failed', 'error'); return; }
+  const html = await resp.text();
+  const w = window.open('', '_blank');
+  if (w) { w.document.write(html); w.document.close(); }
 }
 
 async function toggleProposalPreview() {
@@ -2267,7 +2283,9 @@ async function renderCustomers(m) {
       <button class="btn btn-sm btn-outline" onclick="guide.start('customers')" style="color:var(--cyan);border-color:rgba(34,211,238,0.2)">
         <svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button>
       <button class="btn btn-sm btn-outline" onclick="document.getElementById('csvImportInput').click()" style="display:flex;align-items:center;gap:4px">
-        <svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Import CSV</button>
+        <svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Import</button>
+      <button class="btn btn-sm btn-outline" onclick="exportCustomersCSV()" style="display:flex;align-items:center;gap:4px">
+        <svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Export</button>
       <input type="file" id="csvImportInput" accept=".csv" style="display:none" onchange="importCustomersCSV(this.files[0])">
       <button class="btn btn-primary btn-sm" onclick="showNewCustomer()">+ New Customer</button>
     </div></div>`;
@@ -2390,6 +2408,26 @@ async function createCustomer(){const n=document.getElementById('nc_name').value
   invalidateCache('customers'); navigate('customers');
 }
 
+async function exportCustomersCSV() {
+  const data = await cachedApi('/customers','customers');
+  const custs = data.customers || [];
+  if (custs.length === 0) { toast('No customers to export', 'info'); return; }
+  const estData = await cachedApi('/estimates','estimates');
+  const allEsts = estData.estimates || [];
+  const headers = ['Name','Email','Phone','Address','City','Province','Notes','Estimates','Total Value'];
+  const rows = custs.map(c => {
+    const ce = allEsts.filter(e => e.customer_id === c.id);
+    return [c.full_name||c.name||'', c.email||'', c.phone||'', c.address||'', c.city||'', c.province||'', c.notes||'', ce.length, ce.reduce((s,e)=>s+(e.total_with_tax||e.total_price||0),0)];
+  });
+  const csv = [headers,...rows].map(r => r.map(c => '"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const blob = new Blob([csv],{type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href=url; a.download='ryujin-customers-'+new Date().toISOString().split('T')[0]+'.csv';
+  a.click(); URL.revokeObjectURL(url);
+  toast('CSV downloaded','success');
+}
+
 async function importCustomersCSV(file) {
   if (!file) return;
   const text = await file.text();
@@ -2481,6 +2519,7 @@ async function deleteEstimate(id) {
 }
 
 let estFilter = 'all';
+let estSort = 'newest';
 let estSelected = new Set();
 
 function toggleEstSelect(id, checked) {
@@ -2516,7 +2555,13 @@ async function renderEstimates(m) {
   const declined = ests.filter(e => e.status==='declined');
   const acceptedVal = accepted.reduce((s,e) => s + (e.total_price||0), 0);
 
-  const filtered = estFilter === 'all' ? ests : ests.filter(e => e.status === estFilter);
+  let filtered = estFilter === 'all' ? [...ests] : ests.filter(e => e.status === estFilter);
+  // Sort
+  if (estSort === 'newest') filtered.sort((a,b) => new Date(b.created_at||0) - new Date(a.created_at||0));
+  else if (estSort === 'oldest') filtered.sort((a,b) => new Date(a.created_at||0) - new Date(b.created_at||0));
+  else if (estSort === 'highest') filtered.sort((a,b) => (b.total_with_tax||b.total_price||0) - (a.total_with_tax||a.total_price||0));
+  else if (estSort === 'lowest') filtered.sort((a,b) => (a.total_with_tax||a.total_price||0) - (b.total_with_tax||b.total_price||0));
+  else if (estSort === 'name') filtered.sort((a,b) => (a.customer?.full_name||'').localeCompare(b.customer?.full_name||''));
 
   let html = `<div class="page-header"><div><h1>Estimates</h1><div class="sub">${ests.length} total &mdash; ${fmt$(totalVal)} pipeline</div></div>
     <div style="display:flex;gap:6px">
@@ -2545,6 +2590,12 @@ async function renderEstimates(m) {
   // Conversion progress
   const closeRate = ests.length > 0 ? Math.round((accepted.length / ests.length) * 100) : 0;
   html += `<div class="panel" style="margin-bottom:10px;padding:10px 14px">${progressBar(closeRate, closeRate >= 15 ? 'green' : closeRate >= 8 ? 'cyan' : 'yellow', 'Close Rate', closeRate + '% (' + accepted.length + '/' + ests.length + ')')}</div>`;
+
+  // Sort control
+  html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+    <span style="font-size:0.65em;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px">Sort:</span>
+    ${['newest','oldest','highest','lowest','name'].map(s => `<button class="btn btn-sm ${estSort===s?'btn-primary':'btn-outline'}" style="font-size:0.65em;padding:3px 8px" onclick="estSort='${s}';renderEstimates(document.getElementById('main'))">${s==='highest'?'$$$ first':s==='lowest'?'$ first':s==='name'?'A-Z':s}</button>`).join('')}
+  </div>`;
 
   // Bulk action bar
   html += `<div id="bulkBar" style="display:none;gap:8px;align-items:center;padding:8px 14px;background:rgba(34,211,238,0.06);border:1px solid rgba(34,211,238,0.12);border-radius:10px;margin-bottom:10px">
