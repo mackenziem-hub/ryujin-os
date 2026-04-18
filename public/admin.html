@@ -1436,11 +1436,55 @@ async function generateOutputs(type) {
 }
 
 async function createEstimateFromQuote() {
-  if(!quoteState.result)return;const name=prompt('Customer name:');if(!name)return;const addr=prompt('Property address:');
-  let cid=null;const custs=await api('/customers');const ex=(custs.customers||[]).find(c=>(c.full_name||'').toLowerCase()===name.toLowerCase());
-  if(ex){cid=ex.id;}else{const nc=await api('/customers',{method:'POST',body:JSON.stringify({full_name:name,address:addr})});if(nc.id)cid=nc.id;}
-  const est=await api('/estimates',{method:'POST',body:JSON.stringify({customer_id:cid,address:addr||'',status:'draft',system:quoteState.result.offer.system,package:quoteState.result.offer.slug,total_price:quoteState.result.summary.sellingPrice,total_with_tax:quoteState.result.summary.totalWithTax,measurements:quoteState.result.measurements,choices:quoteState.result.choices,notes:'Generated via Quote Builder — '+quoteState.result.offer.name})});
-  if(est.error){sfx.play('error');alert('Error: '+est.error);return;}sfx.play('success');alert('Estimate saved!');navigate('estimates');
+  if(!quoteState.result) return;
+  const name = quoteState.answers.customerName || prompt('Customer name:');
+  if(!name) return;
+  const addr = quoteState.answers.address || '';
+  const phone = quoteState.answers.customerPhone || '';
+  const email = quoteState.answers.customerEmail || '';
+  const notes = quoteState.answers.notes || '';
+
+  // Find or create customer
+  let cid = null;
+  const custs = await api('/customers');
+  const ex = (custs.customers||[]).find(c => (c.full_name||'').toLowerCase() === name.toLowerCase());
+  if (ex) {
+    cid = ex.id;
+  } else {
+    const nc = await api('/customers', {method:'POST', body:JSON.stringify({full_name:name, address:addr, phone:phone, email:email})});
+    if (nc.id) cid = nc.id;
+  }
+
+  const est = await api('/estimates', {method:'POST', body:JSON.stringify({
+    customer_id: cid, address: addr, status: 'draft',
+    system: quoteState.result.offer.system,
+    package: quoteState.result.offer.slug,
+    total_price: quoteState.result.summary.sellingPrice,
+    total_with_tax: quoteState.result.summary.totalWithTax,
+    measurements: quoteState.result.measurements,
+    choices: quoteState.result.choices,
+    notes: (notes ? notes + ' — ' : '') + 'Generated via Quote Builder — ' + quoteState.result.offer.name
+  })});
+
+  if (est.error) { sfx.play('error'); alert('Error: ' + est.error); return; }
+  sfx.play('success');
+
+  // Show confirmation inline instead of alert
+  const rd = document.getElementById('quoteResult');
+  if (rd) {
+    const confirmHtml = `<div class="panel" style="margin-top:12px;border-color:var(--green);text-align:center;padding:24px">
+      <div style="font-size:2em;margin-bottom:8px">&#10003;</div>
+      <div style="font-family:'Orbitron',monospace;font-size:0.9em;font-weight:700;color:var(--green);letter-spacing:1px">ESTIMATE SAVED</div>
+      <div style="font-size:0.82em;color:var(--text-dim);margin-top:6px">${esc(name)} &mdash; ${esc(quoteState.result.offer.name)} &mdash; ${fmt$(quoteState.result.summary.totalWithTax)}</div>
+      <div style="display:flex;gap:8px;justify-content:center;margin-top:16px">
+        <button class="btn btn-primary btn-sm" onclick="navigate('estimates')">View Estimates</button>
+        <button class="btn btn-outline btn-sm" onclick="generateOutputs('proposal')">Print Proposal</button>
+        <button class="btn btn-outline btn-sm" onclick="generateOutputs('contract')">Generate Contract</button>
+      </div>
+    </div>`;
+    rd.insertAdjacentHTML('beforeend', confirmHtml);
+    rd.lastElementChild.scrollIntoView({behavior:'smooth', block:'center'});
+  }
 }
 
 
@@ -1479,27 +1523,75 @@ async function renderOffers(m) {
   m.innerHTML=html;
 }
 
+let custSearch = '';
 async function renderCustomers(m) {
   m.innerHTML='<div class="loading"><div class="spinner"></div>Loading...</div>';
-  const data=await api('/customers');const custs=data.customers||[];
-  const withEmail=custs.filter(c=>c.email).length;
-  const withPhone=custs.filter(c=>c.phone).length;
+  const data = await api('/customers');
+  const custs = data.customers || [];
+  const withEmail = custs.filter(c => c.email).length;
+  const withPhone = custs.filter(c => c.phone).length;
+  const completeness = custs.length > 0 ? Math.round(((withEmail + withPhone) / (custs.length * 2)) * 100) : 0;
 
-  let html=`<div class="page-header"><div><h1>Customers</h1><div class="sub">${custs.length} total</div></div>
-    <div style="display:flex;gap:6px"><button class="btn btn-sm btn-outline" onclick="guide.start('customers')" style="color:var(--cyan);border-color:rgba(34,211,238,0.2)"><svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button><button class="btn btn-primary btn-sm" onclick="showNewCustomer()">+ New</button></div></div>`;
+  const filtered = custSearch
+    ? custs.filter(c => (c.full_name||c.name||'').toLowerCase().includes(custSearch.toLowerCase()) || (c.email||'').toLowerCase().includes(custSearch.toLowerCase()) || (c.phone||'').includes(custSearch) || (c.address||'').toLowerCase().includes(custSearch.toLowerCase()))
+    : custs;
 
-  // Stat row
-  html+=`<div class="stat-row" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">
+  let html = `<div class="page-header"><div><h1>Customers</h1><div class="sub">${custs.length} contacts</div></div>
+    <div style="display:flex;gap:6px">
+      <button class="btn btn-sm btn-outline" onclick="guide.start('customers')" style="color:var(--cyan);border-color:rgba(34,211,238,0.2)">
+        <svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button>
+      <button class="btn btn-primary btn-sm" onclick="showNewCustomer()">+ New Customer</button>
+    </div></div>`;
+
+  // Stat row with completeness
+  html += `<div class="stat-row" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px">
     <div class="panel" style="padding:12px 14px;display:flex;align-items:center;gap:10px">
       <div class="orb purple" style="width:40px;height:40px"></div>
-      <div><div style="font-family:'Orbitron',monospace;font-size:1.6em;font-weight:700;color:var(--purple)">${custs.length}</div><div class="mega-label">Total</div></div></div>
-    <div class="panel" style="padding:12px 14px"><div style="font-family:'Orbitron',monospace;font-size:1.5em;font-weight:700;color:var(--cyan)">${withEmail}</div><div class="mega-label">With Email</div></div>
-    <div class="panel" style="padding:12px 14px"><div style="font-family:'Orbitron',monospace;font-size:1.5em;font-weight:700;color:var(--green)">${withPhone}</div><div class="mega-label">With Phone</div></div>
+      <div><div style="font-family:'Orbitron',monospace;font-size:1.5em;font-weight:700;color:var(--purple)">${custs.length}</div><div class="mega-label">Total</div></div></div>
+    <div class="panel" style="padding:12px 14px">
+      <div style="font-family:'Orbitron',monospace;font-size:1.4em;font-weight:700;color:var(--cyan)">${withEmail}</div><div class="mega-label">With Email</div></div>
+    <div class="panel" style="padding:12px 14px">
+      <div style="font-family:'Orbitron',monospace;font-size:1.4em;font-weight:700;color:var(--green)">${withPhone}</div><div class="mega-label">With Phone</div></div>
+    <div class="panel" style="padding:12px 14px">
+      ${progressBar(completeness, completeness >= 70 ? 'green' : completeness >= 40 ? 'cyan' : 'yellow', 'Contact Data', completeness + '%')}
+    </div>
   </div>`;
 
-  html+='<div class="panel"><div class="panel-header"><div class="panel-title">Customer Database</div><span class="badge badge-purple">'+custs.length+'</span></div><div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Address</th></tr></thead><tbody>';
-  for(const c of custs) html+=`<tr><td style="font-weight:600;font-size:0.85em">${esc(c.full_name||c.name||'—')}</td><td class="text-dim" style="font-size:0.82em">${esc(c.email||'—')}</td><td class="text-dim" style="font-size:0.82em">${esc(c.phone||'—')}</td><td class="text-dim" style="font-size:0.82em">${esc(c.address||'—')}</td></tr>`;
-  html+='</tbody></table></div></div>';m.innerHTML=html;
+  // Search bar
+  html += `<div class="panel" style="margin-bottom:10px;padding:8px 14px;display:flex;align-items:center;gap:10px">
+    <svg viewBox="0 0 24 24" style="width:16px;height:16px;stroke:var(--text-dim);fill:none;stroke-width:2;flex-shrink:0"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" placeholder="Search by name, email, phone, or address..." value="${esc(custSearch)}" onkeyup="custSearch=this.value;clearTimeout(window._custDebounce);window._custDebounce=setTimeout(()=>renderCustomers(document.getElementById('main')),300)" style="border:none;background:transparent;color:var(--text);font-size:0.88em;width:100%;outline:none">
+    ${custSearch ? `<button class="btn btn-sm btn-outline" onclick="custSearch='';renderCustomers(document.getElementById('main'))" style="flex-shrink:0">Clear</button>` : ''}
+  </div>`;
+
+  // Customer cards
+  if (filtered.length === 0) {
+    html += `<div class="panel" style="text-align:center;padding:40px">
+      <div style="font-size:0.9em;color:var(--text-dim)">${custSearch ? 'No customers match your search.' : 'No customers yet.'}</div>
+      <button class="btn btn-primary btn-sm" style="margin-top:12px" onclick="showNewCustomer()">Add First Customer</button></div>`;
+  } else {
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px">';
+    for (const c of filtered) {
+      const name = c.full_name || c.name || 'Unknown';
+      const hasContact = c.email || c.phone;
+      html += `<div class="panel" style="cursor:default">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <div style="width:36px;height:36px;border-radius:50%;background:rgba(167,139,250,0.1);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:700;color:var(--purple);font-size:0.82em">${name.charAt(0).toUpperCase()}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;font-size:0.9em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(name)}</div>
+            ${c.address ? `<div style="font-size:0.72em;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(c.address)}${c.city ? ', ' + esc(c.city) : ''}</div>` : ''}
+          </div>
+        </div>
+        <div style="display:flex;gap:12px;font-size:0.78em;padding-top:8px;border-top:1px solid var(--glass-border)">
+          ${c.email ? `<div style="display:flex;align-items:center;gap:4px;color:var(--cyan);min-width:0"><svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2;flex-shrink:0"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.email)}</span></div>` : '<span class="text-dim" style="font-size:0.85em">No email</span>'}
+          ${c.phone ? `<div style="display:flex;align-items:center;gap:4px;color:var(--green)"><svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72"/></svg>${esc(c.phone)}</div>` : '<span class="text-dim" style="font-size:0.85em">No phone</span>'}
+        </div>
+        ${c.notes ? `<div style="font-size:0.7em;color:var(--text-dim);margin-top:6px;padding-top:6px;border-top:1px solid var(--glass-border)">${esc(c.notes)}</div>` : ''}
+      </div>`;
+    }
+    html += '</div>';
+  }
+  m.innerHTML = html;
 }
 
 function showNewCustomer(){
@@ -1517,28 +1609,89 @@ function showNewCustomer(){
 async function createCustomer(){const n=document.getElementById('nc_name').value.trim();if(!n){alert('Name required');return;}
   await api('/customers',{method:'POST',body:JSON.stringify({full_name:n,email:document.getElementById('nc_email').value.trim()||null,phone:document.getElementById('nc_phone').value.trim()||null,address:document.getElementById('nc_address').value.trim()||null,city:document.getElementById('nc_city').value.trim()||null,province:document.getElementById('nc_province').value.trim()||null,notes:document.getElementById('nc_notes').value.trim()||null})});navigate('customers');}
 
+let estFilter = 'all';
 async function renderEstimates(m) {
-  m.innerHTML='<div class="loading"><div class="spinner"></div>Loading...</div>';const data=await api('/estimates');const ests=data.estimates||[];
-  const totalVal=ests.reduce((s,e)=>s+(e.total_price||0),0);
-  const draft=ests.filter(e=>e.status==='draft').length;
-  const sent=ests.filter(e=>e.status==='sent').length;
-  const accepted=ests.filter(e=>e.status==='accepted').length;
+  m.innerHTML='<div class="loading"><div class="spinner"></div>Loading...</div>';
+  const data = await api('/estimates');
+  const ests = data.estimates || [];
+  const totalVal = ests.reduce((s,e) => s + (e.total_price||0), 0);
+  const draft = ests.filter(e => e.status==='draft');
+  const sent = ests.filter(e => e.status==='sent');
+  const accepted = ests.filter(e => e.status==='accepted');
+  const declined = ests.filter(e => e.status==='declined');
+  const acceptedVal = accepted.reduce((s,e) => s + (e.total_price||0), 0);
 
-  let html=`<div class="page-header"><div><h1>Estimates</h1><div class="sub">${ests.length} total</div></div>
-    <div style="display:flex;gap:6px"><button class="btn btn-sm btn-outline" onclick="guide.start('estimates')" style="color:var(--cyan);border-color:rgba(34,211,238,0.2)"><svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button><button class="btn btn-primary btn-sm" onclick="navigate('quote')">+ New Quote</button></div></div>`;
+  const filtered = estFilter === 'all' ? ests : ests.filter(e => e.status === estFilter);
 
-  // Stat row
-  html+=`<div class="stat-row" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px">
-    <div class="panel" style="padding:12px 14px"><div class="mega-num cyan sm" style="font-size:1.8em">${fmt$(totalVal)}</div><div class="mega-label">Pipeline</div></div>
-    <div class="panel" style="padding:12px 14px"><div style="font-family:'Orbitron',monospace;font-size:1.5em;font-weight:700;color:var(--text-dim)">${draft}</div><div class="mega-label">Draft</div></div>
-    <div class="panel" style="padding:12px 14px"><div style="font-family:'Orbitron',monospace;font-size:1.5em;font-weight:700;color:var(--blue)">${sent}</div><div class="mega-label">Sent</div></div>
-    <div class="panel" style="padding:12px 14px"><div style="font-family:'Orbitron',monospace;font-size:1.5em;font-weight:700;color:var(--green)">${accepted}</div><div class="mega-label">Accepted</div></div>
+  let html = `<div class="page-header"><div><h1>Estimates</h1><div class="sub">${ests.length} total &mdash; ${fmt$(totalVal)} pipeline</div></div>
+    <div style="display:flex;gap:6px">
+      <button class="btn btn-sm btn-outline" onclick="guide.start('estimates')" style="color:var(--cyan);border-color:rgba(34,211,238,0.2)">
+        <svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button>
+      <button class="btn btn-primary btn-sm" onclick="navigate('quote')">+ New Quote</button>
+    </div></div>`;
+
+  // Pipeline stat cards
+  html += `<div class="stat-row" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:10px">
+    <div class="panel" style="padding:12px 14px;cursor:pointer;${estFilter==='all'?'border-color:var(--cyan)':''}" onclick="estFilter='all';renderEstimates(document.getElementById('main'))">
+      <div class="mega-num cyan sm" style="font-size:1.6em">${fmt$(totalVal)}</div><div class="mega-label">Pipeline</div></div>
+    <div class="panel" style="padding:12px 14px;cursor:pointer;${estFilter==='draft'?'border-color:var(--text-dim)':''}" onclick="estFilter='draft';renderEstimates(document.getElementById('main'))">
+      <div style="font-family:'Orbitron',monospace;font-size:1.4em;font-weight:700;color:var(--text-dim)">${draft.length}</div><div class="mega-label">Draft</div></div>
+    <div class="panel" style="padding:12px 14px;cursor:pointer;${estFilter==='sent'?'border-color:var(--blue)':''}" onclick="estFilter='sent';renderEstimates(document.getElementById('main'))">
+      <div style="font-family:'Orbitron',monospace;font-size:1.4em;font-weight:700;color:var(--blue)">${sent.length}</div><div class="mega-label">Sent</div></div>
+    <div class="panel" style="padding:12px 14px;cursor:pointer;${estFilter==='accepted'?'border-color:var(--green)':''}" onclick="estFilter='accepted';renderEstimates(document.getElementById('main'))">
+      <div style="font-family:'Orbitron',monospace;font-size:1.4em;font-weight:700;color:var(--green)">${accepted.length}</div><div class="mega-label">Accepted</div>
+      ${acceptedVal>0?`<div style="font-size:0.65em;color:var(--green);margin-top:2px">${fmt$(acceptedVal)}</div>`:''}</div>
+    <div class="panel" style="padding:12px 14px;cursor:pointer;${estFilter==='declined'?'border-color:var(--red)':''}" onclick="estFilter='declined';renderEstimates(document.getElementById('main'))">
+      <div style="font-family:'Orbitron',monospace;font-size:1.4em;font-weight:700;color:var(--red)">${declined.length}</div><div class="mega-label">Declined</div></div>
   </div>`;
 
-  html+='<div class="panel"><div class="panel-header"><div class="panel-title">All Estimates</div><span class="badge badge-blue">'+ests.length+'</span></div><div class="table-wrap"><table><thead><tr><th>Customer</th><th>Address</th><th>Status</th><th class="text-right">Amount</th><th>Created</th></tr></thead><tbody>';
-  for(const e of ests){const sc=e.status==='accepted'?'green':e.status==='sent'?'blue':'dim';
-    html+=`<tr><td style="font-weight:600;font-size:0.85em">${esc(e.customer?.full_name||'—')}</td><td class="text-dim" style="font-size:0.82em">${esc(e.address||'—')}</td><td><span class="badge badge-${sc}">${e.status||'draft'}</span></td><td class="text-right text-cyan" style="font-family:'Orbitron',monospace;font-size:0.85em">${e.total_price?fmt$(e.total_price):'—'}</td><td class="text-dim" style="font-size:0.78em">${e.created_at?new Date(e.created_at).toLocaleDateString():'—'}</td></tr>`;}
-  html+='</tbody></table></div></div>';m.innerHTML=html;
+  // Conversion progress
+  const closeRate = ests.length > 0 ? Math.round((accepted.length / ests.length) * 100) : 0;
+  html += `<div class="panel" style="margin-bottom:10px;padding:10px 14px">${progressBar(closeRate, closeRate >= 15 ? 'green' : closeRate >= 8 ? 'cyan' : 'yellow', 'Close Rate', closeRate + '% (' + accepted.length + '/' + ests.length + ')')}</div>`;
+
+  // Estimate cards
+  if (filtered.length === 0) {
+    html += `<div class="panel" style="text-align:center;padding:40px"><div style="font-size:0.9em;color:var(--text-dim)">No ${estFilter === 'all' ? '' : estFilter + ' '}estimates yet.</div>
+      <button class="btn btn-primary btn-sm" style="margin-top:12px" onclick="navigate('quote')">Create First Quote</button></div>`;
+  } else {
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:8px">';
+    for (const e of filtered) {
+      const sc = e.status==='accepted'?'green':e.status==='sent'?'blue':e.status==='declined'?'red':'dim';
+      const pkg = e.package || e.system || '';
+      const created = e.created_at ? new Date(e.created_at).toLocaleDateString() : '';
+      html += `<div class="panel" style="cursor:default">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+          <div>
+            <div style="font-weight:700;font-size:0.92em">${esc(e.customer?.full_name||'Unknown Customer')}</div>
+            <div style="font-size:0.75em;color:var(--text-dim)">${esc(e.address||'No address')}</div>
+          </div>
+          <span class="badge badge-${sc}">${e.status||'draft'}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid var(--glass-border)">
+          <div>
+            ${pkg ? `<div style="font-size:0.7em;color:var(--text-dim);text-transform:capitalize">${esc(pkg)}</div>` : ''}
+            <div style="font-family:'Orbitron',monospace;font-size:1.2em;font-weight:700;color:var(--cyan)">${e.total_with_tax ? fmt$(e.total_with_tax) : e.total_price ? fmt$(e.total_price) : '—'}</div>
+          </div>
+          <div style="font-size:0.7em;color:var(--text-dim)">${created}</div>
+        </div>
+        <div style="display:flex;gap:4px;margin-top:8px;border-top:1px solid var(--glass-border);padding-top:8px">
+          ${e.status==='draft'?`<button class="btn btn-sm btn-outline" onclick="updateEstStatus('${e.id}','sent')">Mark Sent</button>`:''}
+          ${e.status==='sent'?`<button class="btn btn-sm btn-success" onclick="updateEstStatus('${e.id}','accepted')">Accepted</button><button class="btn btn-sm btn-danger" onclick="updateEstStatus('${e.id}','declined')">Declined</button>`:''}
+          ${e.status==='accepted'?`<span style="font-size:0.7em;color:var(--green);font-weight:600">CLOSED</span>`:''}
+          ${e.status==='declined'?`<button class="btn btn-sm btn-outline" onclick="updateEstStatus('${e.id}','draft')">Reopen</button>`:''}
+        </div>
+      </div>`;
+    }
+    html += '</div>';
+  }
+  m.innerHTML = html;
+}
+
+async function updateEstStatus(id, status) {
+  const r = await api('/estimates', {method:'PUT', body:JSON.stringify({id, status})});
+  if (r.error) { alert('Error: ' + r.error); return; }
+  sfx.play('success');
+  renderEstimates(document.getElementById('main'));
 }
 
 async function renderSettings(m) {
