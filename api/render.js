@@ -7,7 +7,7 @@
 // Returns styled HTML ready for browser display / print / PDF export
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireTenant } from '../lib/tenant.js';
-import { renderProposalHTML, renderContractHTML } from '../lib/documentRenderer.js';
+import { renderProposalHTML, renderContractHTML, renderSalesPageHTML } from '../lib/documentRenderer.js';
 
 async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -29,8 +29,10 @@ async function handler(req, res) {
     html = renderProposalHTML(docData);
   } else if (type === 'contract') {
     html = renderContractHTML(docData);
+  } else if (type === 'sales_page') {
+    html = renderSalesPageHTML(docData);
   } else {
-    return res.status(400).json({ error: `Unknown type: ${type}. Use proposal or contract.` });
+    return res.status(400).json({ error: `Unknown type: ${type}. Use proposal, contract, or sales_page.` });
   }
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');

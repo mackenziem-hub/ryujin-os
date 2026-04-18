@@ -1354,9 +1354,10 @@ function renderQuoteResult(el, r) {
     <div style="display:flex;gap:6px;flex-wrap:wrap">
       <button class="btn btn-success" onclick="createEstimateFromQuote()">Save Estimate</button>
       <button class="btn btn-primary" onclick="generateOutputs('proposal')">Print Proposal</button>
-      <button class="btn btn-outline" onclick="generateOutputs('contract')">Generate Contract</button>
+      <button class="btn btn-outline" onclick="generateOutputs('sales_page')">Sales Page</button>
+      <button class="btn btn-outline" onclick="generateOutputs('contract')">Contract</button>
       <button class="btn btn-outline" onclick="generateOutputs('all')">All Outputs</button>
-      <button class="btn btn-outline" onclick="setQuoteMode('advanced')">Edit Line Items</button>
+      <button class="btn btn-outline" onclick="setQuoteMode('advanced')">Edit Items</button>
     </div>
   </div>`;
 
@@ -1444,24 +1445,47 @@ async function recalcWithOverrides(){
 
 async function generateOutputs(type) {
   if (!quoteState.result) return;
-  const payload = {quote_result:quoteState.result,customer_name:quoteState.answers.customerName||'',property_address:quoteState.answers.address||''};
-  if (type==='proposal'||type==='contract') {
-    const od = await api(`/outputs?type=${type}`,{method:'POST',body:JSON.stringify(payload)});
-    const resp = await fetch(`${API}/render?type=${type}&tenant=${TENANT}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(od)});
-    if(!resp.ok){alert('Render failed');return;}
-    const html=await resp.text();const w=window.open('','_blank');
-    if(!w){alert('Pop-up blocked');return;}w.document.write(html);w.document.close();return;
+  const payload = {
+    quote_result: quoteState.result,
+    customer_name: quoteState.answers.customerName || '',
+    property_address: quoteState.answers.address || '',
+    prepared_by: 'Mackenzie Mazerolle'
+  };
+
+  // Types that render as HTML
+  const renderTypes = ['proposal', 'contract', 'sales_page'];
+
+  if (renderTypes.includes(type)) {
+    const od = await api(`/outputs?type=${type}`, {method:'POST', body:JSON.stringify(payload)});
+    if (od.error) { alert('Output error: ' + od.error); return; }
+    const resp = await fetch(`${API}/render?type=${type}&tenant=${TENANT}`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(od)});
+    if (!resp.ok) { alert('Render failed'); return; }
+    const html = await resp.text();
+    const w = window.open('', '_blank');
+    if (!w) { alert('Pop-up blocked — allow pop-ups for this site'); return; }
+    w.document.write(html); w.document.close();
+    return;
   }
-  if (type==='all') {
-    const ad=await api('/outputs?type=all',{method:'POST',body:JSON.stringify(payload)});
-    for (const t of ['proposal','contract']) {
-      const resp=await fetch(`${API}/render?type=${t}&tenant=${TENANT}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(ad.outputs[t])});
-      const html=await resp.text();const w=window.open('','_blank');if(w){w.document.write(html);w.document.close();}
+
+  if (type === 'all') {
+    const ad = await api('/outputs?type=all', {method:'POST', body:JSON.stringify(payload)});
+    if (ad.error) { alert('Output error: ' + ad.error); return; }
+    for (const t of ['proposal', 'contract', 'sales_page']) {
+      const data = t === 'sales_page' ? ad.outputs?.salesPage : ad.outputs?.[t];
+      if (!data) continue;
+      const resp = await fetch(`${API}/render?type=${t}&tenant=${TENANT}`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
+      if (!resp.ok) continue;
+      const html = await resp.text();
+      const w = window.open('', '_blank');
+      if (w) { w.document.write(html); w.document.close(); }
     }
     return;
   }
-  const r=await api(`/outputs?type=${type}`,{method:'POST',body:JSON.stringify(payload)});
-  const w=window.open('','_blank');if(w)w.document.write(`<pre style="background:#060a14;color:#d0daf0;padding:20px;font-family:monospace;font-size:13px;white-space:pre-wrap">${JSON.stringify(r,null,2)}</pre>`);
+
+  // Fallback: show JSON
+  const r = await api(`/outputs?type=${type}`, {method:'POST', body:JSON.stringify(payload)});
+  const w = window.open('', '_blank');
+  if (w) w.document.write(`<pre style="background:#060a14;color:#d0daf0;padding:20px;font-family:monospace;font-size:13px;white-space:pre-wrap">${JSON.stringify(r,null,2)}</pre>`);
 }
 
 async function createEstimateFromQuote() {
