@@ -775,7 +775,7 @@ const globalSearch = {
         items.push({type:'Customer', name:c.full_name||c.name, meta:c.email||c.phone||'', action:()=>{globalSearch.toggle();navigate('customers');}});
       }
       for (const e of (estData.estimates||[]).filter(e => (e.customer?.full_name||'').toLowerCase().includes(ql) || (e.address||'').toLowerCase().includes(ql)).slice(0,5)) {
-        items.push({type:'Estimate', name:e.customer?.full_name||'—', meta: (e.total_with_tax?fmt$(e.total_with_tax):'') + ' ' + (e.status||''), action:()=>{globalSearch.toggle();navigate('estimates');}});
+        items.push({type:'Estimate', name:e.customer?.full_name||'—', meta: (estTotalWithTax(e)?fmt$(estTotalWithTax(e)):'') + ' ' + (e.status||''), action:()=>{globalSearch.toggle();navigate('estimates');}});
       }
     }
 
@@ -831,6 +831,27 @@ function showShortcutsHelp() {
   </div>`;
   document.body.appendChild(overlay);
 }
+
+// Helper to extract price from estimate (handles both old and new schema)
+function estPrice(e) {
+  if (e.total_price) return e.total_price;
+  if (e.calculated_packages && e.selected_package) {
+    const pkg = e.calculated_packages[e.selected_package];
+    return pkg?.sellingPrice || pkg?.totalWithTax || 0;
+  }
+  return 0;
+}
+function estTotalWithTax(e) {
+  if (e.total_with_tax) return e.total_with_tax;
+  if (e.calculated_packages && e.selected_package) {
+    const pkg = e.calculated_packages[e.selected_package];
+    return pkg?.totalWithTax || pkg?.sellingPrice || 0;
+  }
+  return 0;
+}
+function estPkg(e) { return e.package || e.selected_package || e.proposal_mode || ''; }
+function estSys(e) { return e.system || (e.proposal_mode === 'Exterior Only' ? 'exterior' : e.proposal_mode === 'Roof + Shell' ? 'combined' : 'asphalt'); }
+function estAddr(e) { return e.address || e.customer?.address || ''; }
 
 // Cached API for read-heavy endpoints
 async function cachedApi(path, key) {
@@ -1060,7 +1081,7 @@ async function renderDashboard(m) {
   const systems = {};
   for (const o of (offers.offers || [])) systems[o.system] = (systems[o.system] || 0) + 1;
 
-  const pipelineVal = estList.reduce((s,e) => s + (e.total_price || 0), 0);
+  const pipelineVal = estList.reduce((s,e) => s + estPrice(e), 0);
   const acceptedCount = estList.filter(e => e.status === 'accepted').length;
   const draftCount = estList.filter(e => e.status === 'draft').length;
   const sentCount = estList.filter(e => e.status === 'sent').length;
@@ -1079,11 +1100,11 @@ async function renderDashboard(m) {
   const thisWeekSent = thisWeekEsts.filter(e => e.status !== 'draft').length;
   const lastWeekSent = lastWeekEsts.filter(e => e.status !== 'draft').length;
   const thisWeekWon = thisWeekEsts.filter(e => e.status === 'accepted').length;
-  const thisWeekVal = thisWeekEsts.reduce((s,e) => s + (e.total_price||0), 0);
-  const lastWeekVal = lastWeekEsts.reduce((s,e) => s + (e.total_price||0), 0);
+  const thisWeekVal = thisWeekEsts.reduce((s,e) => s + (estPrice(e)), 0);
+  const lastWeekVal = lastWeekEsts.reduce((s,e) => s + (estPrice(e)), 0);
   const valDiff = thisWeekVal - lastWeekVal;
   const closeRate = estList.length > 0 ? Math.round((acceptedCount / estList.length) * 100) : 0;
-  const acceptedVal = estList.filter(e => e.status === 'accepted').reduce((s,e) => s + (e.total_price||0), 0);
+  const acceptedVal = estList.filter(e => e.status === 'accepted').reduce((s,e) => s + (estPrice(e)), 0);
 
   html += `<div style="display:flex;gap:12px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
     <span style="font-size:0.65em;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:1.5px">This Week:</span>
@@ -1298,7 +1319,7 @@ async function renderDashboard(m) {
     html += `<tr style="cursor:pointer" onclick="estFilter='all';navigate('estimates')">
       <td style="font-weight:600;font-size:0.82em">${esc(e.customer?.full_name||e.customer?.name||'—')}</td>
       <td><span class="badge badge-${sc}">${e.status||'draft'}</span></td>
-      <td class="text-right" style="font-family:'Orbitron',monospace;color:var(--cyan);font-size:0.85em">${e.total_price?fmt$(e.total_price):'—'}</td>
+      <td class="text-right" style="font-family:'Orbitron',monospace;color:var(--cyan);font-size:0.85em">${estPrice(e)?fmt$(estPrice(e)):'—'}</td>
       <td class="text-dim" style="font-size:0.78em">${eAge}</td></tr>`;
   }
   html += '</tbody></table></div></div>';
@@ -2188,15 +2209,36 @@ async function createEstimateFromQuote() {
     if (nc.id) cid = nc.id;
   }
 
+  const m = quoteState.result.measurements || {};
   const est = await api('/estimates', {method:'POST', body:JSON.stringify({
-    customer_id: cid, address: addr, status: 'draft',
-    system: quoteState.result.offer.system,
-    package: quoteState.result.offer.slug,
-    total_price: quoteState.result.summary.sellingPrice,
-    total_with_tax: quoteState.result.summary.totalWithTax,
-    measurements: quoteState.result.measurements,
-    choices: quoteState.result.choices,
-    notes: (notes ? notes + ' — ' : '') + 'Generated via Quote Builder — ' + quoteState.result.offer.name
+    customer_id: cid,
+    status: 'draft',
+    proposal_mode: quoteState.system === 'combined' ? 'Roof + Shell' : quoteState.system === 'exterior' ? 'Exterior Only' : 'Roof Only',
+    pricing_model: (m.projectType === 'local') ? 'Local' : (m.projectType === 'dayTrip') ? 'Day Trip' : 'Extended Stay',
+    roof_area_sqft: m.input_sqft || quoteState.answers.squareFeet || 0,
+    roof_pitch: m.pitch || quoteState.answers.pitch || '5/12',
+    complexity: m.complexity || 'medium',
+    stories: quoteState.answers.stories || 1,
+    extra_layers: quoteState.answers.extraLayers || 1,
+    chimneys: quoteState.answers.chimneys || 0,
+    chimney_size: quoteState.answers.chimneySize || 'small',
+    chimney_cricket: quoteState.answers.cricket || false,
+    pipes: quoteState.answers.pipes || 3,
+    vents: quoteState.answers.vents || 2,
+    eaves_lf: quoteState.answers.eavesLF || 0,
+    rakes_lf: quoteState.answers.rakesLF || 0,
+    ridges_lf: quoteState.answers.ridgesLF || 0,
+    valleys_lf: quoteState.answers.valleysLF || 0,
+    distance_km: m.distanceKM || quoteState.answers.distanceKM || 0,
+    siding_sqft: quoteState.answers.wallSqFt || 0,
+    soffit_lf: quoteState.answers.soffitLF || 0,
+    fascia_lf: quoteState.answers.fasciaLF || 0,
+    gutter_lf: quoteState.answers.gutterLF || 0,
+    window_count: quoteState.answers.windowCount || 0,
+    door_count: quoteState.answers.doorCount || 0,
+    selected_package: quoteState.result.offer.slug,
+    calculated_packages: { [quoteState.result.offer.slug]: quoteState.result.summary },
+    notes: [(notes ? notes + ' — ' : '') + 'Quote Builder — ' + quoteState.result.offer.name + ' — ' + fmt$(quoteState.result.summary.totalWithTax)]
   })});
 
   if (est.error) { sfx.play('error'); toast('Error: ' + est.error, 'error'); return; }
@@ -2487,7 +2529,7 @@ async function renderCustomers(m) {
                 const sc = e.status==='accepted'?'green':e.status==='sent'?'blue':e.status==='declined'?'red':'dim';
                 return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:0.78em">
                   <div><span class="badge badge-${sc}" style="font-size:0.7em">${e.status||'draft'}</span> <span class="text-dim">${esc(e.package||'')}</span></div>
-                  <span style="font-family:'Orbitron',monospace;color:var(--cyan)">${e.total_with_tax?fmt$(e.total_with_tax):e.total_price?fmt$(e.total_price):'—'}</span>
+                  <span style="font-family:'Orbitron',monospace;color:var(--cyan)">${estTotalWithTax(e)?fmt$(estTotalWithTax(e)):estPrice(e)?fmt$(estPrice(e)):'—'}</span>
                 </div>`;
               }).join('')}
             </div>
@@ -2548,7 +2590,7 @@ async function exportCustomersCSV() {
   const headers = ['Name','Email','Phone','Address','City','Province','Notes','Estimates','Total Value'];
   const rows = custs.map(c => {
     const ce = allEsts.filter(e => e.customer_id === c.id);
-    return [c.full_name||c.name||'', c.email||'', c.phone||'', c.address||'', c.city||'', c.province||'', c.notes||'', ce.length, ce.reduce((s,e)=>s+(e.total_with_tax||e.total_price||0),0)];
+    return [c.full_name||c.name||'', c.email||'', c.phone||'', c.address||'', c.city||'', c.province||'', c.notes||'', ce.length, ce.reduce((s,e)=>s+estTotalWithTax(e),0)];
   });
   const csv = [headers,...rows].map(r => r.map(c => '"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
   const blob = new Blob([csv],{type:'text/csv'});
@@ -2626,8 +2668,8 @@ async function duplicateEstimate(id) {
     customer_id: est.customer_id,
     address: est.address,
     status: 'draft',
-    system: est.system,
-    package: est.package,
+    system: estSys(est),
+    package: estPkg(est),
     total_price: est.total_price,
     total_with_tax: est.total_with_tax,
     measurements: est.measurements,
@@ -2680,12 +2722,12 @@ async function renderEstimates(m) {
   m.innerHTML='<div class="loading"><div class="spinner"></div>Loading...</div>';
   const data = await api('/estimates');
   const ests = data.estimates || [];
-  const totalVal = ests.reduce((s,e) => s + (e.total_price||0), 0);
+  const totalVal = ests.reduce((s,e) => s + (estPrice(e)), 0);
   const draft = ests.filter(e => e.status==='draft');
   const sent = ests.filter(e => e.status==='sent');
   const accepted = ests.filter(e => e.status==='accepted');
   const declined = ests.filter(e => e.status==='declined');
-  const acceptedVal = accepted.reduce((s,e) => s + (e.total_price||0), 0);
+  const acceptedVal = accepted.reduce((s,e) => s + (estPrice(e)), 0);
 
   let filtered = estFilter === 'all' ? [...ests] : ests.filter(e => e.status === estFilter);
   if (estSearch) {
@@ -2695,8 +2737,8 @@ async function renderEstimates(m) {
   // Sort
   if (estSort === 'newest') filtered.sort((a,b) => new Date(b.created_at||0) - new Date(a.created_at||0));
   else if (estSort === 'oldest') filtered.sort((a,b) => new Date(a.created_at||0) - new Date(b.created_at||0));
-  else if (estSort === 'highest') filtered.sort((a,b) => (b.total_with_tax||b.total_price||0) - (a.total_with_tax||a.total_price||0));
-  else if (estSort === 'lowest') filtered.sort((a,b) => (a.total_with_tax||a.total_price||0) - (b.total_with_tax||b.total_price||0));
+  else if (estSort === 'highest') filtered.sort((a,b) => estTotalWithTax(b) - estTotalWithTax(a));
+  else if (estSort === 'lowest') filtered.sort((a,b) => estTotalWithTax(a) - estTotalWithTax(b));
   else if (estSort === 'name') filtered.sort((a,b) => (a.customer?.full_name||'').localeCompare(b.customer?.full_name||''));
 
   let html = `<div class="page-header"><div><h1>Estimates</h1><div class="sub">${ests.length} total &mdash; ${fmt$(totalVal)} pipeline</div></div>
@@ -2775,7 +2817,7 @@ async function renderEstimates(m) {
     html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:8px">';
     for (const e of filtered) {
       const sc = e.status==='accepted'?'green':e.status==='sent'?'blue':e.status==='declined'?'red':'dim';
-      const pkg = e.package || e.system || '';
+      const pkg = estPkg(e);
       const created = e.created_at ? new Date(e.created_at).toLocaleDateString() : '';
       const createdAgo = e.created_at ? timeAgo(new Date(e.created_at)) : '';
       const daysSince = e.created_at ? Math.floor((Date.now() - new Date(e.created_at).getTime()) / 86400000) : 0;
@@ -2784,7 +2826,7 @@ async function renderEstimates(m) {
       const isExpiringSoon = daysRemaining > 0 && daysRemaining <= 7 && e.status === 'sent';
       const isStale = (e.status === 'draft' && daysSince > 7) || (e.status === 'sent' && daysSince > 3);
       const custName = e.customer?.full_name || 'Unknown Customer';
-      const hasMeasurements = e.measurements && Object.keys(e.measurements).length > 0;
+      const hasMeasurements = e.roof_area_sqft || (e.measurements && Object.keys(e.measurements).length > 0);
       const eid = e.id;
 
       html += `<details class="panel" style="cursor:default;padding:0;${isExpired?'border-color:rgba(248,113,113,0.3)':isStale||isExpiringSoon?'border-color:rgba(250,204,21,0.3)':''}">
@@ -2794,7 +2836,7 @@ async function renderEstimates(m) {
               <input type="checkbox" ${estSelected.has(eid)?'checked':''} onclick="event.stopPropagation();toggleEstSelect('${eid}',this.checked)" style="width:auto;accent-color:var(--cyan);margin-top:3px;cursor:pointer">
               <div>
                 <div style="font-weight:700;font-size:0.92em">${esc(custName)}</div>
-                <div style="font-size:0.75em;color:var(--text-dim)">${esc(e.address||'No address')}</div>
+                <div style="font-size:0.75em;color:var(--text-dim)">${esc(estAddr(e)||'No address')}</div>
               </div>
             </div>
             <span class="badge badge-${sc}">${e.status||'draft'}</span>
@@ -2812,18 +2854,18 @@ async function renderEstimates(m) {
         <div style="padding:0 14px 14px;border-top:1px solid var(--glass-border)">
           <!-- Measurements summary -->
           ${hasMeasurements ? `<div style="display:flex;gap:12px;flex-wrap:wrap;padding:10px 0;font-size:0.75em">
-            ${e.measurements.input_sqft ? `<div><span class="text-dim">Area:</span> ${e.measurements.input_sqft} sqft</div>` : ''}
-            ${e.measurements.pitch ? `<div><span class="text-dim">Pitch:</span> ${e.measurements.pitch}</div>` : ''}
-            ${e.measurements.measuredSQ ? `<div><span class="text-dim">SQ:</span> ${e.measurements.measuredSQ}</div>` : ''}
-            ${e.measurements.workdays ? `<div><span class="text-dim">Days:</span> ${e.measurements.workdays}</div>` : ''}
-            ${e.measurements.distanceKM ? `<div><span class="text-dim">Dist:</span> ${e.measurements.distanceKM}km</div>` : ''}
+            ${e.roof_area_sqft || e.measurements?.input_sqft ? `<div><span class="text-dim">Area:</span> ${e.roof_area_sqft || e.measurements?.input_sqft} sqft</div>` : ''}
+            ${e.roof_pitch || e.measurements?.pitch ? `<div><span class="text-dim">Pitch:</span> ${e.roof_pitch || e.measurements?.pitch}</div>` : ''}
+            ${e.complexity ? `<div><span class="text-dim">Type:</span> ${e.complexity}</div>` : ''}
+            ${e.stories > 1 ? `<div><span class="text-dim">Stories:</span> ${e.stories}</div>` : ''}
+            ${e.distance_km || e.measurements?.distanceKM ? `<div><span class="text-dim">Dist:</span> ${e.distance_km || e.measurements?.distanceKM}km</div>` : ''}
           </div>` : ''}
 
           <!-- Price breakdown -->
-          ${e.total_price ? `<div style="display:flex;justify-content:space-between;font-size:0.78em;padding:4px 0">
-            <span class="text-dim">Selling</span><span>${fmt$(e.total_price)}</span></div>` : ''}
-          ${e.total_with_tax && e.total_price ? `<div style="display:flex;justify-content:space-between;font-size:0.78em;padding:4px 0">
-            <span class="text-dim">Tax incl.</span><span style="font-weight:600;color:var(--cyan)">${fmt$(e.total_with_tax)}</span></div>` : ''}
+          ${estPrice(e) ? `<div style="display:flex;justify-content:space-between;font-size:0.78em;padding:4px 0">
+            <span class="text-dim">Selling</span><span>${fmt$(estPrice(e))}</span></div>` : ''}
+          ${estTotalWithTax(e) && estTotalWithTax(e) !== estPrice(e) ? `<div style="display:flex;justify-content:space-between;font-size:0.78em;padding:4px 0">
+            <span class="text-dim">Tax incl.</span><span style="font-weight:600;color:var(--cyan)">${fmt$(estTotalWithTax(e))}</span></div>` : ''}
 
           <!-- Notes -->
           <div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--glass-border)">
@@ -2867,12 +2909,12 @@ async function exportEstimatesCSV() {
   const headers = ['Customer','Address','Package','System','Status','Selling Price','Total w/Tax','Created'];
   const rows = ests.map(e => [
     e.customer?.full_name || '',
-    e.address || '',
-    e.package || '',
-    e.system || '',
+    estAddr(e),
+    estPkg(e),
+    estSys(e),
     e.status || 'draft',
-    e.total_price || '',
-    e.total_with_tax || '',
+    estPrice(e) || '',
+    estTotalWithTax(e) || '',
     e.created_at ? new Date(e.created_at).toLocaleDateString() : ''
   ]);
   const csv = [headers, ...rows].map(r => r.map(c => '"' + String(c).replace(/"/g,'""') + '"').join(',')).join('\n');
@@ -2928,15 +2970,19 @@ function reQuoteEstimate(id, name, address, pkg) {
   // Try to get the estimate to load measurements
   api('/estimates?id=' + id).then(data => {
     const est = data.estimate || data;
-    if (est.measurements) {
-      Object.assign(quoteState.answers, {
-        squareFeet: est.measurements.input_sqft,
-        pitch: est.measurements.pitch,
-        distanceKM: est.measurements.distanceKM,
-        complexity: est.measurements.complexity
-      });
-    }
-    if (est.system) quoteState.system = est.system === 'asphalt' ? 'residential' : est.system;
+    // Load measurements from DB columns or nested object
+    Object.assign(quoteState.answers, {
+      squareFeet: est.roof_area_sqft || est.measurements?.input_sqft || 0,
+      pitch: est.roof_pitch || est.measurements?.pitch || '5/12',
+      distanceKM: est.distance_km || est.measurements?.distanceKM || 10,
+      complexity: est.complexity || est.measurements?.complexity || 'medium',
+      stories: est.stories || 1,
+      extraLayers: est.extra_layers || 1,
+      chimneys: est.chimneys || 0,
+      pipes: est.pipes || 3,
+      vents: est.vents || 2
+    });
+    if (estSys(est)) quoteState.system = estSys(est) === 'asphalt' ? 'residential' : estSys(est);
     navigate('quote');
   });
 }
@@ -2945,17 +2991,18 @@ async function generateEstOutputs(id, type) {
   // Fetch estimate, build a minimal quote result, generate output
   const data = await api('/estimates?id=' + id);
   const est = data.estimate || data;
-  if (!est || !est.package) { toast('Estimate data incomplete', 'error'); return; }
+  if (!est || !estPkg(est)) { toast('Estimate data incomplete', 'error'); return; }
 
   // Re-calculate via the API
   const calcPayload = {
-    system: est.system || 'residential',
-    offer_slug: est.package,
+    system: estSys(est) || 'residential',
+    offer_slug: estPkg(est),
     answers: {
       address: est.address || '',
-      ...(est.measurements || {}),
-      squareFeet: est.measurements?.input_sqft || 0,
-      distanceKM: est.measurements?.distanceKM || 10
+      squareFeet: est.roof_area_sqft || est.measurements?.input_sqft || 0,
+      pitch: est.roof_pitch || est.measurements?.pitch || '5/12',
+      distanceKM: est.distance_km || est.measurements?.distanceKM || 10,
+      complexity: est.complexity || 'medium'
     }
   };
   const quoteResult = await api('/quote?mode=guided&materials=1', {method:'POST', body:JSON.stringify(calcPayload)});
