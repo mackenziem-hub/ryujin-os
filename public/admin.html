@@ -416,8 +416,14 @@ tr:hover td{background:rgba(34,211,238,0.02)}
   /* System selector — 5→3 on mobile */
   .sys-grid{grid-template-columns:repeat(3,1fr)!important}
 
-  /* Stat rows — 4/3 cols → 2 */
+  /* Stat rows — 4/3/5 cols → 2 */
   .stat-row{grid-template-columns:repeat(2,1fr)!important}
+
+  /* Package cards — force 1 col on mobile */
+  .pkg-card{min-width:0!important}
+
+  /* Collapsible sections */
+  details.panel summary{padding:10px 12px!important}
 
   /* Settings side-by-side → stacked */
   .dash-grid[style*="1fr 1fr"]{grid-template-columns:1fr!important}
@@ -1047,6 +1053,8 @@ async function renderQuoteForm() {
     // ═══ Section 1: Property & Customer Info ═══
     html += formSection('Property & Customer', '📍',
       qField('customerName','Customer Name','text',{hint:'For proposal header'}) +
+      qField('customerPhone','Phone','tel',{hint:'Mobile preferred'}) +
+      qField('customerEmail','Email','text',{hint:'For sending proposal'}) +
       qField('address','Property Address','text',{required:true,hint:'Used for distance calc & project file'}) +
       qField('distanceKM','Distance from Shop (km)','number',{required:true,default:10,hint:'Riverview to job site'}) +
       qField('stories','Number of Stories','select',{default:1,options:[1,1.5,2,2.5,3]})
@@ -1493,34 +1501,73 @@ async function createEstimateFromQuote() {
 // ═══════════════════════════════════════════
 async function renderOffers(m) {
   m.innerHTML='<div class="loading"><div class="spinner"></div>Loading...</div>';
-  if(!offersCache) offersCache=await api('/quote?offers=1');
-  const offers=offersCache.offers||[];const groups={};
-  for(const o of offers){const c=o.system||'other';if(!groups[c])groups[c]=[];groups[c].push(o);}
-  const sysCount=Object.keys(groups).length;
+  if (!offersCache) offersCache = await api('/quote?offers=1');
+  const offers = offersCache.offers || [];
+  const groups = {};
+  for (const o of offers) { const c = o.system||'other'; if (!groups[c]) groups[c]=[]; groups[c].push(o); }
+  const sysCount = Object.keys(groups).length;
+  const sysIcons = {asphalt:'🏠',metal:'⚙️',exterior:'🧱',combined:'🔄',other:'📦'};
+  const sysLabels = {asphalt:'Residential & Commercial',metal:'Metal Roofing',exterior:'Exterior / Shell',combined:'Combined Packages',other:'Other'};
 
-  let html=`<div class="page-header"><div><h1>Offers</h1><div class="sub">${offers.length} packages &bull; ${sysCount} systems</div></div>
-    <button class="btn btn-sm btn-outline" onclick="guide.start('offers')" style="color:var(--cyan);border-color:rgba(34,211,238,0.2)"><svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button></div>`;
+  let html = `<div class="page-header"><div><h1>Offers</h1><div class="sub">${offers.length} packages across ${sysCount} systems</div></div>
+    <div style="display:flex;gap:6px">
+      <button class="btn btn-sm btn-outline" onclick="guide.start('offers')" style="color:var(--cyan);border-color:rgba(34,211,238,0.2)">
+        <svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button>
+    </div></div>`;
 
-  // System stat row
-  html+=`<div class="dash-grid" style="grid-template-columns:repeat(${Math.min(sysCount,5)},1fr);margin-bottom:10px">`;
-  for(const [sys,items] of Object.entries(groups)){
-    html+=`<div class="panel" style="text-align:center;padding:10px">
-      <div style="font-family:'Orbitron',monospace;font-size:1.5em;font-weight:700;color:var(--cyan)">${items.length}</div>
-      <div class="mega-label">${sys}</div></div>`;
+  // System overview cards
+  html += `<div class="dash-grid" style="grid-template-columns:repeat(${Math.min(sysCount,4)},1fr);margin-bottom:10px">`;
+  for (const [sys,items] of Object.entries(groups)) {
+    const confirmed = items.filter(o => !o.has_estimated_pricing).length;
+    html += `<div class="panel" style="text-align:center;padding:12px">
+      <div style="font-size:1.3em;margin-bottom:4px">${sysIcons[sys]||'📦'}</div>
+      <div style="font-family:'Orbitron',monospace;font-size:1.4em;font-weight:700;color:var(--cyan)">${items.length}</div>
+      <div class="mega-label">${sys}</div>
+      <div style="font-size:0.6em;color:var(--green);margin-top:4px">${confirmed} confirmed pricing</div>
+    </div>`;
   }
-  html+='</div>';
+  html += '</div>';
 
-  for(const [sys,items] of Object.entries(groups)){
-    html+=`<div class="panel" style="margin-bottom:10px"><div class="panel-header"><div class="panel-title">${sys}</div><span class="badge badge-blue">${items.length}</span></div><div class="table-wrap"><table><thead><tr><th>Name</th><th>Badge</th><th>Warranty</th><th>Estimated</th><th>Sort</th></tr></thead><tbody>`;
-    for(const o of items) html+=`<tr>
-      <td style="font-weight:600;font-size:0.85em">${esc(o.name)}<br><span class="text-dim" style="font-size:0.7em">${esc(o.slug)}</span></td>
-      <td>${o.badge?`<span class="badge badge-blue">${o.badge}</span>`:'—'}</td>
-      <td>${o.warranty_years?o.warranty_years+' yr':'—'}</td>
-      <td>${o.has_estimated_pricing?'<span class="badge badge-yellow">EST</span>':'<span class="badge badge-green">Confirmed</span>'}</td>
-      <td class="text-dim">${o.sort_order}</td></tr>`;
-    html+='</tbody></table></div></div>';
+  // Offer cards grouped by system
+  for (const [sys,items] of Object.entries(groups)) {
+    html += `<div style="margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <span style="font-size:1.1em">${sysIcons[sys]||'📦'}</span>
+        <span style="font-family:'Orbitron',monospace;font-size:0.7em;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim)">${sysLabels[sys]||sys}</span>
+        <span class="badge badge-blue">${items.length}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px">`;
+
+    for (const o of items) {
+      const copy = PACKAGE_COPY[o.slug] || { tagline: o.badge||'', icon: sysIcons[sys]||'📦', color: 'cyan' };
+      html += `<div class="panel" style="padding:14px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:1.1em">${copy.icon}</span>
+            <div>
+              <div style="font-weight:700;font-size:0.88em;color:var(--${copy.color})">${esc(o.name)}</div>
+              <div style="font-size:0.62em;color:var(--text-dim);font-family:monospace">${esc(o.slug)}</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:4px">
+            ${o.badge ? `<span class="badge badge-blue">${esc(o.badge)}</span>` : ''}
+            ${o.is_default ? '<span class="badge badge-green">Default</span>' : ''}
+          </div>
+        </div>
+
+        <div style="font-size:0.75em;color:var(--text-dim);line-height:1.5;margin-bottom:10px;max-height:40px;overflow:hidden">${esc(o.description||copy.tagline||'')}</div>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;padding-top:8px;border-top:1px solid var(--glass-border)">
+          ${o.warranty_years ? `<div style="display:flex;align-items:center;gap:3px;font-size:0.7em"><svg viewBox="0 0 24 24" style="width:10px;height:10px;stroke:var(--green);fill:none;stroke-width:2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span style="color:var(--green)">${o.warranty_years}yr</span></div>` : ''}
+          <div style="font-size:0.65em;color:var(--text-dim)">${o.pricing_method||'multiplier'}</div>
+          ${o.has_estimated_pricing ? '<span class="badge badge-yellow" style="font-size:0.5em">EST</span>' : '<span class="badge badge-green" style="font-size:0.5em">Verified</span>'}
+          <div style="font-size:0.6em;color:var(--text-dim);margin-left:auto">#${o.sort_order}</div>
+        </div>
+      </div>`;
+    }
+    html += '</div></div>';
   }
-  m.innerHTML=html;
+  m.innerHTML = html;
 }
 
 let custSearch = '';
