@@ -2319,11 +2319,14 @@ async function renderEstimates(m) {
       const sc = e.status==='accepted'?'green':e.status==='sent'?'blue':e.status==='declined'?'red':'dim';
       const pkg = e.package || e.system || '';
       const created = e.created_at ? new Date(e.created_at).toLocaleDateString() : '';
+      const createdAgo = e.created_at ? timeAgo(new Date(e.created_at)) : '';
+      const daysSince = e.created_at ? Math.floor((Date.now() - new Date(e.created_at).getTime()) / 86400000) : 0;
+      const isStale = (e.status === 'draft' && daysSince > 7) || (e.status === 'sent' && daysSince > 3);
       const custName = e.customer?.full_name || 'Unknown Customer';
       const hasMeasurements = e.measurements && Object.keys(e.measurements).length > 0;
       const eid = e.id;
 
-      html += `<details class="panel" style="cursor:default;padding:0">
+      html += `<details class="panel" style="cursor:default;padding:0;${isStale?'border-color:rgba(250,204,21,0.3)':''}"
         <summary style="padding:12px 14px;cursor:pointer;list-style:none;display:block">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
             <div>
@@ -2337,7 +2340,7 @@ async function renderEstimates(m) {
               ${pkg ? `<span style="font-size:0.68em;color:var(--text-dim);text-transform:capitalize">${esc(pkg)}</span>` : ''}
               <div style="font-family:'Orbitron',monospace;font-size:1.15em;font-weight:700;color:var(--cyan)">${e.total_with_tax ? fmt$(e.total_with_tax) : e.total_price ? fmt$(e.total_price) : '—'}</div>
             </div>
-            <div style="font-size:0.68em;color:var(--text-dim)">${created}</div>
+            <div style="font-size:0.68em;color:${isStale?'var(--yellow)':'var(--text-dim)'}">${createdAgo}${isStale?' ⚠':''}${e.status==='sent'&&daysSince>3?' follow up!':''}</div>
           </div>
         </summary>
         <div style="padding:0 14px 14px;border-top:1px solid var(--glass-border)">
