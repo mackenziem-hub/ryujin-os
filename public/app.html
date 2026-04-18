@@ -203,33 +203,72 @@ function render() {
 
 // ─── TICKETS TAB ───
 async function renderTickets(c) {
-  c.innerHTML = '<div class="section-header"><div class="section-title">My Tickets</div></div>';
-
   const params = currentUser?.id ? `&assigned_to=${currentUser.id}` : '';
-  const data = await api(`/tickets?status=open${params}`);
-  const activeData = await api(`/tickets?status=active${params}`);
+  const [data, activeData, projData] = await Promise.all([
+    api(`/tickets?status=open${params}`),
+    api(`/tickets?status=active${params}`),
+    api('/projects')
+  ]);
   const tickets = [...(activeData.tickets || []), ...(data.tickets || [])];
+  const activeProjects = (projData.projects || []).filter(p => p.status === 'active' || p.status === 'not_started');
+  const now = new Date();
+  const greeting = now.getHours() < 12 ? 'Good morning' : now.getHours() < 17 ? 'Good afternoon' : 'Good evening';
+
+  let html = '';
+
+  // Daily summary header
+  html += `<div style="margin-bottom:16px">
+    <div style="font-size:1.2em;font-weight:800">${greeting}, ${esc(currentUser?.name || 'Crew')}</div>
+    <div style="font-size:0.82em;color:var(--text-dim)">${now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</div>
+  </div>`;
+
+  // Quick stats
+  const urgent = tickets.filter(t => t.priority === 'urgent').length;
+  const active = tickets.filter(t => t.status === 'active').length;
+  html += `<div class="metrics-grid" style="margin-bottom:16px">
+    <div class="metric-card"><div class="metric-val ${active > 0 ? 'green' : 'accent'}">${active}</div><div class="metric-label">In Progress</div></div>
+    <div class="metric-card"><div class="metric-val ${urgent > 0 ? 'red' : 'accent'}">${tickets.length}</div><div class="metric-label">Open Tasks</div></div>
+  </div>`;
+
+  // Active job cards (projects in progress)
+  if (activeProjects.length > 0) {
+    html += '<div class="section-header"><div class="section-title">Active Jobs</div></div>';
+    for (const p of activeProjects.slice(0, 3)) {
+      html += `<div class="card" onclick="showProject('${p.id}')" style="border-left:3px solid var(--green)">
+        <div class="card-title">${esc(p.name || p.address || 'Job')}</div>
+        <div class="card-sub">${esc(p.address || '')}${p.city ? ', ' + esc(p.city) : ''}</div>
+        <div class="card-row">
+          <span class="badge badge-active">${(p.status || '').replace('_', ' ')}</span>
+          ${p.customer?.full_name ? `<span class="card-sub">${esc(p.customer.full_name)}</span>` : ''}
+        </div>
+      </div>`;
+    }
+  }
+
+  // Tickets
+  html += '<div class="section-header" style="margin-top:8px"><div class="section-title">My Tasks</div></div>';
 
   if (tickets.length === 0) {
-    c.innerHTML += '<div class="empty"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.5"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg><p>No open tickets. You\'re all caught up.</p></div>';
-    return;
+    html += '<div class="empty"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.5"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg><p>No open tickets. You\'re all caught up.</p></div>';
+  } else {
+    for (const t of tickets) {
+      const priorityClass = t.priority === 'urgent' ? 'badge-urgent' : t.priority === 'high' ? 'badge-high' : '';
+      const statusClass = t.status === 'active' ? 'badge-active' : 'badge-open';
+      html += `
+        <div class="card" onclick="showTicket('${t.id}')" ${t.priority === 'urgent' ? 'style="border-left:3px solid var(--red)"' : ''}>
+          <div class="card-title">${esc(t.title)}</div>
+          <div class="card-sub">${t.project?.address || t.project?.name || ''}</div>
+          <div class="card-row">
+            <span class="badge ${statusClass}">${t.status}</span>
+            ${t.priority !== 'medium' ? `<span class="badge ${priorityClass}">${t.priority}</span>` : ''}
+            ${t.due_date ? `<span class="card-sub">${formatDate(t.due_date)}</span>` : ''}
+          </div>
+        </div>
+      `;
+    }
   }
 
-  for (const t of tickets) {
-    const priorityClass = t.priority === 'urgent' ? 'badge-urgent' : t.priority === 'high' ? 'badge-high' : '';
-    const statusClass = t.status === 'active' ? 'badge-active' : 'badge-open';
-    c.innerHTML += `
-      <div class="card" onclick="showTicket('${t.id}')">
-        <div class="card-title">${esc(t.title)}</div>
-        <div class="card-sub">${t.project?.address || t.project?.name || ''}</div>
-        <div class="card-row">
-          <span class="badge ${statusClass}">${t.status}</span>
-          ${t.priority !== 'medium' ? `<span class="badge ${priorityClass}">${t.priority}</span>` : ''}
-          ${t.due_date ? `<span class="card-sub">${formatDate(t.due_date)}</span>` : ''}
-        </div>
-      </div>
-    `;
-  }
+  c.innerHTML = html;
 }
 
 async function showTicket(id) {

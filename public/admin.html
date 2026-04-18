@@ -2231,6 +2231,21 @@ async function renderSettings(m) {
   let html=`<div class="page-header"><div><h1>Settings</h1><div class="sub">Tenant configuration &bull; changes apply on next quote</div></div>
     <div style="display:flex;gap:6px"><button class="btn btn-sm btn-outline" onclick="guide.start('settings')" style="color:var(--cyan);border-color:rgba(34,211,238,0.2)"><svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button><button class="btn btn-primary btn-sm" onclick="saveSettings()">Save All</button></div></div>`;
 
+  // Branding preview
+  const accentCol = s.accent_color || '#FF6B00';
+  html += `<div class="panel" style="margin-bottom:10px;padding:16px">
+    <div class="panel-header"><div class="panel-title">Branding Preview</div></div>
+    <div style="display:flex;align-items:center;gap:16px;padding:14px;border-radius:10px;background:rgba(255,255,255,0.02);border:1px solid var(--glass-border)">
+      <div style="width:50px;height:50px;border-radius:12px;background:${accentCol};display:flex;align-items:center;justify-content:center;font-weight:900;font-size:1.2em;color:#fff">${(s.company_name||'R').charAt(0)}</div>
+      <div>
+        <div style="font-weight:800;font-size:1.1em;color:${accentCol}">${esc(s.company_name||'Company Name')}</div>
+        <div style="font-size:0.78em;color:var(--text-dim)">${esc(s.tagline||'Your tagline here')}</div>
+        <div style="font-size:0.72em;color:var(--text-dim);margin-top:2px">${esc(s.company_phone||'')} ${s.company_email?' &bull; '+esc(s.company_email):''}</div>
+      </div>
+    </div>
+    <div style="font-size:0.7em;color:var(--text-muted);margin-top:6px">This is how your company appears on proposals, contracts, and sales pages.</div>
+  </div>`;
+
   // Branding + Tax side by side
   html+=`<div class="dash-grid" style="grid-template-columns:1fr 1fr;margin-bottom:10px">
     <div class="panel"><div class="panel-header"><div class="panel-title">Branding</div></div><div class="form-grid">
@@ -2238,15 +2253,15 @@ async function renderSettings(m) {
       <div class="form-group"><label class="form-label">Phone</label><input type="tel" id="s_company_phone" value="${esc(s.company_phone||'')}"></div>
       <div class="form-group"><label class="form-label">Email</label><input type="email" id="s_company_email" value="${esc(s.company_email||'')}"></div>
       <div class="form-group"><label class="form-label">Website</label><input type="text" id="s_company_website" value="${esc(s.company_website||'')}"></div>
-      <div class="form-group"><label class="form-label">Accent Color</label><input type="text" id="s_accent_color" value="${esc(s.accent_color||'#22d3ee')}"></div>
+      <div class="form-group"><label class="form-label">Accent Color</label><div style="display:flex;gap:8px;align-items:center"><input type="color" value="${esc(accentCol)}" onchange="document.getElementById('s_accent_color').value=this.value" style="width:36px;height:32px;border:1px solid var(--glass-border);border-radius:6px;padding:2px;cursor:pointer"><input type="text" id="s_accent_color" value="${esc(accentCol)}" style="flex:1"></div></div>
       <div class="form-group"><label class="form-label">Tagline</label><input type="text" id="s_tagline" value="${esc(s.tagline||'')}"></div></div></div>
     <div class="panel"><div class="panel-header"><div class="panel-title">Tax & Overhead</div></div><div class="form-grid">
       <div class="form-group"><label class="form-label">Tax Rate</label><input type="number" id="s_tax_rate" value="${s.tax_rate||0.15}" step="0.01"><div class="form-hint">0.15 = 15%</div></div>
       <div class="form-group"><label class="form-label">Tax Label</label><input type="text" id="s_tax_label" value="${esc(s.tax_label||'HST')}"></div>
-      <div class="form-group"><label class="form-label">Rounding</label><input type="number" id="s_price_rounding" value="${s.price_rounding||25}"></div>
-      <div class="form-group"><label class="form-label">Daily Overhead</label><input type="number" id="s_daily_overhead" value="${s.daily_overhead||90}"></div>
-      <div class="form-group"><label class="form-label">Crew SQ/Day</label><input type="number" id="s_crew_sq" value="${s.crew_sq_per_day||12}"></div>
-      <div class="form-group"><label class="form-label">Crew SqFt/Day (Ext)</label><input type="number" id="s_crew_ext" value="${s.crew_exterior_sqft_per_day||500}"></div></div></div>
+      <div class="form-group"><label class="form-label">Rounding</label><input type="number" id="s_price_rounding" value="${s.price_rounding||25}"><div class="form-hint">Round selling price to nearest $X</div></div>
+      <div class="form-group"><label class="form-label">Daily Overhead</label><input type="number" id="s_daily_overhead" value="${s.daily_overhead||90}"><div class="form-hint">$/day for remote jobs</div></div>
+      <div class="form-group"><label class="form-label">Crew SQ/Day</label><input type="number" id="s_crew_sq" value="${s.crew_sq_per_day||12}"><div class="form-hint">Roofing productivity</div></div>
+      <div class="form-group"><label class="form-label">Crew SqFt/Day (Ext)</label><input type="number" id="s_crew_ext" value="${s.crew_exterior_sqft_per_day||500}"><div class="form-hint">Exterior productivity</div></div></div></div>
   </div>`;
   const jsonFields = [
     ['Labor — Roofing','s_labor_roofing',s.labor_rates_roofing],
@@ -2260,11 +2275,25 @@ async function renderSettings(m) {
   html+='<div class="dash-grid" style="grid-template-columns:1fr 1fr">';
   for(const [label,id,val] of jsonFields) html+=`<div class="panel"><div class="panel-header"><div class="panel-title">${label}</div></div><textarea id="${id}" style="font-family:monospace;font-size:0.75em;min-height:100px;line-height:1.4">${esc(JSON.stringify(val||{},null,2))}</textarea></div>`;
   html+='</div>';
-  html+=`<div style="margin-top:12px;display:flex;gap:8px"><button class="btn btn-primary" onclick="saveSettings()">Save All</button><button class="btn btn-outline" onclick="navigate('settings')">Reset</button></div>`;
+  html+=`<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+    <button class="btn btn-primary" onclick="saveSettings()">Save All</button>
+    <button class="btn btn-outline" onclick="testQuoteFromSettings()">Test Quote</button>
+    <button class="btn btn-outline" onclick="navigate('settings')">Reset</button>
+  </div>`;
   m.innerHTML=html;
 }
 
 function tryJSON(id){try{return JSON.parse(document.getElementById(id).value);}catch(e){toast('Invalid JSON in '+id,'error');return null;}}
+
+async function testQuoteFromSettings() {
+  toast('Running test quote...', 'info');
+  const r = await api('/quote?mode=guided&materials=1', {method:'POST', body:JSON.stringify({
+    system:'residential', offer_slug:'gold',
+    answers:{address:'Test — 123 Main St',distanceKM:15,squareFeet:2000,pitch:'6/12',complexity:'medium',stories:1,extraLayers:1,chimneys:0,pipes:3,vents:2}
+  })});
+  if (r.error) { toast('Test quote failed: ' + r.error, 'error'); return; }
+  toast(`Test OK: Gold 2000sqft = ${fmt$(r.summary.totalWithTax)} (${r.summary.netMargin} margin)`, 'success', 6000);
+}
 async function saveSettings(){
   const jf=['s_labor_roofing','s_labor_exterior','s_distance','s_multipliers','s_margins','s_mobilization','s_remediation'];
   const parsed={};for(const id of jf){const v=tryJSON(id);if(!v)return;parsed[id]=v;}
