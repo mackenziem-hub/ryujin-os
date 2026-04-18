@@ -1149,7 +1149,25 @@ async function renderQuoteForm() {
       qField('interiorWaterDamage','Interior Water Damage Signs','checkbox',{default:false,hint:'Stains, peeling paint, mold — indicates active leak'})
     , false);
 
-    // ═══ Section 6: Site Conditions ═══
+    // ═══ Section 6: Property Photos ═══
+    html += formSection('Property Photos', '📷',
+      `<div class="form-full">
+        <div id="photoPreview" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+          ${(quoteState.answers._photos||[]).map((url,i) => `<div style="position:relative;width:100px;height:75px;border-radius:8px;overflow:hidden;border:1px solid var(--glass-border)">
+            <img src="${esc(url)}" style="width:100%;height:100%;object-fit:cover">
+            <button onclick="quoteState.answers._photos.splice(${i},1);renderQuoteForm()" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:4px;width:18px;height:18px;cursor:pointer;font-size:0.7em">x</button>
+          </div>`).join('')}
+        </div>
+        <label style="display:flex;align-items:center;justify-content:center;gap:8px;padding:20px;border:2px dashed var(--glass-border);border-radius:10px;cursor:pointer;color:var(--text-dim);font-size:0.82em;transition:all 0.2s" onmouseover="this.style.borderColor='var(--cyan)'" onmouseout="this.style.borderColor='var(--glass-border)'">
+          <svg viewBox="0 0 24 24" style="width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          Click or drag photos here
+          <input type="file" accept="image/*" multiple style="display:none" onchange="uploadQuotePhotos(this.files)">
+        </label>
+        <div class="form-hint">Property photos appear in proposals and sales pages</div>
+      </div>`
+    , false);
+
+    // ═══ Section 7: Site Conditions ═══
     html += formSection('Site & Access', '📋',
       qField('existingCondition','Overall Roof Condition','select',{default:'fair',options:['good','fair','poor'],labels:{good:'Good — single layer, solid deck',fair:'Fair — some wear, standard tear-off',poor:'Poor — multiple layers, potential deck issues'},hint:'Affects remediation allowance'}) +
       qField('accessDifficulty','Site Access','select',{default:'normal',options:['easy','normal','difficult'],labels:{easy:'Easy — ground level, open lot',normal:'Normal — standard residential',difficult:'Difficult — tight access, steep grade, landscaping'},hint:'Notes for crew planning'}) +
@@ -1463,6 +1481,21 @@ async function recalcWithOverrides(){
   quoteState.result=r;renderQuoteResult(rd,r);renderQuoteForm();
 }
 
+async function uploadQuotePhotos(fileList) {
+  if (!quoteState.answers._photos) quoteState.answers._photos = [];
+  for (const file of fileList) {
+    if (!file.type.startsWith('image/')) continue;
+    // Convert to base64 data URL for now (works in proposal render)
+    // TODO: upload to Vercel Blob for persistent URLs
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      quoteState.answers._photos.push(e.target.result);
+      renderQuoteForm();
+    };
+    reader.readAsDataURL(file);
+  }
+}
+
 async function generateOutputs(type) {
   if (!quoteState.result) return;
   // Get the system-specific offer IDs for comparison
@@ -1475,7 +1508,8 @@ async function generateOutputs(type) {
     property_address: quoteState.answers.address || '',
     prepared_by: 'Mackenzie Mazerolle',
     compare_offer_ids: sysOffers,
-    measurements: quoteState.result.measurements
+    measurements: quoteState.result.measurements,
+    photos: quoteState.answers._photos || []
   };
 
   // Types that render as HTML
