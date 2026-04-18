@@ -601,6 +601,10 @@ setTimeout(() => {
       <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
       <div class="tooltip">Estimates</div>
     </div>
+    <div class="nav-icon" data-page="funnel" onclick="navigate('funnel')">
+      <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+      <span class="tooltip">Funnel Builder</span>
+    </div>
     <div class="nav-icon" data-page="products" onclick="navigate('products')">
       <svg viewBox="0 0 24 24"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
       <span class="tooltip">Products</span>
@@ -637,6 +641,10 @@ setTimeout(() => {
   <button class="bot-btn" data-page="offers" onclick="navigate('offers')">
     <svg viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
     <span>Offers</span>
+  </button>
+  <button class="bot-btn" data-page="funnel" onclick="navigate('funnel')">
+    <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+    <span>Funnel</span>
   </button>
   <button class="bot-btn" data-page="products" onclick="navigate('products')">
     <svg viewBox="0 0 24 24"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
@@ -914,7 +922,7 @@ const sfx = {
   }
 };
 
-const PAGE_TITLES = {dashboard:'Command Center',quote:'Quote Builder',estimates:'Estimates',customers:'Customers',offers:'Offers',products:'Products',settings:'Settings'};
+const PAGE_TITLES = {dashboard:'Command Center',quote:'Quote Builder',funnel:'Funnel Builder',estimates:'Estimates',customers:'Customers',offers:'Offers',products:'Products',settings:'Settings'};
 function navigate(page) {
   currentPage = page;
   document.title = (PAGE_TITLES[page]||page) + ' — Ryujin OS';
@@ -965,6 +973,7 @@ function renderPage() {
     case 'offers': return renderOffers(m);
     case 'customers': return renderCustomers(m);
     case 'estimates': return renderEstimates(m);
+    case 'funnel': return renderFunnelBuilder(m);
     case 'products': return renderProducts(m);
     case 'settings': return renderSettings(m);
     default: m.innerHTML = '<div class="loading"><div class="spinner"></div>Coming soon</div>';
@@ -2381,6 +2390,366 @@ async function createEstimateFromQuote() {
 // ═══════════════════════════════════════════
 // OFFERS / CUSTOMERS / ESTIMATES / SETTINGS
 // ═══════════════════════════════════════════
+// ═══════════════════════════════════════════
+// FUNNEL BUILDER — Step-by-step proposal generation
+// ═══════════════════════════════════════════
+
+const GOOGLE_REVIEWS = [
+  { text: "Professional crew, clean job site, excellent communication throughout. The whole process was smooth from the first estimate to the final walkthrough.", author: "Recent Customer", rating: 5 },
+  { text: "Mackenzie and his crew did an outstanding job. They showed up on time, worked efficiently, and left the property spotless. Highly recommend!", author: "Verified Review", rating: 5 },
+  { text: "Best roofing experience we've had. Fair pricing, quality materials, and they actually explain what they're doing and why. Five stars.", author: "Google Review", rating: 5 },
+  { text: "Had our roof done and then called them back for siding. Both times, top notch. These guys take pride in their work.", author: "Repeat Customer", rating: 5 }
+];
+
+let funnelState = {
+  step: 1,
+  customer: { name: '', phone: '', email: '', address: '' },
+  jobType: 'reroof',
+  system: 'residential',
+  tiers: ['economy', 'gold', 'platinum', 'diamond'],
+  selectedTier: 'gold',
+  includeSalesPage: true,
+  includeVideo: true,
+  includeComparison: true,
+  includeFinancing: true,
+  includeTestimonials: true,
+  salesperson: 'mackenzie',
+  measurements: { squareFeet: 2000, pitch: '5/12', complexity: 'medium', distanceKM: 10, stories: 1, extraLayers: 1 },
+  quoteResult: null,
+  generating: false
+};
+
+function renderFunnelBuilder(m) {
+  const fs = funnelState;
+  let html = `<div class="page-header"><div><h1>Funnel Builder</h1><div class="sub">Build &bull; Customize &bull; Generate</div></div></div>`;
+
+  // Step indicators
+  html += `<div style="display:flex;gap:4px;margin-bottom:16px">
+    ${[{n:1,l:'Customer'},{n:2,l:'Job Type'},{n:3,l:'Measurements'},{n:4,l:'Customize'},{n:5,l:'Generate'}].map(s =>
+      `<div style="flex:1;text-align:center;padding:8px;border-radius:8px;font-size:0.72em;font-weight:600;cursor:pointer;
+        background:${fs.step===s.n?'rgba(34,211,238,0.1)':'rgba(255,255,255,0.02)'};
+        border:1px solid ${fs.step===s.n?'var(--cyan)':'var(--glass-border)'};
+        color:${fs.step>=s.n?'var(--cyan)':'var(--text-dim)'}"
+        onclick="funnelState.step=${s.n};renderFunnelBuilder(document.getElementById('main'))">
+        <div style="font-size:1.3em;margin-bottom:2px">${fs.step>s.n?'✓':s.n}</div>${s.l}
+      </div>`
+    ).join('')}
+  </div>`;
+
+  // ═══ STEP 1: CUSTOMER ═══
+  if (fs.step === 1) {
+    // Auto-fill from recent estimates
+    html += `<div class="panel" style="padding:20px">
+      <div style="font-family:'Orbitron',monospace;font-size:0.7em;font-weight:600;letter-spacing:2px;color:var(--cyan);margin-bottom:16px">STEP 1 — CUSTOMER INFO</div>
+      <div class="form-grid">
+        <div class="form-group"><label class="form-label">Customer Name *</label>
+          <input type="text" value="${esc(fs.customer.name)}" onchange="funnelState.customer.name=this.value" placeholder="Full name"></div>
+        <div class="form-group"><label class="form-label">Phone</label>
+          <input type="tel" value="${esc(fs.customer.phone)}" onchange="funnelState.customer.phone=this.value" placeholder="For follow-up"></div>
+        <div class="form-group"><label class="form-label">Email</label>
+          <input type="text" value="${esc(fs.customer.email)}" onchange="funnelState.customer.email=this.value" placeholder="For sending proposal"></div>
+        <div class="form-group"><label class="form-label">Property Address *</label>
+          <input type="text" value="${esc(fs.customer.address)}" onchange="funnelState.customer.address=this.value" placeholder="Job site address"></div>
+      </div>
+      <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--glass-border)">
+        <div style="font-size:0.7em;color:var(--text-dim);margin-bottom:8px">Or load from existing customer:</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap" id="funnelCustPick"></div>
+      </div>
+      <div style="margin-top:20px;text-align:right">
+        <button class="btn btn-primary" onclick="funnelState.step=2;renderFunnelBuilder(document.getElementById('main'))" style="width:auto;padding:10px 32px">Next →</button>
+      </div>
+    </div>`;
+    // Load customers for quick pick
+    setTimeout(async () => {
+      const d = await cachedApi('/customers','customers');
+      const el = document.getElementById('funnelCustPick');
+      if (!el) return;
+      el.innerHTML = (d.customers||[]).slice(0,8).map(c =>
+        `<button class="btn btn-sm btn-outline" style="font-size:0.7em" onclick="funnelState.customer={name:'${esc(c.full_name||'')}',phone:'${esc(c.phone||'')}',email:'${esc(c.email||'')}',address:'${esc(c.address||'')}'};renderFunnelBuilder(document.getElementById('main'))">${esc(c.full_name||'')}</button>`
+      ).join('');
+    }, 100);
+  }
+
+  // ═══ STEP 2: JOB TYPE ═══
+  if (fs.step === 2) {
+    const jobTypes = [
+      { key: 'reroof', icon: '🏠', label: 'Reroof', desc: 'Standard residential tear-off and replace', system: 'residential', tiers: ['economy','gold','platinum','diamond'] },
+      { key: 'newconstruction', icon: '🏗️', label: 'New Construction', desc: 'New build — no tear-off needed', system: 'residential', tiers: ['economy','gold','platinum','diamond'] },
+      { key: 'metal', icon: '⚙️', label: 'Metal Roof', desc: 'Americana ribbed or standing seam', system: 'metal', tiers: ['metal-americana','metal-standing-seam'] },
+      { key: 'flat', icon: '🏢', label: 'Flat / Commercial', desc: 'TPO, EPDM, or modified bitumen', system: 'flat', tiers: ['commercial-flat-tpo','commercial-flat-epdm','commercial-flat-modbit'] },
+      { key: 'commercial', icon: '🏬', label: 'Commercial Pitched', desc: 'Commercial with pitched roof', system: 'residential', tiers: ['commercial-economy','commercial-standard','commercial-premium'] },
+      { key: 'exterior', icon: '🧱', label: 'Performance Shell', desc: 'Full exterior wall assembly', system: 'exterior', tiers: ['performance-shell-plus','hardie-shell','metal-shell'] },
+      { key: 'combined', icon: '🔄', label: 'Roof + Shell', desc: 'Complete exterior renovation', system: 'combined', tiers: ['gold-shell','platinum-shell'] }
+    ];
+    html += `<div class="panel" style="padding:20px">
+      <div style="font-family:'Orbitron',monospace;font-size:0.7em;font-weight:600;letter-spacing:2px;color:var(--cyan);margin-bottom:16px">STEP 2 — JOB TYPE</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">
+        ${jobTypes.map(j => `<div style="padding:16px;border-radius:10px;border:2px solid ${fs.jobType===j.key?'var(--cyan)':'var(--glass-border)'};background:${fs.jobType===j.key?'rgba(34,211,238,0.06)':'transparent'};cursor:pointer;transition:all 0.2s"
+          onclick="funnelState.jobType='${j.key}';funnelState.system='${j.system}';funnelState.tiers=${JSON.stringify(j.tiers).replace(/"/g,'&quot;')};funnelState.selectedTier=funnelState.tiers[Math.min(1,funnelState.tiers.length-1)];renderFunnelBuilder(document.getElementById('main'))">
+          <div style="font-size:1.5em;margin-bottom:6px">${j.icon}</div>
+          <div style="font-weight:700;font-size:0.88em;color:${fs.jobType===j.key?'var(--cyan)':'var(--text)'}">${j.label}</div>
+          <div style="font-size:0.72em;color:var(--text-dim);margin-top:4px">${j.desc}</div>
+        </div>`).join('')}
+      </div>
+      <div style="margin-top:20px;display:flex;justify-content:space-between">
+        <button class="btn btn-outline" onclick="funnelState.step=1;renderFunnelBuilder(document.getElementById('main'))" style="width:auto;padding:10px 24px">← Back</button>
+        <button class="btn btn-primary" onclick="funnelState.step=3;renderFunnelBuilder(document.getElementById('main'))" style="width:auto;padding:10px 32px">Next →</button>
+      </div>
+    </div>`;
+  }
+
+  // ═══ STEP 3: MEASUREMENTS ═══
+  if (fs.step === 3) {
+    const isRoof = ['residential','metal','flat','combined'].includes(fs.system);
+    const isExt = ['exterior','combined'].includes(fs.system);
+    html += `<div class="panel" style="padding:20px">
+      <div style="font-family:'Orbitron',monospace;font-size:0.7em;font-weight:600;letter-spacing:2px;color:var(--cyan);margin-bottom:16px">STEP 3 — MEASUREMENTS</div>
+      <div class="form-grid">
+        ${isRoof ? `
+        <div class="form-group"><label class="form-label">Roof Area (sq ft) *</label>
+          <input type="number" value="${fs.measurements.squareFeet}" onchange="funnelState.measurements.squareFeet=Number(this.value)"></div>
+        <div class="form-group"><label class="form-label">Pitch</label>
+          <select onchange="funnelState.measurements.pitch=this.value">
+            ${['4/12','5/12','6/12','7/12','8/12','9/12','10/12','12/12'].map(p => `<option value="${p}" ${fs.measurements.pitch===p?'selected':''}>${p}</option>`).join('')}
+          </select></div>
+        <div class="form-group"><label class="form-label">Complexity</label>
+          <select onchange="funnelState.measurements.complexity=this.value">
+            ${['simple','medium','complex'].map(c => `<option value="${c}" ${fs.measurements.complexity===c?'selected':''}>${c}</option>`).join('')}
+          </select></div>
+        <div class="form-group"><label class="form-label">Stories</label>
+          <select onchange="funnelState.measurements.stories=Number(this.value)">
+            ${[1,1.5,2,2.5,3].map(s => `<option value="${s}" ${fs.measurements.stories==s?'selected':''}>${s}</option>`).join('')}
+          </select></div>
+        <div class="form-group"><label class="form-label">Layers to Remove</label>
+          <select onchange="funnelState.measurements.extraLayers=Number(this.value)">
+            ${[0,1,2,3].map(l => `<option value="${l}" ${fs.measurements.extraLayers==l?'selected':''}>${l}</option>`).join('')}
+          </select></div>
+        ` : ''}
+        ${isExt ? `
+        <div class="form-group"><label class="form-label">Wall Area (sq ft) *</label>
+          <input type="number" value="${fs.measurements.wallSqFt||0}" onchange="funnelState.measurements.wallSqFt=Number(this.value)"></div>
+        ` : ''}
+        <div class="form-group"><label class="form-label">Distance (km)</label>
+          <input type="number" value="${fs.measurements.distanceKM}" onchange="funnelState.measurements.distanceKM=Number(this.value)"></div>
+      </div>
+      <div style="margin-top:20px;display:flex;justify-content:space-between">
+        <button class="btn btn-outline" onclick="funnelState.step=2;renderFunnelBuilder(document.getElementById('main'))" style="width:auto;padding:10px 24px">← Back</button>
+        <button class="btn btn-primary" onclick="funnelState.step=4;renderFunnelBuilder(document.getElementById('main'))" style="width:auto;padding:10px 32px">Next →</button>
+      </div>
+    </div>`;
+  }
+
+  // ═══ STEP 4: CUSTOMIZE ═══
+  if (fs.step === 4) {
+    html += `<div class="panel" style="padding:20px">
+      <div style="font-family:'Orbitron',monospace;font-size:0.7em;font-weight:600;letter-spacing:2px;color:var(--cyan);margin-bottom:16px">STEP 4 — CUSTOMIZE YOUR FUNNEL</div>
+
+      <!-- Tiers to include -->
+      <div style="margin-bottom:16px">
+        <div style="font-size:0.75em;font-weight:600;color:var(--text-dim);margin-bottom:8px">Package Tiers to Show</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${(offersCache?.offers||[]).filter(o => fs.tiers.includes(o.slug)).map(o =>
+            `<label style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;border:1px solid var(--glass-border);cursor:pointer;font-size:0.82em">
+              <input type="checkbox" checked style="accent-color:var(--cyan)" onchange=""> ${esc(o.name)}
+            </label>`
+          ).join('')}
+        </div>
+      </div>
+
+      <!-- Primary package -->
+      <div style="margin-bottom:16px">
+        <div style="font-size:0.75em;font-weight:600;color:var(--text-dim);margin-bottom:8px">Recommended Package</div>
+        <select onchange="funnelState.selectedTier=this.value" style="max-width:300px">
+          ${fs.tiers.map(t => {
+            const o = (offersCache?.offers||[]).find(o => o.slug === t);
+            return `<option value="${t}" ${fs.selectedTier===t?'selected':''}>${o ? o.name : t}</option>`;
+          }).join('')}
+        </select>
+      </div>
+
+      <!-- Salesperson -->
+      <div style="margin-bottom:16px">
+        <div style="font-size:0.75em;font-weight:600;color:var(--text-dim);margin-bottom:8px">Assigned Salesperson</div>
+        <div style="display:flex;gap:8px">
+          ${Object.entries(SALES_REPS).map(([k,r]) =>
+            `<div style="flex:1;padding:14px;border-radius:10px;border:2px solid ${fs.salesperson===k?'var(--cyan)':'var(--glass-border)'};cursor:pointer;text-align:center" onclick="funnelState.salesperson='${k}';renderFunnelBuilder(document.getElementById('main'))">
+              <div style="font-weight:700;font-size:0.88em;color:${fs.salesperson===k?'var(--cyan)':'var(--text)'}">${esc(r.name)}</div>
+              <div style="font-size:0.68em;color:var(--text-dim)">${esc(r.title)}</div>
+            </div>`
+          ).join('')}
+        </div>
+      </div>
+
+      <!-- Include sections -->
+      <div style="margin-bottom:16px">
+        <div style="font-size:0.75em;font-weight:600;color:var(--text-dim);margin-bottom:8px">Funnel Sections</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          ${[
+            {key:'includeSalesPage',label:'Sales Intro Page',desc:'Dark visual warm-up — no pricing'},
+            {key:'includeComparison',label:'Package Comparison',desc:'Side-by-side tier cards with specs'},
+            {key:'includeVideo',label:'Video Placeholder',desc:'Personal intro video slot'},
+            {key:'includeFinancing',label:'Financing CTA',desc:'Monthly payment calculator'},
+            {key:'includeTestimonials',label:'Google Reviews',desc:'5-star testimonials from real customers'}
+          ].map(s =>
+            `<label style="display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border-radius:8px;border:1px solid var(--glass-border);cursor:pointer">
+              <input type="checkbox" ${fs[s.key]?'checked':''} onchange="funnelState.${s.key}=this.checked" style="accent-color:var(--cyan);margin-top:2px">
+              <div><div style="font-size:0.82em;font-weight:600">${s.label}</div><div style="font-size:0.68em;color:var(--text-dim)">${s.desc}</div></div>
+            </label>`
+          ).join('')}
+        </div>
+      </div>
+
+      <div style="margin-top:20px;display:flex;justify-content:space-between">
+        <button class="btn btn-outline" onclick="funnelState.step=3;renderFunnelBuilder(document.getElementById('main'))" style="width:auto;padding:10px 24px">← Back</button>
+        <button class="btn btn-primary" onclick="funnelState.step=5;renderFunnelBuilder(document.getElementById('main'))" style="width:auto;padding:10px 32px">Next →</button>
+      </div>
+    </div>`;
+  }
+
+  // ═══ STEP 5: GENERATE ═══
+  if (fs.step === 5) {
+    const rep = SALES_REPS[fs.salesperson];
+    const tmpl = PROPOSAL_TEMPLATES[fs.jobType] || PROPOSAL_TEMPLATES.reroof;
+    html += `<div class="panel" style="padding:20px">
+      <div style="font-family:'Orbitron',monospace;font-size:0.7em;font-weight:600;letter-spacing:2px;color:var(--cyan);margin-bottom:16px">STEP 5 — REVIEW & GENERATE</div>
+
+      <!-- Summary -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px">
+        <div style="padding:12px;border-radius:8px;background:rgba(34,211,238,0.03);border:1px solid var(--glass-border)">
+          <div style="font-size:0.6em;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Customer</div>
+          <div style="font-weight:700;font-size:0.9em">${esc(fs.customer.name || 'Not set')}</div>
+          <div style="font-size:0.75em;color:var(--text-dim)">${esc(fs.customer.address || '')}</div>
+        </div>
+        <div style="padding:12px;border-radius:8px;background:rgba(34,211,238,0.03);border:1px solid var(--glass-border)">
+          <div style="font-size:0.6em;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Job</div>
+          <div style="font-weight:700;font-size:0.9em">${esc(tmpl.label)}</div>
+          <div style="font-size:0.75em;color:var(--text-dim)">${fs.measurements.squareFeet} sqft &bull; ${fs.measurements.pitch} pitch</div>
+        </div>
+        <div style="padding:12px;border-radius:8px;background:rgba(34,211,238,0.03);border:1px solid var(--glass-border)">
+          <div style="font-size:0.6em;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Salesperson</div>
+          <div style="font-weight:700;font-size:0.9em">${esc(rep.name)}</div>
+          <div style="font-size:0.75em;color:var(--text-dim)">${esc(rep.title)}</div>
+        </div>
+        <div style="padding:12px;border-radius:8px;background:rgba(34,211,238,0.03);border:1px solid var(--glass-border)">
+          <div style="font-size:0.6em;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Includes</div>
+          <div style="font-size:0.75em;color:var(--text-dim);line-height:1.6">
+            ${fs.includeSalesPage?'✓ Sales Page<br>':''}${fs.includeComparison?'✓ Package Comparison<br>':''}${fs.includeFinancing?'✓ Financing<br>':''}${fs.includeTestimonials?'✓ Reviews<br>':''}${fs.includeVideo?'✓ Video':''}
+          </div>
+        </div>
+      </div>
+
+      <!-- Generate buttons -->
+      <div id="funnelOutput" style="margin-bottom:16px"></div>
+
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="generateFunnel('proposal')" style="flex:1;min-width:140px" ${fs.generating?'disabled':''}>
+          ${fs.generating ? 'Generating...' : '⚡ Generate Proposal'}
+        </button>
+        ${fs.includeSalesPage ? `<button class="btn btn-outline" onclick="generateFunnel('sales_page')" style="flex:1;min-width:140px">Generate Sales Page</button>` : ''}
+        <button class="btn btn-outline" onclick="generateFunnel('all')" style="flex:1;min-width:140px">Generate All</button>
+      </div>
+
+      <div style="margin-top:16px;display:flex;justify-content:flex-start">
+        <button class="btn btn-outline" onclick="funnelState.step=4;renderFunnelBuilder(document.getElementById('main'))" style="width:auto;padding:10px 24px">← Back</button>
+      </div>
+    </div>`;
+  }
+
+  m.innerHTML = html;
+}
+
+async function generateFunnel(type) {
+  const fs = funnelState;
+  if (!fs.customer.name) { toast('Customer name required', 'error'); funnelState.step = 1; renderFunnelBuilder(document.getElementById('main')); return; }
+
+  funnelState.generating = true;
+  renderFunnelBuilder(document.getElementById('main'));
+  toast('Calculating quote & generating outputs...', 'info', 8000);
+
+  // Step 1: Calculate quote
+  const sysMap = {residential:'residential',metal:'metal',flat:'flat',exterior:'exterior',combined:'combined'};
+  const answers = {
+    address: fs.customer.address,
+    distanceKM: fs.measurements.distanceKM,
+    squareFeet: fs.measurements.squareFeet,
+    pitch: fs.measurements.pitch,
+    complexity: fs.measurements.complexity,
+    stories: fs.measurements.stories,
+    extraLayers: fs.measurements.extraLayers,
+    wallSqFt: fs.measurements.wallSqFt || 0
+  };
+
+  const quoteResult = await api('/quote?mode=guided&materials=1', {
+    method: 'POST',
+    body: JSON.stringify({ system: sysMap[fs.system] || 'residential', offer_slug: fs.selectedTier, answers })
+  });
+
+  if (quoteResult.error) {
+    toast('Quote error: ' + quoteResult.error, 'error');
+    funnelState.generating = false;
+    renderFunnelBuilder(document.getElementById('main'));
+    return;
+  }
+
+  // Step 2: Run comparison for all tiers
+  let comparison = null;
+  try {
+    const comp = await api('/quote?mode=compare', { method: 'POST', body: JSON.stringify({ measurements: answers }) });
+    if (comp.offers) {
+      comparison = Object.entries(comp.offers).map(([slug, q]) => ({
+        slug, name: q.offer.name, badge: q.offer.badge,
+        total: '$' + (q.summary.totalWithTax||0).toLocaleString(),
+        totalRaw: q.summary.totalWithTax,
+        warranty: q.offer.warranty_years ? q.offer.warranty_years + '-year warranty' : null,
+        isSelected: q.offer.slug === fs.selectedTier, highlights: []
+      }));
+    }
+  } catch(e) {}
+
+  // Step 3: Generate output
+  const rep = SALES_REPS[fs.salesperson];
+  const tmpl = PROPOSAL_TEMPLATES[fs.jobType] || PROPOSAL_TEMPLATES.reroof;
+  const payload = {
+    quote_result: quoteResult,
+    customer_name: fs.customer.name,
+    property_address: fs.customer.address,
+    prepared_by: rep.name,
+    sales_rep: rep,
+    template: tmpl,
+    template_key: fs.jobType,
+    _comparison: comparison
+  };
+
+  if (type === 'all') {
+    for (const t of ['sales_page', 'proposal', 'contract']) {
+      const od = await api('/outputs?type=' + t, { method: 'POST', body: JSON.stringify(payload) });
+      if (od.error) continue;
+      const resp = await fetch(API + '/render?type=' + t + '&tenant=' + TENANT + '&_t=' + Date.now(), {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(od)
+      });
+      if (!resp.ok) continue;
+      const html = await resp.text();
+      const w = window.open('', '_blank');
+      if (w) { w.document.write(html); w.document.close(); }
+    }
+    toast('All outputs generated!', 'success');
+  } else {
+    const od = await api('/outputs?type=' + type, { method: 'POST', body: JSON.stringify(payload) });
+    if (od.error) { toast('Error: ' + od.error, 'error'); funnelState.generating = false; return; }
+    const resp = await fetch(API + '/render?type=' + type + '&tenant=' + TENANT + '&_t=' + Date.now(), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(od)
+    });
+    if (!resp.ok) { toast('Render failed', 'error'); funnelState.generating = false; return; }
+    const html = await resp.text();
+    const w = window.open('', '_blank');
+    if (w) { w.document.write(html); w.document.close(); toast(type.replace('_',' ') + ' generated!', 'success'); }
+  }
+
+  funnelState.generating = false;
+  funnelState.quoteResult = quoteResult;
+  renderFunnelBuilder(document.getElementById('main'));
+}
+
 // ═══════════════════════════════════════════
 // PRODUCTS & MERCHANTS
 // ═══════════════════════════════════════════
