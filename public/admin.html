@@ -774,7 +774,7 @@ const globalSearch = {
       for (const c of (custData.customers||[]).filter(c => (c.full_name||'').toLowerCase().includes(ql) || (c.email||'').toLowerCase().includes(ql) || (c.phone||'').includes(ql)).slice(0,5)) {
         items.push({type:'Customer', name:c.full_name||c.name, meta:c.email||c.phone||'', action:()=>{globalSearch.toggle();navigate('customers');}});
       }
-      for (const e of (estData.estimates||[]).filter(e => (e.customer?.full_name||'').toLowerCase().includes(ql) || (e.address||'').toLowerCase().includes(ql)).slice(0,5)) {
+      for (const e of (estData.estimates||[]).filter(e => (e.customer?.full_name||'').toLowerCase().includes(ql) || estAddr(e).toLowerCase().includes(ql) || estPkg(e).toLowerCase().includes(ql)).slice(0,5)) {
         items.push({type:'Estimate', name:e.customer?.full_name||'—', meta: (estTotalWithTax(e)?fmt$(estTotalWithTax(e)):'') + ' ' + (e.status||''), action:()=>{globalSearch.toggle();navigate('estimates');}});
       }
     }
@@ -2218,7 +2218,7 @@ async function createEstimateFromQuote() {
     roof_area_sqft: m.input_sqft || quoteState.answers.squareFeet || 0,
     roof_pitch: m.pitch || quoteState.answers.pitch || '5/12',
     complexity: m.complexity || 'medium',
-    stories: quoteState.answers.stories || 1,
+    stories: Math.round(quoteState.answers.stories || 1),
     extra_layers: quoteState.answers.extraLayers || 1,
     chimneys: quoteState.answers.chimneys || 0,
     chimney_size: quoteState.answers.chimneySize || 'small',
@@ -2666,15 +2666,25 @@ async function duplicateEstimate(id) {
   if (!est) { toast('Could not load estimate', 'error'); return; }
   const newEst = await api('/estimates', {method:'POST', body:JSON.stringify({
     customer_id: est.customer_id,
-    address: est.address,
     status: 'draft',
-    system: estSys(est),
-    package: estPkg(est),
-    total_price: est.total_price,
-    total_with_tax: est.total_with_tax,
-    measurements: est.measurements,
-    choices: est.choices,
-    notes: 'Duplicated from estimate ' + id.substring(0,8)
+    proposal_mode: est.proposal_mode || 'Roof Only',
+    pricing_model: est.pricing_model || 'Local',
+    roof_area_sqft: est.roof_area_sqft || 0,
+    roof_pitch: est.roof_pitch || '5/12',
+    complexity: est.complexity || 'medium',
+    stories: est.stories || 1,
+    extra_layers: est.extra_layers || 1,
+    chimneys: est.chimneys || 0,
+    pipes: est.pipes || 3,
+    vents: est.vents || 2,
+    distance_km: est.distance_km || 0,
+    siding_sqft: est.siding_sqft || 0,
+    soffit_lf: est.soffit_lf || 0,
+    fascia_lf: est.fascia_lf || 0,
+    gutter_lf: est.gutter_lf || 0,
+    selected_package: est.selected_package,
+    calculated_packages: est.calculated_packages || {},
+    notes: ['Duplicated from estimate ' + id.substring(0,8)]
   })});
   if (newEst.error) { toast('Error: ' + newEst.error, 'error'); return; }
   toast('Estimate duplicated as draft', 'success');
@@ -2732,7 +2742,7 @@ async function renderEstimates(m) {
   let filtered = estFilter === 'all' ? [...ests] : ests.filter(e => e.status === estFilter);
   if (estSearch) {
     const q = estSearch.toLowerCase();
-    filtered = filtered.filter(e => (e.customer?.full_name||'').toLowerCase().includes(q) || (e.address||'').toLowerCase().includes(q) || (e.package||'').toLowerCase().includes(q));
+    filtered = filtered.filter(e => (e.customer?.full_name||'').toLowerCase().includes(q) || estAddr(e).toLowerCase().includes(q) || estPkg(e).toLowerCase().includes(q));
   }
   // Sort
   if (estSort === 'newest') filtered.sort((a,b) => new Date(b.created_at||0) - new Date(a.created_at||0));
