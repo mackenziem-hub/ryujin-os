@@ -1148,8 +1148,52 @@ async function renderDashboard(m) {
   }
   html += '</tbody></table></div></div>';
 
+  // ═══ ROW 6: Activity Feed (span 4) ═══
+  const recentActivity = [];
+  for (const e of estList.slice(0, 8)) {
+    const when = e.created_at ? timeAgo(new Date(e.created_at)) : '';
+    recentActivity.push({
+      icon: e.status === 'accepted' ? '&#10003;' : e.status === 'sent' ? '&#9993;' : '&#128196;',
+      color: e.status === 'accepted' ? 'var(--green)' : e.status === 'sent' ? 'var(--blue)' : 'var(--text-dim)',
+      text: `${e.status === 'accepted' ? 'Accepted' : e.status === 'sent' ? 'Sent' : 'Created'} estimate for <strong>${esc(e.customer?.full_name||'—')}</strong>${e.total_price ? ' — '+fmt$(e.total_price) : ''}`,
+      when
+    });
+  }
+  for (const c of custList.slice(0, 4)) {
+    if (c.created_at) {
+      recentActivity.push({
+        icon: '&#128100;', color: 'var(--purple)',
+        text: `Added <strong>${esc(c.full_name||c.name||'—')}</strong> to database`,
+        when: timeAgo(new Date(c.created_at))
+      });
+    }
+  }
+  recentActivity.sort((a,b) => (b._ts||0) - (a._ts||0));
+
+  if (recentActivity.length > 0) {
+    html += `<div class="panel span-4">
+      <div class="panel-header"><div class="panel-title">Recent Activity</div></div>`;
+    for (const a of recentActivity.slice(0, 8)) {
+      html += `<div style="display:flex;align-items:flex-start;gap:10px;padding:6px 0;border-bottom:1px solid rgba(34,211,238,0.03);font-size:0.8em">
+        <span style="color:${a.color};font-size:1.1em;width:20px;text-align:center;flex-shrink:0">${a.icon}</span>
+        <span style="flex:1;line-height:1.4">${a.text}</span>
+        <span style="font-size:0.85em;color:var(--text-dim);white-space:nowrap">${a.when}</span>
+      </div>`;
+    }
+    html += '</div>';
+  }
+
   html += '</div>'; // close dash-grid
   m.innerHTML = html;
+}
+
+function timeAgo(date) {
+  const s = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.floor(s/60) + 'm ago';
+  if (s < 86400) return Math.floor(s/3600) + 'h ago';
+  if (s < 604800) return Math.floor(s/86400) + 'd ago';
+  return date.toLocaleDateString();
 }
 
 
@@ -1407,10 +1451,18 @@ async function runGuidedQuote() {
   const rd = document.getElementById('quoteResult');
   rd.innerHTML = '<div class="loading"><div class="spinner"></div>Calculating...</div>';
   const a = {...quoteState.answers}; const slug = a._offer_slug; delete a._offer_slug;
-  const r = await api('/quote?mode=guided&materials=1', {method:'POST',body:JSON.stringify({system:quoteState.system,offer_slug:slug,answers:a})});
+
+  // Run quote + comparison in parallel
+  const [r, comp] = await Promise.all([
+    api('/quote?mode=guided&materials=1', {method:'POST',body:JSON.stringify({system:quoteState.system,offer_slug:slug,answers:a})}),
+    api('/quote?mode=compare', {method:'POST',body:JSON.stringify({measurements:a})}).catch(() => null)
+  ]);
+
   if (r.error) { rd.innerHTML = `<div class="panel" style="border-color:var(--red)"><div class="panel-title text-red">Error</div><div class="panel-sub">${esc(r.error)}</div></div>`; return; }
-  quoteState.result = r; sfx.play('success'); renderQuoteResult(rd, r);
-  // Chain into result tutorial if guide is running
+  quoteState.result = r;
+  quoteState._comparison = comp; // store for inline display
+  sfx.play('success');
+  renderQuoteResult(rd, r);
   setTimeout(() => guide.onQuoteResult(), 500);
 }
 
@@ -1483,6 +1535,37 @@ function renderQuoteResult(el, r) {
       ${s.hasEstimatedPricing ? '<div style="margin-top:6px"><span class="badge badge-estimated">* Contains estimated pricing — verify with supplier</span></div>' : ''}
     </div>
 
+    <!-- ═══ PACKAGE POSITION BAR (inline price anchor) ═══ -->`;
+  if (quoteState._comparison && quoteState._comparison.offers) {
+    const compOffers = Object.entries(quoteState._comparison.offers)
+      .map(([slug, q]) => ({slug, name: q.offer.name, total: q.summary.totalWithTax, selected: q.offer.slug === r.offer.slug}))
+      .sort((a,b) => a.total - b.total);
+    const maxTotal = Math.max(...compOffers.map(o => o.total));
+    if (compOffers.length > 1) {
+      html += `<div style="padding:12px 0;border-bottom:1px solid var(--glass-border)">
+        <div style="font-size:0.6em;color:var(--text-dim);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:8px">How Your Package Compares</div>
+        <div style="display:flex;gap:4px;align-items:flex-end;height:48px">`;
+      for (const o of compOffers) {
+        const pct = Math.max((o.total / maxTotal) * 100, 15);
+        const color = o.selected ? 'var(--cyan)' : 'rgba(34,211,238,0.15)';
+        html += `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px" title="${o.name}: ${fmt$(o.total)}">
+          <div style="font-size:0.55em;color:${o.selected?'var(--cyan)':'var(--text-dim)'};font-weight:${o.selected?'700':'400'};white-space:nowrap">${fmt$(o.total)}</div>
+          <div style="width:100%;height:${pct}%;min-height:6px;background:${color};border-radius:4px 4px 0 0;transition:height 0.5s"></div>
+          <div style="font-size:0.5em;color:${o.selected?'var(--cyan)':'var(--text-dim)'};font-weight:${o.selected?'700':'400'};letter-spacing:0.5px">${o.name}</div>
+        </div>`;
+      }
+      html += `</div>`;
+      // Savings callout
+      const highest = compOffers[compOffers.length - 1];
+      const selected = compOffers.find(o => o.selected);
+      if (selected && highest && !highest.selected && highest.total > selected.total) {
+        const savings = highest.total - selected.total;
+        html += `<div style="font-size:0.72em;color:var(--green);margin-top:6px;text-align:center">You save <strong>${fmt$(savings)}</strong> vs ${highest.name}</div>`;
+      }
+      html += '</div>';
+    }
+  }
+  html += `
     <!-- ═══ INTERNAL METRICS (owner only) ═══ -->
     <div style="display:flex;gap:12px;justify-content:center;padding:12px 0;flex-wrap:wrap">
       <div style="text-align:center;padding:6px 14px;border-radius:8px;background:rgba(34,211,238,0.03)">
