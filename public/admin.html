@@ -981,54 +981,171 @@ async function renderQuoteBuilder(m) {
 
 function setQuoteMode(mode) { quoteState.mode = mode; quoteState.result = null; renderQuoteBuilder(document.getElementById('main')); }
 
+// ─── Form field helper ───
+function qField(key,label,type,opts={}) {
+  const val = quoteState.answers[key] ?? opts.default ?? '';
+  const req = opts.required ? ' *' : '';
+  const hint = opts.hint ? `<div class="form-hint">${esc(opts.hint)}</div>` : '';
+  if (type === 'select') {
+    const options = (opts.options||[]).map(o => {
+      const lb = opts.labels ? (opts.labels[o]||o) : o;
+      return `<option value="${o}" ${val==o?'selected':''}>${lb}</option>`;
+    }).join('');
+    return `<div class="form-group"><label class="form-label">${esc(label)}${req}</label><select data-qkey="${esc(key)}" onchange="quoteState.answers[this.dataset.qkey]=this.value">${options}</select>${hint}</div>`;
+  }
+  if (type === 'checkbox') {
+    return `<div class="form-group" style="display:flex;align-items:center;gap:8px;padding-top:18px"><input type="checkbox" ${val?'checked':''} data-qkey="${esc(key)}" onchange="quoteState.answers[this.dataset.qkey]=this.checked" style="width:auto;accent-color:var(--cyan)"><label class="form-label" style="margin:0">${esc(label)}</label></div>`;
+  }
+  return `<div class="form-group"><label class="form-label">${esc(label)}${req}</label><input type="${type}" value="${val}" data-qkey="${esc(key)}" onchange="quoteState.answers[this.dataset.qkey]=this.type==='number'?Number(this.value):this.value" placeholder="${esc(opts.hint||'')}">${hint}</div>`;
+}
+
+function formSection(title, icon, content, open=true) {
+  return `<details class="panel" style="cursor:default;padding:0" ${open?'open':''}>
+    <summary style="padding:12px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;user-select:none;list-style:none">
+      <span style="font-size:1.1em">${icon}</span>
+      <span class="panel-title" style="font-size:0.7em">${title}</span>
+      <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:var(--text-dim);fill:none;stroke-width:2;margin-left:auto;transition:transform 0.2s"><polyline points="6 9 12 15 18 9"/></svg>
+    </summary>
+    <div style="padding:0 14px 14px;border-top:1px solid var(--glass-border)"><div class="form-grid" style="margin-top:12px">${content}</div></div>
+  </details>`;
+}
+
+// ─── Sales copy per package ───
+const PACKAGE_COPY = {
+  economy: { tagline: 'Reliable Protection', copy: 'Quality roofing at the best price. IKO Cambridge architectural shingles with standard materials. Perfect for budget-conscious homeowners who want solid performance.', icon: '🛡️', color: 'cyan' },
+  gold: { tagline: 'Best Value', copy: 'CertainTeed Landmark architectural shingles — the gold standard in residential roofing. Synthetic underlayment and standard ice shield. The sweet spot between quality and price.', icon: '⭐', color: 'yellow', recommended: true },
+  platinum: { tagline: 'Premium Quality', copy: 'CertainTeed Landmark PRO with premium synthetic underlayment, Grace ice shield, and metal valleys. Superior protection for homeowners who want the best without going ultra-premium.', icon: '💎', color: 'purple' },
+  diamond: { tagline: 'Luxury Finish', copy: 'CertainTeed Presidential luxury shingles (4 bundles/SQ). Premium everything — underlayment, ice shield, metal valleys, extended warranty. The finest residential roofing available.', icon: '👑', color: 'orange' },
+  'performance-shell-plus': { tagline: 'Complete Exterior', copy: 'Full wall rebuild — strip to sheathing, OSB substrate, Tyvek housewrap, EPS foam insulation, VentiGrid rain screen, and your choice of siding. Includes remediation allowance.', icon: '🏗️', color: 'cyan' },
+  'hardie-shell': { tagline: 'Premium Exterior', copy: 'James Hardie fiber cement siding with full wall assembly. DrainWrap premium housewrap, VentiGrid rain screen, HardiePlank lap siding. The gold standard in exterior renovation.', icon: '🏠', color: 'blue' },
+  'metal-shell': { tagline: 'Industrial Grade', copy: 'Steel siding with full wall assembly. Low maintenance, high durability, modern aesthetic. Built to withstand anything.', icon: '⚙️', color: 'blue' },
+  'metal-americana': { tagline: 'Classic Metal', copy: 'Americana ribbed steel panels with strapping. Durable, low-maintenance metal roofing with a classic profile.', icon: '⚙️', color: 'blue' },
+  'metal-standing-seam': { tagline: 'Premium Metal', copy: 'Standing seam metal roof with concealed fasteners. Clean lines, premium performance, lifetime durability.', icon: '⚙️', color: 'purple' },
+  'gold-shell': { tagline: 'Complete Package', copy: 'Gold roofing + full Performance Shell exterior. One crew, one mobilization, complete transformation.', icon: '🔄', color: 'green' },
+  'platinum-shell': { tagline: 'Premium Complete', copy: 'Platinum roofing + full Performance Shell. The ultimate exterior renovation — roof to walls, premium everything.', icon: '🔄', color: 'purple' }
+};
+
 async function renderQuoteForm() {
   const form = document.getElementById('quoteForm');
   if (!form) return;
 
   if (quoteState.mode === 'guided') {
-    const data = await api(`/quote?questions=1&system=${quoteState.system}`);
-    if (data.error) { form.innerHTML = `<div class="panel" style="border-color:var(--red)"><div class="panel-header"><div class="panel-title text-red">Connection Error</div></div><div style="font-size:0.85em;color:var(--text-dim);padding:8px 0">${esc(data.error)}<br><br>Check that the API is running and the tenant exists.</div><button class="btn btn-outline btn-sm" onclick="renderQuoteForm()">Retry</button></div>`; return; }
-    const questions = data.questions || [];
-    if (questions.length === 0) { form.innerHTML = `<div class="panel"><div style="text-align:center;padding:20px;color:var(--text-dim);font-size:0.85em">No questions configured for "${quoteState.system}" system.<br>Check offer scope templates in the database.</div></div>`; return; }
-    let html = '<div class="panel"><div class="panel-header"><div class="panel-title">Job Details</div></div><div class="form-grid">';
-    for (const q of questions) {
-      const val = quoteState.answers[q.key] ?? q.default ?? '';
-      if (q.type === 'select') {
-        const options = q.options.map(o => {
-          const label = q.labels ? (q.labels[o] || o) : o;
-          return `<option value="${o}" ${val == o ? 'selected' : ''}>${label}</option>`;
-        }).join('');
-        html += `<div class="form-group"><label class="form-label">${esc(q.label)}${q.required?' *':''}</label>
-          <select data-qkey="${esc(q.key)}" onchange="quoteState.answers[this.dataset.qkey]=this.value">${options}</select>
-          ${q.hint?`<div class="form-hint">${esc(q.hint)}</div>`:''}</div>`;
-      } else {
-        html += `<div class="form-group"><label class="form-label">${esc(q.label)}${q.required?' *':''}</label>
-          <input type="${q.type}" value="${val}" data-qkey="${esc(q.key)}" onchange="quoteState.answers[this.dataset.qkey]=this.type==='number'?Number(this.value):this.value" placeholder="${esc(q.hint||'')}">
-          ${q.hint?`<div class="form-hint">${esc(q.hint)}</div>`:''}</div>`;
-      }
-    }
-    html += '</div>';
-
+    // Load offers
     if (!offersCache) offersCache = await api('/quote?offers=1');
     const sysMap = {residential:'asphalt',metal:'metal',flat:'asphalt',exterior:'exterior',combined:'combined'};
     const offers = (offersCache.offers||[]).filter(o => o.system === (sysMap[quoteState.system]||'asphalt'));
-    html += `<div class="form-group form-full" style="margin-top:14px"><label class="form-label">Package</label>
-      <select id="qOffer" onchange="quoteState.answers._offer_slug=this.value">
-        ${offers.map(o => `<option value="${o.slug}" ${quoteState.answers._offer_slug===o.slug?'selected':''}>${o.name}${o.badge?' — '+o.badge:''}</option>`).join('')}
-      </select></div>`;
-    html += `<div style="margin-top:18px;display:flex;gap:8px">
-      <button class="btn btn-primary" onclick="runGuidedQuote()">Calculate</button>
-      <button class="btn btn-outline" onclick="runCompare()">Compare All</button>
-    </div></div>`;
-    form.innerHTML = html;
     if (!quoteState.answers._offer_slug && offers.length) quoteState.answers._offer_slug = offers[0].slug;
+
+    const sys = quoteState.system;
+    const isRoof = ['residential','metal','flat','combined'].includes(sys);
+    const isExterior = ['exterior','combined'].includes(sys);
+    const isMetal = sys === 'metal';
+    const isFlat = sys === 'flat';
+
+    let html = '';
+
+    // ═══ Section 1: Property & Customer Info ═══
+    html += formSection('Property & Customer', '📍',
+      qField('customerName','Customer Name','text',{hint:'For proposal header'}) +
+      qField('address','Property Address','text',{required:true,hint:'Used for distance calc & project file'}) +
+      qField('distanceKM','Distance from Shop (km)','number',{required:true,default:10,hint:'Riverview to job site'}) +
+      qField('stories','Number of Stories','select',{default:1,options:[1,1.5,2,2.5,3]})
+    );
+
+    // ═══ Section 2: Roof Measurements (if roof system) ═══
+    if (isRoof) {
+      let roofFields =
+        qField('squareFeet','Roof Area (sq ft)','number',{required:true,hint:'2D footprint from EagleView or tape measure'}) +
+        qField('pitch','Roof Pitch','select',{required:true,default:'5/12',options:['4/12','5/12','6/12','7/12','8/12','9/12','10/12','11/12','12/12','13/12','14/12'],hint:'From EagleView or measurement'}) +
+        qField('complexity','Roof Complexity','select',{required:true,default:'medium',options:['simple','medium','complex'],labels:{simple:'Simple — basic gable',medium:'Medium — hip/valley mix',complex:'Complex — cut-up, dormers, steep'},hint:'Affects waste factor: 10% / 15% / 20%'}) +
+        qField('extraLayers','Layers to Remove','select',{default:1,options:[0,1,2,3],labels:{'0':'0 — New construction','1':'1 layer','2':'2 layers','3':'3 layers'},hint:'Existing shingle layers for tear-off'});
+
+      if (isMetal) {
+        roofFields += qField('panelType','Panel Type','select',{default:'americana',options:['americana','standingSeam'],labels:{americana:'Americana Ribbed ($2.80/sqft)',standingSeam:'Standing Seam ($6.00/sqft)'}});
+      }
+      if (isFlat) {
+        roofFields += qField('flatSystem','Flat Roof System','select',{default:'tpo',options:['tpo','epdm','mod_bit','bur'],labels:{tpo:'TPO Membrane *',epdm:'EPDM Rubber *',mod_bit:'Modified Bitumen *',bur:'Built-Up Roofing (BUR) *'},hint:'* Estimated pricing — verify with supplier'});
+      }
+      html += formSection('Roof Measurements', '📐', roofFields);
+    }
+
+    // ═══ Section 3: Roof Details (chimneys, pipes, vents, perimeter) ═══
+    if (isRoof && !isFlat) {
+      html += formSection('Roof Details', '🔧',
+        qField('ridgesLF','Ridge Length (LF)','number',{default:0,hint:'Linear feet of ridge line'}) +
+        qField('valleysLF','Valley Length (LF)','number',{default:0,hint:'Total valley linear feet'}) +
+        qField('eavesLF','Eaves Length (LF)','number',{default:0,hint:'Auto-estimated from sq ft if left at 0'}) +
+        qField('rakesLF','Rake Length (LF)','number',{default:0,hint:'Auto-estimated from sq ft if left at 0'}) +
+        qField('chimneys','Chimneys','number',{default:0}) +
+        qField('chimneySize','Chimney Size','select',{default:'small',options:['small','large'],labels:{small:'Small ($125 flashing)',large:'Large ($350 flashing)'}}) +
+        qField('pipes','Pipe Penetrations','number',{default:3,hint:'Vent pipes through roof'}) +
+        qField('vents','Max Vents','number',{default:2}) +
+        qField('cricket','Install Cricket','checkbox',{default:false,hint:'Roof drainage behind chimney — $150'}) +
+        qField('cedarTearoff','Cedar Tear-off','checkbox',{default:false,hint:'Specialty removal — $70/SQ extra'}) +
+        qField('redeckSheets','Redeck Sheets (OSB)','number',{default:0,hint:'Expected remediation sheets — $30/sheet labor'})
+      , false);
+    }
+
+    // ═══ Section 4: Exterior (if applicable) ═══
+    if (isExterior) {
+      html += formSection('Exterior Scope', '🧱',
+        qField('wallSqFt','Total Wall Area (sq ft)','number',{required:true,hint:'All sides combined — subtract openings or estimate gross'}) +
+        qField('sidingChoice','Siding Material','select',{required:true,default:'vinyl_standard',options:['vinyl_standard','vinyl_premium','vinyl_signature','hardie_lap','steel_ribbed','steel_board_batten','aluminum'],labels:{vinyl_standard:'Vinyl — Standard (Gentek Sovereign)',vinyl_premium:'Vinyl — Premium (Gentek Sequoia)',vinyl_signature:'Vinyl — Signature (Gentek Premium)',hardie_lap:'HardiePlank Fiber Cement',steel_ribbed:'Steel Ribbed Panel',steel_board_batten:'Steel Board & Batten',aluminum:'Aluminum Panel'}}) +
+        qField('soffitLF','Soffit (LF)','number',{default:0}) +
+        qField('fasciaLF','Fascia (LF)','number',{default:0}) +
+        qField('gutterLF','Gutters (LF)','number',{default:0}) +
+        qField('leafGuard','Include Leaf Guard','checkbox',{default:false,hint:'$6/LF on top of gutter cost'}) +
+        qField('windowCount','Windows to Cap/Replace','number',{default:0}) +
+        qField('doorCount','Doors to Cap','number',{default:0})
+      );
+    }
+
+    // ═══ Section 5: Site Conditions ═══
+    html += formSection('Site Conditions', '📋',
+      qField('existingCondition','Existing Roof Condition','select',{default:'fair',options:['good','fair','poor'],labels:{good:'Good — single layer, solid deck',fair:'Fair — some wear, standard tear-off',poor:'Poor — multiple layers, potential deck issues'},hint:'Affects remediation allowance'}) +
+      qField('accessDifficulty','Site Access','select',{default:'normal',options:['easy','normal','difficult'],labels:{easy:'Easy — ground level, open lot',normal:'Normal — standard residential',difficult:'Difficult — tight access, steep grade, landscaping'},hint:'Notes for crew planning'}) +
+      qField('notes','Job Notes','text',{hint:'Anything crew should know — hazards, pets, parking, etc.'})
+    , false);
+
+    // ═══ Section 6: Package Selection — Visual Cards ═══
+    html += `<div class="panel" style="padding:14px"><div class="panel-header"><div class="panel-title">Select Package</div><span class="badge badge-blue">${offers.length} available</span></div>`;
+    html += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin-top:10px">`;
+    for (const o of offers) {
+      const copy = PACKAGE_COPY[o.slug] || { tagline: o.badge || '', copy: o.description || '', icon: '📦', color: 'cyan' };
+      const sel = quoteState.answers._offer_slug === o.slug;
+      html += `<div onclick="quoteState.answers._offer_slug='${o.slug}';document.querySelectorAll('.pkg-card').forEach(c=>c.style.borderColor='var(--glass-border)');this.style.borderColor='var(--${copy.color})'"
+        class="pkg-card" style="padding:14px;border-radius:10px;border:2px solid ${sel?'var(--'+copy.color+')':'var(--glass-border)'};background:${sel?'rgba(34,211,238,0.04)':'rgba(6,12,24,0.5)'};cursor:pointer;transition:all 0.25s;position:relative">
+        ${copy.recommended?'<div style="position:absolute;top:-8px;right:10px;background:var(--yellow);color:#000;font-size:0.55em;font-weight:700;padding:2px 8px;border-radius:4px;letter-spacing:1px">RECOMMENDED</div>':''}
+        <div style="font-size:1.3em;margin-bottom:4px">${copy.icon}</div>
+        <div style="font-family:'Orbitron',monospace;font-size:0.75em;font-weight:700;color:var(--${copy.color})">${esc(o.name)}</div>
+        ${o.badge?`<div style="font-size:0.65em;color:var(--${copy.color});opacity:0.7;margin-top:2px">${esc(o.badge)}</div>`:''}
+        <div style="font-size:0.68em;color:var(--text-dim);margin-top:6px;line-height:1.4">${esc(copy.tagline)}</div>
+        ${o.warranty_years?`<div style="font-size:0.6em;color:var(--text-dim);margin-top:6px;display:flex;align-items:center;gap:4px"><svg viewBox="0 0 24 24" style="width:10px;height:10px;stroke:var(--green);fill:none;stroke-width:2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>${o.warranty_years}-yr warranty</div>`:''}
+      </div>`;
+    }
+    html += '</div>';
+
+    // Expandable sales copy for selected package
+    const selOffer = offers.find(o => o.slug === quoteState.answers._offer_slug);
+    if (selOffer) {
+      const selCopy = PACKAGE_COPY[selOffer.slug] || { copy: selOffer.description || '' };
+      html += `<div style="margin-top:10px;padding:10px 12px;border-radius:8px;background:rgba(34,211,238,0.03);border:1px solid var(--glass-border);font-size:0.78em;color:var(--text-dim);line-height:1.5">${esc(selCopy.copy || selOffer.description || '')}</div>`;
+    }
+
+    html += `<div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="runGuidedQuote()" style="flex:1;min-width:140px">Calculate Quote</button>
+      <button class="btn btn-outline" onclick="runCompare()" style="flex:1;min-width:140px">Compare All Packages</button>
+    </div></div>`;
+
+    form.innerHTML = html;
   } else {
+    // ═══ ADVANCED MODE — Line Item Editor ═══
     if (!quoteState.result) {
-      form.innerHTML = `<div class="panel"><div class="panel-title">Advanced Mode</div><div class="panel-sub" style="margin-top:6px">Run a guided quote first, then switch to advanced.</div><div style="margin-top:14px"><button class="btn btn-outline" onclick="setQuoteMode('guided')">Start Guided</button></div></div>`;
+      form.innerHTML = `<div class="panel"><div class="panel-title">Advanced Mode</div><div class="panel-sub" style="margin-top:6px">Run a guided quote first, then switch to advanced to edit individual line items.</div><div style="margin-top:14px"><button class="btn btn-outline" onclick="setQuoteMode('guided')">Start Guided</button></div></div>`;
       return;
     }
     const items = quoteState.result.lineItems || [];
-    let html = `<div class="panel"><div class="panel-header"><div class="panel-title">Line Item Editor</div></div>
+    let html = `<div class="panel"><div class="panel-header"><div class="panel-title">Line Item Editor</div><span class="badge badge-blue">${items.length} items</span></div>
       <div class="table-wrap"><table><thead><tr><th style="width:28px"></th><th>Item</th><th>Cat</th><th style="width:70px">Qty</th><th style="width:50px">Unit</th><th style="width:90px">Cost</th><th class="text-right" style="width:90px">Total</th><th style="width:100px">Source</th></tr></thead><tbody>`;
     for (const li of items) {
       const ovr = quoteState.overrides[li.item_key]||{};
@@ -1047,7 +1164,7 @@ async function renderQuoteForm() {
     }
     html += `</tbody></table></div><div style="display:flex;gap:8px;margin-top:14px">
       <button class="btn btn-primary" onclick="recalcWithOverrides()">Recalculate</button>
-      <button class="btn btn-outline" onclick="quoteState.overrides={};renderQuoteBuilder(document.getElementById('main'))">Reset</button></div></div>`;
+      <button class="btn btn-outline" onclick="quoteState.overrides={};renderQuoteBuilder(document.getElementById('main'))">Reset Overrides</button></div></div>`;
     form.innerHTML = html;
   }
 }
@@ -1077,55 +1194,146 @@ function renderQuoteResult(el, r) {
   const includedItems = r.lineItems.filter(li => li.included);
   const marginPct = parseFloat(s.netMargin) || 0;
   const marginColor = marginPct >= 30 ? 'green' : marginPct >= 20 ? 'cyan' : marginPct >= 10 ? 'yellow' : 'red';
+  const copy = PACKAGE_COPY[r.offer.slug] || { tagline: r.offer.badge||'', copy: '', icon: '📦', color: 'cyan' };
+  const custName = quoteState.answers.customerName || '';
+  const addr = quoteState.answers.address || '';
 
-  let html = `<div class="quote-result" style="margin-top:12px">
-    <!-- Hero Price Row -->
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px">
-      <div style="display:flex;align-items:center;gap:16px">
-        <div class="orb" style="width:52px;height:52px"></div>
-        <div>
-          <div style="font-size:0.72em;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase">${esc(r.offer.name)}${r.offer.badge?' — '+r.offer.badge:''}</div>
-          <div class="quote-total" style="font-size:2.6em">${fmt$(s.totalWithTax)}</div>
-          <div style="font-size:0.78em;color:var(--text-dim)">${fmt$(s.sellingPrice)} + ${fmt$(s.tax)} ${s.taxLabel||'HST'}</div>
-        </div>
+  // Bundle line items into client-facing categories (mirrors outputGenerators.js)
+  const bundleMap = {
+    'Roofing System': ['shingles','underlayment','ice_water','starter','ridge_cap','drip_edge','valley_metal','pipe_flashing','step_flashing','ridge_vent','nails','caulking','base_labor','tearoff_labor','extra_layer_labor','cedar_tearoff_labor','redeck_labor','valley_labor','ridge_vent_labor','pipe_labor','chimney_labor','cricket_labor','vent_labor','metal_panels','metal_strapping','metal_labor','flat_membrane','flat_insulation','flat_adhesive','flat_labor'],
+    'Siding System': ['siding','j_channel','corner_posts_outside','corner_posts_inside','window_trim','undersill_trim','starter_strip_siding','drip_cap','metal_trim','strip_existing'],
+    'Wall Substrate & Insulation': ['osb_substrate','housewrap','eps_foam','ventigrid','sheathing_inspection'],
+    'Soffit & Fascia': ['soffit','fascia'],
+    'Gutters & Drainage': ['gutters','leaf_guard'],
+    'Windows & Doors': ['window_capping','door_capping','window_replacement','window_small','window_medium','window_large'],
+    'Remediation Allowance': ['remediation'],
+    'Project Logistics': ['distance_adder','project_overhead','disposal','warranty']
+  };
+  const mult = s.hardCost > 0 ? s.sellingPrice / s.hardCost : 1;
+  const bundles = [];
+  for (const [label, keys] of Object.entries(bundleMap)) {
+    const hardTotal = includedItems.filter(li => keys.includes(li.item_key)).reduce((sum,li) => sum + li.total_cost, 0);
+    if (hardTotal <= 0) continue;
+    const isRem = label === 'Remediation Allowance';
+    bundles.push({ label, retail: isRem ? hardTotal : Math.round(hardTotal * mult), isRemediation: isRem });
+  }
+
+  // Workday estimate
+  const workdays = r.measurements?.workdays || 1;
+  const projType = r.measurements?.projectType || 'local';
+
+  let html = '';
+
+  // ═══ PROPOSAL HEADER ═══
+  html += `<div class="quote-result" style="margin-top:12px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:16px">
+      <div>
+        ${custName ? `<div style="font-size:0.72em;color:var(--text-dim);letter-spacing:0.5px;margin-bottom:2px">Prepared for</div><div style="font-size:1.1em;font-weight:700">${esc(custName)}</div>` : ''}
+        ${addr ? `<div style="font-size:0.78em;color:var(--text-dim);margin-top:2px">${esc(addr)}</div>` : ''}
       </div>
-      <div style="display:flex;gap:16px;text-align:center">
-        <div><div style="font-family:'Orbitron',monospace;font-size:1.3em;font-weight:700;color:var(--${marginColor})">${s.netMargin}</div><div class="mega-label">Margin</div></div>
-        <div><div style="font-family:'Orbitron',monospace;font-size:1.3em;font-weight:700;color:var(--text-dim)">${s.multiplier}x</div><div class="mega-label">Multi</div></div>
-        ${s.pricePerSQ?`<div><div style="font-family:'Orbitron',monospace;font-size:1.3em;font-weight:700;color:var(--blue)">${fmt$(s.pricePerSQ)}</div><div class="mega-label">/SQ</div></div>`:''}
+      <div style="text-align:right">
+        <div style="display:flex;align-items:center;gap:6px;justify-content:flex-end">
+          <span style="font-size:1.2em">${copy.icon}</span>
+          <span style="font-family:'Orbitron',monospace;font-size:0.8em;font-weight:700;color:var(--${copy.color})">${esc(r.offer.name)}</span>
+          ${r.offer.badge ? `<span class="badge badge-blue">${esc(r.offer.badge)}</span>` : ''}
+        </div>
+        ${r.offer.warranty_years ? `<div style="font-size:0.68em;color:var(--green);margin-top:4px"><svg viewBox="0 0 24 24" style="width:10px;height:10px;stroke:currentColor;fill:none;stroke-width:2;vertical-align:middle"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> ${r.offer.warranty_years}-Year Workmanship Warranty</div>` : ''}
       </div>
     </div>
 
-    ${s.hasEstimatedPricing?'<div style="margin-top:8px"><span class="badge badge-estimated">* Contains estimated pricing</span></div>':''}
+    <!-- ═══ HERO PRICE ═══ -->
+    <div style="text-align:center;padding:20px 0;border-top:1px solid var(--glass-border);border-bottom:1px solid var(--glass-border)">
+      <div style="font-size:0.65em;color:var(--text-dim);text-transform:uppercase;letter-spacing:2px;margin-bottom:4px">Total Investment</div>
+      <div class="quote-total" style="font-size:3.2em">${fmt$(s.totalWithTax)}</div>
+      <div style="font-size:0.82em;color:var(--text-dim);margin-top:4px">${fmt$(s.sellingPrice)} + ${fmt$(s.tax)} ${s.taxLabel||'HST'}</div>
+      ${s.hasEstimatedPricing ? '<div style="margin-top:6px"><span class="badge badge-estimated">* Contains estimated pricing — verify with supplier</span></div>' : ''}
+    </div>
 
-    <!-- Margin Progress Bar -->
-    <div style="margin-top:14px">${progressBar(Math.min(marginPct,50)/50*100, marginColor, 'Net Margin', s.netMargin+(s.marginProtected?' (floor)':''))}</div>
+    <!-- ═══ INTERNAL METRICS (owner only) ═══ -->
+    <div style="display:flex;gap:12px;justify-content:center;padding:12px 0;flex-wrap:wrap">
+      <div style="text-align:center;padding:6px 14px;border-radius:8px;background:rgba(34,211,238,0.03)">
+        <div style="font-family:'Orbitron',monospace;font-size:1.1em;font-weight:700;color:var(--${marginColor})">${s.netMargin}</div><div class="mega-label">Margin</div>
+      </div>
+      <div style="text-align:center;padding:6px 14px;border-radius:8px;background:rgba(34,211,238,0.03)">
+        <div style="font-family:'Orbitron',monospace;font-size:1.1em;font-weight:700;color:var(--text-dim)">${s.multiplier}x</div><div class="mega-label">Multi</div>
+      </div>
+      <div style="text-align:center;padding:6px 14px;border-radius:8px;background:rgba(34,211,238,0.03)">
+        <div style="font-family:'Orbitron',monospace;font-size:1.1em;font-weight:700;color:var(--text-dim)">${fmt$(s.hardCost)}</div><div class="mega-label">Hard Cost</div>
+      </div>
+      ${s.pricePerSQ ? `<div style="text-align:center;padding:6px 14px;border-radius:8px;background:rgba(34,211,238,0.03)"><div style="font-family:'Orbitron',monospace;font-size:1.1em;font-weight:700;color:var(--blue)">${fmt$(s.pricePerSQ)}</div><div class="mega-label">/SQ</div></div>` : ''}
+    </div>
+    <div style="margin:0 0 14px">${progressBar(Math.min(marginPct,50)/50*100, marginColor, 'Net Margin', s.netMargin+(s.marginProtected?' (floor protected)':''))}</div>
 
-    <!-- Line Items -->
-    <div class="line-items" style="margin-top:14px">`;
-  for (const li of includedItems) {
-    html += `<div class="line-item ${li.estimated?'estimated':''}"><div class="name">${esc(li.label)}</div><div class="qty">${li.quantity} ${li.unit}</div><div class="cost">${fmt$(li.total_cost)}</div></div>`;
+    <!-- ═══ SCOPE OF WORK ═══ -->
+    <div style="margin-bottom:14px">
+      <div style="font-family:'Orbitron',monospace;font-size:0.6em;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px">Scope of Work</div>
+      <div style="font-size:0.8em;color:var(--text-dim);line-height:1.6;margin-bottom:10px">${esc(copy.copy || r.offer.description || '')}</div>`;
+
+  // Bundled retail line items
+  for (const b of bundles) {
+    html += `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(34,211,238,0.05);font-size:0.88em">
+      <span style="font-weight:500">${b.label}</span>
+      <span style="font-family:'Orbitron',monospace;font-weight:600;color:var(--cyan)">${fmt$(b.retail)}</span>
+    </div>`;
+    if (b.isRemediation) {
+      html += `<div style="font-size:0.68em;color:var(--green);padding:2px 0 4px">Unused portion credited back to you</div>`;
+    }
   }
-  if (s.byCategory) {
-    html += '<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--glass-border);font-size:0.82em">';
-    for (const [cat,amt] of Object.entries(s.byCategory)) html += `<div style="display:flex;justify-content:space-between;padding:3px 0"><span class="text-dim">${cat}</span><span style="font-family:'Orbitron',monospace;font-size:0.9em">${fmt$(amt)}</span></div>`;
-    html += '</div>';
-  }
-  html += `</div>
 
-    <!-- Action Buttons -->
-    <div style="display:flex;gap:6px;margin-top:16px;flex-wrap:wrap">
+  html += `<div style="display:flex;justify-content:space-between;padding:10px 0 4px;font-size:0.92em;font-weight:700;border-top:2px solid var(--glass-border);margin-top:4px">
+    <span>Subtotal</span><span style="font-family:'Orbitron',monospace">${fmt$(s.sellingPrice)}</span></div>
+    <div style="display:flex;justify-content:space-between;padding:2px 0;font-size:0.82em;color:var(--text-dim)">
+    <span>${s.taxLabel||'HST'}</span><span style="font-family:'Orbitron',monospace">${fmt$(s.tax)}</span></div>
+    <div style="display:flex;justify-content:space-between;padding:8px 0 0;font-size:1.05em;font-weight:800;color:var(--cyan)">
+    <span>Total</span><span style="font-family:'Orbitron',monospace">${fmt$(s.totalWithTax)}</span></div>
+    </div>
+
+    <!-- ═══ PROJECT DETAILS ═══ -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+      <div style="padding:10px 12px;border-radius:8px;background:rgba(34,211,238,0.03);border:1px solid var(--glass-border)">
+        <div style="font-size:0.6em;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Estimated Duration</div>
+        <div style="font-family:'Orbitron',monospace;font-weight:700;color:var(--cyan)">${workdays} day${workdays>1?'s':''}</div>
+      </div>
+      <div style="padding:10px 12px;border-radius:8px;background:rgba(34,211,238,0.03);border:1px solid var(--glass-border)">
+        <div style="font-size:0.6em;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Payment Schedule</div>
+        <div style="font-family:'Orbitron',monospace;font-weight:700;color:var(--cyan)">33% deposit</div>
+        <div style="font-size:0.68em;color:var(--text-dim)">Balance on completion</div>
+      </div>
+    </div>
+
+    <!-- ═══ WARRANTY & FINANCING ═══ -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+      ${r.offer.warranty_years ? `<div style="padding:10px 12px;border-radius:8px;background:rgba(74,222,128,0.04);border:1px solid rgba(74,222,128,0.1)">
+        <div style="font-size:0.6em;color:var(--green);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Warranty</div>
+        <div style="font-size:0.82em;color:var(--text)"><strong>${r.offer.warranty_years}-year workmanship warranty</strong> included. Manufacturer material warranties apply separately.</div>
+      </div>` : ''}
+      <div style="padding:10px 12px;border-radius:8px;background:rgba(34,211,238,0.04);border:1px solid rgba(34,211,238,0.08)">
+        <div style="font-size:0.6em;color:var(--cyan);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Financing</div>
+        <div style="font-size:0.82em;color:var(--text)">Available through <strong>FinanceIt</strong>. Apply online — approval in minutes. Ask about monthly payment options.</div>
+      </div>
+    </div>
+
+    <!-- ═══ CLEANUP & SITE NOTES ═══ -->
+    <div style="padding:10px 12px;border-radius:8px;background:rgba(34,211,238,0.02);border:1px solid var(--glass-border);margin-bottom:14px">
+      <div style="font-size:0.6em;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Included in Every Job</div>
+      <div style="font-size:0.78em;color:var(--text-dim);line-height:1.6">
+        Complete jobsite cleanup &bull; Magnetic nail sweep &bull; Debris removal &bull; Final walkthrough with customer &bull; Before/after photos
+      </div>
+    </div>
+
+    <!-- ═══ ACTION BUTTONS ═══ -->
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
       <button class="btn btn-success" onclick="createEstimateFromQuote()">Save Estimate</button>
-      <button class="btn btn-primary" onclick="generateOutputs('proposal')">Proposal</button>
-      <button class="btn btn-outline" onclick="generateOutputs('contract')">Contract</button>
+      <button class="btn btn-primary" onclick="generateOutputs('proposal')">Print Proposal</button>
+      <button class="btn btn-outline" onclick="generateOutputs('contract')">Generate Contract</button>
       <button class="btn btn-outline" onclick="generateOutputs('all')">All Outputs</button>
-      <button class="btn btn-outline" onclick="setQuoteMode('advanced')">Edit Items</button>
+      <button class="btn btn-outline" onclick="setQuoteMode('advanced')">Edit Line Items</button>
     </div>
   </div>`;
 
-  // Materials panel
+  // ═══ MATERIALS LIST (internal use) ═══
   if (r.materialList) {
-    html += `<div class="panel" style="margin-top:10px"><div class="panel-header"><div class="panel-title">Materials</div><span class="badge badge-blue">${r.materialList.itemCount} items</span></div>
+    html += `<div class="panel" style="margin-top:10px"><div class="panel-header"><div class="panel-title">Material Purchase List</div><span class="badge badge-blue">${r.materialList.itemCount} items</span><span class="badge badge-green" style="margin-left:4px">${r.materialList.verifiedCount} verified</span></div>
       <div class="table-wrap"><table><thead><tr><th>Item</th><th>Qty</th><th>Unit</th><th class="text-right">Cost</th><th>Source</th></tr></thead><tbody>`;
     for (const m of r.materialList.items) html += `<tr><td style="font-size:0.82em">${esc(m.item)}${m.estimated?' <span class="text-yellow">*</span>':''}</td><td>${m.quantity}</td><td class="text-dim">${m.unit}</td><td class="text-right" style="font-family:'Orbitron',monospace;font-size:0.82em">${fmt$(m.totalCost)}</td><td class="text-dim" style="font-size:0.68em;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.source)}</td></tr>`;
     html += `</tbody></table></div>
@@ -1137,24 +1345,60 @@ function renderQuoteResult(el, r) {
 function renderCompareResult(el, r) {
   const offers = r.offers||{};
   const sorted = Object.entries(offers).sort((a,b) => a[1].summary.sellingPrice - b[1].summary.sellingPrice);
-  let html = `<div class="panel" style="margin-top:12px">
-    <div class="panel-header"><div class="panel-title">Package Comparison</div><span class="badge badge-blue">${sorted.length} packages</span></div>
-    <div class="table-wrap"><table><thead><tr><th>Package</th><th>Badge</th><th class="text-right">Hard</th><th class="text-right">Selling</th><th class="text-right">w/ Tax</th><th class="text-right">Margin</th><th class="text-right">/SQ</th><th>Warranty</th></tr></thead><tbody>`;
+
+  // Package highlights
+  const highlights = {
+    'economy': ['IKO Cambridge shingles','Standard underlayment','10-year warranty'],
+    'gold': ['CertainTeed Landmark','Synthetic underlayment','15-year warranty'],
+    'platinum': ['CertainTeed Landmark PRO','Grace ice shield','Metal valleys','20-year warranty'],
+    'diamond': ['CertainTeed Presidential','Premium everything','25-year warranty'],
+    'performance-shell-plus': ['Full wall rebuild','VentiGrid rain screen','Remediation included'],
+    'hardie-shell': ['James Hardie siding','DrainWrap premium','15-year warranty'],
+    'metal-shell': ['Steel siding','Full wall assembly','15-year warranty'],
+    'gold-shell': ['Gold roof + shell','Complete exterior','Bundle savings'],
+    'platinum-shell': ['Platinum roof + shell','Premium everything','20-year warranty']
+  };
+
+  let html = `<div style="margin-top:12px">
+    <div class="panel" style="margin-bottom:10px"><div class="panel-header"><div class="panel-title">Package Comparison</div><span class="badge badge-blue">${sorted.length} packages</span></div>
+    <div style="font-size:0.78em;color:var(--text-dim)">Click any package to see the full proposal breakdown.</div></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px">`;
+
   for (const [slug,q] of sorted) {
     const s = q.summary;
     const mp = parseFloat(s.netMargin)||0;
     const mc = mp >= 30 ? 'green' : mp >= 20 ? 'cyan' : mp >= 10 ? 'yellow' : 'red';
-    html += `<tr style="cursor:pointer" onclick="quoteState.answers._offer_slug='${slug}';runGuidedQuote()">
-      <td style="font-weight:600;font-size:0.85em">${esc(q.offer.name)}</td>
-      <td>${q.offer.badge?`<span class="badge badge-blue">${q.offer.badge}</span>`:''}</td>
-      <td class="text-right text-dim" style="font-family:'Orbitron',monospace;font-size:0.8em">${fmt$(s.hardCost)}</td>
-      <td class="text-right" style="font-family:'Orbitron',monospace;font-size:0.8em">${fmt$(s.sellingPrice)}</td>
-      <td class="text-right" style="font-family:'Orbitron',monospace;font-size:0.9em;font-weight:700;color:var(--cyan)">${fmt$(s.totalWithTax)}</td>
-      <td class="text-right text-${mc}" style="font-weight:600">${s.netMargin}</td>
-      <td class="text-right text-dim" style="font-size:0.78em">${s.pricePerSQ?fmt$(s.pricePerSQ):'—'}</td>
-      <td>${q.offer.warranty_years?q.offer.warranty_years+' yr':'—'}</td></tr>`;
+    const copy = PACKAGE_COPY[slug] || { tagline: q.offer.badge||'', icon: '📦', color: 'cyan' };
+    const hl = highlights[slug] || [];
+    const isRec = copy.recommended;
+
+    html += `<div class="panel" style="cursor:pointer;transition:all 0.25s;position:relative;${isRec?'border-color:var(--yellow);box-shadow:0 0 20px rgba(250,204,21,0.08)':''}" onclick="quoteState.answers._offer_slug='${slug}';runGuidedQuote()">
+      ${isRec?'<div style="position:absolute;top:-8px;left:50%;transform:translateX(-50%);background:var(--yellow);color:#000;font-size:0.5em;font-weight:800;padding:2px 10px;border-radius:4px;letter-spacing:1.5px;white-space:nowrap">RECOMMENDED</div>':''}
+      <div style="text-align:center;padding-bottom:10px;border-bottom:1px solid var(--glass-border)">
+        <div style="font-size:1.4em;margin-bottom:4px">${copy.icon}</div>
+        <div style="font-family:'Orbitron',monospace;font-size:0.85em;font-weight:700;color:var(--${copy.color})">${esc(q.offer.name)}</div>
+        ${q.offer.badge?`<div style="font-size:0.62em;color:var(--${copy.color});opacity:0.7;margin-top:2px">${esc(q.offer.badge)}</div>`:''}
+      </div>
+
+      <div style="text-align:center;padding:12px 0">
+        <div style="font-family:'Orbitron',monospace;font-size:1.8em;font-weight:900;color:var(--cyan);text-shadow:0 0 20px rgba(34,211,238,0.3)">${fmt$(s.totalWithTax)}</div>
+        <div style="font-size:0.7em;color:var(--text-dim)">${fmt$(s.sellingPrice)} + ${s.taxLabel||'HST'}</div>
+      </div>
+
+      <div style="font-size:0.72em;margin-bottom:8px">
+        ${hl.map(h => `<div style="display:flex;align-items:center;gap:5px;padding:2px 0;color:var(--text-dim)"><svg viewBox="0 0 24 24" style="width:10px;height:10px;stroke:var(--green);fill:none;stroke-width:3;flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg>${esc(h)}</div>`).join('')}
+      </div>
+
+      <div style="display:flex;justify-content:space-between;font-size:0.7em;padding-top:8px;border-top:1px solid var(--glass-border)">
+        <span class="text-dim">Margin</span><span class="text-${mc}" style="font-weight:600">${s.netMargin}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:0.7em;padding:2px 0">
+        <span class="text-dim">/SQ</span><span style="font-family:'Orbitron',monospace;font-size:0.9em">${s.pricePerSQ?fmt$(s.pricePerSQ):'—'}</span>
+      </div>
+      ${q.offer.warranty_years?`<div style="display:flex;justify-content:space-between;font-size:0.7em;padding:2px 0"><span class="text-dim">Warranty</span><span style="color:var(--green)">${q.offer.warranty_years} years</span></div>`:''}
+    </div>`;
   }
-  html += '</tbody></table></div></div>';
+  html += '</div></div>';
   el.innerHTML = html;
 }
 
