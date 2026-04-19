@@ -130,20 +130,25 @@ async function handler(req, res) {
   }
 
   if (outputType === 'sales_page' || outputType === 'all') {
-    outputs.salesPage = generateSalesPageData(quoteResult, {
-      ...commonOpts,
-      aiRenders: body.ai_renders || [],
-      testimonials: body.testimonials || [],
-      multiOfferResults,
-      callToAction: body.cta_label || 'View Your Proposal',
-      acceptUrl: body.accept_url || null,
-      declineUrl: body.decline_url || null
-    });
-    // Pass through template, salesperson, and media
-    if (body.sales_rep) outputs.salesPage.salesRep = body.sales_rep;
-    if (body.template) outputs.salesPage.template = body.template;
-    if (body.cover_photo) outputs.salesPage.coverPhoto = body.cover_photo;
-    if (body.intro_video) outputs.salesPage.introVideo = body.intro_video;
+    try {
+      outputs.salesPage = generateSalesPageData(quoteResult, {
+        ...commonOpts,
+        aiRenders: body.ai_renders || [],
+        testimonials: body.testimonials || [],
+        multiOfferResults,
+        callToAction: body.cta_label || 'View Your Proposal',
+        acceptUrl: body.accept_url || null,
+        declineUrl: body.decline_url || null
+      });
+      // Pass through template, salesperson, and media
+      if (body.sales_rep) outputs.salesPage.salesRep = body.sales_rep;
+      if (body.template) outputs.salesPage.template = body.template;
+      if (body.cover_photo) outputs.salesPage.coverPhoto = body.cover_photo;
+      if (body.intro_video) outputs.salesPage.introVideo = body.intro_video;
+    } catch (e) {
+      if (outputType === 'sales_page') return res.status(500).json({ error: 'Sales page generation failed: ' + e.message, stack: e.stack?.split('\n').slice(0,3) });
+      // For 'all', continue without sales page
+    }
   }
 
   // Return single output or all
@@ -151,7 +156,10 @@ async function handler(req, res) {
     return res.json({ outputs, tenant: req.tenant.slug });
   }
 
-  return res.json({ ...outputs[outputType], tenant: req.tenant.slug });
+  // Map query type to output key (sales_page → salesPage)
+  const typeToKey = { proposal: 'proposal', contract: 'contract', sales_page: 'salesPage' };
+  const result = outputs[typeToKey[outputType] || outputType];
+  return res.json({ ...(result || {}), tenant: req.tenant.slug });
 }
 
 export default requireTenant(handler);
