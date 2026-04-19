@@ -1053,7 +1053,7 @@ function buildMonthlyData(estimates, field, months) {
     const val = estimates.filter(e => {
       const cd = new Date(e.created_at);
       return cd >= d && cd < nextD;
-    }).reduce((s, e) => s + (e[field] || 0), 0);
+    }).reduce((s, e) => s + (field === 'total_price' ? estPrice(e) : (e[field] || 0)), 0);
     data.push(val);
   }
   return data;
@@ -1298,7 +1298,7 @@ async function renderDashboard(m) {
   html += `<div class="panel span-2">
     <div class="panel-header"><div class="panel-title">Revenue Trend</div></div>
     <div style="display:flex;gap:20px;margin-bottom:6px">
-      <div><span style="font-family:'Orbitron',monospace;font-size:1.4em;font-weight:700;color:var(--green)">${fmt$(acceptedCount > 0 ? estList.filter(e=>e.status==='accepted').reduce((s,e)=>s+(e.total_price||0),0) : 0)}</span><div class="mega-label">Accepted Value</div></div>
+      <div><span style="font-family:'Orbitron',monospace;font-size:1.4em;font-weight:700;color:var(--green)">${fmt$(acceptedCount > 0 ? estList.filter(e=>e.status==='accepted').reduce((s,e)=>s+estPrice(e),0) : 0)}</span><div class="mega-label">Accepted Value</div></div>
     </div>
     <div style="height:60px">${areaChart(400,60,'green',buildMonthlyData(estList.filter(e=>e.status==='accepted'),'total_price',6))}</div>
   </div>`;
@@ -1340,7 +1340,7 @@ async function renderDashboard(m) {
     recentActivity.push({
       icon: e.status === 'accepted' ? '&#10003;' : e.status === 'sent' ? '&#9993;' : '&#128196;',
       color: e.status === 'accepted' ? 'var(--green)' : e.status === 'sent' ? 'var(--blue)' : 'var(--text-dim)',
-      text: `${e.status === 'accepted' ? 'Accepted' : e.status === 'sent' ? 'Sent' : 'Created'} estimate for <strong>${esc(e.customer?.full_name||'—')}</strong>${e.total_price ? ' — '+fmt$(e.total_price) : ''}`,
+      text: `${e.status === 'accepted' ? 'Accepted' : e.status === 'sent' ? 'Sent' : 'Created'} estimate for <strong>${esc(e.customer?.full_name||'—')}</strong>${estPrice(e) ? ' — '+fmt$(estPrice(e)) : ''}`,
       when
     });
   }
@@ -2982,7 +2982,7 @@ async function renderCustomers(m) {
     for (const c of filtered) {
       const name = c.full_name || c.name || 'Unknown';
       const custEsts = allEsts.filter(e => e.customer_id === c.id);
-      const custTotal = custEsts.reduce((s,e) => s + (e.total_with_tax || e.total_price || 0), 0);
+      const custTotal = custEsts.reduce((s,e) => s + estTotalWithTax(e), 0);
       const lastContactDate = custEsts.length > 0 ? new Date(Math.max(...custEsts.map(e => new Date(e.created_at||0).getTime()))) : (c.created_at ? new Date(c.created_at) : null);
       const daysSinceContact = lastContactDate ? Math.floor((Date.now() - lastContactDate.getTime()) / 86400000) : 999;
       const isCold = daysSinceContact > 30;
@@ -3344,7 +3344,7 @@ async function renderEstimates(m) {
           <div style="display:flex;justify-content:space-between;align-items:center">
             <div>
               ${pkg ? `<span style="font-size:0.68em;color:var(--text-dim);text-transform:capitalize">${esc(pkg)}</span>` : ''}
-              <div style="font-family:'Orbitron',monospace;font-size:1.15em;font-weight:700;color:var(--cyan)">${e.total_with_tax ? fmt$(e.total_with_tax) : e.total_price ? fmt$(e.total_price) : '—'}</div>
+              <div style="font-family:'Orbitron',monospace;font-size:1.15em;font-weight:700;color:var(--cyan)">${estTotalWithTax(e) ? fmt$(estTotalWithTax(e)) : estPrice(e) ? fmt$(estPrice(e)) : '—'}</div>
             </div>
             <div style="font-size:0.68em;color:${isExpired?'var(--red)':isExpiringSoon?'var(--yellow)':isStale?'var(--yellow)':'var(--text-dim)'}">
               ${isExpired ? '⛔ EXPIRED' : isExpiringSoon ? '⚠ '+daysRemaining+'d left' : createdAgo}${!isExpired&&isStale?' ⚠':''}${!isExpired&&e.status==='sent'&&daysSince>3&&!isExpiringSoon?' follow up!':''}
