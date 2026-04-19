@@ -134,6 +134,25 @@ Every table has `tenant_id`. Every API route uses `requireTenant()` middleware f
 | `/api/users` | User management |
 | `/api/invites` | Team invites |
 
+### Marketing Clips (migration 010)
+| Method | Route | Description |
+|---|---|---|
+| GET | `/api/marketing` | List clips for tenant (optional `?status=`) |
+| GET | `/api/marketing?id=X` | Fetch single clip |
+| POST | `/api/marketing` | Multipart upload video → creates clip, kicks render |
+| PUT | `/api/marketing` | Edit metadata / reschedule / adjust emphasis |
+| DELETE | `/api/marketing?id=X` | Delete clip |
+| POST | `/api/marketing-render?id=X` | Internal — triggered by upload, runs pipeline |
+| POST | `/api/marketing-render?next=1` | Pulls oldest queued clip for tenant (cron-safe) |
+
+**Pipeline** (`lib/marketingRenderer.js`): Whisper transcribe → Claude Haiku emphasis flag → ASS caption gen → ffmpeg 9:16 reframe + burn Hormozi-style subs → Vercel Blob upload.
+
+**Brand color** pulled from `tenant_settings.accent_color`. **Font**: Montserrat (drop TTF in `lib/assets/fonts/`).
+
+**Status lifecycle**: `queued → rendering → ready → scheduled → posted` (or `failed`).
+
+Full contract: `docs/MARKETING_CLIPS_API.md`.
+
 ## Conventions
 - All prices in CAD. HST 15% (NB default, configurable per tenant).
 - 1 SQ = 100 sq ft. Labor on measured SQ. Materials on SQ + waste.

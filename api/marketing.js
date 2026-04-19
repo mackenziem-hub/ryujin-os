@@ -1,0 +1,208 @@
+// Ryujin OS — Marketing Clips API
+//
+// GET    /api/marketing                    — List clips for tenant (optional ?status=)
+// GET    /api/marketing?id=X               — Fetch single clip
+// POST   /api/marketing                    — Multipart upload: video + fields → creates clip, kicks render
+// PUT    /api/marketing                    — { id, ...updates } — edit metadata / reschedule
+// DELETE /api/marketing?id=X               — Delete clip
+//
+// Upload body (multipart):
+//   file             — video (mp4/mov/webm, max 200MB)
+//   title            — optional, defaults to filename
+//   description      — optional
+//   platforms        — comma-separated: "facebook,youtube,gbp"
+//   scheduled_at     — ISO 8601; if omitted, "next available slot" is computed
+//   hashtags         — comma-separated
+//   created_by       — user id (optional)
+import { supabaseAdmin } from '../lib/supabase.js';
+import { requireTenant } from '../lib/tenant.js';
+import { put } from '@vercel/blob';
+import Busboy from 'busboy';
+
+const MAX_VIDEO_SIZE = 200 * 1024 * 1024; // 200 MB
+const ALLOWED_VIDEO_TYPES = new Set(['video/mp4', 'video/quicktime', 'video/webm', 'video/x-m4v']);
+const EDITABLE_FIELDS = ['title', 'description', 'hashtags', 'target_platforms', 'scheduled_at', 'caption_style', 'emphasis_indices'];
+
+function parseMultipart(req) {
+  return new Promise((resolve, reject) => {
+    const files = [];
+    const fields = {};
+    const busboy = Busboy({ headers: req.headers, limits: { files: 1, fileSize: MAX_VIDEO_SIZE } });
+    busboy.on('field', (name, val) => { fields[name] = val; });
+    busboy.on('file', (name, stream, info) => {
+      const chunks = [];
+      let truncated = false;
+      stream.on('data', (c) => chunks.push(c));
+      stream.on('limit', () => { truncated = true; });
+      stream.on('end', () => {
+        files.push({ buffer: Buffer.concat(chunks), mimeType: info.mimeType, fileName: info.filename, truncated });
+      });
+    });
+    busboy.on('close', () => resolve({ files, fields }));
+    busboy.on('error', reject);
+    req.pipe(busboy);
+  });
+}
+
+function splitCsv(s) {
+  if (!s) return [];
+  return String(s).split(',').map((x) => x.trim()).filter(Boolean);
+}
+
+async function computeNextSlot(tenantId) {
+  // "Next available slot": latest scheduled_at for tenant + 24h, or now + 1h, whichever is later.
+  const { data } = await supabaseAdmin
+    .from('marketing_clips')
+    .select('scheduled_at')
+    .eq('tenant_id', tenantId)
+    .not('scheduled_at', 'is', null)
+    .order('scheduled_at', { ascending: false })
+    .limit(1);
+  const nowPlus1h = Date.now() + 60 * 60 * 1000;
+  if (!data?.length) return new Date(nowPlus1h).toISOString();
+  const latest = new Date(data[0].scheduled_at).getTime();
+  return new Date(Math.max(latest + 24 * 60 * 60 * 1000, nowPlus1h)).toISOString();
+}
+
+function baseUrl(req) {
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  const proto = req.headers['x-forwarded-proto'] || 'https';
+  const host = req.headers.host;
+  return `${proto}://${host}`;
+}
+
+function kickoffRender(req, tenantSlug, clipId) {
+  const url = `${baseUrl(req)}/api/marketing-render?id=${clipId}`;
+  // fire-and-forget — upload handler returns immediately; render runs in its own invocation
+  fetch(url, {
+    method: 'POST',
+    headers: {
+      'x-tenant-id': tenantSlug,
+      'x-internal-key': (process.env.INTERNAL_RENDER_KEY || '').trim(),
+    },
+  }).catch((e) => console.error('[marketing] render kickoff failed', e?.message));
+}
+
+async function handler(req, res) {
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  const tenantId = req.tenant.id;
+  const tenantSlug = req.tenant.slug;
+
+  // ── GET ──
+  if (req.method === 'GET') {
+    const { id, status } = req.query;
+    if (id) {
+      const { data, error } = await supabaseAdmin
+        .from('marketing_clips')
+        .select('*')
+        .eq('id', id)
+        .eq('tenant_id', tenantId)
+        .single();
+      if (error) return res.status(404).json({ error: 'Clip not found' });
+      return res.json(data);
+    }
+    let q = supabaseAdmin
+      .from('marketing_clips')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false });
+    if (status) q = q.eq('status', status);
+    const { data, error } = await q;
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ clips: data });
+  }
+
+  // ── POST (Upload + create clip) ──
+  if (req.method === 'POST') {
+    let parsed;
+    try {
+      parsed = await parseMultipart(req);
+    } catch (e) {
+      return res.status(400).json({ error: `Multipart parse failed: ${e.message}` });
+    }
+    const { files, fields } = parsed;
+    if (!files.length) return res.status(400).json({ error: 'No video file provided (field: file)' });
+
+    const f = files[0];
+    if (f.truncated) return res.status(413).json({ error: `File exceeds ${MAX_VIDEO_SIZE / 1024 / 1024}MB limit` });
+    if (!ALLOWED_VIDEO_TYPES.has(f.mimeType)) {
+      return res.status(415).json({ error: `Unsupported video type: ${f.mimeType}. Allowed: mp4, mov, webm` });
+    }
+
+    // Store source in Blob
+    const ts = Date.now();
+    const clean = (f.fileName || 'video.mp4').replace(/[^\w.\-]/g, '_').substring(0, 80);
+    const blobPath = `${tenantSlug}/marketing/sources/${ts}-${clean}`;
+    const blob = await put(blobPath, f.buffer, { access: 'public', contentType: f.mimeType });
+
+    // Compute scheduled slot
+    const scheduledAt = fields.scheduled_at?.trim() || await computeNextSlot(tenantId);
+
+    // Create clip row
+    const { data: clip, error } = await supabaseAdmin
+      .from('marketing_clips')
+      .insert({
+        tenant_id: tenantId,
+        created_by: fields.created_by || null,
+        source_url: blob.url,
+        source_filename: f.fileName,
+        source_mime_type: f.mimeType,
+        source_size_bytes: f.buffer.length,
+        title: fields.title?.trim() || f.fileName,
+        description: fields.description?.trim() || null,
+        hashtags: splitCsv(fields.hashtags),
+        target_platforms: splitCsv(fields.platforms),
+        scheduled_at: scheduledAt,
+        status: 'queued',
+      })
+      .select('*')
+      .single();
+    if (error) return res.status(500).json({ error: error.message });
+
+    // Fire-and-forget render
+    kickoffRender(req, tenantSlug, clip.id);
+
+    return res.status(202).json({ clip });
+  }
+
+  // ── PUT (Update metadata / reschedule / edit captions) ──
+  if (req.method === 'PUT') {
+    const { id, ...rest } = req.body || {};
+    if (!id) return res.status(400).json({ error: 'Missing id' });
+
+    const updates = {};
+    for (const k of EDITABLE_FIELDS) {
+      if (rest[k] !== undefined) updates[k] = rest[k];
+    }
+    if (!Object.keys(updates).length) return res.status(400).json({ error: 'No editable fields provided' });
+
+    const { data, error } = await supabaseAdmin
+      .from('marketing_clips')
+      .update(updates)
+      .eq('id', id)
+      .eq('tenant_id', tenantId)
+      .select('*')
+      .single();
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json(data);
+  }
+
+  // ── DELETE ──
+  if (req.method === 'DELETE') {
+    const { id } = req.query;
+    if (!id) return res.status(400).json({ error: 'Missing ?id=' });
+    const { error } = await supabaseAdmin
+      .from('marketing_clips')
+      .delete()
+      .eq('id', id)
+      .eq('tenant_id', tenantId);
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ deleted: id });
+  }
+
+  return res.status(405).json({ error: 'Method not allowed' });
+}
+
+export default requireTenant(handler);
+
+export const config = { api: { bodyParser: false } };
