@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ryujin OS · Pricing Engine</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root{--accent:#4a9eff;--accent-deep:#2563eb;--border:rgba(74,158,255,0.24);--border-hi:rgba(74,158,255,0.5);
+  --text:#e0e6f0;--text-dim:rgba(160,190,230,0.62);--text-muted:rgba(140,170,220,0.32);
+  --cyan:#22d3ee;--green:#4ade80;--yellow:#facc15;--red:#f87171;--orange:#fb923c;--purple:#7c3aed}
+*{margin:0;padding:0;box-sizing:border-box}html,body{height:100%}
+body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:var(--text);overflow:hidden}
+.bg{position:fixed;inset:0;z-index:0;background:radial-gradient(ellipse at 40% 30%,rgba(74,158,255,0.08),transparent 55%),linear-gradient(180deg,#060a14,#030611)}
+.bg-grid{position:fixed;inset:0;z-index:1;pointer-events:none;background-image:linear-gradient(rgba(74,158,255,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(74,158,255,0.025) 1px,transparent 1px);background-size:48px 48px;mask-image:radial-gradient(ellipse at center,black 40%,transparent 85%);-webkit-mask-image:radial-gradient(ellipse at center,black 40%,transparent 85%)}
+
+.app{position:relative;z-index:2;height:100vh;display:grid;grid-template-rows:52px 1fr;gap:10px;padding:10px 12px}
+.topbar{display:flex;align-items:center;gap:12px;background:rgba(14,22,40,0.78);border:1px solid var(--border);border-radius:14px;padding:0 14px;backdrop-filter:blur(20px);position:relative;overflow:hidden}
+.topbar::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),var(--purple),transparent);opacity:0.5}
+.brand{display:flex;align-items:center;gap:10px}
+.brand-mark{width:30px;height:30px;border-radius:7px;background:radial-gradient(circle at 35% 30%,rgba(200,230,255,0.3),rgba(74,158,255,0.22) 40%,rgba(5,15,30,0.8));box-shadow:0 0 14px rgba(74,158,255,0.35)}
+.brand-name{font-family:'Orbitron',sans-serif;font-size:0.78em;font-weight:800;letter-spacing:2.5px}
+.brand-name .dim{color:var(--text-dim);font-weight:500;letter-spacing:2px;margin-left:8px}
+.tb-spacer{flex:1}
+.btn{padding:7px 14px;border-radius:8px;font-family:'Orbitron',sans-serif;font-size:0.66em;font-weight:700;letter-spacing:1.5px;cursor:pointer;border:1px solid;transition:all 0.2s;display:inline-flex;align-items:center;gap:6px}
+.btn.primary{background:linear-gradient(135deg,rgba(74,158,255,0.28),rgba(74,158,255,0.1));color:var(--accent);border-color:rgba(74,158,255,0.45);font-weight:800}
+.btn.primary:hover{background:linear-gradient(135deg,rgba(74,158,255,0.4),rgba(74,158,255,0.2));box-shadow:0 0 14px rgba(74,158,255,0.3)}
+.btn.ghost{background:rgba(6,10,20,0.5);color:var(--text-dim);border-color:var(--border)}
+.btn.ghost:hover{color:var(--text);border-color:var(--border-hi)}
+.btn svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2.2}
+.tb-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:rgba(6,10,20,0.6);border:1px solid var(--border);color:var(--text-dim);cursor:pointer;transition:all 0.2s}
+.tb-icon:hover{color:var(--accent);border-color:var(--border-hi)}
+.tb-icon svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round}
+
+.main{display:grid;grid-template-columns:280px 1fr 320px;gap:10px;min-height:0}
+.panel{background:rgba(14,22,40,0.78);border:1px solid var(--border);border-radius:14px;backdrop-filter:blur(14px);display:flex;flex-direction:column;min-height:0;overflow:hidden;position:relative}
+.panel::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:0.45}
+.panel-head{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid rgba(74,158,255,0.1)}
+.panel-title{font-family:'Orbitron',sans-serif;font-size:0.62em;font-weight:700;letter-spacing:2.5px;color:var(--text-dim)}
+.panel-badge{background:rgba(74,158,255,0.12);border:1px solid rgba(74,158,255,0.28);padding:2px 8px;border-radius:5px;font-family:'Share Tech Mono',monospace;font-size:0.65em;color:var(--accent);letter-spacing:0.5px}
+.panel-body{flex:1;overflow-y:auto;padding:12px}
+
+.nav-btn{width:100%;text-align:left;padding:10px 13px;background:transparent;border:1px solid transparent;border-radius:9px;color:var(--text-dim);font-family:inherit;font-size:0.84em;margin-bottom:3px;cursor:pointer;transition:all 0.18s}
+.nav-btn:hover{background:rgba(74,158,255,0.06);color:var(--text)}
+.nav-btn.active{background:rgba(74,158,255,0.12);border-color:rgba(74,158,255,0.3);color:var(--accent);font-weight:700}
+.nav-head{font-family:'Orbitron',sans-serif;font-size:0.55em;font-weight:700;letter-spacing:2.5px;color:var(--text-muted);text-transform:uppercase;padding:0 4px;margin:12px 0 6px}
+.nav-head:first-child{margin-top:0}
+
+.section{padding:18px 20px;border-bottom:1px solid rgba(74,158,255,0.08)}
+.section:last-child{border:none}
+.section h3{font-family:'Orbitron',sans-serif;font-size:0.72em;font-weight:800;letter-spacing:2px;color:var(--accent);margin-bottom:14px;text-transform:uppercase}
+
+.slider-card{padding:12px 14px;background:rgba(6,10,20,0.4);border:1px solid var(--border);border-radius:10px;margin-bottom:8px}
+.slider-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.slider-label{font-size:0.86em;font-weight:600}
+.slider-val{font-family:'Orbitron',sans-serif;font-weight:800;font-size:1.1em;color:var(--accent);min-width:70px;text-align:right}
+.slider-hint{font-size:0.7em;color:var(--text-dim);margin-bottom:8px;font-family:'Share Tech Mono',monospace;letter-spacing:0.3px}
+.slider-row{display:flex;gap:10px;align-items:center}
+.slider-row input[type=range]{flex:1;height:6px;background:rgba(74,158,255,0.1);border-radius:3px;outline:none;cursor:pointer;accent-color:var(--accent)}
+.slider-row input[type=number]{width:90px;padding:6px 10px;background:rgba(6,10,20,0.7);border:1px solid var(--border);border-radius:7px;color:var(--text);font-family:'Orbitron',sans-serif;font-size:0.88em;font-weight:700;outline:none;text-align:right}
+.slider-row input[type=number]:focus{border-color:var(--accent)}
+.slider-range{display:flex;justify-content:space-between;font-family:'Share Tech Mono',monospace;font-size:0.62em;color:var(--text-muted);margin-top:3px;letter-spacing:0.5px}
+
+.field{margin-bottom:14px}
+.field label{display:block;font-family:'Orbitron',sans-serif;font-size:0.58em;font-weight:700;letter-spacing:1.8px;color:var(--text-dim);text-transform:uppercase;margin-bottom:5px}
+.field input,.field select{width:100%;padding:9px 12px;background:rgba(6,10,20,0.7);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:0.88em;outline:none}
+.field input:focus,.field select:focus{border-color:var(--accent)}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+/* Material rate rows */
+.rate-row{display:flex;gap:10px;padding:9px 12px;background:rgba(6,10,20,0.4);border:1px solid var(--border);border-radius:9px;margin-bottom:4px;align-items:center}
+.rate-name{flex:1;font-size:0.86em}
+.rate-name .unit{color:var(--text-dim);font-size:0.85em;font-family:'Share Tech Mono',monospace}
+.rate-input{width:110px;display:flex;align-items:center;gap:4px;padding:5px 9px;background:rgba(6,10,20,0.6);border:1px solid var(--border);border-radius:7px}
+.rate-input .cur{color:var(--text-muted);font-family:'Share Tech Mono',monospace;font-size:0.7em}
+.rate-input input{flex:1;background:none;border:none;color:var(--text);font-family:'Orbitron',sans-serif;font-weight:700;font-size:0.9em;outline:none;text-align:right;padding:0}
+
+/* Preview pane */
+.preview{padding:14px 16px}
+.preview-lbl{font-family:'Orbitron',sans-serif;font-size:0.58em;font-weight:700;letter-spacing:2px;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px}
+.preview-val{font-family:'Orbitron',sans-serif;font-size:1.5em;font-weight:800;color:var(--accent);margin-bottom:3px}
+.preview-line{display:flex;justify-content:space-between;padding:6px 0;font-size:0.82em;border-bottom:1px solid rgba(74,158,255,0.06)}
+.preview-line:last-child{border:none}
+.preview-line .l{color:var(--text-dim)}
+.preview-line .v{font-family:'Orbitron',sans-serif;font-weight:600}
+.preview-delta{font-family:'Share Tech Mono',monospace;font-size:0.68em;color:var(--text-muted);margin-top:4px}
+
+.warn-card{padding:12px 14px;background:rgba(250,204,21,0.07);border:1px solid rgba(250,204,21,0.25);border-radius:9px;margin-top:10px}
+.warn-title{font-family:'Orbitron',sans-serif;font-size:0.6em;font-weight:800;letter-spacing:1.5px;color:var(--yellow);margin-bottom:4px}
+.warn-body{font-size:0.78em;line-height:1.5;color:var(--text)}
+
+.action-foot{padding:12px 16px;border-top:1px solid rgba(74,158,255,0.1);display:flex;gap:8px;justify-content:flex-end}
+</style>
+</head>
+<body>
+<div class="bg"></div>
+<div class="bg-grid"></div>
+
+<div class="app">
+  <div class="topbar">
+    <button class="tb-icon" onclick="window.location.href='administration.html'"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
+    <div class="brand"><div class="brand-mark"></div><div class="brand-name">RYUJIN <span class="dim">· ADMIN · PRICING ENGINE v3.1</span></div></div>
+    <div class="tb-spacer"></div>
+    <button class="btn ghost" onclick="resetDefaults()"><svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>RESET</button>
+    <button class="btn primary" onclick="saveSettings()"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>SAVE TO TENANT</button>
+  </div>
+
+  <div class="main">
+    <!-- LEFT nav -->
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title">SECTIONS</div></div>
+      <div class="panel-body">
+        <div class="nav-head">Globals</div>
+        <button class="nav-btn active" data-section="core">Core Method</button>
+        <button class="nav-btn" data-section="margin">Margin &amp; Rounding</button>
+        <button class="nav-btn" data-section="tax">Tax</button>
+
+        <div class="nav-head">Material Rates</div>
+        <button class="nav-btn" data-section="substrate">Substrate &amp; Decking</button>
+        <button class="nav-btn" data-section="wall">Wall Assembly</button>
+        <button class="nav-btn" data-section="addon">Add-ons</button>
+
+        <div class="nav-head">Multipliers</div>
+        <button class="nav-btn" data-section="pitch">Pitch</button>
+        <button class="nav-btn" data-section="complex">Complexity</button>
+        <button class="nav-btn" data-section="mob">Mobilization Discounts</button>
+      </div>
+    </div>
+
+    <!-- MIDDLE editor -->
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title" id="sectionTitle">CORE METHOD</div><div class="panel-badge">LIVE EDITOR</div></div>
+      <div class="panel-body" id="editor">
+
+        <!-- CORE -->
+        <div class="editor-section" data-section="core">
+          <div class="section">
+            <h3>Core Method</h3>
+            <div class="slider-card">
+              <div class="slider-head"><span class="slider-label">Pricing Method</span><span class="slider-val" style="font-size:0.88em" id="v_method">UNIFIED</span></div>
+              <div class="slider-hint">Materials + Labor \u00D7 Multiplier (all systems). v3.1 default. Do not change unless you want legacy divisor method.</div>
+            </div>
+            <div class="field">
+              <label>Engine Version</label>
+              <select><option>v3.1 \u00B7 current</option><option disabled>v2.x (legacy)</option></select>
+            </div>
+          </div>
+          <div class="section">
+            <h3>Margin &amp; Rounding</h3>
+            <div class="slider-card">
+              <div class="slider-head"><span class="slider-label">Default Target Margin</span><span class="slider-val" id="v_margin">37%</span></div>
+              <div class="slider-hint">Target gross margin applied across offers unless overridden per tier.</div>
+              <div class="slider-row"><input type="range" min="20" max="55" value="37" id="s_margin"/><input type="number" min="20" max="55" value="37" id="n_margin"/></div>
+              <div class="slider-range"><span>20% \u00B7 floor</span><span>55% \u00B7 max</span></div>
+            </div>
+            <div class="slider-card">
+              <div class="slider-head"><span class="slider-label">Margin Floor</span><span class="slider-val" id="v_floor">28%</span></div>
+              <div class="slider-hint">Hard floor \u2014 no quote can go below this without an override flag.</div>
+              <div class="slider-row"><input type="range" min="20" max="40" value="28" id="s_floor"/><input type="number" min="20" max="40" value="28" id="n_floor"/></div>
+            </div>
+            <div class="slider-card">
+              <div class="slider-head"><span class="slider-label">Price Rounding</span><span class="slider-val" id="v_round">$25</span></div>
+              <div class="slider-hint">All final prices round to nearest N dollars.</div>
+              <div class="slider-row"><input type="range" min="1" max="100" step="1" value="25" id="s_round"/><input type="number" min="1" max="100" value="25" id="n_round"/></div>
+            </div>
+          </div>
+          <div class="section">
+            <h3>Tax</h3>
+            <div class="slider-card">
+              <div class="slider-head"><span class="slider-label">HST Rate</span><span class="slider-val" id="v_hst">15%</span></div>
+              <div class="slider-hint">NB default. Configurable per tenant.</div>
+              <div class="slider-row"><input type="range" min="0" max="20" step="0.5" value="15" id="s_hst"/><input type="number" min="0" max="20" step="0.5" value="15" id="n_hst"/></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SUBSTRATE -->
+        <div class="editor-section" data-section="substrate" style="display:none">
+          <div class="section">
+            <h3>Substrate &amp; Decking</h3>
+            <div class="rate-row"><div class="rate-name">OSB substrate <span class="unit">\u00B7 per sheet</span></div><div class="rate-input"><span class="cur">$</span><input type="number" value="50" data-rate="osb"/></div></div>
+            <div class="rate-row"><div class="rate-name">Plywood substrate <span class="unit">\u00B7 per sheet</span></div><div class="rate-input"><span class="cur">$</span><input type="number" value="72" data-rate="plywood"/></div></div>
+            <div class="rate-row"><div class="rate-name">EPS foam <span class="unit">\u00B7 per sheet 32sqft</span></div><div class="rate-input"><span class="cur">$</span><input type="number" value="40" data-rate="eps"/></div></div>
+            <div class="rate-row"><div class="rate-name">Ice &amp; water barrier <span class="unit">\u00B7 per roll</span></div><div class="rate-input"><span class="cur">$</span><input type="number" value="85" data-rate="iw"/></div></div>
+            <div class="rate-row"><div class="rate-name">Synthetic underlay <span class="unit">\u00B7 per SQ</span></div><div class="rate-input"><span class="cur">$</span><input type="number" value="18" data-rate="under"/></div></div>
+            <div class="rate-row"><div class="rate-name">Drip edge <span class="unit">\u00B7 per LF</span></div><div class="rate-input"><span class="cur">$</span><input type="number" value="3.5" step="0.25" data-rate="drip"/></div></div>
+          </div>
+        </div>
+
+        <!-- WALL -->
+        <div class="editor-section" data-section="wall" style="display:none">
+          <div class="section">
+            <h3>Wall Assembly</h3>
+            <div class="rate-row"><div class="rate-name">Tyvek housewrap <span class="unit">\u00B7 per SQ</span></div><div class="rate-input"><span class="cur">$</span><input type="number" value="22" data-rate="tyvek"/></div></div>
+            <div class="rate-row"><div class="rate-name">VentiGrid <span class="unit">\u00B7 per sqft</span></div><div class="rate-input"><span class="cur">$</span><input type="number" value="0.50" step="0.05" data-rate="venti"/></div></div>
+            <div class="rate-row"><div class="rate-name">Siding strip + prep <span class="unit">\u00B7 per SQ</span></div><div class="rate-input"><span class="cur">$</span><input type="number" value="85" data-rate="strip"/></div></div>
+            <div class="rate-row"><div class="rate-name">Hardie vinyl siding <span class="unit">\u00B7 per SQ installed</span></div><div class="rate-input"><span class="cur">$</span><input type="number" value="680" data-rate="siding"/></div></div>
+            <div class="rate-row"><div class="rate-name">Corner trim <span class="unit">\u00B7 per LF</span></div><div class="rate-input"><span class="cur">$</span><input type="number" value="14" data-rate="corner"/></div></div>
+            <div class="rate-row"><div class="rate-name">J-channel <span class="unit">\u00B7 per LF</span></div><div class="rate-input"><span class="cur">$</span><input type="number" value="8" data-rate="jchan"/></div></div>
+          </div>
+        </div>
+
+        <!-- ADDON -->
+        <div class="editor-section" data-section="addon" style="display:none">
+          <div class="section">
+            <h3>Add-ons &amp; Accessories</h3>
+            <div class="rate-row"><div class="rate-name">Leaf guard <span class="unit">\u00B7 per LF installed</span></div><div class="rate-input"><span class="cur">$</span><input type="number" value="9" data-rate="leaf"/></div></div>
+            <div class="rate-row"><div class="rate-name">Gutter + downspout <span class="unit">\u00B7 per LF</span></div><div class="rate-input"><span class="cur">$</span><input type="number" value="12" data-rate="gutter"/></div></div>
+            <div class="rate-row"><div class="rate-name">Soffit <span class="unit">\u00B7 per LF</span></div><div class="rate-input"><span class="cur">$</span><input type="number" value="11" data-rate="soffit"/></div></div>
+            <div class="rate-row"><div class="rate-name">Fascia <span class="unit">\u00B7 per LF</span></div><div class="rate-input"><span class="cur">$</span><input type="number" value="7" data-rate="fascia"/></div></div>
+            <div class="rate-row"><div class="rate-name">Ventilation upgrade <span class="unit">\u00B7 flat</span></div><div class="rate-input"><span class="cur">$</span><input type="number" value="1650" data-rate="vent"/></div></div>
+            <div class="rate-row"><div class="rate-name">Chimney flashing + reseal <span class="unit">\u00B7 flat</span></div><div class="rate-input"><span class="cur">$</span><input type="number" value="680" data-rate="chimney"/></div></div>
+            <div class="rate-row"><div class="rate-name">Skylight replacement <span class="unit">\u00B7 per unit</span></div><div class="rate-input"><span class="cur">$</span><input type="number" value="1200" data-rate="skylight"/></div></div>
+          </div>
+        </div>
+
+        <!-- PITCH -->
+        <div class="editor-section" data-section="pitch" style="display:none">
+          <div class="section">
+            <h3>Pitch Multipliers</h3>
+            <div class="slider-card">
+              <div class="slider-head"><span class="slider-label">Low (3/12 or less)</span><span class="slider-val" id="v_pitch_low">0.97\u00D7</span></div>
+              <div class="slider-row"><input type="range" min="0.85" max="1.1" step="0.01" value="0.97" id="s_pitch_low"/><input type="number" min="0.85" max="1.1" step="0.01" value="0.97" id="n_pitch_low"/></div>
+            </div>
+            <div class="slider-card">
+              <div class="slider-head"><span class="slider-label">Normal (4/12 \u2013 8/12)</span><span class="slider-val" id="v_pitch_normal">1.00\u00D7</span></div>
+              <div class="slider-row"><input type="range" min="0.9" max="1.15" step="0.01" value="1.00" id="s_pitch_normal"/><input type="number" min="0.9" max="1.15" step="0.01" value="1.00" id="n_pitch_normal"/></div>
+            </div>
+            <div class="slider-card">
+              <div class="slider-head"><span class="slider-label">Steep (9/12 \u2013 12/12)</span><span class="slider-val" id="v_pitch_steep">1.12\u00D7</span></div>
+              <div class="slider-row"><input type="range" min="1.05" max="1.35" step="0.01" value="1.12" id="s_pitch_steep"/><input type="number" min="1.05" max="1.35" step="0.01" value="1.12" id="n_pitch_steep"/></div>
+            </div>
+            <div class="slider-card">
+              <div class="slider-head"><span class="slider-label">Extreme (13/12+)</span><span class="slider-val" id="v_pitch_extreme">1.28\u00D7</span></div>
+              <div class="slider-row"><input type="range" min="1.15" max="1.6" step="0.01" value="1.28" id="s_pitch_extreme"/><input type="number" min="1.15" max="1.6" step="0.01" value="1.28" id="n_pitch_extreme"/></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- COMPLEX -->
+        <div class="editor-section" data-section="complex" style="display:none">
+          <div class="section">
+            <h3>Complexity Multipliers</h3>
+            <div class="slider-card">
+              <div class="slider-head"><span class="slider-label">Simple (gable)</span><span class="slider-val" id="v_cx_simple">0.96\u00D7</span></div>
+              <div class="slider-row"><input type="range" min="0.85" max="1.05" step="0.01" value="0.96" id="s_cx_simple"/><input type="number" min="0.85" max="1.05" step="0.01" value="0.96" id="n_cx_simple"/></div>
+            </div>
+            <div class="slider-card">
+              <div class="slider-head"><span class="slider-label">Normal (hip / dormers)</span><span class="slider-val" id="v_cx_normal">1.00\u00D7</span></div>
+              <div class="slider-row"><input type="range" min="0.9" max="1.15" step="0.01" value="1.00" id="s_cx_normal"/><input type="number" min="0.9" max="1.15" step="0.01" value="1.00" id="n_cx_normal"/></div>
+            </div>
+            <div class="slider-card">
+              <div class="slider-head"><span class="slider-label">Complex (valleys + dormers)</span><span class="slider-val" id="v_cx_complex">1.12\u00D7</span></div>
+              <div class="slider-row"><input type="range" min="1.0" max="1.3" step="0.01" value="1.12" id="s_cx_complex"/><input type="number" min="1.0" max="1.3" step="0.01" value="1.12" id="n_cx_complex"/></div>
+            </div>
+            <div class="slider-card">
+              <div class="slider-head"><span class="slider-label">Custom (mansard / tower)</span><span class="slider-val" id="v_cx_custom">1.25\u00D7</span></div>
+              <div class="slider-row"><input type="range" min="1.1" max="1.5" step="0.01" value="1.25" id="s_cx_custom"/><input type="number" min="1.1" max="1.5" step="0.01" value="1.25" id="n_cx_custom"/></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- MOBILIZATION -->
+        <div class="editor-section" data-section="mob" style="display:none">
+          <div class="section">
+            <h3>Mobilization Discounts \u00B7 "While we\u2019re already here"</h3>
+            <div class="slider-card">
+              <div class="slider-head"><span class="slider-label">Stage 1 \u2014 roof + gutters bundled</span><span class="slider-val" id="v_mob1">8%</span></div>
+              <div class="slider-hint">Discount applied to gutter upsell when bundled with a roof.</div>
+              <div class="slider-row"><input type="range" min="0" max="15" value="8" id="s_mob1"/><input type="number" min="0" max="15" value="8" id="n_mob1"/></div>
+            </div>
+            <div class="slider-card">
+              <div class="slider-head"><span class="slider-label">Stage 2 \u2014 adds soffit/fascia</span><span class="slider-val" id="v_mob2">12%</span></div>
+              <div class="slider-row"><input type="range" min="0" max="20" value="12" id="s_mob2"/><input type="number" min="0" max="20" value="12" id="n_mob2"/></div>
+            </div>
+            <div class="slider-card">
+              <div class="slider-head"><span class="slider-label">Stage 3 \u2014 full shell (roof + walls)</span><span class="slider-val" id="v_mob3">18%</span></div>
+              <div class="slider-row"><input type="range" min="0" max="25" value="18" id="s_mob3"/><input type="number" min="0" max="25" value="18" id="n_mob3"/></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+      <div class="action-foot">
+        <button class="btn ghost" onclick="window.location.href='administration.html'">CANCEL</button>
+        <button class="btn primary" onclick="saveSettings()">SAVE TO TENANT</button>
+      </div>
+    </div>
+
+    <!-- RIGHT: Live preview + sanity -->
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title">LIVE PREVIEW</div><div class="panel-badge" id="previewBadge">DRAFT</div></div>
+      <div class="panel-body">
+        <div class="preview">
+          <div class="preview-lbl">Sample Quote \u00B7 24 SQ Asphalt Gold</div>
+          <div class="preview-val" id="p_total">$13,700</div>
+          <div class="preview-delta" id="p_delta">Based on current settings</div>
+        </div>
+        <div class="preview" style="border-top:1px solid rgba(74,158,255,0.08)">
+          <div class="preview-line"><span class="l">Roofing (24 SQ @ $520)</span><span class="v" id="p_roof">$12,480</span></div>
+          <div class="preview-line"><span class="l">Pitch adj (normal)</span><span class="v" id="p_pitch">$0</span></div>
+          <div class="preview-line"><span class="l">Complexity (normal)</span><span class="v" id="p_cx">$0</span></div>
+          <div class="preview-line"><span class="l">Subtotal (pre-tax)</span><span class="v" id="p_sub">$12,480</span></div>
+          <div class="preview-line"><span class="l">HST</span><span class="v" id="p_hst">$1,872</span></div>
+        </div>
+        <div class="warn-card" id="marginWarn" style="display:none">
+          <div class="warn-title">\u26A0 BELOW MARGIN FLOOR</div>
+          <div class="warn-body">Current settings would produce quotes under your configured margin floor. Review before saving.</div>
+        </div>
+        <div class="preview">
+          <div class="preview-lbl" style="margin-top:6px">Sanity Checks</div>
+          <div class="preview-line"><span class="l">OSB rate match memory</span><span class="v" style="color:var(--green)">\u2713 $50/sheet</span></div>
+          <div class="preview-line"><span class="l">VentiGrid rate</span><span class="v" style="color:var(--green)">\u2713 $0.50/sqft</span></div>
+          <div class="preview-line"><span class="l">Leaf guard current</span><span class="v" id="p_leaf" style="color:var(--green)">\u2713 $9/LF</span></div>
+          <div class="preview-line"><span class="l">Engine version</span><span class="v">v3.1 \u00B7 stable</span></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="assets/ryujin-mode.js"></script>
+<script src="assets/ryujin-tenant.js"></script>
+<script src="assets/ryujin-persist.js"></script>
+<script src="assets/ryujin-api.js"></script>
+<script src="assets/ryujin-scenario.js"></script>
+<script src="assets/ryujin-xp.js"></script>
+<script src="assets/ryujin-mode-badge.js"></script>
+<script src="assets/ryujin-chat.js"></script>
+<script src="assets/ryujin-tutor.js"></script>
+<script>
+RyujinTutor.register('pricing', [
+  { target: '.panel:first-child', title: 'Sections sidebar', body: 'The pricing engine is split into 9 tunable areas: <b>Core, Margin, Tax, Substrate, Wall, Add-ons, Pitch, Complexity, Mobilization</b>. Click to jump.', position: 'right' },
+  { target: '.slider-card:first-of-type', title: 'Every rate has a slider', body: 'Drag the slider <b>or</b> type the exact number. They\u2019re linked \u2014 change either and the other follows. The preview pane on the right updates instantly.', position: 'bottom' },
+  { target: '.panel:last-child', title: 'Live sample quote', body: '<b>24 SQ Asphalt Gold</b> reference quote recalculates on every change. Watch the total move as you tune rates. <b>See the impact before you save.</b>', position: 'left' },
+  { target: '.warn-card, .preview-line', title: 'Sanity checks', body: 'Confirms rates match memory (OSB $50, VentiGrid $0.50, leaf guard $9). <b>Warning card appears if you drop below margin floor.</b>', position: 'left' },
+  { target: '.action-foot button.primary, .btn.primary', title: 'Save to tenant', body: 'One click writes to <code>tenant_settings</code>. Every quote generated after that uses your new rates. <b>Dogfood rule: tune on Plus Ultra first.</b>', position: 'top' },
+  { target: '__center__', title: 'This is why Ryujin is AI-native.', body: 'Competitors ship one price book. You ship <b>tenant-configurable everything</b>, in a UI your customers would actually use. Press <b>?</b> to replay.', position: 'top' }
+]);
+document.addEventListener('keydown', e => { if ((e.key === '?' || e.key === 'h' || e.key === 'H') && window.RyujinTutor) { e.preventDefault(); RyujinTutor.start('pricing'); } });
+
+// Section nav
+document.querySelectorAll('.nav-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const s = btn.dataset.section;
+    document.querySelectorAll('.editor-section').forEach(el => el.style.display = el.dataset.section === s ? 'block' : 'none');
+    document.getElementById('sectionTitle').textContent = btn.textContent.toUpperCase();
+  });
+});
+
+// Slider + number input sync
+function syncPair(sliderId, numId, formatter, displayId){
+  const s = document.getElementById(sliderId);
+  const n = document.getElementById(numId);
+  const d = displayId ? document.getElementById(displayId) : null;
+  function update(from){
+    if (from === 's') n.value = s.value;
+    else s.value = n.value;
+    if (d) d.textContent = formatter(parseFloat(s.value));
+    updatePreview();
+  }
+  if (s) s.addEventListener('input', () => update('s'));
+  if (n) n.addEventListener('input', () => update('n'));
+}
+
+// Core
+syncPair('s_margin','n_margin',v=>v+'%','v_margin');
+syncPair('s_floor','n_floor',v=>v+'%','v_floor');
+syncPair('s_round','n_round',v=>'$'+v,'v_round');
+syncPair('s_hst','n_hst',v=>v+'%','v_hst');
+// Pitch
+['low','normal','steep','extreme'].forEach(k => syncPair(`s_pitch_${k}`,`n_pitch_${k}`,v=>v.toFixed(2)+'\u00D7',`v_pitch_${k}`));
+// Complexity
+['simple','normal','complex','custom'].forEach(k => syncPair(`s_cx_${k}`,`n_cx_${k}`,v=>v.toFixed(2)+'\u00D7',`v_cx_${k}`));
+// Mob
+['mob1','mob2','mob3'].forEach(k => syncPair(`s_${k}`,`n_${k}`,v=>v+'%',`v_${k}`));
+
+function updatePreview(){
+  const sq = 24;
+  const persq = 520;
+  const roofing = sq * persq;
+  const pitchMult = parseFloat(document.getElementById('n_pitch_normal').value);
+  const cxMult = parseFloat(document.getElementById('n_cx_normal').value);
+  const pitchAdj = roofing * (pitchMult - 1);
+  const cxAdj = roofing * (cxMult - 1);
+  const hstRate = parseFloat(document.getElementById('n_hst').value) / 100;
+  const round = parseInt(document.getElementById('n_round').value);
+  let subtotal = roofing + pitchAdj + cxAdj;
+  subtotal = Math.round(subtotal / round) * round;
+  const hst = Math.round(subtotal * hstRate);
+  const total = subtotal + hst;
+  document.getElementById('p_roof').textContent = '$' + roofing.toLocaleString();
+  document.getElementById('p_pitch').textContent = (pitchAdj >= 0 ? '+' : '') + '$' + Math.abs(Math.round(pitchAdj)).toLocaleString();
+  document.getElementById('p_cx').textContent = (cxAdj >= 0 ? '+' : '') + '$' + Math.abs(Math.round(cxAdj)).toLocaleString();
+  document.getElementById('p_sub').textContent = '$' + subtotal.toLocaleString();
+  document.getElementById('p_hst').textContent = '$' + hst.toLocaleString();
+  document.getElementById('p_total').textContent = '$' + total.toLocaleString();
+  const leafVal = document.querySelector('[data-rate="leaf"]');
+  if (leafVal) document.getElementById('p_leaf').innerHTML = '\u2713 $' + leafVal.value + '/LF';
+}
+updatePreview();
+
+function collectAllRates(){
+  const settings = { globals:{}, rates:{}, pitch:{}, complex:{}, mob:{} };
+  ['margin','floor','round','hst'].forEach(k => { const el = document.getElementById('n_' + k); if (el) settings.globals[k] = parseFloat(el.value); });
+  document.querySelectorAll('[data-rate]').forEach(el => { settings.rates[el.dataset.rate] = parseFloat(el.value); });
+  ['low','normal','steep','extreme'].forEach(k => { const el = document.getElementById('n_pitch_' + k); if (el) settings.pitch[k] = parseFloat(el.value); });
+  ['simple','normal','complex','custom'].forEach(k => { const el = document.getElementById('n_cx_' + k); if (el) settings.complex[k] = parseFloat(el.value); });
+  ['mob1','mob2','mob3'].forEach(k => { const el = document.getElementById('n_' + k); if (el) settings.mob[k] = parseFloat(el.value); });
+  return settings;
+}
+
+function applyAllRates(settings){
+  if (!settings) return;
+  Object.entries(settings.globals || {}).forEach(([k,v]) => {
+    const n = document.getElementById('n_' + k), s = document.getElementById('s_' + k);
+    if (n) n.value = v; if (s) s.value = v;
+  });
+  Object.entries(settings.rates || {}).forEach(([k,v]) => {
+    const el = document.querySelector('[data-rate="'+k+'"]'); if (el) el.value = v;
+  });
+  Object.entries(settings.pitch || {}).forEach(([k,v]) => {
+    const n = document.getElementById('n_pitch_' + k), s = document.getElementById('s_pitch_' + k);
+    if (n) n.value = v; if (s) s.value = v;
+  });
+  Object.entries(settings.complex || {}).forEach(([k,v]) => {
+    const n = document.getElementById('n_cx_' + k), s = document.getElementById('s_cx_' + k);
+    if (n) n.value = v; if (s) s.value = v;
+  });
+  Object.entries(settings.mob || {}).forEach(([k,v]) => {
+    const n = document.getElementById('n_' + k), s = document.getElementById('s_' + k);
+    if (n) n.value = v; if (s) s.value = v;
+  });
+  // Trigger display updates by firing input events
+  document.querySelectorAll('input[type="range"]').forEach(s => s.dispatchEvent(new Event('input')));
+  updatePreview();
+}
+
+async function saveSettings(){
+  const settings = collectAllRates();
+  settings.savedAt = new Date().toISOString();
+  // Always save locally first
+  RyujinStore.save('pricing_settings', settings);
+  document.getElementById('previewBadge').textContent = 'SAVED \u2713';
+  document.getElementById('previewBadge').style.background = 'rgba(74,222,128,0.15)';
+  document.getElementById('previewBadge').style.color = 'var(--green)';
+  document.getElementById('previewBadge').style.borderColor = 'rgba(74,222,128,0.3)';
+  // Then try syncing to Supabase
+  if (location.protocol !== 'file:' && localStorage.getItem('ryujin_token')) {
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + localStorage.getItem('ryujin_token'),
+          'x-tenant-id': (JSON.parse(localStorage.getItem('ryujin_tenant') || '{}').id) || ''
+        },
+        body: JSON.stringify({ pricing_engine: settings })
+      });
+      if (res.ok) { toast('Saved to Supabase tenant_settings \u00B7 all quotes use new rates'); return; }
+      toast('Saved locally \u00B7 sync failed: ' + res.status);
+    } catch(e) {
+      toast('Saved locally \u00B7 offline (will retry on next save)');
+    }
+  } else {
+    toast('Saved locally \u00B7 deploy to sync to tenant_settings');
+  }
+}
+async function loadSettingsFromServer(){
+  if (location.protocol === 'file:' || !localStorage.getItem('ryujin_token')) return null;
+  try {
+    const res = await fetch('/api/settings', {
+      headers: {
+        'Authorization': 'Bearer ' + localStorage.getItem('ryujin_token'),
+        'x-tenant-id': (JSON.parse(localStorage.getItem('ryujin_tenant') || '{}').id) || ''
+      }
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.pricing_engine || null;
+  } catch(e) { return null; }
+}
+function resetDefaults(){ if (confirm('Reset all pricing to v3.1 defaults?')) { RyujinStore.remove('pricing_settings'); location.reload(); } }
+
+// Load saved settings on init — try server first, fall back to local
+setTimeout(async () => {
+  const server = await loadSettingsFromServer();
+  if (server) {
+    applyAllRates(server);
+    RyujinStore.save('pricing_settings', server); // keep local in sync
+    toast('Loaded tenant pricing from Supabase');
+    return;
+  }
+  const local = RyujinStore.load('pricing_settings');
+  if (local) {
+    applyAllRates(local);
+    toast('Loaded local pricing \u00B7 ' + new Date(local.savedAt).toLocaleString());
+  }
+}, 200);
+
+function toast(msg){ if (window.RyujinToast) return RyujinToast(msg); console.log(msg); }
+
+Ryujin.init({
+  sector:'PRICING',
+  root:{
+    msg:"Pricing Engine v3.1 editor. <b>Changes here update every quote the system generates.</b> Your current settings match what\u2019s in memory: OSB $50/sheet, VentiGrid $0.50/sqft, HST 15%. Safe to tune.",
+    choices:[
+      {text:'Raise leaf guard rate (Home Hardware bumped)', next:'leaf'},
+      {text:'Explain pitch multipliers', next:'pitch'},
+      {text:'What changes if I lower margin floor?', next:'floor'},
+      {text:'Just browse', dismiss:true}
+    ]
+  },
+  states:{
+    leaf:{msg:'Current $9/LF. Cost bumped to $8.25/LF material-only. Raise to $11/LF to hold margin. Click Add-ons.',choices:[{text:'Open Add-ons', next:'root'}]},
+    pitch:{msg:'Pitch multipliers scale labor only, not materials. Steep roofs take 12% more labor hours \u2014 anchor at 1.12\u00D7 unless you see consistent overages.',choices:[{text:'Ok', next:'root'}]},
+    floor:{msg:'Margin floor is the guardrail against cut-rate quotes. Lowering it from 28% to 25% means you\'d need 14% more volume to match profit. Usually a trap.',choices:[{text:'Leave it alone', next:'root'}]}
+  }
+});
+
+document.addEventListener('keydown',e=>{if(e.key==='Escape')window.location.href='administration.html'});
+document.addEventListener('contextmenu',e=>{e.preventDefault();window.location.href='administration.html'});
+</script>
+</body>
+</html>
