@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ryujin OS · Active Jobs</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg-deep:#030611;--glass:rgba(14,22,40,0.78);
+  --border:rgba(251,146,60,0.24);--border-hi:rgba(251,146,60,0.5);
+  --accent:#fb923c;--accent-2:#fbbf77;
+  --text:#e0e6f0;--text-dim:rgba(160,190,230,0.62);--text-muted:rgba(140,170,220,0.32);
+  --cyan:#22d3ee;--green:#4ade80;--yellow:#facc15;--red:#f87171;--orange:#fb923c;--purple:#7c3aed;--blue:#4a9eff;
+  --radius:14px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg-deep);color:var(--text);overflow:hidden}
+.bg-ambient{position:fixed;inset:0;z-index:0;background:radial-gradient(ellipse at 40% 30%,rgba(251,146,60,0.08) 0%,transparent 55%),radial-gradient(ellipse at 75% 85%,rgba(248,113,113,0.05) 0%,transparent 50%),linear-gradient(180deg,#060a14 0%,#030611 100%)}
+.bg-grid{position:fixed;inset:0;z-index:1;pointer-events:none;background-image:linear-gradient(rgba(251,146,60,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(251,146,60,0.03) 1px,transparent 1px);background-size:48px 48px;mask-image:radial-gradient(ellipse at center,black 40%,transparent 85%);-webkit-mask-image:radial-gradient(ellipse at center,black 40%,transparent 85%)}
+.app{position:relative;z-index:2;height:100vh;display:grid;grid-template-rows:52px 1fr 44px;gap:10px;padding:10px 12px}
+.topbar{display:flex;align-items:center;gap:12px;background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);padding:0 14px;backdrop-filter:blur(20px);position:relative;overflow:hidden}
+.topbar::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),var(--red),transparent);opacity:0.5}
+.brand{display:flex;align-items:center;gap:10px}
+.brand-mark{width:30px;height:30px;border-radius:7px;background:radial-gradient(circle at 35% 30%,rgba(255,220,200,0.3),rgba(251,146,60,0.22) 40%,rgba(30,10,5,0.8));box-shadow:0 0 14px rgba(251,146,60,0.35)}
+.brand-name{font-family:'Orbitron',sans-serif;font-size:0.78em;font-weight:800;letter-spacing:2.5px}
+.brand-name .dim{color:var(--text-dim);font-weight:500;letter-spacing:2px;margin-left:8px}
+.tb-spacer{flex:1}
+.tb-stat{display:flex;align-items:center;gap:6px;font-family:'Share Tech Mono',monospace;font-size:0.68em;color:var(--text-dim);letter-spacing:1px}
+.tb-stat .dot{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+.tb-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:rgba(6,10,20,0.6);border:1px solid var(--border);color:var(--text-dim);cursor:pointer;transition:all 0.2s}
+.tb-icon:hover{color:var(--accent);border-color:var(--border-hi);background:rgba(251,146,60,0.08)}
+.tb-icon svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.main{display:grid;grid-template-rows:auto 1fr;gap:10px;min-height:0}
+.kpi-rail{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+.kpi{background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;backdrop-filter:blur(14px);position:relative;overflow:hidden;transition:all 0.25s;cursor:pointer}
+.kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:0.4}
+.kpi:hover{border-color:var(--border-hi);transform:translateY(-2px)}
+.kpi-label{font-family:'Orbitron',sans-serif;font-size:0.53em;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim)}
+.kpi-value{font-family:'Orbitron',sans-serif;font-size:1.7em;font-weight:800;letter-spacing:-0.5px;margin-top:4px;line-height:1;background:linear-gradient(135deg,#fff 20%,var(--accent));-webkit-background-clip:text;-webkit-text-fill-color:transparent;filter:drop-shadow(0 0 10px rgba(251,146,60,0.25))}
+.kpi-value.green{background:linear-gradient(135deg,#fff 20%,var(--green));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.kpi-value.red{background:linear-gradient(135deg,#fff 20%,var(--red));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.kpi-value.cyan{background:linear-gradient(135deg,#fff 20%,var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.kpi-meta{display:flex;justify-content:space-between;align-items:center;margin-top:5px;font-size:0.65em}
+.kpi-delta{font-family:'Share Tech Mono',monospace;font-weight:700}
+.kpi-delta.up{color:var(--green)}
+.kpi-delta.down{color:var(--red)}
+.kpi-sub{color:var(--text-muted);font-size:0.9em}
+.content{display:grid;grid-template-columns:1.5fr 1fr;gap:10px;min-height:0}
+.col{display:flex;flex-direction:column;gap:10px;min-height:0;overflow:hidden}
+.panel{background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);backdrop-filter:blur(14px);display:flex;flex-direction:column;min-height:0;overflow:hidden;position:relative}
+.panel::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:0.45}
+.panel-head{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid rgba(251,146,60,0.1);flex-shrink:0}
+.panel-title{font-family:'Orbitron',sans-serif;font-size:0.62em;font-weight:700;letter-spacing:2.5px;color:var(--text-dim)}
+.panel-badge{background:rgba(251,146,60,0.12);border:1px solid rgba(251,146,60,0.28);padding:2px 8px;border-radius:5px;font-family:'Share Tech Mono',monospace;font-size:0.65em;color:var(--accent-2);letter-spacing:0.5px}
+.panel-badge.red{background:rgba(248,113,113,0.12);border-color:rgba(248,113,113,0.3);color:var(--red)}
+.panel-body{flex:1;overflow-y:auto;padding:8px}
+.panel-body::-webkit-scrollbar{width:4px}
+.panel-body::-webkit-scrollbar-thumb{background:rgba(251,146,60,0.18);border-radius:2px}
+
+/* Ticket */
+.tick-card{display:flex;gap:12px;padding:10px 12px;border-radius:10px;margin-bottom:4px;cursor:pointer;border:1px solid transparent;transition:all 0.2s}
+.tick-card:hover{background:rgba(251,146,60,0.05);border-color:rgba(251,146,60,0.15)}
+.tick-card.active{background:rgba(251,146,60,0.09);border-color:rgba(251,146,60,0.3)}
+.tick-status{width:6px;border-radius:3px;flex-shrink:0}
+.tick-status.active{background:var(--green);box-shadow:0 0 6px var(--green)}
+.tick-status.open{background:var(--cyan)}
+.tick-status.overdue{background:var(--red);box-shadow:0 0 6px var(--red)}
+.tick-status.done{background:var(--text-muted)}
+.tick-body{flex:1;min-width:0}
+.tick-name{font-size:0.86em;font-weight:600}
+.tick-meta{font-size:0.68em;color:var(--text-dim);font-family:'Share Tech Mono',monospace;margin-top:2px;letter-spacing:0.4px}
+.tick-assignee{font-size:0.72em;color:var(--accent-2);margin-top:2px}
+.tick-right{text-align:right;flex-shrink:0}
+.tick-due{font-family:'Orbitron',sans-serif;font-weight:700;font-size:0.72em;color:var(--yellow)}
+.tick-due.overdue{color:var(--red)}
+.tick-due.active{color:var(--green)}
+.tick-stage{font-size:0.62em;color:var(--text-dim);margin-top:2px;font-family:'Share Tech Mono',monospace;letter-spacing:0.5px;text-transform:uppercase}
+
+.tick-detail{padding:14px 16px;background:rgba(251,146,60,0.05);border-radius:10px;margin:2px 0 8px;border:1px solid rgba(251,146,60,0.15);display:none}
+.tick-card.active + .tick-detail{display:block}
+.detail-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px}
+.detail-stat{padding:8px 10px;background:rgba(6,10,20,0.5);border-radius:7px;border:1px solid rgba(251,146,60,0.1)}
+.detail-stat .lbl{font-family:'Share Tech Mono',monospace;font-size:0.58em;color:var(--text-muted);letter-spacing:0.8px;text-transform:uppercase}
+.detail-stat .val{font-family:'Orbitron',sans-serif;font-weight:700;font-size:0.96em;margin-top:2px}
+.detail-actions{display:flex;gap:6px;flex-wrap:wrap}
+.act-btn{padding:7px 14px;border-radius:8px;font-family:'Orbitron',sans-serif;font-size:0.66em;font-weight:700;letter-spacing:1.5px;cursor:pointer;border:1px solid;transition:all 0.2s}
+.act-btn.primary{background:linear-gradient(135deg,rgba(251,146,60,0.25),rgba(251,146,60,0.1));color:var(--accent);border-color:rgba(251,146,60,0.4)}
+.act-btn.primary:hover{background:linear-gradient(135deg,rgba(251,146,60,0.4),rgba(251,146,60,0.2));box-shadow:0 0 12px rgba(251,146,60,0.25)}
+.act-btn.ghost{background:rgba(6,10,20,0.5);color:var(--text-dim);border-color:var(--border)}
+.act-btn.ghost:hover{color:var(--text);border-color:var(--border-hi)}
+.act-btn.success{background:rgba(74,222,128,0.12);color:var(--green);border-color:rgba(74,222,128,0.3)}
+.act-btn.danger{background:rgba(248,113,113,0.08);color:var(--red);border-color:rgba(248,113,113,0.25)}
+
+/* Crew grid */
+.crew-row{display:flex;align-items:center;gap:12px;padding:10px;border-radius:8px;margin-bottom:3px;background:rgba(6,10,20,0.4);border:1px solid rgba(251,146,60,0.08)}
+.crew-avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,rgba(251,146,60,0.28),rgba(248,113,113,0.12));border:1px solid rgba(251,146,60,0.25);display:flex;align-items:center;justify-content:center;font-family:'Orbitron',sans-serif;font-weight:700;font-size:0.76em;color:var(--accent);flex-shrink:0}
+.crew-info{flex:1}
+.crew-name{font-size:0.82em;font-weight:600}
+.crew-meta{font-size:0.66em;color:var(--text-dim);font-family:'Share Tech Mono',monospace;letter-spacing:0.4px}
+.crew-load{width:70px;text-align:right}
+.crew-pct{font-family:'Orbitron',sans-serif;font-weight:700;font-size:0.84em;color:var(--accent-2)}
+.crew-bar{height:4px;background:rgba(6,10,20,0.6);border-radius:2px;overflow:hidden;margin-top:3px}
+.crew-fill{height:100%;border-radius:2px;background:linear-gradient(90deg,#c2410c,var(--accent));box-shadow:0 0 8px rgba(251,146,60,0.4)}
+
+/* Schedule */
+.sched-day{padding:8px 10px;border-radius:8px;margin-bottom:4px;background:rgba(6,10,20,0.4);border:1px solid rgba(251,146,60,0.08)}
+.sched-head{display:flex;justify-content:space-between;font-family:'Orbitron',sans-serif;font-size:0.62em;font-weight:700;letter-spacing:1.5px;color:var(--accent-2);text-transform:uppercase;margin-bottom:6px}
+.sched-item{font-size:0.72em;padding:3px 0;color:var(--text-dim);border-left:2px solid rgba(251,146,60,0.25);padding-left:8px;margin-bottom:2px}
+.sched-item b{color:var(--text);font-weight:600}
+
+.alerts{background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);backdrop-filter:blur(14px);display:flex;align-items:center;padding:0 14px;gap:14px;position:relative;overflow:hidden}
+.alerts::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),var(--red),transparent);opacity:0.4}
+.alerts-label{font-family:'Orbitron',sans-serif;font-size:0.58em;font-weight:700;letter-spacing:2.5px;color:var(--red);flex-shrink:0;display:flex;align-items:center;gap:8px}
+.alert-icon{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2}
+.alerts-items{flex:1;display:flex;gap:18px;overflow-x:auto}
+.alert-chip{display:flex;align-items:center;gap:6px;font-size:0.76em;color:var(--text);white-space:nowrap}
+.alert-chip .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.alert-chip .dot.red{background:var(--red);box-shadow:0 0 6px var(--red)}
+.alert-chip .dot.yellow{background:var(--yellow);box-shadow:0 0 6px var(--yellow)}
+.alert-chip .dim{color:var(--text-dim);font-size:0.88em;margin-left:4px}
+
+.chat-fab{position:fixed;bottom:54px;right:14px;z-index:10;width:50px;height:50px;border-radius:50%;background:linear-gradient(135deg,rgba(251,146,60,0.22),rgba(248,113,113,0.12));border:1px solid var(--border-hi);display:flex;align-items:center;justify-content:center;color:var(--accent);cursor:pointer;box-shadow:0 6px 24px rgba(0,0,0,0.5),0 0 16px rgba(251,146,60,0.3);backdrop-filter:blur(10px)}
+.chat-fab svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.chat-fab::after{content:'';position:absolute;top:4px;right:4px;width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);border:2px solid var(--bg-deep)}
+.embed-mode .chat-fab{display:none}
+</style>
+</head>
+<body>
+
+<div class="bg-ambient"></div>
+<div class="bg-grid"></div>
+
+<div class="app">
+  <div class="topbar">
+    <button class="tb-icon" onclick="goBackToHub()"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
+    <div class="brand"><div class="brand-mark"></div><div class="brand-name">RYUJIN <span class="dim">· PRODUCTION · JOBS</span></div></div>
+    <div class="tb-stat"><div class="dot"></div><span>ACTION BOARD · LIVE</span></div>
+    <div class="tb-spacer"></div>
+    <button onclick="window.location.href='production-paysheet.html'" style="padding:8px 16px;border-radius:9px;font-family:'Orbitron',sans-serif;font-size:0.7em;font-weight:800;letter-spacing:1.5px;cursor:pointer;border:1px solid rgba(251,146,60,0.45);background:linear-gradient(135deg,rgba(251,146,60,0.28),rgba(248,113,113,0.12));color:var(--accent);box-shadow:0 0 14px rgba(251,146,60,0.2);display:inline-flex;align-items:center;gap:6px">
+      <svg viewBox="0 0 24 24" style="width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2.5;stroke-linecap:round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+      PAY SHEET
+    </button>
+    <button class="tb-icon" onclick="toggleFs()"><svg viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 00-2 2v3M21 8V5a2 2 0 00-2-2h-3M3 16v3a2 2 0 002 2h3M16 21h3a2 2 0 002-2v-3"/></svg></button>
+    <button class="tb-icon"><svg viewBox="0 0 24 24"><path d="M12 2l3 7h7l-5.5 4.5L18 22l-6-4-6 4 1.5-8.5L2 9h7z"/></svg></button>
+  </div>
+
+  <div class="main">
+    <div class="kpi-rail">
+      <div class="kpi"><div class="kpi-label">Active Tickets</div><div class="kpi-value">6</div><div class="kpi-meta"><span class="kpi-delta up">in progress</span><span class="kpi-sub">of 24 total</span></div></div>
+      <div class="kpi"><div class="kpi-label">Overdue</div><div class="kpi-value red">8</div><div class="kpi-meta"><span class="kpi-delta down">needs action</span><span class="kpi-sub">Diego · AJ</span></div></div>
+      <div class="kpi"><div class="kpi-label">Crew Load</div><div class="kpi-value">40%</div><div class="kpi-meta"><span class="kpi-delta up">capacity</span><span class="kpi-sub">3 active crews</span></div></div>
+      <div class="kpi"><div class="kpi-label">Completed</div><div class="kpi-value green">15</div><div class="kpi-meta"><span class="kpi-delta up">this month</span><span class="kpi-sub">on pace</span></div></div>
+      <div class="kpi"><div class="kpi-label">Materials</div><div class="kpi-value cyan">$12.8K</div><div class="kpi-meta"><span class="kpi-delta up">on order</span><span class="kpi-sub">4 POs open</span></div></div>
+    </div>
+
+    <div class="content">
+      <div class="col">
+        <div class="panel">
+          <div class="panel-head"><div class="panel-title">ACTIVE JOBS</div><div class="panel-badge red">6 IN PROGRESS</div></div>
+          <div class="panel-body">
+            <div class="tick-card" data-id="edgewater" onclick="toggleTick('edgewater')">
+              <div class="tick-status active"></div>
+              <div class="tick-body"><div class="tick-name">10 Edgewater Dr · Shediac</div><div class="tick-meta">Mansard + caulking pass</div><div class="tick-assignee">Diego · Seyeau</div></div>
+              <div class="tick-right"><div class="tick-due active">DAY 3/5</div><div class="tick-stage">In Progress</div></div>
+            </div>
+            <div class="tick-detail">
+              <div class="detail-grid">
+                <div class="detail-stat"><div class="lbl">Scope</div><div class="val">Mansard caulk + touch</div></div>
+                <div class="detail-stat"><div class="lbl">Start</div><div class="val">Apr 17</div></div>
+                <div class="detail-stat"><div class="lbl">Contract</div><div class="val">$29,900</div></div>
+                <div class="detail-stat"><div class="lbl">Weather</div><div class="val" style="color:var(--yellow)">WATCH</div></div>
+              </div>
+              <div class="detail-actions">
+                <button class="act-btn primary" onclick="RyujinActions.sms('5065552211','Diego, status check on 10 Edgewater \u2014 how\u2019s day 3 going?')">MESSAGE CREW</button>
+                <button class="act-btn ghost" onclick="RyujinToast('Photos open in CompanyCam \u00B7 integration pending')">VIEW PHOTOS</button>
+                <button class="act-btn ghost" onclick="logTime('edgewater')">LOG TIME</button>
+                <button class="act-btn success" onclick="markTicketComplete('edgewater')">MARK COMPLETE</button>
+              </div>
+            </div>
+
+            <div class="tick-card" data-id="fortune" onclick="toggleTick('fortune')">
+              <div class="tick-status active"></div>
+              <div class="tick-body"><div class="tick-name">105 Rue Fortune · Moncton</div><div class="tick-meta">Asphalt tear-off + install</div><div class="tick-assignee">AJ · starting today</div></div>
+              <div class="tick-right"><div class="tick-due active">DAY 1/3</div><div class="tick-stage">Starting</div></div>
+            </div>
+            <div class="tick-detail">
+              <div class="detail-grid">
+                <div class="detail-stat"><div class="lbl">Scope</div><div class="val">Asphalt full</div></div>
+                <div class="detail-stat"><div class="lbl">Start</div><div class="val">Today</div></div>
+                <div class="detail-stat"><div class="lbl">Sub</div><div class="val">Ryan / Atlantic</div></div>
+                <div class="detail-stat"><div class="lbl">Squares</div><div class="val">28</div></div>
+              </div>
+              <div class="detail-actions">
+                <button class="act-btn primary" onclick="RyujinActions.sms('5065553344','AJ, how\u2019s Fortune tear-off going? Need any materials?')">MESSAGE AJ</button>
+                <button class="act-btn ghost" onclick="window.location.href='production-materials.html'">MATERIAL LIST</button>
+                <button class="act-btn ghost" onclick="window.location.href='production-paysheet.html?job=fortune'">CREW SHEET</button>
+              </div>
+            </div>
+
+            <div class="tick-card" data-id="faulkner" onclick="toggleTick('faulkner')">
+              <div class="tick-status open"></div>
+              <div class="tick-body"><div class="tick-name">178 Summerhill · Jim Faulkner</div><div class="tick-meta">Pre-job · Moire Black · waiting weather</div><div class="tick-assignee">Pushed to Wed</div></div>
+              <div class="tick-right"><div class="tick-due">APR 21</div><div class="tick-stage">Scheduled</div></div>
+            </div>
+            <div class="tick-detail">
+              <div class="detail-grid">
+                <div class="detail-stat"><div class="lbl">EagleView</div><div class="val" style="color:var(--yellow)">ORDER DUE</div></div>
+                <div class="detail-stat"><div class="lbl">Gutters</div><div class="val">Sterling PO open</div></div>
+                <div class="detail-stat"><div class="lbl">Weather</div><div class="val" style="color:var(--green)">3-day window</div></div>
+                <div class="detail-stat"><div class="lbl">Contract</div><div class="val">$18,400</div></div>
+              </div>
+              <div class="detail-actions">
+                <button class="act-btn primary" onclick="RyujinActions.sms('5065550133','Hey Jim \u2014 confirming Wednesday start for 178 Summerhill. 3-day window looks great, weather cooperating. Talk soon!')">TEXT JIM · WED CONFIRM</button>
+                <button class="act-btn ghost" onclick="orderEagleView('178 Summerhill Dr, Moncton NB')">ORDER EAGLEVIEW</button>
+                <button class="act-btn ghost" onclick="RyujinActions.call('5065559988')">CHECK GUTTERS</button>
+              </div>
+            </div>
+
+            <div class="tick-card" data-id="gould" onclick="toggleTick('gould')">
+              <div class="tick-status overdue"></div>
+              <div class="tick-body"><div class="tick-name">810 Route 124 · Jonathan Gould</div><div class="tick-meta">Repair · delayed · customer waiting</div><div class="tick-assignee">Needs reassignment</div></div>
+              <div class="tick-right"><div class="tick-due overdue">OVERDUE 2d</div><div class="tick-stage">Blocked</div></div>
+            </div>
+            <div class="tick-detail">
+              <div class="detail-grid">
+                <div class="detail-stat"><div class="lbl">Type</div><div class="val">Repair · callback</div></div>
+                <div class="detail-stat"><div class="lbl">Days Late</div><div class="val" style="color:var(--red)">2</div></div>
+                <div class="detail-stat"><div class="lbl">Cause</div><div class="val">Crew conflict</div></div>
+                <div class="detail-stat"><div class="lbl">Value</div><div class="val">$1,200</div></div>
+              </div>
+              <div class="detail-actions">
+                <button class="act-btn primary" onclick="RyujinActions.call('5065559812')">CALL JONATHAN · APOLOGIZE</button>
+                <button class="act-btn ghost" onclick="reassignTicket('gould','Pavanjot')">REASSIGN CREW</button>
+                <button class="act-btn ghost" onclick="scheduleTicket('gould','Friday')">SCHEDULE FRIDAY</button>
+              </div>
+            </div>
+
+            <div class="tick-card" data-id="arzaga" onclick="toggleTick('arzaga')">
+              <div class="tick-status done"></div>
+              <div class="tick-body"><div class="tick-name">Arzaga · complete?</div><div class="tick-meta">Confirm completion status</div><div class="tick-assignee">AJ</div></div>
+              <div class="tick-right"><div class="tick-due active">CHECK</div><div class="tick-stage">Verify</div></div>
+            </div>
+            <div class="tick-detail">
+              <div class="detail-grid">
+                <div class="detail-stat"><div class="lbl">Status</div><div class="val">Unverified</div></div>
+                <div class="detail-stat"><div class="lbl">Last Update</div><div class="val">2d ago</div></div>
+                <div class="detail-stat"><div class="lbl">Photos</div><div class="val">Missing</div></div>
+                <div class="detail-stat"><div class="lbl">Invoice</div><div class="val">Pending</div></div>
+              </div>
+              <div class="detail-actions">
+                <button class="act-btn primary" onclick="RyujinActions.sms('5065553344','Arzaga job \u2014 quick status? Complete, and any photos logged?')">PING AJ · STATUS</button>
+                <button class="act-btn ghost" onclick="RyujinActions.sms('5065553344','AJ, can you send the Arzaga final photos today? We need them for the warranty packet.')">REQUEST PHOTOS</button>
+                <button class="act-btn success" onclick="markTicketComplete('arzaga')">MARK COMPLETE</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><div class="panel-title">3-DAY SCHEDULE</div><div class="panel-badge">4 JOBS</div></div>
+          <div class="panel-body">
+            <div class="sched-day">
+              <div class="sched-head">TODAY · APR 19 <span>SAT</span></div>
+              <div class="sched-item"><b>Fortune 105</b> · AJ starting · asphalt tear-off</div>
+              <div class="sched-item"><b>Edgewater</b> · Diego · mansard day 3</div>
+              <div class="sched-item"><b>Jim Faulkner</b> · Mackenzie text at 1PM · push to Wed</div>
+            </div>
+            <div class="sched-day">
+              <div class="sched-head">SUN · APR 20 <span></span></div>
+              <div class="sched-item"><b>Edgewater</b> · Diego · finish caulk</div>
+              <div class="sched-item"><b>Fortune 105</b> · AJ · day 2</div>
+            </div>
+            <div class="sched-day">
+              <div class="sched-head">WED · APR 23 <span>FAULKNER</span></div>
+              <div class="sched-item"><b>178 Summerhill</b> · Faulkner start · 3-day window Wed-Fri</div>
+              <div class="sched-item"><b>Gould 124</b> · reassign to Friday</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="panel">
+          <div class="panel-head"><div class="panel-title">CREW STATUS</div><div class="panel-badge">3 ACTIVE</div></div>
+          <div class="panel-body">
+            <div class="crew-row">
+              <div class="crew-avatar">DM</div>
+              <div class="crew-info"><div class="crew-name">Diego · lead</div><div class="crew-meta">14 tickets · Edgewater today</div></div>
+              <div class="crew-load"><div class="crew-pct">88%</div><div class="crew-bar"><div class="crew-fill" style="width:88%"></div></div></div>
+            </div>
+            <div class="crew-row">
+              <div class="crew-avatar" style="color:var(--cyan);border-color:rgba(34,211,238,0.3);background:linear-gradient(135deg,rgba(34,211,238,0.28),rgba(124,58,237,0.1))">AJ</div>
+              <div class="crew-info"><div class="crew-name">AJ</div><div class="crew-meta">8 tickets · Fortune today</div></div>
+              <div class="crew-load"><div class="crew-pct">62%</div><div class="crew-bar"><div class="crew-fill" style="width:62%;background:linear-gradient(90deg,#0891b2,var(--cyan));box-shadow:0 0 8px rgba(34,211,238,0.4)"></div></div></div>
+            </div>
+            <div class="crew-row">
+              <div class="crew-avatar" style="color:var(--green);border-color:rgba(74,222,128,0.3);background:linear-gradient(135deg,rgba(74,222,128,0.28),rgba(34,211,238,0.1))">PV</div>
+              <div class="crew-info"><div class="crew-name">Pavanjot</div><div class="crew-meta">1 ticket · on standby</div></div>
+              <div class="crew-load"><div class="crew-pct">14%</div><div class="crew-bar"><div class="crew-fill" style="width:14%;background:linear-gradient(90deg,#16a34a,var(--green));box-shadow:0 0 8px rgba(74,222,128,0.4)"></div></div></div>
+            </div>
+            <div class="crew-row">
+              <div class="crew-avatar" style="color:var(--red);border-color:rgba(248,113,113,0.3);background:rgba(248,113,113,0.08)">RY</div>
+              <div class="crew-info"><div class="crew-name">Ryan · sub (Atlantic)</div><div class="crew-meta">Standing PO · $75/SQ uplift</div></div>
+              <div class="crew-load"><div class="crew-pct">ON CALL</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><div class="panel-title">MATERIAL ORDERS</div><div class="panel-badge">4 OPEN</div></div>
+          <div class="panel-body">
+            <div style="padding:8px 12px;font-size:0.78em">
+              <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(251,146,60,0.08)"><span>CertainTeed · Moire Black</span><span style="color:var(--accent-2);font-weight:700">$4.2K</span></div>
+              <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(251,146,60,0.08)"><span>Sterling Gutters · 178 Summerhill</span><span style="color:var(--accent-2);font-weight:700">$980</span></div>
+              <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(251,146,60,0.08)"><span>OSB redeck · Peach</span><span style="color:var(--accent-2);font-weight:700">$3,700</span></div>
+              <div style="display:flex;justify-content:space-between;padding:6px 0"><span>Misc flashing · stock</span><span style="color:var(--accent-2);font-weight:700">$3.9K</span></div>
+              <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(251,146,60,0.15);display:flex;justify-content:space-between;font-family:'Orbitron',sans-serif;font-weight:700"><span>TOTAL</span><span style="color:var(--accent)">$12,780</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><div class="panel-title">PAY SHEETS</div><div class="panel-badge">~$22K</div></div>
+          <div class="panel-body">
+            <div style="padding:8px 12px;font-size:0.75em;color:var(--text-dim)">
+              <div style="padding:4px 0">Ryan / Atlantic · base $65/SQ</div>
+              <div style="padding:4px 0">Grand Manor uplift · +$75/SQ</div>
+              <div style="padding:4px 0">Pipeline subtotal · <b style="color:var(--text)">$22,100</b></div>
+              <button class="act-btn primary" style="margin-top:10px;width:100%" onclick="window.location.href='production-paysheet.html'">GENERATE PAY SHEET PDF</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="alerts">
+    <div class="alerts-label"><svg class="alert-icon" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 22h20L12 2zM12 9v5M12 17v.01"/></svg>ALERTS · 3</div>
+    <div class="alerts-items">
+      <div class="alert-chip"><div class="dot red"></div>Jonathan Gould · repair delay <span class="dim">OVERDUE 2d</span></div>
+      <div class="alert-chip"><div class="dot yellow"></div>EagleView order · Faulkner <span class="dim">before Wed</span></div>
+      <div class="alert-chip"><div class="dot yellow"></div>Arzaga · confirm completion <span class="dim">2d stale</span></div>
+    </div>
+  </div>
+</div>
+
+<script src="assets/ryujin-mode.js"></script>
+<script src="assets/ryujin-tenant.js"></script>
+<script src="assets/ryujin-persist.js"></script>
+<script src="assets/ryujin-api.js"></script>
+<script src="assets/ryujin-scenario.js"></script>
+<script src="assets/ryujin-xp.js"></script>
+<script src="assets/ryujin-mode-badge.js"></script>
+<script src="assets/ryujin-chat.js"></script>
+<script>
+Ryujin.init({
+  sector: 'PRODUCTION',
+  root: {
+    msg: "Production floor. <b>6 active, 8 overdue</b>, crew at 40% load. <b>Top priority:</b> Jonathan Gould repair is overdue 2 days. Next up: EagleView order for Faulkner before Wednesday, and confirming Arzaga completion.",
+    choices: [
+      { text: 'Fix the Gould overdue', next: 'gould' },
+      { text: 'Order EagleView for Faulkner', next: 'eagle' },
+      { text: 'Confirm Arzaga status', next: 'arz' },
+      { text: 'Rebalance crew load', next: 'crew' },
+      { text: 'Just browse', dismiss: true }
+    ]
+  },
+  states: {
+    gould: {
+      msg: "Gould is blocked on crew. Pavanjot has capacity \u2014 I can move it to Friday with him.",
+      effect: () => document.querySelector('[data-id="gould"]')?.classList.add('active'),
+      choices: [
+        { text: 'Reassign to Pavanjot, Fri', next: 'root' },
+        { text: 'Back', next: 'root' }
+      ]
+    },
+    eagle: {
+      msg: "Faulkner job is 178 Summerhill. Ordering EagleView now gives 24h processing \u2014 easily ready for Wed start.",
+      effect: () => document.querySelector('[data-id="faulkner"]')?.classList.add('active'),
+      choices: [
+        { text: 'Order EagleView \u2014 standard', next: 'root' },
+        { text: 'Order + gutter report', next: 'root' },
+        { text: 'Back', next: 'root' }
+      ]
+    },
+    arz: {
+      msg: "Arzaga status is 2d stale. AJ hasn\u2019t logged photos or signed off. I\u2019ll ping him.",
+      effect: () => document.querySelector('[data-id="arzaga"]')?.classList.add('active'),
+      choices: [
+        { text: 'Ping AJ for status', next: 'root' },
+        { text: 'Request photos specifically', next: 'root' },
+        { text: 'Back', next: 'root' }
+      ]
+    },
+    crew: {
+      msg: "Diego 88% (Edgewater), AJ 62% (Fortune), Pavanjot 14% (idle). I\u2019d move 2 quick repairs from Diego\u2019s queue to Pavanjot.",
+      choices: [
+        { text: 'Make the transfer', next: 'root' },
+        { text: 'Show me the 2 tickets first', next: 'root' },
+        { text: 'Back', next: 'root' }
+      ]
+    }
+  }
+});
+function toggleTick(id){document.querySelectorAll('.tick-card').forEach(c=>c.classList.toggle('active',c.dataset.id===id&&!c.classList.contains('active')))}
+function markTicketComplete(id){
+  const done = RyujinStore.load('tickets_done', {});
+  done[id] = new Date().toISOString();
+  RyujinStore.save('tickets_done', done);
+  const card = document.querySelector(`.tick-card[data-id="${id}"]`);
+  if (card) { card.style.opacity = '0.55'; card.querySelector('.tick-status')?.classList.add('done'); }
+  RyujinToast('Ticket complete \u00B7 logged');
+}
+function logTime(id){
+  const hrs = prompt('Hours worked on ' + id + ' today?');
+  if (!hrs) return;
+  const log = RyujinStore.load('time_log', []);
+  log.push({ ticket: id, hours: parseFloat(hrs) || 0, at: new Date().toISOString() });
+  RyujinStore.save('time_log', log);
+  RyujinToast(hrs + ' hr logged for ' + id);
+}
+function orderEagleView(address){
+  const to = 'orders@eagleview.com';
+  const subject = 'EagleView order - ' + address;
+  const body = 'Please generate a residential roofing report for:\n\n' + address + '\n\nAccount: Plus Ultra Roofing\nContact: Mackenzie Mazerolle\n(506) 540-1052\n\nNeeded within 24h if possible.\n\nThanks!';
+  RyujinActions.gmail(to, subject, body);
+  RyujinToast('EagleView email drafted in Gmail');
+}
+function reassignTicket(id, to){
+  const reassign = RyujinStore.load('reassignments', []);
+  reassign.push({ ticket: id, to, at: new Date().toISOString() });
+  RyujinStore.save('reassignments', reassign);
+  RyujinToast('Reassigned ' + id + ' to ' + to);
+}
+function scheduleTicket(id, when){
+  const sched = RyujinStore.load('schedule_changes', []);
+  sched.push({ ticket: id, when, at: new Date().toISOString() });
+  RyujinStore.save('schedule_changes', sched);
+  RyujinToast('Scheduled ' + id + ' for ' + when);
+}
+window.markTicketComplete = markTicketComplete;
+window.logTime = logTime;
+window.orderEagleView = orderEagleView;
+window.reassignTicket = reassignTicket;
+window.scheduleTicket = scheduleTicket;
+function toggleFs(){if(!document.fullscreenElement)document.documentElement.requestFullscreen().catch(()=>{});else document.exitFullscreen().catch(()=>{})}
+function goBackToHub(){window.location.href='production.html'}
+document.addEventListener('contextmenu', e => { e.preventDefault(); goBackToHub(); });
+document.addEventListener('keydown',e=>{if((e.key==='f'||e.key==='F')&&!e.ctrlKey&&!e.metaKey)toggleFs();if(e.key==='Escape')goBackToHub()});
+if(new URLSearchParams(location.search).has('embed'))document.documentElement.classList.add('embed-mode');
+</script>
+
+<script src="assets/ryujin-tutor.js"></script>
+<script src="assets/ryujin-auto-tutor.js"></script>
+</body>
+</html>

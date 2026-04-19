@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ryujin OS · Pay Sheet Generator</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg-deep:#030611;--glass:rgba(14,22,40,0.78);
+  --border:rgba(251,146,60,0.24);--border-hi:rgba(251,146,60,0.5);
+  --accent:#fb923c;--accent-2:#fbbf77;
+  --text:#e0e6f0;--text-dim:rgba(160,190,230,0.62);--text-muted:rgba(140,170,220,0.32);
+  --cyan:#22d3ee;--green:#4ade80;--yellow:#facc15;--red:#f87171;--orange:#fb923c;--purple:#7c3aed;--blue:#4a9eff;
+  --radius:12px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg-deep);color:var(--text);overflow:hidden;font-size:14px}
+.bg-ambient{position:fixed;inset:0;z-index:0;background:radial-gradient(ellipse at 40% 30%,rgba(251,146,60,0.08) 0%,transparent 55%),radial-gradient(ellipse at 80% 80%,rgba(248,113,113,0.05) 0%,transparent 50%),linear-gradient(180deg,#060a14 0%,#030611 100%)}
+.bg-grid{position:fixed;inset:0;z-index:1;pointer-events:none;background-image:linear-gradient(rgba(251,146,60,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(251,146,60,0.03) 1px,transparent 1px);background-size:48px 48px;mask-image:radial-gradient(ellipse at center,black 40%,transparent 85%);-webkit-mask-image:radial-gradient(ellipse at center,black 40%,transparent 85%)}
+
+.app{position:relative;z-index:2;height:100vh;display:grid;grid-template-rows:52px 1fr;gap:10px;padding:10px 12px}
+.topbar{display:flex;align-items:center;gap:12px;background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);padding:0 14px;backdrop-filter:blur(20px);position:relative;overflow:hidden}
+.topbar::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),var(--red),transparent);opacity:0.5}
+.tb-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:rgba(6,10,20,0.6);border:1px solid var(--border);color:var(--text-dim);cursor:pointer;transition:all 0.2s}
+.tb-icon:hover{color:var(--accent);border-color:var(--border-hi);background:rgba(251,146,60,0.08)}
+.tb-icon svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.brand{display:flex;align-items:center;gap:10px}
+.brand-mark{width:28px;height:28px;border-radius:7px;background:radial-gradient(circle at 35% 30%,rgba(255,220,200,0.3),rgba(251,146,60,0.22) 40%,rgba(30,10,5,0.8));box-shadow:0 0 12px rgba(251,146,60,0.35)}
+.brand-name{font-family:'Orbitron',sans-serif;font-size:0.78em;font-weight:800;letter-spacing:2.5px}
+.brand-name .dim{color:var(--text-dim);font-weight:500;letter-spacing:2px;margin-left:8px}
+.tool-title{font-family:'Orbitron',sans-serif;font-size:0.72em;font-weight:700;letter-spacing:2px;color:var(--accent);padding:0 12px;border-left:1px solid rgba(251,146,60,0.2)}
+.tb-spacer{flex:1}
+.btn{padding:7px 14px;border-radius:8px;font-family:'Orbitron',sans-serif;font-size:0.66em;font-weight:700;letter-spacing:1.5px;cursor:pointer;border:1px solid;transition:all 0.2s;display:inline-flex;align-items:center;gap:6px}
+.btn.ghost{background:rgba(6,10,20,0.5);color:var(--text-dim);border-color:var(--border)}
+.btn.ghost:hover{color:var(--text);border-color:var(--border-hi);background:rgba(251,146,60,0.06)}
+.btn.primary{background:linear-gradient(135deg,rgba(251,146,60,0.3),rgba(251,146,60,0.1));color:var(--accent);border-color:rgba(251,146,60,0.4);font-weight:800}
+.btn.primary:hover{background:linear-gradient(135deg,rgba(251,146,60,0.4),rgba(251,146,60,0.2));box-shadow:0 0 16px rgba(251,146,60,0.3)}
+.btn.success{background:linear-gradient(135deg,rgba(74,222,128,0.3),rgba(74,222,128,0.1));color:var(--green);border-color:rgba(74,222,128,0.4)}
+.btn svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2.2}
+
+.main{display:grid;grid-template-columns:220px 1fr 320px;gap:10px;min-height:0}
+.step-nav{background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);backdrop-filter:blur(14px);padding:14px;overflow-y:auto;position:relative}
+.step-nav::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:0.45}
+.step-head{font-family:'Orbitron',sans-serif;font-size:0.58em;font-weight:700;letter-spacing:2.5px;color:var(--text-dim);margin-bottom:14px;text-transform:uppercase}
+.step-item{display:flex;gap:10px;padding:10px;border-radius:9px;margin-bottom:4px;cursor:pointer;transition:all 0.2s;border:1px solid transparent}
+.step-item:hover{background:rgba(251,146,60,0.05)}
+.step-item.active{background:rgba(251,146,60,0.1);border-color:rgba(251,146,60,0.3)}
+.step-num{width:24px;height:24px;border-radius:50%;background:rgba(6,10,20,0.6);border:1px solid rgba(251,146,60,0.2);display:flex;align-items:center;justify-content:center;font-family:'Orbitron',sans-serif;font-size:0.72em;font-weight:800;color:var(--text-dim);flex-shrink:0;transition:all 0.2s}
+.step-item.active .step-num{background:rgba(251,146,60,0.2);color:var(--accent);border-color:var(--accent)}
+.step-body{flex:1;min-width:0}
+.step-name{font-size:0.82em;font-weight:600;line-height:1.2}
+.step-desc{font-size:0.68em;color:var(--text-dim);margin-top:2px;font-family:'Share Tech Mono',monospace;letter-spacing:0.3px}
+
+.step-summary{margin-top:18px;border-top:1px solid rgba(251,146,60,0.1);padding-top:14px}
+.summary-head{font-family:'Orbitron',sans-serif;font-size:0.55em;font-weight:700;letter-spacing:2.5px;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px}
+.summary-row{font-size:0.78em;padding:3px 0;color:var(--text-dim)}
+.summary-row b{color:var(--text);font-weight:600;display:block;margin-bottom:2px;font-size:0.92em}
+
+.content{background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);backdrop-filter:blur(14px);display:flex;flex-direction:column;min-height:0;overflow:hidden;position:relative}
+.content::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--accent),var(--red),transparent);opacity:0.55}
+.content-head{padding:16px 20px;border-bottom:1px solid rgba(251,146,60,0.1)}
+.content-head h2{font-family:'Orbitron',sans-serif;font-size:1.15em;font-weight:800;letter-spacing:1.5px;background:linear-gradient(135deg,#fff 20%,var(--accent));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.content-head .sub{font-size:0.78em;color:var(--text-dim);margin-top:3px}
+.content-body{flex:1;overflow-y:auto;padding:20px 24px}
+.content-body::-webkit-scrollbar{width:6px}
+.content-body::-webkit-scrollbar-thumb{background:rgba(251,146,60,0.2);border-radius:3px}
+.content-foot{padding:12px 20px;border-top:1px solid rgba(251,146,60,0.1);display:flex;justify-content:space-between;align-items:center;gap:10px}
+
+.field{margin-bottom:14px}
+.field label{display:block;font-family:'Orbitron',sans-serif;font-size:0.58em;font-weight:700;letter-spacing:1.8px;color:var(--text-dim);text-transform:uppercase;margin-bottom:6px}
+.field input,.field select,.field textarea{width:100%;padding:10px 13px;background:rgba(6,10,20,0.7);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:inherit;font-size:0.9em;outline:none;transition:all 0.2s}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent);box-shadow:0 0 10px rgba(251,146,60,0.15)}
+.field input::placeholder{color:var(--text-muted)}
+.field textarea{resize:vertical;min-height:60px}
+.field-row{display:grid;gap:10px;grid-template-columns:repeat(2,1fr)}
+.field-row.three{grid-template-columns:repeat(3,1fr)}
+.hint{font-size:0.72em;color:var(--text-muted);margin-top:4px;font-family:'Share Tech Mono',monospace;letter-spacing:0.3px}
+
+.job-list{border:1px solid var(--border);border-radius:10px;background:rgba(6,10,20,0.4);margin-bottom:14px;max-height:240px;overflow-y:auto}
+.job-row{padding:10px 14px;cursor:pointer;border-bottom:1px solid rgba(251,146,60,0.06);display:flex;justify-content:space-between;align-items:center;transition:all 0.15s;gap:10px}
+.job-row:last-child{border:none}
+.job-row:hover{background:rgba(251,146,60,0.06)}
+.job-row.selected{background:rgba(251,146,60,0.12);border-left:3px solid var(--accent)}
+.job-name{font-weight:600;font-size:0.86em}
+.job-meta{font-size:0.68em;color:var(--text-dim);font-family:'Share Tech Mono',monospace}
+.job-tag{font-size:0.6em;padding:2px 7px;border-radius:4px;font-family:'Share Tech Mono',monospace;letter-spacing:0.5px}
+.job-tag.active{background:rgba(74,222,128,0.1);color:var(--green);border:1px solid rgba(74,222,128,0.25)}
+.job-tag.complete{background:rgba(34,211,238,0.1);color:var(--cyan);border:1px solid rgba(34,211,238,0.25)}
+
+.sub-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
+.sub-choice{padding:14px;background:rgba(6,10,20,0.5);border:1px solid var(--border);border-radius:10px;cursor:pointer;transition:all 0.2s;position:relative}
+.sub-choice:hover{border-color:var(--border-hi);background:rgba(251,146,60,0.05);transform:translateY(-2px)}
+.sub-choice.selected{border-color:var(--accent);background:rgba(251,146,60,0.1);box-shadow:0 0 14px rgba(251,146,60,0.2)}
+.sub-name{font-family:'Orbitron',sans-serif;font-size:0.82em;font-weight:800;letter-spacing:0.8px}
+.sub-rate{font-family:'Orbitron',sans-serif;font-size:0.96em;font-weight:700;color:var(--accent);margin-top:6px}
+.sub-notes{font-size:0.68em;color:var(--text-dim);margin-top:3px;font-family:'Share Tech Mono',monospace;letter-spacing:0.3px}
+
+.adj-row{display:flex;gap:10px;padding:10px;border-radius:9px;background:rgba(6,10,20,0.4);border:1px solid var(--border);margin-bottom:6px;align-items:center}
+.adj-row input{flex:1;padding:7px 10px;font-size:0.85em;background:rgba(6,10,20,0.6);border:1px solid var(--border);border-radius:7px;color:var(--text);font-family:inherit;outline:none}
+.adj-row input:focus{border-color:var(--accent)}
+.adj-row .adj-desc{flex:2}
+.adj-row .adj-amt{width:110px;text-align:right}
+.adj-row button{background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.25);color:var(--red);border-radius:7px;padding:7px 10px;cursor:pointer;font-family:'Orbitron',sans-serif;font-size:0.6em;letter-spacing:1px;font-weight:700}
+.adj-add{padding:10px;background:rgba(251,146,60,0.05);border:1px dashed rgba(251,146,60,0.3);border-radius:9px;color:var(--accent);font-family:'Orbitron',sans-serif;font-size:0.68em;font-weight:700;letter-spacing:1.5px;cursor:pointer;text-align:center;width:100%;margin-top:4px}
+.adj-add:hover{background:rgba(251,146,60,0.12)}
+
+.preview{background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);backdrop-filter:blur(14px);display:flex;flex-direction:column;min-height:0;overflow:hidden;position:relative}
+.preview::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:0.45}
+.preview-head{padding:14px 16px;border-bottom:1px solid rgba(251,146,60,0.1);display:flex;justify-content:space-between;align-items:center}
+.preview-title{font-family:'Orbitron',sans-serif;font-size:0.62em;font-weight:700;letter-spacing:2.5px;color:var(--text-dim)}
+.preview-badge{background:rgba(74,222,128,0.1);border:1px solid rgba(74,222,128,0.25);color:var(--green);font-family:'Share Tech Mono',monospace;font-size:0.6em;padding:2px 8px;border-radius:4px;letter-spacing:0.5px}
+.preview-body{flex:1;overflow-y:auto;padding:16px}
+.pv-section{margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid rgba(251,146,60,0.08)}
+.pv-section:last-child{border:none}
+.pv-lbl{font-family:'Orbitron',sans-serif;font-size:0.55em;font-weight:700;letter-spacing:2px;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px}
+.pv-line{display:flex;justify-content:space-between;padding:3px 0;font-size:0.84em}
+.pv-line .n{color:var(--text-dim)}
+.pv-line .v{color:var(--text);font-family:'Orbitron',sans-serif;font-weight:600}
+.pv-line.neg .v{color:var(--red)}
+.pv-line.pos .v{color:var(--green)}
+.pv-total{display:flex;justify-content:space-between;padding:10px 14px;margin-top:10px;background:linear-gradient(135deg,rgba(251,146,60,0.12),rgba(248,113,113,0.08));border:1px solid rgba(251,146,60,0.25);border-radius:9px;font-family:'Orbitron',sans-serif;font-weight:800}
+.pv-total .l{font-size:0.7em;letter-spacing:1.5px;color:var(--text-dim)}
+.pv-total .v{font-size:1.3em;color:var(--accent);text-shadow:0 0 20px rgba(251,146,60,0.3)}
+
+.final-doc{background:rgba(6,10,20,0.6);border:1px solid rgba(251,146,60,0.14);border-radius:10px;padding:20px 22px;max-width:640px;margin:0 auto}
+.final-doc h3{font-family:'Orbitron',sans-serif;font-size:1.05em;font-weight:800;letter-spacing:1.5px;margin-bottom:6px;color:var(--accent)}
+.final-doc .meta-row{display:flex;justify-content:space-between;margin-bottom:14px;font-size:0.78em;color:var(--text-dim);font-family:'Share Tech Mono',monospace}
+.final-doc p{font-size:0.86em;line-height:1.55;color:var(--text);margin-bottom:10px}
+.final-doc .line-table{width:100%;margin:14px 0;border-collapse:collapse}
+.final-doc .line-table th{text-align:left;font-family:'Orbitron',sans-serif;font-size:0.6em;font-weight:700;letter-spacing:1.5px;color:var(--text-muted);padding:8px 6px;border-bottom:1px solid rgba(251,146,60,0.2);text-transform:uppercase}
+.final-doc .line-table td{padding:10px 6px;border-bottom:1px solid rgba(251,146,60,0.07);font-size:0.86em}
+.final-doc .line-table td.v{text-align:right;font-family:'Orbitron',sans-serif;font-weight:700;color:var(--accent)}
+.final-doc .line-table tfoot td{padding-top:14px;font-weight:700;font-family:'Orbitron',sans-serif;border-top:1px solid rgba(251,146,60,0.25)}
+.final-doc .line-table tfoot td.v{font-size:1.1em;color:var(--accent)}
+
+.empty-hint{text-align:center;padding:30px 20px;color:var(--text-muted);font-size:0.82em;font-family:'Share Tech Mono',monospace;letter-spacing:0.5px}
+
+@media print {
+  body * { visibility: hidden !important; }
+  .final-doc, .final-doc * { visibility: visible !important; }
+  .final-doc { position: absolute; left: 0; top: 0; width: 100%; padding: 24px !important; background: #fff !important; color: #111 !important; box-shadow: none !important; border: none !important; }
+  .final-doc h3 { color: #c2410c !important; }
+  .final-doc .line-table td.v { color: #c2410c !important; }
+  .bg-ambient, .bg-grid, .topbar, .step-nav, .preview, .content-foot, #ry-root { display: none !important; }
+}
+
+
+/* Mobile — tool pages should be scrollable and stack columns */
+@media (max-width: 900px){
+  html,body{overflow:auto!important;height:auto!important;min-height:100%}
+  body{overflow-x:hidden}
+  .app{height:auto!important;min-height:100vh;grid-template-rows:auto auto 1fr!important;padding:8px 8px}
+  .topbar{position:sticky;top:0;z-index:15;flex-wrap:wrap;padding:8px 12px!important;height:auto!important;gap:6px}
+  .topbar .btn,.topbar .tb-icon{padding:6px 9px;font-size:0.6em;letter-spacing:0.8px}
+  .topbar .btn svg,.topbar .tb-icon svg{width:12px;height:12px}
+  .topbar .brand-name{font-size:0.7em}
+  .tb-spacer{display:none}
+  .main{grid-template-columns:1fr!important;grid-auto-rows:auto!important;gap:10px}
+  .panel{max-height:none;min-height:280px}
+  .panel-head{padding:12px 14px!important;flex-wrap:wrap;gap:8px}
+  .panel-body{padding:10px 12px!important}
+  .field-row,.field-row.three{grid-template-columns:1fr!important}
+  /* Pay sheet 3-col → 1-col */
+  .step-nav{order:-1;max-height:none;padding:10px!important}
+  .content-body{padding:14px 16px!important}
+  .content-foot{flex-direction:column;gap:6px;padding:10px!important}
+  .content-foot .btn{width:100%;justify-content:center}
+}
+</style>
+</head>
+<body data-prod-tool="paysheet">
+
+<div class="bg-ambient"></div>
+<div class="bg-grid"></div>
+
+<div class="app">
+  <div class="topbar">
+    <button class="tb-icon" onclick="goBack()" title="Back to Production"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
+    <div class="brand"><div class="brand-mark"></div><div class="brand-name">RYUJIN <span class="dim">· PRODUCTION</span></div></div>
+    <div class="tool-title" id="tbTitle">PAY SHEET · untitled</div>
+    <div class="tb-spacer"></div>
+    <button class="btn ghost" onclick="saveDraft()"><svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/></svg>SAVE</button>
+    <button class="btn ghost" onclick="exportJSON()"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>EXPORT</button>
+    <button class="btn primary" onclick="exportPdf()"><svg viewBox="0 0 24 24"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>PRINT</button>
+    <button class="btn success" onclick="markPaid()"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>MARK PAID</button>
+    <a class="btn ghost" href="command-center.html" title="Main menu"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>MAIN MENU</a>
+  </div>
+
+  <div class="main">
+
+    <div class="step-nav">
+      <div class="step-head">PAY SHEET STEPS</div>
+      <div class="step-item" data-step="1" onclick="goToStep(1)"><div class="step-num">1</div><div class="step-body"><div class="step-name">Job &amp; Sub</div><div class="step-desc">who · which job</div></div></div>
+      <div class="step-item" data-step="2" onclick="goToStep(2)"><div class="step-num">2</div><div class="step-body"><div class="step-name">Work Completed</div><div class="step-desc">SQ · rates · days</div></div></div>
+      <div class="step-item" data-step="3" onclick="goToStep(3)"><div class="step-num">3</div><div class="step-body"><div class="step-name">Adjustments</div><div class="step-desc">bonuses · deductions</div></div></div>
+      <div class="step-item" data-step="4" onclick="goToStep(4)"><div class="step-num">4</div><div class="step-body"><div class="step-name">Review &amp; Send</div><div class="step-desc">export · text</div></div></div>
+
+      <div class="step-summary" id="stepSummary"></div>
+    </div>
+
+    <div class="content">
+      <div class="content-head">
+        <h2 id="stepTitle">Job &amp; Sub</h2>
+        <div class="sub" id="stepSub">Which job and which sub are we paying for?</div>
+      </div>
+
+      <!-- STEP 1 -->
+      <div class="content-body step-pane" data-pane="1">
+        <div class="field">
+          <label>Job</label>
+          <div class="job-list" id="jobList"></div>
+          <div class="hint">Or create a pay sheet for a job not listed here.</div>
+        </div>
+        <div class="field">
+          <label>Subcontractor</label>
+          <div class="sub-grid" id="subGrid"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Pay Period Start</label><input type="date" id="p_start"/></div>
+          <div class="field"><label>Pay Period End</label><input type="date" id="p_end"/></div>
+        </div>
+      </div>
+
+      <!-- STEP 2 -->
+      <div class="content-body step-pane" data-pane="2" style="display:none">
+        <div class="field-row">
+          <div class="field"><label>Squares Installed (SQ)</label><input type="number" id="w_sq" min="0" step="0.5" placeholder="28"/><div class="hint">Base rate applies per SQ.</div></div>
+          <div class="field"><label>Base Rate ($/SQ)</label><input type="number" id="w_base" min="0" placeholder="65"/><div class="hint">Default fills from selected sub.</div></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Uplift ($/SQ)</label><input type="number" id="w_uplift" min="0" placeholder="0"/><div class="hint">e.g. Grand Manor +$75/SQ</div></div>
+          <div class="field"><label>Days Worked</label><input type="number" id="w_days" min="0" placeholder="3"/></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Day Rate ($/day, optional)</label><input type="number" id="w_dayrate" min="0" placeholder="0"/><div class="hint">Use for hourly / daily work instead of per-SQ.</div></div>
+          <div class="field"><label>Materials Pickup ($)</label><input type="number" id="w_mats" min="0" placeholder="0"/><div class="hint">Reimbursement for sub picking up materials.</div></div>
+        </div>
+      </div>
+
+      <!-- STEP 3 -->
+      <div class="content-body step-pane" data-pane="3" style="display:none">
+        <div class="field">
+          <label>Bonuses &amp; Reimbursements</label>
+          <div id="bonusList"></div>
+          <button class="adj-add" onclick="addBonus()">+ ADD BONUS / REIMBURSEMENT</button>
+        </div>
+        <div class="field">
+          <label>Deductions</label>
+          <div id="deductionList"></div>
+          <button class="adj-add" onclick="addDeduction()">+ ADD DEDUCTION</button>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Callback / Punch List Hold ($)</label><input type="number" id="a_hold" min="0" placeholder="0"/><div class="hint">Withheld until walk-through passes.</div></div>
+          <div class="field"><label>Notes</label><input type="text" id="a_notes" placeholder="e.g. weather delay, material shortage..."/></div>
+        </div>
+      </div>
+
+      <!-- STEP 4 -->
+      <div class="content-body step-pane" data-pane="4" style="display:none">
+        <div id="finalPreview"></div>
+      </div>
+
+      <div class="content-foot">
+        <button class="btn ghost" id="prevBtn" onclick="prevStep()"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>PREVIOUS</button>
+        <div id="stepCounter" style="font-family:'Share Tech Mono',monospace;font-size:0.7em;color:var(--text-dim);letter-spacing:1px">STEP 1 OF 4</div>
+        <button class="btn primary" id="nextBtn" onclick="nextStep()">CONTINUE<svg viewBox="0 0 24 24"><polyline points="9 6 15 12 9 18"/></svg></button>
+      </div>
+    </div>
+
+    <!-- LIVE TOTAL -->
+    <div class="preview">
+      <div class="preview-head">
+        <div class="preview-title">PAY TOTAL</div>
+        <div class="preview-badge" id="pvBadge">DRAFT</div>
+      </div>
+      <div class="preview-body" id="livePreview"></div>
+    </div>
+
+  </div>
+</div>
+
+<script src="assets/ryujin-mode.js"></script>
+<script src="assets/ryujin-tenant.js"></script>
+<script src="assets/ryujin-persist.js"></script>
+<script src="assets/ryujin-api.js"></script>
+<script src="assets/ryujin-scenario.js"></script>
+<script src="assets/ryujin-xp.js"></script>
+<script src="assets/ryujin-mode-badge.js"></script>
+<script src="assets/ryujin-search.js"></script>
+<script>
+const state = {
+  step: 1,
+  job: null, sub: null,
+  period: { start: '', end: '' },
+  work: { sq: 0, base: 0, uplift: 0, days: 0, dayrate: 0, mats: 0 },
+  adj: { bonuses: [], deductions: [], hold: 0, notes: '' }
+};
+
+// Jobs — pulled from your actual Work Orders (localStorage), not hardcoded.
+function loadJobsFromWOs(){
+  try {
+    const r = localStorage.getItem('ry_v1_work_orders_v3');
+    if (!r) return [];
+    const wos = JSON.parse(r);
+    return wos.map(w => ({
+      id: w.num || w.client,
+      name: w.client + (w.address ? ' · ' + w.address.split(',')[0] : ''),
+      meta: (w.scope || '').slice(0, 80) + ' · ' + (w.tier || ''),
+      tag: w.status === 'complete' ? 'complete' : 'active',
+      val: '$' + (w.total || 0).toLocaleString('en-CA'),
+      sq: w.sq || 0
+    }));
+  } catch(e){ return []; }
+}
+const jobs = loadJobsFromWOs();
+
+// Subs — pulled from tenant config. Defaults to just the primary sub (Ryan · Atlantic Roofing).
+// You can add more crew via admin-tenant → sub list (when that UI ships).
+function loadSubsFromTenant(){
+  const t = (window.RyujinTenant && RyujinTenant.get()) || null;
+  if (!t || !t.sub || !t.sub.name) return [];
+  return [
+    { id: 'primary', name: (t.sub.contact ? t.sub.contact + ' · ' : '') + t.sub.name, rate: t.sub.rateSQ || 0, notes: 'Primary sub from tenant config' }
+  ];
+}
+const subs = loadSubsFromTenant();
+
+function money(n){ if(!n && n !== 0) return '—'; return '$' + Math.round(n).toLocaleString('en-CA'); }
+
+/* Calc */
+function calcTotal(){
+  const w = state.work;
+  const perSq = ((Number(w.base)||0) + (Number(w.uplift)||0)) * (Number(w.sq)||0);
+  const daily = (Number(w.dayrate)||0) * (Number(w.days)||0);
+  const mats = Number(w.mats) || 0;
+  const bonuses = state.adj.bonuses.reduce((a,b) => a + (Number(b.amt)||0), 0);
+  const deductions = state.adj.deductions.reduce((a,d) => a + (Number(d.amt)||0), 0);
+  const hold = Number(state.adj.hold) || 0;
+  const gross = perSq + daily + mats + bonuses;
+  const net = gross - deductions - hold;
+  return { perSq, daily, mats, bonuses, deductions, hold, gross, net };
+}
+
+/* Render */
+function renderJobList(){
+  const wrap = document.getElementById('jobList');
+  if (!jobs.length) {
+    wrap.innerHTML = `<div style="padding:30px 24px;text-align:center;color:var(--text-muted);font-size:0.88em;line-height:1.55">No jobs available.<br><span style="font-family:'Share Tech Mono',monospace;font-size:0.82em;color:var(--text-dim)">Create a <a href="production-workorders.html" style="color:var(--accent);text-decoration:none;font-weight:700">Work Order</a> first — jobs pull from there automatically.</span></div>`;
+    return;
+  }
+  wrap.innerHTML = jobs.map(j => `
+    <div class="job-row ${state.job === j.id ? 'selected' : ''}" onclick="pickJob('${j.id}')">
+      <div><div class="job-name">${j.name}</div><div class="job-meta">${j.meta}</div></div>
+      <div style="display:flex;align-items:center;gap:8px"><span class="job-tag ${j.tag}">${j.tag.toUpperCase()}</span><span style="font-family:'Orbitron',sans-serif;font-weight:700;font-size:0.82em;color:var(--accent)">${j.val}</span></div>
+    </div>
+  `).join('');
+}
+function pickJob(id){ state.job = id; renderJobList(); updateTitle(); renderPreview(); renderSummary();
+  // Auto-fill SQ from the work order
+  const j = jobs.find(x => x.id === id);
+  if (j && j.sq) { state.work.sq = j.sq; const el = document.getElementById('w_sq'); if (el) el.value = j.sq; renderPreview(); renderSummary(); }
+}
+
+function renderSubs(){
+  const wrap = document.getElementById('subGrid');
+  if (!subs.length) {
+    wrap.innerHTML = `<div style="padding:24px;grid-column:1/-1;text-align:center;color:var(--text-muted);font-size:0.88em;line-height:1.55">No sub-contractors configured yet.<br><span style="font-family:'Share Tech Mono',monospace;font-size:0.82em;color:var(--text-dim)">Set your primary sub in <a href="admin-tenant.html" style="color:var(--accent);text-decoration:none;font-weight:700">Admin → Branding</a>.</span></div>`;
+    return;
+  }
+  wrap.innerHTML = subs.map(s => `
+    <div class="sub-choice ${state.sub === s.id ? 'selected' : ''}" onclick="pickSub('${s.id}')">
+      <div class="sub-name">${s.name}</div>
+      <div class="sub-rate">$${s.rate}/SQ</div>
+      <div class="sub-notes">${s.notes}</div>
+    </div>
+  `).join('');
+}
+function pickSub(id){
+  state.sub = id;
+  const s = subs.find(x => x.id === id);
+  if (s && s.rate) { state.work.base = s.rate; document.getElementById('w_base').value = s.rate; }
+  renderSubs(); renderPreview(); renderSummary(); updateTitle();
+}
+
+function addBonus(){ state.adj.bonuses.push({ desc:'', amt:0 }); renderAdjLists(); }
+function addDeduction(){ state.adj.deductions.push({ desc:'', amt:0 }); renderAdjLists(); }
+function removeAdj(kind, idx){ state.adj[kind].splice(idx, 1); renderAdjLists(); renderPreview(); renderSummary(); }
+function updateAdj(kind, idx, field, val){ state.adj[kind][idx][field] = field === 'amt' ? Number(val)||0 : val; renderPreview(); renderSummary(); }
+
+function renderAdjLists(){
+  const buildList = (kind, items) => items.map((x,i) => `
+    <div class="adj-row">
+      <input class="adj-desc" placeholder="${kind==='bonuses'?'e.g. Grand Manor uplift':'e.g. Material advance paid'}" value="${x.desc}" oninput="updateAdj('${kind}',${i},'desc',this.value)"/>
+      <input class="adj-amt" type="number" min="0" placeholder="0" value="${x.amt||''}" oninput="updateAdj('${kind}',${i},'amt',this.value)"/>
+      <button onclick="removeAdj('${kind}',${i})">×</button>
+    </div>
+  `).join('');
+  document.getElementById('bonusList').innerHTML = buildList('bonuses', state.adj.bonuses) || '<div class="hint" style="padding:4px 0">No bonuses yet.</div>';
+  document.getElementById('deductionList').innerHTML = buildList('deductions', state.adj.deductions) || '<div class="hint" style="padding:4px 0">No deductions yet.</div>';
+}
+
+function renderPreview(){
+  const el = document.getElementById('livePreview');
+  if (!state.job || !state.sub) {
+    el.innerHTML = `<div class="empty-hint">Pick a job and sub to see pay total.</div>`;
+    return;
+  }
+  const t = calcTotal();
+  const sub = subs.find(s => s.id === state.sub);
+  const job = jobs.find(j => j.id === state.job);
+  const lines = [];
+  const push = (n, v, cls) => { if (v && v !== 0) lines.push(`<div class="pv-line ${cls||''}"><span class="n">${n}</span><span class="v">${money(v)}</span></div>`); };
+  push(`SQ work (${state.work.sq||0} × $${(Number(state.work.base)||0) + (Number(state.work.uplift)||0)})`, t.perSq);
+  push('Day rate × days', t.daily);
+  push('Materials pickup', t.mats);
+  push('Bonuses', t.bonuses, 'pos');
+  push('Deductions', -t.deductions, 'neg');
+  push('Hold (callback)', -t.hold, 'neg');
+
+  el.innerHTML = `
+    <div class="pv-section">
+      <div class="pv-lbl">Job &amp; Sub</div>
+      <div class="pv-line"><span class="n">Job</span><span class="v" style="font-size:0.85em">${job ? job.name.split(' · ')[0] : '—'}</span></div>
+      <div class="pv-line"><span class="n">Sub</span><span class="v" style="font-size:0.85em">${sub ? sub.name : '—'}</span></div>
+    </div>
+    <div class="pv-section">
+      <div class="pv-lbl">Line items</div>
+      ${lines.join('') || '<div class="empty-hint">No work logged yet.</div>'}
+    </div>
+    <div class="pv-section">
+      <div class="pv-line"><span class="n">Gross</span><span class="v">${money(t.gross)}</span></div>
+      <div class="pv-line neg"><span class="n">Deductions + Hold</span><span class="v">${money(-(t.deductions+t.hold))}</span></div>
+    </div>
+    <div class="pv-total"><span class="l">NET PAY</span><span class="v">${money(t.net)}</span></div>
+  `;
+}
+
+function renderSummary(){
+  const el = document.getElementById('stepSummary');
+  const parts = [];
+  const sub = subs.find(s => s.id === state.sub);
+  const job = jobs.find(j => j.id === state.job);
+  if (job) parts.push(`<div class="summary-row"><b>Job</b>${job.name}</div>`);
+  if (sub) parts.push(`<div class="summary-row"><b>Sub</b>${sub.name}</div>`);
+  if (state.period.start) parts.push(`<div class="summary-row">Period: ${state.period.start}${state.period.end?' → '+state.period.end:''}</div>`);
+  if (state.work.sq) parts.push(`<div class="summary-row">${state.work.sq} SQ @ $${(Number(state.work.base)||0)+(Number(state.work.uplift)||0)}/SQ</div>`);
+  if (!parts.length) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="summary-head">Pay Sheet Summary</div>${parts.join('')}`;
+}
+
+function updateTitle(){
+  const tbl = document.getElementById('tbTitle');
+  const job = jobs.find(j => j.id === state.job);
+  const sub = subs.find(s => s.id === state.sub);
+  const parts = ['PAY SHEET'];
+  if (job) parts.push(job.name.split(' · ')[0].toUpperCase());
+  else parts.push('UNTITLED');
+  if (sub) parts.push(sub.name.toUpperCase());
+  tbl.textContent = parts.join(' · ');
+}
+
+function renderFinal(){
+  const t = calcTotal();
+  const sub = subs.find(s => s.id === state.sub);
+  const job = jobs.find(j => j.id === state.job);
+  const today = new Date().toLocaleDateString('en-CA', { year:'numeric', month:'short', day:'numeric' });
+
+  const rows = [];
+  const addRow = (n, v, neg) => { if (v && v !== 0) rows.push(`<tr><td>${n}</td><td class="v" style="${neg?'color:var(--red)':''}">${money(v)}</td></tr>`); };
+  if (state.work.sq && (state.work.base || state.work.uplift)) addRow(`${state.work.sq} SQ × $${(Number(state.work.base)||0)+(Number(state.work.uplift)||0)}/SQ`, t.perSq);
+  if (t.daily) addRow(`Day rate · ${state.work.days} days`, t.daily);
+  if (t.mats) addRow('Materials pickup', t.mats);
+  state.adj.bonuses.forEach(b => { if (b.amt) addRow(`BONUS · ${b.desc || 'bonus'}`, b.amt); });
+  state.adj.deductions.forEach(d => { if (d.amt) addRow(`DEDUCT · ${d.desc || 'deduction'}`, -d.amt, true); });
+  if (t.hold) addRow('Callback hold (released on sign-off)', -t.hold, true);
+
+  document.getElementById('finalPreview').innerHTML = `
+    <div class="final-doc">
+      <h3>PAY SHEET — PLUS ULTRA ROOFING</h3>
+      <div class="meta-row"><span>${today}</span><span>${state.period.start || ''} ${state.period.end ? '→ '+state.period.end : ''}</span></div>
+
+      <p><strong>Job:</strong> ${job ? job.name : '—'}<br/>
+      <strong>Subcontractor:</strong> ${sub ? sub.name : '—'}<br/>
+      <strong>Rate:</strong> $${(Number(state.work.base)||0) + (Number(state.work.uplift)||0)}/SQ ${state.work.uplift ? `(base $${state.work.base} + uplift $${state.work.uplift})` : ''}</p>
+
+      <table class="line-table">
+        <thead><tr><th>Line item</th><th style="text-align:right">Amount</th></tr></thead>
+        <tbody>${rows.join('') || '<tr><td colspan="2" style="color:var(--text-muted);text-align:center;padding:16px">No line items yet</td></tr>'}</tbody>
+        <tfoot>
+          <tr><td>Gross</td><td class="v">${money(t.gross)}</td></tr>
+          <tr><td>Deductions + Hold</td><td class="v" style="color:var(--red)">${money(-(t.deductions+t.hold))}</td></tr>
+          <tr><td>NET PAY</td><td class="v">${money(t.net)}</td></tr>
+        </tfoot>
+      </table>
+
+      ${state.adj.notes ? `<p><strong>Notes.</strong> ${state.adj.notes}</p>` : ''}
+      <p><strong>Payment method.</strong> E-transfer to sub's registered email within 48h of pay sheet approval.</p>
+      <p style="color:var(--text-dim);font-size:0.78em">Plus Ultra Roofing · (506) 540-1052 · plusultraroofing@gmail.com</p>
+    </div>
+  `;
+}
+
+/* Step nav */
+function goToStep(n){
+  state.step = n;
+  document.querySelectorAll('.step-item').forEach(el => el.classList.toggle('active', parseInt(el.dataset.step) === n));
+  document.querySelectorAll('.step-pane').forEach(p => p.style.display = parseInt(p.dataset.pane) === n ? 'block' : 'none');
+  const titles = ['', 'Job & Sub', 'Work Completed', 'Adjustments', 'Review & Send'];
+  const subsH = ['', 'Which job and which sub are we paying for?', 'Rates, squares, days worked.', 'Bonuses, deductions, callback holds.', 'Review and export the pay sheet.'];
+  document.getElementById('stepTitle').textContent = titles[n];
+  document.getElementById('stepSub').textContent = subsH[n];
+  document.getElementById('stepCounter').textContent = `STEP ${n} OF 4`;
+  document.getElementById('prevBtn').style.visibility = n === 1 ? 'hidden' : 'visible';
+  document.getElementById('nextBtn').innerHTML = n === 4 ? 'EXPORT PDF<svg viewBox="0 0 24 24"><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>' : 'CONTINUE<svg viewBox="0 0 24 24"><polyline points="9 6 15 12 9 18"/></svg>';
+  if (n === 4) renderFinal();
+}
+function nextStep(){ if (state.step >= 4) return exportPdf(); goToStep(state.step + 1); }
+function prevStep(){ if (state.step <= 1) return; goToStep(state.step - 1); }
+
+/* Actions */
+function saveDraft(){
+  RyujinStore.save('paysheet_draft', state);
+  toast('Pay sheet saved');
+}
+function exportPdf(){
+  if (state.step !== 4) { goToStep(4); setTimeout(() => window.print(), 350); return; }
+  window.print();
+}
+function exportJSON(){
+  const data = { generatedAt: new Date().toISOString(), ...state, total: calcTotal() };
+  const sub = subs.find(s => s.id === state.sub);
+  const job = jobs.find(j => j.id === state.job);
+  const name = ((job?.name || 'paysheet') + '-' + (sub?.name || '')).toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
+  RyujinActions.downloadJSON('paysheet-' + name + '.json', data);
+  toast('Pay sheet exported');
+}
+function markPaid(){
+  if (!state.job || !state.sub) { toast('Pick a job and sub first'); goToStep(1); return; }
+  state.paid = { at: new Date().toISOString(), total: calcTotal().net };
+  // Archive this pay sheet
+  const history = RyujinStore.load('paysheet_history', []);
+  history.push({ ts: state.paid.at, job: state.job, sub: state.sub, net: state.paid.total });
+  RyujinStore.save('paysheet_history', history.slice(-50));
+  document.getElementById('pvBadge').textContent = 'PAID';
+  document.getElementById('pvBadge').style.background = 'rgba(74,222,128,0.15)';
+  document.getElementById('pvBadge').style.color = 'var(--green)';
+  document.getElementById('pvBadge').style.borderColor = 'rgba(74,222,128,0.3)';
+  toast('Marked paid \u00B7 $' + calcTotal().net.toLocaleString() + ' \u00B7 logged to history');
+}
+function loadDraft(){
+  const saved = RyujinStore.load('paysheet_draft');
+  if (!saved || !saved.job) return;
+  if (!confirm('Resume saved pay sheet draft for ' + (jobs.find(j => j.id === saved.job)?.name || 'unknown') + '?')) return;
+  Object.assign(state, saved);
+  // Restore UI
+  if (state.job) pickJob(state.job);
+  if (state.sub) pickSub(state.sub);
+  ['sq','base','uplift','days','dayrate','mats'].forEach(k => { if (state.work[k]) document.getElementById('w_' + k).value = state.work[k]; });
+  if (state.period.start) document.getElementById('p_start').value = state.period.start;
+  if (state.period.end) document.getElementById('p_end').value = state.period.end;
+  if (state.adj.hold) document.getElementById('a_hold').value = state.adj.hold;
+  if (state.adj.notes) document.getElementById('a_notes').value = state.adj.notes;
+  renderAdjLists(); renderPreview(); renderSummary(); updateTitle();
+  toast('Draft loaded');
+}
+window.exportJSON = exportJSON;
+window.loadDraft = loadDraft;
+document.addEventListener('keydown', e => { if (e.key === 'Escape') goBack(); });
+document.addEventListener('contextmenu', e => { e.preventDefault(); goBack(); });
+
+function goBack(){
+  if (window.parent !== window && window.parent.exitSectionOverlay) { window.parent.location.href = 'production.html'; return; }
+  window.location.href = 'production.html';
+}
+function toast(msg){
+  const t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = 'position:fixed;bottom:40px;left:50%;transform:translateX(-50%);background:rgba(6,12,24,0.95);border:1px solid var(--border-hi);color:var(--accent);padding:10px 20px;border-radius:10px;font-family:Orbitron,sans-serif;font-size:0.74em;font-weight:700;letter-spacing:1.5px;z-index:999;box-shadow:0 6px 24px rgba(0,0,0,0.5),0 0 20px rgba(251,146,60,0.2)';
+  document.body.appendChild(t);
+  setTimeout(() => { t.style.transition = 'opacity 0.4s'; t.style.opacity = '0'; setTimeout(() => t.remove(), 500); }, 2400);
+}
+
+/* Wire inputs */
+['p_start','p_end'].forEach(id => document.getElementById(id).addEventListener('input', e => { state.period[id.slice(2)] = e.target.value; renderSummary(); }));
+['w_sq','w_base','w_uplift','w_days','w_dayrate','w_mats'].forEach(id => document.getElementById(id).addEventListener('input', e => { state.work[id.slice(2)] = Number(e.target.value) || 0; renderPreview(); renderSummary(); }));
+document.getElementById('a_hold').addEventListener('input', e => { state.adj.hold = Number(e.target.value) || 0; renderPreview(); renderSummary(); });
+document.getElementById('a_notes').addEventListener('input', e => { state.adj.notes = e.target.value; });
+
+/* Init */
+renderJobList(); renderSubs(); renderAdjLists(); renderPreview(); renderSummary(); updateTitle();
+goToStep(1);
+
+// Pre-fill from ?job= param or resume draft
+const pre = new URLSearchParams(location.search).get('job');
+if (pre) { const j = jobs.find(jj => jj.id === pre); if (j) pickJob(j.id); }
+else { setTimeout(loadDraft, 400); }
+</script>
+
+<script src="assets/ryujin-tutor.js"></script>
+<script src="assets/ryujin-auto-tutor.js"></script>
+<script src="assets/ryujin-prod-nav.js"></script>
+</body>
+</html>

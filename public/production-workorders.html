@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ryujin OS · Work Orders</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root{--accent:#fb923c;--border:rgba(251,146,60,0.24);--border-hi:rgba(251,146,60,0.55);
+  --text:#e0e6f0;--text-dim:rgba(160,190,230,0.62);--text-muted:rgba(140,170,220,0.32);
+  --green:#4ade80;--red:#f87171;--yellow:#facc15;--cyan:#22d3ee}
+*{margin:0;padding:0;box-sizing:border-box}html,body{height:100%}
+body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:var(--text);overflow:hidden}
+.bg{position:fixed;inset:0;z-index:0;background:radial-gradient(ellipse at 35% 25%,rgba(251,146,60,0.08),transparent 55%),linear-gradient(180deg,#060a14,#030611)}
+.bg-grid{position:fixed;inset:0;z-index:1;pointer-events:none;background-image:linear-gradient(rgba(251,146,60,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(251,146,60,0.025) 1px,transparent 1px);background-size:48px 48px;mask-image:radial-gradient(ellipse at center,black 40%,transparent 85%);-webkit-mask-image:radial-gradient(ellipse at center,black 40%,transparent 85%)}
+.app{position:relative;z-index:2;height:100vh;display:grid;grid-template-rows:56px 1fr;gap:10px;padding:10px 12px}
+
+.topbar{display:flex;align-items:center;gap:12px;background:rgba(14,22,40,0.82);border:1px solid var(--border);border-radius:14px;padding:0 14px;backdrop-filter:blur(20px);position:relative;overflow:hidden}
+.topbar::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),var(--red),transparent);opacity:0.5}
+.brand{display:flex;align-items:center;gap:10px}
+.brand-mark{width:30px;height:30px;border-radius:7px;background:radial-gradient(circle at 35% 30%,rgba(255,220,200,0.3),rgba(251,146,60,0.22) 40%,rgba(30,10,5,0.8));box-shadow:0 0 14px rgba(251,146,60,0.35)}
+.brand-name{font-family:'Orbitron',sans-serif;font-size:0.82em;font-weight:800;letter-spacing:2.5px}
+.brand-name .dim{color:var(--text-dim);font-weight:500;letter-spacing:2px;margin-left:8px}
+.tb-spacer{flex:1}
+.btn{padding:8px 14px;border-radius:9px;font-family:'Orbitron',sans-serif;font-size:0.68em;font-weight:700;letter-spacing:1.5px;cursor:pointer;transition:all 0.2s;border:1px solid;display:inline-flex;align-items:center;gap:8px;text-decoration:none}
+.btn svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.btn.ghost{background:rgba(6,10,20,0.6);border-color:var(--border);color:var(--text-dim)}
+.btn.ghost:hover{border-color:var(--border-hi);color:var(--accent)}
+.btn.primary{background:linear-gradient(135deg,var(--accent),#c2410c);border-color:var(--accent);color:#0a0604;box-shadow:0 0 16px rgba(251,146,60,0.35)}
+.btn.primary:hover{filter:brightness(1.1)}
+.btn.success{background:linear-gradient(135deg,var(--green),#16a34a);border-color:var(--green);color:#05180a;box-shadow:0 0 16px rgba(74,222,128,0.35)}
+
+/* Layout */
+.main{display:grid;grid-template-columns:300px 1fr;gap:10px;min-height:0}
+.panel{background:rgba(14,22,40,0.78);border:1px solid var(--border);border-radius:14px;backdrop-filter:blur(14px);display:flex;flex-direction:column;min-height:0;overflow:hidden;position:relative}
+.panel::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:0.5}
+.panel-head{padding:14px 18px;border-bottom:1px solid rgba(251,146,60,0.12)}
+.panel-title{font-family:'Orbitron',sans-serif;font-size:0.68em;font-weight:800;letter-spacing:2.5px;color:var(--accent);text-transform:uppercase}
+.panel-sub{font-family:'Share Tech Mono',monospace;font-size:0.68em;color:var(--text-muted);letter-spacing:1px;margin-top:3px}
+.panel-body{flex:1;overflow-y:auto}
+
+/* Left: WO list */
+.wo-item{padding:14px 18px;border-bottom:1px solid rgba(251,146,60,0.08);cursor:pointer;transition:all 0.15s;position:relative}
+.wo-item:hover{background:rgba(251,146,60,0.04)}
+.wo-item.on{background:rgba(251,146,60,0.08)}
+.wo-item.on::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent)}
+.wo-num{font-family:'Share Tech Mono',monospace;font-size:0.68em;color:var(--text-muted);letter-spacing:1.2px}
+.wo-client{font-family:'Orbitron',sans-serif;font-weight:800;font-size:0.86em;letter-spacing:0.5px;margin:3px 0 2px}
+.wo-addr{font-size:0.76em;color:var(--text-dim)}
+.wo-foot{display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-family:'Share Tech Mono',monospace;font-size:0.7em;letter-spacing:0.8px}
+.wo-foot .st{padding:2px 8px;border-radius:4px}
+.wo-foot .st.draft{background:rgba(160,190,230,0.12);color:var(--text-dim)}
+.wo-foot .st.scheduled{background:rgba(34,211,238,0.12);color:var(--cyan);border:1px solid rgba(34,211,238,0.3)}
+.wo-foot .st.active{background:rgba(250,204,21,0.12);color:var(--yellow);border:1px solid rgba(250,204,21,0.3)}
+.wo-foot .st.complete{background:rgba(74,222,128,0.12);color:var(--green);border:1px solid rgba(74,222,128,0.3)}
+.wo-foot .v{font-family:'Orbitron',sans-serif;font-weight:700;color:var(--accent)}
+
+/* Right: WO detail */
+.wo-detail-head{padding:20px 24px 16px;border-bottom:1px solid rgba(251,146,60,0.12);display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.wo-detail-num{font-family:'Share Tech Mono',monospace;font-size:0.72em;color:var(--text-muted);letter-spacing:2px;margin-bottom:6px}
+.wo-detail-client{font-family:'Orbitron',sans-serif;font-weight:900;font-size:1.5em;letter-spacing:0.5px;margin-bottom:4px}
+.wo-detail-addr{font-size:0.92em;color:var(--text-dim)}
+.wo-detail-meta{display:flex;gap:16px;font-family:'Share Tech Mono',monospace;font-size:0.72em;color:var(--text-dim);letter-spacing:1px;margin-top:10px}
+.wo-detail-meta b{color:var(--accent)}
+.wo-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+.wo-body{padding:20px 24px;display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.wo-card{background:rgba(6,10,20,0.55);border:1px solid rgba(251,146,60,0.12);border-radius:11px;padding:16px 18px}
+.wo-card h4{font-family:'Orbitron',sans-serif;font-size:0.66em;font-weight:800;letter-spacing:2px;color:var(--accent);margin-bottom:12px;text-transform:uppercase;border-bottom:1px dashed rgba(251,146,60,0.2);padding-bottom:8px}
+.wo-kv{display:flex;justify-content:space-between;padding:6px 0;font-size:0.88em;border-bottom:1px solid rgba(251,146,60,0.05)}
+.wo-kv:last-child{border-bottom:none}
+.wo-kv .k{color:var(--text-dim)}
+.wo-kv .v{color:var(--text);font-weight:600}
+
+.wo-tasks{grid-column:1 / -1}
+.wo-task{display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid rgba(251,146,60,0.06)}
+.wo-task:last-child{border-bottom:none}
+.wo-check{width:22px;height:22px;border:1.5px solid rgba(251,146,60,0.35);border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all 0.15s}
+.wo-check.on{background:var(--accent);border-color:var(--accent);color:#0a0604}
+.wo-check svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:3;stroke-linecap:round;display:none}
+.wo-check.on svg{display:block}
+.wo-task-body{flex:1}
+.wo-task-title{font-size:0.92em;color:var(--text);font-weight:500;margin-bottom:3px}
+.wo-task-meta{font-family:'Share Tech Mono',monospace;font-size:0.7em;color:var(--text-muted);letter-spacing:0.5px}
+
+.wo-notes{grid-column:1 / -1}
+.wo-notes textarea{width:100%;min-height:100px;background:rgba(6,10,20,0.7);border:1px solid rgba(251,146,60,0.2);border-radius:10px;padding:12px 14px;color:var(--text);font-family:'Inter',sans-serif;font-size:0.9em;resize:vertical;line-height:1.5}
+.wo-notes textarea:focus{outline:none;border-color:var(--border-hi)}
+
+.new-btn{width:100%;padding:14px;background:linear-gradient(135deg,rgba(251,146,60,0.12),rgba(194,65,12,0.06));border:1px dashed var(--border-hi);border-radius:11px;color:var(--accent);font-family:'Orbitron',sans-serif;font-weight:800;font-size:0.72em;letter-spacing:2px;cursor:pointer;transition:all 0.2s;margin:12px}
+.new-btn:hover{background:rgba(251,146,60,0.15)}
+
+@media (max-width: 980px){
+  .main{grid-template-columns:1fr}
+  .wo-body{grid-template-columns:1fr}
+}
+
+@media print{
+  .bg,.bg-grid,.topbar,.panel:first-child,.wo-actions{display:none!important}
+  body{background:#fff!important;color:#000!important}
+  .panel{background:#fff!important;border:none!important}
+  .wo-card{border:1px solid #ccc!important;background:#fff!important}
+  .wo-detail-client,.wo-card h4,.panel-title{color:#0a1530!important;-webkit-text-fill-color:#0a1530!important}
+}
+
+
+/* Mobile — tool pages should be scrollable and stack columns */
+@media (max-width: 900px){
+  html,body{overflow:auto!important;height:auto!important;min-height:100%}
+  body{overflow-x:hidden}
+  .app{height:auto!important;min-height:100vh;grid-template-rows:auto auto 1fr!important;padding:8px 8px}
+  .topbar{position:sticky;top:0;z-index:15;flex-wrap:wrap;padding:8px 12px!important;height:auto!important;gap:6px}
+  .topbar .btn,.topbar .tb-icon{padding:6px 9px;font-size:0.6em;letter-spacing:0.8px}
+  .topbar .btn svg,.topbar .tb-icon svg{width:12px;height:12px}
+  .topbar .brand-name{font-size:0.7em}
+  .tb-spacer{display:none}
+  .main{grid-template-columns:1fr!important;grid-auto-rows:auto!important;gap:10px}
+  .panel{max-height:none;min-height:280px}
+  .panel-head{padding:12px 14px!important;flex-wrap:wrap;gap:8px}
+  .panel-body{padding:10px 12px!important}
+  .field-row,.field-row.three{grid-template-columns:1fr!important}
+  /* Pay sheet 3-col → 1-col */
+  .step-nav{order:-1;max-height:none;padding:10px!important}
+  .content-body{padding:14px 16px!important}
+  .content-foot{flex-direction:column;gap:6px;padding:10px!important}
+  .content-foot .btn{width:100%;justify-content:center}
+}
+</style>
+</head>
+<body data-prod-tool="wo">
+
+<div class="bg"></div>
+<div class="bg-grid"></div>
+
+<div class="app">
+  <div class="topbar">
+    <button class="btn ghost" onclick="goBack()" title="Back to Production"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
+    <div class="brand"><div class="brand-mark"></div><div class="brand-name">RYUJIN <span class="dim">· WORK ORDERS</span></div></div>
+    <div class="tb-spacer"></div>
+    <button class="btn ghost" onclick="printWO()"><svg viewBox="0 0 24 24"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>PRINT</button>
+    <button class="btn ghost" onclick="smsToForeman()"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>SMS FOREMAN</button>
+    <button class="btn success" onclick="markActive()"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>MARK ACTIVE</button>
+    <a class="btn ghost" href="command-center.html"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>MAIN MENU</a>
+  </div>
+
+  <div class="main">
+
+    <!-- LEFT: list -->
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">Work Orders</div>
+        <div class="panel-sub" id="listCount">— orders</div>
+      </div>
+      <div class="panel-body">
+        <div id="woList"></div>
+        <button class="new-btn" onclick="newWO()">+ NEW WORK ORDER</button>
+      </div>
+    </div>
+
+    <!-- RIGHT: detail -->
+    <div class="panel">
+      <div id="woDetail"></div>
+    </div>
+
+  </div>
+</div>
+
+<script src="assets/ryujin-mode.js"></script>
+<script src="assets/ryujin-tenant.js"></script>
+<script src="assets/ryujin-persist.js"></script>
+<script src="assets/ryujin-api.js"></script>
+<script src="assets/ryujin-scenario.js"></script>
+<script src="assets/ryujin-xp.js"></script>
+<script src="assets/ryujin-mode-badge.js"></script>
+<script>
+
+// ── Real Plus Ultra signed jobs (sourced from Estimator OS as of April 19, 2026) ──
+// Sub-crew pulled from tenant config (Ryan · Atlantic Roofing by default).
+// Edit any WO in place or add more via "+ NEW WORK ORDER".
+const SUB_CREW = (window.RyujinTenant && RyujinTenant.get().sub && RyujinTenant.get().sub.name)
+  ? ((RyujinTenant.get().sub.contact ? RyujinTenant.get().sub.contact + ' · ' : '') + RyujinTenant.get().sub.name)
+  : 'Ryan · Atlantic Roofing';
+
+const DEFAULT_WOS = [
+  {
+    num: 'WO-SEYEAU-01', status: 'active', matJobId: '',
+    client: 'Richard Seyeau', address: '10 Edgewater Dr, Shediac NB', phone: '', email: 'richardwseyeau@gmail.com',
+    scope: 'Mansard finish + caulk remediation (balance work from initial install)',
+    sq: 9, system: 'asphalt', tier: 'Gold', start: '2026-04-22', days: 2,
+    crew: 'AJ (site supervisor) · Diego (material haul)', total: 15450, deposit: 10300,
+    tasks: [
+      { t: 'Site walk-through — punch list review with Richard', m: 'Day 1 AM' },
+      { t: 'Mansard shingle finish', m: 'Day 1' },
+      { t: 'Caulk + flashing remediation', m: 'Day 1 PM' },
+      { t: 'Photo documentation — before/after', m: 'ongoing' },
+      { t: 'Final walk-through + sign-off', m: 'Day 2 PM' },
+      { t: 'Invoice final balance', m: 'after sign-off' }
+    ],
+    notes: 'Balance work from initial install. Fund release was delayed — make sure final walkthrough sign-off is documented before invoicing. AJ on site, Diego handling material.'
+  },
+  {
+    num: 'WO-ARZAGA-02', status: 'scheduled', matJobId: '',
+    client: 'Mark Arzaga', address: '105 Rue Fortune, Dieppe NB', phone: '(506) 269-7784', email: '',
+    scope: 'Full tear-off + CertainTeed Landmark · 27 SQ · 7/12-9/12 pitch · Platinum tier',
+    sq: 27, system: 'asphalt', tier: 'Platinum', start: '2026-04-28', days: 3,
+    crew: SUB_CREW, total: 18583, deposit: 6200,
+    tasks: [
+      { t: 'Prep + landscape protection', m: 'Day 1 AM' },
+      { t: 'Full tear-off to deck', m: 'Day 1' },
+      { t: 'Substrate inspection + rot repair if needed', m: 'Day 1 PM · photos' },
+      { t: 'Ice & water shield — eaves + valleys', m: 'Day 2 AM' },
+      { t: 'Synthetic underlayment full deck', m: 'Day 2' },
+      { t: 'Drip edge + step flashings', m: 'Day 2' },
+      { t: 'Shingle install — 27 SQ Platinum', m: 'Day 2-3' },
+      { t: 'Ridge cap + vent', m: 'Day 3' },
+      { t: 'Magnet sweep + debris haul', m: 'Day 3 end' },
+      { t: 'Customer walkthrough + sign-off', m: 'Day 3 PM' }
+    ],
+    notes: 'Accepted Apr 13. 7/12-9/12 pitch — steep access. Darcy is sales owner. Standard Platinum scope.'
+  },
+  {
+    num: 'WO-NORTHRUP-03', status: 'scheduled', matJobId: '',
+    client: 'Brian Northrup', address: '79 Willow St, Amherst NS', phone: '(902) 699-9024', email: 'briannorthrup1936@gmail.com',
+    scope: 'Full tear-off + CertainTeed Landmark · 11 SQ · 4/12 pitch · Platinum tier · Out-of-town',
+    sq: 11, system: 'asphalt', tier: 'Platinum', start: '2026-05-02', days: 2,
+    crew: SUB_CREW, total: 9189, deposit: 3100,
+    tasks: [
+      { t: 'Prep + travel (Amherst · 100 km out)', m: 'Day 1 AM' },
+      { t: 'Tear-off to deck', m: 'Day 1' },
+      { t: 'Ice & water + underlayment', m: 'Day 1 PM' },
+      { t: 'Drip edge + flashings', m: 'Day 2 AM' },
+      { t: 'Shingle install — 11 SQ', m: 'Day 2' },
+      { t: 'Ridge vent', m: 'Day 2' },
+      { t: 'Cleanup + walkthrough', m: 'Day 2 end' },
+      { t: 'Invoice balance', m: 'after sign-off' }
+    ],
+    notes: 'Accepted Apr 13. Out-of-town job — build travel time into pay sheet. Small job (11 SQ) so 2-day target. Steel chimney.'
+  },
+  {
+    num: 'WO-PARDY-04', status: 'scheduled', matJobId: '',
+    client: 'Gary & Karen Pardy', address: '316 Pointe a Nicet Rd NB', phone: '', email: 'riversidehomesltd@gmail.com',
+    scope: 'Full roof replacement — scope being finalized',
+    sq: 0, system: 'asphalt', tier: 'Gold', start: '2026-05-05', days: 3,
+    crew: SUB_CREW, total: 0, deposit: 0,
+    tasks: [
+      { t: 'Finalize scope + measurements with customer', m: 'BEFORE START' },
+      { t: 'Confirm tier + color selection', m: 'BEFORE START' },
+      { t: 'Prep + landscape', m: 'Day 1' },
+      { t: 'Tear-off + substrate inspection', m: 'Day 1' },
+      { t: 'Ice & water + underlayment', m: 'Day 2' },
+      { t: 'Shingle install', m: 'Day 2-3' },
+      { t: 'Ridge vent + cleanup', m: 'Day 3' },
+      { t: 'Walkthrough + invoice', m: 'Day 3' }
+    ],
+    notes: 'Accepted Apr 13 but scope + measurements still to finalize. Confirm SQ, tier, color, start date before running this order. Contact via email.'
+  },
+  {
+    num: 'WO-FAULKNER-05', status: 'draft', matJobId: '',
+    client: 'Jim Faulkner', address: 'NB (address to confirm)', phone: '', email: '',
+    scope: 'Roof replacement — details to be gathered',
+    sq: 0, system: 'asphalt', tier: 'Gold', start: '', days: 3,
+    crew: SUB_CREW, total: 0, deposit: 0,
+    tasks: [
+      { t: 'GATHER: full address + phone + email', m: 'URGENT' },
+      { t: 'GATHER: measurements + tier + color', m: 'URGENT' },
+      { t: 'GATHER: start date preference', m: 'URGENT' },
+      { t: 'Send final agreement for signature', m: 'after scope' },
+      { t: 'Schedule crew', m: 'after signature' }
+    ],
+    notes: 'Accepted Apr 13 in Estimator OS but customer contact + scope details missing. Pull full record from Estimator OS #69 and populate.'
+  },
+  {
+    num: 'WO-FRAM-06', status: 'scheduled', matJobId: '',
+    client: 'Korey Fram', address: '25 Windyhill Road, Indian Mountain NB', phone: '(506) 863-8121', email: '',
+    scope: 'Full tear-off + CertainTeed Landmark · 21.45 SQ · up to 6/12 pitch · Platinum tier',
+    sq: 22, system: 'asphalt', tier: 'Platinum', start: '2026-05-12', days: 3,
+    crew: SUB_CREW, total: 14001, deposit: 4700,
+    tasks: [
+      { t: 'Prep + landscape protection', m: 'Day 1 AM' },
+      { t: 'Tear-off to deck', m: 'Day 1' },
+      { t: 'Substrate inspection', m: 'Day 1 PM · photos' },
+      { t: 'Ice & water + underlayment', m: 'Day 2 AM' },
+      { t: 'Drip edge + flashings', m: 'Day 2' },
+      { t: 'Shingle install — 22 SQ Platinum', m: 'Day 2-3' },
+      { t: 'Ridge vent', m: 'Day 3' },
+      { t: 'Cleanup + walkthrough', m: 'Day 3 end' }
+    ],
+    notes: 'Accepted Mar 20. Standard pitch — straightforward job. Indian Mountain — 30 min from Moncton.'
+  },
+  {
+    num: 'WO-SACKVILLE-07', status: 'active', matJobId: '',
+    client: '7 Main St · Sackville', address: '7 Main St, Sackville NB', phone: '', email: '',
+    scope: 'Siding + soffit + fascia + gutters replacement (full exterior)',
+    sq: 0, system: 'exterior', tier: 'Full Exterior', start: '2026-04-20', days: 4,
+    crew: 'Diego (siding/soffit/fascia + gutters) · Pavanjot (touch-ups + painting)', total: 0, deposit: 0,
+    tasks: [
+      { t: 'Current: Diego on siding + soffit + fascia + gutters', m: 'ACTIVE' },
+      { t: 'Current: Pavanjot on touch-ups + painting', m: 'ACTIVE' },
+      { t: 'Photo docs of every face', m: 'ongoing' },
+      { t: 'Final walkthrough with homeowner', m: 'End of project' },
+      { t: 'Invoice balance', m: 'after sign-off' }
+    ],
+    notes: 'Active exterior job. Diego + Pavanjot crew on-site. Pull exact contract total from Estimator OS.'
+  }
+];
+
+const DEFAULT_WOS_OLD = [
+  {
+    num: 'WO-0421-01', status: 'scheduled', matJobId: 'seyeau',
+    client: 'Richard Seyeau', address: '10 Edgewater, Riverview NB', phone: '(506) 555-0192', email: '',
+    scope: 'Mansard finish + caulk remediation (balance work from March install)',
+    sq: 9, system: 'asphalt', tier: 'Gold', start: '2026-04-22', days: 2,
+    crew: SUB_CREW, total: 15450, deposit: 10300,
+    tasks: [
+      { t: 'Site walk w/ Richard — punch list review', m: 'Day 1 AM' },
+      { t: 'Mansard shingle finish', m: 'Day 1' },
+      { t: 'Caulk + flashing remediation', m: 'Day 1 PM' },
+      { t: 'Photo documentation', m: 'ongoing' },
+      { t: 'Final walkthrough + sign-off', m: 'Day 2 PM' },
+      { t: 'Invoice final $5,150 balance', m: 'after sign-off' }
+    ],
+    notes: 'Balance from March install — funds were delayed. Complete the punch list, photo document everything, invoice final $5,150 on sign-off. Richard is sensitive to timelines — daily texts.'
+  },
+  {
+    num: 'WO-0422-02', status: 'scheduled', matJobId: 'faulkner',
+    client: 'Ezra Faulkner', address: '17 Glendale Terr, Moncton NB', phone: '(506) 555-0242', email: '',
+    scope: 'Full tear-off + CT Landmark Moire Black · 24 SQ · mansard + main · ridge vent',
+    sq: 24, system: 'asphalt', tier: 'Gold', start: '2026-04-23', days: 3,
+    crew: SUB_CREW, total: 14400, deposit: 4800,
+    tasks: [
+      { t: 'Tarps + landscape protection', m: 'Day 1 AM — PREP' },
+      { t: 'Full tear-off to deck', m: 'Day 1' },
+      { t: 'Substrate inspection + rot repairs', m: 'Day 1 PM · photos' },
+      { t: 'Ice & water shield — eaves + valleys', m: 'Day 2 AM' },
+      { t: 'Synthetic underlayment full deck', m: 'Day 2' },
+      { t: 'Drip edge + step flashings', m: 'Day 2' },
+      { t: 'Shingle install — 24 SQ Landmark Moire', m: 'Day 2-3' },
+      { t: 'Ridge cap + vent', m: 'Day 3' },
+      { t: 'Pipe boots + chimney saddle', m: 'Day 3' },
+      { t: 'Magnet sweep + debris haul', m: 'Day 3 end' },
+      { t: 'Customer walkthrough + sign-off', m: 'Day 3 PM' }
+    ],
+    notes: 'Faulkner is a lawyer — wants daily text updates. Dog gets anxious — secure gates. Ice + water to code, NOT just eaves. Expect possible north mansard rot ($2-4K change order likely).'
+  },
+  {
+    num: 'WO-0426-03', status: 'scheduled', matJobId: 'peach',
+    client: 'Shelagh Peach', address: '205 Collishaw St, Moncton NB', phone: '(506) 555-0120', email: '',
+    scope: 'Redeck (12 sheets OSB) + CT Landmark Weathered Wood · 20 SQ · ventilation upgrade',
+    sq: 20, system: 'asphalt', tier: 'Gold', start: '2026-04-28', days: 3,
+    crew: SUB_CREW, total: 12100, deposit: 4200,
+    tasks: [
+      { t: 'Prep + landscape tarps', m: 'Day 1 AM' },
+      { t: 'Tear-off + remove existing OSB', m: 'Day 1' },
+      { t: 'Structural inspection of trusses', m: 'Day 1 PM · photos' },
+      { t: 'Install new 7/16" OSB — 12 sheets', m: 'Day 1 evening' },
+      { t: 'Ice & water + underlayment', m: 'Day 2 AM' },
+      { t: 'Drip edge + flashings', m: 'Day 2' },
+      { t: 'Shingle install — Weathered Wood', m: 'Day 2-3' },
+      { t: 'Ridge + ventilation', m: 'Day 3' },
+      { t: 'Cleanup + magnet sweep', m: 'Day 3 end' }
+    ],
+    notes: 'Darcy presenting final numbers. Watch for hidden decking issues since we\'re already redecking — document and flag any additional rot to Darcy for approval.'
+  },
+  {
+    num: 'WO-0503-04', status: 'scheduled', matJobId: 'summerhill',
+    client: '178 Summerhill', address: '178 Summerhill, Moncton NB', phone: '', email: '',
+    scope: 'Gutter + downspout replacement · white 5" seamless · 9 sections',
+    sq: 0, system: 'asphalt', tier: 'Gutters', start: '2026-05-04', days: 1,
+    crew: SUB_CREW, total: 2850, deposit: 950,
+    tasks: [
+      { t: 'Remove existing gutters + downspouts', m: 'Morning' },
+      { t: 'Inspect fascia · replace rotten sections', m: 'Morning' },
+      { t: 'Install new seamless 5" white', m: 'Afternoon' },
+      { t: 'Downspouts + splash guards', m: 'Afternoon' },
+      { t: 'Cleanup + walkthrough', m: 'End of day' }
+    ],
+    notes: 'Single-day gutter job. Sterling delivery Wed. Simple in-and-out.'
+  },
+  {
+    num: 'WO-0509-05', status: 'scheduled', matJobId: 'cho',
+    client: 'Juniper Cho', address: '43 Lakeshore Ave, Moncton NB', phone: '(506) 555-0407', email: 'juniper.cho@example.com',
+    scope: 'Full reroof · Platinum tier · CT Designer series · 28 SQ · premium upgrade',
+    sq: 28, system: 'asphalt', tier: 'Platinum', start: '2026-05-09', days: 3,
+    crew: SUB_CREW, total: 22100, deposit: 7400,
+    tasks: [
+      { t: 'Prep + full landscape protection (premium client)', m: 'Day 1 AM' },
+      { t: 'Tear-off to deck', m: 'Day 1' },
+      { t: 'Substrate inspection · photo doc', m: 'Day 1 PM' },
+      { t: 'Ice & water shield (full eaves + valleys + penetrations)', m: 'Day 2 AM' },
+      { t: 'Synthetic underlayment', m: 'Day 2' },
+      { t: 'Premium drip edge + step flashings', m: 'Day 2' },
+      { t: 'Designer shingle install', m: 'Day 2-3' },
+      { t: 'Copper valleys (upgrade)', m: 'Day 3 AM' },
+      { t: 'Ridge cap + vent', m: 'Day 3' },
+      { t: 'Magnet sweep + pressure-wash driveway', m: 'Day 3 end' },
+      { t: 'Walkthrough + 50-yr warranty packet handoff', m: 'Day 3 PM' }
+    ],
+    notes: 'Platinum client — white-glove. 50-yr warranty filing. Hand-deliver packet at walkthrough. Ask for referral + testimonial at sign-off.'
+  }
+];
+
+// v4 storage key — seeded with real Plus Ultra signed jobs.
+// Bump this key when default data changes so users get fresh seed.
+const WO_KEY = 'ry_v1_work_orders_v4';
+function loadWOs(){
+  try {
+    const r = localStorage.getItem(WO_KEY);
+    if (r) return JSON.parse(r);
+  } catch(e){}
+  // First load: seed with current signed jobs
+  const seed = DEFAULT_WOS.map(wo => ({ ...wo, taskDone: {} }));
+  try { localStorage.setItem(WO_KEY, JSON.stringify(seed)); } catch(e){}
+  return seed;
+}
+function saveWOs(list){
+  try { localStorage.setItem(WO_KEY, JSON.stringify(list)); } catch(e){}
+}
+
+const wos = loadWOs();
+// If ?wo=WO-xxx is in URL, pre-select that work order (coming from Materials link)
+const urlWo = new URLSearchParams(location.search).get('wo');
+let selected = 0;
+if (urlWo) {
+  const idx = wos.findIndex(w => w.num === urlWo);
+  if (idx >= 0) selected = idx;
+}
+
+// ── Render ──
+function $(id){ return document.getElementById(id); }
+function fmt(n){ return '$' + Math.round(n).toLocaleString('en-CA'); }
+
+function renderList(){
+  $('listCount').textContent = wos.length + ' order' + (wos.length === 1 ? '' : 's');
+  if (!wos.length) {
+    $('woList').innerHTML = '<div style="padding:36px 24px;text-align:center;color:var(--text-muted);font-size:0.88em;line-height:1.6">No work orders yet.<br><span style="font-family:\'Share Tech Mono\',monospace;font-size:0.82em;color:var(--text-dim)">Click <b style="color:var(--accent)">+ NEW WORK ORDER</b> below to add your first one.</span></div>';
+    return;
+  }
+  $('woList').innerHTML = wos.map((w, i) => `
+    <div class="wo-item ${i === selected ? 'on' : ''}" onclick="selectWO(${i})">
+      <div class="wo-num">${w.num}</div>
+      <div class="wo-client">${w.client}</div>
+      <div class="wo-addr">${(w.address || '').split(',')[0]}</div>
+      <div class="wo-foot">
+        <span class="st ${w.status}">${w.status.toUpperCase()}</span>
+        <span class="v">${fmt(w.total)}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderDetail(){
+  const w = wos[selected];
+  if (!w) {
+    $('woDetail').innerHTML = `
+      <div style="padding:80px 40px;text-align:center">
+        <div style="width:72px;height:72px;margin:0 auto 18px;border-radius:18px;background:radial-gradient(circle at 35% 30%,rgba(255,220,200,0.25),rgba(251,146,60,0.2) 40%,rgba(10,5,2,0.9));border:1px solid rgba(251,146,60,0.35);display:flex;align-items:center;justify-content:center;color:var(--accent);box-shadow:0 0 22px rgba(251,146,60,0.15)">
+          <svg viewBox="0 0 24 24" style="width:34px;height:34px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/><line x1="9" y1="11" x2="15" y2="11"/></svg>
+        </div>
+        <h3 style="font-family:'Orbitron',sans-serif;font-weight:900;font-size:1.15em;letter-spacing:0.5px;color:var(--text);margin-bottom:10px">No work orders yet</h3>
+        <p style="color:var(--text-dim);font-size:0.92em;line-height:1.55;max-width:420px;margin:0 auto 22px">Create a work order for a signed job. Includes scope, crew assignment, task checklist, and client contact info.</p>
+        <button class="btn primary" onclick="newWO()"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>NEW WORK ORDER</button>
+      </div>
+    `;
+    return;
+  }
+  const doneCount = Object.values(w.taskDone || {}).filter(Boolean).length;
+  // Editable field helper — every input saves on blur
+  const inp = (field, type, value, placeholder) => `<input data-wo-field="${field}" type="${type}" value="${(value ?? '').toString().replace(/"/g, '&quot;')}" placeholder="${placeholder || ''}" style="background:rgba(6,10,20,0.6);border:1px solid rgba(251,146,60,0.18);color:var(--text);padding:8px 11px;border-radius:7px;font-family:inherit;font-size:0.92em;width:100%;outline:none" />`;
+  const sel = (field, value, options) => `<select data-wo-field="${field}" style="background:rgba(6,10,20,0.6);border:1px solid rgba(251,146,60,0.18);color:var(--text);padding:8px 11px;border-radius:7px;font-family:inherit;font-size:0.92em;width:100%;outline:none">${options.map(o => `<option value="${o}" ${o === value ? 'selected' : ''}>${o}</option>`).join('')}</select>`;
+
+  $('woDetail').innerHTML = `
+    <div class="wo-detail-head">
+      <div style="flex:1;min-width:0">
+        <div class="wo-detail-num">${w.num}</div>
+        <div style="margin:5px 0 8px">${inp('client','text',w.client,'Client name')}</div>
+        <div>${inp('address','text',w.address,'Street, City Province')}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;min-width:200px">
+        <div style="display:flex;gap:6px;align-items:center">
+          <span style="font-family:'Share Tech Mono',monospace;font-size:0.68em;color:var(--text-muted);letter-spacing:1.5px">STATUS</span>
+          ${sel('status', w.status, ['draft','scheduled','active','complete'])}
+        </div>
+      </div>
+    </div>
+    <div class="wo-body">
+      <div class="wo-card">
+        <h4>Client Contact</h4>
+        <div style="display:grid;gap:10px">
+          <div><label style="font-family:'Share Tech Mono',monospace;font-size:0.62em;color:var(--text-muted);letter-spacing:1.5px;display:block;margin-bottom:4px">PHONE</label>${inp('phone','tel',w.phone,'(506) 555-0100')}</div>
+          <div><label style="font-family:'Share Tech Mono',monospace;font-size:0.62em;color:var(--text-muted);letter-spacing:1.5px;display:block;margin-bottom:4px">EMAIL</label>${inp('email','email',w.email || '','name@example.com')}</div>
+        </div>
+        <div class="wo-actions" style="margin-top:12px">
+          <button class="btn ghost" onclick="callClient()"><svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/></svg>CALL</button>
+          <button class="btn ghost" onclick="smsClient()"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>SMS</button>
+          <button class="btn primary" onclick="openMaterials('${w.num}')"><svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>MATERIAL LIST</button>
+        </div>
+      </div>
+
+      <div class="wo-card">
+        <h4>Scope &amp; Schedule</h4>
+        <div style="display:grid;gap:10px">
+          <div><label style="font-family:'Share Tech Mono',monospace;font-size:0.62em;color:var(--text-muted);letter-spacing:1.5px;display:block;margin-bottom:4px">SCOPE OF WORK</label><textarea data-wo-field="scope" style="background:rgba(6,10,20,0.6);border:1px solid rgba(251,146,60,0.18);color:var(--text);padding:8px 11px;border-radius:7px;font-family:inherit;font-size:0.92em;width:100%;min-height:54px;outline:none;resize:vertical" placeholder="Full tear-off + install...">${w.scope || ''}</textarea></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div><label style="font-family:'Share Tech Mono',monospace;font-size:0.62em;color:var(--text-muted);letter-spacing:1.5px;display:block;margin-bottom:4px">SQ</label>${inp('sq','number',w.sq,'')}</div>
+            <div><label style="font-family:'Share Tech Mono',monospace;font-size:0.62em;color:var(--text-muted);letter-spacing:1.5px;display:block;margin-bottom:4px">TIER</label>${sel('tier', w.tier, ['Economy','Gold','Platinum','Diamond','Custom','Full Exterior'])}</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div><label style="font-family:'Share Tech Mono',monospace;font-size:0.62em;color:var(--text-muted);letter-spacing:1.5px;display:block;margin-bottom:4px">START DATE</label>${inp('start','date',w.start,'')}</div>
+            <div><label style="font-family:'Share Tech Mono',monospace;font-size:0.62em;color:var(--text-muted);letter-spacing:1.5px;display:block;margin-bottom:4px">DAYS</label>${inp('days','number',w.days,'3')}</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div><label style="font-family:'Share Tech Mono',monospace;font-size:0.62em;color:var(--text-muted);letter-spacing:1.5px;display:block;margin-bottom:4px">TOTAL ($)</label>${inp('total','number',w.total,'')}</div>
+            <div><label style="font-family:'Share Tech Mono',monospace;font-size:0.62em;color:var(--text-muted);letter-spacing:1.5px;display:block;margin-bottom:4px">DEPOSIT ($)</label>${inp('deposit','number',w.deposit,'')}</div>
+          </div>
+          <div><label style="font-family:'Share Tech Mono',monospace;font-size:0.62em;color:var(--text-muted);letter-spacing:1.5px;display:block;margin-bottom:4px">CREW / SUB</label>${inp('crew','text',w.crew,'Ryan · Atlantic Roofing')}</div>
+        </div>
+      </div>
+
+      <div class="wo-card wo-tasks">
+        <h4>Task Checklist · ${doneCount}/${w.tasks.length} done</h4>
+        ${w.tasks.map((t, i) => `
+          <div class="wo-task">
+            <div class="wo-check ${w.taskDone && w.taskDone[i] ? 'on' : ''}" onclick="toggleTask(${i})"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+            <div class="wo-task-body">
+              <div class="wo-task-title">${t.t}</div>
+              <div class="wo-task-meta">${t.m}</div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+
+      <div class="wo-card wo-notes">
+        <h4>Notes</h4>
+        <textarea id="woNotes" oninput="updateNotes(this.value)" placeholder="Site access notes, customer preferences, hidden damage flags...">${w.notes || ''}</textarea>
+      </div>
+    </div>
+  `;
+
+  // Wire inline-edit handlers — any field change saves to storage
+  document.querySelectorAll('[data-wo-field]').forEach(el => {
+    el.addEventListener('change', () => updateField(el.dataset.woField, el.value));
+    el.addEventListener('blur',   () => updateField(el.dataset.woField, el.value));
+  });
+}
+
+function updateField(field, value){
+  if (!wos[selected]) return;
+  // Coerce numeric fields
+  if (['sq','days','total','deposit'].includes(field)) value = parseFloat(value) || 0;
+  wos[selected][field] = value;
+  saveWOs(wos);
+  // Refresh list sidebar (client name / status may have changed)
+  renderList();
+}
+window.updateField = updateField;
+
+function selectWO(i){ selected = i; renderList(); renderDetail(); }
+function toggleTask(i){
+  const w = wos[selected];
+  w.taskDone = w.taskDone || {};
+  w.taskDone[i] = !w.taskDone[i];
+  saveWOs(wos);
+  renderDetail();
+}
+function updateNotes(v){ wos[selected].notes = v; saveWOs(wos); }
+
+function markActive(){
+  wos[selected].status = wos[selected].status === 'active' ? 'complete' : (wos[selected].status === 'scheduled' ? 'active' : 'scheduled');
+  saveWOs(wos);
+  renderList(); renderDetail();
+}
+
+function newWO(){
+  const client = prompt('Client name?');
+  if (!client) return;
+  const address = prompt('Address?', '');
+  const phone = prompt('Client phone?', '') || '';
+  const email = prompt('Client email?', '') || '';
+  const scope = prompt('One-line scope?', 'Full tear-off + install');
+  const sq = parseInt(prompt('Squares?', '20'), 10) || 20;
+  const start = prompt('Start date (YYYY-MM-DD)?', new Date(Date.now() + 7*24*60*60*1000).toISOString().slice(0,10));
+  const tier = prompt('Tier? (Economy / Gold / Platinum / Diamond)', 'Gold') || 'Gold';
+  // Sub-crew pulled from tenant config
+  const tenantSub = (window.RyujinTenant && RyujinTenant.get().sub) || { name: '', contact: '' };
+  const crew = tenantSub.name ? (tenantSub.contact + ' · ' + tenantSub.name) : '';
+  // Per-SQ rate: real Plus Ultra Gold ~$600/SQ selling price (placeholder fallback if no engine)
+  const totalEstimate = sq * 600;
+  wos.unshift({
+    num: 'WO-' + new Date().toISOString().slice(5,10).replace('-','') + '-' + String(wos.length + 1).padStart(2,'0'),
+    status: 'draft', client, address: address || '', phone, email,
+    scope: scope || '', sq, system: 'asphalt', tier,
+    start: start || new Date().toISOString().slice(0,10), days: 3, crew,
+    total: totalEstimate, deposit: Math.round(totalEstimate * 0.35),
+    matJobId: '', // link to material list later via edit
+    tasks: [
+      { t: 'Prep + landscaping tarps', m: 'Day 1' },
+      { t: 'Tear-off to deck', m: 'Day 1' },
+      { t: 'Substrate inspection', m: 'Day 1' },
+      { t: 'Ice & water shield', m: 'Day 2' },
+      { t: 'Underlayment', m: 'Day 2' },
+      { t: 'Drip + flashings', m: 'Day 2' },
+      { t: 'Shingle install', m: 'Day 2-3' },
+      { t: 'Ridge vent', m: 'Day 3' },
+      { t: 'Cleanup + magnet', m: 'Day 3' },
+      { t: 'Walkthrough + sign-off', m: 'Day 3' }
+    ],
+    taskDone: {},
+    notes: ''
+  });
+  selected = 0;
+  saveWOs(wos);
+  renderList(); renderDetail();
+}
+
+function callClient(){
+  const w = wos[selected];
+  if (w.phone && window.RyujinActions) RyujinActions.call(w.phone);
+  else alert('No phone on file — add one first.');
+}
+function smsClient(){
+  const w = wos[selected];
+  if (!w.phone) { alert('No phone on file'); return; }
+  const body = `Hi ${w.client.split(' ')[0]} — ${w.num} scheduled ${w.start}. Any questions before we start? — Plus Ultra`;
+  if (window.RyujinActions) RyujinActions.sms(w.phone, body);
+}
+
+function smsToForeman(){
+  const w = wos[selected];
+  const body = `${w.num} · ${w.client}\n${w.address}\nScope: ${w.scope}\nStart ${w.start}\nCrew: ${w.crew}`;
+  if (window.RyujinActions) RyujinActions.sms('', body);
+}
+
+function printWO(){ window.print(); }
+function openMaterials(jobId){
+  // Pass the WO number so the materials page can auto-generate a list if none exists
+  window.location.href = 'production-materials.html?wo=' + encodeURIComponent(jobId);
+}
+function goBack(){ window.location.href = 'production.html'; }
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') goBack(); });
+document.addEventListener('contextmenu', e => { e.preventDefault(); goBack(); });
+
+window.selectWO = selectWO;
+window.toggleTask = toggleTask;
+window.updateNotes = updateNotes;
+window.markActive = markActive;
+window.newWO = newWO;
+window.callClient = callClient;
+window.smsClient = smsClient;
+window.smsToForeman = smsToForeman;
+window.printWO = printWO;
+window.openMaterials = openMaterials;
+window.goBack = goBack;
+
+renderList();
+renderDetail();
+</script>
+<script src="assets/ryujin-prod-nav.js"></script>
+</body>
+</html>

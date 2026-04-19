@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ryujin OS · Walk-Through</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root{--accent:#4ade80;--accent-deep:#16a34a;--border:rgba(74,222,128,0.24);--border-hi:rgba(74,222,128,0.5);
+  --text:#e0e6f0;--text-dim:rgba(160,190,230,0.62);--text-muted:rgba(140,170,220,0.32);
+  --cyan:#22d3ee;--red:#f87171;--yellow:#facc15;--purple:#7c3aed;--orange:#fb923c;--blue:#4a9eff}
+*{margin:0;padding:0;box-sizing:border-box}html,body{height:100%}
+body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:var(--text);overflow:hidden}
+.bg{position:fixed;inset:0;z-index:0;background:radial-gradient(ellipse at 40% 30%,rgba(74,222,128,0.08),transparent 55%),linear-gradient(180deg,#060a14,#030611)}
+.bg-grid{position:fixed;inset:0;z-index:1;pointer-events:none;background-image:linear-gradient(rgba(74,222,128,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(74,222,128,0.025) 1px,transparent 1px);background-size:48px 48px;mask-image:radial-gradient(ellipse at center,black 40%,transparent 85%);-webkit-mask-image:radial-gradient(ellipse at center,black 40%,transparent 85%)}
+.app{position:relative;z-index:2;height:100vh;display:grid;grid-template-rows:52px 1fr;gap:10px;padding:10px 12px}
+.topbar{display:flex;align-items:center;gap:12px;background:rgba(14,22,40,0.78);border:1px solid var(--border);border-radius:14px;padding:0 14px;backdrop-filter:blur(20px);position:relative;overflow:hidden}
+.topbar::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),var(--cyan),transparent);opacity:0.5}
+.brand{display:flex;align-items:center;gap:10px}
+.brand-mark{width:30px;height:30px;border-radius:7px;background:radial-gradient(circle at 35% 30%,rgba(200,255,220,0.3),rgba(74,222,128,0.22) 40%,rgba(5,25,12,0.8));box-shadow:0 0 14px rgba(74,222,128,0.35)}
+.brand-name{font-family:'Orbitron',sans-serif;font-size:0.78em;font-weight:800;letter-spacing:2.5px}
+.brand-name .dim{color:var(--text-dim);font-weight:500;letter-spacing:2px;margin-left:8px}
+.tb-spacer{flex:1}
+.tb-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:rgba(6,10,20,0.6);border:1px solid var(--border);color:var(--text-dim);cursor:pointer;transition:all 0.2s}
+.tb-icon:hover{color:var(--accent);border-color:var(--border-hi)}
+.tb-icon svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round}
+
+.main{display:grid;grid-template-columns:280px 1fr 340px;gap:10px;min-height:0}
+.panel{background:rgba(14,22,40,0.78);border:1px solid var(--border);border-radius:14px;backdrop-filter:blur(14px);display:flex;flex-direction:column;min-height:0;overflow:hidden;position:relative}
+.panel::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:0.45}
+.panel-head{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid rgba(74,222,128,0.1)}
+.panel-title{font-family:'Orbitron',sans-serif;font-size:0.62em;font-weight:700;letter-spacing:2.5px;color:var(--text-dim)}
+.panel-badge{background:rgba(74,222,128,0.12);border:1px solid rgba(74,222,128,0.28);padding:2px 8px;border-radius:5px;font-family:'Share Tech Mono',monospace;font-size:0.65em;color:var(--accent);letter-spacing:0.5px}
+.panel-body{flex:1;overflow-y:auto;padding:12px}
+
+/* Job pick */
+.job-row{padding:12px 14px;border-radius:10px;margin-bottom:5px;cursor:pointer;border:1px solid transparent;transition:all 0.2s}
+.job-row:hover{background:rgba(74,222,128,0.05);border-color:rgba(74,222,128,0.15)}
+.job-row.selected{background:rgba(74,222,128,0.1);border-color:rgba(74,222,128,0.35)}
+.job-name{font-size:0.86em;font-weight:600}
+.job-meta{font-size:0.68em;color:var(--text-dim);margin-top:3px;font-family:'Share Tech Mono',monospace;letter-spacing:0.3px}
+.job-status{display:inline-block;font-size:0.58em;padding:2px 7px;border-radius:4px;margin-top:5px;font-family:'Share Tech Mono',monospace;letter-spacing:0.5px;background:rgba(74,222,128,0.1);color:var(--accent);border:1px solid rgba(74,222,128,0.25)}
+.job-status.ready{background:rgba(250,204,21,0.1);color:var(--yellow);border-color:rgba(250,204,21,0.25)}
+
+/* Checklist */
+.ck-section{margin-bottom:14px}
+.ck-section-head{font-family:'Orbitron',sans-serif;font-size:0.62em;font-weight:700;letter-spacing:2px;color:var(--accent);margin-bottom:6px;text-transform:uppercase;display:flex;align-items:center;gap:8px}
+.ck-section-head .count{font-family:'Share Tech Mono',monospace;color:var(--text-muted);font-size:0.88em}
+.ck-item{display:flex;gap:10px;padding:9px 12px;background:rgba(6,10,20,0.4);border:1px solid var(--border);border-radius:9px;margin-bottom:4px;cursor:pointer;transition:all 0.18s}
+.ck-item:hover{border-color:var(--border-hi)}
+.ck-item.checked{background:rgba(74,222,128,0.08);border-color:rgba(74,222,128,0.3)}
+.ck-mark{width:20px;height:20px;border-radius:6px;border:1.5px solid var(--border);flex-shrink:0;display:flex;align-items:center;justify-content:center;margin-top:1px;transition:all 0.18s}
+.ck-item.checked .ck-mark{background:var(--accent);border-color:var(--accent)}
+.ck-mark svg{width:12px;height:12px;stroke:#000;fill:none;stroke-width:3.5;opacity:0;transition:opacity 0.18s}
+.ck-item.checked .ck-mark svg{opacity:1}
+.ck-body{flex:1}
+.ck-label{font-size:0.88em;font-weight:500;line-height:1.3}
+.ck-note{font-size:0.72em;color:var(--text-dim);margin-top:3px}
+.ck-item.checked .ck-label{text-decoration:line-through;color:var(--text-muted)}
+
+/* Photo grid */
+.photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.photo-tile{aspect-ratio:1/1;border-radius:8px;border:1px dashed var(--border);background:rgba(6,10,20,0.4);display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:0.66em;font-family:'Share Tech Mono',monospace;letter-spacing:0.5px;cursor:pointer;transition:all 0.2s;position:relative;overflow:hidden}
+.photo-tile:hover{border-color:var(--border-hi);color:var(--accent);background:rgba(74,222,128,0.05)}
+.photo-tile.filled{border:1px solid var(--border-hi);background:linear-gradient(160deg,rgba(74,222,128,0.2),rgba(10,20,40,0.6));color:var(--accent)}
+.photo-tile.filled::after{content:'\\2713';position:absolute;top:4px;right:4px;width:18px;height:18px;border-radius:50%;background:var(--accent);color:#000;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:0.78em}
+.photo-tile svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+
+/* Signature pad */
+.sig-pad{background:rgba(6,10,20,0.5);border:1px dashed var(--border);border-radius:10px;padding:8px;margin-top:8px}
+.sig-canvas{width:100%;height:140px;background:rgba(255,255,255,0.02);border-radius:7px;cursor:crosshair}
+.sig-actions{display:flex;gap:6px;margin-top:8px}
+
+.btn{padding:8px 14px;border-radius:8px;font-family:'Orbitron',sans-serif;font-size:0.66em;font-weight:700;letter-spacing:1.5px;cursor:pointer;border:1px solid;transition:all 0.2s;display:inline-flex;align-items:center;gap:5px}
+.btn svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round}
+.btn.primary{background:linear-gradient(135deg,rgba(74,222,128,0.25),rgba(74,222,128,0.1));color:var(--accent);border-color:rgba(74,222,128,0.4);font-weight:800}
+.btn.primary:hover{background:linear-gradient(135deg,rgba(74,222,128,0.4),rgba(74,222,128,0.2));box-shadow:0 0 14px rgba(74,222,128,0.3)}
+.btn.ghost{background:rgba(6,10,20,0.5);color:var(--text-dim);border-color:var(--border)}
+.btn.ghost:hover{color:var(--text);border-color:var(--border-hi)}
+
+/* Progress */
+.progress-wrap{padding:10px 14px;background:rgba(6,10,20,0.4);border-radius:9px;margin-bottom:10px}
+.progress-row{display:flex;justify-content:space-between;margin-bottom:4px;font-size:0.72em}
+.progress-row .l{color:var(--text-dim)}
+.progress-row .v{font-family:'Orbitron',sans-serif;font-weight:700;color:var(--accent)}
+.progress-bar{height:6px;background:rgba(74,222,128,0.08);border-radius:3px;overflow:hidden}
+.progress-fill{height:100%;background:linear-gradient(90deg,#16a34a,var(--accent));box-shadow:0 0 10px rgba(74,222,128,0.4);transition:width 0.4s}
+
+/* Review / SMS */
+.sms-card{padding:12px 14px;background:rgba(6,10,20,0.4);border:1px solid var(--border);border-radius:10px;margin-bottom:8px}
+.sms-label{font-family:'Orbitron',sans-serif;font-size:0.58em;font-weight:700;letter-spacing:2px;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px}
+.sms-card textarea{width:100%;padding:10px;background:rgba(6,10,20,0.6);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:0.82em;line-height:1.5;outline:none;resize:vertical;min-height:100px}
+.sms-card textarea:focus{border-color:var(--accent)}
+
+/* Action footer */
+.action-foot{padding:14px 16px;border-top:1px solid rgba(74,222,128,0.1);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-shrink:0}
+</style>
+</head>
+<body>
+<div class="bg"></div>
+<div class="bg-grid"></div>
+
+<div class="app">
+  <div class="topbar">
+    <button class="tb-icon" onclick="window.location.href='post-production.html'"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
+    <div class="brand"><div class="brand-mark"></div><div class="brand-name">RYUJIN <span class="dim">· POST-PROD · WALK-THROUGH</span></div></div>
+    <div class="tb-spacer"></div>
+    <div id="tbJobLabel" style="font-family:'Share Tech Mono',monospace;font-size:0.7em;color:var(--text-dim);letter-spacing:1px">SELECT A JOB TO BEGIN</div>
+  </div>
+
+  <div class="main">
+
+    <!-- LEFT: Jobs ready for walk-through -->
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title">READY FOR WALK-THROUGH</div><div class="panel-badge">2 READY</div></div>
+      <div class="panel-body" id="jobList">
+        <div class="job-row selected" data-id="seyeau" onclick="pickJob('seyeau')">
+          <div class="job-name">10 Edgewater · Seyeau</div>
+          <div class="job-meta">Mansard + caulk · Diego lead</div>
+          <div class="job-status ready">AWAITING WALK-THROUGH</div>
+        </div>
+        <div class="job-row" data-id="fortune" onclick="pickJob('fortune')">
+          <div class="job-name">105 Rue Fortune</div>
+          <div class="job-meta">Asphalt full · AJ · wrapping Apr 20</div>
+          <div class="job-status ready">AWAITING WALK-THROUGH</div>
+        </div>
+        <div class="job-row" data-id="northrup" onclick="pickJob('northrup')">
+          <div class="job-name">Northrup</div>
+          <div class="job-meta">Repair · complete · paid</div>
+          <div class="job-status">COMPLETED Apr 17</div>
+        </div>
+        <div class="job-row" data-id="arzaga" onclick="pickJob('arzaga')">
+          <div class="job-name">Arzaga</div>
+          <div class="job-meta">AJ · verify photos</div>
+          <div class="job-status">SIGN-OFF PENDING</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MIDDLE: Checklist + photos + signature -->
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">WALK-THROUGH CHECKLIST</div>
+        <div class="panel-badge" id="progressBadge">0 / 14</div>
+      </div>
+      <div class="panel-body" id="checklist">
+
+        <div class="progress-wrap">
+          <div class="progress-row"><span class="l">Completion</span><span class="v" id="pct">0%</span></div>
+          <div class="progress-bar"><div class="progress-fill" id="bar" style="width:0%"></div></div>
+        </div>
+
+        <div class="ck-section">
+          <div class="ck-section-head">Roof Surface <span class="count">· 4 items</span></div>
+          <div class="ck-item" data-key="c1"><div class="ck-mark"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div><div class="ck-body"><div class="ck-label">Shingles properly seated with no lifting</div><div class="ck-note">Walk perimeter, check field and hips</div></div></div>
+          <div class="ck-item" data-key="c2"><div class="ck-mark"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div><div class="ck-body"><div class="ck-label">Ridge cap installed straight, no gaps</div><div class="ck-note">Both directions, all peaks</div></div></div>
+          <div class="ck-item" data-key="c3"><div class="ck-mark"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div><div class="ck-body"><div class="ck-label">Valleys clean, metal exposed evenly</div><div class="ck-note">No debris, no cut shingles protruding</div></div></div>
+          <div class="ck-item" data-key="c4"><div class="ck-mark"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div><div class="ck-body"><div class="ck-label">Drip edge flush and fully nailed</div></div></div>
+        </div>
+
+        <div class="ck-section">
+          <div class="ck-section-head">Flashing &amp; Penetrations <span class="count">· 3 items</span></div>
+          <div class="ck-item" data-key="c5"><div class="ck-mark"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div><div class="ck-body"><div class="ck-label">Chimney flashing sealed, no gaps</div></div></div>
+          <div class="ck-item" data-key="c6"><div class="ck-mark"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div><div class="ck-body"><div class="ck-label">Plumbing boots + vents sealed</div></div></div>
+          <div class="ck-item" data-key="c7"><div class="ck-mark"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div><div class="ck-body"><div class="ck-label">Wall flashing tucked behind siding</div></div></div>
+        </div>
+
+        <div class="ck-section">
+          <div class="ck-section-head">Gutters &amp; Water Management <span class="count">· 3 items</span></div>
+          <div class="ck-item" data-key="c8"><div class="ck-mark"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div><div class="ck-body"><div class="ck-label">Gutters pitched correctly toward downspouts</div></div></div>
+          <div class="ck-item" data-key="c9"><div class="ck-mark"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div><div class="ck-body"><div class="ck-label">Downspouts secure, extensions clear of foundation</div></div></div>
+          <div class="ck-item" data-key="c10"><div class="ck-mark"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div><div class="ck-body"><div class="ck-label">Run water test — no ponding, no leaks at seams</div><div class="ck-note">Yard hose on roof for 2 minutes</div></div></div>
+        </div>
+
+        <div class="ck-section">
+          <div class="ck-section-head">Site Cleanup <span class="count">· 2 items</span></div>
+          <div class="ck-item" data-key="c11"><div class="ck-mark"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div><div class="ck-body"><div class="ck-label">Magnet sweep complete · no nails found</div></div></div>
+          <div class="ck-item" data-key="c12"><div class="ck-mark"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div><div class="ck-body"><div class="ck-label">Debris removed, landscaping undamaged</div></div></div>
+        </div>
+
+        <div class="ck-section">
+          <div class="ck-section-head">Final Paperwork <span class="count">· 2 items</span></div>
+          <div class="ck-item" data-key="c13"><div class="ck-mark"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div><div class="ck-body"><div class="ck-label">Warranty certificates filed (CertainTeed + workmanship)</div></div></div>
+          <div class="ck-item" data-key="c14"><div class="ck-mark"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div><div class="ck-body"><div class="ck-label">Final invoice sent · payment terms confirmed</div></div></div>
+        </div>
+
+        <div class="ck-section">
+          <div class="ck-section-head">Photos <span class="count">· capture 6+</span></div>
+          <div class="photo-grid">
+            <div class="photo-tile filled" onclick="togglePhoto(this)"><svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg></div>
+            <div class="photo-tile filled" onclick="togglePhoto(this)"><svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg></div>
+            <div class="photo-tile filled" onclick="togglePhoto(this)"><svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg></div>
+            <div class="photo-tile" onclick="togglePhoto(this)"><div style="text-align:center"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><div style="margin-top:4px">ADD</div></div></div>
+            <div class="photo-tile" onclick="togglePhoto(this)"><div style="text-align:center"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><div style="margin-top:4px">ADD</div></div></div>
+            <div class="photo-tile" onclick="togglePhoto(this)"><div style="text-align:center"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><div style="margin-top:4px">ADD</div></div></div>
+          </div>
+        </div>
+
+        <div class="ck-section">
+          <div class="ck-section-head">Customer Sign-Off</div>
+          <div class="sig-pad">
+            <canvas id="sigCanvas" class="sig-canvas"></canvas>
+            <div class="sig-actions">
+              <button class="btn ghost" onclick="clearSig()">CLEAR</button>
+              <span style="font-family:'Share Tech Mono',monospace;font-size:0.7em;color:var(--text-muted);align-self:center">customer signs here with mouse or touch</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="action-foot">
+        <button class="btn ghost" onclick="window.location.href='post-production.html'"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>CANCEL</button>
+        <button class="btn primary" onclick="completeWalkthrough()"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>SAVE &amp; COMPLETE</button>
+      </div>
+    </div>
+
+    <!-- RIGHT: Review request draft -->
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title">REVIEW REQUEST</div><div class="panel-badge">SMS READY</div></div>
+      <div class="panel-body">
+
+        <div class="sms-card">
+          <div class="sms-label">SMS to customer after sign-off</div>
+          <textarea id="reviewSms">Hey Richard! Thanks for trusting us with your roof. If you have 30 seconds, a quick Google review would mean a lot to us — it helps other homeowners find us. Here's the link: g.page/plusultra/review
+
+— Mackenzie &amp; the Plus Ultra crew</textarea>
+        </div>
+
+        <button class="btn primary" style="width:100%" onclick="sendReviewSms()"><svg viewBox="0 0 24 24"><polyline points="5 12 12 5 19 12" transform="rotate(90 12 12)"/></svg>SEND REVIEW REQUEST</button>
+
+        <div class="sms-card" style="margin-top:14px">
+          <div class="sms-label">Warranty packet email</div>
+          <div style="font-size:0.82em;color:var(--text-dim);line-height:1.5;margin-bottom:8px">Auto-attached: CertainTeed material warranty, Plus Ultra workmanship warranty, photo log, invoice.</div>
+          <button class="btn ghost" style="width:100%">GENERATE &amp; EMAIL</button>
+        </div>
+
+        <div class="sms-card">
+          <div class="sms-label">Schedule follow-up</div>
+          <div style="font-size:0.82em;color:var(--text-dim);line-height:1.5;margin-bottom:8px">Annual inspection reminder · next spring.</div>
+          <button class="btn ghost" style="width:100%">QUEUE APRIL 2027 REMINDER</button>
+        </div>
+
+        <div class="sms-card" style="background:rgba(74,222,128,0.08);border-color:rgba(74,222,128,0.25)">
+          <div class="sms-label" style="color:var(--accent)">Ryujin Tip</div>
+          <div style="font-size:0.82em;line-height:1.5">Fresh walk-throughs convert to reviews at <b style="color:var(--accent)">4x the rate</b> vs asking a week later. Send the SMS the moment they sign.</div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="assets/ryujin-mode.js"></script>
+<script src="assets/ryujin-tenant.js"></script>
+<script src="assets/ryujin-persist.js"></script>
+<script src="assets/ryujin-api.js"></script>
+<script src="assets/ryujin-scenario.js"></script>
+<script src="assets/ryujin-xp.js"></script>
+<script src="assets/ryujin-mode-badge.js"></script>
+<script src="assets/ryujin-chat.js"></script>
+<script src="assets/ryujin-tutor.js"></script>
+<script>
+RyujinTutor.register('walkthrough', [
+  { target: '.panel:first-child', title: 'Pick the job', body: 'Only jobs <b>ready for walk-through</b> appear here. Click to load the checklist. Diego\u2019s Edgewater job is pre-selected.', position: 'right' },
+  { target: '.progress-wrap', title: 'Live completion tracker', body: 'Every item you check advances the bar. <b>14 total</b> \u2014 grouped by roof surface, flashing, gutters, cleanup, paperwork. Miss no more than 2 to save.', position: 'bottom' },
+  { target: '.ck-section:first-child', title: 'Tap items to mark done', body: 'Walk the roof and tap as you go. <b>Notes</b> below each item remind you what to look for (ridge alignment, valley cleanliness, drip-edge flush).', position: 'right' },
+  { target: '.photo-grid', title: 'Photo documentation', body: 'Six essentials: <b>wide ridge, valleys, chimney flashing, gutter slope, drip-edge corner, magnet-sweep pile</b>. Tap to mark captured. These attach to the warranty packet.', position: 'top' },
+  { target: '.sig-pad', title: 'Customer sign-off', body: 'Hand them your tablet or phone. <b>Real signature on canvas</b> \u2014 mouse or touch. Saves to the walk-through record.', position: 'left' },
+  { target: '.panel:last-child', title: 'Review request SMS \u2014 ready to fire', body: 'Fresh walk-throughs convert to Google reviews at <b>4\u00D7 the rate</b> of asking later. Send the SMS the moment they sign. Template pre-personalized.', position: 'left' },
+  { target: '__center__', title: 'Close the loop every time.', body: 'Walk-through \u2192 sign-off \u2192 review ask \u2192 warranty packet \u2192 invoice. All in one screen. Press <b>?</b> to replay.', position: 'top' }
+]);
+document.addEventListener('keydown', e => { if ((e.key === '?' || e.key === 'h' || e.key === 'H') && window.RyujinTutor) { e.preventDefault(); RyujinTutor.start('walkthrough'); } });
+
+const jobs = {
+  seyeau: { name:'10 Edgewater · Seyeau', customer:'Richard Seyeau', scope:'Mansard + caulk pass' },
+  fortune: { name:'105 Rue Fortune', customer:'Owner', scope:'Asphalt full replacement' },
+  northrup: { name:'Northrup', customer:'Northrup', scope:'Repair' },
+  arzaga: { name:'Arzaga', customer:'Arzaga', scope:'Repair' }
+};
+let selectedJob = 'seyeau';
+
+function pickJob(id){
+  selectedJob = id;
+  document.querySelectorAll('.job-row').forEach(r => r.classList.toggle('selected', r.dataset.id === id));
+  const j = jobs[id];
+  document.getElementById('tbJobLabel').textContent = j.name.toUpperCase();
+  // Load saved state for this job if any
+  const saved = RyujinStore.load('walkthrough_' + id);
+  if (saved) {
+    // Restore checklist ticks
+    document.querySelectorAll('.ck-item').forEach(el => {
+      el.classList.toggle('checked', !!(saved.checklist && saved.checklist[el.dataset.key]));
+    });
+    Object.assign(checklist, saved.checklist || {});
+    // Restore signature
+    if (saved.signature) {
+      const img = new Image();
+      img.onload = () => { ctx.clearRect(0,0,canvas.width,canvas.height); ctx.drawImage(img, 0, 0, canvas.width, canvas.height); };
+      img.src = saved.signature;
+    } else { ctx.clearRect(0,0,canvas.width,canvas.height); }
+    updateProgress();
+    if (window.RyujinToast) RyujinToast('Loaded saved walk-through for ' + j.name);
+  }
+}
+
+function saveWalkthrough(){
+  if (!selectedJob) return;
+  const sig = canvas.toDataURL('image/png');
+  RyujinStore.save('walkthrough_' + selectedJob, {
+    checklist: checklist,
+    signature: sig,
+    savedAt: new Date().toISOString()
+  });
+}
+// Auto-save on any check change
+const _origUpdate = window.updateProgress;
+
+// Checklist state
+const checklist = {};
+document.querySelectorAll('.ck-item').forEach(el => {
+  el.addEventListener('click', () => {
+    el.classList.toggle('checked');
+    checklist[el.dataset.key] = el.classList.contains('checked');
+    updateProgress();
+  });
+});
+
+function updateProgress(){
+  const total = document.querySelectorAll('.ck-item').length;
+  const done = document.querySelectorAll('.ck-item.checked').length;
+  const pct = Math.round(done / total * 100);
+  document.getElementById('pct').textContent = pct + '%';
+  document.getElementById('bar').style.width = pct + '%';
+  document.getElementById('progressBadge').textContent = done + ' / ' + total;
+  saveWalkthrough();
+}
+
+function togglePhoto(el){
+  el.classList.toggle('filled');
+  if (el.classList.contains('filled')) {
+    el.innerHTML = '<svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>';
+  } else {
+    el.innerHTML = '<div style="text-align:center"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><div style="margin-top:4px">ADD</div></div>';
+  }
+}
+
+// Signature pad
+const canvas = document.getElementById('sigCanvas');
+const ctx = canvas.getContext('2d');
+function resizeCanvas(){
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width;
+  canvas.height = rect.height;
+  ctx.strokeStyle = '#4ade80';
+  ctx.lineWidth = 2.5;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+let drawing = false;
+canvas.addEventListener('pointerdown', e => { drawing = true; const r = canvas.getBoundingClientRect(); ctx.beginPath(); ctx.moveTo(e.clientX - r.left, e.clientY - r.top); });
+canvas.addEventListener('pointermove', e => { if (!drawing) return; const r = canvas.getBoundingClientRect(); ctx.lineTo(e.clientX - r.left, e.clientY - r.top); ctx.stroke(); });
+canvas.addEventListener('pointerup', () => { drawing = false; saveWalkthrough(); });
+canvas.addEventListener('pointerleave', () => { drawing = false; });
+function clearSig(){ ctx.clearRect(0, 0, canvas.width, canvas.height); }
+window.clearSig = clearSig;
+
+function completeWalkthrough(){
+  const done = document.querySelectorAll('.ck-item.checked').length;
+  const total = document.querySelectorAll('.ck-item').length;
+  if (done < total - 2) { toast('Complete at least ' + (total - 2) + ' of ' + total + ' items first'); return; }
+  saveWalkthrough();
+  // Archive completed walk-through
+  const completed = RyujinStore.load('walkthroughs_completed', []);
+  completed.push({ job: selectedJob, at: new Date().toISOString(), done, total });
+  RyujinStore.save('walkthroughs_completed', completed.slice(-50));
+  toast('Walk-through saved \u00B7 warranty packet queued \u00B7 review SMS ready');
+}
+
+function sendReviewSms(){
+  // Look up customer phone (stub — in a real build this would come from a backend)
+  const phones = { seyeau: '5065550167', fortune: '5065550199', northrup: '5065550115', arzaga: '5065550288' };
+  const phone = phones[selectedJob];
+  const msg = document.getElementById('reviewSms').value;
+  if (phone) {
+    RyujinActions.sms(phone, msg);
+    toast('Opening SMS app \u00B7 ' + jobs[selectedJob].customer);
+  } else {
+    navigator.clipboard.writeText(msg).then(() => toast('SMS text copied \u00B7 paste into your texting app'));
+  }
+}
+
+function toast(msg){ if (window.RyujinToast) return RyujinToast(msg); console.log(msg); }
+
+Ryujin.init({
+  sector: 'WALK-THROUGH',
+  root: {
+    msg: "Walk-through mode for <b>10 Edgewater \u00B7 Seyeau</b>. Job wraps this week. I\u2019ve pre-checked your 3 best photos. Remember: fresh walk-throughs convert to Google reviews at 4x the rate if you ask during sign-off.",
+    choices: [
+      { text: 'Auto-check obvious items', next: 'auto' },
+      { text: 'Draft review SMS for Seyeau', next: 'sms' },
+      { text: 'What should I photograph?', next: 'photos' },
+      { text: 'Just work the checklist', dismiss: true }
+    ]
+  },
+  states: {
+    auto: { msg: "I\u2019ve checked items you told me were done earlier today: photos logged, drip edge verified, site cleaned. You still need to sign the rest physically.", choices: [{text:'Ok', next:'root'}] },
+    sms: { msg: "Drafted. Customizes automatically based on job + customer. Edit in the right panel before sending.", choices: [{text:'Looks good', next:'root'}] },
+    photos: { msg: "Six essentials: wide ridgeline, each valley from below, chimney flashing, gutter slope, drip edge corner, and the magnet-sweep pile. Owner-signature shot optional.", choices: [{text:'Got it', next:'root'}] }
+  }
+});
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') window.location.href='post-production.html'; });
+document.addEventListener('contextmenu', e => { e.preventDefault(); window.location.href='post-production.html'; });
+</script>
+</body>
+</html>
