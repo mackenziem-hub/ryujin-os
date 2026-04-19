@@ -1627,6 +1627,19 @@ async function renderQuoteForm() {
       qField('interiorWaterDamage','Interior Water Damage Signs','checkbox',{default:false,hint:'Stains, peeling paint, mold — indicates active leak'})
     , false);
 
+    // ═══ Section 5.5: Cover Photo & Video ═══
+    html += formSection('Sales Page Media', '🎬',
+      qField('coverPhotoUrl','Cover Photo URL','text',{hint:'Property photo for the sales page hero. Paste a URL or leave blank for a premium gradient placeholder.'}) +
+      qField('introVideoUrl','Intro Video URL','text',{hint:'Personal video from the salesperson. Defaults to Darcy\'s intro if empty.'}) +
+      `<div class="form-full" style="margin-top:8px">
+        <div style="font-size:0.7em;color:var(--text-dim);line-height:1.6">
+          <strong>Cover photo tips:</strong> Use a property photo from CompanyCam, a drone shot, or a before photo. Landscape orientation works best.
+          The photo appears behind the hero text on the client's sales page.
+        </div>
+        ${quoteState.answers.coverPhotoUrl ? `<div style="margin-top:8px;border-radius:8px;overflow:hidden;height:120px;background:#0a0e1a"><img src="${esc(quoteState.answers.coverPhotoUrl)}" style="width:100%;height:100%;object-fit:cover;opacity:0.7" onerror="this.style.display='none'"></div>` : ''}
+      </div>`
+    , false);
+
     // ═══ Section 6: Property Photos ═══
     html += formSection('Property Photos', '📷',
       `<div class="form-full">
@@ -2266,7 +2279,9 @@ async function generateOutputs(type) {
     sales_rep: rep,
     template: tmpl,
     template_key: selectedTemplate,
-    _comparison: comparisonData
+    _comparison: comparisonData,
+    cover_photo: quoteState.answers.coverPhotoUrl || '',
+    intro_video: quoteState.answers.introVideoUrl || ''
   };
 
   // Types that render as HTML
@@ -2305,8 +2320,12 @@ async function generateOutputs(type) {
     if (ad.error) { toast('Output error: ' + ad.error, 'error'); return; }
     let opened = 0;
     for (const t of ['sales_page', 'proposal', 'contract']) {
-      const data = t === 'sales_page' ? ad.outputs?.salesPage : ad.outputs?.[t];
+      let data = t === 'sales_page' ? ad.outputs?.salesPage : ad.outputs?.[t];
       if (!data) continue;
+      // Attach proposal data to sales page for embedded pricing
+      if (t === 'sales_page' && ad.outputs?.proposal) {
+        data._proposalData = ad.outputs.proposal;
+      }
       const resp = await fetch(`${API}/render?type=${t}&tenant=${TENANT}&_t=${Date.now()}`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
       if (!resp.ok) continue;
       const html = await resp.text();

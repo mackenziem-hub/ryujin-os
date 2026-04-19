@@ -139,9 +139,11 @@ async function handler(req, res) {
       acceptUrl: body.accept_url || null,
       declineUrl: body.decline_url || null
     });
-    // Pass through template + salesperson
+    // Pass through template, salesperson, and media
     if (body.sales_rep) outputs.salesPage.salesRep = body.sales_rep;
     if (body.template) outputs.salesPage.template = body.template;
+    if (body.cover_photo) outputs.salesPage.coverPhoto = body.cover_photo;
+    if (body.intro_video) outputs.salesPage.introVideo = body.intro_video;
   }
 
   // Return single output or all
