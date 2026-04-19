@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#060a14">
+<title>Ryujin OS · Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#060a14; --bg-deep:#030611;
+  --glass:rgba(14,22,40,0.78); --glass-hi:rgba(18,28,48,0.88);
+  --border:rgba(34,211,238,0.14); --border-hi:rgba(34,211,238,0.35);
+  --text:#e0e6f0; --text-dim:rgba(160,190,230,0.62); --text-muted:rgba(140,170,220,0.32);
+  --cyan:#22d3ee; --cyan-deep:#0891b2; --blue:#4a9eff; --purple:#7c3aed;
+  --green:#4ade80; --yellow:#facc15; --red:#f87171; --orange:#fb923c;
+  --radius:14px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{
+  font-family:'Inter',system-ui,sans-serif;background:var(--bg-deep);color:var(--text);
+  overflow:hidden;letter-spacing:0.1px
+}
+
+/* ─── Ambient background ─── */
+.bg-ambient{
+  position:fixed;inset:0;z-index:0;overflow:hidden;
+  background:
+    radial-gradient(ellipse at 50% 40%, rgba(34,211,238,0.06) 0%, transparent 55%),
+    radial-gradient(ellipse at 20% 80%, rgba(124,58,237,0.04) 0%, transparent 50%),
+    linear-gradient(180deg,#060a14 0%,#030611 100%);
+}
+.bg-caustic{
+  position:fixed;inset:0;z-index:1;
+  background-image:url('assets/grok-image-13862a83-9822-4cbd-9913-0bf1c615e042.png');
+  background-size:cover;background-position:center;
+  opacity:0.18;mix-blend-mode:screen;pointer-events:none
+}
+.bg-grid{
+  position:fixed;inset:0;z-index:1;pointer-events:none;
+  background-image:
+    linear-gradient(rgba(34,211,238,0.025) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(34,211,238,0.025) 1px,transparent 1px);
+  background-size:48px 48px;
+  mask-image:radial-gradient(ellipse at center, black 40%, transparent 85%);
+  -webkit-mask-image:radial-gradient(ellipse at center, black 40%, transparent 85%)
+}
+
+/* ─── App shell ─── */
+.app{position:relative;z-index:2;height:100vh;display:grid;
+  grid-template-rows:52px 1fr 44px;
+  grid-template-columns:1fr 360px;
+  gap:10px;padding:10px 12px 10px}
+
+/* ─── Top bar ─── */
+.topbar{
+  grid-column:1/-1;grid-row:1;
+  display:flex;align-items:center;gap:16px;
+  background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);
+  padding:0 16px;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  position:relative;overflow:hidden
+}
+.topbar::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent 2%,var(--cyan) 25%,var(--purple) 75%,transparent 98%);opacity:0.5}
+.brand{display:flex;align-items:center;gap:10px}
+.brand-mark{
+  width:32px;height:32px;border-radius:8px;
+  background:url('assets/logo/logo-glow.jpg') center/cover;
+  box-shadow:0 0 16px rgba(34,211,238,0.35);
+  flex-shrink:0
+}
+.brand-name{font-family:'Orbitron',sans-serif;font-size:0.82em;font-weight:800;letter-spacing:3px}
+.brand-name .dim{color:var(--text-dim);font-weight:500;letter-spacing:2px;margin-left:10px}
+.tb-spacer{flex:1}
+.tb-status{display:flex;align-items:center;gap:8px;font-family:'Share Tech Mono',monospace;font-size:0.72em;color:var(--text-dim)}
+.tb-dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+.tb-ctrl{display:flex;gap:8px;align-items:center}
+
+/* ─── Mode switch ─── */
+.mode-switch{display:flex;background:rgba(6,10,20,0.6);border:1px solid var(--border);border-radius:10px;padding:3px;height:32px}
+.mode-btn{padding:0 12px;background:none;border:none;color:var(--text-dim);font-family:'Orbitron',sans-serif;font-size:0.62em;font-weight:700;letter-spacing:1.5px;cursor:pointer;border-radius:7px;transition:all 0.25s}
+.mode-btn.active{background:linear-gradient(135deg,rgba(34,211,238,0.18),rgba(124,58,237,0.10));color:var(--cyan);box-shadow:0 0 10px rgba(34,211,238,0.12)}
+
+.tb-icon{
+  width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;
+  background:rgba(6,10,20,0.6);border:1px solid var(--border);color:var(--text-dim);cursor:pointer;transition:all 0.2s
+}
+.tb-icon:hover{color:var(--cyan);border-color:var(--border-hi);background:rgba(34,211,238,0.06)}
+.tb-icon.on{color:var(--cyan);border-color:var(--border-hi);box-shadow:0 0 10px rgba(34,211,238,0.15)}
+.tb-icon svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+
+/* ─── Main (center) ─── */
+.main{
+  grid-column:1;grid-row:2;
+  display:grid;grid-template-rows:auto 1fr auto;gap:10px;min-height:0
+}
+
+/* ─── KPI rail ─── */
+.kpi-rail{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+.kpi{
+  background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);
+  padding:10px 14px;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  position:relative;overflow:hidden;transition:border-color 0.25s
+}
+.kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--cyan),transparent);opacity:0.4}
+.kpi:hover{border-color:var(--border-hi)}
+.kpi-label{font-family:'Orbitron',sans-serif;font-size:0.55em;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim)}
+.kpi-value{font-family:'Orbitron',sans-serif;font-size:1.75em;font-weight:800;letter-spacing:-0.5px;margin-top:4px;line-height:1;
+  background:linear-gradient(135deg,#fff 20%,var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;filter:drop-shadow(0 0 10px rgba(34,211,238,0.2))}
+.kpi-value.green{background:linear-gradient(135deg,#fff 20%,var(--green));-webkit-background-clip:text;-webkit-text-fill-color:transparent;filter:drop-shadow(0 0 10px rgba(74,222,128,0.2))}
+.kpi-value.orange{background:linear-gradient(135deg,#fff 20%,var(--orange));-webkit-background-clip:text;-webkit-text-fill-color:transparent;filter:drop-shadow(0 0 10px rgba(251,146,60,0.2))}
+.kpi-meta{display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:0.65em}
+.kpi-delta{font-family:'Share Tech Mono',monospace;font-weight:700}
+.kpi-delta.up{color:var(--green)}
+.kpi-delta.down{color:var(--red)}
+.kpi-sub{color:var(--text-muted);font-size:0.9em}
+.kpi-spark{position:absolute;bottom:0;left:0;right:0;height:22px;opacity:0.5}
+
+/* ─── Dragon hero panel ─── */
+.dragon-stage{
+  background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);
+  backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+  position:relative;overflow:hidden;min-height:0;
+  display:flex;flex-direction:column
+}
+#dragonChatMount{flex:1;min-height:0;position:relative;z-index:3}
+.dragon-stage::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,transparent 2%,var(--cyan) 25%,var(--purple) 50%,var(--cyan) 75%,transparent 98%);opacity:0.65}
+.dragon-img{
+  position:absolute;inset:0;
+  background-image:url('assets/grok-image-7faae61d-ab16-4bdd-9cbd-847de42e01db.png');
+  background-size:cover;background-position:center;
+  opacity:0.55;mix-blend-mode:screen;
+  transition:opacity 1.5s, filter 1.5s;
+  animation:breathe 6s ease-in-out infinite
+}
+@keyframes breathe{
+  0%,100%{opacity:0.50;filter:drop-shadow(0 0 20px rgba(34,211,238,0.15)) brightness(0.95)}
+  50%{opacity:0.62;filter:drop-shadow(0 0 30px rgba(34,211,238,0.3)) brightness(1.1)}
+}
+.dragon-stage.active .dragon-img{
+  opacity:0.85;filter:drop-shadow(0 0 60px rgba(251,146,60,0.6)) brightness(1.3) hue-rotate(-30deg);
+  animation:activate 1.2s ease-in-out infinite
+}
+@keyframes activate{
+  0%,100%{filter:drop-shadow(0 0 50px rgba(251,146,60,0.5)) brightness(1.2) hue-rotate(-25deg)}
+  50%{filter:drop-shadow(0 0 80px rgba(248,113,113,0.7)) brightness(1.45) hue-rotate(-40deg)}
+}
+
+.dragon-overlay{
+  position:relative;z-index:2;padding:20px 28px;
+  display:flex;justify-content:space-between;align-items:flex-start
+}
+.dragon-status{display:flex;align-items:center;gap:10px}
+.dragon-pulse{width:10px;height:10px;border-radius:50%;background:var(--cyan);box-shadow:0 0 12px var(--cyan);animation:pulse 3s infinite}
+.dragon-stage.active .dragon-pulse{background:var(--orange);box-shadow:0 0 14px var(--orange);animation:pulse 0.8s infinite}
+.dragon-title{font-family:'Orbitron',sans-serif;font-size:0.7em;font-weight:700;letter-spacing:3px;color:var(--text-dim)}
+.dragon-state{font-family:'Share Tech Mono',monospace;font-size:0.68em;color:var(--cyan);margin-top:2px;letter-spacing:1.5px}
+.dragon-stage.active .dragon-state{color:var(--orange)}
+
+.dragon-hero{
+  position:relative;z-index:2;text-align:center;padding:16px 20px 24px;pointer-events:none
+}
+.dragon-quote{font-family:'Orbitron',sans-serif;font-size:1.4em;font-weight:400;letter-spacing:4px;color:var(--text-dim);text-shadow:0 0 20px rgba(34,211,238,0.2)}
+.dragon-stage.active .dragon-quote{color:var(--orange);text-shadow:0 0 24px rgba(251,146,60,0.5)}
+.dragon-sub{font-family:'Share Tech Mono',monospace;font-size:0.75em;color:var(--text-muted);margin-top:8px;letter-spacing:2px}
+
+.dragon-timestamp{
+  position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;
+  padding:10px 18px;border-top:1px solid rgba(34,211,238,0.08);
+  font-family:'Share Tech Mono',monospace;font-size:0.68em;color:var(--text-muted)
+}
+.ts-val{color:var(--cyan)}
+
+/* ─── Sector gateways ─── */
+.sectors{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+.sector{
+  background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);
+  padding:16px 14px;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  position:relative;overflow:hidden;cursor:pointer;transition:all 0.25s;
+  display:flex;flex-direction:column;align-items:flex-start;gap:8px
+}
+.sector::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--cyan),transparent);opacity:0.35;transition:opacity 0.3s}
+.sector::after{content:'';position:absolute;bottom:-1px;right:-1px;width:18px;height:18px;
+  border-bottom:2px solid var(--cyan);border-right:2px solid var(--cyan);border-radius:0 0 var(--radius) 0;
+  opacity:0.25;transition:opacity 0.3s}
+.sector:hover{border-color:var(--border-hi);transform:translateY(-2px);
+  box-shadow:0 8px 24px rgba(0,0,0,0.3),0 0 24px rgba(34,211,238,0.08)}
+.sector:hover::before{opacity:1}
+.sector:hover::after{opacity:0.6}
+.sector-icon{width:30px;height:30px;display:flex;align-items:center;justify-content:center;color:var(--cyan)}
+.sector-icon svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 6px rgba(34,211,238,0.4))}
+.sector-name{font-family:'Orbitron',sans-serif;font-size:0.78em;font-weight:700;letter-spacing:1.5px}
+.sector-meta{font-size:0.65em;color:var(--text-dim);font-family:'Share Tech Mono',monospace;letter-spacing:0.5px}
+.sector-count{
+  position:absolute;top:12px;right:12px;
+  min-width:22px;height:22px;border-radius:6px;
+  background:rgba(34,211,238,0.12);border:1px solid rgba(34,211,238,0.25);
+  display:flex;align-items:center;justify-content:center;
+  font-family:'Orbitron',sans-serif;font-size:0.6em;font-weight:800;color:var(--cyan);padding:0 6px
+}
+.sector-count.warn{background:rgba(250,204,21,0.12);border-color:rgba(250,204,21,0.3);color:var(--yellow)}
+.sector-count.urgent{background:rgba(248,113,113,0.12);border-color:rgba(248,113,113,0.3);color:var(--red)}
+
+/* ─── Right rail (action log + messenger) ─── */
+.side{
+  grid-column:2;grid-row:2;
+  display:grid;grid-template-rows:1fr 1fr;gap:10px;min-height:0
+}
+.side-panel{
+  background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  position:relative;overflow:hidden;display:flex;flex-direction:column;min-height:0
+}
+.side-panel::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--cyan),transparent);opacity:0.45}
+.side-head{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:12px 14px;border-bottom:1px solid rgba(34,211,238,0.08);flex-shrink:0
+}
+.side-title{font-family:'Orbitron',sans-serif;font-size:0.62em;font-weight:700;letter-spacing:2.5px;color:var(--text-dim)}
+.side-badge{
+  background:rgba(34,211,238,0.1);border:1px solid rgba(34,211,238,0.22);
+  padding:2px 8px;border-radius:5px;
+  font-family:'Share Tech Mono',monospace;font-size:0.65em;color:var(--cyan);letter-spacing:0.5px
+}
+.side-scroll{flex:1;overflow-y:auto;padding:6px 4px}
+.side-scroll::-webkit-scrollbar{width:4px}
+.side-scroll::-webkit-scrollbar-thumb{background:rgba(34,211,238,0.15);border-radius:2px}
+
+/* ─── Action log entry ─── */
+.log-entry{
+  display:flex;gap:10px;padding:8px 12px;border-radius:8px;margin-bottom:2px;
+  transition:background 0.2s;cursor:pointer
+}
+.log-entry:hover{background:rgba(34,211,238,0.04)}
+.log-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:6px}
+.log-dot.green{background:var(--green);box-shadow:0 0 8px var(--green)}
+.log-dot.blue{background:var(--blue);box-shadow:0 0 8px var(--blue)}
+.log-dot.yellow{background:var(--yellow);box-shadow:0 0 8px var(--yellow)}
+.log-dot.cyan{background:var(--cyan);box-shadow:0 0 8px var(--cyan)}
+.log-dot.orange{background:var(--orange);box-shadow:0 0 8px var(--orange)}
+.log-dot.red{background:var(--red);box-shadow:0 0 8px var(--red)}
+.log-body{flex:1;min-width:0}
+.log-msg{font-size:0.78em;color:var(--text);line-height:1.35}
+.log-msg b{color:var(--cyan);font-weight:600}
+.log-time{font-family:'Share Tech Mono',monospace;font-size:0.62em;color:var(--text-muted);margin-top:2px;letter-spacing:0.5px}
+
+/* ─── Messenger entry ─── */
+.msg-entry{
+  display:flex;gap:10px;padding:10px 12px;border-radius:8px;margin-bottom:4px;cursor:pointer;
+  border:1px solid transparent;transition:all 0.2s
+}
+.msg-entry:hover{background:rgba(34,211,238,0.04);border-color:rgba(34,211,238,0.12)}
+.msg-avatar{
+  width:32px;height:32px;border-radius:50%;flex-shrink:0;
+  background:linear-gradient(135deg,rgba(34,211,238,0.25),rgba(124,58,237,0.15));
+  border:1px solid rgba(34,211,238,0.2);
+  display:flex;align-items:center;justify-content:center;
+  font-family:'Orbitron',sans-serif;font-weight:700;font-size:0.72em;color:var(--cyan)
+}
+.msg-body{flex:1;min-width:0}
+.msg-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.msg-name{font-size:0.78em;font-weight:600;color:var(--text)}
+.msg-time{font-family:'Share Tech Mono',monospace;font-size:0.62em;color:var(--text-muted)}
+.msg-snippet{font-size:0.72em;color:var(--text-dim);margin-top:2px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.msg-tag{display:inline-block;padding:1px 6px;border-radius:4px;font-family:'Share Tech Mono',monospace;font-size:0.6em;letter-spacing:0.5px;margin-top:4px}
+.msg-tag.ghl{background:rgba(74,222,128,0.1);color:var(--green);border:1px solid rgba(74,222,128,0.2)}
+.msg-tag.gmail{background:rgba(74,158,255,0.1);color:var(--blue);border:1px solid rgba(74,158,255,0.2)}
+.msg-tag.sms{background:rgba(167,139,250,0.1);color:#a78bfa;border:1px solid rgba(167,139,250,0.2)}
+.msg-unread{width:6px;height:6px;border-radius:50%;background:var(--cyan);box-shadow:0 0 6px var(--cyan);flex-shrink:0;margin-top:6px}
+
+/* ─── Alerts bar ─── */
+.alerts{
+  grid-column:1/-1;grid-row:3;
+  background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  display:flex;align-items:center;padding:0 14px;gap:14px;
+  position:relative;overflow:hidden
+}
+.alerts::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--red),var(--orange),transparent);opacity:0.4}
+.alerts-label{font-family:'Orbitron',sans-serif;font-size:0.6em;font-weight:700;letter-spacing:2.5px;color:var(--red);flex-shrink:0;display:flex;align-items:center;gap:8px}
+.alert-icon{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2}
+.alerts-items{flex:1;display:flex;gap:18px;overflow-x:auto}
+.alert-chip{display:flex;align-items:center;gap:6px;font-size:0.76em;color:var(--text);white-space:nowrap}
+.alert-chip .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.alert-chip .dot.red{background:var(--red);box-shadow:0 0 6px var(--red)}
+.alert-chip .dot.yellow{background:var(--yellow);box-shadow:0 0 6px var(--yellow)}
+.alert-chip .dim{color:var(--text-dim);font-size:0.88em;margin-left:4px}
+
+/* ─── Chat FAB ─── */
+.chat-fab{
+  position:fixed;bottom:56px;right:14px;z-index:10;
+  width:50px;height:50px;border-radius:50%;
+  background:linear-gradient(135deg,rgba(34,211,238,0.2),rgba(124,58,237,0.12));
+  border:1px solid var(--border-hi);
+  display:flex;align-items:center;justify-content:center;
+  color:var(--cyan);cursor:pointer;
+  box-shadow:0 6px 24px rgba(0,0,0,0.5),0 0 18px rgba(34,211,238,0.3);
+  backdrop-filter:blur(10px);transition:all 0.25s
+}
+.chat-fab:hover{transform:translateY(-2px) scale(1.05);box-shadow:0 8px 30px rgba(0,0,0,0.5),0 0 30px rgba(34,211,238,0.5)}
+.chat-fab svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.chat-fab::after{content:'';position:absolute;top:4px;right:4px;width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);border:2px solid var(--bg-deep)}
+
+/* ─── Activate test btn (dev only) ─── */
+.dev-trigger{
+  position:fixed;bottom:12px;left:12px;z-index:10;
+  background:rgba(251,146,60,0.1);border:1px solid rgba(251,146,60,0.3);
+  color:var(--orange);padding:5px 10px;border-radius:7px;cursor:pointer;
+  font-family:'Share Tech Mono',monospace;font-size:0.65em;letter-spacing:0.5px
+}
+.dev-trigger:hover{background:rgba(251,146,60,0.15)}
+
+/* ─── Responsive guard ─── */
+@media (max-width:1200px){
+  .app{grid-template-columns:1fr 320px}
+  .kpi-rail{grid-template-columns:repeat(3,1fr)}
+  .kpi:nth-child(n+4){display:none}
+}
+
+/* Embed mode (preview thumbnail inside 3D hub) — hide dev chrome */
+.embed-mode .dev-trigger,
+.embed-mode .chat-fab{display:none}
+</style>
+</head>
+<body>
+
+<div class="bg-ambient"></div>
+<div class="bg-caustic"></div>
+<div class="bg-grid"></div>
+
+<div class="app">
+
+  <!-- TOP BAR -->
+  <div class="topbar">
+    <button class="tb-icon" title="Back to Hub" onclick="goBackToHub()" style="margin-right:4px">
+      <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <div class="brand-name">RYUJIN <span class="dim">· DASHBOARD</span></div>
+    </div>
+    <div class="tb-status">
+      <div class="tb-dot"></div>
+      <span>LIVE · <span class="ts-val" id="ts">00:00:00</span></span>
+    </div>
+    <div class="tb-spacer"></div>
+    <div class="tb-ctrl">
+      <div class="mode-switch">
+        <button class="mode-btn active">CLASSIC</button>
+        <button class="mode-btn" onclick="goBackToHub()">3D</button>
+      </div>
+      <button class="tb-icon on" title="Tutorial" onclick="RyujinTutor && RyujinTutor.start('dashboard')">
+        <svg viewBox="0 0 24 24"><path d="M12 2l3 7h7l-5.5 4.5L18 22l-6-4-6 4 1.5-8.5L2 9h7z"/></svg>
+      </button>
+      <button class="tb-icon" title="Fullscreen (F)" onclick="toggleFs()">
+        <svg viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 00-2 2v3M21 8V5a2 2 0 00-2-2h-3M3 16v3a2 2 0 002 2h3M16 21h3a2 2 0 002-2v-3"/></svg>
+      </button>
+      <button class="tb-icon" title="Settings">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      </button>
+      <button class="tb-icon" title="Profile">
+        <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+
+    <!-- KPI RAIL -->
+    <div class="kpi-rail">
+      <div class="kpi">
+        <div class="kpi-label">Signed Revenue</div>
+        <div class="kpi-value green">$90.7K</div>
+        <div class="kpi-meta"><span class="kpi-delta up">▲ +$12.4K</span><span class="kpi-sub">this month</span></div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Open Pipeline</div>
+        <div class="kpi-value">$410K</div>
+        <div class="kpi-meta"><span class="kpi-delta up">▲ 67 deals</span><span class="kpi-sub">avg $6.1K</span></div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Crew Active</div>
+        <div class="kpi-value">6<span style="font-size:0.55em;color:var(--text-muted)">/24</span></div>
+        <div class="kpi-meta"><span class="kpi-delta down">▼ 8 overdue</span><span class="kpi-sub">24 total</span></div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Leads · Week</div>
+        <div class="kpi-value">9</div>
+        <div class="kpi-meta"><span class="kpi-delta up">▲ 8.3%</span><span class="kpi-sub">close rate</span></div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Cost Per Lead</div>
+        <div class="kpi-value orange">$8.10</div>
+        <div class="kpi-meta"><span class="kpi-delta up">▲ +$0.30</span><span class="kpi-sub">7-day avg</span></div>
+      </div>
+    </div>
+
+    <!-- DRAGON STAGE — main AI command box (chatbot rendered in here) -->
+    <div class="dragon-stage" id="dragonStage">
+      <div class="dragon-img"></div>
+      <div id="dragonChatMount"></div>
+    </div>
+
+    <!-- SECTOR GATEWAYS -->
+    <div class="sectors">
+      <div class="sector">
+        <div class="sector-count">3</div>
+        <div class="sector-icon"><svg viewBox="0 0 24 24"><path d="M3 11l18-8-8 18-2-8-8-2z"/></svg></div>
+        <div class="sector-name">MARKETING</div>
+        <div class="sector-meta">3 campaigns · $845 / 7d</div>
+      </div>
+      <div class="sector">
+        <div class="sector-count warn">7</div>
+        <div class="sector-icon"><svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div>
+        <div class="sector-name">SALES</div>
+        <div class="sector-meta">67 open · 7 due today</div>
+      </div>
+      <div class="sector">
+        <div class="sector-count urgent">8</div>
+        <div class="sector-icon"><svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg></div>
+        <div class="sector-name">PRODUCTION</div>
+        <div class="sector-meta">6 active · 8 overdue</div>
+      </div>
+      <div class="sector">
+        <div class="sector-count">2</div>
+        <div class="sector-icon"><svg viewBox="0 0 24 24"><path d="M20 7h-7V3M20 7L9 18l-5-5M20 7v13H4V7"/></svg></div>
+        <div class="sector-name">POST-PROD</div>
+        <div class="sector-meta">2 awaiting sign-off</div>
+      </div>
+      <div class="sector">
+        <div class="sector-count">—</div>
+        <div class="sector-icon"><svg viewBox="0 0 24 24"><path d="M12 2l7 4v6c0 5-3.5 9-7 10-3.5-1-7-5-7-10V6l7-4z"/></svg></div>
+        <div class="sector-name">ADMIN</div>
+        <div class="sector-meta">pricing · team · config</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- RIGHT RAIL -->
+  <div class="side">
+
+    <!-- ACTION LOG -->
+    <div class="side-panel">
+      <div class="side-head">
+        <div class="side-title">LIVE ACTION LOG</div>
+        <div class="side-badge" id="logBadge">● LIVE</div>
+      </div>
+      <div class="side-scroll" id="logScroll">
+        <div class="log-entry">
+          <div class="log-dot green"></div>
+          <div class="log-body">
+            <div class="log-msg"><b>Quote signed</b> — Partridge · $44,370 roof + wall</div>
+            <div class="log-time">2 min ago · sales</div>
+          </div>
+        </div>
+        <div class="log-entry">
+          <div class="log-dot blue"></div>
+          <div class="log-body">
+            <div class="log-msg"><b>Ticket complete</b> — AJ · 10 Edgewater caulking pass 1</div>
+            <div class="log-time">8 min ago · production</div>
+          </div>
+        </div>
+        <div class="log-entry">
+          <div class="log-dot yellow"></div>
+          <div class="log-body">
+            <div class="log-msg"><b>Meeting booked</b> — Ben Crocker · NanoSeal · Tue 1PM</div>
+            <div class="log-time">14 min ago · calendar</div>
+          </div>
+        </div>
+        <div class="log-entry">
+          <div class="log-dot green"></div>
+          <div class="log-body">
+            <div class="log-msg"><b>New lead</b> — 10CM v2 ad · Moncton · asphalt</div>
+            <div class="log-time">22 min ago · marketing</div>
+          </div>
+        </div>
+        <div class="log-entry">
+          <div class="log-dot cyan"></div>
+          <div class="log-body">
+            <div class="log-msg"><b>Proposal viewed</b> — Shelagh Peach · 47s on page</div>
+            <div class="log-time">31 min ago · sales</div>
+          </div>
+        </div>
+        <div class="log-entry">
+          <div class="log-dot orange"></div>
+          <div class="log-body">
+            <div class="log-msg"><b>Payment received</b> — Northrup · $3,100</div>
+            <div class="log-time">1 hr ago · finance</div>
+          </div>
+        </div>
+        <div class="log-entry">
+          <div class="log-dot blue"></div>
+          <div class="log-body">
+            <div class="log-msg"><b>Ticket assigned</b> — Diego · Faulkner pre-job inspection</div>
+            <div class="log-time">1 hr ago · production</div>
+          </div>
+        </div>
+        <div class="log-entry">
+          <div class="log-dot green"></div>
+          <div class="log-body">
+            <div class="log-msg"><b>PDF download</b> — T-Esterony · 10 Costly Mistakes</div>
+            <div class="log-time">2 hr ago · marketing</div>
+          </div>
+        </div>
+        <div class="log-entry">
+          <div class="log-dot red"></div>
+          <div class="log-body">
+            <div class="log-msg"><b>Alert filtered</b> — CFIB payment bounce · $39.10</div>
+            <div class="log-time">2 hr ago · system</div>
+          </div>
+        </div>
+        <div class="log-entry">
+          <div class="log-dot cyan"></div>
+          <div class="log-body">
+            <div class="log-msg"><b>Quote viewed</b> — Robert Partridge · 3rd view</div>
+            <div class="log-time">3 hr ago · sales</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MESSENGER -->
+    <div class="side-panel">
+      <div class="side-head">
+        <div class="side-title">FILTERED MESSENGER</div>
+        <div class="side-badge">3 · NEW</div>
+      </div>
+      <div class="side-scroll">
+        <div class="msg-entry">
+          <div class="msg-avatar">KC</div>
+          <div class="msg-body">
+            <div class="msg-head">
+              <span class="msg-name">Kevin Chase · APHL</span>
+              <span class="msg-time">8m</span>
+            </div>
+            <div class="msg-snippet">Re: Tara Court — can we get Wed site visit?</div>
+            <span class="msg-tag gmail">GMAIL</span>
+          </div>
+          <div class="msg-unread"></div>
+        </div>
+        <div class="msg-entry">
+          <div class="msg-avatar">SP</div>
+          <div class="msg-body">
+            <div class="msg-head">
+              <span class="msg-name">Shelagh Peach</span>
+              <span class="msg-time">34m</span>
+            </div>
+            <div class="msg-snippet">Quick question about the ventilation add-on…</div>
+            <span class="msg-tag ghl">GHL · SMS</span>
+          </div>
+          <div class="msg-unread"></div>
+        </div>
+        <div class="msg-entry">
+          <div class="msg-avatar">JF</div>
+          <div class="msg-body">
+            <div class="msg-head">
+              <span class="msg-name">Jim Faulkner</span>
+              <span class="msg-time">1h</span>
+            </div>
+            <div class="msg-snippet">Got your text — Wed works great. See you then.</div>
+            <span class="msg-tag sms">SMS</span>
+          </div>
+          <div class="msg-unread"></div>
+        </div>
+        <div class="msg-entry">
+          <div class="msg-avatar">RP</div>
+          <div class="msg-body">
+            <div class="msg-head">
+              <span class="msg-name">Robert Partridge</span>
+              <span class="msg-time">3h</span>
+            </div>
+            <div class="msg-snippet">Signed and sent back. Looking forward to it.</div>
+            <span class="msg-tag ghl">GHL</span>
+          </div>
+        </div>
+        <div class="msg-entry">
+          <div class="msg-avatar">BC</div>
+          <div class="msg-body">
+            <div class="msg-head">
+              <span class="msg-name">Ben Crocker · NanoSeal</span>
+              <span class="msg-time">yesterday</span>
+            </div>
+            <div class="msg-snippet">Confirming Tuesday 1PM call — I'll send Zoom.</div>
+            <span class="msg-tag gmail">GMAIL</span>
+          </div>
+        </div>
+        <div class="msg-entry">
+          <div class="msg-avatar">DL</div>
+          <div class="msg-body">
+            <div class="msg-head">
+              <span class="msg-name">Darcy · rep</span>
+              <span class="msg-time">yesterday</span>
+            </div>
+            <div class="msg-snippet">Peach is ready to sign. Sending over later today.</div>
+            <span class="msg-tag sms">SMS</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ALERTS BAR -->
+  <div class="alerts">
+    <div class="alerts-label">
+      <svg class="alert-icon" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 22h20L12 2zM12 9v5M12 17v.01"/></svg>
+      ALERTS · 3
+    </div>
+    <div class="alerts-items">
+      <div class="alert-chip"><div class="dot red"></div>Jonathan Gould — repair delay <span class="dim">OVERDUE 2d</span></div>
+      <div class="alert-chip"><div class="dot yellow"></div>Shelagh Peach — redeck quote follow-up <span class="dim">due Apr 20</span></div>
+      <div class="alert-chip"><div class="dot yellow"></div>8 crew tickets overdue <span class="dim">Diego · AJ</span></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- DEV: toggle dragon state -->
+<button class="dev-trigger" onclick="toggleDragon()">⚡ TEST ACTIVATE</button>
+
+<script src="assets/ryujin-mode.js"></script>
+<script src="assets/ryujin-tenant.js"></script>
+<script src="assets/ryujin-persist.js"></script>
+<script src="assets/ryujin-api.js"></script>
+<script src="assets/ryujin-scenario.js"></script>
+<script src="assets/ryujin-xp.js"></script>
+<script src="assets/ryujin-mode-badge.js"></script>
+<script src="assets/ryujin-search.js"></script>
+<script src="assets/ryujin-chat.js"></script>
+<script src="assets/ryujin-tutor.js"></script>
+<script>
+// Live snapshot fetcher — pulls real numbers from shenron-app when deployed
+(async function fetchLiveSnapshot(){
+  // Skip for local file:// to avoid CORS noise in console
+  if (location.protocol === 'file:') return;
+  try {
+    const res = await fetch('https://shenron-app.vercel.app/api/snapshot', { cache: 'no-store' });
+    if (!res.ok) throw new Error('snapshot ' + res.status);
+    const snap = await res.json();
+    // Update KPI rail if structure matches
+    const set = (selector, val) => { const el = document.querySelector(selector); if (el && val != null) el.textContent = val; };
+    if (snap.revenue?.signed) set('.kpi:nth-child(1) .kpi-value', '$' + (snap.revenue.signed / 1000).toFixed(1) + 'K');
+    if (snap.pipeline?.totalValue) set('.kpi:nth-child(2) .kpi-value', '$' + (snap.pipeline.totalValue / 1000).toFixed(0) + 'K');
+    if (snap.tickets?.active != null) set('.kpi:nth-child(3) .kpi-value', snap.tickets.active + '/' + (snap.tickets.total || '?'));
+    if (snap.leads?.weekly != null) set('.kpi:nth-child(4) .kpi-value', snap.leads.weekly);
+    if (snap.ads?.avgCPL != null) set('.kpi:nth-child(5) .kpi-value', '$' + snap.ads.avgCPL.toFixed(2));
+    // Signal live status
+    const tsEl = document.getElementById('ts'); if (tsEl) tsEl.textContent = new Date(snap.lastUpdated || Date.now()).toLocaleTimeString();
+    if (window.RyujinToast) RyujinToast('Live snapshot synced \u00B7 ' + (snap.lastUpdated || 'now'));
+  } catch(e) {
+    // Silent fail — keep placeholder values
+    console.info('Snapshot not available (local mode):', e.message);
+  }
+})();
+// Re-fetch quietly every 5 min (refreshes KPI values, doesn't reload the page)
+async function refetchSnapshot(){
+  if (location.protocol === 'file:') return;
+  try {
+    const res = await fetch('https://shenron-app.vercel.app/api/snapshot', { cache: 'no-store' });
+    if (!res.ok) return;
+    const snap = await res.json();
+    const set = (selector, val) => { const el = document.querySelector(selector); if (el && val != null) el.textContent = val; };
+    if (snap.revenue?.signed) set('.kpi:nth-child(1) .kpi-value', '$' + (snap.revenue.signed / 1000).toFixed(1) + 'K');
+    if (snap.pipeline?.totalValue) set('.kpi:nth-child(2) .kpi-value', '$' + (snap.pipeline.totalValue / 1000).toFixed(0) + 'K');
+  } catch(e){}
+}
+setInterval(refetchSnapshot, 300000);
+</script>
+<script>
+RyujinTutor.register('dashboard', [
+  { target: '.kpi-rail', title: 'Live KPI rail', body: 'Your five headline numbers \u2014 <b>Revenue, Pipeline, Crew, Leads, CPL</b>. These tick in real time from your live snapshot. Hover for deltas.', position: 'bottom' },
+  { target: '#dragonChatMount', title: 'Ryujin \u00B7 your sentinel', body: 'The dragon stage isn\u2019t decoration. It\u2019s your <b>AI command surface</b>. It greets you with today\u2019s priority, offers multiple-choice next actions, and routes you to the tool that handles it. No typing required.', position: 'right' },
+  { target: '.side-panel:first-child', title: 'Live action log', body: 'Every meaningful event across the business: <b>quote signed, ticket complete, meeting booked, payment received</b>. Filtered for signal, not noise.', position: 'left' },
+  { target: '.side-panel:last-child', title: 'Filtered messenger', body: 'Messages from customers and partners that <b>actually need your attention</b>. Spam and auto-replies are hidden. Tap any to open the thread.', position: 'left' },
+  { target: '.sectors', title: 'Sector gateways', body: 'Quick jumps to <b>Marketing, Sales, Production, Post-Prod, Admin</b>. Same destinations as the 3D hub. Click the one that matches what you\u2019re about to work on.', position: 'top' },
+  { target: '.alerts', title: 'Alert strip', body: 'Anything hard-coded as <b>urgent</b> lands here. Overdue jobs, payment bounces, customer complaints. Zero of these = all is quiet.', position: 'top' },
+  { target: '__center__', title: 'The dashboard is home.', body: 'Keep this open. The dragon talks to you, the log keeps you honest, and the sector gateways get you anywhere in one click. Press <b>?</b> anywhere for a tour.', position: 'top' }
+]);
+
+document.addEventListener('keydown', e => {
+  if ((e.key === '?' || e.key === 'h' || e.key === 'H') && window.RyujinTutor) { e.preventDefault(); RyujinTutor.start('dashboard'); }
+});
+
+Ryujin.init({
+  sector: 'DASHBOARD',
+  embedTarget: '#dragonChatMount',
+  root: {
+    msg: "Welcome back, Mackenzie. I've scanned today's state. <b>Top priority:</b> Jonathan Gould's repair is 2 days overdue — that's your only red alert. Your pipeline is healthy at <b>$410K</b> and the Faulkner job shifts to Wednesday thanks to the weather call. What do you want to tackle first?",
+    choices: [
+      { text: 'Handle the Gould overdue repair', next: 'gould' },
+      { text: 'Show me top open deals', next: 'deals' },
+      { text: 'Review today\u2019s crew status', next: 'crew' },
+      { text: 'Just browse the dashboard', dismiss: true }
+    ]
+  },
+  states: {
+    gould: {
+      msg: "Jonathan Gould, 810 Route 124 — callback repair blocked by crew conflict. Customer is waiting. I recommend calling him, apologizing, and scheduling for Friday. How do you want to move?",
+      choices: [
+        { text: 'Draft apology, call now', next: 'gould_call' },
+        { text: 'Reassign crew to Friday', next: 'gould_reassign' },
+        { text: 'Offer discount for delay', next: 'gould_discount' },
+        { text: 'Back', next: 'root' }
+      ]
+    },
+    gould_call: {
+      msg: "Opening Gould\u2019s contact. Dial his cell while I draft a message you can text after the call.",
+      sys: "Contact opened \u2022 SMS template ready",
+      choices: [
+        { text: 'Mark handled', next: 'root' },
+        { text: 'What\u2019s next?', next: 'next' }
+      ]
+    },
+    gould_reassign: {
+      msg: "Moving the ticket to Friday with Ryan\u2019s crew. I\u2019ll text Jonathan the updated ETA once you confirm.",
+      sys: "Ticket rescheduled \u2022 awaiting confirmation",
+      choices: [
+        { text: 'Send the text', next: 'root' },
+        { text: 'Back', next: 'root' }
+      ]
+    },
+    gould_discount: {
+      msg: "$150 credit off the repair is reasonable for a 2-day delay. I\u2019ll draft an email — review before sending.",
+      choices: [
+        { text: 'Preview the email', next: 'root' },
+        { text: 'Back', next: 'root' }
+      ]
+    },
+    deals: {
+      msg: "Three open deals worth your attention: Partridge ($44K, quote sent, 3 views), Peach ($19.7K, inspection set), Lipton ($27K, quiet 2d). Which do you want to push?",
+      choices: [
+        { text: 'Partridge \u2014 he\u2019s warm', next: 'deal_partridge' },
+        { text: 'Peach \u2014 Darcy presenting', next: 'deal_peach' },
+        { text: 'Lipton \u2014 cold, re-engage', next: 'deal_lipton' },
+        { text: 'Back', next: 'root' }
+      ]
+    },
+    deal_partridge: {
+      msg: "Partridge has viewed the proposal 3 times \u2014 high intent. I\u2019d call him today. Want me to draft what you\u2019ll say?",
+      choices: [
+        { text: 'Yes, give me a script', next: 'root' },
+        { text: 'Just open his record', next: 'root' },
+        { text: 'Back', next: 'deals' }
+      ]
+    },
+    deal_peach: {
+      msg: "Darcy is presenting Shelagh Peach. Redeck $3,700 + ventilation $11,850. Follow-up due Apr 20. I can ping Darcy now.",
+      choices: [
+        { text: 'Ping Darcy', next: 'root' },
+        { text: 'View notes', next: 'root' },
+        { text: 'Back', next: 'deals' }
+      ]
+    },
+    deal_lipton: {
+      msg: "Lipton\u2019s been cold for 2 days. Options: re-engage with a value-add, offer a discount, or mark stalled.",
+      choices: [
+        { text: 'Draft value-add email', next: 'root' },
+        { text: 'Offer small discount', next: 'root' },
+        { text: 'Back', next: 'deals' }
+      ]
+    },
+    crew: {
+      msg: "Diego is at 88% load (Edgewater mansard, day 3). AJ\u2019s starting Fortune today. Pavanjot is idle. 8 tickets overdue \u2014 mostly Diego / AJ. Want to redistribute?",
+      choices: [
+        { text: 'Reassign overdue to Pavanjot', next: 'crew_reassign' },
+        { text: 'Ping Diego for ETA', next: 'root' },
+        { text: 'Open Production board', next: 'root' },
+        { text: 'Back', next: 'root' }
+      ]
+    },
+    crew_reassign: {
+      msg: "Pavanjot has capacity for 2\u20133 tickets. I\u2019ll surface the 3 easiest wins \u2014 confirm each before assigning.",
+      choices: [
+        { text: 'Show me the 3', next: 'root' },
+        { text: 'Back', next: 'crew' }
+      ]
+    },
+    next: {
+      msg: "Now that\u2019s handled, next on your radar: Ben Crocker Zoom (Tuesday 1 PM), Melody tester batch, and FinanceIt deposit watch. Pick one.",
+      choices: [
+        { text: 'Prep Ben Crocker talking points', next: 'root' },
+        { text: 'Send Melody tester email', next: 'root' },
+        { text: 'Check FinanceIt status', next: 'root' },
+        { text: 'Done for now', dismiss: true }
+      ]
+    }
+  }
+});
+
+// On dashboard the chat IS the dragon stage, so remove the dev trigger in embed mode
+if (new URLSearchParams(location.search).has('embed')) {
+  const dev = document.querySelector('.dev-trigger'); if (dev) dev.style.display = 'none';
+}
+</script>
+
+<script>
+// Live timestamp
+function tickTs(){
+  const d=new Date(),p=n=>String(n).padStart(2,'0');
+  document.getElementById('ts').textContent=`${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+setInterval(tickTs,1000);tickTs();
+
+// Dragon activate demo
+function toggleDragon(){
+  const s=document.getElementById('dragonStage');
+  const q=document.getElementById('dragonQuote');
+  const sub=document.getElementById('dragonSub');
+  const st=document.getElementById('dragonState');
+  if(s.classList.toggle('active')){
+    q.textContent='THE STORM STIRS';
+    sub.textContent='3 EVENTS REQUIRE YOUR HANDS';
+    st.textContent='ACTIVE · attention needed';
+  }else{
+    q.textContent='ALL IS QUIET';
+    sub.textContent='THE STORM WATCHES · NOTHING REQUIRES HANDS';
+    st.textContent='DORMANT · monitoring';
+  }
+}
+
+// Mode switch (visual only)
+document.querySelectorAll('.mode-btn').forEach(b=>{
+  b.addEventListener('click',()=>{
+    document.querySelectorAll('.mode-btn').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+  });
+});
+
+// Fullscreen
+function toggleFs(){
+  if(!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{});
+  else document.exitFullscreen().catch(()=>{});
+}
+window.toggleFs=toggleFs;
+
+// Back to hub: if embedded in overlay, tell parent to close; else navigate
+function goBackToHub(){
+  const embed = new URLSearchParams(location.search).has('embed');
+  if (window.parent !== window && window.parent.exitSectionOverlay) {
+    window.parent.exitSectionOverlay();
+  } else if (embed || window.parent !== window) {
+    // silent: parent will handle close
+  } else {
+    window.location.href = 'command-center.html';
+  }
+}
+window.goBackToHub=goBackToHub;
+
+document.addEventListener('keydown',e=>{
+  if((e.key==='f'||e.key==='F')&&!e.ctrlKey&&!e.metaKey)toggleFs();
+  if(e.key==='Escape')goBackToHub();
+});
+document.addEventListener('contextmenu', e => { e.preventDefault(); goBackToHub(); });
+
+// Hide nav chrome when used as a tiny preview (embed=1)
+if (new URLSearchParams(location.search).has('embed')) {
+  document.documentElement.classList.add('embed-mode');
+}
+</script>
+
+</body>
+</html>

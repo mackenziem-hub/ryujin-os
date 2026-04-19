@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#000">
+<title>Ryujin OS · Booting</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;width:100%;overflow:hidden}
+body{background:#000;color:#e0e6f0;font-family:'Orbitron',sans-serif;position:relative;cursor:pointer;user-select:none;-webkit-user-select:none}
+
+/* ─── Background video (dragon fly-by) ─── */
+#boot-vid{position:fixed;inset:0;width:100vw;height:100vh;object-fit:cover;z-index:0;opacity:0;mix-blend-mode:screen;filter:hue-rotate(-8deg) saturate(1.2) brightness(1.1) contrast(1.15);will-change:transform,opacity;transform:translateX(-110vw);transition:opacity 1.8s ease-out}
+#boot-vid.arriving{transition:transform 1.8s cubic-bezier(.2,.8,.3,1), opacity 1.2s ease-out;transform:translateX(0);opacity:0.55}
+#boot-vid.exiting{transition:transform 2s cubic-bezier(.4,.05,.9,.5);transform:translateX(110vw)}
+
+/* ─── Ambient layers ─── */
+.layer{position:absolute;inset:0;pointer-events:none}
+.layer.deep{background:radial-gradient(ellipse at 50% 55%, #081626 0%, #000 70%);opacity:0;transition:opacity 1.2s}
+.layer.caustic{background-image:url('assets/grok-image-13862a83-9822-4cbd-9913-0bf1c615e042.png');background-size:cover;background-position:center;opacity:0;mix-blend-mode:screen;transition:opacity 2s;transform:scale(1.1);will-change:transform,opacity;animation:causticDrift 20s ease-in-out infinite}
+@keyframes causticDrift{0%,100%{transform:scale(1.1) translateX(-2%)}50%{transform:scale(1.12) translateX(2%)}}
+.layer.wire{background-image:url('assets/grok-image-7faae61d-ab16-4bdd-9cbd-847de42e01db.png');background-size:cover;background-position:center;opacity:0;mix-blend-mode:screen;transition:opacity 2.5s, filter 3s;filter:drop-shadow(0 0 40px rgba(34,211,238,0.5));transform:scale(1.05)}
+
+/* ─── Scanlines + grid ─── */
+.scanlines{position:fixed;inset:0;z-index:4;pointer-events:none;background-image:repeating-linear-gradient(0deg,transparent 0,transparent 2px,rgba(34,211,238,0.028) 2px,rgba(34,211,238,0.028) 3px);mix-blend-mode:overlay;opacity:0;transition:opacity 1.2s}
+.grid{position:fixed;inset:0;z-index:3;pointer-events:none;background-image:linear-gradient(rgba(34,211,238,0.05) 1px,transparent 1px),linear-gradient(90deg,rgba(34,211,238,0.05) 1px,transparent 1px);background-size:68px 68px;mask-image:radial-gradient(ellipse at center,black 20%,transparent 75%);-webkit-mask-image:radial-gradient(ellipse at center,black 20%,transparent 75%);opacity:0;transition:opacity 1.8s}
+.vignette{position:fixed;inset:0;z-index:6;pointer-events:none;background:radial-gradient(ellipse at center,transparent 35%,rgba(0,0,0,0.78) 100%)}
+
+/* ─── Lens flare sweep ─── */
+.flare{position:fixed;inset:0;z-index:5;pointer-events:none;opacity:0;background:radial-gradient(ellipse 60% 120% at -20% 50%, rgba(34,211,238,0.3) 0%, transparent 50%);transition:opacity 0.6s}
+.flare.on{animation:flareSweep 2.2s cubic-bezier(.2,.8,.3,1) forwards}
+@keyframes flareSweep{0%{opacity:0;background:radial-gradient(ellipse 60% 120% at -20% 50%, rgba(34,211,238,0.4) 0%, transparent 50%)}20%{opacity:1}70%{opacity:1;background:radial-gradient(ellipse 60% 120% at 120% 50%, rgba(124,58,237,0.4) 0%, transparent 50%)}100%{opacity:0;background:radial-gradient(ellipse 60% 120% at 140% 50%, rgba(124,58,237,0.2) 0%, transparent 50%)}}
+
+/* ─── Boot log (top-left terminal) ─── */
+.boot-log{position:fixed;top:28px;left:28px;z-index:22;font-family:'Share Tech Mono',monospace;font-size:0.72em;color:rgba(34,211,238,0.6);letter-spacing:0.5px;max-width:440px;opacity:0;transition:opacity 0.5s}
+.boot-log.on{opacity:1}
+.boot-line{margin:2px 0;white-space:nowrap;opacity:0;animation:logSlide 0.35s cubic-bezier(.2,.8,.3,1) forwards}
+.boot-line.ok::after{content:' ✓';color:#4ade80}
+.boot-line.err::after{content:' FAIL';color:#f87171}
+.boot-line b{color:#22d3ee}
+@keyframes logSlide{from{opacity:0;transform:translateX(-14px)}to{opacity:0.92;transform:translateX(0)}}
+
+/* ─── Top-right status ─── */
+.status{position:fixed;top:28px;right:28px;z-index:22;font-family:'Share Tech Mono',monospace;font-size:0.7em;color:rgba(34,211,238,0.55);letter-spacing:1px;text-align:right;opacity:0;transition:opacity 0.8s}
+.status.on{opacity:1}
+.status div{margin:2px 0}
+.status .val{color:#22d3ee}
+
+/* ─── Center stage ─── */
+.stage{position:fixed;inset:0;z-index:15;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;will-change:transform, opacity}
+.stage.zoom-in{transition:transform 1.4s cubic-bezier(.55,.06,.68,.19), opacity 1s cubic-bezier(.4,0,.2,1);transform:scale(12);opacity:0}
+
+/* ─── Logo core + rings ─── */
+.core-wrap{position:relative;width:340px;height:340px;display:flex;align-items:center;justify-content:center;opacity:0;transform:scale(0.25);transition:opacity 1.6s cubic-bezier(.2,.8,.3,1), transform 2s cubic-bezier(.2,.8,.3,1.08)}
+.core-wrap.on{opacity:1;transform:scale(1)}
+
+.ring{position:absolute;border-radius:50%;animation:ringSpin 22s linear infinite}
+.ring-1{inset:0;border:1px solid rgba(34,211,238,0.35);border-top-color:#22d3ee;border-right-color:rgba(124,58,237,0.5)}
+.ring-2{inset:32px;border:1px solid rgba(124,58,237,0.35);border-top-color:rgba(124,58,237,0.75);border-left-color:rgba(34,211,238,0.55);animation-direction:reverse;animation-duration:18s}
+.ring-3{inset:62px;border:1px solid rgba(74,222,128,0.3);border-top-color:rgba(74,222,128,0.6);animation-duration:30s}
+.ring-glow{position:absolute;inset:-20px;border-radius:50%;background:radial-gradient(circle,transparent 55%,rgba(34,211,238,0.25) 60%,transparent 70%);filter:blur(4px);opacity:0;transition:opacity 1.6s;animation:glowPulse 3s ease-in-out infinite}
+.core-wrap.on .ring-glow{opacity:1}
+@keyframes ringSpin{to{transform:rotate(360deg)}}
+@keyframes glowPulse{0%,100%{opacity:0.45;transform:scale(1)}50%{opacity:0.75;transform:scale(1.04)}}
+
+.core{width:160px;height:160px;border-radius:50%;background:radial-gradient(circle at 38% 32%,rgba(220,240,255,0.45) 0%,rgba(34,211,238,0.5) 20%,rgba(10,25,50,0.8) 60%,rgba(0,5,15,0.98) 100%);box-shadow:0 0 80px rgba(34,211,238,0.55),0 0 160px rgba(34,211,238,0.25),inset 0 -12px 30px rgba(0,0,0,0.5),inset 0 6px 20px rgba(200,230,255,0.2);position:relative;overflow:hidden}
+.core::after{content:'';position:absolute;top:16px;left:34px;width:50px;height:24px;background:rgba(255,255,255,0.32);border-radius:50%;transform:rotate(-22deg);filter:blur(5px)}
+.core::before{content:'';position:absolute;inset:0;border-radius:50%;background:url('assets/logo/logo-glow.jpg') center/cover;opacity:0.85;mix-blend-mode:screen}
+
+/* ─── Wordmark: letter-by-letter reveal ─── */
+.wordmark{margin-top:50px;display:flex;gap:14px;font-size:3.4em;font-weight:900;letter-spacing:2px;filter:drop-shadow(0 0 28px rgba(34,211,238,0.5))}
+.wordmark span{display:inline-block;opacity:0;transform:translateY(24px) scale(0.85);background:linear-gradient(135deg,#ffffff 20%,#22d3ee 60%,#7c3aed);-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-shadow:0 0 20px rgba(34,211,238,0.3);transition:opacity 0.55s, transform 0.75s cubic-bezier(.2,.8,.3,1.2)}
+.wordmark.on span{opacity:1;transform:translateY(0) scale(1)}
+.wordmark.on span:nth-child(1){transition-delay:0s}
+.wordmark.on span:nth-child(2){transition-delay:0.1s}
+.wordmark.on span:nth-child(3){transition-delay:0.2s}
+.wordmark.on span:nth-child(4){transition-delay:0.3s}
+.wordmark.on span:nth-child(5){transition-delay:0.4s}
+.wordmark.on span:nth-child(6){transition-delay:0.5s}
+
+/* ─── Tagline (typed) ─── */
+.tagline{margin-top:16px;font-family:'Share Tech Mono',monospace;font-size:0.82em;letter-spacing:3.5px;color:rgba(160,190,230,0.65);height:1.4em;overflow:hidden}
+.tagline .cursor{display:inline-block;width:2px;height:1em;background:#22d3ee;margin-left:4px;animation:cursorBlink 0.8s step-end infinite;vertical-align:middle}
+@keyframes cursorBlink{0%,50%{opacity:1}51%,100%{opacity:0}}
+
+/* ─── Progress bar ─── */
+.progress{margin-top:44px;width:360px;opacity:0;transition:opacity 0.6s}
+.progress.on{opacity:1}
+.progress-track{height:3px;background:rgba(34,211,238,0.1);border-radius:2px;overflow:hidden;position:relative}
+.progress-fill{position:absolute;top:0;left:0;height:100%;width:0;background:linear-gradient(90deg,transparent 0%,#22d3ee 50%,#7c3aed 100%);box-shadow:0 0 14px rgba(34,211,238,0.7);transition:width 3.5s cubic-bezier(.4,0,.3,1)}
+.progress-label{display:flex;justify-content:space-between;margin-top:10px;font-family:'Share Tech Mono',monospace;font-size:0.68em;color:rgba(160,190,230,0.5);letter-spacing:1.5px}
+
+/* ─── Press any key ─── */
+.press{position:fixed;bottom:16%;left:0;right:0;z-index:20;text-align:center;opacity:0;transform:translateY(10px);transition:opacity 0.8s, transform 0.8s;pointer-events:none}
+.press.on{opacity:1;transform:translateY(0)}
+.press-text{font-family:'Share Tech Mono',monospace;font-size:0.82em;letter-spacing:5px;color:#22d3ee;text-shadow:0 0 20px rgba(34,211,238,0.6);animation:pressPulse 1.5s ease-in-out infinite}
+@keyframes pressPulse{0%,100%{opacity:1;letter-spacing:5px}50%{opacity:0.45;letter-spacing:6px}}
+.press-keys{margin-top:16px;display:flex;gap:12px;justify-content:center;align-items:center}
+.key{min-width:42px;height:40px;padding:0 12px;border-radius:9px;background:rgba(34,211,238,0.1);border:1px solid rgba(34,211,238,0.45);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:0.78em;color:#22d3ee;box-shadow:0 0 18px rgba(34,211,238,0.25),inset 0 -3px 0 rgba(0,0,0,0.4);letter-spacing:1.5px}
+.key-sep{color:rgba(160,190,230,0.3);font-family:'Share Tech Mono',monospace}
+
+/* ─── Skip button ─── */
+.skip{position:fixed;bottom:26px;right:26px;z-index:22;padding:8px 14px;border:1px solid rgba(160,190,230,0.2);border-radius:8px;background:rgba(6,10,20,0.5);color:rgba(160,190,230,0.55);font-family:'Share Tech Mono',monospace;font-size:0.7em;letter-spacing:1.5px;cursor:pointer;opacity:0;transition:opacity 0.6s, color 0.2s, border-color 0.2s}
+.skip.on{opacity:1}
+.skip:hover{color:#22d3ee;border-color:rgba(34,211,238,0.4)}
+
+/* ─── Fade-out to next screen (belt-and-suspenders after zoom) ─── */
+.blackout{position:fixed;inset:0;z-index:30;background:#000;opacity:0;pointer-events:none;transition:opacity 0.9s}
+.blackout.on{opacity:1;pointer-events:auto}
+
+/* ─── Activation flash ─── */
+.flash{position:fixed;inset:0;z-index:28;background:radial-gradient(circle at center,rgba(34,211,238,0.7) 0%,rgba(34,211,238,0) 55%);pointer-events:none;opacity:0;transition:opacity 0.3s}
+.flash.on{opacity:1;transition:opacity 0.1s}
+</style>
+</head>
+<body>
+
+<!-- Boot cinematic (production intro) -->
+<video id="boot-vid" autoplay muted playsinline>
+  <source src="assets/videos/production cinematic.mp4" type="video/mp4">
+  <source src="assets/videos/backround scrolling dragon.mp4" type="video/mp4">
+</video>
+
+<!-- Ambient layers -->
+<div class="layer deep" id="lDeep"></div>
+<div class="layer caustic" id="lCaustic"></div>
+<div class="layer wire" id="lWire"></div>
+<div class="grid" id="grid"></div>
+<div class="scanlines" id="scan"></div>
+<div class="flare" id="flare"></div>
+<div class="vignette"></div>
+
+<!-- Boot log -->
+<div class="boot-log" id="bootLog"></div>
+
+<!-- Top-right status -->
+<div class="status" id="status">
+  <div>RYUJIN OS <span class="val">v3.1</span></div>
+  <div>TENANT · <span class="val">plus-ultra</span></div>
+  <div>NODE · <span class="val" id="sNode">—</span></div>
+  <div id="sTs">—</div>
+</div>
+
+<!-- Center stage -->
+<div class="stage" id="stage">
+  <div class="core-wrap" id="coreWrap">
+    <div class="ring-glow"></div>
+    <div class="ring ring-1"></div>
+    <div class="ring ring-2"></div>
+    <div class="ring ring-3"></div>
+    <div class="core"></div>
+  </div>
+  <div class="wordmark" id="wordmark">
+    <span>R</span><span>Y</span><span>U</span><span>J</span><span>I</span><span>N</span>
+  </div>
+  <div class="tagline" id="tagline"><span class="cursor"></span></div>
+  <div class="progress" id="progress">
+    <div class="progress-track"><div class="progress-fill" id="progFill"></div></div>
+    <div class="progress-label">
+      <span id="progStep">INITIALIZING</span>
+      <span id="progPct">0%</span>
+    </div>
+  </div>
+</div>
+
+<!-- Press any key -->
+<div class="press" id="press">
+  <div class="press-text">PRESS ANY BUTTON TO ACTIVATE</div>
+  <div class="press-keys">
+    <div class="key">SPACE</div>
+    <div class="key-sep">·</div>
+    <div class="key">A</div>
+    <div class="key-sep">·</div>
+    <div class="key">CLICK</div>
+  </div>
+</div>
+
+<button class="skip" id="skip">SKIP INTRO ›</button>
+
+<div class="flash" id="flash"></div>
+<div class="blackout" id="blackout"></div>
+
+<script>
+// ── Boot log sequence ──
+const log = document.getElementById('bootLog');
+const addLog = (msg, cls) => {
+  const d = document.createElement('div');
+  d.className = 'boot-line ' + (cls || '');
+  d.innerHTML = '> ' + msg;
+  log.appendChild(d);
+};
+const lines = [
+  { t: 300,  msg: 'BIOS · RYUJIN BOOT LOADER v3.1', cls: 'ok' },
+  { t: 450,  msg: 'MEM · 32.7GB allocated',         cls: 'ok' },
+  { t: 600,  msg: 'CORE · quantum link <b>ONLINE</b>', cls: 'ok' },
+  { t: 800,  msg: 'DRAGON · engine v3.1 handshake', cls: 'ok' },
+  { t: 1050, msg: 'SUPABASE · vnhamjbcvrzm…',      cls: 'ok' },
+  { t: 1250, msg: 'TENANT · plus-ultra-roofing',   cls: 'ok' },
+  { t: 1500, msg: 'BLOB · vercel storage mounted', cls: 'ok' },
+  { t: 1750, msg: 'GHL · CRM sync nominal',        cls: 'ok' },
+  { t: 2000, msg: 'META · ad telemetry 3 active',  cls: 'ok' },
+  { t: 2250, msg: 'STORM · sentinel awakening…',   cls: '' },
+  { t: 2550, msg: 'DRAGON CORE · <b>READY</b>',    cls: 'ok' }
+];
+lines.forEach(l => setTimeout(() => addLog(l.msg, l.cls), l.t));
+
+// Live node + timestamp
+const nodes = ['MCN-1', 'HLFX-2', 'FRED-1', 'MCN-3'];
+document.getElementById('sNode').textContent = nodes[Math.floor(Math.random() * nodes.length)];
+const tick = () => {
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  document.getElementById('sTs').textContent = `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())} UTC-3`;
+};
+setInterval(tick, 1000); tick();
+
+// ── Tagline typewriter ──
+const tag = document.getElementById('tagline');
+const tagText = 'SMART SYSTEMS DESIGNED FOR YOU · BY YOU';
+let ti = 0;
+function typeTag(){
+  if (ti >= tagText.length) return;
+  tag.insertBefore(document.createTextNode(tagText[ti]), tag.lastElementChild);
+  ti++;
+  setTimeout(typeTag, 42);
+}
+
+// ── Phased animation ──
+setTimeout(() => {                         // Phase 1 — background video flies in
+  document.getElementById('lDeep').style.opacity = '1';
+  document.getElementById('boot-vid').classList.add('arriving');
+  document.getElementById('boot-vid').play().catch(() => {});
+  document.getElementById('bootLog').classList.add('on');
+  document.getElementById('status').classList.add('on');
+  document.getElementById('grid').style.opacity = '1';
+}, 200);
+
+setTimeout(() => {                         // Phase 2 — caustic + lens flare
+  document.getElementById('lCaustic').style.opacity = '0.35';
+  document.getElementById('scan').style.opacity = '1';
+  document.getElementById('flare').classList.add('on');
+}, 900);
+
+setTimeout(() => {                         // Phase 3 — core + rings emerge
+  document.getElementById('lWire').style.opacity = '0.55';
+  document.getElementById('coreWrap').classList.add('on');
+}, 1400);
+
+setTimeout(() => {                         // Phase 4 — wordmark letter-by-letter
+  document.getElementById('wordmark').classList.add('on');
+}, 2200);
+
+setTimeout(() => {                         // Phase 5 — tagline typewriter
+  typeTag();
+}, 3000);
+
+setTimeout(() => {                         // Phase 6 — progress bar
+  document.getElementById('progress').classList.add('on');
+  document.getElementById('progStep').textContent = 'SYSTEMS ONLINE';
+  document.getElementById('progFill').style.width = '100%';
+  document.getElementById('progPct').textContent = '100%';
+}, 3400);
+
+setTimeout(() => {                         // Phase 7 — press any key
+  document.getElementById('press').classList.add('on');
+  document.getElementById('skip').classList.add('on');
+  activated.ready = true;
+}, 4600);
+
+// ── Activation ──
+const activated = { fired: false, ready: false };
+function activate(){
+  if (activated.fired || !activated.ready) return;
+  activated.fired = true;
+  // Flash + zoom into the orb
+  document.getElementById('flash').classList.add('on');
+  setTimeout(() => document.getElementById('flash').classList.remove('on'), 250);
+  // Exit the video stream to the right
+  document.getElementById('boot-vid').classList.remove('arriving');
+  document.getElementById('boot-vid').classList.add('exiting');
+  // Zoom the whole stage INTO the orb
+  document.getElementById('stage').classList.add('zoom-in');
+  document.getElementById('press').style.opacity = '0';
+  document.getElementById('skip').style.opacity = '0';
+  // Start blackout
+  setTimeout(() => document.getElementById('blackout').classList.add('on'), 900);
+  // Hand off
+  setTimeout(() => {
+    try { sessionStorage.setItem('ry_boot_seen', '1'); } catch(e){}
+    window.location.href = 'command-center.html?skip-onboarding=1';
+  }, 1750);
+}
+function skip(){
+  try { sessionStorage.setItem('ry_boot_seen', '1'); } catch(e){}
+  document.getElementById('blackout').classList.add('on');
+  setTimeout(() => window.location.href = 'command-center.html?skip-onboarding=1', 450);
+}
+document.addEventListener('keydown', activate);
+document.addEventListener('click', e => { if (e.target.id !== 'skip') activate(); });
+document.addEventListener('touchstart', activate, { passive: true });
+document.getElementById('skip').addEventListener('click', skip);
+
+// Gamepad
+function pollGamepad(){
+  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+  for (const p of pads) { if (!p) continue; if (p.buttons.some(b => b && b.pressed)) activate(); }
+  requestAnimationFrame(pollGamepad);
+}
+requestAnimationFrame(pollGamepad);
+</script>
+
+</body>
+</html>

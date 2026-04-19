@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#030611">
+<title>Arcade · Ryujin OS</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;width:100%;overflow:hidden;-webkit-font-smoothing:antialiased}
+body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;user-select:none}
+
+.bg-deep{position:fixed;inset:0;z-index:0;background:radial-gradient(ellipse at 25% 20%,rgba(250,204,21,0.08),transparent 55%),radial-gradient(ellipse at 75% 80%,rgba(239,68,68,0.06),transparent 50%),linear-gradient(180deg,#060a14 0%,#000 100%)}
+.bg-grid{position:fixed;inset:0;z-index:1;pointer-events:none;background-image:linear-gradient(rgba(250,204,21,0.02) 1px,transparent 1px),linear-gradient(90deg,rgba(250,204,21,0.02) 1px,transparent 1px);background-size:60px 60px;mask-image:radial-gradient(ellipse at center,black 25%,transparent 80%);-webkit-mask-image:radial-gradient(ellipse at center,black 25%,transparent 80%)}
+
+/* ─── Top bar ─── */
+.topbar{position:fixed;top:14px;left:16px;right:16px;height:58px;display:flex;align-items:center;gap:14px;background:rgba(14,22,40,0.85);border:1px solid rgba(250,204,21,0.35);border-radius:14px;padding:0 18px;backdrop-filter:blur(20px);z-index:30;box-shadow:0 10px 40px rgba(0,0,0,0.5),0 0 24px rgba(250,204,21,0.08)}
+.back-btn{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:rgba(6,10,20,0.6);border:1px solid rgba(250,204,21,0.3);color:rgba(250,220,150,0.8);cursor:pointer;transition:all 0.2s}
+.back-btn:hover{background:rgba(250,204,21,0.12);color:#facc15;border-color:rgba(250,204,21,0.6)}
+.back-btn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.title{font-family:'Orbitron',sans-serif;font-size:0.88em;font-weight:900;letter-spacing:3px;background:linear-gradient(135deg,#fff 30%,#facc15);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.sub{font-size:0.66em;font-family:'Share Tech Mono',monospace;color:rgba(200,220,255,0.5);letter-spacing:2px;margin-top:2px}
+.score-pill{margin-left:auto;padding:10px 18px;background:rgba(6,10,20,0.8);border:1px solid rgba(250,204,21,0.35);border-radius:10px;font-family:'Orbitron',sans-serif;font-weight:800;font-size:0.76em;letter-spacing:2px;color:#facc15}
+
+/* ─── Hub ─── */
+.hub{position:fixed;top:100px;left:24px;right:24px;bottom:24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px;z-index:10;overflow-y:auto;padding:4px}
+.game-card{position:relative;padding:28px 26px;background:rgba(14,22,40,0.72);border:1px solid rgba(250,204,21,0.25);border-radius:18px;cursor:pointer;transition:all 0.35s cubic-bezier(.2,.8,.3,1);overflow:hidden;backdrop-filter:blur(14px);box-shadow:0 14px 40px rgba(0,0,0,0.45)}
+.game-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#facc15,transparent);opacity:0.7}
+.game-card:hover{border-color:#facc15;transform:translateY(-6px) scale(1.02);box-shadow:0 24px 70px rgba(0,0,0,0.6),0 0 40px rgba(250,204,21,0.25)}
+.game-card.locked{opacity:0.55;cursor:not-allowed}
+.game-card.locked:hover{transform:none;box-shadow:0 14px 40px rgba(0,0,0,0.45);border-color:rgba(250,204,21,0.25)}
+.game-header{display:flex;align-items:center;gap:14px;margin-bottom:16px}
+.game-icon{width:56px;height:56px;border-radius:14px;background:radial-gradient(circle at 35% 30%,rgba(255,245,200,0.35),rgba(250,204,21,0.25) 40%,rgba(80,60,0,0.9));border:1px solid rgba(250,204,21,0.4);display:flex;align-items:center;justify-content:center;color:#facc15;box-shadow:0 0 18px rgba(250,204,21,0.2)}
+.game-icon svg{width:26px;height:26px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.game-name{font-family:'Orbitron',sans-serif;font-weight:900;font-size:1.1em;letter-spacing:1.5px;color:#fff;margin-bottom:4px}
+.game-tag{font-family:'Share Tech Mono',monospace;font-size:0.7em;color:#facc15;letter-spacing:2px}
+.game-desc{font-size:0.92em;color:rgba(200,220,255,0.75);line-height:1.55;margin-bottom:16px}
+.game-meta{display:flex;gap:10px;font-family:'Share Tech Mono',monospace;font-size:0.7em;color:rgba(200,220,255,0.55);letter-spacing:1px}
+.game-meta span{padding:5px 10px;background:rgba(6,10,20,0.6);border:1px solid rgba(250,204,21,0.15);border-radius:6px}
+.game-meta .hi{color:#facc15;border-color:rgba(250,204,21,0.4)}
+.game-lock{position:absolute;top:22px;right:22px;width:28px;height:28px;border-radius:50%;background:rgba(6,10,20,0.8);border:1px solid rgba(200,220,255,0.2);display:flex;align-items:center;justify-content:center;color:rgba(200,220,255,0.5)}
+.game-lock svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2.5}
+
+/* ─── Proposal Sprint game ─── */
+#spring-stage{position:fixed;inset:0;z-index:50;display:none;flex-direction:column;align-items:stretch;justify-content:stretch;background:radial-gradient(ellipse at center,rgba(10,18,34,0.98),rgba(3,6,17,0.99))}
+#spring-stage.on{display:flex}
+
+.sprint-top{display:flex;justify-content:space-between;align-items:center;padding:22px 28px;border-bottom:1px solid rgba(250,204,21,0.2)}
+.sprint-quit{background:rgba(6,10,20,0.7);border:1px solid rgba(239,68,68,0.35);color:rgba(239,68,68,0.85);padding:8px 14px;border-radius:8px;font-family:'Share Tech Mono',monospace;font-size:0.68em;letter-spacing:1.5px;cursor:pointer;transition:all 0.2s}
+.sprint-quit:hover{color:#ef4444;border-color:#ef4444}
+.sprint-status{display:flex;gap:18px;align-items:center}
+.sprint-stat{text-align:center}
+.sprint-stat .lbl{font-family:'Share Tech Mono',monospace;font-size:0.6em;color:rgba(200,220,255,0.5);letter-spacing:1.5px;margin-bottom:3px;text-transform:uppercase}
+.sprint-stat .v{font-family:'Orbitron',sans-serif;font-weight:900;font-size:1.4em;color:#fff}
+.sprint-stat.score .v{color:#facc15}
+.sprint-stat.streak .v{background:linear-gradient(135deg,#facc15,#22d3ee);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+
+.sprint-timer{flex:1;max-width:420px;margin:0 22px;position:relative;height:14px;background:rgba(6,10,20,0.65);border:1px solid rgba(250,204,21,0.3);border-radius:8px;overflow:hidden}
+.sprint-timer-fill{position:absolute;inset:0;background:linear-gradient(90deg,#4ade80,#facc15,#ef4444);transform-origin:left center;transform:scaleX(1);transition:transform 0.1s linear}
+.sprint-timer.low .sprint-timer-fill{animation:timerPulse 0.5s ease-in-out infinite}
+@keyframes timerPulse{0%,100%{opacity:1}50%{opacity:0.5}}
+
+.sprint-main{flex:1;display:flex;align-items:center;justify-content:center;padding:40px;overflow-y:auto}
+.prospect-card{max-width:760px;width:100%;padding:40px;background:rgba(14,22,40,0.85);border:1px solid rgba(250,204,21,0.3);border-radius:18px;backdrop-filter:blur(14px);box-shadow:0 24px 70px rgba(0,0,0,0.6),0 0 40px rgba(250,204,21,0.08);animation:cardFade 0.4s cubic-bezier(.2,.8,.3,1) forwards;opacity:0}
+@keyframes cardFade{to{opacity:1}}
+.prospect-card.leaving{animation:cardOut 0.35s forwards}
+@keyframes cardOut{to{opacity:0;transform:translateX(-30px)}}
+.prospect-head{display:flex;align-items:center;gap:18px;margin-bottom:20px}
+.prospect-avatar{width:64px;height:64px;border-radius:50%;overflow:hidden;flex-shrink:0;border:2px solid rgba(250,204,21,0.4);box-shadow:0 0 18px rgba(250,204,21,0.2)}
+.prospect-meta{flex:1;min-width:0}
+.prospect-label{font-family:'Share Tech Mono',monospace;font-size:0.7em;color:#facc15;letter-spacing:2px;margin-bottom:4px;text-transform:uppercase}
+.prospect-name{font-family:'Orbitron',sans-serif;font-weight:800;font-size:1.05em;letter-spacing:0.5px;color:#fff}
+.prospect-hook{font-size:1.05em;line-height:1.7;color:#e0e6f0;margin-bottom:24px;font-style:italic;padding:16px 20px;background:rgba(6,12,24,0.6);border-left:3px solid #facc15;border-radius:0 8px 8px 0}
+.prospect-hook::before{content:'"';color:#facc15;font-size:1.5em;margin-right:4px}
+.prospect-hook::after{content:'"';color:#facc15;font-size:1.5em;margin-left:2px}
+.prospect-options{display:flex;flex-direction:column;gap:10px}
+.prospect-opt{padding:16px 20px;background:rgba(6,12,24,0.7);border:1px solid rgba(250,204,21,0.22);color:#e0e6f0;border-radius:12px;font-family:'Inter',sans-serif;font-size:0.95em;font-weight:500;cursor:pointer;text-align:left;transition:all 0.2s;line-height:1.45;display:flex;align-items:center;gap:12px}
+.prospect-opt .k{display:inline-block;width:24px;height:24px;border-radius:6px;background:rgba(250,204,21,0.15);color:#facc15;font-family:'Share Tech Mono',monospace;font-weight:900;font-size:0.76em;text-align:center;line-height:24px;flex-shrink:0}
+.prospect-opt:hover{background:rgba(250,204,21,0.08);border-color:rgba(250,204,21,0.5);transform:translateX(4px)}
+.prospect-opt:disabled{cursor:default;opacity:0.6}
+.prospect-opt.correct{background:rgba(74,222,128,0.18);border-color:#4ade80}
+.prospect-opt.partial{background:rgba(250,204,21,0.18);border-color:#facc15}
+.prospect-opt.wrong{background:rgba(239,68,68,0.15);border-color:#ef4444}
+
+/* Feedback */
+.sprint-feedback{margin-top:18px;padding:14px 18px;border-radius:10px;font-size:0.9em;line-height:1.6;animation:fbFade 0.3s}
+.sprint-feedback.win{background:rgba(74,222,128,0.12);border:1px solid rgba(74,222,128,0.4);color:#4ade80}
+.sprint-feedback.ok{background:rgba(250,204,21,0.1);border:1px solid rgba(250,204,21,0.35);color:#facc15}
+.sprint-feedback.loss{background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.35);color:#f87171}
+@keyframes fbFade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+
+/* Start / game over screen */
+.sprint-splash{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;padding:40px}
+.splash-title{font-family:'Orbitron',sans-serif;font-weight:900;font-size:3em;letter-spacing:-1px;background:linear-gradient(135deg,#fff 30%,#facc15);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:14px}
+.splash-desc{color:rgba(200,220,255,0.72);font-size:1.05em;max-width:540px;line-height:1.65;margin-bottom:32px}
+.splash-btn{padding:16px 38px;background:linear-gradient(135deg,#facc15,#f59e0b);color:#0a1530;border:none;border-radius:12px;font-family:'Orbitron',sans-serif;font-weight:900;font-size:0.92em;letter-spacing:3px;cursor:pointer;box-shadow:0 0 30px rgba(250,204,21,0.45),0 10px 30px rgba(0,0,0,0.4);transition:all 0.25s}
+.splash-btn:hover{transform:translateY(-3px);box-shadow:0 0 40px rgba(250,204,21,0.6),0 14px 40px rgba(0,0,0,0.5)}
+
+.result-stats{display:grid;grid-template-columns:repeat(4,minmax(100px,1fr));gap:14px;max-width:620px;margin:20px auto 30px}
+.result-stat{padding:18px 14px;background:rgba(14,22,40,0.7);border:1px solid rgba(250,204,21,0.25);border-radius:12px;text-align:center}
+.result-stat .v{font-family:'Orbitron',sans-serif;font-weight:900;font-size:1.7em;background:linear-gradient(135deg,#fff 30%,#facc15);-webkit-background-clip:text;-webkit-text-fill-color:transparent;line-height:1}
+.result-stat .l{font-family:'Share Tech Mono',monospace;font-size:0.65em;letter-spacing:1.5px;color:rgba(200,220,255,0.5);margin-top:8px;text-transform:uppercase}
+.hi-score-banner{display:inline-flex;align-items:center;gap:8px;padding:9px 18px;background:linear-gradient(135deg,rgba(250,204,21,0.22),rgba(124,58,237,0.12));border:1px solid #facc15;border-radius:22px;font-family:'Orbitron',sans-serif;font-weight:900;color:#facc15;font-size:0.78em;letter-spacing:2px;margin-bottom:18px;box-shadow:0 0 20px rgba(250,204,21,0.35)}
+
+@media (max-width:700px){
+  .result-stats{grid-template-columns:repeat(2,1fr)}
+  .splash-title{font-size:2em}
+  .prospect-card{padding:26px 22px}
+}
+</style>
+</head>
+<body>
+
+<div class="bg-deep"></div>
+<div class="bg-grid"></div>
+
+<div class="topbar">
+  <button class="back-btn" onclick="goBack()"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
+  <div>
+    <div class="title">ARCADE</div>
+    <div class="sub">TRAINING HALL · HIGH SCORES · LEVEL UP YOUR SKILLS</div>
+  </div>
+  <div class="score-pill" id="topScore">BEST: 0</div>
+</div>
+
+<!-- Arcade hub -->
+<div class="hub" id="hub">
+
+  <div class="game-card" onclick="startProposalSprint()">
+    <div class="game-header">
+      <div class="game-icon"><svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+      <div>
+        <div class="game-name">PROPOSAL SPRINT</div>
+        <div class="game-tag">60s · RAPID PITCH · SOLO</div>
+      </div>
+    </div>
+    <div class="game-desc">60 seconds. Prospects fly at you. Read their body language, pick the right frame, close the deal. Wrong response = prospect ghosts. Streaks multiply score.</div>
+    <div class="game-meta">
+      <span>10 prospect archetypes</span>
+      <span class="hi" id="pshi">Best: 0</span>
+    </div>
+  </div>
+
+  <div class="game-card locked">
+    <div class="game-lock"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div>
+    <div class="game-header">
+      <div class="game-icon"><svg viewBox="0 0 24 24"><path d="M3 3h18l-3 11H6L3 3z"/><line x1="3" y1="7" x2="21" y2="7"/></svg></div>
+      <div>
+        <div class="game-name">CREW DRAFT</div>
+        <div class="game-tag">BUILD YOUR TEAM</div>
+      </div>
+    </div>
+    <div class="game-desc">Draft a 5-person crew from a pool of candidates. Balance skill, attitude, price. Your picks play out over a simulated month.</div>
+    <div class="game-meta"><span>COMING IN PHASE 4</span></div>
+  </div>
+
+  <div class="game-card locked">
+    <div class="game-lock"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div>
+    <div class="game-header">
+      <div class="game-icon"><svg viewBox="0 0 24 24"><path d="M12 2l7 4v6c0 5-3.5 9-7 10-3.5-1-7-5-7-10V6l7-4z"/></svg></div>
+      <div>
+        <div class="game-name">OBJECTION GAUNTLET</div>
+        <div class="game-tag">ENDLESS · COMBAT</div>
+      </div>
+    </div>
+    <div class="game-desc">Face every objection in the book, back-to-back, in escalating difficulty. Last as long as you can. Boss waves with power objections.</div>
+    <div class="game-meta"><span>COMING IN PHASE 4</span></div>
+  </div>
+
+  <div class="game-card locked">
+    <div class="game-lock"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div>
+    <div class="game-header">
+      <div class="game-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M16 12l-4-4-4 4 4 4 4-4z"/></svg></div>
+      <div>
+        <div class="game-name">STORM SEASON</div>
+        <div class="game-tag">SURVIVAL · TYCOON</div>
+      </div>
+    </div>
+    <div class="game-desc">A 30-day storm event floods the market with leads. Maximize close rate and crew utilization before competitors swoop in.</div>
+    <div class="game-meta"><span>COMING IN PHASE 4</span></div>
+  </div>
+
+</div>
+
+<!-- Proposal Sprint game stage -->
+<div id="spring-stage">
+  <div class="sprint-top">
+    <button class="sprint-quit" onclick="quitSprint()">QUIT</button>
+    <div class="sprint-timer" id="timerBar"><div class="sprint-timer-fill" id="timerFill"></div></div>
+    <div class="sprint-status">
+      <div class="sprint-stat score"><div class="lbl">Score</div><div class="v" id="scoreVal">0</div></div>
+      <div class="sprint-stat streak"><div class="lbl">Streak</div><div class="v" id="streakVal">0</div></div>
+      <div class="sprint-stat"><div class="lbl">Closes</div><div class="v" id="closesVal">0</div></div>
+    </div>
+  </div>
+  <div class="sprint-main" id="sprintMain"></div>
+</div>
+
+<script src="assets/ryujin-mode.js"></script>
+<script src="assets/ryujin-tenant.js"></script>
+<script src="assets/ryujin-persist.js"></script>
+<script src="assets/ryujin-xp.js"></script>
+<script>
+function $(id){ return document.getElementById(id); }
+
+// Force sandbox
+if (window.RyujinMode && !RyujinMode.isSandbox()) RyujinMode.set('sandbox');
+
+// ── Prospect library ──
+const PROSPECTS = [
+  {
+    name: 'The Tire-Kicker',
+    label: 'Homeowner · casual browse · cold intent',
+    portrait: avatar('#94a3b8','TK'),
+    hook: 'Just looking around. Getting a few quotes. How fast can you get me a number?',
+    options: [
+      { text: 'Close them now: "I can give you a ballpark today if you can decide this week."', result: 'wrong', fb: 'Too hard. Tire-kickers disengage when pushed. They shop around longer.' },
+      { text: 'Consultative: "Let me come see the roof first — then you\'ll know what you\'re shopping."', result: 'correct', fb: 'Gold. You reframed from price to diagnosis. They booked an inspection.' },
+      { text: 'Soft: "Here\'s my email, send photos when you\'re ready."', result: 'partial', fb: 'Safe, but you\'re now in a stack of 5 emails they\'ll forget about.' }
+    ]
+  },
+  {
+    name: 'The Price Wall',
+    label: 'Got 3 quotes · you\'re highest',
+    portrait: avatar('#ef4444','PW'),
+    hook: 'Your quote is $6K more than Quick Roof. I need you to match or I\'m going with them.',
+    options: [
+      { text: 'Match them. A job is a job.', result: 'wrong', fb: 'You just commoditized yourself. They\'ll haggle you on everything next.' },
+      { text: 'Consultative: "Let me send you the scope comparison. You\'re not comparing apples to apples."', result: 'correct', fb: 'Perfect. Value reframe. They called back wanting to see the differences. Signed.' },
+      { text: 'Walk away: "Then Quick Roof is the right call for you."', result: 'partial', fb: 'You hold the line but lose the deal. Respectable, but a close was possible.' }
+    ]
+  },
+  {
+    name: 'The Referral',
+    label: 'Neighbor signed 2 weeks ago · hot',
+    portrait: avatar('#4ade80','RF'),
+    hook: 'My neighbor just used you and raved. I want the same exact package. When can you start?',
+    options: [
+      { text: 'Close hard: "Let me get the paperwork over today."', result: 'correct', fb: 'Correct. Hot referrals close fast. Hesitation lets doubt creep in.' },
+      { text: 'Consultative: "Let me inspect first — every roof is different."', result: 'partial', fb: 'Technically right but you slowed a hot lead. They\'re still in but you delayed a close.' },
+      { text: 'Over-explain: Launch into full pitch of features.', result: 'wrong', fb: 'You bored them. They said "uh, okay" and ghosted.' }
+    ]
+  },
+  {
+    name: 'The Widow',
+    label: 'Elderly · fixed income · scared of contractors',
+    portrait: avatar('#a78bfa','WD'),
+    hook: 'My late husband handled these things. I don\'t want to be taken advantage of. Everyone\'s quoting me different numbers.',
+    options: [
+      { text: 'Patient: "Can I bring my own daughter along? Just so you feel comfortable having us here."', result: 'correct', fb: 'Your humanity opened the door. She signed for the Gold tier at full price.' },
+      { text: 'Close: "Here\'s my best price. Fair and final. No games."', result: 'partial', fb: 'Good intent but her anxiety needs softening first. She hesitated.' },
+      { text: 'Aggressive: "You should decide today — prices are going up next week."', result: 'wrong', fb: 'You triggered every alarm bell she has. She told her daughter. Your rep took a hit.' }
+    ]
+  },
+  {
+    name: 'The Skeptic',
+    label: 'Got burned by a contractor last time',
+    portrait: avatar('#f472b6','SK'),
+    hook: 'Last guy took my deposit and disappeared. I don\'t trust any of you. Convince me.',
+    options: [
+      { text: 'Evidence: "I get it. Here are 5 references, my insurance COI, my CertainTeed cert, and a milestone payment schedule — you pay as we finish."', result: 'correct', fb: 'You answered every silent objection he had with proof. Signed within an hour.' },
+      { text: 'Defensive: "I\'m not those other guys."', result: 'wrong', fb: 'Protests don\'t build trust. He stayed suspicious.' },
+      { text: 'Emotional: "I totally understand. That\'s terrible. How about a 10% discount to show good faith?"', result: 'partial', fb: 'Discounting doesn\'t build trust — it looks desperate. He wavered.' }
+    ]
+  },
+  {
+    name: 'The DIYer',
+    label: 'Thinks they can YouTube it',
+    portrait: avatar('#fb923c','DY'),
+    hook: 'I watched 40 hours of YouTube. I think I can do this myself for half. Why should I pay you?',
+    options: [
+      { text: 'Challenge: "Alright, walk me through how you\'d handle ice damming in the north valley."', result: 'correct', fb: 'You exposed the knowledge gap without insulting them. They admitted they\'d hire you.' },
+      { text: 'Mock: "Good luck, hope you have insurance."', result: 'wrong', fb: 'Condescension loses the room. Zero chance of a close.' },
+      { text: 'Features: "Here\'s everything we include that YouTube won\'t teach..."', result: 'partial', fb: 'Facts without engagement. They said they\'d think about it.' }
+    ]
+  },
+  {
+    name: 'The Claims Adjuster',
+    label: 'Insurance job · tight margins',
+    portrait: avatar('#22d3ee','CA'),
+    hook: 'Insurance approved $18K. That\'s what you get paid. Don\'t add anything. Sign the assignment.',
+    options: [
+      { text: 'Honest: "Let me inspect first. Your settlement is what I quote — not what I invoice before I\'ve seen it."', result: 'correct', fb: 'Professional. The homeowner trusted you more. Adjuster approved without fuss.' },
+      { text: 'Accept: "Done. Sign me up."', result: 'partial', fb: 'Easy money but you may lose on hidden damage with no remediation budget.' },
+      { text: 'Pad it: "For $22K I can upgrade the shingles."', result: 'wrong', fb: 'Adjuster caught it. Blacklisted. Plus the homeowner now questions your integrity.' }
+    ]
+  },
+  {
+    name: 'The Fast-Decider',
+    label: 'Executive · values time > price',
+    portrait: avatar('#facc15','FD'),
+    hook: 'I don\'t care about 10% savings. I care about you starting Monday and being done by Friday. Can you?',
+    options: [
+      { text: 'Commit honestly: "Yes if I can juggle — let me call Diego and confirm in 30 minutes."', result: 'correct', fb: 'Executives respect decisive honesty. You called back, committed, signed at full price +5% rush fee.' },
+      { text: 'Hedge: "I can try but no promises."', result: 'wrong', fb: 'Executives hate hedging. They went with Quick Roof who said yes without hesitation.' },
+      { text: 'Close fast: "Yes absolutely, sign today."', result: 'partial', fb: 'You committed without checking. You delivered but burned the crew to do it.' }
+    ]
+  },
+  {
+    name: 'The Ghost',
+    label: 'Replied once · went dark · you\'re reviving',
+    portrait: avatar('#64748b','GH'),
+    hook: '(Radio silence for 3 weeks. You\'re the one reaching out.)',
+    options: [
+      { text: 'Text: "Hey — circling back. Want me to kill the quote or leave it open?"', result: 'correct', fb: 'Permission-to-close + low pressure. They replied instantly: "Leave it open. Call me Thursday."' },
+      { text: 'Email: Long re-pitch of your services.', result: 'wrong', fb: 'Deleted unread. Ghosts stay ghosts when you drown them.' },
+      { text: 'Call: "Hi! Just following up!"', result: 'partial', fb: 'They didn\'t pick up but your number\'s burned in their phone now.' }
+    ]
+  },
+  {
+    name: 'The Negotiator',
+    label: 'Every contractor\'s nightmare · loves to haggle',
+    portrait: avatar('#fda4af','NG'),
+    hook: 'Look, your price is fine. But throw in free gutter guards or I\'m walking.',
+    options: [
+      { text: 'Trade: "I can add gutter guards if you sign today at full price."', result: 'correct', fb: 'Turned the demand into a close. Trade-for-trade is how pros negotiate. Signed same day.' },
+      { text: 'Concede: "Sure. Gutter guards included."', result: 'partial', fb: 'Lost $1,200 in margin. They\'ll remember they can always squeeze you.' },
+      { text: 'Refuse: "No. Price is price."', result: 'wrong', fb: 'They walked. They\'ll sign with Carl who said yes and delivers subpar work.' }
+    ]
+  }
+];
+
+function avatar(color, letters){
+  return `<svg viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg">
+    <defs><radialGradient id="pg_${letters}" cx="35%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.5"/>
+      <stop offset="45%" stop-color="${color}" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#030611"/>
+    </radialGradient></defs>
+    <circle cx="40" cy="40" r="38" fill="url(#pg_${letters})" stroke="${color}" stroke-width="1.5"/>
+    <text x="40" y="48" text-anchor="middle" font-family="Orbitron, sans-serif" font-weight="900" font-size="24" fill="#fff" style="filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5))">${letters}</text>
+  </svg>`;
+}
+
+// ── Game state ──
+const GAME_DURATION = 60;
+let game = null;
+
+function startProposalSprint(){
+  game = { score: 0, streak: 0, bestStreak: 0, closes: 0, partial: 0, wrong: 0, timeLeft: GAME_DURATION, current: null, locked: false, ended: false, startedAt: Date.now() };
+  $('spring-stage').classList.add('on');
+  loop();
+  nextProspect();
+  startTimer();
+}
+
+function startTimer(){
+  if (game.timerHandle) clearInterval(game.timerHandle);
+  const start = performance.now();
+  game.timerHandle = setInterval(() => {
+    const elapsed = (performance.now() - start) / 1000;
+    game.timeLeft = Math.max(0, GAME_DURATION - elapsed);
+    const pct = game.timeLeft / GAME_DURATION;
+    $('timerFill').style.transform = 'scaleX(' + pct + ')';
+    $('timerBar').classList.toggle('low', pct < 0.2);
+    if (game.timeLeft <= 0) endGame();
+  }, 100);
+}
+
+function loop(){
+  $('scoreVal').textContent = game.score;
+  $('streakVal').textContent = game.streak + 'x';
+  $('closesVal').textContent = game.closes;
+}
+
+function nextProspect(){
+  if (game.ended) return;
+  const p = PROSPECTS[Math.floor(Math.random() * PROSPECTS.length)];
+  game.current = p;
+  game.locked = false;
+  renderProspect(p);
+}
+
+function renderProspect(p){
+  $('sprintMain').innerHTML = `
+    <div class="prospect-card" id="pcard">
+      <div class="prospect-head">
+        <div class="prospect-avatar">${p.portrait}</div>
+        <div class="prospect-meta">
+          <div class="prospect-label">${p.label}</div>
+          <div class="prospect-name">${p.name}</div>
+        </div>
+      </div>
+      <div class="prospect-hook">${p.hook}</div>
+      <div class="prospect-options" id="popts">
+        ${p.options.map((o, i) => `
+          <button class="prospect-opt" data-idx="${i}" onclick="choose(${i})">
+            <span class="k">${i + 1}</span>${o.text}
+          </button>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function choose(idx){
+  if (game.locked || game.ended) return;
+  game.locked = true;
+  const p = game.current;
+  const opt = p.options[idx];
+  const buttons = document.querySelectorAll('.prospect-opt');
+  buttons.forEach((b, i) => {
+    b.disabled = true;
+    if (i === idx) b.classList.add(opt.result);
+  });
+  // Score
+  let gain = 0;
+  if (opt.result === 'correct') { gain = 100 + game.streak * 20 + Math.round(game.timeLeft * 2); game.streak += 1; game.closes += 1; }
+  else if (opt.result === 'partial') { gain = 30; game.streak = 0; game.partial += 1; }
+  else { gain = -25; game.streak = 0; game.wrong += 1; }
+  game.score = Math.max(0, game.score + gain);
+  if (game.streak > game.bestStreak) game.bestStreak = game.streak;
+  // Feedback
+  const fbClass = opt.result === 'correct' ? 'win' : opt.result === 'partial' ? 'ok' : 'loss';
+  const fbLbl = opt.result === 'correct' ? '✓ CLOSE' : opt.result === 'partial' ? '◐ SOFT' : '✗ LOST';
+  const fb = document.createElement('div');
+  fb.className = 'sprint-feedback ' + fbClass;
+  fb.innerHTML = `<b>${fbLbl} (${gain > 0 ? '+' : ''}${gain})</b> · ${opt.fb}`;
+  document.getElementById('popts').appendChild(fb);
+  loop();
+  // Move to next after a beat
+  setTimeout(() => {
+    const card = document.getElementById('pcard');
+    if (card) card.classList.add('leaving');
+    setTimeout(nextProspect, 300);
+  }, 1600);
+}
+
+function endGame(){
+  if (game.ended) return;
+  game.ended = true;
+  clearInterval(game.timerHandle);
+  // Update best score + XP
+  const bestRaw = localStorage.getItem('ry_sb_sprint_best');
+  const prevBest = bestRaw ? parseInt(bestRaw, 10) : 0;
+  const newBest = game.score > prevBest;
+  if (newBest) localStorage.setItem('ry_sb_sprint_best', game.score);
+  // Award XP
+  if (window.RyujinXP) window.RyujinXP.award('Proposal Sprint: ' + game.score, Math.round(game.score / 4));
+  // Render result splash
+  $('sprintMain').innerHTML = `
+    <div class="sprint-splash">
+      ${newBest ? '<div class="hi-score-banner"><svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2.5;stroke-linecap:round"><polyline points="20 6 9 17 4 12"/></svg>NEW HIGH SCORE</div>' : ''}
+      <div class="splash-title">${game.score} POINTS</div>
+      <div class="splash-desc">
+        ${game.closes >= 8 ? 'Masterful. You read every prospect correctly. Diego would high-five you.' :
+          game.closes >= 5 ? 'Solid run. Keep working the objection reads — streaks compound fast.' :
+          game.closes >= 2 ? 'Respectable. Every wrong answer is a lesson. Try again.' :
+          'Rough session. Read the prospect type carefully before pressing.'}
+      </div>
+      <div class="result-stats">
+        <div class="result-stat"><div class="v">${game.closes}</div><div class="l">Closes</div></div>
+        <div class="result-stat"><div class="v">${game.partial}</div><div class="l">Partials</div></div>
+        <div class="result-stat"><div class="v">${game.wrong}</div><div class="l">Ghosted</div></div>
+        <div class="result-stat"><div class="v">${game.bestStreak}x</div><div class="l">Best Streak</div></div>
+      </div>
+      <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+        <button class="splash-btn" onclick="startProposalSprint()">PLAY AGAIN</button>
+        <button class="splash-btn" style="background:rgba(14,22,40,0.9);color:#facc15;box-shadow:none;border:1px solid rgba(250,204,21,0.45)" onclick="quitSprint()">BACK TO ARCADE</button>
+      </div>
+    </div>
+  `;
+  updateTopScore();
+}
+
+function updateTopScore(){
+  const best = localStorage.getItem('ry_sb_sprint_best') || 0;
+  $('topScore').textContent = 'BEST: ' + best;
+  $('pshi').textContent = 'Best: ' + best;
+}
+
+function quitSprint(){
+  if (game) { game.ended = true; clearInterval(game.timerHandle); }
+  $('spring-stage').classList.remove('on');
+  $('sprintMain').innerHTML = '';
+  updateTopScore();
+}
+
+function goBack(){ window.location.href = 'command-center.html'; }
+
+// Keyboard
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if (document.getElementById('spring-stage').classList.contains('on')) quitSprint();
+    else goBack();
+  }
+  if (game && !game.ended && !game.locked && /^[1-4]$/.test(e.key)) {
+    const idx = parseInt(e.key, 10) - 1;
+    if (game.current && game.current.options[idx]) choose(idx);
+  }
+});
+document.addEventListener('contextmenu', e => { e.preventDefault(); if (document.getElementById('spring-stage').classList.contains('on')) quitSprint(); else goBack(); });
+
+window.startProposalSprint = startProposalSprint;
+window.quitSprint = quitSprint;
+window.goBack = goBack;
+window.choose = choose;
+
+updateTopScore();
+</script>
+
+</body>
+</html>

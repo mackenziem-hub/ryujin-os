@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#030611">
+<title>Business Manager Simulator · Ryujin OS</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;width:100%;overflow:hidden;-webkit-font-smoothing:antialiased}
+body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;user-select:none}
+
+/* ─── Background ─── */
+.bg-deep{position:fixed;inset:0;z-index:0;background:radial-gradient(ellipse at 30% 20%,rgba(250,204,21,0.06),transparent 55%),radial-gradient(ellipse at 70% 80%,rgba(124,58,237,0.05),transparent 50%),linear-gradient(180deg,#060a14 0%,#000 100%)}
+.bg-grid{position:fixed;inset:0;z-index:1;pointer-events:none;background-image:linear-gradient(rgba(250,204,21,0.02) 1px,transparent 1px),linear-gradient(90deg,rgba(250,204,21,0.02) 1px,transparent 1px);background-size:60px 60px;mask-image:radial-gradient(ellipse at center,black 25%,transparent 80%);-webkit-mask-image:radial-gradient(ellipse at center,black 25%,transparent 80%)}
+
+/* ─── Top bar ─── */
+.topbar{position:fixed;top:14px;left:16px;right:16px;height:58px;display:flex;align-items:center;gap:14px;background:rgba(14,22,40,0.85);border:1px solid rgba(250,204,21,0.32);border-radius:14px;padding:0 18px;backdrop-filter:blur(20px);z-index:30;box-shadow:0 10px 40px rgba(0,0,0,0.5),0 0 24px rgba(250,204,21,0.08)}
+.topbar::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,#facc15,#22d3ee,transparent);opacity:0.6}
+.back-btn{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:rgba(6,10,20,0.6);border:1px solid rgba(250,204,21,0.3);color:rgba(250,220,150,0.8);cursor:pointer;transition:all 0.2s}
+.back-btn:hover{background:rgba(250,204,21,0.12);color:#facc15;border-color:rgba(250,204,21,0.6)}
+.back-btn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.title{font-family:'Orbitron',sans-serif;font-size:0.88em;font-weight:900;letter-spacing:3px;background:linear-gradient(135deg,#fff 30%,#facc15);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.sub{font-size:0.66em;font-family:'Share Tech Mono',monospace;color:rgba(200,220,255,0.5);letter-spacing:2px;margin-top:2px}
+.time-pill{margin-left:auto;padding:10px 18px;background:rgba(6,10,20,0.8);border:1px solid rgba(250,204,21,0.35);border-radius:10px;font-family:'Orbitron',sans-serif;font-size:0.76em;font-weight:800;letter-spacing:2.5px;color:#facc15;display:flex;align-items:center;gap:12px}
+.time-pill .sep{opacity:0.3}
+.advance-btn{padding:11px 22px;background:linear-gradient(135deg,#facc15,#f59e0b);border:none;border-radius:10px;color:#0a1530;font-family:'Orbitron',sans-serif;font-weight:900;font-size:0.74em;letter-spacing:2.5px;cursor:pointer;transition:all 0.25s;box-shadow:0 0 20px rgba(250,204,21,0.3),0 4px 14px rgba(0,0,0,0.35);display:flex;align-items:center;gap:8px}
+.advance-btn:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 0 30px rgba(250,204,21,0.5),0 6px 18px rgba(0,0,0,0.5)}
+.advance-btn:disabled{opacity:0.4;cursor:not-allowed}
+.advance-btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:3;stroke-linecap:round}
+
+/* ─── Layout: 3 columns ─── */
+.stage{position:fixed;top:90px;left:16px;right:16px;bottom:16px;display:grid;grid-template-columns:280px 1fr 300px;gap:14px;z-index:10}
+
+/* ─── Stats panel (left) ─── */
+.panel{background:rgba(14,22,40,0.72);border:1px solid rgba(250,204,21,0.18);border-radius:14px;padding:20px;backdrop-filter:blur(14px);overflow-y:auto;scrollbar-width:thin}
+.panel::-webkit-scrollbar{width:6px}
+.panel::-webkit-scrollbar-thumb{background:rgba(250,204,21,0.2);border-radius:3px}
+.panel h3{font-family:'Orbitron',sans-serif;font-size:0.68em;font-weight:800;letter-spacing:2.5px;color:#facc15;margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid rgba(250,204,21,0.15);text-transform:uppercase}
+
+.stat{margin-bottom:18px}
+.stat-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
+.stat-lbl{font-family:'Share Tech Mono',monospace;font-size:0.64em;color:rgba(200,220,255,0.7);letter-spacing:1.5px;text-transform:uppercase}
+.stat-val{font-family:'Orbitron',sans-serif;font-size:0.95em;font-weight:900;color:#fff}
+.stat-val.up{color:#4ade80}.stat-val.down{color:#f87171}
+.stat-bar{position:relative;height:6px;background:rgba(6,10,20,0.55);border-radius:3px;overflow:hidden}
+.stat-fill{position:absolute;inset:0;border-radius:3px;transition:width 0.6s cubic-bezier(.2,.8,.3,1),background 0.3s}
+.stat-fill.cash{background:linear-gradient(90deg,#4ade80,#22d3ee)}
+.stat-fill.rep{background:linear-gradient(90deg,#22d3ee,#a78bfa)}
+.stat-fill.morale{background:linear-gradient(90deg,#fb923c,#facc15)}
+.stat-fill.sat{background:linear-gradient(90deg,#f472b6,#facc15)}
+.stat-fill.low{background:linear-gradient(90deg,#ef4444,#f59e0b)}
+.cash-big{font-family:'Orbitron',sans-serif;font-weight:900;font-size:1.65em;background:linear-gradient(135deg,#4ade80,#22d3ee);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin:4px 0 2px}
+.cash-big.negative{background:linear-gradient(135deg,#ef4444,#f59e0b);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.cash-sub{font-family:'Share Tech Mono',monospace;font-size:0.68em;color:rgba(200,220,255,0.5);letter-spacing:1.5px}
+
+/* ─── Center stage (event) ─── */
+.center{display:flex;flex-direction:column;gap:14px;min-width:0}
+.scene-card{flex:1;background:rgba(14,22,40,0.75);border:1px solid rgba(250,204,21,0.25);border-radius:16px;padding:36px 38px;display:flex;flex-direction:column;backdrop-filter:blur(14px);position:relative;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.5),0 0 40px rgba(250,204,21,0.06)}
+.scene-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#facc15,transparent);opacity:0.6}
+.scene-head{display:flex;align-items:center;gap:16px;margin-bottom:20px}
+.scene-portrait{width:64px;height:64px;border-radius:50%;overflow:hidden;border:2px solid rgba(250,204,21,0.4);flex-shrink:0;box-shadow:0 0 18px rgba(250,204,21,0.2)}
+.scene-portrait svg{width:100%;height:100%;display:block}
+.scene-meta{flex:1;min-width:0}
+.scene-title{font-family:'Orbitron',sans-serif;font-size:0.72em;font-weight:800;letter-spacing:2.5px;color:#facc15;margin-bottom:4px;text-transform:uppercase}
+.scene-who{font-family:'Share Tech Mono',monospace;font-size:0.72em;color:rgba(200,220,255,0.6);letter-spacing:1px}
+
+.scene-body{font-size:1.02em;line-height:1.75;color:#e0e6f0;margin-bottom:26px;flex:0 0 auto;font-style:italic}
+.scene-body::before{content:'"';color:#facc15;font-size:2em;line-height:0;margin-right:4px;vertical-align:-6px;opacity:0.6}
+.scene-body::after{content:'"';color:#facc15;font-size:2em;line-height:0;margin-left:2px;vertical-align:-6px;opacity:0.6}
+
+.choices{display:flex;flex-direction:column;gap:10px;margin-top:auto}
+.choice{padding:16px 20px;background:rgba(6,12,24,0.7);border:1px solid rgba(250,204,21,0.2);border-radius:12px;color:#e0e6f0;font-family:'Inter',sans-serif;font-size:0.95em;font-weight:500;cursor:pointer;text-align:left;transition:all 0.2s cubic-bezier(.2,.8,.3,1);position:relative;overflow:hidden;line-height:1.45}
+.choice::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:#facc15;opacity:0.4;transition:opacity 0.2s}
+.choice:hover{background:rgba(250,204,21,0.08);border-color:rgba(250,204,21,0.5);transform:translateX(4px)}
+.choice:hover::before{opacity:1}
+.choice .num{display:inline-block;width:22px;height:22px;border-radius:50%;background:rgba(250,204,21,0.15);color:#facc15;font-family:'Orbitron',sans-serif;font-weight:900;font-size:0.78em;text-align:center;line-height:22px;margin-right:12px;flex-shrink:0}
+
+/* Resolution card (shown after choosing) */
+.resolution{padding:22px 26px;background:linear-gradient(135deg,rgba(74,222,128,0.08),rgba(34,211,238,0.05));border:1px solid rgba(74,222,128,0.3);border-radius:14px;animation:resPop 0.5s cubic-bezier(.2,.8,.3,1.1)}
+@keyframes resPop{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.res-tag{font-family:'Share Tech Mono',monospace;font-size:0.7em;color:#4ade80;letter-spacing:2px;margin-bottom:8px;text-transform:uppercase}
+.res-body{font-size:1em;line-height:1.6;color:#e0e6f0;font-style:italic}
+.res-deltas{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
+.res-delta{padding:6px 12px;background:rgba(6,12,24,0.7);border-radius:8px;font-family:'Share Tech Mono',monospace;font-size:0.72em;letter-spacing:1px;color:#e0e6f0}
+.res-delta.pos{color:#4ade80;border:1px solid rgba(74,222,128,0.3)}
+.res-delta.neg{color:#f87171;border:1px solid rgba(239,68,68,0.3)}
+
+/* Empty-state (no event today) */
+.empty-scene{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px}
+.empty-scene .icon{width:84px;height:84px;border-radius:22px;background:radial-gradient(circle at 35% 30%,rgba(250,204,21,0.35),rgba(124,58,237,0.15));border:1px solid rgba(250,204,21,0.35);display:flex;align-items:center;justify-content:center;margin-bottom:18px;box-shadow:0 0 40px rgba(250,204,21,0.2)}
+.empty-scene .icon svg{width:40px;height:40px;stroke:#facc15;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.empty-scene h3{font-family:'Orbitron',sans-serif;font-size:1.3em;font-weight:900;letter-spacing:1px;margin-bottom:10px}
+.empty-scene p{color:rgba(200,220,255,0.65);font-size:0.96em;line-height:1.55;max-width:440px}
+
+/* ─── Right: characters + history ─── */
+.char-list{display:flex;flex-direction:column;gap:12px}
+.char{display:flex;align-items:center;gap:12px;padding:12px;background:rgba(6,12,24,0.55);border:1px solid rgba(250,204,21,0.12);border-radius:12px;transition:all 0.2s}
+.char:hover{border-color:rgba(250,204,21,0.35);background:rgba(250,204,21,0.04)}
+.char-port{width:42px;height:42px;border-radius:50%;overflow:hidden;flex-shrink:0;border:1.5px solid rgba(250,204,21,0.3)}
+.char-port svg{width:100%;height:100%;display:block}
+.char-meta{flex:1;min-width:0}
+.char-name{font-family:'Orbitron',sans-serif;font-size:0.76em;font-weight:800;letter-spacing:1px;color:#fff;margin-bottom:2px}
+.char-role{font-family:'Share Tech Mono',monospace;font-size:0.62em;color:rgba(200,220,255,0.55);letter-spacing:0.5px}
+.char-rel{height:3px;margin-top:6px;background:rgba(6,10,20,0.6);border-radius:2px;overflow:hidden}
+.char-rel-fill{height:100%;transition:width 0.5s cubic-bezier(.2,.8,.3,1)}
+
+.history{margin-top:22px}
+.history h3{margin-bottom:12px}
+.history-item{padding:10px 12px;background:rgba(6,10,20,0.55);border-left:2px solid rgba(250,204,21,0.4);margin-bottom:8px;font-size:0.82em;color:rgba(200,220,255,0.75);line-height:1.5;border-radius:0 6px 6px 0}
+.history-item .when{font-family:'Share Tech Mono',monospace;font-size:0.72em;color:rgba(250,204,21,0.7);letter-spacing:1px;display:block;margin-bottom:4px}
+
+/* ─── Game over modal ─── */
+#gameOver{position:fixed;inset:0;z-index:500;background:rgba(3,6,17,0.94);backdrop-filter:blur(16px);display:none;align-items:center;justify-content:center;padding:30px}
+#gameOver.on{display:flex}
+.go-card{background:rgba(10,18,34,0.98);border:2px solid #ef4444;border-radius:20px;padding:48px 56px;text-align:center;max-width:560px;box-shadow:0 0 80px rgba(239,68,68,0.35),0 30px 80px rgba(0,0,0,0.6);animation:goPop 0.6s cubic-bezier(.2,.8,.3,1.1)}
+@keyframes goPop{from{opacity:0;transform:scale(0.85) translateY(20px)}to{opacity:1;transform:scale(1) translateY(0)}}
+.go-card h2{font-family:'Orbitron',sans-serif;font-weight:900;font-size:2.4em;letter-spacing:-0.5px;margin-bottom:16px;background:linear-gradient(135deg,#fff,#ef4444);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.go-card p{color:rgba(200,220,255,0.8);font-size:1.05em;line-height:1.6;margin-bottom:30px}
+.go-btn{padding:14px 32px;background:linear-gradient(135deg,#facc15,#f59e0b);color:#0a1530;border:none;border-radius:10px;font-family:'Orbitron',sans-serif;font-weight:900;font-size:0.78em;letter-spacing:2.5px;cursor:pointer;box-shadow:0 0 20px rgba(250,204,21,0.35)}
+.go-btn:hover{transform:translateY(-2px);box-shadow:0 0 30px rgba(250,204,21,0.5)}
+
+/* ─── Achievement toast ─── */
+.ach-toast{position:fixed;top:100px;right:28px;z-index:9000;background:linear-gradient(135deg,rgba(250,204,21,0.18),rgba(124,58,237,0.12));border:1px solid #facc15;border-radius:14px;padding:14px 20px 14px 16px;display:flex;align-items:center;gap:14px;min-width:300px;max-width:380px;box-shadow:0 0 40px rgba(250,204,21,0.4),0 18px 50px rgba(0,0,0,0.6);animation:achSlide 0.55s cubic-bezier(.2,.8,.3,1.1) forwards;opacity:0;transform:translateX(40px)}
+@keyframes achSlide{to{opacity:1;transform:translateX(0)}}
+.ach-toast.leaving{animation:achLeave 0.5s forwards}
+@keyframes achLeave{to{opacity:0;transform:translateX(60px)}}
+.ach-icon{width:48px;height:48px;border-radius:12px;background:radial-gradient(circle at 35% 30%,rgba(255,245,200,0.6),rgba(250,204,21,0.8) 40%,rgba(80,60,0,0.9));display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 0 20px rgba(250,204,21,0.5)}
+.ach-icon svg{width:22px;height:22px;stroke:#0a1530;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
+.ach-body{flex:1}
+.ach-tag{font-family:'Share Tech Mono',monospace;font-size:0.62em;color:#facc15;letter-spacing:2px;margin-bottom:3px}
+.ach-title{font-family:'Orbitron',sans-serif;font-size:0.86em;font-weight:800;color:#fff;margin-bottom:3px;letter-spacing:0.5px}
+.ach-desc{font-size:0.78em;color:rgba(200,220,255,0.7);line-height:1.4}
+
+/* ─── Side action buttons ─── */
+.side-actions{display:flex;flex-direction:column;gap:8px;margin-top:18px}
+.side-btn{padding:9px 14px;background:rgba(6,10,20,0.65);border:1px solid rgba(250,204,21,0.22);color:rgba(250,220,150,0.8);border-radius:9px;font-family:'Orbitron',sans-serif;font-size:0.66em;font-weight:800;letter-spacing:1.8px;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;gap:10px}
+.side-btn:hover{border-color:#facc15;color:#facc15;background:rgba(250,204,21,0.06)}
+.side-btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.side-btn .pts{margin-left:auto;font-family:'Share Tech Mono',monospace;background:#facc15;color:#0a1530;padding:2px 8px;border-radius:4px;font-size:0.72em;letter-spacing:1px;display:none}
+.side-btn.has-pts .pts{display:inline-block}
+
+/* ─── Modals ─── */
+.modal{position:fixed;inset:0;z-index:400;background:rgba(3,6,17,0.92);backdrop-filter:blur(14px);display:none;align-items:center;justify-content:center;padding:28px}
+.modal.on{display:flex}
+.modal-card{background:rgba(10,18,34,0.98);border:1px solid rgba(250,204,21,0.4);border-radius:18px;padding:36px 40px;max-width:640px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 30px 80px rgba(0,0,0,0.65),0 0 60px rgba(250,204,21,0.15);animation:mdlPop 0.45s cubic-bezier(.2,.8,.3,1.08)}
+@keyframes mdlPop{from{opacity:0;transform:scale(0.9) translateY(14px)}to{opacity:1;transform:scale(1) translateY(0)}}
+.modal-card h2{font-family:'Orbitron',sans-serif;font-weight:900;font-size:1.8em;letter-spacing:-0.5px;background:linear-gradient(135deg,#fff,#facc15);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px}
+.modal-card .lead{color:rgba(200,220,255,0.7);font-size:0.95em;margin-bottom:24px}
+.modal-close{position:absolute;top:14px;right:16px;background:transparent;border:none;color:rgba(200,220,255,0.55);font-size:1.5em;cursor:pointer;padding:6px 10px;border-radius:6px}
+.modal-close:hover{color:#facc15;background:rgba(250,204,21,0.08)}
+
+/* ─── Skill tree ─── */
+.skill-head{margin-bottom:20px;display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+.skill-pts{font-family:'Orbitron',sans-serif;font-weight:900;color:#facc15;font-size:0.9em;letter-spacing:1.5px}
+.skill-pts.zero{color:rgba(200,220,255,0.4)}
+.skill-tracks{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.skill-track{padding:18px;background:rgba(6,12,24,0.65);border:1px solid rgba(250,204,21,0.18);border-radius:12px;transition:all 0.25s}
+.skill-track:hover{border-color:rgba(250,204,21,0.4);background:rgba(250,204,21,0.04)}
+.skill-track-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.skill-track-icon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.skill-track-icon svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.skill-track[data-track="sales"] .skill-track-icon{background:rgba(34,211,238,0.18);color:#22d3ee}
+.skill-track[data-track="ops"] .skill-track-icon{background:rgba(251,146,60,0.18);color:#fb923c}
+.skill-track[data-track="marketing"] .skill-track-icon{background:rgba(167,139,250,0.18);color:#a78bfa}
+.skill-track[data-track="finance"] .skill-track-icon{background:rgba(74,222,128,0.18);color:#4ade80}
+.skill-track-name{font-family:'Orbitron',sans-serif;font-weight:800;font-size:0.82em;letter-spacing:1.5px;color:#fff}
+.skill-track-desc{font-size:0.8em;color:rgba(200,220,255,0.65);line-height:1.45;margin-bottom:12px}
+.skill-pips{display:flex;gap:6px;margin-bottom:10px}
+.skill-pip{flex:1;height:6px;background:rgba(6,10,20,0.6);border-radius:3px;border:1px solid rgba(250,204,21,0.15)}
+.skill-pip.filled{background:linear-gradient(90deg,#facc15,#f59e0b);box-shadow:0 0 8px rgba(250,204,21,0.5);border-color:#facc15}
+.skill-allocate{width:100%;padding:9px;background:rgba(250,204,21,0.12);border:1px solid rgba(250,204,21,0.4);color:#facc15;border-radius:8px;font-family:'Orbitron',sans-serif;font-weight:800;font-size:0.68em;letter-spacing:1.5px;cursor:pointer;transition:all 0.2s}
+.skill-allocate:hover:not(:disabled){background:#facc15;color:#0a1530}
+.skill-allocate:disabled{opacity:0.35;cursor:not-allowed}
+
+/* ─── Achievements grid ─── */
+.ach-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.ach-row{padding:14px 16px;background:rgba(6,12,24,0.55);border:1px solid rgba(250,204,21,0.15);border-radius:10px;transition:all 0.25s;position:relative}
+.ach-row.unlocked{border-color:rgba(250,204,21,0.5);background:linear-gradient(135deg,rgba(250,204,21,0.08),rgba(124,58,237,0.04));box-shadow:0 0 14px rgba(250,204,21,0.12)}
+.ach-row.locked{opacity:0.5}
+.ach-row-title{font-family:'Orbitron',sans-serif;font-weight:800;font-size:0.78em;color:#facc15;margin-bottom:4px;letter-spacing:0.5px;display:flex;align-items:center;gap:8px}
+.ach-row.locked .ach-row-title{color:rgba(200,220,255,0.5)}
+.ach-row-title svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
+.ach-row-body{font-size:0.78em;color:rgba(200,220,255,0.7);line-height:1.45}
+
+/* ─── Week summary modal ─── */
+.wk-head{text-align:center;margin-bottom:24px}
+.wk-num{font-family:'Orbitron',sans-serif;font-weight:900;font-size:0.7em;color:#facc15;letter-spacing:3px;margin-bottom:6px}
+.wk-title{font-family:'Orbitron',sans-serif;font-weight:900;font-size:2em;background:linear-gradient(135deg,#fff,#facc15);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.wk-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:22px}
+.wk-stat{padding:14px 12px;background:rgba(6,10,20,0.55);border:1px solid rgba(250,204,21,0.2);border-radius:10px;text-align:center}
+.wk-stat-lbl{font-family:'Share Tech Mono',monospace;font-size:0.6em;color:rgba(200,220,255,0.55);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px}
+.wk-stat-val{font-family:'Orbitron',sans-serif;font-weight:900;font-size:1em;color:#fff}
+.wk-stat-val.delta.pos{color:#4ade80}
+.wk-stat-val.delta.neg{color:#f87171}
+.wk-continue{width:100%;padding:14px;background:linear-gradient(135deg,#facc15,#f59e0b);color:#0a1530;border:none;border-radius:10px;font-family:'Orbitron',sans-serif;font-weight:900;font-size:0.82em;letter-spacing:2.5px;cursor:pointer;margin-top:10px}
+
+/* ─── Slot picker ─── */
+.slot-list{display:flex;flex-direction:column;gap:10px;margin-top:14px}
+.slot-row{padding:14px 18px;background:rgba(6,12,24,0.65);border:1px solid rgba(250,204,21,0.18);border-radius:12px;display:flex;justify-content:space-between;align-items:center;gap:12px;cursor:pointer;transition:all 0.2s}
+.slot-row:hover{border-color:#facc15;background:rgba(250,204,21,0.06)}
+.slot-row.active{border-color:#facc15;background:rgba(250,204,21,0.1);box-shadow:0 0 14px rgba(250,204,21,0.18)}
+.slot-meta{flex:1;min-width:0}
+.slot-name{font-family:'Orbitron',sans-serif;font-weight:800;font-size:0.82em;color:#fff;letter-spacing:0.5px;margin-bottom:4px}
+.slot-name.empty{color:rgba(200,220,255,0.45);font-style:italic}
+.slot-detail{font-family:'Share Tech Mono',monospace;font-size:0.68em;color:rgba(200,220,255,0.55);letter-spacing:1px}
+.slot-actions{display:flex;gap:6px;flex-shrink:0}
+.slot-action{padding:7px 12px;background:transparent;border:1px solid rgba(250,204,21,0.3);color:rgba(250,220,150,0.8);border-radius:7px;font-family:'Share Tech Mono',monospace;font-size:0.62em;letter-spacing:1.2px;cursor:pointer;transition:all 0.2s}
+.slot-action:hover{border-color:#facc15;color:#facc15}
+.slot-action.danger{border-color:rgba(239,68,68,0.35);color:rgba(239,68,68,0.8)}
+.slot-action.danger:hover{border-color:#ef4444;color:#ef4444;background:rgba(239,68,68,0.08)}
+
+/* Mobile */
+@media (max-width: 1100px){
+  .stage{grid-template-columns:1fr;grid-template-rows:auto 1fr auto;gap:10px;top:80px}
+  .panel{max-height:none}
+  .scene-card{padding:22px}
+}
+</style>
+</head>
+<body>
+
+<div class="bg-deep"></div>
+<div class="bg-grid"></div>
+
+<div class="topbar">
+  <button class="back-btn" onclick="goBack()" title="Back to command center"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
+  <div>
+    <div class="title">BUSINESS MANAGER SIMULATOR</div>
+    <div class="sub">CHAPTER 1 · FIRST 90 DAYS</div>
+  </div>
+  <div class="time-pill" id="timePill">
+    <span>YEAR <b id="t-year">1</b></span>
+    <span class="sep">·</span>
+    <span>MONTH <b id="t-month">1</b></span>
+    <span class="sep">·</span>
+    <span>WEEK <b id="t-week">1</b></span>
+    <span class="sep">·</span>
+    <span>DAY <b id="t-day">1</b></span>
+  </div>
+  <button class="advance-btn" id="advanceBtn" onclick="advanceDay()"><svg viewBox="0 0 24 24"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>ADVANCE DAY</button>
+</div>
+
+<div class="stage">
+
+  <!-- LEFT: Stats -->
+  <div class="panel">
+    <h3>Business Stats</h3>
+    <div class="cash-big" id="cashBig">$0</div>
+    <div class="cash-sub">CASH ON HAND</div>
+    <div style="margin-top:16px">
+      <div class="stat"><div class="stat-top"><div class="stat-lbl">Reputation</div><div class="stat-val" id="rep-val">0</div></div><div class="stat-bar"><div class="stat-fill rep" id="rep-bar"></div></div></div>
+      <div class="stat"><div class="stat-top"><div class="stat-lbl">Crew Morale</div><div class="stat-val" id="morale-val">0</div></div><div class="stat-bar"><div class="stat-fill morale" id="morale-bar"></div></div></div>
+      <div class="stat"><div class="stat-top"><div class="stat-lbl">Customer Sat</div><div class="stat-val" id="sat-val">0</div></div><div class="stat-bar"><div class="stat-fill sat" id="sat-bar"></div></div></div>
+    </div>
+    <div style="margin-top:20px;padding-top:18px;border-top:1px solid rgba(250,204,21,0.12)">
+      <div style="display:flex;justify-content:space-between;margin-bottom:10px"><span class="stat-lbl">Active Jobs</span><span class="stat-val" id="jobs-val">0</span></div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:10px"><span class="stat-lbl">Pipeline</span><span class="stat-val" id="pipe-val">$0</span></div>
+      <div style="display:flex;justify-content:space-between"><span class="stat-lbl">Streak</span><span class="stat-val" id="streak-val">0 days</span></div>
+    </div>
+    <div class="side-actions">
+      <button class="side-btn" id="skillsBtn" onclick="openSkills()">
+        <svg viewBox="0 0 24 24"><path d="M12 2l3 7h7l-5.5 4.5L18 22l-6-4-6 4 1.5-8.5L2 9h7z"/></svg>
+        SKILL TREE <span class="pts" id="skillPts">0</span>
+      </button>
+      <button class="side-btn" onclick="openAchievements()">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></svg>
+        ACHIEVEMENTS
+      </button>
+      <button class="side-btn" onclick="openSlots()">
+        <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/></svg>
+        SAVE SLOTS
+      </button>
+      <button class="side-btn" onclick="resetGame()">
+        <svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+        NEW RUN
+      </button>
+    </div>
+  </div>
+
+  <!-- CENTER: Scene -->
+  <div class="center">
+    <div class="scene-card" id="sceneCard"></div>
+  </div>
+
+  <!-- RIGHT: Characters + history -->
+  <div class="panel">
+    <h3>The People</h3>
+    <div class="char-list" id="charList"></div>
+    <div class="history">
+      <h3>Recent Memory</h3>
+      <div id="historyList"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Game Over -->
+<div id="gameOver">
+  <div class="go-card">
+    <h2>Game Over</h2>
+    <p id="goReason">—</p>
+    <button class="go-btn" onclick="resetGame()">START NEW GAME</button>
+  </div>
+</div>
+
+<!-- Skill tree modal -->
+<div class="modal" id="skillsModal">
+  <div class="modal-card" style="position:relative">
+    <button class="modal-close" onclick="closeModal('skillsModal')">×</button>
+    <div class="skill-head">
+      <div>
+        <h2>Skill Tree</h2>
+        <div class="lead">Spend skill points earned from level-ups. Each rank gives a passive bonus that stacks daily.</div>
+      </div>
+      <div class="skill-pts" id="skillPtsHeader">0 POINTS</div>
+    </div>
+    <div class="skill-tracks">
+      <div class="skill-track" data-track="sales">
+        <div class="skill-track-head"><div class="skill-track-icon"><svg viewBox="0 0 24 24"><path d="M3 11l18-8-8 18-2-8-8-2z"/></svg></div><div class="skill-track-name">SALES</div></div>
+        <div class="skill-track-desc">Each rank adds <b>+$600/day to pipeline growth</b>.</div>
+        <div class="skill-pips" id="skill-pips-sales"></div>
+        <button class="skill-allocate" onclick="allocateSkill('sales')">+1 RANK</button>
+      </div>
+      <div class="skill-track" data-track="ops">
+        <div class="skill-track-head"><div class="skill-track-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 008 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 8a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></div><div class="skill-track-name">OPS</div></div>
+        <div class="skill-track-desc">Each rank adds <b>+$40/day per active job</b>.</div>
+        <div class="skill-pips" id="skill-pips-ops"></div>
+        <button class="skill-allocate" onclick="allocateSkill('ops')">+1 RANK</button>
+      </div>
+      <div class="skill-track" data-track="marketing">
+        <div class="skill-track-head"><div class="skill-track-icon"><svg viewBox="0 0 24 24"><path d="M3 11l18-8-8 18-2-8-8-2z"/></svg></div><div class="skill-track-name">MARKETING</div></div>
+        <div class="skill-track-desc">Each rank amplifies reputation into cash (+$1/day per rep point).</div>
+        <div class="skill-pips" id="skill-pips-marketing"></div>
+        <button class="skill-allocate" onclick="allocateSkill('marketing')">+1 RANK</button>
+      </div>
+      <div class="skill-track" data-track="finance">
+        <div class="skill-track-head"><div class="skill-track-icon"><svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div><div class="skill-track-name">FINANCE</div></div>
+        <div class="skill-track-desc">Each rank <b>reduces daily burn by $30</b>.</div>
+        <div class="skill-pips" id="skill-pips-finance"></div>
+        <button class="skill-allocate" onclick="allocateSkill('finance')">+1 RANK</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Achievements modal -->
+<div class="modal" id="achModal">
+  <div class="modal-card" style="position:relative">
+    <button class="modal-close" onclick="closeModal('achModal')">×</button>
+    <h2>Achievements</h2>
+    <div class="lead" id="achCount">Unlocked: 0 / 0</div>
+    <div class="ach-grid" id="achGrid"></div>
+  </div>
+</div>
+
+<!-- Save slots modal -->
+<div class="modal" id="slotModal">
+  <div class="modal-card" style="position:relative">
+    <button class="modal-close" onclick="closeModal('slotModal')">×</button>
+    <h2>Save Slots</h2>
+    <div class="lead">3 independent playthroughs. Switch any time — each slot remembers its own world.</div>
+    <div class="slot-list" id="slotList"></div>
+  </div>
+</div>
+
+<!-- Week summary modal -->
+<div class="modal" id="weekModal">
+  <div class="modal-card" style="position:relative">
+    <div class="wk-head">
+      <div class="wk-num" id="wk-num">WEEK 1 COMPLETE</div>
+      <div class="wk-title">The chapter closes.</div>
+    </div>
+    <div class="wk-stats">
+      <div class="wk-stat"><div class="wk-stat-lbl">Cash Δ</div><div class="wk-stat-val delta" id="wk-cash">—</div></div>
+      <div class="wk-stat"><div class="wk-stat-lbl">Rep Δ</div><div class="wk-stat-val delta" id="wk-rep">—</div></div>
+      <div class="wk-stat"><div class="wk-stat-lbl">Morale</div><div class="wk-stat-val" id="wk-morale">—</div></div>
+      <div class="wk-stat"><div class="wk-stat-lbl">Sat</div><div class="wk-stat-val" id="wk-sat">—</div></div>
+    </div>
+    <div id="wk-note" style="padding:16px;background:rgba(6,10,20,0.55);border-left:3px solid #facc15;border-radius:6px;font-size:0.9em;line-height:1.6;color:rgba(200,220,255,0.8);margin-bottom:18px"></div>
+    <button class="wk-continue" onclick="closeWeekSummary()">ONWARD →</button>
+  </div>
+</div>
+
+<script src="assets/ryujin-mode.js"></script>
+<script src="assets/ryujin-tenant.js"></script>
+<script src="assets/ryujin-persist.js"></script>
+<script src="assets/ryujin-api.js"></script>
+<script src="assets/ryujin-scenario.js"></script>
+<script src="assets/ryujin-xp.js"></script>
+<script src="assets/ryujin-sim.js"></script>
+<script>
+// Force sandbox mode on the simulator
+if (window.RyujinMode && !RyujinMode.isSandbox()) RyujinMode.set('sandbox');
+
+function $(id){ return document.getElementById(id); }
+function fmtMoney(n){ const neg = n < 0 ? '-' : ''; return neg + '$' + Math.abs(Math.round(n)).toLocaleString('en-CA'); }
+
+function render(){
+  const s = RyujinSim.state();
+  const chars = RyujinSim.characters();
+
+  // Time
+  $('t-year').textContent = s.year;
+  $('t-month').textContent = s.month;
+  $('t-week').textContent = s.week;
+  $('t-day').textContent = s.day;
+
+  // Stats
+  const cashEl = $('cashBig');
+  cashEl.textContent = fmtMoney(s.cash);
+  cashEl.classList.toggle('negative', s.cash < 0);
+  $('rep-val').textContent = s.reputation;
+  $('rep-bar').style.width = s.reputation + '%';
+  $('rep-bar').classList.toggle('low', s.reputation < 30);
+  $('morale-val').textContent = s.crew_morale;
+  $('morale-bar').style.width = s.crew_morale + '%';
+  $('morale-bar').classList.toggle('low', s.crew_morale < 30);
+  $('sat-val').textContent = s.customer_sat;
+  $('sat-bar').style.width = s.customer_sat + '%';
+  $('sat-bar').classList.toggle('low', s.customer_sat < 30);
+  $('jobs-val').textContent = s.active_jobs;
+  $('pipe-val').textContent = fmtMoney(s.pipeline);
+  $('streak-val').textContent = s.streak + ' days';
+
+  // Characters
+  $('charList').innerHTML = Object.entries(chars).map(([id, c]) => {
+    const rel = s.relationships[id] || 0;
+    const color = rel >= 60 ? '#4ade80' : rel >= 35 ? '#facc15' : '#f87171';
+    return `
+      <div class="char">
+        <div class="char-port">${c.portrait}</div>
+        <div class="char-meta">
+          <div class="char-name">${c.name}</div>
+          <div class="char-role">${c.role}</div>
+          <div class="char-rel"><div class="char-rel-fill" style="width:${rel}%;background:${color}"></div></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // History
+  $('historyList').innerHTML = s.history.slice().reverse().slice(0, 6).map(h => `
+    <div class="history-item">
+      <span class="when">YR ${s.year} · WK ${h.week} · DAY ${h.day}</span>
+      ${h.text}
+    </div>
+  `).join('') || '<div style="color:rgba(200,220,255,0.4);font-size:0.85em;font-style:italic">No memories yet. Your story begins today.</div>';
+
+  // Skill points pill
+  $('skillPts').textContent = s.skill_points || 0;
+  $('skillsBtn').classList.toggle('has-pts', (s.skill_points || 0) > 0);
+
+  // Scene (current pending event or empty state)
+  renderScene();
+
+  // Advance button
+  const pending = RyujinSim.eligibleToday();
+  $('advanceBtn').disabled = !!pending || s.game_over;
+
+  // Game over
+  if (s.game_over) {
+    $('goReason').textContent = s.game_over_reason;
+    $('gameOver').classList.add('on');
+  } else {
+    $('gameOver').classList.remove('on');
+  }
+}
+
+function renderScene(){
+  const pending = RyujinSim.eligibleToday();
+  const sceneCard = $('sceneCard');
+  if (!pending) {
+    sceneCard.innerHTML = `
+      <div class="empty-scene">
+        <div class="icon"><svg viewBox="0 0 24 24"><path d="M12 2l3 7h7l-5.5 4.5L18 22l-6-4-6 4 1.5-8.5L2 9h7z"/></svg></div>
+        <h3>A Quiet Day</h3>
+        <p>No pending decisions. Crew is working. Coffee's hot. When you're ready, advance to tomorrow — the world keeps moving whether you're ready or not.</p>
+      </div>
+    `;
+    return;
+  }
+  const chars = RyujinSim.characters();
+  const c = chars[pending.character];
+  sceneCard.innerHTML = `
+    <div class="scene-head">
+      <div class="scene-portrait">${c.portrait}</div>
+      <div class="scene-meta">
+        <div class="scene-title">${pending.title}</div>
+        <div class="scene-who">${c.name.toUpperCase()} · ${c.tag}</div>
+      </div>
+    </div>
+    <div class="scene-body">${pending.scene}</div>
+    <div class="choices">
+      ${pending.choices.map((ch, i) => `
+        <button class="choice" onclick="choose('${pending.id}', ${i})">
+          <span class="num">${i + 1}</span>${ch.text}
+        </button>
+      `).join('')}
+    </div>
+  `;
+}
+
+function choose(eventId, choiceIdx){
+  const result = RyujinSim.choose(eventId, choiceIdx);
+  if (!result) return;
+  drainAchievements();
+  const impact = RyujinSim.events()[eventId].choices[choiceIdx].impact || {};
+  // Show resolution card with deltas
+  const deltas = Object.entries(impact).map(([k, v]) => {
+    const label = ({
+      cash: '$', reputation: 'Rep', crew_morale: 'Morale', customer_sat: 'Sat', pipeline: 'Pipe',
+      diego: 'Diego', marcus: 'Marcus', kelly: 'Kelly', carl: 'Carl'
+    })[k] || k;
+    const cls = v > 0 ? 'pos' : 'neg';
+    const sign = v > 0 ? '+' : '';
+    const val = k === 'cash' || k === 'pipeline' ? fmtMoney(v) : (sign + v);
+    return `<div class="res-delta ${cls}">${label} ${val}</div>`;
+  }).join('');
+
+  $('sceneCard').innerHTML = `
+    <div class="resolution">
+      <div class="res-tag">OUTCOME</div>
+      <div class="res-body">${result.narrative}</div>
+      <div class="res-deltas">${deltas}</div>
+      <button class="choice" style="margin-top:18px" onclick="render()">CONTINUE →</button>
+    </div>
+  `;
+  // Light re-render of stats panel only (keep resolution card visible)
+  setTimeout(() => {
+    const s = RyujinSim.state();
+    $('cashBig').textContent = fmtMoney(s.cash);
+    $('rep-val').textContent = s.reputation; $('rep-bar').style.width = s.reputation + '%';
+    $('morale-val').textContent = s.crew_morale; $('morale-bar').style.width = s.crew_morale + '%';
+    $('sat-val').textContent = s.customer_sat; $('sat-bar').style.width = s.customer_sat + '%';
+    // Refresh characters
+    const chars = RyujinSim.characters();
+    $('charList').innerHTML = Object.entries(chars).map(([id, c]) => {
+      const rel = s.relationships[id] || 0;
+      const color = rel >= 60 ? '#4ade80' : rel >= 35 ? '#facc15' : '#f87171';
+      return `<div class="char"><div class="char-port">${c.portrait}</div><div class="char-meta"><div class="char-name">${c.name}</div><div class="char-role">${c.role}</div><div class="char-rel"><div class="char-rel-fill" style="width:${rel}%;background:${color}"></div></div></div></div>`;
+    }).join('');
+    if (s.game_over) { $('goReason').textContent = s.game_over_reason; $('gameOver').classList.add('on'); }
+  }, 60);
+}
+
+function advanceDay(){
+  const r = RyujinSim.advanceDay();
+  if (r.blocked) return;
+  drainAchievements();
+  if (r.weekEnded) {
+    const summaries = RyujinSim.drainWeekSummary();
+    if (summaries.length) { showWeekSummary(summaries[0]); return; }
+  }
+  render();
+}
+
+function drainAchievements(){
+  if (!RyujinSim.drainAchievements) return;
+  const newly = RyujinSim.drainAchievements();
+  newly.forEach((a, i) => setTimeout(() => showAchToast(a), i * 900));
+}
+
+function showAchToast(a){
+  const el = document.createElement('div');
+  el.className = 'ach-toast';
+  el.innerHTML = `
+    <div class="ach-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></svg></div>
+    <div class="ach-body">
+      <div class="ach-tag">ACHIEVEMENT UNLOCKED</div>
+      <div class="ach-title">${a.title}</div>
+      <div class="ach-desc">${a.body}</div>
+    </div>
+  `;
+  document.body.appendChild(el);
+  setTimeout(() => { el.classList.add('leaving'); setTimeout(() => el.remove(), 500); }, 4200);
+}
+
+function showWeekSummary(sum){
+  $('wk-num').textContent = 'WEEK ' + sum.week + ' COMPLETE';
+  $('wk-cash').textContent = (sum.cash_delta >= 0 ? '+' : '') + fmtMoney(sum.cash_delta);
+  $('wk-cash').classList.toggle('pos', sum.cash_delta >= 0);
+  $('wk-cash').classList.toggle('neg', sum.cash_delta < 0);
+  $('wk-rep').textContent = (sum.rep_delta >= 0 ? '+' : '') + sum.rep_delta;
+  $('wk-rep').classList.toggle('pos', sum.rep_delta >= 0);
+  $('wk-rep').classList.toggle('neg', sum.rep_delta < 0);
+  $('wk-morale').textContent = sum.morale;
+  $('wk-sat').textContent = sum.sat;
+  const notes = [];
+  if (sum.cash_delta > 3000) notes.push('Strong cash week — you grew the float.');
+  else if (sum.cash_delta < -2000) notes.push('Cash took a hit. Watch the burn.');
+  if (sum.rep_delta > 5) notes.push('Reputation climbed. Leads will follow.');
+  if (sum.morale < 40) notes.push('Crew morale is shaky. One bad call away from a walk-off.');
+  if (sum.new_achievements.length) notes.push('New achievements unlocked: ' + sum.new_achievements.length);
+  if (!notes.length) notes.push('Steady week. Sometimes that\'s the win.');
+  $('wk-note').innerHTML = notes.map(n => '· ' + n).join('<br>');
+  $('weekModal').classList.add('on');
+}
+function closeWeekSummary(){ $('weekModal').classList.remove('on'); render(); }
+
+function openModal(id){ $(id).classList.add('on'); }
+function closeModal(id){ $(id).classList.remove('on'); }
+window.closeModal = closeModal;
+window.closeWeekSummary = closeWeekSummary;
+
+function openSkills(){
+  renderSkills();
+  openModal('skillsModal');
+}
+function renderSkills(){
+  const s = RyujinSim.state();
+  $('skillPtsHeader').textContent = s.skill_points + ' POINT' + (s.skill_points === 1 ? '' : 'S');
+  $('skillPtsHeader').classList.toggle('zero', s.skill_points === 0);
+  ['sales','ops','marketing','finance'].forEach(track => {
+    const level = s.skills[track] || 0;
+    const wrap = document.getElementById('skill-pips-' + track);
+    wrap.innerHTML = [0,1,2].map(i => `<div class="skill-pip ${i < level ? 'filled' : ''}"></div>`).join('');
+    const btn = wrap.parentElement.querySelector('.skill-allocate');
+    btn.disabled = s.skill_points < 1 || level >= 3;
+    btn.textContent = level >= 3 ? 'MAX' : (s.skill_points < 1 ? 'NEED A POINT' : '+1 RANK');
+  });
+  // Update side button pill
+  $('skillPts').textContent = s.skill_points;
+  $('skillsBtn').classList.toggle('has-pts', s.skill_points > 0);
+}
+function allocateSkill(track){
+  if (RyujinSim.allocateSkill(track)) {
+    renderSkills();
+    render();
+  }
+}
+window.openSkills = openSkills;
+window.allocateSkill = allocateSkill;
+
+function openAchievements(){
+  const catalog = RyujinSim.achievementsCatalog();
+  const s = RyujinSim.state();
+  const total = Object.keys(catalog).length;
+  const unlocked = s.achievements.length;
+  $('achCount').textContent = `Unlocked: ${unlocked} / ${total}`;
+  $('achGrid').innerHTML = Object.values(catalog).map(a => {
+    const has = s.achievements.includes(a.id);
+    return `
+      <div class="ach-row ${has ? 'unlocked' : 'locked'}">
+        <div class="ach-row-title">${has ? '<svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>' : '<svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>'}${a.title}</div>
+        <div class="ach-row-body">${has ? a.body : '🔒 Locked'}</div>
+      </div>
+    `;
+  }).join('');
+  openModal('achModal');
+}
+window.openAchievements = openAchievements;
+
+function openSlots(){
+  const slots = RyujinSim.listSlots();
+  const current = RyujinSim.state().slot || 'slot1';
+  $('slotList').innerHTML = slots.map(s => {
+    const active = s.slot === current;
+    if (s.empty) {
+      return `
+        <div class="slot-row">
+          <div class="slot-meta">
+            <div class="slot-name empty">Empty Slot</div>
+            <div class="slot-detail">No save in this slot</div>
+          </div>
+          <div class="slot-actions">
+            <button class="slot-action" onclick="newGameInSlot('${s.slot}')">NEW GAME</button>
+          </div>
+        </div>
+      `;
+    }
+    return `
+      <div class="slot-row ${active ? 'active' : ''}">
+        <div class="slot-meta">
+          <div class="slot-name">${s.name || 'Run'}</div>
+          <div class="slot-detail">YR ${1} · M${s.month} · W${s.week} · DAY ${s.day} · ${fmtMoney(s.cash)} · REP ${s.rep}</div>
+        </div>
+        <div class="slot-actions">
+          ${active ? '<span class="slot-action" style="border-color:#4ade80;color:#4ade80">ACTIVE</span>' : `<button class="slot-action" onclick="loadSlot('${s.slot}')">LOAD</button>`}
+          <button class="slot-action danger" onclick="deleteSlot('${s.slot}')">DEL</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+  openModal('slotModal');
+}
+function loadSlot(slot){ RyujinSim.loadSlot(slot); closeModal('slotModal'); render(); }
+function newGameInSlot(slot){
+  const name = prompt('Name this run:', 'Run ' + slot.slice(-1));
+  if (name === null) return;
+  RyujinSim.newGame(slot, name || 'Run');
+  closeModal('slotModal');
+  render();
+}
+function deleteSlot(slot){
+  if (!confirm('Delete save in ' + slot + '? Cannot undo.')) return;
+  RyujinSim.deleteSlot(slot);
+  openSlots();
+}
+window.openSlots = openSlots;
+window.loadSlot = loadSlot;
+window.newGameInSlot = newGameInSlot;
+window.deleteSlot = deleteSlot;
+
+function resetGame(){
+  RyujinSim.reset();
+  render();
+}
+
+function goBack(){
+  window.location.href = 'command-center.html';
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') goBack();
+  if (e.key === ' ' || e.key === 'Enter') { if (!RyujinSim.eligibleToday()) advanceDay(); }
+  if (e.key >= '1' && e.key <= '9') {
+    const idx = parseInt(e.key, 10) - 1;
+    const pending = RyujinSim.eligibleToday();
+    if (pending && pending.choices[idx]) choose(pending.id, idx);
+  }
+});
+document.addEventListener('contextmenu', e => { e.preventDefault(); goBack(); });
+
+window.choose = choose;
+window.advanceDay = advanceDay;
+window.resetGame = resetGame;
+window.goBack = goBack;
+window.render = render;
+
+render();
+</script>
+
+</body>
+</html>
