@@ -16,7 +16,7 @@ async function handler(req, res) {
 
     let query = supabaseAdmin
       .from('time_entries')
-      .select('*, user:users(id, name)')
+      .select('*, user:users!time_entries_user_id_fkey(id, name)')
       .eq('tenant_id', tenantId)
       .order('date', { ascending: false })
       .limit(parseInt(limit));
