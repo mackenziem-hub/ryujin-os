@@ -496,7 +496,7 @@ async function renderClock(c) {
 
     <div class="panel" style="text-align:center">
       <div style="font-weight:700;font-size:1em">${esc(currentUser?.name||'Crew')}</div>
-      <div style="font-size:0.78em;color:var(--text-dim);margin-top:2px">${esc((ROLE_CONFIG[getDisplayRole(currentUser?.role)]||{}).label || currentUser?.role || 'crew')}</div>
+      <div style="font-size:0.78em;color:var(--text-dim);margin-top:2px">${esc((ROLE_CONFIG[getDisplayRole(currentUser?.role, currentUser?.name)]||{}).label || currentUser?.role || 'crew')}</div>
       ${currentUser?.phone ? `<div style="font-size:0.75em;color:var(--text-dim);margin-top:4px">${esc(currentUser.phone)}</div>` : ''}
       ${currentUser?.email ? `<div style="font-size:0.72em;color:var(--text-dim);margin-top:2px">${esc(currentUser.email)}</div>` : ''}
     </div>
@@ -530,14 +530,25 @@ async function clockOut() {
 
 // ═══ ROLE CONFIG ═══
 const ROLE_CONFIG = {
-  owner: { label: 'Owner', color: 'owner', icon: '👑', tabs: ['home','tasks','projects','clock'] },
-  estimator: { label: 'Estimator / Partner', color: 'estimator', icon: '📋', tabs: ['home','tasks','projects','clock'] },
-  crew: { label: 'Crew / Subcontractor', color: 'crew', icon: '🔨', tabs: ['home','tasks','projects','clock'] },
-  field_ops: { label: 'Field Ops', color: 'field-ops', icon: '🎯', tabs: ['home','tasks','projects','clock'] }
+  owner: { label: 'Owner', color: 'owner', icon: '👑' },
+  estimator: { label: 'Estimator / Partner', color: 'estimator', icon: '📋' },
+  production_assistant: { label: 'Production Assistant', color: 'field-ops', icon: '🎯' },
+  operations_specialist: { label: 'Operations Specialist', color: 'crew', icon: '🔧' },
+  laborer: { label: 'Laborer', color: 'crew', icon: '🔨' },
+  subcontractor: { label: 'Subcontractor', color: 'crew', icon: '⚡' },
+  crew: { label: 'Crew', color: 'crew', icon: '🔨' }
 };
 
-// Map existing roles to display roles
-function getDisplayRole(role) {
+// Map user names to specific roles (until DB roles are updated)
+const USER_ROLES = {
+  'AJ': 'production_assistant',
+  'Diego': 'operations_specialist',
+  'Pavanjot': 'laborer',
+  'Ryan': 'subcontractor'
+};
+
+function getDisplayRole(role, name) {
+  if (name && USER_ROLES[name]) return USER_ROLES[name];
   if (role === 'owner' || role === 'admin' || role === 'manager') return 'owner';
   if (role === 'estimator') return 'estimator';
   return 'crew';
@@ -586,7 +597,7 @@ function showUserSelector() {
   });
 
   for (const u of sorted) {
-    const dr = getDisplayRole(u.role);
+    const dr = getDisplayRole(u.role, u.name);
     const cfg = ROLE_CONFIG[dr] || ROLE_CONFIG.crew;
     html += `<div class="user-select-card" onclick="selectUser(allUsers.find(x=>x.id==='${u.id}'))">
       <div class="user-avatar ${cfg.color}">${cfg.icon}</div>
@@ -613,7 +624,7 @@ function selectUser(user) {
   document.getElementById('userName').textContent = user.name;
 
   // Update user pill color based on role
-  const dr = getDisplayRole(user.role);
+  const dr = getDisplayRole(user.role, user.name);
   const pill = document.getElementById('userPill');
   if (pill) pill.style.borderColor = dr === 'owner' ? 'rgba(34,211,238,0.2)' : dr === 'estimator' ? 'rgba(74,158,255,0.2)' : 'rgba(74,222,128,0.2)';
 
