@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ryujin OS · Pipeline</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg-deep:#030611;--glass:rgba(14,22,40,0.78);
+  --border:rgba(34,211,238,0.22);--border-hi:rgba(34,211,238,0.45);
+  --accent:#22d3ee;--accent-2:#67e8f9;
+  --text:#e0e6f0;--text-dim:rgba(160,190,230,0.62);--text-muted:rgba(140,170,220,0.32);
+  --cyan:#22d3ee;--green:#4ade80;--yellow:#facc15;--red:#f87171;--orange:#fb923c;--purple:#7c3aed;--blue:#4a9eff;
+  --radius:14px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg-deep);color:var(--text);overflow:hidden}
+.bg-ambient{position:fixed;inset:0;z-index:0;background:radial-gradient(ellipse at 40% 30%,rgba(34,211,238,0.08) 0%,transparent 55%),radial-gradient(ellipse at 80% 80%,rgba(74,222,128,0.04) 0%,transparent 50%),linear-gradient(180deg,#060a14 0%,#030611 100%)}
+.bg-grid{position:fixed;inset:0;z-index:1;pointer-events:none;background-image:linear-gradient(rgba(34,211,238,0.028) 1px,transparent 1px),linear-gradient(90deg,rgba(34,211,238,0.028) 1px,transparent 1px);background-size:48px 48px;mask-image:radial-gradient(ellipse at center,black 40%,transparent 85%);-webkit-mask-image:radial-gradient(ellipse at center,black 40%,transparent 85%)}
+.app{position:relative;z-index:2;height:100vh;display:grid;grid-template-rows:52px 1fr 44px;gap:10px;padding:10px 12px}
+.topbar{display:flex;align-items:center;gap:12px;background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);padding:0 14px;backdrop-filter:blur(20px);position:relative;overflow:hidden}
+.topbar::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),var(--purple),transparent);opacity:0.5}
+.brand{display:flex;align-items:center;gap:10px}
+.brand-mark{width:30px;height:30px;border-radius:7px;background:radial-gradient(circle at 35% 30%,rgba(200,240,255,0.3),rgba(34,211,238,0.22) 40%,rgba(5,15,30,0.8));box-shadow:0 0 14px rgba(34,211,238,0.35)}
+.brand-name{font-family:'Orbitron',sans-serif;font-size:0.78em;font-weight:800;letter-spacing:2.5px}
+.brand-name .dim{color:var(--text-dim);font-weight:500;letter-spacing:2px;margin-left:8px}
+.tb-spacer{flex:1}
+.tb-stat{display:flex;align-items:center;gap:6px;font-family:'Share Tech Mono',monospace;font-size:0.68em;color:var(--text-dim);letter-spacing:1px}
+.tb-stat .dot{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+.tb-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:rgba(6,10,20,0.6);border:1px solid var(--border);color:var(--text-dim);cursor:pointer;transition:all 0.2s}
+.tb-icon:hover{color:var(--accent);border-color:var(--border-hi);background:rgba(34,211,238,0.08)}
+.tb-icon svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.main{display:grid;grid-template-rows:auto 1fr;gap:10px;min-height:0}
+.kpi-rail{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+.kpi{background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;backdrop-filter:blur(14px);position:relative;overflow:hidden;transition:all 0.25s;cursor:pointer}
+.kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:0.4}
+.kpi:hover{border-color:var(--border-hi);transform:translateY(-2px)}
+.kpi-label{font-family:'Orbitron',sans-serif;font-size:0.53em;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim)}
+.kpi-value{font-family:'Orbitron',sans-serif;font-size:1.7em;font-weight:800;letter-spacing:-0.5px;margin-top:4px;line-height:1;background:linear-gradient(135deg,#fff 20%,var(--accent));-webkit-background-clip:text;-webkit-text-fill-color:transparent;filter:drop-shadow(0 0 10px rgba(34,211,238,0.25))}
+.kpi-value.green{background:linear-gradient(135deg,#fff 20%,var(--green));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.kpi-value.orange{background:linear-gradient(135deg,#fff 20%,var(--orange));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.kpi-value.purple{background:linear-gradient(135deg,#fff 20%,var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.kpi-meta{display:flex;justify-content:space-between;align-items:center;margin-top:5px;font-size:0.65em}
+.kpi-delta{font-family:'Share Tech Mono',monospace;font-weight:700}
+.kpi-delta.up{color:var(--green)}
+.kpi-delta.down{color:var(--red)}
+.kpi-sub{color:var(--text-muted);font-size:0.9em}
+.content{display:grid;grid-template-columns:1.5fr 1fr;gap:10px;min-height:0}
+.col{display:flex;flex-direction:column;gap:10px;min-height:0;overflow:hidden}
+.panel{background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);backdrop-filter:blur(14px);display:flex;flex-direction:column;min-height:0;overflow:hidden;position:relative}
+.panel::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:0.45}
+.panel-head{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid rgba(34,211,238,0.1);flex-shrink:0}
+.panel-title{font-family:'Orbitron',sans-serif;font-size:0.62em;font-weight:700;letter-spacing:2.5px;color:var(--text-dim)}
+.panel-badge{background:rgba(34,211,238,0.12);border:1px solid rgba(34,211,238,0.28);padding:2px 8px;border-radius:5px;font-family:'Share Tech Mono',monospace;font-size:0.65em;color:var(--accent);letter-spacing:0.5px}
+.panel-body{flex:1;overflow-y:auto;padding:8px}
+.panel-body::-webkit-scrollbar{width:4px}
+.panel-body::-webkit-scrollbar-thumb{background:rgba(34,211,238,0.18);border-radius:2px}
+.deal-card{display:flex;gap:12px;padding:10px 12px;border-radius:10px;margin-bottom:4px;cursor:pointer;border:1px solid transparent;transition:all 0.2s}
+.deal-card:hover{background:rgba(34,211,238,0.05);border-color:rgba(34,211,238,0.15)}
+.deal-card.active{background:rgba(34,211,238,0.08);border-color:rgba(34,211,238,0.28)}
+.deal-stage{width:6px;border-radius:3px;flex-shrink:0}
+.deal-stage.new{background:var(--blue)}
+.deal-stage.inspect{background:var(--yellow)}
+.deal-stage.quote{background:var(--accent)}
+.deal-stage.sent{background:var(--purple)}
+.deal-stage.won{background:var(--green)}
+.deal-stage.lost{background:var(--text-muted)}
+.deal-body{flex:1;min-width:0}
+.deal-name{font-size:0.86em;font-weight:600}
+.deal-meta{font-size:0.68em;color:var(--text-dim);font-family:'Share Tech Mono',monospace;margin-top:2px;letter-spacing:0.4px}
+.deal-right{text-align:right;flex-shrink:0}
+.deal-val{font-family:'Orbitron',sans-serif;font-weight:700;font-size:1em;color:var(--accent)}
+.deal-stagetag{font-size:0.62em;color:var(--text-dim);margin-top:2px;font-family:'Share Tech Mono',monospace;letter-spacing:0.5px;text-transform:uppercase}
+.deal-detail{padding:14px 16px;background:rgba(34,211,238,0.05);border-radius:10px;margin:2px 0 8px;border:1px solid rgba(34,211,238,0.15);display:none}
+.deal-card.active + .deal-detail{display:block}
+.detail-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px}
+.detail-stat{padding:8px 10px;background:rgba(6,10,20,0.5);border-radius:7px;border:1px solid rgba(34,211,238,0.1)}
+.detail-stat .lbl{font-family:'Share Tech Mono',monospace;font-size:0.58em;color:var(--text-muted);letter-spacing:0.8px;text-transform:uppercase}
+.detail-stat .val{font-family:'Orbitron',sans-serif;font-weight:700;font-size:0.96em;margin-top:2px}
+.detail-actions{display:flex;gap:6px;flex-wrap:wrap}
+.act-btn{padding:7px 14px;border-radius:8px;font-family:'Orbitron',sans-serif;font-size:0.66em;font-weight:700;letter-spacing:1.5px;cursor:pointer;border:1px solid;transition:all 0.2s}
+.act-btn.primary{background:linear-gradient(135deg,rgba(34,211,238,0.25),rgba(34,211,238,0.1));color:var(--accent);border-color:rgba(34,211,238,0.4)}
+.act-btn.primary:hover{background:linear-gradient(135deg,rgba(34,211,238,0.4),rgba(34,211,238,0.2));box-shadow:0 0 12px rgba(34,211,238,0.25)}
+.act-btn.ghost{background:rgba(6,10,20,0.5);color:var(--text-dim);border-color:var(--border)}
+.act-btn.ghost:hover{color:var(--text);border-color:var(--border-hi)}
+.act-btn.danger{background:rgba(248,113,113,0.08);color:var(--red);border-color:rgba(248,113,113,0.25)}
+.pipeline-stages{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;padding:8px}
+.stage-col{background:rgba(6,10,20,0.5);border:1px solid rgba(34,211,238,0.08);border-radius:8px;padding:8px;min-height:120px}
+.stage-head{font-family:'Orbitron',sans-serif;font-size:0.56em;font-weight:700;letter-spacing:1.2px;color:var(--text-dim);text-transform:uppercase;margin-bottom:6px;display:flex;justify-content:space-between}
+.stage-head .cnt{color:var(--accent);font-weight:800}
+.stage-card{background:rgba(34,211,238,0.06);border:1px solid rgba(34,211,238,0.14);border-radius:6px;padding:5px 8px;margin-bottom:4px;font-size:0.7em;cursor:pointer}
+.stage-card:hover{background:rgba(34,211,238,0.12);border-color:rgba(34,211,238,0.3)}
+.stage-card .v{font-family:'Orbitron',sans-serif;font-weight:700;font-size:0.78em;color:var(--accent);letter-spacing:-0.3px}
+.alerts{background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);backdrop-filter:blur(14px);display:flex;align-items:center;padding:0 14px;gap:14px;position:relative;overflow:hidden}
+.alerts::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),var(--red),transparent);opacity:0.4}
+.alerts-label{font-family:'Orbitron',sans-serif;font-size:0.58em;font-weight:700;letter-spacing:2.5px;color:var(--accent);flex-shrink:0;display:flex;align-items:center;gap:8px}
+.alert-icon{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2}
+.alerts-items{flex:1;display:flex;gap:18px;overflow-x:auto}
+.alert-chip{display:flex;align-items:center;gap:6px;font-size:0.76em;color:var(--text);white-space:nowrap}
+.alert-chip .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.alert-chip .dot.red{background:var(--red);box-shadow:0 0 6px var(--red)}
+.alert-chip .dot.yellow{background:var(--yellow);box-shadow:0 0 6px var(--yellow)}
+.alert-chip .dim{color:var(--text-dim);font-size:0.88em;margin-left:4px}
+.embed-mode .chat-fab{display:none}
+</style>
+</head>
+<body>
+
+<div class="bg-ambient"></div>
+<div class="bg-grid"></div>
+
+<div class="app">
+  <div class="topbar">
+    <button class="tb-icon" onclick="goBackToSubHub()"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
+    <div class="brand"><div class="brand-mark"></div><div class="brand-name">RYUJIN <span class="dim">· SALES · PIPELINE</span></div></div>
+    <div class="tb-stat"><div class="dot"></div><span>GHL · SYNCED</span></div>
+    <div class="tb-spacer"></div>
+    <button onclick="newProposal()" style="padding:8px 16px;border-radius:9px;font-family:'Orbitron',sans-serif;font-size:0.7em;font-weight:800;letter-spacing:1.5px;cursor:pointer;border:1px solid rgba(34,211,238,0.45);background:linear-gradient(135deg,rgba(34,211,238,0.28),rgba(124,58,237,0.12));color:var(--accent);box-shadow:0 0 14px rgba(34,211,238,0.2);display:inline-flex;align-items:center;gap:6px">
+      <svg viewBox="0 0 24 24" style="width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2.5;stroke-linecap:round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      NEW PROPOSAL
+    </button>
+    <button class="tb-icon" onclick="toggleFs()"><svg viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 00-2 2v3M21 8V5a2 2 0 00-2-2h-3M3 16v3a2 2 0 002 2h3M16 21h3a2 2 0 002-2v-3"/></svg></button>
+  </div>
+
+  <div class="main">
+    <div class="kpi-rail">
+      <div class="kpi"><div class="kpi-label">Signed MTD</div><div class="kpi-value green">$90.7K</div><div class="kpi-meta"><span class="kpi-delta up">▲ +$12.4K</span><span class="kpi-sub">6 signed</span></div></div>
+      <div class="kpi"><div class="kpi-label">Open Pipeline</div><div class="kpi-value">$410K</div><div class="kpi-meta"><span class="kpi-delta up">67 deals</span><span class="kpi-sub">avg $6.1K</span></div></div>
+      <div class="kpi"><div class="kpi-label">Close Rate</div><div class="kpi-value green">8.3%</div><div class="kpi-meta"><span class="kpi-delta up">▲ 1.2%</span><span class="kpi-sub">30-day</span></div></div>
+      <div class="kpi"><div class="kpi-label">Quote Rate</div><div class="kpi-value purple">47.9%</div><div class="kpi-meta"><span class="kpi-delta up">leads → quoted</span><span class="kpi-sub"></span></div></div>
+      <div class="kpi"><div class="kpi-label">Stale Leads</div><div class="kpi-value orange">63</div><div class="kpi-meta"><span class="kpi-delta down">▼ re-engage</span><span class="kpi-sub">7+ days</span></div></div>
+    </div>
+
+    <div class="content">
+      <div class="col">
+        <div class="panel">
+          <div class="panel-head"><div class="panel-title">TOP OPEN DEALS</div><div class="panel-badge">67 TOTAL</div></div>
+          <div class="panel-body">
+            <div class="deal-card" data-id="partridge" onclick="toggleDeal('partridge')">
+              <div class="deal-stage quote"></div>
+              <div class="deal-body"><div class="deal-name">Robert Partridge</div><div class="deal-meta">Moncton · asphalt + mansard · 3 views</div></div>
+              <div class="deal-right"><div class="deal-val">$44,370</div><div class="deal-stagetag">QUOTE SENT</div></div>
+            </div>
+            <div class="deal-detail">
+              <div class="detail-grid">
+                <div class="detail-stat"><div class="lbl">Scope</div><div class="val">Asphalt · Shell</div></div>
+                <div class="detail-stat"><div class="lbl">First Touch</div><div class="val">Apr 9</div></div>
+                <div class="detail-stat"><div class="lbl">Last Activity</div><div class="val">3 hr ago</div></div>
+                <div class="detail-stat"><div class="lbl">Rep</div><div class="val">Mackenzie</div></div>
+              </div>
+              <div class="detail-actions">
+                <button class="act-btn primary">CALL NOW</button>
+                <button class="act-btn ghost">SMS FOLLOW-UP</button>
+                <button class="act-btn ghost">VIEW PROPOSAL</button>
+                <button class="act-btn ghost">MOVE TO CLOSED</button>
+              </div>
+            </div>
+
+            <div class="deal-card" data-id="lipton" onclick="toggleDeal('lipton')">
+              <div class="deal-stage quote"></div>
+              <div class="deal-body"><div class="deal-name">Nadine Lipton</div><div class="deal-meta">Dieppe · metal standing seam</div></div>
+              <div class="deal-right"><div class="deal-val">$27,351</div><div class="deal-stagetag">QUOTE SENT</div></div>
+            </div>
+            <div class="deal-detail">
+              <div class="detail-grid">
+                <div class="detail-stat"><div class="lbl">Scope</div><div class="val">Metal · SS</div></div>
+                <div class="detail-stat"><div class="lbl">First Touch</div><div class="val">Apr 11</div></div>
+                <div class="detail-stat"><div class="lbl">Last Activity</div><div class="val">2d ago</div></div>
+                <div class="detail-stat"><div class="lbl">Rep</div><div class="val">Darcy</div></div>
+              </div>
+              <div class="detail-actions">
+                <button class="act-btn primary">CALL NOW</button>
+                <button class="act-btn ghost">EMAIL</button>
+                <button class="act-btn ghost">VIEW PROPOSAL</button>
+              </div>
+            </div>
+
+            <div class="deal-card" data-id="juha" onclick="toggleDeal('juha')">
+              <div class="deal-stage quote"></div>
+              <div class="deal-body"><div class="deal-name">Diaa Juha</div><div class="deal-meta">Moncton · full replacement</div></div>
+              <div class="deal-right"><div class="deal-val">$20,502</div><div class="deal-stagetag">QUOTE SENT</div></div>
+            </div>
+            <div class="deal-detail">
+              <div class="detail-grid">
+                <div class="detail-stat"><div class="lbl">Scope</div><div class="val">Asphalt + gutters</div></div>
+                <div class="detail-stat"><div class="lbl">First Touch</div><div class="val">Apr 7</div></div>
+                <div class="detail-stat"><div class="lbl">Last Activity</div><div class="val">5d ago</div></div>
+                <div class="detail-stat"><div class="lbl">Status</div><div class="val">Cooling</div></div>
+              </div>
+              <div class="detail-actions">
+                <button class="act-btn primary">RE-ENGAGE</button>
+                <button class="act-btn ghost">DISCOUNT OFFER</button>
+                <button class="act-btn danger">MARK LOST</button>
+              </div>
+            </div>
+
+            <div class="deal-card" data-id="peach" onclick="toggleDeal('peach')">
+              <div class="deal-stage inspect"></div>
+              <div class="deal-body"><div class="deal-name">Shelagh Peach</div><div class="deal-meta">Redeck + ventilation · Darcy presenting</div></div>
+              <div class="deal-right"><div class="deal-val">$19,702</div><div class="deal-stagetag">INSPECTION</div></div>
+            </div>
+            <div class="deal-detail">
+              <div class="detail-grid">
+                <div class="detail-stat"><div class="lbl">Scope</div><div class="val">Redeck $3,700 + vent $11,850</div></div>
+                <div class="detail-stat"><div class="lbl">Due</div><div class="val">Apr 20</div></div>
+                <div class="detail-stat"><div class="lbl">Presenter</div><div class="val">Darcy</div></div>
+                <div class="detail-stat"><div class="lbl">Likelihood</div><div class="val" style="color:var(--green)">HIGH</div></div>
+              </div>
+              <div class="detail-actions">
+                <button class="act-btn primary">GENERATE PROPOSAL</button>
+                <button class="act-btn ghost">PING DARCY</button>
+                <button class="act-btn ghost">VIEW NOTES</button>
+              </div>
+            </div>
+
+            <div class="deal-card" data-id="aphl" onclick="toggleDeal('aphl')">
+              <div class="deal-stage sent"></div>
+              <div class="deal-body"><div class="deal-name">APHL · Tara Court</div><div class="deal-meta">Kevin Chase · two-tier quote · competitor undercut</div></div>
+              <div class="deal-right"><div class="deal-val">$16,200</div><div class="deal-stagetag">AWAITING</div></div>
+            </div>
+            <div class="deal-detail">
+              <div class="detail-grid">
+                <div class="detail-stat"><div class="lbl">Sent</div><div class="val">Apr 14</div></div>
+                <div class="detail-stat"><div class="lbl">Option A</div><div class="val">$16.2K</div></div>
+                <div class="detail-stat"><div class="lbl">Option B</div><div class="val">$12.4K</div></div>
+                <div class="detail-stat"><div class="lbl">Risk</div><div class="val" style="color:var(--yellow)">MEDIUM</div></div>
+              </div>
+              <div class="detail-actions">
+                <button class="act-btn primary">CALL KEVIN</button>
+                <button class="act-btn ghost">EMAIL REMINDER</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><div class="panel-title">PIPELINE · BY STAGE</div><div class="panel-badge">$410K OPEN</div></div>
+          <div class="panel-body">
+            <div class="pipeline-stages">
+              <div class="stage-col"><div class="stage-head">NEW LEAD <span class="cnt">12</span></div>
+                <div class="stage-card"><div>Carter, D.</div><div class="v">—</div></div>
+                <div class="stage-card"><div>LeBlanc, K.</div><div class="v">—</div></div>
+                <div class="stage-card"><div>+ 10 more</div></div>
+              </div>
+              <div class="stage-col"><div class="stage-head">INSPECTION <span class="cnt">18</span></div>
+                <div class="stage-card"><div>Peach</div><div class="v">$19.7K</div></div>
+                <div class="stage-card"><div>Arsenault</div><div class="v">$8.2K</div></div>
+                <div class="stage-card"><div>+ 16 more</div></div>
+              </div>
+              <div class="stage-col"><div class="stage-head">QUOTED <span class="cnt">22</span></div>
+                <div class="stage-card"><div>Partridge</div><div class="v">$44.4K</div></div>
+                <div class="stage-card"><div>Lipton</div><div class="v">$27.4K</div></div>
+                <div class="stage-card"><div>Juha</div><div class="v">$20.5K</div></div>
+                <div class="stage-card"><div>+ 19 more</div></div>
+              </div>
+              <div class="stage-col"><div class="stage-head">SENT <span class="cnt">9</span></div>
+                <div class="stage-card"><div>APHL · Tara</div><div class="v">$16.2K</div></div>
+                <div class="stage-card"><div>+ 8 more</div></div>
+              </div>
+              <div class="stage-col"><div class="stage-head">LOST <span class="cnt">6</span></div>
+                <div class="stage-card"><div>Nicholas</div><div class="v">$32.5K</div></div>
+                <div class="stage-card"><div>+ 5 more</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="panel">
+          <div class="panel-head"><div class="panel-title">SIGNED DEALS · MTD</div><div class="panel-badge">6 WINS</div></div>
+          <div class="panel-body">
+            <div class="deal-card"><div class="deal-stage won"></div><div class="deal-body"><div class="deal-name">Seyeau · 10 Edgewater</div><div class="deal-meta">FinanceIt · Apr 15</div></div><div class="deal-right"><div class="deal-val">$29,900</div><div class="deal-stagetag">WON</div></div></div>
+            <div class="deal-card"><div class="deal-stage won"></div><div class="deal-body"><div class="deal-name">Northrup</div><div class="deal-meta">Paid Apr 17 · $3,100</div></div><div class="deal-right"><div class="deal-val">$3,100</div><div class="deal-stagetag">WON</div></div></div>
+            <div class="deal-card"><div class="deal-stage won"></div><div class="deal-body"><div class="deal-name">Faulkner · 178 Summerhill</div><div class="deal-meta">Scheduled Wed</div></div><div class="deal-right"><div class="deal-val">$18,400</div><div class="deal-stagetag">WON</div></div></div>
+            <div class="deal-card"><div class="deal-stage won"></div><div class="deal-body"><div class="deal-name">Fortune 105</div><div class="deal-meta">AJ starting today</div></div><div class="deal-right"><div class="deal-val">$18,200</div><div class="deal-stagetag">WON</div></div></div>
+            <div class="deal-card"><div class="deal-stage won"></div><div class="deal-body"><div class="deal-name">Arzaga</div><div class="deal-meta">Awaiting final sign-off</div></div><div class="deal-right"><div class="deal-val">$8,800</div><div class="deal-stagetag">WON</div></div></div>
+            <div class="deal-card"><div class="deal-stage won"></div><div class="deal-body"><div class="deal-name">Misc · Apr batch</div><div class="deal-meta">3 smaller wins</div></div><div class="deal-right"><div class="deal-val">$12,284</div><div class="deal-stagetag">WON</div></div></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><div class="panel-title">PIPELINE VELOCITY</div><div class="panel-badge">AVG 18d</div></div>
+          <div class="panel-body" style="padding:16px">
+            <div style="display:flex;justify-content:space-between;padding:6px 0"><span style="color:var(--text-dim);font-size:0.8em">Lead → Inspection</span><span style="font-family:'Orbitron',sans-serif;font-weight:700">3.2 days</span></div>
+            <div style="display:flex;justify-content:space-between;padding:6px 0"><span style="color:var(--text-dim);font-size:0.8em">Inspection → Quote</span><span style="font-family:'Orbitron',sans-serif;font-weight:700">5.8 days</span></div>
+            <div style="display:flex;justify-content:space-between;padding:6px 0"><span style="color:var(--text-dim);font-size:0.8em">Quote → Sent</span><span style="font-family:'Orbitron',sans-serif;font-weight:700">1.4 days</span></div>
+            <div style="display:flex;justify-content:space-between;padding:6px 0"><span style="color:var(--text-dim);font-size:0.8em">Sent → Signed</span><span style="font-family:'Orbitron',sans-serif;font-weight:700">7.6 days</span></div>
+            <div style="display:flex;justify-content:space-between;padding:10px 0;margin-top:8px;border-top:1px solid rgba(34,211,238,0.15)"><span style="font-family:'Orbitron',sans-serif;font-weight:700">Total cycle</span><span style="font-family:'Orbitron',sans-serif;font-weight:800;color:var(--accent);font-size:1.05em">18.0 days</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="alerts">
+    <div class="alerts-label"><svg class="alert-icon" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 22h20L12 2zM12 9v5M12 17v.01"/></svg>ALERTS · 2</div>
+    <div class="alerts-items">
+      <div class="alert-chip"><div class="dot red"></div>Jonathan Gould · repair update <span class="dim">OVERDUE</span></div>
+      <div class="alert-chip"><div class="dot yellow"></div>Shelagh Peach · quote due <span class="dim">Apr 20</span></div>
+    </div>
+  </div>
+</div>
+
+<script src="assets/ryujin-mode.js"></script>
+<script src="assets/ryujin-tenant.js"></script>
+<script src="assets/ryujin-persist.js"></script>
+<script src="assets/ryujin-api.js"></script>
+<script src="assets/ryujin-scenario.js"></script>
+<script src="assets/ryujin-xp.js"></script>
+<script src="assets/ryujin-mode-badge.js"></script>
+<script>
+function toggleDeal(id){document.querySelectorAll('.deal-card').forEach(c=>c.classList.toggle('active',c.dataset.id===id&&!c.classList.contains('active')))}
+
+// Deal contacts for actions
+const dealContacts = {
+  partridge: { name: 'Robert Partridge', phone: '5065550144', email: 'rpartridge@example.com' },
+  lipton: { name: 'Nadine Lipton', phone: '5065550192', email: 'nlipton@example.com' },
+  juha: { name: 'Diaa Juha', phone: '5065550177', email: 'djuha@example.com' },
+  peach: { name: 'Shelagh Peach', phone: '5065550120', email: 'speach@example.com' },
+  aphl: { name: 'Kevin Chase', phone: '5065550101', email: 'kchase@aphl.ca' }
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.deal-detail').forEach(detail => {
+    const card = detail.previousElementSibling;
+    const id = card && card.dataset.id;
+    const c = dealContacts[id];
+    detail.querySelectorAll('.act-btn').forEach(btn => {
+      const t = btn.textContent.trim();
+      if (btn._wired) return; btn._wired = true;
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        if (/CALL/i.test(t) && c?.phone) { RyujinActions.call(c.phone); }
+        else if (/SMS/i.test(t) && c?.phone) { RyujinActions.sms(c.phone, 'Hi ' + (c.name.split(' ')[0]) + ', '); }
+        else if (/EMAIL/i.test(t) && c?.email) { RyujinActions.gmail(c.email, 'Checking in from Plus Ultra Roofing', 'Hi ' + (c.name.split(' ')[0]) + ',\n\n'); }
+        else if (/RE-ENGAGE|DISCOUNT/i.test(t) && c?.email) { RyujinActions.gmail(c.email, 'Following up on your roof quote', 'Hi ' + (c.name.split(' ')[0]) + ',\n\nJust checking in on the quote we sent. Happy to answer any questions.\n\nThanks,\nMackenzie'); }
+        else if (/GENERATE PROPOSAL|VIEW PROPOSAL/i.test(t)) { newProposal(c?.name?.split(' ')[0] || id); }
+        else if (/MARK LOST/i.test(t)) {
+          const lost = RyujinStore.load('deals_lost', []);
+          lost.push({ id, at: new Date().toISOString() });
+          RyujinStore.save('deals_lost', lost);
+          RyujinToast('Marked lost \u00B7 ' + (c?.name || id));
+        }
+        else if (/MOVE TO CLOSED/i.test(t)) {
+          const closed = RyujinStore.load('deals_closed', []);
+          closed.push({ id, at: new Date().toISOString() });
+          RyujinStore.save('deals_closed', closed);
+          RyujinToast('Moved to closed \u00B7 ' + (c?.name || id));
+        }
+        else if (/PING DARCY/i.test(t)) { RyujinActions.sms('5065552727', 'Hey Darcy \u2014 quick ping on the ' + (c?.name || id) + ' deal. Where are we?'); }
+        else if (/VIEW NOTES/i.test(t)) { window.location.href = 'sales-customers.html'; }
+        else if (/EMAIL REMINDER/i.test(t) && c?.email) { RyujinActions.gmail(c.email, 'Quick reminder on your proposal', 'Hi ' + (c.name.split(' ')[0]) + ',\n\nJust making sure our proposal didn\'t get buried. Let me know if any questions.\n\nThanks!\nMackenzie'); }
+        else if (window.RyujinToast) RyujinToast(t + ' \u00B7 ' + (c?.name || id));
+      });
+    });
+  });
+});
+function newProposal(lead){
+  const url = 'sales-proposal.html' + (lead ? '?lead=' + encodeURIComponent(lead) : '');
+  window.location.href = url;
+}
+function toggleFs(){if(!document.fullscreenElement)document.documentElement.requestFullscreen().catch(()=>{});else document.exitFullscreen().catch(()=>{})}
+function goBackToSubHub(){ window.location.href = 'sales.html'; }
+document.addEventListener('keydown',e=>{if((e.key==='f'||e.key==='F')&&!e.ctrlKey&&!e.metaKey)toggleFs();if(e.key==='Escape')goBackToSubHub()});
+document.addEventListener('contextmenu', e => { e.preventDefault(); goBackToSubHub(); });
+
+// Wire proposal generation buttons
+document.addEventListener('DOMContentLoaded', () => {
+  const map = { partridge: 'Partridge', lipton: 'Lipton', juha: 'Juha', peach: 'Peach', aphl: 'APHL' };
+  document.querySelectorAll('.deal-detail').forEach(detail => {
+    const card = detail.previousElementSibling;
+    const id = card && card.dataset.id;
+    detail.querySelectorAll('.act-btn').forEach(btn => {
+      const t = btn.textContent.trim();
+      if (t.startsWith('GENERATE PROPOSAL') || t.startsWith('VIEW PROPOSAL') || t.startsWith('RE-ENGAGE')) {
+        btn.addEventListener('click', (e) => { e.preventDefault(); newProposal(id && map[id]); });
+      }
+    });
+  });
+});
+if(new URLSearchParams(location.search).has('embed'))document.documentElement.classList.add('embed-mode');
+</script>
+
+<script src="assets/ryujin-tutor.js"></script>
+<script src="assets/ryujin-auto-tutor.js"></script>
+</body>
+</html>
