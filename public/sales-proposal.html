@@ -1,0 +1,1422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ryujin OS · Proposal Generator</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg-deep:#030611;--glass:rgba(14,22,40,0.78);
+  --border:rgba(34,211,238,0.22);--border-hi:rgba(34,211,238,0.45);
+  --accent:#22d3ee;--accent-2:#67e8f9;
+  --text:#e0e6f0;--text-dim:rgba(160,190,230,0.62);--text-muted:rgba(140,170,220,0.32);
+  --cyan:#22d3ee;--green:#4ade80;--yellow:#facc15;--red:#f87171;--orange:#fb923c;--purple:#7c3aed;--blue:#4a9eff;
+  --radius:12px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg-deep);color:var(--text);overflow:hidden;font-size:14px}
+.bg-ambient{position:fixed;inset:0;z-index:0;background:radial-gradient(ellipse at 40% 30%,rgba(34,211,238,0.08) 0%,transparent 55%),radial-gradient(ellipse at 80% 80%,rgba(124,58,237,0.04) 0%,transparent 50%),linear-gradient(180deg,#060a14 0%,#030611 100%)}
+.bg-grid{position:fixed;inset:0;z-index:1;pointer-events:none;background-image:linear-gradient(rgba(34,211,238,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(34,211,238,0.025) 1px,transparent 1px);background-size:48px 48px;mask-image:radial-gradient(ellipse at center,black 40%,transparent 85%);-webkit-mask-image:radial-gradient(ellipse at center,black 40%,transparent 85%)}
+
+.app{position:relative;z-index:2;height:100vh;display:grid;grid-template-rows:52px 1fr;gap:10px;padding:10px 12px}
+.topbar{display:flex;align-items:center;gap:12px;background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);padding:0 14px;backdrop-filter:blur(20px);position:relative;overflow:hidden}
+.topbar::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),var(--purple),transparent);opacity:0.5}
+.tb-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:rgba(6,10,20,0.6);border:1px solid var(--border);color:var(--text-dim);cursor:pointer;transition:all 0.2s}
+.tb-icon:hover{color:var(--accent);border-color:var(--border-hi);background:rgba(34,211,238,0.08)}
+.tb-icon svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.brand{display:flex;align-items:center;gap:10px}
+.brand-mark{width:28px;height:28px;border-radius:7px;background:radial-gradient(circle at 35% 30%,rgba(200,240,255,0.3),rgba(34,211,238,0.22) 40%,rgba(5,15,30,0.8));box-shadow:0 0 12px rgba(34,211,238,0.35)}
+.brand-name{font-family:'Orbitron',sans-serif;font-size:0.78em;font-weight:800;letter-spacing:2.5px}
+.brand-name .dim{color:var(--text-dim);font-weight:500;letter-spacing:2px;margin-left:8px}
+.proposal-title{font-family:'Orbitron',sans-serif;font-size:0.72em;font-weight:700;letter-spacing:2px;color:var(--accent);padding:0 12px;border-left:1px solid rgba(34,211,238,0.2)}
+.tb-spacer{flex:1}
+.btn{padding:7px 14px;border-radius:8px;font-family:'Orbitron',sans-serif;font-size:0.66em;font-weight:700;letter-spacing:1.5px;cursor:pointer;border:1px solid;transition:all 0.2s;display:inline-flex;align-items:center;gap:6px}
+.btn.ghost{background:rgba(6,10,20,0.5);color:var(--text-dim);border-color:var(--border)}
+.btn.ghost:hover{color:var(--text);border-color:var(--border-hi);background:rgba(34,211,238,0.06)}
+.btn.primary{background:linear-gradient(135deg,rgba(34,211,238,0.3),rgba(34,211,238,0.1));color:var(--accent);border-color:rgba(34,211,238,0.4);font-weight:800}
+.btn.primary:hover{background:linear-gradient(135deg,rgba(34,211,238,0.4),rgba(34,211,238,0.2));box-shadow:0 0 16px rgba(34,211,238,0.3)}
+.btn.success{background:linear-gradient(135deg,rgba(74,222,128,0.3),rgba(74,222,128,0.1));color:var(--green);border-color:rgba(74,222,128,0.4)}
+.btn svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2.2}
+
+/* Main grid */
+.main{display:grid;grid-template-columns:220px 1fr 340px;gap:10px;min-height:0}
+
+/* Step sidebar */
+.step-nav{background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);backdrop-filter:blur(14px);padding:14px;overflow-y:auto;position:relative}
+.step-nav::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:0.45}
+.step-head{font-family:'Orbitron',sans-serif;font-size:0.58em;font-weight:700;letter-spacing:2.5px;color:var(--text-dim);margin-bottom:14px;text-transform:uppercase}
+.step-item{display:flex;gap:10px;padding:10px;border-radius:9px;margin-bottom:4px;cursor:pointer;transition:all 0.2s;border:1px solid transparent}
+.step-item:hover{background:rgba(34,211,238,0.05)}
+.step-item.active{background:rgba(34,211,238,0.1);border-color:rgba(34,211,238,0.3)}
+.step-item.complete .step-num{background:rgba(74,222,128,0.15);color:var(--green);border-color:rgba(74,222,128,0.35)}
+.step-num{width:24px;height:24px;border-radius:50%;background:rgba(6,10,20,0.6);border:1px solid rgba(34,211,238,0.2);display:flex;align-items:center;justify-content:center;font-family:'Orbitron',sans-serif;font-size:0.72em;font-weight:800;color:var(--text-dim);flex-shrink:0;transition:all 0.2s}
+.step-item.active .step-num{background:rgba(34,211,238,0.2);color:var(--accent);border-color:var(--accent)}
+.step-body{flex:1;min-width:0}
+.step-name{font-size:0.82em;font-weight:600;line-height:1.2}
+.step-desc{font-size:0.68em;color:var(--text-dim);margin-top:2px;font-family:'Share Tech Mono',monospace;letter-spacing:0.3px}
+
+.step-summary{margin-top:18px;border-top:1px solid rgba(34,211,238,0.1);padding-top:14px}
+.summary-head{font-family:'Orbitron',sans-serif;font-size:0.55em;font-weight:700;letter-spacing:2.5px;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px}
+.summary-row{font-size:0.78em;padding:3px 0;color:var(--text-dim)}
+.summary-row b{color:var(--text);font-weight:600;display:block;margin-bottom:2px;font-size:0.92em}
+
+/* Main content */
+.content{background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);backdrop-filter:blur(14px);display:flex;flex-direction:column;min-height:0;overflow:hidden;position:relative}
+.content::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--accent),var(--purple),transparent);opacity:0.55}
+.content-head{padding:16px 20px;border-bottom:1px solid rgba(34,211,238,0.1)}
+.content-head h2{font-family:'Orbitron',sans-serif;font-size:1.15em;font-weight:800;letter-spacing:1.5px;background:linear-gradient(135deg,#fff 20%,var(--accent));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.content-head .sub{font-size:0.78em;color:var(--text-dim);margin-top:3px}
+.content-body{flex:1;overflow-y:auto;padding:20px 24px}
+.content-body::-webkit-scrollbar{width:6px}
+.content-body::-webkit-scrollbar-thumb{background:rgba(34,211,238,0.2);border-radius:3px}
+.content-foot{padding:12px 20px;border-top:1px solid rgba(34,211,238,0.1);display:flex;justify-content:space-between;align-items:center;gap:10px}
+
+/* Form elements */
+.field{margin-bottom:14px}
+.field label{display:block;font-family:'Orbitron',sans-serif;font-size:0.58em;font-weight:700;letter-spacing:1.8px;color:var(--text-dim);text-transform:uppercase;margin-bottom:6px}
+.field input,.field select,.field textarea{width:100%;padding:10px 13px;background:rgba(6,10,20,0.7);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:inherit;font-size:0.9em;outline:none;transition:all 0.2s}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent);box-shadow:0 0 10px rgba(34,211,238,0.15)}
+.field input::placeholder{color:var(--text-muted)}
+.field textarea{resize:vertical;min-height:70px}
+.field-row{display:grid;gap:10px;grid-template-columns:repeat(2,1fr)}
+.field-row.three{grid-template-columns:repeat(3,1fr)}
+.hint{font-size:0.72em;color:var(--text-muted);margin-top:4px;font-family:'Share Tech Mono',monospace;letter-spacing:0.3px}
+
+/* Choice grid (system picker, tier picker) */
+.choice-grid{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}
+.choice{padding:14px;background:rgba(6,10,20,0.5);border:1px solid var(--border);border-radius:10px;cursor:pointer;transition:all 0.2s;position:relative;overflow:hidden}
+.choice:hover{border-color:var(--border-hi);background:rgba(34,211,238,0.05);transform:translateY(-2px)}
+.choice.selected{border-color:var(--accent);background:rgba(34,211,238,0.1);box-shadow:0 0 16px rgba(34,211,238,0.2)}
+.choice.selected::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--accent),transparent)}
+.choice-name{font-family:'Orbitron',sans-serif;font-size:0.78em;font-weight:800;letter-spacing:1px}
+.choice-sub{font-size:0.7em;color:var(--text-dim);margin-top:3px;font-family:'Share Tech Mono',monospace;letter-spacing:0.3px}
+.choice-price{margin-top:8px;font-family:'Orbitron',sans-serif;font-weight:700;font-size:0.88em;color:var(--accent)}
+
+/* Option toggle */
+.opt-row{display:flex;align-items:center;gap:12px;padding:10px 12px;background:rgba(6,10,20,0.4);border:1px solid var(--border);border-radius:9px;margin-bottom:6px;cursor:pointer;transition:all 0.18s}
+.opt-row:hover{border-color:var(--border-hi)}
+.opt-row.on{border-color:var(--accent);background:rgba(34,211,238,0.07)}
+.opt-check{width:20px;height:20px;border-radius:5px;border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all 0.18s}
+.opt-row.on .opt-check{background:var(--accent);border-color:var(--accent)}
+.opt-check svg{width:12px;height:12px;stroke:#000;fill:none;stroke-width:3.5;opacity:0;transition:opacity 0.18s}
+.opt-row.on .opt-check svg{opacity:1}
+.opt-info{flex:1}
+.opt-name{font-size:0.88em;font-weight:600}
+.opt-desc{font-size:0.7em;color:var(--text-dim);margin-top:2px}
+.opt-price{font-family:'Orbitron',sans-serif;font-weight:700;font-size:0.82em;color:var(--accent);flex-shrink:0}
+.opt-inputs{margin-top:8px;padding:10px;background:rgba(6,10,20,0.5);border-radius:7px;display:none}
+.opt-row.on+.opt-inputs{display:block}
+
+/* Customer search */
+.cust-search{margin-bottom:14px}
+.cust-list{max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:9px;background:rgba(6,10,20,0.5);margin-bottom:14px}
+.cust-row{padding:9px 12px;cursor:pointer;border-bottom:1px solid rgba(34,211,238,0.06);display:flex;justify-content:space-between;align-items:center;transition:background 0.15s}
+.cust-row:last-child{border:none}
+.cust-row:hover{background:rgba(34,211,238,0.06)}
+.cust-name{font-weight:600;font-size:0.86em}
+.cust-meta{font-size:0.68em;color:var(--text-dim);font-family:'Share Tech Mono',monospace}
+.cust-val{font-family:'Orbitron',sans-serif;font-size:0.82em;color:var(--accent);font-weight:700}
+
+/* Preview pane */
+.preview{background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);backdrop-filter:blur(14px);display:flex;flex-direction:column;min-height:0;overflow:hidden;position:relative}
+.preview::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:0.45}
+.preview-head{padding:14px 16px;border-bottom:1px solid rgba(34,211,238,0.1);display:flex;justify-content:space-between;align-items:center}
+.preview-title{font-family:'Orbitron',sans-serif;font-size:0.62em;font-weight:700;letter-spacing:2.5px;color:var(--text-dim)}
+.preview-badge{background:rgba(74,222,128,0.1);border:1px solid rgba(74,222,128,0.25);color:var(--green);font-family:'Share Tech Mono',monospace;font-size:0.6em;padding:2px 8px;border-radius:4px;letter-spacing:0.5px}
+.preview-body{flex:1;overflow-y:auto;padding:16px}
+.pv-section{margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid rgba(34,211,238,0.08)}
+.pv-section:last-child{border:none}
+.pv-lbl{font-family:'Orbitron',sans-serif;font-size:0.55em;font-weight:700;letter-spacing:2px;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px}
+.pv-line{display:flex;justify-content:space-between;padding:3px 0;font-size:0.84em}
+.pv-line .n{color:var(--text-dim)}
+.pv-line .v{color:var(--text);font-family:'Orbitron',sans-serif;font-weight:600}
+.pv-total{display:flex;justify-content:space-between;padding:10px 14px;margin-top:10px;background:linear-gradient(135deg,rgba(34,211,238,0.12),rgba(124,58,237,0.08));border:1px solid rgba(34,211,238,0.25);border-radius:9px;font-family:'Orbitron',sans-serif;font-weight:800}
+.pv-total .l{font-size:0.7em;letter-spacing:1.5px;color:var(--text-dim)}
+.pv-total .v{font-size:1.3em;color:var(--accent);text-shadow:0 0 20px rgba(34,211,238,0.3)}
+
+/* Preview final (step 5) */
+/* Final proposal doc — homeowner-friendly (white paper, black ink). Inspired by the original Plus Ultra design. */
+.final-doc{background:#fff;color:#1a1a1a;border-radius:10px;padding:44px 48px;max-width:760px;margin:0 auto;font-family:'Inter',system-ui,sans-serif;line-height:1.5;box-shadow:0 8px 40px rgba(0,0,0,0.35),0 0 0 1px rgba(255,255,255,0.05)}
+.final-doc .doc-page{padding-bottom:20px}
+.final-doc .doc-page + .doc-page{margin-top:40px;padding-top:40px;border-top:1px dashed #ccc}
+.final-doc .doc-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px;padding-bottom:22px;border-bottom:3px solid #1a1a1a;gap:16px}
+.final-doc .co-name{font-size:24px;font-weight:700;color:#1a1a1a;letter-spacing:-0.5px}
+.final-doc .co-tag{font-size:10px;color:#666;text-transform:uppercase;letter-spacing:2px;margin-top:4px}
+.final-doc .co-contact{font-size:12px;color:#555;margin-top:8px;line-height:1.7}
+.final-doc .est-badge{background:#1a1a1a;color:#fff;padding:7px 18px;font-size:12px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase}
+.final-doc .bill-sec{display:flex;justify-content:space-between;gap:20px;margin-bottom:30px}
+.final-doc .bill-sec h3{font-size:10px;text-transform:uppercase;letter-spacing:1.5px;color:#999;margin-bottom:8px;font-weight:600}
+.final-doc .bill-sec p{font-size:13px;color:#333;line-height:1.7}
+.final-doc .bill-right{text-align:right}
+.final-doc .det-row{display:flex;justify-content:flex-end;gap:14px;margin-bottom:3px}
+.final-doc .det-l{font-size:12px;color:#999}
+.final-doc .det-v{font-size:13px;font-weight:500;min-width:120px;text-align:right;color:#1a1a1a}
+.final-doc .opt-head{background:#f8f8f8;border-left:4px solid #1a1a1a;padding:14px 18px;margin:28px 0 20px}
+.final-doc .opt-head.premium{border-left-color:#2563eb}
+.final-doc .opt-head.economy{border-left-color:#16a34a}
+.final-doc .opt-head.recommended{border-left-color:#dc2626}
+.final-doc .opt-head h2{font-size:15px;font-weight:600;color:#1a1a1a;letter-spacing:0.2px}
+.final-doc .opt-head p{font-size:12px;color:#666;margin-top:3px}
+.final-doc .line-table{width:100%;border-collapse:collapse;margin-bottom:20px}
+.final-doc .line-table thead th{font-size:10px;text-transform:uppercase;letter-spacing:1.5px;color:#999;font-weight:600;padding:10px 0;border-bottom:1px solid #e5e5e5;text-align:left;background:transparent}
+.final-doc .line-table thead th:last-child{text-align:right}
+.final-doc .line-table tbody td{padding:16px 0;vertical-align:top;border-bottom:1px solid #f0f0f0;color:#1a1a1a;font-size:13px}
+.final-doc .line-table tbody td:last-child{text-align:right;font-weight:600;font-size:15px;white-space:nowrap;padding-left:20px;color:#1a1a1a}
+.final-doc .item-name{font-size:14px;font-weight:600;color:#1a1a1a;margin-bottom:6px}
+.final-doc .item-desc{font-size:12px;color:#555;line-height:1.8}
+.final-doc .item-desc ul{margin-top:6px;padding-left:18px}
+.final-doc .item-desc li{margin-bottom:3px}
+.final-doc .optional-tag{display:inline-block;background:#fef3c7;color:#92400e;font-size:10px;font-weight:600;padding:2px 8px;border-radius:3px;text-transform:uppercase;letter-spacing:0.5px;margin-left:6px}
+.final-doc .totals{margin-left:auto;width:300px;margin-bottom:30px}
+.final-doc .tot-row{display:flex;justify-content:space-between;padding:7px 0;font-size:13px;color:#1a1a1a}
+.final-doc .tot-row.sub{border-top:1px solid #e5e5e5;padding-top:12px;margin-top:4px}
+.final-doc .tot-row.tax{color:#666}
+.final-doc .tot-row.total{border-top:2px solid #1a1a1a;padding-top:12px;margin-top:6px;font-size:18px;font-weight:700}
+.final-doc .warranty-box{border:2px solid #1a1a1a;padding:18px 22px;margin-top:20px;text-align:center;color:#1a1a1a}
+.final-doc .warranty-box h3{font-size:14px;font-weight:700;margin-bottom:4px;color:#1a1a1a}
+.final-doc .warranty-box p{font-size:12px;color:#555}
+.final-doc .doc-notes{background:#fafafa;border:1px solid #eee;padding:18px 22px;margin-top:22px;color:#1a1a1a}
+.final-doc .doc-notes h3{font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:#999;font-weight:600;margin-bottom:8px}
+.final-doc .doc-notes p,.final-doc .doc-notes li{font-size:12px;color:#555;line-height:1.75}
+.final-doc .doc-notes ul{padding-left:18px;margin-top:5px}
+.final-doc .doc-foot{margin-top:34px;padding-top:18px;border-top:1px solid #e5e5e5;text-align:center;font-size:11px;color:#999;line-height:1.7}
+
+.empty-hint{text-align:center;padding:40px 20px;color:var(--text-muted);font-size:0.84em;font-family:'Share Tech Mono',monospace;letter-spacing:0.5px}
+
+@media(max-width:1100px){.main{grid-template-columns:180px 1fr 280px}.choice-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}}
+
+/* Print stylesheet — when user hits Print Proposal, only the final-doc shows */
+@media print {
+  body * { visibility: hidden !important; }
+  .final-doc, .final-doc * { visibility: visible !important; }
+  .final-doc { position: absolute; left: 0; top: 0; width: 100%; padding: 24px !important; background: #fff !important; color: #111 !important; box-shadow: none !important; border: none !important; }
+  .final-doc h3 { color: #0891b2 !important; }
+  .final-doc .line-table td.v { color: #0891b2 !important; }
+  .bg-ambient, .bg-grid, #emailModal, .topbar, .step-nav, .preview, .content-foot, #ry-root { display: none !important; }
+}
+
+/* Email composer modal */
+#emailModal{position:fixed;inset:0;z-index:9500;display:none;align-items:center;justify-content:center}
+#emailModal.on{display:flex}
+.em-backdrop{position:absolute;inset:0;background:rgba(3,6,17,0.75);backdrop-filter:blur(6px)}
+.em-card{position:relative;width:min(640px,calc(100vw - 40px));max-height:calc(100vh - 80px);background:rgba(10,18,34,0.96);border:1px solid var(--border-hi);border-radius:14px;backdrop-filter:blur(20px);box-shadow:0 20px 60px rgba(0,0,0,0.6),0 0 40px rgba(34,211,238,0.15);display:flex;flex-direction:column;overflow:hidden;animation:emSlide 0.3s cubic-bezier(.2,.8,.3,1.1)}
+.em-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--accent),#a78bfa,transparent);opacity:0.7}
+@keyframes emSlide{from{opacity:0;transform:translateY(12px) scale(0.97)}to{opacity:1;transform:translateY(0) scale(1)}}
+.em-head{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid rgba(34,211,238,0.12)}
+.em-title{font-family:'Orbitron',sans-serif;font-size:0.88em;font-weight:800;letter-spacing:2px;color:var(--accent)}
+.em-sub{font-family:'Share Tech Mono',monospace;font-size:0.68em;color:var(--text-dim);margin-top:3px;letter-spacing:1px}
+.em-x{width:32px;height:32px;border-radius:8px;background:none;border:1px solid transparent;color:var(--text-dim);font-size:1.4em;cursor:pointer}
+.em-x:hover{color:var(--accent);border-color:var(--border-hi)}
+.em-body{flex:1;overflow-y:auto;padding:16px 20px}
+.em-row{margin-bottom:12px}
+.em-row label{display:block;font-family:'Orbitron',sans-serif;font-size:0.56em;font-weight:700;letter-spacing:2px;color:var(--text-dim);text-transform:uppercase;margin-bottom:5px}
+.em-row input,.em-row textarea{width:100%;padding:10px 13px;background:rgba(6,10,20,0.7);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:inherit;font-size:0.88em;outline:none;resize:vertical}
+.em-row textarea{min-height:220px;line-height:1.5;font-family:'Inter',sans-serif}
+.em-row input:focus,.em-row textarea:focus{border-color:var(--accent);box-shadow:0 0 10px rgba(34,211,238,0.15)}
+.em-attach{padding:8px 12px;background:rgba(34,211,238,0.07);border:1px dashed rgba(34,211,238,0.25);border-radius:8px;font-family:'Share Tech Mono',monospace;font-size:0.72em;color:var(--accent);display:flex;align-items:center;gap:8px}
+.em-foot{display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;border-top:1px solid rgba(34,211,238,0.12);flex-wrap:wrap}
+</style>
+</head>
+<body>
+
+<div class="bg-ambient"></div>
+<div class="bg-grid"></div>
+
+<div class="app">
+  <!-- TOPBAR -->
+  <div class="topbar">
+    <button class="tb-icon" onclick="goBack()" title="Back to Sales"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
+    <div class="brand"><div class="brand-mark"></div><div class="brand-name">RYUJIN <span class="dim">· SALES</span></div></div>
+    <div class="proposal-title" id="tbTitle">NEW PROPOSAL · untitled</div>
+    <div class="tb-spacer"></div>
+    <button class="btn ghost" onclick="saveDraft()"><svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/></svg>SAVE</button>
+    <button class="btn ghost" onclick="printProposal()"><svg viewBox="0 0 24 24"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>PRINT</button>
+    <button class="btn ghost" onclick="exportProposal()"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>EXPORT</button>
+    <button class="btn primary" onclick="previewProposal()"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>PREVIEW</button>
+    <button class="btn ghost" onclick="openMediaModal()"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>MEDIA</button>
+    <button class="btn success" id="generateLinkBtn" onclick="generateClientLink()" style="background:linear-gradient(135deg,#a78bfa,#7c3aed);color:#000;border-color:#a78bfa;box-shadow:0 0 20px rgba(124,58,237,0.35)"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>CLIENT LINK</button>
+    <button class="btn success" id="sendBtn" onclick="sendProposal()"><svg viewBox="0 0 24 24"><polyline points="5 12 12 5 19 12" transform="rotate(90 12 12)"/><line x1="12" y1="19" x2="12" y2="5"/></svg>SEND</button>
+    <a class="btn ghost" href="command-center.html" title="Main menu"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>MAIN MENU</a>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+
+    <!-- STEP NAV -->
+    <div class="step-nav">
+      <div class="step-head">PROPOSAL STEPS</div>
+      <div class="step-item" data-step="1" onclick="goToStep(1)"><div class="step-num">1</div><div class="step-body"><div class="step-name">Customer</div><div class="step-desc">name · address</div></div></div>
+      <div class="step-item" data-step="2" onclick="goToStep(2)"><div class="step-num">2</div><div class="step-body"><div class="step-name">Scope</div><div class="step-desc">system · offer tier</div></div></div>
+      <div class="step-item" data-step="3" onclick="goToStep(3)"><div class="step-num">3</div><div class="step-body"><div class="step-name">Measurements</div><div class="step-desc">SQ · linear ft</div></div></div>
+      <div class="step-item" data-step="4" onclick="goToStep(4)"><div class="step-num">4</div><div class="step-body"><div class="step-name">Options</div><div class="step-desc">add-ons · remediation</div></div></div>
+      <div class="step-item" data-step="5" onclick="goToStep(5)"><div class="step-num">5</div><div class="step-body"><div class="step-name">Review &amp; Send</div><div class="step-desc">preview · send</div></div></div>
+
+      <div class="step-summary" id="stepSummary"></div>
+    </div>
+
+    <!-- CONTENT -->
+    <div class="content">
+      <div class="content-head">
+        <h2 id="stepTitle">Customer</h2>
+        <div class="sub" id="stepSub">Who is this proposal for?</div>
+      </div>
+
+      <!-- STEP 1: CUSTOMER -->
+      <div class="content-body step-pane" data-pane="1">
+        <div class="cust-search">
+          <div class="field">
+            <label>Start with an existing lead</label>
+            <div class="cust-list" id="custList"></div>
+            <div class="hint">Or enter a new customer below</div>
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Full Name</label><input type="text" id="f_name" placeholder="e.g. Robert Partridge"/></div>
+          <div class="field"><label>Phone</label><input type="text" id="f_phone" placeholder="(506) 555-0123"/></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Email</label><input type="email" id="f_email" placeholder="customer@example.com"/></div>
+          <div class="field"><label>Address</label><input type="text" id="f_address" placeholder="32 Oak St, Moncton NB"/></div>
+        </div>
+        <div class="field"><label>Notes</label><textarea id="f_notes" placeholder="Site access, pets, preferences, decision-maker info..."></textarea></div>
+      </div>
+
+      <!-- STEP 2: SCOPE -->
+      <div class="content-body step-pane" data-pane="2" style="display:none">
+        <div class="field">
+          <label>Roofing System</label>
+          <div class="choice-grid" id="systemGrid"></div>
+        </div>
+        <div class="field" id="tierWrap" style="display:none">
+          <label>Offer Tier</label>
+          <div class="choice-grid" id="tierGrid"></div>
+          <div class="hint" id="tierHint"></div>
+        </div>
+      </div>
+
+      <!-- STEP 3: MEASUREMENTS -->
+      <div class="content-body step-pane" data-pane="3" style="display:none">
+        <div class="field-row">
+          <div class="field"><label>Roof Squares (SQ)</label><input type="number" id="m_sq" placeholder="28" min="0" step="0.5"/><div class="hint">1 SQ = 100 sq ft. Add 10% waste built into pricing.</div></div>
+          <div class="field"><label>Pitch</label>
+            <select id="m_pitch">
+              <option value="low">Low (3/12 or less)</option>
+              <option value="normal" selected>Normal (4/12 - 8/12)</option>
+              <option value="steep">Steep (9/12 - 12/12)</option>
+              <option value="extreme">Extreme (13/12+)</option>
+            </select>
+          </div>
+        </div>
+        <div class="field-row three">
+          <div class="field"><label>Gutter (LF)</label><input type="number" id="m_gutter" placeholder="120" min="0"/></div>
+          <div class="field"><label>Soffit (LF)</label><input type="number" id="m_soffit" placeholder="120" min="0"/></div>
+          <div class="field"><label>Fascia (LF)</label><input type="number" id="m_fascia" placeholder="120" min="0"/></div>
+        </div>
+        <div class="field">
+          <label>Complexity</label>
+          <select id="m_complexity">
+            <option value="simple">Simple (gable, few penetrations)</option>
+            <option value="normal" selected>Normal (hip or dormers)</option>
+            <option value="complex">Complex (valleys + dormers + multiple planes)</option>
+            <option value="custom">Custom (mansard, tower, feature)</option>
+          </select>
+          <div class="hint">Complexity affects labor multiplier.</div>
+        </div>
+      </div>
+
+      <!-- STEP 4: OPTIONS -->
+      <div class="content-body step-pane" data-pane="4" style="display:none">
+        <div class="opt-row" data-opt="osb" onclick="toggleOpt('osb')">
+          <div class="opt-check"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="opt-info"><div class="opt-name">OSB Substrate Redeck</div><div class="opt-desc">$50/sheet · assumes 1 sheet per SQ unless specified</div></div>
+          <div class="opt-price" id="opt_osb_price">—</div>
+        </div>
+        <div class="opt-inputs" id="opt_osb_inputs">
+          <div class="field"><label>Sheets</label><input type="number" id="o_osb_sheets" placeholder="auto = SQ × 1" min="0"/></div>
+        </div>
+
+        <div class="opt-row" data-opt="leafguard" onclick="toggleOpt('leafguard')">
+          <div class="opt-check"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="opt-info"><div class="opt-name">Leaf Guard (over new gutter)</div><div class="opt-desc">$9/LF installed</div></div>
+          <div class="opt-price" id="opt_leafguard_price">—</div>
+        </div>
+
+        <div class="opt-row" data-opt="vent" onclick="toggleOpt('vent')">
+          <div class="opt-check"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="opt-info"><div class="opt-name">Ventilation Upgrade</div><div class="opt-desc">Ridge vent + baffles + intake · flat $1,650</div></div>
+          <div class="opt-price" id="opt_vent_price">—</div>
+        </div>
+
+        <div class="opt-row" data-opt="chimney" onclick="toggleOpt('chimney')">
+          <div class="opt-check"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="opt-info"><div class="opt-name">Chimney Flashing &amp; Reseal</div><div class="opt-desc">Flat $680</div></div>
+          <div class="opt-price" id="opt_chimney_price">—</div>
+        </div>
+
+        <div class="opt-row" data-opt="remediation" onclick="toggleOpt('remediation')">
+          <div class="opt-check"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="opt-info"><div class="opt-name">Remediation Allowance</div><div class="opt-desc">Scope-transparent buffer · unused portion credited</div></div>
+          <div class="opt-price" id="opt_remediation_price">—</div>
+        </div>
+        <div class="opt-inputs" id="opt_remediation_inputs">
+          <div class="field"><label>Allowance</label><input type="number" id="o_rem_amt" placeholder="1200" min="0" step="100"/></div>
+        </div>
+
+        <div class="opt-row" data-opt="financing" onclick="toggleOpt('financing')">
+          <div class="opt-check"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="opt-info"><div class="opt-name">FinanceIt Financing Offer</div><div class="opt-desc">Include financing CTA on proposal (no cost to you)</div></div>
+          <div class="opt-price">—</div>
+        </div>
+      </div>
+
+      <!-- STEP 5: REVIEW -->
+      <div class="content-body step-pane" data-pane="5" style="display:none">
+        <div id="finalPreview"></div>
+      </div>
+
+      <div class="content-foot">
+        <button class="btn ghost" id="prevBtn" onclick="prevStep()"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>PREVIOUS</button>
+        <div id="stepCounter" style="font-family:'Share Tech Mono',monospace;font-size:0.7em;color:var(--text-dim);letter-spacing:1px">STEP 1 OF 5</div>
+        <button class="btn primary" id="nextBtn" onclick="nextStep()">CONTINUE<svg viewBox="0 0 24 24"><polyline points="9 6 15 12 9 18"/></svg></button>
+      </div>
+    </div>
+
+    <!-- LIVE PREVIEW -->
+    <div class="preview">
+      <div class="preview-head">
+        <div class="preview-title">LIVE PRICE</div>
+        <div class="preview-badge" id="pvBadge">DRAFT</div>
+      </div>
+      <div class="preview-body" id="livePreview"></div>
+    </div>
+
+  </div>
+</div>
+
+<script src="assets/ryujin-mode.js"></script>
+<script src="assets/ryujin-tenant.js"></script>
+<script src="assets/ryujin-persist.js"></script>
+<script src="assets/ryujin-api.js"></script>
+<script src="assets/ryujin-scenario.js"></script>
+<script src="assets/ryujin-xp.js"></script>
+<script src="assets/ryujin-mode-badge.js"></script>
+<script src="assets/ryujin-search.js"></script>
+<script src="assets/ryujin-tutor.js"></script>
+<script>
+RyujinTutor.register('proposal', [
+  { target: '.step-nav', title: 'Five steps to a signed deal', body: 'Customer \u2192 Scope \u2192 Measurements \u2192 Options \u2192 Review &amp; Send. <b>Every step auto-fills the live price pane on the right.</b> Jump between steps any time.', position: 'right' },
+  { target: '.cust-list', title: 'Start from existing leads', body: 'Pick from 5 hot leads and customer info auto-fills. Or type a new customer below. Either way, <b>the proposal is personalized before you touch a slider</b>.', position: 'right' },
+  { target: '#systemGrid, .content-body', title: 'System + tier', body: '5 systems (Asphalt / Metal / Flat / Commercial / Roof+Shell), 17 offers total. <b>Prices per SQ are live from the v3.1 pricing engine.</b> Pick the tier that matches the customer\u2019s intent.', position: 'top' },
+  { target: '.preview', title: 'Live price pane', body: 'Every change you make is reflected here immediately. Line-by-line, subtotal, HST, total. <b>No waiting, no recalculation delays.</b>', position: 'left' },
+  { target: '.content-foot', title: 'Navigate + send', body: 'Hit <b>CONTINUE</b> to advance. On the final review step you\u2019ll see a <b>3-tier comparison</b> (Good/Better/Best) and a FinanceIt monthly quote. Then <b>SEND PROPOSAL</b> opens an editable email draft with the Gmail compose URL pre-built.', position: 'top' },
+  { target: '__center__', title: 'This is the tool you\u2019ll use every day.', body: 'From cold call to signed contract in <b>under 20 minutes</b>. No contractor-SaaS is this fast. Press <b>?</b> any time to replay this tutorial.', position: 'top' }
+]);
+
+document.addEventListener('keydown', e => {
+  if ((e.key === '?' || e.key === 'h' || e.key === 'H') && window.RyujinTutor) { e.preventDefault(); RyujinTutor.start('proposal'); }
+});
+
+/* ─── State ─── */
+const state = {
+  step: 1,
+  customer: { name: '', phone: '', email: '', address: '', notes: '' },
+  scope: { system: null, tier: null },
+  measure: { sq: 0, pitch: 'normal', gutter: 0, soffit: 0, fascia: 0, complexity: 'normal' },
+  options: { osb: false, leafguard: false, vent: false, chimney: false, remediation: false, financing: false, osb_sheets: null, rem_amt: 1200 },
+  media: { satelliteImage: '', coverImage: '', beforeImage: '', afterImage: '', repPhoto: '', videoCover: '', videoUrl: '' }
+};
+
+/* ─── Data ─── */
+const existingLeads = [
+  { name: 'Robert Partridge', meta: 'Moncton · asphalt + mansard · 3 views', address: '32 Oak St, Moncton NB', phone: '(506) 555-0144', email: 'rpartridge@example.com', val: '$44.4K' },
+  { name: 'Nadine Lipton', meta: 'Dieppe · metal SS · cooling', address: '18 Gauvin Rd, Dieppe NB', phone: '(506) 555-0192', email: 'nlipton@example.com', val: '$27.4K' },
+  { name: 'Diaa Juha', meta: 'Moncton · full replacement', address: '91 Ryan St, Moncton NB', phone: '(506) 555-0177', email: 'djuha@example.com', val: '$20.5K' },
+  { name: 'Shelagh Peach', meta: 'Redeck + vent · Darcy presenting', address: '205 Collishaw St, Moncton NB', phone: '(506) 555-0120', email: 'speach@example.com', val: '$19.7K' },
+  { name: 'APHL · Tara Court', meta: 'Kevin Chase · 2-tier quote', address: 'Tara Court · Riverview NB', phone: '(506) 555-0101', email: 'kchase@aphl.ca', val: '$16.2K' }
+];
+
+const SYSTEMS = [
+  { id: 'asphalt', name: 'Asphalt', sub: 'Residential · 4 tiers', tiers: [
+    { id: 'economy', name: 'Economy', sub: 'Basic 3-tab', persq: 395 },
+    { id: 'gold', name: 'Gold', sub: 'Landmark AR', persq: 520 },
+    { id: 'platinum', name: 'Platinum', sub: 'Designer', persq: 680 },
+    { id: 'diamond', name: 'Diamond', sub: 'Landmark Pro Max', persq: 820 }
+  ]},
+  { id: 'metal', name: 'Metal', sub: 'Residential · 2 tiers', tiers: [
+    { id: 'americana', name: 'Americana Ribbed', sub: 'Exposed fastener', persq: 780 },
+    { id: 'standingseam', name: 'Standing Seam', sub: '* estimated', persq: 1240 }
+  ]},
+  { id: 'flat', name: 'Flat', sub: '3 systems · estimated', tiers: [
+    { id: 'tpo', name: 'TPO', sub: '* estimated', persq: 640 },
+    { id: 'epdm', name: 'EPDM', sub: '* estimated', persq: 580 },
+    { id: 'modbit', name: 'Mod Bit', sub: '* estimated', persq: 620 }
+  ]},
+  { id: 'commercial', name: 'Commercial', sub: 'Multi-unit · 3 tiers', tiers: [
+    { id: 'ceconomy', name: 'Economy', sub: 'Basic commercial asphalt', persq: 380 },
+    { id: 'cstandard', name: 'Standard', sub: 'Durable, warranted', persq: 480 },
+    { id: 'cpremium', name: 'Premium', sub: 'Full package + mgmt reporting', persq: 620 }
+  ]},
+  { id: 'combined', name: 'Roof + Shell', sub: 'Combined packages', tiers: [
+    { id: 'goldshell', name: 'Gold + Performance Shell', sub: 'Roof + wall assembly', persq: 860 },
+    { id: 'platshell', name: 'Platinum + Performance Shell', sub: 'Top-tier roof + wall', persq: 1100 }
+  ]}
+];
+
+const HST_RATE = 0.15;
+
+/* ─── Price calc ─── */
+function calcBreakdown(){
+  const b = { roofing: 0, gutter: 0, soffit: 0, fascia: 0, osb: 0, leafguard: 0, vent: 0, chimney: 0, remediation: 0, pitchAdj: 0, complexAdj: 0 };
+  const sq = state.measure.sq || 0;
+  const tier = getSelectedTier();
+  if (tier && sq) b.roofing = sq * tier.persq;
+
+  // Pitch multiplier (labor side)
+  const pitchMult = { low: 0.97, normal: 1.0, steep: 1.12, extreme: 1.28 }[state.measure.pitch] || 1.0;
+  b.pitchAdj = b.roofing * (pitchMult - 1);
+
+  // Complexity adj
+  const cxMult = { simple: 0.96, normal: 1.0, complex: 1.12, custom: 1.25 }[state.measure.complexity] || 1.0;
+  b.complexAdj = b.roofing * (cxMult - 1);
+
+  b.gutter = (state.measure.gutter || 0) * 12;
+  b.soffit = (state.measure.soffit || 0) * 11;
+  b.fascia = (state.measure.fascia || 0) * 7;
+
+  if (state.options.osb) {
+    const sheets = state.options.osb_sheets ?? Math.ceil(sq);
+    b.osb = sheets * 50;
+  }
+  if (state.options.leafguard) b.leafguard = (state.measure.gutter || 0) * 9;
+  if (state.options.vent) b.vent = 1650;
+  if (state.options.chimney) b.chimney = 680;
+  if (state.options.remediation) b.remediation = Number(state.options.rem_amt) || 0;
+
+  let subtotal = Object.values(b).reduce((a,c) => a + c, 0);
+  // Round to $25
+  subtotal = Math.round(subtotal / 25) * 25;
+  const hst = Math.round(subtotal * HST_RATE);
+  const total = subtotal + hst;
+  return { ...b, subtotal, hst, total };
+}
+
+function money(n){ if(!n && n !== 0) return '—'; return '$' + Math.round(n).toLocaleString('en-CA'); }
+function getSelectedTier(){ const sys = SYSTEMS.find(s => s.id === state.scope.system); if (!sys) return null; return sys.tiers.find(t => t.id === state.scope.tier); }
+
+/* ─── Rendering ─── */
+function renderCustList(){
+  const el = document.getElementById('custList');
+  el.innerHTML = existingLeads.map(l => `
+    <div class="cust-row" onclick='applyLead(${JSON.stringify(l).replace(/'/g,"&#39;")})'>
+      <div><div class="cust-name">${l.name}</div><div class="cust-meta">${l.meta}</div></div>
+      <div class="cust-val">${l.val}</div>
+    </div>
+  `).join('');
+}
+function applyLead(l){
+  state.customer.name = l.name; state.customer.phone = l.phone; state.customer.email = l.email; state.customer.address = l.address;
+  document.getElementById('f_name').value = l.name;
+  document.getElementById('f_phone').value = l.phone;
+  document.getElementById('f_email').value = l.email;
+  document.getElementById('f_address').value = l.address;
+  updateTitle(); renderSummary(); renderPreview();
+}
+
+function renderSystemGrid(){
+  document.getElementById('systemGrid').innerHTML = SYSTEMS.map(s => `
+    <div class="choice ${state.scope.system === s.id ? 'selected' : ''}" onclick="pickSystem('${s.id}')">
+      <div class="choice-name">${s.name}</div>
+      <div class="choice-sub">${s.sub}</div>
+      <div class="choice-price">${s.tiers.length} options</div>
+    </div>
+  `).join('');
+}
+function pickSystem(id){
+  state.scope.system = id;
+  // If current tier doesn't belong to this system, clear it
+  const sys = SYSTEMS.find(s => s.id === id);
+  if (!sys.tiers.some(t => t.id === state.scope.tier)) state.scope.tier = null;
+  renderSystemGrid(); renderTierGrid(); renderPreview(); renderSummary();
+}
+function renderTierGrid(){
+  const sys = SYSTEMS.find(s => s.id === state.scope.system);
+  const wrap = document.getElementById('tierWrap');
+  if (!sys) { wrap.style.display = 'none'; return; }
+  wrap.style.display = 'block';
+  document.getElementById('tierGrid').innerHTML = sys.tiers.map(t => `
+    <div class="choice ${state.scope.tier === t.id ? 'selected' : ''}" onclick="pickTier('${t.id}')">
+      <div class="choice-name">${t.name}</div>
+      <div class="choice-sub">${t.sub}</div>
+      <div class="choice-price">$${t.persq} / SQ</div>
+    </div>
+  `).join('');
+  document.getElementById('tierHint').textContent = sys.id === 'flat' || sys.id === 'metal' ? 'Items marked * use estimated regional pricing.' : 'Prices per SQ. Adjusted for pitch and complexity at measure step.';
+}
+function pickTier(id){
+  state.scope.tier = id;
+  renderTierGrid(); renderPreview(); renderSummary();
+}
+
+function toggleOpt(key){
+  state.options[key] = !state.options[key];
+  document.querySelectorAll(`.opt-row[data-opt="${key}"]`).forEach(r => r.classList.toggle('on', state.options[key]));
+  renderOptPrices(); renderPreview(); renderSummary();
+}
+function renderOptPrices(){
+  const sq = state.measure.sq || 0;
+  const b = calcBreakdown();
+  document.getElementById('opt_osb_price').textContent = state.options.osb ? money(b.osb) : money(sq * 50) + ' est.';
+  document.getElementById('opt_leafguard_price').textContent = state.options.leafguard ? money(b.leafguard) : money((state.measure.gutter||0) * 9) + ' est.';
+  document.getElementById('opt_vent_price').textContent = money(1650);
+  document.getElementById('opt_chimney_price').textContent = money(680);
+  document.getElementById('opt_remediation_price').textContent = state.options.remediation ? money(b.remediation) : money(Number(state.options.rem_amt)||0) + ' est.';
+}
+
+function renderPreview(){
+  const el = document.getElementById('livePreview');
+  const tier = getSelectedTier();
+  if (!tier || !state.measure.sq) {
+    el.innerHTML = `<div class="empty-hint">Fill in scope + measurements to see live pricing.</div>`;
+    return;
+  }
+  const b = calcBreakdown();
+  const lines = [];
+  const push = (n, v) => { if (v && v !== 0) lines.push(`<div class="pv-line"><span class="n">${n}</span><span class="v">${money(v)}</span></div>`); };
+  push(`Roofing (${state.measure.sq} SQ @ ${tier.name})`, b.roofing);
+  if (Math.abs(b.pitchAdj) > 1) push(`Pitch adj. (${state.measure.pitch})`, b.pitchAdj);
+  if (Math.abs(b.complexAdj) > 1) push(`Complexity adj. (${state.measure.complexity})`, b.complexAdj);
+  push('Gutter', b.gutter);
+  push('Soffit', b.soffit);
+  push('Fascia', b.fascia);
+  push('OSB substrate', b.osb);
+  push('Leaf guard', b.leafguard);
+  push('Ventilation', b.vent);
+  push('Chimney reseal', b.chimney);
+  push('Remediation allowance', b.remediation);
+
+  el.innerHTML = `
+    <div class="pv-section">
+      <div class="pv-lbl">Line items</div>
+      ${lines.join('') || '<div class="empty-hint">No line items yet.</div>'}
+    </div>
+    <div class="pv-section">
+      <div class="pv-line"><span class="n">Subtotal</span><span class="v">${money(b.subtotal)}</span></div>
+      <div class="pv-line"><span class="n">HST 15%</span><span class="v">${money(b.hst)}</span></div>
+    </div>
+    <div class="pv-total"><span class="l">TOTAL</span><span class="v">${money(b.total)}</span></div>
+  `;
+}
+
+function renderSummary(){
+  const el = document.getElementById('stepSummary');
+  const tier = getSelectedTier();
+  const parts = [];
+  if (state.customer.name) parts.push(`<div class="summary-row"><b>Customer</b>${state.customer.name}</div>`);
+  if (state.customer.address) parts.push(`<div class="summary-row">${state.customer.address}</div>`);
+  if (tier) { const sys = SYSTEMS.find(s => s.id === state.scope.system); parts.push(`<div class="summary-row"><b>Scope</b>${sys.name} · ${tier.name}</div>`); }
+  if (state.measure.sq) parts.push(`<div class="summary-row">${state.measure.sq} SQ · ${state.measure.complexity}</div>`);
+  const opts = Object.entries(state.options).filter(([k,v]) => v && typeof v === 'boolean').map(([k]) => k);
+  if (opts.length) parts.push(`<div class="summary-row"><b>Options</b>${opts.join(', ')}</div>`);
+  if (!parts.length) {
+    el.innerHTML = '';
+  } else {
+    el.innerHTML = `<div class="summary-head">Proposal summary</div>${parts.join('')}`;
+  }
+}
+
+function updateTitle(){
+  const tbl = document.getElementById('tbTitle');
+  const parts = ['PROPOSAL'];
+  if (state.customer.name) parts.push(state.customer.name.toUpperCase());
+  else parts.push('UNTITLED');
+  const tier = getSelectedTier();
+  if (tier) parts.push(tier.name.toUpperCase());
+  tbl.textContent = parts.join(' · ');
+}
+
+/* FinanceIt monthly payment estimate (compound @ 8.99%) */
+function financeItMonthly(principal, months){
+  const r = 0.0899 / 12;
+  if (!principal || !months) return 0;
+  return principal * (r * Math.pow(1+r, months)) / (Math.pow(1+r, months) - 1);
+}
+
+/* Compute breakdown for a hypothetical tier (for comparison view) */
+function calcForTier(tier){
+  if (!tier || !state.measure.sq) return null;
+  const sq = state.measure.sq;
+  const roofing = sq * tier.persq;
+  const pitchMult = { low: 0.97, normal: 1.0, steep: 1.12, extreme: 1.28 }[state.measure.pitch] || 1.0;
+  const cxMult = { simple: 0.96, normal: 1.0, complex: 1.12, custom: 1.25 }[state.measure.complexity] || 1.0;
+  const pitchAdj = roofing * (pitchMult - 1);
+  const complexAdj = roofing * (cxMult - 1);
+  const gutter = (state.measure.gutter||0) * 12;
+  const soffit = (state.measure.soffit||0) * 11;
+  const fascia = (state.measure.fascia||0) * 7;
+  let opts = 0;
+  if (state.options.osb) opts += (state.options.osb_sheets ?? Math.ceil(sq)) * 50;
+  if (state.options.leafguard) opts += (state.measure.gutter||0) * 9;
+  if (state.options.vent) opts += 1650;
+  if (state.options.chimney) opts += 680;
+  if (state.options.remediation) opts += Number(state.options.rem_amt)||0;
+  let subtotal = roofing + pitchAdj + complexAdj + gutter + soffit + fascia + opts;
+  subtotal = Math.round(subtotal / 25) * 25;
+  const hst = Math.round(subtotal * HST_RATE);
+  return { roofing: roofing+pitchAdj+complexAdj, gutter, soffit, fascia, opts, subtotal, hst, total: subtotal + hst };
+}
+
+function renderFinal(){
+  const b = calcBreakdown();
+  const sys = SYSTEMS.find(s => s.id === state.scope.system);
+  const tier = getSelectedTier();
+  const today = new Date().toLocaleDateString('en-CA', { year:'numeric', month:'short', day:'numeric' });
+
+  if (!tier || !state.measure.sq) {
+    document.getElementById('finalPreview').innerHTML = `<div class="empty-hint">Complete scope and measurements to see the proposal.</div>`;
+    return;
+  }
+
+  // Pick 3 tiers for comparison — prev tier, selected, next tier
+  const sysIdx = SYSTEMS.findIndex(s => s.id === state.scope.system);
+  const tierIdx = sys.tiers.findIndex(t => t.id === state.scope.tier);
+  let goodTier, betterTier, bestTier;
+  if (sys.tiers.length >= 3) {
+    if (tierIdx <= 0) { goodTier = sys.tiers[0]; betterTier = sys.tiers[1]; bestTier = sys.tiers[Math.min(2, sys.tiers.length-1)]; }
+    else if (tierIdx >= sys.tiers.length - 1) { bestTier = sys.tiers[sys.tiers.length-1]; betterTier = sys.tiers[sys.tiers.length-2]; goodTier = sys.tiers[Math.max(0, sys.tiers.length-3)]; }
+    else { goodTier = sys.tiers[tierIdx-1]; betterTier = sys.tiers[tierIdx]; bestTier = sys.tiers[tierIdx+1]; }
+  } else if (sys.tiers.length === 2) {
+    goodTier = sys.tiers[0]; betterTier = sys.tiers[0]; bestTier = sys.tiers[1];
+  } else {
+    goodTier = betterTier = bestTier = sys.tiers[0];
+  }
+
+  const good = calcForTier(goodTier);
+  const better = calcForTier(betterTier);
+  const best = calcForTier(bestTier);
+
+  const lineRows = [];
+  const addRow = (n, v) => { if (v && v !== 0) lineRows.push(`<tr><td>${n}</td><td class="v">${money(v)}</td></tr>`); };
+  const totalRoofing = (b.roofing || 0) + (b.pitchAdj || 0) + (b.complexAdj || 0);
+  addRow(`Roofing installation (${state.measure.sq} SQ, ${tier ? tier.name : '—'})`, totalRoofing);
+  addRow('Gutter replacement', b.gutter);
+  addRow('Soffit', b.soffit);
+  addRow('Fascia', b.fascia);
+  addRow('OSB substrate (transparency buffer)', b.osb);
+  addRow('Leaf guard', b.leafguard);
+  addRow('Ventilation upgrade', b.vent);
+  addRow('Chimney flashing & reseal', b.chimney);
+  addRow('Remediation allowance', b.remediation);
+
+  // FinanceIt monthly at 120 months (10 yr) and 60 (5 yr)
+  const m120 = financeItMonthly(b.total, 120);
+  const m60 = financeItMonthly(b.total, 60);
+
+  // Pull tenant branding for display
+  const T = (window.RyujinTenant && RyujinTenant.get()) || { name: 'Plus Ultra Roofing', nameShort: 'Plus Ultra', phone: '(506) 540-1052', email: 'plusultraroofing@gmail.com', website: 'plusultraroofing.com', address: 'Riverview, New Brunswick', certifications: 'CertainTeed Certified · Fully Insured · 3rd Generation' };
+
+  const estNum = 'EST-' + (state.customer.name ? state.customer.name.split(' ')[0].toUpperCase().slice(0,3) : 'NEW') + '-' + new Date().getFullYear().toString().slice(-2) + (new Date().getMonth()+1).toString().padStart(2,'0');
+  const validUntil = new Date(Date.now() + 30*24*60*60*1000).toLocaleDateString('en-CA', { year:'numeric', month:'short', day:'numeric' });
+  const issueDate = today;
+
+  // Build scope bullets for the selected tier
+  const scopeBullets = [
+    'Removal of all existing shingles down to decking',
+    'Full deck inspection and re-nailing as required',
+    'Ice and water shield at all eaves and vulnerable areas',
+    'Synthetic underlayment across all roof surfaces',
+    'New drip edge at eaves and rakes',
+    'Starter shingles at all eaves and rakes',
+    (tier.name || 'Architectural') + ' shingles installed to manufacturer specification',
+    'Ridge vent installation for continuous attic ventilation',
+    'Replacement of all pipe flashings',
+    'Complete jobsite cleanup and debris removal',
+    'Final walkthrough inspection'
+  ];
+  if (state.options.osb) scopeBullets.push('OSB substrate (' + (state.options.osb_sheets || '—') + ' sheets) included');
+  if (state.options.leafguard) scopeBullets.push('Leaf guard installed (LF = gutter linear feet)');
+  if (state.options.vent) scopeBullets.push('Ventilation upgrade package');
+  if (state.options.chimney) scopeBullets.push('Chimney flashing + reseal');
+
+  // Helper to render a single option page (given a tier + computed breakdown)
+  function renderOptionPage(tierObj, breakdown, label, cls){
+    if (!tierObj || !breakdown) return '';
+    const lines = [];
+    const totalRoof = (breakdown.roofing || 0) + (breakdown.pitchAdj || 0) + (breakdown.complexAdj || 0);
+    lines.push(`<tr><td><div class="item-name">${tierObj.name} Roofing System — ${state.measure.sq} SQ</div><div class="item-desc">Complete tear-off and replacement of existing asphalt roofing system. Scope includes:<ul>${scopeBullets.map(b => `<li>${b}</li>`).join('')}</ul></div></td><td>${money(totalRoof)}</td></tr>`);
+    if (breakdown.gutter) lines.push(`<tr><td><div class="item-name">Gutter replacement</div><div class="item-desc">Full gutter + downspout replacement across measured linear footage.</div></td><td>${money(breakdown.gutter)}</td></tr>`);
+    if (breakdown.soffit) lines.push(`<tr><td><div class="item-name">Soffit</div><div class="item-desc">Soffit replacement matched to existing profile and color.</div></td><td>${money(breakdown.soffit)}</td></tr>`);
+    if (breakdown.fascia) lines.push(`<tr><td><div class="item-name">Fascia</div><div class="item-desc">Aluminum fascia wrap / replacement.</div></td><td>${money(breakdown.fascia)}</td></tr>`);
+    if (breakdown.remediation) lines.push(`<tr><td><div class="item-name">Remediation Allowance <span class="optional-tag">Contingency</span></div><div class="item-desc">Allowance for hidden damage uncovered at tear-off (rot, compromised flashing, bad venting). Any unused portion is credited back on final invoice.</div></td><td>${money(breakdown.remediation)}</td></tr>`);
+    if (breakdown.osb) lines.push(`<tr><td><div class="item-name">Full Resheet Allowance — ${state.options.osb_sheets || '—'} Sheets OSB <span class="optional-tag">Optional</span></div><div class="item-desc">Complete removal and replacement of roof decking. Includes supply and installation of 7/16" OSB sheathing, re-nailing to current building code, and inspection of underlying rafters/trusses for structural integrity. Applied only if deck condition warrants replacement upon tear-off.</div></td><td>${money(breakdown.osb)}</td></tr>`);
+    if (breakdown.vent) lines.push(`<tr><td><div class="item-name">Ventilation Upgrade</div><div class="item-desc">Additional ridge vent + intake venting beyond code minimum for improved attic airflow.</div></td><td>${money(breakdown.vent)}</td></tr>`);
+    if (breakdown.chimney) lines.push(`<tr><td><div class="item-name">Chimney Flashing & Reseal</div><div class="item-desc">Step + counter-flashing replacement with proper mortar cut and reseal.</div></td><td>${money(breakdown.chimney)}</td></tr>`);
+    if (breakdown.leafguard) lines.push(`<tr><td><div class="item-name">Leaf Guard</div><div class="item-desc">Micro-mesh gutter guards installed across all gutter runs.</div></td><td>${money(breakdown.leafguard)}</td></tr>`);
+
+    return `
+      <div class="doc-page">
+        <div class="doc-head">
+          <div>
+            <div class="co-name">${T.name.toUpperCase()}</div>
+            <div class="co-tag">Residential &amp; Commercial Roofing</div>
+            <div class="co-contact">${T.phone}<br>${T.email}<br>www.${T.website.replace(/^https?:\/\/|^www\./,'')}<br>${T.address}</div>
+          </div>
+          <div><div class="est-badge">ESTIMATE</div></div>
+        </div>
+
+        <div class="bill-sec">
+          <div class="bill-left">
+            <h3>Billed To</h3>
+            <p><strong>${state.customer.name || '—'}</strong>${state.customer.address ? '<br>' + state.customer.address : ''}${state.customer.phone ? '<br>' + state.customer.phone : ''}${state.customer.email ? '<br>' + state.customer.email : ''}</p>
+          </div>
+          <div class="bill-right">
+            <h3>Estimate Details</h3>
+            <div class="det-row"><span class="det-l">Estimate No.</span><span class="det-v">${estNum}</span></div>
+            <div class="det-row"><span class="det-l">Issue Date</span><span class="det-v">${issueDate}</span></div>
+            <div class="det-row"><span class="det-l">Valid Until</span><span class="det-v">${validUntil}</span></div>
+            <div class="det-row"><span class="det-l">Property</span><span class="det-v">${state.measure.sq} SQ Roof</span></div>
+          </div>
+        </div>
+
+        <div class="opt-head ${cls}">
+          <h2>Option ${label} — ${tierObj.name} Package</h2>
+          <p>${tierObj.sub || ''}</p>
+        </div>
+
+        <table class="line-table">
+          <thead><tr><th>Item</th><th>Subtotal</th></tr></thead>
+          <tbody>${lines.join('')}</tbody>
+        </table>
+
+        <div class="totals">
+          <div class="tot-row sub"><span>Subtotal</span><span>${money(breakdown.subtotal)}</span></div>
+          <div class="tot-row tax"><span>HST (${Math.round((T.hstRate || 0.15)*100)}%)</span><span>${money(breakdown.hst)}</span></div>
+          <div class="tot-row total"><span>Amount Due</span><span>${money(breakdown.total)}</span></div>
+        </div>
+
+        <div class="warranty-box">
+          <h3>5-Year Workmanship Warranty</h3>
+          <p>In addition to CertainTeed manufacturer warranty on all shingle products.</p>
+        </div>
+      </div>
+    `;
+  }
+
+  // Build up to 3 pages: selected tier (main option) + 1–2 alternatives
+  const pages = [];
+  pages.push(renderOptionPage(betterTier, better, 'A', 'premium'));
+  if (goodTier && goodTier.id !== betterTier.id) pages.push(renderOptionPage(goodTier, good, 'B', 'economy'));
+  if (bestTier && bestTier.id !== betterTier.id && bestTier.id !== goodTier.id) pages.push(renderOptionPage(bestTier, best, 'C', 'recommended'));
+
+  document.getElementById('finalPreview').innerHTML = `
+    <div class="final-doc">
+      ${pages.join('')}
+      <div class="doc-notes">
+        <h3>Notes</h3>
+        <ul>
+          <li>Options include identical scope of work, underlayment, ice &amp; water protection, and workmanship warranty. The difference between options is the shingle product tier.</li>
+          <li>Remediation allowance covers hidden damage uncovered at tear-off. Any unused portion is credited back on final invoice.</li>
+          <li>Estimate valid for 30 days from issue date.</li>
+          ${m120 ? '<li>Financing available via FinanceIt — approx. <strong>' + money(m120) + '/mo</strong> over 10 years or <strong>' + money(m60) + '/mo</strong> over 5 years. Pre-approval in 60 seconds.</li>' : ''}
+        </ul>
+      </div>
+      <div class="doc-foot">
+        ${T.name} &mdash; ${T.address}<br>
+        ${T.phone} &nbsp;|&nbsp; ${T.email} &nbsp;|&nbsp; www.${T.website.replace(/^https?:\/\/|^www\./,'')}
+      </div>
+    </div>
+  `;
+}
+
+/* ─── Step nav ─── */
+function goToStep(n){
+  state.step = n;
+  document.querySelectorAll('.step-item').forEach(el => el.classList.toggle('active', parseInt(el.dataset.step) === n));
+  document.querySelectorAll('.step-pane').forEach(p => p.style.display = parseInt(p.dataset.pane) === n ? 'block' : 'none');
+  const titles = ['', 'Customer', 'Scope', 'Measurements', 'Options', 'Review & Send'];
+  const subs = ['', 'Who is this proposal for?', 'What are we building?', 'How big and how complex?', 'Any add-ons or allowances?', 'Review the generated proposal and send.'];
+  document.getElementById('stepTitle').textContent = titles[n];
+  document.getElementById('stepSub').textContent = subs[n];
+  document.getElementById('stepCounter').textContent = `STEP ${n} OF 5`;
+  document.getElementById('prevBtn').style.visibility = n === 1 ? 'hidden' : 'visible';
+  document.getElementById('nextBtn').innerHTML = n === 5 ? 'SEND PROPOSAL<svg viewBox="0 0 24 24"><polyline points="5 12 12 5 19 12" transform="rotate(90 12 12)"/><line x1="12" y1="19" x2="12" y2="5"/></svg>' : 'CONTINUE<svg viewBox="0 0 24 24"><polyline points="9 6 15 12 9 18"/></svg>';
+  if (n === 5) renderFinal();
+  // Mark previous steps as complete
+  const isStepComplete = [
+    false,
+    state.customer.name && state.customer.address,
+    state.scope.system && state.scope.tier,
+    state.measure.sq > 0,
+    true,
+    false
+  ];
+  document.querySelectorAll('.step-item').forEach((el,idx) => {
+    const sn = parseInt(el.dataset.step);
+    el.classList.toggle('complete', sn < n && isStepComplete[sn]);
+  });
+}
+function nextStep(){ if (state.step >= 5) return sendProposal(); goToStep(state.step + 1); }
+function prevStep(){ if (state.step <= 1) return; goToStep(state.step - 1); }
+
+/* ─── Actions ─── */
+function saveDraft(){
+  // 1) Always save locally first for instant UX + offline safety
+  RyujinStore.save('proposal_draft', state);
+  const meta = RyujinStore.load('proposal_drafts_meta', []);
+  const name = (state.customer.name || 'untitled') + ' \u00B7 ' + new Date().toLocaleDateString();
+  if (!meta.find(m => m.name === name)) meta.push({ name, ts: Date.now() });
+  RyujinStore.save('proposal_drafts_meta', meta.slice(-10));
+  toast('Draft saved \u00B7 ' + (state.customer.name || 'untitled'));
+
+  // 2) Fire-and-forget API persist (queued offline if network fails)
+  if (window.RyujinAPI && state.customer.name) {
+    const b = calcBreakdown();
+    const tier = getSelectedTier();
+    RyujinAPI.post('/api/estimates', {
+      customer_name: state.customer.name,
+      customer_email: state.customer.email,
+      customer_phone: state.customer.phone,
+      address: state.customer.address,
+      system: state.scope.system,
+      tier: state.scope.tier,
+      measurements: state.measure,
+      options: state.options,
+      total_cents: Math.round((b.total || 0) * 100),
+      status: 'draft',
+      metadata: { tier_name: tier ? tier.name : null, breakdown: b }
+    }).then(r => {
+      if (r && r.id) RyujinStore.save('proposal_draft_id', r.id);
+    }).catch(() => { /* queued */ });
+  }
+}
+function printProposal(){
+  if (state.step !== 5) { goToStep(5); setTimeout(() => window.print(), 350); return; }
+  window.print();
+}
+function exportProposal(){
+  const data = {
+    generatedAt: new Date().toISOString(),
+    customer: state.customer,
+    scope: state.scope,
+    measure: state.measure,
+    options: state.options,
+    breakdown: calcBreakdown(),
+    financing: { monthly120: financeItMonthly(calcBreakdown().total, 120), monthly60: financeItMonthly(calcBreakdown().total, 60) }
+  };
+  const name = (state.customer.name || 'proposal').toLowerCase().replace(/\s+/g, '-');
+  RyujinActions.downloadJSON('proposal-' + name + '.json', data);
+  toast('Proposal exported');
+}
+function previewProposal(){ goToStep(5); }
+
+// Auto-load the most recent draft
+function loadDraft(){
+  const saved = RyujinStore.load('proposal_draft');
+  if (!saved || !saved.customer || !saved.customer.name) return;
+  if (!confirm('Resume saved draft for ' + saved.customer.name + '?')) return;
+  Object.assign(state, saved);
+  // Re-fill form fields
+  if (state.customer.name) document.getElementById('f_name').value = state.customer.name;
+  if (state.customer.phone) document.getElementById('f_phone').value = state.customer.phone;
+  if (state.customer.email) document.getElementById('f_email').value = state.customer.email;
+  if (state.customer.address) document.getElementById('f_address').value = state.customer.address;
+  if (state.customer.notes) document.getElementById('f_notes').value = state.customer.notes;
+  if (state.measure.sq) document.getElementById('m_sq').value = state.measure.sq;
+  if (state.measure.gutter) document.getElementById('m_gutter').value = state.measure.gutter;
+  if (state.measure.soffit) document.getElementById('m_soffit').value = state.measure.soffit;
+  if (state.measure.fascia) document.getElementById('m_fascia').value = state.measure.fascia;
+  document.getElementById('m_pitch').value = state.measure.pitch || 'normal';
+  document.getElementById('m_complexity').value = state.measure.complexity || 'normal';
+  renderSystemGrid(); renderTierGrid();
+  // Apply options
+  Object.keys(state.options || {}).forEach(k => {
+    if (state.options[k] === true) {
+      const row = document.querySelector('.opt-row[data-opt="'+k+'"]');
+      if (row) row.classList.add('on');
+    }
+  });
+  renderOptPrices(); renderPreview(); renderSummary(); updateTitle();
+  toast('Draft loaded');
+}
+window.loadDraft = loadDraft;
+window.printProposal = printProposal;
+window.exportProposal = exportProposal;
+function sendProposal(){
+  if (!state.customer.name || !state.customer.email) { toast('Add customer name + email before sending'); goToStep(1); return; }
+  if (!state.scope.tier || !state.measure.sq) { toast('Complete scope + measurements before sending'); goToStep(state.scope.tier ? 3 : 2); return; }
+  openEmailComposer();
+}
+
+function openEmailComposer(){
+  const tier = getSelectedTier();
+  const b = calcBreakdown();
+  const firstName = (state.customer.name || 'there').split(' ')[0];
+  const subject = `Your roofing proposal from Plus Ultra \u2014 ${state.customer.address || tier.name}`;
+  const body = `Hi ${firstName},
+
+Thanks again for letting me take a look at your roof. Attached is your proposal with three options so you can pick the level of protection and finish that fits best.
+
+Summary of what we discussed:
+\u2022 System: ${tier.name}${tier.sub ? ' (' + tier.sub + ')' : ''}
+\u2022 ${state.measure.sq} squares of roofing, ${state.measure.complexity} complexity
+\u2022 Total: ${money(b.total)} (incl. HST, or ${money(financeItMonthly(b.total, 120))}/mo via FinanceIt)
+
+A few quick things to know:
+1. The remediation allowance is a transparency buffer \u2014 anything we don\'t use is credited back on your final invoice.
+2. Financing is available via FinanceIt with approvals in minutes.
+3. The proposal is valid 30 days, but I can usually lock the pricing if you let me know within a week.
+
+Happy to jump on a quick call to walk through the three options. What time works best?
+
+Thanks,
+Mackenzie
+Plus Ultra Roofing
+(506) 540-1052`;
+
+  let modal = document.getElementById('emailModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'emailModal';
+    modal.innerHTML = `
+      <div class="em-backdrop" onclick="closeEmailComposer()"></div>
+      <div class="em-card">
+        <div class="em-head">
+          <div>
+            <div class="em-title">Send Proposal</div>
+            <div class="em-sub">Draft ready \u2014 edit before sending</div>
+          </div>
+          <button class="em-x" onclick="closeEmailComposer()">\u00D7</button>
+        </div>
+        <div class="em-body">
+          <div class="em-row"><label>To</label><input id="em_to" type="email"/></div>
+          <div class="em-row"><label>Subject</label><input id="em_subject" type="text"/></div>
+          <div class="em-row"><label>Body</label><textarea id="em_body" rows="16"></textarea></div>
+          <div class="em-attach">
+            <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+            proposal-${Date.now()}.pdf
+            <span style="color:var(--text-muted);font-size:0.85em">\u00B7 auto-attached</span>
+          </div>
+        </div>
+        <div class="em-foot">
+          <button class="btn ghost" onclick="closeEmailComposer()">CANCEL</button>
+          <button class="btn ghost" onclick="copyToClipboard()"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>COPY</button>
+          <button class="btn ghost" onclick="openInGmail()"><svg viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22 6 12 13 2 6"/></svg>OPEN IN GMAIL</button>
+          <button class="btn success" onclick="confirmSend()"><svg viewBox="0 0 24 24"><polyline points="5 12 12 5 19 12" transform="rotate(90 12 12)"/></svg>SEND TO ${firstName.toUpperCase()}</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  }
+  document.getElementById('em_to').value = state.customer.email;
+  document.getElementById('em_subject').value = subject;
+  document.getElementById('em_body').value = body;
+  modal.classList.add('on');
+}
+
+function closeEmailComposer(){ const m = document.getElementById('emailModal'); if (m) m.classList.remove('on'); }
+function copyToClipboard(){
+  const text = `To: ${document.getElementById('em_to').value}\nSubject: ${document.getElementById('em_subject').value}\n\n${document.getElementById('em_body').value}`;
+  navigator.clipboard.writeText(text).then(() => toast('Copied to clipboard'));
+}
+function openInGmail(){
+  const to = encodeURIComponent(document.getElementById('em_to').value);
+  const subject = encodeURIComponent(document.getElementById('em_subject').value);
+  const body = encodeURIComponent(document.getElementById('em_body').value);
+  const url = `https://mail.google.com/mail/?view=cm&fs=1&to=${to}&su=${subject}&body=${body}`;
+  window.open(url, '_blank', 'noopener');
+  toast('Opening Gmail \u2014 review and send from there');
+}
+window.openInGmail = openInGmail;
+function confirmSend(){
+  closeEmailComposer();
+  toast('Proposal sent to ' + state.customer.email + ' \u00B7 stub \u2014 wiring Gmail/GHL next pass');
+  document.getElementById('pvBadge').textContent = 'SENT';
+  document.getElementById('pvBadge').style.background = 'rgba(74,222,128,0.15)';
+}
+window.openEmailComposer = openEmailComposer;
+window.closeEmailComposer = closeEmailComposer;
+window.copyToClipboard = copyToClipboard;
+window.confirmSend = confirmSend;
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    // Close email composer first if open, otherwise back to sub-hub
+    const mdl = document.getElementById('emailModal');
+    if (mdl && mdl.classList.contains('on')) { closeEmailComposer(); return; }
+    goBack();
+  }
+});
+document.addEventListener('contextmenu', e => { e.preventDefault(); goBack(); });
+
+function goBack(){
+  if (window.parent !== window && window.parent.exitSectionOverlay) { window.parent.location.href = 'sales.html'; return; }
+  window.location.href = 'sales.html';
+}
+
+function toast(msg){ if (window.RyujinToast) return RyujinToast(msg); console.log(msg); }
+
+// ── Build tier payload for the client-facing proposal ──
+function buildClientPayload(){
+  const sys = SYSTEMS.find(s => s.id === state.scope.system);
+  const selectedTier = getSelectedTier();
+  if (!sys || !selectedTier) { toast('Complete scope + tier first'); return null; }
+  // Generate 3 tiers around the selection for the configurator
+  const tierList = sys.tiers.slice();
+  const idx = tierList.findIndex(t => t.id === selectedTier.id);
+  let tierSlice;
+  if (tierList.length <= 3) tierSlice = tierList;
+  else if (idx <= 0) tierSlice = tierList.slice(0, 3);
+  else if (idx >= tierList.length - 1) tierSlice = tierList.slice(-3);
+  else tierSlice = tierList.slice(idx - 1, idx + 2);
+
+  const sqPrice = (tier) => {
+    const sq = state.measure.sq || 20;
+    const roofing = sq * tier.persq;
+    const pitchMult = { low: 0.97, normal: 1.0, steep: 1.12, extreme: 1.28 }[state.measure.pitch] || 1.0;
+    const cxMult = { simple: 0.96, normal: 1.0, complex: 1.12, custom: 1.25 }[state.measure.complexity] || 1.0;
+    return Math.round((roofing * pitchMult * cxMult) / 25) * 25;
+  };
+
+  const perksFor = (tier) => {
+    const list = [`${state.measure.sq || 20} SQ full tear-off`, '5yr workmanship guarantee'];
+    if (/economy/i.test(tier.name)) list.splice(0, 0, 'Standard CertainTeed shingles');
+    else if (/gold/i.test(tier.name)) list.splice(0, 0, 'CertainTeed Landmark architectural', '30yr material warranty');
+    else if (/platinum|designer/i.test(tier.name)) list.splice(0, 0, 'CertainTeed Designer', '50yr material warranty');
+    else if (/diamond/i.test(tier.name)) list.splice(0, 0, 'Landmark Pro Max', 'Lifetime material warranty');
+    else if (/standing seam|seam/i.test(tier.name)) list.splice(0, 0, 'Standing seam metal', '50yr paint warranty');
+    else if (/americana|ribbed/i.test(tier.name)) list.splice(0, 0, 'Ribbed metal panels', '40yr paint warranty');
+    if (state.options.osb) list.push('OSB substrate included');
+    if (state.options.leafguard) list.push('Leaf guard installed');
+    if (state.options.vent) list.push('Ventilation upgrade');
+    return list;
+  };
+
+  const refId = 'PU-' + (state.customer.name ? state.customer.name.split(' ')[0].toUpperCase().slice(0, 6) : 'XXX') + '-' + Date.now().toString(36).slice(-5).toUpperCase();
+  const repName = 'Mackenzie Mazerolle';
+
+  const payload = {
+    refId,
+    createdAt: new Date().toISOString(),
+    customer: {
+      name: state.customer.name,
+      address: state.customer.address,
+      phone: state.customer.phone,
+      email: state.customer.email,
+      coverImage: state.media && state.media.coverImage || ''
+    },
+    rep: {
+      name: repName,
+      title: 'Owner · Plus Ultra Roofing',
+      initials: repName.split(' ').map(x => x[0]).join('').slice(0, 2),
+      photo: state.media && state.media.repPhoto || ''
+    },
+    media: {
+      satelliteImage: state.media && state.media.satelliteImage || '',
+      beforeImage: state.media && state.media.beforeImage || '',
+      afterImage: state.media && state.media.afterImage || '',
+      videoCover: state.media && state.media.videoCover || '',
+      videoUrl: state.media && state.media.videoUrl || ''
+    },
+    scope: { system: state.scope.system, recommended: selectedTier.id, measure: state.measure },
+    tiers: {}
+  };
+
+  payload.tiers[state.scope.system] = tierSlice.map(t => ({
+    id: t.id,
+    tag: t.name.toUpperCase(),
+    name: t.name,
+    desc: t.sub || '',
+    total: sqPrice(t),
+    perks: perksFor(t)
+  }));
+  // Also offer the alternate system (asphalt ↔ metal) if we have it
+  if (state.scope.system === 'asphalt') {
+    const metal = SYSTEMS.find(s => s.id === 'metal');
+    if (metal) payload.tiers.metal = metal.tiers.map(t => ({ id: t.id, tag: t.name.toUpperCase(), name: t.name, desc: t.sub || '', total: sqPrice(t), perks: perksFor(t) }));
+  }
+  return payload;
+}
+
+function encodePayload(obj){
+  // URL-safe base64 of JSON
+  const json = JSON.stringify(obj);
+  return btoa(unescape(encodeURIComponent(json)));
+}
+
+function generateClientLink(){
+  if (!state.customer.name || !state.measure.sq || !state.scope.tier) {
+    toast('Need customer name, SQ, and tier first');
+    return;
+  }
+  const payload = buildClientPayload();
+  if (!payload) return;
+  const encoded = encodePayload(payload);
+  const base = (location.protocol === 'file:' ? 'file://' + location.pathname.replace(/[^\/]+$/, '') : location.origin + '/');
+  const url = base + 'proposal-client.html?data=' + encoded;
+
+  // Log the sent proposal
+  const sent = RyujinStore.load('proposals_sent', []);
+  const sentRecord = { refId: payload.refId, client: state.customer.name, system: state.scope.system, tier: state.scope.tier, url, at: new Date().toISOString() };
+  sent.push(sentRecord);
+  RyujinStore.save('proposals_sent', sent);
+
+  // Persist to API (fire-and-forget, queued offline)
+  if (window.RyujinAPI) {
+    const estimateId = RyujinStore.load('proposal_draft_id', null);
+    RyujinAPI.post('/api/outputs?type=proposal', {
+      estimate_id: estimateId,
+      ref_id: payload.refId,
+      client_link: url,
+      payload
+    }).catch(() => {});
+  }
+
+  openLinkModal(url, payload);
+}
+
+function openLinkModal(url, payload){
+  let mdl = document.getElementById('linkModal');
+  if (!mdl) {
+    mdl = document.createElement('div');
+    mdl.id = 'linkModal';
+    document.body.appendChild(mdl);
+  }
+  const smsBody = 'Hi ' + (payload.customer.name ? payload.customer.name.split(' ')[0] : 'there') + ' \u2014 here\u2019s your Plus Ultra roof proposal with your three options. Takes 2 minutes to look over. Just tap Accept on the one that works. ' + url;
+  const emailBody = 'Hi ' + (payload.customer.name ? payload.customer.name.split(' ')[0] : 'there') + ',\n\nHere\u2019s your personalized proposal from Plus Ultra Roofing, with three options and live pricing. Tap or click through and hit Accept on the one that works for you:\n\n' + url + '\n\nIf you have any questions, call or text me at (506) 540-1052.\n\nThanks,\nMackenzie\nPlus Ultra Roofing';
+  const subject = 'Your Roof Proposal \u00B7 ' + (payload.customer.name || 'Plus Ultra');
+
+  mdl.innerHTML = `
+    <div class="em-backdrop" onclick="closeLinkModal()"></div>
+    <div class="em-card" style="max-width:680px">
+      <div class="em-head">
+        <div>
+          <div class="em-title" style="color:#a78bfa">Client Proposal Link</div>
+          <div class="em-sub">Ref ${payload.refId} \u00B7 ${payload.customer.name || 'unknown'}</div>
+        </div>
+        <button class="em-x" onclick="closeLinkModal()">&times;</button>
+      </div>
+      <div class="em-body">
+        <div class="em-row">
+          <label>SHAREABLE URL</label>
+          <input id="linkUrl" type="text" value="${url.replace(/"/g, '&quot;')}" readonly style="font-family:'Share Tech Mono',monospace;font-size:0.78em;color:#22d3ee"/>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin:14px 0 4px">
+          <button class="btn primary" onclick="copyLinkUrl()"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>COPY LINK</button>
+          <button class="btn ghost" onclick="openLinkInBrowser()"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>PREVIEW</button>
+          <button class="btn ghost" onclick="smsLinkTo('${(payload.customer.phone || '').replace(/'/g, '')}','${smsBody.replace(/'/g, '&#39;').replace(/"/g, '&quot;')}')"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>SMS</button>
+          <button class="btn ghost" onclick="emailLinkTo('${(payload.customer.email || '').replace(/'/g, '')}','${subject.replace(/'/g, '&#39;')}','${emailBody.replace(/'/g, '&#39;').replace(/"/g, '&quot;').replace(/\\n/g, '\\\\n')}')"><svg viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22 6 12 13 2 6"/></svg>GMAIL</button>
+        </div>
+        <div style="padding:12px 14px;background:rgba(74,222,128,0.07);border:1px solid rgba(74,222,128,0.25);border-radius:9px;font-size:0.82em;line-height:1.55;margin-top:12px">
+          <b style="color:#4ade80;font-family:Orbitron,sans-serif;font-size:0.74em;letter-spacing:1.2px">WHEN THEY ACCEPT</b><br/>
+          You get an instant email at <code style="color:#22d3ee;font-family:'Share Tech Mono',monospace">plusultraroofing@gmail.com</code> with the package + total + timestamp. The Ryujin dashboard also logs it to your accepted-proposals pile.
+        </div>
+      </div>
+      <div class="em-foot">
+        <button class="btn ghost" onclick="closeLinkModal()">CLOSE</button>
+      </div>
+    </div>
+  `;
+  mdl.classList.add('on');
+  mdl.style.cssText = 'position:fixed;inset:0;z-index:9500;display:flex;align-items:center;justify-content:center';
+}
+function closeLinkModal(){ const m = document.getElementById('linkModal'); if (m) m.remove(); }
+function copyLinkUrl(){ const u = document.getElementById('linkUrl'); u.select(); document.execCommand('copy'); toast('Link copied'); }
+function openLinkInBrowser(){ const u = document.getElementById('linkUrl').value; window.open(u, '_blank'); }
+function smsLinkTo(phone, body){
+  if (!phone) { toast('No phone on file \u2014 link copied instead'); copyLinkUrl(); return; }
+  RyujinActions.sms(phone, body.replace(/&#39;/g, "'").replace(/&quot;/g, '"'));
+}
+function emailLinkTo(email, subject, body){
+  if (!email) { toast('No email on file \u2014 use COPY + paste into Gmail'); copyLinkUrl(); return; }
+  RyujinActions.gmail(email, subject.replace(/&#39;/g, "'"), body.replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/\\n/g, '\n'));
+}
+/* ─── Media modal ─── */
+function openMediaModal(){
+  let mdl = document.getElementById('mediaModal');
+  if (mdl) { mdl.remove(); }
+  mdl = document.createElement('div');
+  mdl.id = 'mediaModal';
+  mdl.style.cssText = 'position:fixed;inset:0;z-index:900;background:rgba(3,6,17,0.9);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:24px';
+  const m = state.media || {};
+  mdl.innerHTML = `
+    <div style="background:rgba(10,18,34,0.98);border:1px solid rgba(34,211,238,0.4);border-radius:16px;padding:32px;max-width:560px;width:100%;box-shadow:0 30px 80px rgba(0,0,0,0.6),0 0 40px rgba(34,211,238,0.18)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:22px">
+        <h3 style="font-family:'Orbitron',sans-serif;font-weight:900;font-size:1.1em;letter-spacing:1.5px;color:#22d3ee">CUSTOMIZE MEDIA</h3>
+        <button onclick="closeMediaModal()" style="background:none;border:none;color:rgba(200,220,255,0.6);font-size:1.4em;cursor:pointer">×</button>
+      </div>
+      <p style="color:rgba(200,220,255,0.65);font-size:0.88em;line-height:1.5;margin-bottom:20px">Paste public image/video URLs for the client-facing proposal. Leave blank to use defaults.</p>
+      <div style="display:flex;flex-direction:column;gap:14px">
+        ${mediaRow('Satellite image of client property', 'mm_sat', m.satelliteImage || '', 'https://… .jpg (or screenshot Google Maps sat view)')}
+        ${mediaRow('Cover image (hero background)', 'mm_cover', m.coverImage || '', 'https://… .jpg')}
+        ${mediaRow('Before photo (similar home)', 'mm_before', m.beforeImage || '', 'https://… .jpg')}
+        ${mediaRow('After photo (finished job)', 'mm_after', m.afterImage || '', 'https://… .jpg')}
+        ${mediaRow('Rep headshot (circle avatar)', 'mm_rep', m.repPhoto || '', 'https://… .jpg')}
+        ${mediaRow('Video cover image', 'mm_vcover', m.videoCover || '', 'https://… .jpg')}
+        ${mediaRow('Video URL (.mp4)', 'mm_vurl', m.videoUrl || '', 'https://… .mp4')}
+      </div>
+      <div style="display:flex;gap:10px;margin-top:24px">
+        <button onclick="closeMediaModal()" class="btn ghost" style="flex:1">CANCEL</button>
+        <button onclick="saveMediaModal()" class="btn success" style="flex:1">SAVE MEDIA</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(mdl);
+  mdl.addEventListener('click', e => { if (e.target === mdl) closeMediaModal(); });
+}
+function mediaRow(label, id, val, placeholder){
+  return `
+    <div>
+      <div style="font-family:'Share Tech Mono',monospace;font-size:0.7em;color:rgba(200,220,255,0.55);letter-spacing:1.2px;margin-bottom:6px">${label.toUpperCase()}</div>
+      <input id="${id}" type="url" value="${val.replace(/"/g, '&quot;')}" placeholder="${placeholder}" style="width:100%;padding:10px 14px;background:rgba(6,10,20,0.7);border:1px solid rgba(34,211,238,0.25);border-radius:8px;color:#fff;font-family:'Share Tech Mono',monospace;font-size:0.82em" />
+    </div>
+  `;
+}
+function saveMediaModal(){
+  state.media = state.media || {};
+  state.media.satelliteImage = document.getElementById('mm_sat').value.trim();
+  state.media.coverImage = document.getElementById('mm_cover').value.trim();
+  state.media.beforeImage = document.getElementById('mm_before').value.trim();
+  state.media.afterImage = document.getElementById('mm_after').value.trim();
+  state.media.repPhoto = document.getElementById('mm_rep').value.trim();
+  state.media.videoCover = document.getElementById('mm_vcover').value.trim();
+  state.media.videoUrl = document.getElementById('mm_vurl').value.trim();
+  closeMediaModal();
+  toast('Media saved');
+}
+function closeMediaModal(){ const m = document.getElementById('mediaModal'); if (m) m.remove(); }
+window.openMediaModal = openMediaModal;
+window.saveMediaModal = saveMediaModal;
+window.closeMediaModal = closeMediaModal;
+
+window.generateClientLink = generateClientLink;
+window.closeLinkModal = closeLinkModal;
+window.copyLinkUrl = copyLinkUrl;
+window.openLinkInBrowser = openLinkInBrowser;
+window.smsLinkTo = smsLinkTo;
+window.emailLinkTo = emailLinkTo;
+
+/* ─── Wire inputs ─── */
+['f_name','f_phone','f_email','f_address','f_notes'].forEach(id => {
+  document.getElementById(id).addEventListener('input', e => {
+    state.customer[id.slice(2)] = e.target.value;
+    updateTitle(); renderSummary(); renderPreview();
+  });
+});
+['m_sq','m_gutter','m_soffit','m_fascia'].forEach(id => {
+  document.getElementById(id).addEventListener('input', e => {
+    state.measure[id.slice(2)] = Number(e.target.value) || 0;
+    renderOptPrices(); renderPreview(); renderSummary();
+  });
+});
+['m_pitch','m_complexity'].forEach(id => {
+  document.getElementById(id).addEventListener('change', e => {
+    state.measure[id.slice(2)] = e.target.value;
+    renderPreview(); renderSummary();
+  });
+});
+document.getElementById('o_osb_sheets').addEventListener('input', e => { state.options.osb_sheets = e.target.value ? Number(e.target.value) : null; renderOptPrices(); renderPreview(); });
+document.getElementById('o_rem_amt').addEventListener('input', e => { state.options.rem_amt = Number(e.target.value) || 0; renderOptPrices(); renderPreview(); });
+
+/* ─── Init ─── */
+renderCustList();
+renderSystemGrid();
+renderOptPrices();
+renderPreview();
+renderSummary();
+updateTitle();
+goToStep(1);
+
+// ── Proposal Entry Gate ──
+// If user opened a fresh proposal with nothing pre-filled, show the entry wizard:
+//   NEW PROPOSAL  (→ New Contact or Existing Contact)
+//   REVIEW EXISTING  (→ list of saved drafts)
+function showProposalGate(){
+  if (document.getElementById('pgGate')) return;
+  const wrap = document.createElement('div');
+  wrap.id = 'pgGate';
+  wrap.style.cssText = 'position:fixed;inset:0;z-index:500;background:rgba(3,6,17,0.92);backdrop-filter:blur(14px);display:flex;align-items:center;justify-content:center;padding:24px';
+  wrap.innerHTML = `
+    <div style="background:rgba(10,18,34,0.98);border:1px solid rgba(34,211,238,0.45);border-radius:18px;padding:36px 40px;max-width:560px;width:100%;box-shadow:0 28px 80px rgba(0,0,0,0.6),0 0 40px rgba(34,211,238,0.18);position:relative">
+      <button onclick="closeProposalGate()" style="position:absolute;top:14px;right:16px;background:none;border:none;color:rgba(200,220,255,0.5);font-size:1.4em;cursor:pointer;padding:6px 10px;border-radius:6px">×</button>
+      <div style="font-family:'Share Tech Mono',monospace;font-size:0.72em;color:#22d3ee;letter-spacing:2.5px;margin-bottom:6px">STEP 0 · ENTRY</div>
+      <h2 style="font-family:'Orbitron',sans-serif;font-size:1.7em;font-weight:900;letter-spacing:0.5px;background:linear-gradient(135deg,#fff,#22d3ee);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:8px" id="pgH">What are we doing?</h2>
+      <p style="color:rgba(200,220,255,0.7);font-size:0.95em;margin-bottom:24px;line-height:1.55" id="pgSub">Start a new proposal or pick up an existing one.</p>
+      <div id="pgChoices" style="display:flex;flex-direction:column;gap:10px"></div>
+    </div>
+  `;
+  document.body.appendChild(wrap);
+  pgStep('root');
+}
+function closeProposalGate(){ const el = document.getElementById('pgGate'); if (el) el.remove(); }
+window.closeProposalGate = closeProposalGate;
+
+function pgBtn(text, sub, onclick, accent){
+  const cyan = accent === 'cyan';
+  return `<button onclick="${onclick}" style="text-align:left;padding:16px 20px;background:rgba(6,12,24,0.7);border:1px solid rgba(34,211,238,0.22);border-radius:12px;color:#e0e6f0;cursor:pointer;transition:all 0.2s;font-family:'Inter',sans-serif;font-size:0.95em;line-height:1.45" onmouseover="this.style.background='rgba(34,211,238,0.08)';this.style.borderColor='rgba(34,211,238,0.55)';this.style.transform='translateX(4px)'" onmouseout="this.style.background='rgba(6,12,24,0.7)';this.style.borderColor='rgba(34,211,238,0.22)';this.style.transform=''">
+    <div style="font-family:'Orbitron',sans-serif;font-weight:800;font-size:0.82em;letter-spacing:1px;color:${cyan ? '#22d3ee' : '#fff'};margin-bottom:3px">${text}</div>
+    ${sub ? `<div style="font-size:0.82em;color:rgba(200,220,255,0.65)">${sub}</div>` : ''}
+  </button>`;
+}
+
+function pgStep(s){
+  const h = document.getElementById('pgH'), sub = document.getElementById('pgSub'), choices = document.getElementById('pgChoices');
+  if (!h) return;
+  if (s === 'root') {
+    h.textContent = 'What are we doing?';
+    sub.textContent = 'Start a new proposal or pick up an existing one.';
+    const drafts = RyujinStore.load('proposal_drafts_meta', []);
+    choices.innerHTML = [
+      pgBtn('🆕 New Proposal', 'Build a fresh proposal from scratch.', "pgStep('new')", 'cyan'),
+      pgBtn('📋 Review Existing', drafts.length + ' saved draft' + (drafts.length === 1 ? '' : 's') + '. Pick up where you left off.', "pgStep('existing')")
+    ].join('');
+  } else if (s === 'new') {
+    h.textContent = 'New Proposal';
+    sub.textContent = 'Who is this for?';
+    choices.innerHTML = [
+      pgBtn('✨ New Contact', 'Brand new homeowner. Enter their details from scratch.', "pgStartNewContact()", 'cyan'),
+      pgBtn('👤 Existing Contact', 'Pull from your CRM — pipeline leads, past customers.', "pgStep('pickLead')"),
+      pgBtn('← Back', '', "pgStep('root')")
+    ].join('');
+  } else if (s === 'pickLead') {
+    h.textContent = 'Pick a Contact';
+    sub.textContent = existingLeads.length + ' contacts from your CRM.';
+    choices.innerHTML = existingLeads.map(l => pgBtn(l.name, l.meta + ' · ' + l.val, "pgPickLead('" + l.name.replace(/'/g,"\\'") + "')")).join('') + pgBtn('← Back', '', "pgStep('new')");
+  } else if (s === 'existing') {
+    h.textContent = 'Existing Proposals';
+    sub.textContent = 'Saved drafts — click to resume.';
+    const drafts = RyujinStore.load('proposal_drafts_meta', []);
+    if (!drafts.length) {
+      choices.innerHTML = '<div style="padding:24px;text-align:center;color:rgba(200,220,255,0.5);font-style:italic">No saved drafts yet.</div>' + pgBtn('← Back', '', "pgStep('root')");
+    } else {
+      choices.innerHTML = drafts.slice().reverse().map((d, i) => pgBtn(d.name, new Date(d.ts).toLocaleString(), "pgResumeDraft()")).join('') + pgBtn('← Back', '', "pgStep('root')");
+    }
+  }
+}
+function pgStartNewContact(){ closeProposalGate(); goToStep(1); setTimeout(() => { const el = document.getElementById('f_name'); if (el) el.focus(); }, 100); }
+function pgPickLead(name){
+  const lead = existingLeads.find(l => l.name === name);
+  if (lead) applyLead(lead);
+  closeProposalGate();
+}
+function pgResumeDraft(){ loadDraft(); closeProposalGate(); }
+window.pgStep = pgStep;
+window.pgStartNewContact = pgStartNewContact;
+window.pgPickLead = pgPickLead;
+window.pgResumeDraft = pgResumeDraft;
+
+// Pre-fill from ?customer= or ?lead=
+const params = new URLSearchParams(location.search);
+const pre = params.get('lead');
+if (pre) {
+  const lead = existingLeads.find(l => l.name.toLowerCase().includes(pre.toLowerCase()));
+  if (lead) applyLead(lead);
+} else {
+  // Show proposal entry gate unless ?skip=1 (for quick access during testing)
+  if (!params.get('skip')) {
+    setTimeout(showProposalGate, 150);
+  }
+}
+</script>
+
+</body>
+</html>
