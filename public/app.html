@@ -132,6 +132,17 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .toast.err{background:rgba(50,16,16,0.92);color:var(--red);border:1px solid rgba(248,113,113,0.15)}
 .toast.info{background:rgba(16,24,50,0.92);color:var(--cyan);border:1px solid rgba(34,211,238,0.15)}
 @keyframes toastIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* ─── User Selector ─── */
+.user-select-card{display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:8px;cursor:pointer;transition:all 0.2s}
+.user-select-card:active{border-color:var(--cyan);background:rgba(34,211,238,0.04)}
+.user-avatar{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:0.9em;flex-shrink:0}
+.user-avatar.owner{background:rgba(34,211,238,0.15);color:var(--cyan)}
+.user-avatar.estimator{background:rgba(74,158,255,0.15);color:var(--blue)}
+.user-avatar.crew{background:rgba(74,222,128,0.15);color:var(--green)}
+.user-avatar.field-ops{background:rgba(251,146,60,0.15);color:var(--orange)}
+.user-info .name{font-weight:700;font-size:0.9em}
+.user-info .role-label{font-size:0.68em;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;margin-top:1px}
 </style>
 </head>
 <body>
@@ -148,10 +159,20 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
     <div class="logo"></div>
     <span class="name">RYUJIN OS</span>
   </div>
-  <div class="user-pill" id="userPill">
+  <div class="user-pill" id="userPill" onclick="switchUser()" style="cursor:pointer">
     <span class="dot"></span>
     <span id="userName">Loading...</span>
   </div>
+</div>
+
+<!-- User Selector (shown before content loads) -->
+<div class="content" id="userSelect" style="display:none;padding-top:80px">
+  <div style="text-align:center;margin-bottom:20px">
+    <div class="logo" style="width:48px;height:48px;border-radius:12px;background:url('/assets/logo/logo-glow.jpg') center/cover;margin:0 auto 12px;box-shadow:0 0 20px rgba(34,211,238,0.2)"></div>
+    <div style="font-family:'Orbitron',monospace;font-size:0.9em;font-weight:600;letter-spacing:2px;color:var(--cyan)">RYUJIN OS</div>
+    <div style="font-size:0.78em;color:var(--text-dim);margin-top:4px">Select your account</div>
+  </div>
+  <div id="userList"></div>
 </div>
 
 <!-- Content -->
@@ -475,8 +496,11 @@ async function renderClock(c) {
 
     <div class="panel" style="text-align:center">
       <div style="font-weight:700;font-size:1em">${esc(currentUser?.name||'Crew')}</div>
-      <div style="font-size:0.78em;color:var(--text-dim);margin-top:2px">${esc(currentUser?.role||'crew')}</div>
-    </div>`;
+      <div style="font-size:0.78em;color:var(--text-dim);margin-top:2px">${esc((ROLE_CONFIG[getDisplayRole(currentUser?.role)]||{}).label || currentUser?.role || 'crew')}</div>
+      ${currentUser?.phone ? `<div style="font-size:0.75em;color:var(--text-dim);margin-top:4px">${esc(currentUser.phone)}</div>` : ''}
+      ${currentUser?.email ? `<div style="font-size:0.72em;color:var(--text-dim);margin-top:2px">${esc(currentUser.email)}</div>` : ''}
+    </div>
+    <button class="btn btn-outline" style="margin-top:12px" onclick="switchUser()">Switch Account</button>`;
 
   c.innerHTML = html;
 
@@ -504,21 +528,102 @@ async function clockOut() {
   renderClock(document.getElementById('content'));
 }
 
+// ═══ ROLE CONFIG ═══
+const ROLE_CONFIG = {
+  owner: { label: 'Owner', color: 'owner', icon: '👑', tabs: ['home','tasks','projects','clock'] },
+  estimator: { label: 'Estimator / Partner', color: 'estimator', icon: '📋', tabs: ['home','tasks','projects','clock'] },
+  crew: { label: 'Crew / Subcontractor', color: 'crew', icon: '🔨', tabs: ['home','tasks','projects','clock'] },
+  field_ops: { label: 'Field Ops', color: 'field-ops', icon: '🎯', tabs: ['home','tasks','projects','clock'] }
+};
+
+// Map existing roles to display roles
+function getDisplayRole(role) {
+  if (role === 'owner' || role === 'admin' || role === 'manager') return 'owner';
+  if (role === 'estimator') return 'estimator';
+  return 'crew';
+}
+
+let allUsers = [];
+
 // ═══ INIT ═══
 async function init() {
   const data = await api('/users');
-  if (data.users) {
-    const crew = data.users.find(u => u.role === 'crew') || data.users[0];
-    if (crew) { currentUser = crew; }
+  allUsers = data.users || [];
+
+  // Check if user was previously selected
+  const savedId = localStorage.getItem('ryujin_crew_user');
+  if (savedId) {
+    const saved = allUsers.find(u => u.id === savedId);
+    if (saved) {
+      selectUser(saved);
+      return;
+    }
   }
-  document.getElementById('userName').textContent = currentUser?.name || 'Crew';
-  render();
+
+  // Show user selector
+  showUserSelector();
 
   // Lazy load background video
   setTimeout(() => {
     const v = document.getElementById('bgVid');
     if (v) { const s = v.querySelector('source'); if (s?.dataset.src) { s.src = s.dataset.src; v.load(); v.play().catch(()=>{}); }}
   }, 2000);
+}
+
+function showUserSelector() {
+  document.getElementById('content').style.display = 'none';
+  document.querySelector('.nav').style.display = 'none';
+  const sel = document.getElementById('userSelect');
+  sel.style.display = 'block';
+
+  const list = document.getElementById('userList');
+  let html = '';
+
+  // Sort: owner first, then estimator, then crew
+  const sorted = [...allUsers].sort((a,b) => {
+    const order = {owner:0, admin:0, manager:1, estimator:2, crew:3};
+    return (order[a.role]||3) - (order[b.role]||3);
+  });
+
+  for (const u of sorted) {
+    const dr = getDisplayRole(u.role);
+    const cfg = ROLE_CONFIG[dr] || ROLE_CONFIG.crew;
+    html += `<div class="user-select-card" onclick="selectUser(allUsers.find(x=>x.id==='${u.id}'))">
+      <div class="user-avatar ${cfg.color}">${cfg.icon}</div>
+      <div class="user-info">
+        <div class="name">${esc(u.name)}</div>
+        <div class="role-label">${cfg.label}</div>
+      </div>
+      <svg viewBox="0 0 24 24" style="width:16px;height:16px;stroke:var(--text-dim);fill:none;stroke-width:2;margin-left:auto"><polyline points="9 18 15 12 9 6"/></svg>
+    </div>`;
+  }
+
+  // Add AJ as field_ops specifically
+  // (AJ's role is 'crew' in DB but she's actually field ops)
+
+  list.innerHTML = html;
+}
+
+function selectUser(user) {
+  currentUser = user;
+  localStorage.setItem('ryujin_crew_user', user.id);
+  document.getElementById('userSelect').style.display = 'none';
+  document.getElementById('content').style.display = 'block';
+  document.querySelector('.nav').style.display = 'flex';
+  document.getElementById('userName').textContent = user.name;
+
+  // Update user pill color based on role
+  const dr = getDisplayRole(user.role);
+  const pill = document.getElementById('userPill');
+  if (pill) pill.style.borderColor = dr === 'owner' ? 'rgba(34,211,238,0.2)' : dr === 'estimator' ? 'rgba(74,158,255,0.2)' : 'rgba(74,222,128,0.2)';
+
+  render();
+}
+
+function switchUser() {
+  localStorage.removeItem('ryujin_crew_user');
+  currentUser = null;
+  showUserSelector();
 }
 
 init();
