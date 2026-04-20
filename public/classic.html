@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#030611">
+<title>Ryujin OS · Classic Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg-deep:#030611; --glass:rgba(14,22,40,0.78);
+  --border:rgba(34,211,238,0.18); --border-hi:rgba(34,211,238,0.4);
+  --accent:#22d3ee; --accent-2:#67e8f9; --purple:#7c3aed;
+  --text:#e0e6f0; --text-dim:rgba(160,190,230,0.62); --text-muted:rgba(140,170,220,0.32);
+  --green:#4ade80; --yellow:#facc15; --red:#f87171; --orange:#fb923c;
+  --radius:12px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{min-height:100%;-webkit-font-smoothing:antialiased}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg-deep);color:var(--text);min-height:100vh;padding:14px}
+
+/* Ambient (CSS only — no video, no WebGL) */
+body::before{content:'';position:fixed;inset:0;z-index:0;background:radial-gradient(ellipse at 30% 20%,rgba(34,211,238,0.06),transparent 55%),radial-gradient(ellipse at 75% 80%,rgba(124,58,237,0.05),transparent 55%),linear-gradient(180deg,#060a14,#000);pointer-events:none}
+body::after{content:'';position:fixed;inset:0;z-index:1;background-image:linear-gradient(rgba(34,211,238,0.02) 1px,transparent 1px),linear-gradient(90deg,rgba(34,211,238,0.02) 1px,transparent 1px);background-size:72px 72px;mask-image:radial-gradient(ellipse at center,black 30%,transparent 85%);-webkit-mask-image:radial-gradient(ellipse at center,black 30%,transparent 85%);pointer-events:none}
+
+.wrap{position:relative;z-index:2;max-width:1440px;margin:0 auto}
+
+/* Top bar */
+.top{display:flex;align-items:center;gap:14px;padding:10px 16px;background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);backdrop-filter:blur(14px);margin-bottom:14px}
+.brand{display:flex;align-items:center;gap:10px}
+.brand-mark{width:28px;height:28px;border-radius:7px;background:radial-gradient(circle at 35% 30%,rgba(200,240,255,0.3),rgba(34,211,238,0.22) 40%,rgba(5,15,30,0.8));box-shadow:0 0 12px rgba(34,211,238,0.35)}
+.brand-name{font-family:'Orbitron',sans-serif;font-size:0.8em;font-weight:800;letter-spacing:2.5px}
+.brand-name .dim{color:var(--text-dim);font-weight:500;letter-spacing:2px;margin-left:8px}
+.top .sep{flex:1}
+.top-meta{font-family:'Share Tech Mono',monospace;font-size:0.72em;letter-spacing:1.5px;color:var(--text-dim);display:flex;align-items:center;gap:14px}
+.top-meta .dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+.switch-link{padding:6px 12px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.35);border-radius:8px;color:#a78bfa;font-family:'Orbitron',sans-serif;font-size:0.62em;font-weight:700;letter-spacing:1.5px;text-decoration:none;transition:all 0.2s}
+.switch-link:hover{background:rgba(124,58,237,0.2);border-color:#a78bfa}
+
+/* KPI rail */
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px}
+.kpi{padding:14px 16px;background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);position:relative}
+.kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:0.5}
+.kpi-label{font-family:'Orbitron',sans-serif;font-size:0.56em;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);margin-bottom:4px}
+.kpi-value{font-family:'Orbitron',sans-serif;font-size:1.65em;font-weight:900;line-height:1;background:linear-gradient(135deg,#fff 20%,var(--accent));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.kpi-value.red{background:linear-gradient(135deg,#fff 20%,var(--red));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.kpi-value.green{background:linear-gradient(135deg,#fff 20%,var(--green));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.kpi-sub{font-size:0.68em;color:var(--text-muted);margin-top:4px;font-family:'Share Tech Mono',monospace;letter-spacing:0.5px}
+
+/* Main grid */
+.grid{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:14px;margin-bottom:14px}
+.col{display:flex;flex-direction:column;gap:14px;min-width:0}
+.panel{background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);backdrop-filter:blur(14px);position:relative;overflow:hidden}
+.panel::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:0.4}
+.panel-head{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid rgba(34,211,238,0.1)}
+.panel-title{font-family:'Orbitron',sans-serif;font-size:0.62em;font-weight:700;letter-spacing:2.5px;color:var(--text-dim)}
+.panel-badge{padding:2px 8px;background:rgba(34,211,238,0.1);border:1px solid rgba(34,211,238,0.28);border-radius:5px;font-family:'Share Tech Mono',monospace;font-size:0.64em;color:var(--accent);letter-spacing:0.5px}
+.panel-body{padding:10px 14px}
+.panel-link{display:block;margin:8px 14px 12px;padding:8px;background:rgba(6,10,20,0.5);border:1px solid rgba(34,211,238,0.15);border-radius:8px;text-align:center;font-family:'Orbitron',sans-serif;font-size:0.64em;font-weight:700;letter-spacing:1.5px;color:var(--text-dim);text-decoration:none;transition:all 0.2s}
+.panel-link:hover{color:var(--accent);border-color:rgba(34,211,238,0.4);background:rgba(34,211,238,0.05)}
+
+/* Job rows */
+.job-row{display:flex;gap:12px;padding:10px;border-radius:9px;margin-bottom:4px;background:rgba(6,10,20,0.35);border:1px solid rgba(34,211,238,0.08);transition:border-color 0.2s}
+.job-row:hover{border-color:rgba(34,211,238,0.25)}
+.job-status{width:5px;border-radius:3px;flex-shrink:0}
+.job-status.active{background:var(--green);box-shadow:0 0 6px var(--green)}
+.job-status.scheduled{background:var(--accent)}
+.job-status.draft{background:var(--red)}
+.job-status.overdue{background:var(--red);box-shadow:0 0 6px var(--red)}
+.job-body{flex:1;min-width:0}
+.job-name{font-size:0.88em;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.job-meta{font-size:0.7em;color:var(--text-dim);font-family:'Share Tech Mono',monospace;letter-spacing:0.3px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.job-date{font-family:'Orbitron',sans-serif;font-size:0.7em;font-weight:700;color:var(--accent-2);flex-shrink:0;text-align:right}
+.job-date.overdue{color:var(--red)}
+.job-date.today{color:var(--green)}
+
+/* Crew */
+.crew-row{display:flex;align-items:center;gap:12px;padding:8px 10px;margin-bottom:3px;background:rgba(6,10,20,0.35);border:1px solid rgba(34,211,238,0.08);border-radius:8px}
+.crew-avatar{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Orbitron',sans-serif;font-weight:700;font-size:0.74em;flex-shrink:0;border:1px solid}
+.crew-info{flex:1;min-width:0}
+.crew-name{font-size:0.82em;font-weight:600}
+.crew-meta{font-size:0.64em;color:var(--text-dim);font-family:'Share Tech Mono',monospace;letter-spacing:0.3px}
+.crew-pct{font-family:'Orbitron',sans-serif;font-weight:700;font-size:0.78em}
+.crew-bar{width:54px;height:3px;background:rgba(6,10,20,0.6);border-radius:2px;overflow:hidden;margin-top:3px}
+.crew-fill{height:100%;border-radius:2px}
+
+/* Weather */
+.wx-row{display:flex;justify-content:space-between;align-items:center;padding:7px 10px;margin-bottom:3px;background:rgba(6,10,20,0.35);border:1px solid rgba(34,211,238,0.08);border-radius:8px;font-size:0.76em}
+.wx-row.warn{border-color:rgba(250,204,21,0.3);background:rgba(250,204,21,0.05)}
+.wx-row.alert{border-color:rgba(248,113,113,0.35);background:rgba(248,113,113,0.06)}
+.wx-day{font-family:'Orbitron',sans-serif;font-weight:700;font-size:0.72em;letter-spacing:1px;min-width:68px}
+.wx-info{font-family:'Share Tech Mono',monospace;font-size:0.68em;color:var(--text-dim);flex:1;margin:0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wx-temp{font-family:'Orbitron',sans-serif;font-weight:700;font-size:0.8em;color:var(--accent)}
+
+/* Quick links */
+.ql-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}
+.ql-btn{padding:10px;background:rgba(6,10,20,0.5);border:1px solid rgba(34,211,238,0.15);border-radius:9px;text-align:center;text-decoration:none;transition:all 0.2s}
+.ql-btn:hover{border-color:rgba(34,211,238,0.4);background:rgba(34,211,238,0.06);transform:translateY(-1px)}
+.ql-btn .ic{font-size:1.4em;display:block;margin-bottom:4px}
+.ql-btn .lbl{font-family:'Orbitron',sans-serif;font-size:0.58em;font-weight:700;letter-spacing:1.5px;color:var(--text)}
+.ql-btn .s{font-size:0.64em;color:var(--text-muted);margin-top:2px}
+
+/* Alerts strip */
+.alerts{display:flex;align-items:center;gap:16px;padding:10px 14px;background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);overflow-x:auto}
+.alerts-lbl{font-family:'Orbitron',sans-serif;font-size:0.58em;font-weight:700;letter-spacing:2px;color:var(--red);flex-shrink:0}
+.alerts-lbl.clear{color:var(--green)}
+.alert-chip{display:flex;align-items:center;gap:6px;font-size:0.76em;white-space:nowrap;color:var(--text)}
+.alert-chip .dot{width:6px;height:6px;border-radius:50%}
+.alert-chip .dot.red{background:var(--red);box-shadow:0 0 6px var(--red)}
+.alert-chip .dot.yellow{background:var(--yellow);box-shadow:0 0 6px var(--yellow)}
+.alert-chip .dot.green{background:var(--green);box-shadow:0 0 6px var(--green)}
+.alert-chip .dim{color:var(--text-dim);font-size:0.88em;margin-left:4px}
+
+.empty{padding:20px;text-align:center;color:var(--text-muted);font-size:0.82em}
+
+/* Responsive */
+@media (max-width: 1100px){ .grid{grid-template-columns:1fr 1fr} .col.col-3{grid-column:1/-1} .kpis{grid-template-columns:repeat(3,1fr)} }
+@media (max-width: 760px){ .grid{grid-template-columns:1fr} .kpis{grid-template-columns:1fr 1fr} .top{flex-wrap:wrap} }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <div class="top">
+    <div class="brand"><div class="brand-mark"></div><div class="brand-name">RYUJIN OS <span class="dim">· CLASSIC</span></div></div>
+    <div class="sep"></div>
+    <div class="top-meta"><span id="timeNow">—</span><span id="dateNow">—</span><span class="dot"></span><span>LIVE</span></div>
+    <a href="command-center.html" class="switch-link">3D HUB ↗</a>
+    <a href="admin.html" class="switch-link" style="color:var(--accent);border-color:rgba(34,211,238,0.35);background:rgba(34,211,238,0.08)">ADMIN ↗</a>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi"><div class="kpi-label">Active</div><div class="kpi-value green" id="kActive">0</div><div class="kpi-sub" id="kActiveSub">in progress</div></div>
+    <div class="kpi"><div class="kpi-label">Scheduled</div><div class="kpi-value" id="kScheduled">0</div><div class="kpi-sub" id="kScheduledSub">upcoming</div></div>
+    <div class="kpi"><div class="kpi-label">Needs Info</div><div class="kpi-value red" id="kNeeds">0</div><div class="kpi-sub" id="kNeedsSub">action required</div></div>
+    <div class="kpi"><div class="kpi-label">Pipeline</div><div class="kpi-value" id="kPipeline">$0</div><div class="kpi-sub" id="kPipelineSub">contract $</div></div>
+    <div class="kpi"><div class="kpi-label">Deposits</div><div class="kpi-value" id="kDeposits">$0</div><div class="kpi-sub" id="kDepositsSub">collected</div></div>
+  </div>
+
+  <div class="grid">
+
+    <div class="col col-1">
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">ACTIVE JOBS</div><div class="panel-badge" id="jobsBadge">—</div></div>
+        <div class="panel-body" id="jobsList"></div>
+        <a href="production-jobs.html" class="panel-link">OPEN ACTION BOARD →</a>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">NEXT 7 DAYS</div><div class="panel-badge" id="schedBadge">—</div></div>
+        <div class="panel-body" id="schedList"></div>
+        <a href="production-calendar.html" class="panel-link">OPEN CALENDAR →</a>
+      </div>
+    </div>
+
+    <div class="col col-2">
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">CREW LOAD</div><div class="panel-badge" id="crewBadge">—</div></div>
+        <div class="panel-body" id="crewList"></div>
+        <a href="production-workorders.html" class="panel-link">OPEN WORK ORDERS →</a>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">WEATHER · MONCTON</div><div class="panel-badge" id="wxBadge">—</div></div>
+        <div class="panel-body" id="wxList"></div>
+      </div>
+    </div>
+
+    <div class="col col-3">
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">QUICK LINKS</div></div>
+        <div class="panel-body">
+          <div class="ql-grid">
+            <a class="ql-btn" href="sales-proposal.html"><span class="ic">📝</span><div class="lbl">PROPOSAL</div><div class="s">Generator</div></a>
+            <a class="ql-btn" href="sales-pipeline.html"><span class="ic">📊</span><div class="lbl">PIPELINE</div><div class="s">Leads</div></a>
+            <a class="ql-btn" href="production-workorders.html"><span class="ic">🔧</span><div class="lbl">WORK ORDERS</div><div class="s">Jobs</div></a>
+            <a class="ql-btn" href="production-materials.html"><span class="ic">📦</span><div class="lbl">MATERIALS</div><div class="s">Orders</div></a>
+            <a class="ql-btn" href="production-paysheet.html"><span class="ic">💵</span><div class="lbl">PAY SHEET</div><div class="s">Sub</div></a>
+            <a class="ql-btn" href="production-calendar.html"><span class="ic">📅</span><div class="lbl">CALENDAR</div><div class="s">Schedule</div></a>
+            <a class="ql-btn" href="sales-customers.html"><span class="ic">👥</span><div class="lbl">CUSTOMERS</div><div class="s">CRM</div></a>
+            <a class="ql-btn" href="post-production-reviews.html"><span class="ic">⭐</span><div class="lbl">REVIEWS</div><div class="s">Post-job</div></a>
+            <a class="ql-btn" href="marketing.html"><span class="ic">📢</span><div class="lbl">MARKETING</div><div class="s">Clips</div></a>
+            <a class="ql-btn" href="admin.html"><span class="ic">⚙</span><div class="lbl">ADMIN</div><div class="s">Settings</div></a>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">RECENT ACTIVITY</div></div>
+        <div class="panel-body" id="activityList"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="alerts">
+    <div class="alerts-lbl" id="alertsLbl">ALERTS · 0</div>
+    <div id="alertsList" style="display:flex;gap:16px;flex:1"></div>
+  </div>
+
+</div>
+
+<script>
+function $(id){ return document.getElementById(id); }
+function escHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function money(n){ if (!n) return '$0'; if (n >= 1000) return '$' + (n/1000).toFixed(1) + 'K'; return '$' + Math.round(n).toLocaleString('en-CA'); }
+function fmtShortDate(d){ return d.toLocaleDateString('en-US',{month:'short',day:'numeric'}).toUpperCase(); }
+function loadWOs(){ try { const r = localStorage.getItem('ry_v1_work_orders_v5'); return r ? JSON.parse(r) : []; } catch(e){ return []; } }
+function daysFromToday(iso){ if (!iso) return null; const now = new Date(); now.setHours(0,0,0,0); const d = new Date(iso); d.setHours(0,0,0,0); return Math.round((d - now) / 86400000); }
+
+// ── Live clock ──
+function tickClock(){
+  const now = new Date();
+  $('timeNow').textContent = now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+  $('dateNow').textContent = now.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}).toUpperCase();
+}
+tickClock(); setInterval(tickClock, 30000);
+
+// ── KPIs + active jobs ──
+function renderKpisAndJobs(){
+  const wos = loadWOs();
+  const active = wos.filter(w => w.status === 'active');
+  const scheduled = wos.filter(w => w.status === 'scheduled');
+  const needs = wos.filter(w => w.status === 'draft' || (w.status === 'scheduled' && (w.sq === 0 && w.system !== 'exterior')) || (w.status === 'scheduled' && (daysFromToday(w.start)||0) < 0));
+  const pipeline = wos.filter(w => w.status !== 'complete').reduce((s,w) => s + (Number(w.total)||0), 0);
+  const deposits = wos.filter(w => w.status !== 'complete').reduce((s,w) => s + (Number(w.deposit)||0), 0);
+
+  $('kActive').textContent = active.length;
+  $('kActiveSub').textContent = active.length ? active.map(w => w.client.split(' ')[0]).join(' · ') : 'none';
+  $('kScheduled').textContent = scheduled.length;
+  $('kScheduledSub').textContent = scheduled.length ? 'next ' + (wos.length ? Math.min(14, Math.max(0, daysFromToday(scheduled.sort((a,b)=>(daysFromToday(a.start)||9999)-(daysFromToday(b.start)||9999))[0]?.start))) + 'd' : '') : 'empty pipeline';
+  $('kNeeds').textContent = needs.length;
+  $('kNeedsSub').textContent = needs.length ? 'blocked · drafts' : 'all clear';
+  $('kPipeline').textContent = money(pipeline);
+  $('kPipelineSub').textContent = 'open jobs';
+  $('kDeposits').textContent = money(deposits);
+  $('kDepositsSub').textContent = pipeline > 0 ? (Math.round(deposits/pipeline*100) + '% of pipeline') : '—';
+
+  // Active jobs list (show active + next few scheduled, max 6)
+  const jobHost = $('jobsList');
+  const priority = { active:0, scheduled:1, draft:2, complete:3 };
+  const sorted = [...wos].filter(w => w.status !== 'complete').sort((a,b) => {
+    const pa = priority[a.status] ?? 9, pb = priority[b.status] ?? 9;
+    if (pa !== pb) return pa - pb;
+    return (daysFromToday(a.start)||9999) - (daysFromToday(b.start)||9999);
+  }).slice(0, 6);
+  if (!sorted.length) {
+    jobHost.innerHTML = '<div class="empty">No open jobs. <a href="production-workorders.html" style="color:var(--accent)">Add one →</a></div>';
+  } else {
+    jobHost.innerHTML = sorted.map(w => {
+      const days = daysFromToday(w.start);
+      let dateLabel = '—', dateClass = '';
+      if (w.status === 'active') { dateLabel = 'IN PROGRESS'; dateClass = 'today'; }
+      else if (w.status === 'draft') { dateLabel = 'DRAFT'; dateClass = 'overdue'; }
+      else if (days != null && days < 0) { dateLabel = Math.abs(days) + 'D LATE'; dateClass = 'overdue'; }
+      else if (days === 0) { dateLabel = 'TODAY'; dateClass = 'today'; }
+      else if (days > 0 && days <= 3) { dateLabel = days + 'D'; dateClass = 'today'; }
+      else if (w.start) { dateLabel = fmtShortDate(new Date(w.start)); }
+      const statusCls = w.status === 'draft' ? 'draft' : (days != null && days < 0 ? 'overdue' : w.status);
+      const addr = (w.address || '').split(',')[0] || w.client;
+      return `<div class="job-row">
+        <div class="job-status ${statusCls}"></div>
+        <div class="job-body">
+          <div class="job-name">${escHtml(addr)} · ${escHtml(w.client.split(' ')[0])}</div>
+          <div class="job-meta">${escHtml(w.tier||'')} ${w.sq ? '· ' + w.sq + ' SQ' : ''} ${w.total ? '· ' + money(w.total) : ''}</div>
+        </div>
+        <div class="job-date ${dateClass}">${escHtml(dateLabel)}</div>
+      </div>`;
+    }).join('');
+  }
+  $('jobsBadge').textContent = active.length + ' ACTIVE · ' + scheduled.length + ' UP';
+}
+
+// ── Schedule (next 7 days) ──
+function renderSchedule(){
+  const wos = loadWOs();
+  const host = $('schedList');
+  const now = new Date(); now.setHours(0,0,0,0);
+  const items = [];
+  wos.forEach(w => {
+    if (w.status === 'complete' || !w.start) return;
+    const start = new Date(w.start); start.setHours(0,0,0,0);
+    const days = w.days || 1;
+    for (let d = 0; d < days; d++) {
+      const workDay = new Date(start); workDay.setDate(workDay.getDate() + d);
+      const diff = Math.round((workDay - now) / 86400000);
+      if (diff >= 0 && diff <= 7) items.push({ date: workDay, wo: w, dayOfN: (d+1) + '/' + days, diff });
+    }
+  });
+  items.sort((a,b) => a.date - b.date);
+  if (!items.length) {
+    host.innerHTML = '<div class="empty">Nothing scheduled in the next 7 days.</div>';
+    $('schedBadge').textContent = 'EMPTY';
+    return;
+  }
+  host.innerHTML = items.slice(0, 10).map(it => {
+    const label = it.diff === 0 ? 'TODAY' : (it.diff === 1 ? 'TOMORROW' : it.date.toLocaleDateString('en-US',{weekday:'short'}).toUpperCase() + ' · ' + fmtShortDate(it.date));
+    const addr = (it.wo.address || '').split(',')[0] || it.wo.client;
+    return `<div class="job-row">
+      <div class="job-status ${it.wo.status === 'active' ? 'active' : 'scheduled'}"></div>
+      <div class="job-body">
+        <div class="job-name">${escHtml(addr)} · ${escHtml(it.wo.client)}</div>
+        <div class="job-meta">${escHtml(label)} · day ${it.dayOfN} · ${escHtml((it.wo.crew||'').split(/[·+]/)[0].trim())}</div>
+      </div>
+      <div class="job-date ${it.diff === 0 ? 'today' : ''}">${escHtml(it.diff === 0 ? 'TODAY' : fmtShortDate(it.date))}</div>
+    </div>`;
+  }).join('');
+  $('schedBadge').textContent = items.length + ' SHIFT' + (items.length === 1 ? '' : 'S');
+}
+
+// ── Crew load ──
+const CREW = [
+  { id:'ryan',     initials:'RY', name:'Ryan · Atlantic',     role:'Sub · installer',      color:'cyan',   capacity:5 },
+  { id:'aj',       initials:'AJ', name:'AJ',                  role:'Prod assist · doors',  color:'cyan',   capacity:4 },
+  { id:'diego',    initials:'DG', name:'Diego',               role:'Ops · repairs',        color:'orange', capacity:4 },
+  { id:'pavanjot', initials:'PV', name:'Pavanjot',            role:'Laborer',              color:'green',  capacity:4 }
+];
+function onWO(m, w){
+  const s = (w.crew || '').toLowerCase();
+  if (!s) return false;
+  if (m.id === 'ryan') return /ryan|atlantic/.test(s);
+  if (m.id === 'aj')   return /\baj\b/.test(s);
+  if (m.id === 'diego') return /diego/.test(s);
+  if (m.id === 'pavanjot') return /pavanjot|pav\b/.test(s);
+  return false;
+}
+function renderCrew(){
+  const wos = loadWOs();
+  const openWos = wos.filter(w => w.status === 'active' || w.status === 'scheduled');
+  const rows = CREW.map(m => {
+    const onJobs = openWos.filter(w => onWO(m, w));
+    const pct = Math.min(100, Math.round((onJobs.length / m.capacity) * 100));
+    const css = ({
+      cyan:   { c:'var(--accent)', b:'rgba(34,211,238,0.3)',  bg:'linear-gradient(135deg,rgba(34,211,238,0.28),rgba(124,58,237,0.1))', f:'linear-gradient(90deg,#0891b2,var(--accent))' },
+      orange: { c:'var(--orange)', b:'rgba(251,146,60,0.3)',  bg:'linear-gradient(135deg,rgba(251,146,60,0.28),rgba(248,113,113,0.1))', f:'linear-gradient(90deg,#c2410c,var(--orange))' },
+      green:  { c:'var(--green)',  b:'rgba(74,222,128,0.3)',  bg:'linear-gradient(135deg,rgba(74,222,128,0.28),rgba(34,211,238,0.1))', f:'linear-gradient(90deg,#16a34a,var(--green))' }
+    })[m.color];
+    const activeJob = onJobs.find(w => w.status === 'active') || onJobs[0];
+    const meta = onJobs.length ? (onJobs.length + (onJobs.length === 1 ? ' job' : ' jobs') + (activeJob ? ' · ' + activeJob.client.split(' ')[0] : '')) : m.role;
+    return `<div class="crew-row">
+      <div class="crew-avatar" style="color:${css.c};border-color:${css.b};background:${css.bg}">${escHtml(m.initials)}</div>
+      <div class="crew-info"><div class="crew-name">${escHtml(m.name)}</div><div class="crew-meta">${escHtml(meta)}</div></div>
+      <div style="text-align:right">
+        <div class="crew-pct" style="color:${css.c}">${pct}%</div>
+        <div class="crew-bar"><div class="crew-fill" style="width:${pct}%;background:${css.f}"></div></div>
+      </div>
+    </div>`;
+  }).join('');
+  $('crewList').innerHTML = rows;
+  $('crewBadge').textContent = openWos.length + ' OPEN';
+}
+
+// ── Weather (read cache from calendar page if present, otherwise fetch fresh) ──
+async function loadWeather(){
+  const host = $('wxList');
+  const badge = $('wxBadge');
+  // Try calendar's cache first
+  try {
+    const cached = JSON.parse(localStorage.getItem('ry_v1_weather_moncton_v1') || 'null');
+    if (cached && cached.at && (Date.now() - cached.at) < 3600 * 1000 && Array.isArray(cached.data) && cached.data.length) {
+      renderWeather(cached.data); return;
+    }
+  } catch(e){}
+  // Fetch fresh
+  host.innerHTML = '<div class="empty">Loading forecast…</div>';
+  try {
+    const res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=46.088&longitude=-64.779&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=America/Moncton&forecast_days=5');
+    if (!res.ok) throw new Error('api');
+    const j = await res.json();
+    const codes = j.daily.weathercode || [], maxes = j.daily.temperature_2m_max || [], mins = j.daily.temperature_2m_min || [], precs = j.daily.precipitation_probability_max || [], times = j.daily.time || [];
+    const today = new Date(); today.setHours(0,0,0,0);
+    const data = times.map((t, i) => {
+      const d = new Date(t + 'T12:00:00');
+      const diff = Math.round((d - today) / 86400000);
+      const dayLabel = diff === 0 ? 'TODAY' : diff === 1 ? 'TMRW' : d.toLocaleDateString('en-US',{weekday:'short'}).toUpperCase();
+      const code = codes[i] || 0, precip = precs[i] || 0;
+      const info = wmoLabel(code, precip);
+      return { day: dayLabel, info: info.icon + ' ' + info.label + (precip ? ' · ' + precip + '%' : ''), temp: Math.round(maxes[i]) + '° / ' + Math.round(mins[i]) + '°', cls: info.cls };
+    });
+    try { localStorage.setItem('ry_v1_weather_moncton_v1', JSON.stringify({ at: Date.now(), data })); } catch(e){}
+    renderWeather(data);
+  } catch (e) {
+    host.innerHTML = '<div class="empty">Weather unavailable · check connection</div>';
+    badge.textContent = '—';
+  }
+}
+function wmoLabel(code, precip){
+  if (code === 0) return { icon:'☀', label:'Clear', cls:'' };
+  if (code >= 1 && code <= 3) return { icon:'⛅', label:'Cloudy', cls:'' };
+  if (code >= 45 && code <= 48) return { icon:'🌫', label:'Fog', cls:'warn' };
+  if (code >= 51 && code <= 57) return { icon:'🌧', label:'Drizzle', cls:'warn' };
+  if (code >= 61 && code <= 63) return { icon:'🌧', label:'Rain', cls: precip > 60 ? 'alert' : 'warn' };
+  if (code >= 65 && code <= 67) return { icon:'🌧', label:'Heavy rain', cls:'alert' };
+  if (code >= 71 && code <= 77) return { icon:'❄', label:'Snow', cls:'alert' };
+  if (code >= 80 && code <= 82) return { icon:'🌦', label:'Showers', cls: precip > 60 ? 'alert' : 'warn' };
+  if (code >= 85 && code <= 86) return { icon:'❄', label:'Snow showers', cls:'alert' };
+  if (code >= 95) return { icon:'⛈', label:'Storm', cls:'alert' };
+  return { icon:'—', label:'—', cls:'' };
+}
+function renderWeather(data){
+  $('wxList').innerHTML = data.map(w => `<div class="wx-row ${w.cls}"><div class="wx-day">${escHtml(w.day)}</div><div class="wx-info">${escHtml(w.info)}</div><div class="wx-temp">${escHtml(w.temp)}</div></div>`).join('');
+  const worst = data.find(w => w.cls === 'alert') || data.find(w => w.cls === 'warn');
+  $('wxBadge').textContent = worst ? worst.day + ' ' + (worst.cls || 'ok').toUpperCase() : 'CLEAR';
+}
+
+// ── Alerts ──
+function renderAlerts(){
+  const wos = loadWOs();
+  const alerts = [];
+  wos.forEach(w => {
+    if (w.status === 'scheduled') {
+      const d = daysFromToday(w.start);
+      if (d != null && d < 0) alerts.push({ sev:'red', text: w.client + ' · start ' + (w.start||'?'), note: 'OVERDUE ' + Math.abs(d) + 'd' });
+      else if (w.sq === 0 && w.system !== 'exterior') alerts.push({ sev:'yellow', text: w.client + ' · SQ + tier TBD', note: 'before start' });
+    }
+    if (w.status === 'draft') alerts.push({ sev:'yellow', text: w.client + ' · needs scope', note: 'draft' });
+    if (w.status === 'active' && !w.phone) alerts.push({ sev:'yellow', text: w.client + ' · no phone on file', note: 'action' });
+  });
+  const lbl = $('alertsLbl');
+  const list = $('alertsList');
+  if (!alerts.length) {
+    lbl.textContent = 'ALL CLEAR';
+    lbl.classList.add('clear');
+    list.innerHTML = '<div class="alert-chip"><div class="dot green"></div>No blockers · drafts · missing info</div>';
+    return;
+  }
+  lbl.classList.remove('clear');
+  lbl.textContent = 'ALERTS · ' + alerts.length;
+  list.innerHTML = alerts.slice(0, 5).map(a => `<div class="alert-chip"><div class="dot ${a.sev}"></div>${escHtml(a.text)} <span class="dim">${escHtml(a.note)}</span></div>`).join('');
+}
+
+// ── Recent activity (drawn from localStorage events across the OS) ──
+function renderActivity(){
+  const ev = [];
+  try {
+    const wos = loadWOs();
+    wos.filter(w => w.completedAt).forEach(w => ev.push({ at: w.completedAt, text: w.client + ' marked complete', kind: 'complete' }));
+  } catch(e){}
+  try {
+    const drafts = JSON.parse(localStorage.getItem('ry_v1_paysheet_draft') || 'null');
+    if (drafts && drafts.savedAt) ev.push({ at: drafts.savedAt, text: 'Pay sheet draft saved', kind: 'pay' });
+  } catch(e){}
+  try {
+    const hist = JSON.parse(localStorage.getItem('ry_v1_paysheet_history') || '[]');
+    hist.slice(-3).forEach(h => { if (h.at) ev.push({ at: h.at, text: 'Pay sheet paid · ' + (h.jobName||'job'), kind:'pay' }); });
+  } catch(e){}
+  ev.sort((a,b) => new Date(b.at) - new Date(a.at));
+  const host = $('activityList');
+  if (!ev.length) {
+    host.innerHTML = '<div class="empty">No recent activity. <span style="color:var(--text-muted)">Mark a job complete to see it here.</span></div>';
+    return;
+  }
+  host.innerHTML = ev.slice(0, 5).map(e => {
+    const d = new Date(e.at);
+    const rel = (() => {
+      const diff = (Date.now() - d) / 1000;
+      if (diff < 60) return 'just now';
+      if (diff < 3600) return Math.round(diff/60) + 'm ago';
+      if (diff < 86400) return Math.round(diff/3600) + 'h ago';
+      return Math.round(diff/86400) + 'd ago';
+    })();
+    return `<div class="job-row">
+      <div class="job-status ${e.kind==='complete'?'active':'scheduled'}"></div>
+      <div class="job-body"><div class="job-name">${escHtml(e.text)}</div><div class="job-meta">${escHtml(rel)}</div></div>
+    </div>`;
+  }).join('');
+}
+
+// ── Refresh all + periodic ──
+function refresh(){
+  renderKpisAndJobs();
+  renderSchedule();
+  renderCrew();
+  renderAlerts();
+  renderActivity();
+}
+refresh();
+loadWeather();
+setInterval(refresh, 60000); // every minute
+</script>
+
+</body>
+</html>
