@@ -1094,6 +1094,20 @@ function buildClientPayload(){
   const refId = 'PU-' + (state.customer.name ? state.customer.name.split(' ')[0].toUpperCase().slice(0, 6) : 'XXX') + '-' + Date.now().toString(36).slice(-5).toUpperCase();
   const repName = 'Mackenzie Mazerolle';
 
+  // Real Plus Ultra brand photos (CDN) — fall back to these when the user hasn't uploaded project-specific ones.
+  const FALLBACK_PHOTOS = [
+    'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/683df2a1e1360e210d25da2f.jpeg',
+    'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/683df2a18406d6d308cec7a1.jpeg',
+    'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/6839b129d906870c391d2e00.jpeg',
+    'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/684214dee142b673f143437d.jpeg',
+    'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/6841dac0598392e117d07add.jpeg',
+    'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/696b6c244e42b975f6577663.jpg'
+  ];
+  const DARCY_VIDEO = 'https://oyhn4tqzifmqqj0o.public.blob.vercel-storage.com/darcy-roof%20proposal%20introduction.mp4';
+
+  const systemLabel = { asphalt:'Asphalt', metal:'Metal', exterior:'Performance Shell', combined:'Roof + Shell', flat:'Flat Roof' }[state.scope.system] || 'Roofing';
+  const packageName = selectedTier.name + (systemLabel !== selectedTier.name ? ' · ' + systemLabel : '');
+
   const payload = {
     refId,
     createdAt: new Date().toISOString(),
@@ -1102,20 +1116,28 @@ function buildClientPayload(){
       address: state.customer.address,
       phone: state.customer.phone,
       email: state.customer.email,
-      coverImage: state.media && state.media.coverImage || ''
+      coverImage: (state.media && state.media.coverImage) || FALLBACK_PHOTOS[0]
     },
     rep: {
       name: repName,
       title: 'Owner · Plus Ultra Roofing',
       initials: repName.split(' ').map(x => x[0]).join('').slice(0, 2),
-      photo: state.media && state.media.repPhoto || ''
+      photo: (state.media && state.media.repPhoto) || '',
+      phone: '(506) 540-1052',
+      phoneTel: '15065401052',
+      email: 'plusultraroofing@gmail.com'
     },
+    // Package info — consumed by sales-client.html (which uses data.package.name in hero badge + CTA)
+    package: { name: packageName, system: state.scope.system },
     media: {
-      satelliteImage: state.media && state.media.satelliteImage || '',
-      beforeImage: state.media && state.media.beforeImage || '',
-      afterImage: state.media && state.media.afterImage || '',
-      videoCover: state.media && state.media.videoCover || '',
-      videoUrl: state.media && state.media.videoUrl || ''
+      satelliteImage: (state.media && state.media.satelliteImage) || '',
+      beforeImage: (state.media && state.media.beforeImage) || FALLBACK_PHOTOS[2],
+      afterImage: (state.media && state.media.afterImage) || FALLBACK_PHOTOS[0],
+      videoCover: (state.media && state.media.videoCover) || FALLBACK_PHOTOS[1],
+      videoUrl: (state.media && state.media.videoUrl) || DARCY_VIDEO,
+      gallery: (state.media && Array.isArray(state.media.gallery) && state.media.gallery.length)
+        ? state.media.gallery
+        : FALLBACK_PHOTOS
     },
     scope: { system: state.scope.system, recommended: selectedTier.id, measure: state.measure },
     tiers: {}
@@ -1152,11 +1174,14 @@ function generateClientLink(){
   if (!payload) return;
   const encoded = encodePayload(payload);
   const base = (location.protocol === 'file:' ? 'file://' + location.pathname.replace(/[^\/]+$/, '') : location.origin + '/');
-  const url = base + 'proposal-client.html?data=' + encoded;
+  // Primary URL: sales-client (warm-up page → CTA forwards ?data= to proposal-client).
+  // Direct URL: skips the warm-up and goes straight to the priced proposal.
+  const salesUrl    = base + 'sales-client.html?data=' + encoded;
+  const proposalUrl = base + 'proposal-client.html?data=' + encoded;
 
   // Log the sent proposal
   const sent = RyujinStore.load('proposals_sent', []);
-  const sentRecord = { refId: payload.refId, client: state.customer.name, system: state.scope.system, tier: state.scope.tier, url, at: new Date().toISOString() };
+  const sentRecord = { refId: payload.refId, client: state.customer.name, system: state.scope.system, tier: state.scope.tier, url: salesUrl, proposalUrl, at: new Date().toISOString() };
   sent.push(sentRecord);
   RyujinStore.save('proposals_sent', sent);
 
@@ -1166,49 +1191,62 @@ function generateClientLink(){
     RyujinAPI.post('/api/outputs?type=proposal', {
       estimate_id: estimateId,
       ref_id: payload.refId,
-      client_link: url,
+      client_link: salesUrl,
+      proposal_link: proposalUrl,
       payload
     }).catch(() => {});
   }
 
-  openLinkModal(url, payload);
+  openLinkModal(salesUrl, proposalUrl, payload);
 }
 
-function openLinkModal(url, payload){
+function openLinkModal(salesUrl, proposalUrl, payload){
   let mdl = document.getElementById('linkModal');
   if (!mdl) {
     mdl = document.createElement('div');
     mdl.id = 'linkModal';
     document.body.appendChild(mdl);
   }
-  const smsBody = 'Hi ' + (payload.customer.name ? payload.customer.name.split(' ')[0] : 'there') + ' \u2014 here\u2019s your Plus Ultra roof proposal with your three options. Takes 2 minutes to look over. Just tap Accept on the one that works. ' + url;
-  const emailBody = 'Hi ' + (payload.customer.name ? payload.customer.name.split(' ')[0] : 'there') + ',\n\nHere\u2019s your personalized proposal from Plus Ultra Roofing, with three options and live pricing. Tap or click through and hit Accept on the one that works for you:\n\n' + url + '\n\nIf you have any questions, call or text me at (506) 540-1052.\n\nThanks,\nMackenzie\nPlus Ultra Roofing';
-  const subject = 'Your Roof Proposal \u00B7 ' + (payload.customer.name || 'Plus Ultra');
+  // Back-compat: if called with only 2 args, second arg is payload (old signature)
+  if (proposalUrl && typeof proposalUrl === 'object') { payload = proposalUrl; proposalUrl = null; }
+  if (!proposalUrl) proposalUrl = salesUrl.replace('/sales-client.html', '/proposal-client.html');
+
+  const firstName = payload.customer.name ? payload.customer.name.split(' ')[0] : 'there';
+  const smsBody = 'Hi ' + firstName + ' \u2014 your Plus Ultra roof plan is ready. Takes 2 min to look over: ' + salesUrl + ' \u2014 any questions, just text back.';
+  const emailBody = 'Hi ' + firstName + ',\n\nYour personalized Plus Ultra roof plan is ready. The page walks you through the recommendation, shows our recent work, and ends with three priced options you can accept right on the page:\n\n' + salesUrl + '\n\nCall or text me at (506) 540-1052 any time.\n\nThanks,\nMackenzie\nPlus Ultra Roofing';
+  const subject = 'Your Roof Plan \u00B7 Plus Ultra \u00B7 ' + (payload.customer.name || '');
+  const esc = s => (s||'').replace(/'/g, '&#39;').replace(/"/g, '&quot;');
 
   mdl.innerHTML = `
     <div class="em-backdrop" onclick="closeLinkModal()"></div>
-    <div class="em-card" style="max-width:680px">
+    <div class="em-card" style="max-width:720px">
       <div class="em-head">
         <div>
-          <div class="em-title" style="color:#a78bfa">Client Proposal Link</div>
+          <div class="em-title" style="color:#a78bfa">Client Link \u00B7 Ready to Send</div>
           <div class="em-sub">Ref ${payload.refId} \u00B7 ${payload.customer.name || 'unknown'}</div>
         </div>
         <button class="em-x" onclick="closeLinkModal()">&times;</button>
       </div>
       <div class="em-body">
         <div class="em-row">
-          <label>SHAREABLE URL</label>
-          <input id="linkUrl" type="text" value="${url.replace(/"/g, '&quot;')}" readonly style="font-family:'Share Tech Mono',monospace;font-size:0.78em;color:#22d3ee"/>
+          <label style="color:#22d3ee">PRIMARY \u00B7 SALES PAGE (WARM-UP \u2192 PROPOSAL)</label>
+          <input id="linkUrl" type="text" value="${salesUrl.replace(/"/g, '&quot;')}" readonly style="font-family:'Share Tech Mono',monospace;font-size:0.78em;color:#22d3ee"/>
+          <div style="font-size:0.76em;color:rgba(200,220,255,0.5);margin-top:4px;line-height:1.5">What clients see first: 3rd-gen story, Darcy video, our work, testimonials \u2014 CTA button forwards them into the full priced proposal.</div>
         </div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin:14px 0 4px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin:14px 0 12px">
           <button class="btn primary" onclick="copyLinkUrl()"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>COPY LINK</button>
           <button class="btn ghost" onclick="openLinkInBrowser()"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>PREVIEW</button>
-          <button class="btn ghost" onclick="smsLinkTo('${(payload.customer.phone || '').replace(/'/g, '')}','${smsBody.replace(/'/g, '&#39;').replace(/"/g, '&quot;')}')"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>SMS</button>
-          <button class="btn ghost" onclick="emailLinkTo('${(payload.customer.email || '').replace(/'/g, '')}','${subject.replace(/'/g, '&#39;')}','${emailBody.replace(/'/g, '&#39;').replace(/"/g, '&quot;').replace(/\\n/g, '\\\\n')}')"><svg viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22 6 12 13 2 6"/></svg>GMAIL</button>
+          <button class="btn ghost" onclick="smsLinkTo('${esc(payload.customer.phone || '')}','${esc(smsBody)}')"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>SMS</button>
+          <button class="btn ghost" onclick="emailLinkTo('${esc(payload.customer.email || '')}','${esc(subject)}','${esc(emailBody).replace(/\n/g, '\\\\n')}')"><svg viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22 6 12 13 2 6"/></svg>GMAIL</button>
+        </div>
+        <div class="em-row">
+          <label>DIRECT \u00B7 PROPOSAL ONLY (SKIPS WARM-UP)</label>
+          <input id="linkUrlDirect" type="text" value="${proposalUrl.replace(/"/g, '&quot;')}" readonly style="font-family:'Share Tech Mono',monospace;font-size:0.76em;color:rgba(200,220,255,0.6)"/>
+          <div style="font-size:0.74em;color:rgba(200,220,255,0.4);margin-top:4px">Use for repeat customers who've already been through the sales page.</div>
         </div>
         <div style="padding:12px 14px;background:rgba(74,222,128,0.07);border:1px solid rgba(74,222,128,0.25);border-radius:9px;font-size:0.82em;line-height:1.55;margin-top:12px">
           <b style="color:#4ade80;font-family:Orbitron,sans-serif;font-size:0.74em;letter-spacing:1.2px">WHEN THEY ACCEPT</b><br/>
-          You get an instant email at <code style="color:#22d3ee;font-family:'Share Tech Mono',monospace">plusultraroofing@gmail.com</code> with the package + total + timestamp. The Ryujin dashboard also logs it to your accepted-proposals pile.
+          You get an instant email at <code style="color:#22d3ee;font-family:'Share Tech Mono',monospace">plusultraroofing@gmail.com</code> with the package + total + timestamp. Ryujin logs it to your accepted-proposals pile.
         </div>
       </div>
       <div class="em-foot">
