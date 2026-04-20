@@ -1136,6 +1136,18 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS3DRenderer, CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
 
+// ── Perf detection: mobile, reduced-motion, or save-data mode gets the cheap path ──
+const LOW_PERF = (
+  window.innerWidth < 900 ||
+  (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) ||
+  (navigator.connection && (navigator.connection.saveData || /2g/.test(navigator.connection.effectiveType || '')))
+);
+if (LOW_PERF) {
+  // Kill the 18MB background video on low-perf devices — the CSS bg gradient is plenty
+  const bgv = document.getElementById('bg-dragon');
+  if (bgv) { bgv.pause(); bgv.removeAttribute('autoplay'); bgv.style.display = 'none'; }
+}
+
 // ──────────────────────────────────────────
 // CONFIG
 // ──────────────────────────────────────────
@@ -1167,9 +1179,9 @@ const clock = new THREE.Clock();
 
 // WebGL scene (background effects)
 const bgCanvas = document.getElementById('bg-canvas');
-const bgRenderer = new THREE.WebGLRenderer({ canvas: bgCanvas, antialias: true, alpha: true });
+const bgRenderer = new THREE.WebGLRenderer({ canvas: bgCanvas, antialias: !LOW_PERF, alpha: true, powerPreference: LOW_PERF ? 'low-power' : 'default' });
 bgRenderer.setSize(window.innerWidth, window.innerHeight);
-bgRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+bgRenderer.setPixelRatio(Math.min(window.devicePixelRatio, LOW_PERF ? 1 : 1.5));
 const bgScene = new THREE.Scene();
 
 // CSS3D scene (panels)
@@ -1195,7 +1207,7 @@ controls.enableZoom = false;  // we handle wheel ourselves for snap-zoom
 controls.minDistance = 100;
 controls.maxDistance = 820;
 controls.enablePan = false;
-controls.autoRotate = true;
+controls.autoRotate = !LOW_PERF;
 controls.autoRotateSpeed = 0.3;
 controls.target.set(0, 0, 0);
 
@@ -1203,8 +1215,8 @@ controls.target.set(0, 0, 0);
 // BACKGROUND: STARFIELD + PARTICLES
 // ──────────────────────────────────────────
 
-// Stars
-const starCount = 2000;
+// Stars — scaled down on low-perf devices (mobile, reduced-motion, save-data)
+const starCount = LOW_PERF ? 400 : 2000;
 const starGeo = new THREE.BufferGeometry();
 const starPos = new Float32Array(starCount * 3);
 const starSizes = new Float32Array(starCount);
@@ -1596,17 +1608,23 @@ window.toggleAutoRotate = toggleAutoRotate;
 })();
 
 // ──────────────────────────────────────────
-// OPENING CUTSCENE — flash + wordmark on every load. Cleans up so nothing blocks clicks.
+// OPENING CUTSCENE — plays once per session, skipped on repeats + low-perf devices.
 // ──────────────────────────────────────────
 (function openingCutscene(){
   const flash = document.getElementById('entry-flash');
   const mark = document.getElementById('entry-mark');
   if (!flash || !mark) return;
+  const seen = sessionStorage.getItem('ry_cc_cutscene_seen');
+  if (seen || LOW_PERF) {
+    // Skip entirely — tear down now so nothing stays on screen or intercepts clicks
+    flash.remove(); mark.remove();
+    return;
+  }
+  sessionStorage.setItem('ry_cc_cutscene_seen', '1');
   requestAnimationFrame(() => {
     flash.classList.add('fire');
     mark.classList.add('fire');
   });
-  // After animation completes, remove the elements entirely so they can never intercept anything
   setTimeout(() => { flash.remove(); mark.remove(); }, 3000);
 })();
 
