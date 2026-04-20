@@ -131,6 +131,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .toast.ok{background:rgba(16,50,16,0.92);color:var(--green);border:1px solid rgba(74,222,128,0.15)}
 .toast.err{background:rgba(50,16,16,0.92);color:var(--red);border:1px solid rgba(248,113,113,0.15)}
 .toast.info{background:rgba(16,24,50,0.92);color:var(--cyan);border:1px solid rgba(34,211,238,0.15)}
+.toast.warn{background:rgba(50,32,8,0.92);color:var(--orange);border:1px solid rgba(251,146,60,0.2)}
 @keyframes toastIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 
 /* ─── User Selector ─── */
@@ -350,10 +351,151 @@ async function renderTasks(c) {
   c.innerHTML = html;
 }
 
+// ═══ Checklist templates — auto-pick by task title ═══
+const CHECKLIST_TEMPLATES = {
+  install: [
+    { id:'setup',     label:'Setup: tarps, landscape protection, dumpster positioned', photoReq:true },
+    { id:'tearoff',   label:'Tear-off complete, deck exposed',                         photoReq:true },
+    { id:'deck',      label:'Deck inspected — rotted boards replaced',                 photoReq:true },
+    { id:'icewater',  label:'Ice & water shield at eaves + valleys',                   photoReq:true },
+    { id:'underlay',  label:'Synthetic underlayment laid + stapled',                   photoReq:false },
+    { id:'dripedge',  label:'Drip edge + starter strip installed',                     photoReq:false },
+    { id:'shingles',  label:'Shingles installed per manufacturer pattern',             photoReq:true },
+    { id:'ridge',     label:'Ridge cap + vents sealed',                                photoReq:true },
+    { id:'cleanup',   label:'Magnetic sweep + debris removed',                         photoReq:true }
+  ],
+  repair: [
+    { id:'assess',    label:'Damage assessed — before photos',                         photoReq:true },
+    { id:'materials', label:'Materials matched (color / profile)',                     photoReq:false },
+    { id:'repair',    label:'Repair complete — after photo',                           photoReq:true },
+    { id:'seal',      label:'Sealed + flashed',                                        photoReq:true },
+    { id:'cleanup',   label:'Site cleaned',                                            photoReq:false }
+  ],
+  cleanup: [
+    { id:'debris',    label:'Debris bagged + dumpster loaded',                         photoReq:true },
+    { id:'magnet',    label:'Magnetic sweep completed',                                photoReq:true },
+    { id:'walk',      label:'Walkthrough with customer',                               photoReq:false },
+    { id:'final',     label:'Final drive-by photos',                                   photoReq:true }
+  ],
+  inspect: [
+    { id:'arrive',    label:'Arrived on site',                                         photoReq:false },
+    { id:'measure',   label:'Measurements (SQ, pitch, complexity)',                    photoReq:true },
+    { id:'damage',    label:'Damage photos + notes',                                   photoReq:true },
+    { id:'report',    label:'Report sent to estimator',                                photoReq:false }
+  ],
+  caulk: [
+    { id:'clean',     label:'Surfaces cleaned + primed',                               photoReq:false },
+    { id:'apply',     label:'Caulk applied — smooth bead',                             photoReq:true },
+    { id:'tool',      label:'Tooled + neat',                                           photoReq:true }
+  ],
+  doors: [
+    { id:'map',       label:'Area mapped — start addr',                                photoReq:false },
+    { id:'doors',     label:'Doors knocked',                                           photoReq:false },
+    { id:'leads',     label:'Leads logged in Ryujin',                                  photoReq:false },
+    { id:'end',       label:'End addr + quit time',                                    photoReq:false }
+  ],
+  default: [
+    { id:'start',     label:'On site — task started',                                  photoReq:false },
+    { id:'progress',  label:'Progress photo for records',                              photoReq:true },
+    { id:'done',      label:'Task complete',                                           photoReq:false }
+  ]
+};
+
+function pickTemplate(title) {
+  const t = (title || '').toLowerCase();
+  if (/install|reroof|tear[-\s]?off|shingle/.test(t)) return 'install';
+  if (/caulk|mansard|seal/.test(t)) return 'caulk';
+  if (/repair|leak|fix|patch/.test(t)) return 'repair';
+  if (/cleanup|debris|magnet|sweep/.test(t)) return 'cleanup';
+  if (/inspect|measure|assess|eagleview|walkthrough/.test(t)) return 'inspect';
+  if (/canvass|door|lead/.test(t)) return 'doors';
+  return 'default';
+}
+
+function loadChecklist(taskId) {
+  try { return JSON.parse(localStorage.getItem('ryujin_checklist_' + taskId) || '{}'); }
+  catch(e){ return {}; }
+}
+function saveChecklist(taskId, state) {
+  try { localStorage.setItem('ryujin_checklist_' + taskId, JSON.stringify(state)); } catch(e){}
+}
+
+function renderChecklist(task, templateKey) {
+  const items = CHECKLIST_TEMPLATES[templateKey] || CHECKLIST_TEMPLATES.default;
+  const state = loadChecklist(task.id);
+  const done = items.filter(i => state[i.id]?.done).length;
+  const blocking = items.filter(i => i.photoReq && !state[i.id]?.photoUrl).length;
+
+  const rows = items.map(i => {
+    const s = state[i.id] || {};
+    const hasPhoto = !!s.photoUrl;
+    const canCheck = !i.photoReq || hasPhoto;
+    return `<div class="check-item">
+      <div class="check-box ${s.done?'checked':''}" onclick="toggleCheckItem('${task.id}','${i.id}',${canCheck})"></div>
+      <div style="flex:1">
+        <div class="check-label ${s.done?'done':''}">${esc(i.label)}</div>
+        ${i.photoReq ? `<div style="display:flex;gap:8px;margin-top:6px;align-items:center">
+          ${hasPhoto
+            ? `<img src="${esc(s.photoUrl)}" style="width:48px;height:48px;border-radius:6px;object-fit:cover;border:1px solid var(--border)"><span style="font-size:0.7em;color:var(--green)">Photo attached</span>`
+            : `<button class="btn btn-outline" style="padding:6px 10px;font-size:0.72em;width:auto" onclick="document.getElementById('photoFor_${i.id}').click()">📷 Photo required</button>`
+          }
+          <input type="file" id="photoFor_${i.id}" accept="image/*" capture="environment" style="display:none" onchange="uploadChecklistPhoto('${task.id}','${i.id}','${task.project?.id||''}',this.files)">
+        </div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  return `<div class="panel" style="margin-top:14px">
+    <div class="panel-title">Checklist · ${done}/${items.length} · ${templateKey}</div>
+    ${rows}
+    ${blocking ? `<div style="font-size:0.72em;color:var(--orange);margin-top:10px">${blocking} step${blocking>1?'s':''} need photo before check</div>` : ''}
+  </div>`;
+}
+
+function toggleCheckItem(taskId, itemId, canCheck) {
+  if (!canCheck) { toast('Photo required first','warn'); return; }
+  const state = loadChecklist(taskId);
+  state[itemId] = { ...(state[itemId]||{}), done: !state[itemId]?.done };
+  saveChecklist(taskId, state);
+  showTask(taskId);
+}
+
+async function uploadChecklistPhoto(taskId, itemId, projectId, fileList) {
+  if (!fileList || !fileList.length) return;
+  const f = fileList[0];
+  toast('Uploading photo...','info');
+  // Store data URL locally for instant preview (survives offline)
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    const dataUrl = e.target.result;
+    const state = loadChecklist(taskId);
+    state[itemId] = { ...(state[itemId]||{}), photoUrl: dataUrl };
+    saveChecklist(taskId, state);
+    showTask(taskId);
+    // Fire-and-forget upload to /api/files if we have a project
+    if (projectId) {
+      try {
+        const form = new FormData();
+        form.append('project_id', projectId);
+        form.append('uploaded_by', currentUser?.id || '');
+        form.append('category', 'checklist');
+        form.append('caption', 'checklist:' + itemId);
+        form.append('files', f);
+        await fetch(API + '/files?tenant=' + TENANT, { method: 'POST', body: form });
+      } catch(e) { /* offline — local copy remains */ }
+    }
+  };
+  reader.readAsDataURL(f);
+}
+
 // ═══ Task Detail ═══
 async function showTask(id) {
   const c = document.getElementById('content');
   const t = await api(`/tickets?id=${id}`);
+  const tmpl = pickTemplate(t.title);
+  const state = loadChecklist(t.id);
+  const items = CHECKLIST_TEMPLATES[tmpl] || CHECKLIST_TEMPLATES.default;
+  const allDone = items.every(i => state[i.id]?.done);
 
   c.innerHTML = `
     <div class="detail-back" onclick="render()">← Back</div>
@@ -370,15 +512,20 @@ async function showTask(id) {
       </div>
     </div>
     ${t.description?`<div class="panel" style="margin-top:14px"><div class="panel-title">Details</div><div style="font-size:0.88em;line-height:1.7;color:rgba(255,255,255,0.75)">${esc(t.description)}</div></div>`:''}
+    ${renderChecklist(t, tmpl)}
     <div style="display:flex;gap:8px;margin-top:16px">
       ${t.status==='open'?`<button class="btn btn-primary" style="flex:1" onclick="taskAction('${t.id}','acknowledge')">Start Task</button>`:''}
-      ${t.status==='active'?`<button class="btn btn-success" style="flex:1" onclick="taskAction('${t.id}','complete')">Complete</button>`:''}
+      ${t.status==='active'?`<button class="btn ${allDone?'btn-success':'btn-outline'}" style="flex:1" onclick="taskAction('${t.id}','complete',${allDone})">${allDone?'Complete':'Finish Checklist First'}</button>`:''}
       <button class="btn btn-outline" style="flex:1" onclick="render()">Back</button>
     </div>
   `;
 }
 
-async function taskAction(id, action) {
+async function taskAction(id, action, allowed) {
+  if (action === 'complete' && allowed === false) {
+    toast('Finish checklist first','warn');
+    return;
+  }
   await api('/tickets',{method:'PUT',body:JSON.stringify({id,action})});
   toast(action==='complete'?'Task completed!':'Task started','ok');
   render();

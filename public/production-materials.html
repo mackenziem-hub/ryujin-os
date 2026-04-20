@@ -186,20 +186,78 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:var(--tex
 <script src="assets/ryujin-xp.js"></script>
 <script src="assets/ryujin-mode-badge.js"></script>
 <script>
-// Sample POs
-const POS = [
+// ── POs + Vendors: localStorage-backed with seed fallback ──
+const POS_KEY = 'ry_v1_pos_v1';
+const VENDORS_KEY = 'ry_v1_vendors_v1';
+
+const SEED_POS = [
   { vendor: 'CERTAINTEED', status: 'shipped', job: 'Faulkner — Moire Black · 24 SQ', meta: 'PO #PU-0419-01 · ETA Tue', total: 4200 },
   { vendor: 'STERLING', status: 'open', job: 'Summerhill gutters — white 5"', meta: 'PO #PU-0419-02 · pickup Wed', total: 980 },
   { vendor: 'HOME HARDWARE', status: 'open', job: 'Peach redeck — 12 OSB sheets', meta: 'PO #PU-0420-03 · ordering Apr 20', total: 780 },
   { vendor: 'CERTAINTEED', status: 'delivered', job: 'Stock restock — misc flashing', meta: 'PO #PU-0416-04 · received Apr 17', total: 1240 }
 ];
 
-const VENDORS = [
+const SEED_VENDORS = [
   { name: 'CertainTeed', tag: 'PRIMARY', meta: 'Shingles · ice guard · ridge · certified partner' },
   { name: 'Sterling — John Sterling', tag: 'PRIMARY', meta: 'Gutters · downspouts · accessories' },
   { name: 'Home Hardware', tag: 'BACKUP', meta: 'OSB · lumber · fasteners · misc' },
   { name: 'Roofmart', tag: 'BACKUP', meta: 'Alternate shingle stock · emergency runs' }
 ];
+
+function loadPOs(){
+  try { const r = localStorage.getItem(POS_KEY); if (r) return JSON.parse(r); } catch(e){}
+  savePOs(SEED_POS); return [...SEED_POS];
+}
+function savePOs(list){ try { localStorage.setItem(POS_KEY, JSON.stringify(list)); } catch(e){} }
+
+function loadVendors(){
+  try { const r = localStorage.getItem(VENDORS_KEY); if (r) return JSON.parse(r); } catch(e){}
+  saveVendors(SEED_VENDORS); return [...SEED_VENDORS];
+}
+function saveVendors(list){ try { localStorage.setItem(VENDORS_KEY, JSON.stringify(list)); } catch(e){} }
+
+let POS = loadPOs();
+let VENDORS = loadVendors();
+
+function cyclePOStatus(idx){
+  const order = ['open','shipped','delivered'];
+  const cur = POS[idx].status;
+  POS[idx].status = order[(order.indexOf(cur) + 1) % order.length];
+  savePOs(POS);
+  renderRight();
+}
+function deletePO(idx){
+  if (!confirm('Delete PO for ' + POS[idx].vendor + '?')) return;
+  POS.splice(idx, 1);
+  savePOs(POS);
+  renderRight();
+}
+function newPOPrompt(){
+  const job = currentJob();
+  const defVendor = job ? 'CertainTeed' : '';
+  const vendor = (prompt('Vendor?', defVendor) || '').toUpperCase(); if (!vendor) return;
+  const jobDesc = prompt('Job / description?', job ? job.client + ' — ' + (job.meta || '') : '') || '';
+  const poNum = prompt('PO number?', 'PU-' + new Date().toISOString().slice(5,10).replace('-','') + '-' + String(POS.length + 1).padStart(2,'0')) || '';
+  const eta = prompt('ETA / notes?', 'ETA this week') || '';
+  const total = parseFloat(prompt('Total ($)?', '0')) || 0;
+  POS.unshift({ vendor, status: 'open', job: jobDesc, meta: 'PO #' + poNum + (eta ? ' · ' + eta : ''), total });
+  savePOs(POS);
+  renderRight();
+}
+function newVendorPrompt(){
+  const name = prompt('Vendor name?'); if (!name) return;
+  const tag = (prompt('Tag (PRIMARY / BACKUP / SPECIAL)?', 'BACKUP') || 'BACKUP').toUpperCase();
+  const meta = prompt('What they supply?', '') || '';
+  VENDORS.push({ name, tag, meta });
+  saveVendors(VENDORS);
+  renderRight();
+}
+function deleteVendor(idx){
+  if (!confirm('Remove vendor ' + VENDORS[idx].name + '?')) return;
+  VENDORS.splice(idx, 1);
+  saveVendors(VENDORS);
+  renderRight();
+}
 
 // ── Auto-generate a Plus Ultra material list for a given WO based on SQ + tier ──
 function generateMatListFromWO(wo){
@@ -410,21 +468,31 @@ function setTab(tab){
 function renderRight(){
   const el = document.getElementById('rightContent');
   if (state.tab === 'pos') {
-    el.innerHTML = POS.map(p => `
-      <div class="po-card">
-        <div class="po-head"><div class="po-vendor">${p.vendor}</div><div class="po-status ${p.status}">${p.status.toUpperCase()}</div></div>
-        <div class="po-job">${p.job}</div>
-        <div class="po-meta">${p.meta}</div>
-        <div class="po-total"><span class="l">TOTAL</span><span class="v">${fmt(p.total)}</span></div>
-      </div>
-    `).join('');
+    el.innerHTML = `
+      <button class="btn ghost" style="width:100%;margin-bottom:10px" onclick="newPOPrompt()">+ NEW PO</button>
+      ${POS.length === 0 ? '<div style="text-align:center;padding:20px;color:var(--text-dim);font-size:0.85em">No POs yet</div>' : ''}
+      ${POS.map((p, idx) => `
+        <div class="po-card">
+          <div class="po-head">
+            <div class="po-vendor">${p.vendor}</div>
+            <div class="po-status ${p.status}" style="cursor:pointer" onclick="cyclePOStatus(${idx})" title="Tap to advance status">${p.status.toUpperCase()}</div>
+          </div>
+          <div class="po-job">${p.job || ''}</div>
+          <div class="po-meta">${p.meta || ''}</div>
+          <div class="po-total"><span class="l">TOTAL</span><span class="v">${fmt(p.total)}</span></div>
+          <div style="text-align:right;margin-top:6px"><span style="font-size:0.7em;color:var(--text-dim);cursor:pointer" onclick="deletePO(${idx})">× delete</span></div>
+        </div>
+      `).join('')}`;
   } else if (state.tab === 'vendors') {
-    el.innerHTML = VENDORS.map(v => `
-      <div class="po-card">
-        <div class="po-head"><div class="po-vendor">${v.name}</div><div class="po-status open">${v.tag}</div></div>
-        <div class="po-meta">${v.meta}</div>
-      </div>
-    `).join('');
+    el.innerHTML = `
+      <button class="btn ghost" style="width:100%;margin-bottom:10px" onclick="newVendorPrompt()">+ ADD VENDOR</button>
+      ${VENDORS.map((v, idx) => `
+        <div class="po-card">
+          <div class="po-head"><div class="po-vendor">${v.name}</div><div class="po-status open">${v.tag}</div></div>
+          <div class="po-meta">${v.meta}</div>
+          <div style="text-align:right;margin-top:6px"><span style="font-size:0.7em;color:var(--text-dim);cursor:pointer" onclick="deleteVendor(${idx})">× remove</span></div>
+        </div>
+      `).join('')}`;
   } else {
     const openTotal = POS.filter(p => p.status !== 'delivered').reduce((a, p) => a + p.total, 0);
     const deliveredTotal = POS.filter(p => p.status === 'delivered').reduce((a, p) => a + p.total, 0);
@@ -473,22 +541,38 @@ function exportJobList(){
 function printList(){ window.print(); }
 
 function createPO(){
-  const job = currentJob();
+  const job = currentJob(); if (!job) return;
   const byVendor = {};
   job.items.forEach((it, idx) => {
     const key = job.id + ':' + idx;
     if (state.checked[key]) return; // skip already-received
-    (byVendor[it.vendor] = byVendor[it.vendor] || []).push(it);
+    (byVendor[it.vendor || 'Unknown'] = byVendor[it.vendor || 'Unknown'] || []).push(it);
   });
   const vendors = Object.keys(byVendor);
   if (!vendors.length) { alert('All items already received — nothing to order.'); return; }
-  let msg = 'CREATE PO FOR:\n\n';
-  vendors.forEach(v => {
+
+  const summary = vendors.map(v => {
     const total = byVendor[v].reduce((a, it) => a + it.qty * it.cost, 0);
-    msg += v + ': ' + byVendor[v].length + ' lines · ' + fmt(total) + '\n';
+    return v + ': ' + byVendor[v].length + ' lines · ' + fmt(total);
+  }).join('\n');
+  if (!confirm('Create ' + vendors.length + ' PO(s)?\n\n' + summary)) return;
+
+  const today = new Date().toISOString().slice(5,10).replace('-','');
+  vendors.forEach((v, i) => {
+    const lines = byVendor[v];
+    const total = lines.reduce((a, it) => a + it.qty * it.cost, 0);
+    POS.unshift({
+      vendor: v.toUpperCase(),
+      status: 'open',
+      job: job.client + ' — ' + lines.length + ' lines',
+      meta: 'PO #PU-' + today + '-' + String(POS.length + i + 1).padStart(2,'0') + ' · auto-generated',
+      total: Math.round(total)
+    });
   });
-  msg += '\nThis would generate ' + vendors.length + ' POs. Build PO-send flow next.';
-  alert(msg);
+  savePOs(POS);
+  setTab('pos');
+  toast && toast(vendors.length + ' PO(s) created','ok');
+  alert(vendors.length + ' PO(s) created — see Open POs tab.');
 }
 
 function openWorkOrder(woNum){
@@ -508,6 +592,11 @@ window.printList = printList;
 window.createPO = createPO;
 window.openWorkOrder = openWorkOrder;
 window.goBack = goBack;
+window.cyclePOStatus = cyclePOStatus;
+window.deletePO = deletePO;
+window.newPOPrompt = newPOPrompt;
+window.newVendorPrompt = newVendorPrompt;
+window.deleteVendor = deleteVendor;
 
 renderJobs();
 renderMatList();
