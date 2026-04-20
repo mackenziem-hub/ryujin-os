@@ -239,7 +239,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg-deep);color:va
         </div>
 
         <div class="panel">
-          <div class="panel-head"><div class="panel-title">PIPELINE · BY STAGE</div><div class="panel-badge">$410K OPEN</div></div>
+          <div class="panel-head"><div class="panel-title">PIPELINE · BY STAGE</div><div class="panel-badge" id="liveBadge">$410K OPEN</div></div>
+          <div id="liveStages" style="padding:8px 12px;font-family:'Share Tech Mono',monospace;font-size:0.72em;color:var(--text-dim);letter-spacing:0.8px;border-bottom:1px solid rgba(34,211,238,0.08);display:none"></div>
           <div class="panel-body">
             <div class="pipeline-stages">
               <div class="stage-col"><div class="stage-head">NEW LEAD <span class="cnt">12</span></div>
@@ -316,6 +317,37 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg-deep);color:va
 <script src="assets/ryujin-mode-badge.js"></script>
 <script>
 function toggleDeal(id){document.querySelectorAll('.deal-card').forEach(c=>c.classList.toggle('active',c.dataset.id===id&&!c.classList.contains('active')))}
+
+// Live pipeline hydration — pulls real estimate counts from Supabase and
+// displays a strip above the hardcoded showcase columns. Silent if offline.
+async function hydratePipeline(){
+  try {
+    const r = await fetch('/api/estimates?tenant=plus-ultra&limit=200', { headers: { 'x-tenant-id': 'plus-ultra' } });
+    if (!r.ok) return;
+    const { estimates } = await r.json();
+    if (!Array.isArray(estimates)) return;
+    const byStatus = {};
+    let openTotal = 0, wonTotal = 0;
+    estimates.forEach(e => {
+      const st = e.status || 'draft';
+      byStatus[st] = (byStatus[st] || 0) + 1;
+      const v = Number(e.total) || 0;
+      if (['draft','sent','viewed'].includes(st)) openTotal += v;
+      if (st === 'accepted' || st === 'signed' || st === 'won') wonTotal += v;
+    });
+    const strip = Object.entries(byStatus)
+      .map(([s,n]) => `<b style="color:var(--accent)">${s.toUpperCase()}</b> ${n}`)
+      .join(' &nbsp;·&nbsp; ');
+    const el = document.getElementById('liveStages');
+    if (el && strip) {
+      el.innerHTML = '🗄 LIVE · ' + strip + (estimates.length ? ` &nbsp;·&nbsp; ${estimates.length} total` : '');
+      el.style.display = 'block';
+    }
+    const badge = document.getElementById('liveBadge');
+    if (badge && openTotal) badge.textContent = '$' + Math.round(openTotal/1000) + 'K OPEN';
+  } catch(e) { /* offline — keep demo */ }
+}
+hydratePipeline();
 
 // Deal contacts for actions
 const dealContacts = {

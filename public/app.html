@@ -414,12 +414,23 @@ function pickTemplate(title) {
   return 'default';
 }
 
+// Checklist state lives on the ticket row in Supabase (tickets.checklist_state JSONB)
+// — we mirror to localStorage for instant render + offline tolerance.
+// `currentTaskChecklist` is hydrated from the latest api/tickets?id= payload.
+let currentTaskChecklist = null;
 function loadChecklist(taskId) {
+  if (currentTaskChecklist) return currentTaskChecklist;
   try { return JSON.parse(localStorage.getItem('ryujin_checklist_' + taskId) || '{}'); }
   catch(e){ return {}; }
 }
 function saveChecklist(taskId, state) {
+  currentTaskChecklist = state;
   try { localStorage.setItem('ryujin_checklist_' + taskId, JSON.stringify(state)); } catch(e){}
+  // Fire-and-forget sync to Supabase — offline failures are non-fatal; localStorage still wins locally
+  api('/tickets', {
+    method: 'PUT',
+    body: JSON.stringify({ id: taskId, checklist_state: state })
+  }).catch(() => {});
 }
 
 function renderChecklist(task, templateKey) {
@@ -495,6 +506,14 @@ async function showTask(id) {
   const c = document.getElementById('content');
   const t = await api(`/tickets?id=${id}`);
   const tmpl = pickTemplate(t.title);
+  // Hydrate the in-memory checklist state from the ticket row (DB wins over local mirror
+  // when server returned something non-empty). Falls back to localStorage when offline.
+  if (t.checklist_state && typeof t.checklist_state === 'object' && Object.keys(t.checklist_state).length) {
+    currentTaskChecklist = t.checklist_state;
+    try { localStorage.setItem('ryujin_checklist_' + t.id, JSON.stringify(t.checklist_state)); } catch(e){}
+  } else {
+    currentTaskChecklist = null;
+  }
   const state = loadChecklist(t.id);
   const items = CHECKLIST_TEMPLATES[tmpl] || CHECKLIST_TEMPLATES.default;
   const allDone = items.every(i => state[i.id]?.done);

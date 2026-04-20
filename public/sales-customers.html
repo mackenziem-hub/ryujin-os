@@ -157,7 +157,7 @@ RyujinTutor.register('customers', [
 ]);
 document.addEventListener('keydown', e => { if ((e.key === '?' || e.key === 'h' || e.key === 'H') && window.RyujinTutor) { e.preventDefault(); RyujinTutor.start('customers'); } });
 
-const contacts = [
+let contacts = [
   { id:'partridge', name:'Robert Partridge', initials:'RP', status:'open', value:'$44.4K',
     meta:'Moncton · asphalt + mansard', phone:'(506) 555-0144', email:'rpartridge@example.com', address:'32 Oak St, Moncton NB',
     firstTouch:'Apr 9', lastTouch:'3 hr ago', rep:'Mackenzie',
@@ -365,6 +365,46 @@ Ryujin.init({
 renderList();
 renderDetail();
 if(new URLSearchParams(location.search).has('embed'))document.documentElement.classList.add('embed-mode');
+
+// ── Live hydration from Supabase ──
+// Fetch /api/customers, merge with the demo list (real contacts first so they
+// show up at top), and re-render. Offline? keep the hardcoded showcase.
+async function hydrateCustomers(){
+  try {
+    const r = await fetch('/api/customers?tenant=plus-ultra&limit=100', { headers: { 'x-tenant-id': 'plus-ultra' } });
+    if (!r.ok) return;
+    const { customers } = await r.json();
+    if (!Array.isArray(customers) || !customers.length) return;
+    const real = customers.map(c => {
+      const name = c.full_name || c.name || 'Unnamed';
+      const parts = name.split(/\s+/).filter(Boolean);
+      const initials = ((parts[0]||'?')[0] + (parts[1]||'')[0] || '?').toUpperCase();
+      const statusMap = { 'lead':'open','quoted':'open','sold':'won','lost':'cold','cold':'cold' };
+      return {
+        id: 'crm-' + c.id,
+        name,
+        initials,
+        status: statusMap[c.status] || 'open',
+        value: c.estimated_value ? '$' + Math.round(c.estimated_value/1000) + 'K' : '—',
+        meta: [c.city, c.notes].filter(Boolean).join(' · ') || 'Supabase contact',
+        phone: c.phone || '',
+        email: c.email || '',
+        address: c.address || '',
+        firstTouch: c.created_at ? new Date(c.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—',
+        lastTouch: c.updated_at ? new Date(c.updated_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—',
+        rep: 'Mackenzie',
+        totalJobs: 0,
+        lifetimeValue: c.estimated_value ? '$' + Math.round(c.estimated_value/1000) + 'K' : '—',
+        closeProb: '—',
+        logs: [{ type:'note', date: c.created_at ? new Date(c.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—', msg: 'Imported from CRM — log first interaction.' }]
+      };
+    });
+    // Real contacts first, then the demo showcase so a new user still sees narrative data
+    contacts = [...real, ...contacts];
+    renderList();
+  } catch(e) { /* offline — keep demo */ }
+}
+hydrateCustomers();
 </script>
 </body>
 </html>

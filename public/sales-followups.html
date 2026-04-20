@@ -407,6 +407,51 @@ document.querySelectorAll('.filter-btn').forEach(btn => {
 document.addEventListener('keydown', e => { if (e.key === 'Escape') window.location.href='sales.html'; });
 document.addEventListener('contextmenu', e => { e.preventDefault(); window.location.href='sales.html'; });
 if(new URLSearchParams(location.search).has('embed'))document.documentElement.classList.add('embed-mode');
+
+// ── Surface CRM contacts that need follow-up ──
+// Pulls /api/customers for tenant and prepends cards for any contact with
+// status lead/quoted that hasn't been touched in 7+ days.
+async function hydrateFromCRM(){
+  try {
+    const r = await fetch('/api/customers?tenant=plus-ultra&limit=200', { headers: { 'x-tenant-id': 'plus-ultra' } });
+    if (!r.ok) return;
+    const { customers } = await r.json();
+    if (!Array.isArray(customers) || !customers.length) return;
+    const now = Date.now();
+    const candidates = customers.filter(c => {
+      if (!['lead','quoted','contacted'].includes((c.status||'').toLowerCase())) return false;
+      const last = c.updated_at || c.created_at;
+      if (!last) return false;
+      const days = (now - new Date(last).getTime()) / 86400000;
+      return days >= 7;
+    }).slice(0, 6);
+    if (!candidates.length) return;
+    const list = document.getElementById('fuList');
+    const header = document.createElement('div');
+    header.style.cssText = 'font-family:Share Tech Mono,monospace;font-size:0.7em;color:var(--accent);letter-spacing:1.5px;padding:4px 6px 8px;opacity:0.85';
+    header.textContent = '⟨ CRM · NEEDS TOUCH ⟩ ' + candidates.length + ' contacts';
+    list.prepend(header);
+    candidates.forEach(c => {
+      const days = Math.round((now - new Date(c.updated_at || c.created_at).getTime()) / 86400000);
+      const card = document.createElement('div');
+      card.className = 'fu-card';
+      card.dataset.id = 'crm-' + c.id;
+      const name = c.full_name || c.name || 'Unnamed';
+      card.innerHTML = `<div class="fu-head">
+        <div class="fu-left"><div class="fu-badge ${days>14?'overdue':'soon'}">${days}d cold</div><div class="fu-title">${name} · ${(c.status||'lead').toUpperCase()}</div></div>
+        <div class="fu-date">—</div>
+      </div>
+      <div class="fu-meta">from CRM · ${c.city||c.address||''}</div>
+      <div class="fu-actions">
+        ${c.phone ? `<button class="act-btn primary" onclick="event.stopPropagation();RyujinActions.call('${c.phone}')">CALL</button>` : ''}
+        ${c.email ? `<button class="act-btn ghost" onclick="event.stopPropagation();RyujinActions.gmail('${c.email}','Checking in','Hi ${name.split(' ')[0]},\\n\\n')">EMAIL</button>` : ''}
+        <button class="act-btn ghost" onclick="event.stopPropagation();window.location.href='sales-customers.html'">OPEN RECORD</button>
+      </div>`;
+      list.insertBefore(card, list.children[1]);
+    });
+  } catch(e) { /* offline */ }
+}
+hydrateFromCRM();
 </script>
 </body>
 </html>
