@@ -60,6 +60,25 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', stripMediaSrc);
   else stripMediaSrc();
 
+  // Visible HUD badge — small, bottom-right. Click to toggle + reload.
+  function mountBadge(){
+    if (document.getElementById('ry-perf-badge')) return;
+    const b = document.createElement('div');
+    b.id = 'ry-perf-badge';
+    const isLite = document.documentElement.classList.contains('perf-lite');
+    b.textContent = isLite ? 'LITE · ON' : 'LITE';
+    b.title = 'Toggle lite mode (reduces lag on slower GPUs) — reloads page';
+    if (!isLite) b.style.color = 'rgba(200,220,255,0.35)';
+    b.addEventListener('click', () => {
+      if (localStorage.getItem(LS) === '1') localStorage.removeItem(LS);
+      else localStorage.setItem(LS, '1');
+      location.reload();
+    });
+    document.body.appendChild(b);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountBadge);
+  else mountBadge();
+
   // Expose a toggle + a query for pages that want to branch behavior
   window.RyujinPerf = {
     isLite: () => document.documentElement.classList.contains('perf-lite'),

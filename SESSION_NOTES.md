@@ -1,3 +1,50 @@
+# Session notes — 2026-04-20
+
+Picked up on 2026-04-20 to finish the TODO list + an aggressive perf pass. Everything deployed to Vercel main.
+
+## What shipped today (2026-04-20)
+
+**Sales proposal polish**
+- New `exterior` system in SYSTEMS (Performance Shell Plus / Hardie Shell / Metal Shell, estimated pricing)
+- Customer picker now hydrates from `/api/customers?tenant=plus-ultra` on page load, falls back to demo set offline
+- Tour copy updated: 6 systems / 20 offers
+
+**Work-order seed corrections**
+- Donna Glen address: 115 North St → **95 Cornhill St** (user correction)
+- WO_KEY bumped v5 → v6 across workorders/jobs/materials/paysheet/classic so the fix picks up without a manual localStorage clear
+- Summerhill + Cornhill still at `sq: 0` pending EagleView reports
+
+**Crew app checklists (app.html)**
+- Seven templates: install / repair / cleanup / inspect / caulk / doors / default
+- Template auto-picks from task title keywords
+- Photo-required steps gate their own check until a photo is attached (camera input, data-URL local preview, fire-and-forget `/api/files` upload when project_id is present)
+- Task "Complete" button disabled until every checklist item is done
+- State saved per-task in localStorage (`ryujin_checklist_{taskId}`)
+
+**Materials hub (production-materials.html)**
+- POs + Vendors migrated from hardcoded const → localStorage (`ry_v1_pos_v1`, `ry_v1_vendors_v1`) with seed fallback
+- New PO / Add vendor / delete / tap-to-cycle status (open → shipped → delivered)
+- `createPO()` actually generates per-vendor POs from unchecked material lines now (was alert-only)
+
+**Jobs board tutor (production-jobs.html)**
+- Overdue action: Open WO to reschedule · Push 3 days · Push 7 days (all write back to `ry_v1_work_orders_v6`)
+- Draft action: Open WO · **Draft EagleView Gmail** (pre-filled compose URL with client address + scope)
+- Next action: Order materials (with `?wo=` pre-select) · Open WO · Pay sheet
+
+**Performance pass (THE big one)**
+- New `/assets/ryujin-perf.js` + `/assets/ryujin-perf.css` auto-loaded on all 45 pages
+- Detects low-perf signals (`prefers-reduced-motion`, saveData, `deviceMemory < 4`, `hardwareConcurrency <= 2`) AND runs a 3s FPS sampler — flips to lite mode automatically on sub-25fps
+- Visible `LITE` badge bottom-right on every page — click to toggle, persists to localStorage
+- URL `?perf=lite` (or `?perf=off`) to force
+- Lite mode strips backdrop-filter, kills infinite animations, hides grid-mask overlays, and on DOMContentLoaded **yanks the src from every autoplay video** so huge bg clips don't even download
+- Command-center: `bg-dragon` video element ships with no src, JS attaches it in 2s AFTER load only if not lite. Kills 18MB eager-download that was clobbering initial paint
+- Swapped Google Fonts `display=swap` → `display=optional` on all 45 pages — no more layout thrash on first paint if fonts are slow
+- All shared `ryujin-*.js` scripts now `defer` (tutor, mode, tenant, persist, api, scenario, xp, mode-badge, chat, search, subhub, prod-nav)
+- classic.html 60s refresh pauses when tab hidden + re-fires on `visibilitychange`
+- Weather fetches in classic + calendar got a **3s AbortController timeout** and read lat/lon/tz from `RyujinTenant.get()` (Moncton defaults)
+
+---
+
 # Session notes — 2026-04-19
 
 Everything committed to `main` and deployed on Vercel. Updated through the final autonomous pass.
