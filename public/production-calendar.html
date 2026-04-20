@@ -169,7 +169,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:var(--tex
         <div class="panel-sub">Next 14 days + weather</div>
       </div>
       <div class="panel-body">
-        <div class="panel-title" style="font-size:0.6em;margin-bottom:8px">3-DAY FORECAST</div>
+        <div class="panel-title" style="font-size:0.6em;margin-bottom:8px">5-DAY FORECAST · MONCTON</div>
         <div id="wxList"></div>
 
         <div class="panel-title" style="font-size:0.6em;margin:14px 0 8px">NEXT UP</div>
@@ -241,9 +241,81 @@ const DEFAULT_EVENTS = [
   { d: '2026-04-21', type: 'meet', t: 'Darcy 1:1 — pipeline review', m: 'Weekly check-in · 3 jobs need follow-up (Gould, Pardy scope, Faulkner details)' }
 ];
 
-// Weather forecast — empty until wired to a real API.
-// TODO: plug Environment Canada API keyed on tenant postal code.
-const WEATHER = [];
+// Weather forecast — Open-Meteo (free, no key) for Moncton NB.
+// Cached for 1 hour in localStorage so refresh doesn't hammer the API.
+// Default coords: Moncton NB. Future: pull from tenant postal code.
+let WEATHER = [];
+const WEATHER_CACHE_KEY = 'ry_v1_weather_moncton_v1';
+const WEATHER_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+// WMO weather code → { icon, label, severity }
+function wmoToInfo(code, precipPct){
+  // Reference: https://open-meteo.com/en/docs#weathervariables
+  const map = [
+    [0, 0, '☀', 'Clear', ''],
+    [1, 3, '⛅', 'Partly cloudy', ''],
+    [45, 48, '🌫', 'Foggy', 'warn'],
+    [51, 57, '🌧', 'Drizzle', 'warn'],
+    [61, 63, '🌧', 'Rain', precipPct > 60 ? 'alert' : 'warn'],
+    [65, 67, '🌧', 'Heavy rain', 'alert'],
+    [71, 75, '❄', 'Snow', 'alert'],
+    [77, 77, '❄', 'Snow grains', 'warn'],
+    [80, 81, '🌦', 'Rain showers', precipPct > 60 ? 'alert' : 'warn'],
+    [82, 82, '🌦', 'Heavy showers', 'alert'],
+    [85, 86, '❄', 'Snow showers', 'alert'],
+    [95, 99, '⛈', 'Thunderstorm', 'alert']
+  ];
+  for (const [lo, hi, icon, label, cls] of map) {
+    if (code >= lo && code <= hi) return { icon, label, cls };
+  }
+  return { icon: '—', label: 'Unknown', cls: '' };
+}
+
+async function loadWeather(){
+  // Try cache first
+  try {
+    const cached = JSON.parse(localStorage.getItem(WEATHER_CACHE_KEY) || 'null');
+    if (cached && cached.at && (Date.now() - cached.at) < WEATHER_CACHE_TTL && Array.isArray(cached.data)) {
+      WEATHER = cached.data;
+      if (typeof renderSidebar === 'function') renderSidebar();
+      return;
+    }
+  } catch(e){}
+
+  // Moncton NB · 46.088, -64.779
+  const url = 'https://api.open-meteo.com/v1/forecast?latitude=46.088&longitude=-64.779&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=America/Moncton&forecast_days=5';
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('weather api ' + res.status);
+    const json = await res.json();
+    const daily = json.daily || {};
+    const times = daily.time || [];
+    const codes = daily.weathercode || [];
+    const maxes = daily.temperature_2m_max || [];
+    const mins  = daily.temperature_2m_min || [];
+    const precs = daily.precipitation_probability_max || [];
+    const today = new Date(); today.setHours(0,0,0,0);
+    const data = times.map((t, i) => {
+      const d = new Date(t + 'T12:00:00');
+      const diff = Math.round((d - today) / 86400000);
+      const dayLabel = diff === 0 ? 'Today' : diff === 1 ? 'Tomorrow' : d.toLocaleDateString('en-US',{weekday:'short'});
+      const info = wmoToInfo(codes[i] || 0, precs[i] || 0);
+      const tMax = Math.round(maxes[i] || 0);
+      const tMin = Math.round(mins[i] || 0);
+      return {
+        day: dayLabel.toUpperCase(),
+        info: info.icon + ' ' + info.label + (precs[i] ? ' · ' + precs[i] + '% rain' : ''),
+        temp: tMax + '° / ' + tMin + '°',
+        cls: info.cls
+      };
+    });
+    WEATHER = data;
+    try { localStorage.setItem(WEATHER_CACHE_KEY, JSON.stringify({ at: Date.now(), data })); } catch(e){}
+    if (typeof renderSidebar === 'function') renderSidebar();
+  } catch (e) {
+    console.warn('Weather load failed, falling back to empty:', e);
+  }
+}
 
 // ── State ──
 function loadEvents(){
@@ -316,7 +388,7 @@ function goToday(){ viewDate = new Date(); renderCalendar(); }
 function renderSidebar(){
   $('wxList').innerHTML = WEATHER.length
     ? WEATHER.map(w => `<div class="wx-row ${w.cls}"><div><div class="wx-day">${w.day}</div><div class="wx-info">${w.info}</div></div><div class="wx-temp">${w.temp}</div></div>`).join('')
-    : '<div style="padding:14px 16px;background:rgba(6,10,20,0.4);border:1px dashed rgba(251,146,60,0.18);border-radius:9px;text-align:center;color:var(--text-muted);font-size:0.78em;line-height:1.5">Weather feed not wired yet.<br><span style="font-family:\'Share Tech Mono\',monospace;font-size:0.88em">Coming soon — Environment Canada for your region.</span></div>';
+    : '<div style="padding:14px 16px;background:rgba(6,10,20,0.4);border:1px dashed rgba(251,146,60,0.18);border-radius:9px;text-align:center;color:var(--text-muted);font-size:0.78em;line-height:1.5">Loading forecast\u2026<br><span style="font-family:\'Share Tech Mono\',monospace;font-size:0.88em">Open-Meteo · Moncton NB</span></div>';
 
   const today = new Date();
   const in14 = new Date();
@@ -418,6 +490,7 @@ window.goBack = goBack;
 
 renderCalendar();
 renderSidebar();
+loadWeather(); // fires async — re-renders sidebar when data arrives
 </script>
 <script src="assets/ryujin-prod-nav.js"></script>
 </body>
