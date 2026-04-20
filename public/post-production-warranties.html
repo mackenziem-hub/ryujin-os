@@ -176,6 +176,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:var(--tex
 <script src="assets/ryujin-mode.js"></script>
 <script src="assets/ryujin-tenant.js"></script>
 <script src="assets/ryujin-persist.js"></script>
+<script src="assets/ryujin-postprod.js"></script>
 <script src="assets/ryujin-api.js"></script>
 <script src="assets/ryujin-scenario.js"></script>
 <script src="assets/ryujin-xp.js"></script>
@@ -205,8 +206,27 @@ function fileWarranty(id){
   RyujinStore.save('warranties_filed', filed);
   RyujinActions.gmail('warranty@certainteed.com', 'Warranty Filing - ' + id + ' - Plus Ultra Roofing',
     'Please register the following CertainTeed warranty:\n\nContractor: Plus Ultra Roofing\nJob ID: ' + id + '\nProduct: Landmark 30yr\nInstallation: (see attached)\n\nCustomer contact info attached.\n\nThanks.');
-  RyujinToast('Warranty filed locally + Gmail draft opened');
+  // Final pipeline stage — mark complete
+  if (window.PostProd) window.PostProd.advance(id, 'complete');
+  RyujinToast('Warranty filed · job closed out');
+  renderQueue();
 }
+function renderQueue(){
+  if (!window.PostProd) return;
+  const host = document.getElementById('ppQueue');
+  if (!host) return;
+  window.PostProd.renderStrip('ppQueue', 'warranty', { label: '\u27E8 READY FOR WARRANTY FILE \u27E9 ' + window.PostProd.list('warranty').length });
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const topbar = document.querySelector('.topbar') || document.body.firstElementChild;
+  if (topbar && !document.getElementById('ppQueue')) {
+    const strip = document.createElement('div');
+    strip.id = 'ppQueue';
+    strip.style.cssText = 'margin:10px 12px -2px;border:1px solid rgba(124,58,237,0.22);border-radius:10px;overflow:hidden;background:rgba(14,22,40,0.55)';
+    topbar.insertAdjacentElement('afterend', strip);
+  }
+  renderQueue();
+});
 function pullEagleView(){
   RyujinActions.gmail('orders@eagleview.com', 'EagleView measurement pull', 'Please pull measurements for the Apr 13 batch job #3.\n\nAccount: Plus Ultra Roofing\n(506) 540-1052');
   RyujinToast('EagleView request drafted');

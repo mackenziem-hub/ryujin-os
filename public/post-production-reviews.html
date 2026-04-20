@@ -139,6 +139,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:var(--tex
 <script src="assets/ryujin-mode.js"></script>
 <script src="assets/ryujin-tenant.js"></script>
 <script src="assets/ryujin-persist.js"></script>
+<script src="assets/ryujin-postprod.js"></script>
 <script src="assets/ryujin-api.js"></script>
 <script src="assets/ryujin-scenario.js"></script>
 <script src="assets/ryujin-xp.js"></script>
@@ -167,9 +168,48 @@ function bulkReminder(){
   const log = RyujinStore.load('review_reminders_sent', []);
   log.push({ batch: 'apr13', count: 3, at: new Date().toISOString() });
   RyujinStore.save('review_reminders_sent', log);
-  RyujinToast('3 reminder SMS queued \u00B7 wiring GHL send when deployed');
+  if (window.PostProd) window.PostProd.list('reviews').forEach(j => window.PostProd.advance(j.jobId, 'warranty'));
+  RyujinToast('Reminders sent · jobs advanced to warranty stage');
+  renderQueue();
 }
+function sendReviewFor(jobId, firstName, scope){
+  const first = firstName || 'there';
+  const msg = 'Hi ' + first + "! Thanks for trusting us with your " + (scope || 'roof') + ". A 30-second Google review would mean a lot: https://g.page/plusultra/review \u2014 Mackenzie, Plus Ultra";
+  navigator.clipboard?.writeText(msg);
+  if (window.PostProd) window.PostProd.advance(jobId, 'warranty');
+  RyujinToast('Review SMS copied \u00B7 paste into your SMS app');
+  renderQueue();
+}
+function renderQueue(){
+  if (!window.PostProd) return;
+  const items = window.PostProd.list('reviews');
+  const host = document.getElementById('ppQueue');
+  if (!host) return;
+  if (!items.length) {
+    host.innerHTML = '<div style="padding:10px 14px;font-family:\'Share Tech Mono\',monospace;font-size:0.72em;color:rgba(160,190,230,0.4);letter-spacing:1px">NO JOBS READY FOR REVIEW REQUEST</div>';
+    return;
+  }
+  host.innerHTML = '<div style="padding:10px 14px;font-family:\'Share Tech Mono\',monospace;font-size:0.74em;color:#fb923c;letter-spacing:1.2px;border-bottom:1px solid rgba(251,146,60,0.15)">\u27E8 READY FOR REVIEW REQUEST \u27E9 ' + items.length + '</div>' +
+    items.map(j => {
+      const first = (j.customer || '').split(' ')[0] || 'there';
+      return '<div style="padding:10px 14px;display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:0.85em;border-bottom:1px solid rgba(255,255,255,0.05)">' +
+        '<div><b>' + (j.customer || j.jobId) + '</b>' + (j.address ? ' \u00B7 <span style="color:rgba(160,190,230,0.5)">' + j.address + '</span>' : '') + '</div>' +
+        '<button style="padding:5px 10px;background:rgba(74,222,128,0.12);border:1px solid rgba(74,222,128,0.35);color:#4ade80;border-radius:6px;font-family:inherit;font-size:0.78em;font-weight:700;cursor:pointer" onclick="sendReviewFor(\'' + j.jobId + '\',\'' + first + '\',\'' + (j.scope||'') + '\')">SEND REVIEW SMS</button>' +
+      '</div>';
+    }).join('');
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const topbar = document.querySelector('.topbar') || document.body.firstElementChild;
+  if (topbar && !document.getElementById('ppQueue')) {
+    const strip = document.createElement('div');
+    strip.id = 'ppQueue';
+    strip.style.cssText = 'margin:10px 12px -2px;border:1px solid rgba(251,146,60,0.22);border-radius:10px;overflow:hidden;background:rgba(14,22,40,0.55)';
+    topbar.insertAdjacentElement('afterend', strip);
+  }
+  renderQueue();
+});
 window.bulkReminder = bulkReminder;
+window.sendReviewFor = sendReviewFor;
 document.addEventListener('keydown',e=>{if(e.key==='Escape')window.location.href='post-production.html'});
 document.addEventListener('contextmenu',e=>{e.preventDefault();window.location.href='post-production.html'});
 </script>

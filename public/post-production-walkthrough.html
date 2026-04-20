@@ -257,6 +257,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:var(--tex
 <script src="assets/ryujin-mode.js"></script>
 <script src="assets/ryujin-tenant.js"></script>
 <script src="assets/ryujin-persist.js"></script>
+<script src="assets/ryujin-postprod.js"></script>
 <script src="assets/ryujin-api.js"></script>
 <script src="assets/ryujin-scenario.js"></script>
 <script src="assets/ryujin-xp.js"></script>
@@ -380,7 +381,16 @@ function completeWalkthrough(){
   const completed = RyujinStore.load('walkthroughs_completed', []);
   completed.push({ job: selectedJob, at: new Date().toISOString(), done, total });
   RyujinStore.save('walkthroughs_completed', completed.slice(-50));
-  toast('Walk-through saved \u00B7 warranty packet queued \u00B7 review SMS ready');
+  // Advance the job into the closeout queue so the next page sees it
+  if (window.PostProd && selectedJob) {
+    const j = jobs[selectedJob] || {};
+    window.PostProd.advance(selectedJob, 'closeout', {
+      customer: j.customer || selectedJob,
+      address: j.name || '',
+      scope: j.scope || ''
+    });
+  }
+  toast('Walk-through saved \u00B7 queued for closeout');
 }
 
 function sendReviewSms(){

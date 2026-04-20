@@ -286,6 +286,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg-deep);color:va
 <script src="assets/ryujin-mode.js"></script>
 <script src="assets/ryujin-tenant.js"></script>
 <script src="assets/ryujin-persist.js"></script>
+<script src="assets/ryujin-postprod.js"></script>
 <script src="assets/ryujin-api.js"></script>
 <script src="assets/ryujin-scenario.js"></script>
 <script src="assets/ryujin-xp.js"></script>
@@ -346,14 +347,33 @@ function archiveJob(id){
   const arch = RyujinStore.load('archived_jobs', []);
   arch.push({ id, at: new Date().toISOString() });
   RyujinStore.save('archived_jobs', arch);
-  RyujinToast('Job archived \u00B7 ' + id);
+  if (window.PostProd) window.PostProd.advance(id, 'reviews');
+  RyujinToast('Job archived \u00B7 review request queued');
+  renderQueue();
 }
 function sendWarrantyPackages(){
   const queue = RyujinStore.load('warranty_send_queue', []);
   queue.push({ batch: 'apr13_signed', at: new Date().toISOString() });
   RyujinStore.save('warranty_send_queue', queue);
-  RyujinToast('2 warranty packages queued for send');
+  if (window.PostProd) window.PostProd.list('reviews').forEach(j => window.PostProd.advance(j.jobId, 'warranty'));
+  RyujinToast('Warranty packages queued + jobs advanced');
+  renderQueue();
 }
+function renderQueue(){
+  if (!window.PostProd) return;
+  const n = window.PostProd.list('closeout').length;
+  window.PostProd.renderStrip('ppQueue', 'closeout', { label: '⟨ READY FOR CLOSEOUT ⟩ ' + n });
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const topbar = document.querySelector('.topbar');
+  if (topbar && !document.getElementById('ppQueue')) {
+    const strip = document.createElement('div');
+    strip.id = 'ppQueue';
+    strip.style.cssText = 'margin:10px 12px -2px;border:1px solid rgba(74,222,128,0.18);border-radius:10px;overflow:hidden;background:rgba(14,22,40,0.55)';
+    topbar.insertAdjacentElement('afterend', strip);
+  }
+  renderQueue();
+});
 window.archiveJob = archiveJob;
 window.sendWarrantyPackages = sendWarrantyPackages;
 function toggleFs(){if(!document.fullscreenElement)document.documentElement.requestFullscreen().catch(()=>{});else document.exitFullscreen().catch(()=>{})}
