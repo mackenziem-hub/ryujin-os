@@ -1136,8 +1136,16 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS3DRenderer, CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
 
-// ── Perf detection: mobile, reduced-motion, or save-data mode gets the cheap path ──
-const LOW_PERF = (
+// ── Perf mode: auto-detect low-end + manual override per-machine ──
+// Force via URL: ?lite=1 (on) or ?lite=0 (off). Persists to localStorage, so do it once per machine.
+(function syncLiteFlag(){
+  const p = new URLSearchParams(location.search);
+  if (!p.has('lite')) return;
+  if (p.get('lite') === '0') localStorage.removeItem('ry_cc_lite');
+  else localStorage.setItem('ry_cc_lite', '1');
+})();
+const LITE_FORCED = localStorage.getItem('ry_cc_lite') === '1';
+const LOW_PERF = LITE_FORCED || (
   window.innerWidth < 900 ||
   (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) ||
   (navigator.connection && (navigator.connection.saveData || /2g/.test(navigator.connection.effectiveType || '')))
@@ -1147,6 +1155,21 @@ if (LOW_PERF) {
   const bgv = document.getElementById('bg-dragon');
   if (bgv) { bgv.pause(); bgv.removeAttribute('autoplay'); bgv.style.display = 'none'; }
 }
+
+// Small HUD indicator + click-to-toggle (bottom-left, subtle)
+(function liteToggle(){
+  const btn = document.createElement('button');
+  btn.textContent = LITE_FORCED ? 'LITE · ON' : (LOW_PERF ? 'LITE · AUTO' : 'LITE · OFF');
+  btn.title = 'Toggle Lite mode (reduces lag on low-end GPUs) — reloads the page';
+  btn.style.cssText = 'position:fixed;left:12px;bottom:12px;z-index:100;padding:6px 10px;background:rgba(6,10,20,0.72);border:1px solid rgba(34,211,238,0.35);border-radius:8px;font-family:"Share Tech Mono",monospace;font-size:0.7em;letter-spacing:1.5px;color:' + (LOW_PERF ? '#22d3ee' : 'rgba(200,220,255,0.4)') + ';cursor:pointer;backdrop-filter:blur(8px)';
+  btn.onclick = () => {
+    const next = LITE_FORCED ? '0' : '1';
+    const u = new URL(location.href);
+    u.searchParams.set('lite', next);
+    location.href = u.toString();
+  };
+  document.body.appendChild(btn);
+})();
 
 // ──────────────────────────────────────────
 // CONFIG
