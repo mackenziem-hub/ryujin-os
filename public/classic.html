@@ -5,7 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#030611">
 <title>Ryujin OS · Classic Dashboard</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=optional" rel="stylesheet">
+<link rel="stylesheet" href="/assets/ryujin-perf.css">
+<script src="/assets/ryujin-perf.js"></script>
 <style>
 :root{
   --bg-deep:#030611; --glass:rgba(14,22,40,0.78);
@@ -361,10 +363,17 @@ async function loadWeather(){
       renderWeather(cached.data); return;
     }
   } catch(e){}
-  // Fetch fresh
+  // Fetch fresh (3s timeout — never block the dashboard on a slow external API)
   host.innerHTML = '<div class="empty">Loading forecast…</div>';
   try {
-    const res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=46.088&longitude=-64.779&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=America/Moncton&forecast_days=5');
+    const ts = (window.RyujinTenant?.get?.()) || {};
+    const lat = ts.weather_lat || 46.088;
+    const lon = ts.weather_lon || -64.779;
+    const tz  = ts.weather_tz  || 'America/Moncton';
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 3000);
+    const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=${encodeURIComponent(tz)}&forecast_days=5`, { signal: ctrl.signal });
+    clearTimeout(timer);
     if (!res.ok) throw new Error('api');
     const j = await res.json();
     const codes = j.daily.weathercode || [], maxes = j.daily.temperature_2m_max || [], mins = j.daily.temperature_2m_min || [], precs = j.daily.precipitation_probability_max || [], times = j.daily.time || [];
@@ -476,7 +485,10 @@ function refresh(){
 }
 refresh();
 loadWeather();
-setInterval(refresh, 60000); // every minute
+// Only refresh when the tab is visible — stops background repaint loops burning
+// CPU on laptops where the user has other tabs focused.
+setInterval(() => { if (!document.hidden) refresh(); }, 60000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
 </script>
 
 </body>

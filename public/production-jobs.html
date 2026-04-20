@@ -4,7 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Ryujin OS · Active Jobs</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=optional" rel="stylesheet">
+<link rel="stylesheet" href="/assets/ryujin-perf.css">
+<script src="/assets/ryujin-perf.js"></script>
 <style>
 :root{
   --bg-deep:#030611;--glass:rgba(14,22,40,0.78);
@@ -196,14 +198,14 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg-deep);color:va
   </div>
 </div>
 
-<script src="assets/ryujin-mode.js"></script>
-<script src="assets/ryujin-tenant.js"></script>
-<script src="assets/ryujin-persist.js"></script>
-<script src="assets/ryujin-api.js"></script>
-<script src="assets/ryujin-scenario.js"></script>
-<script src="assets/ryujin-xp.js"></script>
-<script src="assets/ryujin-mode-badge.js"></script>
-<script src="assets/ryujin-chat.js"></script>
+<script src="assets/ryujin-mode.js" defer></script>
+<script src="assets/ryujin-tenant.js" defer></script>
+<script src="assets/ryujin-persist.js" defer></script>
+<script src="assets/ryujin-api.js" defer></script>
+<script src="assets/ryujin-scenario.js" defer></script>
+<script src="assets/ryujin-xp.js" defer></script>
+<script src="assets/ryujin-mode-badge.js" defer></script>
+<script src="assets/ryujin-chat.js" defer></script>
 <script>
 // Build tutor context from live WO data
 (function initTutor(){
@@ -226,13 +228,58 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg-deep);color:va
   if (nextUp) choices.push({ text: 'Prep next job: ' + nextUp.client, next: 'next' });
   choices.push({ text: 'Just browse', dismiss: true });
 
+  // Effects wired to real actions: navigate, push date, draft Gmail
+  function pushWOStart(woNum, days){
+    const list = loadWOs();
+    const wo = list.find(w => w.num === woNum);
+    if (!wo || !wo.start) return;
+    const d = new Date(wo.start + 'T00:00:00');
+    d.setDate(d.getDate() + days);
+    wo.start = d.toISOString().slice(0,10);
+    try { localStorage.setItem('ry_v1_work_orders_v6', JSON.stringify(list)); } catch(e){}
+    location.reload();
+  }
+  function draftEagleView(wo){
+    const subj = encodeURIComponent('EagleView request — ' + (wo.address || wo.client));
+    const body = encodeURIComponent(
+      'Hi EagleView,\n\nPlease pull a premium residential report for:\n' +
+      (wo.client || '') + '\n' + (wo.address || '') + '\n\n' +
+      'Scope: ' + (wo.scope || 'reroof') + '\nDesired delivery: ASAP\n\n' +
+      '— Plus Ultra Roofing'
+    );
+    window.open('https://mail.google.com/mail/?view=cm&fs=1&to=service@eagleview.com&su=' + subj + '&body=' + body, '_blank');
+  }
+
   Ryujin.init({
     sector: 'PRODUCTION',
     root: { msg: summary, choices },
     states: {
-      over: { msg: overdue.length ? overdue[0].client + ' start was ' + fmtShortDate(overdue[0].start) + '. Reschedule, reassign, or push — pick one.' : 'No overdue jobs right now.', choices: [{ text: 'Back', next: 'root' }] },
-      draft: { msg: draft.length ? draft[0].client + ' is missing scope details. Open the work order to fill it in.' : 'No drafts.', choices: [{ text: 'Open work orders', next: 'root', effect: () => { window.location.href = 'production-workorders.html'; } }, { text: 'Back', next: 'root' }] },
-      next: { msg: nextUp ? nextUp.client + ' at ' + (nextUp.address||'?') + ' — ' + (nextUp.sq ? nextUp.sq+' SQ ' : '') + (nextUp.tier||'') + '. Starts ' + fmtShortDate(nextUp.start) + '.' : 'Pipeline empty.', choices: [{ text: 'Order materials', next: 'root', effect: () => { window.location.href = 'production-materials.html'; } }, { text: 'Back', next: 'root' }] }
+      over: {
+        msg: overdue.length ? overdue[0].client + ' start was ' + fmtShortDate(overdue[0].start) + '. Push the date, open the WO, or go.' : 'No overdue jobs right now.',
+        choices: overdue.length ? [
+          { text: 'Open WO to reschedule', next: 'root', effect: () => { window.location.href = 'production-workorders.html?wo=' + encodeURIComponent(overdue[0].num); } },
+          { text: 'Push 3 days forward',   next: 'root', effect: () => pushWOStart(overdue[0].num, 3) },
+          { text: 'Push 7 days forward',   next: 'root', effect: () => pushWOStart(overdue[0].num, 7) },
+          { text: 'Back', next: 'root' }
+        ] : [{ text: 'Back', next: 'root' }]
+      },
+      draft: {
+        msg: draft.length ? draft[0].client + ' is missing scope details. Open the WO, or draft an EagleView request right now.' : 'No drafts.',
+        choices: draft.length ? [
+          { text: 'Open WO to fill in',         next: 'root', effect: () => { window.location.href = 'production-workorders.html?wo=' + encodeURIComponent(draft[0].num); } },
+          { text: 'Draft EagleView email',      next: 'root', effect: () => draftEagleView(draft[0]) },
+          { text: 'Back', next: 'root' }
+        ] : [{ text: 'Back', next: 'root' }]
+      },
+      next: {
+        msg: nextUp ? nextUp.client + ' at ' + (nextUp.address||'?') + ' — ' + (nextUp.sq ? nextUp.sq+' SQ ' : '') + (nextUp.tier||'') + '. Starts ' + fmtShortDate(nextUp.start) + '.' : 'Pipeline empty.',
+        choices: nextUp ? [
+          { text: 'Order materials', next: 'root', effect: () => { window.location.href = 'production-materials.html?wo=' + encodeURIComponent(nextUp.num); } },
+          { text: 'Open WO',         next: 'root', effect: () => { window.location.href = 'production-workorders.html?wo=' + encodeURIComponent(nextUp.num); } },
+          { text: 'Pay sheet',       next: 'root', effect: () => { window.location.href = 'production-paysheet.html'; } },
+          { text: 'Back', next: 'root' }
+        ] : [{ text: 'Back', next: 'root' }]
+      }
     }
   });
 })();
@@ -700,7 +747,7 @@ document.addEventListener('keydown',e=>{if((e.key==='f'||e.key==='F')&&!e.ctrlKe
 if(new URLSearchParams(location.search).has('embed'))document.documentElement.classList.add('embed-mode');
 </script>
 
-<script src="assets/ryujin-tutor.js"></script>
-<script src="assets/ryujin-auto-tutor.js"></script>
+<script src="assets/ryujin-tutor.js" defer></script>
+<script src="assets/ryujin-auto-tutor.js" defer></script>
 </body>
 </html>

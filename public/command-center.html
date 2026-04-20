@@ -5,7 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#060a14">
 <title>Ryujin OS — Command Center</title>
-<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700&family=Share+Tech+Mono&display=optional" rel="stylesheet">
+<link rel="stylesheet" href="/assets/ryujin-perf.css">
+<script src="/assets/ryujin-perf.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
@@ -950,10 +952,8 @@ body.gp-mode * { cursor: none !important; }
 </head>
 <body>
 
-<!-- Gliding dragon video layer — seamless CSS-driven cruise loop. Video itself plays on endless loop. -->
-<video id="bg-dragon" autoplay muted playsinline loop preload="metadata" disableremoteplayback>
-  <source src="assets/videos/bacround cinematic update.mp4" type="video/mp4">
-</video>
+<!-- Gliding dragon video layer — src attached by JS below only when not in LOW_PERF -->
+<video id="bg-dragon" muted playsinline loop preload="none" disableremoteplayback data-src="assets/videos/bacround cinematic update.mp4"></video>
 
 <!-- Opening cutscene flash + wordmark -->
 <div id="entry-flash"></div>
@@ -1083,8 +1083,8 @@ body.gp-mode * { cursor: none !important; }
 })();
 </script>
 
-<script src="assets/ryujin-search.js"></script>
-<script src="assets/ryujin-tutor.js"></script>
+<script src="assets/ryujin-search.js" defer></script>
+<script src="assets/ryujin-tutor.js" defer></script>
 <script>
 RyujinTutor.register('command-center', [
   { target: '#css3d-container', title: 'The 3D Command Hub', body: 'You\u2019re standing inside the ring. <b>6 floating screens</b> orbit around you \u2014 one for each sector of your business. Drag with your mouse to look around, scroll to zoom.', position: 'bottom' },
@@ -1150,11 +1150,32 @@ const LOW_PERF = LITE_FORCED || (
   (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) ||
   (navigator.connection && (navigator.connection.saveData || /2g/.test(navigator.connection.effectiveType || '')))
 );
-if (LOW_PERF) {
-  // Kill the 18MB background video on low-perf devices — the CSS bg gradient is plenty
+// Video is deferred (no src attached). Attach + play only on capable devices
+// AND after the page has settled (2s after DOMContentLoaded) so it doesn't
+// fight with initial render. On low-perf, stays permanently disabled.
+(function handleBgDragon(){
   const bgv = document.getElementById('bg-dragon');
-  if (bgv) { bgv.pause(); bgv.removeAttribute('autoplay'); bgv.style.display = 'none'; }
-}
+  if (!bgv) return;
+  if (LOW_PERF || window.RyujinPerf?.isLite?.()) {
+    bgv.style.display = 'none';
+    return;
+  }
+  const start = () => {
+    if (!bgv.getAttribute('src') && bgv.dataset.src) {
+      bgv.setAttribute('src', bgv.dataset.src);
+      bgv.setAttribute('autoplay','');
+      bgv.load();
+      const p = bgv.play();
+      if (p && p.catch) p.catch(() => {
+        // Autoplay blocked — wait for user gesture
+        const resume = () => { bgv.play().catch(()=>{}); document.removeEventListener('pointerdown', resume); };
+        document.addEventListener('pointerdown', resume, { once: true });
+      });
+    }
+  };
+  if (document.readyState === 'complete') setTimeout(start, 2000);
+  else window.addEventListener('load', () => setTimeout(start, 2000));
+})();
 
 // Small HUD indicator + click-to-toggle (bottom-left, subtle)
 (function liteToggle(){
@@ -1607,18 +1628,8 @@ function toggleAutoRotate() {
 }
 window.toggleAutoRotate = toggleAutoRotate;
 
-// ──────────────────────────────────────────
-// DRAGON VIDEO — the CSS animation drives the motion; we just make sure video autoplays.
-// ──────────────────────────────────────────
-(function bgDragonLoop(){
-  const v = document.getElementById('bg-dragon');
-  if (!v) return;
-  const play = () => v.play().catch(() => {});
-  play();
-  setTimeout(play, 500);
-  // Retry on first user interaction in case browser blocked autoplay
-  ['click','keydown','pointerdown'].forEach(ev => document.addEventListener(ev, play, { once: true }));
-})();
+// Dragon video start/retry is handled by handleBgDragon() above — which
+// defers the src entirely on LOW_PERF devices. No duplicate autoplay loop.
 
 // ──────────────────────────────────────────
 // BUILD STAMP — visible in bottom-left so you can confirm the right version loaded
@@ -2080,13 +2091,13 @@ setTimeout(() => {
 
 </script>
 
-<script src="assets/ryujin-mode.js"></script>
-<script src="assets/ryujin-tenant.js"></script>
-<script src="assets/ryujin-persist.js"></script>
-<script src="assets/ryujin-api.js"></script>
-<script src="assets/ryujin-scenario.js"></script>
-<script src="assets/ryujin-xp.js"></script>
-<script src="assets/ryujin-mode-badge.js"></script>
+<script src="assets/ryujin-mode.js" defer></script>
+<script src="assets/ryujin-tenant.js" defer></script>
+<script src="assets/ryujin-persist.js" defer></script>
+<script src="assets/ryujin-api.js" defer></script>
+<script src="assets/ryujin-scenario.js" defer></script>
+<script src="assets/ryujin-xp.js" defer></script>
+<script src="assets/ryujin-mode-badge.js" defer></script>
 
 </body>
 </html>

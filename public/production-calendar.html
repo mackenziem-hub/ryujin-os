@@ -4,7 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Ryujin OS · Production Calendar</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=optional" rel="stylesheet">
+<link rel="stylesheet" href="/assets/ryujin-perf.css">
+<script src="/assets/ryujin-perf.js"></script>
 <style>
 :root{--accent:#fb923c;--border:rgba(251,146,60,0.24);--border-hi:rgba(251,146,60,0.55);
   --text:#e0e6f0;--text-dim:rgba(160,190,230,0.62);--text-muted:rgba(140,170,220,0.32);
@@ -199,13 +201,13 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:var(--tex
   </div>
 </div>
 
-<script src="assets/ryujin-mode.js"></script>
-<script src="assets/ryujin-tenant.js"></script>
-<script src="assets/ryujin-persist.js"></script>
-<script src="assets/ryujin-api.js"></script>
-<script src="assets/ryujin-scenario.js"></script>
-<script src="assets/ryujin-xp.js"></script>
-<script src="assets/ryujin-mode-badge.js"></script>
+<script src="assets/ryujin-mode.js" defer></script>
+<script src="assets/ryujin-tenant.js" defer></script>
+<script src="assets/ryujin-persist.js" defer></script>
+<script src="assets/ryujin-api.js" defer></script>
+<script src="assets/ryujin-scenario.js" defer></script>
+<script src="assets/ryujin-xp.js" defer></script>
+<script src="assets/ryujin-mode-badge.js" defer></script>
 <script>
 
 // ── Calendar events — seeded from real Plus Ultra signed jobs (as of Apr 19 2026) ──
@@ -282,10 +284,17 @@ async function loadWeather(){
     }
   } catch(e){}
 
-  // Moncton NB · 46.088, -64.779
-  const url = 'https://api.open-meteo.com/v1/forecast?latitude=46.088&longitude=-64.779&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=America/Moncton&forecast_days=5';
+  // Pull lat/lon from tenant_settings when present; fall back to Moncton defaults.
+  const ts  = (window.RyujinTenant?.get?.()) || {};
+  const lat = ts.weather_lat || 46.088;
+  const lon = ts.weather_lon || -64.779;
+  const tz  = ts.weather_tz  || 'America/Moncton';
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=${encodeURIComponent(tz)}&forecast_days=5`;
   try {
-    const res = await fetch(url);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 3000);
+    const res = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(timer);
     if (!res.ok) throw new Error('weather api ' + res.status);
     const json = await res.json();
     const daily = json.daily || {};
@@ -492,6 +501,6 @@ renderCalendar();
 renderSidebar();
 loadWeather(); // fires async — re-renders sidebar when data arrives
 </script>
-<script src="assets/ryujin-prod-nav.js"></script>
+<script src="assets/ryujin-prod-nav.js" defer></script>
 </body>
 </html>
