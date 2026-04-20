@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ryujin OS · Content Calendar</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=optional" rel="stylesheet">
+<link rel="stylesheet" href="/assets/ryujin-perf.css">
+<script src="/assets/ryujin-perf.js"></script>
+<style>
+:root{--accent:#a78bfa;--accent-deep:#7c3aed;--border:rgba(124,58,237,0.24);--border-hi:rgba(124,58,237,0.5);
+  --text:#e0e6f0;--text-dim:rgba(160,190,230,0.62);--text-muted:rgba(140,170,220,0.32);
+  --green:#4ade80;--red:#f87171;--yellow:#facc15;--cyan:#22d3ee;--orange:#fb923c;--blue:#60a5fa;
+  --panel:rgba(14,22,40,0.78)}
+*{margin:0;padding:0;box-sizing:border-box}html,body{height:100%}
+body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:var(--text);overflow:hidden}
+.bg{position:fixed;inset:0;z-index:0;background:radial-gradient(ellipse at 40% 30%,rgba(124,58,237,0.08),transparent 55%),linear-gradient(180deg,#060a14,#030611)}
+.bg-grid{position:fixed;inset:0;z-index:1;pointer-events:none;background-image:linear-gradient(rgba(124,58,237,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(124,58,237,0.025) 1px,transparent 1px);background-size:48px 48px;mask-image:radial-gradient(ellipse at center,black 40%,transparent 85%);-webkit-mask-image:radial-gradient(ellipse at center,black 40%,transparent 85%)}
+.app{position:relative;z-index:2;height:100vh;display:grid;grid-template-rows:52px auto 1fr;gap:10px;padding:10px 12px}
+
+.topbar{display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:0 14px;backdrop-filter:blur(20px);position:relative;overflow:hidden}
+.topbar::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),var(--cyan),transparent);opacity:0.5}
+.brand{display:flex;align-items:center;gap:10px}
+.brand-mark{width:30px;height:30px;border-radius:7px;background:radial-gradient(circle at 35% 30%,rgba(220,200,255,0.3),rgba(124,58,237,0.22) 40%,rgba(10,5,25,0.8));box-shadow:0 0 14px rgba(124,58,237,0.35)}
+.brand-name{font-family:'Orbitron',sans-serif;font-size:0.78em;font-weight:800;letter-spacing:2.5px}
+.brand-name .dim{color:var(--text-dim);font-weight:500;letter-spacing:2px;margin-left:8px}
+.tb-spacer{flex:1}
+.tb-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:rgba(6,10,20,0.6);border:1px solid var(--border);color:var(--text-dim);cursor:pointer;transition:all 0.2s}
+.tb-icon:hover{color:var(--accent);border-color:var(--border-hi)}
+.tb-icon svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round}
+.tb-stat{font-family:'Share Tech Mono',monospace;font-size:0.7em;color:var(--text-dim);letter-spacing:1px}
+
+.toolbar{display:flex;gap:10px;align-items:center;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:10px 14px;backdrop-filter:blur(14px);flex-wrap:wrap}
+.month-nav{display:flex;align-items:center;gap:10px}
+.nav-btn{width:28px;height:28px;border-radius:7px;background:rgba(6,10,20,0.6);border:1px solid var(--border);color:var(--text);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.18s}
+.nav-btn:hover{border-color:var(--border-hi);color:var(--accent)}
+.nav-btn svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round}
+.month-label{font-family:'Orbitron',sans-serif;font-size:0.92em;font-weight:800;letter-spacing:2px;min-width:180px;text-align:center}
+.today-btn{padding:5px 12px;background:transparent;border:1px solid var(--border);border-radius:6px;font-family:'Orbitron',sans-serif;font-size:0.62em;font-weight:700;letter-spacing:1.3px;color:var(--text-dim);cursor:pointer}
+.today-btn:hover{color:var(--accent);border-color:var(--border-hi)}
+.filter-group{display:flex;gap:6px;margin-left:12px}
+.filter-btn{padding:6px 13px;background:transparent;border:1px solid transparent;border-radius:8px;font-family:'Orbitron',sans-serif;font-size:0.65em;font-weight:700;letter-spacing:1.3px;color:var(--text-dim);cursor:pointer;transition:all 0.2s}
+.filter-btn:hover{background:rgba(124,58,237,0.06);color:var(--text)}
+.filter-btn.active{background:rgba(124,58,237,0.15);border-color:rgba(124,58,237,0.35);color:var(--accent)}
+.legend{display:flex;gap:12px;align-items:center;margin-left:auto;font-family:'Share Tech Mono',monospace;font-size:0.62em;color:var(--text-dim);letter-spacing:1px}
+.legend-item{display:flex;align-items:center;gap:5px}
+.legend-dot{width:8px;height:8px;border-radius:2px}
+.btn-new{padding:9px 18px;background:linear-gradient(135deg,rgba(124,58,237,0.32),rgba(124,58,237,0.14));color:var(--accent);border:1px solid rgba(124,58,237,0.5);border-radius:8px;font-family:'Orbitron',sans-serif;font-size:0.7em;font-weight:800;letter-spacing:1.5px;cursor:pointer;display:inline-flex;align-items:center;gap:7px}
+.btn-new:hover{box-shadow:0 0 18px rgba(124,58,237,0.35)}
+.btn-new svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2.5;stroke-linecap:round}
+
+.cal-wrap{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px;backdrop-filter:blur(14px);display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.cal-head{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:8px;padding:0 2px}
+.cal-head div{font-family:'Orbitron',sans-serif;font-size:0.62em;font-weight:700;letter-spacing:1.8px;color:var(--text-dim);text-align:center;padding:6px 0}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);grid-auto-rows:1fr;gap:6px;flex:1;min-height:0}
+.cal-cell{background:rgba(6,10,20,0.5);border:1px solid rgba(124,58,237,0.12);border-radius:8px;padding:6px;display:flex;flex-direction:column;gap:4px;min-height:0;overflow:hidden;transition:all 0.15s;cursor:pointer;position:relative}
+.cal-cell:hover{border-color:var(--border);background:rgba(10,16,30,0.65)}
+.cal-cell.other-month{opacity:0.35}
+.cal-cell.today{border-color:rgba(34,211,238,0.5);background:rgba(34,211,238,0.04);box-shadow:inset 0 0 16px rgba(34,211,238,0.06)}
+.cal-cell.drop-target{border-color:var(--accent);background:rgba(124,58,237,0.12);box-shadow:inset 0 0 18px rgba(124,58,237,0.15)}
+.cell-date{font-family:'Share Tech Mono',monospace;font-size:0.7em;font-weight:700;color:var(--text-dim);letter-spacing:0.5px}
+.cal-cell.today .cell-date{color:var(--cyan)}
+.cell-items{display:flex;flex-direction:column;gap:3px;overflow-y:auto;flex:1;min-height:0}
+.cell-items::-webkit-scrollbar{width:4px}
+.cell-items::-webkit-scrollbar-thumb{background:rgba(124,58,237,0.3);border-radius:2px}
+.clip-card{background:rgba(14,22,40,0.9);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:5px;padding:4px 6px;font-size:0.7em;cursor:grab;transition:all 0.15s;display:flex;flex-direction:column;gap:1px;line-height:1.2;user-select:none}
+.clip-card:hover{border-color:var(--border-hi);transform:translateY(-1px);box-shadow:0 3px 10px rgba(0,0,0,0.3)}
+.clip-card:active{cursor:grabbing}
+.clip-card.dragging{opacity:0.4}
+.clip-card.status-draft{border-left-color:var(--yellow)}
+.clip-card.status-scheduled{border-left-color:var(--cyan)}
+.clip-card.status-posted{border-left-color:var(--green)}
+.clip-card.status-rendering{border-left-color:var(--orange)}
+.clip-card.status-failed{border-left-color:var(--red)}
+.clip-title{font-size:0.85em;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.clip-meta{font-family:'Share Tech Mono',monospace;font-size:0.72em;color:var(--text-dim);letter-spacing:0.3px;display:flex;gap:5px;align-items:center}
+.clip-platforms{display:flex;gap:2px}
+.plat-pill{padding:0 4px;border-radius:3px;font-size:0.82em;background:rgba(124,58,237,0.15);color:var(--accent);font-weight:700;letter-spacing:0.3px}
+
+.empty-state{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text-muted);font-family:'Share Tech Mono',monospace;font-size:0.75em;letter-spacing:1.3px;gap:10px}
+
+/* ─── Modal ─── */
+.mdl-backdrop{position:fixed;inset:0;background:rgba(3,6,17,0.82);backdrop-filter:blur(6px);z-index:100;display:none;align-items:center;justify-content:center;padding:20px}
+.mdl-backdrop.open{display:flex}
+.mdl{width:min(560px,100%);max-height:92vh;background:var(--panel);border:1px solid var(--border-hi);border-radius:14px;padding:22px;display:flex;flex-direction:column;gap:14px;overflow-y:auto;box-shadow:0 0 40px rgba(124,58,237,0.25)}
+.mdl-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-bottom:10px;border-bottom:1px solid var(--border)}
+.mdl-title{font-family:'Orbitron',sans-serif;font-size:0.95em;font-weight:800;letter-spacing:2px}
+.mdl-close{background:transparent;border:none;color:var(--text-dim);cursor:pointer;width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:6px}
+.mdl-close:hover{color:var(--text);background:rgba(124,58,237,0.1)}
+.mdl-close svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-family:'Orbitron',sans-serif;font-size:0.62em;font-weight:700;letter-spacing:1.8px;color:var(--text-dim)}
+.field input[type=text],.field input[type=date],.field input[type=time],.field textarea{background:rgba(6,10,20,0.7);border:1px solid var(--border);border-radius:7px;padding:9px 12px;color:var(--text);font-family:'Inter',sans-serif;font-size:0.92em;outline:none;transition:border-color 0.15s}
+.field input:focus,.field textarea:focus{border-color:var(--accent)}
+.field textarea{resize:vertical;min-height:68px;font-family:inherit}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.plat-choice{display:flex;flex-wrap:wrap;gap:7px}
+.plat-chip{padding:7px 13px;background:rgba(6,10,20,0.7);border:1px solid var(--border);border-radius:7px;font-family:'Orbitron',sans-serif;font-size:0.64em;font-weight:700;letter-spacing:1.3px;color:var(--text-dim);cursor:pointer;transition:all 0.15s}
+.plat-chip:hover{color:var(--text);border-color:var(--border-hi)}
+.plat-chip.on{background:rgba(124,58,237,0.18);border-color:rgba(124,58,237,0.55);color:var(--accent)}
+.file-picker{display:flex;flex-direction:column;gap:6px}
+.file-drop{border:1.5px dashed var(--border);border-radius:8px;padding:14px;text-align:center;font-family:'Share Tech Mono',monospace;font-size:0.72em;color:var(--text-dim);letter-spacing:1px;cursor:pointer;transition:all 0.15s;background:rgba(6,10,20,0.5)}
+.file-drop:hover{border-color:var(--accent);color:var(--accent)}
+.file-drop.has-file{border-style:solid;border-color:var(--accent);color:var(--text);background:rgba(124,58,237,0.08)}
+.preview-thumb{width:100%;aspect-ratio:9/16;max-height:200px;background:rgba(6,10,20,0.7);border-radius:8px;border:1px solid var(--border);object-fit:cover;align-self:center}
+.mdl-footer{display:flex;gap:10px;justify-content:space-between;align-items:center;padding-top:8px;border-top:1px solid var(--border)}
+.mdl-footer .left{display:flex;gap:8px}
+.mdl-footer .right{display:flex;gap:8px}
+.btn{padding:9px 18px;border-radius:8px;font-family:'Orbitron',sans-serif;font-size:0.68em;font-weight:800;letter-spacing:1.4px;cursor:pointer;border:1px solid transparent;transition:all 0.15s}
+.btn-ghost{background:transparent;border-color:var(--border);color:var(--text-dim)}
+.btn-ghost:hover{color:var(--text);border-color:var(--border-hi)}
+.btn-danger{background:transparent;border-color:rgba(248,113,113,0.4);color:var(--red)}
+.btn-danger:hover{background:rgba(248,113,113,0.12)}
+.btn-primary{background:linear-gradient(135deg,rgba(124,58,237,0.4),rgba(124,58,237,0.18));border-color:rgba(124,58,237,0.55);color:var(--accent)}
+.btn-primary:hover{box-shadow:0 0 16px rgba(124,58,237,0.35)}
+.btn-primary:disabled{opacity:0.5;cursor:not-allowed;box-shadow:none}
+.status-chip{display:inline-block;padding:3px 9px;border-radius:5px;font-family:'Share Tech Mono',monospace;font-size:0.7em;letter-spacing:1.2px;text-transform:uppercase}
+.status-chip.draft{background:rgba(250,204,21,0.18);color:var(--yellow)}
+.status-chip.scheduled{background:rgba(34,211,238,0.18);color:var(--cyan)}
+.status-chip.posted{background:rgba(74,222,128,0.18);color:var(--green)}
+.status-chip.rendering{background:rgba(251,146,60,0.18);color:var(--orange)}
+.status-chip.failed{background:rgba(248,113,113,0.18);color:var(--red)}
+
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:rgba(14,22,40,0.95);border:1px solid var(--border-hi);padding:10px 18px;border-radius:10px;font-family:'Share Tech Mono',monospace;font-size:0.78em;color:var(--text);letter-spacing:0.8px;z-index:200;backdrop-filter:blur(12px);box-shadow:0 4px 20px rgba(0,0,0,0.5);opacity:0;transition:opacity 0.2s}
+.toast.show{opacity:1}
+
+@media (max-width:720px){
+  .toolbar{gap:6px;padding:8px 10px}
+  .legend{display:none}
+  .month-label{min-width:130px;font-size:0.78em}
+  .filter-group{margin-left:0}
+  .cell-items{display:none}
+  .cal-cell{min-height:48px}
+  .cal-cell[data-count]::after{content:attr(data-count);position:absolute;bottom:4px;right:6px;font-family:'Share Tech Mono',monospace;font-size:0.72em;color:var(--accent);font-weight:700}
+  .cal-cell[data-count="0"]::after,.cal-cell:not([data-count])::after{display:none}
+}
+</style>
+</head>
+<body>
+<div class="bg"></div>
+<div class="bg-grid"></div>
+
+<div class="app">
+  <div class="topbar">
+    <button class="tb-icon" onclick="window.location.href='marketing.html'" title="Back">
+      <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
+    <div class="brand"><div class="brand-mark"></div><div class="brand-name">RYUJIN <span class="dim">· MARKETING · CONTENT CALENDAR</span></div></div>
+    <div class="tb-spacer"></div>
+    <div class="tb-stat" id="clip-count">— CLIPS</div>
+  </div>
+
+  <div class="toolbar">
+    <div class="month-nav">
+      <button class="nav-btn" id="prev-month" title="Previous month"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
+      <div class="month-label" id="month-label">—</div>
+      <button class="nav-btn" id="next-month" title="Next month"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></button>
+      <button class="today-btn" id="today-btn">TODAY</button>
+    </div>
+    <div class="filter-group">
+      <button class="filter-btn active" data-filter="all">ALL</button>
+      <button class="filter-btn" data-filter="draft">DRAFT</button>
+      <button class="filter-btn" data-filter="scheduled">SCHEDULED</button>
+      <button class="filter-btn" data-filter="posted">POSTED</button>
+    </div>
+    <div class="legend">
+      <div class="legend-item"><span class="legend-dot" style="background:var(--yellow)"></span>DRAFT</div>
+      <div class="legend-item"><span class="legend-dot" style="background:var(--cyan)"></span>SCHEDULED</div>
+      <div class="legend-item"><span class="legend-dot" style="background:var(--green)"></span>POSTED</div>
+      <div class="legend-item"><span class="legend-dot" style="background:var(--orange)"></span>RENDERING</div>
+    </div>
+    <button class="btn-new" id="new-content-btn">
+      <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      NEW CONTENT
+    </button>
+  </div>
+
+  <div class="cal-wrap">
+    <div class="cal-head">
+      <div>SUN</div><div>MON</div><div>TUE</div><div>WED</div><div>THU</div><div>FRI</div><div>SAT</div>
+    </div>
+    <div class="cal-grid" id="cal-grid"></div>
+  </div>
+</div>
+
+<!-- ─── Composer Modal ─── -->
+<div class="mdl-backdrop" id="mdl-backdrop">
+  <div class="mdl" id="mdl-content">
+    <div class="mdl-head">
+      <div class="mdl-title" id="mdl-title">NEW CONTENT</div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="status-chip" id="mdl-status" style="display:none"></span>
+        <button class="mdl-close" id="mdl-close"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>TITLE</label>
+      <input type="text" id="f-title" placeholder="Shediac testimonial · hook test">
+    </div>
+
+    <div class="field">
+      <label>CAPTION / DESCRIPTION</label>
+      <textarea id="f-description" placeholder="First line is your hook. Hormozi rule — tell them what's in it for them in 3 seconds."></textarea>
+    </div>
+
+    <div class="field">
+      <label>HASHTAGS</label>
+      <input type="text" id="f-hashtags" placeholder="#moncton #roofing #certainteed">
+    </div>
+
+    <div class="field">
+      <label>PLATFORMS</label>
+      <div class="plat-choice" id="plat-choice">
+        <div class="plat-chip" data-plat="facebook">FACEBOOK</div>
+        <div class="plat-chip" data-plat="youtube">YOUTUBE</div>
+        <div class="plat-chip" data-plat="gbp">GOOGLE BUSINESS</div>
+      </div>
+    </div>
+
+    <div class="field-row">
+      <div class="field">
+        <label>DATE</label>
+        <input type="date" id="f-date">
+      </div>
+      <div class="field">
+        <label>TIME</label>
+        <input type="time" id="f-time" value="10:00">
+      </div>
+    </div>
+
+    <div class="field" id="file-field">
+      <label>VIDEO (UPLOAD)</label>
+      <div class="file-picker">
+        <div class="file-drop" id="file-drop">TAP TO CHOOSE VIDEO · MP4/MOV/WEBM · MAX 200MB</div>
+        <input type="file" id="f-file" accept="video/mp4,video/quicktime,video/webm,video/x-m4v" style="display:none">
+      </div>
+    </div>
+
+    <div id="preview-wrap" style="display:none">
+      <video id="preview-video" class="preview-thumb" controls></video>
+    </div>
+
+    <div class="mdl-footer">
+      <div class="left">
+        <button class="btn btn-danger" id="btn-delete" style="display:none">DELETE</button>
+      </div>
+      <div class="right">
+        <button class="btn btn-ghost" id="btn-cancel">CANCEL</button>
+        <button class="btn btn-primary" id="btn-save">SAVE</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="assets/ryujin-mode.js"></script>
+<script src="assets/ryujin-tenant.js"></script>
+<script src="assets/ryujin-persist.js"></script>
+<script src="assets/ryujin-api.js"></script>
+<script src="assets/ryujin-scenario.js"></script>
+<script src="assets/ryujin-xp.js"></script>
+<script src="assets/ryujin-mode-badge.js"></script>
+<script src="assets/ryujin-chat.js"></script>
+
+<script>
+// ─── State ─────────────────────────────────────────────────────────────
+const state = {
+  cursor: new Date(),           // first-of-month anchor for the displayed grid
+  clips: [],                    // all clips from /api/marketing
+  filter: 'all',                // all | draft | scheduled | posted
+  editingId: null,              // id of clip being edited in modal; null = new
+  pendingFile: null,            // File object queued for upload
+};
+state.cursor.setDate(1);
+
+const MONTH_NAMES = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
+
+// ─── API helpers ───────────────────────────────────────────────────────
+const TENANT = (window.RyujinTenant && RyujinTenant.get && RyujinTenant.get().slug) || 'plus-ultra';
+function apiHeaders(json) {
+  const h = { 'x-tenant-id': TENANT };
+  if (json) h['Content-Type'] = 'application/json';
+  return h;
+}
+async function apiList() {
+  const r = await fetch('/api/marketing', { headers: apiHeaders() });
+  if (!r.ok) throw new Error('List failed: ' + r.status);
+  const j = await r.json();
+  return j.clips || [];
+}
+async function apiUpdate(id, updates) {
+  const r = await fetch('/api/marketing', {
+    method: 'PUT',
+    headers: apiHeaders(true),
+    body: JSON.stringify({ id, ...updates }),
+  });
+  if (!r.ok) {
+    const j = await r.json().catch(()=>({}));
+    throw new Error(j.error || 'Update failed');
+  }
+  return r.json();
+}
+async function apiDelete(id) {
+  const r = await fetch('/api/marketing?id=' + encodeURIComponent(id), {
+    method: 'DELETE',
+    headers: apiHeaders(),
+  });
+  if (!r.ok) throw new Error('Delete failed');
+  return r.json();
+}
+async function apiUpload(file, fields) {
+  const fd = new FormData();
+  fd.append('file', file);
+  for (const [k, v] of Object.entries(fields)) {
+    if (v !== undefined && v !== null && v !== '') fd.append(k, v);
+  }
+  const r = await fetch('/api/marketing', { method: 'POST', headers: apiHeaders(), body: fd });
+  if (!r.ok) {
+    const j = await r.json().catch(()=>({}));
+    throw new Error(j.error || 'Upload failed');
+  }
+  return r.json();
+}
+
+// ─── Status normalization ─────────────────────────────────────────────
+// Backend statuses: queued, rendering, ready, scheduled, posted, failed
+// UI buckets:      draft (ready or no scheduled_at), scheduled, posted, rendering, failed
+function uiStatus(clip) {
+  if (clip.status === 'failed') return 'failed';
+  if (clip.status === 'posted') return 'posted';
+  if (clip.status === 'queued' || clip.status === 'rendering') return 'rendering';
+  if (clip.status === 'scheduled') return 'scheduled';
+  // 'ready' — if it has a scheduled_at in the future → scheduled; else → draft
+  if (clip.scheduled_at && new Date(clip.scheduled_at) > new Date()) return 'scheduled';
+  return 'draft';
+}
+
+function clipMatchesFilter(c) {
+  if (state.filter === 'all') return true;
+  return uiStatus(c) === state.filter;
+}
+
+// ─── Date helpers ─────────────────────────────────────────────────────
+function ymd(d){
+  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), dd = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${dd}`;
+}
+function startOfDay(d){ const x = new Date(d); x.setHours(0,0,0,0); return x; }
+function addDays(d, n){ const x = new Date(d); x.setDate(x.getDate()+n); return x; }
+function sameDay(a, b){ return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
+function localDateInputValue(d){
+  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), dd = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${dd}`;
+}
+function localTimeInputValue(d){
+  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+// ─── Rendering ────────────────────────────────────────────────────────
+function render() {
+  renderMonthLabel();
+  renderGrid();
+  renderCount();
+}
+
+function renderMonthLabel() {
+  const d = state.cursor;
+  document.getElementById('month-label').textContent = `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+function renderCount() {
+  const n = state.clips.filter(clipMatchesFilter).length;
+  document.getElementById('clip-count').textContent = `${n} CLIP${n===1?'':'S'}`;
+}
+
+function renderGrid() {
+  const grid = document.getElementById('cal-grid');
+  grid.innerHTML = '';
+  const anchor = new Date(state.cursor);
+  // Start from Sunday of the week that contains the 1st
+  const gridStart = addDays(anchor, -anchor.getDay());
+  const today = startOfDay(new Date());
+
+  // Bucket clips by scheduled_at (local date) — only ones with a date
+  const byDate = new Map();
+  for (const c of state.clips) {
+    if (!clipMatchesFilter(c)) continue;
+    if (!c.scheduled_at) continue;
+    const key = ymd(new Date(c.scheduled_at));
+    if (!byDate.has(key)) byDate.set(key, []);
+    byDate.get(key).push(c);
+  }
+  // Sort each day's items by scheduled_at time
+  for (const arr of byDate.values()) {
+    arr.sort((a,b) => new Date(a.scheduled_at) - new Date(b.scheduled_at));
+  }
+
+  // 6 weeks × 7 days = 42 cells
+  for (let i = 0; i < 42; i++) {
+    const d = addDays(gridStart, i);
+    const cell = document.createElement('div');
+    cell.className = 'cal-cell';
+    cell.dataset.date = ymd(d);
+    if (d.getMonth() !== anchor.getMonth()) cell.classList.add('other-month');
+    if (sameDay(d, today)) cell.classList.add('today');
+
+    const dateLbl = document.createElement('div');
+    dateLbl.className = 'cell-date';
+    dateLbl.textContent = d.getDate();
+    cell.appendChild(dateLbl);
+
+    const items = document.createElement('div');
+    items.className = 'cell-items';
+    const list = byDate.get(ymd(d)) || [];
+    cell.dataset.count = list.length;
+    for (const c of list) items.appendChild(renderClipCard(c));
+    cell.appendChild(items);
+
+    cell.addEventListener('click', (ev) => {
+      if (ev.target.closest('.clip-card')) return;
+      openComposer(null, d);
+    });
+
+    // Drag targets
+    cell.addEventListener('dragover', (ev) => {
+      if (!state.draggingId) return;
+      ev.preventDefault();
+      cell.classList.add('drop-target');
+    });
+    cell.addEventListener('dragleave', () => cell.classList.remove('drop-target'));
+    cell.addEventListener('drop', (ev) => {
+      ev.preventDefault();
+      cell.classList.remove('drop-target');
+      if (!state.draggingId) return;
+      const targetDate = cell.dataset.date;
+      rescheduleClip(state.draggingId, targetDate);
+      state.draggingId = null;
+    });
+
+    grid.appendChild(cell);
+  }
+
+  // Drafts (no scheduled_at) — drop them into today cell-items if filter allows
+  // (Alternative: render in a side drawer. For v1, stash them on today so they're visible.)
+  if (state.filter === 'all' || state.filter === 'draft') {
+    const todayKey = ymd(today);
+    const todayCell = grid.querySelector(`[data-date="${todayKey}"]`);
+    if (todayCell) {
+      const todayItems = todayCell.querySelector('.cell-items');
+      const drafts = state.clips.filter(c => !c.scheduled_at && clipMatchesFilter(c));
+      for (const c of drafts) todayItems.appendChild(renderClipCard(c));
+      todayCell.dataset.count = parseInt(todayCell.dataset.count||'0',10) + drafts.length;
+    }
+  }
+}
+
+function renderClipCard(c) {
+  const card = document.createElement('div');
+  const st = uiStatus(c);
+  card.className = `clip-card status-${st}`;
+  card.draggable = true;
+  card.dataset.id = c.id;
+
+  const title = document.createElement('div');
+  title.className = 'clip-title';
+  title.textContent = c.title || c.source_filename || 'Untitled';
+  card.appendChild(title);
+
+  const meta = document.createElement('div');
+  meta.className = 'clip-meta';
+  const time = c.scheduled_at ? new Date(c.scheduled_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : 'DRAFT';
+  const timeEl = document.createElement('span');
+  timeEl.textContent = time;
+  meta.appendChild(timeEl);
+  if (c.target_platforms?.length) {
+    const pw = document.createElement('div');
+    pw.className = 'clip-platforms';
+    for (const p of c.target_platforms) {
+      const pill = document.createElement('span');
+      pill.className = 'plat-pill';
+      pill.textContent = p[0].toUpperCase();
+      pill.title = p;
+      pw.appendChild(pill);
+    }
+    meta.appendChild(pw);
+  }
+  card.appendChild(meta);
+
+  card.addEventListener('click', (ev) => { ev.stopPropagation(); openComposer(c); });
+  card.addEventListener('dragstart', (ev) => {
+    state.draggingId = c.id;
+    card.classList.add('dragging');
+    ev.dataTransfer.effectAllowed = 'move';
+    try { ev.dataTransfer.setData('text/plain', c.id); } catch(_){}
+  });
+  card.addEventListener('dragend', () => { card.classList.remove('dragging'); state.draggingId = null; });
+  return card;
+}
+
+// ─── Composer modal ───────────────────────────────────────────────────
+const mdl = document.getElementById('mdl-backdrop');
+function openComposer(clip, preselectDate) {
+  state.editingId = clip?.id || null;
+  state.pendingFile = null;
+  document.getElementById('mdl-title').textContent = clip ? 'EDIT CONTENT' : 'NEW CONTENT';
+
+  document.getElementById('f-title').value = clip?.title || '';
+  document.getElementById('f-description').value = clip?.description || '';
+  document.getElementById('f-hashtags').value = (clip?.hashtags || []).join(' ');
+
+  // Platforms
+  const plats = new Set(clip?.target_platforms || []);
+  document.querySelectorAll('#plat-choice .plat-chip').forEach(chip => {
+    chip.classList.toggle('on', plats.has(chip.dataset.plat));
+  });
+
+  // Date / time
+  const whenRaw = clip?.scheduled_at ? new Date(clip.scheduled_at) : (preselectDate ? new Date(preselectDate) : new Date(Date.now() + 60*60*1000));
+  if (clip?.scheduled_at) {
+    document.getElementById('f-date').value = localDateInputValue(whenRaw);
+    document.getElementById('f-time').value = localTimeInputValue(whenRaw);
+  } else {
+    document.getElementById('f-date').value = localDateInputValue(whenRaw);
+    document.getElementById('f-time').value = '10:00';
+  }
+
+  // Status chip + file field visibility
+  const chip = document.getElementById('mdl-status');
+  if (clip) {
+    const st = uiStatus(clip);
+    chip.style.display = '';
+    chip.className = `status-chip ${st}`;
+    chip.textContent = st;
+    // Editing existing clip: hide file upload (video is immutable post-upload)
+    document.getElementById('file-field').style.display = 'none';
+    // Preview if rendered
+    if (clip.rendered_url || clip.source_url) {
+      const pw = document.getElementById('preview-wrap');
+      const pv = document.getElementById('preview-video');
+      pv.src = clip.rendered_url || clip.source_url;
+      pw.style.display = '';
+    } else {
+      document.getElementById('preview-wrap').style.display = 'none';
+    }
+    document.getElementById('btn-delete').style.display = '';
+  } else {
+    chip.style.display = 'none';
+    document.getElementById('file-field').style.display = '';
+    document.getElementById('preview-wrap').style.display = 'none';
+    document.getElementById('btn-delete').style.display = 'none';
+    document.getElementById('file-drop').classList.remove('has-file');
+    document.getElementById('file-drop').textContent = 'TAP TO CHOOSE VIDEO · MP4/MOV/WEBM · MAX 200MB';
+    document.getElementById('f-file').value = '';
+  }
+
+  mdl.classList.add('open');
+  setTimeout(() => document.getElementById('f-title').focus(), 50);
+}
+
+function closeComposer() {
+  mdl.classList.remove('open');
+  state.editingId = null;
+  state.pendingFile = null;
+  const pv = document.getElementById('preview-video');
+  pv.pause?.(); pv.removeAttribute('src'); pv.load?.();
+}
+
+// Collect field values from the modal
+function collectFields() {
+  const title = document.getElementById('f-title').value.trim();
+  const description = document.getElementById('f-description').value.trim();
+  const hashtagsRaw = document.getElementById('f-hashtags').value.trim();
+  const hashtags = hashtagsRaw.split(/\s+/).map(s => s.replace(/^#/,'')).filter(Boolean);
+  const platforms = Array.from(document.querySelectorAll('#plat-choice .plat-chip.on')).map(c => c.dataset.plat);
+  const dateStr = document.getElementById('f-date').value;
+  const timeStr = document.getElementById('f-time').value || '10:00';
+  let scheduled_at = null;
+  if (dateStr) {
+    const [y,m,d] = dateStr.split('-').map(Number);
+    const [hh,mm] = timeStr.split(':').map(Number);
+    scheduled_at = new Date(y, m-1, d, hh, mm, 0).toISOString();
+  }
+  return { title, description, hashtags, platforms, scheduled_at };
+}
+
+async function saveComposer() {
+  const btn = document.getElementById('btn-save');
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = 'SAVING…';
+  try {
+    const f = collectFields();
+    if (!f.title) throw new Error('Title is required');
+
+    if (state.editingId) {
+      // PUT existing clip
+      await apiUpdate(state.editingId, {
+        title: f.title,
+        description: f.description || null,
+        hashtags: f.hashtags,
+        target_platforms: f.platforms,
+        scheduled_at: f.scheduled_at,
+      });
+      toast('Saved · ' + f.title);
+    } else {
+      // Must have a file for new clip (backend requires video)
+      if (!state.pendingFile) throw new Error('Choose a video file to upload');
+      await apiUpload(state.pendingFile, {
+        title: f.title,
+        description: f.description,
+        hashtags: f.hashtags.join(','),
+        platforms: f.platforms.join(','),
+        scheduled_at: f.scheduled_at,
+      });
+      toast('Uploaded · rendering will start in background');
+    }
+    closeComposer();
+    await refresh();
+  } catch (e) {
+    toast('ERROR · ' + e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+}
+
+async function deleteComposer() {
+  if (!state.editingId) return;
+  if (!confirm('Delete this content? This cannot be undone.')) return;
+  try {
+    await apiDelete(state.editingId);
+    toast('Deleted');
+    closeComposer();
+    await refresh();
+  } catch (e) {
+    toast('ERROR · ' + e.message, true);
+  }
+}
+
+async function rescheduleClip(id, newDateStr) {
+  const clip = state.clips.find(c => c.id === id);
+  if (!clip) return;
+  // Preserve existing time-of-day; default to 10:00 if the clip has none
+  let hh = 10, mm = 0;
+  if (clip.scheduled_at) {
+    const prev = new Date(clip.scheduled_at);
+    hh = prev.getHours(); mm = prev.getMinutes();
+  }
+  const [y,m,d] = newDateStr.split('-').map(Number);
+  const iso = new Date(y, m-1, d, hh, mm, 0).toISOString();
+  try {
+    await apiUpdate(id, { scheduled_at: iso });
+    toast('Rescheduled · ' + new Date(iso).toLocaleDateString());
+    await refresh();
+  } catch (e) {
+    toast('ERROR · ' + e.message, true);
+  }
+}
+
+// ─── Toasts ────────────────────────────────────────────────────────────
+let toastTimer;
+function toast(msg, isError) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.borderColor = isError ? 'rgba(248,113,113,0.5)' : 'var(--border-hi)';
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3200);
+}
+
+// ─── Data refresh ──────────────────────────────────────────────────────
+async function refresh() {
+  try {
+    state.clips = await apiList();
+  } catch (e) {
+    toast('Load failed · offline mode', true);
+    state.clips = RyujinStore?.load?.('content_calendar_cache', []) || [];
+  }
+  RyujinStore?.save?.('content_calendar_cache', state.clips);
+  render();
+}
+
+// ─── Event wiring ─────────────────────────────────────────────────────
+document.getElementById('prev-month').addEventListener('click', () => {
+  state.cursor.setMonth(state.cursor.getMonth() - 1);
+  render();
+});
+document.getElementById('next-month').addEventListener('click', () => {
+  state.cursor.setMonth(state.cursor.getMonth() + 1);
+  render();
+});
+document.getElementById('today-btn').addEventListener('click', () => {
+  state.cursor = new Date();
+  state.cursor.setDate(1);
+  render();
+});
+document.querySelectorAll('.filter-btn').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('.filter-btn').forEach(x => x.classList.remove('active'));
+  b.classList.add('active');
+  state.filter = b.dataset.filter;
+  render();
+}));
+document.getElementById('new-content-btn').addEventListener('click', () => openComposer(null));
+document.getElementById('mdl-close').addEventListener('click', closeComposer);
+document.getElementById('btn-cancel').addEventListener('click', closeComposer);
+document.getElementById('btn-save').addEventListener('click', saveComposer);
+document.getElementById('btn-delete').addEventListener('click', deleteComposer);
+mdl.addEventListener('click', (e) => { if (e.target === mdl) closeComposer(); });
+
+document.querySelectorAll('#plat-choice .plat-chip').forEach(chip => {
+  chip.addEventListener('click', () => chip.classList.toggle('on'));
+});
+
+// File picker
+const fileDrop = document.getElementById('file-drop');
+const fileInput = document.getElementById('f-file');
+fileDrop.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => {
+  const f = fileInput.files?.[0];
+  if (!f) return;
+  state.pendingFile = f;
+  fileDrop.classList.add('has-file');
+  fileDrop.textContent = `${f.name} · ${(f.size/1024/1024).toFixed(1)}MB`;
+  // autofill title if empty
+  const t = document.getElementById('f-title');
+  if (!t.value.trim()) t.value = f.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ');
+  // local preview
+  const pw = document.getElementById('preview-wrap');
+  const pv = document.getElementById('preview-video');
+  pv.src = URL.createObjectURL(f);
+  pw.style.display = '';
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (mdl.classList.contains('open')) closeComposer();
+    else window.location.href = 'marketing.html';
+  }
+  if (e.key === 'n' && !mdl.classList.contains('open') && !/input|textarea/i.test(document.activeElement.tagName)) {
+    openComposer(null);
+  }
+});
+document.addEventListener('contextmenu', (e) => {
+  if (mdl.classList.contains('open')) return;
+  e.preventDefault(); window.location.href = 'marketing.html';
+});
+
+// ─── Ryujin chat integration ─────────────────────────────────────────
+if (window.Ryujin?.init) {
+  Ryujin.init({
+    sector: 'CONTENT',
+    root: {
+      msg: "Content calendar. Drop a selfie video in and I'll caption + schedule it. Pick a day on the grid to start, or hit NEW CONTENT.",
+      choices: [
+        { text: 'New content now', next: 'new' },
+        { text: 'Show only scheduled', next: 'sched' },
+        { text: 'Just browse', dismiss: true },
+      ],
+    },
+    states: {
+      new: { effect: () => openComposer(null), choices: [] },
+      sched: { effect: () => document.querySelector('.filter-btn[data-filter="scheduled"]').click(), choices: [] },
+    },
+  });
+}
+
+// ─── Boot ──────────────────────────────────────────────────────────────
+refresh();
+</script>
+
+<script src="assets/ryujin-tutor.js"></script>
+<script src="assets/ryujin-auto-tutor.js"></script>
+</body>
+</html>

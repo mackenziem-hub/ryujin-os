@@ -5,8 +5,9 @@
 (function(){
   if (!window.RyujinMode) return;
 
-  // Don't render on full-screen cinematic pages or command-center (where it overlaps 3D panels)
-  const SKIP = ['login.html','onboarding.html','boot.html','landing.html','index.html','proposal-client.html','command-center.html'];
+  // Don't render on full-screen cinematic pages, command-center (overlaps 3D panels),
+  // or the crew field app (badge collides with bottom nav).
+  const SKIP = ['login.html','onboarding.html','boot.html','landing.html','index.html','proposal-client.html','command-center.html','app.html'];
   const path = location.pathname.split('/').pop() || 'index.html';
   if (SKIP.includes(path)) return;
 
