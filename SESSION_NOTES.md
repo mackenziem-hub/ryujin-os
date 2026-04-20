@@ -1,8 +1,41 @@
 # Session notes — 2026-04-20
 
-Picked up on 2026-04-20 to finish the TODO list + an aggressive perf pass. Everything deployed to Vercel main.
+Picked up on 2026-04-20 to finish the TODO list + an aggressive perf pass + a second pass on the 5 half-baked areas. Everything deployed to Vercel main.
+
+## Pending manual steps
+
+- **Migration 012** (`schema/migration_012_checklist_state.sql`) needs to run in Supabase SQL editor before crew-app checklists sync across devices. One statement: `alter table tickets add column if not exists checklist_state jsonb default '{}'::jsonb;`
+- Migration 011 (password reset) already applied and verified.
 
 ## What shipped today (2026-04-20)
+
+**Second pass — 5 half-baked areas wired up**
+- **Admin tenant settings** — admin-tenant.html now has a Weather/Location card with latitude/longitude/timezone fields. Persisted via `RyujinTenant.set()` → localStorage. `classic.html` + `production-calendar.html` already read via `RyujinTenant.get()` with Moncton fallback.
+- **Crew checklist sync** — migration 012 adds `checklist_state JSONB` on tickets. `app.html` mirrors local → DB fire-and-forget on every toggle/photo, and hydrates DB → local inside `showTask()` before rendering. localStorage still wins locally (instant + offline), server is source-of-truth when online.
+- **Sales hub hydration** — sales-customers.html prepends real `/api/customers` results to the demo showcase list; sales-pipeline.html shows a live-stats strip above the hardcoded stage columns with real estimate counts + open $; sales-followups.html surfaces CRM contacts with no touch in 7+ days and one-tap CALL / EMAIL / OPEN RECORD.
+- **Post-production pipeline** — new `/assets/ryujin-postprod.js` + `PostProd` helper connecting walkthrough → closeout → reviews → warranty → complete. State in `ry_v1_post_prod_queue_v1`. Each downstream page shows a queue strip of jobs waiting for its stage. Completing walkthrough pushes forward; closeout's `archiveJob` advances → reviews; reviews has per-job **SEND REVIEW SMS** with the real `g.page/plusultra/review` link and advances → warranty; warranty `fileWarranty` advances → complete.
+- **Proposal output** — proposal-client.html's fabricated testimonials replaced with the three real Steve V / Brad W / Tarah M reviews already on sales-client. "100% 5-star rating" → "35+ Google reviews". Added a **READ ALL REVIEWS ON GOOGLE** link pointing at `g.page/plusultra`.
+
+**Performance pass**
+- New `/assets/ryujin-perf.js` + `/assets/ryujin-perf.css` auto-loaded on all 45 pages. Detects low-end signals (`prefers-reduced-motion`, saveData, `deviceMemory < 4`, `hardwareConcurrency <= 2`) + 3s FPS sampler (flips to lite on sub-25fps).
+- **Always-visible LITE badge** bottom-right on every page — click to toggle, persists.
+- URL `?perf=lite` forces it. `?perf=off` clears.
+- Lite mode: strips `backdrop-filter`, snaps animations to 0.01ms, hides grid-mask overlays, and on DOMContentLoaded yanks `src` from autoplay videos so huge bg clips never even download.
+- Command-center `bg-dragon` video ships with no src — JS attaches it 2s AFTER load only if not lite. Kills the 18MB eager-download.
+- Google Fonts `display=swap` → `display=optional` on all 45 pages.
+- classic.html 60s refresh pauses when tab hidden + visibility-change listener.
+- Weather fetches (classic + calendar) get 3s AbortController timeouts.
+- NOTE: an earlier attempt to `defer` all shared scripts was reverted — it broke initialization order for inline scripts that depend on Ryujin.init / RyujinTenant.get. Don't re-add defer without making the inline scripts wait on DOMContentLoaded first.
+
+**Auth — forgot password flow**
+- Migration 011 adds `reset_token` + `reset_token_expires_at` on users. New `/api/auth?action=forgot` issues a 1-hour token, `/api/auth?action=reset` validates + updates. New `/reset-password.html` handles both request + set-new-password forms. "Forgot password?" link added to login.html. Reset URL is returned inline in the response (solo-tenant safe; swap for email send via Resend/SendGrid when multi-tenant).
+
+**First pass — earlier in 2026-04-20 session**
+- sales-proposal.html: added `exterior` system (Performance Shell Plus / Hardie Shell / Metal Shell, estimated pricing), live customer fetch from Supabase (`/api/customers`), tour copy bumped to "6 systems / 20 offers"
+- WO seed: Donna Glen address 115 North St → **95 Cornhill St** (user correction). WO_KEY bumped v5 → v6 across workorders/jobs/materials/paysheet/classic so the fix picks up without manual localStorage clear. SQ + tier still pending EagleView.
+- Crew app checklists (before the DB sync): 7 templates (install / repair / cleanup / inspect / caulk / doors / default) auto-picked by task title keywords. Photo-required steps gate their own check until a photo is attached. Complete disabled until all items done.
+- Materials POs + Vendors migrated from hardcoded const to localStorage with seed fallback (`ry_v1_pos_v1`, `ry_v1_vendors_v1`). Tap PO status to cycle open → shipped → delivered. New PO / Add vendor / delete. `createPO()` now actually creates per-vendor POs from unchecked material lines.
+- Jobs board tutor real effects: Push 3/7 days forward (writes back to WO store), Draft EagleView Gmail (pre-filled compose URL with address + scope), Order materials / Open WO / Pay sheet with `?wo=` pre-select.
 
 **Sales proposal polish**
 - New `exterior` system in SYSTEMS (Performance Shell Plus / Hardie Shell / Metal Shell, estimated pricing)
