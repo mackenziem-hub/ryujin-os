@@ -408,7 +408,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg-deep);color:va
 RyujinTutor.register('proposal', [
   { target: '.step-nav', title: 'Five steps to a signed deal', body: 'Customer \u2192 Scope \u2192 Measurements \u2192 Options \u2192 Review &amp; Send. <b>Every step auto-fills the live price pane on the right.</b> Jump between steps any time.', position: 'right' },
   { target: '.cust-list', title: 'Start from existing leads', body: 'Pick from 5 hot leads and customer info auto-fills. Or type a new customer below. Either way, <b>the proposal is personalized before you touch a slider</b>.', position: 'right' },
-  { target: '#systemGrid, .content-body', title: 'System + tier', body: '5 systems (Asphalt / Metal / Flat / Commercial / Roof+Shell), 17 offers total. <b>Prices per SQ are live from the v3.1 pricing engine.</b> Pick the tier that matches the customer\u2019s intent.', position: 'top' },
+  { target: '#systemGrid, .content-body', title: 'System + tier', body: '6 systems (Asphalt / Metal / Flat / Commercial / Performance Shell / Roof+Shell), 20 offers total. <b>Prices per SQ are live from the v3.1 pricing engine.</b> Pick the tier that matches the customer\u2019s intent.', position: 'top' },
   { target: '.preview', title: 'Live price pane', body: 'Every change you make is reflected here immediately. Line-by-line, subtotal, HST, total. <b>No waiting, no recalculation delays.</b>', position: 'left' },
   { target: '.content-foot', title: 'Navigate + send', body: 'Hit <b>CONTINUE</b> to advance. On the final review step you\u2019ll see a <b>3-tier comparison</b> (Good/Better/Best) and a FinanceIt monthly quote. Then <b>SEND PROPOSAL</b> opens an editable email draft with the Gmail compose URL pre-built.', position: 'top' },
   { target: '__center__', title: 'This is the tool you\u2019ll use every day.', body: 'From cold call to signed contract in <b>under 20 minutes</b>. No contractor-SaaS is this fast. Press <b>?</b> any time to replay this tutorial.', position: 'top' }
@@ -429,13 +429,31 @@ const state = {
 };
 
 /* ─── Data ─── */
-const existingLeads = [
+let existingLeads = [
   { name: 'Robert Partridge', meta: 'Moncton · asphalt + mansard · 3 views', address: '32 Oak St, Moncton NB', phone: '(506) 555-0144', email: 'rpartridge@example.com', val: '$44.4K' },
   { name: 'Nadine Lipton', meta: 'Dieppe · metal SS · cooling', address: '18 Gauvin Rd, Dieppe NB', phone: '(506) 555-0192', email: 'nlipton@example.com', val: '$27.4K' },
   { name: 'Diaa Juha', meta: 'Moncton · full replacement', address: '91 Ryan St, Moncton NB', phone: '(506) 555-0177', email: 'djuha@example.com', val: '$20.5K' },
   { name: 'Shelagh Peach', meta: 'Redeck + vent · Darcy presenting', address: '205 Collishaw St, Moncton NB', phone: '(506) 555-0120', email: 'speach@example.com', val: '$19.7K' },
   { name: 'APHL · Tara Court', meta: 'Kevin Chase · 2-tier quote', address: 'Tara Court · Riverview NB', phone: '(506) 555-0101', email: 'kchase@aphl.ca', val: '$16.2K' }
 ];
+
+async function loadCustomersFromCRM(){
+  try {
+    const r = await fetch('/api/customers?tenant=plus-ultra&limit=50', { headers: { 'x-tenant-id': 'plus-ultra' } });
+    if (!r.ok) return;
+    const { customers } = await r.json();
+    if (!Array.isArray(customers) || customers.length === 0) return;
+    existingLeads = customers.map(c => ({
+      name: c.full_name || c.name || '(no name)',
+      meta: [c.city || c.address?.split(',')[1]?.trim(), c.notes, c.status].filter(Boolean).join(' · ') || 'Supabase contact',
+      address: c.address || '',
+      phone: c.phone || '',
+      email: c.email || '',
+      val: c.estimated_value ? '$' + Math.round(c.estimated_value/1000) + 'K' : '—'
+    }));
+    renderCustList();
+  } catch (e) { /* offline / not deployed — keep demo leads */ }
+}
 
 const SYSTEMS = [
   { id: 'asphalt', name: 'Asphalt', sub: 'Residential · 4 tiers', tiers: [
@@ -457,6 +475,11 @@ const SYSTEMS = [
     { id: 'ceconomy', name: 'Economy', sub: 'Basic commercial asphalt', persq: 380 },
     { id: 'cstandard', name: 'Standard', sub: 'Durable, warranted', persq: 480 },
     { id: 'cpremium', name: 'Premium', sub: 'Full package + mgmt reporting', persq: 620 }
+  ]},
+  { id: 'exterior', name: 'Performance Shell', sub: 'Wall assembly · 3 systems', tiers: [
+    { id: 'shellplus', name: 'Performance Shell Plus', sub: 'Full wall stack * estimated', persq: 520 },
+    { id: 'hardieshell', name: 'Hardie Shell', sub: 'James Hardie siding * estimated', persq: 610 },
+    { id: 'metalshell', name: 'Metal Shell', sub: 'Metal cladding * estimated', persq: 680 }
   ]},
   { id: 'combined', name: 'Roof + Shell', sub: 'Combined packages', tiers: [
     { id: 'goldshell', name: 'Gold + Performance Shell', sub: 'Roof + wall assembly', persq: 860 },
@@ -552,7 +575,7 @@ function renderTierGrid(){
       <div class="choice-price">$${t.persq} / SQ</div>
     </div>
   `).join('');
-  document.getElementById('tierHint').textContent = sys.id === 'flat' || sys.id === 'metal' ? 'Items marked * use estimated regional pricing.' : 'Prices per SQ. Adjusted for pitch and complexity at measure step.';
+  document.getElementById('tierHint').textContent = (sys.id === 'flat' || sys.id === 'metal' || sys.id === 'exterior') ? 'Items marked * use estimated regional pricing.' : 'Prices per SQ. Adjusted for pitch and complexity at measure step.';
 }
 function pickTier(id){
   state.scope.tier = id;
@@ -1362,6 +1385,7 @@ renderOptPrices();
 renderPreview();
 renderSummary();
 updateTitle();
+loadCustomersFromCRM();
 goToStep(1);
 
 // ── Proposal Entry Gate ──
