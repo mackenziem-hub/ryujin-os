@@ -155,6 +155,9 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .prio-chip[data-p="medium"].on{background:rgba(34,211,238,0.15);border-color:var(--cyan);color:var(--cyan)}
 .prio-chip[data-p="high"].on{background:rgba(251,146,60,0.15);border-color:var(--orange);color:var(--orange)}
 .prio-chip[data-p="urgent"].on{background:rgba(248,113,113,0.15);border-color:var(--red);color:var(--red)}
+.prio-chip[data-r="crew"].on{background:rgba(74,222,128,0.15);border-color:var(--green);color:var(--green)}
+.prio-chip[data-r="supervisor"].on{background:rgba(34,211,238,0.15);border-color:var(--cyan);color:var(--cyan)}
+.prio-chip[data-r="sales"].on{background:rgba(74,158,255,0.15);border-color:var(--blue);color:var(--blue)}
 
 /* ─── Rapid-fire camera ─── */
 .cam-overlay{position:fixed;inset:0;z-index:500;background:#000;display:none;flex-direction:column}
@@ -185,6 +188,18 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .cam-shutter:disabled{opacity:0.4}
 .cam-done-btn{position:absolute;right:14px;padding:10px 16px;background:rgba(34,211,238,0.18);border:1px solid rgba(34,211,238,0.5);border-radius:10px;color:var(--cyan);font-family:'Orbitron',monospace;font-weight:700;font-size:0.7em;letter-spacing:1.3px;cursor:pointer}
 .cam-hint{text-align:center;color:rgba(255,255,255,0.45);font-size:0.68em;letter-spacing:1px;font-family:'Share Tech Mono',monospace}
+.cam-cats{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px}
+.cam-cats::-webkit-scrollbar{display:none}
+.cam-cat{flex:none;padding:7px 13px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.14);border-radius:16px;color:rgba(255,255,255,0.65);font-family:'Orbitron',monospace;font-size:0.62em;font-weight:700;letter-spacing:1.2px;cursor:pointer;transition:all 0.15s}
+.cam-cat.on{background:rgba(34,211,238,0.22);border-color:rgba(34,211,238,0.6);color:var(--cyan)}
+.cam-cat[data-cat="before"].on{background:rgba(74,158,255,0.22);border-color:rgba(74,158,255,0.6);color:var(--blue)}
+.cam-cat[data-cat="progress"].on{background:rgba(34,211,238,0.22);border-color:rgba(34,211,238,0.6);color:var(--cyan)}
+.cam-cat[data-cat="after"].on{background:rgba(74,222,128,0.22);border-color:rgba(74,222,128,0.6);color:var(--green)}
+.cam-cat[data-cat="damage"].on{background:rgba(248,113,113,0.22);border-color:rgba(248,113,113,0.6);color:var(--red)}
+.cam-cat[data-cat="materials"].on{background:rgba(251,146,60,0.22);border-color:rgba(251,146,60,0.6);color:var(--orange)}
+.gallery-group{margin-bottom:12px}
+.gallery-group-head{display:flex;align-items:center;justify-content:space-between;margin:6px 0 6px;padding:0 2px}
+.gallery-group-head .lbl{font-family:'Orbitron',monospace;font-size:0.6em;font-weight:700;letter-spacing:2px;color:var(--text-dim);text-transform:uppercase}
 
 /* ─── View toggle (MINE / BOARD) ─── */
 .view-toggle{display:grid;grid-template-columns:1fr 1fr;gap:0;margin-bottom:12px;background:rgba(6,10,20,0.7);border:1px solid var(--border);border-radius:10px;overflow:hidden;padding:3px}
@@ -262,12 +277,19 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
     </div>
   </div>
   <div class="cam-controls">
+    <div class="cam-cats" id="camCats">
+      <button class="cam-cat" data-cat="before">BEFORE</button>
+      <button class="cam-cat on" data-cat="progress">PROGRESS</button>
+      <button class="cam-cat" data-cat="after">AFTER</button>
+      <button class="cam-cat" data-cat="damage">DAMAGE</button>
+      <button class="cam-cat" data-cat="materials">MATERIALS</button>
+    </div>
     <div class="cam-strip" id="camStrip"></div>
     <div class="cam-shutter-row" style="position:relative">
       <button class="cam-shutter" id="camShutter" aria-label="Take photo"></button>
       <button class="cam-done-btn" onclick="closeCamera()">DONE</button>
     </div>
-    <div class="cam-hint">Tap shutter rapidly · uploads in background · photos auto-save to this project</div>
+    <div class="cam-hint">Tap shutter rapidly · uploads in background · tag before/after/damage</div>
   </div>
 </div>
 
@@ -278,6 +300,14 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
     <div class="fld">
       <label>Title</label>
       <input type="text" id="aTitle" placeholder="e.g. Tear-off — 178 Summerhill">
+    </div>
+    <div class="fld">
+      <label>Role / Checklist</label>
+      <div class="priority-row" id="aRole">
+        <div class="prio-chip" data-r="crew" style="grid-column:span 1">CREW</div>
+        <div class="prio-chip" data-r="supervisor" style="grid-column:span 2">SUPERVISOR</div>
+        <div class="prio-chip" data-r="sales" style="grid-column:span 1">SALES</div>
+      </div>
     </div>
     <div class="fld">
       <label>Assign to</label>
@@ -432,6 +462,7 @@ async function renderHome(c) {
         <div class="sub">${esc(t.project?.name||t.project?.address||'')}</div>
         <div class="meta">
           <span class="badge badge-${t.status==='active'?'active':'open'}">${t.status}</span>
+          ${roleBadge(t, {small:true})}
           ${t.priority!=='medium'?`<span class="badge badge-${t.priority==='urgent'?'urgent':'high'}">${t.priority}</span>`:''}
           ${t.due_date?`<span class="sub">${new Date(t.due_date+'T00:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</span>`:''}
         </div>
@@ -495,6 +526,7 @@ async function renderMineView() {
       <div class="sub">${esc(t.project?.name||t.project?.address||'')}</div>
       <div class="meta">
         <span class="badge badge-${t.status==='active'?'active':'open'}">${t.status}</span>
+        ${roleBadge(t, {small:true})}
         ${t.priority!=='medium'?`<span class="badge badge-${t.priority==='urgent'?'urgent':'high'}">${t.priority}</span>`:''}
       </div>
     </div>`;
@@ -509,6 +541,7 @@ async function renderMineView() {
         <div class="sub">${esc(t.project?.name||'')} ${t.assigned_user?'— '+esc(t.assigned_user.name):''}</div>
         <div class="meta">
           <span class="badge badge-ticket">ticket</span>
+          ${roleBadge(t, {small:true})}
           ${t.priority!=='medium'?`<span class="badge badge-${t.priority==='urgent'?'urgent':'high'}">${t.priority}</span>`:''}
         </div>
       </div>`;
@@ -536,6 +569,7 @@ async function renderBoardView() {
       <div class="sub">${esc(t.project?.name||t.project?.address||'')}</div>
       <div class="meta">
         ${who}
+        ${roleBadge(t, {small:true})}
         ${t.priority!=='medium'?`<span class="badge badge-${t.priority==='urgent'?'urgent':t.priority==='high'?'high':'open'}">${t.priority}</span>`:''}
         ${t.due_date?`<span class="sub" style="font-size:0.68em">${new Date(t.due_date+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span>`:''}
       </div>
@@ -561,9 +595,12 @@ async function renderBoardView() {
   inner.innerHTML = html;
 }
 
-// ═══ Checklist templates — auto-pick by task title ═══
+// ═══ Role-aware checklist templates ═══
+// A ticket's role is set via tags: ['crew'] | ['supervisor'] | ['sales'].
+// pickTemplate reads tags first, then falls back to title-keyword matching.
 const CHECKLIST_TEMPLATES = {
-  install: [
+  // CREW — on-site install deliverables (set by NEW ASSIGNMENT → CREW)
+  crew: [
     { id:'before',    label:'Before photos (full roof, all sides)',                    photoReq:true },
     { id:'safety',    label:'Safety check-in (harness, ladders, fall protection)',     photoReq:true },
     { id:'damages',   label:'Existing damages documented',                             photoReq:true },
@@ -575,6 +612,27 @@ const CHECKLIST_TEMPLATES = {
     { id:'vent',      label:'Ventilation (ridge vent, intake, baffles)',               photoReq:true },
     { id:'cleanup',   label:'Final cleanup (magnet sweep, debris gone)',               photoReq:true }
   ],
+  // SUPERVISOR — QA, coordination, customer-facing moments
+  supervisor: [
+    { id:'walk',      label:'Site walkthrough (access, parking, gate, pets noted)',    photoReq:false },
+    { id:'materials', label:'Materials delivered + counted against order',             photoReq:true },
+    { id:'permits',   label:'Permits pulled (or confirmed not required)',              photoReq:false },
+    { id:'brief',     label:'Crew briefed on scope + safety plan',                     photoReq:false },
+    { id:'qa',        label:'Mid-job QA (after tear-off, before shingles)',            photoReq:true },
+    { id:'final',     label:'Final walkthrough with customer · punch list zero',       photoReq:true },
+    { id:'close',     label:'Warranty docs delivered + review request sent',           photoReq:false }
+  ],
+  // SALES — pre-job paperwork + customer communication
+  sales: [
+    { id:'contract',  label:'Contract signed + filed',                                 photoReq:false },
+    { id:'deposit',   label:'Deposit collected (e-transfer / cheque / card logged)',   photoReq:false },
+    { id:'measure',   label:'Measurements confirmed (EagleView or site measure)',      photoReq:false },
+    { id:'product',   label:'Product + tier confirmed with customer',                  photoReq:false },
+    { id:'schedule',  label:'Install date booked + customer notified',                 photoReq:false },
+    { id:'precall',   label:'Day-before reminder call',                                photoReq:false },
+    { id:'review',    label:'Post-install: review request + warranty pack',            photoReq:false }
+  ],
+  // Legacy fallback templates kept for backward compat with existing tickets
   repair: [
     { id:'assess',    label:'Damage assessed — before photos',                         photoReq:true },
     { id:'materials', label:'Materials matched (color / profile)',                     photoReq:false },
@@ -594,11 +652,6 @@ const CHECKLIST_TEMPLATES = {
     { id:'damage',    label:'Damage photos + notes',                                   photoReq:true },
     { id:'report',    label:'Report sent to estimator',                                photoReq:false }
   ],
-  caulk: [
-    { id:'clean',     label:'Surfaces cleaned + primed',                               photoReq:false },
-    { id:'apply',     label:'Caulk applied — smooth bead',                             photoReq:true },
-    { id:'tool',      label:'Tooled + neat',                                           photoReq:true }
-  ],
   doors: [
     { id:'map',       label:'Area mapped — start addr',                                photoReq:false },
     { id:'doors',     label:'Doors knocked',                                           photoReq:false },
@@ -612,13 +665,42 @@ const CHECKLIST_TEMPLATES = {
   ]
 };
 
-function pickTemplate(title) {
-  const t = (title || '').toLowerCase();
-  if (/install|reroof|tear[-\s]?off|shingle/.test(t)) return 'install';
-  if (/caulk|mansard|seal/.test(t)) return 'caulk';
+// Role metadata for badges and the assignment modal chip group
+const ROLE_META = {
+  crew:       { label:'CREW',       color:'var(--green)',  bg:'rgba(74,222,128,0.14)',  bd:'rgba(74,222,128,0.32)' },
+  supervisor: { label:'SUPERVISOR', color:'var(--cyan)',   bg:'rgba(34,211,238,0.14)',  bd:'rgba(34,211,238,0.32)' },
+  sales:      { label:'SALES',      color:'var(--blue)',   bg:'rgba(74,158,255,0.14)',  bd:'rgba(74,158,255,0.32)' },
+};
+
+function ticketRole(t) {
+  const tags = t?.tags || [];
+  if (tags.includes('crew'))       return 'crew';
+  if (tags.includes('supervisor')) return 'supervisor';
+  if (tags.includes('sales'))      return 'sales';
+  return null;
+}
+
+function roleBadge(t, opts = {}) {
+  const r = ticketRole(t);
+  if (!r) return '';
+  const m = ROLE_META[r];
+  const sz = opts.small ? 'padding:1px 6px;font-size:0.58em' : 'padding:3px 8px;font-size:0.62em';
+  return `<span style="${sz};border-radius:10px;font-weight:700;letter-spacing:1px;background:${m.bg};color:${m.color};border:1px solid ${m.bd}">${m.label}</span>`;
+}
+
+function pickTemplate(ticket) {
+  // Role via explicit tag takes priority
+  const r = ticketRole(ticket);
+  if (r) return r;
+  // Fall back to title-keyword matching (legacy tickets)
+  const t = (ticket?.title || '').toLowerCase();
+  if (/install|reroof|tear[-\s]?off|shingle/.test(t)) return 'crew';
+  if (/walk[-\s]?through|qa|final|supervisor/.test(t)) return 'supervisor';
+  if (/contract|deposit|pre[-\s]?job|schedule|customer call/.test(t)) return 'sales';
+  if (/caulk|mansard|seal/.test(t)) return 'repair';
   if (/repair|leak|fix|patch/.test(t)) return 'repair';
   if (/cleanup|debris|magnet|sweep/.test(t)) return 'cleanup';
-  if (/inspect|measure|assess|eagleview|walkthrough/.test(t)) return 'inspect';
+  if (/inspect|measure|assess|eagleview/.test(t)) return 'inspect';
   if (/canvass|door|lead/.test(t)) return 'doors';
   return 'default';
 }
@@ -667,8 +749,9 @@ function renderChecklist(task, templateKey) {
     </div>`;
   }).join('');
 
+  const tmplLabel = ROLE_META[templateKey]?.label?.toLowerCase() || templateKey;
   return `<div class="panel" style="margin-top:14px">
-    <div class="panel-title">Checklist · ${done}/${items.length} · ${templateKey}</div>
+    <div class="panel-title">${tmplLabel} checklist · ${done}/${items.length}</div>
     ${rows}
     ${blocking ? `<div style="font-size:0.72em;color:var(--orange);margin-top:10px">${blocking} step${blocking>1?'s':''} need photo before check</div>` : ''}
   </div>`;
@@ -718,10 +801,20 @@ async function uploadChecklistPhoto(taskId, itemId, projectId, fileList) {
 let camStream = null;
 let camProjectId = null;
 let camCount = 0;
+let camCategory = 'progress';
 let uploadInFlight = 0;
 const MAX_PARALLEL_UPLOADS = 3;
 const uploadQueue = [];
 let camPendingCount = 0;
+
+// Wire category chip toggles (persistent DOM, wired once)
+document.addEventListener('click', (e) => {
+  const chip = e.target.closest('#camCats .cam-cat');
+  if (!chip) return;
+  document.querySelectorAll('#camCats .cam-cat').forEach(c => c.classList.remove('on'));
+  chip.classList.add('on');
+  camCategory = chip.dataset.cat;
+});
 
 async function openCamera(projectId) {
   camProjectId = projectId;
@@ -802,7 +895,7 @@ function captureFrame() {
     document.getElementById('camCount').textContent = camCount + ' TAKEN';
     const thumbUrl = URL.createObjectURL(blob);
     const thumb = addThumbnail(thumbUrl);
-    queueUpload(blob, thumb);
+    queueUpload(blob, thumb, camCategory);
   }, 'image/jpeg', 0.85);
 }
 
@@ -816,20 +909,20 @@ function addThumbnail(url) {
   return t;
 }
 
-function queueUpload(blob, thumb) {
+function queueUpload(blob, thumb, category) {
   if (uploadInFlight < MAX_PARALLEL_UPLOADS) {
-    startUpload(blob, thumb);
+    startUpload(blob, thumb, category);
   } else {
-    uploadQueue.push({ blob, thumb });
+    uploadQueue.push({ blob, thumb, category });
   }
 }
 
-async function startUpload(blob, thumb) {
+async function startUpload(blob, thumb, category) {
   uploadInFlight++;
   const form = new FormData();
   form.append('project_id', camProjectId);
   form.append('uploaded_by', currentUser?.id || '');
-  form.append('category', 'general');
+  form.append('category', category || 'general');
   const fname = `photo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.jpg`;
   form.append('files', blob, fname);
   try {
@@ -843,7 +936,7 @@ async function startUpload(blob, thumb) {
   } finally {
     uploadInFlight--;
     const next = uploadQueue.shift();
-    if (next) startUpload(next.blob, next.thumb);
+    if (next) startUpload(next.blob, next.thumb, next.category);
   }
 }
 
@@ -868,7 +961,7 @@ document.addEventListener('DOMContentLoaded', () => {
 async function showTask(id) {
   const c = document.getElementById('content');
   const t = await api(`/tickets?id=${id}`);
-  const tmpl = pickTemplate(t.title);
+  const tmpl = pickTemplate(t);
   // Hydrate the in-memory checklist state from the ticket row (DB wins over local mirror
   // when server returned something non-empty). Falls back to localStorage when offline.
   if (t.checklist_state && typeof t.checklist_state === 'object' && Object.keys(t.checklist_state).length) {
@@ -885,9 +978,10 @@ async function showTask(id) {
     <div class="detail-back" onclick="render()">← Back</div>
     <div class="detail-header">
       <h2>${esc(t.title)}</h2>
-      <div style="display:flex;gap:6px;margin-top:6px">
+      <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center">
         <span class="badge badge-${t.status==='active'?'active':t.status==='done'?'done':'open'}">${t.status}</span>
         ${t.priority!=='medium'?`<span class="badge badge-${t.priority==='urgent'?'urgent':'high'}">${t.priority}</span>`:''}
+        ${roleBadge(t)}
       </div>
       <div style="display:flex;gap:10px;margin-top:8px;font-size:0.78em;color:var(--text-dim);flex-wrap:wrap">
         ${t.due_date?`<span>Due: ${new Date(t.due_date+'T00:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</span>`:''}
@@ -902,7 +996,16 @@ async function showTask(id) {
       ${t.status==='active'?`<button class="btn ${allDone?'btn-success':'btn-outline'}" style="flex:1" onclick="taskAction('${t.id}','complete',${allDone})">${allDone?'Complete':'Finish Checklist First'}</button>`:''}
       <button class="btn btn-outline" style="flex:1" onclick="render()">Back</button>
     </div>
+    <button class="btn" style="margin-top:10px;background:transparent;border:1px solid rgba(248,113,113,0.35);color:var(--red);font-size:0.78em" onclick="deleteTask('${t.id}','${esc(t.title).replace(/'/g,'&#39;')}')">Delete this task</button>
   `;
+}
+
+async function deleteTask(id, title) {
+  if (!confirm(`Delete "${title}"? This cannot be undone.`)) return;
+  const r = await api('/tickets?id=' + encodeURIComponent(id), { method: 'DELETE' });
+  if (r?.error) { toast('Error · ' + r.error, 'err'); return; }
+  toast('Deleted', 'ok');
+  switchTab('tasks');
 }
 
 async function taskAction(id, action, allowed) {
@@ -945,6 +1048,7 @@ async function openAssignModal() {
   document.getElementById('aDue').value = '';
   document.getElementById('aDesc').value = '';
   document.querySelectorAll('#aPriority .prio-chip').forEach(c => c.classList.toggle('on', c.dataset.p === 'medium'));
+  document.querySelectorAll('#aRole .prio-chip').forEach(c => c.classList.toggle('on', c.dataset.r === 'crew'));
 
   mdl.classList.add('open');
   setTimeout(() => document.getElementById('aTitle').focus(), 60);
@@ -962,6 +1066,14 @@ document.addEventListener('click', (e) => {
   chip.classList.add('on');
 });
 
+// Role chip toggles
+document.addEventListener('click', (e) => {
+  const chip = e.target.closest('#aRole .prio-chip');
+  if (!chip) return;
+  document.querySelectorAll('#aRole .prio-chip').forEach(c => c.classList.remove('on'));
+  chip.classList.add('on');
+});
+
 // Backdrop tap closes
 document.addEventListener('click', (e) => {
   if (e.target.id === 'assignModal') closeAssignModal();
@@ -974,6 +1086,7 @@ async function createAssignment() {
   const assignee = document.getElementById('aAssignee').value || null;
   const project = document.getElementById('aProject').value || null;
   const priority = document.querySelector('#aPriority .prio-chip.on')?.dataset.p || 'medium';
+  const role = document.querySelector('#aRole .prio-chip.on')?.dataset.r || 'crew';
   const due = document.getElementById('aDue').value || null;
   const description = document.getElementById('aDesc').value.trim() || null;
 
@@ -989,6 +1102,7 @@ async function createAssignment() {
       assigned_to: assignee,
       project_id: project,
       due_date: due,
+      tags: [role],
     }),
   });
 
@@ -1042,12 +1156,30 @@ async function showProject(id) {
       <div style="font-size:0.78em;color:var(--text-dim);margin-top:4px">${esc(p.address||'')}${p.city?', '+esc(p.city):''}</div>
     </div>`;
 
-  // Photos
-  html += `<div class="section-head"><div class="section-label">Photos (${photos.length})</div></div>
-    <div class="photo-grid">
-      ${photos.map(f => `<div class="photo-thumb"><img src="${esc(f.url)}" alt="${esc(f.caption||'')}" loading="lazy"></div>`).join('')}
-    </div>
-    <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-top:10px">
+  // Photos — grouped by category (media pool)
+  const CAT_ORDER = ['before','progress','after','damage','materials','general','checklist'];
+  const CAT_LABEL = { before:'BEFORE', progress:'PROGRESS', after:'AFTER', damage:'DAMAGE', materials:'MATERIALS', general:'GENERAL', checklist:'CHECKLIST PHOTOS' };
+  const buckets = {};
+  for (const f of photos) {
+    const k = (f.category || 'general').toLowerCase();
+    (buckets[k] = buckets[k] || []).push(f);
+  }
+  html += `<div class="section-head"><div class="section-label">Media (${photos.length})</div></div>`;
+  if (photos.length === 0) {
+    html += `<div style="font-size:0.82em;color:var(--text-dim);padding:6px 2px">No photos yet. Tap Take Photos below.</div>`;
+  } else {
+    for (const cat of CAT_ORDER) {
+      const list = buckets[cat];
+      if (!list?.length) continue;
+      html += `<div class="gallery-group">
+        <div class="gallery-group-head"><span class="lbl">${CAT_LABEL[cat] || cat.toUpperCase()}</span><span class="badge badge-open">${list.length}</span></div>
+        <div class="photo-grid">
+          ${list.map(f => `<div class="photo-thumb"><img src="${esc(f.url)}" alt="${esc(f.caption||'')}" loading="lazy"></div>`).join('')}
+        </div>
+      </div>`;
+    }
+  }
+  html += `<div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-top:10px">
       <button class="btn btn-primary" style="padding:14px;font-size:0.9em" onclick="openCamera('${id}')">📸 Take Photos</button>
       <button class="btn btn-outline" style="padding:14px;font-size:0.82em" onclick="document.getElementById('libraryInput').click()">📁 Library</button>
     </div>

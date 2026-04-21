@@ -209,6 +209,30 @@ async function handler(req, res) {
     return res.json(data);
   }
 
+  // ── DELETE ──
+  if (req.method === 'DELETE') {
+    const { id } = req.query;
+    if (!id) return res.status(400).json({ error: 'Missing ?id=' });
+
+    const { error } = await supabaseAdmin
+      .from('tickets')
+      .delete()
+      .eq('id', id)
+      .eq('tenant_id', tenantId);
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    await supabaseAdmin.from('activity_log').insert({
+      tenant_id: tenantId,
+      entity_type: 'ticket',
+      entity_id: id,
+      action: 'deleted',
+      details: {}
+    });
+
+    return res.json({ deleted: id });
+  }
+
   return res.status(405).json({ error: 'Method not allowed' });
 }
 
