@@ -156,6 +156,36 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .prio-chip[data-p="high"].on{background:rgba(251,146,60,0.15);border-color:var(--orange);color:var(--orange)}
 .prio-chip[data-p="urgent"].on{background:rgba(248,113,113,0.15);border-color:var(--red);color:var(--red)}
 
+/* ─── Rapid-fire camera ─── */
+.cam-overlay{position:fixed;inset:0;z-index:500;background:#000;display:none;flex-direction:column}
+.cam-overlay.open{display:flex}
+.cam-video-wrap{flex:1;position:relative;overflow:hidden;background:#000}
+.cam-video{width:100%;height:100%;object-fit:cover;background:#000}
+.cam-flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity 0.1s}
+.cam-flash.on{opacity:0.65}
+.cam-topbar{position:absolute;top:0;left:0;right:0;height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;background:linear-gradient(180deg,rgba(0,0,0,0.6),transparent);z-index:3}
+.cam-close{width:40px;height:40px;border-radius:20px;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;color:#fff;border:none;cursor:pointer;font-size:1.1em;font-weight:700}
+.cam-count{color:#fff;font-family:'Orbitron',monospace;font-size:0.7em;letter-spacing:1.5px;font-weight:700;padding:7px 14px;background:rgba(0,0,0,0.55);border-radius:20px;display:flex;align-items:center;gap:6px}
+.cam-count .dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green)}
+.cam-controls{padding:16px 14px 22px;background:rgba(0,0,0,0.85);border-top:1px solid rgba(255,255,255,0.08);display:flex;flex-direction:column;gap:12px}
+.cam-strip{display:flex;gap:6px;overflow-x:auto;min-height:56px;padding:2px 0}
+.cam-strip::-webkit-scrollbar{display:none}
+.cam-thumb{position:relative;width:56px;height:56px;flex-shrink:0;border-radius:8px;overflow:hidden;border:1.5px solid rgba(255,255,255,0.18)}
+.cam-thumb img{width:100%;height:100%;object-fit:cover}
+.cam-thumb .cam-thumb-status{position:absolute;bottom:2px;right:2px;width:18px;height:18px;border-radius:9px;background:rgba(0,0,0,0.75);color:#fff;display:flex;align-items:center;justify-content:center;font-size:0.66em;font-weight:700}
+.cam-thumb.pending{border-color:rgba(251,146,60,0.7)}
+.cam-thumb.pending .cam-thumb-status{color:var(--orange)}
+.cam-thumb.done{border-color:rgba(74,222,128,0.8)}
+.cam-thumb.done .cam-thumb-status{color:var(--green)}
+.cam-thumb.failed{border-color:rgba(248,113,113,0.8)}
+.cam-thumb.failed .cam-thumb-status{color:var(--red)}
+.cam-shutter-row{display:flex;align-items:center;justify-content:center;gap:22px}
+.cam-shutter{width:74px;height:74px;border-radius:50%;background:#fff;border:4px solid rgba(255,255,255,0.4);cursor:pointer;transition:transform 0.08s, box-shadow 0.08s;box-shadow:0 0 0 2px rgba(0,0,0,0.6) inset}
+.cam-shutter:active{transform:scale(0.92);box-shadow:0 0 0 4px rgba(34,211,238,0.6) inset}
+.cam-shutter:disabled{opacity:0.4}
+.cam-done-btn{position:absolute;right:14px;padding:10px 16px;background:rgba(34,211,238,0.18);border:1px solid rgba(34,211,238,0.5);border-radius:10px;color:var(--cyan);font-family:'Orbitron',monospace;font-weight:700;font-size:0.7em;letter-spacing:1.3px;cursor:pointer}
+.cam-hint{text-align:center;color:rgba(255,255,255,0.45);font-size:0.68em;letter-spacing:1px;font-family:'Share Tech Mono',monospace}
+
 /* ─── View toggle (MINE / BOARD) ─── */
 .view-toggle{display:grid;grid-template-columns:1fr 1fr;gap:0;margin-bottom:12px;background:rgba(6,10,20,0.7);border:1px solid var(--border);border-radius:10px;overflow:hidden;padding:3px}
 .vt-btn{padding:8px;text-align:center;font-family:'Orbitron',monospace;font-size:0.64em;font-weight:700;letter-spacing:1.5px;color:var(--text-dim);cursor:pointer;border-radius:7px;transition:all 0.15s}
@@ -220,6 +250,26 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 
 <!-- Content -->
 <div class="content" id="content"></div>
+
+<!-- Rapid-fire Camera Overlay -->
+<div class="cam-overlay" id="camOverlay">
+  <div class="cam-video-wrap">
+    <video class="cam-video" id="camVideo" autoplay playsinline muted></video>
+    <div class="cam-flash" id="camFlash"></div>
+    <div class="cam-topbar">
+      <button class="cam-close" onclick="closeCamera()">✕</button>
+      <div class="cam-count"><span class="dot"></span><span id="camCount">0 TAKEN</span></div>
+    </div>
+  </div>
+  <div class="cam-controls">
+    <div class="cam-strip" id="camStrip"></div>
+    <div class="cam-shutter-row" style="position:relative">
+      <button class="cam-shutter" id="camShutter" aria-label="Take photo"></button>
+      <button class="cam-done-btn" onclick="closeCamera()">DONE</button>
+    </div>
+    <div class="cam-hint">Tap shutter rapidly · uploads in background · photos auto-save to this project</div>
+  </div>
+</div>
 
 <!-- New Assignment Modal -->
 <div class="modal-bd" id="assignModal">
@@ -660,6 +710,160 @@ async function uploadChecklistPhoto(taskId, itemId, projectId, fileList) {
   reader.readAsDataURL(f);
 }
 
+// ═══ RAPID-FIRE CAMERA ═══
+// Custom viewfinder via getUserMedia. Shutter captures a canvas frame,
+// downscales to 1920px/JPEG 0.85 (~400KB vs 5MB native) and fires upload
+// in the background (max 3 parallel). Shutter is re-enabled immediately
+// so crew can tap-tap-tap without waiting for previous upload.
+let camStream = null;
+let camProjectId = null;
+let camCount = 0;
+let uploadInFlight = 0;
+const MAX_PARALLEL_UPLOADS = 3;
+const uploadQueue = [];
+let camPendingCount = 0;
+
+async function openCamera(projectId) {
+  camProjectId = projectId;
+  camCount = 0;
+  document.getElementById('camStrip').innerHTML = '';
+  document.getElementById('camCount').textContent = '0 TAKEN';
+  const overlay = document.getElementById('camOverlay');
+  overlay.classList.add('open');
+
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: 'environment' },
+        width:  { ideal: 1920 },
+        height: { ideal: 1080 },
+      },
+      audio: false,
+    });
+    const vid = document.getElementById('camVideo');
+    vid.srcObject = camStream;
+    await vid.play().catch(() => {});
+  } catch (e) {
+    // Permission denied or unsupported — fall back to native picker
+    closeCamera();
+    toast('Camera access blocked · using device picker', 'warn');
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = 'image/*'; inp.capture = 'environment';
+    inp.onchange = () => handlePhotoUpload(projectId, inp.files);
+    inp.click();
+  }
+}
+
+function closeCamera() {
+  if (camStream) {
+    try { camStream.getTracks().forEach(t => t.stop()); } catch(e){}
+    camStream = null;
+  }
+  document.getElementById('camOverlay').classList.remove('open');
+  // Only refresh the project view if we actually took photos AND they're done uploading
+  if (camCount > 0 && camProjectId) {
+    // Wait for in-flight uploads to settle, then refresh once
+    const wait = () => {
+      if (uploadInFlight === 0 && uploadQueue.length === 0) {
+        showProject(camProjectId);
+      } else {
+        setTimeout(wait, 400);
+      }
+    };
+    wait();
+  }
+}
+
+function flashCamera() {
+  const f = document.getElementById('camFlash');
+  f.classList.add('on');
+  setTimeout(() => f.classList.remove('on'), 120);
+}
+
+function captureFrame() {
+  const vid = document.getElementById('camVideo');
+  if (!vid.videoWidth) return; // stream not ready yet
+
+  const canvas = document.createElement('canvas');
+  const maxEdge = 1920;
+  let w = vid.videoWidth, h = vid.videoHeight;
+  if (Math.max(w, h) > maxEdge) {
+    const scale = maxEdge / Math.max(w, h);
+    w = Math.round(w * scale); h = Math.round(h * scale);
+  }
+  canvas.width = w; canvas.height = h;
+  canvas.getContext('2d').drawImage(vid, 0, 0, w, h);
+
+  flashCamera(); // instant visual feedback — shutter stays responsive
+
+  canvas.toBlob((blob) => {
+    if (!blob) return;
+    camCount++;
+    document.getElementById('camCount').textContent = camCount + ' TAKEN';
+    const thumbUrl = URL.createObjectURL(blob);
+    const thumb = addThumbnail(thumbUrl);
+    queueUpload(blob, thumb);
+  }, 'image/jpeg', 0.85);
+}
+
+function addThumbnail(url) {
+  const strip = document.getElementById('camStrip');
+  const t = document.createElement('div');
+  t.className = 'cam-thumb pending';
+  t.innerHTML = `<img src="${url}"><div class="cam-thumb-status">…</div>`;
+  strip.insertBefore(t, strip.firstChild);
+  strip.scrollLeft = 0;
+  return t;
+}
+
+function queueUpload(blob, thumb) {
+  if (uploadInFlight < MAX_PARALLEL_UPLOADS) {
+    startUpload(blob, thumb);
+  } else {
+    uploadQueue.push({ blob, thumb });
+  }
+}
+
+async function startUpload(blob, thumb) {
+  uploadInFlight++;
+  const form = new FormData();
+  form.append('project_id', camProjectId);
+  form.append('uploaded_by', currentUser?.id || '');
+  form.append('category', 'general');
+  const fname = `photo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.jpg`;
+  form.append('files', blob, fname);
+  try {
+    const r = await fetch(API + '/files?tenant=' + TENANT, { method: 'POST', body: form });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    thumb.classList.remove('pending'); thumb.classList.add('done');
+    thumb.querySelector('.cam-thumb-status').textContent = '✓';
+  } catch (e) {
+    thumb.classList.remove('pending'); thumb.classList.add('failed');
+    thumb.querySelector('.cam-thumb-status').textContent = '✗';
+  } finally {
+    uploadInFlight--;
+    const next = uploadQueue.shift();
+    if (next) startUpload(next.blob, next.thumb);
+  }
+}
+
+// Wire shutter (once — overlay is persistent in DOM)
+document.addEventListener('DOMContentLoaded', () => {
+  const sh = document.getElementById('camShutter');
+  if (sh && !sh._wired) {
+    sh._wired = true;
+    sh.addEventListener('click', captureFrame);
+  }
+});
+// Also wire immediately in case DOM is already parsed by the time this runs
+(function wireShutterNow(){
+  const sh = document.getElementById('camShutter');
+  if (sh && !sh._wired) {
+    sh._wired = true;
+    sh.addEventListener('click', captureFrame);
+  }
+})();
+
 // ═══ Task Detail ═══
 async function showTask(id) {
   const c = document.getElementById('content');
@@ -844,10 +1048,9 @@ async function showProject(id) {
       ${photos.map(f => `<div class="photo-thumb"><img src="${esc(f.url)}" alt="${esc(f.caption||'')}" loading="lazy"></div>`).join('')}
     </div>
     <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-top:10px">
-      <button class="btn btn-primary" style="padding:14px;font-size:0.9em" onclick="document.getElementById('cameraInput').click()">📸 Take Photo</button>
+      <button class="btn btn-primary" style="padding:14px;font-size:0.9em" onclick="openCamera('${id}')">📸 Take Photos</button>
       <button class="btn btn-outline" style="padding:14px;font-size:0.82em" onclick="document.getElementById('libraryInput').click()">📁 Library</button>
     </div>
-    <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none" onchange="handlePhotoUpload('${id}',this.files)">
     <input type="file" id="libraryInput" accept="image/*,video/*" multiple style="display:none" onchange="handlePhotoUpload('${id}',this.files)">`;
 
   // Tasks for this project
