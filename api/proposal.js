@@ -121,8 +121,10 @@ const REVIEW_STATS = {
 const GALLERY = [
   { img: `${BRAND_BASE}/gallery/01-hero-lakeside-landmark.jpg`, loc: 'MONCTON · LAKESIDE', desc: 'CertainTeed Landmark · full reroof · drone' },
   { img: `${BRAND_BASE}/gallery/02-topdown-architectural.jpg`, loc: 'RIVERVIEW · 2025',    desc: 'Complex architectural roof · top-down drone' },
+  { img: `${BRAND_BASE}/gallery/07-valley-detail.jpg`,          loc: 'RIVERVIEW · 2025',    desc: 'Woven valley detail · architectural shingle' },
   { img: `${BRAND_BASE}/gallery/03-crew-in-action.jpg`,         loc: 'DIEPPE · 2025',       desc: 'Full tear-off · safety-harnessed crew' },
   { img: `${BRAND_BASE}/gallery/04-job-complete.jpg`,           loc: 'MONCTON · 2025',      desc: 'Job complete · debris staged for haul' },
+  { img: `${BRAND_BASE}/gallery/08-new-construction-2.jpg`,     loc: 'MONCTON · 2025',      desc: 'New build · crew installing deck + underlayment' },
   { img: `${BRAND_BASE}/gallery/05-new-construction.jpg`,       loc: 'RIVERVIEW · 2025',    desc: 'New-construction install' },
   { img: `${BRAND_BASE}/gallery/06-drone-completion.jpg`,       loc: 'MONCTON · 2025',      desc: 'Drone completion shot' }
 ];
@@ -285,7 +287,7 @@ export default async function handler(req, res) {
       beforeImage: beforePhoto?.url || PU_DEFAULT_MEDIA.beforeImage,
       afterImage: afterPhoto?.url || PU_DEFAULT_MEDIA.afterImage,
       videoUrl: rep.introVideo || PU_DEFAULT_MEDIA.videoUrl,
-      gallery: customGallery.length ? [...customGallery, ...GALLERY].slice(0, 6) : GALLERY
+      gallery: customGallery.length ? [...customGallery, ...GALLERY].slice(0, 8) : GALLERY
     },
     tiers: {
       asphalt: tierEntries.length ? tierEntries : [
