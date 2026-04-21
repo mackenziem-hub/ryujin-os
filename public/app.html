@@ -208,6 +208,9 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .gallery-group{margin-bottom:12px}
 .gallery-group-head{display:flex;align-items:center;justify-content:space-between;margin:6px 0 6px;padding:0 2px}
 .gallery-group-head .lbl{font-family:'Orbitron',monospace;font-size:0.6em;font-weight:700;letter-spacing:2px;color:var(--text-dim);text-transform:uppercase}
+.filter-btn-media{flex:none;padding:6px 12px;background:rgba(6,10,20,0.7);border:1px solid var(--border);border-radius:16px;font-family:'Orbitron',monospace;font-size:0.6em;font-weight:700;letter-spacing:1.2px;color:var(--text-dim);cursor:pointer;white-space:nowrap}
+.filter-btn-media.on{background:rgba(34,211,238,0.18);border-color:rgba(34,211,238,0.5);color:var(--cyan)}
+#mediaFilters::-webkit-scrollbar{display:none}
 
 /* ─── View toggle (MINE / BOARD) ─── */
 .view-toggle{display:grid;grid-template-columns:1fr 1fr;gap:0;margin-bottom:12px;background:rgba(6,10,20,0.7);border:1px solid var(--border);border-radius:10px;overflow:hidden;padding:3px}
@@ -364,6 +367,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
     <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
     <span>Projects</span>
   </div>
+  <div class="nav-item" data-tab="media" onclick="switchTab('media')">
+    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+    <span>Media</span>
+  </div>
   <div class="nav-item" data-tab="clock" onclick="switchTab('clock')">
     <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
     <span>Clock</span>
@@ -409,6 +416,7 @@ function render() {
     case 'home': return renderHome(c);
     case 'tasks': return renderTasks(c);
     case 'projects': return renderProjects(c);
+    case 'media': return renderMedia(c);
     case 'clock': return renderClock(c);
   }
 }
@@ -563,6 +571,23 @@ async function renderMineView() {
   inner.innerHTML = html;
 }
 
+async function clearClutter(items) {
+  const list = typeof items === 'string' ? JSON.parse(items) : items;
+  if (!list?.length) return;
+  const preview = list.slice(0, 5).map(x => '· ' + x.title).join('\n') + (list.length > 5 ? `\n· …and ${list.length - 5} more` : '');
+  if (!confirm(`Delete ${list.length} legacy ticket${list.length>1?'s':''}?\n\n${preview}\n\nThis cannot be undone. Role-tagged checklists (CREW/SUPERVISOR/SALES/ADMIN) are NOT affected.`)) return;
+  toast(`Clearing ${list.length}…`, 'info');
+  let failed = 0;
+  await Promise.all(list.map(async (x) => {
+    try {
+      const r = await fetch(API + '/tickets?tenant=' + TENANT + '&id=' + encodeURIComponent(x.id), { method: 'DELETE' });
+      if (!r.ok) failed++;
+    } catch (e) { failed++; }
+  }));
+  toast(failed ? `Cleared ${list.length - failed} · ${failed} failed` : `Cleared ${list.length} legacy tickets`, failed ? 'warn' : 'ok');
+  renderTasks(document.getElementById('content'));
+}
+
 async function renderBoardView() {
   const inner = document.getElementById('tasksInner');
   const [openD, activeD, doneD] = await Promise.all([
@@ -573,6 +598,15 @@ async function renderBoardView() {
   const open = openD.tickets || [];
   const active = activeD.tickets || [];
   const done = doneD.tickets || [];
+
+  // Clutter = open/active tickets without a role tag (crew/supervisor/sales/admin)
+  const clutter = [...open, ...active].filter(t => !ticketRole(t));
+  const clutterBanner = clutter.length > 0
+    ? `<div style="background:rgba(251,146,60,0.08);border:1px solid rgba(251,146,60,0.28);border-radius:10px;padding:10px 14px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+         <div style="font-size:0.82em;color:var(--orange);flex:1;min-width:180px">${clutter.length} tickets without a checklist role — likely legacy clutter.</div>
+         <button class="btn" style="padding:7px 13px;font-size:0.74em;background:rgba(248,113,113,0.15);border:1px solid rgba(248,113,113,0.4);color:var(--red);width:auto" onclick='clearClutter(${JSON.stringify(clutter.map(t=>({id:t.id,title:t.title})))})'>🧹 CLEAR ${clutter.length}</button>
+       </div>`
+    : '';
 
   const cardHtml = (t) => {
     const pClass = t.priority==='urgent'?'urgent':t.priority==='high'?'high':t.status==='active'?'active-task':'';
@@ -589,7 +623,7 @@ async function renderBoardView() {
     </div>`;
   };
 
-  let html = '';
+  let html = clutterBanner;
   html += `<div class="board-col active">
     <div class="board-col-head"><span class="lbl">IN PROGRESS</span><span class="badge badge-active">${active.length}</span></div>
     ${active.length ? active.map(cardHtml).join('') : `<div style="font-size:0.78em;color:var(--text-dim);padding:8px 4px">Nothing in progress</div>`}
@@ -1337,16 +1371,52 @@ async function deletePhoto(fileId, projectId) {
 
 async function shareShowcase(projectId, count) {
   const url = `${window.location.origin}/customer-showcase.html?tenant=${encodeURIComponent(TENANT)}&project=${encodeURIComponent(projectId)}`;
+  openShareDialog(url, count);
+}
+
+function openShareDialog(url, count) {
+  const existing = document.getElementById('shareDialog');
+  if (existing) existing.remove();
+  const d = document.createElement('div');
+  d.id = 'shareDialog';
+  d.className = 'modal-bd open';
+  d.innerHTML = `
+    <div class="modal" style="padding-bottom:20px">
+      <h3>CUSTOMER SHOWCASE LINK</h3>
+      <div style="font-size:0.85em;color:var(--text-dim);margin-top:-4px">${count} starred photo${count===1?'':'s'} will be visible on this page.</div>
+      <div style="margin-top:6px">
+        <input type="text" id="shareUrlInput" value="${url.replace(/"/g,'&quot;')}" readonly style="width:100%;padding:12px 14px;background:rgba(6,10,20,0.8);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Share Tech Mono',monospace;font-size:0.85em;outline:none" onclick="this.select()">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+        <button class="btn btn-primary" onclick="copyShareUrl()">📋 Copy Link</button>
+        <button class="btn btn-outline" onclick="window.open(document.getElementById('shareUrlInput').value,'_blank')">👁 Preview</button>
+      </div>
+      ${navigator.share ? `<button class="btn btn-outline" style="margin-top:6px" onclick="nativeShareUrl('${url.replace(/'/g,'&#39;')}',${count})">📤 Share via… (Messages, Email, etc.)</button>` : ''}
+      <button class="btn btn-outline" style="margin-top:10px" onclick="closeShareDialog()">Done</button>
+    </div>
+  `;
+  document.body.appendChild(d);
+  setTimeout(() => document.getElementById('shareUrlInput')?.select(), 80);
+}
+function closeShareDialog() {
+  document.getElementById('shareDialog')?.remove();
+}
+async function copyShareUrl() {
+  const inp = document.getElementById('shareUrlInput');
+  if (!inp) return;
+  inp.select(); inp.setSelectionRange(0, 99999);
+  let copied = false;
+  try { await navigator.clipboard.writeText(inp.value); copied = true; } catch(e){}
+  if (!copied) {
+    try { copied = document.execCommand && document.execCommand('copy'); } catch(e){}
+  }
+  toast(copied ? 'Link copied · paste into text/email' : 'Select the link above and copy manually', copied ? 'ok' : 'warn');
+}
+async function nativeShareUrl(url, count) {
   try {
-    if (navigator.share) {
-      await navigator.share({ title: 'Plus Ultra — Project Photos', text: `${count} photos selected for you`, url });
-    } else {
-      await navigator.clipboard.writeText(url);
-      toast('Showcase link copied', 'ok');
-    }
+    await navigator.share({ title: 'Plus Ultra — Project Photos', text: `${count} photo${count===1?'':'s'} from your project`, url });
   } catch (e) {
-    // User cancelled share sheet — ignore
-    if (e?.name !== 'AbortError') toast('Share failed · ' + e.message, 'err');
+    if (e?.name !== 'AbortError') toast('Share sheet unavailable — use Copy Link', 'warn');
   }
 }
 
@@ -1362,6 +1432,121 @@ async function handlePhotoUpload(projectId, fileList) {
   toast('Photos uploaded!','ok');
   showProject(projectId);
 }
+
+// ═══ MEDIA TAB — global photo view across all projects ═══
+let mediaFilter = 'all'; // 'all' | 'starred' | category value
+async function renderMedia(c) {
+  c.innerHTML = `
+    <div class="section-head"><div class="section-label">All Media</div><div class="section-label" id="mediaCount" style="color:var(--cyan)">—</div></div>
+    <div style="display:flex;gap:6px;overflow-x:auto;margin-bottom:10px;padding-bottom:2px" id="mediaFilters">
+      <button class="filter-btn-media ${mediaFilter==='all'?'on':''}" data-m="all">ALL</button>
+      <button class="filter-btn-media ${mediaFilter==='starred'?'on':''}" data-m="starred">★ SHOWCASE</button>
+      <button class="filter-btn-media ${mediaFilter==='before'?'on':''}" data-m="before">BEFORE</button>
+      <button class="filter-btn-media ${mediaFilter==='during'?'on':''}" data-m="during">PROGRESS</button>
+      <button class="filter-btn-media ${mediaFilter==='after'?'on':''}" data-m="after">AFTER</button>
+      <button class="filter-btn-media ${mediaFilter==='damage'?'on':''}" data-m="damage">DAMAGE</button>
+      <button class="filter-btn-media ${mediaFilter==='material'?'on':''}" data-m="material">MATERIALS</button>
+      <button class="filter-btn-media ${mediaFilter==='inspection'?'on':''}" data-m="inspection">CHECKLIST</button>
+    </div>
+    <div id="mediaGrid"><div class="empty" style="padding:30px"><div style="font-size:1.5em;opacity:0.2">📷</div><p>Loading…</p></div></div>
+  `;
+
+  // Fetch projects, then files per project in parallel
+  let projects = [];
+  try {
+    const pData = await api('/projects');
+    projects = pData.projects || [];
+  } catch(e){}
+
+  const results = await Promise.all(projects.map(p =>
+    fetch(API + '/files?tenant=' + TENANT + '&project_id=' + encodeURIComponent(p.id))
+      .then(r => r.ok ? r.json() : { files: [] })
+      .then(j => (j.files || []).map(f => ({ ...f, _projectName: p.name || p.address || 'Project', _projectId: p.id })))
+      .catch(() => [])
+  ));
+  const allPhotos = results.flat().filter(f => f.mime_type && f.mime_type.startsWith('image/'));
+  allPhotos.sort((a,b) => (b.uploaded_at || '').localeCompare(a.uploaded_at || ''));
+
+  renderMediaGrid(allPhotos);
+}
+
+function renderMediaGrid(allPhotos) {
+  const grid = document.getElementById('mediaGrid');
+  const countEl = document.getElementById('mediaCount');
+  if (!grid || !countEl) return;
+
+  let filtered = allPhotos;
+  if (mediaFilter === 'starred') filtered = allPhotos.filter(f => f.client_visible);
+  else if (mediaFilter !== 'all') filtered = allPhotos.filter(f => (f.category || 'general').toLowerCase() === mediaFilter);
+
+  countEl.textContent = `${filtered.length} / ${allPhotos.length}`;
+
+  if (filtered.length === 0) {
+    grid.innerHTML = `<div class="empty" style="padding:30px"><div style="font-size:1.5em;opacity:0.2">📷</div><p>${mediaFilter==='all'?'No photos yet. Open a project and tap Take Photos.':'No photos match this filter.'}</p></div>`;
+    return;
+  }
+
+  // Group by project for visual anchoring
+  const byProj = new Map();
+  for (const f of filtered) {
+    const k = f._projectId;
+    if (!byProj.has(k)) byProj.set(k, { name: f._projectName, id: k, photos: [] });
+    byProj.get(k).photos.push(f);
+  }
+
+  let html = '';
+  for (const { name, id, photos } of byProj.values()) {
+    html += `<div class="gallery-group">
+      <div class="gallery-group-head">
+        <span class="lbl" onclick="showProject('${id}')" style="cursor:pointer;color:var(--cyan)">${esc(name)}</span>
+        <span class="badge badge-open">${photos.length}</span>
+      </div>
+      <div class="photo-grid">
+        ${photos.map(f => `<div class="photo-thumb ${f.client_visible?'starred':''}">
+          <img src="${esc(f.url)}" alt="${esc(f.caption||'')}" loading="lazy">
+          <button class="thumb-btn thumb-star ${f.client_visible?'on':''}" onclick="event.stopPropagation();togglePhotoStarMedia('${f.id}',${!f.client_visible})" title="Add to customer showcase">★</button>
+          <button class="thumb-btn thumb-del" onclick="event.stopPropagation();deletePhotoMedia('${f.id}')" title="Delete">✕</button>
+        </div>`).join('')}
+      </div>
+    </div>`;
+  }
+  grid.innerHTML = html;
+}
+
+// Media-tab versions of toggle/delete that refresh the media tab, not the project page
+async function togglePhotoStarMedia(fileId, newState) {
+  try {
+    const r = await fetch(API + '/files?tenant=' + TENANT, {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ id: fileId, client_visible: !!newState }),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    toast(newState ? 'Added to showcase' : 'Removed from showcase', 'ok');
+    renderMedia(document.getElementById('content'));
+  } catch (e) {
+    toast('Star failed · ' + e.message, 'err');
+  }
+}
+async function deletePhotoMedia(fileId) {
+  if (!confirm('Delete this photo? This cannot be undone.')) return;
+  try {
+    const r = await fetch(API + '/files?tenant=' + TENANT + '&id=' + encodeURIComponent(fileId), { method: 'DELETE' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    toast('Deleted', 'ok');
+    renderMedia(document.getElementById('content'));
+  } catch (e) {
+    toast('Delete failed · ' + e.message, 'err');
+  }
+}
+
+// Media filter chip click (delegated — buttons are rebuilt on each render)
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('#mediaFilters .filter-btn-media');
+  if (!b) return;
+  mediaFilter = b.dataset.m;
+  renderMedia(document.getElementById('content'));
+});
 
 // ═══ CLOCK ═══
 async function renderClock(c) {
