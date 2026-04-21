@@ -103,8 +103,15 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 
 /* ─── Project Detail ─── */
 .photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px}
-.photo-thumb{aspect-ratio:1;border-radius:8px;overflow:hidden;position:relative;border:1px solid var(--border)}
+.photo-thumb{aspect-ratio:1;border-radius:8px;overflow:hidden;position:relative;border:1px solid var(--border);transition:border-color 0.15s, box-shadow 0.15s}
 .photo-thumb img{width:100%;height:100%;object-fit:cover}
+.photo-thumb.starred{border-color:var(--yellow);box-shadow:0 0 0 1px var(--yellow), 0 0 12px rgba(250,204,21,0.25)}
+.thumb-btn{position:absolute;width:26px;height:26px;border-radius:13px;border:none;background:rgba(0,0,0,0.72);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:0.8em;font-weight:700;padding:0;line-height:1;transition:all 0.15s;z-index:2}
+.thumb-btn:active{transform:scale(0.9)}
+.thumb-star{top:4px;left:4px;color:rgba(255,255,255,0.75)}
+.thumb-star.on{background:rgba(250,204,21,0.9);color:#000}
+.thumb-del{top:4px;right:4px;font-size:0.72em;color:rgba(255,255,255,0.75)}
+.thumb-del:hover,.thumb-del:active{background:rgba(248,113,113,0.9)}
 .upload-zone{border:2px dashed var(--border);border-radius:10px;padding:20px;text-align:center;cursor:pointer;transition:all 0.2s;color:var(--text-dim);font-size:0.82em;margin-top:10px}
 .upload-zone:active{border-color:var(--cyan);background:rgba(34,211,238,0.04)}
 
@@ -158,6 +165,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .prio-chip[data-r="crew"].on{background:rgba(74,222,128,0.15);border-color:var(--green);color:var(--green)}
 .prio-chip[data-r="supervisor"].on{background:rgba(34,211,238,0.15);border-color:var(--cyan);color:var(--cyan)}
 .prio-chip[data-r="sales"].on{background:rgba(74,158,255,0.15);border-color:var(--blue);color:var(--blue)}
+.prio-chip[data-r="admin"].on{background:rgba(124,58,237,0.15);border-color:var(--purple);color:var(--purple)}
 
 /* ─── Rapid-fire camera ─── */
 .cam-overlay{position:fixed;inset:0;z-index:500;background:#000;display:none;flex-direction:column}
@@ -302,11 +310,12 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
       <input type="text" id="aTitle" placeholder="e.g. Tear-off — 178 Summerhill">
     </div>
     <div class="fld">
-      <label>Role / Checklist</label>
-      <div class="priority-row" id="aRole">
-        <div class="prio-chip" data-r="crew" style="grid-column:span 1">CREW</div>
-        <div class="prio-chip" data-r="supervisor" style="grid-column:span 2">SUPERVISOR</div>
-        <div class="prio-chip" data-r="sales" style="grid-column:span 1">SALES</div>
+      <label>Checklist</label>
+      <div class="priority-row" id="aRole" style="grid-template-columns:repeat(2,1fr);gap:6px">
+        <div class="prio-chip" data-r="crew">CREW</div>
+        <div class="prio-chip" data-r="supervisor">SUPERVISOR</div>
+        <div class="prio-chip" data-r="sales">SALES REP</div>
+        <div class="prio-chip" data-r="admin">ADMIN</div>
       </div>
     </div>
     <div class="fld">
@@ -628,6 +637,12 @@ const CHECKLIST_TEMPLATES = {
     { id:'scheduled', label:'Install date booked + customer notified',                 photoReq:false },
     { id:'review',    label:'Post-install: review request + warranty pack',            photoReq:false }
   ],
+  // ADMIN — 3 core deliverables (back-office / closeout)
+  admin: [
+    { id:'invoicing', label:'Invoicing reconciled (deposit + final payment)',          photoReq:false },
+    { id:'suppliers', label:'Supplier invoices paid + receipts filed',                 photoReq:false },
+    { id:'warranty',  label:'Warranty filed + job docs archived',                      photoReq:false }
+  ],
   // Legacy fallback templates kept for backward compat with existing tickets
   repair: [
     { id:'assess',    label:'Damage assessed — before photos',                         photoReq:true },
@@ -666,13 +681,13 @@ const ROLE_META = {
   crew:       { label:'CREW',       color:'var(--green)',  bg:'rgba(74,222,128,0.14)',  bd:'rgba(74,222,128,0.32)' },
   supervisor: { label:'SUPERVISOR', color:'var(--cyan)',   bg:'rgba(34,211,238,0.14)',  bd:'rgba(34,211,238,0.32)' },
   sales:      { label:'SALES',      color:'var(--blue)',   bg:'rgba(74,158,255,0.14)',  bd:'rgba(74,158,255,0.32)' },
+  admin:      { label:'ADMIN',      color:'var(--purple)', bg:'rgba(124,58,237,0.14)',  bd:'rgba(124,58,237,0.32)' },
 };
+const ROLE_LIST = ['crew','supervisor','sales','admin'];
 
 function ticketRole(t) {
   const tags = t?.tags || [];
-  if (tags.includes('crew'))       return 'crew';
-  if (tags.includes('supervisor')) return 'supervisor';
-  if (tags.includes('sales'))      return 'sales';
+  for (const r of ROLE_LIST) if (tags.includes(r)) return r;
   return null;
 }
 
@@ -693,6 +708,7 @@ function pickTemplate(ticket) {
   if (/install|reroof|tear[-\s]?off|shingle/.test(t)) return 'crew';
   if (/walk[-\s]?through|qa|final|supervisor/.test(t)) return 'supervisor';
   if (/contract|deposit|pre[-\s]?job|schedule|customer call/.test(t)) return 'sales';
+  if (/invoic|warranty|supplier|admin|accounting|bookkeep/.test(t)) return 'admin';
   if (/caulk|mansard|seal/.test(t)) return 'repair';
   if (/repair|leak|fix|patch/.test(t)) return 'repair';
   if (/cleanup|debris|magnet|sweep/.test(t)) return 'cleanup';
@@ -1054,7 +1070,7 @@ async function openAssignModal() {
   document.getElementById('aDue').value = '';
   document.getElementById('aDesc').value = '';
   document.querySelectorAll('#aPriority .prio-chip').forEach(c => c.classList.toggle('on', c.dataset.p === 'medium'));
-  document.querySelectorAll('#aRole .prio-chip').forEach(c => c.classList.toggle('on', c.dataset.r === 'crew'));
+  document.querySelectorAll('#aRole .prio-chip').forEach(c => c.classList.remove('on'));
 
   mdl.classList.add('open');
   setTimeout(() => document.getElementById('aTitle').focus(), 60);
@@ -1072,13 +1088,35 @@ document.addEventListener('click', (e) => {
   chip.classList.add('on');
 });
 
-// Role chip toggles
+// Role chip toggles + auto-title
 document.addEventListener('click', (e) => {
   const chip = e.target.closest('#aRole .prio-chip');
   if (!chip) return;
   document.querySelectorAll('#aRole .prio-chip').forEach(c => c.classList.remove('on'));
   chip.classList.add('on');
+  maybeAutoTitle();
 });
+document.addEventListener('change', (e) => {
+  if (e.target?.id === 'aProject') maybeAutoTitle();
+});
+
+function maybeAutoTitle() {
+  const titleEl = document.getElementById('aTitle');
+  if (!titleEl) return;
+  const role = document.querySelector('#aRole .prio-chip.on')?.dataset.r;
+  const projSel = document.getElementById('aProject');
+  const projName = projSel?.options[projSel.selectedIndex]?.text;
+  if (!role) return;
+  const roleLabel = ROLE_META[role]?.label || role.toUpperCase();
+  const suggested = projName && projName !== '— None —'
+    ? `${projName} · ${roleLabel} Checklist`
+    : `${roleLabel} Checklist`;
+  const cur = titleEl.value.trim();
+  // Only overwrite if empty or still matches a previous auto-title pattern
+  if (!cur || /· (CREW|SUPERVISOR|SALES REP|ADMIN) Checklist$/i.test(cur) || /^(CREW|SUPERVISOR|SALES REP|ADMIN) Checklist$/i.test(cur)) {
+    titleEl.value = suggested;
+  }
+}
 
 // Backdrop tap closes
 document.addEventListener('click', (e) => {
@@ -1092,7 +1130,8 @@ async function createAssignment() {
   const assignee = document.getElementById('aAssignee').value || null;
   const project = document.getElementById('aProject').value || null;
   const priority = document.querySelector('#aPriority .prio-chip.on')?.dataset.p || 'medium';
-  const role = document.querySelector('#aRole .prio-chip.on')?.dataset.r || 'crew';
+  const role = document.querySelector('#aRole .prio-chip.on')?.dataset.r;
+  if (!role) { toast('Pick a checklist type (Crew / Supervisor / Sales / Admin)', 'warn'); return; }
   const due = document.getElementById('aDue').value || null;
   const description = document.getElementById('aDesc').value.trim() || null;
 
@@ -1153,17 +1192,65 @@ async function showProject(id) {
   const p = await api(`/projects?id=${id}`);
   const files = p.files || [];
   const photos = files.filter(f => f.mime_type && f.mime_type.startsWith('image/'));
-  const tickets = p.tickets || [];
+  const tickets = (p.tickets || []).filter(t => t.status !== 'cancelled');
+  const projName = p.name || p.address || 'Project';
 
   let html = `
     <div class="detail-back" onclick="switchTab('projects')">← Projects</div>
     <div class="detail-header">
-      <h2>${esc(p.name||p.address||'Project')}</h2>
+      <h2>${esc(projName)}</h2>
       <div style="font-size:0.78em;color:var(--text-dim);margin-top:4px">${esc(p.address||'')}${p.city?', '+esc(p.city):''}</div>
     </div>`;
 
-  // Photos — grouped by category (media pool). Keys match project_files.category
-  // CHECK constraint (migration 002): before|during|after|damage|material|safety|inspection|general
+  // ─── CHECKLISTS (the 4 canonical role tickets) ────────────────────
+  const roleTix = {};
+  for (const t of tickets) {
+    const r = ticketRole(t);
+    if (r && !roleTix[r]) roleTix[r] = t;
+  }
+  const missing = ROLE_LIST.filter(r => !roleTix[r]);
+  html += `<div class="section-head" style="margin-top:14px"><div class="section-label">Checklists</div></div>`;
+  if (missing.length > 0) {
+    html += `<button class="btn btn-primary" style="margin-bottom:10px;padding:12px;font-size:0.85em" onclick='setupAllChecklists("${id}",${JSON.stringify(missing)},${JSON.stringify(projName).replace(/"/g,'&quot;')})'>
+      ＋ SET UP ${missing.length === ROLE_LIST.length ? 'ALL' : missing.length} CHECKLIST${missing.length>1?'S':''} · ${missing.map(r => ROLE_META[r].label).join(' · ')}
+    </button>`;
+  }
+  for (const r of ROLE_LIST) {
+    const t = roleTix[r];
+    const m = ROLE_META[r];
+    if (!t) continue;
+    const who = t.assigned_user?.name ? `<span class="assignee-pill">${esc(t.assigned_user.name)}</span>` : `<span class="assignee-pill unassigned">unassigned</span>`;
+    const stateKeys = Object.keys(t.checklist_state || {}).filter(k => t.checklist_state[k]?.done);
+    const total = (CHECKLIST_TEMPLATES[r] || []).length;
+    html += `<div class="task-card ${t.status==='active'?'active-task':''}" onclick="showTask('${t.id}')" style="border-left:3px solid ${m.color}">
+      <div class="title">${m.label} CHECKLIST</div>
+      <div class="sub">${stateKeys.length}/${total} complete · ${who}</div>
+      <div class="meta">
+        <span class="badge badge-${t.status==='done'?'done':t.status==='active'?'active':'open'}">${t.status}</span>
+      </div>
+    </div>`;
+  }
+
+  // ─── OTHER TASKS (legacy or one-offs) ────────────────────────────
+  const otherTix = tickets.filter(t => !ticketRole(t));
+  if (otherTix.length > 0) {
+    html += `<div class="section-head" style="margin-top:14px"><div class="section-label">Other tasks</div><span class="badge badge-ticket">${otherTix.length}</span></div>`;
+    for (const t of otherTix) {
+      html += `<div class="task-card" onclick="showTask('${t.id}')">
+        <div class="title">${esc(t.title)}</div>
+        <div class="meta"><span class="badge badge-${t.status==='done'?'done':t.status==='active'?'active':'open'}">${t.status}</span></div>
+      </div>`;
+    }
+  }
+
+  // ─── MEDIA POOL (grouped gallery with delete + showcase star) ─────
+  const starred = photos.filter(f => f.client_visible);
+  html += `<div class="section-head" style="margin-top:16px">
+    <div class="section-label">Media (${photos.length})</div>
+    ${starred.length ? `<button class="btn btn-outline" style="padding:5px 11px;font-size:0.7em;width:auto" onclick="shareShowcase('${id}',${starred.length})">🔗 Share Showcase (${starred.length})</button>` : ''}
+  </div>`;
+  html += `<div style="font-size:0.7em;color:var(--text-dim);margin-bottom:8px">Tap ★ to add to customer showcase · tap ✕ to delete</div>`;
+
   const CAT_ORDER = ['before','during','after','damage','material','safety','inspection','general'];
   const CAT_LABEL = { before:'BEFORE', during:'PROGRESS', after:'AFTER', damage:'DAMAGE', material:'MATERIALS', safety:'SAFETY', inspection:'CHECKLIST PHOTOS', general:'GENERAL' };
   const buckets = {};
@@ -1171,7 +1258,6 @@ async function showProject(id) {
     const k = (f.category || 'general').toLowerCase();
     (buckets[k] = buckets[k] || []).push(f);
   }
-  html += `<div class="section-head"><div class="section-label">Media (${photos.length})</div></div>`;
   if (photos.length === 0) {
     html += `<div style="font-size:0.82em;color:var(--text-dim);padding:6px 2px">No photos yet. Tap Take Photos below.</div>`;
   } else {
@@ -1181,7 +1267,11 @@ async function showProject(id) {
       html += `<div class="gallery-group">
         <div class="gallery-group-head"><span class="lbl">${CAT_LABEL[cat] || cat.toUpperCase()}</span><span class="badge badge-open">${list.length}</span></div>
         <div class="photo-grid">
-          ${list.map(f => `<div class="photo-thumb"><img src="${esc(f.url)}" alt="${esc(f.caption||'')}" loading="lazy"></div>`).join('')}
+          ${list.map(f => `<div class="photo-thumb ${f.client_visible?'starred':''}">
+            <img src="${esc(f.url)}" alt="${esc(f.caption||'')}" loading="lazy">
+            <button class="thumb-btn thumb-star ${f.client_visible?'on':''}" onclick="event.stopPropagation();togglePhotoStar('${f.id}',${!f.client_visible},'${id}')" title="Add to customer showcase">★</button>
+            <button class="thumb-btn thumb-del" onclick="event.stopPropagation();deletePhoto('${f.id}','${id}')" title="Delete">✕</button>
+          </div>`).join('')}
         </div>
       </div>`;
     }
@@ -1192,19 +1282,72 @@ async function showProject(id) {
     </div>
     <input type="file" id="libraryInput" accept="image/*,video/*" multiple style="display:none" onchange="handlePhotoUpload('${id}',this.files)">`;
 
-  // Tasks for this project
-  html += `<div class="section-head"><div class="section-label">Tasks (${tickets.length})</div></div>`;
-  if (tickets.length === 0) {
-    html += `<div style="font-size:0.82em;color:var(--text-dim);padding:8px 0">No tasks for this project.</div>`;
-  }
-  for (const t of tickets) {
-    html += `<div class="task-card" onclick="showTask('${t.id}')">
-      <div class="title">${esc(t.title)}</div>
-      <div class="meta"><span class="badge badge-${t.status==='done'?'done':t.status==='active'?'active':'open'}">${t.status}</span></div>
-    </div>`;
-  }
-
   c.innerHTML = html;
+}
+
+// ─── Setup all 4 role checklists for a project ──────────────────────
+async function setupAllChecklists(projectId, missingRoles, projectName) {
+  const miss = typeof missingRoles === 'string' ? JSON.parse(missingRoles) : missingRoles;
+  if (!miss?.length) return;
+  toast(`Creating ${miss.length} checklist${miss.length>1?'s':''}…`, 'info');
+  try {
+    await Promise.all(miss.map(r => api('/tickets', {
+      method: 'POST',
+      body: JSON.stringify({
+        title: `${projectName} · ${ROLE_META[r].label} Checklist`,
+        project_id: projectId,
+        priority: 'medium',
+        tags: [r],
+      }),
+    })));
+    toast('Checklists ready', 'ok');
+    showProject(projectId);
+  } catch (e) {
+    toast('Error · ' + (e.message || 'create failed'), 'err');
+  }
+}
+
+// ─── Photo controls ─────────────────────────────────────────────────
+async function togglePhotoStar(fileId, newState, projectId) {
+  try {
+    const r = await fetch(API + '/files?tenant=' + TENANT, {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ id: fileId, client_visible: !!newState }),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    toast(newState ? 'Added to showcase' : 'Removed from showcase', 'ok');
+    showProject(projectId);
+  } catch (e) {
+    toast('Star failed · ' + e.message, 'err');
+  }
+}
+
+async function deletePhoto(fileId, projectId) {
+  if (!confirm('Delete this photo? This cannot be undone.')) return;
+  try {
+    const r = await fetch(API + '/files?tenant=' + TENANT + '&id=' + encodeURIComponent(fileId), { method: 'DELETE' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    toast('Photo deleted', 'ok');
+    showProject(projectId);
+  } catch (e) {
+    toast('Delete failed · ' + e.message, 'err');
+  }
+}
+
+async function shareShowcase(projectId, count) {
+  const url = `${window.location.origin}/customer-showcase.html?tenant=${encodeURIComponent(TENANT)}&project=${encodeURIComponent(projectId)}`;
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: 'Plus Ultra — Project Photos', text: `${count} photos selected for you`, url });
+    } else {
+      await navigator.clipboard.writeText(url);
+      toast('Showcase link copied', 'ok');
+    }
+  } catch (e) {
+    // User cancelled share sheet — ignore
+    if (e?.name !== 'AbortError') toast('Share failed · ' + e.message, 'err');
+  }
 }
 
 async function handlePhotoUpload(projectId, fileList) {

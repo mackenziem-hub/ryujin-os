@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plus Ultra Roofing · Your Project Photos</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{min-height:100%}
+body{font-family:'Inter',system-ui,sans-serif;background:#0a0f1a;color:#eaeef8;padding:22px 14px 60px;line-height:1.45}
+.wrap{max-width:1100px;margin:0 auto}
+.header{text-align:center;margin-bottom:30px}
+.logo{width:72px;height:72px;border-radius:16px;margin:0 auto 14px;background:#15202e url('/brand/plus-ultra/logo.png') center/contain no-repeat;box-shadow:0 10px 30px rgba(34,211,238,0.12)}
+.brand{font-size:1.12em;font-weight:800;letter-spacing:0.8px;color:#fff}
+.tagline{font-size:0.9em;color:rgba(220,230,245,0.55);margin-top:3px}
+.project-card{background:rgba(20,28,45,0.7);border:1px solid rgba(255,255,255,0.06);border-radius:14px;padding:18px 20px;margin:22px 0;text-align:center}
+.project-name{font-size:1.25em;font-weight:700;color:#fff}
+.project-addr{font-size:0.92em;color:rgba(220,230,245,0.6);margin-top:4px}
+.project-count{display:inline-block;margin-top:10px;padding:4px 12px;border-radius:14px;background:rgba(34,211,238,0.12);color:#22d3ee;font-size:0.78em;font-weight:700;letter-spacing:0.5px}
+.note{font-size:0.85em;color:rgba(220,230,245,0.55);text-align:center;margin:8px 0 26px;max-width:520px;margin-left:auto;margin-right:auto}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+.card{aspect-ratio:1;border-radius:11px;overflow:hidden;cursor:pointer;background:#15202e;position:relative;transition:transform 0.15s}
+.card:hover{transform:translateY(-2px)}
+.card img{width:100%;height:100%;object-fit:cover;display:block}
+.card .caption{position:absolute;bottom:0;left:0;right:0;padding:8px 10px;background:linear-gradient(180deg,transparent,rgba(0,0,0,0.78));font-size:0.76em;color:rgba(255,255,255,0.92);font-weight:500;letter-spacing:0.2px}
+.empty{text-align:center;padding:60px 20px;color:rgba(220,230,245,0.5);font-size:0.95em}
+.empty .big{font-size:2em;opacity:0.3;margin-bottom:14px}
+.footer{text-align:center;margin-top:50px;padding-top:26px;border-top:1px solid rgba(255,255,255,0.06);font-size:0.82em;color:rgba(220,230,245,0.5)}
+.footer a{color:#22d3ee;text-decoration:none}
+.footer a:hover{text-decoration:underline}
+
+/* Lightbox for full-size view */
+.lb{position:fixed;inset:0;background:rgba(0,0,0,0.92);display:none;align-items:center;justify-content:center;z-index:100;padding:14px;cursor:zoom-out}
+.lb.open{display:flex}
+.lb img{max-width:100%;max-height:100%;object-fit:contain;border-radius:6px}
+.lb-close{position:absolute;top:14px;right:16px;width:40px;height:40px;border-radius:20px;background:rgba(255,255,255,0.1);border:none;color:#fff;cursor:pointer;font-size:1.2em;display:flex;align-items:center;justify-content:center}
+
+@media (max-width:600px){
+  .grid{grid-template-columns:repeat(2,1fr);gap:8px}
+  .project-card{padding:14px 16px}
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="header">
+    <div class="logo"></div>
+    <div class="brand">PLUS ULTRA ROOFING</div>
+    <div class="tagline">The most-reviewed roofer in Moncton</div>
+  </div>
+
+  <div id="content">
+    <div class="empty"><div class="big">📷</div>Loading your project photos…</div>
+  </div>
+
+  <div class="footer">
+    Thank you for trusting us with your roof.<br>
+    Questions? Call <a href="tel:+15065401052">(506) 540-1052</a> · Email <a href="mailto:plusultraroofing@gmail.com">plusultraroofing@gmail.com</a>
+  </div>
+</div>
+
+<div class="lb" id="lb" onclick="closeLightbox(event)">
+  <button class="lb-close" onclick="closeLightbox(event)">✕</button>
+  <img id="lbImg" alt="">
+</div>
+
+<script>
+const qs = new URLSearchParams(location.search);
+const tenant = qs.get('tenant') || 'plus-ultra';
+const projectId = qs.get('project');
+
+function esc(s){ return (s||'').replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])); }
+
+function openLightbox(url){
+  document.getElementById('lbImg').src = url;
+  document.getElementById('lb').classList.add('open');
+}
+function closeLightbox(ev){
+  if (ev) ev.stopPropagation();
+  document.getElementById('lb').classList.remove('open');
+  document.getElementById('lbImg').src = '';
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
+
+async function load(){
+  const content = document.getElementById('content');
+  if (!projectId) {
+    content.innerHTML = `<div class="empty"><div class="big">⚠️</div>No project specified.</div>`;
+    return;
+  }
+
+  let project, photos;
+  try {
+    const [pRes, fRes] = await Promise.all([
+      fetch(`/api/projects?id=${encodeURIComponent(projectId)}&tenant=${encodeURIComponent(tenant)}`),
+      fetch(`/api/files?project_id=${encodeURIComponent(projectId)}&client_visible=true&tenant=${encodeURIComponent(tenant)}`),
+    ]);
+    project = await pRes.json();
+    const fJson = await fRes.json();
+    photos = (fJson.files || []).filter(f => f.mime_type && f.mime_type.startsWith('image/'));
+  } catch (e) {
+    content.innerHTML = `<div class="empty"><div class="big">⚠️</div>Could not load project photos.</div>`;
+    return;
+  }
+
+  const projName = project?.name || project?.address || 'Your Project';
+  const projAddr = project?.address ? project.address + (project.city ? ', ' + project.city : '') : '';
+
+  // Order by category: before → progress → after → others
+  const CAT_ORDER = ['before','during','after','damage','material','safety','inspection','general'];
+  const CAT_LABEL = { before:'Before', during:'Progress', after:'After', damage:'Damage', material:'Materials', safety:'Safety', inspection:'Inspection', general:'Project' };
+  photos.sort((a,b) => {
+    const ai = CAT_ORDER.indexOf((a.category||'general').toLowerCase());
+    const bi = CAT_ORDER.indexOf((b.category||'general').toLowerCase());
+    return (ai<0?99:ai) - (bi<0?99:bi);
+  });
+
+  let html = `
+    <div class="project-card">
+      <div class="project-name">${esc(projName)}</div>
+      ${projAddr ? `<div class="project-addr">${esc(projAddr)}</div>` : ''}
+      ${photos.length ? `<div class="project-count">${photos.length} photo${photos.length>1?'s':''}</div>` : ''}
+    </div>`;
+
+  if (photos.length === 0) {
+    html += `<div class="empty"><div class="big">📷</div>Photos coming soon — we'll update this page as work progresses.</div>`;
+  } else {
+    html += `<div class="note">Tap any photo to view full size.</div>`;
+    html += `<div class="grid">
+      ${photos.map(f => `<div class="card" onclick="openLightbox('${esc(f.url)}')">
+        <img src="${esc(f.url)}" alt="${esc(f.caption||'')}" loading="lazy">
+        ${f.category && CAT_LABEL[f.category.toLowerCase()] ? `<div class="caption">${CAT_LABEL[f.category.toLowerCase()]}</div>` : ''}
+      </div>`).join('')}
+    </div>`;
+  }
+
+  content.innerHTML = html;
+}
+
+load();
+</script>
+
+</body>
+</html>
