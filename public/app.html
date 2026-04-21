@@ -193,10 +193,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .cam-cat{flex:none;padding:7px 13px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.14);border-radius:16px;color:rgba(255,255,255,0.65);font-family:'Orbitron',monospace;font-size:0.62em;font-weight:700;letter-spacing:1.2px;cursor:pointer;transition:all 0.15s}
 .cam-cat.on{background:rgba(34,211,238,0.22);border-color:rgba(34,211,238,0.6);color:var(--cyan)}
 .cam-cat[data-cat="before"].on{background:rgba(74,158,255,0.22);border-color:rgba(74,158,255,0.6);color:var(--blue)}
-.cam-cat[data-cat="progress"].on{background:rgba(34,211,238,0.22);border-color:rgba(34,211,238,0.6);color:var(--cyan)}
+.cam-cat[data-cat="during"].on{background:rgba(34,211,238,0.22);border-color:rgba(34,211,238,0.6);color:var(--cyan)}
 .cam-cat[data-cat="after"].on{background:rgba(74,222,128,0.22);border-color:rgba(74,222,128,0.6);color:var(--green)}
 .cam-cat[data-cat="damage"].on{background:rgba(248,113,113,0.22);border-color:rgba(248,113,113,0.6);color:var(--red)}
-.cam-cat[data-cat="materials"].on{background:rgba(251,146,60,0.22);border-color:rgba(251,146,60,0.6);color:var(--orange)}
+.cam-cat[data-cat="material"].on{background:rgba(251,146,60,0.22);border-color:rgba(251,146,60,0.6);color:var(--orange)}
 .gallery-group{margin-bottom:12px}
 .gallery-group-head{display:flex;align-items:center;justify-content:space-between;margin:6px 0 6px;padding:0 2px}
 .gallery-group-head .lbl{font-family:'Orbitron',monospace;font-size:0.6em;font-weight:700;letter-spacing:2px;color:var(--text-dim);text-transform:uppercase}
@@ -279,10 +279,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
   <div class="cam-controls">
     <div class="cam-cats" id="camCats">
       <button class="cam-cat" data-cat="before">BEFORE</button>
-      <button class="cam-cat on" data-cat="progress">PROGRESS</button>
+      <button class="cam-cat on" data-cat="during">PROGRESS</button>
       <button class="cam-cat" data-cat="after">AFTER</button>
       <button class="cam-cat" data-cat="damage">DAMAGE</button>
-      <button class="cam-cat" data-cat="materials">MATERIALS</button>
+      <button class="cam-cat" data-cat="material">MATERIALS</button>
     </div>
     <div class="cam-strip" id="camStrip"></div>
     <div class="cam-shutter-row" style="position:relative">
@@ -457,12 +457,14 @@ async function renderHome(c) {
   } else {
     for (const t of allTasks) {
       const pClass = t.priority==='urgent'?'urgent':t.priority==='high'?'high':t.status==='active'?'active-task':'';
+      const who = t.assigned_user?.name ? `<span class="assignee-pill">${esc(t.assigned_user.name)}</span>` : '';
       html += `<div class="task-card ${pClass}" onclick="showTask('${t.id}')">
         <div class="title">${esc(t.title)}</div>
         <div class="sub">${esc(t.project?.name||t.project?.address||'')}</div>
         <div class="meta">
           <span class="badge badge-${t.status==='active'?'active':'open'}">${t.status}</span>
           ${roleBadge(t, {small:true})}
+          ${who}
           ${t.priority!=='medium'?`<span class="badge badge-${t.priority==='urgent'?'urgent':'high'}">${t.priority}</span>`:''}
           ${t.due_date?`<span class="sub">${new Date(t.due_date+'T00:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</span>`:''}
         </div>
@@ -521,12 +523,14 @@ async function renderMineView() {
   }
   for (const t of myTasks) {
     const pClass = t.priority==='urgent'?'urgent':t.priority==='high'?'high':t.status==='active'?'active-task':'';
+    const who = t.assigned_user?.name ? `<span class="assignee-pill">${esc(t.assigned_user.name)}</span>` : '';
     html += `<div class="task-card ${pClass}" onclick="showTask('${t.id}')">
       <div class="title">${esc(t.title)}</div>
       <div class="sub">${esc(t.project?.name||t.project?.address||'')}</div>
       <div class="meta">
         <span class="badge badge-${t.status==='active'?'active':'open'}">${t.status}</span>
         ${roleBadge(t, {small:true})}
+        ${who}
         ${t.priority!=='medium'?`<span class="badge badge-${t.priority==='urgent'?'urgent':'high'}">${t.priority}</span>`:''}
       </div>
     </div>`;
@@ -612,24 +616,16 @@ const CHECKLIST_TEMPLATES = {
     { id:'vent',      label:'Ventilation (ridge vent, intake, baffles)',               photoReq:true },
     { id:'cleanup',   label:'Final cleanup (magnet sweep, debris gone)',               photoReq:true }
   ],
-  // SUPERVISOR — QA, coordination, customer-facing moments
+  // SUPERVISOR — 3 core deliverables
   supervisor: [
-    { id:'walk',      label:'Site walkthrough (access, parking, gate, pets noted)',    photoReq:false },
-    { id:'materials', label:'Materials delivered + counted against order',             photoReq:true },
-    { id:'permits',   label:'Permits pulled (or confirmed not required)',              photoReq:false },
-    { id:'brief',     label:'Crew briefed on scope + safety plan',                     photoReq:false },
-    { id:'qa',        label:'Mid-job QA (after tear-off, before shingles)',            photoReq:true },
-    { id:'final',     label:'Final walkthrough with customer · punch list zero',       photoReq:true },
-    { id:'close',     label:'Warranty docs delivered + review request sent',           photoReq:false }
+    { id:'walk',  label:'Pre-job site walkthrough + crew brief',                      photoReq:false },
+    { id:'qa',    label:'Mid-job quality check',                                       photoReq:true  },
+    { id:'final', label:'Final walkthrough + close-out (punch list + warranty docs)',  photoReq:true  }
   ],
-  // SALES — pre-job paperwork + customer communication
+  // SALES — 3 core deliverables
   sales: [
-    { id:'contract',  label:'Contract signed + filed',                                 photoReq:false },
-    { id:'deposit',   label:'Deposit collected (e-transfer / cheque / card logged)',   photoReq:false },
-    { id:'measure',   label:'Measurements confirmed (EagleView or site measure)',      photoReq:false },
-    { id:'product',   label:'Product + tier confirmed with customer',                  photoReq:false },
-    { id:'schedule',  label:'Install date booked + customer notified',                 photoReq:false },
-    { id:'precall',   label:'Day-before reminder call',                                photoReq:false },
+    { id:'signed',    label:'Contract signed + deposit collected',                     photoReq:false },
+    { id:'scheduled', label:'Install date booked + customer notified',                 photoReq:false },
     { id:'review',    label:'Post-install: review request + warranty pack',            photoReq:false }
   ],
   // Legacy fallback templates kept for backward compat with existing tickets
@@ -783,7 +779,7 @@ async function uploadChecklistPhoto(taskId, itemId, projectId, fileList) {
         const form = new FormData();
         form.append('project_id', projectId);
         form.append('uploaded_by', currentUser?.id || '');
-        form.append('category', 'checklist');
+        form.append('category', 'inspection');
         form.append('caption', 'checklist:' + itemId);
         form.append('files', f);
         await fetch(API + '/files?tenant=' + TENANT, { method: 'POST', body: form });
@@ -801,7 +797,7 @@ async function uploadChecklistPhoto(taskId, itemId, projectId, fileList) {
 let camStream = null;
 let camProjectId = null;
 let camCount = 0;
-let camCategory = 'progress';
+let camCategory = 'during'; // DB-enum-safe default (maps to PROGRESS chip)
 let uploadInFlight = 0;
 const MAX_PARALLEL_UPLOADS = 3;
 const uploadQueue = [];
@@ -927,12 +923,22 @@ async function startUpload(blob, thumb, category) {
   form.append('files', blob, fname);
   try {
     const r = await fetch(API + '/files?tenant=' + TENANT, { method: 'POST', body: form });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
+    if (!r.ok) {
+      let msg = 'HTTP ' + r.status;
+      try { const j = await r.json(); if (j.error) msg = j.error; } catch(_){}
+      throw new Error(msg);
+    }
+    // /api/files returns { files: [ { ...record } | { error, fileName } ] } — surface per-file errors
+    const j = await r.json().catch(() => null);
+    const row = j?.files?.[0];
+    if (row && row.error) throw new Error(row.error);
     thumb.classList.remove('pending'); thumb.classList.add('done');
     thumb.querySelector('.cam-thumb-status').textContent = '✓';
   } catch (e) {
     thumb.classList.remove('pending'); thumb.classList.add('failed');
     thumb.querySelector('.cam-thumb-status').textContent = '✗';
+    toast('Upload failed · ' + (e.message || 'unknown'), 'err');
+    console.error('[camera upload]', e);
   } finally {
     uploadInFlight--;
     const next = uploadQueue.shift();
@@ -1156,9 +1162,10 @@ async function showProject(id) {
       <div style="font-size:0.78em;color:var(--text-dim);margin-top:4px">${esc(p.address||'')}${p.city?', '+esc(p.city):''}</div>
     </div>`;
 
-  // Photos — grouped by category (media pool)
-  const CAT_ORDER = ['before','progress','after','damage','materials','general','checklist'];
-  const CAT_LABEL = { before:'BEFORE', progress:'PROGRESS', after:'AFTER', damage:'DAMAGE', materials:'MATERIALS', general:'GENERAL', checklist:'CHECKLIST PHOTOS' };
+  // Photos — grouped by category (media pool). Keys match project_files.category
+  // CHECK constraint (migration 002): before|during|after|damage|material|safety|inspection|general
+  const CAT_ORDER = ['before','during','after','damage','material','safety','inspection','general'];
+  const CAT_LABEL = { before:'BEFORE', during:'PROGRESS', after:'AFTER', damage:'DAMAGE', material:'MATERIALS', safety:'SAFETY', inspection:'CHECKLIST PHOTOS', general:'GENERAL' };
   const buckets = {};
   for (const f of photos) {
     const k = (f.category || 'general').toLowerCase();
