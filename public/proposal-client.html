@@ -929,8 +929,19 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;l
 // ── Load proposal data ──
 function getProposalData(){
   const params = new URLSearchParams(location.search);
+  const shareParam = params.get('share');
   const dataParam = params.get('data');
   const idParam = params.get('id');
+  if (shareParam) {
+    try {
+      // Sync XHR so existing top-level init keeps working without a full refactor.
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', '/api/proposal?share=' + encodeURIComponent(shareParam), false);
+      xhr.send();
+      if (xhr.status === 200) return JSON.parse(xhr.responseText);
+      console.warn('Proposal fetch failed:', xhr.status, xhr.responseText);
+    } catch(e){ console.warn('Share fetch error', e); }
+  }
   if (dataParam) {
     try { return JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(dataParam))))); }
     catch(e){ console.warn('Bad data param', e); }
@@ -1046,6 +1057,58 @@ if (data.rep.photo) {
   cp.classList.remove('placeholder');
   document.getElementById('credPhoto').style.backgroundImage = `url('${data.rep.photo}')`;
 }
+
+// ── Brand overrides (logo, testimonials, review count, cert badges) ──
+(function applyBrandOverrides(){
+  // Topbar logo
+  if (data.branding && data.branding.logoUrl) {
+    const tbMark = document.querySelector('.tb-mark');
+    if (tbMark) {
+      tbMark.style.background = `url('${data.branding.logoUrl}') center/contain no-repeat`;
+      tbMark.style.boxShadow = 'none';
+      tbMark.style.width = '36px';
+      tbMark.style.height = '36px';
+      tbMark.style.borderRadius = '0';
+    }
+  }
+
+  // Proof stats — real review count
+  if (data.reviewStats) {
+    const proofCards = document.querySelectorAll('.proof-card');
+    if (proofCards[0]) {
+      const num = proofCards[0].querySelector('.proof-num');
+      const lbl = proofCards[0].querySelector('.proof-lbl');
+      if (num) num.textContent = (data.reviewStats.averageRating || 5) + '★';
+      if (lbl) lbl.textContent = (data.reviewStats.totalReviews || 0) + ' ' + (data.reviewStats.source || 'Google') + ' reviews';
+    }
+  }
+
+  // Testimonials — replace hardcoded with real data (duplicated for infinite-scroll loop)
+  if (Array.isArray(data.testimonials) && data.testimonials.length) {
+    const track = document.getElementById('testiTrack');
+    if (track) {
+      const renderCard = t => `
+        <div class="testi-card">
+          <div class="testi-stars">${'★'.repeat(Math.max(1, Math.min(5, t.rating || 5)))}</div>
+          <div class="testi-quote">"${t.quote.replace(/"/g,'&quot;')}"</div>
+          <div class="testi-author"><span>${(t.name || '').toUpperCase()}</span><span>${(t.source || 'GOOGLE').toUpperCase()} · ${(t.city || '').toUpperCase()}</span></div>
+        </div>`;
+      const cards = data.testimonials.map(renderCard).join('');
+      track.innerHTML = cards + cards;
+    }
+  }
+
+  // Certification badges — slot into materials section if available
+  if (Array.isArray(data.certifications) && data.certifications.length) {
+    const matCert = document.querySelector('.mat-cert');
+    if (matCert) {
+      const shinglemaster = data.certifications.find(c => /shinglemaster/i.test(c.label || ''));
+      if (shinglemaster && shinglemaster.image) {
+        matCert.innerHTML = `<img src="${shinglemaster.image}" alt="${shinglemaster.label}" style="height:42px;vertical-align:middle;margin-right:10px;filter:drop-shadow(0 4px 12px rgba(34,211,238,0.25))"/> <span style="vertical-align:middle">${shinglemaster.label}</span>`;
+      }
+    }
+  }
+})();
 
 // ── Material Spec interactive diagram ──
 const MAT_LAYERS = [

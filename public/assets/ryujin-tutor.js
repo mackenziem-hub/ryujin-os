@@ -207,7 +207,11 @@
     renderStep();
   }
 
-  function start(id){
+  function start(id, opts){
+    // Respect global tutorial suppression (unless the caller forces it via opts.force)
+    try {
+      if (!(opts && opts.force) && localStorage.getItem('ry_suppress_tutorials') === '1') return;
+    } catch(e){}
     const seq = sequences[id];
     if (!seq) { console.warn('RyujinTutor: no sequence', id); return; }
     injectStyles();

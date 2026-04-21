@@ -36,6 +36,7 @@ async function handler(req, res) {
       .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
 
     if (status) query = query.eq('status', status);
+    else query = query.neq('status', 'cancelled');
     if (customer_id) query = query.eq('customer_id', customer_id);
 
     const { data, error, count } = await query;

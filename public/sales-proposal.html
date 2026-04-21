@@ -270,8 +270,9 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg-deep);color:va
         <div class="cust-search">
           <div class="field">
             <label>Start with an existing lead</label>
+            <input type="text" id="ghlSearch" placeholder="Search GHL contacts — name, phone, or email..." autocomplete="off" oninput="onGhlSearch(this.value)" style="width:100%;padding:9px 12px;border-radius:9px;border:1px solid var(--border);background:rgba(6,10,20,0.5);color:var(--text);font-size:0.88em;margin-bottom:8px"/>
             <div class="cust-list" id="custList"></div>
-            <div class="hint">Or enter a new customer below</div>
+            <div class="hint" id="custHint">Or enter a new customer below</div>
           </div>
         </div>
         <div class="field-row">
@@ -455,6 +456,55 @@ async function loadCustomersFromCRM(){
     }));
     renderCustList();
   } catch (e) { /* offline / not deployed — keep demo leads */ }
+}
+
+/* ─── GHL live search ─── */
+let ghlSearchTimer = null;
+let ghlSearchSeq = 0;
+const defaultLeads = null; // captured on first search so we can restore
+let _savedDefaultLeads = null;
+
+function onGhlSearch(raw){
+  const q = (raw || '').trim();
+  clearTimeout(ghlSearchTimer);
+  const hint = document.getElementById('custHint');
+
+  if (q.length < 2) {
+    if (_savedDefaultLeads) { existingLeads = _savedDefaultLeads; renderCustList(); _savedDefaultLeads = null; }
+    if (hint) hint.textContent = 'Or enter a new customer below';
+    return;
+  }
+
+  if (hint) hint.textContent = 'Searching GHL...';
+  const mySeq = ++ghlSearchSeq;
+
+  ghlSearchTimer = setTimeout(async () => {
+    try {
+      const r = await fetch('/api/ghl-lookup?q=' + encodeURIComponent(q), { headers: { 'x-tenant-id': 'plus-ultra' } });
+      if (mySeq !== ghlSearchSeq) return; // stale
+      if (!r.ok) { if (hint) hint.textContent = 'GHL search unavailable — enter details manually below'; return; }
+      const { contacts = [] } = await r.json();
+      if (!_savedDefaultLeads) _savedDefaultLeads = existingLeads;
+      if (contacts.length === 0) {
+        existingLeads = [];
+        renderCustList();
+        if (hint) hint.textContent = 'No matches in GHL — enter manually below';
+        return;
+      }
+      existingLeads = contacts.map(c => ({
+        name: c.name || '(no name)',
+        meta: [c.address, c.opportunity?.stage, c.source].filter(Boolean).join(' · ') || (c.tags || []).join(', ') || 'GHL contact',
+        address: c.address || '',
+        phone: c.phone || '',
+        email: c.email || '',
+        val: c.opportunity?.value ? '$' + Math.round(c.opportunity.value/1000) + 'K' : '—'
+      }));
+      renderCustList();
+      if (hint) hint.textContent = contacts.length + ' GHL match' + (contacts.length === 1 ? '' : 'es') + ' — click to pre-fill';
+    } catch (e) {
+      if (hint) hint.textContent = 'GHL search failed — enter manually below';
+    }
+  }, 300);
 }
 
 const SYSTEMS = [
@@ -1396,6 +1446,10 @@ goToStep(1);
 //   REVIEW EXISTING  (→ list of saved drafts)
 function showProposalGate(){
   if (document.getElementById('pgGate')) return;
+  try {
+    if (localStorage.getItem('ry_suppress_proposal_gate') === '1') return;
+    if (localStorage.getItem('ry_suppress_tutorials') === '1') return;
+  } catch(e){}
   const wrap = document.createElement('div');
   wrap.id = 'pgGate';
   wrap.style.cssText = 'position:fixed;inset:0;z-index:500;background:rgba(3,6,17,0.92);backdrop-filter:blur(14px);display:flex;align-items:center;justify-content:center;padding:24px';
@@ -1406,12 +1460,21 @@ function showProposalGate(){
       <h2 style="font-family:'Orbitron',sans-serif;font-size:1.7em;font-weight:900;letter-spacing:0.5px;background:linear-gradient(135deg,#fff,#22d3ee);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:8px" id="pgH">What are we doing?</h2>
       <p style="color:rgba(200,220,255,0.7);font-size:0.95em;margin-bottom:24px;line-height:1.55" id="pgSub">Start a new proposal or pick up an existing one.</p>
       <div id="pgChoices" style="display:flex;flex-direction:column;gap:10px"></div>
+      <div style="margin-top:20px;padding-top:14px;border-top:1px solid rgba(34,211,238,0.12);text-align:right">
+        <button onclick="suppressGateForever()" style="background:none;border:none;color:rgba(200,220,255,0.45);font-family:'Share Tech Mono',monospace;font-size:0.7em;letter-spacing:1.2px;cursor:pointer;padding:6px 10px;border-radius:6px" onmouseover="this.style.color='#22d3ee'" onmouseout="this.style.color='rgba(200,220,255,0.45)'">DON'T SHOW AGAIN</button>
+      </div>
     </div>
   `;
   document.body.appendChild(wrap);
   pgStep('root');
 }
 function closeProposalGate(){ const el = document.getElementById('pgGate'); if (el) el.remove(); }
+function suppressGateForever(){
+  try { localStorage.setItem('ry_suppress_proposal_gate', '1'); } catch(e){}
+  closeProposalGate();
+  toast && toast('Tutorial gate disabled. Reset in Admin → Tenant settings.');
+}
+window.suppressGateForever = suppressGateForever;
 window.closeProposalGate = closeProposalGate;
 
 function pgBtn(text, sub, onclick, accent){
@@ -1447,15 +1510,56 @@ function pgStep(s){
     choices.innerHTML = existingLeads.map(l => pgBtn(l.name, l.meta + ' · ' + l.val, "pgPickLead('" + l.name.replace(/'/g,"\\'") + "')")).join('') + pgBtn('← Back', '', "pgStep('new')");
   } else if (s === 'existing') {
     h.textContent = 'Existing Proposals';
-    sub.textContent = 'Saved drafts — click to resume.';
-    const drafts = RyujinStore.load('proposal_drafts_meta', []);
-    if (!drafts.length) {
-      choices.innerHTML = '<div style="padding:24px;text-align:center;color:rgba(200,220,255,0.5);font-style:italic">No saved drafts yet.</div>' + pgBtn('← Back', '', "pgStep('root')");
-    } else {
-      choices.innerHTML = drafts.slice().reverse().map((d, i) => pgBtn(d.name, new Date(d.ts).toLocaleString(), "pgResumeDraft()")).join('') + pgBtn('← Back', '', "pgStep('root')");
-    }
+    sub.textContent = 'Loading...';
+    choices.innerHTML = '<div style="padding:24px;text-align:center;color:rgba(200,220,255,0.5);font-style:italic">Fetching saved + sent proposals...</div>';
+    loadExistingProposals().then(rows => {
+      sub.textContent = rows.length + ' proposal' + (rows.length === 1 ? '' : 's') + ' — click to open.';
+      if (!rows.length) {
+        choices.innerHTML = '<div style="padding:24px;text-align:center;color:rgba(200,220,255,0.5);font-style:italic">No proposals found yet.</div>' + pgBtn('← Back', '', "pgStep('root')");
+      } else {
+        choices.innerHTML = rows.map(r => pgBtn(r.title, r.subtitle, r.onclick)).join('') + pgBtn('← Back', '', "pgStep('root')");
+      }
+    });
   }
 }
+
+async function loadExistingProposals(){
+  const rows = [];
+  try {
+    const r = await fetch('/api/estimates?limit=200', { headers: { 'x-tenant-id': 'plus-ultra' } });
+    if (r.ok) {
+      const { estimates } = await r.json();
+      (estimates || []).forEach(e => {
+        const ref = 'PU-' + (e.estimate_number || (e.id || '').slice(0, 8).toUpperCase());
+        const name = (e.customer && e.customer.full_name) || '(no name)';
+        const addr = e.customer && e.customer.address ? ' · ' + e.customer.address : '';
+        const when = e.updated_at || e.created_at;
+        const whenStr = when ? new Date(when).toLocaleDateString() : '';
+        const pkg = e.calculated_packages && e.calculated_packages[e.selected_package || 'gold'];
+        const total = (pkg && pkg.total) || 0;
+        const totalStr = total ? ' · $' + Math.round(total/1000) + 'K' : '';
+        const shareToken = e.share_token || ref.toLowerCase();
+        rows.push({
+          title: name + ' · ' + ref,
+          subtitle: (e.status || 'draft').toUpperCase() + ' · ' + whenStr + addr + totalStr,
+          onclick: "window.open('/proposal-client.html?share=" + encodeURIComponent(shareToken) + "','_blank')",
+          ts: when
+        });
+      });
+    }
+  } catch(e) { console.warn('Server estimates fetch failed', e); }
+
+  const drafts = RyujinStore.load('proposal_drafts_meta', []);
+  drafts.forEach(d => rows.push({
+    title: d.name + ' · DRAFT',
+    subtitle: 'LOCAL DRAFT · ' + new Date(d.ts).toLocaleString(),
+    onclick: "pgResumeDraft()",
+    ts: d.ts
+  }));
+
+  return rows.sort((a, b) => new Date(b.ts || 0) - new Date(a.ts || 0));
+}
+window.loadExistingProposals = loadExistingProposals;
 function pgStartNewContact(){ closeProposalGate(); goToStep(1); setTimeout(() => { const el = document.getElementById('f_name'); if (el) el.focus(); }, 100); }
 function pgPickLead(name){
   const lead = existingLeads.find(l => l.name === name);
