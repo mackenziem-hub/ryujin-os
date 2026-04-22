@@ -64,7 +64,8 @@ const REPS = {
     phone: '(506) 540-1052',
     email: 'mackenzie.m@plusultraroofing.com',
     photo: `${BRAND_BASE}/rep-mackenzie.png`,
-    introVideo: 'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/69c29e439728a19e9eb265cd.mp4'
+    introVideo: 'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/69c29e439728a19e9eb265cd.mp4',
+    bio: "Mackenzie is the owner of Plus Ultra Roofing — a third-generation roofing company serving Greater Moncton and beyond. He grew up on job sites, runs the crews hands-on, and signs his own name to every proposal he writes. Tech-forward, certification-backed, and committed to doing every job the way he'd want it done on his own home."
   },
   darcy: {
     name: 'Darcy Mazerolle',
@@ -73,7 +74,8 @@ const REPS = {
     phone: '(506) 232-2272',
     email: 'plusultraroofinginfo@gmail.com',
     photo: `${BRAND_BASE}/rep-darcy.jpg`,
-    introVideo: 'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/69c29e439728a19e9eb265cd.mp4'
+    introVideo: 'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/69c29e439728a19e9eb265cd.mp4',
+    bio: "Darcy has been in the trades for over 20 years, helping homeowners plan and price the right roof for their home. He's part of the Plus Ultra Roofing family and is here to give expert advice on any and all of your roofing needs. All you have to do is ask."
   }
 };
 
