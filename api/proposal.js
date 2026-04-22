@@ -178,10 +178,27 @@ function buildScopeLineItems(est) {
   return items;
 }
 
-function resolveRep(salesOwner) {
-  const key = String(salesOwner || '').toLowerCase().trim();
-  if (key.includes('mack')) return REPS.mackenzie;
-  if (key.includes('darcy')) return REPS.darcy;
+// Resolve the rep for a given estimate. Priority order:
+//   1. A `sales_owner:<slug>` entry in est.tags (e.g. "sales_owner:mackenzie")
+//      — this avoids the UUID-coupling in the sales_owner FK column and lets
+//      the frontend set ownership with a plain string.
+//   2. est.sales_owner_slug (if the column exists — forward-compat)
+//   3. est.sales_owner looked up against the users table (future work)
+//   4. Darcy as the default fallback.
+function resolveRepFromEstimate(est) {
+  const tags = Array.isArray(est?.tags) ? est.tags : [];
+  const ownerTag = tags.find(t => typeof t === 'string' && t.toLowerCase().startsWith('sales_owner:'));
+  const slugFromTag = ownerTag ? ownerTag.split(':')[1]?.trim().toLowerCase() : '';
+  const slug = (slugFromTag || est?.sales_owner_slug || '').toLowerCase();
+
+  if (slug.includes('mack')) return REPS.mackenzie;
+  if (slug.includes('darcy')) return REPS.darcy;
+
+  // Legacy path — very occasionally sales_owner is a human name string not a UUID
+  const legacyKey = String(est?.sales_owner || '').toLowerCase().trim();
+  if (legacyKey.includes('mack')) return REPS.mackenzie;
+  if (legacyKey.includes('darcy')) return REPS.darcy;
+
   return REPS.darcy;
 }
 
@@ -232,10 +249,15 @@ export default async function handler(req, res) {
   const tierEntries = Object.entries(packages)
     .map(([id, pkg]) => {
       const meta = TIER_CATALOG[id] || { tag: id.toUpperCase(), name: id, desc: '', perks: [] };
+      // Split name on the separator so the card renders "Gold" as primary
+      // and "Landmark" as the smaller sub-line instead of stacking them.
+      const [primary, ...rest] = (meta.name || id).split(/\s*·\s*/);
+      const sub = rest.join(' · ');
       return {
         id,
         tag: meta.tag,
-        name: meta.name,
+        name: primary,
+        sub,
         desc: meta.desc,
         total: pkg.total || 0,
         persq: pkg.persq || 0,
@@ -249,7 +271,7 @@ export default async function handler(req, res) {
   const customerAddress = [est.customer?.address, est.customer?.city, est.customer?.province]
     .filter(Boolean).join(', ');
 
-  const rep = resolveRep(est.sales_owner);
+  const rep = resolveRepFromEstimate(est);
 
   const data = {
     refId: `PU-${est.estimate_number || est.id.slice(0, 8).toUpperCase()}`,

@@ -174,6 +174,10 @@ section{padding:80px 0;position:relative}
 .rep-card .info{padding:18px 20px}
 .rep-card .info .n{font-family:'Montserrat',sans-serif;font-weight:700;color:var(--ink);font-size:1.08rem}
 .rep-card .info .t{color:var(--ink-muted);font-size:0.85rem;margin-top:2px}
+.rep-card .info .b{
+  margin-top:12px;padding-top:12px;border-top:1px solid var(--border);
+  font-size:0.85rem;line-height:1.5;color:var(--ink-body);font-style:italic;
+}
 .rep-card .info .c{margin-top:12px;padding-top:12px;border-top:1px solid var(--border);font-size:0.88rem}
 .rep-card .info .c a{display:block;color:var(--ink-body);padding:4px 0}
 
@@ -618,6 +622,7 @@ footer{padding:40px 0;background:var(--bg-deep);border-top:1px solid var(--borde
         <div class="info">
           <div class="n" id="repName">Darcy Mazerolle</div>
           <div class="t" id="repTitle">Outside Sales · Plus Ultra Roofing</div>
+          <div class="b" id="repBio"></div>
           <div class="c">
             <a id="repPhoneLink" href="tel:+15062322272">(506) 232-2272</a>
             <a id="repEmailLink" href="mailto:plusultraroofinginfo@gmail.com">plusultraroofinginfo@gmail.com</a>
@@ -796,26 +801,7 @@ footer{padding:40px 0;background:var(--bg-deep);border-top:1px solid var(--borde
       <div class="kicker">Customer Reviews</div>
       <h2 id="reviewsHead">5.0★ — 35+ verified Google reviews.</h2>
     </div>
-    <div class="reviews-grid">
-      <div class="review">
-        <div class="stars">★★★★★</div>
-        <div class="review-q">"Professional crew, clean job site, excellent communication throughout. The whole process was smooth from the first estimate to the final walkthrough."</div>
-        <div class="review-n">Steve V.</div>
-        <div class="review-src">Google Review</div>
-      </div>
-      <div class="review">
-        <div class="stars">★★★★★</div>
-        <div class="review-q">"Best roofing experience we've had. Fair pricing, quality materials, and they actually explain what they're doing and why."</div>
-        <div class="review-n">Brad W.</div>
-        <div class="review-src">Google Review</div>
-      </div>
-      <div class="review">
-        <div class="stars">★★★★★</div>
-        <div class="review-q">"They showed up when they said they would, finished on time, and the roof looks incredible. No shortcuts, no surprises."</div>
-        <div class="review-n">Tarah M.</div>
-        <div class="review-src">Google Review</div>
-      </div>
-    </div>
+    <div class="reviews-grid" id="reviewsGrid"></div>
     <div class="reviews-link">
       <a href="https://g.page/plusultra" target="_blank" rel="noopener">Read all reviews on Google →</a>
     </div>
@@ -1124,11 +1110,16 @@ function renderIntro(){
   const rep = DATA.rep || {};
   const first = (DATA.customer && DATA.customer.name || '').split(' ')[0] || 'there';
   document.getElementById('introGreeting').textContent = 'Hi ' + first + ',';
-  if (rep.bio) document.getElementById('introBio').textContent = rep.bio;
+  // NOTE: We intentionally DO NOT overwrite #introBio with rep.bio. That paragraph
+  // carries the $2M-liability / harnessed-daily / full-documentation credibility
+  // message, which is core sales ammo and applies on every proposal regardless of rep.
+  // Rep bios live in the rep-card on the right (#repBio) instead.
   document.getElementById('introSigName').textContent = rep.name || 'Mackenzie Mazerolle';
   document.getElementById('introSigTitle').textContent = rep.title || 'Owner · Plus Ultra Roofing';
   document.getElementById('repName').textContent = rep.name || 'Darcy Mazerolle';
   document.getElementById('repTitle').textContent = rep.title || 'Outside Sales · Plus Ultra Roofing';
+  const repBioEl = document.getElementById('repBio');
+  if (repBioEl) repBioEl.textContent = rep.bio || '';
   if (rep.photo) document.getElementById('repPortrait').style.backgroundImage = "url('" + rep.photo + "')";
   if (rep.phone) {
     const a = document.getElementById('repPhoneLink');
@@ -1142,6 +1133,33 @@ function renderIntro(){
   }
   // Video intro headline tweak when rep has name
   if (rep.name) document.getElementById('videoHead').textContent = 'Meet ' + rep.name.split(' ')[0] + ' before they meet your roof.';
+}
+
+function renderReviews(){
+  const grid = document.getElementById('reviewsGrid');
+  if (!grid) return;
+  const list = (DATA.testimonials && DATA.testimonials.length)
+    ? DATA.testimonials
+    : [
+        { name: 'Norm Clark', city: 'Moncton, NB', rating: 5, source: 'Google',
+          quote: 'Amazing all around experience. From how quickly I received an estimate for a new roof, to getting the work done quickly and at a great price! Highly recommend Mackenzie and his crew!' },
+        { name: 'Rick Porter', city: 'Riverview, NB', rating: 5, source: 'Google',
+          quote: 'Having Plus Ultra Roofing re-shingle our roof was a great decision. The finished roof looks amazing! It was a pleasure working with both Mackenzie (owner), AJ and the rest of their crew. Thank you for a job well done!' }
+      ];
+  grid.innerHTML = list.map(r => {
+    const stars = '★'.repeat(Math.max(1, Math.min(5, Number(r.rating || 5))));
+    const city = r.city ? ` · ${r.city}` : '';
+    const src = (r.source || 'Google').toUpperCase() + ' REVIEW';
+    const quote = (r.quote || '').replace(/"/g, '&quot;');
+    return `
+      <div class="review">
+        <div class="stars">${stars}</div>
+        <div class="review-q">"${quote}"</div>
+        <div class="review-n">${r.name || 'Verified homeowner'}${city}</div>
+        <div class="review-src">${src}</div>
+      </div>
+    `;
+  }).join('');
 }
 
 function renderWhy(){
@@ -1458,6 +1476,7 @@ window.acceptProposal = acceptProposal;
   renderScope();
   renderAccept();
   renderReviewsHead();
+  renderReviews();
   initBeforeAfter();
   initFinTerms();
   initSignature();
