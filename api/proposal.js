@@ -13,44 +13,39 @@ const TIER_CATALOG = {
     perks: [
       'CertainTeed Landmark shingles',
       'Lifetime limited manufacturer warranty',
-      '10-yr SureStart™ full coverage',
+      '10-yr SureStart™ full coverage (certified installer)',
       '15-yr Plus Ultra workmanship warranty',
-      'Full tear-off + new synthetic underlayment',
+      'Full tear-off + synthetic underlayment',
       'Ice & water shield at eaves + valleys',
       'Drip edge, pipe boots, step flashing'
     ]
   },
   platinum: {
     tag: 'BETTER', name: 'Platinum · Landmark Pro',
-    desc: 'CertainTeed Landmark Pro. Thicker shingle, stronger granules, Class A wind.',
+    desc: 'CertainTeed Landmark Pro with Max Def color, Grace ice shield, Roof Runner synthetic upgrade.',
     perks: [
-      'CertainTeed Landmark Pro shingles',
+      'CertainTeed Landmark Pro (Max Def) shingles',
       'Lifetime limited manufacturer warranty',
-      '15-yr SureStart™ full coverage',
+      '10-yr SureStart™ full coverage (certified installer)',
       '20-yr Plus Ultra workmanship warranty',
-      'Full tear-off + premium synthetic underlayment',
-      'Ice & water shield at eaves + valleys',
-      'Upgraded flashings + ridge venting'
+      'Grace ice & water shield upgrade',
+      'Roof Runner synthetic underlayment upgrade',
+      'Drip edge, pipe boots, step flashing'
     ]
   },
   diamond: {
-    tag: 'BEST', name: 'Diamond · Presidential',
-    desc: 'CertainTeed Presidential designer shingle. Luxury profile, maximum protection.',
+    tag: 'BEST', name: 'Diamond · Grand Manor',
+    desc: 'CertainTeed Grand Manor — Super Shangle 5-layer construction with authentic slate profile.',
     perks: [
-      'CertainTeed Presidential designer shingles',
+      'CertainTeed Grand Manor designer shingles',
+      'Super Shangle® 5-layer construction',
+      'Streakfighter® algae protection',
       'Lifetime limited manufacturer warranty',
-      '15-yr SureStart™ full coverage',
+      '10-yr SureStart™ full coverage (certified installer)',
       '25-yr Plus Ultra workmanship warranty',
-      'Full tear-off + premium synthetic underlayment',
-      'Full ice & water shield coverage',
-      'All upgrade flashings + ridge venting',
+      'Grace ice & water shield + Roof Runner synthetic',
       'Priority scheduling'
     ]
-  },
-  economy: {
-    tag: 'ECONOMY', name: 'Economy · 3-tab',
-    desc: 'Budget 3-tab asphalt. Gets you a new roof.',
-    perks: ['25-yr basic asphalt shingle', 'Standard manufacturer warranty', '5-yr workmanship', 'Full tear-off']
   }
 };
 
@@ -155,30 +150,30 @@ function buildScopeLineItems(est) {
   const sel = String(est.selected_package || 'platinum').toLowerCase();
   const prod = {
     gold: 'CertainTeed Landmark',
-    platinum: 'CertainTeed Landmark Pro',
-    diamond: 'CertainTeed Presidential'
+    platinum: 'CertainTeed Landmark Pro (Max Def)',
+    diamond: 'CertainTeed Grand Manor'
   }[sel] || 'CertainTeed Landmark';
   const workmanship = { gold: '15 yr', platinum: '20 yr', diamond: '25 yr' }[sel] || '15 yr';
-  const surestart = sel === 'gold' ? '10 yr' : '15 yr';
   const iwsProd = sel === 'gold' ? 'standard' : 'Grace';
-  const underlayProd = sel === 'gold' ? 'standard' : 'Roof Runner';
+  const underlayProd = sel === 'gold' ? 'standard synthetic' : 'Roof Runner';
 
   const items = [
     { label: prod + ' + install', value: (sq ? sq + ' SQ' : '—') + ' · included' },
     { label: 'Full tear-off to deck', value: 'included' },
     { label: iwsProd + ' ice & water shield', value: est.eaves_lf ? (est.eaves_lf + (est.valleys_lf ? '+' + est.valleys_lf : '') + ' LF eaves+valleys') : 'included' },
-    { label: underlayProd + ' synthetic underlayment', value: 'full deck' },
+    { label: underlayProd + ' underlayment', value: 'full deck' },
     { label: 'Drip edge', value: est.eaves_lf && est.rakes_lf ? (est.eaves_lf + est.rakes_lf) + ' LF' : 'included' },
     { label: 'Ridge venting', value: est.ridges_lf ? est.ridges_lf + ' LF' : 'included' },
     { label: 'Valley metal', value: est.valleys_lf ? est.valleys_lf + ' LF' : 'included where applicable' },
     { label: 'Pipe boots (3-inch)', value: est.pipes ? est.pipes + ' boots' : 'included' },
     { label: 'Hip and ridge caps', value: 'included' },
-    { label: 'Substrate inspection', value: 'included' },
+    { label: 'Substrate inspection + re-nail', value: 'included' },
   ];
-  if (est.osb_sheets) items.push({ label: 'OSB decking allowance', value: est.osb_sheets + ' sheets' });
-  if (est.remediation_allowance) items.push({ label: 'Remediation allowance', value: '$' + est.remediation_allowance + ' · credited back unused' });
+  if (est.osb_sheets) items.push({ label: 'Rotten wood allowance', value: est.osb_sheets + ' sheets (above → $85/sheet, approved in advance)' });
   items.push({ label: 'Magnetic cleanup + debris haul', value: 'included' });
-  items.push({ label: 'Manufacturer warranty', value: 'Lifetime + ' + surestart + ' SureStart™' });
+  items.push({ label: '50–100+ photo documentation', value: 'every stage via Company Cam' });
+  items.push({ label: 'Internal QA checklist', value: 'every install' });
+  items.push({ label: 'Manufacturer warranty', value: 'Lifetime limited + 10-yr SureStart™' });
   items.push({ label: 'Plus Ultra workmanship', value: workmanship + ' + leak-free guarantee' });
   return items;
 }
