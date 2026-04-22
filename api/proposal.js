@@ -59,7 +59,11 @@ const REPS = {
     phone: '(506) 540-1052',
     email: 'mackenzie.m@plusultraroofing.com',
     photo: `${BRAND_BASE}/rep-mackenzie.png`,
-    introVideo: 'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/69c29e439728a19e9eb265cd.mp4',
+    // Mackenzie's own intro video hasn't been recorded yet. Leaving this null so
+    // the frontend shows the generic Plus Ultra company video (same file Darcy
+    // uses) without falsely personalising the headline as "Meet Mackenzie".
+    // Replace this URL once he records a dedicated intro.
+    introVideo: null,
     bio: "Mackenzie is the owner of Plus Ultra Roofing — a third-generation roofing company serving Greater Moncton and beyond. He grew up on job sites, runs the crews hands-on, and signs his own name to every proposal he writes. Tech-forward, certification-backed, and committed to doing every job the way he'd want it done on his own home."
   },
   darcy: {
