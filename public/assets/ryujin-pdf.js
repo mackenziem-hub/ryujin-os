@@ -197,11 +197,24 @@
     header(doc, 'Work Order', 'WO-' + (wo.wo_number || '—'));
     let y = 90;
 
+    // Crew-facing: keep contact minimal (no email), skip anything financial.
+    // Filter list is shared with production-workorders.html — editable via ⚙ PRIVACY there.
+    const WO_SENSITIVE_DEFAULTS = ['$','total','subtotal','HST','GST','tax','financ','deposit','balance','commission','payout','margin','quote','estimate','price','cost','retail'];
+    const WO_SENSITIVE_TERMS = (() => {
+      try {
+        const raw = localStorage.getItem('ry_wo_sensitive_terms');
+        if (raw == null) return WO_SENSITIVE_DEFAULTS;
+        return raw.split('\n').map(s => s.trim()).filter(Boolean);
+      } catch { return WO_SENSITIVE_DEFAULTS; }
+    })();
+    const WO_SENSITIVE_RX = WO_SENSITIVE_TERMS.length
+      ? new RegExp(WO_SENSITIVE_TERMS.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'i')
+      : /a^/;
+
     y = sectionTitle(doc, y, 'Client');
     y = row(doc, y, 'Customer', wo.customer_name);
     y = row(doc, y, 'Address', wo.address);
     if (wo.phone) y = row(doc, y, 'Phone', wo.phone);
-    if (wo.email) y = row(doc, y, 'Email', wo.email);
 
     y += 6;
     y = sectionTitle(doc, y, 'Schedule');
@@ -243,7 +256,7 @@
       });
     }
 
-    if (wo.special_notes) {
+    if (wo.special_notes && !WO_SENSITIVE_RX.test(wo.special_notes)) {
       y += 4;
       y = sectionTitle(doc, y, 'Special Notes');
       doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(60,70,90);
@@ -252,7 +265,7 @@
       y += 12 + (wrapped.length - 1) * 12;
     }
 
-    if (wo.notes) {
+    if (wo.notes && !WO_SENSITIVE_RX.test(wo.notes)) {
       y += 4;
       y = sectionTitle(doc, y, 'Notes');
       doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(80,90,110);

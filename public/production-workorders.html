@@ -104,6 +104,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
   <a class="btn-back" href="production.html"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg> BACK</a>
   <div class="brand"><div class="brand-mark"></div><div class="brand-name">RYUJIN <span class="dim">· WORK ORDERS</span></div></div>
   <div class="tb-spacer"></div>
+  <button onclick="openPrivacySettings()" style="background:rgba(251,146,60,0.14);border:1px solid rgba(251,146,60,0.4);color:#fb923c;padding:7px 12px;border-radius:8px;font-family:'Orbitron',sans-serif;font-size:0.62em;font-weight:800;letter-spacing:1.5px;cursor:pointer;margin-right:10px" title="Customize which words are redacted from work order displays and PDFs">⚙ PRIVACY</button>
   <div style="font-family:'Share Tech Mono',monospace;font-size:0.7em;color:rgba(160,190,230,0.5);letter-spacing:1.5px" id="countBadge">—</div>
 </div>
 
@@ -144,13 +145,35 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
   </div>
 </div>
 
-<div class="modal-bg" id="modalBg" onclick="if(event.target===this)closeModal()">
+<div class="modal-bg" id="modalBg" onclick="handleModalBgClick(event)">
   <div class="modal" id="modalBody"></div>
+</div>
+
+<div class="modal-bg" id="settingsBg" onclick="if(event.target===this)closeSettings()">
+  <div class="modal" id="settingsBody" style="max-width:540px"></div>
 </div>
 
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// Work orders are crew-facing — hide anything that leaks pricing, financing, or pay.
+// Terms are editable via ⚙ PRIVACY (stored per-browser in localStorage).
+const SENSITIVE_KEY = 'ry_wo_sensitive_terms';
+const SENSITIVE_DEFAULTS = ['$','total','subtotal','HST','GST','tax','financ','deposit','balance','commission','payout','margin','quote','estimate','price','cost','retail'];
+function loadSensitiveTerms(){
+  try {
+    const raw = localStorage.getItem(SENSITIVE_KEY);
+    if (raw == null) return SENSITIVE_DEFAULTS.slice();
+    return raw.split('\n').map(s => s.trim()).filter(Boolean);
+  } catch { return SENSITIVE_DEFAULTS.slice(); }
+}
+function buildSensitiveRx(terms){
+  if (!terms || !terms.length) return /a^/;  // matches nothing
+  const escRx = t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(terms.map(escRx).join('|'), 'i');
+}
+let SENSITIVE_RX = buildSensitiveRx(loadSensitiveTerms());
 
 const STATUS_STYLE = {
   draft: { color: '#94a3b8', bg: 'rgba(148,163,184,0.14)' },
@@ -422,18 +445,62 @@ function openDetail(idx){
     ${scope.length ? `<div class="modal-section"><h3>Scope Checklist</h3>
     <ul class="scope-list">${scope.map(s => `<li class="${s.included ? '' : 'off'}"><span class="chk">${s.included ? checkMark : dashMark}</span>${esc(s.item)}${s.qty ? ' (' + s.qty + ')' : ''}</li>`).join('')}</ul></div>` : ''}
 
-    ${w.notes && !/total|HST|\$\d/.test(w.notes) ? `<div class="modal-section"><h3>Notes</h3><div style="color:rgba(200,220,255,0.7);line-height:1.5;font-size:0.85em;font-family:'Share Tech Mono',monospace;letter-spacing:0.3px">${esc(w.notes)}</div></div>` : ''}
+    ${w.special_notes && !SENSITIVE_RX.test(w.special_notes) ? `<div class="modal-section"><h3>Site / Access</h3><div style="color:#e0e6f0;line-height:1.5;font-size:0.9em">${esc(w.special_notes)}</div></div>` : ''}
 
-    ${w.estimate ? `<div class="modal-section"><h3>Linked</h3>
-    <a href="/proposal-client.html?share=${esc(w.estimate.share_token)}" target="_blank" style="color:#22d3ee;text-decoration:none;font-family:'Share Tech Mono',monospace;font-size:0.82em;letter-spacing:1px">-> Proposal PU-${w.estimate.estimate_number}</a>
-    ${w.paysheet ? ` | <a href="production-paysheet.html" style="color:#fb923c;text-decoration:none;font-family:'Share Tech Mono',monospace;font-size:0.82em;letter-spacing:1px">-> Pay Sheet ${esc(w.paysheet.job_id)}</a>` : ''}
-    </div>` : ''}
+    ${w.notes && !SENSITIVE_RX.test(w.notes) ? `<div class="modal-section"><h3>Notes</h3><div style="color:rgba(200,220,255,0.7);line-height:1.5;font-size:0.85em;font-family:'Share Tech Mono',monospace;letter-spacing:0.3px">${esc(w.notes)}</div></div>` : ''}
   `;
   $('modalBody').innerHTML = html;
+  $('modalBody').dataset.currentId = w.id;
+  delete $('modalBody').dataset.editingId;
   $('modalBg').classList.add('on');
 }
 
 function closeModal(){ $('modalBg').classList.remove('on'); }
+
+function openPrivacySettings(){
+  const terms = loadSensitiveTerms();
+  $('settingsBody').innerHTML = `
+    <button class="modal-close" onclick="closeSettings()">×</button>
+    <h2>Privacy Filter</h2>
+    <div class="sub">WORD LIST · REDACTED FROM NOTES + PDFS</div>
+    <p style="color:rgba(200,220,255,0.7);font-size:0.88em;line-height:1.5;margin-bottom:14px">
+      Any note containing one of these words (case-insensitive substring match) is hidden from the work order display and the PDF. One per line. Changes apply instantly — no code edits, no redeploy.
+    </p>
+    <textarea id="privTerms" rows="14" class="edit-in" style="font-family:'Share Tech Mono',monospace;font-size:0.88em;white-space:pre">${esc(terms.join('\n'))}</textarea>
+    <div style="margin-top:14px;display:flex;gap:10px;justify-content:space-between;align-items:center">
+      <button class="btn-sm cancel" onclick="resetPrivacyDefaults()" title="Restore the shipped default list">↺ RESET DEFAULTS</button>
+      <div style="display:flex;gap:10px">
+        <button class="btn-sm cancel" onclick="closeSettings()">CANCEL</button>
+        <button class="btn-sm save" onclick="savePrivacySettings()">💾 SAVE</button>
+      </div>
+    </div>
+  `;
+  $('settingsBg').classList.add('on');
+}
+function closeSettings(){ $('settingsBg').classList.remove('on'); }
+function resetPrivacyDefaults(){
+  const ta = $('privTerms');
+  if (ta) ta.value = SENSITIVE_DEFAULTS.join('\n');
+}
+function savePrivacySettings(){
+  const ta = $('privTerms');
+  if (!ta) return;
+  const terms = ta.value.split('\n').map(s => s.trim()).filter(Boolean);
+  try { localStorage.setItem(SENSITIVE_KEY, terms.join('\n')); } catch {}
+  SENSITIVE_RX = buildSensitiveRx(terms);
+  closeSettings();
+  // Refresh any open detail view so filtering reflects the new list.
+  const openId = $('modalBody').dataset.currentId;
+  if ($('modalBg').classList.contains('on') && openId && !WO_EDIT) openDetailById(openId);
+}
+
+// Don't close the modal while editing — would discard unsaved changes.
+// Exit editing explicitly via × or CANCEL.
+function handleModalBgClick(e){
+  if (e.target !== e.currentTarget) return;
+  if (WO_EDIT) return;
+  closeModal();
+}
 
 function goBack(){
   if (window.parent !== window && window.parent.exitSectionOverlay) { window.parent.exitSectionOverlay(); return; }
@@ -441,9 +508,17 @@ function goBack(){
 }
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
-    e.preventDefault();
-    if ($('modalBg').classList.contains('on')) closeModal();
-    else goBack();
+    if ($('settingsBg').classList.contains('on')) {
+      e.preventDefault();
+      closeSettings();
+    } else if ($('modalBg').classList.contains('on')) {
+      if (WO_EDIT) return;
+      e.preventDefault();
+      closeModal();
+    } else {
+      e.preventDefault();
+      goBack();
+    }
   }
 });
 
