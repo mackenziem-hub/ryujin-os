@@ -1608,10 +1608,11 @@ async function renderQuoteForm() {
     // ═══ Section 3: Roof Details (chimneys, pipes, vents, perimeter) ═══
     if (isRoof && !isFlat) {
       html += formSection('Roof Details', '🔧',
+        qField('eavesLF','Eaves Length (LF)','number',{default:0,hint:'★ Always measure — drives drip edge, starter, I&W'}) +
+        qField('rakesLF','Rake Length (LF)','number',{default:0,hint:'★ Always measure — drives drip edge, starter, I&W'}) +
         qField('ridgesLF','Ridge Length (LF)','number',{default:0,hint:'Linear feet of ridge line'}) +
+        qField('hipsLF','Hip Length (LF)','number',{default:0,hint:'Hip lines — adds to ridge cap count'}) +
         qField('valleysLF','Valley Length (LF)','number',{default:0,hint:'Total valley linear feet'}) +
-        qField('eavesLF','Eaves Length (LF)','number',{default:0,hint:'Auto-estimated from sq ft if left at 0'}) +
-        qField('rakesLF','Rake Length (LF)','number',{default:0,hint:'Auto-estimated from sq ft if left at 0'}) +
         qField('chimneys','Chimneys','number',{default:0}) +
         qField('chimneySize','Chimney Size','select',{default:'small',options:['small','large'],labels:{small:'Small ($125 flashing)',large:'Large ($350 flashing)'}}) +
         qField('pipes','Pipe Penetrations','number',{default:3,hint:'Vent pipes through roof'}) +
@@ -1844,6 +1845,20 @@ function renderQuoteResult(el, r) {
   const projType = r.measurements?.projectType || 'local';
 
   let html = '';
+
+  // ═══ MEASUREMENT WARNING (sqrt fallback fired) ═══
+  if (r.measurements?.measurementsEstimated) {
+    html += `<div class="panel" style="margin-top:12px;border-color:var(--yellow);background:rgba(255,200,0,0.08);padding:12px 14px">
+      <div style="display:flex;gap:10px;align-items:flex-start">
+        <span style="font-size:1.2em">⚠️</span>
+        <div style="font-size:0.85em;line-height:1.4">
+          <strong style="color:var(--yellow)">Measurements estimated from square footage.</strong><br>
+          Eaves, rakes, valleys were auto-calculated — material counts are approximate and will usually be LOW on complex roofs.
+          Enter measured edge lengths above for accurate drip edge, ice &amp; water, and starter quantities.
+        </div>
+      </div>
+    </div>`;
+  }
 
   // ═══ PROPOSAL HEADER ═══
   html += `<div class="quote-result" style="margin-top:12px">
@@ -2408,6 +2423,7 @@ async function createEstimateFromQuote() {
     eaves_lf: quoteState.answers.eavesLF || 0,
     rakes_lf: quoteState.answers.rakesLF || 0,
     ridges_lf: quoteState.answers.ridgesLF || 0,
+    hips_lf: quoteState.answers.hipsLF || 0,
     valleys_lf: quoteState.answers.valleysLF || 0,
     distance_km: m.distanceKM || quoteState.answers.distanceKM || 0,
     siding_sqft: quoteState.answers.wallSqFt || 0,
@@ -2423,7 +2439,8 @@ async function createEstimateFromQuote() {
 
   if (est.error) { sfx.play('error'); toast('Error: ' + est.error, 'error'); return; }
   sfx.play('success');
-  localStorage.removeItem('ryujin_quote_draft'); // clear auto-saved draft
+  // Keep localStorage draft — user may refine and re-save (e.g. after EagleView comes back).
+  // "New Quote" button explicitly clears it.
 
   // Show confirmation inline instead of alert
   const rd = document.getElementById('quoteResult');
@@ -2717,8 +2734,31 @@ function renderFunnelBuilder(m) {
 
 function openFunnelFromEstimate(id, name, phone, email, address, sqft, pitch, complexity, dist, stories, layers) {
   funnelState.customer = { name, phone, email, address };
+  // Seed with the fields we already have, then fetch the full estimate to pull edge LF too —
+  // otherwise the funnel quote falls back to sqrt(sqft)*4 on perimeter (the 95 Cornhill bug).
   funnelState.measurements = { squareFeet: sqft || 2000, pitch: pitch || '5/12', complexity: complexity || 'medium', distanceKM: dist || 10, stories: stories || 1, extraLayers: layers || 1 };
-  funnelState.step = 4; // skip to customize since we have the data
+  funnelState.step = 4;
+  api('/estimates?id=' + id).then(data => {
+    const est = data.estimate || data;
+    Object.assign(funnelState.measurements, {
+      eavesLF: est.eaves_lf || 0,
+      rakesLF: est.rakes_lf || 0,
+      ridgesLF: est.ridges_lf || 0,
+      hipsLF: est.hips_lf || 0,
+      valleysLF: est.valleys_lf || 0,
+      chimneys: est.chimneys || 0,
+      chimneySize: est.chimney_size || 'small',
+      cricket: est.chimney_cricket || false,
+      pipes: est.pipes || 3,
+      vents: est.vents || 2,
+      wallSqFt: est.siding_sqft || 0,
+      soffitLF: est.soffit_lf || 0,
+      fasciaLF: est.fascia_lf || 0,
+      gutterLF: est.gutter_lf || 0,
+      windowCount: est.window_count || 0,
+      doorCount: est.door_count || 0
+    });
+  }).catch(() => {});
   navigate('funnel');
 }
 
@@ -2740,7 +2780,22 @@ async function generateFunnel(type) {
     complexity: fs.measurements.complexity,
     stories: fs.measurements.stories,
     extraLayers: fs.measurements.extraLayers,
-    wallSqFt: fs.measurements.wallSqFt || 0
+    wallSqFt: fs.measurements.wallSqFt || 0,
+    eavesLF: fs.measurements.eavesLF || 0,
+    rakesLF: fs.measurements.rakesLF || 0,
+    ridgesLF: fs.measurements.ridgesLF || 0,
+    hipsLF: fs.measurements.hipsLF || 0,
+    valleysLF: fs.measurements.valleysLF || 0,
+    chimneys: fs.measurements.chimneys || 0,
+    chimneySize: fs.measurements.chimneySize || 'small',
+    cricket: fs.measurements.cricket || false,
+    pipes: fs.measurements.pipes || 3,
+    vents: fs.measurements.vents || 2,
+    soffitLF: fs.measurements.soffitLF || 0,
+    fasciaLF: fs.measurements.fasciaLF || 0,
+    gutterLF: fs.measurements.gutterLF || 0,
+    windowCount: fs.measurements.windowCount || 0,
+    doorCount: fs.measurements.doorCount || 0
   };
 
   const quoteResult = await api('/quote?mode=guided&materials=1', {
@@ -3524,11 +3579,12 @@ async function updateEstStatus(id, status) {
 function reQuoteEstimate(id, name, address, pkg) {
   // Pre-fill quote builder with saved data
   quoteState.mode = 'guided';
-  quoteState.answers = { customerName: name, address: address, _offer_slug: pkg };
+  quoteState.answers = { customerName: name, address: address, _offer_slug: pkg, _estimate_id: id };
   // Try to get the estimate to load measurements
   api('/estimates?id=' + id).then(data => {
     const est = data.estimate || data;
-    // Load measurements from DB columns or nested object
+    // Load ALL measurements — edge LF were being dropped, causing the sqrt fallback to fire
+    // on every re-quote even when measurements were saved (the "95 Cornhill" bug).
     Object.assign(quoteState.answers, {
       squareFeet: est.roof_area_sqft || est.measurements?.input_sqft || 0,
       pitch: est.roof_pitch || est.measurements?.pitch || '5/12',
@@ -3537,8 +3593,21 @@ function reQuoteEstimate(id, name, address, pkg) {
       stories: est.stories || 1,
       extraLayers: est.extra_layers || 1,
       chimneys: est.chimneys || 0,
+      chimneySize: est.chimney_size || 'small',
+      cricket: est.chimney_cricket || false,
       pipes: est.pipes || 3,
-      vents: est.vents || 2
+      vents: est.vents || 2,
+      eavesLF: est.eaves_lf || 0,
+      rakesLF: est.rakes_lf || 0,
+      ridgesLF: est.ridges_lf || 0,
+      hipsLF: est.hips_lf || 0,
+      valleysLF: est.valleys_lf || 0,
+      wallSqFt: est.siding_sqft || 0,
+      soffitLF: est.soffit_lf || 0,
+      fasciaLF: est.fascia_lf || 0,
+      gutterLF: est.gutter_lf || 0,
+      windowCount: est.window_count || 0,
+      doorCount: est.door_count || 0
     });
     if (estSys(est)) quoteState.system = estSys(est) === 'asphalt' ? 'residential' : estSys(est);
     navigate('quote');
@@ -3551,7 +3620,7 @@ async function generateEstOutputs(id, type) {
   const est = data.estimate || data;
   if (!est || !estPkg(est)) { toast('Estimate data incomplete', 'error'); return; }
 
-  // Re-calculate via the API
+  // Re-calculate via the API — pass all measurement fields so the engine doesn't fall back to sqrt(sqft)
   const calcPayload = {
     system: estSys(est) || 'residential',
     offer_slug: estPkg(est),
@@ -3560,7 +3629,25 @@ async function generateEstOutputs(id, type) {
       squareFeet: est.roof_area_sqft || est.measurements?.input_sqft || 0,
       pitch: est.roof_pitch || est.measurements?.pitch || '5/12',
       distanceKM: est.distance_km || est.measurements?.distanceKM || 10,
-      complexity: est.complexity || 'medium'
+      complexity: est.complexity || 'medium',
+      stories: est.stories || 1,
+      extraLayers: est.extra_layers || 1,
+      chimneys: est.chimneys || 0,
+      chimneySize: est.chimney_size || 'small',
+      cricket: est.chimney_cricket || false,
+      pipes: est.pipes || 3,
+      vents: est.vents || 2,
+      eavesLF: est.eaves_lf || 0,
+      rakesLF: est.rakes_lf || 0,
+      ridgesLF: est.ridges_lf || 0,
+      hipsLF: est.hips_lf || 0,
+      valleysLF: est.valleys_lf || 0,
+      wallSqFt: est.siding_sqft || 0,
+      soffitLF: est.soffit_lf || 0,
+      fasciaLF: est.fascia_lf || 0,
+      gutterLF: est.gutter_lf || 0,
+      windowCount: est.window_count || 0,
+      doorCount: est.door_count || 0
     }
   };
   const quoteResult = await api('/quote?mode=guided&materials=1', {method:'POST', body:JSON.stringify(calcPayload)});
@@ -4417,6 +4504,9 @@ const ryujinChat = {
 
     // Add user message
     this.addMessage(msg, 'user');
+
+    // Capture PRIOR history (don't include current message — it goes in `message`)
+    const historyToSend = this.history.slice(-10);
     this.history.push({ role: 'user', content: msg });
 
     // Show typing
@@ -4427,43 +4517,87 @@ const ryujinChat = {
     msgs.appendChild(typing);
     msgs.scrollTop = msgs.scrollHeight;
 
-    // Call assistant API
+    // Call the full Shenron brain at /api/chat (SSE streaming, tool use enabled)
     try {
-      const result = await api('/assistant', {
+      const resp = await fetch('/api/chat', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: msg,
-          context: {
-            page: currentPage,
-            quoteResult: quoteState.result ? {
-              offer: quoteState.result.offer,
-              summary: quoteState.result.summary
-            } : null
-          },
-          history: this.history.slice(-10)
+          history: historyToSend
         })
       });
 
       typing.remove();
 
-      const response = result.response || result.error || "Signal lost. Try again.";
-      this.addMessage(response, 'ai');
-      this.history.push({ role: 'assistant', content: response });
+      if (!resp.ok || !resp.body) {
+        this.addMessage(`Signal lost (HTTP ${resp.status}). Try again.`, 'ai');
+        return;
+      }
 
-      // Handle actions
-      if (result.action) {
-        if (result.action.type === 'navigate') {
-          setTimeout(() => navigate(result.action.target), 800);
+      // Create the message bubble upfront and fill it as tokens arrive
+      const msgs = document.getElementById('ryuMessages');
+      const bubble = document.createElement('div');
+      bubble.className = 'ryu-msg ai';
+      msgs.appendChild(bubble);
+      let assembled = '';
+      let toolPill = null;
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const payload = line.slice(6).trim();
+          if (!payload) continue;
+          let data;
+          try { data = JSON.parse(payload); } catch { continue; }
+
+          if (data.text) {
+            assembled += data.text;
+            bubble.textContent = assembled;
+          } else if (data.tool_start) {
+            toolPill = document.createElement('div');
+            toolPill.className = 'ryu-msg ai';
+            toolPill.style.opacity = '0.6';
+            toolPill.style.fontStyle = 'italic';
+            toolPill.textContent = data.tool_start.label || 'Running tool...';
+            msgs.insertBefore(toolPill, bubble);
+          } else if (data.tool_end) {
+            if (toolPill) {
+              if (data.tool_end.status === 'error') {
+                toolPill.textContent = `⚠️ ${toolPill.textContent} (failed)`;
+              } else {
+                toolPill.remove();
+                toolPill = null;
+              }
+            }
+          } else if (data.done) {
+            break;
+          }
+          msgs.scrollTop = msgs.scrollHeight;
         }
       }
 
-      // Voice
+      if (assembled) {
+        this.history.push({ role: 'assistant', content: assembled });
+      } else {
+        bubble.textContent = 'No response.';
+      }
+
       if (msg.toLowerCase().includes('quote')) this.playVoice('guide-quote');
-      else if (result.action) this.playVoice('confirm');
 
     } catch (e) {
       typing.remove();
-      this.addMessage("Connection interrupted. Standing by.", 'ai');
+      this.addMessage('Connection interrupted. Standing by.', 'ai');
     }
   },
 

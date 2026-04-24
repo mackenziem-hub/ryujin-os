@@ -161,23 +161,33 @@ function computeMaterials(wo){
   const sq = Number(wo.total_sq) || 0;
   const tier = (wo.package_tier || 'gold').toLowerCase();
   const color = wo.shingle_color || '';
+  // Read edges from the work order first (persisted on the WO itself), fall back to the
+  // linked estimate. The WO-level storage is what rescued the 95 Cornhill case —
+  // that job had no linked estimate at all, so materials fell back to sqft-only math.
   const est = wo.estimate || {};
-  const eaves = Number(est.eaves_lf) || 0;
-  const rakes = Number(est.rakes_lf) || 0;
-  const ridge = Number(est.ridges_lf) || 0;
-  const valleys = Number(est.valleys_lf) || 0;
-  const walls = Number(est.walls_lf) || 0;
-  const pipes = Number(est.pipes) || 1;
-  const chimneys = Number(est.chimneys) || 0;
-  const osbSheets = Number(est.osb_sheets) || 0;
+  const pick = (woVal, estVal) => Number(woVal) || Number(estVal) || 0;
+  const eaves = pick(wo.eaves_lf, est.eaves_lf);
+  const rakes = pick(wo.rakes_lf, est.rakes_lf);
+  const ridge = pick(wo.ridges_lf, est.ridges_lf);
+  const hips = pick(wo.hips_lf, est.hips_lf);
+  const valleys = pick(wo.valleys_lf, est.valleys_lf);
+  const walls = pick(wo.walls_lf, est.walls_lf);
+  const pipes = pick(wo.pipes, est.pipes) || 1;
+  const chimneys = pick(wo.chimneys, est.chimneys);
+  const osbSheets = pick(wo.osb_sheets, est.osb_sheets);
   const prod = PRODUCTS[tier] || PRODUCTS.gold;
 
+  // Flag missing edge measurements so the UI can warn — silent fallbacks produced
+  // materially wrong orders (1 roll I&W for an 18.4 SQ job).
+  const measurementsMissing = eaves === 0 && rakes === 0 && valleys === 0;
+
   const shingleBundles = bundlesForShingles(sq, tier);
-  const ridgeCapBundles = Math.ceil((ridge + valleys * 0.5) / RIDGE_CAP_LF_PER_BUNDLE) || 1;
-  const starterBundles = Math.ceil(eaves / STARTER_LF_PER_BUNDLE) || 1;
-  const iwsRolls = Math.ceil((eaves + valleys) / IWS_LF_PER_ROLL) || 1;
+  // Starter goes on eaves AND rakes. Ridge cap covers ridges AND hips.
+  const ridgeCapBundles = ridge + hips > 0 ? Math.ceil((ridge + hips) / RIDGE_CAP_LF_PER_BUNDLE) : 0;
+  const starterBundles = eaves + rakes > 0 ? Math.ceil((eaves + rakes) / STARTER_LF_PER_BUNDLE) : 0;
+  const iwsRolls = eaves + valleys > 0 ? Math.ceil((eaves + valleys) / IWS_LF_PER_ROLL) : 0;
   const underlayRolls = Math.ceil(sq / UNDERLAY_SQ_PER_ROLL) || 1;
-  const dripEdge = Math.ceil((eaves + rakes) / DRIP_EDGE_LF_PER_PIECE) || Math.ceil(sq / 4);
+  const dripEdge = eaves + rakes > 0 ? Math.ceil((eaves + rakes) / DRIP_EDGE_LF_PER_PIECE) : 0;
   const valleyMetal = Math.ceil(valleys / 10);
   const ridgeVentRolls = Math.ceil(ridge / RIDGE_VENT_LF_PER_ROLL);
   const nailBoxes = Math.max(1, Math.ceil(sq / NAILS_SQ_PER_BOX));
@@ -186,20 +196,21 @@ function computeMaterials(wo){
   const hasWallFlashing = walls > 0 || chimneys > 0;
 
   return {
+    _measurementsMissing: measurementsMissing,
     shingles: { label: shingleLabel, qty: shingleBundles, unit: 'bundles',
       note: sq + ' SQ × ' + (tier==='diamond'||tier==='grand_manor'?4:3) + ' bundles/SQ × 1.10 waste' },
     ridgeCap: { label: 'Hip and Ridge Caps', qty: ridgeCapBundles, unit: 'bundles',
-      note: ridge + ' LF ridge' + (valleys?' + half of '+valleys+' LF valleys':'') + ' ÷ 33 LF/bundle' },
+      note: (ridge + hips) + ' LF (ridges + hips) ÷ 33 LF/bundle' },
     starter: { label: 'Starter Strip', qty: starterBundles, unit: 'bundles',
-      note: eaves + ' LF eaves ÷ 120 LF/bundle' },
+      note: (eaves + rakes) + ' LF (eaves + rakes) ÷ 120 LF/bundle' },
     iws: { label: prod.iws, qty: iwsRolls, unit: 'rolls',
       note: (eaves + valleys) + ' LF (eaves + valleys) ÷ 60 LF/roll' },
     underlay: { label: prod.underlay, qty: underlayRolls, unit: 'rolls',
       note: sq + ' SQ ÷ 10 SQ/roll' },
     dripEdge: { label: 'Drip Edge (aluminum, 10ft)', qty: dripEdge, unit: 'pieces',
-      note: (eaves + rakes) + ' LF total ÷ 10 ft' },
-    valleyMetal: valleys > 0 ? { label: 'Valley Metal (W-valley, 10ft)', qty: valleyMetal, unit: 'pieces',
-      note: valleys + ' LF ÷ 10 ft' } : null,
+      note: (eaves + rakes) + ' LF (eaves + rakes) ÷ 10 LF/piece' },
+    valleyMetal: (valleys > 0 && ['platinum','diamond','grand_manor'].includes(tier)) ? { label: 'Valley Metal (W-valley, 10ft)', qty: valleyMetal, unit: 'pieces',
+      note: valleys + ' LF ÷ 10 ft (Platinum+ only — Gold uses closed-cut asphalt valleys)' } : null,
     ridgeVent: ridge > 0 ? { label: 'Ridge Vent (25ft rolls)', qty: ridgeVentRolls, unit: 'rolls',
       note: ridge + ' LF ÷ 25 LF/roll' } : null,
     pipeBoots: { label: 'Pipe Boots (3-inch standard)', qty: pipes, unit: 'each',
@@ -293,6 +304,13 @@ function renderAll(){
           <div class="chev"><svg viewBox="0 0 24 24"><polyline points="9 6 15 12 9 18"/></svg></div>
         </div>
         <div class="job-body">
+          ${m._measurementsMissing ? `<div style="margin-bottom:14px;padding:12px 14px;background:rgba(251,146,60,0.10);border:1px solid rgba(251,146,60,0.35);border-radius:10px;display:flex;gap:10px;align-items:flex-start">
+            <span style="font-size:1.1em">⚠️</span>
+            <div style="font-size:0.82em;line-height:1.45;color:#fb923c">
+              <strong>Measurements missing.</strong>
+              <span style="color:rgba(200,220,255,0.78)">Eaves, rakes, and valleys aren't on this work order yet — drip edge / starter / ice &amp; water can't be calculated. Open the work order (production-workorders), enter your measured edge lengths, and this list will regenerate.</span>
+            </div>
+          </div>` : ''}
           ${catsHtml}
           <div class="actions-bar">
             <button class="btn" onclick="printList(${i})"><svg viewBox="0 0 24 24"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg> PRINT</button>

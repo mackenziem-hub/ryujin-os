@@ -1,3 +1,46 @@
+# Session notes — 2026-04-24 (most recent — read this first)
+
+Mac flagged 95 Cornhill's material order was wrong (4 sticks drip edge, 1 roll I&W for an 18.4 SQ job). Fixed the crew-side material engine + added a durable place to persist edge measurements on work orders. **Code is done locally, three unblockers remain.**
+
+## Three unblockers before 95 Cornhill regenerates
+
+1. **Run `schema/migration_015_workorder_measurements.sql` in Supabase SQL editor** — idempotent ALTER TABLE ADD COLUMN IF NOT EXISTS on `workorders`. Without this, PUTs to `/api/workorders` with edge LF fields will fail with "column does not exist".
+2. **Deploy** — `vercel --prod` from repo root, or push to `main` and let auto-deploy pick it up. Other WIP on `main` that predates this session (`api/chat.js`, `api/proposal-pdf.js`, `api/proposal-timeline.js`, `lib/google.js`, `public/content/`, modifications to `api/estimate-photos.js` / `api/proposal-accept.js` / `api/proposal.js` / `public/marketing-creatives.html` / `public/proposal-history.html` / `public/sales-client.html` / `public/assets/ryujin-chat.js` / `vercel.json` / `package-lock.json`) will ride along in a push — separate WIP, not from this session.
+3. **EagleView measurements for WO-11 (95 Cornhill)** — file is at `OneDrive/Desktop/claude review/95 Cornhill st.PDF` (report 70584009, Bid Perfect 18.4 SQ, 24 facets). Pulling eaves / rakes / valleys / ridges / hips / walls LF, then one `PUT /api/workorders` on id `b472365f-957b-4128-9720-445d14f575a3` regenerates the material order. WO already has: customer Donna Boosamra, 18.4 SQ, Gold / Landmark Moire Black, pitch mix (73% @ 8/12 dominant), 2 est pipes + 1 hydro mast, starts 2026-04-24 with Ryan Atlantic.
+
+## Root cause (confirmed from live DB)
+
+WO-11 has `linked_estimate_id: null` and zero edge measurements anywhere. Old `computeMaterials()` in `public/production-materials.html` did `eaves=0, rakes=0 → dripEdge = Math.ceil(0/10) || Math.ceil(18.4/4) = 5`, starter→1, I&W→1. Exactly what Mac saw. The workorders schema had nowhere to store edge LF — it's now been added.
+
+**Two separate material systems to keep straight:**
+- **Sales side** — `lib/quoteEngineV3.js` → `estimates` table. Powers proposals.
+- **Crew side** — `public/production-materials.html` → `workorders` table (falls back to linked estimate). Powers Ryan's shopping list. **This is where Mac was looking when he reported the bad numbers.**
+
+## What shipped this session
+
+**Engine / formulas** — locked-in real-world coverage rates (Mac's spec, no waste padding):
+- Drip edge: 1 piece = 10 LF of eaves or rakes
+- Ice &amp; water: 1 roll = 60 LF of eaves or valleys
+- Starter: 1 bundle = 120 LF of eaves or rakes
+- Ridge cap: 1 bundle = 33 LF of ridge or hip
+- Valley metal: 1 sheet = 10 LF of valley
+
+**Files changed (uncommitted):**
+- `schema/migration_015_workorder_measurements.sql` (new) — adds `eaves_lf`, `rakes_lf`, `ridges_lf`, `hips_lf`, `valleys_lf`, `walls_lf`, `pipes`, `vents`, `chimneys`, `osb_sheets` to `workorders`.
+- `public/production-materials.html` — reads edges from WO first, falls back to linked estimate; fixed starter to `(eaves+rakes)/120`; ridge cap now uses `(ridges+hips)/33`; removed silent `sqft/4` fallback; yellow "measurements missing" banner per job when edges aren't set.
+- `public/production-workorders.html` — new **Measurements** section in both edit form (10 input fields) and view modal; saveEditWo() PUTs all edge LF fields via `numOrZero()` helper.
+- `lib/quoteEngineV3.js` — formula rewrite with the coverage rates above; added `hipsLF` plumbing; output now carries `measurementsEstimated: true` + warning string when sqrt fallback fires.
+- `public/admin.html` — `reQuoteEstimate()`, `generateEstOutputs()`, `openFunnelFromEstimate()` + `generateFunnel()` now carry ALL edge LF from the DB (previously dropped everything except sqft/pitch/complexity — that was the hidden "memory bug" Mac suspected); `hipsLF` input added; localStorage draft no longer wiped on save; yellow warning banner on quote result when engine fell back to sqrt.
+
+## Reference IDs for 95 Cornhill
+
+- Tenant `plus-ultra` UUID: `84c91cb9-df07-4424-8938-075e9c50cb3b`
+- WO-11: `b472365f-957b-4128-9720-445d14f575a3`
+- Paysheet `PU-2026-CORN`: `3fbf1dbf-493a-4e53-a85d-02fd029554b4`
+- EagleView report #: 70584009
+
+---
+
 # Session notes — 2026-04-20
 
 Picked up on 2026-04-20 to finish the TODO list + an aggressive perf pass + a second pass on the 5 half-baked areas. Everything deployed to Vercel main.
