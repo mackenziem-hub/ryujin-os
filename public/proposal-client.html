@@ -133,10 +133,33 @@ section{padding:80px 0;position:relative}
 }
 .hero-photo{
   width:100%;aspect-ratio:16/7;border-radius:16px;overflow:hidden;
-  box-shadow:var(--shadow-lg);margin-bottom:32px;
-  background:var(--bg-deep);
+  box-shadow:var(--shadow-lg);margin-bottom:6px;
+  background:linear-gradient(135deg,#1a2030,#0a0e18);
+  position:relative;
 }
-.hero-photo img{width:100%;height:100%;object-fit:cover}
+.hero-photo::before{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(110deg,transparent 20%,rgba(255,255,255,0.04) 50%,transparent 80%);
+  background-size:200% 100%;animation:hero-shimmer 1.6s linear infinite;
+  opacity:1;transition:opacity 0.3s ease;
+}
+.hero-photo.loaded::before{opacity:0}
+@keyframes hero-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.hero-photo img{width:100%;height:100%;object-fit:cover;position:relative;z-index:1}
+.render-disclaimer{
+  font-family:'Inter',sans-serif;font-size:0.78rem;color:var(--ink-muted);
+  font-style:italic;margin:0 0 26px 2px;letter-spacing:0.01em;opacity:0.75;
+}
+.hero-actions{display:flex;justify-content:flex-end;margin:-18px 0 12px;gap:8px}
+.btn-hero-ghost{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:7px 14px;border-radius:8px;border:1px solid var(--border);
+  background:rgba(255,255,255,0.6);backdrop-filter:blur(6px);
+  font-family:'Inter',sans-serif;font-size:0.82rem;font-weight:600;color:var(--ink-body);
+  cursor:pointer;transition:all 0.15s ease;text-decoration:none;
+}
+.btn-hero-ghost:hover{border-color:var(--accent-2);color:var(--ink);background:#fff;box-shadow:var(--shadow)}
+@media print{.hero-actions,[data-hide-in-pdf]{display:none !important}}
 .hero-meta{
   display:grid;grid-template-columns:1fr auto 1.2fr auto;gap:28px;align-items:center;
   padding:28px 32px;background:var(--bg-card);border-radius:14px;box-shadow:var(--shadow);
@@ -578,9 +601,11 @@ footer{padding:40px 0;background:var(--bg-deep);border-top:1px solid var(--borde
       <img class="logo" src="/brand/plus-ultra/logo.png" alt="Plus Ultra Roofing">
       <img class="cert" src="/brand/plus-ultra/cert-shinglemaster.webp" alt="CertainTeed Select ShingleMaster">
     </div>
-    <div class="hero-photo">
-      <img id="heroPhoto" src="/brand/plus-ultra/gallery/01-hero-lakeside-landmark.jpg" alt="Your property">
+    <div class="hero-photo" id="heroPhotoWrap">
+      <img id="heroPhoto" alt="Your property" style="opacity:0;transition:opacity 0.35s ease">
+      <video id="heroVideo" autoplay muted loop playsinline preload="metadata" style="display:none;width:100%;height:100%;object-fit:cover;position:relative;z-index:1"></video>
     </div>
+    <div class="render-disclaimer" id="renderDisclaimer" style="display:none">Visual rendering — not an actual photo of your home.</div>
     <div class="hero-meta">
       <div>
         <div class="kicker">Roofing Proposal</div>
@@ -597,6 +622,12 @@ footer{padding:40px 0;background:var(--bg-deep);border-top:1px solid var(--borde
         <b id="contactEmail">plusultraroofing@gmail.com</b>
         <b id="contactPhone">(506) 540-1052</b>
       </div>
+    </div>
+    <div class="hero-actions" data-hide-in-pdf>
+      <button id="downloadPdfBtn" class="btn-hero-ghost" onclick="downloadPdf()">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Save as PDF
+      </button>
     </div>
   </div>
 </section>
@@ -691,9 +722,9 @@ footer{padding:40px 0;background:var(--bg-deep);border-top:1px solid var(--borde
     </div>
     <div class="video-wrap">
       <video id="vidEl" controls playsinline preload="metadata"
-             poster="/brand/plus-ultra/gallery/01-hero-lakeside-landmark.jpg">
-        <source src="https://oyhn4tqzifmqqj0o.public.blob.vercel-storage.com/darcy-roof%20proposal%20introduction.mp4" type="video/mp4">
-        Your browser doesn't support embedded video. <a href="https://oyhn4tqzifmqqj0o.public.blob.vercel-storage.com/darcy-roof%20proposal%20introduction.mp4">Download the video</a>.
+             poster="/brand/plus-ultra/gallery/02-topdown-architectural.jpg">
+        <source src="" type="video/mp4">
+        Your browser doesn't support embedded video.
       </video>
     </div>
   </div>
@@ -717,6 +748,7 @@ footer{padding:40px 0;background:var(--bg-deep);border-top:1px solid var(--borde
       <div class="ba-handle" id="baHandle"></div>
       <div class="ba-hint">DRAG</div>
     </div>
+    <div class="render-disclaimer" style="text-align:center;margin:10px 0 20px">Before/after reflects a past Plus Ultra install — shown to illustrate finish quality, not your home.</div>
     <div class="gallery-grid" id="galleryGrid"></div>
   </div>
 </section>
@@ -971,19 +1003,18 @@ const DEMO = {
   },
   scope: { system: 'asphalt', recommended: 'platinum' },
   media: {
-    videoUrl: 'https://oyhn4tqzifmqqj0o.public.blob.vercel-storage.com/darcy-roof%20proposal%20introduction.mp4',
-    videoCover: '/brand/plus-ultra/gallery/01-hero-lakeside-landmark.jpg',
+    videoUrl: 'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/69e9ed12a48992f689d9d242.mp4',
+    videoCover: '/brand/plus-ultra/gallery/02-topdown-architectural.jpg',
     beforeImage: '/brand/plus-ultra/gallery/03-crew-in-action.jpg',
     afterImage:  '/brand/plus-ultra/gallery/01-hero-lakeside-landmark.jpg',
+    // Gallery intentionally excludes 01 (hero cover), 02 (video poster), 03 (B/A before),
+    // and 01 (B/A after) so no photo repeats across the page.
     gallery: [
-      { img: '/brand/plus-ultra/gallery/01-hero-lakeside-landmark.jpg', loc: 'MONCTON · LAKESIDE', desc: 'CertainTeed Landmark · full reroof' },
-      { img: '/brand/plus-ultra/gallery/02-topdown-architectural.jpg',  loc: 'RIVERVIEW · 2025',   desc: 'Complex architectural roof' },
-      { img: '/brand/plus-ultra/gallery/07-valley-detail.jpg',           loc: 'RIVERVIEW · 2025',   desc: 'Woven valley detail' },
-      { img: '/brand/plus-ultra/gallery/03-crew-in-action.jpg',          loc: 'DIEPPE · 2025',      desc: 'Full tear-off · crew on site' },
-      { img: '/brand/plus-ultra/gallery/04-job-complete.jpg',            loc: 'MONCTON · 2025',     desc: 'Job complete' },
-      { img: '/brand/plus-ultra/gallery/08-new-construction-2.jpg',      loc: 'MONCTON · 2025',     desc: 'New build install' },
-      { img: '/brand/plus-ultra/gallery/05-new-construction.jpg',        loc: 'RIVERVIEW · 2025',   desc: 'New-construction install' },
-      { img: '/brand/plus-ultra/gallery/06-drone-completion.jpg',        loc: 'MONCTON · 2025',     desc: 'Drone completion shot' }
+      { img: '/brand/plus-ultra/gallery/07-valley-detail.jpg',       loc: 'RIVERVIEW · 2025', desc: 'Woven valley detail' },
+      { img: '/brand/plus-ultra/gallery/04-job-complete.jpg',        loc: 'MONCTON · 2025',   desc: 'Finished install · closeup' },
+      { img: '/brand/plus-ultra/gallery/08-new-construction-2.jpg',  loc: 'MONCTON · 2025',   desc: 'New build · crew on deck' },
+      { img: '/brand/plus-ultra/gallery/05-new-construction.jpg',    loc: 'RIVERVIEW · 2025', desc: 'Multi-unit new construction' },
+      { img: '/brand/plus-ultra/gallery/06-drone-completion.jpg',    loc: 'MONCTON · 2025',   desc: 'Drone completion shot' }
     ]
   },
   tiers: {
@@ -1069,6 +1100,29 @@ const state = {
 
 function money(n){ return '$' + (Math.round(n)||0).toLocaleString('en-CA'); }
 
+function downloadPdf(){
+  const params = new URLSearchParams(location.search);
+  const share = params.get('share');
+  if (!share) {
+    // No share token — fall back to browser print-to-PDF
+    window.print();
+    return;
+  }
+  const customer = (DATA && DATA.customer && DATA.customer.name) || 'proposal';
+  const safe = String(customer).replace(/[^\w\-]+/g, '_').slice(0, 40);
+  const url = '/api/proposal-pdf?share=' + encodeURIComponent(share) + '&download=' + encodeURIComponent('PU-' + safe + '.pdf');
+  const btn = document.getElementById('downloadPdfBtn');
+  if (btn) {
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<span style="font-size:0.82rem">Preparing PDF…</span>';
+    btn.disabled = true;
+    setTimeout(() => { btn.innerHTML = orig; btn.disabled = false; }, 10000);
+  }
+  window.open(url, '_blank', 'noopener');
+  try { logEvent('pdf_downloaded', {}); } catch(e){}
+}
+window.downloadPdf = downloadPdf;
+
 function financeItMonthly(principal, termMonths){
   const apr = 0.0899;
   const r = apr / 12;
@@ -1100,8 +1154,38 @@ function renderHero(){
   document.getElementById('cAddr').textContent = DATA.customer && DATA.customer.address || '';
   const today = new Date(); const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
   document.getElementById('heroDate').textContent = months[today.getMonth()] + ' ' + today.getDate() + ', ' + today.getFullYear();
-  const coverImg = DATA.customer && DATA.customer.coverImage;
-  if (coverImg) document.getElementById('heroPhoto').src = coverImg;
+  const cust = DATA.customer || {};
+  const coverVideo = cust.coverVideo;
+  const coverImg = cust.coverImage;
+  const coverSource = cust.coverSource; // 'ai' | 'streetview' | 'photo' | 'video'
+  const heroImg = document.getElementById('heroPhoto');
+  const heroVid = document.getElementById('heroVideo');
+  const heroWrap = document.getElementById('heroPhotoWrap');
+  const disclaimer = document.getElementById('renderDisclaimer');
+  const STOCK_FALLBACK = '/brand/plus-ultra/gallery/01-hero-lakeside-landmark.jpg';
+
+  if (coverVideo && heroVid) {
+    // Video cover — Grok-generated flythrough, etc.
+    if (heroImg) heroImg.style.display = 'none';
+    heroVid.style.display = 'block';
+    heroVid.src = coverVideo;
+    if (heroWrap) heroWrap.classList.add('loaded');
+  } else if (coverImg && heroImg) {
+    const pre = new Image();
+    pre.onload = () => { heroImg.src = coverImg; heroImg.style.opacity = '1'; if (heroWrap) heroWrap.classList.add('loaded'); };
+    pre.onerror = () => { heroImg.src = STOCK_FALLBACK; heroImg.style.opacity = '1'; if (heroWrap) heroWrap.classList.add('loaded'); };
+    pre.src = coverImg;
+  } else if (heroImg) {
+    heroImg.src = STOCK_FALLBACK;
+    heroImg.style.opacity = '1';
+    if (heroWrap) heroWrap.classList.add('loaded');
+  }
+
+  // Disclaimer: only when the cover is AI-generated. Street view, real photos, and
+  // actual videos are all representations of reality — no disclaimer needed.
+  if (disclaimer) {
+    disclaimer.style.display = (coverSource === 'ai') ? '' : 'none';
+  }
   document.getElementById('contactEmail').textContent = (DATA.rep && DATA.rep.email) || 'plusultraroofing@gmail.com';
   document.getElementById('contactPhone').textContent = (DATA.rep && DATA.rep.phone) || '(506) 540-1052';
 }

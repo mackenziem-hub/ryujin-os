@@ -428,7 +428,7 @@ const state = {
   scope: { system: null, tier: null },
   measure: { sq: 0, pitch: 'normal', gutter: 0, soffit: 0, fascia: 0, complexity: 'normal' },
   options: { osb: false, leafguard: false, vent: false, chimney: false, remediation: false, financing: false, osb_sheets: null, rem_amt: 1200 },
-  media: { satelliteImage: '', coverImage: '', beforeImage: '', afterImage: '', repPhoto: '', videoCover: '', videoUrl: '' }
+  media: { satelliteImage: '', coverImage: '', coverVideo: '', coverSource: 'streetview', beforeImage: '', afterImage: '', repPhoto: '', videoCover: '', videoUrl: '' }
 };
 
 /* ─── Data ─── */
@@ -966,6 +966,25 @@ function saveDraft(){
   }
 }
 function printProposal(){
+  // If we have a saved draft with a share token, hit the server-side PDF endpoint
+  // for a clean, branded PDF. Otherwise, fall back to browser print dialog.
+  const estimateId = RyujinStore.load('proposal_draft_id', null);
+  if (estimateId && window.RyujinAPI) {
+    fetch('/api/estimates?id=' + encodeURIComponent(estimateId), {
+      headers: { 'x-tenant-id': 'plus-ultra' }
+    }).then(r => r.ok ? r.json() : null).then(e => {
+      if (e && e.share_token) {
+        downloadProposalPdf(e.share_token, (e.customer && e.customer.full_name) || state.customer.name);
+      } else {
+        if (state.step !== 5) { goToStep(5); setTimeout(() => window.print(), 350); return; }
+        window.print();
+      }
+    }).catch(() => {
+      if (state.step !== 5) { goToStep(5); setTimeout(() => window.print(), 350); return; }
+      window.print();
+    });
+    return;
+  }
   if (state.step !== 5) { goToStep(5); setTimeout(() => window.print(), 350); return; }
   window.print();
 }
@@ -1191,7 +1210,9 @@ function buildClientPayload(){
       address: state.customer.address,
       phone: state.customer.phone,
       email: state.customer.email,
-      coverImage: (state.media && state.media.coverImage) || FALLBACK_PHOTOS[0]
+      coverImage: (state.media && state.media.coverImage) || FALLBACK_PHOTOS[0],
+      coverVideo: (state.media && state.media.coverVideo) || '',
+      coverSource: (state.media && state.media.coverSource) || 'streetview'
     },
     rep: {
       name: repName,
@@ -1206,13 +1227,21 @@ function buildClientPayload(){
     package: { name: packageName, system: state.scope.system },
     media: {
       satelliteImage: (state.media && state.media.satelliteImage) || '',
-      beforeImage: (state.media && state.media.beforeImage) || FALLBACK_PHOTOS[2],
-      afterImage: (state.media && state.media.afterImage) || FALLBACK_PHOTOS[0],
-      videoCover: (state.media && state.media.videoCover) || FALLBACK_PHOTOS[1],
+      beforeImage: (state.media && state.media.beforeImage) || '/brand/plus-ultra/gallery/03-crew-in-action.jpg',
+      afterImage: (state.media && state.media.afterImage) || '/brand/plus-ultra/gallery/01-hero-lakeside-landmark.jpg',
+      videoCover: (state.media && state.media.videoCover) || '/brand/plus-ultra/gallery/02-topdown-architectural.jpg',
       videoUrl: (state.media && state.media.videoUrl) || DARCY_VIDEO,
+      // Gallery items are {img, loc, desc} objects. Default excludes photos already
+      // used as hero cover (01) / B/A before (03) / B/A after (01) so nothing repeats.
       gallery: (state.media && Array.isArray(state.media.gallery) && state.media.gallery.length)
         ? state.media.gallery
-        : FALLBACK_PHOTOS
+        : [
+            { img: '/brand/plus-ultra/gallery/07-valley-detail.jpg',      loc: 'RIVERVIEW · 2025', desc: 'Woven valley detail' },
+            { img: '/brand/plus-ultra/gallery/04-job-complete.jpg',       loc: 'MONCTON · 2025',   desc: 'Finished install · closeup' },
+            { img: '/brand/plus-ultra/gallery/08-new-construction-2.jpg', loc: 'MONCTON · 2025',   desc: 'New build · crew on deck' },
+            { img: '/brand/plus-ultra/gallery/05-new-construction.jpg',   loc: 'RIVERVIEW · 2025', desc: 'Multi-unit new construction' },
+            { img: '/brand/plus-ultra/gallery/06-drone-completion.jpg',   loc: 'MONCTON · 2025',   desc: 'Drone completion shot' }
+          ]
     },
     scope: { system: state.scope.system, recommended: selectedTier.id, measure: state.measure },
     tiers: {}
@@ -1240,29 +1269,94 @@ function encodePayload(obj){
   return btoa(unescape(encodeURIComponent(json)));
 }
 
-function generateClientLink(){
+async function generateClientLink(){
   if (!state.customer.name || !state.measure.sq || !state.scope.tier) {
     toast('Need customer name, SQ, and tier first');
     return;
   }
   const payload = buildClientPayload();
   if (!payload) return;
-  const encoded = encodePayload(payload);
   const base = (location.protocol === 'file:' ? 'file://' + location.pathname.replace(/[^\/]+$/, '') : location.origin + '/');
-  // Primary URL: sales-client (warm-up page → CTA forwards ?data= to proposal-client).
-  // Direct URL: skips the warm-up and goes straight to the priced proposal.
-  const salesUrl    = base + 'sales-client.html?data=' + encoded;
-  const proposalUrl = base + 'proposal-client.html?data=' + encoded;
 
-  // Log the sent proposal
+  // Preferred flow: create/update estimate in DB → use share_token for URL so
+  // tracking + accept writeback work. Fall back to ?data= only if API unreachable.
+  let shareToken = null;
+  let estimateId = RyujinStore.load('proposal_draft_id', null);
+
+  try {
+    // If we don't have a draft id yet, create the estimate record
+    if (!estimateId && window.RyujinAPI) {
+      const b = (typeof calcBreakdown === 'function') ? calcBreakdown() : {};
+      const tier = (typeof getSelectedTier === 'function') ? getSelectedTier() : null;
+      const created = await RyujinAPI.post('/api/estimates', {
+        customer: {
+          full_name: state.customer.name,
+          email: state.customer.email || '',
+          phone: state.customer.phone || '',
+          address: state.customer.address || ''
+        },
+        proposal_mode: state.scope.system === 'metal' ? 'Metal' : state.scope.system === 'exterior' ? 'Full Exterior' : 'Roof Only',
+        roof_area_sqft: (state.measure.sq || 0) * 100,
+        roof_pitch: state.measure.pitch || null,
+        complexity: state.measure.complexity || 'medium',
+        selected_package: state.scope.tier,
+        status: 'proposal_sent',
+        tags: ['sales_owner:mackenzie'],
+        notes: [{ ts: new Date().toISOString(), kind: 'proposal_generated', body: 'Client link generated from sales-proposal flow' }]
+      });
+      if (created && created.id) {
+        estimateId = created.id;
+        shareToken = created.share_token;
+        RyujinStore.save('proposal_draft_id', estimateId);
+      }
+    } else if (estimateId && window.RyujinAPI) {
+      // Flip existing draft to proposal_sent + pull its share_token
+      const existing = await fetch('/api/estimates?id=' + encodeURIComponent(estimateId), {
+        headers: { 'x-tenant-id': 'plus-ultra' }
+      }).then(r => r.ok ? r.json() : null).catch(() => null);
+      if (existing && existing.share_token) {
+        shareToken = existing.share_token;
+        if (existing.status !== 'proposal_sent' && existing.status !== 'accepted') {
+          RyujinAPI.put('/api/estimates', { id: estimateId, status: 'proposal_sent' }).catch(() => {});
+        }
+      }
+    }
+  } catch (e) { console.warn('Estimate persist failed, falling back to ?data=', e); }
+
+  // Build URLs: prefer share_token, fall back to encoded payload
+  let salesUrl, proposalUrl, linkMode;
+  if (shareToken) {
+    const s = encodeURIComponent(shareToken);
+    salesUrl    = base + 'sales-client.html?share=' + s;
+    proposalUrl = base + 'proposal-client.html?share=' + s;
+    linkMode = 'share';
+  } else {
+    const encoded = encodePayload(payload);
+    salesUrl    = base + 'sales-client.html?data=' + encoded;
+    proposalUrl = base + 'proposal-client.html?data=' + encoded;
+    linkMode = 'data';
+    toast('Offline — link works but tracking disabled until back online');
+  }
+
+  // Local history
   const sent = RyujinStore.load('proposals_sent', []);
-  const sentRecord = { refId: payload.refId, client: state.customer.name, system: state.scope.system, tier: state.scope.tier, url: salesUrl, proposalUrl, at: new Date().toISOString() };
+  const sentRecord = {
+    refId: payload.refId,
+    client: state.customer.name,
+    system: state.scope.system,
+    tier: state.scope.tier,
+    url: salesUrl,
+    proposalUrl,
+    shareToken,
+    estimateId,
+    linkMode,
+    at: new Date().toISOString()
+  };
   sent.push(sentRecord);
   RyujinStore.save('proposals_sent', sent);
 
-  // Persist to API (fire-and-forget, queued offline)
+  // Persist the outputs too (fire-and-forget)
   if (window.RyujinAPI) {
-    const estimateId = RyujinStore.load('proposal_draft_id', null);
     RyujinAPI.post('/api/outputs?type=proposal', {
       estimate_id: estimateId,
       ref_id: payload.refId,
@@ -1272,10 +1366,10 @@ function generateClientLink(){
     }).catch(() => {});
   }
 
-  openLinkModal(salesUrl, proposalUrl, payload);
+  openLinkModal(salesUrl, proposalUrl, payload, { linkMode, shareToken, estimateId });
 }
 
-function openLinkModal(salesUrl, proposalUrl, payload){
+function openLinkModal(salesUrl, proposalUrl, payload, meta){
   let mdl = document.getElementById('linkModal');
   if (!mdl) {
     mdl = document.createElement('div');
@@ -1285,6 +1379,7 @@ function openLinkModal(salesUrl, proposalUrl, payload){
   // Back-compat: if called with only 2 args, second arg is payload (old signature)
   if (proposalUrl && typeof proposalUrl === 'object') { payload = proposalUrl; proposalUrl = null; }
   if (!proposalUrl) proposalUrl = salesUrl.replace('/sales-client.html', '/proposal-client.html');
+  meta = meta || { linkMode: 'data' };
 
   const firstName = payload.customer.name ? payload.customer.name.split(' ')[0] : 'there';
   const smsBody = 'Hi ' + firstName + ' \u2014 your Plus Ultra roof plan is ready. Takes 2 min to look over: ' + salesUrl + ' \u2014 any questions, just text back.';
@@ -1303,14 +1398,20 @@ function openLinkModal(salesUrl, proposalUrl, payload){
         <button class="em-x" onclick="closeLinkModal()">&times;</button>
       </div>
       <div class="em-body">
+        ${meta.linkMode === 'share' ? `
+          <div style="display:inline-flex;gap:6px;align-items:center;padding:5px 10px;background:rgba(74,222,128,0.12);border:1px solid rgba(74,222,128,0.35);border-radius:6px;font-family:'Share Tech Mono',monospace;font-size:0.68em;letter-spacing:1px;color:#4ade80;margin-bottom:12px"><span style="width:6px;height:6px;background:#4ade80;border-radius:50%;box-shadow:0 0 6px #4ade80"></span>TRACKING ENABLED \u00B7 SHARE TOKEN \u00B7 ${esc(meta.shareToken || '')}</div>
+        ` : `
+          <div style="display:inline-flex;gap:6px;align-items:center;padding:5px 10px;background:rgba(250,204,21,0.12);border:1px solid rgba(250,204,21,0.35);border-radius:6px;font-family:'Share Tech Mono',monospace;font-size:0.68em;letter-spacing:1px;color:#facc15;margin-bottom:12px"><span style="width:6px;height:6px;background:#facc15;border-radius:50%"></span>OFFLINE LINK \u00B7 TRACKING DEGRADED \u2014 RE-GENERATE WHEN ONLINE</div>
+        `}
         <div class="em-row">
           <label style="color:#22d3ee">PRIMARY \u00B7 SALES PAGE (WARM-UP \u2192 PROPOSAL)</label>
           <input id="linkUrl" type="text" value="${salesUrl.replace(/"/g, '&quot;')}" readonly style="font-family:'Share Tech Mono',monospace;font-size:0.78em;color:#22d3ee"/>
-          <div style="font-size:0.76em;color:rgba(200,220,255,0.5);margin-top:4px;line-height:1.5">What clients see first: 3rd-gen story, Darcy video, our work, testimonials \u2014 CTA button forwards them into the full priced proposal.</div>
+          <div style="font-size:0.76em;color:rgba(200,220,255,0.5);margin-top:4px;line-height:1.5">What clients see first: 3rd-gen story, your intro video, our work, testimonials \u2014 CTA button forwards them into the full priced proposal.</div>
         </div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin:14px 0 12px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;margin:14px 0 12px">
           <button class="btn primary" onclick="copyLinkUrl()"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>COPY LINK</button>
           <button class="btn ghost" onclick="openLinkInBrowser()"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>PREVIEW</button>
+          ${meta.shareToken ? `<button class="btn ghost" onclick="downloadProposalPdf('${esc(meta.shareToken)}','${esc(payload.customer.name || 'proposal')}')"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>PDF</button>` : ''}
           <button class="btn ghost" onclick="smsLinkTo('${esc(payload.customer.phone || '')}','${esc(smsBody)}')"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>SMS</button>
           <button class="btn ghost" onclick="emailLinkTo('${esc(payload.customer.email || '')}','${esc(subject)}','${esc(emailBody).replace(/\n/g, '\\\\n')}')"><svg viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22 6 12 13 2 6"/></svg>GMAIL</button>
         </div>
@@ -1321,7 +1422,7 @@ function openLinkModal(salesUrl, proposalUrl, payload){
         </div>
         <div style="padding:12px 14px;background:rgba(74,222,128,0.07);border:1px solid rgba(74,222,128,0.25);border-radius:9px;font-size:0.82em;line-height:1.55;margin-top:12px">
           <b style="color:#4ade80;font-family:Orbitron,sans-serif;font-size:0.74em;letter-spacing:1.2px">WHEN THEY ACCEPT</b><br/>
-          You get an instant email at <code style="color:#22d3ee;font-family:'Share Tech Mono',monospace">plusultraroofing@gmail.com</code> with the package + total + timestamp. Ryujin logs it to your accepted-proposals pile.
+          You get an instant email at <code style="color:#22d3ee;font-family:'Share Tech Mono',monospace">mackenzie.m@plusultraroofing.com</code> with the package + total + timestamp. The GHL opportunity auto-moves to <b>Signed</b> and a note drops on the contact. Ryujin logs everything to the activity timeline.
         </div>
       </div>
       <div class="em-foot">
@@ -1334,6 +1435,15 @@ function openLinkModal(salesUrl, proposalUrl, payload){
 }
 function closeLinkModal(){ const m = document.getElementById('linkModal'); if (m) m.remove(); }
 function copyLinkUrl(){ const u = document.getElementById('linkUrl'); u.select(); document.execCommand('copy'); toast('Link copied'); }
+function downloadProposalPdf(shareToken, clientName){
+  if (!shareToken) { toast('No share token — save as server estimate first'); return; }
+  const safeName = String(clientName || 'proposal').replace(/[^\w\-]+/g, '_').slice(0, 40);
+  const url = '/api/proposal-pdf?share=' + encodeURIComponent(shareToken) + '&download=' + encodeURIComponent(safeName + '.pdf');
+  // Open in a new tab — Vercel streams the PDF; browser handles the save.
+  window.open(url, '_blank', 'noopener');
+  toast('Generating PDF… this takes ~8s on cold start');
+}
+window.downloadProposalPdf = downloadProposalPdf;
 function openLinkInBrowser(){ const u = document.getElementById('linkUrl').value; window.open(u, '_blank'); }
 function smsLinkTo(phone, body){
   if (!phone) { toast('No phone on file \u2014 link copied instead'); copyLinkUrl(); return; }
@@ -1361,6 +1471,16 @@ function openMediaModal(){
       <div style="display:flex;flex-direction:column;gap:14px">
         ${mediaRow('Satellite image of client property', 'mm_sat', m.satelliteImage || '', 'https://… .jpg (or screenshot Google Maps sat view)')}
         ${mediaRow('Cover image (hero background)', 'mm_cover', m.coverImage || '', 'https://… .jpg')}
+        ${mediaRow('Cover video — optional, overrides image', 'mm_cvid', m.coverVideo || '', 'https://… .mp4 (Grok flythrough, drone clip, etc.)')}
+        <div>
+          <div style="font-family:'Share Tech Mono',monospace;font-size:0.7em;color:rgba(200,220,255,0.55);letter-spacing:1.2px;margin-bottom:6px">COVER SOURCE <span style="color:#fb923c">— drives the "visual rendering" disclaimer</span></div>
+          <select id="mm_csrc" style="width:100%;padding:10px 14px;background:rgba(6,10,20,0.7);border:1px solid rgba(34,211,238,0.25);border-radius:8px;color:#fff;font-family:'Share Tech Mono',monospace;font-size:0.82em">
+            <option value="streetview" ${(m.coverSource||'streetview')==='streetview'?'selected':''}>Street View (no disclaimer)</option>
+            <option value="photo"      ${m.coverSource==='photo'?'selected':''}>Real Photo of Home (no disclaimer)</option>
+            <option value="video"      ${m.coverSource==='video'?'selected':''}>Actual Video (no disclaimer)</option>
+            <option value="ai"         ${m.coverSource==='ai'?'selected':''}>AI Render / Grok (shows disclaimer)</option>
+          </select>
+        </div>
         ${mediaRow('Before photo (similar home)', 'mm_before', m.beforeImage || '', 'https://… .jpg')}
         ${mediaRow('After photo (finished job)', 'mm_after', m.afterImage || '', 'https://… .jpg')}
         ${mediaRow('Rep headshot (circle avatar)', 'mm_rep', m.repPhoto || '', 'https://… .jpg')}
@@ -1388,6 +1508,8 @@ function saveMediaModal(){
   state.media = state.media || {};
   state.media.satelliteImage = document.getElementById('mm_sat').value.trim();
   state.media.coverImage = document.getElementById('mm_cover').value.trim();
+  state.media.coverVideo = document.getElementById('mm_cvid').value.trim();
+  state.media.coverSource = document.getElementById('mm_csrc').value;
   state.media.beforeImage = document.getElementById('mm_before').value.trim();
   state.media.afterImage = document.getElementById('mm_after').value.trim();
   state.media.repPhoto = document.getElementById('mm_rep').value.trim();
