@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Job Log Review — Ryujin Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Orbitron:wght@400;500;600;700;800&display=optional" rel="stylesheet">
+<link rel="stylesheet" href="/assets/ryujin-perf.css">
+<script src="/assets/ryujin-perf.js"></script>
+<style>
+:root{--bg:#060a14;--surface:rgba(14,22,40,0.85);--border:rgba(34,211,238,0.1);--border-hi:rgba(34,211,238,0.28);--text:#d0daf0;--dim:rgba(160,190,230,0.55);--cyan:#22d3ee;--green:#4ade80;--yellow:#facc15;--red:#f87171;--orange:#fb923c}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:16px}
+.wrap{max-width:960px;margin:0 auto}
+.topbar{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:16px}
+.brand{font-family:'Orbitron';font-size:0.78em;letter-spacing:1.8px;color:var(--cyan);font-weight:700}
+h1{font-size:1.2em;margin:10px 0 14px}
+.filters{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.pill{padding:7px 14px;background:rgba(34,211,238,0.05);border:1px solid var(--border);border-radius:20px;font-size:0.78em;cursor:pointer;color:var(--dim);font-weight:600}
+.pill.on{background:rgba(34,211,238,0.15);border-color:var(--cyan);color:var(--cyan)}
+.entry{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:10px}
+.entry.pending{border-color:rgba(250,204,21,0.3)}
+.row{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.meta{font-size:0.82em;color:var(--dim);margin-top:6px}
+.meta b{color:var(--text);font-weight:600}
+.tag{font-size:0.68em;padding:3px 9px;border-radius:14px;background:rgba(34,211,238,0.1);color:var(--cyan);border:1px solid var(--border-hi);font-weight:700;letter-spacing:0.5px;text-transform:uppercase}
+.tag.green{background:rgba(74,222,128,0.12);color:var(--green);border-color:rgba(74,222,128,0.3)}
+.tag.yellow{background:rgba(250,204,21,0.12);color:var(--yellow);border-color:rgba(250,204,21,0.3)}
+.tag.red{background:rgba(248,113,113,0.12);color:var(--red);border-color:rgba(248,113,113,0.3)}
+.desc{font-size:0.93em;margin:10px 0;line-height:1.5}
+.amt{font-size:1.1em;font-weight:700;color:var(--green)}
+.photos{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.photos img{width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid var(--border);cursor:pointer}
+.actions{display:flex;gap:8px;margin-top:12px}
+.btn{padding:9px 18px;border-radius:8px;border:1px solid var(--border-hi);background:rgba(34,211,238,0.08);color:var(--cyan);font-weight:600;cursor:pointer;font-family:inherit;font-size:0.85em}
+.btn.approve{background:rgba(74,222,128,0.15);color:var(--green);border-color:rgba(74,222,128,0.35)}
+.btn.deny{background:rgba(248,113,113,0.1);color:var(--red);border-color:rgba(248,113,113,0.3)}
+.btn.ghost{background:transparent;color:var(--dim);border-color:var(--border)}
+.empty{padding:40px;text-align:center;color:var(--dim)}
+.review-box{margin-top:10px;display:none}
+.review-box.on{display:block}
+.review-box input{width:100%;padding:9px 12px;background:rgba(6,10,20,0.6);border:1px solid var(--border-hi);color:var(--text);border-radius:8px;font-family:inherit;margin-bottom:8px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border-hi);padding:10px 18px;border-radius:8px;font-size:0.88em;z-index:99}
+.sub-section{margin-top:20px}
+.sub-section h2{font-size:0.85em;letter-spacing:1.5px;text-transform:uppercase;color:var(--dim);margin-bottom:10px}
+.sub-row{padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;font-size:0.88em}
+.sub-row .url{font-family:monospace;font-size:0.72em;color:var(--cyan);word-break:break-all;max-width:100%}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand">RYUJIN · ADMIN</div>
+    <div style="font-size:0.85em;color:var(--dim)">Job Log Review</div>
+  </div>
+  <h1>Pending Entries</h1>
+  <div class="filters">
+    <div class="pill on" data-status="pending" onclick="setFilter(this,'pending')">Pending</div>
+    <div class="pill" data-status="approved" onclick="setFilter(this,'approved')">Approved</div>
+    <div class="pill" data-status="denied" onclick="setFilter(this,'denied')">Denied</div>
+    <div class="pill" data-status="" onclick="setFilter(this,'')">All</div>
+  </div>
+  <div id="list" class="empty">Loading…</div>
+
+  <div class="sub-section">
+    <h2>Subcontractors</h2>
+    <div id="subList"></div>
+    <button class="btn" onclick="createSub()" style="margin-top:8px">+ NEW SUBCONTRACTOR</button>
+  </div>
+</div>
+
+<script>
+const TENANT = 'plus-ultra';
+let currentFilter = 'pending';
+
+function esc(s){return String(s||'').replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]))}
+function money(n){return '$'+Number(n||0).toLocaleString('en-CA',{minimumFractionDigits:2,maximumFractionDigits:2})}
+function toast(m){const t=document.createElement('div');t.className='toast';t.textContent=m;document.body.appendChild(t);setTimeout(()=>t.remove(),2400)}
+
+async function api(path, opts={}){
+  const url = `/api${path}${path.includes('?')?'&':'?'}tenant=${TENANT}`;
+  const r = await fetch(url,{headers:{'Content-Type':'application/json','x-tenant-id':TENANT},...opts});
+  const body = await r.json().catch(()=>({}));
+  if (!r.ok) throw new Error(body.error || r.statusText);
+  return body;
+}
+
+async function load(){
+  const q = currentFilter ? `?status=${currentFilter}` : '';
+  const { entries } = await api(`/job-log${q}`);
+  const list = document.getElementById('list');
+  if (!entries.length){ list.innerHTML = '<div class="empty">No entries.</div>'; return }
+
+  list.innerHTML = entries.map(e=>{
+    const label = { material_purchase:'🧾 Material Purchase', scope_change:'📐 Scope Change', additional_fee:'➕ Additional Fee', advance_payout:'💵 Advance Payout', note:'📝 Note' }[e.entry_type] || e.entry_type;
+    const statusColor = e.status==='approved'?'green':e.status==='denied'?'red':'yellow';
+    return `<div class="entry ${e.status}">
+      <div class="row">
+        <div>
+          <span class="tag">${label}</span>
+          <span class="tag ${statusColor}">${e.status}</span>
+          <div class="meta" style="margin-top:8px">
+            <b>${esc(e.workorder?.address||'?')}</b> · ${esc(e.workorder?.customer_name||'')} · WO#${e.workorder?.wo_number||'?'}<br>
+            By ${esc(e.subcontractor?.name||'owner')} · ${new Date(e.created_at).toLocaleString('en-CA',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}
+          </div>
+        </div>
+        ${e.amount ? `<div class="amt">${money(e.amount)}</div>` : ''}
+      </div>
+      <div class="desc">${esc(e.description)}</div>
+      ${e.vendor?`<div class="meta">Vendor: <b>${esc(e.vendor)}</b></div>`:''}
+      ${(e.photos||[]).length?`<div class="photos">${e.photos.map(u=>`<img src="${esc(u)}" onclick="window.open('${esc(u)}','_blank')">`).join('')}</div>`:''}
+      ${e.review_notes?`<div class="meta" style="margin-top:8px">Review: <b>${esc(e.review_notes)}</b></div>`:''}
+      ${e.status==='pending' ? `
+        <div class="actions">
+          <button class="btn approve" onclick="decide('${e.id}','approved',this)">APPROVE</button>
+          <button class="btn deny" onclick="toggleReview('${e.id}',this)">DENY WITH NOTE</button>
+        </div>
+        <div class="review-box" id="rv-${e.id}">
+          <input placeholder="Reason for denial (Ryan will see this)">
+          <button class="btn deny" onclick="decide('${e.id}','denied',this)">CONFIRM DENY</button>
+          <button class="btn ghost" onclick="toggleReview('${e.id}')">Cancel</button>
+        </div>
+      ` : ''}
+    </div>`;
+  }).join('');
+}
+
+function setFilter(el, status){
+  document.querySelectorAll('.pill').forEach(p=>p.classList.remove('on'));
+  el.classList.add('on');
+  currentFilter = status;
+  load();
+}
+
+function toggleReview(id, btn){
+  const box = document.getElementById(`rv-${id}`);
+  box.classList.toggle('on');
+}
+
+async function decide(id, status, btn){
+  const box = document.getElementById(`rv-${id}`);
+  const note = box ? box.querySelector('input')?.value.trim() : '';
+  try {
+    await api('/job-log', { method:'PUT', body: JSON.stringify({ id, status, review_notes: note || null })});
+    toast(`Entry ${status}`);
+    load();
+  } catch (e) { toast('Failed: '+e.message) }
+}
+
+async function loadSubs(){
+  const { subcontractors } = await api('/sub-auth?action=list');
+  const el = document.getElementById('subList');
+  if (!subcontractors.length){ el.innerHTML = '<div class="empty" style="padding:14px">No subcontractors yet.</div>'; return }
+  el.innerHTML = subcontractors.map(s=>{
+    const expired = s.magic_link_expires_at && new Date(s.magic_link_expires_at) < new Date();
+    const url = s.magic_link_token ? `https://ryujin-os.vercel.app/sub-portal.html?token=${s.magic_link_token}` : '(no link)';
+    return `<div class="sub-row">
+      <div>
+        <b>${esc(s.name)}</b> · ${esc(s.company||'')}
+        <div class="url">${url}</div>
+        <div class="meta">${expired?'<span class="tag red">EXPIRED</span>':s.magic_link_expires_at?'Expires '+new Date(s.magic_link_expires_at).toLocaleDateString('en-CA'):'No expiry'}</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn" onclick="copyLink('${esc(url)}')">COPY</button>
+        <button class="btn ghost" onclick="rotateSub('${s.id}')">ROTATE</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function createSub(){
+  const name = prompt('Name (e.g. Ryan)');
+  if (!name) return;
+  const company = prompt('Company (optional)') || '';
+  const email = prompt('Email (optional)') || '';
+  const phone = prompt('Phone (optional)') || '';
+  try {
+    const res = await api('/sub-auth?action=create', { method:'POST', body: JSON.stringify({ name, company, email, phone })});
+    toast('Created — link copied');
+    navigator.clipboard?.writeText(res.portal_url);
+    loadSubs();
+  } catch (e) { toast('Failed: '+e.message) }
+}
+
+async function rotateSub(id){
+  if (!confirm('Rotate magic-link? Old link will stop working.')) return;
+  try {
+    const res = await api('/sub-auth?action=rotate', { method:'POST', body: JSON.stringify({ id })});
+    navigator.clipboard?.writeText(res.portal_url);
+    toast('Rotated — new link copied');
+    loadSubs();
+  } catch (e) { toast('Failed: '+e.message) }
+}
+
+function copyLink(url){
+  navigator.clipboard?.writeText(url);
+  toast('Link copied');
+}
+
+load();
+loadSubs();
+</script>
+</body>
+</html>
