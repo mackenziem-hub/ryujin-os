@@ -16,28 +16,23 @@
 // Returns: { scheduled: N, failed: M, results: [{ ghl_account_id, status, ghl_post_id?, error? }] }
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireTenant } from '../lib/tenant.js';
-import { createSocialPost } from '../lib/ghl.js';
+import { createSocialPost, getDefaultPosterUserId } from '../lib/ghl.js';
 
-export function buildGhlPost({ mediaUrl, mediaType, scheduledAt, post, accountRow }){
-  // Base payload — fields GHL's Social Planner accepts at the top level.
+export function buildGhlPost({ mediaUrl, mediaType, scheduledAt, post, accountRow, userId }){
+  // Base payload — only the top-level keys GHL Social Planner accepts.
+  // Verified Apr 26, 2026: nested `youtube`/`google` keys cause 422
+  // ("property X should not exist"). Per-platform metadata (yt title,
+  // gbp CTA) goes inside the per-account post object via different
+  // endpoints if at all — not the multi-platform /posts call.
   const body = {
     accountIds: [post.ghl_account_id],
     summary: post.caption || '',
     media: [{ url: mediaUrl, type: mediaType || 'video' }],
     scheduleDate: scheduledAt,
     status: 'scheduled',
-    type: 'post'
+    type: 'post',
   };
-
-  // Platform-specific nested fields. Keys are best-effort based on GHL docs —
-  // may need adjustment as we see real responses.
-  const plat = accountRow?.platform;
-  if (plat === 'youtube' && post.title){
-    body.youtube = { title: post.title, description: post.caption || '' };
-  }
-  if (plat === 'google' && post.ctaType){
-    body.google = { callToAction: { actionType: post.ctaType, url: post.ctaUrl || undefined } };
-  }
+  if (userId) body.userId = userId; // GHL requires this — which user is posting
   return body;
 }
 
@@ -77,6 +72,10 @@ async function handler(req, res) {
     });
   }
 
+  let userId = null;
+  try { userId = await getDefaultPosterUserId(); }
+  catch (e) { console.error('[schedule-clip] userId fetch failed:', e.message); }
+
   const results = [];
   for (const post of posts){
     const accountRow = byId.get(post.ghl_account_id);
@@ -103,7 +102,7 @@ async function handler(req, res) {
 
     // Call GHL
     try {
-      const ghlBody = buildGhlPost({ mediaUrl, mediaType, scheduledAt, post, accountRow });
+      const ghlBody = buildGhlPost({ mediaUrl, mediaType, scheduledAt, post, accountRow, userId });
       const ghlResp = await createSocialPost(ghlBody);
       const ghlPostId = ghlResp?.post?.id || ghlResp?.id || ghlResp?.data?.id || null;
       await supabaseAdmin.from('scheduled_posts')

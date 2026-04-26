@@ -32,7 +32,7 @@
 //   - GHL rejects scheduleDate ≤ now+30s, so we clamp clipped clips forward.
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireTenant } from '../lib/tenant.js';
-import { createSocialPost } from '../lib/ghl.js';
+import { createSocialPost, getDefaultPosterUserId } from '../lib/ghl.js';
 import { buildGhlPost } from './schedule-clip.js';
 import { generatePlatformCaptions } from '../lib/captionGenerator.js';
 
@@ -222,6 +222,12 @@ async function publishClip(clip) {
   const mediaType = clip.is_photo ? 'image' : 'video';
   const brandsById = new Map(brands.map((b) => [b.id, b]));
 
+  // GHL requires a userId on every Social Planner post. Fetch once,
+  // reuse across the fan-out. Cached for 30 min in-process.
+  let userId = null;
+  try { userId = await getDefaultPosterUserId(); }
+  catch (e) { console.error('[marketing-publish] userId fetch failed:', e.message); }
+
   // Polished captions per brand × platform (best-effort).
   const captionsByBrand = await buildBrandCaptions(clip, brands, accounts);
 
@@ -270,6 +276,7 @@ async function publishClip(clip) {
         scheduledAt: scheduleDate,
         post,
         accountRow: account,
+        userId,
       });
       const ghlResp = await createSocialPost(ghlBody);
       const ghlPostId = ghlResp?.post?.id || ghlResp?.id || ghlResp?.data?.id || null;
