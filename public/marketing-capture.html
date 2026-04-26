@@ -275,12 +275,24 @@ input[type=file]{display:none}
 
 <script>
 // Tenant resolution: ?tenant=… query param > localStorage > 'plus-ultra' default.
-// Query param wins so a quick URL switch can override stale localStorage on mobile.
+// localStorage may hold either a bare slug OR the full tenant object JSON
+// (depending on which part of the app wrote it last) — extract .slug if it's
+// an object so we never send JSON as an x-tenant-id header.
+function readStoredTenantSlug(){
+  try {
+    const raw = localStorage.getItem('ryujin_tenant');
+    if (!raw) return null;
+    const t = raw.trim();
+    if (t.startsWith('{')) {
+      try { const o = JSON.parse(t); return o.slug || o.tenant_slug || null; } catch { return null; }
+    }
+    return t;
+  } catch { return null; }
+}
 const TENANT = (() => {
   const qp = new URLSearchParams(location.search).get('tenant');
   if (qp) { try { localStorage.setItem('ryujin_tenant', qp); } catch {} return qp.trim(); }
-  try { const ls = localStorage.getItem('ryujin_tenant'); if (ls) return ls.trim(); } catch {}
-  return 'plus-ultra';
+  return readStoredTenantSlug() || 'plus-ultra';
 })();
 
 const state = {
