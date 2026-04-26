@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Ryujin · Capture</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@600;700;800&display=optional" rel="stylesheet">
+<style>
+:root{
+  --accent:#a78bfa; --accent-deep:#7c3aed; --cyan:#22d3ee; --green:#4ade80; --red:#f87171; --orange:#fb923c;
+  --bg:#030611; --panel:rgba(14,22,40,0.78); --border:rgba(124,58,237,0.28); --border-hi:rgba(124,58,237,0.6);
+  --text:#e0e6f0; --text-dim:rgba(160,190,230,0.62); --text-muted:rgba(140,170,220,0.32);
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;width:100%;overflow:hidden}
+body{
+  font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);
+  position:relative;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+/* Background */
+.bg{position:fixed;inset:0;z-index:0;
+  background:radial-gradient(ellipse at 30% 20%,rgba(124,58,237,0.18) 0%,transparent 55%),
+             radial-gradient(ellipse at 70% 90%,rgba(34,211,238,0.10) 0%,transparent 55%),
+             linear-gradient(180deg,#060a14 0%,#030611 100%)}
+
+.app{position:relative;z-index:1;height:100%;display:flex;flex-direction:column}
+
+/* Topbar */
+.topbar{
+  flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:12px 14px 8px;
+}
+.back{
+  width:38px;height:38px;border-radius:11px;border:1px solid var(--border);
+  background:rgba(6,10,20,0.6);color:var(--text-dim);
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+}
+.back svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round}
+.brand{font-family:'Orbitron',sans-serif;font-size:0.78em;font-weight:800;letter-spacing:2.4px}
+.brand .dim{color:var(--text-dim);font-weight:500;letter-spacing:2px;margin-left:8px}
+
+/* Stage */
+.stage{flex:1;min-height:0;overflow-y:auto;padding:8px 14px 24px}
+.stage::-webkit-scrollbar{display:none}
+
+.h1{font-family:'Orbitron',sans-serif;font-size:1.7em;font-weight:800;letter-spacing:1.2px;line-height:1.1;margin:6px 0 4px}
+.sub{color:var(--text-dim);font-size:0.92em;margin-bottom:18px}
+
+/* Big capture button */
+.capture-stack{display:flex;flex-direction:column;gap:12px;margin-bottom:20px}
+.capture{
+  position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:10px;height:200px;border-radius:18px;
+  background:linear-gradient(160deg,rgba(124,58,237,0.22),rgba(124,58,237,0.06));
+  border:2px solid var(--border-hi);color:var(--accent);
+  font-family:'Orbitron',sans-serif;font-size:0.8em;font-weight:800;letter-spacing:2.4px;
+  cursor:pointer;overflow:hidden;
+  box-shadow:0 8px 28px rgba(124,58,237,0.18),inset 0 0 28px rgba(124,58,237,0.10);
+  transition:transform 0.12s ease;
+}
+.capture:active{transform:scale(0.98)}
+.capture svg{width:54px;height:54px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.capture .label{font-size:0.95em}
+.capture-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.capture-row .capture{height:120px}
+.capture-row .capture svg{width:36px;height:36px}
+.capture-row .capture .label{font-size:0.8em}
+
+input[type=file]{display:none}
+
+/* Preview */
+.preview{
+  position:relative;border-radius:16px;overflow:hidden;border:1px solid var(--border);
+  background:#000;display:flex;align-items:center;justify-content:center;
+  aspect-ratio:9/16;max-height:55vh;margin-bottom:16px;
+}
+.preview video,.preview img{width:100%;height:100%;object-fit:cover}
+.preview .replace-btn{
+  position:absolute;top:10px;right:10px;width:34px;height:34px;border-radius:9px;
+  background:rgba(3,6,17,0.7);border:1px solid var(--border);color:var(--text);
+  display:flex;align-items:center;justify-content:center;cursor:pointer;backdrop-filter:blur(8px);
+}
+.preview .replace-btn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round}
+
+/* Section */
+.section{margin-bottom:18px}
+.section-label{
+  font-family:'Orbitron',sans-serif;font-size:0.62em;font-weight:700;letter-spacing:2.2px;
+  color:var(--text-dim);margin-bottom:8px;text-transform:uppercase;
+}
+
+/* Brand chips */
+.brand-grid{display:flex;flex-wrap:wrap;gap:8px}
+.brand-chip{
+  padding:11px 14px;border-radius:11px;
+  background:rgba(6,10,20,0.6);border:1.5px solid var(--border);
+  color:var(--text-dim);font-size:0.86em;font-weight:600;
+  cursor:pointer;display:inline-flex;align-items:center;gap:8px;
+  transition:all 0.15s ease;
+  -webkit-user-select:none;user-select:none;
+}
+.brand-chip:active{transform:scale(0.97)}
+.brand-chip.on{background:rgba(124,58,237,0.18);border-color:rgba(124,58,237,0.65);color:var(--text)}
+.brand-chip .check{
+  width:18px;height:18px;border-radius:50%;
+  background:rgba(124,58,237,0.18);border:1.5px solid rgba(124,58,237,0.4);
+  display:flex;align-items:center;justify-content:center;flex:0 0 auto;
+  transition:all 0.12s ease;
+}
+.brand-chip.on .check{background:var(--accent);border-color:var(--accent)}
+.brand-chip .check svg{width:11px;height:11px;stroke:#0a0e1a;fill:none;stroke-width:3;stroke-linecap:round;opacity:0;transition:opacity 0.12s}
+.brand-chip.on .check svg{opacity:1}
+
+/* Caption box */
+.caption-box{
+  width:100%;background:rgba(6,10,20,0.7);border:1.5px solid var(--border);border-radius:12px;
+  padding:12px 14px;color:var(--text);font-family:inherit;font-size:0.96em;line-height:1.45;
+  resize:none;outline:none;min-height:88px;
+  -webkit-appearance:none;
+}
+.caption-box:focus{border-color:var(--accent)}
+.caption-hint{color:var(--text-muted);font-size:0.78em;margin-top:6px;font-style:italic}
+
+/* Schedule */
+.schedule-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.schedule-row select,.schedule-row input{
+  background:rgba(6,10,20,0.7);border:1.5px solid var(--border);border-radius:11px;
+  padding:11px 12px;color:var(--text);font-family:inherit;font-size:0.92em;outline:none;
+  -webkit-appearance:none;
+}
+.schedule-row select:focus,.schedule-row input:focus{border-color:var(--accent)}
+
+/* Submit */
+.submit-bar{
+  flex:0 0 auto;padding:12px 14px calc(12px + env(safe-area-inset-bottom));
+  background:linear-gradient(180deg,rgba(3,6,17,0) 0%,rgba(3,6,17,0.9) 30%,#030611 100%);
+  border-top:1px solid rgba(124,58,237,0.16);
+}
+.submit{
+  width:100%;height:56px;border-radius:14px;border:none;cursor:pointer;
+  background:linear-gradient(135deg,var(--accent-deep),var(--accent));
+  color:#fff;font-family:'Orbitron',sans-serif;font-size:0.92em;font-weight:800;letter-spacing:2.5px;
+  display:flex;align-items:center;justify-content:center;gap:10px;
+  box-shadow:0 8px 24px rgba(124,58,237,0.36);
+  transition:transform 0.1s ease,opacity 0.15s;
+}
+.submit:active{transform:scale(0.985)}
+.submit:disabled{opacity:0.4;cursor:not-allowed;box-shadow:none}
+.submit svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2.4;stroke-linecap:round}
+
+/* Status overlay */
+.overlay{
+  position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center;
+  background:rgba(3,6,17,0.92);backdrop-filter:blur(10px);padding:24px;
+}
+.overlay.on{display:flex}
+.over-card{
+  width:min(420px,100%);text-align:center;display:flex;flex-direction:column;align-items:center;gap:14px;
+  padding:28px 22px;background:var(--panel);border:1px solid var(--border-hi);border-radius:18px;
+}
+.spinner{width:48px;height:48px;border-radius:50%;border:3px solid rgba(124,58,237,0.2);border-top-color:var(--accent);animation:spin 0.9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.over-title{font-family:'Orbitron',sans-serif;font-size:1.05em;font-weight:800;letter-spacing:1.6px}
+.over-msg{color:var(--text-dim);font-size:0.92em;line-height:1.5}
+.over-card.success .icon{width:62px;height:62px;border-radius:50%;background:rgba(74,222,128,0.18);border:2px solid var(--green);display:flex;align-items:center;justify-content:center}
+.over-card.success .icon svg{width:30px;height:30px;stroke:var(--green);fill:none;stroke-width:3;stroke-linecap:round}
+.over-card.error .icon{width:62px;height:62px;border-radius:50%;background:rgba(248,113,113,0.18);border:2px solid var(--red);display:flex;align-items:center;justify-content:center;color:var(--red);font-family:'Orbitron',sans-serif;font-size:1.7em;font-weight:800}
+.over-actions{display:flex;gap:10px;width:100%;margin-top:6px}
+.over-btn{
+  flex:1;padding:13px;border-radius:11px;border:1px solid var(--border);
+  background:rgba(6,10,20,0.6);color:var(--text);
+  font-family:'Orbitron',sans-serif;font-size:0.74em;font-weight:700;letter-spacing:1.6px;cursor:pointer;
+}
+.over-btn.primary{background:linear-gradient(135deg,var(--accent-deep),var(--accent));border-color:transparent;color:#fff}
+</style>
+</head>
+<body>
+
+<div class="bg"></div>
+
+<div class="app">
+
+  <div class="topbar">
+    <button class="back" onclick="goBack()" aria-label="Back">
+      <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
+    <div class="brand">RYUJIN <span class="dim">· CAPTURE</span></div>
+  </div>
+
+  <div class="stage">
+
+    <div class="h1">Post content</div>
+    <div class="sub" id="subText">Tap to record. We auto-caption, polish, and schedule.</div>
+
+    <!-- Picker (visible until media chosen) -->
+    <div id="pickerStack" class="capture-stack">
+      <label class="capture" for="videoCam">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
+        <span class="label">RECORD VIDEO</span>
+      </label>
+      <div class="capture-row">
+        <label class="capture" for="videoLib" style="background:linear-gradient(160deg,rgba(34,211,238,0.18),rgba(34,211,238,0.04));border-color:rgba(34,211,238,0.5);color:var(--cyan)">
+          <svg viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+          <span class="label">PICK VIDEO</span>
+        </label>
+        <label class="capture" for="photoLib" style="background:linear-gradient(160deg,rgba(251,146,60,0.18),rgba(251,146,60,0.04));border-color:rgba(251,146,60,0.5);color:var(--orange)">
+          <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><polyline points="21 15 16 11 5 19"/></svg>
+          <span class="label">PICK PHOTO</span>
+        </label>
+      </div>
+      <input id="videoCam" type="file" accept="video/*" capture="environment">
+      <input id="videoLib" type="file" accept="video/*">
+      <input id="photoLib" type="file" accept="image/*">
+    </div>
+
+    <!-- Preview -->
+    <div id="previewWrap" style="display:none">
+      <div class="preview">
+        <video id="previewVideo" controls playsinline style="display:none"></video>
+        <img id="previewImage" alt="Photo preview" style="display:none">
+        <button class="replace-btn" onclick="resetMedia()" aria-label="Replace">
+          <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Brands -->
+    <div class="section" id="brandSection" style="display:none">
+      <div class="section-label">Post to</div>
+      <div class="brand-grid" id="brandGrid"></div>
+    </div>
+
+    <!-- Caption -->
+    <div class="section" id="captionSection" style="display:none">
+      <div class="section-label">Say something <span style="text-transform:none;font-weight:500">(optional)</span></div>
+      <textarea id="captionInput" class="caption-box" placeholder="One or two sentences. We polish it per platform and add hashtags."></textarea>
+      <div class="caption-hint">Each brand gets its own AI-tuned caption. Leave blank to caption from transcript.</div>
+    </div>
+
+    <!-- Schedule -->
+    <div class="section" id="scheduleSection" style="display:none">
+      <div class="section-label">When</div>
+      <div class="schedule-row">
+        <select id="scheduleSelect">
+          <option value="auto">Next available slot</option>
+          <option value="now">Post ASAP</option>
+          <option value="custom">Pick date &amp; time</option>
+        </select>
+        <input id="scheduleAt" type="datetime-local" style="display:none">
+      </div>
+    </div>
+
+  </div>
+
+  <div class="submit-bar" id="submitBar" style="display:none">
+    <button class="submit" id="submitBtn" disabled onclick="submitClip()">
+      <svg viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+      <span id="submitLabel">SCHEDULE POST</span>
+    </button>
+  </div>
+
+</div>
+
+<!-- Status overlay -->
+<div class="overlay" id="overlay">
+  <div class="over-card" id="overCard">
+    <div id="overIcon"></div>
+    <div class="over-title" id="overTitle">Working…</div>
+    <div class="over-msg" id="overMsg">Uploading and processing.</div>
+    <div class="over-actions" id="overActions" style="display:none"></div>
+  </div>
+</div>
+
+<script>
+const TENANT = (window.localStorage.getItem('ryujin_tenant') || 'plus-ultra').trim();
+
+const state = {
+  file: null,
+  isPhoto: false,
+  brands: [],          // loaded from /api/brands
+  selectedBrands: new Set(),
+  scheduleMode: 'auto',
+  scheduleAt: null,
+};
+
+// ─── Init: load brands ──
+async function loadBrands(){
+  try{
+    const r = await fetch('/api/brands', { headers:{ 'x-tenant-id': TENANT } });
+    if (!r.ok) throw new Error('brands ' + r.status);
+    const j = await r.json();
+    state.brands = j.brands || [];
+    renderBrands();
+  } catch(e){
+    document.getElementById('brandGrid').innerHTML =
+      '<div style="color:var(--red);font-size:0.86em">Failed to load brands. ' + e.message + '</div>';
+  }
+}
+
+function renderBrands(){
+  const grid = document.getElementById('brandGrid');
+  grid.innerHTML = '';
+  for (const b of state.brands){
+    const chip = document.createElement('div');
+    chip.className = 'brand-chip';
+    chip.dataset.id = b.id;
+    chip.innerHTML = `
+      <div class="check"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+      <span>${escapeHtml(b.name)}</span>
+    `;
+    chip.onclick = () => toggleBrand(b.id, chip);
+    grid.appendChild(chip);
+  }
+  // Default: select all (most common case for owner-driven content)
+  for (const b of state.brands){
+    state.selectedBrands.add(b.id);
+    const chip = grid.querySelector(`[data-id="${b.id}"]`);
+    if (chip) chip.classList.add('on');
+  }
+  updateSubmitState();
+}
+
+function toggleBrand(id, chip){
+  if (state.selectedBrands.has(id)){
+    state.selectedBrands.delete(id);
+    chip.classList.remove('on');
+  } else {
+    state.selectedBrands.add(id);
+    chip.classList.add('on');
+  }
+  updateSubmitState();
+}
+
+// ─── File pick ──
+['videoCam','videoLib','photoLib'].forEach(id => {
+  document.getElementById(id).addEventListener('change', (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    state.file = f;
+    state.isPhoto = f.type.startsWith('image/');
+    showPreview(f);
+  });
+});
+
+function showPreview(f){
+  const url = URL.createObjectURL(f);
+  document.getElementById('pickerStack').style.display = 'none';
+  document.getElementById('previewWrap').style.display = '';
+  const v = document.getElementById('previewVideo');
+  const img = document.getElementById('previewImage');
+  if (state.isPhoto){
+    v.style.display = 'none'; img.style.display = '';
+    img.src = url;
+  } else {
+    img.style.display = 'none'; v.style.display = '';
+    v.src = url;
+  }
+  document.getElementById('brandSection').style.display = '';
+  document.getElementById('captionSection').style.display = '';
+  document.getElementById('scheduleSection').style.display = '';
+  document.getElementById('submitBar').style.display = '';
+  document.getElementById('subText').textContent =
+    state.isPhoto ? 'Photo selected. Pick brands and we\u2019ll schedule it.' :
+    'Video selected. We\u2019ll auto-caption and schedule.';
+  updateSubmitState();
+}
+
+function resetMedia(){
+  state.file = null;
+  state.isPhoto = false;
+  document.getElementById('pickerStack').style.display = '';
+  document.getElementById('previewWrap').style.display = 'none';
+  document.getElementById('brandSection').style.display = 'none';
+  document.getElementById('captionSection').style.display = 'none';
+  document.getElementById('scheduleSection').style.display = 'none';
+  document.getElementById('submitBar').style.display = 'none';
+  document.getElementById('previewVideo').src = '';
+  document.getElementById('previewImage').src = '';
+  document.getElementById('subText').textContent = 'Tap to record. We auto-caption, polish, and schedule.';
+  ['videoCam','videoLib','photoLib'].forEach(id => document.getElementById(id).value = '');
+}
+
+// ─── Schedule ──
+document.getElementById('scheduleSelect').addEventListener('change', (e) => {
+  state.scheduleMode = e.target.value;
+  const inp = document.getElementById('scheduleAt');
+  if (state.scheduleMode === 'custom'){
+    inp.style.display = '';
+    if (!inp.value){
+      const d = new Date(Date.now() + 60*60*1000);
+      const pad = (n)=>String(n).padStart(2,'0');
+      inp.value = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+  } else {
+    inp.style.display = 'none';
+  }
+});
+
+function resolveScheduledAt(){
+  if (state.scheduleMode === 'now') return new Date(Date.now() + 90*1000).toISOString();
+  if (state.scheduleMode === 'custom'){
+    const v = document.getElementById('scheduleAt').value;
+    if (!v) return null;
+    return new Date(v).toISOString();
+  }
+  return null; // server picks "next available"
+}
+
+// ─── Submit ──
+function updateSubmitState(){
+  const ok = state.file && state.selectedBrands.size > 0;
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = !ok;
+}
+
+async function submitClip(){
+  if (!state.file || state.selectedBrands.size === 0) return;
+  const overlay = document.getElementById('overlay');
+  const card = document.getElementById('overCard');
+  card.className = 'over-card';
+  document.getElementById('overIcon').innerHTML = '<div class="spinner"></div>';
+  document.getElementById('overTitle').textContent = state.isPhoto ? 'Uploading photo…' : 'Uploading video…';
+  document.getElementById('overMsg').textContent = state.isPhoto
+    ? 'Posting straight to your selected brands.'
+    : 'Auto-captioning, then scheduling on your timeline.';
+  document.getElementById('overActions').style.display = 'none';
+  overlay.classList.add('on');
+
+  const fd = new FormData();
+  fd.append('file', state.file);
+  fd.append('title', (document.getElementById('captionInput').value || state.file.name).slice(0,120));
+  const desc = document.getElementById('captionInput').value.trim();
+  if (desc) fd.append('description', desc);
+  fd.append('brand_ids', JSON.stringify([...state.selectedBrands]));
+  const sched = resolveScheduledAt();
+  if (sched) fd.append('scheduled_at', sched);
+
+  try {
+    const r = await fetch('/api/marketing', {
+      method: 'POST',
+      headers: { 'x-tenant-id': TENANT },
+      body: fd,
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || ('upload ' + r.status));
+
+    const clip = j.clip;
+    if (state.isPhoto){
+      // Photos are 'ready' immediately — kick the publisher right away so we
+      // can report actual landed status instead of a vague "scheduled".
+      try {
+        const pr = await fetch('/api/marketing-publish?id=' + clip.id, {
+          method: 'POST',
+          headers: { 'x-tenant-id': TENANT }
+        });
+        const pj = await pr.json();
+        if (pr.ok && pj.scheduled > 0) {
+          const platMsg = pj.results
+            .filter((r) => r.status === 'scheduled')
+            .map((r) => r.platform)
+            .filter((v, i, a) => a.indexOf(v) === i)
+            .join(', ');
+          showSuccess('Photo scheduled', `Going live on ${platMsg || pj.scheduled + ' channels'}.`);
+        } else if (pj.status === 'failed') {
+          showError(pj.error || 'Publish failed — check brand connections.');
+        } else {
+          // 200 but partial; still uploaded, just report partial
+          showSuccess('Photo uploaded', `${pj.scheduled || 0} scheduled, ${pj.failed || 0} failed. Check calendar.`);
+        }
+      } catch(e){
+        // Fall back to cron sweep — the clip is still queued correctly.
+        showSuccess('Photo uploaded', 'Will publish on the next cron tick (within 10 min).');
+      }
+    } else {
+      showSuccess('Video uploaded', 'We\u2019ll caption it and schedule. Check the calendar in a minute or two.');
+    }
+  } catch(e){
+    showError(e.message || String(e));
+  }
+}
+
+function showSuccess(title, msg){
+  const card = document.getElementById('overCard');
+  card.className = 'over-card success';
+  document.getElementById('overIcon').innerHTML = '<div class="icon"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>';
+  document.getElementById('overTitle').textContent = title;
+  document.getElementById('overMsg').textContent = msg;
+  const acts = document.getElementById('overActions');
+  acts.style.display = '';
+  acts.innerHTML = `
+    <button class="over-btn" onclick="anotherOne()">POST ANOTHER</button>
+    <button class="over-btn primary" onclick="goCalendar()">VIEW CALENDAR</button>
+  `;
+}
+function showError(msg){
+  const card = document.getElementById('overCard');
+  card.className = 'over-card error';
+  document.getElementById('overIcon').innerHTML = '<div class="icon">!</div>';
+  document.getElementById('overTitle').textContent = 'Upload failed';
+  document.getElementById('overMsg').textContent = msg;
+  const acts = document.getElementById('overActions');
+  acts.style.display = '';
+  acts.innerHTML = `<button class="over-btn primary" onclick="closeOverlay()">TRY AGAIN</button>`;
+}
+function closeOverlay(){ document.getElementById('overlay').classList.remove('on'); }
+function anotherOne(){ closeOverlay(); resetMedia(); }
+function goCalendar(){ window.location.href = 'marketing-content-calendar.html'; }
+
+function goBack(){
+  if (window.parent !== window && window.parent.exitSectionOverlay) { window.parent.exitSectionOverlay(); return; }
+  window.location.href = 'marketing.html';
+}
+
+function escapeHtml(s){
+  return String(s||'').replace(/[&<>"']/g, (c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+}
+
+loadBrands();
+</script>
+
+</body>
+</html>

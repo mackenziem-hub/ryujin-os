@@ -18,7 +18,7 @@ import { supabaseAdmin } from '../lib/supabase.js';
 import { requireTenant } from '../lib/tenant.js';
 import { createSocialPost } from '../lib/ghl.js';
 
-function buildGhlPost({ mediaUrl, mediaType, scheduledAt, post, accountRow }){
+export function buildGhlPost({ mediaUrl, mediaType, scheduledAt, post, accountRow }){
   // Base payload — fields GHL's Social Planner accepts at the top level.
   const body = {
     accountIds: [post.ghl_account_id],

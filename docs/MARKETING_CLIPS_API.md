@@ -54,6 +54,14 @@ Deletes clip row. (Does NOT clean up Blob files in v1 — manual cleanup if need
 Internal — triggered by upload handler. UI should not need to call this directly.
 Requires `x-internal-key` header if `INTERNAL_RENDER_KEY` env is set.
 
+### POST `/api/marketing-publish?id=CLIP_ID`
+Bridge from `marketing_clips` → `scheduled_posts` (GHL Social Planner). Resolves the clip's `target_platforms` to matching `brand_accounts` rows for the tenant and fans out one scheduled post per account. Promotes clip status `ready → scheduled` on success.
+- Requires `x-tenant-id` header.
+- Idempotent: returns 409 `skipped` if the clip already has any `scheduled_posts` rows.
+- Returns: `{ clip_id, status, scheduled, failed, results: [...] }`.
+- Status values: `scheduled` (≥1 fan-out succeeded), `failed` (all failed or no matching accounts), `skipped` (preconditions not met or already published), `error` (unexpected).
+- Use this for a UI "Publish now" button. Cron runs the sweep variant automatically (every 10 min, picks up clips whose `scheduled_at` falls within 24h).
+
 ## MarketingClip shape
 
 ```ts
@@ -143,7 +151,7 @@ Grab TTF from Google Fonts: https://fonts.google.com/specimen/Montserrat
 ## Known limitations (v1)
 
 - **Silence trim**: NOT implemented. v1 keeps source timing. Add in v2 with a two-pass ffmpeg approach.
-- **GHL schedule push**: stub. `scheduled_at` is saved but no actual post to GHL Social Planner yet. Add `/api/marketing-publish` in v2.
+- ~~**GHL schedule push**: stub.~~ Done. `/api/marketing-publish` (manual + cron sweep every 10 min) auto-fans-out ready clips into `scheduled_posts` and posts them to GHL Social Planner. The 15-min `/api/marketing-reconcile` cron then propagates GHL post outcomes back to `marketing_clips.status` (`scheduled → posted` / `failed`).
 - **Caption re-render on edit**: editing `emphasis_indices` via PUT saves them but doesn't re-render automatically. Need `POST /api/marketing-render?id=X` to regenerate.
 - **Font substitution**: drop Montserrat-Bold.ttf into `lib/assets/fonts/` or captions fall back to system sans.
 - **Thumbnail URL** is extracted at 1s mark — fine for most clips; may be a blank frame if user starts mid-transition.

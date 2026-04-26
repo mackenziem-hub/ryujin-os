@@ -19,15 +19,16 @@ import { requireTenant } from '../lib/tenant.js';
 import { put } from '@vercel/blob';
 import Busboy from 'busboy';
 
-const MAX_VIDEO_SIZE = 200 * 1024 * 1024; // 200 MB
+const MAX_MEDIA_SIZE = 200 * 1024 * 1024; // 200 MB
 const ALLOWED_VIDEO_TYPES = new Set(['video/mp4', 'video/quicktime', 'video/webm', 'video/x-m4v']);
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/heic', 'image/heif', 'image/webp']);
 const EDITABLE_FIELDS = ['title', 'description', 'hashtags', 'target_platforms', 'scheduled_at', 'caption_style', 'emphasis_indices'];
 
 function parseMultipart(req) {
   return new Promise((resolve, reject) => {
     const files = [];
     const fields = {};
-    const busboy = Busboy({ headers: req.headers, limits: { files: 1, fileSize: MAX_VIDEO_SIZE } });
+    const busboy = Busboy({ headers: req.headers, limits: { files: 1, fileSize: MAX_MEDIA_SIZE } });
     busboy.on('field', (name, val) => { fields[name] = val; });
     busboy.on('file', (name, stream, info) => {
       const chunks = [];
@@ -47,6 +48,47 @@ function parseMultipart(req) {
 function splitCsv(s) {
   if (!s) return [];
   return String(s).split(',').map((x) => x.trim()).filter(Boolean);
+}
+
+// Accepts JSON array, CSV, or single string. Used for brand_ids on multipart.
+function parseList(s) {
+  if (!s) return [];
+  const t = String(s).trim();
+  if (t.startsWith('[')) {
+    try { const arr = JSON.parse(t); return Array.isArray(arr) ? arr.map(String) : []; } catch { /* fall through */ }
+  }
+  return splitCsv(t);
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Resolves a list of brand identifiers (uuids OR slugs) to brand uuids
+// for the given tenant. Unknown identifiers are silently dropped.
+async function resolveBrandIds(tenantId, idents) {
+  const uuids = idents.filter((s) => UUID_RE.test(s));
+  const slugs = idents.filter((s) => !UUID_RE.test(s));
+  const results = new Set(uuids);
+  if (slugs.length) {
+    const { data } = await supabaseAdmin
+      .from('brands').select('id, slug')
+      .eq('tenant_id', tenantId).in('slug', slugs);
+    (data || []).forEach((row) => results.add(row.id));
+  }
+  // Tenant-scope check on the uuid path: drop any uuid that doesn't belong.
+  if (uuids.length) {
+    const { data } = await supabaseAdmin
+      .from('brands').select('id')
+      .eq('tenant_id', tenantId).in('id', uuids);
+    const allowed = new Set((data || []).map((r) => r.id));
+    for (const id of uuids) if (!allowed.has(id)) results.delete(id);
+  }
+  return [...results];
+}
+
+function flattenBrands(clip) {
+  if (!clip) return clip;
+  const links = Array.isArray(clip.brands) ? clip.brands : [];
+  return { ...clip, brands: links.map((l) => l.brand).filter(Boolean) };
 }
 
 async function computeNextSlot(tenantId) {
@@ -94,22 +136,22 @@ async function handler(req, res) {
     if (id) {
       const { data, error } = await supabaseAdmin
         .from('marketing_clips')
-        .select('*')
+        .select('*, brands:marketing_clip_brands(brand:brands(id,slug,name))')
         .eq('id', id)
         .eq('tenant_id', tenantId)
         .single();
       if (error) return res.status(404).json({ error: 'Clip not found' });
-      return res.json(data);
+      return res.json(flattenBrands(data));
     }
     let q = supabaseAdmin
       .from('marketing_clips')
-      .select('*')
+      .select('*, brands:marketing_clip_brands(brand:brands(id,slug,name))')
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false });
     if (status) q = q.eq('status', status);
     const { data, error } = await q;
     if (error) return res.status(500).json({ error: error.message });
-    return res.json({ clips: data });
+    return res.json({ clips: (data || []).map(flattenBrands) });
   }
 
   // ── POST (Upload + create clip) ──
@@ -124,67 +166,106 @@ async function handler(req, res) {
     if (!files.length) return res.status(400).json({ error: 'No video file provided (field: file)' });
 
     const f = files[0];
-    if (f.truncated) return res.status(413).json({ error: `File exceeds ${MAX_VIDEO_SIZE / 1024 / 1024}MB limit` });
-    if (!ALLOWED_VIDEO_TYPES.has(f.mimeType)) {
-      return res.status(415).json({ error: `Unsupported video type: ${f.mimeType}. Allowed: mp4, mov, webm` });
+    if (f.truncated) return res.status(413).json({ error: `File exceeds ${MAX_MEDIA_SIZE / 1024 / 1024}MB limit` });
+
+    const isVideo = ALLOWED_VIDEO_TYPES.has(f.mimeType);
+    const isPhoto = ALLOWED_IMAGE_TYPES.has(f.mimeType);
+    if (!isVideo && !isPhoto) {
+      return res.status(415).json({ error: `Unsupported media type: ${f.mimeType}. Allowed: mp4/mov/webm or jpeg/png/heic/webp` });
     }
 
     // Store source in Blob
     const ts = Date.now();
-    const clean = (f.fileName || 'video.mp4').replace(/[^\w.\-]/g, '_').substring(0, 80);
+    const fallbackName = isPhoto ? 'photo.jpg' : 'video.mp4';
+    const clean = (f.fileName || fallbackName).replace(/[^\w.\-]/g, '_').substring(0, 80);
     const blobPath = `${tenantSlug}/marketing/sources/${ts}-${clean}`;
     const blob = await put(blobPath, f.buffer, { access: 'public', contentType: f.mimeType });
 
     // Compute scheduled slot
     const scheduledAt = fields.scheduled_at?.trim() || await computeNextSlot(tenantId);
 
-    // Create clip row
+    // Brand multi-select. Accept JSON array OR CSV. Each value is a brand UUID
+    // OR a brand slug — we resolve slugs to ids server-side so the mobile UI
+    // can pass either.
+    const brandInput = parseList(fields.brand_ids || fields.brands);
+    const brandIds = brandInput.length ? await resolveBrandIds(tenantId, brandInput) : [];
+
+    // Photos skip the renderer — source IS the rendered output, status='ready'.
+    // Videos go through Whisper/Haiku/ffmpeg and start in 'queued'.
+    const clipBase = {
+      tenant_id: tenantId,
+      created_by: fields.created_by || null,
+      source_url: blob.url,
+      source_filename: f.fileName,
+      source_mime_type: f.mimeType,
+      source_size_bytes: f.buffer.length,
+      title: fields.title?.trim() || f.fileName,
+      description: fields.description?.trim() || null,
+      hashtags: splitCsv(fields.hashtags),
+      target_platforms: splitCsv(fields.platforms),
+      scheduled_at: scheduledAt,
+      is_photo: isPhoto,
+    };
+
+    if (isPhoto) {
+      clipBase.rendered_url = blob.url;
+      clipBase.thumbnail_url = blob.url;
+      clipBase.status = 'ready';
+    } else {
+      clipBase.status = 'queued';
+    }
+
     const { data: clip, error } = await supabaseAdmin
-      .from('marketing_clips')
-      .insert({
-        tenant_id: tenantId,
-        created_by: fields.created_by || null,
-        source_url: blob.url,
-        source_filename: f.fileName,
-        source_mime_type: f.mimeType,
-        source_size_bytes: f.buffer.length,
-        title: fields.title?.trim() || f.fileName,
-        description: fields.description?.trim() || null,
-        hashtags: splitCsv(fields.hashtags),
-        target_platforms: splitCsv(fields.platforms),
-        scheduled_at: scheduledAt,
-        status: 'queued',
-      })
-      .select('*')
-      .single();
+      .from('marketing_clips').insert(clipBase).select('*').single();
     if (error) return res.status(500).json({ error: error.message });
 
-    // Fire-and-forget render
-    kickoffRender(req, tenantSlug, clip.id);
+    // Persist brand selections
+    if (brandIds.length) {
+      const links = brandIds.map((brand_id) => ({ clip_id: clip.id, brand_id }));
+      const { error: linkErr } = await supabaseAdmin
+        .from('marketing_clip_brands').insert(links);
+      if (linkErr) console.error('[marketing] brand link insert failed:', linkErr.message);
+    }
 
-    return res.status(202).json({ clip });
+    // Fire-and-forget render (videos only)
+    if (isVideo) kickoffRender(req, tenantSlug, clip.id);
+
+    return res.status(202).json({ clip, brand_ids: brandIds });
   }
 
-  // ── PUT (Update metadata / reschedule / edit captions) ──
+  // ── PUT (Update metadata / reschedule / edit captions / change brands) ──
   if (req.method === 'PUT') {
-    const { id, ...rest } = req.body || {};
+    const { id, brand_ids, ...rest } = req.body || {};
     if (!id) return res.status(400).json({ error: 'Missing id' });
 
     const updates = {};
     for (const k of EDITABLE_FIELDS) {
       if (rest[k] !== undefined) updates[k] = rest[k];
     }
-    if (!Object.keys(updates).length) return res.status(400).json({ error: 'No editable fields provided' });
 
-    const { data, error } = await supabaseAdmin
+    if (Object.keys(updates).length) {
+      const { error } = await supabaseAdmin
+        .from('marketing_clips').update(updates)
+        .eq('id', id).eq('tenant_id', tenantId);
+      if (error) return res.status(500).json({ error: error.message });
+    }
+
+    // Replace brand links if brand_ids provided (array of uuids/slugs)
+    if (Array.isArray(brand_ids)) {
+      const resolved = await resolveBrandIds(tenantId, brand_ids.map(String));
+      await supabaseAdmin.from('marketing_clip_brands').delete().eq('clip_id', id);
+      if (resolved.length) {
+        await supabaseAdmin.from('marketing_clip_brands').insert(
+          resolved.map((brand_id) => ({ clip_id: id, brand_id }))
+        );
+      }
+    }
+
+    const { data: clip } = await supabaseAdmin
       .from('marketing_clips')
-      .update(updates)
-      .eq('id', id)
-      .eq('tenant_id', tenantId)
-      .select('*')
-      .single();
-    if (error) return res.status(500).json({ error: error.message });
-    return res.json(data);
+      .select('*, brands:marketing_clip_brands(brand:brands(id,slug,name))')
+      .eq('id', id).eq('tenant_id', tenantId).single();
+    return res.json(flattenBrands(clip));
   }
 
   // ── DELETE ──
