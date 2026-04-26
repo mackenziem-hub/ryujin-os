@@ -77,6 +77,10 @@
   .ry-choice.ry-priority-high:hover{background:rgba(248,113,113,0.12);border-color:rgba(248,113,113,0.6)}
   .ry-choice.ry-priority-high .key{color:#f87171;background:rgba(248,113,113,0.12);border-color:rgba(248,113,113,0.35)}
 
+  /* Hide the chat fab while the tutor popup is open so SKIP/NEXT
+     aren't overlapped on small screens. */
+  body:has(#rt-backdrop.on) #ry-root{display:none}
+
   .ry-footer{display:flex;gap:6px;padding:10px 12px;border-top:1px solid rgba(34,211,238,0.1);flex-shrink:0;background:rgba(6,10,20,0.4)}
   .ry-input{flex:1;padding:8px 12px;background:rgba(6,10,20,0.6);border:1px solid rgba(34,211,238,0.18);
     border-radius:8px;color:#e0e6f0;font-family:inherit;font-size:0.78em;outline:none}
@@ -451,7 +455,27 @@
     choices: []
   };
 
+  // Global opt-out: localStorage 'ry_chat_off' = '1' suppresses the fab on
+  // every page. Mac can re-enable from the command center HUD or by clearing
+  // the flag in browser storage.
+  function chatDisabled(){
+    try { return localStorage.getItem('ry_chat_off') === '1'; } catch { return false; }
+  }
+  RY.disable = function(){
+    try { localStorage.setItem('ry_chat_off', '1'); } catch {}
+    const root = document.getElementById('ry-root');
+    if (root) root.remove();
+    config = null;
+  };
+  RY.enable = function(){
+    try { localStorage.removeItem('ry_chat_off'); } catch {}
+    if (!config) RY.init({ sector: document.body.dataset.rySector || 'HUB', autoOpen: false });
+  };
+  RY.isDisabled = chatDisabled;
+
   RY.init = function(cfg){
+    if (chatDisabled()) return;
+
     cfg = cfg || {};
     if (!cfg.root) cfg.root = DEFAULT_ROOT;
     if (!cfg.states) cfg.states = {};
@@ -474,10 +498,14 @@
   // Auto-init fallback: if a page includes this script but never calls
   // Ryujin.init() (e.g. mounted globally on operational pages), bootstrap
   // a minimal chat fab so the brain is one tap away from anywhere.
+  // Waits for the command-center entry cutscene (#entry-mark) to finish so
+  // the fab doesn't pop in over the wordmark animation.
   document.addEventListener('DOMContentLoaded', () => {
+    const cutscene = document.getElementById('entry-mark');
+    const delay = cutscene ? 3200 : 200;
     setTimeout(() => {
-      if (!config) RY.init({ sector: document.body.dataset.rySector || 'HUB', autoOpen: false });
-    }, 200);
+      if (!config && !chatDisabled()) RY.init({ sector: document.body.dataset.rySector || 'HUB', autoOpen: false });
+    }, delay);
   });
 
   RY.open = () => togglePanelSafe(true);
