@@ -27,7 +27,7 @@ export function buildGhlPost({ mediaUrl, mediaType, scheduledAt, post, accountRo
   const body = {
     accountIds: [post.ghl_account_id],
     summary: post.caption || '',
-    media: [{ url: mediaUrl, type: mediaType || 'video' }],
+    media: [{ url: mediaUrl, type: mediaType || 'video/mp4' }],
     scheduleDate: scheduledAt,
     status: 'scheduled',
     type: 'post',

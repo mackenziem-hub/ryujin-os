@@ -38,7 +38,7 @@ import { generatePlatformCaptions } from '../lib/captionGenerator.js';
 
 const SWEEP_LOOKAHEAD_MS = 24 * 60 * 60 * 1000; // publish anything scheduled within next 24h
 const SWEEP_LIMIT = 10; // ~6s per clip × 10 = 60s budget; cron fires every 10 min so backlog drains fast
-const MIN_SCHEDULE_OFFSET_MS = 60 * 1000; // GHL needs at least ~30s — give 60s headroom
+const MIN_SCHEDULE_OFFSET_MS = 10 * 60 * 1000; // GHL rejects schedule dates < ~10 min ahead — empirically verified Apr 26
 
 // clip target_platforms term  →  brand_accounts.platform term
 const PLATFORM_MAP = {
@@ -219,7 +219,11 @@ async function publishClip(clip) {
   }
 
   const scheduleDate = clampScheduleDate(clip.scheduled_at);
-  const mediaType = clip.is_photo ? 'image' : 'video';
+  // GHL requires the actual MIME type (e.g. 'image/jpeg', 'video/mp4'), not
+  // a generic 'image'/'video' string. Use the source mime if known, else
+  // a sane default by media kind.
+  const mediaType = clip.source_mime_type
+    || (clip.is_photo ? 'image/jpeg' : 'video/mp4');
   const brandsById = new Map(brands.map((b) => [b.id, b]));
 
   // GHL requires a userId on every Social Planner post. Fetch once,
