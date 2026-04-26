@@ -18,6 +18,7 @@ import { supabaseAdmin } from '../lib/supabase.js';
 import { requireTenant } from '../lib/tenant.js';
 import { put } from '@vercel/blob';
 import Busboy from 'busboy';
+import { nextOpenSlotForTenant } from '../lib/scheduling.js';
 
 const MAX_MEDIA_SIZE = 200 * 1024 * 1024; // 200 MB
 const ALLOWED_VIDEO_TYPES = new Set(['video/mp4', 'video/quicktime', 'video/webm', 'video/x-m4v']);
@@ -120,6 +121,12 @@ async function handleJsonRegister(req, res, tenantId, tenantSlug) {
     : parseList(body.brand_ids || body.brands);
   const brandIds = brandInput.length ? await resolveBrandIds(tenantId, brandInput) : [];
 
+  // Caption overrides: map of brand_id → approved caption from the review
+  // flow. Stored on the clip and used by the publisher in preference to AI
+  // auto-gen at fan-out time.
+  const captionOverrides = (body.caption_overrides && typeof body.caption_overrides === 'object')
+    ? body.caption_overrides : {};
+
   const clipBase = {
     tenant_id: tenantId,
     created_by: body.created_by || null,
@@ -133,6 +140,7 @@ async function handleJsonRegister(req, res, tenantId, tenantSlug) {
     target_platforms: parseList(body.platforms || body.target_platforms),
     scheduled_at: scheduledAt,
     is_photo: isPhoto,
+    caption_overrides: captionOverrides,
   };
 
   if (isPhoto) {
@@ -165,18 +173,10 @@ function flattenBrands(clip) {
 }
 
 async function computeNextSlot(tenantId) {
-  // "Next available slot": latest scheduled_at for tenant + 24h, or now + 1h, whichever is later.
-  const { data } = await supabaseAdmin
-    .from('marketing_clips')
-    .select('scheduled_at')
-    .eq('tenant_id', tenantId)
-    .not('scheduled_at', 'is', null)
-    .order('scheduled_at', { ascending: false })
-    .limit(1);
-  const nowPlus1h = Date.now() + 60 * 60 * 1000;
-  if (!data?.length) return new Date(nowPlus1h).toISOString();
-  const latest = new Date(data[0].scheduled_at).getTime();
-  return new Date(Math.max(latest + 24 * 60 * 60 * 1000, nowPlus1h)).toISOString();
+  // Prime-time slot resolver: 9am / 1pm / 7pm AT, spread across pending clips
+  // so multiple uploads don't pile at the same moment.
+  const slot = await nextOpenSlotForTenant(tenantId);
+  return slot.toISOString();
 }
 
 function baseUrl(req) {

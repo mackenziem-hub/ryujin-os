@@ -132,6 +132,52 @@ input[type=file]{display:none}
 }
 .schedule-row select:focus,.schedule-row input:focus{border-color:var(--accent)}
 
+/* Review cards (post-suggest) */
+.review-stack{display:flex;flex-direction:column;gap:10px}
+.review-card{
+  background:rgba(6,10,20,0.55);border:1.5px solid var(--border);border-radius:12px;padding:12px;
+  display:flex;flex-direction:column;gap:9px;transition:border-color 0.15s;
+}
+.review-card.off{opacity:0.42}
+.review-card.off .review-cap{pointer-events:none}
+.review-head{display:flex;align-items:center;gap:8px}
+.review-brand{font-family:'Orbitron',sans-serif;font-size:0.7em;font-weight:800;letter-spacing:1.6px;flex:1}
+.review-toggle{
+  width:36px;height:20px;border-radius:11px;background:rgba(124,58,237,0.5);
+  border:1px solid rgba(124,58,237,0.65);position:relative;cursor:pointer;transition:all 0.15s;flex:0 0 auto;
+}
+.review-toggle::after{content:'';position:absolute;top:1px;right:1px;width:16px;height:16px;border-radius:50%;background:#fff;transition:all 0.15s}
+.review-card.off .review-toggle{background:rgba(60,70,90,0.6);border-color:rgba(120,130,150,0.4)}
+.review-card.off .review-toggle::after{right:auto;left:1px}
+.review-regen{
+  background:transparent;border:1px solid var(--border);color:var(--text-dim);
+  border-radius:7px;padding:5px 9px;font-family:'Orbitron',sans-serif;font-size:0.6em;font-weight:700;
+  letter-spacing:1.2px;cursor:pointer;display:flex;align-items:center;gap:4px;
+}
+.review-regen:hover{color:var(--accent);border-color:var(--border-hi)}
+.review-regen svg{width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round}
+.review-regen.spin svg{animation:ry-spin 0.9s linear infinite}
+@keyframes ry-spin{to{transform:rotate(360deg)}}
+.review-cap{
+  width:100%;background:rgba(3,6,17,0.65);border:1px solid var(--border);border-radius:9px;
+  padding:10px 11px;color:var(--text);font-family:inherit;font-size:0.92em;line-height:1.45;
+  resize:vertical;outline:none;min-height:78px;-webkit-appearance:none;
+}
+.review-cap:focus{border-color:var(--accent)}
+.review-meta{font-family:'Share Tech Mono',monospace;font-size:0.66em;color:var(--text-muted);letter-spacing:0.4px;display:flex;justify-content:space-between}
+
+.slot-line{
+  display:flex;align-items:center;gap:8px;padding:11px 12px;
+  background:rgba(34,211,238,0.08);border:1px solid rgba(34,211,238,0.28);border-radius:10px;
+  font-size:0.86em;
+}
+.slot-line .icon{flex:0 0 auto;color:var(--cyan)}
+.slot-line .icon svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round}
+.slot-line .lbl{flex:1;color:var(--text)}
+.slot-line .lbl b{color:var(--cyan)}
+.slot-change{background:transparent;border:none;color:var(--cyan);font-family:'Orbitron',sans-serif;font-size:0.66em;font-weight:700;letter-spacing:1.4px;cursor:pointer}
+.slot-change:hover{text-decoration:underline}
+
 /* Submit */
 .submit-bar{
   flex:0 0 auto;padding:12px 14px calc(12px + env(safe-area-inset-bottom));
@@ -239,25 +285,39 @@ input[type=file]{display:none}
       <div class="caption-hint">Each brand gets its own AI-tuned caption. Leave blank to caption from transcript.</div>
     </div>
 
-    <!-- Schedule -->
+    <!-- Review (post-suggest): one card per brand with editable AI caption -->
+    <div class="section" id="reviewSection" style="display:none">
+      <div class="section-label">Review &amp; approve</div>
+      <div class="review-stack" id="reviewStack"></div>
+    </div>
+
+    <!-- Schedule (only shown in pre-preview state; review state shows slot-line) -->
     <div class="section" id="scheduleSection" style="display:none">
       <div class="section-label">When</div>
       <div class="schedule-row">
         <select id="scheduleSelect">
-          <option value="auto">Next available slot</option>
-          <option value="now">Post in ~10 min</option>
+          <option value="auto">Next prime slot (9am · 1pm · 7pm AT)</option>
           <option value="custom">Pick date &amp; time</option>
         </select>
         <input id="scheduleAt" type="datetime-local" style="display:none">
       </div>
     </div>
 
+    <!-- Slot pill (shown in review state) -->
+    <div class="section" id="slotSection" style="display:none">
+      <div class="slot-line">
+        <span class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg></span>
+        <span class="lbl">Will post: <b id="slotLabel">—</b></span>
+        <button class="slot-change" onclick="backToEdit()">CHANGE</button>
+      </div>
+    </div>
+
   </div>
 
   <div class="submit-bar" id="submitBar" style="display:none">
-    <button class="submit" id="submitBtn" disabled onclick="submitClip()">
-      <svg viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-      <span id="submitLabel">SCHEDULE POST</span>
+    <button class="submit" id="submitBtn" disabled onclick="primaryAction()">
+      <svg id="submitIcon" viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+      <span id="submitLabel">GET PREVIEW</span>
     </button>
   </div>
 
@@ -302,12 +362,16 @@ const TENANT = (() => {
 })();
 
 const state = {
+  phase: 'compose',                  // compose | review
   file: null,
   isPhoto: false,
-  brands: [],          // loaded from /api/brands
+  brands: [],                        // loaded from /api/brands
   selectedBrands: new Set(),
   scheduleMode: 'auto',
   scheduleAt: null,
+  blob: null,                        // { url } after upload
+  suggestions: {},                   // { brand_id: { caption, on, brand } }
+  nextSlot: null,                    // { iso, label }
 };
 
 // ─── Init: load brands ──
@@ -416,12 +480,19 @@ function showPreview(f){
 function resetMedia(){
   state.file = null;
   state.isPhoto = false;
+  state.blob = null;
+  state.suggestions = {};
+  state.nextSlot = null;
+  state.phase = 'compose';
   document.getElementById('pickerStack').style.display = '';
   document.getElementById('previewWrap').style.display = 'none';
   document.getElementById('brandSection').style.display = 'none';
   document.getElementById('captionSection').style.display = 'none';
   document.getElementById('scheduleSection').style.display = 'none';
+  document.getElementById('reviewSection').style.display = 'none';
+  document.getElementById('slotSection').style.display = 'none';
   document.getElementById('submitBar').style.display = 'none';
+  document.getElementById('submitLabel').textContent = 'GET PREVIEW';
   document.getElementById('previewVideo').src = '';
   document.getElementById('previewImage').src = '';
   document.getElementById('subText').textContent = 'Tap to record. We auto-caption, polish, and schedule.';
@@ -463,7 +534,14 @@ function updateSubmitState(){
   btn.disabled = !ok;
 }
 
-async function submitClip(){
+// Primary CTA dispatcher — same button changes role between phases.
+function primaryAction(){
+  if (state.phase === 'compose') return previewFlow();
+  if (state.phase === 'review')  return approveFlow();
+}
+
+// PHASE 1 → 2: upload to Blob, fetch AI suggestions, show review.
+async function previewFlow(){
   if (!state.file || state.selectedBrands.size === 0) return;
   const overlay = document.getElementById('overlay');
   const card = document.getElementById('overCard');
@@ -474,13 +552,8 @@ async function submitClip(){
   document.getElementById('overActions').style.display = 'none';
   overlay.classList.add('on');
 
-  const desc = document.getElementById('captionInput').value.trim();
-  const title = (desc || state.file.name).slice(0,120);
-  const sched = resolveScheduledAt();
-
   try {
-    // 1) Direct-to-Blob upload via @vercel/blob/client. Streams the file
-    //    straight to storage so we don't hit Vercel's 4.5MB function limit.
+    // 1) Direct-to-Blob upload via @vercel/blob/client.
     if (typeof window.__ryBlobUpload !== 'function') {
       throw new Error('Blob uploader not loaded — refresh the page.');
     }
@@ -497,35 +570,91 @@ async function submitClip(){
         document.getElementById('overMsg').textContent = pct + '%';
       },
     });
+    state.blob = blob;
 
-    // 2) Register the clip row + brand links via JSON POST.
-    document.getElementById('overTitle').textContent = state.isPhoto ? 'Scheduling photo…' : 'Queuing video…';
+    // 2) Fetch AI suggestions (one per brand, vision-enabled for photos).
+    document.getElementById('overTitle').textContent = 'Generating ideas…';
     document.getElementById('overMsg').textContent = state.isPhoto
-      ? 'Posting straight to your selected brands.'
-      : 'Auto-captioning, then scheduling on your timeline.';
+      ? 'Looking at the photo and writing on-brand captions.'
+      : 'Writing on-brand captions per brand.';
 
-    const r = await fetch('/api/marketing', {
+    const userNote = document.getElementById('captionInput').value.trim();
+    const sr = await fetch('/api/marketing-suggest', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-tenant-id': TENANT },
       body: JSON.stringify({
         source_url: blob.url,
+        source_mime_type: state.file.type || (state.isPhoto ? 'image/jpeg' : 'video/mp4'),
+        is_photo: state.isPhoto,
+        user_note: userNote || null,
+        brand_ids: [...state.selectedBrands],
+      }),
+    });
+    const stext = await sr.text();
+    let sj; try { sj = JSON.parse(stext); } catch { throw new Error('Suggest: bad JSON: ' + stext.slice(0,200)); }
+    if (!sr.ok) throw new Error(sj.error || ('suggest ' + sr.status));
+
+    // 3) Populate review state + render cards.
+    state.suggestions = {};
+    for (const [bid, s] of Object.entries(sj.suggestions || {})) {
+      state.suggestions[bid] = { caption: s.caption || '', brand: s.brand || {}, on: true };
+    }
+    state.nextSlot = sj.next_slot || null;
+    state.phase = 'review';
+    overlay.classList.remove('on');
+    renderReview();
+  } catch(e){
+    showError(e.message || String(e));
+  }
+}
+
+// PHASE 2 → 3: send approved captions + schedule the clip.
+async function approveFlow(){
+  if (!state.blob) return;
+  const approved = Object.entries(state.suggestions).filter(([_, s]) => s.on);
+  if (!approved.length) {
+    showError('No brands selected — toggle at least one on.');
+    return;
+  }
+  const overlay = document.getElementById('overlay');
+  const card = document.getElementById('overCard');
+  card.className = 'over-card';
+  document.getElementById('overIcon').innerHTML = '<div class="spinner"></div>';
+  document.getElementById('overTitle').textContent = state.isPhoto ? 'Scheduling photo…' : 'Queuing video…';
+  document.getElementById('overMsg').textContent = state.isPhoto
+    ? 'Posting to your selected brands.'
+    : 'Auto-captioning, then scheduling.';
+  document.getElementById('overActions').style.display = 'none';
+  overlay.classList.add('on');
+
+  const userNote = document.getElementById('captionInput').value.trim();
+  const captionOverrides = Object.fromEntries(approved.map(([bid, s]) => [bid, s.caption.trim()]));
+  const brandIds = approved.map(([bid]) => bid);
+  const sched = resolveScheduledAt();
+
+  try {
+    const r = await fetch('/api/marketing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-tenant-id': TENANT },
+      body: JSON.stringify({
+        source_url: state.blob.url,
         source_filename: state.file.name,
         source_mime_type: state.file.type || (state.isPhoto ? 'image/jpeg' : 'video/mp4'),
         source_size_bytes: state.file.size,
-        title,
-        description: desc || null,
-        brand_ids: [...state.selectedBrands],
+        title: (userNote || state.file.name).slice(0,120),
+        description: userNote || null,
+        brand_ids: brandIds,
+        caption_overrides: captionOverrides,
         scheduled_at: sched,
       }),
     });
     let body = ''; try { body = await r.text(); } catch {}
-    let j; try { j = JSON.parse(body); } catch { throw new Error('Bad server response: ' + body.slice(0,200)); }
+    let j; try { j = JSON.parse(body); } catch { throw new Error('Register: bad JSON: ' + body.slice(0,200)); }
     if (!r.ok) throw new Error(j.error || ('register ' + r.status));
 
     const clip = j.clip;
     if (state.isPhoto){
-      // Photos are 'ready' immediately — kick the publisher right away so we
-      // can report actual landed status instead of a vague "scheduled".
+      // Photo path: kick publisher immediately so the user sees real outcome.
       try {
         const pr = await fetch('/api/marketing-publish?id=' + clip.id, {
           method: 'POST',
@@ -533,29 +662,114 @@ async function submitClip(){
         });
         const pj = await pr.json();
         if (pr.ok && pj.scheduled > 0) {
-          const platMsg = pj.results
-            .filter((r) => r.status === 'scheduled')
-            .map((r) => r.platform)
-            .filter((v, i, a) => a.indexOf(v) === i)
-            .join(', ');
-          showSuccess('Photo scheduled', `Going live on ${platMsg || pj.scheduled + ' channels'}.`);
+          const plats = pj.results.filter((r) => r.status === 'scheduled').map((r) => r.platform);
+          const uniq = [...new Set(plats)].join(', ');
+          showSuccess('Scheduled', `${pj.scheduled} post${pj.scheduled>1?'s':''} on ${uniq || 'your channels'}.`);
         } else if (pj.status === 'failed') {
           showError(pj.error || 'Publish failed — check brand connections.');
         } else {
-          // 200 but partial; still uploaded, just report partial
-          showSuccess('Photo uploaded', `${pj.scheduled || 0} scheduled, ${pj.failed || 0} failed. Check calendar.`);
+          showSuccess('Scheduled', `${pj.scheduled || 0} ok, ${pj.failed || 0} failed. See calendar.`);
         }
       } catch(e){
-        // Fall back to cron sweep — the clip is still queued correctly.
-        showSuccess('Photo uploaded', 'Will publish on the next cron tick (within 10 min).');
+        showSuccess('Scheduled', 'Will publish on the next cron sweep (~10 min).');
       }
     } else {
-      showSuccess('Video uploaded', 'We\u2019ll caption it and schedule. Check the calendar in a minute or two.');
+      showSuccess('Video queued', 'We\u2019ll auto-caption + schedule. Check calendar in a minute or two.');
     }
   } catch(e){
     showError(e.message || String(e));
   }
 }
+
+// Render the per-brand review cards (state.phase = 'review').
+function renderReview(){
+  document.getElementById('pickerStack').style.display = 'none';
+  document.getElementById('captionSection').style.display = 'none';
+  document.getElementById('scheduleSection').style.display = 'none';
+  document.getElementById('brandSection').style.display = 'none';
+  document.getElementById('reviewSection').style.display = '';
+  document.getElementById('slotSection').style.display = '';
+
+  const stack = document.getElementById('reviewStack');
+  stack.innerHTML = '';
+  for (const [bid, s] of Object.entries(state.suggestions)) {
+    const card = document.createElement('div');
+    card.className = 'review-card' + (s.on ? '' : ' off');
+    card.dataset.bid = bid;
+    card.innerHTML = `
+      <div class="review-head">
+        <div class="review-brand">${escapeHtml(s.brand?.name || 'Brand')}</div>
+        <button class="review-regen" onclick="regenerateBrand('${bid}')" title="Regenerate">
+          <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10"/></svg>
+          REGENERATE
+        </button>
+        <div class="review-toggle" onclick="toggleBrand('${bid}')"></div>
+      </div>
+      <textarea class="review-cap" data-bid="${bid}" rows="4">${escapeHtml(s.caption)}</textarea>
+      <div class="review-meta"><span class="char-count">${s.caption.length} chars</span><span>edit \u00B7 toggle off \u00B7 regenerate</span></div>
+    `;
+    const ta = card.querySelector('textarea');
+    ta.addEventListener('input', () => {
+      state.suggestions[bid].caption = ta.value;
+      card.querySelector('.char-count').textContent = ta.value.length + ' chars';
+    });
+    stack.appendChild(card);
+  }
+
+  document.getElementById('slotLabel').textContent = state.nextSlot?.label || 'Next prime slot';
+  document.getElementById('submitLabel').textContent = 'APPROVE & SCHEDULE';
+  document.getElementById('submitBtn').disabled = false;
+  document.getElementById('submitBar').style.display = '';
+  window.scrollTo({ top: document.getElementById('reviewSection').offsetTop - 80, behavior: 'smooth' });
+}
+
+window.toggleBrand = function(bid){
+  state.suggestions[bid].on = !state.suggestions[bid].on;
+  const card = document.querySelector(`.review-card[data-bid="${bid}"]`);
+  if (card) card.classList.toggle('off');
+};
+
+window.regenerateBrand = async function(bid){
+  const card = document.querySelector(`.review-card[data-bid="${bid}"]`);
+  const btn = card?.querySelector('.review-regen');
+  if (btn) btn.classList.add('spin');
+  try {
+    const userNote = document.getElementById('captionInput').value.trim();
+    const r = await fetch('/api/marketing-suggest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-tenant-id': TENANT },
+      body: JSON.stringify({
+        source_url: state.blob.url,
+        source_mime_type: state.file.type || (state.isPhoto ? 'image/jpeg' : 'video/mp4'),
+        is_photo: state.isPhoto,
+        user_note: userNote || null,
+        brand_ids: [bid],
+      }),
+    });
+    const j = await r.json();
+    const fresh = j.suggestions?.[bid]?.caption;
+    if (fresh) {
+      state.suggestions[bid].caption = fresh;
+      const ta = card?.querySelector('textarea');
+      if (ta) ta.value = fresh;
+      const cc = card?.querySelector('.char-count');
+      if (cc) cc.textContent = fresh.length + ' chars';
+    }
+  } catch (e) { /* keep current caption */ }
+  finally { if (btn) btn.classList.remove('spin'); }
+};
+
+window.backToEdit = function(){
+  state.phase = 'compose';
+  document.getElementById('reviewSection').style.display = 'none';
+  document.getElementById('slotSection').style.display = 'none';
+  document.getElementById('pickerStack').style.display = state.file ? 'none' : '';
+  document.getElementById('captionSection').style.display = state.file ? '' : 'none';
+  document.getElementById('scheduleSection').style.display = state.file ? '' : 'none';
+  document.getElementById('brandSection').style.display = state.file ? '' : 'none';
+  document.getElementById('submitLabel').textContent = 'GET PREVIEW';
+  document.getElementById('submitBar').style.display = state.file ? '' : 'none';
+};
 
 function showSuccess(title, msg){
   const card = document.getElementById('overCard');

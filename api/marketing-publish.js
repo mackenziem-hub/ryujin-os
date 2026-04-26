@@ -238,14 +238,36 @@ async function publishClip(clip) {
   try { userId = await getDefaultPosterUserId(); }
   catch (e) { console.error('[marketing-publish] userId fetch failed:', e.message); }
 
-  // Polished captions per brand × platform (best-effort).
-  const captionsByBrand = await buildBrandCaptions(clip, brands, accounts);
+  // Approved captions from the review flow (one per brand). When present
+  // we use them verbatim — the user already saw and approved this text.
+  // Falls back to AI auto-gen for any brand without an override.
+  const overrides = (clip.caption_overrides && typeof clip.caption_overrides === 'object')
+    ? clip.caption_overrides : {};
+  const brandsNeedingAi = brands.filter((b) => !overrides[b.id]?.trim?.());
+  const captionsByBrand = brandsNeedingAi.length
+    ? await buildBrandCaptions(clip, brandsNeedingAi, accounts)
+    : new Map();
+
+  // Per-platform truncation for approved overrides. GHL/each platform has
+  // its own cap; we trim cleanly on word boundary if the brand caption is
+  // longer than the platform allows.
+  const PLATFORM_MAX = { facebook: 2000, instagram: 2200, youtube: 4900, tiktok: 2200, google: 1500 };
+  const truncForPlatform = (text, plat) => {
+    const max = PLATFORM_MAX[plat] || 2000;
+    if (!text || text.length <= max) return text;
+    const trimmed = text.slice(0, max - 1);
+    const lastSpace = trimmed.lastIndexOf(' ');
+    return (lastSpace > max * 0.7 ? trimmed.slice(0, lastSpace) : trimmed) + '\u2026';
+  };
 
   // Fan out: insert draft → POST GHL → update with ghl_post_id.
   for (const account of accounts) {
+    const override = overrides[account.brand_id];
     const polished = captionsByBrand.get(account.brand_id)?.[account.platform];
     const fallback = buildFallbackCaption(clip, brandsById.get(account.brand_id));
-    const caption = polished?.caption || fallback;
+    const caption = override
+      ? truncForPlatform(override, account.platform)
+      : (polished?.caption || fallback);
     const ytTitle = polished?.title || clip.title || undefined;
     const ctaType = polished?.ctaType || undefined;
 
