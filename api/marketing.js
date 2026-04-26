@@ -85,6 +85,79 @@ async function resolveBrandIds(tenantId, idents) {
   return [...results];
 }
 
+async function readJsonBody(req) {
+  if (req.body && typeof req.body === 'object') return req.body;
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  const text = Buffer.concat(chunks).toString('utf8');
+  if (!text) return null;
+  return JSON.parse(text);
+}
+
+// JSON registration path — client uploaded direct to Blob, now create the
+// clip row from the URL + metadata. Mirrors the multipart path's logic.
+async function handleJsonRegister(req, res, tenantId, tenantSlug) {
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (e) {
+    return res.status(400).json({ error: 'Bad JSON: ' + e.message });
+  }
+  if (!body || !body.source_url) {
+    return res.status(400).json({ error: 'Missing source_url (did the Blob upload complete?)' });
+  }
+
+  const isVideo = ALLOWED_VIDEO_TYPES.has(body.source_mime_type);
+  const isPhoto = ALLOWED_IMAGE_TYPES.has(body.source_mime_type);
+  if (!isVideo && !isPhoto) {
+    return res.status(415).json({ error: `Unsupported media type: ${body.source_mime_type}` });
+  }
+
+  const scheduledAt = body.scheduled_at?.trim?.() || await computeNextSlot(tenantId);
+
+  const brandInput = Array.isArray(body.brand_ids)
+    ? body.brand_ids.map(String)
+    : parseList(body.brand_ids || body.brands);
+  const brandIds = brandInput.length ? await resolveBrandIds(tenantId, brandInput) : [];
+
+  const clipBase = {
+    tenant_id: tenantId,
+    created_by: body.created_by || null,
+    source_url: body.source_url,
+    source_filename: body.source_filename || null,
+    source_mime_type: body.source_mime_type || null,
+    source_size_bytes: body.source_size_bytes || null,
+    title: body.title?.trim?.() || body.source_filename || null,
+    description: body.description?.trim?.() || null,
+    hashtags: parseList(body.hashtags),
+    target_platforms: parseList(body.platforms || body.target_platforms),
+    scheduled_at: scheduledAt,
+    is_photo: isPhoto,
+  };
+
+  if (isPhoto) {
+    clipBase.rendered_url = body.source_url;
+    clipBase.thumbnail_url = body.source_url;
+    clipBase.status = 'ready';
+  } else {
+    clipBase.status = 'queued';
+  }
+
+  const { data: clip, error } = await supabaseAdmin
+    .from('marketing_clips').insert(clipBase).select('*').single();
+  if (error) return res.status(500).json({ error: error.message });
+
+  if (brandIds.length) {
+    const links = brandIds.map((brand_id) => ({ clip_id: clip.id, brand_id }));
+    const { error: linkErr } = await supabaseAdmin.from('marketing_clip_brands').insert(links);
+    if (linkErr) console.error('[marketing] brand link insert failed:', linkErr.message);
+  }
+
+  if (isVideo) kickoffRender(req, tenantSlug, clip.id);
+
+  return res.status(202).json({ clip, brand_ids: brandIds });
+}
+
 function flattenBrands(clip) {
   if (!clip) return clip;
   const links = Array.isArray(clip.brands) ? clip.brands : [];
@@ -156,6 +229,13 @@ async function handler(req, res) {
 
   // ── POST (Upload + create clip) ──
   if (req.method === 'POST') {
+    // JSON body path: client-side direct-to-Blob upload already happened
+    // (via /api/marketing-upload-token), now register the clip row.
+    const ctype = String(req.headers['content-type'] || '');
+    if (ctype.startsWith('application/json')) {
+      return handleJsonRegister(req, res, tenantId, tenantSlug);
+    }
+
     let parsed;
     try {
       parsed = await parseMultipart(req);
