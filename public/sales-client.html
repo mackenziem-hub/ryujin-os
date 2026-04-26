@@ -342,37 +342,68 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;l
 </div>
 
 <script>
-// ── Load data (same shape/encoding as proposal-client.html) ──
-function getSalesData(){
+const DEMO_DATA = {
+  refId: 'PU-DEMO-001',
+  customer: {
+    name: 'Sample Homeowner',
+    address: '123 Example St, Moncton NB',
+    coverImage: 'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/683df2a1e1360e210d25da2f.jpeg'
+  },
+  rep: { name: 'Mackenzie Mazerolle', title: 'Owner \u00B7 Plus Ultra Roofing', initials: 'MM', phone: '(506) 540-1052' },
+  package: { name: 'Gold · CertainTeed Landmark', system: 'asphalt' },
+  media: {
+    videoUrl: 'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/69e9ed12a48992f689d9d242.mp4',
+    gallery: [
+      'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/683df2a1e1360e210d25da2f.jpeg',
+      'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/683df2a18406d6d308cec7a1.jpeg',
+      'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/6839b129d906870c391d2e00.jpeg',
+      'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/684214dee142b673f143437d.jpeg',
+      'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/6841dac0598392e117d07add.jpeg',
+      'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/696b6c244e42b975f6577663.jpg'
+    ]
+  }
+};
+
+function derivePackageFromApi(api) {
+  const sys = (api.scope && api.scope.system) || 'asphalt';
+  const tierId = (api.scope && api.scope.recommended) || 'platinum';
+  const tierList = (api.tiers && api.tiers[sys]) || [];
+  const selected = tierList.find(t => t.id === tierId) || tierList[0];
+  const name = selected ? (selected.name + (selected.sub ? ' · ' + selected.sub : '')) : (tierId[0].toUpperCase() + tierId.slice(1));
+  return { name, system: sys };
+}
+
+// Load data: ?share= (DB-backed, real tracking) → ?data= (legacy inline) → DEMO
+async function getSalesData(){
   const params = new URLSearchParams(location.search);
+  const share = params.get('share');
   const dataParam = params.get('data');
+
+  if (share) {
+    try {
+      const r = await fetch('/api/proposal?share=' + encodeURIComponent(share));
+      if (r.ok) {
+        const api = await r.json();
+        // Map to shape sales-client expects
+        return {
+          ...api,
+          package: api.package || derivePackageFromApi(api)
+        };
+      }
+      console.warn('Share fetch failed', r.status);
+    } catch (e) { console.warn('Share fetch error', e); }
+  }
   if (dataParam) {
     try { return JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(dataParam))))); }
     catch(e){ console.warn('Bad data param', e); }
   }
-  return {
-    refId: 'PU-DEMO-001',
-    customer: {
-      name: 'Sample Homeowner',
-      address: '123 Example St, Moncton NB',
-      coverImage: 'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/683df2a1e1360e210d25da2f.jpeg'
-    },
-    rep: { name: 'Mackenzie Mazerolle', title: 'Owner \u00B7 Plus Ultra Roofing', initials: 'MM', phone: '(506) 540-1052' },
-    package: { name: 'Gold · CertainTeed Landmark', system: 'asphalt' },
-    media: {
-      videoUrl: 'https://oyhn4tqzifmqqj0o.public.blob.vercel-storage.com/darcy-roof%20proposal%20introduction.mp4',
-      gallery: [
-        'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/683df2a1e1360e210d25da2f.jpeg',
-        'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/683df2a18406d6d308cec7a1.jpeg',
-        'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/6839b129d906870c391d2e00.jpeg',
-        'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/684214dee142b673f143437d.jpeg',
-        'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/6841dac0598392e117d07add.jpeg',
-        'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/696b6c244e42b975f6577663.jpg'
-      ]
-    }
-  };
+  return DEMO_DATA;
 }
-const data = getSalesData();
+
+// Wrap the rest of the script in an async init — top-level await isn't available in classic scripts
+getSalesData().then(data => render(data));
+
+function render(data){
 const isExterior = (data.package && (data.package.system || '').match(/exterior|shell|combined/i));
 
 // Hero
@@ -459,14 +490,20 @@ document.getElementById('ctaPhoneLink').textContent = phone;
 // CTA headline personalization
 document.getElementById('ctaH2').textContent = firstName + ', ready to see your options?';
 
-// CTA → proposal-client with the same ?data= forwarded
+// CTA → proposal-client. Prefer ?share= (DB-backed), fall back to ?data=.
 const params = new URLSearchParams(location.search);
+const origShare = params.get('share');
 const origDataParam = params.get('data');
-const proposalUrl = 'proposal-client.html' + (origDataParam ? ('?data=' + origDataParam) : '');
+const proposalUrl = 'proposal-client.html' + (
+  origShare ? ('?share=' + encodeURIComponent(origShare))
+  : origDataParam ? ('?data=' + origDataParam)
+  : ''
+);
 document.getElementById('ctaBtn').href = proposalUrl;
 
 // Analytics hook (same pattern as proposal-client)
 if (window.va) { try { window.va('event', { name: 'sales_page_viewed', refId: data.refId }); } catch(e){} }
+} // end render
 </script>
 
 <!-- Vercel Web Analytics -->

@@ -6,8 +6,9 @@ import { requireTenant } from '../lib/tenant.js';
 import { put, del } from '@vercel/blob';
 import Busboy from 'busboy';
 
-const MAX_FILE_SIZE = 20 * 1024 * 1024;
+const MAX_FILE_SIZE = 60 * 1024 * 1024; // bumped to 60MB to cover short cover-video renders
 const ALLOWED_IMAGE = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif']);
+const ALLOWED_VIDEO = new Set(['video/mp4', 'video/webm', 'video/quicktime']);
 
 function parseMultipart(req) {
   return new Promise((resolve, reject) => {
@@ -50,9 +51,18 @@ async function handler(req, res) {
     }
 
     for (const f of files) {
-      if (!ALLOWED_IMAGE.has(f.mimeType)) {
+      const isVideo = ALLOWED_VIDEO.has(f.mimeType);
+      if (!ALLOWED_IMAGE.has(f.mimeType) && !isVideo) {
         results.push({ filename: f.fileName, error: `Unsupported type: ${f.mimeType}` });
         continue;
+      }
+      // Videos are always treated as cover_video — swap any previous cover video
+      if (isVideo && caption !== 'cover_video') {
+        // Let the caption override if explicitly set, otherwise enforce it
+      }
+      if (isVideo) {
+        await supabaseAdmin.from('estimate_photos').delete()
+          .eq('estimate_id', estimateId).eq('caption', 'cover_video');
       }
       const safeName = f.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
       const blobPath = `tenants/${req.tenant.slug}/estimates/${estimateId}/${Date.now()}-${safeName}`;

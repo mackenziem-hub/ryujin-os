@@ -178,6 +178,18 @@ function renderList(list){
   }
   const rows = list.map((p, i) => {
     const url = p.url || p.proposalUrl || '#';
+    // Extract share token from URL if present — powers PDF + timeline buttons
+    let shareToken = p.shareToken || '';
+    if (!shareToken && url.includes('share=')) {
+      try { shareToken = new URL(url, location.origin).searchParams.get('share') || ''; } catch(e){}
+    }
+    const absoluteUrl = url.startsWith('http') ? url : (location.origin + url);
+    const pdfBtn = shareToken
+      ? `<button class="btn ghost" title="Download PDF" onclick="downloadRowPdf('${esc(shareToken)}','${esc(p.client||'proposal')}')">PDF</button>`
+      : '';
+    const timelineBtn = shareToken
+      ? `<button class="btn ghost" title="View activity timeline" onclick="openTimeline('${esc(shareToken)}','${esc(p.client||'')}')">TIMELINE</button>`
+      : '';
     return `
       <div class="row" data-idx="${i}" data-status="${esc((p.status||'').toLowerCase())}" data-search="${esc(((p.client||'') + ' ' + (p.refId||'') + ' ' + (p.address||'')).toLowerCase())}">
         <div>
@@ -192,7 +204,9 @@ function renderList(list){
         <div class="ref" style="font-family:'Orbitron',sans-serif;font-weight:800;color:#22d3ee">${money(p.value)}</div>
         <div class="actions">
           <a class="btn primary" href="${esc(url)}" target="_blank" rel="noopener">OPEN</a>
-          <button class="btn ghost" onclick="copyLink(this, location.origin + '${esc(url)}')">COPY LINK</button>
+          <button class="btn ghost" onclick="copyLink(this, '${esc(absoluteUrl)}')">COPY</button>
+          ${pdfBtn}
+          ${timelineBtn}
         </div>
       </div>`;
   }).join('');
@@ -215,6 +229,118 @@ function applyFilter(){
   else list.sort((a,b) => new Date(b.at) - new Date(a.at));
   renderList(list);
 }
+
+function downloadRowPdf(shareToken, clientName){
+  if (!shareToken) return;
+  const safe = String(clientName || 'proposal').replace(/[^\w\-]+/g, '_').slice(0, 40);
+  const url = '/api/proposal-pdf?share=' + encodeURIComponent(shareToken) + '&download=' + encodeURIComponent('PU-' + safe + '.pdf');
+  window.open(url, '_blank', 'noopener');
+}
+window.downloadRowPdf = downloadRowPdf;
+
+function fmtEventTime(iso){
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US',{month:'short',day:'numeric'}) + ' ' + d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+}
+
+const EVENT_LABELS = {
+  created: { label: 'Estimate created', color: '#94a3b8', icon: '●' },
+  updated: { label: 'Estimate updated', color: '#94a3b8', icon: '●' },
+  proposal_opened: { label: 'Client opened proposal', color: '#22d3ee', icon: '👁' },
+  video_played: { label: 'Video played', color: '#a78bfa', icon: '▶' },
+  tier_selected: { label: 'Tier selected', color: '#facc15', icon: '◉' },
+  scope_expanded: { label: 'Scope expanded', color: '#facc15', icon: '↔' },
+  signature_started: { label: 'Signature started', color: '#facc15', icon: '✎' },
+  pdf_rendered: { label: 'PDF generated', color: '#7c3aed', icon: '⬇' },
+  accepted: { label: 'PROPOSAL ACCEPTED', color: '#4ade80', icon: '✓' }
+};
+
+function eventDetail(e){
+  const a = String(e.action || '').toLowerCase();
+  const d = e.details || {};
+  if (a === 'accepted') {
+    const total = d.total_with_tax ? '$' + Number(d.total_with_tax).toLocaleString() : '';
+    return (d.tier_name || d.tier_id || '') + (total ? ' · ' + total : '');
+  }
+  if (a === 'tier_selected') return (d.payload && d.payload.tier_id) || (d.payload && d.payload.id) || '';
+  if (a === 'video_played') return '';
+  return '';
+}
+
+async function openTimeline(shareToken, client){
+  let drawer = document.getElementById('timelineDrawer');
+  if (!drawer) {
+    drawer = document.createElement('div');
+    drawer.id = 'timelineDrawer';
+    document.body.appendChild(drawer);
+  }
+  drawer.innerHTML = `
+    <div style="position:fixed;inset:0;background:rgba(0,0,0,0.55);backdrop-filter:blur(4px);z-index:9000" onclick="closeTimeline()"></div>
+    <div style="position:fixed;top:0;right:0;bottom:0;width:min(540px,92vw);background:var(--glass);border-left:1px solid var(--border);z-index:9001;padding:22px;overflow-y:auto;backdrop-filter:blur(14px)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+        <div>
+          <div style="font-family:'Orbitron',sans-serif;font-size:0.62em;letter-spacing:2px;color:var(--text-dim);text-transform:uppercase">Activity Timeline</div>
+          <div style="font-family:'Orbitron',sans-serif;font-size:1.1em;font-weight:800;margin-top:4px">${esc(client || 'Proposal')}</div>
+        </div>
+        <button onclick="closeTimeline()" style="width:32px;height:32px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:1.2em;cursor:pointer">×</button>
+      </div>
+      <div id="timelineBody" style="color:var(--text-dim);font-size:0.88em">Loading…</div>
+    </div>
+  `;
+
+  try {
+    const r = await fetch('/api/proposal-timeline?share=' + encodeURIComponent(shareToken));
+    const data = r.ok ? await r.json() : null;
+    const body = document.getElementById('timelineBody');
+    if (!data) { body.textContent = 'Could not load timeline.'; return; }
+
+    const s = data.summary || {};
+    const statsCard = `
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:18px">
+        <div style="padding:10px;background:rgba(34,211,238,0.08);border:1px solid rgba(34,211,238,0.2);border-radius:8px;text-align:center">
+          <div style="font-family:'Orbitron',sans-serif;font-size:1.4em;font-weight:800;color:#22d3ee">${s.opened||0}</div>
+          <div style="font-family:'Share Tech Mono',monospace;font-size:0.58em;letter-spacing:1.2px;color:var(--text-dim);margin-top:2px">OPENS</div>
+        </div>
+        <div style="padding:10px;background:rgba(167,139,250,0.08);border:1px solid rgba(167,139,250,0.2);border-radius:8px;text-align:center">
+          <div style="font-family:'Orbitron',sans-serif;font-size:1.4em;font-weight:800;color:#a78bfa">${s.videoPlayed||0}</div>
+          <div style="font-family:'Share Tech Mono',monospace;font-size:0.58em;letter-spacing:1.2px;color:var(--text-dim);margin-top:2px">VIDEO</div>
+        </div>
+        <div style="padding:10px;background:rgba(250,204,21,0.08);border:1px solid rgba(250,204,21,0.2);border-radius:8px;text-align:center">
+          <div style="font-family:'Orbitron',sans-serif;font-size:1.4em;font-weight:800;color:#facc15">${s.tiersExpanded||0}</div>
+          <div style="font-family:'Share Tech Mono',monospace;font-size:0.58em;letter-spacing:1.2px;color:var(--text-dim);margin-top:2px">TIERS</div>
+        </div>
+        <div style="padding:10px;background:${s.accepted?'rgba(74,222,128,0.14)':'rgba(148,163,184,0.08)'};border:1px solid ${s.accepted?'rgba(74,222,128,0.35)':'var(--border)'};border-radius:8px;text-align:center">
+          <div style="font-family:'Orbitron',sans-serif;font-size:1.4em;font-weight:800;color:${s.accepted?'#4ade80':'var(--text-dim)'}">${s.accepted?'✓':'—'}</div>
+          <div style="font-family:'Share Tech Mono',monospace;font-size:0.58em;letter-spacing:1.2px;color:var(--text-dim);margin-top:2px">SIGNED</div>
+        </div>
+      </div>
+    `;
+
+    const events = (data.events || []).slice().reverse();
+    const list = events.length ? events.map(e => {
+      const meta = EVENT_LABELS[e.action] || { label: e.action, color: '#94a3b8', icon: '•' };
+      const detail = eventDetail(e);
+      return `
+        <div style="display:flex;gap:12px;padding:10px 0;border-bottom:1px solid rgba(34,211,238,0.08)">
+          <div style="width:22px;height:22px;flex-shrink:0;border-radius:50%;background:${meta.color}22;color:${meta.color};display:flex;align-items:center;justify-content:center;font-size:0.8em">${meta.icon}</div>
+          <div style="flex:1">
+            <div style="font-weight:700;color:var(--text);font-size:0.9em">${esc(meta.label)}</div>
+            ${detail ? `<div style="color:var(--text-dim);font-size:0.82em;margin-top:2px">${esc(detail)}</div>` : ''}
+            <div style="font-family:'Share Tech Mono',monospace;font-size:0.7em;color:var(--text-muted);margin-top:3px">${esc(fmtEventTime(e.created_at))}</div>
+          </div>
+        </div>
+      `;
+    }).join('') : '<div style="padding:40px 0;text-align:center;color:var(--text-muted)">No activity yet.</div>';
+
+    body.innerHTML = statsCard + list;
+  } catch (e) {
+    const body = document.getElementById('timelineBody');
+    if (body) body.textContent = 'Error loading timeline: ' + e.message;
+  }
+}
+function closeTimeline(){ const d = document.getElementById('timelineDrawer'); if (d) d.remove(); }
+window.openTimeline = openTimeline;
+window.closeTimeline = closeTimeline;
 
 function copyLink(btn, url){
   const ta = document.createElement('textarea');
@@ -275,5 +401,6 @@ async function init(){
 init();
 </script>
 
+<script src="assets/ryujin-chat.js"></script>
 </body>
 </html>

@@ -17,7 +17,7 @@ async function handler(req, res) {
     if (id) {
       const { data, error } = await supabaseAdmin
         .from('workorders')
-        .select('*, estimate:estimates(estimate_number,share_token), paysheet:paysheets(job_id,status,total)')
+        .select('*, estimate:estimates(estimate_number,share_token,complexity), paysheet:paysheets(job_id,status,total)')
         .eq('tenant_id', tenantId).eq('id', id).single();
       if (error) return res.status(404).json({ error: 'Work order not found' });
       return res.json(data);
@@ -25,7 +25,7 @@ async function handler(req, res) {
 
     let query = supabaseAdmin
       .from('workorders')
-      .select('*, estimate:estimates(estimate_number,share_token), paysheet:paysheets(job_id,status)', { count: 'exact' })
+      .select('*, estimate:estimates(estimate_number,share_token,complexity), paysheet:paysheets(job_id,status)', { count: 'exact' })
       .eq('tenant_id', tenantId)
       .order('start_date', { ascending: true, nullsFirst: false })
       .order('created_at', { ascending: false })

@@ -141,7 +141,18 @@ const PRODUCTS = {
 };
 
 // Plus Ultra standard coverage constants
-const WASTE = 0.10;
+// Waste factor is derived per-WO from estimate complexity (see resolveWaste below).
+// Engine SOP: simple=10%, medium=15%, complex=20% (see lib/quoteEngineV3.js:25
+// and docs/pricing_formula_v2.md §7a). The DEFAULT_WASTE here is the fallback
+// when there's no linked estimate and no waste_pct stamped on the WO.
+const DEFAULT_WASTE = 0.15;
+const WASTE_BY_COMPLEXITY = { simple: 0.10, medium: 0.15, complex: 0.20 };
+function resolveWaste(wo){
+  // Priority: explicit waste_pct on WO → wo.complexity → wo.estimate.complexity → default
+  if (wo && typeof wo.waste_pct === 'number') return wo.waste_pct;
+  const c = (wo && wo.complexity) || (wo && wo.estimate && wo.estimate.complexity) || null;
+  return WASTE_BY_COMPLEXITY[c] || DEFAULT_WASTE;
+}
 const BUNDLES_PER_SQ = 3;
 const BUNDLES_PER_SQ_PREMIUM = 4;          // Presidential / Grand Manor
 const RIDGE_CAP_LF_PER_BUNDLE = 33;        // Hip & Ridge caps: 33 LF per bundle
@@ -152,9 +163,14 @@ const DRIP_EDGE_LF_PER_PIECE = 10;
 const RIDGE_VENT_LF_PER_ROLL = 25;         // 25 LF rolls of ridge vent
 const NAILS_SQ_PER_BOX = 20;               // 1 box coil nails covers ~20 SQ
 
-function bundlesForShingles(sq, tier){
+function bundlesForShingles(sq, tier, waste){
+  // Match engine order-of-ops (lib/quoteEngineV3.js:651-653): ceil the waste-inflated SQ
+  // FIRST, then multiply by bundles-per-SQ. Doing ceil() at the end produces 1-bundle
+  // shortages on jobs where the inner math lands just above an integer.
   const rate = ['diamond','grand_manor'].includes(tier) ? BUNDLES_PER_SQ_PREMIUM : BUNDLES_PER_SQ;
-  return Math.ceil(sq * rate * (1 + WASTE));
+  const w = typeof waste === 'number' ? waste : DEFAULT_WASTE;
+  const totalSQ = Math.ceil(sq * (1 + w));
+  return totalSQ * rate;
 }
 
 function computeMaterials(wo){
@@ -181,7 +197,8 @@ function computeMaterials(wo){
   // materially wrong orders (1 roll I&W for an 18.4 SQ job).
   const measurementsMissing = eaves === 0 && rakes === 0 && valleys === 0;
 
-  const shingleBundles = bundlesForShingles(sq, tier);
+  const waste = resolveWaste(wo);
+  const shingleBundles = bundlesForShingles(sq, tier, waste);
   // Starter goes on eaves AND rakes. Ridge cap covers ridges AND hips.
   const ridgeCapBundles = ridge + hips > 0 ? Math.ceil((ridge + hips) / RIDGE_CAP_LF_PER_BUNDLE) : 0;
   const starterBundles = eaves + rakes > 0 ? Math.ceil((eaves + rakes) / STARTER_LF_PER_BUNDLE) : 0;
@@ -198,7 +215,7 @@ function computeMaterials(wo){
   return {
     _measurementsMissing: measurementsMissing,
     shingles: { label: shingleLabel, qty: shingleBundles, unit: 'bundles',
-      note: sq + ' SQ × ' + (tier==='diamond'||tier==='grand_manor'?4:3) + ' bundles/SQ × 1.10 waste' },
+      note: sq + ' SQ × ' + (tier==='diamond'||tier==='grand_manor'?4:3) + ' bundles/SQ × ' + (1 + waste).toFixed(2) + ' waste' },
     ridgeCap: { label: 'Hip and Ridge Caps', qty: ridgeCapBundles, unit: 'bundles',
       note: (ridge + hips) + ' LF (ridges + hips) ÷ 33 LF/bundle' },
     starter: { label: 'Starter Strip', qty: starterBundles, unit: 'bundles',
@@ -380,5 +397,6 @@ loadAll();
 <script src="assets/ryujin-tenant.js"></script>
 <script src="assets/ryujin-persist.js"></script>
 
+<script src="assets/ryujin-chat.js"></script>
 </body>
 </html>

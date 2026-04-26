@@ -73,6 +73,9 @@
   .ry-choice .key{width:22px;height:22px;border-radius:5px;background:rgba(34,211,238,0.12);border:1px solid rgba(34,211,238,0.3);
     display:flex;align-items:center;justify-content:center;font-family:'Orbitron',sans-serif;font-size:0.68em;font-weight:800;color:#22d3ee;flex-shrink:0}
   .ry-choice.dismiss .key{color:#a0b6d6}
+  .ry-choice.ry-priority-high{border-color:rgba(248,113,113,0.4);background:rgba(248,113,113,0.05)}
+  .ry-choice.ry-priority-high:hover{background:rgba(248,113,113,0.12);border-color:rgba(248,113,113,0.6)}
+  .ry-choice.ry-priority-high .key{color:#f87171;background:rgba(248,113,113,0.12);border-color:rgba(248,113,113,0.35)}
 
   .ry-footer{display:flex;gap:6px;padding:10px 12px;border-top:1px solid rgba(34,211,238,0.1);flex-shrink:0;background:rgba(6,10,20,0.4)}
   .ry-input{flex:1;padding:8px 12px;background:rgba(6,10,20,0.6);border:1px solid rgba(34,211,238,0.18);
@@ -162,7 +165,57 @@
     if (!p) return;
     if (show === undefined) show = !p.classList.contains('on');
     p.classList.toggle('on', show);
-    if (show && !historyStack.length) renderState('root');
+    if (show && !historyStack.length) {
+      renderState('root');
+      // First-open priorities pulse — fire-and-forget; don't block the panel.
+      maybeRenderPriorities();
+    }
+  }
+
+  // Fetches /api/chat-priorities once per panel-open (cached behind 60s s-maxage)
+  // and seeds the chat with tappable priority chips. Silent on failure — the
+  // brain is still reachable via free-text.
+  let prioritiesShown = false;
+  async function maybeRenderPriorities(){
+    if (prioritiesShown) return;
+    prioritiesShown = true;
+    try {
+      const r = await fetch('/api/chat-priorities');
+      if (!r.ok) return;
+      const data = await r.json();
+      if (!data.items?.length) return;
+
+      // Wait for the root bubble to land first so this stacks underneath
+      await wait(700);
+      const msgsEl = document.getElementById('ry-msgs');
+      const choicesEl = document.getElementById('ry-choices');
+      if (!msgsEl || !choicesEl) return;
+
+      const sys = document.createElement('div');
+      sys.className = 'ry-bubble sys';
+      sys.textContent = '\u25CA Priority pulse \u00B7 ' + (data.greeting || '');
+      msgsEl.appendChild(sys);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+
+      // Inject priorities as additional choices. Tapping fills the input
+      // with the suggested prompt and submits — same pathway as typed input.
+      data.items.forEach((item, i) => {
+        const btn = document.createElement('button');
+        btn.className = 'ry-choice' + (item.priority === 'high' ? ' ry-priority-high' : '');
+        btn.innerHTML = '<span class="key">\u2192</span><span>' + escapeHtml(item.label) + '</span>';
+        btn.addEventListener('click', () => {
+          const input = document.getElementById('ry-input');
+          if (input) { input.value = item.prompt; sendTyped(); }
+        });
+        choicesEl.appendChild(btn);
+      });
+    } catch (e) {
+      // silent — priorities are an enhancement, not a hard requirement
+    }
+  }
+
+  function escapeHtml(s){
+    return String(s||'').replace(/[&<>"']/g, (c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
 
   async function renderState(stateKey){
@@ -278,25 +331,108 @@
     if (input) input.addEventListener('keydown', e => { if (e.key === 'Enter') sendTyped(); });
   }
 
-  function sendTyped(){
+  // Conversation history for free-text chat with the brain
+  let chatHistory = [];
+
+  async function sendTyped(){
     const input = document.getElementById('ry-input');
     const text = input.value.trim();
     if (!text) return;
     input.value = '';
     const msgsEl = document.getElementById('ry-msgs');
+
+    // User bubble
     const userBubble = document.createElement('div');
     userBubble.className = 'ry-bubble user';
     userBubble.textContent = text;
     msgsEl.appendChild(userBubble);
     msgsEl.scrollTop = msgsEl.scrollHeight;
-    // Stub response — real LLM later
-    setTimeout(() => {
+
+    // Capture PRIOR history (don't include current message — it goes in `message`)
+    const historyToSend = chatHistory.slice(-10);
+    chatHistory.push({ role: 'user', content: text });
+
+    // Typing indicator
+    const typing = document.createElement('div');
+    typing.className = 'ry-typing';
+    typing.innerHTML = '<span></span><span></span><span></span>';
+    msgsEl.appendChild(typing);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+
+    try {
+      const resp = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text, history: historyToSend })
+      });
+      typing.remove();
+
+      if (!resp.ok || !resp.body) {
+        const err = document.createElement('div');
+        err.className = 'ry-bubble dragon';
+        err.textContent = `Signal lost (HTTP ${resp.status}). Try again.`;
+        msgsEl.appendChild(err);
+        return;
+      }
+
       const bubble = document.createElement('div');
       bubble.className = 'ry-bubble dragon';
-      bubble.innerHTML = `Heard you. Free-text commands are coming — for now, pick one of the options below or ask me to navigate somewhere specific.`;
       msgsEl.appendChild(bubble);
-      msgsEl.scrollTop = msgsEl.scrollHeight;
-    }, 600);
+      let assembled = '';
+      let toolBubble = null;
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const raw = line.slice(6).trim();
+          if (!raw) continue;
+          let data;
+          try { data = JSON.parse(raw); } catch { continue; }
+
+          if (data.text) {
+            assembled += data.text;
+            bubble.textContent = assembled;
+          } else if (data.tool_start) {
+            toolBubble = document.createElement('div');
+            toolBubble.className = 'ry-bubble sys';
+            toolBubble.textContent = '◊ ' + (data.tool_start.label || 'Running tool...');
+            msgsEl.insertBefore(toolBubble, bubble);
+          } else if (data.tool_end) {
+            if (toolBubble) {
+              if (data.tool_end.status === 'error') {
+                toolBubble.textContent = '⚠ ' + toolBubble.textContent.replace(/^◊ /, '') + ' (failed)';
+              } else {
+                toolBubble.remove();
+                toolBubble = null;
+              }
+            }
+          }
+          msgsEl.scrollTop = msgsEl.scrollHeight;
+        }
+      }
+
+      if (assembled) {
+        chatHistory.push({ role: 'assistant', content: assembled });
+      } else {
+        bubble.textContent = 'No response.';
+      }
+    } catch (e) {
+      typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ry-bubble dragon';
+      err.textContent = 'Connection interrupted. Standing by.';
+      msgsEl.appendChild(err);
+    }
   }
 
   function togglePanelSafe(show){
@@ -308,7 +444,17 @@
     togglePanel(show);
   }
 
+  // Default greeting for pages that don't define a sector menu — the brain
+  // takes over once the user starts typing.
+  const DEFAULT_ROOT = {
+    msg: "I'm Ryujin. Ask me anything — quotes, tickets, leads, ads, today's priorities.",
+    choices: []
+  };
+
   RY.init = function(cfg){
+    cfg = cfg || {};
+    if (!cfg.root) cfg.root = DEFAULT_ROOT;
+    if (!cfg.states) cfg.states = {};
     config = cfg;
     historyStack = [];
     injectStyles();
@@ -324,6 +470,15 @@
       setTimeout(() => togglePanel(true), 900);
     }
   };
+
+  // Auto-init fallback: if a page includes this script but never calls
+  // Ryujin.init() (e.g. mounted globally on operational pages), bootstrap
+  // a minimal chat fab so the brain is one tap away from anywhere.
+  document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => {
+      if (!config) RY.init({ sector: document.body.dataset.rySector || 'HUB', autoOpen: false });
+    }, 200);
+  });
 
   RY.open = () => togglePanelSafe(true);
   RY.close = () => togglePanelSafe(false);

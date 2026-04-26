@@ -15,6 +15,131 @@
 
 import { supabaseAdmin } from '../lib/supabase.js';
 import { put } from '@vercel/blob';
+import { gmailSend } from '../lib/google.js';
+
+const NOTIFY_EMAIL = (process.env.NOTIFY_EMAIL || 'mackenzie.m@plusultraroofing.com').trim();
+const GHL_BASE = 'https://services.leadconnectorhq.com';
+const GHL_TOKEN = (process.env.GHL_TOKEN || '').trim();
+const GHL_VERSION = '2021-07-28';
+
+async function ghlCall(path, { method = 'GET', body = null } = {}) {
+  if (!GHL_TOKEN) throw new Error('GHL_TOKEN not configured');
+  const headers = {
+    'Authorization': `Bearer ${GHL_TOKEN}`,
+    'Version': GHL_VERSION,
+    'Accept': 'application/json'
+  };
+  const opts = { method, headers };
+  if (body) {
+    headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
+  }
+  const r = await fetch(GHL_BASE + path, opts);
+  const text = await r.text();
+  if (!r.ok) throw new Error(`GHL ${r.status}: ${text.substring(0, 400)}`);
+  try { return JSON.parse(text); } catch { return { raw: text }; }
+}
+
+// Stage IDs per pipeline — map a pipelineId to its "accepted/signed" equivalent.
+// Mirrors Shenron's ghl.js PIPELINE_STAGES, filtered to the terminal-success stage
+// for each pipeline. Update here if GHL stages are reshuffled.
+const ACCEPTED_STAGE_BY_PIPELINE = {
+  'l2xOb5ApmVbAWADKtra5': 'f872cb17-7e0d-47ca-b1b3-f2bbd38274d9', // Main → Client Signed
+  'jTAc7D9RMHBb3Gzb5bQz': 'aabfe851-86ff-461d-88d3-b6cbad34de56', // Darcy → Contract Signed
+  'OF6SJPdnmQS7KcgRffrb': '25b51d70-231f-433b-a545-d885b5a7fd6a', // Mack's → Approved
+  'ahWs3qwCDkByRb1e8QSM': 'eb0a8ca2-b9c4-44b7-b0a6-fa0c1287217f'  // Proposal Sent → Approved
+};
+
+function fmtMoney(n) {
+  if (n == null) return '—';
+  return '$' + Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
+}
+
+async function notifyMackenzie({ est, tier, financing, customer, rep, signatureUrl, tierTotalWithTax, acceptedAt, refId, shareToken }) {
+  const proposalUrl = `https://ryujin-os.vercel.app/proposal-client.html?share=${encodeURIComponent(shareToken || '')}`;
+  const backofficeUrl = `https://ryujin-os.vercel.app/sales-proposal.html?estimate_id=${encodeURIComponent(est.id)}`;
+
+  const subject = `PROPOSAL ACCEPTED · ${customer?.name || 'Customer'} · ${tier.name || tier.id} · ${fmtMoney(tierTotalWithTax)}`;
+  const lines = [
+    `${customer?.name || 'A customer'} just accepted proposal ${refId || ('PU-' + (est.estimate_number || ''))}.`,
+    ``,
+    `Package: ${tier.name || tier.id}${tier.sub ? ' · ' + tier.sub : ''}`,
+    `Pre-tax: ${fmtMoney(tier.total)}`,
+    `With HST:  ${fmtMoney(tierTotalWithTax)}`,
+    financing?.monthly
+      ? `Financing: $${financing.monthly}/mo over ${(financing.term || 120) / 12} years`
+      : `Paying in full`,
+    ``,
+    `Customer: ${customer?.name || '—'}`,
+    `Email:    ${customer?.email || '—'}`,
+    `Phone:    ${customer?.phone || '—'}`,
+    `Rep:      ${rep?.name || '—'}`,
+    `Signed:   ${acceptedAt || new Date().toISOString()}`,
+    signatureUrl ? `Signature: ${signatureUrl}` : '',
+    ``,
+    `Client view: ${proposalUrl}`,
+    `Back office: ${backofficeUrl}`,
+    ``,
+    `— Ryujin OS`
+  ].filter(Boolean);
+
+  return gmailSend(NOTIFY_EMAIL, subject, lines.join('\n'));
+}
+
+async function fireGhlUpdates({ est, tier, customer, tierTotalWithTax, signatureUrl }) {
+  const oppId = est.ghl_opportunity_id;
+  const contactIdFromEst = est.customer?.ghl_contact_id || null;
+  if (!oppId && !contactIdFromEst) return { skipped: 'no_ghl_ids_on_estimate' };
+
+  const results = {};
+  let pipelineId = null;
+  let contactId = contactIdFromEst;
+
+  // 1. GET the current opp to learn its pipelineId + contactId
+  if (oppId) {
+    try {
+      const data = await ghlCall(`/opportunities/${oppId}`);
+      const opp = data?.opportunity || data;
+      pipelineId = opp?.pipelineId || null;
+      contactId = contactId || opp?.contactId || null;
+    } catch (e) {
+      results.fetchOpp = 'error_' + (e.message || 'unknown');
+    }
+  }
+
+  // 2. Move opp to the accepted/signed stage for its pipeline
+  const targetStageId = pipelineId ? ACCEPTED_STAGE_BY_PIPELINE[pipelineId] : null;
+  if (oppId && targetStageId) {
+    try {
+      await ghlCall(`/opportunities/${oppId}`, {
+        method: 'PUT',
+        body: { pipelineStageId: targetStageId, status: 'won' }
+      });
+      results.moveStage = 'ok';
+    } catch (e) { results.moveStage = 'error_' + (e.message || 'unknown').substring(0, 120); }
+  } else if (oppId) {
+    results.moveStage = `no_mapped_stage_for_pipeline:${pipelineId || 'unknown'}`;
+  }
+
+  // 3. Drop a note on the contact record for clean audit trail in GHL
+  if (contactId) {
+    const noteBody = [
+      `PROPOSAL ACCEPTED — ${tier.name || tier.id}${tier.sub ? ' · ' + tier.sub : ''}`,
+      `Total w/ HST: ${fmtMoney(tierTotalWithTax)}`,
+      `Customer: ${customer?.name || '—'}`,
+      signatureUrl ? `Signature: ${signatureUrl}` : ''
+    ].filter(Boolean).join('\n');
+    try {
+      await ghlCall(`/contacts/${contactId}/notes`, {
+        method: 'POST',
+        body: { body: noteBody }
+      });
+      results.contactNote = 'ok';
+    } catch (e) { results.contactNote = 'error_' + (e.message || 'unknown').substring(0, 120); }
+  }
+
+  return results;
+}
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -33,7 +158,7 @@ export default async function handler(req, res) {
   // 1. Resolve estimate by share token (authoritative — do not trust estimateId from client alone)
   const query = supabaseAdmin
     .from('estimates')
-    .select('id, tenant_id, estimate_number, customer_id, status, selected_package, notes, calculated_packages, ghl_opportunity_id')
+    .select('id, tenant_id, estimate_number, customer_id, status, selected_package, notes, calculated_packages, ghl_opportunity_id, share_token, customer:customers(full_name, email, phone, ghl_contact_id)')
     .limit(1);
   const lookup = shareToken
     ? await query.eq('share_token', shareToken).maybeSingle()
@@ -113,8 +238,30 @@ export default async function handler(req, res) {
     if (r.error) console.error('[proposal-accept] activity_log insert failed', r.error);
   });
 
-  // 5. Success — Shenron cron jobs will pick this up in the next snapshot refresh.
-  //    (A future enhancement could fire an SMS to Mackenzie via Automator or drop a GHL note here.)
+  // 5. Fire-and-forget notifications — never block the success response on these.
+  //    They're non-critical: if email or GHL calls fail, the acceptance is still
+  //    recorded and Mackenzie will still see it in the next snapshot refresh.
+  const customerPayload = {
+    name: customer?.name || est.customer?.full_name || '',
+    email: customer?.email || est.customer?.email || '',
+    phone: customer?.phone || est.customer?.phone || ''
+  };
+
+  notifyMackenzie({
+    est, tier, financing, customer: customerPayload, rep,
+    signatureUrl, tierTotalWithTax,
+    acceptedAt: acceptedAt || now,
+    refId, shareToken: est.share_token
+  }).catch(e => console.error('[proposal-accept] notify email failed', e?.message));
+
+  fireGhlUpdates({
+    est, tier,
+    customer: customerPayload,
+    tierTotalWithTax,
+    signatureUrl
+  }).then(r => console.log('[proposal-accept] ghl results', r))
+    .catch(e => console.error('[proposal-accept] ghl update failed', e?.message));
+
   return res.status(200).json({
     ok: true,
     estimateId: est.id,

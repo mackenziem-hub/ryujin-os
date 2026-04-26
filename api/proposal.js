@@ -59,11 +59,10 @@ const REPS = {
     phone: '(506) 540-1052',
     email: 'mackenzie.m@plusultraroofing.com',
     photo: `${BRAND_BASE}/rep-mackenzie.png`,
-    // Mackenzie's own intro video hasn't been recorded yet. Leaving this null so
-    // the frontend shows the generic Plus Ultra company video (same file Darcy
-    // uses) without falsely personalising the headline as "Meet Mackenzie".
-    // Replace this URL once he records a dedicated intro.
-    introVideo: null,
+    introVideo: 'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/69e9ed12a48992f689d9d242.mp4',
+    introVideos: {
+      shingle: 'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/69e9ed12a48992f689d9d242.mp4'
+    },
     bio: "Mackenzie is the owner of Plus Ultra Roofing — a third-generation roofing company serving Greater Moncton and beyond. He grew up on job sites, runs the crews hands-on, and signs his own name to every proposal he writes. Tech-forward, certification-backed, and committed to doing every job the way he'd want it done on his own home."
   },
   darcy: {
@@ -74,6 +73,9 @@ const REPS = {
     email: 'plusultraroofinginfo@gmail.com',
     photo: `${BRAND_BASE}/rep-darcy.jpg`,
     introVideo: 'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/69c29e439728a19e9eb265cd.mp4',
+    introVideos: {
+      shingle: 'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/69c29e439728a19e9eb265cd.mp4'
+    },
     bio: "Darcy has been in the trades for over 20 years, helping homeowners plan and price the right roof for their home. He's part of the Plus Ultra Roofing family and is here to give expert advice on any and all of your roofing needs. All you have to do is ask."
   }
 };
@@ -121,10 +123,9 @@ const REVIEW_STATS = {
 
 const GALLERY = [
   { img: `${BRAND_BASE}/gallery/01-hero-lakeside-landmark.jpg`, loc: 'MONCTON · LAKESIDE', desc: 'CertainTeed Landmark · full reroof · drone' },
-  { img: `${BRAND_BASE}/gallery/02-topdown-architectural.jpg`, loc: 'RIVERVIEW · 2025',    desc: 'Complex architectural roof · top-down drone' },
+  { img: `${BRAND_BASE}/gallery/02-topdown-architectural.jpg`, loc: 'MONCTON · LAKESIDE', desc: 'Complex architectural roof · top-down drone' },
   { img: `${BRAND_BASE}/gallery/07-valley-detail.jpg`,          loc: 'RIVERVIEW · 2025',    desc: 'Woven valley detail · architectural shingle' },
   { img: `${BRAND_BASE}/gallery/03-crew-in-action.jpg`,         loc: 'DIEPPE · 2025',       desc: 'Full tear-off · safety-harnessed crew' },
-  { img: `${BRAND_BASE}/gallery/04-job-complete.jpg`,           loc: 'MONCTON · 2025',      desc: 'Job complete · debris staged for haul' },
   { img: `${BRAND_BASE}/gallery/08-new-construction-2.jpg`,     loc: 'MONCTON · 2025',      desc: 'New build · crew installing deck + underlayment' },
   { img: `${BRAND_BASE}/gallery/05-new-construction.jpg`,       loc: 'RIVERVIEW · 2025',    desc: 'New-construction install' },
   { img: `${BRAND_BASE}/gallery/06-drone-completion.jpg`,       loc: 'MONCTON · 2025',      desc: 'Drone completion shot' }
@@ -134,9 +135,18 @@ const PU_DEFAULT_MEDIA = {
   beforeImage: `${BRAND_BASE}/gallery/03-crew-in-action.jpg`,
   afterImage:  `${BRAND_BASE}/gallery/04-job-complete.jpg`,
   videoCover:  `${BRAND_BASE}/gallery/01-hero-lakeside-landmark.jpg`,
-  videoUrl:    REPS.darcy.introVideo,
+  videoUrl:    REPS.mackenzie.introVideo,
   gallery:     GALLERY
 };
+
+function resolveIntroVideo(rep, systemType) {
+  const sys = String(systemType || 'shingle').toLowerCase();
+  const key = sys.includes('metal') ? 'metal'
+            : sys.includes('flat') ? 'flat'
+            : sys.includes('shell') || sys.includes('exterior') ? 'exterior'
+            : 'shingle';
+  return (rep.introVideos && rep.introVideos[key]) || rep.introVideo || PU_DEFAULT_MEDIA.videoUrl;
+}
 
 const TENANT_BRANDING_DEFAULT = {
   companyName: 'Plus Ultra Roofing',
@@ -309,7 +319,7 @@ export default async function handler(req, res) {
       ...PU_DEFAULT_MEDIA,
       beforeImage: beforePhoto?.url || PU_DEFAULT_MEDIA.beforeImage,
       afterImage: afterPhoto?.url || PU_DEFAULT_MEDIA.afterImage,
-      videoUrl: rep.introVideo || PU_DEFAULT_MEDIA.videoUrl,
+      videoUrl: resolveIntroVideo(rep, est.proposal_mode || 'shingle'),
       gallery: customGallery.length ? [...customGallery, ...GALLERY].slice(0, 8) : GALLERY
     },
     tiers: {
