@@ -104,7 +104,11 @@ async function handler(req, res) {
     try {
       const ghlBody = buildGhlPost({ mediaUrl, mediaType, scheduledAt, post, accountRow, userId });
       const ghlResp = await createSocialPost(ghlBody);
-      const ghlPostId = ghlResp?.post?.id || ghlResp?.id || ghlResp?.data?.id || null;
+      const ghlPostId = ghlResp?.results?.post?.id
+        || ghlResp?.post?.id
+        || ghlResp?.id
+        || ghlResp?.data?.id
+        || null;
       await supabaseAdmin.from('scheduled_posts')
         .update({
           status: 'scheduled',

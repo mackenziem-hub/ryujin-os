@@ -210,6 +210,12 @@ async function publishClip(clip) {
     return { ...result, status: 'error', error: e.message };
   }
 
+  // Photo clips can't post to TikTok (video-only platform). Filter rather
+  // than fan out and let GHL reject it.
+  if (clip.is_photo) {
+    accounts = accounts.filter((a) => a.platform !== 'tiktok');
+  }
+
   if (!accounts.length) {
     await supabaseAdmin.from('marketing_clips').update({
       status: 'failed',
@@ -283,7 +289,11 @@ async function publishClip(clip) {
         userId,
       });
       const ghlResp = await createSocialPost(ghlBody);
-      const ghlPostId = ghlResp?.post?.id || ghlResp?.id || ghlResp?.data?.id || null;
+      const ghlPostId = ghlResp?.results?.post?.id
+        || ghlResp?.post?.id
+        || ghlResp?.id
+        || ghlResp?.data?.id
+        || null;
       await supabaseAdmin.from('scheduled_posts')
         .update({
           status: 'scheduled',
