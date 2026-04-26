@@ -289,7 +289,10 @@ async function publishClip(clip) {
         userId,
       });
       const ghlResp = await createSocialPost(ghlBody);
-      const ghlPostId = ghlResp?.results?.post?.id
+      // GHL returns the post id as Mongo-style `_id` under results.post
+      const ghlPostId = ghlResp?.results?.post?._id
+        || ghlResp?.results?.post?.id
+        || ghlResp?.post?._id
         || ghlResp?.post?.id
         || ghlResp?.id
         || ghlResp?.data?.id
