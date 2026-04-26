@@ -33,77 +33,85 @@ async function fetchSnapshot() {
   }
 }
 
+// Strip the leading emoji + spaces so labels render cleanly in the chat chip
+function cleanAction(s) {
+  return String(s || '').replace(/^[\p{Extended_Pictographic}\u200d\uFE0F\s]+/u, '').trim();
+}
+
 function compose(snapshot) {
+  const sec = snapshot?.sections || {};
   const items = [];
   const greetParts = [];
 
-  // 1. Overdue sales tasks (Shenron flags these as 🔴 alerts)
-  const alerts = snapshot?.sales?.alerts || snapshot?.alerts || [];
-  for (const a of alerts) {
-    const text = typeof a === 'string' ? a : (a.text || a.message || '');
-    if (!text) continue;
-    if (/overdue/i.test(text)) {
+  // Pick the freshest briefing — morning runs at 7AM AT, evening at 5PM AT.
+  // Use whichever has a more recent timestamp.
+  const morn = sec.briefing_morning;
+  const eve = sec.briefing_evening;
+  const briefing = (morn?.timestamp && eve?.timestamp)
+    ? (new Date(morn.timestamp) > new Date(eve.timestamp) ? morn : eve)
+    : (morn || eve);
+
+  const top3 = briefing?.top3;
+  if (Array.isArray(top3) && top3.length) {
+    for (const t of top3) {
+      const label = cleanAction(t.action).slice(0, 90);
+      if (!label) continue;
+      const promptParts = [t.action];
+      if (t.context) promptParts.push('Context: ' + String(t.context).slice(0, 400));
+      promptParts.push('What should I do about this right now?');
       items.push({
-        label: 'Review overdue: ' + text.replace(/^[^a-z0-9]+/i, '').slice(0, 90),
-        prompt: 'Tell me what to do about the overdue sales task: ' + text,
-        priority: 'high',
+        label,
+        prompt: promptParts.join('\n\n'),
+        priority: t.priority === 'top_priority' ? 'high' : 'medium',
       });
-      if (items.length >= 5) break;
     }
   }
 
-  // 2. Top open deal — quote-sent state, biggest dollar amount
-  const topDeal = snapshot?.sales?.topDeal || snapshot?.pipeline?.topDeal;
-  if (topDeal?.name) {
-    const amt = topDeal.value ? '$' + Number(topDeal.value).toLocaleString() : '';
-    items.push({
-      label: `Nudge top deal: ${topDeal.name} ${amt}`.trim(),
-      prompt: `What's the latest on ${topDeal.name}'s ${amt} quote? Help me draft the next nudge.`,
-      priority: 'medium',
-    });
-    if (amt) greetParts.push(`top deal ${amt}`);
+  // Greeting line — short, factual, no questions.
+  const overdueTickets = sec.tickets?.overdueCount;
+  const overdueTasks = sec.salesTasks?.overdue;
+  const stale = sec.leads?.total && sec.leads?.thisWeek != null
+    ? Math.max(0, sec.leads.total - sec.leads.thisWeek)
+    : null;
+
+  if (overdueTickets) greetParts.push(`${overdueTickets} overdue tickets`);
+  if (overdueTasks) greetParts.push(`${overdueTasks} overdue task${overdueTasks > 1 ? 's' : ''}`);
+  if (sec.pipeline?.length) {
+    // Find biggest pipeline deal by .value
+    const big = [...sec.pipeline].sort((a, b) => (b.value || 0) - (a.value || 0))[0];
+    if (big?.value > 0) greetParts.push(`top deal $${Math.round(big.value / 1000)}K`);
   }
 
-  // 3. Stale leads count
-  const staleCount = snapshot?.sales?.staleLeadsCount ?? snapshot?.leads?.stale?.length;
-  if (staleCount && staleCount > 0) {
-    items.push({
-      label: `Triage ${staleCount} stale leads`,
-      prompt: `Show me the top 5 stale leads I should re-engage today.`,
-      priority: 'medium',
-    });
-    greetParts.push(`${staleCount} stale leads`);
+  // If briefing didn't surface anything, hand-roll fallback items so the chat
+  // is never empty.
+  if (!items.length) {
+    if (overdueTasks) {
+      items.push({
+        label: `Review ${overdueTasks} overdue sales task${overdueTasks > 1 ? 's' : ''}`,
+        prompt: 'Show me my overdue sales tasks and recommend the next move on each.',
+        priority: 'high',
+      });
+    }
+    if (overdueTickets) {
+      items.push({
+        label: `${overdueTickets} overdue crew ticket${overdueTickets > 1 ? 's' : ''}`,
+        prompt: 'List my overdue Action Board tickets and recommend who to assign them to.',
+        priority: 'high',
+      });
+    }
+    if (stale && stale > 5) {
+      items.push({
+        label: `Triage ${stale} stale leads`,
+        prompt: 'Show me the top 5 stale leads I should re-engage today.',
+        priority: 'medium',
+      });
+    }
   }
 
-  // 4. Overdue tickets (crew side)
-  const overdueTickets = snapshot?.crew?.overdue ?? snapshot?.tickets?.overdue;
-  if (overdueTickets && overdueTickets > 0) {
-    items.push({
-      label: `${overdueTickets} overdue tickets on the Action Board`,
-      prompt: `List my overdue field tickets and recommend who to assign them to.`,
-      priority: 'high',
-    });
-    greetParts.unshift(`${overdueTickets} overdue`);
-  }
-
-  // 5. Recent inbound leads — possible "new lead came in" prompts
-  const newLeads = snapshot?.leads?.newToday ?? snapshot?.communications?.newConversations;
-  if (newLeads && newLeads > 0 && items.length < 5) {
-    items.push({
-      label: `${newLeads} new conversations to review`,
-      prompt: `Give me a one-line summary of each new lead from today.`,
-      priority: 'medium',
-    });
-  }
-
-  // Sort: high priority first, cap at 4 items so the chat panel doesn't choke
-  items.sort((a, b) => (a.priority === 'high' ? -1 : 1) - (b.priority === 'high' ? -1 : 1));
+  // Cap at 4 chips so the chat panel doesn't get cluttered.
   const trimmed = items.slice(0, 4);
 
-  const greeting = greetParts.length
-    ? greetParts.join(' · ')
-    : 'No fires. Standing by.';
-
+  const greeting = greetParts.length ? greetParts.join(' · ') : 'No fires. Standing by.';
   return { greeting, items: trimmed, timestamp: new Date().toISOString() };
 }
 
