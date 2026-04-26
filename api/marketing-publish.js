@@ -238,15 +238,22 @@ async function publishClip(clip) {
   try { userId = await getDefaultPosterUserId(); }
   catch (e) { console.error('[marketing-publish] userId fetch failed:', e.message); }
 
-  // Approved captions from the review flow (one per brand). When present
-  // we use them verbatim — the user already saw and approved this text.
-  // Falls back to AI auto-gen for any brand without an override.
+  // Approved captions from the review flow (one per brand). The publisher
+  // REFUSES to fan out without explicit approval — Mac's hard rule after
+  // the Apr 26 incident where auto-gen captions went live unapproved.
   const overrides = (clip.caption_overrides && typeof clip.caption_overrides === 'object')
     ? clip.caption_overrides : {};
-  const brandsNeedingAi = brands.filter((b) => !overrides[b.id]?.trim?.());
-  const captionsByBrand = brandsNeedingAi.length
-    ? await buildBrandCaptions(clip, brandsNeedingAi, accounts)
-    : new Map();
+  const brandsMissingApproval = brands.filter((b) => !overrides[b.id]?.trim?.());
+  if (brandsMissingApproval.length) {
+    const names = brandsMissingApproval.map((b) => b.slug).join(', ');
+    await supabaseAdmin.from('marketing_clips').update({
+      status: 'failed',
+      error_message: `No approved caption for brand(s): ${names}. Re-upload via the capture page so suggestions go through review before publish.`,
+    }).eq('id', clip.id);
+    return { ...result, status: 'failed', error: `Missing approved captions: ${names}` };
+  }
+  // All brands have approved overrides — no AI auto-gen needed.
+  const captionsByBrand = new Map();
 
   // Per-platform truncation for approved overrides. GHL/each platform has
   // its own cap; we trim cleanly on word boundary if the brand caption is
