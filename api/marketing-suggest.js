@@ -30,12 +30,23 @@ const REQUEST_TIMEOUT_MS = 25000;
 const SYSTEM_PROMPT = `You write social media captions for small business posts. Your job:
 - Read the brand voice + the user's note about the photo
 - If a photo is attached, look at it and describe what you actually see (selfie, roof job, crew, hardware, etc.)
-- Write ONE simple, fresh-feeling caption (1-3 sentences, ~120-300 chars)
+- Write ONE simple, fresh-feeling caption (1-3 sentences, ~80-220 chars). Short wins.
 - Tone matches the brand voice exactly. Do not invent corporate filler.
-- Add 0-3 relevant hashtags at the end if they feel natural — skip if they don't
-- Never hashtag every word. Never add aggressive CTAs. Never sound like a press release.
-- The user's note is the seed — riff on it, don't replace it with your own message
-- Reply with ONLY the caption text. No JSON, no preamble, no "here's a caption:".`;
+- The user's note is the seed. Riff on it. Do not replace it with your own message.
+- Reply with ONLY the caption text. No JSON, no preamble, no "here's a caption:".
+
+Style rules (mandatory):
+- NO em-dashes (—). Use a comma, period, or "and" instead. Em-dash use is a hard fail.
+- Contractions always (don't, we're, it's, that's). Never spell out "do not", "we are".
+- No aggressive CTAs. No "DM us!", no "Hit the link!", no all-caps yelling.
+- No clichéd marketing phrases ("game-changer", "next-level", "elevate", "unleash").
+- No hashtag in the middle of a sentence. Hashtags only at the end if at all.
+
+Hashtag rules (strict):
+- Use ONLY hashtags from the brand's provided list. Do NOT invent new ones.
+- Maximum 2 hashtags. Often zero is the right answer for fresh content.
+- If the brand provides no hashtags, use no hashtags.
+- Never hashtag a place name you weren't given (no #RiverviewNB, #MonctonNB, etc. unless those exact tags are in the brand's list).`;
 
 function buildUserMessage({ brand, userNote, isPhoto, sourceUrl, sourceMimeType }) {
   const brandLines = [
@@ -92,8 +103,7 @@ async function suggestForBrand({ brand, userNote, isPhoto, sourceUrl, sourceMime
     const data = await r.json();
     const text = data?.content?.[0]?.text?.trim() || '';
     if (!text) throw new Error('Empty caption');
-    // Strip accidental quotes/fences
-    return text.replace(/^["'`]|["'`]$/g, '').replace(/^```[\w]*\n?|\n?```$/g, '').trim();
+    return scrubCaption(text, brand);
   } finally {
     clearTimeout(t);
   }
@@ -102,6 +112,35 @@ async function suggestForBrand({ brand, userNote, isPhoto, sourceUrl, sourceMime
 function fallbackCaption(brand, userNote) {
   if (userNote) return userNote;
   return brand.cta || `Latest from ${brand.name}.`;
+}
+
+// Post-processing: enforce style rules and strip hallucinated hashtags.
+// Belt-and-suspenders for the system prompt — if the LLM slips, we still
+// ship clean text.
+function scrubCaption(text, brand) {
+  let out = String(text || '').trim();
+
+  // Strip wrapping quotes/fences
+  out = out.replace(/^["'`]|["'`]$/g, '').replace(/^```[\w]*\n?|\n?```$/g, '').trim();
+
+  // Em-dashes → comma+space. Catches both real em-dash and the UTF-8/Win-1252
+  // mojibake form that sometimes sneaks through ("â€"").
+  out = out.replace(/\u2014|\u2013/g, ', ');     // em-dash, en-dash
+  out = out.replace(/\u00E2\u20AC\u201D/g, ', '); // mojibake em-dash
+  out = out.replace(/\u00E2\u20AC\u201C/g, ', '); // mojibake en-dash
+  out = out.replace(/  +/g, ' ').replace(/ ,/g, ',').replace(/,,/g, ',').trim();
+
+  // Hashtag whitelist — keep only ones in the brand's provided list (case-insensitive).
+  // Strip any others the model invented (e.g. fake place names).
+  const allowed = new Set((brand?.hashtags || []).map((t) => String(t).replace(/^#/, '').toLowerCase()));
+  out = out.replace(/#([\w\d_]+)/g, (m, tag) => {
+    return allowed.has(tag.toLowerCase()) ? '#' + tag : '';
+  });
+
+  // Tidy whitespace from removed tags
+  out = out.replace(/  +/g, ' ').replace(/ \./g, '.').replace(/ ,/g, ',').trim();
+
+  return out;
 }
 
 async function handler(req, res) {
