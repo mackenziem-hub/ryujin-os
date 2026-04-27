@@ -1371,37 +1371,36 @@ function renderTiers(){
   const grid = document.getElementById('tiersGrid');
   if (!state.tierId) {
     const rec = DATA.scope && DATA.scope.recommended;
-    // Skip below-floor tiers when picking a default — never auto-select a money-loser
-    const candidates = DATA.internal ? list.filter(t => t.floorCleared !== false) : list;
-    const pool = candidates.length ? candidates : list;
-    state.tierId = (pool.find(t => t.id === rec) || pool[1] || pool[0] || {}).id;
+    state.tierId = (list.find(t => t.id === rec) || list[1] || list[0] || {}).id;
   }
   grid.innerHTML = list.map(t => {
     const total = Math.round(t.total || 0);
     const monthly = financeItMonthly(total, 120);
     const on = t.id === state.tierId ? 'on' : '';
-    const belowFloor = DATA.internal && t.floorCleared === false;
-    const cls = ['tier', on, belowFloor ? 'below-floor' : ''].filter(Boolean).join(' ');
+    // Phase 4 (Apr 27): only flag a tier as "below breakeven" when the engine
+    // says so — i.e. a custom multiplier under min_custom_multiplier (default 1.35).
+    // Internal-only display. SOP multipliers (1.47/1.52/1.58) never trip this.
+    const belowBE = DATA.internal && t.belowBreakeven === true;
+    const cls = ['tier', on, belowBE ? 'below-floor' : ''].filter(Boolean).join(' ');
     const name = t.name || '';
     const sub = t.sub ? `<div class="sub">${t.sub}</div>` : '';
-    // Internal-only: render the floor warning for tiers under the floor.
-    // Public share URL never sees this block (DATA.internal is false).
-    const floorBlock = belowFloor
+    // Internal-only diagnostic block: SOP profit + real cash net per pricing_formula_v2.md.
+    const sopBlock = DATA.internal && t.sopProfit != null
       ? `<div class="tier-floor-warning">
-           <b>BELOW FLOOR</b> · ${t.realNetMargin || ''} real net · $${Number(t.macNetPerWorkday || 0).toLocaleString()}/day vs $${Number(t.minNetPerWorkday || 800).toLocaleString()} target<br>
-           Recommended min sell: <b>$${Number(t.recommendedMinSell || 0).toLocaleString()}</b>
+           SOP profit: <b>$${Number(t.sopProfit || 0).toLocaleString()}</b> · Real cash net: <b>$${Number(t.realCashNet || 0).toLocaleString()}</b> (${t.realCashNetMargin || ''})
+           ${belowBE ? `<br><b>BELOW BREAKEVEN</b>: ${t.breakevenWarning || ''}` : ''}
          </div>`
       : '';
     return `
       <div class="${cls}" onclick="pickTier('${t.id}')">
-        <div class="tag">${t.tag || ''}${belowFloor ? ' · BELOW FLOOR' : ''}</div>
+        <div class="tag">${t.tag || ''}${belowBE ? ' · BELOW BREAKEVEN' : ''}</div>
         <div class="name">${name}</div>
         ${sub}
         <div class="desc">${t.desc || ''}</div>
         <div class="price">${money(total)}<small>+ HST</small></div>
         <div class="fin">or <b>${money(monthly)}/mo</b> via FinanceIt (10-yr)</div>
         <ul>${(t.perks || []).map(p => `<li>${p}</li>`).join('')}</ul>
-        ${floorBlock}
+        ${sopBlock}
         <button class="pick-btn" type="button" onclick="event.stopPropagation();pickTier('${t.id}')">${on ? 'Selected' : 'Choose ' + name}</button>
       </div>
     `;
