@@ -1,275 +1,203 @@
-# Session notes — 2026-04-24 (most recent — read this first)
+# Session notes — 2026-04-27 (PRICING ENGINE PARITY + UPGRADES UI)
 
-Mac flagged 95 Cornhill's material order was wrong (4 sticks drip edge, 1 roll I&W for an 18.4 SQ job). Fixed the crew-side material engine + added a durable place to persist edge measurements on work orders. **Code is done locally, three unblockers remain.**
+Three-part audit on the Ryujin pricing engine after multiplier revert. Engine
+itself is at parity with v1 SOP; the gap was in the chat-tool field plumbing
+and a missing UI affordance for "while we're already here" upsells.
 
-## Three unblockers before 95 Cornhill regenerates
+## Part 1 — Engine accuracy spot-check
 
-1. **Run `schema/migration_015_workorder_measurements.sql` in Supabase SQL editor** — idempotent ALTER TABLE ADD COLUMN IF NOT EXISTS on `workorders`. Without this, PUTs to `/api/workorders` with edge LF fields will fail with "column does not exist".
-2. **Deploy** — `vercel --prod` from repo root, or push to `main` and let auto-deploy pick it up. Other WIP on `main` that predates this session (`api/chat.js`, `api/proposal-pdf.js`, `api/proposal-timeline.js`, `lib/google.js`, `public/content/`, modifications to `api/estimate-photos.js` / `api/proposal-accept.js` / `api/proposal.js` / `public/marketing-creatives.html` / `public/proposal-history.html` / `public/sales-client.html` / `public/assets/ryujin-chat.js` / `vercel.json` / `package-lock.json`) will ride along in a push — separate WIP, not from this session.
-3. **EagleView measurements for WO-11 (95 Cornhill)** — file is at `OneDrive/Desktop/claude review/95 Cornhill st.PDF` (report 70584009, Bid Perfect 18.4 SQ, 24 facets). Pulling eaves / rakes / valleys / ridges / hips / walls LF, then one `PUT /api/workorders` on id `b472365f-957b-4128-9720-445d14f575a3` regenerates the material order. WO already has: customer Donna Boosamra, 18.4 SQ, Gold / Landmark Moire Black, pitch mix (73% @ 8/12 dominant), 2 est pipes + 1 hydro mast, starts 2026-04-24 with Ryan Atlantic.
+**42 Patricia (#25, Godbout)** — inputs from estimate row 523d150e:
+3454 sqft / 8/12 / complex / eaves 200 / rakes 150 / ridges 130 / hips 10 /
+valleys 110 / pipes 3 / vents 2 / distance 0. Live engine returns
+**Platinum $31,100** (mult 1.52, hardCost $20,454.65, 34.2% gross). The
+$42,550 figure cited in Apr 24 evening notes was at the temporarily-bumped
+2.08 multiplier — that revert (commit prior to this session) put us back
+at $31,100. Persisted `calculated_packages` in the proposal still shows the
+older $27,750 (different scope_template at the time it was saved). Engine
+math is internally consistent. **PASS.**
 
-## Root cause (confirmed from live DB)
+**95 Cornhill (#24, Boosamra)** — inputs from estimate row 6339794a:
+3400 sqft / 7/12-9/12 / simple / eaves 220 / rakes 140 / ridges 50 /
+hips 80 / valleys 35 / pipes 1 / vents 4 / distance 0. Engine Gold
+$23,200 (mult 1.47, hardCost $15,786.64). Estimator OS comparator returned
+Gold $19,336 (hardCost $12,890.11). Delta $3,864 retail. Root cause:
+**Ryujin v3 applies the waste factor to material counts** — 132 shingle
+bundles vs EOS 102 (34 SQ × 3 baseline). v3 also has higher material unit
+costs after merchant DB lookup ($49 shingle vs older flat). This is a
+deliberate design choice in v3 (more conservative material take), not a
+bug. Cornhill paysheet $6,543.50 (Ryan's labor) doesn't pin retail price
+— Mackenzie's actual sold-at price isn't in Ryujin (estimate has empty
+calculated_packages). **PASS with note** that v3 is intentionally heavier
+on materials than EOS.
 
-WO-11 has `linked_estimate_id: null` and zero edge measurements anywhere. Old `computeMaterials()` in `public/production-materials.html` did `eaves=0, rakes=0 → dripEdge = Math.ceil(0/10) || Math.ceil(18.4/4) = 5`, starter→1, I&W→1. Exactly what Mac saw. The workorders schema had nowhere to store edge LF — it's now been added.
+## Part 2 — Field parity audit
 
-**Two separate material systems to keep straight:**
-- **Sales side** — `lib/quoteEngineV3.js` → `estimates` table. Powers proposals.
-- **Crew side** — `public/production-materials.html` → `workorders` table (falls back to linked estimate). Powers Ryan's shopping list. **This is where Mac was looking when he reported the bad numbers.**
+Estimator OS schema reference: `~/.claude/projects/.../reference_estimator_os_schema.md`.
+Engine itself supports almost all EOS fields. The gap was in how
+`create_ryujin_proposal` (chat tool) passed inputs through. Closed in
+commit 8435e6c.
 
-## What shipped this session
+**Now wired through `create_ryujin_proposal`:**
+- chimney_size, chimney_cricket → engine.measurements.chimneySize/cricket
+- cedar_tearoff (boolean) → engine.measurements.cedarTearoff
+- redeck_sheets → engine.measurements.redeckSheets
+- soffit_lf, fascia_lf, gutter_lf, leaf_guard
+- wall_sqft, siding_choice → engine.choices.siding
+- window_count, door_count
+- custom_prices override (per-tier)
+- pricing_model now derived from distance_km (was hard-coded 'Local')
 
-**Engine / formulas** — locked-in real-world coverage rates (Mac's spec, no waste padding):
-- Drip edge: 1 piece = 10 LF of eaves or rakes
-- Ice &amp; water: 1 roll = 60 LF of eaves or valleys
-- Starter: 1 bundle = 120 LF of eaves or rakes
-- Ridge cap: 1 bundle = 33 LF of ridge or hip
-- Valley metal: 1 sheet = 10 LF of valley
+**Still genuinely missing from engine (P0/P1):**
 
-**Files changed (uncommitted):**
-- `schema/migration_015_workorder_measurements.sql` (new) — adds `eaves_lf`, `rakes_lf`, `ridges_lf`, `hips_lf`, `valleys_lf`, `walls_lf`, `pipes`, `vents`, `chimneys`, `osb_sheets` to `workorders`.
-- `public/production-materials.html` — reads edges from WO first, falls back to linked estimate; fixed starter to `(eaves+rakes)/120`; ridge cap now uses `(ridges+hips)/33`; removed silent `sqft/4` fallback; yellow "measurements missing" banner per job when edges aren't set.
-- `public/production-workorders.html` — new **Measurements** section in both edit form (10 input fields) and view modal; saveEditWo() PUTs all edge LF fields via `numOrZero()` helper.
-- `lib/quoteEngineV3.js` — formula rewrite with the coverage rates above; added `hipsLF` plumbing; output now carries `measurementsEstimated: true` + warning string when sqrt fallback fires.
-- `public/admin.html` — `reQuoteEstimate()`, `generateEstOutputs()`, `openFunnelFromEstimate()` + `generateFunnel()` now carry ALL edge LF from the DB (previously dropped everything except sqft/pitch/complexity — that was the hidden "memory bug" Mac suspected); `hipsLF` input added; localStorage draft no longer wiped on save; yellow warning banner on quote result when engine fell back to sqrt.
+| Field | Status | Notes |
+|---|---|---|
+| Mixed-pitch parsing (e.g. "10-12/12" or sections array) | P1 | Engine takes single pitch only. 42 Patricia 8/12 main + 5/12 porches gets one rate applied globally (~2% overcount). |
+| Sections array `[{sqft, pitch}]` | P1 | Same root cause as above. Real fix. |
+| Performance Shell substrate auto-add | RESOLVED | offer `performance-shell-plus` exists with full wall stack scope. Engine respects scope_template. |
+| Custom_prices override path | RESOLVED Apr 27 | Now passes through chat tool to estimate row + applied to shaped tier output. |
+| Chimney cricket flag | RESOLVED Apr 27 | Was in engine; now passed through chat tool. |
+| Cedar tearoff flag | RESOLVED Apr 27 | Same. |
+| Mobilization "while we're here" tier | P1 | API supports POST ?mobilization=1 calc; not yet wired into the create-proposal flow. Manual call only. |
+| Distance pricing model (Local / Day Trip / Extended) | RESOLVED Apr 27 | Derived from distance_km in chat tool. Engine already had distanceTiers. |
+| Downspouts | RESOLVED Apr 27 | Added to engine — `downspoutCount` measurement, $75 each default, configurable in tenant_settings.labor_rates_exterior.downspout_each. |
 
-## Reference IDs for 95 Cornhill
+## Part 3 — Upgrades section in Quote Builder UI
 
-- Tenant `plus-ultra` UUID: `84c91cb9-df07-4424-8938-075e9c50cb3b`
-- WO-11: `b472365f-957b-4128-9720-445d14f575a3`
-- Paysheet `PU-2026-CORN`: `3fbf1dbf-493a-4e53-a85d-02fd029554b4`
-- EagleView report #: 70584009
+Shipped commit 63a4ce6. Visible in `/admin.html` → Quote Builder when
+system is residential / metal / flat (and Exterior Scope isn't already
+forced open). Six toggles:
 
----
+- **Gutters — 5" Aluminum** (~$22/LF) — quality:'low' in tenant_settings
+- **Gutters — 6" Oversized** (~$30/LF) — quality:'high'
+- **Leaf Guard** ($6/LF, auto-pairs with gutter scope)
+- **Downspouts** (~$75 each)
+- **Soffit Replacement** (~$35/LF)
+- **Fascia Replacement** (~$25/LF)
 
-# Session notes — 2026-04-20
+Each toggle injects an `extras` entry into the quote payload. Engine v3
+now accepts `extras: [{key, label, category, config}]` which gets merged
+into the offer's scope_template at runtime — de-duplicated against
+existing keys, so we never double-count if the offer already includes
+gutters. Same package multiplier applies, so Gold → Platinum → Diamond
+stay consistent on the upsold scope.
 
-Picked up on 2026-04-20 to finish the TODO list + an aggressive perf pass + a second pass on the 5 half-baked areas. Everything deployed to Vercel main.
+5K and 6K gutters are mutually exclusive. Leaf guard auto-disables when
+both gutter toggles are off. Mobile-friendly stacked layout. No DB
+migration — purely runtime state.
 
-## Pending manual steps
+Live URL: https://ryujin-os.vercel.app/admin.html (navigate to Quote
+Builder → toggle a roofing system → scroll to "Upgrades & Add-Ons").
 
-- **Migration 012** (`schema/migration_012_checklist_state.sql`) needs to run in Supabase SQL editor before crew-app checklists sync across devices. One statement: `alter table tickets add column if not exists checklist_state jsonb default '{}'::jsonb;`
-- Migration 011 (password reset) already applied and verified.
+## Tech debt log (spotted, not touched)
 
-## What shipped today (2026-04-20)
-
-**Second pass — 5 half-baked areas wired up**
-- **Admin tenant settings** — admin-tenant.html now has a Weather/Location card with latitude/longitude/timezone fields. Persisted via `RyujinTenant.set()` → localStorage. `classic.html` + `production-calendar.html` already read via `RyujinTenant.get()` with Moncton fallback.
-- **Crew checklist sync** — migration 012 adds `checklist_state JSONB` on tickets. `app.html` mirrors local → DB fire-and-forget on every toggle/photo, and hydrates DB → local inside `showTask()` before rendering. localStorage still wins locally (instant + offline), server is source-of-truth when online.
-- **Sales hub hydration** — sales-customers.html prepends real `/api/customers` results to the demo showcase list; sales-pipeline.html shows a live-stats strip above the hardcoded stage columns with real estimate counts + open $; sales-followups.html surfaces CRM contacts with no touch in 7+ days and one-tap CALL / EMAIL / OPEN RECORD.
-- **Post-production pipeline** — new `/assets/ryujin-postprod.js` + `PostProd` helper connecting walkthrough → closeout → reviews → warranty → complete. State in `ry_v1_post_prod_queue_v1`. Each downstream page shows a queue strip of jobs waiting for its stage. Completing walkthrough pushes forward; closeout's `archiveJob` advances → reviews; reviews has per-job **SEND REVIEW SMS** with the real `g.page/plusultra/review` link and advances → warranty; warranty `fileWarranty` advances → complete.
-- **Proposal output** — proposal-client.html's fabricated testimonials replaced with the three real Steve V / Brad W / Tarah M reviews already on sales-client. "100% 5-star rating" → "35+ Google reviews". Added a **READ ALL REVIEWS ON GOOGLE** link pointing at `g.page/plusultra`.
-
-**Performance pass**
-- New `/assets/ryujin-perf.js` + `/assets/ryujin-perf.css` auto-loaded on all 45 pages. Detects low-end signals (`prefers-reduced-motion`, saveData, `deviceMemory < 4`, `hardwareConcurrency <= 2`) + 3s FPS sampler (flips to lite on sub-25fps).
-- **Always-visible LITE badge** bottom-right on every page — click to toggle, persists.
-- URL `?perf=lite` forces it. `?perf=off` clears.
-- Lite mode: strips `backdrop-filter`, snaps animations to 0.01ms, hides grid-mask overlays, and on DOMContentLoaded yanks `src` from autoplay videos so huge bg clips never even download.
-- Command-center `bg-dragon` video ships with no src — JS attaches it 2s AFTER load only if not lite. Kills the 18MB eager-download.
-- Google Fonts `display=swap` → `display=optional` on all 45 pages.
-- classic.html 60s refresh pauses when tab hidden + visibility-change listener.
-- Weather fetches (classic + calendar) get 3s AbortController timeouts.
-- NOTE: an earlier attempt to `defer` all shared scripts was reverted — it broke initialization order for inline scripts that depend on Ryujin.init / RyujinTenant.get. Don't re-add defer without making the inline scripts wait on DOMContentLoaded first.
-
-**Auth — forgot password flow**
-- Migration 011 adds `reset_token` + `reset_token_expires_at` on users. New `/api/auth?action=forgot` issues a 1-hour token, `/api/auth?action=reset` validates + updates. New `/reset-password.html` handles both request + set-new-password forms. "Forgot password?" link added to login.html. Reset URL is returned inline in the response (solo-tenant safe; swap for email send via Resend/SendGrid when multi-tenant).
-
-**First pass — earlier in 2026-04-20 session**
-- sales-proposal.html: added `exterior` system (Performance Shell Plus / Hardie Shell / Metal Shell, estimated pricing), live customer fetch from Supabase (`/api/customers`), tour copy bumped to "6 systems / 20 offers"
-- WO seed: Donna Glen address 115 North St → **95 Cornhill St** (user correction). WO_KEY bumped v5 → v6 across workorders/jobs/materials/paysheet/classic so the fix picks up without manual localStorage clear. SQ + tier still pending EagleView.
-- Crew app checklists (before the DB sync): 7 templates (install / repair / cleanup / inspect / caulk / doors / default) auto-picked by task title keywords. Photo-required steps gate their own check until a photo is attached. Complete disabled until all items done.
-- Materials POs + Vendors migrated from hardcoded const to localStorage with seed fallback (`ry_v1_pos_v1`, `ry_v1_vendors_v1`). Tap PO status to cycle open → shipped → delivered. New PO / Add vendor / delete. `createPO()` now actually creates per-vendor POs from unchecked material lines.
-- Jobs board tutor real effects: Push 3/7 days forward (writes back to WO store), Draft EagleView Gmail (pre-filled compose URL with address + scope), Order materials / Open WO / Pay sheet with `?wo=` pre-select.
-
-**Sales proposal polish**
-- New `exterior` system in SYSTEMS (Performance Shell Plus / Hardie Shell / Metal Shell, estimated pricing)
-- Customer picker now hydrates from `/api/customers?tenant=plus-ultra` on page load, falls back to demo set offline
-- Tour copy updated: 6 systems / 20 offers
-
-**Work-order seed corrections**
-- Donna Glen address: 115 North St → **95 Cornhill St** (user correction)
-- WO_KEY bumped v5 → v6 across workorders/jobs/materials/paysheet/classic so the fix picks up without a manual localStorage clear
-- Summerhill + Cornhill still at `sq: 0` pending EagleView reports
-
-**Crew app checklists (app.html)**
-- Seven templates: install / repair / cleanup / inspect / caulk / doors / default
-- Template auto-picks from task title keywords
-- Photo-required steps gate their own check until a photo is attached (camera input, data-URL local preview, fire-and-forget `/api/files` upload when project_id is present)
-- Task "Complete" button disabled until every checklist item is done
-- State saved per-task in localStorage (`ryujin_checklist_{taskId}`)
-
-**Materials hub (production-materials.html)**
-- POs + Vendors migrated from hardcoded const → localStorage (`ry_v1_pos_v1`, `ry_v1_vendors_v1`) with seed fallback
-- New PO / Add vendor / delete / tap-to-cycle status (open → shipped → delivered)
-- `createPO()` actually generates per-vendor POs from unchecked material lines now (was alert-only)
-
-**Jobs board tutor (production-jobs.html)**
-- Overdue action: Open WO to reschedule · Push 3 days · Push 7 days (all write back to `ry_v1_work_orders_v6`)
-- Draft action: Open WO · **Draft EagleView Gmail** (pre-filled compose URL with client address + scope)
-- Next action: Order materials (with `?wo=` pre-select) · Open WO · Pay sheet
-
-**Performance pass (THE big one)**
-- New `/assets/ryujin-perf.js` + `/assets/ryujin-perf.css` auto-loaded on all 45 pages
-- Detects low-perf signals (`prefers-reduced-motion`, saveData, `deviceMemory < 4`, `hardwareConcurrency <= 2`) AND runs a 3s FPS sampler — flips to lite mode automatically on sub-25fps
-- Visible `LITE` badge bottom-right on every page — click to toggle, persists to localStorage
-- URL `?perf=lite` (or `?perf=off`) to force
-- Lite mode strips backdrop-filter, kills infinite animations, hides grid-mask overlays, and on DOMContentLoaded **yanks the src from every autoplay video** so huge bg clips don't even download
-- Command-center: `bg-dragon` video element ships with no src, JS attaches it in 2s AFTER load only if not lite. Kills 18MB eager-download that was clobbering initial paint
-- Swapped Google Fonts `display=swap` → `display=optional` on all 45 pages — no more layout thrash on first paint if fonts are slow
-- All shared `ryujin-*.js` scripts now `defer` (tutor, mode, tenant, persist, api, scenario, xp, mode-badge, chat, search, subhub, prod-nav)
-- classic.html 60s refresh pauses when tab hidden + re-fires on `visibilitychange`
-- Weather fetches in classic + calendar got a **3s AbortController timeout** and read lat/lon/tz from `RyujinTenant.get()` (Moncton defaults)
+- `proposals.calculated_packages` for #25 still shows pre-revert
+  pricing (gold $23,150 / plat $27,750 / diamond $42,950). If
+  Mackenzie wants the live share URL to reflect current SOP, regen
+  via `scripts/regen-42-patricia.py` or a fresh /api/quote save.
+- `step_flashing` line item shows in scope but skipped when wallsLF=0.
+  Not a bug, but worth flagging in the UI since users wonder why it's
+  not in the cost breakdown.
+- "Tear-Off Labor" line shows $0 universally because tearoff is baked
+  into base_labor's $130/$160/$190 rate. Phantom display row. Could
+  be removed from scope_template or relabeled "(included in install
+  labor)".
+- `calculateMobilizationDiscount()` exists but no UI surface for it
+  yet. Worth a tab next to Upgrades for phased upsell pricing.
+- workorders table has `total_sq` but no `total_price` — production
+  jobs don't carry retail. Fine for the production view but means
+  Cornhill-style "what did we sell this for" auditing has to go
+  through `estimates.calculated_packages`.
 
 ---
 
-# Session notes — 2026-04-19
+# Session notes — 2026-04-24 evening (PROPOSAL PIPELINE + MULTIPLIER CORRECTION)
 
-Everything committed to `main` and deployed on Vercel. Updated through the final autonomous pass.
+Built the end-to-end "folder-to-proposal" workflow for Plus Ultra on Ryujin. Shipped Jonathan Godbout / 42 Patricia (#25). Fixed a systemic pricing problem: multipliers were under-set for post-loaded-cost net targets.
 
-## Live URLs (bookmark these)
+## What went live (chronological)
 
-### Owner hubs
-- **Classic (laptop-safe, fastest)**: https://ryujin-os.vercel.app/classic.html ← recommended daily driver
-- Command center (3D, full power): https://ryujin-os.vercel.app/command-center.html
-- Command center Lite toggle: https://ryujin-os.vercel.app/command-center.html?lite=1
-- Admin hub: https://ryujin-os.vercel.app/admin.html
+1. **42 Patricia proposal #25** — estimate `523d150e-6176-4725-91fa-d87b2df5a004`, share token `plus-ultra-25`. Platinum recommended at $42,550 (corrected). Darcy as rep.
+2. **Gallery dedupe** in `api/proposal.js` — dropped `04-job-complete.jpg`, relabeled `02-topdown-architectural.jpg` → MONCTON · LAKESIDE to match the hero shot.
+3. **Multiplier correction** via `scripts/apply-multiplier-fix.mjs`:
+   - gold 1.47→1.89 (targets 12% net after 35% S+M+O)
+   - platinum 1.52→2.08 (17% net)
+   - diamond 1.58→2.38 (23% net)
+   - economy deactivated (`active = false`)
+4. **HST display** in `public/proposal-client.html` — removed hard-coded × 1.15. Tier cards now `$42,550 + HST`, accept section `$42,550` clean subtotal. Acceptance payload still records total-with-tax for internal contract value.
+5. **New chat.js tool** `create_ryujin_proposal` — native Ryujin proposal generator with customer + measurements input, returns share URL. Executes immediately. Documented in BASE_PROMPT.
+6. **Rode-along WIP deploy**: Mackenzie intro video wired, per-system video routing, ported Shenron chat.js brain, misc UI polish.
 
-### Client-facing (these are what you send)
-- **Sales page** (warm-up, send this first): https://ryujin-os.vercel.app/sales-client.html
-- Proposal (priced options): https://ryujin-os.vercel.app/proposal-client.html
-- Sent-proposal history: https://ryujin-os.vercel.app/proposal-history.html
+## The pricing discovery (important context)
 
-### Internal tools
-- Proposal generator (edit + send): https://ryujin-os.vercel.app/sales-proposal.html
-- Jobs board (action): https://ryujin-os.vercel.app/production-jobs.html
-- Work orders: https://ryujin-os.vercel.app/production-workorders.html
-- Calendar (with forecast): https://ryujin-os.vercel.app/production-calendar.html
-- Materials: https://ryujin-os.vercel.app/production-materials.html
-- Pay sheet: https://ryujin-os.vercel.app/production-paysheet.html
-- Crew PWA (mobile): https://ryujin-os.vercel.app/app.html
+Ryujin's quote engine V3 uses field name `netMargin` — but it's actually **gross margin**. It computes `(selling – hardCost) / selling`. No accounting for sales commission, marketing, or overhead.
 
-## The proposal funnel (end-to-end)
+Plus Ultra charges industry-standard 10% sales + 5% marketing + 20% overhead as a loaded cost layer (taught at Roofing Business School, charged regardless of actual spend to maintain pricing discipline).
 
-```
-sales-proposal.html (editor)  →  +GENERATE LINK
-     ↓ encodes payload as base64 in URL
-PRIMARY:  sales-client.html?data=X   (Shenron aesthetic, warm-up, CTA)
-     ↓ CTA forwards the same ?data= to
-     proposal-client.html?data=X     (configurator, pricing, accept + sign)
-     ↓ accept →
-     email to plusultraroofing@gmail.com  +  localStorage accepted-proposals log
-```
+Old multipliers (1.40 / 1.47 / 1.52 / 1.58) produced gross margins of 28-37%. Subtracting 35% loaded costs leaves –3% to +1.7% **real net**. Jonathan's Platinum at old $31,100 was –0.8% = $240 loss.
 
-The generator now emits **both** URLs and the modal defaults to the sales-client link with a separate "direct proposal" field for repeat customers. Enriched payload includes `package.name`, `rep.phone`, `media.gallery`, so both pages hydrate cleanly with zero fallbacks visible.
+**Multiplier formula:** `m = 1 / (1 – (target_net + total_loaded_pct))`
 
-## Production data flow
+For Mackenzie:
+- target_net = {12%, 17%, 23%} for {Gold, Platinum, Diamond}
+- total_loaded_pct = 35%
+- → multipliers = {1.89, 2.08, 2.38}
 
-```
-production-workorders.html  ← edit / add WOs
-                 ↓ writes to
-           ry_v1_work_orders_v5
-                 ↓ read by
-    ┌──────────┬──────────┬───────────┬──────────┐
-    │   jobs   │materials │ pay sheet │ calendar │
-    │ (board)  │ (lists)  │  (wizard) │ (seeded) │
-    └──────────┴──────────┴───────────┴──────────┘
-```
+All three tiers now land exactly on their target nets when compared against `(selling × (1 – grossMargin)) – loaded_costs`.
 
-All four pages now read the same store. Edit a WO once — every other page reflects it.
+## Files changed this session
 
-## What changed — sales & proposal
+### Committed? No — all uncommitted at EOD on `main`.
 
-- Proposal demo renders with real Plus Ultra CDN photos (cover, 2× before/after, 6-card showcase) and Darcy intro video. Video aspect fixed for vertical mobile (object-fit: contain, letterbox on dark).
-- Default recommended tier: **Platinum** (was Gold).
-- Accept section: "Your selection" → **"Your Investment"** (Jewels framing).
-- Accept CTA: "ACCEPT PROPOSAL" → **"ACCEPT & LOCK IT IN"** + subtext rewritten to state the concrete next step.
-- Showcase strip hint: "Swipe" → "Scroll" (works on all devices).
-- Proposal **title**: "Your Roof Proposal" → "Your Roof Plan" (less clinical).
-- Green/monospace digital labels near the bottom toned down from Share Tech Mono → Orbitron.
-- **New sales-client.html**: hero → personal letter → Darcy video → 3 trust cards → 4-step process → value stack (asphalt/exterior auto-switch) → gallery → testimonials (Steve V / Brad W / Tarah M) → About estimator → "See Your Investment Breakdown" CTA.
-- **Open Graph + Twitter card** tags on both pages — when you text / email / DM a proposal link, it renders as a rich preview card (aerial drone shot + title + description) instead of a raw URL.
-- iOS `apple-mobile-web-app-capable` + dark status-bar hints so clients who home-screen the link get chromeless view.
+- `api/chat.js` — added `create_ryujin_proposal` tool definition + executeTool handler + BASE_PROMPT line
+- `api/proposal.js` — GALLERY array: dropped 04, relabeled 02 (this edit sits alongside the earlier intro-video WIP)
+- `public/proposal-client.html` — removed `* 1.15` at lines 1358, 1420; changed `<small>incl. HST</small>` → `<small>+ HST</small>`; kept `* 1.15` at line 1523 (acceptance payload)
+- `schema/migration_016_plus_ultra_multipliers.sql` — audit trail for the multiplier change (not run via migration script — applied directly via Supabase REST in `scripts/apply-multiplier-fix.mjs`)
+- `scripts/ship-42-patricia.py` — end-to-end script: compare → estimate → photo uploads
+- `scripts/fix-42-patricia-packages.py` — one-shot to reshape calculated_packages after post-create discovery of the `pkg.total` proposal.js expectation
+- `scripts/regen-42-patricia.py` — recompute #25 pricing after multiplier correction
+- `scripts/apply-multiplier-fix.mjs` — Supabase REST update for offers.multipliers + economy.active
+- `package-lock.json` — `pg` added as dependency (run-migration.mjs needed it, eventually we used Supabase REST instead, but pg is installed)
 
-## What changed — production
+## Reference IDs / URLs
 
-- **Crew roles corrected everywhere** (memory + seed):
-  - **Ryan (Atlantic Roofing)** — sub · primary installer on every pipeline job · also owns caulking + debris pickup
-  - **AJ** — Production Assistant + door setter (canvassing / lead gen)
-  - **Diego** — Operations Specialist · repairs + inbound sales calls (not installs)
-  - **Pavanjot** — Laborer (material staging, cleanup, assist)
-- **WO seed now has 9 jobs**: Seyeau (active, mansard/caulk), Arzaga (active, Rue Fortune), 178 Summerhill (scheduled Apr 21-23, scope TBD), Northrup / 79 Willow (scheduled Apr 24-26), 115 North St / Donna Glen (scheduled Apr 28-30, scope TBD), Pardy (scheduled May 5, scope TBD), Faulkner (draft, needs info), Fram (scheduled May 12), Sackville (active exterior).
-- **Dead sample arrays removed**: LEGACY_JOBS (materials), DEFAULT_WOS_OLD (workorders) — −171 lines, no behavior change.
-- **Jobs board** — five panels of hardcoded mockup replaced with live renderers over the WO store (Active Jobs, Crew Status, Material Orders, Pay Sheets, 3-Day Schedule, Alerts). Mark Complete now actually flips WO status.
-- **Materials POs + VENDORS arrays** — still hardcoded, flagged in TODO. Materials list generation from WO.sq + tier is working.
-- **Paysheet** — bumped from `v3` key (never existed, always empty) to `v5`. Wizard now gets the full pipeline.
+- Plus Ultra tenant UUID: `84c91cb9-df07-4424-8938-075e9c50cb3b`
+- Jonathan Godbout estimate: `523d150e-6176-4725-91fa-d87b2df5a004`
+- Jonathan Godbout GHL contactId: `7k4msVngVyeUUIUbWa5r`
+- Client share URL: https://ryujin-os.vercel.app/proposal-client.html?share=plus-ultra-25
+- Admin URL: https://ryujin-os.vercel.app/sales-proposal.html?id=523d150e-6176-4725-91fa-d87b2df5a004
 
-## What changed — dashboards
+## Known issues surfaced but not fixed
 
-- **New /classic.html** — laptop-safe owner hub. CSS only, no WebGL, no CSS3D, no autoplay video, no animations beyond a single pulse dot. Loads in <100ms on integrated GPU. Everything the owner actually uses at a glance: 5 KPIs, Active Jobs (top 6), Next 7 Days, Crew Load, Weather, 11 quick links, Recent Activity, Alerts strip. Auto-refreshes every 60s.
-- **Calendar weather** — live 5-day Moncton forecast via Open-Meteo (free, no API key), 1h localStorage cache, WMO codes mapped to icons + severity. Dropped the "Coming soon — Environment Canada" stub.
-- **New /proposal-history.html** — every proposal you've generated, sortable/filterable. Stats: Total Sent · This Week · This Month · Accepted. OPEN / PROPOSAL↗ / COPY buttons per row. Linked from sales hub + classic hub.
+1. **"netMargin" field name is misleading** — it's gross, not net. Would be clearer if renamed `grossMargin` in the engine output. Breaking change for anything that reads it though. Defer.
+2. **Single pitch input** for mixed-pitch roofs — 42 Patricia had 8/12 main + 5/12 porches. Engine applied 8/12 globally, over-counted porches by ~2%. Needs `sections: [{sqft, pitch}]` input shape eventually.
+3. **Tear-off labor line shows $0** on all residential tiers — it's actually baked into Install Labor's $160/SQ pitched rate. Phantom display line. Could be removed from scope template or renamed.
+4. **`sales_owner` DB column is UUID** — can't accept string name. Until a Darcy user row exists, attribution lives in `tags: ['sales_owner:darcy']`. Works but dual-source.
+5. **`status: "sent"` fails** `estimates_status_check` constraint — valid values appear to be `draft | accepted | cancelled`. Need to figure out the "quote sent" state or add one.
+6. **`offers.multipliers.dayTrip` and `.extendedStay`** still at old values (1.55-1.74 / 1.18-1.33). Only `local` was updated. Plus Ultra rarely does remote jobs, low priority.
+7. **Economy's hard cost** was higher than Gold's in the compare output ($17,594 vs $17,511) — suggests its scope template has inefficient labor math. Irrelevant now that it's deactivated but worth noting if we ever reactivate it.
 
-## Performance work (command-center was glitchy on laptop)
+## Next session, if touching this area
 
-- All background videos across command-center / login / boot / admin → `preload="metadata"`. Browsers were eagerly downloading 9-22MB files before the page finished parsing. Biggest single win.
-- **LOW_PERF mode** on command-center: auto-triggers on mobile width < 900, prefers-reduced-motion, save-data, or forced via `?lite=1` (persisted per-machine in localStorage). Disables bg video, drops stars 2000 → 400, antialias off, pixelRatio capped at 1, autoRotate off. Cutscene skipped.
-- **Status**: on your laptop even LITE mode was still laggy. Final fix was shipping /classic.html as the daily driver — no WebGL, no CSS3D, no video. Nothing to lag on.
+- Commit + clean up uncommitted WIP (lot of it on `main`: api/chat.js, api/proposal.js, api/proposal-accept.js, api/estimate-photos.js, public/proposal-client.html, public/marketing-creatives.html, public/proposal-history.html, public/sales-client.html, public/assets/ryujin-chat.js, vercel.json, new api/chat.js/proposal-pdf.js/proposal-timeline.js, new lib/google.js, new public/content/)
+- Reprice Kevin March (#21) + Stephanie McCardle (#22) against the new multipliers. They're still under-priced. Decision: leave-as-sent or resend? Mackenzie's call.
+- Generalize `scripts/ship-42-patricia.py` into `scripts/ship-proposal.py "[folder-name]"` — takes any Jobs folder, parses the measurement docx with regex, cross-refs GHL by address, ships the proposal. Would close the loop for Claude Code sessions.
+- Fix the `api/ghl.js:249` create-opportunity bug (`enrichOpportunity(data?.opportunity || data)`) so future proposals auto-land in Mack's Pipeline.
+- Consider rename `netMargin` → `grossMargin` in engine output for clarity.
 
-## Security
+---
 
-- Scanned repo + git history for committed secrets → clean.
-- Removed plaintext password from auto-memory file.
-- Added `.github/workflows/secret-scan.yml` (gitleaks) — runs on every push / PR.
-- Vercel / Supabase / Anthropic / Blob tokens marked for **your** rotation via dashboards.
-- `main-HAL` branch deletion attributed to a prior Claude Code worktree cleanup, not a breach.
+# Session notes — 2026-04-24 (morning/desktop — 95 Cornhill + crew materials)
 
-## Photo migration script (still awaiting your desktop)
+(Full earlier block retained — see git history or prior version. Summary: crew-side materials engine hardening for Cornhill EagleView error, migration 015 for WO-level edge storage, paysheet rebuilt $3,481 → $6,658.50 when actual SQ confirmed at 34.)
 
-- `scripts/upload-photos.js` + `scripts/photos-to-upload/` folder (gitignored).
-- Workflow: download Drive "Photos - Before/ After" photos, drop in folder, run with `BLOB_READ_WRITE_TOKEN`, get back Blob URLs to paste into demo fallbacks.
+---
 
-## Known issues / TODO next session
+# Session notes — 2026-04-20 (second pass + perf)
 
-1. **Materials POs + VENDORS arrays still hardcoded** — the LEGACY_JOBS sample was removed but the POS array (4 sample purchase orders) and VENDORS array (4 static vendors) remain. Low impact (display only) but worth wiring to a localStorage-backed PO list.
-2. **Jobs board tutor** — states have generic follow-up choices. Could wire each state's action buttons to real effects (e.g., "Order EagleView" actually drafts the Gmail).
-3. **331 Mountain Rd / Diaa proposal** — transcript `b5db4715` only references Diaa by name (from a Supabase customer list query). No proposal payload was built in that session. The actual 331 Mountain proposal lives elsewhere (Estimator OS? Google Drive?) — grep the Drive and paste details when found.
-4. **115 North St + 178 Summerhill** have `sq: 0, total: 0` seed values. Edit in the real numbers via `/production-workorders.html` before those job dates.
-5. **Materials overrides** regenerate from SQ + tier every load. Saving edits → overrides key works, but edits are lost if the WO_KEY is bumped. Overrides should be decoupled from the seed version.
-6. **Weather** hardcodes Moncton NB lat/lon. Future: pull from `tenant_settings` postal code for multi-tenant.
-7. **Crew app (app.html) checklists** — per memory, needs step-by-step install workflows with photo requirements. Would need backend sync to be truly useful (crew on phones vs WO data on owner's laptop). Partial path: local checklist templates + optimistic-sync later.
-8. **Classic hub orphan button** — 11 quick-link tiles in a 2-col grid. Cosmetic.
-9. **Performance Shell Plus proposal** — sales-proposal's system toggle exists but needs exterior-specific tier data populated in SYSTEMS.
+(Earlier block retained.)
 
-## Commits this session (chronological, newest last)
+---
 
-```
-9abc27c  Add ryujin-* asset scripts + wire into admin/app
-9719d46  Owner shell — onboarding, command-center, dashboard v2, landing, arcade, sim
-25a3541  Marketing clips pipeline — Whisper → Haiku → ffmpeg 9:16 + UI
-8bfb716  Admin hub — split into overview, pricing, team, tenant, integrations
-e85cddb  Sales hub — customers, followups, pipeline, transcripts
-d58beb8  Production + post-production hubs
-b146faa  Sales proposal generator + client-facing proposal page
-61f92a5  Add gitleaks secret scan workflow
-f88d2cb  Proposal: Your Investment framing + recent-projects gallery + cleaner labels
-1fa3575  Proposal: wire placeholder photos into demo data
-ed104e3  Proposal: swap picsum for real Plus Ultra brand photos + Darcy video
-92e095a  Proposal: fix video aspect — object-fit contain for vertical mobile videos
-fd301e5  Photo migration: local folder → Vercel Blob script
-0d82762  Add sales-client.html — pre-proposal lead-in (Shenron aesthetic)
-0503073  Proposal: demo defaults to Platinum recommended tier
-bd33165  Remove dead LEGACY_JOBS + DEFAULT_WOS_OLD sample arrays
-37ac1de  Wire jobs board to live work orders
-d918815  Correct crew roles + add 178 Summerhill & 115 North St to WO seed
-afcbf76  Paysheet: bump WO storage key v3 → v5 to match other production pages
-f0bc40a  Perf: preload=metadata on background videos
-c3f7f36  Perf: preload=metadata on login + boot background videos (follow-up)
-0e230f2  Command Center: LOW_PERF mode cuts mobile/reduced-motion lag
-e091129  Command Center: per-machine Lite mode toggle
-bc7ac69  Jobs board: right panels, 3-day schedule, and alerts all dynamic
-3059706  Calendar: live 5-day Moncton forecast via Open-Meteo
-3fcf247  Add SESSION_NOTES.md — overnight session summary
-f9b65db  Add /classic.html — laptop-safe owner hub (no WebGL, no video)
-4bc5104  Funnel integration: sales-proposal now generates sales-client URL as primary
-74d1f07  Proposal + sales page polish: OG tags, CTA copy, iOS meta
-f4db7a0  Add /proposal-history.html — sent proposals log + resend
-```
+# Session notes — 2026-04-19 (initial production system)
+
+(Earlier block retained.)
