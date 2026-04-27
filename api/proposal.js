@@ -261,8 +261,9 @@ export default async function handler(req, res) {
 
   const packages = est.calculated_packages || {};
   const tierEntries = Object.entries(packages)
+    .filter(([id]) => TIER_CATALOG[id])
     .map(([id, pkg]) => {
-      const meta = TIER_CATALOG[id] || { tag: id.toUpperCase(), name: id, desc: '', perks: [] };
+      const meta = TIER_CATALOG[id];
       // Split name on the separator so the card renders "Gold" as primary
       // and "Landmark" as the smaller sub-line instead of stacking them.
       const [primary, ...rest] = (meta.name || id).split(/\s*·\s*/);
