@@ -2502,7 +2502,7 @@ async function executeTool(name, input, attachments = []) {
         const resp = await fetch(`${RYUJIN_BASE}/api/quote?materials=1&tenant=${TENANT}`, {
           method: 'POST',
           headers,
-          body: JSON.stringify({ measurements, choices, offerSlug: offerSlug || 'platinum' })
+          body: JSON.stringify({ measurements, choices, offer_slug: offerSlug || 'platinum' })
         });
         if (!resp.ok) return { error: `Quote engine failed (HTTP ${resp.status}): ${(await resp.text()).slice(0, 200)}` };
         const data = await resp.json();
