@@ -1144,8 +1144,8 @@ const TOOLS = [
         estimated_duration_days: { type: 'number' },
         sub_crew_lead: { type: 'string', description: 'Crew lead name (Diego, AJ, Pavanjot, etc.)' },
         support_crew: { type: 'array', items: { type: 'string' }, description: 'Other crew members on the job' },
-        job_type: { type: 'string', description: 'roof, exterior, combined, repair, etc.' },
-        package_tier: { type: 'string', description: 'Gold / Platinum / Diamond / Standard / Enhanced / Premium' },
+        job_type: { type: 'string', enum: ['full_replacement', 'repair', 'gutters', 'siding', 'other'], description: 'STRICT enum. Default to full_replacement for new roof installs.' },
+        package_tier: { type: 'string', enum: ['gold', 'platinum', 'diamond', 'grand_manor'], description: 'STRICT enum. Lowercase only.' },
         shingle_product: { type: 'string' },
         shingle_color: { type: 'string' },
         total_sq: { type: 'number' },
@@ -1162,7 +1162,7 @@ const TOOLS = [
         chimneys: { type: 'number' },
         scope_summary: { type: 'string', description: 'High-level scope description (goes to additional_scope)' },
         special_notes: { type: 'string', description: 'Special access, pets, gates, etc.' },
-        linked_estimate_id: { type: 'string', description: 'Optional — Ryujin estimate UUID to link' },
+        linked_estimate_id: { type: 'string', description: 'Optional — Ryujin estimate UUID ONLY (not Estimator OS integer IDs). Leave null if estimate is in Estimator OS.' },
         linked_paysheet_id: { type: 'string', description: 'Optional — Ryujin paysheet UUID to link' },
         status: { type: 'string', enum: ['draft', 'issued', 'in_progress', 'complete', 'cancelled'], description: 'Default: draft' }
       },
@@ -1180,7 +1180,7 @@ const TOOLS = [
         address: { type: 'string' },
         subcontractor: { type: 'string', description: 'Atlantic Roofing, Grand Manor, etc.' },
         subcontractor_id: { type: 'string', description: 'Optional — subcontractor UUID' },
-        job_type: { type: 'string' },
+        job_type: { type: 'string', enum: ['full_replacement', 'repair', 'gutters', 'siding', 'other'], description: 'STRICT enum.' },
         shingle_product: { type: 'string' },
         eagleview_report: { type: 'string' },
         labour_breakdown: { type: 'array', description: 'Labour line items', items: { type: 'object' } },
@@ -1193,7 +1193,7 @@ const TOOLS = [
         total: { type: 'number' },
         scheduled_date: { type: 'string', description: 'YYYY-MM-DD' },
         status: { type: 'string', enum: ['scheduled', 'in_progress', 'completed', 'invoice_final', 'cancelled'], description: 'Default: scheduled' },
-        linked_estimate_id: { type: 'string', description: 'Optional — Ryujin estimate UUID' },
+        linked_estimate_id: { type: 'string', description: 'Optional — Ryujin estimate UUID ONLY. Leave null if estimate is in Estimator OS.' },
         notes: { type: 'string' }
       },
       required: ['job_id', 'customer_name', 'address', 'subcontractor']
