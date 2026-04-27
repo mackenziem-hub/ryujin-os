@@ -342,22 +342,24 @@ export default async function handler(req, res) {
       videoUrl: resolveIntroVideo(rep, est.proposal_mode || 'shingle'),
       gallery: customGallery.length ? [...customGallery, ...GALLERY].slice(0, 8) : GALLERY
     },
-    // Floor filter:
-    //   - public (default): silently omit any tier where floorCleared === false
-    //     so customers physically cannot click-and-accept a money-loser
-    //   - ?internal=1: return ALL tiers, including the rejected ones, so Mac
-    //     can see floor warnings + recommendedMinSell for each
+    // Floor enforcement (Apr 27 v2):
+    //   - public (default): show ALL tiers, but auto-bump any below-floor tier
+    //     to its recommendedMinSell. Preserves good/better/best sales psychology
+    //     while guaranteeing no money-losers. Customer never sees the bump.
+    //   - ?internal=1: return ALL tiers with their original (unbumped) totals
+    //     so Mac can see floor warnings + recommendedMinSell + delta.
     // If a tier has floorCleared === null (older calculated_packages without
-    // floor data) we trust them — no retroactive filtering.
+    // floor data) we trust them — no retroactive bumping.
     tiers: {
-      asphalt: (() => {
-        const filtered = isInternal
-          ? tierEntries
-          : tierEntries.filter(t => t.floorCleared !== false);
-        return filtered.length ? filtered : [
-          { id: 'gold', tag: 'GOOD', name: TIER_CATALOG.gold.name, desc: TIER_CATALOG.gold.desc, total: 0, perks: TIER_CATALOG.gold.perks }
-        ];
-      })()
+      asphalt: tierEntries.map(t => {
+        if (isInternal) return t;
+        if (t.floorCleared === false && t.recommendedMinSell && t.recommendedMinSell > t.total) {
+          // Round to nearest $25 (matches engine rounding) so price looks clean
+          const bumped = Math.round(t.recommendedMinSell / 25) * 25;
+          return { ...t, total: bumped, persq: t.persq, _bumpedFromBelow: t.total };
+        }
+        return t;
+      })
     },
     internal: isInternal,
     // When the filter dropped tiers we still want admins to know they exist
