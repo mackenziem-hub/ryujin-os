@@ -426,6 +426,21 @@ section{padding:80px 0;position:relative}
   background:var(--bg-card);border:1px dashed var(--border-strong);border-radius:10px;
 }
 .tier-disclaimer a{font-weight:600}
+/* ── Internal-only floor warning (hidden on public share page) ── */
+.tier.below-floor{border-color:#dc2626;background:linear-gradient(180deg,#fff 0%,#fef2f2 100%)}
+.tier.below-floor .tag{color:#dc2626}
+.tier-floor-warning{
+  margin-top:14px;padding:10px 12px;border-radius:8px;
+  background:#fee2e2;border:1px solid #fca5a5;color:#991b1b;
+  font-size:0.78rem;line-height:1.4;font-weight:500;
+}
+.tier-floor-warning b{color:#7f1d1d}
+.internal-banner{
+  position:fixed;top:0;left:0;right:0;z-index:999;
+  background:#1e293b;color:#fde68a;text-align:center;
+  padding:6px 12px;font-size:0.78rem;font-weight:600;letter-spacing:0.05em;
+}
+.internal-banner b{color:#fff}
 
 /* ─── SCOPE TABLE ─── */
 .scope-card{
@@ -1067,10 +1082,14 @@ async function loadData(){
   const share = params.get('share');
   const dataParam = params.get('data');
   const id = params.get('id');
+  // ?internal=1 — admin/sales view. Bypasses floor filter, shows warnings.
+  // Public share URLs default to filtered (below-floor tiers omitted).
+  const internal = params.get('internal') === '1';
 
   if (share) {
     try {
-      const r = await fetch('/api/proposal?share=' + encodeURIComponent(share));
+      const url = '/api/proposal?share=' + encodeURIComponent(share) + (internal ? '&internal=1' : '');
+      const r = await fetch(url);
       if (r.ok) return await r.json();
       console.warn('Share fetch failed', r.status);
     } catch (e) { console.warn('Share fetch error', e); }
@@ -1352,27 +1371,52 @@ function renderTiers(){
   const grid = document.getElementById('tiersGrid');
   if (!state.tierId) {
     const rec = DATA.scope && DATA.scope.recommended;
-    state.tierId = (list.find(t => t.id === rec) || list[1] || list[0] || {}).id;
+    // Skip below-floor tiers when picking a default — never auto-select a money-loser
+    const candidates = DATA.internal ? list.filter(t => t.floorCleared !== false) : list;
+    const pool = candidates.length ? candidates : list;
+    state.tierId = (pool.find(t => t.id === rec) || pool[1] || pool[0] || {}).id;
   }
   grid.innerHTML = list.map(t => {
     const total = Math.round(t.total || 0);
     const monthly = financeItMonthly(total, 120);
     const on = t.id === state.tierId ? 'on' : '';
+    const belowFloor = DATA.internal && t.floorCleared === false;
+    const cls = ['tier', on, belowFloor ? 'below-floor' : ''].filter(Boolean).join(' ');
     const name = t.name || '';
     const sub = t.sub ? `<div class="sub">${t.sub}</div>` : '';
+    // Internal-only: render the floor warning for tiers under the floor.
+    // Public share URL never sees this block (DATA.internal is false).
+    const floorBlock = belowFloor
+      ? `<div class="tier-floor-warning">
+           <b>BELOW FLOOR</b> · ${t.realNetMargin || ''} real net · $${Number(t.macNetPerWorkday || 0).toLocaleString()}/day vs $${Number(t.minNetPerWorkday || 800).toLocaleString()} target<br>
+           Recommended min sell: <b>$${Number(t.recommendedMinSell || 0).toLocaleString()}</b>
+         </div>`
+      : '';
     return `
-      <div class="tier ${on}" onclick="pickTier('${t.id}')">
-        <div class="tag">${t.tag || ''}</div>
+      <div class="${cls}" onclick="pickTier('${t.id}')">
+        <div class="tag">${t.tag || ''}${belowFloor ? ' · BELOW FLOOR' : ''}</div>
         <div class="name">${name}</div>
         ${sub}
         <div class="desc">${t.desc || ''}</div>
         <div class="price">${money(total)}<small>+ HST</small></div>
         <div class="fin">or <b>${money(monthly)}/mo</b> via FinanceIt (10-yr)</div>
         <ul>${(t.perks || []).map(p => `<li>${p}</li>`).join('')}</ul>
+        ${floorBlock}
         <button class="pick-btn" type="button" onclick="event.stopPropagation();pickTier('${t.id}')">${on ? 'Selected' : 'Choose ' + name}</button>
       </div>
     `;
   }).join('');
+
+  // Internal mode banner so admins know they're seeing all tiers (including below-floor)
+  if (DATA.internal && !document.getElementById('internalBanner')) {
+    const banner = document.createElement('div');
+    banner.id = 'internalBanner';
+    banner.className = 'internal-banner';
+    const audit = DATA.floorAudit || {};
+    banner.innerHTML = `INTERNAL VIEW · <b>${audit.cleared || 0}</b> cleared · <b>${audit.blocked || 0}</b> below floor · <b>${audit.unknown || 0}</b> no-data`;
+    document.body.prepend(banner);
+    document.body.style.paddingTop = '32px';
+  }
 }
 
 function pickTier(id){

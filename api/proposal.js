@@ -259,6 +259,12 @@ export default async function handler(req, res) {
       img: p.url
     }));
 
+  // ?internal=1 (or admin host) bypasses the floor filter so Mac can see
+  // EVERY tier with its floor warning. Public share URLs default to filtering
+  // below-floor tiers OUT entirely so a customer can never accept a money-
+  // losing price by clicking a card.
+  const isInternal = String(req.query.internal || '').toLowerCase() === '1';
+
   const packages = est.calculated_packages || {};
   const tierEntries = Object.entries(packages)
     .filter(([id]) => TIER_CATALOG[id])
@@ -268,15 +274,28 @@ export default async function handler(req, res) {
       // and "Landmark" as the smaller sub-line instead of stacking them.
       const [primary, ...rest] = (meta.name || id).split(/\s*·\s*/);
       const sub = rest.join(' · ');
+      const summary = pkg.summary || {};
       return {
         id,
         tag: meta.tag,
         name: primary,
         sub,
         desc: meta.desc,
-        total: pkg.total ?? pkg.summary?.sellingPrice ?? 0,
-        persq: pkg.persq ?? pkg.summary?.pricePerSQ ?? 0,
-        perks: meta.perks
+        total: pkg.total ?? summary.sellingPrice ?? 0,
+        persq: pkg.persq ?? summary.pricePerSQ ?? 0,
+        perks: meta.perks,
+        // ── Floor enforcement passthrough (Apr 27) ──
+        // These are internal numbers — public clients will never render them.
+        // The proposal-client filter uses floorCleared to decide whether to
+        // show the card at all. recommendedMinSell tells admins what to bump
+        // to if they want to clear the floor.
+        macNet: summary.macNet ?? null,
+        macNetPerWorkday: summary.macNetPerWorkday ?? null,
+        floorCleared: summary.floorCleared ?? null,
+        minNetPerWorkday: summary.minNetPerWorkday ?? null,
+        floorViolationAmount: summary.floorViolationAmount ?? null,
+        recommendedMinSell: summary.recommendedMinSell ?? null,
+        realNetMargin: summary.realNetMargin ?? null
       };
     })
     .filter(t => t.total > 0)
@@ -323,11 +342,36 @@ export default async function handler(req, res) {
       videoUrl: resolveIntroVideo(rep, est.proposal_mode || 'shingle'),
       gallery: customGallery.length ? [...customGallery, ...GALLERY].slice(0, 8) : GALLERY
     },
+    // Floor filter:
+    //   - public (default): silently omit any tier where floorCleared === false
+    //     so customers physically cannot click-and-accept a money-loser
+    //   - ?internal=1: return ALL tiers, including the rejected ones, so Mac
+    //     can see floor warnings + recommendedMinSell for each
+    // If a tier has floorCleared === null (older calculated_packages without
+    // floor data) we trust them — no retroactive filtering.
     tiers: {
-      asphalt: tierEntries.length ? tierEntries : [
-        { id: 'gold', tag: 'GOOD', name: TIER_CATALOG.gold.name, desc: TIER_CATALOG.gold.desc, total: 0, perks: TIER_CATALOG.gold.perks }
-      ]
-    }
+      asphalt: (() => {
+        const filtered = isInternal
+          ? tierEntries
+          : tierEntries.filter(t => t.floorCleared !== false);
+        return filtered.length ? filtered : [
+          { id: 'gold', tag: 'GOOD', name: TIER_CATALOG.gold.name, desc: TIER_CATALOG.gold.desc, total: 0, perks: TIER_CATALOG.gold.perks }
+        ];
+      })()
+    },
+    internal: isInternal,
+    // When the filter dropped tiers we still want admins to know they exist
+    // (separate from the visible ones above). null on public response.
+    floorAudit: isInternal ? {
+      totalTiers: tierEntries.length,
+      cleared: tierEntries.filter(t => t.floorCleared === true).length,
+      blocked: tierEntries.filter(t => t.floorCleared === false).length,
+      unknown: tierEntries.filter(t => t.floorCleared == null).length,
+      blockedDetails: tierEntries.filter(t => t.floorCleared === false).map(t => ({
+        id: t.id, total: t.total, recommendedMinSell: t.recommendedMinSell,
+        macNetPerWorkday: t.macNetPerWorkday, minNetPerWorkday: t.minNetPerWorkday
+      }))
+    } : null
   };
 
   supabaseAdmin
