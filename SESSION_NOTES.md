@@ -1,3 +1,85 @@
+# Session notes — 2026-04-27 evening (SOP REALIGNMENT — strip double-counting loading layer)
+
+The Apr 27 morning session bolted on a "floor enforcement" loading layer that
+was double-counting the 35% S+M+O already embedded in the multiplier. This
+session removed it and rebuilt the engine to match `pricing_formula_v2.md`
+exactly. Six commits, one migration.
+
+## What changed
+
+**Engine (`lib/quoteEngineV3.js`)**
+- Stripped the 30% loading subtraction from the floor calc. The multiplier
+  formula `1 + 0.10 + 0.05 + 0.20 + target_profit` already includes the 35%
+  loaded layer per SOP Section 3 — subtracting it again was a known bug.
+- Added `sopProfit` (hardCost x 12/17/23%) and `sopNet` (= sopProfit) so the
+  engine reports SOP-canonical numbers directly.
+- Added `realCashNet` (sell − hardCost − sell × real_loading_pct) for "am I
+  making money" reporting using lean overhead (Plus Ultra default 12%).
+- Added `belowBreakeven` flag. Multipliers below 1.35 (= breakeven on 35%
+  loading) are flagged with `breakevenWarning` text. Flag-only, no auto-bump.
+- Added `apply_waste_to_bundles` toggle. False for Plus Ultra (Mac orders
+  bundles flat at 3/SQ no waste). Labor still uses measuredSQ pre-waste per
+  SOP Section 5.
+
+**Proposal API (`api/proposal.js`)**
+- Removed auto-bump of below-floor tiers. Per SOP, multiplier IS the price.
+- Removed below-floor tier filtering. Public + internal both show all tiers
+  exactly as `calculated_packages.summary.sellingPrice`.
+- Replaced `floorAudit` with `sopAudit` (SOP profit + real cash net per tier).
+
+**Migration 024**
+- Tenant settings: added `min_custom_multiplier` (default 1.35),
+  `real_loading_pct` (default 0.12), `apply_waste_to_bundles` (default false).
+- Merchant prices: Starter Strip $52→$72, Hip & Ridge $55→$67 (matches
+  internal sheet exactly).
+- Coastal Drywall Supplies merchant added. Bundle products (Landmark, Pro,
+  Presidential, Starter, Ridge cap) remapped from Kent → Coastal.
+
+## Validation
+
+- **Mountain Rd Section 16**: SOP says hardCost $39,175 × 1.52 = $59,546.
+  Engine produces $59,550 (within $25 rounding). SOP profit 17% × $39,175 =
+  $6,659.75. Engine produces $6,659.75. Match.
+- **Sheila #71 (EOS)**: hardCost $14,434 × 1.52 = $21,939.68 → rounded $21,950.
+  Engine matches. SOP profit 17% × $14,434 = $2,453.78. Engine matches.
+- **Breakeven guard**: multipliers 1.30, 1.34 trigger `belowBreakeven=true`;
+  1.35, 1.47, 1.52 do not. Verified.
+
+## 3 IE quotes regenerated (--persist)
+
+| Address | Tier | Old Sell | New Sell | Hard Cost | SOP Profit | Real Cash Net |
+|---|---|---|---|---|---|---|
+| Tobias #26 | gold | $11,750 | $11,425 | $7,424.78 | $891 | $2,629 |
+| Tobias #26 | platinum | $13,475 | $13,075 | $8,277.78 | $1,407 | $3,228 |
+| Tobias #26 | diamond | $19,200 | $18,425 | $11,352.78 | $2,611 | $4,861 |
+| Midway #27 | gold | $10,825 | $10,500 | $6,797.82 | $816 | $2,442 |
+| Midway #27 | platinum | $12,425 | $12,025 | $7,583.82 | $1,289 | $2,998 |
+| Midway #27 | diamond | $17,100 | $16,375 | $10,043.82 | $2,310 | $4,366 |
+| Chartersville #28 | gold | $12,575 | $12,225 | $8,323.32 | $999 | $2,435 |
+| Chartersville #28 | platinum | $14,550 | $14,150 | $9,305.32 | $1,582 | $3,147 |
+| Chartersville #28 | diamond | $21,275 | $20,525 | $12,995.32 | $2,989 | $5,067 |
+
+All three dropped 2-3.5% — expected delta from removing waste-padded bundle
+counts and applying corrected starter/ridge cap prices.
+
+## Tech debt remaining
+
+- `loading_pct` and `min_net_per_workday` columns from migration 022 are no
+  longer read by the engine. Left in place rather than dropped — column drops
+  are riskier than column ignores.
+- Coastal Drywall remap covers bundles only. Other materials (underlayment,
+  IWS, drip edge, valley, vents, flashings, nails, caulking, OSB) still at
+  Kent. Need Mac to confirm vendor of record per category.
+- 42 Patricia (#25), Kevin March (#21), Stephanie McCardle (#22) NOT regenned
+  per the no-backfill rule on Published proposals. They'll keep their old
+  `calculated_packages` until Mac decides to resend.
+- Mountain Rd worked-example validation was at the multiplier × hardCost
+  level only. A full end-to-end test (running a Performance Shell config
+  through `calculateQuoteV3` and matching all 7 SOP line items) wasn't done.
+  Worth a dedicated test if any drift surfaces.
+
+---
+
 # Session notes — 2026-04-27 (PRICING ENGINE PARITY + UPGRADES UI)
 
 Three-part audit on the Ryujin pricing engine after multiplier revert. Engine
