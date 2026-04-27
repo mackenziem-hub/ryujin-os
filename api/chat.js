@@ -780,7 +780,7 @@ const TOOLS = [
   },
   {
     name: 'create_ryujin_proposal',
-    description: 'Create a Plus Ultra proposal in RYUJIN (not Estimator OS) from measurements. Returns the client-facing share URL ready to hand to Darcy. Use when Mackenzie says "[address] is ready" or similar — the job folder workflow. Auto-runs the multi-tier quote engine (Gold/Platinum/Diamond, post-correction multipliers 1.89/2.08/2.38 hitting 12/17/23% net after loaded costs), creates the estimate record in Supabase, and returns the share token. Photos should be uploaded separately via /api/estimate-photos or the admin UI. Runs immediately — no approval gate (estimate lands in draft status).',
+    description: 'Create a Plus Ultra proposal in RYUJIN (not Estimator OS) from measurements. Returns the client-facing share URL ready to hand to Darcy. Use when Mackenzie says "[address] is ready" or similar — the job folder workflow. Auto-runs the multi-tier quote engine (Gold/Platinum/Diamond, v1 SOP multipliers 1.47/1.52/1.58 reverted Apr 24), creates the estimate record in Supabase, and returns the share token. Photos should be uploaded separately via /api/estimate-photos or the admin UI. Runs immediately — no approval gate (estimate lands in draft status).',
     input_schema: {
       type: 'object',
       properties: {
@@ -804,9 +804,22 @@ const TOOLS = [
         pipes: { type: 'number', description: 'Pipe penetrations to flash' },
         vents: { type: 'number' },
         chimneys: { type: 'number' },
+        chimney_size: { type: 'string', enum: ['small', 'large'], description: 'Small ($125 flashing) or Large ($350). Default: small.' },
+        chimney_cricket: { type: 'boolean', description: 'Install chimney cricket ($150). Default: false.' },
         stories: { type: 'number', description: 'Default 1' },
         extra_layers: { type: 'number', description: 'Extra shingle layers to tear off beyond standard 1 layer' },
+        cedar_tearoff: { type: 'boolean', description: 'Cedar shake removal — $70/SQ on top of base labor.' },
+        redeck_sheets: { type: 'number', description: 'Expected redeck sheets — $30/sheet labor.' },
         distance_km: { type: 'number', description: 'Distance from Riverview in KM. 0 = local.' },
+        soffit_lf: { type: 'number', description: 'Soffit LF if scoped as upgrade or part of Performance Shell.' },
+        fascia_lf: { type: 'number', description: 'Fascia LF.' },
+        gutter_lf: { type: 'number', description: 'Gutter LF.' },
+        leaf_guard: { type: 'boolean', description: 'Add leaf guard at $6/LF on top of gutter cost.' },
+        wall_sqft: { type: 'number', description: 'Total exterior wall area in sqft (Performance Shell scope).' },
+        siding_choice: { type: 'string', description: 'Siding material: vinyl_standard, vinyl_premium, vinyl_signature, hardie_lap, steel_ribbed, steel_board_batten, aluminum.' },
+        window_count: { type: 'number', description: 'Windows to cap or replace (residential reroof only counts capping).' },
+        door_count: { type: 'number', description: 'Doors to cap.' },
+        custom_prices: { type: 'object', description: 'Override engine output: {gold:N, platinum:N, diamond:N} or {standard:N, enhanced:N, premium:N} for metal. Skips multiplier.', properties: { gold: { type: 'number' }, platinum: { type: 'number' }, diamond: { type: 'number' }, standard: { type: 'number' }, enhanced: { type: 'number' }, premium: { type: 'number' } } },
         selected_package: { type: 'string', enum: ['gold', 'platinum', 'diamond'], description: 'Recommended tier. Default: platinum.' },
         notes: { type: 'string', description: 'Internal notes — skylight scope, concerns, custom adders, etc.' },
         tags: { type: 'array', items: { type: 'string' }, description: 'Estimate tags e.g. ["canvassing", "riverview", "source:facebook-ad"]' }
@@ -1836,6 +1849,10 @@ async function executeTool(name, input, attachments = []) {
         const headers = { 'Content-Type': 'application/json', 'x-tenant-id': TENANT };
 
         // 1. Compare quote across Gold / Platinum / Diamond
+        // Pricing model derives from distance: <=20km local, <=60km dayTrip, else extendedStay
+        const distKM = Number(input.distance_km) || 0;
+        const pricingModel = distKM <= 20 ? 'Local' : distKM <= 60 ? 'Day Trip' : 'Extended Stay';
+
         const measurements = {
           squareFeet: Number(input.square_feet) || 0,
           pitch: String(input.pitch || '5/12'),
@@ -1849,12 +1866,26 @@ async function executeTool(name, input, attachments = []) {
           pipes: Number(input.pipes) || 0,
           vents: Number(input.vents) || 0,
           chimneys: Number(input.chimneys) || 0,
+          chimneySize: input.chimney_size || 'small',
+          cricket: !!input.chimney_cricket,
           stories: Number(input.stories) || 1,
           extraLayers: Number(input.extra_layers) || 0,
-          distanceKM: Number(input.distance_km) || 0
+          cedarTearoff: !!input.cedar_tearoff,
+          redeckSheets: Number(input.redeck_sheets) || 0,
+          distanceKM: distKM,
+          // Exterior + upgrades (engine includes when LF > 0 or required:true in scope)
+          soffitLF: Number(input.soffit_lf) || 0,
+          fasciaLF: Number(input.fascia_lf) || 0,
+          gutterLF: Number(input.gutter_lf) || 0,
+          leafGuard: !!input.leaf_guard,
+          wallSqFt: Number(input.wall_sqft) || 0,
+          windowCount: Number(input.window_count) || 0,
+          doorCount: Number(input.door_count) || 0
         };
+        const choices = input.siding_choice ? { siding: input.siding_choice } : {};
+
         const qResp = await fetch(`${RYUJIN_BASE}/api/quote?mode=compare&tenant=${TENANT}`, {
-          method: 'POST', headers, body: JSON.stringify({ measurements, choices: {} })
+          method: 'POST', headers, body: JSON.stringify({ measurements, choices })
         });
         if (!qResp.ok) return { error: `Quote engine failed (HTTP ${qResp.status}): ${(await qResp.text()).slice(0, 200)}` };
         const compare = await qResp.json();
@@ -1864,12 +1895,18 @@ async function executeTool(name, input, attachments = []) {
         for (const slug of ['gold', 'platinum', 'diamond']) {
           if (!compare.offers?.[slug]) continue;
           const s = compare.offers[slug].summary;
+          // Apply custom price override if provided
+          const cp = input.custom_prices && input.custom_prices[slug];
+          const total = (typeof cp === 'number' && cp > 0) ? cp : s.sellingPrice;
+          const taxRate = s.taxLabel === 'GST' ? 0.05 : 0.15;
+          const totalWithTax = (typeof cp === 'number' && cp > 0) ? Math.round(total * (1 + taxRate)) : s.totalWithTax;
           shaped[slug] = {
-            total: s.sellingPrice,
-            totalWithTax: s.totalWithTax,
+            total,
+            totalWithTax,
             persq: s.pricePerSQ,
-            tax: s.tax,
+            tax: Math.round(total * taxRate),
             margin: s.netMargin,
+            customPrice: typeof cp === 'number' && cp > 0,
             lineItems: compare.offers[slug].lineItems
           };
         }
@@ -1890,7 +1927,7 @@ async function executeTool(name, input, attachments = []) {
             province: input.customer_province || 'NB'
           },
           proposal_mode: 'Roof Only',
-          pricing_model: 'Local',
+          pricing_model: pricingModel,
           roof_area_sqft: measurements.squareFeet,
           roof_pitch: measurements.pitch,
           complexity: measurements.complexity,
@@ -1903,9 +1940,20 @@ async function executeTool(name, input, attachments = []) {
           pipes: measurements.pipes,
           vents: measurements.vents,
           chimneys: measurements.chimneys,
+          chimney_size: measurements.chimneySize,
+          chimney_cricket: measurements.cricket,
           stories: measurements.stories,
           extra_layers: measurements.extraLayers,
+          cedar_tearoff: measurements.cedarTearoff,
+          redeck_sheets: measurements.redeckSheets,
           distance_km: measurements.distanceKM,
+          soffit_lf: measurements.soffitLF,
+          fascia_lf: measurements.fasciaLF,
+          gutter_lf: measurements.gutterLF,
+          window_count: measurements.windowCount,
+          door_count: measurements.doorCount,
+          siding_sqft: measurements.wallSqFt,
+          custom_prices: input.custom_prices || {},
           calculated_packages: shaped,
           selected_package: selected,
           status: 'draft',
