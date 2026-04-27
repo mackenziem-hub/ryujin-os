@@ -259,10 +259,10 @@ export default async function handler(req, res) {
       img: p.url
     }));
 
-  // ?internal=1 (or admin host) bypasses the floor filter so Mac can see
-  // EVERY tier with its floor warning. Public share URLs default to filtering
-  // below-floor tiers OUT entirely so a customer can never accept a money-
-  // losing price by clicking a card.
+  // ?internal=1 surfaces SOP profit + real-cash-net diagnostics for Mac. Public
+  // share URLs only see clean retail prices. The SOP says "multiplier IS the
+  // price, no auto-bump" — so we trust calculated_packages.summary.sellingPrice
+  // exactly, no filtering, no bumping. (Stripped Apr 27 per Phase 1B/1C.)
   const isInternal = String(req.query.internal || '').toLowerCase() === '1';
 
   const packages = est.calculated_packages || {};
@@ -284,18 +284,16 @@ export default async function handler(req, res) {
         total: pkg.total ?? summary.sellingPrice ?? 0,
         persq: pkg.persq ?? summary.pricePerSQ ?? 0,
         perks: meta.perks,
-        // ── Floor enforcement passthrough (Apr 27) ──
-        // These are internal numbers — public clients will never render them.
-        // The proposal-client filter uses floorCleared to decide whether to
-        // show the card at all. recommendedMinSell tells admins what to bump
-        // to if they want to clear the floor.
-        macNet: summary.macNet ?? null,
-        macNetPerWorkday: summary.macNetPerWorkday ?? null,
-        floorCleared: summary.floorCleared ?? null,
-        minNetPerWorkday: summary.minNetPerWorkday ?? null,
-        floorViolationAmount: summary.floorViolationAmount ?? null,
-        recommendedMinSell: summary.recommendedMinSell ?? null,
-        realNetMargin: summary.realNetMargin ?? null
+        // ── SOP + real-cash diagnostics (internal only, never rendered to customer) ──
+        sopTargetPct: summary.sopTargetPct ?? null,
+        sopProfit: summary.sopProfit ?? null,
+        sopNet: summary.sopNet ?? null,
+        sopNetPerWorkday: summary.sopNetPerWorkday ?? null,
+        realCashNet: summary.realCashNet ?? null,
+        realCashNetPerWorkday: summary.realCashNetPerWorkday ?? null,
+        realCashNetMargin: summary.realCashNetMargin ?? null,
+        belowBreakeven: summary.belowBreakeven ?? null,
+        breakevenWarning: summary.breakevenWarning ?? null
       };
     })
     .filter(t => t.total > 0)
@@ -342,36 +340,29 @@ export default async function handler(req, res) {
       videoUrl: resolveIntroVideo(rep, est.proposal_mode || 'shingle'),
       gallery: customGallery.length ? [...customGallery, ...GALLERY].slice(0, 8) : GALLERY
     },
-    // Floor enforcement (Apr 27 v2):
-    //   - public (default): show ALL tiers, but auto-bump any below-floor tier
-    //     to its recommendedMinSell. Preserves good/better/best sales psychology
-    //     while guaranteeing no money-losers. Customer never sees the bump.
-    //   - ?internal=1: return ALL tiers with their original (unbumped) totals
-    //     so Mac can see floor warnings + recommendedMinSell + delta.
-    // If a tier has floorCleared === null (older calculated_packages without
-    // floor data) we trust them — no retroactive bumping.
+    // Per pricing_formula_v2.md Section 3: multiplier IS the price. No bumping,
+    // no filtering. Public and internal both show calculated_packages exactly as
+    // the engine produced them. Internal additionally exposes SOP profit + real-
+    // cash-net diagnostics on each tier.
     tiers: {
-      asphalt: tierEntries.map(t => {
-        if (isInternal) return t;
-        if (t.floorCleared === false && t.recommendedMinSell && t.recommendedMinSell > t.total) {
-          // Round to nearest $25 (matches engine rounding) so price looks clean
-          const bumped = Math.round(t.recommendedMinSell / 25) * 25;
-          return { ...t, total: bumped, persq: t.persq, _bumpedFromBelow: t.total };
-        }
-        return t;
-      })
+      asphalt: tierEntries
     },
     internal: isInternal,
-    // When the filter dropped tiers we still want admins to know they exist
-    // (separate from the visible ones above). null on public response.
-    floorAudit: isInternal ? {
+    // Internal-only audit: SOP profit per tier + breakeven flags for any custom
+    // multipliers below 1.35.
+    sopAudit: isInternal ? {
       totalTiers: tierEntries.length,
-      cleared: tierEntries.filter(t => t.floorCleared === true).length,
-      blocked: tierEntries.filter(t => t.floorCleared === false).length,
-      unknown: tierEntries.filter(t => t.floorCleared == null).length,
-      blockedDetails: tierEntries.filter(t => t.floorCleared === false).map(t => ({
-        id: t.id, total: t.total, recommendedMinSell: t.recommendedMinSell,
-        macNetPerWorkday: t.macNetPerWorkday, minNetPerWorkday: t.minNetPerWorkday
+      belowBreakeven: tierEntries.filter(t => t.belowBreakeven === true).length,
+      breakevenWarnings: tierEntries
+        .filter(t => t.belowBreakeven === true)
+        .map(t => ({ id: t.id, warning: t.breakevenWarning, total: t.total })),
+      tiers: tierEntries.map(t => ({
+        id: t.id,
+        total: t.total,
+        sopProfit: t.sopProfit,
+        sopNetPerWorkday: t.sopNetPerWorkday,
+        realCashNet: t.realCashNet,
+        realCashNetMargin: t.realCashNetMargin
       }))
     } : null
   };
