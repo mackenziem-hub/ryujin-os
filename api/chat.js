@@ -1,5 +1,6 @@
 // Shenron Chat API — powered by snapshot + tool use
 import { gmailSearch, gmailReadMessage, gmailReadThread, gmailDraft, gmailSend, calendarList, calendarCreate, calendarUpdate, driveSearch, driveReadFile } from '../lib/google.js';
+import crypto from 'node:crypto';
 
 const BASE_PROMPT = `You are Shenron, Mackenzie Mazerolle's top-level AI assistant and central command hub. You are powerful, direct, and all-knowing across Mackenzie's entire world.
 
@@ -54,6 +55,12 @@ NOTE on Messenger campaign data: Historical Messenger campaigns (Classic Carouse
 **Google Drive (LIVE):**
 - **search_drive** — Search Drive for files by name or content — executes immediately
 - **read_drive_file** — Read file content (Docs→text, Sheets→CSV) — executes immediately
+
+**Desktop Bridge (LIVE — Mackenzie's Windows machine, read-only):**
+- **read_local_file** — Read a single file from his desktop or laptop. For .docx files, ALWAYS pass as="text".
+- **glob_local** — Find files by pattern (e.g. job folders by address fragment).
+- **list_local_dir** — List entries in a folder.
+Use these when he says "create a proposal for {address}" or references local files. Allowlist: Plus Ultra, Shenron, Aetheria, Ryujin, Obsidian Vault. Default machine: desktop.
 
 CRITICAL: Write operations are routed through the approval system. Approvals happen RIGHT HERE in chat — NOT via SMS.
 
@@ -211,6 +218,22 @@ Darcy's GHL User ID: ri1tt8RZPuABuBwE8kmS
 5. Mackenzie creates Automator redirect links like www.plusultraroofing.com/[address]-roof-proposal that point to the sales page
 6. Add note to GHL contact with the redirect link and pricing summary
 7. Move opportunity to "Quote Sent" stage in the appropriate pipeline
+
+## DESKTOP BRIDGE — Reading Mackenzie's Local Files
+You have read-only access to Mackenzie's Windows machine via three tools: read_local_file, glob_local, list_local_dir. Default machine is "desktop". Allowed roots: Desktop/Plus Ultra/, Desktop/Shenron/, Desktop/Aetheria/, Desktop/Ryujin/, Documents/Obsidian Vault/.
+
+WHEN TO USE: Anytime Mackenzie says "create a proposal for {address}" or references a local file/folder ("read my Obsidian note about X", "what's in the Chartersville folder", "look at the docx in Plus Ultra Jobs"). The Plus Ultra Jobs folder lives at C:/Users/macke/OneDrive/Desktop/Plus Ultra/Jobs/ with one subfolder per address.
+
+Address-to-proposal workflow:
+1. glob_local with pattern C:/Users/macke/OneDrive/Desktop/Plus Ultra/Jobs/*{address-fragment}*/** — finds the job folder and its contents in one call.
+2. If a Summary.md exists, read_local_file that first — it has the canonical scope.
+3. If only a .docx job description exists, call read_local_file with as="text" — the bridge extracts plain text from the docx server-side. NEVER try to base64-decode docx yourself.
+4. For images (cover photo, before/after, drone), the bridge returns base64. Don't try to display them — just acknowledge they exist and use their paths when uploading via the proposal edit URL.
+5. After reading the scope, follow the existing proposal workflow (look up contact in GHL, create_ryujin_proposal or create_estimate, generate sales page, etc.).
+
+If the bridge is offline or returns an error: report it cleanly ("desktop bridge looks offline — start it with npm start in desktop-bridge/, or run cloudflared") and fall back to asking Mackenzie for the scope details.
+
+Path format: Always use forward slashes in paths. Drive letters fine (C:/Users/macke/...). The bridge resolves and case-insensitive-matches against the allowlist, so casing doesn't matter on Windows.
 
 ## Roof Calculation Reference
 Pitch multipliers (for converting top-down/2D measurements to actual roof area):
@@ -1226,6 +1249,43 @@ const TOOLS = [
         },
         choices: { type: 'object', description: 'Optional choices object (siding, housewrap, etc.)' }
       }
+    }
+  },
+  {
+    name: 'read_local_file',
+    description: 'Read a single file from Mackenzie\'s Windows desktop or laptop via the Desktop Bridge. Use this when Mackenzie says "create a proposal for {address}" or references a local file/folder ("read my Obsidian note", "open the docx in Plus Ultra Jobs/..."). The bridge is read-only and only allows paths under Desktop/Plus Ultra/, Desktop/Shenron/, Desktop/Aetheria/, Desktop/Ryujin/, or Documents/Obsidian Vault/. For .docx files, ALWAYS pass as="text" so the bridge extracts plain text server-side instead of returning base64. For images and PDFs the bridge returns base64. Default machine is desktop — only pass "laptop" when Mackenzie explicitly says "on my laptop".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute Windows path. Forward slashes OK. Example: C:/Users/macke/OneDrive/Desktop/Plus Ultra/Jobs/24 Chartersville Road/Summary.md' },
+        machine: { type: 'string', enum: ['desktop', 'laptop'], description: 'Which machine to read from. Default: desktop.' },
+        as: { type: 'string', enum: ['text'], description: 'Optional. Pass "text" for .docx files to get extracted plain text instead of base64.' }
+      },
+      required: ['path']
+    }
+  },
+  {
+    name: 'glob_local',
+    description: 'Find files matching a glob pattern on Mackenzie\'s desktop or laptop via the Desktop Bridge. Use this to locate job folders by partial name. Example: glob_local({pattern: "C:/Users/macke/OneDrive/Desktop/Plus Ultra/Jobs/*Chartersville*/*"}) finds everything in any folder containing "Chartersville". Returns up to 500 paths. Always include a path-prefix that\'s INSIDE the allowlist (Plus Ultra, Shenron, Aetheria, Ryujin, or Obsidian Vault) — patterns rooted outside those return nothing.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        pattern: { type: 'string', description: 'Glob pattern (fast-glob syntax). Use forward slashes. Example: "C:/Users/macke/OneDrive/Desktop/Plus Ultra/Jobs/*42 Patricia*/**"' },
+        machine: { type: 'string', enum: ['desktop', 'laptop'], description: 'Which machine. Default: desktop.' }
+      },
+      required: ['pattern']
+    }
+  },
+  {
+    name: 'list_local_dir',
+    description: 'List files and subfolders in a directory on Mackenzie\'s desktop or laptop via the Desktop Bridge. Use this after glob_local narrows down a job folder, to see what\'s inside. Returns name, type (file/dir), size, mtime for each entry.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute path to a directory inside the allowlist.' },
+        machine: { type: 'string', enum: ['desktop', 'laptop'], description: 'Which machine. Default: desktop.' }
+      },
+      required: ['path']
     }
   }
 ];
@@ -2517,6 +2577,73 @@ async function executeTool(name, input, attachments = []) {
       }
     }
 
+    // ── DESKTOP BRIDGE OPERATIONS — read Mackenzie's local Windows files ──
+    if (name === 'read_local_file' || name === 'glob_local' || name === 'list_local_dir') {
+      const machine = (input.machine || 'desktop').toLowerCase();
+      const baseEnv = machine === 'laptop' ? 'BRIDGE_URL_LAPTOP' : 'BRIDGE_URL_DESKTOP';
+      const baseUrl = (process.env[baseEnv] || '').trim().replace(/\/+$/, '');
+      const secret = (process.env.BRIDGE_HMAC_SECRET || '').trim();
+      if (!baseUrl) return { error: `Desktop Bridge not configured for ${machine}. Set ${baseEnv} in Vercel env.` };
+      if (!secret) return { error: 'Desktop Bridge secret missing. Set BRIDGE_HMAC_SECRET in Vercel env.' };
+
+      // Map tool to bridge endpoint + body
+      let routePath, bodyObj;
+      if (name === 'read_local_file') {
+        const qs = input.as ? `?as=${encodeURIComponent(input.as)}` : '';
+        routePath = `/read${qs}`;
+        bodyObj = { path: input.path };
+        if (input.as) bodyObj.as = input.as;
+      } else if (name === 'glob_local') {
+        routePath = '/glob';
+        bodyObj = { pattern: input.pattern };
+      } else {
+        routePath = '/list';
+        bodyObj = { path: input.path };
+      }
+
+      const bodyStr = JSON.stringify(bodyObj);
+      const ts = Date.now();
+      const bodyHash = crypto.createHash('sha256').update(bodyStr).digest('hex');
+      const canonical = `POST|${routePath}|${ts}|${bodyHash}`;
+      const sig = crypto.createHmac('sha256', secret).update(canonical).digest('hex');
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      try {
+        const resp = await fetch(`${baseUrl}${routePath}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Bridge-Timestamp': String(ts),
+            'X-Bridge-Signature': sig
+          },
+          body: bodyStr,
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        const text = await resp.text();
+        let data;
+        try { data = JSON.parse(text); }
+        catch { data = { error: `Bridge returned non-JSON (${resp.status}): ${text.slice(0, 200)}` }; }
+        if (!resp.ok) {
+          return { error: `Bridge ${routePath} failed (HTTP ${resp.status}): ${data?.error || text.slice(0, 200)}`, machine };
+        }
+        // Trim huge text payloads to keep tool result manageable
+        if (name === 'read_local_file' && data.encoding === 'utf8' && typeof data.content === 'string' && data.content.length > 30000) {
+          return { ...data, _truncated: true, content: data.content.slice(0, 30000) + '\n…[truncated]', original_size: data.size, machine };
+        }
+        if (name === 'read_local_file' && data.encoding === 'base64' && typeof data.content === 'string' && data.content.length > 200000) {
+          // Don't blast 10MB of base64 back to Claude — return metadata + truncation hint
+          return { encoding: 'base64', content_type: data.content_type, size: data.size, mtime: data.mtime, _truncated: true, message: 'Binary too large to embed in tool result. Ask Mackenzie what to do with it (display preview, hand off to a vision model, etc.).', machine };
+        }
+        return { ...data, machine };
+      } catch (e) {
+        clearTimeout(timeoutId);
+        if (e.name === 'AbortError') return { error: `Bridge ${routePath} timed out (10s). Is the bridge + tunnel running on ${machine}?`, machine };
+        return { error: `Bridge ${routePath} request failed: ${e.message}`, machine };
+      }
+    }
+
     return { error: `Unknown tool: ${name}` };
   } catch (e) {
     return { error: e.message };
@@ -2842,6 +2969,9 @@ You are NOW speaking as Gohan, the scholar warrior — Mackenzie's game developm
       case 'create_ghl_task': return `📌 Creating GHL task: "${input.title}"`;
       case 'add_contact_note': return `📝 Adding note to contact`;
       case 'generate_proposal': return `📄 Generating sales page`;
+      case 'read_local_file': return `💻 Reading local file: ${(input.path || '').split(/[\\/]/).pop() || input.path}`;
+      case 'glob_local': return `💻 Searching local files: ${input.pattern}`;
+      case 'list_local_dir': return `💻 Listing local folder: ${(input.path || '').split(/[\\/]/).pop() || input.path}`;
       default: return `⚙ ${name}`;
     }
   }
