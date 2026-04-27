@@ -1180,7 +1180,7 @@ const TOOLS = [
         address: { type: 'string' },
         subcontractor: { type: 'string', description: 'Atlantic Roofing, Grand Manor, etc.' },
         subcontractor_id: { type: 'string', description: 'Optional — subcontractor UUID' },
-        job_type: { type: 'string', enum: ['full_replacement', 'repair', 'gutters', 'siding', 'other'], description: 'STRICT enum.' },
+        job_type: { type: 'string', enum: ['replacement', 'new_construction', 'repair'], description: 'STRICT enum (paysheet uses different values than workorder). Use "replacement" for full reroofs.' },
         shingle_product: { type: 'string' },
         eagleview_report: { type: 'string' },
         labour_breakdown: { type: 'array', description: 'Labour line items', items: { type: 'object' } },
@@ -1201,14 +1201,17 @@ const TOOLS = [
   },
   {
     name: 'generate_material_list',
-    description: 'Generate a purchase-ready material list for a Ryujin estimate. Either pass an estimate_id (preferred — pulls measurements + selected offer from DB) or pass measurements + offer_slug as a fallback. Calls /api/quote?materials=1. Returns the structured list inline.',
+    description: 'Generate a purchase-ready material list. Two modes: (1) pass a Ryujin estimate UUID, OR (2) FALLBACK — pass measurements + offer_slug directly. The fallback works for jobs whose estimates live in Estimator OS or anywhere outside Ryujin. ALWAYS use the fallback when the user mentions an Estimator OS estimate (#71, etc.) or when no Ryujin UUID is available. Do NOT skip this tool just because there is no Ryujin estimate.',
     input_schema: {
       type: 'object',
       properties: {
-        estimate_id: { type: 'string', description: 'Ryujin estimate UUID — preferred path' },
-        offer_slug: { type: 'string', description: 'Offer slug if no estimate_id (gold, platinum, diamond, etc.)' },
-        measurements: { type: 'object', description: 'Measurements object (squareFeet, pitch, eavesLF, etc.) — only needed if no estimate_id' },
-        choices: { type: 'object', description: 'Choices object (siding, housewrap, etc.) — optional fallback' }
+        estimate_id: { type: 'string', description: 'Ryujin estimate UUID. ONLY use if explicitly known to be a Ryujin UUID. For Estimator OS estimates, leave blank and use the fallback fields.' },
+        offer_slug: { type: 'string', description: 'Offer slug — gold, platinum, diamond, grand_manor. Required when no estimate_id.' },
+        measurements: {
+          type: 'object',
+          description: 'Measurements object. Required when no estimate_id. Standard fields: squareFeet, pitch (e.g. "10/12"), complexity (Simple/Standard/Complex), eavesLF, rakesLF, ridgesLF, hipsLF, valleysLF, wallsLF, pipes, vents, chimneys, stories, extraLayers, distanceKM.'
+        },
+        choices: { type: 'object', description: 'Optional choices object (siding, housewrap, etc.)' }
       }
     }
   }
