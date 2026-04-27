@@ -273,8 +273,8 @@ export default async function handler(req, res) {
         name: primary,
         sub,
         desc: meta.desc,
-        total: pkg.total || 0,
-        persq: pkg.persq || 0,
+        total: pkg.total ?? pkg.summary?.sellingPrice ?? 0,
+        persq: pkg.persq ?? pkg.summary?.pricePerSQ ?? 0,
         perks: meta.perks
       };
     })
