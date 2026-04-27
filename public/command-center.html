@@ -35,7 +35,8 @@ body:active { cursor: grabbing; }
   pointer-events: none;
 }
 
-/* Opening cutscene flash — white/cyan pulse on entry */
+/* Opening cutscene flash — white/cyan pulse on entry. Composited layer
+   (transform/opacity only) so it doesn't fight WebGL init for the main thread. */
 #entry-flash {
   position: fixed;
   inset: 0;
@@ -43,17 +44,23 @@ body:active { cursor: grabbing; }
   pointer-events: none;
   background: radial-gradient(ellipse at center, rgba(220,240,255,0.85) 0%, rgba(34,211,238,0.45) 35%, rgba(3,6,17,0) 75%);
   opacity: 0;
+  will-change: transform, opacity;
+  transform: translateZ(0);
+  contain: strict;
 }
 #entry-flash.fire { animation: entryFlash 2.4s cubic-bezier(.2,.7,.3,1) forwards; }
 @keyframes entryFlash {
-  0%   { opacity: 0; transform: scale(0.3); }
-  12%  { opacity: 1; transform: scale(1.05); }
-  35%  { opacity: 0.7; transform: scale(1.2); }
-  70%  { opacity: 0.15; transform: scale(1.35); }
-  100% { opacity: 0; transform: scale(1.4); }
+  0%   { opacity: 0; transform: translateZ(0) scale(0.3); }
+  12%  { opacity: 1; transform: translateZ(0) scale(1.05); }
+  35%  { opacity: 0.7; transform: translateZ(0) scale(1.2); }
+  70%  { opacity: 0.15; transform: translateZ(0) scale(1.35); }
+  100% { opacity: 0; transform: translateZ(0) scale(1.4); }
 }
 
-/* Opening command-center wordmark — appears, holds, fades */
+/* Opening command-center wordmark — appears, holds, fades.
+   Using transform:scale(X) instead of letter-spacing for the expand-in
+   effect — letter-spacing animates layout (reflow every frame), scale
+   animates on the compositor (no main-thread cost). Removes the jank. */
 #entry-mark {
   position: fixed;
   top: 50%; left: 50%;
@@ -69,6 +76,7 @@ body:active { cursor: grabbing; }
   opacity: 0;
   text-align: center;
   white-space: nowrap;
+  will-change: transform, opacity;
 }
 #entry-mark.fire { animation: entryMark 2.8s cubic-bezier(.2,.7,.3,1) forwards; }
 #entry-mark .sub {
@@ -80,10 +88,10 @@ body:active { cursor: grabbing; }
   font-weight: 600;
 }
 @keyframes entryMark {
-  0%   { opacity: 0; letter-spacing: 30px; }
-  25%  { opacity: 1; letter-spacing: 10px; }
-  75%  { opacity: 1; letter-spacing: 10px; }
-  100% { opacity: 0; letter-spacing: 4px; transform: translate(-50%, -50%) scale(1.15); }
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(1.5); }
+  25%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  75%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.15); }
 }
 
 /* WebGL background canvas (stars on top of dragon) */
@@ -1697,21 +1705,31 @@ window.toggleAutoRotate = toggleAutoRotate;
 
 // ──────────────────────────────────────────
 // OPENING CUTSCENE — plays once per session, skipped on repeats + low-perf devices.
+//
+// Bails on perf-lite too (was only checking LOW_PERF / ry_cc_lite, missed the
+// auto-detected ry_perf_lite flag), and waits two RAFs before firing so the
+// first WebGL frame has already rendered. That eliminates the jank where the
+// CSS keyframes started while shaders were still compiling.
 // ──────────────────────────────────────────
 (function openingCutscene(){
   const flash = document.getElementById('entry-flash');
   const mark = document.getElementById('entry-mark');
   if (!flash || !mark) return;
   const seen = sessionStorage.getItem('ry_cc_cutscene_seen');
-  if (seen || LOW_PERF) {
+  const perfLite = document.documentElement.classList.contains('perf-lite');
+  if (seen || LOW_PERF || perfLite) {
     // Skip entirely — tear down now so nothing stays on screen or intercepts clicks
     flash.remove(); mark.remove();
     return;
   }
   sessionStorage.setItem('ry_cc_cutscene_seen', '1');
+  // Defer one extra frame so the WebGL renderer has shipped its first frame
+  // before we start animating — keeps the cutscene off the contended path.
   requestAnimationFrame(() => {
-    flash.classList.add('fire');
-    mark.classList.add('fire');
+    requestAnimationFrame(() => {
+      flash.classList.add('fire');
+      mark.classList.add('fire');
+    });
   });
   setTimeout(() => { flash.remove(); mark.remove(); }, 3000);
 })();

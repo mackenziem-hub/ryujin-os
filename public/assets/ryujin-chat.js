@@ -64,18 +64,81 @@
   .ry-typing span:nth-child(3){animation-delay:0.3s}
   @keyframes ry-bob{0%,80%,100%{transform:translateY(0);opacity:0.3}40%{transform:translateY(-4px);opacity:1}}
 
-  .ry-choices{display:flex;flex-direction:column;gap:5px;padding:0 14px 12px;flex-shrink:0}
-  .ry-choice{text-align:left;padding:9px 12px;background:rgba(6,10,20,0.6);border:1px solid rgba(34,211,238,0.18);
-    border-radius:9px;color:#e0e6f0;font-family:'Inter',sans-serif;font-size:0.78em;cursor:pointer;transition:all 0.18s;
-    display:flex;align-items:center;gap:8px}
+  /* Suggestions header — collapse toggle + label. Persisted in localStorage. */
+  .ry-sugg-head{display:flex;align-items:center;justify-content:space-between;
+    padding:6px 14px 4px;font-family:'Share Tech Mono',monospace;font-size:0.6em;
+    letter-spacing:1.5px;color:rgba(160,190,230,0.55);text-transform:uppercase;
+    flex-shrink:0;cursor:pointer;user-select:none;transition:color 0.18s}
+  .ry-sugg-head:hover{color:#22d3ee}
+  .ry-sugg-head .ry-sugg-label{display:flex;align-items:center;gap:6px}
+  .ry-sugg-head .ry-sugg-chev{display:inline-block;width:10px;height:10px;
+    transition:transform 0.25s;color:rgba(34,211,238,0.55)}
+  .ry-sugg-head .ry-sugg-chev svg{width:100%;height:100%;stroke:currentColor;
+    fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
+  .ry-sugg-wrap.collapsed .ry-sugg-chev{transform:rotate(-90deg)}
+  .ry-sugg-wrap.collapsed .ry-choices{display:none}
+
+  .ry-choices{display:flex;flex-direction:column;gap:5px;padding:0 14px 10px;flex-shrink:0;
+    max-height:120px;overflow-y:auto}
+  .ry-choices::-webkit-scrollbar{width:4px}
+  .ry-choices::-webkit-scrollbar-thumb{background:rgba(34,211,238,0.2);border-radius:2px}
+  .ry-choices:empty{display:none}
+  .ry-choice{text-align:left;padding:7px 10px;background:rgba(6,10,20,0.6);border:1px solid rgba(34,211,238,0.18);
+    border-radius:9px;color:#e0e6f0;font-family:'Inter',sans-serif;font-size:0.74em;cursor:pointer;transition:all 0.18s;
+    display:flex;align-items:center;gap:8px;flex-shrink:0}
   .ry-choice:hover{background:rgba(34,211,238,0.1);border-color:rgba(34,211,238,0.4);transform:translateX(3px);
     box-shadow:0 0 12px rgba(34,211,238,0.15)}
-  .ry-choice .key{width:22px;height:22px;border-radius:5px;background:rgba(34,211,238,0.12);border:1px solid rgba(34,211,238,0.3);
-    display:flex;align-items:center;justify-content:center;font-family:'Orbitron',sans-serif;font-size:0.68em;font-weight:800;color:#22d3ee;flex-shrink:0}
+  .ry-choice .key{width:20px;height:20px;border-radius:5px;background:rgba(34,211,238,0.12);border:1px solid rgba(34,211,238,0.3);
+    display:flex;align-items:center;justify-content:center;font-family:'Orbitron',sans-serif;font-size:0.65em;font-weight:800;color:#22d3ee;flex-shrink:0}
   .ry-choice.dismiss .key{color:#a0b6d6}
   .ry-choice.ry-priority-high{border-color:rgba(248,113,113,0.4);background:rgba(248,113,113,0.05)}
   .ry-choice.ry-priority-high:hover{background:rgba(248,113,113,0.12);border-color:rgba(248,113,113,0.6)}
   .ry-choice.ry-priority-high .key{color:#f87171;background:rgba(248,113,113,0.12);border-color:rgba(248,113,113,0.35)}
+
+  /* Sidebar — slide-in from left, ChatGPT-style chat history */
+  .ry-side-toggle{width:28px;height:28px;border-radius:6px;background:none;border:none;
+    color:rgba(160,190,230,0.55);cursor:pointer;display:flex;align-items:center;justify-content:center;
+    transition:all 0.18s;flex-shrink:0}
+  .ry-side-toggle:hover{color:#22d3ee;background:rgba(34,211,238,0.08)}
+  .ry-side-toggle svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round}
+  #ry-side{position:absolute;top:0;left:0;width:240px;height:100%;
+    background:rgba(4,8,16,0.98);border-right:1px solid rgba(34,211,238,0.18);
+    backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+    transform:translateX(-105%);transition:transform 0.3s cubic-bezier(.2,.8,.3,1);
+    display:flex;flex-direction:column;overflow:hidden;z-index:5}
+  #ry-side.on{transform:translateX(0)}
+  #ry-side .ry-side-head{display:flex;align-items:center;justify-content:space-between;
+    padding:10px 12px;border-bottom:1px solid rgba(34,211,238,0.1);flex-shrink:0}
+  #ry-side .ry-side-head .lbl{font-family:'Orbitron',sans-serif;font-size:0.6em;font-weight:700;
+    letter-spacing:2px;color:#e0e6f0;text-transform:uppercase}
+  .ry-new-conv{display:flex;align-items:center;gap:6px;margin:8px 10px;padding:7px 10px;
+    background:linear-gradient(135deg,rgba(34,211,238,0.18),rgba(124,58,237,0.1));
+    border:1px solid rgba(34,211,238,0.3);border-radius:8px;color:#22d3ee;cursor:pointer;
+    font-family:'Share Tech Mono',monospace;font-size:0.7em;letter-spacing:1px;
+    text-transform:uppercase;transition:all 0.18s;flex-shrink:0}
+  .ry-new-conv:hover{background:linear-gradient(135deg,rgba(34,211,238,0.28),rgba(124,58,237,0.15));
+    border-color:rgba(34,211,238,0.5);box-shadow:0 0 14px rgba(34,211,238,0.18)}
+  .ry-new-conv svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2.5;stroke-linecap:round}
+  #ry-side-list{flex:1;overflow-y:auto;padding:4px 6px 8px}
+  #ry-side-list::-webkit-scrollbar{width:4px}
+  #ry-side-list::-webkit-scrollbar-thumb{background:rgba(34,211,238,0.18);border-radius:2px}
+  #ry-side-list .empty{padding:10px 14px;font-family:'Share Tech Mono',monospace;font-size:0.65em;
+    color:rgba(160,190,230,0.4);letter-spacing:0.5px}
+  .ry-conv{display:flex;align-items:center;gap:6px;padding:7px 10px;border-radius:8px;
+    cursor:pointer;color:#d0daf0;transition:background 0.15s;position:relative}
+  .ry-conv:hover{background:rgba(34,211,238,0.06)}
+  .ry-conv.active{background:rgba(34,211,238,0.12);box-shadow:inset 2px 0 0 #22d3ee}
+  .ry-conv .ry-conv-body{flex:1;min-width:0}
+  .ry-conv .ry-conv-title{font-size:0.78em;color:#e0e6f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ry-conv .ry-conv-time{font-size:0.6em;color:rgba(160,190,230,0.4);font-family:'Share Tech Mono',monospace;margin-top:2px}
+  .ry-conv-del{width:22px;height:22px;border-radius:5px;background:none;border:none;
+    color:rgba(160,190,230,0.4);cursor:pointer;display:none;align-items:center;justify-content:center;
+    flex-shrink:0;transition:all 0.15s}
+  .ry-conv:hover .ry-conv-del{display:flex}
+  .ry-conv-del:hover{color:#f87171;background:rgba(248,113,113,0.1)}
+  .ry-conv-del svg{width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round}
+  /* Mobile: full-width drawer */
+  @media (max-width:480px){#ry-side{width:88%}}
 
   /* Hide the chat fab while the tutor popup is open so SKIP/NEXT
      aren't overlapped on small screens. */
@@ -118,7 +181,23 @@
     root.innerHTML = `
       <button id="ry-fab" title="Wake Ryujin"><div class="ry-fab-eye"></div></button>
       <div id="ry-panel">
+        <div id="ry-side">
+          <div class="ry-side-head">
+            <div class="lbl">History</div>
+            <button class="ry-close" id="ry-side-close" title="Close history">
+              <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </button>
+          </div>
+          <button class="ry-new-conv" id="ry-new-conv" title="Start a new conversation">
+            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+            New conversation
+          </button>
+          <div id="ry-side-list"><div class="empty">Loading history...</div></div>
+        </div>
         <div class="ry-head">
+          <button class="ry-side-toggle" id="ry-side-toggle" title="Show history">
+            <svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+          </button>
           <div class="ry-avatar"></div>
           <div class="ry-who">
             <div class="n">RYUJIN</div>
@@ -129,7 +208,13 @@
           </button>
         </div>
         <div class="ry-msgs" id="ry-msgs"></div>
-        <div class="ry-choices" id="ry-choices"></div>
+        <div class="ry-sugg-wrap" id="ry-sugg-wrap">
+          <div class="ry-sugg-head" id="ry-sugg-head" title="Toggle suggestions">
+            <span class="ry-sugg-label">Suggestions</span>
+            <span class="ry-sugg-chev"><svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></span>
+          </div>
+          <div class="ry-choices" id="ry-choices"></div>
+        </div>
         <div class="ry-footer">
           <input class="ry-input" id="ry-input" placeholder="or type a command..."/>
           <button class="ry-send" id="ry-send" title="Send">
@@ -154,7 +239,13 @@
         </div>
       </div>
       <div class="ry-msgs" id="ry-msgs"></div>
-      <div class="ry-choices" id="ry-choices"></div>
+      <div class="ry-sugg-wrap" id="ry-sugg-wrap">
+        <div class="ry-sugg-head" id="ry-sugg-head" title="Toggle suggestions">
+          <span class="ry-sugg-label">Suggestions</span>
+          <span class="ry-sugg-chev"><svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></span>
+        </div>
+        <div class="ry-choices" id="ry-choices"></div>
+      </div>
       <div class="ry-footer">
         <input class="ry-input" id="ry-input" placeholder="ask Ryujin to handle something..."/>
         <button class="ry-send" id="ry-send" title="Send">
@@ -172,40 +263,52 @@
     if (show && !historyStack.length) {
       renderState('root');
       // First-open priorities pulse — fire-and-forget; don't block the panel.
-      maybeRenderPriorities();
+      refreshPriorities({ withGreeting: true });
     }
   }
 
-  // Fetches /api/chat-priorities once per panel-open (cached behind 60s s-maxage)
-  // and seeds the chat with tappable priority chips. Silent on failure — the
-  // brain is still reachable via free-text.
-  let prioritiesShown = false;
-  async function maybeRenderPriorities(){
-    if (prioritiesShown) return;
-    prioritiesShown = true;
+  // Replaces the priority chips in #ry-choices with a fresh fetch from
+  // /api/chat-priorities. Called on first panel-open AND after every assistant
+  // turn so the suggestions reflect the current conversation state — no more
+  // stale chips from the first message. Silent on failure.
+  let lastPrioritiesGreeting = null;
+  async function refreshPriorities({ withGreeting } = {}){
     try {
       const r = await fetch('/api/chat-priorities');
       if (!r.ok) return;
       const data = await r.json();
-      if (!data.items?.length) return;
 
-      // Wait for the root bubble to land first so this stacks underneath
-      await wait(700);
       const msgsEl = document.getElementById('ry-msgs');
       const choicesEl = document.getElementById('ry-choices');
-      if (!msgsEl || !choicesEl) return;
+      const wrapEl = document.getElementById('ry-sugg-wrap');
+      if (!choicesEl) return;
 
-      const sys = document.createElement('div');
-      sys.className = 'ry-bubble sys';
-      sys.textContent = '\u25CA Priority pulse \u00B7 ' + (data.greeting || '');
-      msgsEl.appendChild(sys);
-      msgsEl.scrollTop = msgsEl.scrollHeight;
+      // Wipe priority-chips ONLY (state-driven choices live in the same
+      // container, but we tag priority chips with .ry-pri so we can scrub them).
+      choicesEl.querySelectorAll('.ry-pri').forEach(el => el.remove());
+
+      if (!data.items?.length) {
+        // No priorities right now — collapse-the-empty-section logic kicks in
+        // via :empty CSS rule on .ry-choices
+        return;
+      }
+
+      // Surface greeting once on first open (or when it changes)
+      if (withGreeting && msgsEl && data.greeting && data.greeting !== lastPrioritiesGreeting) {
+        lastPrioritiesGreeting = data.greeting;
+        await wait(700);
+        const sys = document.createElement('div');
+        sys.className = 'ry-bubble sys';
+        sys.textContent = '\u25CA Priority pulse \u00B7 ' + data.greeting;
+        msgsEl.appendChild(sys);
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
 
       // Inject priorities as additional choices. Tapping fills the input
       // with the suggested prompt and submits — same pathway as typed input.
-      data.items.forEach((item, i) => {
+      data.items.forEach((item) => {
         const btn = document.createElement('button');
-        btn.className = 'ry-choice' + (item.priority === 'high' ? ' ry-priority-high' : '');
+        btn.className = 'ry-choice ry-pri' + (item.priority === 'high' ? ' ry-priority-high' : '');
         btn.innerHTML = '<span class="key">\u2192</span><span>' + escapeHtml(item.label) + '</span>';
         btn.addEventListener('click', () => {
           const input = document.getElementById('ry-input');
@@ -213,9 +316,20 @@
         });
         choicesEl.appendChild(btn);
       });
+
+      // Respect the persisted collapsed state
+      if (wrapEl) wrapEl.classList.toggle('collapsed', getSuggCollapsed());
     } catch (e) {
       // silent — priorities are an enhancement, not a hard requirement
     }
+  }
+
+  // Persisted collapse state for the suggestions panel
+  function getSuggCollapsed(){
+    try { return localStorage.getItem('ry_suggestions_collapsed') === '1'; } catch { return false; }
+  }
+  function setSuggCollapsed(v){
+    try { localStorage.setItem('ry_suggestions_collapsed', v ? '1' : '0'); } catch {}
   }
 
   function escapeHtml(s){
@@ -324,6 +438,175 @@
 
   function wait(ms){ return new Promise(r => setTimeout(r, ms)); }
 
+  // Conversation history for free-text chat with the brain.
+  // Declared early so persistConversationTurn / loadConversationById /
+  // startNewConversation can mutate it without TDZ risk.
+  let chatHistory = [];
+
+  // ── Conversation persistence (ChatGPT-style sidebar) ──
+  // The widget calls /api/chat-conversations to save/load history. Until
+  // migration_021 is applied the endpoint 500s — we fail silent so the chat
+  // still works without the sidebar.
+  let currentConversationId = null;
+  try { currentConversationId = localStorage.getItem('ry_conv_id') || null; } catch {}
+
+  function setCurrentConvId(id){
+    currentConversationId = id || null;
+    try {
+      if (id) localStorage.setItem('ry_conv_id', id);
+      else localStorage.removeItem('ry_conv_id');
+    } catch {}
+  }
+
+  // Build a 4-6 word title from the first user message — no Haiku call,
+  // just truncate. Saves a token call per new conversation.
+  function deriveTitle(firstUserMessage){
+    const text = String(firstUserMessage || '').replace(/\s+/g, ' ').trim();
+    if (!text) return 'New conversation';
+    const words = text.split(' ').slice(0, 6).join(' ');
+    return words.length > 60 ? words.slice(0, 60) + '...' : words;
+  }
+
+  function relativeTime(iso){
+    if (!iso) return '';
+    const t = new Date(iso).getTime();
+    const now = Date.now();
+    const diff = Math.max(0, now - t);
+    const m = Math.floor(diff / 60000);
+    if (m < 1) return 'Just now';
+    if (m < 60) return m + 'm ago';
+    const h = Math.floor(m / 60);
+    if (h < 24) return h + 'h ago';
+    const d = Math.floor(h / 24);
+    if (d === 1) return 'Yesterday';
+    if (d < 7) return d + 'd ago';
+    const date = new Date(iso);
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+  async function persistConversationTurn(){
+    // chatHistory holds the full turn list (user + assistant alternating)
+    // Skip persistence if we don't have at least 1 user + 1 assistant turn
+    if (chatHistory.length < 2) return;
+    try {
+      const body = {
+        id: currentConversationId || undefined,
+        title: currentConversationId ? undefined : deriveTitle(chatHistory.find(m => m.role === 'user')?.content),
+        messages: chatHistory,
+      };
+      const r = await fetch('/api/chat-conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) return; // Silent — migration may not be applied yet
+      const saved = await r.json();
+      if (saved && saved.id) setCurrentConvId(saved.id);
+    } catch {}
+  }
+
+  async function loadConversationsList(){
+    const list = document.getElementById('ry-side-list');
+    if (!list) return;
+    list.innerHTML = '<div class="empty">Loading...</div>';
+    try {
+      const r = await fetch('/api/chat-conversations');
+      if (!r.ok) {
+        // Migration not applied or auth failure — show graceful fallback
+        list.innerHTML = '<div class="empty">History will appear here once enabled.</div>';
+        return;
+      }
+      const data = await r.json();
+      const convs = (data && Array.isArray(data.conversations)) ? data.conversations : [];
+      if (!convs.length) {
+        list.innerHTML = '<div class="empty">No conversations yet.</div>';
+        return;
+      }
+      list.innerHTML = '';
+      convs.forEach(c => list.appendChild(renderConvRow(c)));
+    } catch {
+      list.innerHTML = '<div class="empty">History unavailable.</div>';
+    }
+  }
+
+  function renderConvRow(c){
+    const row = document.createElement('div');
+    row.className = 'ry-conv';
+    if (c.id === currentConversationId) row.classList.add('active');
+    row.innerHTML =
+      '<div class="ry-conv-body">' +
+        '<div class="ry-conv-title">' + escapeHtml(c.title || 'Untitled') + '</div>' +
+        '<div class="ry-conv-time">' + escapeHtml(relativeTime(c.updated_at || c.created_at)) + '</div>' +
+      '</div>' +
+      '<button class="ry-conv-del" title="Delete">' +
+        '<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>' +
+      '</button>';
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('.ry-conv-del')) return;
+      loadConversationById(c.id);
+    });
+    const del = row.querySelector('.ry-conv-del');
+    if (del) del.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!confirm('Delete this conversation?')) return;
+      deleteConversation(c.id);
+    });
+    return row;
+  }
+
+  async function loadConversationById(id){
+    try {
+      const r = await fetch('/api/chat-conversations?id=' + encodeURIComponent(id));
+      if (!r.ok) return;
+      const conv = await r.json();
+      if (!conv || !Array.isArray(conv.messages)) return;
+      // Hydrate chat
+      chatHistory = conv.messages.slice();
+      setCurrentConvId(conv.id);
+      const msgsEl = document.getElementById('ry-msgs');
+      const choicesEl = document.getElementById('ry-choices');
+      if (msgsEl) msgsEl.innerHTML = '';
+      if (choicesEl) choicesEl.innerHTML = '';
+      lastPrioritiesGreeting = null;
+      conv.messages.forEach(m => {
+        if (!m || !m.content) return;
+        const bubble = document.createElement('div');
+        bubble.className = 'ry-bubble ' + (m.role === 'user' ? 'user' : 'dragon');
+        bubble.textContent = m.content;
+        msgsEl.appendChild(bubble);
+      });
+      if (msgsEl) msgsEl.scrollTop = msgsEl.scrollHeight;
+      // Refresh sidebar active highlight + priorities
+      const side = document.getElementById('ry-side');
+      if (side) side.classList.remove('on');
+      refreshPriorities({ withGreeting: false });
+    } catch {}
+  }
+
+  async function deleteConversation(id){
+    try {
+      const r = await fetch('/api/chat-conversations?id=' + encodeURIComponent(id), { method: 'DELETE' });
+      if (!r.ok) return;
+      if (id === currentConversationId) startNewConversation();
+      loadConversationsList();
+    } catch {}
+  }
+
+  function startNewConversation(){
+    chatHistory = [];
+    setCurrentConvId(null);
+    const msgsEl = document.getElementById('ry-msgs');
+    const choicesEl = document.getElementById('ry-choices');
+    if (msgsEl) msgsEl.innerHTML = '';
+    if (choicesEl) choicesEl.innerHTML = '';
+    historyStack = [];
+    lastPrioritiesGreeting = null;
+    renderState('root');
+    refreshPriorities({ withGreeting: true });
+    const side = document.getElementById('ry-side');
+    if (side) side.classList.remove('on');
+  }
+
   function wireEvents(){
     const fab = document.getElementById('ry-fab');
     if (fab) fab.addEventListener('click', () => togglePanel());
@@ -333,10 +616,39 @@
     if (send) send.addEventListener('click', sendTyped);
     const input = document.getElementById('ry-input');
     if (input) input.addEventListener('keydown', e => { if (e.key === 'Enter') sendTyped(); });
-  }
 
-  // Conversation history for free-text chat with the brain
-  let chatHistory = [];
+    // Suggestions collapse toggle — persists across sessions
+    const sugHead = document.getElementById('ry-sugg-head');
+    const sugWrap = document.getElementById('ry-sugg-wrap');
+    if (sugHead && sugWrap) {
+      // Apply persisted state on load
+      sugWrap.classList.toggle('collapsed', getSuggCollapsed());
+      sugHead.addEventListener('click', () => {
+        const next = !sugWrap.classList.contains('collapsed');
+        sugWrap.classList.toggle('collapsed', next);
+        setSuggCollapsed(next);
+      });
+    }
+
+    // Sidebar (history) — only present on the FAB panel, not in embedded mode
+    const sideToggle = document.getElementById('ry-side-toggle');
+    const sideClose = document.getElementById('ry-side-close');
+    const sidePanel = document.getElementById('ry-side');
+    const newConv = document.getElementById('ry-new-conv');
+    if (sideToggle && sidePanel) {
+      sideToggle.addEventListener('click', () => {
+        const next = !sidePanel.classList.contains('on');
+        sidePanel.classList.toggle('on', next);
+        if (next) loadConversationsList();
+      });
+    }
+    if (sideClose && sidePanel) {
+      sideClose.addEventListener('click', () => sidePanel.classList.remove('on'));
+    }
+    if (newConv) {
+      newConv.addEventListener('click', () => startNewConversation());
+    }
+  }
 
   async function sendTyped(){
     const input = document.getElementById('ry-input');
@@ -367,7 +679,7 @@
       const resp = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, history: historyToSend })
+        body: JSON.stringify({ message: text, history: historyToSend, conversation_id: currentConversationId || undefined })
       });
       typing.remove();
 
@@ -427,6 +739,9 @@
 
       if (assembled) {
         chatHistory.push({ role: 'assistant', content: assembled });
+        // Persist conversation + refresh priorities for the next turn — fire and forget
+        persistConversationTurn();
+        refreshPriorities({ withGreeting: false });
       } else {
         bubble.textContent = 'No response.';
       }
