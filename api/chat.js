@@ -249,6 +249,14 @@ When asked about ads, marketing ROI, or CPL — use the metaAds section. When as
 ## Sales & Strategy Knowledge
 You have **get_sales_sop** and **get_mentor_frameworks** tools. Call them when discussing leads, pipeline, follow-ups, pricing, proposals, or business strategy. Don't guess — call the tool.
 
+## Production Workflow — When a Contract Signs
+When a contract is signed and Mackenzie wants to schedule production, do these in order in a SINGLE response:
+1. **create_ticket** — assign crew lead, due date = install date, category = "Installation". ONE ticket per job, never multiple.
+2. **create_workorder** — link linked_estimate_id if known. Include crew lead, start date, scope summary, total_sq, pitch, package_tier.
+3. **create_paysheet** — link to the workorder via linked_paysheet_id (after work order returns its id), or pass linked_estimate_id. Subcontractor + job_id required.
+4. **generate_material_list** — pass estimate_id when available.
+Then summarize what was created with IDs and links. Do NOT spam create_ticket for the same job. If anything fails, report the failure — don't substitute tickets for missing tools.
+
 ## ABSOLUTE RULE
 NEVER ask Mackenzie for data. Use tools or give estimates. Always give the answer.`;
 
@@ -1120,6 +1128,88 @@ const TOOLS = [
         campaignId: { type: 'string', description: 'Meta campaign ID to inspect' }
       },
       required: ['campaignId']
+    }
+  },
+  {
+    name: 'create_workorder',
+    description: 'Create a Ryujin work order for a signed/scheduled job. Use when Mackenzie says "create a work order for [customer]" or when scheduling production after a contract signs. Posts to Ryujin /api/workorders for the plus-ultra tenant. Routes through approval.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        customer_name: { type: 'string', description: 'Full customer name' },
+        address: { type: 'string', description: 'Job site address' },
+        phone: { type: 'string' },
+        email: { type: 'string' },
+        start_date: { type: 'string', description: 'Install start date YYYY-MM-DD' },
+        estimated_duration_days: { type: 'number' },
+        sub_crew_lead: { type: 'string', description: 'Crew lead name (Diego, AJ, Pavanjot, etc.)' },
+        support_crew: { type: 'array', items: { type: 'string' }, description: 'Other crew members on the job' },
+        job_type: { type: 'string', description: 'roof, exterior, combined, repair, etc.' },
+        package_tier: { type: 'string', description: 'Gold / Platinum / Diamond / Standard / Enhanced / Premium' },
+        shingle_product: { type: 'string' },
+        shingle_color: { type: 'string' },
+        total_sq: { type: 'number' },
+        roof_pitch: { type: 'string' },
+        layers_to_remove: { type: 'number' },
+        eaves_lf: { type: 'number' },
+        rakes_lf: { type: 'number' },
+        ridges_lf: { type: 'number' },
+        hips_lf: { type: 'number' },
+        valleys_lf: { type: 'number' },
+        walls_lf: { type: 'number' },
+        pipes: { type: 'number' },
+        vents: { type: 'number' },
+        chimneys: { type: 'number' },
+        scope_summary: { type: 'string', description: 'High-level scope description (goes to additional_scope)' },
+        special_notes: { type: 'string', description: 'Special access, pets, gates, etc.' },
+        linked_estimate_id: { type: 'string', description: 'Optional — Ryujin estimate UUID to link' },
+        linked_paysheet_id: { type: 'string', description: 'Optional — Ryujin paysheet UUID to link' },
+        status: { type: 'string', enum: ['draft', 'issued', 'in_progress', 'complete', 'cancelled'], description: 'Default: draft' }
+      },
+      required: ['customer_name', 'address']
+    }
+  },
+  {
+    name: 'create_paysheet',
+    description: 'Create a Ryujin pay sheet for a subcontractor on a signed job. Use after the work order is created. Posts to Ryujin /api/paysheets. Routes through approval.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        job_id: { type: 'string', description: 'Job ID, format PU-YYYY-XXXX (e.g. PU-2026-0042)' },
+        customer_name: { type: 'string' },
+        address: { type: 'string' },
+        subcontractor: { type: 'string', description: 'Atlantic Roofing, Grand Manor, etc.' },
+        subcontractor_id: { type: 'string', description: 'Optional — subcontractor UUID' },
+        job_type: { type: 'string' },
+        shingle_product: { type: 'string' },
+        eagleview_report: { type: 'string' },
+        labour_breakdown: { type: 'array', description: 'Labour line items', items: { type: 'object' } },
+        add_ons: { type: 'array', description: 'Add-ons (skylights, chimneys, etc.)', items: { type: 'object' } },
+        surcharges: { type: 'array', items: { type: 'object' } },
+        scope_notes: { type: 'array', items: { type: 'string' } },
+        line_items: { type: 'array', description: 'Generic line items (mapped to labour_breakdown if labour_breakdown not given)', items: { type: 'object' } },
+        subtotal: { type: 'number' },
+        hst: { type: 'number' },
+        total: { type: 'number' },
+        scheduled_date: { type: 'string', description: 'YYYY-MM-DD' },
+        status: { type: 'string', enum: ['scheduled', 'in_progress', 'completed', 'invoice_final', 'cancelled'], description: 'Default: scheduled' },
+        linked_estimate_id: { type: 'string', description: 'Optional — Ryujin estimate UUID' },
+        notes: { type: 'string' }
+      },
+      required: ['job_id', 'customer_name', 'address', 'subcontractor']
+    }
+  },
+  {
+    name: 'generate_material_list',
+    description: 'Generate a purchase-ready material list for a Ryujin estimate. Either pass an estimate_id (preferred — pulls measurements + selected offer from DB) or pass measurements + offer_slug as a fallback. Calls /api/quote?materials=1. Returns the structured list inline.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        estimate_id: { type: 'string', description: 'Ryujin estimate UUID — preferred path' },
+        offer_slug: { type: 'string', description: 'Offer slug if no estimate_id (gold, platinum, diamond, etc.)' },
+        measurements: { type: 'object', description: 'Measurements object (squareFeet, pitch, eavesLF, etc.) — only needed if no estimate_id' },
+        choices: { type: 'object', description: 'Choices object (siding, housewrap, etc.) — optional fallback' }
+      }
     }
   }
 ];
@@ -2231,6 +2321,151 @@ async function executeTool(name, input, attachments = []) {
       return await resp.json();
     }
 
+    // ── PRODUCTION: WORK ORDER ──
+    if (name === 'create_workorder') {
+      const woRow = {
+        customer_name: input.customer_name,
+        address: input.address,
+        phone: input.phone || null,
+        email: input.email || null,
+        start_date: input.start_date || null,
+        estimated_duration_days: input.estimated_duration_days || null,
+        sub_crew_lead: input.sub_crew_lead || null,
+        support_crew: Array.isArray(input.support_crew) ? input.support_crew : null,
+        job_type: input.job_type || null,
+        package_tier: input.package_tier || null,
+        shingle_product: input.shingle_product || null,
+        shingle_color: input.shingle_color || null,
+        total_sq: input.total_sq || null,
+        roof_pitch: input.roof_pitch || null,
+        layers_to_remove: input.layers_to_remove || null,
+        eaves_lf: input.eaves_lf || null,
+        rakes_lf: input.rakes_lf || null,
+        ridges_lf: input.ridges_lf || null,
+        hips_lf: input.hips_lf || null,
+        valleys_lf: input.valleys_lf || null,
+        walls_lf: input.walls_lf || null,
+        pipes: input.pipes || null,
+        vents: input.vents || null,
+        chimneys: input.chimneys || null,
+        additional_scope: input.scope_summary || null,
+        special_notes: input.special_notes || null,
+        linked_estimate_id: input.linked_estimate_id || null,
+        linked_paysheet_id: input.linked_paysheet_id || null,
+        status: input.status || 'draft'
+      };
+      try {
+        const RYUJIN_BASE = (process.env.RYUJIN_BASE_URL || 'https://ryujin-os.vercel.app').trim();
+        const resp = await fetch(`${RYUJIN_BASE}/api/workorders?tenant=plus-ultra`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-tenant-id': 'plus-ultra' },
+          body: JSON.stringify(woRow)
+        });
+        if (!resp.ok) return { error: `Work order create failed (HTTP ${resp.status}): ${(await resp.text()).slice(0, 300)}` };
+        const data = await resp.json();
+        return { status: 'created', workorder_id: data.id, customer: data.customer_name, address: data.address, start_date: data.start_date };
+      } catch (e) {
+        return { error: `create_workorder failed: ${e.message}` };
+      }
+    }
+
+    // ── PRODUCTION: PAY SHEET ──
+    if (name === 'create_paysheet') {
+      const labour = Array.isArray(input.labour_breakdown) && input.labour_breakdown.length
+        ? input.labour_breakdown
+        : (Array.isArray(input.line_items) ? input.line_items : []);
+      const psRow = {
+        job_id: input.job_id,
+        customer_name: input.customer_name,
+        address: input.address,
+        subcontractor: input.subcontractor,
+        subcontractor_id: input.subcontractor_id || null,
+        job_type: input.job_type || null,
+        shingle_product: input.shingle_product || null,
+        eagleview_report: input.eagleview_report || null,
+        labour_breakdown: labour,
+        add_ons: Array.isArray(input.add_ons) ? input.add_ons : [],
+        surcharges: Array.isArray(input.surcharges) ? input.surcharges : [],
+        scope_notes: Array.isArray(input.scope_notes) ? input.scope_notes : null,
+        subtotal: input.subtotal || null,
+        hst: input.hst || null,
+        total: input.total || null,
+        scheduled_date: input.scheduled_date || null,
+        status: input.status || 'scheduled',
+        linked_estimate_id: input.linked_estimate_id || null,
+        notes: input.notes || null
+      };
+      try {
+        const RYUJIN_BASE = (process.env.RYUJIN_BASE_URL || 'https://ryujin-os.vercel.app').trim();
+        const resp = await fetch(`${RYUJIN_BASE}/api/paysheets?tenant=plus-ultra`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-tenant-id': 'plus-ultra' },
+          body: JSON.stringify(psRow)
+        });
+        if (!resp.ok) return { error: `Pay sheet create failed (HTTP ${resp.status}): ${(await resp.text()).slice(0, 300)}` };
+        const data = await resp.json();
+        return { status: 'created', paysheet_id: data.id, job_id: data.job_id, customer: data.customer_name, total: data.total };
+      } catch (e) {
+        return { error: `create_paysheet failed: ${e.message}` };
+      }
+    }
+
+    // ── PRODUCTION: MATERIAL LIST ──
+    if (name === 'generate_material_list') {
+      try {
+        const RYUJIN_BASE = (process.env.RYUJIN_BASE_URL || 'https://ryujin-os.vercel.app').trim();
+        const TENANT = 'plus-ultra';
+        const headers = { 'Content-Type': 'application/json', 'x-tenant-id': TENANT };
+
+        let measurements = input.measurements || null;
+        let choices = input.choices || {};
+        let offerSlug = input.offer_slug || null;
+
+        // If estimate_id provided, pull measurements + selected offer from DB
+        if (input.estimate_id) {
+          const estResp = await fetch(`${RYUJIN_BASE}/api/estimates?id=${input.estimate_id}&tenant=${TENANT}`, { headers });
+          if (!estResp.ok) return { error: `Estimate lookup failed (HTTP ${estResp.status})` };
+          const est = await estResp.json();
+          measurements = measurements || {
+            squareFeet: est.roof_area_sqft || 0,
+            pitch: est.roof_pitch || '5/12',
+            complexity: est.complexity || 'medium',
+            eavesLF: est.eaves_lf || 0,
+            rakesLF: est.rakes_lf || 0,
+            ridgesLF: est.ridges_lf || 0,
+            valleysLF: est.valleys_lf || 0,
+            hipsLF: est.hips_lf || 0,
+            wallsLF: est.walls_lf || 0,
+            pipes: est.pipes || 0,
+            vents: est.vents || 0,
+            chimneys: est.chimneys || 0,
+            stories: est.stories || 1,
+            extraLayers: est.extra_layers || 0,
+            distanceKM: est.distance_km || 0
+          };
+          offerSlug = offerSlug || est.selected_package || 'platinum';
+        }
+
+        if (!measurements) return { error: 'Need either estimate_id or measurements object' };
+
+        const resp = await fetch(`${RYUJIN_BASE}/api/quote?materials=1&tenant=${TENANT}`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ measurements, choices, offerSlug: offerSlug || 'platinum' })
+        });
+        if (!resp.ok) return { error: `Quote engine failed (HTTP ${resp.status}): ${(await resp.text()).slice(0, 200)}` };
+        const data = await resp.json();
+        return {
+          status: 'complete',
+          offer: offerSlug,
+          materials: data.materialList || data.materials || data,
+          summary: data.summary || null
+        };
+      } catch (e) {
+        return { error: `generate_material_list failed: ${e.message}` };
+      }
+    }
+
     return { error: `Unknown tool: ${name}` };
   } catch (e) {
     return { error: e.message };
@@ -2550,6 +2785,9 @@ You are NOW speaking as Gohan, the scholar warrior — Mackenzie's game developm
       case 'delete_preference': return `🧠 Removing preference`;
       case 'create_quest': return `📜 Creating quest: "${input.title}"`;
       case 'create_ticket': return `🎫 Creating crew ticket: "${input.title}"`;
+      case 'create_workorder': return `📋 Creating work order: "${input.customer_name}"`;
+      case 'create_paysheet': return `💰 Creating pay sheet: "${input.job_id}"`;
+      case 'generate_material_list': return `📦 Generating material list`;
       case 'create_ghl_task': return `📌 Creating GHL task: "${input.title}"`;
       case 'add_contact_note': return `📝 Adding note to contact`;
       case 'generate_proposal': return `📄 Generating sales page`;
