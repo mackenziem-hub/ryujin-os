@@ -275,8 +275,8 @@ You have **get_sales_sop** and **get_mentor_frameworks** tools. Call them when d
 ## Production Workflow — When a Contract Signs
 When a contract is signed and Mackenzie wants to schedule production, do these in order in a SINGLE response:
 1. **create_ticket** — assign crew lead, due date = install date, category = "Installation". ONE ticket per job, never multiple.
-2. **create_workorder** — link linked_estimate_id if known. Include crew lead, start date, scope summary, total_sq, pitch, package_tier.
-3. **create_paysheet** — link to the workorder via linked_paysheet_id (after work order returns its id), or pass linked_estimate_id. Subcontractor + job_id required.
+2. **create_workorder** — link linked_estimate_id if known. Include crew lead, start date, scope summary, total_sq, pitch, package_tier. When the work order is for a full reroof, ALWAYS include redeck_sheets_estimated in create_workorder (estimate from total_sq × 0.10 conservative, or specifically from inspection notes). Sub WO must answer: how much do they get paid if redeck is needed?
+3. **compute_paysheet_lines** then **create_paysheet** — never create empty. The compute tool returns ready-to-use line items + totals. Pass through to create_paysheet as labour_breakdown, add_ons, surcharges, subtotal, hst, total. Default subcontractor_slug is "atlantic-roofing" (Ryan).
 4. **generate_material_list** — pass estimate_id when available.
 Then summarize what was created with IDs and links. Do NOT spam create_ticket for the same job. If anything fails, report the failure — don't substitute tickets for missing tools.
 
@@ -1196,6 +1196,7 @@ const TOOLS = [
         pipes: { type: 'number' },
         vents: { type: 'number' },
         chimneys: { type: 'number' },
+        redeck_sheets_estimated: { type: 'number', description: 'For full reroofs, ALWAYS pass an estimate (~total_sq × 0.10 conservative, or per inspection notes). Auto-appends a clear "Re-deck pending deck inspection upon tear-off. Estimated ~X sheets if needed (priced at $Y/sheet PU-supplied)." line so the sub knows the redeck payout.' },
         scope_summary: { type: 'string', description: 'High-level scope description (goes to additional_scope)' },
         special_notes: { type: 'string', description: 'Special access, pets, gates, etc.' },
         linked_estimate_id: { type: 'string', description: 'Optional — Ryujin estimate UUID ONLY (not Estimator OS integer IDs). Leave null if estimate is in Estimator OS.' },
@@ -1206,8 +1207,48 @@ const TOOLS = [
     }
   },
   {
+    name: 'compute_paysheet_lines',
+    description: 'Compute populated labor breakdown, add-ons, surcharges, subtotal, HST, and total for a subcontractor pay sheet given measurements + package tier. ALWAYS call this before create_paysheet when you do not already have line items. Returns the structure ready to pass directly to create_paysheet (labour_breakdown, add_ons, surcharges, subtotal, hst, total). Known sub slugs: "atlantic-roofing".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        subcontractor_slug: { type: 'string', description: 'Sub identifier. Currently supported: "atlantic-roofing".' },
+        customer_name: { type: 'string' },
+        address: { type: 'string' },
+        job_id: { type: 'string', description: 'Job ID format PU-YYYY-XXXX' },
+        measurements: {
+          type: 'object',
+          description: 'Measurements object. Required: totalSQ. Recommended: pitch (e.g. "10/12"), distanceKM. Optional: ridgesLF, valleysLF, eavesLF, hipsLF, walls_lf, pipes, vents, chimneys (number OR { count, size_each: small|medium|large } OR array of {size,count}), skylights_swap, skylights_full_replacement, extraLayers, redeck_sheets_count, deck_supply ("pu"|"sub").',
+          properties: {
+            totalSQ: { type: 'number' },
+            pitch: { type: 'string', description: 'e.g. "10/12"' },
+            distanceKM: { type: 'number', description: 'Distance from Riverview' },
+            ridgesLF: { type: 'number' },
+            valleysLF: { type: 'number' },
+            eavesLF: { type: 'number' },
+            hipsLF: { type: 'number' },
+            walls_lf: { type: 'number' },
+            pipes: { type: 'number' },
+            vents: { type: 'number' },
+            skylights_swap: { type: 'number' },
+            skylights_full_replacement: { type: 'number' },
+            extraLayers: { type: 'number' },
+            redeck_sheets_count: { type: 'number' },
+            deck_supply: { type: 'string', enum: ['pu', 'sub'], description: 'Default: pu' }
+          }
+        },
+        package_tier: { type: 'string', enum: ['gold', 'platinum', 'diamond', 'grand_manor'], description: 'Triggers Grand Manor +$75/SQ premium when grand_manor.' },
+        scope_extras: {
+          type: 'object',
+          description: 'Optional extras: metal_bend_sub_supplied (count), metal_bend_pu_supplied (count), dormer_counter_flash_count, custom_lines [{ label, qty, unit, rate, total }].'
+        }
+      },
+      required: ['subcontractor_slug', 'measurements']
+    }
+  },
+  {
     name: 'create_paysheet',
-    description: 'Create a Ryujin pay sheet for a subcontractor on a signed job. Use after the work order is created. Posts to Ryujin /api/paysheets. Routes through approval.',
+    description: 'Create a Ryujin pay sheet. REQUIRED: labour_breakdown, subtotal, hst, total must be populated. If you do not have these computed, CALL compute_paysheet_lines FIRST and pass through the result. NEVER create a paysheet with empty labor — that defeats the purpose. Posts to Ryujin /api/paysheets. Routes through approval.',
     input_schema: {
       type: 'object',
       properties: {
@@ -2434,6 +2475,16 @@ async function executeTool(name, input, attachments = []) {
 
     // ── PRODUCTION: WORK ORDER ──
     if (name === 'create_workorder') {
+      // Compose additional_scope: scope_summary + redeck note (if estimated)
+      let additionalScope = input.scope_summary || '';
+      const redeckEst = Number(input.redeck_sheets_estimated) || 0;
+      if (redeckEst > 0) {
+        const redeckNote = `Re-deck pending deck inspection upon tear-off. Estimated ~${redeckEst} sheets if needed (priced at $60/sheet PU-supplied).`;
+        additionalScope = additionalScope
+          ? `${additionalScope}\n\n${redeckNote}`
+          : redeckNote;
+      }
+
       const woRow = {
         customer_name: input.customer_name,
         address: input.address,
@@ -2459,7 +2510,7 @@ async function executeTool(name, input, attachments = []) {
         pipes: input.pipes || null,
         vents: input.vents || null,
         chimneys: input.chimneys || null,
-        additional_scope: input.scope_summary || null,
+        additional_scope: additionalScope || null,
         special_notes: input.special_notes || null,
         linked_estimate_id: input.linked_estimate_id || null,
         linked_paysheet_id: input.linked_paysheet_id || null,
@@ -2477,6 +2528,33 @@ async function executeTool(name, input, attachments = []) {
         return { status: 'created', workorder_id: data.id, customer: data.customer_name, address: data.address, start_date: data.start_date };
       } catch (e) {
         return { error: `create_workorder failed: ${e.message}` };
+      }
+    }
+
+    // ── PRODUCTION: COMPUTE PAY SHEET LINES (must run BEFORE create_paysheet) ──
+    if (name === 'compute_paysheet_lines') {
+      try {
+        const RYUJIN_BASE = (process.env.RYUJIN_BASE_URL || 'https://ryujin-os.vercel.app').trim();
+        const resp = await fetch(`${RYUJIN_BASE}/api/paysheet-calc?tenant=plus-ultra`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-tenant-id': 'plus-ultra' },
+          body: JSON.stringify({
+            subcontractor_slug: input.subcontractor_slug,
+            customer_name: input.customer_name || null,
+            address: input.address || null,
+            job_id: input.job_id || null,
+            measurements: input.measurements || {},
+            package_tier: input.package_tier || null,
+            scope_extras: input.scope_extras || {}
+          })
+        });
+        if (!resp.ok) {
+          const text = await resp.text();
+          return { error: `compute_paysheet_lines failed (HTTP ${resp.status}): ${text.slice(0, 300)}` };
+        }
+        return await resp.json();
+      } catch (e) {
+        return { error: `compute_paysheet_lines failed: ${e.message}` };
       }
     }
 
@@ -2964,6 +3042,7 @@ You are NOW speaking as Gohan, the scholar warrior — Mackenzie's game developm
       case 'create_quest': return `📜 Creating quest: "${input.title}"`;
       case 'create_ticket': return `🎫 Creating crew ticket: "${input.title}"`;
       case 'create_workorder': return `📋 Creating work order: "${input.customer_name}"`;
+      case 'compute_paysheet_lines': return `💲 Computing paysheet labor for ${input.customer_name || input.job_id || input.subcontractor_slug}`;
       case 'create_paysheet': return `💰 Creating pay sheet: "${input.job_id}"`;
       case 'generate_material_list': return `📦 Generating material list`;
       case 'create_ghl_task': return `📌 Creating GHL task: "${input.title}"`;
