@@ -81,7 +81,7 @@ async function handler(req, res) {
 
   // ── Guided mode ──
   if (req.query.mode === 'guided') {
-    const { answers, system, offer_id, offer_slug, estimate_id } = body;
+    const { answers, system, offer_id, offer_slug, estimate_id, extras } = body;
 
     if (!answers) return res.status(400).json({ error: 'Provide answers object from guided questions' });
 
@@ -126,7 +126,7 @@ async function handler(req, res) {
     }
 
     const result = await calculateQuoteV3(supabaseAdmin, {
-      tenantId, offerId, measurements, overrides: {}, choices, mode: 'guided'
+      tenantId, offerId, measurements, overrides: {}, choices, extras: extras || [], mode: 'guided'
     });
 
     if (result.error) return res.status(400).json(result);
@@ -150,7 +150,7 @@ async function handler(req, res) {
 
   // ── Multi-offer comparison ──
   if (req.query.mode === 'compare') {
-    const { offer_ids, measurements, overrides, choices } = body;
+    const { offer_ids, measurements, overrides, choices, extras } = body;
 
     let ids = offer_ids;
     if (!ids || !Array.isArray(ids) || ids.length === 0) {
@@ -164,7 +164,8 @@ async function handler(req, res) {
       tenantId, offerIds: ids,
       measurements: measurements || {},
       overrides: overrides || {},
-      choices: choices || {}
+      choices: choices || {},
+      extras: extras || []
     });
 
     result.tenant = req.tenant.slug;
@@ -172,7 +173,7 @@ async function handler(req, res) {
   }
 
   // ── Single offer quote (v3 advanced/override) ──
-  const { offer_id, offer_slug, measurements, overrides, choices, mode, estimate_id } = body;
+  const { offer_id, offer_slug, measurements, overrides, choices, extras, mode, estimate_id } = body;
 
   let offerId = offer_id;
   if (!offerId && offer_slug) {
@@ -194,6 +195,7 @@ async function handler(req, res) {
     measurements: measurements || {},
     overrides: overrides || {},
     choices: choices || {},
+    extras: extras || [],
     mode: mode || 'advanced'
   });
 

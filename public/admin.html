@@ -1528,6 +1528,97 @@ const PACKAGE_COPY = {
   'platinum-shell': { tagline: 'Premium Complete', copy: 'Platinum roofing + full Performance Shell. The ultimate exterior renovation — roof to walls, premium everything.', icon: '🔄', color: 'purple' }
 };
 
+// ─── Upgrades catalog ───
+// Each entry maps to an engine line item (key matches engine itemKey). Hooks into
+// existing scope_template logic via the new `extras` array on /api/quote.
+// Rates pull from tenant_settings.labor_rates_exterior; the rateNote here is just
+// for display in the UI tab. Editable in Admin → Pricing.
+const UPGRADE_CATALOG = {
+  gutters_5k: {
+    label: 'Gutters — Aluminum 5"',
+    icon: '🌧️',
+    hint: 'Standard 5-inch K-style aluminum, white seamless. Replaces existing.',
+    rateNote: '~$22/LF',
+    measurementKey: 'gutterLF',
+    measurementLabel: 'Gutter LF',
+    extra: { key: 'gutters', label: 'Gutters — 5" Aluminum', category: 'materials', config: { type: '5k', material: 'aluminum', quality: 'low', remove_existing: true } }
+  },
+  gutters_6k: {
+    label: 'Gutters — Aluminum 6" (oversized)',
+    icon: '🌧️',
+    hint: 'Oversized 6-inch for steep pitch or heavy runoff. Larger downspouts recommended.',
+    rateNote: '~$30/LF',
+    measurementKey: 'gutterLF',
+    measurementLabel: 'Gutter LF',
+    extra: { key: 'gutters', label: 'Gutters — 6" Aluminum (Oversized)', category: 'materials', config: { type: '6k', material: 'aluminum', quality: 'high', remove_existing: true } }
+  },
+  leaf_guard: {
+    label: 'Leaf Guard',
+    icon: '🍂',
+    hint: 'Mesh screen on gutters. Requires gutter LF set.',
+    rateNote: '$6/LF',
+    measurementKey: null,
+    extra: { key: 'leaf_guard', label: 'Leaf Guard', category: 'materials' }
+  },
+  downspouts: {
+    label: 'Downspouts',
+    icon: '⬇️',
+    hint: 'Aluminum downspouts with elbows + hangers. ~1 per 30 ft of gutter.',
+    rateNote: '~$75 each',
+    measurementKey: 'downspoutCount',
+    measurementLabel: 'Count',
+    extra: { key: 'downspouts', label: 'Downspouts', category: 'materials' }
+  },
+  soffit: {
+    label: 'Soffit Replacement',
+    icon: '🏠',
+    hint: 'Vented vinyl soffit. Strip + install. Use when fascia work alone reveals soffit damage.',
+    rateNote: '~$35/LF',
+    measurementKey: 'soffitLF',
+    measurementLabel: 'Soffit LF',
+    extra: { key: 'soffit', label: 'Soffit', category: 'materials', config: { type: 'vented', material: 'vinyl', quality: 'mid' } }
+  },
+  fascia: {
+    label: 'Fascia Replacement',
+    icon: '📐',
+    hint: 'Aluminum fascia cap. Wraps existing wood. Standard with a reroof in NB.',
+    rateNote: '~$25/LF',
+    measurementKey: 'fasciaLF',
+    measurementLabel: 'Fascia LF',
+    extra: { key: 'fascia', label: 'Fascia', category: 'materials', config: { material: 'aluminum_cap', quality: 'mid' } }
+  }
+};
+
+function toggleUpgrade(key, on) {
+  const u = quoteState.answers._upgrades = quoteState.answers._upgrades || {};
+  if (on) u[key] = true; else delete u[key];
+  // Auto-bump leaf_guard if it's added without gutters scoped
+  if (key === 'leaf_guard' && on && !(u.gutters_5k || u.gutters_6k)) {
+    u.gutters_5k = true;
+  }
+  // If neither gutter type is on, leaf_guard auto-disabled
+  if ((key === 'gutters_5k' || key === 'gutters_6k') && !on && !u.gutters_5k && !u.gutters_6k) {
+    delete u.leaf_guard;
+  }
+  // Mutually exclusive 5K vs 6K
+  if (on && key === 'gutters_5k' && u.gutters_6k) delete u.gutters_6k;
+  if (on && key === 'gutters_6k' && u.gutters_5k) delete u.gutters_5k;
+  autoSaveQuote();
+  renderQuoteForm();
+}
+
+// Build the extras array for the engine from the toggled upgrades
+function buildUpgradeExtras() {
+  const u = (quoteState.answers && quoteState.answers._upgrades) || {};
+  const out = [];
+  for (const k of Object.keys(u)) {
+    if (!u[k] || !UPGRADE_CATALOG[k]) continue;
+    const e = UPGRADE_CATALOG[k].extra;
+    out.push({ ...e, required: false });
+  }
+  return out;
+}
+
 async function renderQuoteForm() {
   const form = document.getElementById('quoteForm');
   if (!form) return;
@@ -1635,6 +1726,41 @@ async function renderQuoteForm() {
         qField('windowCount','Windows to Cap/Replace','number',{default:0}) +
         qField('doorCount','Doors to Cap','number',{default:0})
       );
+    }
+
+    // ═══ Section 4b: Upgrades & Add-Ons (roof-only systems) ═══
+    // "While we're already here" upsells. Each toggle injects an extra into the quote
+    // engine so it gets multiplied with the same package multiplier as the rest of the scope.
+    // Rates default to tenant_settings; editable via Admin → Pricing.
+    if (isRoof && !isExterior) {
+      const u = quoteState.answers._upgrades = quoteState.answers._upgrades || {};
+      const cat = UPGRADE_CATALOG;
+      let rows = '';
+      for (const key of Object.keys(cat)) {
+        const item = cat[key];
+        const on = !!u[key];
+        rows += `<div class="upgrade-row" style="display:flex;flex-direction:column;gap:6px;padding:10px 12px;border-radius:8px;border:1px solid ${on?'var(--cyan)':'var(--glass-border)'};background:${on?'rgba(34,211,238,0.04)':'rgba(6,12,24,0.3)'};margin-bottom:6px">
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none">
+            <input type="checkbox" ${on?'checked':''} onchange="toggleUpgrade('${key}',this.checked)" style="width:auto;accent-color:var(--cyan);cursor:pointer">
+            <span style="font-size:1.1em">${item.icon}</span>
+            <div style="flex:1">
+              <div style="font-size:0.82em;font-weight:600;color:${on?'var(--cyan)':'var(--text)'}">${esc(item.label)}</div>
+              <div style="font-size:0.68em;color:var(--text-dim);margin-top:2px">${esc(item.hint)}</div>
+            </div>
+            <div style="font-size:0.72em;color:var(--text-dim);font-family:'Orbitron',monospace">${esc(item.rateNote)}</div>
+          </label>
+          ${on && item.measurementKey ? `<div style="display:flex;gap:8px;align-items:center;padding-left:34px">
+            <label style="font-size:0.72em;color:var(--text-dim);min-width:90px">${esc(item.measurementLabel)}</label>
+            <input type="number" value="${quoteState.answers[item.measurementKey]||0}" onchange="quoteState.answers['${item.measurementKey}']=Number(this.value);autoSaveQuote()" style="flex:1;max-width:120px;padding:4px 8px;font-size:0.82em">
+          </div>` : ''}
+        </div>`;
+      }
+      html += formSection('Upgrades & Add-Ons', '✨',
+        `<div class="form-full">
+          <div style="font-size:0.72em;color:var(--text-dim);margin-bottom:10px;line-height:1.5">Toggle "while we're already here" add-ons. Each rolls into the same package tier so the multiplier and warranty apply uniformly. Rates pull from Admin → Pricing.</div>
+          ${rows}
+        </div>`
+      , false);
     }
 
     // ═══ Section 5: Inspection Findings ═══
@@ -1781,11 +1907,13 @@ async function runGuidedQuote() {
   const rd = document.getElementById('quoteResult');
   rd.innerHTML = '<div class="loading"><div class="spinner"></div>Calculating...</div>';
   const a = {...quoteState.answers}; const slug = a._offer_slug; delete a._offer_slug;
+  const extras = buildUpgradeExtras();
+  delete a._upgrades; // strip from answers (UI-only state)
 
   // Run quote + comparison in parallel
   const [r, comp] = await Promise.all([
-    api('/quote?mode=guided&materials=1', {method:'POST',body:JSON.stringify({system:quoteState.system,offer_slug:slug,answers:a})}),
-    api('/quote?mode=compare', {method:'POST',body:JSON.stringify({measurements:a})}).catch(() => null)
+    api('/quote?mode=guided&materials=1', {method:'POST',body:JSON.stringify({system:quoteState.system,offer_slug:slug,answers:a,extras})}),
+    api('/quote?mode=compare', {method:'POST',body:JSON.stringify({measurements:a,extras})}).catch(() => null)
   ]);
 
   if (r.error) { rd.innerHTML = `<div class="panel" style="border-color:var(--red)"><div class="panel-title text-red">Error</div><div class="panel-sub">${esc(r.error)}</div></div>`; return; }
@@ -1806,7 +1934,9 @@ async function runCompare() {
   const rd = document.getElementById('quoteResult');
   rd.innerHTML = '<div class="loading"><div class="spinner"></div>Comparing...</div>';
   const a = {...quoteState.answers}; delete a._offer_slug;
-  const r = await api('/quote?mode=compare', {method:'POST',body:JSON.stringify({measurements:a})});
+  const extras = buildUpgradeExtras();
+  delete a._upgrades;
+  const r = await api('/quote?mode=compare', {method:'POST',body:JSON.stringify({measurements:a,extras})});
   if (r.error) { rd.innerHTML = `<div class="panel" style="border-color:var(--red)"><div class="panel-title text-red">Error</div><div class="panel-sub">${esc(r.error)}</div></div>`; return; }
   renderCompareResult(rd, r);
 }
