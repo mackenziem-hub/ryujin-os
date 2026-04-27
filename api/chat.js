@@ -1240,7 +1240,18 @@ const TOOLS = [
         package_tier: { type: 'string', enum: ['gold', 'platinum', 'diamond', 'grand_manor'], description: 'Triggers Grand Manor +$75/SQ premium when grand_manor.' },
         scope_extras: {
           type: 'object',
-          description: 'Optional extras: metal_bend_sub_supplied (count), metal_bend_pu_supplied (count), dormer_counter_flash_count, custom_lines [{ label, qty, unit, rate, total }].'
+          description: 'Optional extras: metal_bend_sub_supplied (count), metal_bend_pu_supplied (count), dormer_counter_flash_count, pigeon_brows_single (count, $50/each), pigeon_brows_two_story (count, $75/each), bay_windows_standard (count, $100/each), bay_windows_oversized (count, $125/each), mansard_sq (extra SQ at steep tier rate $190/SQ — separate from main roof SQ), custom_lines [{ label, qty, unit, rate, total }].',
+          properties: {
+            metal_bend_sub_supplied: { type: 'number' },
+            metal_bend_pu_supplied: { type: 'number' },
+            dormer_counter_flash_count: { type: 'number' },
+            pigeon_brows_single: { type: 'number', description: 'Single-story pigeon brow flashings, $50 flat each.' },
+            pigeon_brows_two_story: { type: 'number', description: 'Two-story pigeon brow flashings, $75 flat each.' },
+            bay_windows_standard: { type: 'number', description: 'Standard bay window roofs, $100 flat each.' },
+            bay_windows_oversized: { type: 'number', description: 'Oversized bay window roofs, $125 flat each.' },
+            mansard_sq: { type: 'number', description: 'Extra SQ for mansard accent at steep pitch tier rate ($190/SQ). Separate from main roof totalSQ.' },
+            custom_lines: { type: 'array', items: { type: 'object' } }
+          }
         }
       },
       required: ['subcontractor_slug', 'measurements']
@@ -2475,14 +2486,39 @@ async function executeTool(name, input, attachments = []) {
 
     // ── PRODUCTION: WORK ORDER ──
     if (name === 'create_workorder') {
-      // Compose additional_scope: scope_summary + redeck note (if estimated)
+      // Compose additional_scope: scope_summary + contingency block (redeck + multi-layer)
       let additionalScope = input.scope_summary || '';
-      const redeckEst = Number(input.redeck_sheets_estimated) || 0;
-      if (redeckEst > 0) {
-        const redeckNote = `Re-deck pending deck inspection upon tear-off. Estimated ~${redeckEst} sheets if needed (priced at $60/sheet PU-supplied).`;
+      const totalSQ = Number(input.total_sq) || 0;
+      const tier = String(input.package_tier || '').toLowerCase();
+      const jobType = String(input.job_type || '').toLowerCase();
+      const isReroof = !!tier || jobType === 'full_replacement';
+
+      // Only build contingency block if total_sq is provided (otherwise we can't price multi-layer)
+      if (totalSQ > 0 && isReroof) {
+        const passedRedeck = Number(input.redeck_sheets_estimated) || 0;
+        const usedDefault = passedRedeck <= 0;
+        const redeckSheets = passedRedeck > 0 ? passedRedeck : Math.ceil(totalSQ * 0.10);
+        const redeckCost = redeckSheets * 60;
+        const multiLayerCost = totalSQ * 40;
+        const defaultTag = usedDefault ? ' (default 10% contingency assumed)' : '';
+
+        const contingencyBlock =
+          `**Contingency rates (Atlantic Roofing — if discovered on tear-off):**\n` +
+          `- Re-deck of main: ~${redeckSheets} sheets estimated${defaultTag}. PU-supplied @ $60/sheet = up to $${redeckCost}.\n` +
+          `- Multi-layer tear-off: $40/SQ × ${totalSQ} SQ = up to $${multiLayerCost} if 2nd layer found.`;
+
         additionalScope = additionalScope
-          ? `${additionalScope}\n\n${redeckNote}`
-          : redeckNote;
+          ? `${additionalScope}\n\n${contingencyBlock}`
+          : contingencyBlock;
+      } else {
+        // Fallback: if no total_sq, still surface redeck if explicitly passed
+        const redeckEst = Number(input.redeck_sheets_estimated) || 0;
+        if (redeckEst > 0) {
+          const redeckNote = `Re-deck pending deck inspection upon tear-off. Estimated ~${redeckEst} sheets if needed (priced at $60/sheet PU-supplied).`;
+          additionalScope = additionalScope
+            ? `${additionalScope}\n\n${redeckNote}`
+            : redeckNote;
+        }
       }
 
       const woRow = {

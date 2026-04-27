@@ -224,6 +224,60 @@ async function handler(req, res) {
     }
   }
 
+  // Pigeon brows (flat per occurrence)
+  if (scope_extras.pigeon_brows_single) {
+    const ct = Number(scope_extras.pigeon_brows_single) || 0;
+    if (ct > 0 && rates.pigeon_brow_single_story) {
+      labour_breakdown.push(line(
+        `Pigeon brow flashing (single-story)`,
+        ct, 'each', rates.pigeon_brow_single_story, ct * rates.pigeon_brow_single_story
+      ));
+    }
+  }
+  if (scope_extras.pigeon_brows_two_story) {
+    const ct = Number(scope_extras.pigeon_brows_two_story) || 0;
+    if (ct > 0 && rates.pigeon_brow_two_story) {
+      labour_breakdown.push(line(
+        `Pigeon brow flashing (two-story)`,
+        ct, 'each', rates.pigeon_brow_two_story, ct * rates.pigeon_brow_two_story
+      ));
+    }
+  }
+
+  // Bay windows (flat per occurrence)
+  if (scope_extras.bay_windows_standard) {
+    const ct = Number(scope_extras.bay_windows_standard) || 0;
+    if (ct > 0 && rates.bay_window_standard) {
+      labour_breakdown.push(line(
+        `Bay window roof (standard)`,
+        ct, 'each', rates.bay_window_standard, ct * rates.bay_window_standard
+      ));
+    }
+  }
+  if (scope_extras.bay_windows_oversized) {
+    const ct = Number(scope_extras.bay_windows_oversized) || 0;
+    if (ct > 0 && rates.bay_window_oversized) {
+      labour_breakdown.push(line(
+        `Bay window roof (oversized)`,
+        ct, 'each', rates.bay_window_oversized, ct * rates.bay_window_oversized
+      ));
+    }
+  }
+
+  // Mansard SQ (extra SQ at steep tier rate, separate from main roof SQ)
+  if (scope_extras.mansard_sq) {
+    const sq = Number(scope_extras.mansard_sq) || 0;
+    if (sq > 0) {
+      const mansardRate = rates.mansard_per_sq_override
+        || rates.base_per_sq['10-12']
+        || basePerSQ;
+      labour_breakdown.push(line(
+        `Mansard accent (steep tier rate)`,
+        sq, 'SQ', mansardRate, sq * mansardRate
+      ));
+    }
+  }
+
   // Custom lines passthrough — already-priced extras
   if (Array.isArray(scope_extras.custom_lines)) {
     for (const cl of scope_extras.custom_lines) {
