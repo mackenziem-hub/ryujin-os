@@ -1006,19 +1006,20 @@ const TOOLS = [
     }
   },
 
-  // ── QUEST TOOL (Plus Ultra HQ Quest Board) ──
+  // ── QUEST TOOL (now routes to Ryujin Crew Ops kanban) ──
+  // Plus Ultra HQ was decommissioned Apr 28 2026. Quests now create Crew Ops kanban tickets in Ryujin.
   {
     name: 'create_quest',
-    description: 'Create a quest on the Plus Ultra HQ **Quest Board** — the gamified card grid where Mackenzie tracks XP-rewardable internal work. This is the One True Place for CEO/internal tasks: business strategy, marketing, admin, pricing, internal processes. NOT for crew field work (use create_ticket) or client-tied sales tasks (use create_ghl_task). Quests appear immediately on the Quest Board tab at plus-ultra-hq.vercel.app. Routes through approval.',
+    description: 'Create an internal task / quest on the Ryujin **Crew Ops kanban** at ryujin-os.vercel.app/admin.html#crew. Use for CEO/internal work: strategy, marketing, admin, pricing, internal process. Routes through approval. (Note: HQ Quest Board was retired Apr 28; XP/levels not migrated. Use create_ticket for crew field work and create_ghl_task for client-tied sales.)',
     input_schema: {
       type: 'object',
       properties: {
         title: { type: 'string', description: 'Quest title (clear, actionable, like "Update Q2 pricing sheet")' },
         description: { type: 'string', description: 'Short quest description (1-2 sentences)' },
-        category: { type: 'string', enum: ['sales', 'marketing', 'ops', 'finance', 'team', 'seo'], description: 'Quest Board category. Default: ops.' },
-        priority: { type: 'string', enum: ['top', 'high', 'medium', 'low'], description: 'Priority — top/high marks it as a Priority Quest (shown in Today section). Default: medium.' },
-        xp: { type: 'number', description: 'XP reward, 1-500. Default 50. Quests at 200+ XP become Legendary (gold border, top of grid).' },
-        steps: { type: 'array', items: { type: 'string' }, description: 'Optional ordered list of steps to complete the quest. Shown when the user expands the quest card. Up to 30 steps.' }
+        category: { type: 'string', enum: ['sales', 'marketing', 'ops', 'finance', 'team', 'seo'], description: 'Tagged on the ticket. Default: ops.' },
+        priority: { type: 'string', enum: ['top', 'high', 'medium', 'low'], description: 'Maps top->urgent, high->high, medium->medium, low->low. Default: medium.' },
+        xp: { type: 'number', description: 'Legacy XP reward — recorded in the ticket notes for posterity, no XP system in Ryujin.' },
+        steps: { type: 'array', items: { type: 'string' }, description: 'Optional ordered list of steps appended to the description.' }
       },
       required: ['title']
     }
@@ -2209,28 +2210,36 @@ async function executeTool(name, input, attachments = []) {
       }
     }
 
-    // ── QUEST CREATION (Plus Ultra HQ Quest Board) ──
+    // ── QUEST CREATION (now routes to Ryujin Crew Ops) ──
+    // Plus Ultra HQ decommissioned Apr 28 2026 — routed to ticket create instead.
     if (name === 'create_quest') {
+      const priorityMap = { top: 'urgent', high: 'high', medium: 'medium', low: 'low' };
+      const mappedPriority = priorityMap[input.priority] || 'medium';
+      const stepsBlock = Array.isArray(input.steps) && input.steps.length
+        ? '\n\nSteps:\n' + input.steps.map((s, i) => `${i+1}. ${s}`).join('\n')
+        : '';
+      const xpNote = input.xp ? `\n[Legacy quest XP: ${input.xp}]` : '';
+      const tags = ['quest'];
+      if (input.category) tags.push(input.category);
       const result = await routeForApproval(
-        'create-quest',
-        'Plus Ultra HQ Quest Board',
-        `Create Quest Board card: "${input.title}"${input.category ? ` [${input.category}]` : ''}${input.xp ? ` ${input.xp}XP` : ''}`,
+        'create-ticket',
+        input.title,
+        `Create internal task: "${input.title}"${input.category ? ` [${input.category}]` : ''}`,
         {
-          tool: 'create_quest',
+          tool: 'create_ticket',
           title: input.title,
-          description: input.description || '',
-          category: input.category || 'ops',
-          priority: input.priority || 'medium',
-          xp: input.xp || 50,
-          steps: Array.isArray(input.steps) ? input.steps : null
+          description: (input.description || '') + stepsBlock + xpNote,
+          priority: mappedPriority,
+          tags: tags,
+          assignedTo: 'Mackenzie'
         }
       );
       return {
         status: 'pending_approval',
         code: result.code,
         message: `Awaiting confirmation. Reply "${result.code} confirmed" to execute.`,
-        action: `Create Quest Board card: "${input.title}"`,
-        details: { category: input.category, xp: input.xp, priority: input.priority, visibleIn: 'https://plus-ultra-hq.vercel.app (Quest Board tab)' }
+        action: `Create internal task: "${input.title}"`,
+        details: { category: input.category, priority: mappedPriority, visibleIn: 'https://ryujin-os.vercel.app/admin.html#crew' }
       };
     }
 
