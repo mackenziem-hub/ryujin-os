@@ -43,8 +43,18 @@ h1{font-size:1.2em;margin:10px 0 14px}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border-hi);padding:10px 18px;border-radius:8px;font-size:0.88em;z-index:99}
 .sub-section{margin-top:20px}
 .sub-section h2{font-size:0.85em;letter-spacing:1.5px;text-transform:uppercase;color:var(--dim);margin-bottom:10px}
-.sub-row{padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;font-size:0.88em}
+.sub-row{padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;font-size:0.88em;flex-wrap:wrap;gap:10px}
 .sub-row .url{font-family:monospace;font-size:0.72em;color:var(--cyan);word-break:break-all;max-width:100%}
+.tag.auto{background:rgba(34,211,238,0.18);color:var(--cyan);border-color:rgba(34,211,238,0.45)}
+.entry.auto-approved{border-color:rgba(74,222,128,0.18);background:rgba(74,222,128,0.03)}
+.vis-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px;margin-top:8px}
+.vis-grid label{display:flex;align-items:center;gap:6px;font-size:0.78em;color:var(--text);cursor:pointer;padding:4px 8px;background:rgba(34,211,238,0.04);border:1px solid var(--border);border-radius:6px}
+.vis-grid label input{cursor:pointer}
+.vis-grid label.on{background:rgba(74,222,128,0.08);border-color:rgba(74,222,128,0.3)}
+.thresh-input{width:120px;padding:6px 10px;background:rgba(6,10,20,0.6);border:1px solid var(--border-hi);color:var(--text);border-radius:6px;font-family:inherit;font-size:0.82em}
+.sub-detail{flex:1 1 100%;margin-top:8px;padding-top:10px;border-top:1px solid var(--border);display:none}
+.sub-detail.on{display:block}
+.sub-detail-toggle{font-size:0.74em;color:var(--cyan);cursor:pointer;font-weight:600}
 </style>
 </head>
 <body>
@@ -57,6 +67,7 @@ h1{font-size:1.2em;margin:10px 0 14px}
   <div class="filters">
     <div class="pill on" data-status="pending" onclick="setFilter(this,'pending')">Pending</div>
     <div class="pill" data-status="approved" onclick="setFilter(this,'approved')">Approved</div>
+    <div class="pill" data-status="auto" onclick="setFilter(this,'auto')">Auto-approved</div>
     <div class="pill" data-status="denied" onclick="setFilter(this,'denied')">Denied</div>
     <div class="pill" data-status="" onclick="setFilter(this,'')">All</div>
   </div>
@@ -86,19 +97,39 @@ async function api(path, opts={}){
 }
 
 async function load(){
-  const q = currentFilter ? `?status=${currentFilter}` : '';
-  const { entries } = await api(`/job-log${q}`);
+  // 'auto' filter is client-side: pull all approved, then filter to auto_approved_at != null
+  let serverFilter = currentFilter;
+  if (currentFilter === 'auto') serverFilter = 'approved';
+  const q = serverFilter ? `?status=${serverFilter}` : '';
+  let { entries } = await api(`/job-log${q}`);
+  if (currentFilter === 'auto') {
+    entries = (entries || []).filter(e => !!e.auto_approved_at);
+  }
   const list = document.getElementById('list');
   if (!entries.length){ list.innerHTML = '<div class="empty">No entries.</div>'; return }
 
   list.innerHTML = entries.map(e=>{
-    const label = { material_purchase:'🧾 Material Purchase', scope_change:'📐 Scope Change', additional_fee:'➕ Additional Fee', advance_payout:'💵 Advance Payout', note:'📝 Note' }[e.entry_type] || e.entry_type;
+    const label = {
+      material_purchase:'🧾 Material Purchase',
+      scope_change:'📐 Scope Change',
+      additional_fee:'➕ Additional Fee',
+      advance_payout:'💵 Advance Payout',
+      note:'📝 Note',
+      rate_suggestion:'💡 Rate Suggestion',
+      change_order:'📋 Change Order'
+    }[e.entry_type] || e.entry_type;
     const statusColor = e.status==='approved'?'green':e.status==='denied'?'red':'yellow';
-    return `<div class="entry ${e.status}">
+    const autoFlag = e.auto_approved_at ? '<span class="tag auto">AUTO-APPROVED</span>' : '';
+    const cls = (e.auto_approved_at ? 'auto-approved' : '') + ' ' + e.status;
+    const rateBlock = e.entry_type === 'rate_suggestion' && e.rate_suggestion_item
+      ? `<div class="meta" style="margin-top:6px">Suggested: <b>${esc(e.rate_suggestion_item)}</b> from $${e.rate_suggestion_current ?? '?'} → $${e.rate_suggestion_proposed ?? '?'}</div>`
+      : '';
+    return `<div class="entry ${cls}">
       <div class="row">
         <div>
           <span class="tag">${label}</span>
           <span class="tag ${statusColor}">${e.status}</span>
+          ${autoFlag}
           <div class="meta" style="margin-top:8px">
             <b>${esc(e.workorder?.address||'?')}</b> · ${esc(e.workorder?.customer_name||'')} · WO#${e.workorder?.wo_number||'?'}<br>
             By ${esc(e.subcontractor?.name||'owner')} · ${new Date(e.created_at).toLocaleString('en-CA',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}
@@ -107,6 +138,7 @@ async function load(){
         ${e.amount ? `<div class="amt">${money(e.amount)}</div>` : ''}
       </div>
       <div class="desc">${esc(e.description)}</div>
+      ${rateBlock}
       ${e.vendor?`<div class="meta">Vendor: <b>${esc(e.vendor)}</b></div>`:''}
       ${(e.photos||[]).length?`<div class="photos">${e.photos.map(u=>`<img src="${esc(u)}" onclick="window.open('${esc(u)}','_blank')">`).join('')}</div>`:''}
       ${e.review_notes?`<div class="meta" style="margin-top:8px">Review: <b>${esc(e.review_notes)}</b></div>`:''}
@@ -147,6 +179,16 @@ async function decide(id, status, btn){
   } catch (e) { toast('Failed: '+e.message) }
 }
 
+const VIS_FLAGS = [
+  ['show_pay', 'Pay Sheet'],
+  ['show_materials', 'Materials'],
+  ['show_photos', 'Photos'],
+  ['show_full_scope', 'Full Scope'],
+  ['show_schedule', 'Schedule'],
+  ['show_contingencies', 'Contingencies'],
+  ['show_rates', 'Rate Sheet']
+];
+
 async function loadSubs(){
   const { subcontractors } = await api('/sub-auth?action=list');
   const el = document.getElementById('subList');
@@ -154,18 +196,75 @@ async function loadSubs(){
   el.innerHTML = subcontractors.map(s=>{
     const expired = s.magic_link_expires_at && new Date(s.magic_link_expires_at) < new Date();
     const url = s.magic_link_token ? `https://ryujin-os.vercel.app/sub-portal.html?token=${s.magic_link_token}` : '(no link)';
+    const vis = s.portal_visibility || {};
+    const threshold = s.auto_approve_threshold_cad ?? 250;
     return `<div class="sub-row">
       <div>
         <b>${esc(s.name)}</b> · ${esc(s.company||'')}
         <div class="url">${url}</div>
         <div class="meta">${expired?'<span class="tag red">EXPIRED</span>':s.magic_link_expires_at?'Expires '+new Date(s.magic_link_expires_at).toLocaleDateString('en-CA'):'No expiry'}</div>
+        <div class="sub-detail-toggle" onclick="toggleSubDetail('${s.id}')">⚙ Settings ▾</div>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn" onclick="copyLink('${esc(url)}')">COPY</button>
         <button class="btn ghost" onclick="rotateSub('${s.id}')">ROTATE</button>
       </div>
+      <div class="sub-detail" id="dt-${s.id}">
+        <div class="meta" style="margin-bottom:6px">Portal visibility — toggle what this sub sees on their phone</div>
+        <div class="vis-grid">
+          ${VIS_FLAGS.map(([k,label]) => `
+            <label class="${vis[k] !== false ? 'on' : ''}">
+              <input type="checkbox" ${vis[k] !== false ? 'checked' : ''} data-sub="${s.id}" data-flag="${k}">
+              ${esc(label)}
+            </label>
+          `).join('')}
+        </div>
+        <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <span class="meta">Auto-approve below:</span>
+          <input class="thresh-input" type="number" step="50" id="th-${s.id}" value="${esc(threshold)}">
+          <span class="meta">CAD</span>
+          <button class="btn approve" style="margin-left:auto" onclick="saveSubSettings('${s.id}')">SAVE SETTINGS</button>
+        </div>
+        <div class="meta" style="margin-top:8px;font-size:0.74em">Hard-gate types (scope_change, advance_payout, rate_suggestion, change_order) always require approval regardless of threshold.</div>
+      </div>
     </div>`;
   }).join('');
+
+  // Live-toggle the visual on/off styling for visibility checkboxes
+  document.querySelectorAll('.vis-grid input[type=checkbox]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      cb.parentElement.classList.toggle('on', cb.checked);
+    });
+  });
+}
+
+function toggleSubDetail(subId){
+  const dt = document.getElementById(`dt-${subId}`);
+  if (dt) dt.classList.toggle('on');
+}
+
+async function saveSubSettings(subId){
+  // Collect all checkbox states for this sub
+  const checks = document.querySelectorAll(`.vis-grid input[data-sub="${subId}"]`);
+  const portal_visibility = {};
+  checks.forEach(cb => {
+    portal_visibility[cb.dataset.flag] = cb.checked;
+  });
+  const threshold = Number(document.getElementById(`th-${subId}`).value);
+
+  try {
+    await api('/sub-portal?action=admin-settings', {
+      method: 'PUT',
+      body: JSON.stringify({
+        sub_id: subId,
+        portal_visibility,
+        auto_approve_threshold_cad: threshold
+      })
+    });
+    toast('Saved');
+  } catch (e) {
+    toast('Failed: ' + e.message);
+  }
 }
 
 async function createSub(){
