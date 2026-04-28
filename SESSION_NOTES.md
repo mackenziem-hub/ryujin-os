@@ -1,3 +1,104 @@
+# Session notes — 2026-04-28 (SUB PORTAL V2 — Atlantic Roofing for Ryan)
+
+Built out a 7-tab subcontractor portal, per-sub visibility flags, auto-approval
+routing for job log entries, and a chat tool to flip flags from a one-liner.
+
+## What shipped (5 commits)
+
+1. **Migration 026** — `portal_visibility` JSONB + `auto_approve_threshold_cad`
+   on subcontractors. New entry types `rate_suggestion` and `change_order` on
+   `job_log_entries` plus `rate_suggestion_*` columns and `auto_approved_at`.
+2. **`api/sub-portal.js`** — single Vercel function, action-routed:
+   - `?action=photos` — pulls cover/before/drone/eagleview/street photos from `estimate_photos` of the WO's linked estimate
+   - `?action=materials` — extracts category=materials line items from `calculated_packages.<tier>.lineItems`, groups by supplier, flags color status from WO `shingle_color`
+   - `?action=schedule` — start date, address, GPS regex-parsed from `special_notes`, AJ contact from `users` table
+   - `?action=rates` — full Atlantic rate sheet from `lib/subcontractor-rates.js`, grouped by category
+   - `?action=admin-settings` (PUT, owner-only) — update visibility + threshold
+3. **`api/job-log.js`** auto-approval — POST checks per-sub
+   `auto_approve_threshold_cad`. HARD_GATE_TYPES (scope_change, advance_payout,
+   rate_suggestion, change_order) always go to pending. Other types under
+   threshold auto-approve with `auto_approved_at` stamped. Pending entries
+   fire a Gmail alert via `lib/google.js` `gmailSend()` to NOTIFY_EMAIL
+   (default mackenzie.m@plusultraroofing.com). Fire-and-forget.
+4. **`public/sub-portal.html`** — extended 3 tabs to 7. Conditional tabs based
+   on `sub.portal_visibility`. Lazy load per tab. New: lightbox for photos,
+   tap-to-call for AJ, supplier-coded chips on materials, rate-suggestion form
+   that auto-fills current rate.
+5. **`public/admin-job-log.html`** — per-sub Settings drawer with visibility
+   checkbox grid + threshold input. New "Auto-approved" filter pill (client-side
+   filter on `auto_approved_at != null`). AUTO-APPROVED green tag on entries.
+6. **`api/chat.js`** — `set_sub_visibility` tool. Resolves sub by name fragment
+   if no sub_id. Merges visibility flags (doesn't blow away existing keys).
+   Sample: "Hide Ryan's pay sheet visibility on his portal."
+
+## Self-test results (all pass)
+
+- `GET /api/sub-portal?action=schedule&wo_id=…&token=…` → returned start date
+  May 2, address, AJ supervisor, full special_notes (Mac's flip-back-to-Ryan
+  note from Apr 28). GPS not parsed because special_notes don't contain coords.
+- `GET ...&action=materials` → empty items array (Sheila's estimate
+  `calculated_packages={}` — known: estimate was created without a quote run).
+  color_status = "TBD — confirm with owner before pickup".
+- `GET ...&action=photos` → empty array (no photos uploaded for that estimate yet).
+- `GET ...&action=rates` → full Atlantic rate sheet, 7 groups, version
+  `2025_official_actualized_2026-04-28`.
+- `POST /api/job-log` $50 material → status=approved, auto_approved_at stamped,
+  no alert. **Auto-approval works.**
+- `POST /api/job-log` $300 material → status=pending, alert.sent=true via gmail.
+  **Threshold gating works.** (Real Gmail email sent to Mac's inbox.)
+- `POST /api/job-log` rate_suggestion → status=pending regardless of $0 amount,
+  rate_suggestion_item/current/proposed all stored. **Hard-gate works.**
+- `PUT /api/sub-portal?action=admin-settings` → visibility + threshold updated.
+
+Test entries cleaned from DB after verification (3 rows deleted).
+
+## Backwards compat preserved
+
+- Ryan's existing token still works (no change to magic-link flow).
+- Old 3-tab portal markup replaced; tab IDs changed (`tScope`/`tPay`/`tLog`
+  remain, plus 4 new). Existing entries without rate_suggestion fields render
+  fine — null-safe accessors throughout.
+- `api/sub-auth` adds `portal_visibility` and `auto_approve_threshold_cad` to
+  the response payload but doesn't break callers reading only `id/name/etc`.
+
+## SMS/Automator path
+
+CLAUDE.md flags Automator contactId 02IhxZfSwZZAZ2fooVGu for Mac's phone, but
+Ryujin OS doesn't have a server-side SMS pipeline yet — `RyujinActions.sms` in
+`public/assets/` is a client-side `sms:` URL helper (opens the SMS app), not a
+sendable webhook. The fireAlert() function instead routes through Gmail (which
+IS wired and proven — proposal-accept.js uses the same path). To swap to SMS
+later: replace the body of `fireAlert()` in `api/job-log.js` with a fetch to
+the Automator webhook (need URL + auth keys from Mac).
+
+## Tech debt logged (not blocking)
+
+- GPS coords are regex-parsed from `special_notes` text. If Mac wants reliable
+  GPS, add a `gps_coords jsonb` column on workorders next pass. Current
+  best-effort: matches `46.4567,-64.789` patterns; missed on Sheila's WO.
+- `linked_estimate_id` was null on WO 85635474 until I backfilled it as part of
+  the test. Going forward, `create_ryujin_proposal` should also tee up a WO row
+  pointing back at the estimate. Otherwise materials/photos always come back
+  empty until that join is set.
+- `users` table query for AJ uses `ilike '%aj%'` on full_name — fragile if
+  there's another user with "aj" in their name. Better: a per-tenant
+  `default_supervisor_user_id` column, or a tenant_settings JSON key.
+- The `set_sub_visibility` chat tool's existing-visibility merge currently does
+  one extra GET to read the current JSONB before PUT. Would be one round-trip
+  shorter to add an `?action=visibility-patch` with field-level merge on the
+  server, but the current path works.
+- Materials endpoint relies on `calculated_packages.<tier>.lineItems`. If Mac
+  starts using the manual override flow (override line items not stored back
+  in calculated_packages), the materials list will be stale. Worth checking
+  next time he overrides on a Ryan job.
+
+## URLs to verify Friday
+
+- Ryan's portal: `https://ryujin-os.vercel.app/sub-portal.html?token=bqS9xCYsbpaRluF1_fpC_qK3g_pHdEoF`
+- Admin queue: `https://ryujin-os.vercel.app/admin-job-log.html`
+
+---
+
 # Session notes — 2026-04-27 evening (SOP REALIGNMENT — strip double-counting loading layer)
 
 The Apr 27 morning session bolted on a "floor enforcement" loading layer that
