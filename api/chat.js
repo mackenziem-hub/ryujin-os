@@ -31,6 +31,7 @@ You have tools that let you interact with Mackenzie's systems. USE THEM when ask
 - **add_contact_note** — Add a note to a CRM contact (call summaries, follow-up context, pricing summaries, proposal links) — REQUIRES APPROVAL (confirm code in chat)
 - **generate_proposal** — Generate a Plus Ultra branded intro sales page for an existing estimate. NOT the proposal itself — it's a warm-up page with the client's house photo, video, crew gallery, and a CTA linking to the full Estimator OS proposal. Auto-pulls cover photo from Estimator OS, adapts footer/bio to the assigned salesperson (Darcy or Mackenzie). Executes immediately (no approval needed). IMPORTANT: Always look up the real client name from GHL first — never use placeholder names. After generating, ALWAYS share TWO links: the customer-facing URL and the edit URL (append &edit=1) so Mackenzie can self-service upload cover photos, videos, and edit the message without a Claude Code session.
 - **create_ryujin_proposal** — Create a native Ryujin proposal (NOT Estimator OS) with multi-tier Gold/Platinum/Diamond pricing and return the client-facing share URL. Use when Mackenzie says "[address] is ready" or describes a just-measured job. Auto-runs the Ryujin quote engine (corrected multipliers hitting 12/17/23% net after loaded costs) and persists the estimate in Supabase. Executes immediately. After creating, share the URL with Darcy and remind Mackenzie to upload cover/before/after photos via /sales-proposal.html?id={estimate_id}. Before calling, look up the contact in GHL by address to get phone/email/contactId — no placeholder client info.
+- **set_sub_visibility** — Update what a sub sees on their Ryujin sub-portal and/or their auto-approve threshold for job log entries. Use when Mackenzie says "hide Ryan\'s pay sheet visibility", "let Ryan see his rates", "auto-approve material purchases under $300 for Ryan". Identify the sub by name fragment (e.g. "Ryan", "Atlantic"). Executes immediately — owner-only config, no approval gate.
 - **create_ghl_task** — Create a task on an Automator/GHL contact, assignable to Mackenzie or Darcy — REQUIRES APPROVAL (confirm code in chat)
 
 **Meta Ads (LIVE — Graph API v21.0):**
@@ -1339,6 +1340,25 @@ const TOOLS = [
       },
       required: ['path']
     }
+  },
+  {
+    name: 'set_sub_visibility',
+    description: 'Update what a subcontractor sees on their Ryujin sub-portal (sub-portal.html?token=...) and/or their auto-approval threshold for job log entries. Use when Mackenzie says things like "hide Ryan\'s pay sheet visibility", "let Ryan see his rates", "auto-approve material purchases under $300 for Ryan", or "show Atlantic Roofing the full scope". Executes immediately — no approval gate (this is owner-only config). Identify the sub by name (e.g. "Ryan") or company; the tool resolves to the matching subcontractor row.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        sub_name: { type: 'string', description: 'Sub name or company fragment to identify the row (case-insensitive ilike match). E.g. "Ryan" or "Atlantic".' },
+        sub_id: { type: 'string', description: 'Subcontractor UUID if known (skips the name resolution).' },
+        show_pay: { type: 'boolean', description: 'Show the pay sheet tab in the sub portal.' },
+        show_materials: { type: 'boolean', description: 'Show the materials tab.' },
+        show_photos: { type: 'boolean', description: 'Show the photos gallery tab.' },
+        show_full_scope: { type: 'boolean', description: 'Show the full WO scope items list. When false, only header stats + special_notes show.' },
+        show_schedule: { type: 'boolean', description: 'Show the schedule / GPS / supervisor tab.' },
+        show_contingencies: { type: 'boolean', description: 'Show the contingency rates block at the bottom of the Pay tab.' },
+        show_rates: { type: 'boolean', description: 'Show the full rate sheet tab (and the suggest-a-rate-change form).' },
+        auto_approve_threshold_cad: { type: 'number', description: 'Auto-approve threshold for non-hard-gate entry types. Entries under this dollar value auto-approve; equal/above goes to pending. Hard-gate types (scope_change, advance_payout, rate_suggestion, change_order) always go to pending regardless.' }
+      }
+    }
   }
 ];
 
@@ -2101,6 +2121,91 @@ async function executeTool(name, input, attachments = []) {
         };
       } catch (e) {
         return { error: `create_ryujin_proposal failed: ${e.message}` };
+      }
+    }
+
+    // ── SUB-PORTAL VISIBILITY + AUTO-APPROVE THRESHOLD ──
+    if (name === 'set_sub_visibility') {
+      try {
+        const RYUJIN_BASE = (process.env.RYUJIN_BASE_URL || 'https://ryujin-os.vercel.app').trim();
+        const TENANT = 'plus-ultra';
+        const headers = { 'Content-Type': 'application/json', 'x-tenant-id': TENANT };
+
+        // Resolve sub_id by name if not provided
+        let sub_id = input.sub_id;
+        let resolvedSub = null;
+        if (!sub_id) {
+          if (!input.sub_name) return { error: 'sub_id or sub_name required' };
+          // Pull all subs for the tenant and match
+          const listRes = await fetch(`${RYUJIN_BASE}/api/sub-auth?action=list&tenant=${TENANT}`, { headers });
+          const listJson = await listRes.json();
+          if (!listRes.ok) return { error: `lookup failed: ${listJson.error || listRes.statusText}` };
+          const needle = String(input.sub_name).toLowerCase();
+          const match = (listJson.subcontractors || []).find(s =>
+            (s.name || '').toLowerCase().includes(needle) ||
+            (s.company || '').toLowerCase().includes(needle)
+          );
+          if (!match) {
+            return { error: `No subcontractor matching "${input.sub_name}". Available: ${(listJson.subcontractors || []).map(s => s.name).join(', ')}` };
+          }
+          sub_id = match.id;
+          resolvedSub = match;
+        }
+
+        // Build the visibility patch — only include keys explicitly provided
+        const visKeys = ['show_pay', 'show_materials', 'show_photos', 'show_full_scope', 'show_schedule', 'show_contingencies', 'show_rates'];
+        const portal_visibility = {};
+        let visTouched = false;
+        for (const k of visKeys) {
+          if (typeof input[k] === 'boolean') { portal_visibility[k] = input[k]; visTouched = true; }
+        }
+
+        // Need to merge with existing visibility (the endpoint replaces the whole jsonb)
+        if (visTouched) {
+          // Pull existing
+          const existing = resolvedSub || (await fetch(`${RYUJIN_BASE}/api/sub-auth?action=list&tenant=${TENANT}`, { headers }).then(r => r.json()).then(j => (j.subcontractors || []).find(s => s.id === sub_id)));
+          const merged = { ...(existing?.portal_visibility || {}), ...portal_visibility };
+          portal_visibility._merged = merged; // will overwrite below
+        }
+
+        const updates = { sub_id };
+        if (visTouched) {
+          // The `_merged` field is just a holder — strip it and use the merged object
+          updates.portal_visibility = portal_visibility._merged || portal_visibility;
+          delete updates.portal_visibility._merged;
+        }
+        if (typeof input.auto_approve_threshold_cad === 'number') {
+          updates.auto_approve_threshold_cad = input.auto_approve_threshold_cad;
+        }
+
+        const r = await fetch(`${RYUJIN_BASE}/api/sub-portal?action=admin-settings&tenant=${TENANT}`, {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify(updates)
+        });
+        const result = await r.json();
+        if (!r.ok) return { error: result.error || `${r.status} ${r.statusText}` };
+
+        const changes = [];
+        if (visTouched) {
+          for (const k of visKeys) {
+            if (typeof input[k] === 'boolean') {
+              changes.push(`${k}=${input[k] ? 'shown' : 'hidden'}`);
+            }
+          }
+        }
+        if (typeof input.auto_approve_threshold_cad === 'number') {
+          changes.push(`auto_approve_threshold=$${input.auto_approve_threshold_cad}`);
+        }
+
+        return {
+          ok: true,
+          subcontractor: result.subcontractor,
+          changes,
+          message: `Updated ${result.subcontractor?.name || sub_id}: ${changes.join(', ') || 'no changes'}`
+        };
+      } catch (e) {
+        return { error: `set_sub_visibility failed: ${e.message}` };
       }
     }
 
