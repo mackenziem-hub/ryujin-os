@@ -24,7 +24,7 @@ async function handler(req, res) {
   if (req.method === 'GET' && token) {
     const { data: sub } = await supabaseAdmin
       .from('subcontractors')
-      .select('id, name, company, email, phone, trade, active, magic_link_expires_at')
+      .select('id, name, company, email, phone, trade, active, magic_link_expires_at, portal_visibility, auto_approve_threshold_cad')
       .eq('tenant_id', tenantId)
       .eq('magic_link_token', token)
       .single();
