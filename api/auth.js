@@ -101,8 +101,13 @@ export default async function handler(req, res) {
       .from('users').select('id').eq('tenant_id', tenant.id).eq('email', email.toLowerCase().trim()).single();
     if (existing) return res.status(409).json({ error: 'User already exists' });
 
-    // Resolve role
+    // Resolve role.
+    // SECURITY: role_slug from request body is IGNORED for self-serve registration —
+    // it was a self-elevation primitive (anyone could POST role_slug=admin and create
+    // an admin account). Elevated roles can only come from invite_token, where the
+    // role is read from the invite row (which an admin had to issue), not the body.
     let roleId = null;
+    let resolvedRoleSlug = 'crew';
     if (invite_token) {
       const { data: invite } = await supabaseAdmin
         .from('invites').select('role_id, expires_at, used_at')
@@ -112,10 +117,16 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'Invalid or expired invite' });
       }
       roleId = invite.role_id;
-    } else if (role_slug) {
-      const { data: role } = await supabaseAdmin
-        .from('roles').select('id').eq('tenant_id', tenant.id).eq('slug', role_slug).single();
-      roleId = role?.id || null;
+      if (roleId) {
+        const { data: invitedRole } = await supabaseAdmin
+          .from('roles').select('slug').eq('id', roleId).single();
+        if (invitedRole?.slug) resolvedRoleSlug = invitedRole.slug;
+      }
+    } else {
+      // Self-serve registration without an invite always lands as 'crew'.
+      const { data: crewRole } = await supabaseAdmin
+        .from('roles').select('id').eq('tenant_id', tenant.id).eq('slug', 'crew').single();
+      roleId = crewRole?.id || null;
     }
 
     // Create user
@@ -127,7 +138,7 @@ export default async function handler(req, res) {
         name,
         email: email.toLowerCase().trim(),
         password_hash: passwordHash,
-        role: role_slug || 'crew',
+        role: resolvedRoleSlug,
         role_id: roleId
       })
       .select('id, name, email, role')
@@ -223,16 +234,18 @@ export default async function handler(req, res) {
       .update({ reset_token: token, reset_token_expires_at: expires.toISOString() })
       .eq('id', user.id);
 
-    // Build URL from the request host so it works on preview + prod deploys
+    // Build URL from the request host so it works on preview + prod deploys.
+    // SECURITY: do NOT return resetUrl in the API response — that's an account-takeover
+    // primitive for any known email. Logged server-side so Mac can pull from Vercel
+    // logs until Gmail email-send is wired (TODO: gmailSend from lib/google.js).
     const host = req.headers['x-forwarded-host'] || req.headers.host;
     const proto = req.headers['x-forwarded-proto'] || 'https';
     const resetUrl = `${proto}://${host}/reset-password.html?token=${token}`;
+    console.log(`[auth/forgot] Reset URL for ${user.email}: ${resetUrl} (expires ${expires.toISOString()})`);
 
     return res.json({
       ok: true,
-      message: 'Reset link generated. Open the URL below within the hour to set a new password.',
-      resetUrl,
-      expiresAt: expires.toISOString()
+      message: 'If the account exists, a reset link is available. Contact your administrator to retrieve it until email delivery is wired.'
     });
   }
 

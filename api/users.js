@@ -6,6 +6,10 @@
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireTenant } from '../lib/tenant.js';
 
+// SECURITY: never expose password_hash, reset_token, or reset_token_expires_at via this API.
+// Any new sensitive column added to the users table must be EXCLUDED here.
+const SAFE_USER_FIELDS = 'id, tenant_id, email, name, phone, role, role_id, avatar_url, bio, active, created_at';
+
 async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
@@ -17,7 +21,7 @@ async function handler(req, res) {
     if (id) {
       const { data, error } = await supabaseAdmin
         .from('users')
-        .select('*')
+        .select(SAFE_USER_FIELDS)
         .eq('tenant_id', tenantId)
         .eq('id', id)
         .single();
@@ -28,7 +32,7 @@ async function handler(req, res) {
 
     let query = supabaseAdmin
       .from('users')
-      .select('*')
+      .select(SAFE_USER_FIELDS)
       .eq('tenant_id', tenantId)
       .eq('active', true)
       .order('name');
@@ -45,7 +49,7 @@ async function handler(req, res) {
     const { data, error } = await supabaseAdmin
       .from('users')
       .insert({ tenant_id: tenantId, ...body })
-      .select('*')
+      .select(SAFE_USER_FIELDS)
       .single();
 
     if (error) return res.status(500).json({ error: error.message });
@@ -61,7 +65,7 @@ async function handler(req, res) {
       .update(updates)
       .eq('id', id)
       .eq('tenant_id', tenantId)
-      .select('*')
+      .select(SAFE_USER_FIELDS)
       .single();
 
     if (error) return res.status(500).json({ error: error.message });
