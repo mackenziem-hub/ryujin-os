@@ -1,6 +1,7 @@
 // Shenron Chat API — powered by snapshot + tool use
 import { gmailSearch, gmailReadMessage, gmailReadThread, gmailDraft, gmailSend, calendarList, calendarCreate, calendarUpdate, driveSearch, driveReadFile } from '../lib/google.js';
 import { supabaseAdmin } from '../lib/supabase.js';
+import { peerReview, LENSES as PEER_REVIEW_LENSES } from '../lib/peer_review.js';
 import crypto from 'node:crypto';
 
 // ── ROLE-BASED ACCESS (Phase 5) ──
@@ -376,11 +377,11 @@ The snapshot's salesTasks section has the live list. Overdue tasks are CRITICAL 
    Never put internal tasks on the Action Board. Never put crew work in HQ quests. When in doubt: if it involves a client → GHL. If it involves crew → Action Board. If it's just Mackenzie → HQ quest.
 8. **ESTIMATOR OS — Fill it out properly.** When creating estimates, include ALL available measurements (roof area, pitch, complexity, eaves, rakes, ridges, hips, valleys, distance, layers, chimney type, etc.). Set jobStatus to "Estimate Draft". Include proposal_controls if Mackenzie specifies custom pricing or a custom message.
    **CRITICAL — PITCH ACCURACY:** The pitch value MASSIVELY affects pricing (labor rates jump from $110/SQ at 4-6 band to $160/SQ at 10-12 band — that's $50/SQ delta plus a 16%+ area multiplier change). NEVER assume or default pitch. Use EXACTLY what Mackenzie states. If he says "10/12", pass "10/12" — not "6/12". Before calling create_full_estimate, confirm the key specs in your summary: "[X] SQ at [pitch], [complexity]". If pitch wasn't explicitly stated, ASK — do not guess.
-   **CRITICAL — MIXED PITCH = USE planes.** If Mackenzie describes a roof with different pitches on different sections (e.g. "main is 5/12, rakes are 12/12" or "main is 8/12, garage is 4/12, dormers are 12/12"), use the `planes` input on create_ryujin_proposal — array of `{sqft, pitch, label}` per section. Each plane gets its own pitch multiplier AND its own labor band rate. Single `pitch` underbills steep sections by ~$50/SQ. Examples that mean MULTI-PITCH:
+   **CRITICAL — MIXED PITCH = USE planes.** If Mackenzie describes a roof with different pitches on different sections (e.g. "main is 5/12, rakes are 12/12" or "main is 8/12, garage is 4/12, dormers are 12/12"), use the \`planes\` input on create_ryujin_proposal — array of \`{sqft, pitch, label}\` per section. Each plane gets its own pitch multiplier AND its own labor band rate. Single \`pitch\` underbills steep sections by ~$50/SQ. Examples that mean MULTI-PITCH:
    - "32×30 upper main 5/12, rakes 12/12 8 inches deep, front rake 2.5 ft" → 3 planes
    - "main house at 6/12, attached garage at 4/12" → 2 planes
    - "predominant 7/12 with steep tower section at 12/12" → 2 planes
-   For uniform single-pitch roofs (typical gable or hip), keep using single `pitch` — planes is only needed when sections differ.
+   For uniform single-pitch roofs (typical gable or hip), keep using single \`pitch\` — planes is only needed when sections differ.
    **CRITICAL — NEVER SKIP CHIMNEYS.** If Mackenzie mentions a chimney, or you see one in a photo, ALWAYS include it. If the size (small/large) or cricket isn't specified, make your best guess based on the photo or context and include it with a note like "I set chimney to [size] — correct?" It is ALWAYS better to guess a chimney size and let Mackenzie correct it than to leave chimneys at 0. A missing chimney means missing flashing costs in the quote.
 9. **BATCH CONFIRMATIONS.** ONE workflow = ONE "Go?". Never show approval codes. Never ask per-step. See CONFIRMATION BATCHING section above — this is the #1 priority rule.
 10. **PROPOSAL PAGES.** After creating an estimate, use create_proposal_pages to auto-create the right number of pages based on the scope. Roof Only = 1 page. With Gutters = 2 pages. Full Exterior = 3 pages.
@@ -440,7 +441,7 @@ Pitch multipliers (for converting top-down/2D measurements to actual roof area �
 - 7/12: 1.158 | 8/12: 1.202 | 9/12: 1.250 | 10/12: 1.302
 - 12/12: 1.414
 
-**IMPORTANT — pass raw 2D sqft, not pitch-adjusted.** The engine applies the pitch multiplier itself. If Mackenzie says "14x17 back porch at 5/12", pass `square_feet: 238` (= 14×17), not 258 (= pre-uplifted). For multi-pitch roofs, pass each section's RAW 2D sqft inside its plane: `planes:[{sqft:238, pitch:"5/12", label:"back porch"}, ...]`.
+**IMPORTANT — pass raw 2D sqft, not pitch-adjusted.** The engine applies the pitch multiplier itself. If Mackenzie says "14x17 back porch at 5/12", pass \`square_feet: 238\` (= 14×17), not 258 (= pre-uplifted). For multi-pitch roofs, pass each section's RAW 2D sqft inside its plane: \`planes:[{sqft:238, pitch:"5/12", label:"back porch"}, ...]\`.
 
 Sub labor bands (Ryan 2025 actualized): $110/SQ at 4-6 pitch, $135 at 7-9, $160 at 10-12, $180 at 13+. Multi-pitch roofs split labor per-band when planes input is used. Single-pitch roofs apply one band to the whole job.
 
@@ -2046,6 +2047,20 @@ const TOOLS = [
       },
       required: ['query']
     }
+  },
+  {
+    name: 'peer_review',
+    description: 'Run a second-opinion peer review on an artifact (code, customer-facing copy, or pricing/scope). Returns a typed verdict (pass / needs_changes / fail) plus a list of specific issues with severity and concrete fixes. Use when the user asks for a "second look", "review", or "sanity check" on a draft. Read-only — does not modify anything. Uses a separate Claude instance with no prior conversation context, so it sees the artifact fresh.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        artifact: { type: 'string', description: 'The thing to review — paste the code, copy, JSON, or estimate body verbatim. Required.' },
+        lens: { type: 'string', enum: ['code', 'customer-copy', 'pricing'], description: 'Review lens. "code" = correctness/security/edge cases. "customer-copy" = customer-facing language for Plus Ultra (no jargon, no exposing internals). "pricing" = Ryujin estimate scope/rates against canonical v2.1 rules.' },
+        context: { type: 'string', description: 'Optional one-line context (file path, customer name, what this is for). Helps the reviewer focus.' },
+        speed: { type: 'string', enum: ['default', 'fast'], description: 'Optional. "default" = Sonnet (better judgment). "fast" = Haiku (quicker, cheaper, fine for quick sanity checks).' }
+      },
+      required: ['artifact', 'lens']
+    }
   }
 ];
 
@@ -2686,8 +2701,15 @@ async function executeTool(name, input, attachments = []) {
               .filter(p => p.sqft > 0 && p.pitch)
           : [];
 
+        // Multi-plane SQ normalization: when planes[] is provided, the canonical
+        // total roof area is the sum of plane sqft. The legacy squareFeet input
+        // is ignored to prevent the engine from pricing against a stale figure
+        // that doesn't match planes[]. Caught by peer-audit on El Rody #52 (May 9).
+        const planesSqft = cleanPlanes.reduce((sum, p) => sum + (Number(p.sqft) || 0), 0);
+        const canonicalSqFt = cleanPlanes.length > 0 ? planesSqft : (Number(input.square_feet) || 0);
+
         const measurements = {
-          squareFeet: Number(input.square_feet) || 0,
+          squareFeet: canonicalSqFt,
           pitch: String(input.pitch || '5/12'),
           planes: cleanPlanes.length > 0 ? cleanPlanes : undefined,
           complexity: input.complexity || 'medium',
@@ -2725,6 +2747,11 @@ async function executeTool(name, input, attachments = []) {
         const compare = await qResp.json();
 
         // Shape only the active residential tiers the proposal page expects
+        // persq is derived from the displayed total ÷ actual roof area (SQ).
+        // The engine's internal pricePerSQ uses bracket-rounded SQ for sub paysheet
+        // routing, which can diverge from actual SQ on multi-plane jobs.
+        // Customer-facing per-SQ must reflect what the customer actually has.
+        const actualSQ = canonicalSqFt / 100;
         const shaped = {};
         for (const slug of ['gold', 'platinum', 'diamond']) {
           if (!compare.offers?.[slug]) continue;
@@ -2734,10 +2761,11 @@ async function executeTool(name, input, attachments = []) {
           const total = (typeof cp === 'number' && cp > 0) ? cp : s.sellingPrice;
           const taxRate = s.taxLabel === 'GST' ? 0.05 : 0.15;
           const totalWithTax = (typeof cp === 'number' && cp > 0) ? Math.round(total * (1 + taxRate)) : s.totalWithTax;
+          const persqDisplay = actualSQ > 0 ? Math.round(total / actualSQ) : s.pricePerSQ;
           shaped[slug] = {
             total,
             totalWithTax,
-            persq: s.pricePerSQ,
+            persq: persqDisplay,
             tax: Math.round(total * taxRate),
             margin: s.netMargin,
             customPrice: typeof cp === 'number' && cp > 0,
@@ -2972,6 +3000,35 @@ async function executeTool(name, input, attachments = []) {
         return { ok: true, count: docs.length, docs };
       } catch (e) {
         return { error: `list_docs failed: ${e.message}` };
+      }
+    }
+
+    if (name === 'peer_review') {
+      try {
+        const artifact = String(input.artifact || '').trim();
+        if (!artifact) return { error: 'artifact required (paste the code/copy/JSON to review)' };
+        const lens = String(input.lens || '').trim();
+        if (!PEER_REVIEW_LENSES[lens]) {
+          return { error: `Unknown lens "${lens}". Valid: ${Object.keys(PEER_REVIEW_LENSES).join(', ')}` };
+        }
+        const result = await peerReview({
+          artifact,
+          lens,
+          context: input.context,
+          speed: input.speed === 'fast' ? 'fast' : 'default',
+        });
+        if (!result.ok) return { error: `peer_review failed: ${result.error}`, latencyMs: result.latencyMs };
+        return {
+          ok: true,
+          verdict: result.verdict,
+          summary: result.summary,
+          issues: result.issues,
+          latencyMs: result.latencyMs,
+          model: result.model,
+          tokens: result.usage ? { in: result.usage.input_tokens, out: result.usage.output_tokens } : null,
+        };
+      } catch (e) {
+        return { error: `peer_review crashed: ${e.message}` };
       }
     }
 
@@ -4275,6 +4332,7 @@ You are NOW speaking as Gohan, the scholar warrior — Mackenzie's game developm
       case 'list_docs': return `📚 Listing Plus Ultra SOPs${input.status ? ` (${input.status})` : ''}`;
       case 'fetch_doc': return `📚 Reading SOP: ${input.slug}`;
       case 'recall_conversation': return `🧠 Recalling past conversations: "${input.query}"`;
+      case 'peer_review': return `🔍 Peer-reviewing (${input.lens})${input.context ? ` — ${input.context}` : ''}`;
       default: return `⚙ ${name}`;
     }
   }

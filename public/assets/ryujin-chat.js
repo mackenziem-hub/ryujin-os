@@ -1479,7 +1479,7 @@
       const ryujinToken = (typeof localStorage !== 'undefined' && localStorage.getItem('ryujin_token')) || '';
       const headers = {};
       if (ryujinToken) headers.Authorization = `Bearer ${ryujinToken}`;
-      const r = await fetch('/api/chat-upload', { method: 'POST', headers, body: fd });
+      const r = await fetch('/api/chat-upload?tenant=plus-ultra', { method: 'POST', headers, body: fd });
       const j = await r.json();
       if (j.files) {
         for (const f of j.files) {

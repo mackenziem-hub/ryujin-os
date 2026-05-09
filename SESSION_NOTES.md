@@ -1,3 +1,166 @@
+# Session notes — 2026-05-09 (Session 65, evening) — Bible v0.1+v0.2 implementation + state machines + claims + agent-briefing + finance-verify + Stripe scaffold + asset handoff + Kataria metal merge
+
+## Commits pushed this session (in order)
+
+1. `7dced6f` ship: cumulative Apr 28 → May 9 sessions (244 files of work that had been deployed via vercel CLI but never reached git)
+2. `61f9e38` Bible v0.1 + claims library scaffold
+3. `03a1d6a` state machines + claim guard + endpoint hardening
+4. `e63a52f` migrations 036-039 applied to prod (script + audit log)
+5. `1c12715` agent-briefing + /api/claims + claim-resolver + lint cleanup
+6. `c2153bb` Manus peer review fixes — state machines + briefing + finance-verify + Stripe scaffold (migration 040 applied)
+7. `a96af61` Grok asset handoff — directory scaffold + 8 integrations wired with fallbacks
+
+Backup tag: `backup/desktop-pre-resync-2026-05-09 → 3fad7c7`
+
+## What's new in prod (after final deploy from `a96af61`)
+
+**Schema (migrations 036-040 all applied via Supabase Management API):**
+- `claims` + `claims_audit` tables, status enum (active/soft/disabled), audit trigger
+- `paysheets` extended: `state` (8 states + `cancelled`), `version`, `superseded_token_at`, `completed_at`, `payable_at`, `paid_at` + `paysheet_state_log` audit + transition trigger
+- `estimates` extended: `state` (12 states + `proposal_expired`), 18 new columns covering approval timing, contract status, deposit/finance status enums + amounts + timestamps, schedule_due_by, GHL drift visibility (`last_synced_at`, `ghl_sync_status`, `ghl_sync_error`) + `estimate_state_log` audit
+- `change_orders` + `change_order_log` — central CO ledger per Bible §5.3 (customer + sub sides separate, accept tokens both, margin_impact, full status lifecycle)
+
+**lib/state.js — single source of truth:**
+- `PAYSHEET_TRANSITIONS`, `ESTIMATE_TRANSITIONS`, `CHANGE_ORDER_TRANSITIONS` tables
+- API: `canTransition`, `nextStates`, `assertTransition`, `isTerminal`
+- Helpers: `paysheetEditRequiresReAccept`, `paysheetTransitionRequiresTokenAction`, `changeOrderCanApprove` (Manus §1.3 enforcement — pending_both is a computed result, not a button), `estimateCanResumeFromChangeOrder`, `computeRateHoldExpiry` (30d), `computeRepCallDue` (24h), `computeScheduleDue` (3 biz days, weekend-aware), `computeDepositAmountCents` (33%)
+- `closed_won` semantics documented as "commercially secured/sold" NOT "completed"
+
+**lib/claims.js + 9 Plus Ultra claims seeded:**
+- 7 active: certainteed_select_shinglemaster, workmanship_warranty_tiered, leak_free_year_one, companycam_photo_documentation, verified_google_reviews, locally_owned, licensed_and_operating_nb (interim substitute for GL/WCB)
+- 2 soft: gl_2m_liability + wcb_coverage with `retracted_reason` set
+- `getActiveClaims`, `getActiveClaim`, `renderClaimsBlock`. Returns only render-safe fields — internal notes never leak.
+- Verified: `getActiveClaim('gl_2m_liability')` returns null (soft hidden from render path)
+
+**lib/auth-server.js — `requireOwnerOrAdmin`** Bearer-token resolver, builds on existing `api/auth.js` sessions table. Used by finance-verify + deposit-checkout.
+
+**Endpoints (all live in prod):**
+- `GET /api/agent-briefing` — 14 block types end-to-end. Severity-sorted. Currently p0=2 (soft_claims_present + contract_missing_gl_wcb_claim).
+- `GET /api/claims` — public, only active claims, soft hidden server-side
+- `POST /api/finance-verify` (owner auth + Tier 3 typed-name) — FULL implementation. financing_pending → schedule_pending with full audit log.
+- `POST /api/deposit-checkout` (owner auth) — SCAFFOLDED. 503 STRIPE_NOT_CONFIGURED until Mac adds STRIPE_SECRET_KEY.
+- `POST /api/stripe-webhook` (signature verification) — SCAFFOLDED. Idempotent on payment_intent. Webhook is THE ONLY authority for `deposit_status='cleared'`.
+- `POST /api/paysheet-edit` — owner edit with field allowlist + token-revoke + version-bump + new-token + SMS-sub on accepted/pending_re_accept
+- `POST /api/paysheet-accept` UPDATED — uses canTransition guard, syncs both new `state` + legacy `sub_acceptance_status` columns
+- `POST /api/proposal-accept` UPDATED — sets all state machine fields. **Bug fix:** `customerPayload` was referenced at line 302 (repair-ticket auto-create) before defined at line 343. Would `ReferenceError` on every repair acceptance and skip the auto-ticket. Moved definition above first use.
+
+**Asset integration scaffolding:**
+- 4 directories created with `.gitkeep` markers tracked in git
+- 13 prod files patched with canonical asset paths + graceful fallbacks (admin/login/index/app/manifest/production-jobs/tickets/paysheet HTML files)
+- `public/assets/AUDIT_2026-05-09.md` documents 24 canonical paths + 4 fallback patterns + per-task integration status
+
+**Lint guard (scripts/lint-claims.mjs):**
+- Pre-commit/CI claim guard. Greps customer-facing files for hardcoded GL/WCB/$2M/fully-insured/BBB/GAF/100%-satisfaction phrases.
+- Bible v0.2 §4 motion enforcement on RESTRAINED_SURFACE_PATTERNS (proposal-client.html, paysheet.html, contract*, deposit*, proposal-715-*).
+- BBB regex tightened to uppercase-only (was matching #bbb hex colors as case-insensitive).
+- Baseline: 24 violations / 21 P0 → **8 P0 (all in proposal-client.html, Mac's territory)**
+
+**Documentation:**
+- `docs/interface_bible_v0.1.md` (Manus, May 9)
+- `docs/interface_bible_v0.2_addendum.md` (Manus + Claude, May 9 — 10 enforcement standards)
+- `docs/integration_proposal_client_claims.md` — drop-in patches for 5 hotspots in proposal-client.html
+- `docs/stripe_setup.md` — full activation checklist with 9 hard rules
+
+## Customer work this session
+
+**Kataria #45 — single proposal, dual system:**
+- Merged metal pricing into existing asphalt #45 (deleted parallel #53 cleanly — proposal-client.html already had `switchSystem()` at line 2584)
+- Added LF measurements (eaves 60, rakes 75, ridges 30, valleys 12, walls 50)
+- Injected vinyl siding rework on rake walls ($1,000 raw × 51.3% margin → +$2,050 customer-facing) — the `extras` param didn't propagate from /api/quote engine; manually injected line items + recomputed at preserved margin rate
+- Final: asphalt Gold $8,400/Plat $9,875/Dmd $14,125 (dropped from prior because remediation correctly removed per May 8 doctrine), metal Standard $19,900/Enhanced $22,075 (recommended)/Premium $31,775
+- Profitability verified: 16.3% real cash net at Enhanced, sub clears $700/day floor 2x+
+- Single share URL: https://ryujin-os.vercel.app/proposal-client.html?share=plus-ultra-45
+- Draft Darcy SMS prepared, NOT sent — awaiting Mac sign-off
+
+**Anne Marie #51 — earlier in session:**
+- 686 Royal Oaks Boulevard (other half of Luc/Brian #48 duplex)
+- Mac caught her + husband in person, presented at honored floor
+- Locked at honored floor matching duplex chain (Gold $20,750 / Plat $22,500 / Dmd $34,200)
+
+## Server-side claim violations patched (lint cleanup)
+
+13 files patched, 13 P0 violations resolved. List:
+- `public/index.html:173` — "Fully Insured" trust badge → "Licensed in NB"
+- `public/admin-tenant.html:122` — placeholder text in certifications field
+- `public/marketing-strategy.html:303` — internal copy describing trust stack
+- `public/sales-proposal.html:793` — JS default tenant fallback
+- `public/assets/ryujin-tenant.js:20` — DEFAULT for new tenants (most strategic)
+- `public/proposal-715-rt-11.html` — 3 customer-facing claim spots
+- `lib/metalProposalCopy.js:84` — METAL_INCLUDED_ALL bullet
+- `lib/documentRenderer.js:686` — footer template
+- `api/proposal.js:87` — BBB cert row removed
+- `api/proposal.js:425` — gallery caption
+- `api/breakdown-pdf.js:283` — PDF footer
+
+Remaining 8 P0 all in `public/proposal-client.html` per Mac's "leave it, I'll have it uploaded soon" — Mac handling separately.
+
+## Manus 72h plan status
+
+| # | Priority | State |
+|---|---|---|
+| 1 | proposal-client.html → 0 P0 | ⏳ Mac (8 P0 remaining) |
+| 2 | /api/agent-briefing | ✅ Complete (4 new blocks, escalation, warn-once) |
+| 3 | sales-proposal Advanced Refactor | ⏸ Gated on #1 |
+| 4 | Stripe Checkout + webhook | ⚠️ Scaffolded (needs Mac setup per docs/stripe_setup.md) |
+| 5 | FinanceIt manual verification | ✅ Complete (auth-server + finance-verify) |
+| 6 | CO endpoints minimal | ⏳ Schema applied, endpoints not wired |
+| 7 | First live test logging | ⏳ Awaiting Ryan/customer action |
+
+## Carry-forward (next session)
+
+- 🟡 Push to origin still required — most pushes happened this session (chain `9e20c62..a96af61`). Verify no orphaned commits.
+- 🔴 proposal-client.html copy edits + claim integration (Mac)
+- 🔴 Stripe activation per docs/stripe_setup.md (Mac)
+- 🟡 Kataria Darcy SMS sign-off + relay
+- 🟡 Cowork prompt fired for 24-asset Grok download
+- 🟡 Quote engine `extras` propagation bug — fix in lib/quoteEngineV3.js so future estimates with extras flow correctly without manual injection
+- 🟡 GHL pipeline map fix (carry-forward from Session 64 AM)
+- 🟢 Test cycle observation logging starts on first Ryan paysheet click + first customer proposal-page hit
+
+---
+
+# Session notes — 2026-05-09 (Session 64, AM) — chat brain backtick fix + image-attach fix + FAB icon + El Rody #52 GHL link-up
+
+## What's new in prod (`dpl_6RbpK4ZqmFzfTC194bMBuHYYWZ2C`)
+
+- **`api/chat.js`** — backticks escaped on lines 379 + 443 of BASE_PROMPT. Prior code had inner backticks around `planes`, `{sqft, pitch, label}`, `pitch`, `square_feet: 238`, etc. that closed the outer template literal early. SyntaxError on import → /api/chat 500'd on every request. Verify after deploy: `POST /api/chat` with empty body returns 400 ("No message provided"), not 500.
+- **`public/assets/ryujin-chat.js`** — upload fetch URL changed from `/api/chat-upload` to `/api/chat-upload?tenant=plus-ultra`. The endpoint requires the tenant param via `requireTenant` middleware; widget wasn't sending it; uploads were silently 400'ing; image attachments vanished. One-line fix.
+- **`public/assets/branding/orb.jpg`** — new dragon-orb glassmorphic asset (125 KB, blue dragon head in clear sphere on light grey bg). Old saved as `orb-OLD-2026-05-09.jpg`. FAB icon updated across all 42 mounted pages. Hard-refresh required to bust browser cache. Visual note: light-grey background, sits on dark pages — Mac may eventually want a transparent/dark-matted version.
+
+## All three files UNCOMMITTED on desktop
+
+These need to ride alongside the Session 63 `acc9c24` audit-fix commit and laptop's pending server-side push (paysheet+per-km work). Push sequence remains unchanged: laptop pushes server-side first → desktop pulls + rebases → desktop pushes audit + Session 64 fixes → Vercel auto-deploys → validate at 375/414/768.
+
+## El Rody #52 — Ryujin estimate fully wired into GHL
+
+| | Value |
+|---|---|
+| Estimate row | `220ea44a-c108-4425-b5ff-e02a7d2dc93a` |
+| Share token | `plus-ultra-52` |
+| Customer row | `c04d1e1b-b6e1-41de-ae6b-2c541c140ee4` (715 Ammon Rd, Moncton) |
+| `customers.ghl_contact_id` | `fJpxW6q1fCKSJ4jDV463` |
+| `estimates.ghl_opportunity_id` | `Z96Qm71RpORdRav7Zluy` (Internal Pipeline → New Lead, unassigned, $18,075) |
+| `estimates.ghl_estimate_id` | `69ff3579a79898d03d98bec9` (GHL estimate doc #26, $18,075 valid 30d) |
+| `estimates.tags` | `[address:715-ammon-rd, pipeline:internal]` |
+
+Photos still pending. Quote not yet sent to customer (Mac/Darcy review pending).
+
+## CRITICAL — `api/ghl.js` PIPELINE map is severely stale
+
+Caught while wiring El Rody. The hardcoded `PIPELINE_NAMES` + `PIPELINE_STAGES` constants (lines ~6-68) drift from live GHL state:
+
+- `OF6SJPdnmQS7KcgRffrb` is labeled "Mack's Pipeline" — actual: **"10 CM Pipeline"**
+- Stage `b0742a38…` labeled "Mack's Pipeline / Quote Sent" — actual: "10 CM Pipeline / Follow Up 3 Sent"
+- **Missing entirely:** Internal Pipeline, Operations Pipeline, Instant Estimator, Repair Pipeline
+
+Live patch captured in `_brain/claude-memory/reference_ghl_pipeline_map_stale.md`. **Apply when next touching this file.** Long-term better fix: cache live pipelines from `GET /opportunities/pipelines?locationId=...` at startup with TTL ~1h instead of hardcoding.
+
+## Lessons that became persistent rules
+
+`feedback_no_pipeline_owner_inference.md` — when wiring a Ryujin estimate into GHL and the contact's `source` is empty, ASK Mac which pipeline/stage/rep. Don't pattern-match off recent neighbors or contact name. "Quote Sent" stage is only valid AFTER actually sending — creating + sending in the same instant is not possible.
+
+---
+
 # Session notes — 2026-05-08 (Session 62, late evening) — 3-job ship COMPLETED + per-km engine deployed + memory persistence migrated
 
 ## Status summary for laptop pickup
