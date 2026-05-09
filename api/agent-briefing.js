@@ -4,36 +4,52 @@
 //
 // Returns structured operator briefing for the Agent cockpit. Single canonical
 // source — UI, chat agent, and future automation all consume the same shape.
-// Per Bible v0.2 / Manus 72-hour plan: build endpoint first, expose to MCP later.
+// Per Bible v0.2 / Manus peer review (May 9 2026).
 //
-// Severity model (Manus v0.2):
-//   P0 = trust/legal/compliance (claim violations, GHL drift on accepted estimates)
-//   P1 = money flow blocked (overdue rep call, deposit pending too long, schedule passed)
+// Severity model:
+//   P0 = trust/legal/compliance (claim violations, GHL drift on accepted estimates,
+//        contract sent without required insurance claims)
+//   P1 = money flow blocked (overdue rep call, deposit pending too long, schedule
+//        passed, missing contract, scheduled-without-paysheet, aged COs)
 //   P2 = pending acceptance (re-accept needed, CO awaiting decision)
 //   P3 = info/convenience (rate hold expiring soon, GHL drift on draft work)
-//
-// Block schema:
-//   {
-//     severity: 'P0' | 'P1' | 'P2' | 'P3',
-//     type: machine slug,
-//     entity: { id, type, label },
-//     label: human description,
-//     due_at: ISO | null,
-//     recommended_action: short imperative,
-//     safe_action: machine slug for UI button (optional)
-//   }
 
 import { supabaseAdmin } from '../lib/supabase.js';
 
 const TENANT_HEADER = 'x-tenant-id';
 const PLUS_ULTRA_TENANT_ID = '84c91cb9-df07-4424-8938-075e9c50cb3b';
 
-// Resolve tenant: query param > header > default to Plus Ultra (tenant 0)
+// Manus peer review §1.2 + §2.1: estimates in any of these states are
+// commercially committed. GHL sync drift on these is a P0 trust issue.
+// `change_order_pending` added per peer review §2.2.
+const COMMITTED_STATES = new Set([
+  'approved_pending_rep_call',
+  'contract_pending',
+  'deposit_pending',
+  'financing_pending',
+  'schedule_pending',
+  'scheduled',
+  'change_order_pending',          // added per peer review
+  'closed_won'
+]);
+
+// Paysheet states that mean "active sub-facing work exists on this job"
+const ACTIVE_PAYSHEET_STATES = new Set([
+  'sent', 'accepted', 'pending_re_accept',
+  'completed_owner_marked', 'payable', 'paid'
+]);
+
+// Manus peer review §2.3: warn ONCE on module load that change_orders table
+// is missing, instead of silently skipping every request. This boolean is
+// reset on serverless cold start which is acceptable.
+let warnedMissingChangeOrdersTable = false;
+
 function resolveTenantId(req) {
   return (req.query?.tenant_id || req.headers?.[TENANT_HEADER] || PLUS_ULTRA_TENANT_ID).toString().trim();
 }
 
 function nowIso() { return new Date().toISOString(); }
+function hoursAgoIso(h) { return new Date(Date.now() - h * 3600 * 1000).toISOString(); }
 
 // ── Block builders ─────────────────────────────────────────────────────
 
@@ -63,7 +79,7 @@ async function expiredRateHolds(tenantId) {
     .from('estimates')
     .select('id, estimate_number, customer:customers(full_name), rate_hold_expires_at, state')
     .eq('tenant_id', tenantId)
-    .eq('state', 'proposal_sent')
+    .in('state', ['proposal_sent', 'proposal_expired'])
     .lt('rate_hold_expires_at', nowIso())
     .order('rate_hold_expires_at', { ascending: true })
     .limit(50);
@@ -74,7 +90,9 @@ async function expiredRateHolds(tenantId) {
     entity: { id: e.id, type: 'estimate', label: `PU-${e.estimate_number}` },
     label: `Rate hold expired · ${e.customer?.full_name || 'customer'}`,
     due_at: e.rate_hold_expires_at,
-    recommended_action: 'Re-quote at current material costs OR re-confirm rate with rep call',
+    recommended_action: e.state === 'proposal_expired'
+      ? 'Re-issue proposal at current material costs (proposal_expired → proposal_sent)'
+      : 'Move to proposal_expired and re-issue OR re-confirm rate with rep call',
     safe_action: 'open_estimate'
   }));
 }
@@ -123,29 +141,53 @@ async function pendingReAccept(tenantId) {
 }
 
 async function changeOrdersAwaiting(tenantId) {
+  // Manus peer review §2.1: escalate to P1 if blocking active production OR aged >24h.
+  // Need estimate state for the production-block check, plus age math.
   const { data, error } = await supabaseAdmin
     .from('change_orders')
-    .select('id, estimate_id, paysheet_id, reason, customer_accept_status, sub_accept_status, status, price_delta_customer, rate_delta_sub, created_at')
+    .select('id, estimate_id, paysheet_id, reason, customer_accept_status, sub_accept_status, status, price_delta_customer, rate_delta_sub, created_at, estimate:estimates(state)')
     .eq('tenant_id', tenantId)
     .in('status', ['pending_customer', 'pending_sub', 'pending_both'])
     .order('created_at', { ascending: true })
     .limit(50);
   if (error) {
-    if (error.code === '42P01') return []; // table doesn't exist yet (migration 039 not applied) — skip silently
+    if (error.code === '42P01') {
+      // Manus peer review §2.3: warn once, not on every request
+      if (!warnedMissingChangeOrdersTable) {
+        console.warn('[agent-briefing] change_orders table missing — migration_039 not applied for this tenant. Skipping CO blocks.');
+        warnedMissingChangeOrdersTable = true;
+      }
+      return [];
+    }
     console.error('[agent-briefing] changeOrdersAwaiting', error);
     return [];
   }
-  return (data || []).map(co => ({
-    severity: 'P2',
-    type: co.customer_accept_status === 'pending' ? 'co_pending_customer' : 'co_pending_sub',
-    entity: { id: co.id, type: 'change_order', label: co.reason?.slice(0, 60) || 'change order' },
-    label: `CO awaiting ${co.customer_accept_status === 'pending' ? 'customer' : 'sub'} · ${co.reason?.slice(0, 80) || ''}`,
-    due_at: null,
-    recommended_action: co.customer_accept_status === 'pending'
-      ? 'Confirm customer received CO link; nudge if >24h'
-      : 'Confirm sub received CO link; nudge if >24h',
-    safe_action: 'open_change_order'
-  }));
+  const ageThreshold = 24 * 3600 * 1000;
+  const now = Date.now();
+  return (data || []).map(co => {
+    const ageMs = now - new Date(co.created_at).getTime();
+    const isAged = ageMs > ageThreshold;
+    const blocksProduction = co.estimate?.state === 'change_order_pending' || co.estimate?.state === 'scheduled';
+    const baseSeverity = co.customer_accept_status === 'pending'
+      ? 'co_pending_customer'
+      : 'co_pending_sub';
+    const severity = (isAged || blocksProduction) ? 'P1' : 'P2';
+    const ageNote = isAged ? ` (aged ${Math.round(ageMs / 3600000)}h)` : '';
+    const blockNote = blocksProduction ? ' — blocking production' : '';
+    return {
+      severity,
+      type: severity === 'P1' ? 'co_aged_blocker' : baseSeverity,
+      entity: { id: co.id, type: 'change_order', label: co.reason?.slice(0, 60) || 'change order' },
+      label: `CO awaiting ${co.customer_accept_status === 'pending' ? 'customer' : 'sub'}${ageNote}${blockNote} · ${co.reason?.slice(0, 80) || ''}`,
+      due_at: co.created_at,
+      recommended_action: blocksProduction
+        ? 'Resolve CO immediately — production cannot resume until status=approved'
+        : (co.customer_accept_status === 'pending'
+          ? 'Confirm customer received CO link; nudge if >24h'
+          : 'Confirm sub received CO link; nudge if >24h'),
+      safe_action: 'open_change_order'
+    };
+  });
 }
 
 async function ghlDrift(tenantId) {
@@ -157,10 +199,8 @@ async function ghlDrift(tenantId) {
     .order('last_synced_at', { ascending: true })
     .limit(50);
   if (error) { console.error('[agent-briefing] ghlDrift', error); return []; }
-  // Severity: P0 if estimate is committed (approved → closed_won), P3 if still in proposal phase
-  const COMMITTED = new Set(['approved_pending_rep_call','contract_pending','deposit_pending','financing_pending','schedule_pending','scheduled','closed_won']);
   return (data || []).map(e => ({
-    severity: COMMITTED.has(e.state) ? 'P0' : 'P3',
+    severity: COMMITTED_STATES.has(e.state) ? 'P0' : 'P3',
     type: 'ghl_drift',
     entity: { id: e.id, type: 'estimate', label: `PU-${e.estimate_number}` },
     label: `GHL ${e.ghl_sync_status} · ${e.customer?.full_name || ''} · ${e.ghl_sync_error?.slice(0, 80) || ''}`,
@@ -171,8 +211,7 @@ async function ghlDrift(tenantId) {
 }
 
 async function depositBlockers(tenantId) {
-  // Cash path: state=deposit_pending and approved >24h ago and deposit not cleared
-  const dayAgo = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  const dayAgo = hoursAgoIso(24);
   const { data, error } = await supabaseAdmin
     .from('estimates')
     .select('id, estimate_number, customer:customers(full_name), approved_at, deposit_amount, deposit_status')
@@ -237,7 +276,6 @@ async function scheduleBlockers(tenantId) {
 }
 
 async function softClaimsCount(tenantId) {
-  // Surface as a single P0 summary block — all soft claims represent active retraction state
   const { data, error } = await supabaseAdmin
     .from('claims')
     .select('key, copy, retracted_reason')
@@ -257,6 +295,146 @@ async function softClaimsCount(tenantId) {
   }];
 }
 
+// ── NEW BLOCK BUILDERS (Manus peer review §2.2) ────────────────────────
+
+async function missingContract(tenantId) {
+  // Estimates that have advanced to contract_pending but no contract artifact exists.
+  const dayAgo = hoursAgoIso(24);
+  const { data, error } = await supabaseAdmin
+    .from('estimates')
+    .select('id, estimate_number, customer:customers(full_name), approved_at, contract_status, contract_sent_at')
+    .eq('tenant_id', tenantId)
+    .eq('state', 'contract_pending')
+    .or('contract_status.is.null,contract_status.eq.pending')
+    .is('contract_sent_at', null)
+    .lt('approved_at', dayAgo)
+    .order('approved_at', { ascending: true })
+    .limit(50);
+  if (error) { console.error('[agent-briefing] missingContract', error); return []; }
+  return (data || []).map(e => ({
+    severity: 'P1',
+    type: 'missing_contract',
+    entity: { id: e.id, type: 'estimate', label: `PU-${e.estimate_number}` },
+    label: `Contract not sent >24h after approval · ${e.customer?.full_name || ''}`,
+    due_at: e.approved_at,
+    recommended_action: 'Generate contract PDF and email/SMS to customer',
+    safe_action: 'generate_contract'
+  }));
+}
+
+async function paysheetNotSent(tenantId) {
+  // Manus peer review §2.2: scheduled estimate with assigned sub/job but no paysheet
+  // in sent/accepted/pending_re_accept/completed/payable/paid.
+  // No FK from paysheets→estimates exists; join via tenant + customer/address.
+  const { data: estimates, error: e1 } = await supabaseAdmin
+    .from('estimates')
+    .select('id, estimate_number, customer_id, customer:customers(full_name, address)')
+    .eq('tenant_id', tenantId)
+    .eq('state', 'scheduled')
+    .limit(100);
+  if (e1) { console.error('[agent-briefing] paysheetNotSent estimates', e1); return []; }
+  if (!estimates || estimates.length === 0) return [];
+
+  const addresses = estimates.map(e => e.customer?.address).filter(Boolean);
+  if (addresses.length === 0) return [];
+
+  const { data: paysheets, error: e2 } = await supabaseAdmin
+    .from('paysheets')
+    .select('address, state')
+    .eq('tenant_id', tenantId)
+    .in('address', addresses)
+    .in('state', [...ACTIVE_PAYSHEET_STATES]);
+  if (e2) { console.error('[agent-briefing] paysheetNotSent paysheets', e2); return []; }
+
+  const addressesWithActivePaysheet = new Set((paysheets || []).map(p => p.address));
+  const blocked = estimates.filter(e => e.customer?.address && !addressesWithActivePaysheet.has(e.customer.address));
+
+  return blocked.map(e => ({
+    severity: 'P1',
+    type: 'paysheet_not_sent',
+    entity: { id: e.id, type: 'estimate', label: `PU-${e.estimate_number}` },
+    label: `Scheduled, no active paysheet · ${e.customer?.full_name || ''} · ${e.customer?.address || ''}`,
+    due_at: null,
+    recommended_action: 'Create + send paysheet to assigned sub before crew arrives onsite',
+    safe_action: 'create_paysheet'
+  }));
+}
+
+async function staleAcceptanceToken(tenantId) {
+  // Paysheet has a public token but state is non-actionable (cancelled, completed,
+  // payable, paid). Token should have been revoked; this surfaces ones that weren't.
+  const NON_ACTIONABLE = ['cancelled', 'completed_owner_marked', 'payable', 'paid'];
+  const { data, error } = await supabaseAdmin
+    .from('paysheets')
+    .select('id, job_id, customer_name, subcontractor, state, sub_acceptance_token, superseded_token_at')
+    .eq('tenant_id', tenantId)
+    .not('sub_acceptance_token', 'is', null)
+    .in('state', NON_ACTIONABLE)
+    .limit(50);
+  if (error) { console.error('[agent-briefing] staleAcceptanceToken', error); return []; }
+  return (data || []).map(p => ({
+    // Cancelled = P0 (token must be invalidated, owner intent was kill)
+    // Completed/payable/paid = P1 (less urgent but still confusing if hit)
+    severity: p.state === 'cancelled' ? 'P0' : 'P1',
+    type: 'stale_acceptance_token',
+    entity: { id: p.id, type: 'paysheet', label: `${p.job_id || 'job'} · ${p.subcontractor || 'sub'}` },
+    label: `Stale public token on ${p.state} paysheet · ${p.subcontractor || 'sub'} · ${p.customer_name || ''}`,
+    due_at: p.superseded_token_at,
+    recommended_action: 'Revoke token (clear sub_acceptance_token column); investigate why pullback didn\'t revoke',
+    safe_action: 'revoke_paysheet_token'
+  }));
+}
+
+async function contractMissingClaims(tenantId) {
+  // Bible v0.2 §3: contract sent/signed while required insurance claims are
+  // soft/disabled is a P0 compliance issue. Compute as: count of estimates
+  // with contract activity + check claim status of gl_2m_liability + wcb_coverage.
+  const REQUIRED_KEYS = ['gl_2m_liability', 'wcb_coverage'];
+
+  const { data: claims, error: ce } = await supabaseAdmin
+    .from('claims')
+    .select('key, status')
+    .eq('tenant_id', tenantId)
+    .in('key', REQUIRED_KEYS);
+  if (ce) { console.error('[agent-briefing] contractMissingClaims claims', ce); return []; }
+
+  const inactiveKeys = (claims || []).filter(c => c.status !== 'active').map(c => c.key);
+  if (inactiveKeys.length === 0) return [];
+
+  // Count contracts that have been sent/signed while these claims are inactive
+  const { data: contracts, error: te } = await supabaseAdmin
+    .from('estimates')
+    .select('id, estimate_number, contract_status, contract_sent_at')
+    .eq('tenant_id', tenantId)
+    .or('contract_status.eq.sent,contract_status.eq.signed')
+    .limit(50);
+  if (te) { console.error('[agent-briefing] contractMissingClaims contracts', te); return []; }
+
+  if (!contracts || contracts.length === 0) {
+    // Claims are inactive but no contracts have been generated against the gap yet.
+    // Still surface as a single forward-looking warning.
+    return [{
+      severity: 'P0',
+      type: 'contract_missing_gl_wcb_claim',
+      entity: { id: null, type: 'claims_library', label: 'Insurance claims' },
+      label: `Required insurance claims inactive (${inactiveKeys.join(', ')}) — DO NOT issue contracts until restored`,
+      due_at: null,
+      recommended_action: 'Restore GL/WCB claims to active status before generating any new contract',
+      safe_action: 'open_admin_tenant_claims'
+    }];
+  }
+
+  return [{
+    severity: 'P0',
+    type: 'contract_missing_gl_wcb_claim',
+    entity: { id: null, type: 'claims_library', label: 'Insurance claims' },
+    label: `${contracts.length} contract(s) sent/signed while ${inactiveKeys.join(' + ')} are inactive — review for retraction risk`,
+    due_at: null,
+    recommended_action: 'Audit recent contracts for retracted-claim language; prioritize claim restoration',
+    safe_action: 'open_admin_tenant_claims'
+  }];
+}
+
 // ── Handler ────────────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
@@ -272,7 +450,8 @@ export default async function handler(req, res) {
   // Gather all blocks in parallel
   const [
     repCalls, rateExpired, rateExpiring, reAccept, cosWaiting,
-    drift, deposit, finance, schedule, soft
+    drift, deposit, finance, schedule, soft,
+    missingContractBlocks, paysheetNotSentBlocks, staleTokenBlocks, contractClaimBlocks
   ] = await Promise.all([
     overdueRepCalls(tenantId),
     expiredRateHolds(tenantId),
@@ -283,12 +462,20 @@ export default async function handler(req, res) {
     depositBlockers(tenantId),
     financeBlockers(tenantId),
     scheduleBlockers(tenantId),
-    softClaimsCount(tenantId)
+    softClaimsCount(tenantId),
+    missingContract(tenantId),
+    paysheetNotSent(tenantId),
+    staleAcceptanceToken(tenantId),
+    contractMissingClaims(tenantId)
   ]);
 
   const blocks = [
-    ...soft, ...drift,
+    // P0 first
+    ...soft, ...drift, ...staleTokenBlocks, ...contractClaimBlocks,
+    // P1 money + production blockers
     ...repCalls, ...rateExpired, ...deposit, ...finance, ...schedule,
+    ...missingContractBlocks, ...paysheetNotSentBlocks,
+    // P2 acceptance waits + P3 nudges
     ...reAccept, ...cosWaiting,
     ...rateExpiring
   ].sort((a, b) => {

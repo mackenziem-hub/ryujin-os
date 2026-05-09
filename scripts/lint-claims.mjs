@@ -41,6 +41,41 @@ const ALLOWLIST = [
 // Directories to scan
 const SCAN_DIRS = ['public', 'lib', 'api'];
 
+// Files matching these patterns are PAYMENT/LEGAL surfaces and must not contain
+// motion video, autoplay, or animated archetype assets per Bible v0.2 §4.
+// Customer/sub trust surfaces stay restrained; expressive motion belongs to
+// the internal agent cockpit, not money/contract pages.
+const RESTRAINED_SURFACE_PATTERNS = [
+  /^public\/proposal-client\.html$/,
+  /^public\/proposal-715-/,                       // per-customer proposal copies
+  /^public\/paysheet\.html$/,
+  /^public\/contract\b/,                           // any contract page
+  /^public\/deposit\b/,                            // any deposit / Stripe-adjacent page
+];
+
+const MOTION_RULES = [
+  {
+    name: 'autoplay_on_restrained_surface',
+    pattern: /\bautoplay\b/i,
+    severity: 'P1',
+    why: 'Bible v0.2 §4: customer/sub legal/payment surfaces ban autoplay motion.'
+  },
+  {
+    name: 'video_tag_on_restrained_surface',
+    // Match <video ...>; allow inline poster fallback (hero image static layer)
+    // by also checking that the file isn't using video purely as poster
+    pattern: /<video\b[^>]*\bsrc\s*=/i,
+    severity: 'P2',
+    why: 'Bible v0.2 §4: video on customer/payment surfaces should be reviewed; static imagery preferred unless explicitly approved.'
+  },
+  {
+    name: 'archetype_mp4_on_restrained_surface',
+    pattern: /\/archetypes\/[a-z\-]+(?:-standby)?\.mp4/i,
+    severity: 'P1',
+    why: 'Bible v0.2 §4: archetype motion videos are internal-cockpit-only; never on customer/sub/payment surfaces.'
+  }
+];
+
 // Forbidden phrases. Each entry: { pattern, severity, why, suggested_replacement }
 const RULES = [
   {
@@ -137,6 +172,26 @@ for (const dir of SCAN_DIRS) {
           });
         }
       });
+    }
+
+    // Bible v0.2 §4 motion enforcement — only applies to restrained surfaces
+    const isRestrained = RESTRAINED_SURFACE_PATTERNS.some(rx => rx.test(rel));
+    if (isRestrained) {
+      for (const rule of MOTION_RULES) {
+        lines.forEach((line, i) => {
+          if (rule.pattern.test(line)) {
+            violations.push({
+              file: rel,
+              line: i + 1,
+              rule: rule.name,
+              severity: rule.severity,
+              snippet: line.trim().slice(0, 200),
+              why: rule.why,
+              fix: 'Move expressive motion to internal cockpit pages; use static imagery on customer/payment surfaces.'
+            });
+          }
+        });
+      }
     }
   }
 }
