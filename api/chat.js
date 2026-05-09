@@ -3838,8 +3838,11 @@ async function callClaude(apiKey, systemPrompt, messages, useTools = true, effor
 // preserved in content so the tool loop can pass them back to subsequent turns).
 // Phase 17: effort tier → model + thinking budget mapping. Drives cost-aware behavior per request.
 const EFFORT_CONFIG = {
+  // Bug-sweep #2/$1 (2026-04-24): thinking moved to opt-in via the `high` tier only.
+  // Medium fires on every default chat — was burning ~1500 thinking tokens × every message.
+  // Users who need deep reasoning explicitly pick `high` from the effort picker UI.
   low:    { model: 'claude-haiku-4-5',  thinking: null /* drop field */ },
-  medium: { model: 'claude-sonnet-4-6', thinking: { type: 'enabled', budget_tokens: 1500 } },
+  medium: { model: 'claude-sonnet-4-6', thinking: null /* drop field — was 1500 budget, now opt-in via high tier */ },
   high:   { model: 'claude-opus-4-7',   thinking: { type: 'enabled', budget_tokens: 3000 } }
 };
 function effortToConfig(effort) {
