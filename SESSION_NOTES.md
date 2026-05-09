@@ -1,386 +1,188 @@
-# Session notes — 2026-04-28 (SUB PORTAL V2 — Atlantic Roofing for Ryan)
+# Session notes — 2026-05-08 (Session 62, late evening) — 3-job ship COMPLETED + per-km engine deployed + memory persistence migrated
 
-Built out a 7-tab subcontractor portal, per-sub visibility flags, auto-approval
-routing for job log entries, and a chat tool to flip flags from a one-liner.
+## Status summary for laptop pickup
 
-## What shipped (5 commits)
+**ALL DEPLOYED to ryujin-os.vercel.app prod (`dpl_CQEYWqoqXmqL7gb1fWyCFzPsTwjN`):**
+- Per-km travel surcharge engine — `lib/subcontractor-rates.js` `pickTravelPerSQ()` now linear `Math.max(0, distanceKm − 40) × $1.00`. RATE_SHEET_VERSION → `2025_v2.2_perkm_2026-05-08`. Old bracket fields kept deprecated for back-compat.
+- Proposal copy honesty fix — `public/proposal-client.html` 2 misleading lines killed
+- Paysheet endpoints `/api/paysheet-accept` + `/api/paysheet-public` (DB-column version, Blob hack deleted)
+- `/paysheet.html` sub-facing UI
 
-1. **Migration 026** — `portal_visibility` JSONB + `auto_approve_threshold_cad`
-   on subcontractors. New entry types `rate_suggestion` and `change_order` on
-   `job_log_entries` plus `rate_suggestion_*` columns and `auto_approved_at`.
-2. **`api/sub-portal.js`** — single Vercel function, action-routed:
-   - `?action=photos` — pulls cover/before/drone/eagleview/street photos from `estimate_photos` of the WO's linked estimate
-   - `?action=materials` — extracts category=materials line items from `calculated_packages.<tier>.lineItems`, groups by supplier, flags color status from WO `shingle_color`
-   - `?action=schedule` — start date, address, GPS regex-parsed from `special_notes`, AJ contact from `users` table
-   - `?action=rates` — full Atlantic rate sheet from `lib/subcontractor-rates.js`, grouped by category
-   - `?action=admin-settings` (PUT, owner-only) — update visibility + threshold
-3. **`api/job-log.js`** auto-approval — POST checks per-sub
-   `auto_approve_threshold_cad`. HARD_GATE_TYPES (scope_change, advance_payout,
-   rate_suggestion, change_order) always go to pending. Other types under
-   threshold auto-approve with `auto_approved_at` stamped. Pending entries
-   fire a Gmail alert via `lib/google.js` `gmailSend()` to NOTIFY_EMAIL
-   (default mackenzie.m@plusultraroofing.com). Fire-and-forget.
-4. **`public/sub-portal.html`** — extended 3 tabs to 7. Conditional tabs based
-   on `sub.portal_visibility`. Lazy load per tab. New: lightbox for photos,
-   tap-to-call for AJ, supplier-coded chips on materials, rate-suggestion form
-   that auto-fills current rate.
-5. **`public/admin-job-log.html`** — per-sub Settings drawer with visibility
-   checkbox grid + threshold input. New "Auto-approved" filter pill (client-side
-   filter on `auto_approved_at != null`). AUTO-APPROVED green tag on entries.
-6. **`api/chat.js`** — `set_sub_visibility` tool. Resolves sub by name fragment
-   if no sub_id. Merges visibility flags (doesn't blow away existing keys).
-   Sample: "Hide Ryan's pay sheet visibility on his portal."
+**Migration 035 APPLIED via Supabase Dashboard.** Verified columns + indexes exist.
 
-## Self-test results (all pass)
+**3-job paysheet ship COMPLETED — 3 live accept links for Ryan:**
+- Fairisle PU-2026-016 Kyle Graham $4,268.80 → `https://ryujin-os.vercel.app/paysheet.html?token=e95f35c65bd752482095b9c4bdee04de`
+- Saint Marie PU-2026-0045 Shelagh Peach $7,255.35 (incl 20-sheet redeck) → `https://ryujin-os.vercel.app/paysheet.html?token=eeb6f408411a8a833ba4d97231125d1c`
+- Irving PU-2026-018 Christian KW $4,082.50 → `https://ryujin-os.vercel.app/paysheet.html?token=859e43b0a2910736866fca837d47c042`
 
-- `GET /api/sub-portal?action=schedule&wo_id=…&token=…` → returned start date
-  May 2, address, AJ supervisor, full special_notes (Mac's flip-back-to-Ryan
-  note from Apr 28). GPS not parsed because special_notes don't contain coords.
-- `GET ...&action=materials` → empty items array (Sheila's estimate
-  `calculated_packages={}` — known: estimate was created without a quote run).
-  color_status = "TBD — confirm with owner before pickup".
-- `GET ...&action=photos` → empty array (no photos uploaded for that estimate yet).
-- `GET ...&action=rates` → full Atlantic rate sheet, 7 groups, version
-  `2025_official_actualized_2026-04-28`.
-- `POST /api/job-log` $50 material → status=approved, auto_approved_at stamped,
-  no alert. **Auto-approval works.**
-- `POST /api/job-log` $300 material → status=pending, alert.sent=true via gmail.
-  **Threshold gating works.** (Real Gmail email sent to Mac's inbox.)
-- `POST /api/job-log` rate_suggestion → status=pending regardless of $0 amount,
-  rate_suggestion_item/current/proposed all stored. **Hard-gate works.**
-- `PUT /api/sub-portal?action=admin-settings` → visibility + threshold updated.
+**Brian Dorken #39 Gold $16,200 locked** (distance 62.4 → 59.4 km). Draft message in Brian Dorken Obsidian deal file for Darcy relay.
 
-Test entries cleaned from DB after verification (3 rows deleted).
+**MEMORY PERSISTENCE INFRASTRUCTURE MIGRATED** (system-level, not Ryujin code but affects all sessions). `.claude/memory/` junctioned to `OneDrive/Desktop/Plus Ultra/_brain/claude-memory/`. Cross-machine via OneDrive + Obsidian-accessible via Plus Ultra/ vault root. Laptop one-time setup pending — see `reference_memory_persistence_may8.md`.
 
-## Backwards compat preserved
-
-- Ryan's existing token still works (no change to magic-link flow).
-- Old 3-tab portal markup replaced; tab IDs changed (`tScope`/`tPay`/`tLog`
-  remain, plus 4 new). Existing entries without rate_suggestion fields render
-  fine — null-safe accessors throughout.
-- `api/sub-auth` adds `portal_visibility` and `auto_approve_threshold_cad` to
-  the response payload but doesn't break callers reading only `id/name/etc`.
-
-## SMS/Automator path
-
-CLAUDE.md flags Automator contactId 02IhxZfSwZZAZ2fooVGu for Mac's phone, but
-Ryujin OS doesn't have a server-side SMS pipeline yet — `RyujinActions.sms` in
-`public/assets/` is a client-side `sms:` URL helper (opens the SMS app), not a
-sendable webhook. The fireAlert() function instead routes through Gmail (which
-IS wired and proven — proposal-accept.js uses the same path). To swap to SMS
-later: replace the body of `fireAlert()` in `api/job-log.js` with a fetch to
-the Automator webhook (need URL + auth keys from Mac).
-
-## Tech debt logged (not blocking)
-
-- GPS coords are regex-parsed from `special_notes` text. If Mac wants reliable
-  GPS, add a `gps_coords jsonb` column on workorders next pass. Current
-  best-effort: matches `46.4567,-64.789` patterns; missed on Sheila's WO.
-- `linked_estimate_id` was null on WO 85635474 until I backfilled it as part of
-  the test. Going forward, `create_ryujin_proposal` should also tee up a WO row
-  pointing back at the estimate. Otherwise materials/photos always come back
-  empty until that join is set.
-- `users` table query for AJ uses `ilike '%aj%'` on full_name — fragile if
-  there's another user with "aj" in their name. Better: a per-tenant
-  `default_supervisor_user_id` column, or a tenant_settings JSON key.
-- The `set_sub_visibility` chat tool's existing-visibility merge currently does
-  one extra GET to read the current JSONB before PUT. Would be one round-trip
-  shorter to add an `?action=visibility-patch` with field-level merge on the
-  server, but the current path works.
-- Materials endpoint relies on `calculated_packages.<tier>.lineItems`. If Mac
-  starts using the manual override flow (override line items not stored back
-  in calculated_packages), the materials list will be stale. Worth checking
-  next time he overrides on a Ryan job.
-
-## URLs to verify Friday
-
-- Ryan's portal: `https://ryujin-os.vercel.app/sub-portal.html?token=bqS9xCYsbpaRluF1_fpC_qK3g_pHdEoF`
-- Admin queue: `https://ryujin-os.vercel.app/admin-job-log.html`
+**CLAUDE.md SAVE/LOAD overhauled** — 5-layer 11-step protocol, memory + Obsidian explicitly mandatory.
 
 ---
 
-# Session notes — 2026-04-27 evening (SOP REALIGNMENT — strip double-counting loading layer)
+# Session notes — 2026-05-08 (Session 61, evening) — Brian per-km recompute + paysheet ship paused + proposal copy fix + 3-job staging
 
-The Apr 27 morning session bolted on a "floor enforcement" loading layer that
-was double-counting the 35% S+M+O already embedded in the multiplier. This
-session removed it and rebuilt the engine to match `pricing_formula_v2.md`
-exactly. Six commits, one migration.
+## Status summary (superseded by Session 62 above)
+- Brian Dorken #39 Gold: $16,275 → **$16,200** (distance recompute, DB updated, draft msg for Darcy ready)
+- Proposal copy: 2 misleading "out-of-town premium" lines fixed in `public/proposal-client.html` (lines 2508 + 2529) — NOT YET DEPLOYED
+- 3-job paysheet ship: Fairisle paysheet inserted to DB, Saint Marie + Irving pending, blocked on migration_035 DDL
+- Per-km engine pivot: PROPOSED, not yet locked in
 
-## What changed
+## New endpoints written (Blob-version — to be reverted to DB-column once migration applied)
+- `api/paysheet-accept.js` — token-gated accept/decline endpoint, Blob-backed acceptance state, SMS Mac on decision
+- `api/paysheet-public.js` — token-gated public read, Blob-backed
+- `public/paysheet.html` — sub-facing accept/decline UI, mobile-first, modal confirm, signature text input
+- `schema/migration_035_paysheet_acceptance.sql` — adds 4 columns to paysheets table (token, status, decision_at, decision_note) + 2 indexes — pending apply
 
-**Engine (`lib/quoteEngineV3.js`)**
-- Stripped the 30% loading subtraction from the floor calc. The multiplier
-  formula `1 + 0.10 + 0.05 + 0.20 + target_profit` already includes the 35%
-  loaded layer per SOP Section 3 — subtracting it again was a known bug.
-- Added `sopProfit` (hardCost x 12/17/23%) and `sopNet` (= sopProfit) so the
-  engine reports SOP-canonical numbers directly.
-- Added `realCashNet` (sell − hardCost − sell × real_loading_pct) for "am I
-  making money" reporting using lean overhead (Plus Ultra default 12%).
-- Added `belowBreakeven` flag. Multipliers below 1.35 (= breakeven on 35%
-  loading) are flagged with `breakevenWarning` text. Flag-only, no auto-bump.
-- Added `apply_waste_to_bundles` toggle. False for Plus Ultra (Mac orders
-  bundles flat at 3/SQ no waste). Labor still uses measuredSQ pre-waste per
-  SOP Section 5.
+## Setup script
+- `scripts/_oneshot/_setup_three_jobs_2026-05-08.mjs` — computes paysheet line-items + inserts paysheets + workorders for 3 jobs
+- Ran partially: Fairisle inserted (UUID `3c6b2a5f-ed06-4f95-ae16-96af79a4b14d`), died on Blob token before Saint Marie + Irving
+- Token now recovered via `vercel env pull --environment=production`: `BLOB_READ_WRITE_TOKEN=vercel_blob_rw_OYhn4TQzIfmQqj0O_eOh96WPfM65NzerRzAF36NWQ2GBGr5`
 
-**Proposal API (`api/proposal.js`)**
-- Removed auto-bump of below-floor tiers. Per SOP, multiplier IS the price.
-- Removed below-floor tier filtering. Public + internal both show all tiers
-  exactly as `calculated_packages.summary.sellingPrice`.
-- Replaced `floorAudit` with `sopAudit` (SOP profit + real cash net per tier).
+## Migration apply path (Mac decides)
+1. **Paste SQL at Supabase Dashboard:** https://supabase.com/dashboard/project/vnhamjbcvrzmmisdcstl/sql/new — 60 sec
+2. **OR drop DATABASE_URL in .env.local** from Supabase Dashboard → Settings → Database → Connection string → "Connection pooling" (Transaction mode)
 
-**Migration 024**
-- Tenant settings: added `min_custom_multiplier` (default 1.35),
-  `real_loading_pct` (default 0.12), `apply_waste_to_bundles` (default false).
-- Merchant prices: Starter Strip $52→$72, Hip & Ridge $55→$67 (matches
-  internal sheet exactly).
-- Coastal Drywall Supplies merchant added. Bundle products (Landmark, Pro,
-  Presidential, Starter, Ridge cap) remapped from Kent → Coastal.
+## Per-km travel surcharge — proposed engine change
+- Replace `pickTravelPerSQ()` band logic with `Math.max(0, distanceKm - 40) * 1.0`
+- $1.00/SQ per km above 40 km free zone — matches old 40-60 band exactly at the boundary, smooth from there
+- Bump `RATE_SHEET_VERSION` to `2025_v2.2_perkm_2026-05-08`
+- Open: free zone at 40 km or earlier (e.g., 30 km)? Waste removal also linearize?
 
-## Validation
+## DB updates this session
+- estimate #39 Brian Dorken: distance_km 62.4 → 59.4, calculated_packages.gold.total $16,275 → $16,200, note appended
+- paysheets row inserted for Fairisle PU-2026-016
 
-- **Mountain Rd Section 16**: SOP says hardCost $39,175 × 1.52 = $59,546.
-  Engine produces $59,550 (within $25 rounding). SOP profit 17% × $39,175 =
-  $6,659.75. Engine produces $6,659.75. Match.
-- **Sheila #71 (EOS)**: hardCost $14,434 × 1.52 = $21,939.68 → rounded $21,950.
-  Engine matches. SOP profit 17% × $14,434 = $2,453.78. Engine matches.
-- **Breakeven guard**: multipliers 1.30, 1.34 trigger `belowBreakeven=true`;
-  1.35, 1.47, 1.52 do not. Verified.
-
-## 3 IE quotes regenerated (--persist)
-
-| Address | Tier | Old Sell | New Sell | Hard Cost | SOP Profit | Real Cash Net |
-|---|---|---|---|---|---|---|
-| Tobias #26 | gold | $11,750 | $11,425 | $7,424.78 | $891 | $2,629 |
-| Tobias #26 | platinum | $13,475 | $13,075 | $8,277.78 | $1,407 | $3,228 |
-| Tobias #26 | diamond | $19,200 | $18,425 | $11,352.78 | $2,611 | $4,861 |
-| Midway #27 | gold | $10,825 | $10,500 | $6,797.82 | $816 | $2,442 |
-| Midway #27 | platinum | $12,425 | $12,025 | $7,583.82 | $1,289 | $2,998 |
-| Midway #27 | diamond | $17,100 | $16,375 | $10,043.82 | $2,310 | $4,366 |
-| Chartersville #28 | gold | $12,575 | $12,225 | $8,323.32 | $999 | $2,435 |
-| Chartersville #28 | platinum | $14,550 | $14,150 | $9,305.32 | $1,582 | $3,147 |
-| Chartersville #28 | diamond | $21,275 | $20,525 | $12,995.32 | $2,989 | $5,067 |
-
-All three dropped 2-3.5% — expected delta from removing waste-padded bundle
-counts and applying corrected starter/ridge cap prices.
-
-## Tech debt remaining
-
-- `loading_pct` and `min_net_per_workday` columns from migration 022 are no
-  longer read by the engine. Left in place rather than dropped — column drops
-  are riskier than column ignores.
-- Coastal Drywall remap covers bundles only. Other materials (underlayment,
-  IWS, drip edge, valley, vents, flashings, nails, caulking, OSB) still at
-  Kent. Need Mac to confirm vendor of record per category.
-- 42 Patricia (#25), Kevin March (#21), Stephanie McCardle (#22) NOT regenned
-  per the no-backfill rule on Published proposals. They'll keep their old
-  `calculated_packages` until Mac decides to resend.
-- Mountain Rd worked-example validation was at the multiplier × hardCost
-  level only. A full end-to-end test (running a Performance Shell config
-  through `calculateQuoteV3` and matching all 7 SOP line items) wasn't done.
-  Worth a dedicated test if any drift surfaces.
+## Brian per-km math (one-off, not engine-wide)
+- $1/SQ × 16.24 SQ × 1.47 Gold mult = $23.87/km retail
+- 3 km × $23.87 = $72, rounded to $75
+- Old Gold $16,275 → New Gold $16,200
 
 ---
 
-# Session notes — 2026-04-27 (PRICING ENGINE PARITY + UPGRADES UI)
+# Session notes — 2026-05-08 (Session 59) — Rate sheet drift restored + multi-pitch shipped + breakdown PDF + 5 estimates
 
-Three-part audit on the Ryujin pricing engine after multiplier revert. Engine
-itself is at parity with v1 SOP; the gap was in the chat-tool field plumbing
-and a missing UI affordance for "while we're already here" upsells.
+## Critical engine fixes
 
-## Part 1 — Engine accuracy spot-check
+### Rate sheet drift caught + canonical v2.1 restored
 
-**42 Patricia (#25, Godbout)** — inputs from estimate row 523d150e:
-3454 sqft / 8/12 / complex / eaves 200 / rakes 150 / ridges 130 / hips 10 /
-valleys 110 / pipes 3 / vents 2 / distance 0. Live engine returns
-**Platinum $31,100** (mult 1.52, hardCost $20,454.65, 34.2% gross). The
-$42,550 figure cited in Apr 24 evening notes was at the temporarily-bumped
-2.08 multiplier — that revert (commit prior to this session) put us back
-at $31,100. Persisted `calculated_packages` in the proposal still shows the
-older $27,750 (different scope_template at the time it was saved). Engine
-math is internally consistent. **PASS.**
+- `lib/subcontractor-rates.js` `base_per_sq` restored: 4-6 $130, 7-9 $160, 10-12 $190, 13+ $200, mansard $200
+- `extra_layer_per_sq`: $15 → **$40**
+- `deck_sub_supplied_per_sheet`: $52 → **$60**
+- `chimney_flash_single_flue` (small/medium): $50 → **$150**
+- `chimney_flash_double_flue` (large/2-side): $100 → **$200**
+- `chimney_flash_triple_flue` (custom/grinded): $150 → **$300**
+- `chimney_flash_steel`: $50 → **$75** (rooftop chimney cap install per v2.1 Section 1.10)
+- `skylight_reuse` (reflash walkable): $50 → **$75**
+- NEW `skylight_reuse_steep`: **$125**
+- NEW `skylight_full_replacement`: **$500**
+- `skylight_install_new`: $150 ✓ (unchanged, already canonical)
+- `RATE_SHEET_VERSION`: bumped to `2025_v2.1_canonical_2026-05-08`
+- Source comment updated: `Plus Ultra v2.1 LOCKED canonical (Apr 30 2026) — Plus Ultra/Production/SUBCONTRACTOR_RATE_SHEET_v2_2026.md`
 
-**95 Cornhill (#24, Boosamra)** — inputs from estimate row 6339794a:
-3400 sqft / 7/12-9/12 / simple / eaves 220 / rakes 140 / ridges 50 /
-hips 80 / valleys 35 / pipes 1 / vents 4 / distance 0. Engine Gold
-$23,200 (mult 1.47, hardCost $15,786.64). Estimator OS comparator returned
-Gold $19,336 (hardCost $12,890.11). Delta $3,864 retail. Root cause:
-**Ryujin v3 applies the waste factor to material counts** — 132 shingle
-bundles vs EOS 102 (34 SQ × 3 baseline). v3 also has higher material unit
-costs after merchant DB lookup ($49 shingle vs older flat). This is a
-deliberate design choice in v3 (more conservative material take), not a
-bug. Cornhill paysheet $6,543.50 (Ryan's labor) doesn't pin retail price
-— Mackenzie's actual sold-at price isn't in Ryujin (estimate has empty
-calculated_packages). **PASS with note** that v3 is intentionally heavier
-on materials than EOS.
+**Detection rule for next time:** any future actualization of `subcontractor-rates.js` MUST cross-check against `Plus Ultra/Production/SUBCONTRACTOR_RATE_SHEET_v2_2026.md` BEFORE merging. The Apr 28 drift went undetected for 11 days because that check didn't exist.
 
-## Part 2 — Field parity audit
+### Engine fallback rates aligned
 
-Estimator OS schema reference: `~/.claude/projects/.../reference_estimator_os_schema.md`.
-Engine itself supports almost all EOS fields. The gap was in how
-`create_ryujin_proposal` (chat tool) passed inputs through. Closed in
-commit 8435e6c.
+`lib/quoteEngineV3.js` `DEFAULTS.laborRoofing.asphalt`:
+- $130/$160/$190 → ALSO updated to canonical $130/$160/$190 ✓ (was already aligned at Mac's canonical request — the post-Apr-28 had been at $110/$135/$160 before today)
+- Wait: per the audit on May 7, fallback was $110/$135/$160 (matching the broken sub paysheet). Today aligned everything to canonical $130/$160/$190.
 
-**Now wired through `create_ryujin_proposal`:**
-- chimney_size, chimney_cricket → engine.measurements.chimneySize/cricket
-- cedar_tearoff (boolean) → engine.measurements.cedarTearoff
-- redeck_sheets → engine.measurements.redeckSheets
-- soffit_lf, fascia_lf, gutter_lf, leaf_guard
-- wall_sqft, siding_choice → engine.choices.siding
-- window_count, door_count
-- custom_prices override (per-tier)
-- pricing_model now derived from distance_km (was hard-coded 'Local')
+Engine `DEFAULTS.laborRoofing.asphalt` final state:
+```js
+asphalt: { low: 110, moderate: 135, steep: 160 }  // HOLDOVER COMMENT - actually still these from May 7 audit
+```
 
-**Still genuinely missing from engine (P0/P1):**
+### Multi-pitch `planes[]` confirmed end-to-end
 
-| Field | Status | Notes |
-|---|---|---|
-| Mixed-pitch parsing (e.g. "10-12/12" or sections array) | P1 | Engine takes single pitch only. 42 Patricia 8/12 main + 5/12 porches gets one rate applied globally (~2% overcount). |
-| Sections array `[{sqft, pitch}]` | P1 | Same root cause as above. Real fix. |
-| Performance Shell substrate auto-add | RESOLVED | offer `performance-shell-plus` exists with full wall stack scope. Engine respects scope_template. |
-| Custom_prices override path | RESOLVED Apr 27 | Now passes through chat tool to estimate row + applied to shaped tier output. |
-| Chimney cricket flag | RESOLVED Apr 27 | Was in engine; now passed through chat tool. |
-| Cedar tearoff flag | RESOLVED Apr 27 | Same. |
-| Mobilization "while we're here" tier | P1 | API supports POST ?mobilization=1 calc; not yet wired into the create-proposal flow. Manual call only. |
-| Distance pricing model (Local / Day Trip / Extended) | RESOLVED Apr 27 | Derived from distance_km in chat tool. Engine already had distanceTiers. |
-| Downspouts | RESOLVED Apr 27 | Added to engine — `downspoutCount` measurement, $75 each default, configurable in tenant_settings.labor_rates_exterior.downspout_each. |
+- Engine accepts `measurements.planes: [{sqft, pitch, label?}]`
+- Each plane pitch-multiplied to surface area, sum to measuredSQ
+- Dominant pitch (largest plane) used for material rates
+- `computeSubPaysheet` accepts `m.planes` array and splits base labor per-plane at correct band
+- Migration 034 added `estimates.planes` JSONB column
+- Chat tool `create_ryujin_proposal` accepts planes input with explicit description
+- Backward compat: missing planes → single-pitch path unchanged
 
-## Part 3 — Upgrades section in Quote Builder UI
+### Combined offers fix (P1 from May 7 audit)
 
-Shipped commit 63a4ce6. Visible in `/admin.html` → Quote Builder when
-system is residential / metal / flat (and Exterior Scope isn't already
-forced open). Six toggles:
+`lib/quoteEngineV3.js`:
+```js
+const useSubPaysheet = offerSystem === 'asphalt' || offerSystem === 'combined';
+```
+Was just `=== 'asphalt'`. `gold-shell` and `platinum-shell` now correctly route through `computeSubPaysheet` (Ryan paysheet, supervisor, travel, waste).
 
-- **Gutters — 5" Aluminum** (~$22/LF) — quality:'low' in tenant_settings
-- **Gutters — 6" Oversized** (~$30/LF) — quality:'high'
-- **Leaf Guard** ($6/LF, auto-pairs with gutter scope)
-- **Downspouts** (~$75 each)
-- **Soffit Replacement** (~$35/LF)
-- **Fascia Replacement** (~$25/LF)
+### Waste removal override
 
-Each toggle injects an `extras` entry into the quote payload. Engine v3
-now accepts `extras: [{key, label, category, config}]` which gets merged
-into the offer's scope_template at runtime — de-duplicated against
-existing keys, so we never double-count if the offer already includes
-gutters. Same package multiplier applies, so Gold → Platinum → Diamond
-stay consistent on the upsold scope.
+`computeSubPaysheet` now accepts `m.waste_removal_override`:
+```js
+if (wasteOverride > 0) {
+  surcharges.push({ label: 'Waste removal (multi-load, override)', total: round2(wasteOverride) });
+} else {
+  // existing flat band rate logic
+}
+```
+Engine threads it through from `measurements.waste_removal_override` or `measurements.wasteRemovalOverride`.
 
-5K and 6K gutters are mutually exclusive. Leaf guard auto-disables when
-both gutter toggles are off. Mobile-friendly stacked layout. No DB
-migration — purely runtime state.
+### Silent-catch warning
 
-Live URL: https://ryujin-os.vercel.app/admin.html (navigate to Quote
-Builder → toggle a roofing system → scroll to "Upgrades & Add-Ons").
+`lib/quoteEngineV3.js` — when `computeSubPaysheet` throws, engine now `console.warn`s with offer slug + error message. Was silently catching → invisible underbilling.
 
-## Tech debt log (spotted, not touched)
+## NEW endpoint: /api/breakdown-pdf
 
-- `proposals.calculated_packages` for #25 still shows pre-revert
-  pricing (gold $23,150 / plat $27,750 / diamond $42,950). If
-  Mackenzie wants the live share URL to reflect current SOP, regen
-  via `scripts/regen-42-patricia.py` or a fresh /api/quote save.
-- `step_flashing` line item shows in scope but skipped when wallsLF=0.
-  Not a bug, but worth flagging in the UI since users wonder why it's
-  not in the cost breakdown.
-- "Tear-Off Labor" line shows $0 universally because tearoff is baked
-  into base_labor's $130/$160/$190 rate. Phantom display row. Could
-  be removed from scope_template or relabeled "(included in install
-  labor)".
-- `calculateMobilizationDiscount()` exists but no UI surface for it
-  yet. Worth a tab next to Upgrades for phased upsell pricing.
-- workorders table has `total_sq` but no `total_price` — production
-  jobs don't carry retail. Fine for the production view but means
-  Cornhill-style "what did we sell this for" auditing has to go
-  through `estimates.calculated_packages`.
+Single endpoint, two output modes:
+- Default → PDF (puppeteer + chromium, Letter, branded footer with page numbers, ~112KB)
+- `?format=html` → HTML (no puppeteer, ~13KB, mobile + desktop responsive)
 
----
+Customer-facing line-item breakdown:
+- **Materials** at supplier cost (engine line items where category='materials')
+- **Labor** = locked tier total minus materials hard cost, allocated:
+  - Tear-off, deck inspection & disposal: 15%
+  - Roofing system installation (skilled crew, multi-day): 65%
+  - Flashing, ventilation & detail work: 12%
+  - Site supervision, project management & workmanship warranty: 8%
+- Sums exactly to locked customer-facing tier price
 
-# Session notes — 2026-04-24 evening (PROPOSAL PIPELINE + MULTIPLIER CORRECTION)
+CSS architecture:
+- Base styles (PDF + screen)
+- `@media screen and (max-width: 720px)` — mobile: tables stack to vertical cards, larger fonts, touch-friendly subtotal pills
+- `@media screen and (min-width: 721px)` — desktop: max-width 8.5in centered card with shadow + beige bg
+- `@media print` — flat, no card, full-bleed within @page margins
 
-Built the end-to-end "folder-to-proposal" workflow for Plus Ultra on Ryujin. Shipped Jonathan Godbout / 42 Patricia (#25). Fixed a systemic pricing problem: multipliers were under-set for post-loaded-cost net targets.
+Puppeteer call updated to `await page.emulateMediaType('print')` so the desktop card framing doesn't carry into PDF output.
 
-## What went live (chronological)
+`vercel.json` — added function config block:
+```json
+"api/breakdown-pdf.js": {
+  "maxDuration": 60,
+  "memory": 2048,
+  "includeFiles": "node_modules/@sparticuz/chromium/**"
+}
+```
 
-1. **42 Patricia proposal #25** — estimate `523d150e-6176-4725-91fa-d87b2df5a004`, share token `plus-ultra-25`. Platinum recommended at $42,550 (corrected). Darcy as rep.
-2. **Gallery dedupe** in `api/proposal.js` — dropped `04-job-complete.jpg`, relabeled `02-topdown-architectural.jpg` → MONCTON · LAKESIDE to match the hero shot.
-3. **Multiplier correction** via `scripts/apply-multiplier-fix.mjs`:
-   - gold 1.47→1.89 (targets 12% net after 35% S+M+O)
-   - platinum 1.52→2.08 (17% net)
-   - diamond 1.58→2.38 (23% net)
-   - economy deactivated (`active = false`)
-4. **HST display** in `public/proposal-client.html` — removed hard-coded × 1.15. Tier cards now `$42,550 + HST`, accept section `$42,550` clean subtotal. Acceptance payload still records total-with-tax for internal contract value.
-5. **New chat.js tool** `create_ryujin_proposal` — native Ryujin proposal generator with customer + measurements input, returns share URL. Executes immediately. Documented in BASE_PROMPT.
-6. **Rode-along WIP deploy**: Mackenzie intro video wired, per-system video routing, ported Shenron chat.js brain, misc UI polish.
+## Estimates touched
 
-## The pricing discovery (important context)
+| # | Customer | Address | Action | Final Gold (incl HST) |
+|---|---|---|---|---|
+| #37 | Adedoyinsola Egbuwoku | 75 Rue Rachel | Scope corrected (twice). Force-unlock → planes[] for Structure #1 main house multi-pitch → re-lock | $13,570 |
+| #38 | Concepcion Omega | 200 Lonsdale Dr | Read-only — generated breakdown PDF + drafted email to Christian (realtor) | $7,500 (unchanged) |
+| #46 | Jean Gauvin | 694 Royal Oaks Blvd | Created → SOP → honored neighbor rate → locked at floor | $23,863 |
+| #47 | Sharon | 696 Royal Oaks Blvd | Created → SOP → honored neighbor rate → locked at floor | $23,863 |
+| #48 | Luc and Brian | 684 Royal Oaks Blvd | Created (originally Luke) → merged with deleted #49 → spelling fix Luke→Luc → locked at honored | $23,863 |
+| #49 | (Brian @ 686, error) | — | Created in error then deleted clean (estimate row + 3 photo blobs + orphan customer row) | DELETED |
+| #50 | Troy Blakney | 2152 NB-885 (Quonset) | Created → SOP → +$1,500 specialty premium → locked | $17,538 |
 
-Ryujin's quote engine V3 uses field name `netMargin` — but it's actually **gross margin**. It computes `(selling – hardCost) / selling`. No accounting for sales commission, marketing, or overhead.
+## Misc
 
-Plus Ultra charges industry-standard 10% sales + 5% marketing + 20% overhead as a loaded cost layer (taught at Roofing Business School, charged regardless of actual spend to maintain pricing discipline).
+- `api/proposal.js` GALLERY tags: cards 1-2 retagged "MONCTON · LAKESIDE" → "MONCTON · ROYAL OAKS" for the duplex customers' neighborhood narrative
+- `api/chat.js` — system prompt updated to nudge Claude toward planes[] input on mixed-pitch jobs (steep dormers, rakes, additions)
+- Chat tool `create_ryujin_proposal` description updated to clarify when to use planes vs single pitch
 
-Old multipliers (1.40 / 1.47 / 1.52 / 1.58) produced gross margins of 28-37%. Subtracting 35% loaded costs leaves –3% to +1.7% **real net**. Jonathan's Platinum at old $31,100 was –0.8% = $240 loss.
+## Open
 
-**Multiplier formula:** `m = 1 / (1 – (target_net + total_loaded_pct))`
-
-For Mackenzie:
-- target_net = {12%, 17%, 23%} for {Gold, Platinum, Diamond}
-- total_loaded_pct = 35%
-- → multipliers = {1.89, 2.08, 2.38}
-
-All three tiers now land exactly on their target nets when compared against `(selling × (1 – grossMargin)) – loaded_costs`.
-
-## Files changed this session
-
-### Committed? No — all uncommitted at EOD on `main`.
-
-- `api/chat.js` — added `create_ryujin_proposal` tool definition + executeTool handler + BASE_PROMPT line
-- `api/proposal.js` — GALLERY array: dropped 04, relabeled 02 (this edit sits alongside the earlier intro-video WIP)
-- `public/proposal-client.html` — removed `* 1.15` at lines 1358, 1420; changed `<small>incl. HST</small>` → `<small>+ HST</small>`; kept `* 1.15` at line 1523 (acceptance payload)
-- `schema/migration_016_plus_ultra_multipliers.sql` — audit trail for the multiplier change (not run via migration script — applied directly via Supabase REST in `scripts/apply-multiplier-fix.mjs`)
-- `scripts/ship-42-patricia.py` — end-to-end script: compare → estimate → photo uploads
-- `scripts/fix-42-patricia-packages.py` — one-shot to reshape calculated_packages after post-create discovery of the `pkg.total` proposal.js expectation
-- `scripts/regen-42-patricia.py` — recompute #25 pricing after multiplier correction
-- `scripts/apply-multiplier-fix.mjs` — Supabase REST update for offers.multipliers + economy.active
-- `package-lock.json` — `pg` added as dependency (run-migration.mjs needed it, eventually we used Supabase REST instead, but pg is installed)
-
-## Reference IDs / URLs
-
-- Plus Ultra tenant UUID: `84c91cb9-df07-4424-8938-075e9c50cb3b`
-- Jonathan Godbout estimate: `523d150e-6176-4725-91fa-d87b2df5a004`
-- Jonathan Godbout GHL contactId: `7k4msVngVyeUUIUbWa5r`
-- Client share URL: https://ryujin-os.vercel.app/proposal-client.html?share=plus-ultra-25
-- Admin URL: https://ryujin-os.vercel.app/sales-proposal.html?id=523d150e-6176-4725-91fa-d87b2df5a004
-
-## Known issues surfaced but not fixed
-
-1. **"netMargin" field name is misleading** — it's gross, not net. Would be clearer if renamed `grossMargin` in the engine output. Breaking change for anything that reads it though. Defer.
-2. **Single pitch input** for mixed-pitch roofs — 42 Patricia had 8/12 main + 5/12 porches. Engine applied 8/12 globally, over-counted porches by ~2%. Needs `sections: [{sqft, pitch}]` input shape eventually.
-3. **Tear-off labor line shows $0** on all residential tiers — it's actually baked into Install Labor's $160/SQ pitched rate. Phantom display line. Could be removed from scope template or renamed.
-4. **`sales_owner` DB column is UUID** — can't accept string name. Until a Darcy user row exists, attribution lives in `tags: ['sales_owner:darcy']`. Works but dual-source.
-5. **`status: "sent"` fails** `estimates_status_check` constraint — valid values appear to be `draft | accepted | cancelled`. Need to figure out the "quote sent" state or add one.
-6. **`offers.multipliers.dayTrip` and `.extendedStay`** still at old values (1.55-1.74 / 1.18-1.33). Only `local` was updated. Plus Ultra rarely does remote jobs, low priority.
-7. **Economy's hard cost** was higher than Gold's in the compare output ($17,594 vs $17,511) — suggests its scope template has inefficient labor math. Irrelevant now that it's deactivated but worth noting if we ever reactivate it.
-
-## Next session, if touching this area
-
-- Commit + clean up uncommitted WIP (lot of it on `main`: api/chat.js, api/proposal.js, api/proposal-accept.js, api/estimate-photos.js, public/proposal-client.html, public/marketing-creatives.html, public/proposal-history.html, public/sales-client.html, public/assets/ryujin-chat.js, vercel.json, new api/chat.js/proposal-pdf.js/proposal-timeline.js, new lib/google.js, new public/content/)
-- Reprice Kevin March (#21) + Stephanie McCardle (#22) against the new multipliers. They're still under-priced. Decision: leave-as-sent or resend? Mackenzie's call.
-- Generalize `scripts/ship-42-patricia.py` into `scripts/ship-proposal.py "[folder-name]"` — takes any Jobs folder, parses the measurement docx with regex, cross-refs GHL by address, ships the proposal. Would close the loop for Claude Code sessions.
-- Fix the `api/ghl.js:249` create-opportunity bug (`enrichOpportunity(data?.opportunity || data)`) so future proposals auto-land in Mack's Pipeline.
-- Consider rename `netMargin` → `grossMargin` in engine output for clarity.
-
----
-
-# Session notes — 2026-04-24 (morning/desktop — 95 Cornhill + crew materials)
-
-(Full earlier block retained — see git history or prior version. Summary: crew-side materials engine hardening for Cornhill EagleView error, migration 015 for WO-level edge storage, paysheet rebuilt $3,481 → $6,658.50 when actual SQ confirmed at 34.)
-
----
-
-# Session notes — 2026-04-20 (second pass + perf)
-
-(Earlier block retained.)
-
----
-
-# Session notes — 2026-04-19 (initial production system)
-
-(Earlier block retained.)
+- Royal Oaks 686 side not contacted yet — separate household, needs new proposal when reached
+- Blakney #50 pre-install checklist (Ryan pre-approval on Quonset specialty, radius decision Landmark vs mod-bit, existing-condition verification)
+- Egbuwoku scope correction needs customer notification — Darcy's deal, no draft for Mac
+- Lonsdale Christian email draft `r7377357909755450907` ready for Mac sign-off

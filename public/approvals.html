@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#060a14">
+<title>Approvals · Ryujin</title>
+<link rel="manifest" href="/manifest.json">
+<style>
+:root{
+  --bg:#060a14;--surface:rgba(14,22,40,0.85);
+  --border:rgba(34,211,238,0.1);--border-hi:rgba(34,211,238,0.3);
+  --text:#d0daf0;--text-dim:rgba(160,190,230,0.55);
+  --accent:#22d3ee;--accent-warm:#7c3aed;
+  --green:#4ade80;--red:#f87171;--amber:#fbbf24;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+header{position:sticky;top:0;z-index:5;background:rgba(6,10,20,0.95);backdrop-filter:blur(10px);border-bottom:1px solid var(--border);padding:14px 16px;display:flex;align-items:center;justify-content:space-between}
+h1{margin:0;font-size:1.1em;letter-spacing:0.5px}
+h1 .count{color:var(--accent);font-weight:400;font-size:0.8em;margin-left:8px}
+.tabs{display:flex;gap:6px;padding:10px 16px;border-bottom:1px solid var(--border);background:rgba(6,10,20,0.4)}
+.tab{padding:7px 12px;border-radius:6px;font-size:0.78em;background:rgba(6,10,20,0.6);border:1px solid var(--border);color:var(--text-dim);cursor:pointer;transition:all 0.15s}
+.tab.active{background:linear-gradient(135deg,rgba(34,211,238,0.18),rgba(124,58,237,0.1));border-color:var(--border-hi);color:var(--text)}
+.list{padding:14px 16px;display:flex;flex-direction:column;gap:10px;max-width:760px;margin:0 auto}
+.empty{text-align:center;color:var(--text-dim);padding:40px 20px;font-size:0.9em}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:8px}
+.card.pending{border-left:3px solid var(--amber)}
+.card.approved{border-left:3px solid var(--green);opacity:0.75}
+.card.rejected{border-left:3px solid var(--red);opacity:0.6}
+.card-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.code{font-family:'Share Tech Mono','SF Mono',monospace;font-size:0.85em;color:var(--accent);letter-spacing:1px}
+.age{font-size:0.7em;color:var(--text-dim)}
+.action{font-weight:600;font-size:0.92em}
+.target{color:var(--text-dim);font-size:0.85em}
+.summary{font-size:0.88em;line-height:1.5;color:var(--text);background:rgba(6,10,20,0.6);padding:10px;border-radius:8px;margin-top:4px;white-space:pre-wrap;word-break:break-word}
+.meta{display:flex;gap:12px;font-size:0.72em;color:var(--text-dim);flex-wrap:wrap}
+.actions{display:flex;gap:8px;margin-top:6px}
+.btn{flex:1;padding:10px 14px;border-radius:8px;font-size:0.9em;font-weight:500;cursor:pointer;border:none;font-family:inherit;letter-spacing:0.3px}
+.btn-approve{background:linear-gradient(135deg,rgba(74,222,128,0.25),rgba(34,211,238,0.15));border:1px solid rgba(74,222,128,0.4);color:var(--green)}
+.btn-approve:hover{background:linear-gradient(135deg,rgba(74,222,128,0.4),rgba(34,211,238,0.25))}
+.btn-reject{background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.3);color:var(--red)}
+.btn-reject:hover{background:rgba(248,113,113,0.15)}
+.btn-detail{background:rgba(6,10,20,0.6);border:1px solid var(--border);color:var(--text-dim)}
+.payload{display:none;background:rgba(0,0,0,0.4);border:1px solid var(--border);border-radius:6px;padding:10px;margin-top:6px;font-family:'SF Mono',monospace;font-size:0.72em;white-space:pre-wrap;word-break:break-word;max-height:240px;overflow-y:auto}
+.payload.on{display:block}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(74,222,128,0.15);border:1px solid var(--green);color:var(--green);padding:10px 18px;border-radius:8px;z-index:10;font-size:0.85em;display:none}
+.toast.error{background:rgba(248,113,113,0.15);border-color:var(--red);color:var(--red)}
+.toast.on{display:block}
+.refresh{font-size:0.75em;color:var(--text-dim);cursor:pointer;background:none;border:none;padding:4px 8px}
+.refresh:hover{color:var(--accent)}
+.requester{font-size:0.72em;color:var(--text-dim);font-style:italic}
+@media (max-width:480px){
+  .actions{flex-direction:column}
+  .btn{padding:12px}
+}
+</style>
+  <script src="/assets/nav-buttons.js" defer></script>
+</head>
+<body>
+<header>
+  <h1>Approvals <span class="count" id="count"></span></h1>
+  <button class="refresh" onclick="loadApprovals()" title="Refresh">↻ refresh</button>
+</header>
+<div class="tabs">
+  <button class="tab active" data-status="pending" onclick="setTab('pending')">Pending</button>
+  <button class="tab" data-status="approved" onclick="setTab('approved')">Approved</button>
+  <button class="tab" data-status="rejected" onclick="setTab('rejected')">Rejected</button>
+  <button class="tab" data-status="all" onclick="setTab('all')">All</button>
+</div>
+<div class="list" id="list"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+let currentStatus = 'pending';
+let approvals = [];
+
+const token = localStorage.getItem('ryujin_token') || '';
+if (!token) {
+  document.getElementById('list').innerHTML = '<div class="empty">Not logged in. <a href="/login.html" style="color:var(--accent)">Sign in</a> to view approvals.</div>';
+}
+
+function setTab(status){
+  currentStatus = status;
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.status === status));
+  loadApprovals();
+}
+
+async function loadApprovals(){
+  if (!token) return;
+  try {
+    const url = currentStatus === 'all' ? '/api/approvals?status=all' : '/api/approvals?status=' + currentStatus;
+    const r = await fetch(url, { headers: { Authorization: 'Bearer ' + token } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    approvals = data.approvals || [];
+    document.getElementById('count').textContent = approvals.length ? '(' + approvals.length + ')' : '';
+    render();
+  } catch (e) {
+    showToast('Could not load: ' + e.message, true);
+  }
+}
+
+function ageString(iso){
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 60000) return 'just now';
+  if (ms < 3600000) return Math.floor(ms/60000) + 'm ago';
+  if (ms < 86400000) return Math.floor(ms/3600000) + 'h ago';
+  return Math.floor(ms/86400000) + 'd ago';
+}
+
+function render(){
+  const list = document.getElementById('list');
+  if (!approvals.length) {
+    list.innerHTML = '<div class="empty">No ' + currentStatus + ' approvals. Quiet for now.</div>';
+    return;
+  }
+  list.innerHTML = approvals.map(a => {
+    const isPending = a.status === 'pending';
+    return `
+    <div class="card ${a.status}">
+      <div class="card-head">
+        <div>
+          <div class="code">${escapeHtml(a.code)}</div>
+          <div class="action">${escapeHtml(a.action_type)} ${a.target ? '· ' + escapeHtml(a.target) : ''}</div>
+        </div>
+        <div class="age">${ageString(a.created_at)}</div>
+      </div>
+      ${a.summary ? `<div class="summary">${escapeHtml(a.summary)}</div>` : ''}
+      <div class="meta">
+        ${a.agent ? '<span>agent: ' + escapeHtml(a.agent) + '</span>' : ''}
+        ${a.requested_by_role ? '<span>by: ' + escapeHtml(a.requested_by_role) + '</span>' : ''}
+        ${a.status !== 'pending' && a.decided_at ? '<span>decided: ' + ageString(a.decided_at) + '</span>' : ''}
+      </div>
+      <button class="btn btn-detail" onclick="togglePayload('${a.id}')">View payload</button>
+      <pre class="payload" id="payload-${a.id}">${escapeHtml(JSON.stringify(a.execute_payload || {}, null, 2))}</pre>
+      ${isPending ? `
+      <div class="actions">
+        <button class="btn btn-approve" onclick="decide('${a.code}', 'approved')">Approve</button>
+        <button class="btn btn-reject" onclick="decide('${a.code}', 'rejected')">Reject</button>
+      </div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function togglePayload(id){
+  document.getElementById('payload-' + id).classList.toggle('on');
+}
+
+async function decide(code, status){
+  const note = status === 'rejected' ? (prompt('Optional reason for rejection?') || '') : '';
+  try {
+    const r = await fetch('/api/approvals?code=' + encodeURIComponent(code), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ status, note })
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'HTTP ' + r.status);
+    showToast(status === 'approved' ? 'Approved ' + code : 'Rejected ' + code);
+    loadApprovals();
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+function showToast(msg, isError){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.toggle('error', !!isError);
+  t.classList.add('on');
+  setTimeout(() => t.classList.remove('on'), 2400);
+}
+
+function escapeHtml(s){
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+
+if (token) {
+  loadApprovals();
+  // Auto-refresh every 30s
+  setInterval(() => { if (currentStatus === 'pending' && document.visibilityState === 'visible') loadApprovals(); }, 30000);
+}
+</script>
+<script src="/assets/ryujin-chat.js"></script>
+</body>
+</html>

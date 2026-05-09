@@ -145,7 +145,7 @@ section{padding:80px 0;position:relative}
 }
 .hero-photo.loaded::before{opacity:0}
 @keyframes hero-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
-.hero-photo img{width:100%;height:100%;object-fit:cover;position:relative;z-index:1}
+.hero-photo img{width:100%;height:100%;object-fit:contain;object-position:center;position:relative;z-index:1}
 .render-disclaimer{
   font-family:'Inter',sans-serif;font-size:0.78rem;color:var(--ink-muted);
   font-style:italic;margin:0 0 26px 2px;letter-spacing:0.01em;opacity:0.75;
@@ -426,9 +426,48 @@ section{padding:80px 0;position:relative}
   background:var(--bg-card);border:1px dashed var(--border-strong);border-radius:10px;
 }
 .tier-disclaimer a{font-weight:600}
+/* ── Optional Upgrades (add-on cart) ── */
+.addons-section .addons-list{display:grid;grid-template-columns:1fr;gap:12px;max-width:720px;margin:0 auto}
+.addon-row{display:grid;grid-template-columns:32px 1fr auto;gap:14px;align-items:center;padding:18px 20px;background:var(--bg-card);border:1.5px solid var(--border);border-radius:12px;cursor:pointer;transition:border-color 0.15s,background 0.15s;user-select:none}
+.addon-row:hover{border-color:var(--accent);background:var(--bg-hover,#f7fbff)}
+.addon-row.on{border-color:var(--accent);background:var(--accent-soft,rgba(34,211,238,0.06));box-shadow:0 0 0 1.5px var(--accent) inset}
+.addon-check{width:26px;height:26px;border-radius:6px;border:2px solid var(--border-strong);display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;background:#fff;font-size:1rem;line-height:1}
+.addon-row.on .addon-check{background:var(--accent);border-color:var(--accent)}
+.addon-body{display:flex;flex-direction:column;gap:3px;min-width:0}
+.addon-label{font-weight:700;color:var(--ink);font-size:1rem}
+.addon-desc{font-size:0.85rem;color:var(--ink-muted);line-height:1.4}
+.addon-price{font-family:'Montserrat',sans-serif;font-weight:800;color:var(--ink);font-size:1.1rem;text-align:right;white-space:nowrap}
+.addon-price small{display:block;font-size:0.62rem;font-weight:500;color:var(--ink-muted);letter-spacing:0.08em;margin-top:2px;text-transform:uppercase}
 /* ── Internal-only floor warning (hidden on public share page) ── */
 .tier.below-floor{border-color:#dc2626;background:linear-gradient(180deg,#fff 0%,#fef2f2 100%)}
 .tier.below-floor .tag{color:#dc2626}
+/* Promo tier — always paints above neighbors, even when neighbors are hovered.
+   Sibling tier cards on :hover apply transform:translateY(-2px), which creates
+   their own stacking context — without an explicit z-index here, a hovered
+   neighbor's stack would clip the ribbon's tail. z-index:50 wins decisively. */
+.tier.has-promo{
+  border-color:#ff6a00;
+  box-shadow:0 0 0 3px rgba(255,106,0,0.14),var(--shadow);
+  position:relative;overflow:visible;
+  z-index:50;
+}
+.tier.has-promo:hover{z-index:60}
+.tier.has-promo::before{
+  content:attr(data-promo);
+  position:absolute;top:-14px;left:50%;transform:translateX(-50%);
+  background:linear-gradient(135deg,#ff6a00 0%,#ff8a3d 100%);color:#fff;
+  padding:6px 16px;border-radius:999px;
+  font-size:0.7rem;font-weight:800;letter-spacing:0.14em;text-transform:uppercase;
+  white-space:nowrap;
+  z-index:51;
+  box-shadow:0 6px 18px rgba(255,106,0,0.45),0 2px 6px rgba(0,0,0,0.18);
+  pointer-events:none;
+}
+/* Long ribbon labels can overflow past the card width into neighbor space —
+   that's expected (gives the badge prominence). Keep it as-is, just make sure
+   the parent grid never clips the overflow. */
+.tiers-grid{overflow:visible}
+.tier.has-promo .price small{color:#ff6a00;font-weight:700}
 .tier-floor-warning{
   margin-top:14px;padding:10px 12px;border-radius:8px;
   background:#fee2e2;border:1px solid #fca5a5;color:#991b1b;
@@ -586,8 +625,382 @@ footer{padding:40px 0;background:var(--bg-deep);border-top:1px solid var(--borde
   .tier,.scope-card,.accept-card,.trust,.review,.sys-item,.why-card{box-shadow:none;border:1px solid #ccc}
 }
 </style>
+<style>
+  /* System toggle (asphalt / metal switch) — surfaced only when both are quoted. */
+  #rj-system-toggle{display:none;position:sticky;top:0;z-index:60;background:rgba(11,18,32,0.96);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid rgba(255,255,255,0.08);padding:10px 16px;}
+  #rj-system-toggle.on{display:flex;align-items:center;justify-content:center;gap:12px;}
+  #rj-system-toggle .lbl{font-family:'Montserrat',sans-serif;font-size:0.7rem;letter-spacing:0.18em;color:rgba(255,255,255,0.55);text-transform:uppercase;margin-right:4px}
+  #rj-system-toggle button{font-family:'Montserrat',sans-serif;font-weight:700;font-size:0.78rem;letter-spacing:0.1em;text-transform:uppercase;padding:9px 22px;border-radius:999px;border:1px solid rgba(255,255,255,0.18);background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.78);cursor:pointer;transition:all 0.18s;}
+  #rj-system-toggle button:hover{background:rgba(255,255,255,0.12);color:#fff}
+  #rj-system-toggle button.active{background:#fdcc02;color:#1a1f2e;border-color:#fdcc02;box-shadow:0 4px 14px rgba(253,204,2,0.35)}
+  @media print{#rj-system-toggle{display:none !important}}
+</style>
+
+<style id="anti-fouc">
+/* Anti-FOUC loading shim — covers everything until JS resolves which mode
+   to show. Without this, the legacy asphalt body briefly renders before
+   envelope mode kicks in. Removed by JS once boot completes. */
+.app-loading-screen{position:fixed;inset:0;z-index:9999;background:linear-gradient(180deg,#0b1220 0%,#101a2e 100%);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;transition:opacity 0.3s ease-out;pointer-events:auto}
+.app-loading-screen .als-logo{width:120px;height:auto;opacity:0.85}
+.app-loading-screen .als-text{font-family:'Montserrat',sans-serif;font-size:0.72rem;letter-spacing:0.22em;text-transform:uppercase;font-weight:700;color:#fdcc02}
+.app-loading-screen .als-pulse{width:32px;height:3px;background:#fdcc02;border-radius:99px;animation:alsPulse 1.2s ease-in-out infinite}
+@keyframes alsPulse{0%,100%{opacity:0.3;transform:scaleX(0.5)}50%{opacity:1;transform:scaleX(1)}}
+body.app-ready .app-loading-screen{opacity:0;pointer-events:none}
+/* Hide all proposal bodies until app-ready so nothing flashes */
+body:not(.app-ready) #rj-asphalt-body,
+body:not(.app-ready) #rj-metal-body,
+body:not(.app-ready) #envelopeSection{visibility:hidden !important}
+body:not(.app-ready) .topbar{visibility:hidden}
+</style>
+
+<style>
+/* ════════════════════════════════════════════════════════════════════════
+   PERFORMANCE SHELL ENVELOPE CONFIGURATOR
+   Activated when the estimate carries a custom_prices._envelope payload.
+   When active, the static tier-grid + scope + accept sections are hidden
+   and replaced with an interactive build-your-package experience:
+     • System toggle (shingle / metal)
+     • Component blocks (roof radio, siding radio with skip, 3 trim toggles)
+     • Sticky right rail: dynamic package name + total + savings + cash meter
+     • Animated savings ticker on each click
+     • PDF export + accept signature mounted in the rail
+   ──────────────────────────────────────────────────────────────────────── */
+.envelope-section{padding:48px 0 64px;background:linear-gradient(180deg,#0b1220 0%,#101a2e 100%);color:#e8edf5;}
+.envelope-section .container{max-width:1240px;margin:0 auto;padding:0 24px;}
+@media (max-width:580px){.envelope-section{padding:28px 0 48px}.envelope-section .container{padding:0 16px}}
+.envelope-section .env-head{text-align:center;max-width:720px;margin:0 auto 36px;}
+.envelope-section .env-head .kicker{font-family:'Montserrat',sans-serif;font-size:0.72rem;letter-spacing:0.2em;color:#fdcc02;text-transform:uppercase;font-weight:700;margin-bottom:10px}
+.envelope-section .env-head h2{font-family:'Montserrat',sans-serif;font-size:2.1rem;font-weight:800;color:#fff;margin-bottom:14px;letter-spacing:-0.01em;word-wrap:break-word;overflow-wrap:break-word;hyphens:auto}
+@media (max-width:780px){.envelope-section .env-head h2{font-size:1.6rem;line-height:1.15}}
+@media (max-width:480px){.envelope-section .env-head h2{font-size:1.35rem}}
+.envelope-section .env-head p{color:rgba(232,237,245,0.7);font-size:1rem;line-height:1.5}
+@media (max-width:580px){.envelope-section .env-head p{font-size:0.92rem}}
+
+.env-grid{display:grid;grid-template-columns:1fr 380px;gap:32px;align-items:start}
+@media (max-width:1080px){.env-grid{grid-template-columns:1fr;gap:0}}
+
+.env-components{display:flex;flex-direction:column;gap:22px}
+
+.env-system-toggle{display:flex;justify-content:center;gap:10px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:8px;margin-bottom:6px}
+.env-system-toggle button{flex:1;font-family:'Montserrat',sans-serif;font-weight:700;font-size:0.85rem;letter-spacing:0.08em;text-transform:uppercase;padding:14px 18px;border-radius:10px;border:none;background:transparent;color:rgba(232,237,245,0.65);cursor:pointer;transition:all 0.18s}
+.env-system-toggle button:hover{background:rgba(255,255,255,0.05);color:#fff}
+.env-system-toggle button.active{background:linear-gradient(135deg,#fdcc02 0%,#f5a623 100%);color:#0b1220;box-shadow:0 6px 18px rgba(253,204,2,0.28)}
+
+.env-block{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:18px;padding:22px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.env-block h3{font-family:'Montserrat',sans-serif;font-size:0.78rem;letter-spacing:0.18em;text-transform:uppercase;font-weight:700;color:#fdcc02;margin-bottom:14px}
+.env-block .env-block-sub{font-size:0.85rem;color:rgba(232,237,245,0.55);margin-bottom:16px;line-height:1.4}
+
+.env-options{display:flex;flex-direction:column;gap:10px}
+.env-option{display:grid;grid-template-columns:24px 1fr auto;gap:14px;align-items:center;padding:16px 18px;background:rgba(255,255,255,0.03);border:1.5px solid rgba(255,255,255,0.08);border-radius:12px;cursor:pointer;transition:all 0.16s;user-select:none;position:relative}
+.env-option:hover{border-color:rgba(253,204,2,0.4);background:rgba(255,255,255,0.06)}
+.env-option.on{border-color:#fdcc02;background:linear-gradient(135deg,rgba(253,204,2,0.10) 0%,rgba(253,204,2,0.02) 100%);box-shadow:0 0 0 1.5px #fdcc02 inset}
+.env-option .env-radio{width:22px;height:22px;border-radius:50%;border:2px solid rgba(232,237,245,0.4);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all 0.16s}
+.env-option .env-radio::after{content:'';width:10px;height:10px;border-radius:50%;background:#fdcc02;transform:scale(0);transition:transform 0.18s}
+.env-option.on .env-radio{border-color:#fdcc02}
+.env-option.on .env-radio::after{transform:scale(1)}
+.env-option .env-body{display:flex;flex-direction:column;gap:3px;min-width:0}
+.env-option .env-label{font-weight:700;color:#fff;font-size:1rem;display:flex;align-items:center;gap:8px}
+.env-option .env-label .env-pop{display:inline-block;background:#fdcc02;color:#0b1220;font-size:0.62rem;font-weight:800;padding:2px 7px;border-radius:5px;letter-spacing:0.06em;text-transform:uppercase}
+.env-option .env-sub{font-size:0.85rem;color:rgba(232,237,245,0.65);line-height:1.4}
+.env-option .env-pricing{text-align:right;font-family:'Montserrat',sans-serif;display:flex;flex-direction:column;align-items:flex-end;gap:2px;white-space:nowrap}
+.env-option .env-price-bundle{font-size:1.1rem;font-weight:800;color:#fff;letter-spacing:-0.01em}
+.env-option .env-price-alone{font-size:0.72rem;color:rgba(232,237,245,0.5);text-decoration:line-through}
+.env-option .env-price-save{font-size:0.7rem;color:#7ee787;font-weight:700;letter-spacing:0.04em;text-transform:uppercase}
+
+/* Trim toggles use same option style but binary on/off */
+.env-trim-toggles{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+@media (max-width:580px){.env-trim-toggles{grid-template-columns:1fr}}
+.env-trim-tile{display:flex;flex-direction:column;gap:8px;padding:18px 16px;background:rgba(255,255,255,0.03);border:1.5px solid rgba(255,255,255,0.08);border-radius:12px;cursor:pointer;transition:all 0.16s;user-select:none;position:relative;text-align:left}
+.env-trim-tile:hover{border-color:rgba(253,204,2,0.4);background:rgba(255,255,255,0.06)}
+.env-trim-tile.on{border-color:#fdcc02;background:linear-gradient(135deg,rgba(253,204,2,0.10) 0%,rgba(253,204,2,0.02) 100%);box-shadow:0 0 0 1.5px #fdcc02 inset}
+.env-trim-check{width:24px;height:24px;border-radius:6px;border:2px solid rgba(232,237,245,0.4);display:flex;align-items:center;justify-content:center;font-weight:800;color:#0b1220;background:transparent;font-size:1rem;line-height:1;transition:all 0.16s}
+.env-trim-tile.on .env-trim-check{background:#fdcc02;border-color:#fdcc02}
+.env-trim-tile .env-trim-label{font-weight:700;color:#fff;font-size:0.95rem}
+.env-trim-tile .env-trim-sub{font-size:0.78rem;color:rgba(232,237,245,0.55);line-height:1.35;flex:1}
+.env-trim-price-stack{display:flex;flex-direction:column;align-items:flex-end;gap:4px;font-family:'Montserrat',sans-serif;line-height:1.05}
+.env-trim-tile .env-trim-price{font-weight:800;color:#fdcc02;font-size:1rem;display:flex;flex-direction:column;align-items:flex-end;gap:1px}
+.env-trim-tile .env-trim-price-alone{font-weight:600;color:rgba(232,237,245,0.45);font-size:0.78rem;text-decoration:line-through;display:flex;flex-direction:column;align-items:flex-end;gap:1px}
+.ttp-sub{font-size:0.58rem;font-weight:600;color:rgba(232,237,245,0.5);letter-spacing:0.06em;text-transform:uppercase;text-decoration:none}
+.env-trim-tile .env-trim-price-alone .ttp-sub{color:rgba(232,237,245,0.35)}
+
+/* Sticky summary rail */
+.env-summary{position:sticky;top:24px;background:linear-gradient(160deg,#1a2540 0%,#0f1830 100%);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:24px;box-shadow:0 24px 60px rgba(0,0,0,0.4);align-self:start}
+@media (max-width:1080px){.env-summary{position:relative;top:auto;margin-top:24px}}
+
+.env-rail-toolbar{display:flex;justify-content:flex-end;gap:6px;margin-bottom:10px}
+.env-rail-tool-btn{font-family:'Montserrat',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:rgba(232,237,245,0.75);background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:6px 10px;cursor:pointer;transition:all 0.16s}
+.env-rail-tool-btn:hover{background:rgba(253,204,2,0.15);color:#fdcc02;border-color:rgba(253,204,2,0.35)}
+.env-package-name{font-family:'Montserrat',sans-serif;font-size:1.45rem;font-weight:800;color:#fff;line-height:1.2;letter-spacing:-0.01em;min-height:54px;display:flex;align-items:center;transition:all 0.25s ease-out}
+.env-package-name.morph{animation:envPackageMorph 0.4s ease-out}
+@keyframes envPackageMorph{0%{transform:translateY(8px);opacity:0.4}100%{transform:translateY(0);opacity:1}}
+
+.env-selections{display:flex;flex-direction:column;gap:6px;margin-top:14px;font-size:0.84rem;color:rgba(232,237,245,0.7)}
+.env-selections .sel-row{display:flex;justify-content:space-between;gap:12px}
+.env-selections .sel-row .sel-label{color:rgba(232,237,245,0.55)}
+.env-selections .sel-row .sel-val{color:#fff;font-weight:600;text-align:right}
+
+.env-divider{height:1px;background:rgba(255,255,255,0.1);margin:18px 0}
+
+.env-row{display:flex;justify-content:space-between;align-items:baseline;font-size:0.92rem;color:rgba(232,237,245,0.75);margin:6px 0;gap:12px}
+.env-row.alone span:last-child{text-decoration:line-through;color:rgba(232,237,245,0.4)}
+.env-row.alone span:first-child{display:inline-flex;align-items:center;gap:6px}
+.env-info-i{display:inline-flex;width:14px;height:14px;border-radius:50%;background:rgba(255,255,255,0.12);color:rgba(232,237,245,0.7);font-size:0.62rem;font-weight:700;align-items:center;justify-content:center;font-style:italic;cursor:help;font-family:'Times New Roman',serif}
+.env-row.savings{color:#7ee787;font-weight:700}
+.env-row.savings span:last-child{font-family:'Montserrat',sans-serif;font-size:1.05rem;color:#7ee787;transition:transform 0.25s}
+.env-row.savings.flash span:last-child{animation:savingsBump 0.5s ease-out}
+@keyframes savingsBump{0%{transform:scale(1)}40%{transform:scale(1.18);color:#fff}100%{transform:scale(1);color:#7ee787}}
+.env-savings-explainer{font-size:0.74rem;color:rgba(232,237,245,0.5);line-height:1.4;margin-top:8px;padding:8px 10px;background:rgba(255,255,255,0.03);border-radius:8px;border-left:2px solid rgba(126,231,135,0.3)}
+
+.env-investment-label{font-family:'Montserrat',sans-serif;font-size:0.7rem;letter-spacing:0.2em;color:rgba(232,237,245,0.55);text-transform:uppercase;font-weight:700;margin-bottom:6px}
+.env-investment-amount{font-family:'Montserrat',sans-serif;font-size:2.6rem;font-weight:800;color:#fff;letter-spacing:-0.02em;line-height:1}
+.env-finance{font-size:0.85rem;color:rgba(232,237,245,0.6);margin-top:8px}
+
+.env-cash-meter{background:rgba(255,255,255,0.04);border-radius:12px;padding:14px 16px}
+.env-cash-meter.unlocked{background:linear-gradient(135deg,rgba(126,231,135,0.12) 0%,rgba(126,231,135,0.04) 100%);border:1px solid rgba(126,231,135,0.4)}
+.env-cash-label{font-family:'Montserrat',sans-serif;font-size:0.7rem;letter-spacing:0.16em;color:rgba(232,237,245,0.65);text-transform:uppercase;font-weight:700;margin-bottom:8px}
+.env-cash-bar{width:100%;height:8px;background:rgba(255,255,255,0.06);border-radius:999px;overflow:hidden;margin-bottom:10px}
+.env-cash-fill{height:100%;background:linear-gradient(90deg,#fdcc02 0%,#7ee787 100%);border-radius:999px;width:0;transition:width 0.5s cubic-bezier(0.2,0.8,0.2,1)}
+.env-cash-status{font-size:0.82rem;color:rgba(232,237,245,0.7);line-height:1.4}
+.env-cash-status .applied{color:#7ee787;font-weight:700}
+.env-cash-status .applied b{color:#fff}
+
+.env-cta-row{display:flex;flex-direction:column;gap:10px;margin-top:18px}
+.env-pdf-btn,.env-accept-btn{font-family:'Montserrat',sans-serif;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;padding:14px 22px;border-radius:12px;border:none;cursor:pointer;font-size:0.85rem;transition:all 0.16s}
+.env-pdf-btn,.env-preview-btn{background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.16)}
+.env-pdf-btn:hover,.env-preview-btn:hover{background:rgba(255,255,255,0.14);border-color:rgba(255,255,255,0.3)}
+.env-accept-btn{background:linear-gradient(135deg,#fdcc02 0%,#f5a623 100%);color:#0b1220;box-shadow:0 8px 22px rgba(253,204,2,0.32)}
+.env-accept-btn:hover{transform:translateY(-1px);box-shadow:0 12px 28px rgba(253,204,2,0.42)}
+.env-accept-btn:disabled,.env-accept-btn.done{background:#7ee787;color:#0b1220;cursor:default;transform:none}
+
+/* Floating savings ticker (animates on each component click) */
+.env-ticker{position:fixed;bottom:32px;right:32px;z-index:110;display:flex;flex-direction:column-reverse;gap:8px;pointer-events:none}
+.env-ticker-item{background:linear-gradient(135deg,#1a2540 0%,#0f1830 100%);border:1px solid rgba(126,231,135,0.4);border-radius:12px;padding:12px 18px;color:#fff;font-size:0.88rem;box-shadow:0 12px 30px rgba(0,0,0,0.4);animation:tickerSlideIn 0.3s ease-out, tickerFadeOut 0.4s ease-in 2.6s forwards;max-width:300px}
+.env-ticker-item .ti-label{font-weight:700;color:#fff;margin-bottom:2px}
+.env-ticker-item .ti-amount{color:#7ee787;font-family:'Montserrat',sans-serif;font-weight:800;font-size:0.95rem}
+@keyframes tickerSlideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+@keyframes tickerFadeOut{from{opacity:1;transform:translateX(0)}to{opacity:0;transform:translateX(80px)}}
+
+/* Confetti on cash discount unlock — subtle, not Vegas */
+.env-confetti-burst{position:fixed;pointer-events:none;z-index:200;width:160px;height:160px}
+.env-confetti-burst span{position:absolute;width:8px;height:8px;border-radius:2px;animation:confettiFall 1.2s cubic-bezier(0.2,0.6,0.4,1) forwards}
+@keyframes confettiFall{0%{opacity:1;transform:translateY(0) rotate(0deg)}100%{opacity:0;transform:translateY(140px) rotate(540deg)}}
+
+/* Hidden by default; rj-asphalt-body is collapsed when envelope active */
+body.envelope-active #rj-asphalt-body,
+body.envelope-active #rj-metal-body{display:none !important}
+body:not(.envelope-active) #envelopeSection{display:none !important}
+
+/* Tiny fullscreen toggle — top-right corner, requests browser fullscreen API */
+.env-fs-btn{position:fixed;top:14px;right:14px;z-index:120;width:34px;height:34px;border-radius:8px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.14);color:rgba(232,237,245,0.85);display:flex;align-items:center;justify-content:center;cursor:pointer;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);transition:all 0.16s;padding:0}
+.env-fs-btn:hover{background:rgba(253,204,2,0.18);border-color:rgba(253,204,2,0.45);color:#fdcc02}
+@media print{.env-fs-btn{display:none !important}}
+
+/* Mobile sticky bottom bar (replaces sticky right rail on small screens) */
+@media (max-width:1080px){
+  .env-summary{order:99}
+}
+
+/* Diagram showcase tile — full width above components */
+.env-diagram-card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:18px;padding:22px;text-align:center;overflow:hidden;margin-top:18px}
+.env-diagram-card img{max-width:100%;height:auto;border-radius:10px;box-shadow:0 12px 30px rgba(0,0,0,0.3)}
+.env-diagram-card .dc-cap{margin-top:14px;font-size:0.85rem;color:rgba(232,237,245,0.6);font-style:italic}
+/* Detailed diagram — bigger so the callout text reads cleanly */
+.env-diagram-card-detailed{padding:28px}
+.env-diagram-card-detailed img{max-width:100%;width:100%}
+@media (min-width:980px){.env-diagram-card-detailed img{max-width:1100px;width:100%}}
+
+/* Trust strip — three-column proof block under configurator */
+.env-trust-strip{margin-top:36px;display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+@media (max-width:780px){.env-trust-strip{grid-template-columns:1fr;gap:14px;margin-top:24px}}
+.env-trust-card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:22px}
+.env-trust-card .et-icon{width:36px;height:36px;border-radius:8px;background:rgba(253,204,2,0.14);color:#fdcc02;display:flex;align-items:center;justify-content:center;font-size:1.1rem;font-weight:800;margin-bottom:14px}
+.env-trust-card h4{font-family:'Montserrat',sans-serif;font-size:0.78rem;letter-spacing:0.16em;text-transform:uppercase;color:#fff;font-weight:800;margin-bottom:10px}
+.env-trust-card .et-stars{color:#fdcc02;font-size:1.2rem;letter-spacing:2px;margin-bottom:6px}
+.env-trust-card .et-rating{font-family:'Montserrat',sans-serif;font-size:1.6rem;font-weight:800;color:#fff;line-height:1}
+.env-trust-card .et-rating small{font-size:0.78rem;font-weight:600;color:rgba(232,237,245,0.6);margin-left:6px}
+.env-trust-card .et-body{font-size:0.88rem;color:rgba(232,237,245,0.75);line-height:1.5}
+.env-trust-card .et-list{list-style:none;padding:0;margin:8px 0 0;display:flex;flex-direction:column;gap:6px;font-size:0.86rem;color:rgba(232,237,245,0.75)}
+.env-trust-card .et-list li{padding-left:16px;position:relative;line-height:1.4}
+.env-trust-card .et-list li::before{content:'✓';position:absolute;left:0;color:#7ee787;font-weight:800}
+
+/* Envelope hero — cover photo + customer welcome */
+.env-hero{position:relative;border-radius:24px;overflow:hidden;margin-bottom:36px;box-shadow:0 30px 80px rgba(0,0,0,0.5);aspect-ratio:16/9;max-height:480px;background:linear-gradient(135deg,#1a2540 0%,#0f1830 100%)}
+@media (max-width:780px){.env-hero{aspect-ratio:4/3;max-height:none;border-radius:18px;margin-bottom:24px}}
+.env-hero-photo{position:absolute;inset:0;}
+.env-hero-photo img{width:100%;height:100%;object-fit:cover;display:block;filter:saturate(1.05) contrast(1.05);opacity:0;transition:opacity 0.5s ease-out}
+.env-hero-photo img.loaded{opacity:1}
+.env-hero-overlay{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:flex-end;padding:36px 40px;background:linear-gradient(180deg,rgba(11,18,32,0) 35%,rgba(11,18,32,0.88) 100%);color:#fff}
+@media (max-width:580px){.env-hero-overlay{padding:24px 22px}}
+.env-hero-eyebrow{font-family:'Montserrat',sans-serif;font-size:0.72rem;letter-spacing:0.22em;text-transform:uppercase;color:#fdcc02;font-weight:700;margin-bottom:8px}
+@media (max-width:580px){.env-hero-eyebrow{font-size:0.62rem;letter-spacing:0.18em}}
+.env-hero-title{font-family:'Montserrat',sans-serif;font-size:2.6rem;font-weight:800;color:#fff;margin:0 0 6px;line-height:1.05;letter-spacing:-0.02em;word-wrap:break-word;overflow-wrap:break-word}
+@media (max-width:780px){.env-hero-title{font-size:1.6rem}}
+@media (max-width:480px){.env-hero-title{font-size:1.35rem}}
+.env-hero-address{font-size:1rem;color:rgba(255,255,255,0.85)}
+@media (max-width:580px){.env-hero-address{font-size:0.88rem}}
+
+/* Live preview — image swaps as customer configures.
+   Background placeholder + opacity transition prevents the "black rectangle"
+   problem when the image is still loading or on a slow connection. */
+.env-preview{position:relative;border-radius:18px;overflow:hidden;margin-bottom:32px;background:linear-gradient(135deg,#1a2540 0%,#0f1830 100%);aspect-ratio:16/9;max-height:520px;box-shadow:0 20px 60px rgba(0,0,0,0.4);transition:opacity 0.35s}
+.env-preview::before{content:'Loading preview...';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:rgba(232,237,245,0.5);font-size:0.85rem;font-style:italic;pointer-events:none;z-index:0}
+.env-preview img{position:relative;z-index:1;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 0.4s ease-out}
+.env-preview img.loaded{opacity:1}
+@media (max-width:780px){.env-preview{aspect-ratio:4/3;border-radius:14px;margin-bottom:22px}}
+.env-preview-caption{position:absolute;bottom:16px;left:18px;right:18px;z-index:2;background:rgba(11,18,32,0.84);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-radius:10px;padding:10px 16px;color:#fff;font-size:0.88rem;font-family:'Montserrat',sans-serif;font-weight:600;letter-spacing:0.02em}
+@media (max-width:580px){.env-preview-caption{bottom:10px;left:10px;right:10px;padding:8px 12px;font-size:0.78rem}}
+
+/* Envelope signature modal — clean acceptance flow for envelope mode */
+.env-sig-modal{position:fixed;inset:0;z-index:300;background:rgba(11,18,32,0.92);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center;padding:20px}
+.env-sig-modal.on{display:flex;animation:fadeIn 0.25s ease-out}
+.env-sig-card{background:linear-gradient(160deg,#1a2540 0%,#0f1830 100%);border:1px solid rgba(255,255,255,0.12);border-radius:20px;max-width:560px;width:100%;padding:32px;color:#fff;max-height:90vh;overflow-y:auto}
+.env-sig-card h3{font-family:'Montserrat',sans-serif;font-size:1.4rem;font-weight:800;color:#fff;margin-bottom:6px}
+.env-sig-card .sig-sub{color:rgba(232,237,245,0.7);font-size:0.95rem;margin-bottom:22px;line-height:1.5}
+.env-sig-summary{background:rgba(255,255,255,0.04);border-radius:12px;padding:16px;margin-bottom:22px}
+.env-sig-summary .sig-pkg{font-family:'Montserrat',sans-serif;font-weight:800;font-size:1.1rem;color:#fdcc02;margin-bottom:8px}
+.env-sig-summary .sig-amt{font-family:'Montserrat',sans-serif;font-weight:800;font-size:1.8rem;color:#fff}
+.env-sig-summary .sig-amt small{font-size:0.7rem;color:rgba(232,237,245,0.6);font-weight:600;letter-spacing:0.06em;display:block;margin-top:2px;text-transform:uppercase}
+.env-sig-canvas-wrap{background:#fff;border-radius:12px;padding:6px;border:2px solid rgba(255,255,255,0.18);position:relative;cursor:crosshair}
+.env-sig-canvas-wrap canvas{width:100%;height:140px;display:block;border-radius:8px}
+.env-sig-canvas-wrap.active{border-color:#fdcc02}
+.env-sig-canvas-wrap .sig-hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:rgba(0,0,0,0.4);font-size:0.85rem;pointer-events:none;font-style:italic}
+.env-sig-canvas-wrap.signed .sig-hint{display:none}
+.env-sig-clear{margin-top:8px;background:none;border:none;color:rgba(232,237,245,0.6);font-size:0.78rem;cursor:pointer;text-decoration:underline}
+.env-sig-clear:hover{color:#fff}
+.env-sig-name-input{width:100%;background:rgba(255,255,255,0.05);border:1.5px solid rgba(255,255,255,0.12);border-radius:10px;padding:12px 14px;color:#fff;font-size:0.95rem;font-family:inherit;margin-top:14px;box-sizing:border-box}
+.env-sig-name-input:focus{outline:none;border-color:#fdcc02}
+.env-sig-actions{display:flex;gap:10px;margin-top:24px}
+.env-sig-actions button{flex:1;font-family:'Montserrat',sans-serif;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;padding:14px;border-radius:12px;border:none;cursor:pointer;font-size:0.85rem}
+.env-sig-cancel{background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.16) !important}
+.env-sig-confirm{background:linear-gradient(135deg,#fdcc02 0%,#f5a623 100%);color:#0b1220;box-shadow:0 8px 22px rgba(253,204,2,0.32)}
+.env-sig-confirm:disabled{opacity:0.5;cursor:not-allowed;box-shadow:none}
+
+/* Acceptance success modal */
+.env-done-modal{position:fixed;inset:0;z-index:300;background:rgba(11,18,32,0.94);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center;padding:20px}
+.env-done-modal.on{display:flex;animation:fadeIn 0.3s ease-out}
+.env-done-card{background:linear-gradient(160deg,#1a2540 0%,#0f1830 100%);border:2px solid #7ee787;border-radius:20px;max-width:480px;width:100%;padding:36px;color:#fff;text-align:center}
+.env-done-icon{width:72px;height:72px;border-radius:50%;background:#7ee787;color:#0b1220;display:flex;align-items:center;justify-content:center;margin:0 auto 18px;font-size:2.2rem;font-weight:800}
+.env-done-card h3{font-family:'Montserrat',sans-serif;font-size:1.6rem;color:#fff;margin-bottom:10px}
+.env-done-card p{color:rgba(232,237,245,0.8);line-height:1.5;margin-bottom:6px}
+.env-done-card .pkg{color:#fdcc02;font-weight:700;margin:14px 0}
+
+/* Print: full contrast pass for envelope mode.
+   Manus Findings May 7: pages 2-4 had near-invisible text on light bg
+   because the dark-theme rgba colors didn't read once the bg was forced
+   white. Override every text color explicitly. */
+@media print{
+  .envelope-section{background:#fff !important;color:#1a1f2e !important;page-break-before:always}
+  .envelope-section .env-head .kicker,
+  .envelope-section .env-block h3,
+  .env-investment-label,
+  .env-cash-label,
+  .env-hero-eyebrow{color:#7a5a32 !important}
+  .envelope-section .env-head h2,
+  .envelope-section .env-head p,
+  .env-hero-title,
+  .env-hero-address,
+  .env-block-sub,
+  .env-option .env-label,
+  .env-option .env-sub,
+  .env-trim-tile .env-trim-label,
+  .env-trim-tile .env-trim-sub,
+  .env-package-name,
+  .env-investment-amount,
+  .env-finance,
+  .env-cash-status,
+  .env-row,
+  .env-row span,
+  .env-selections .sel-row,
+  .env-selections .sel-row .sel-label,
+  .env-selections .sel-row .sel-val,
+  .env-preview-caption,
+  .env-diagram-card .dc-cap{color:#1a1f2e !important}
+  .env-row.alone span:last-child{text-decoration:line-through;color:#888 !important}
+  .env-row.savings,
+  .env-row.savings span{color:#0a8754 !important;font-weight:700}
+  .env-grid{grid-template-columns:1fr !important;gap:18px !important}
+  .env-summary,
+  .env-block,
+  .env-cash-meter,
+  .env-trim-tile,
+  .env-option,
+  .env-system-toggle,
+  .env-diagram-card,
+  .env-preview,
+  .env-hero{box-shadow:none !important;background:#fff !important;border:1px solid #ccc !important;color:#1a1f2e !important;backdrop-filter:none !important}
+  .env-hero{background-image:none !important}
+  .env-hero-overlay{background:linear-gradient(180deg,rgba(255,255,255,0) 30%,rgba(255,255,255,0.96) 100%) !important}
+  .env-option.on,.env-trim-tile.on{border-color:#1a3a8c !important;background:#f4f7ff !important;box-shadow:none !important}
+  .env-option.on .env-radio{border-color:#1a3a8c !important}
+  .env-option.on .env-radio::after{background:#1a3a8c !important}
+  .env-trim-tile.on .env-trim-check{background:#1a3a8c !important;border-color:#1a3a8c !important;color:#fff !important}
+  .env-option .env-price-bundle,
+  .env-trim-tile .env-trim-price{color:#1a3a8c !important}
+  .env-option .env-price-alone,
+  .env-trim-tile .env-trim-price-alone,
+  .env-trim-tile .env-trim-price small,
+  .ttp-sub{color:#666 !important}
+  .env-option .env-price-save{color:#0a8754 !important}
+  .env-option .env-label .env-pop{background:#fdcc02 !important;color:#1a1f2e !important}
+  .env-cash-bar{background:#e9ecef !important;border:1px solid #ccc}
+  .env-cash-fill{background:linear-gradient(90deg,#fdcc02 0%,#0a8754 100%) !important}
+  .env-cash-meter.unlocked{background:#f1faf4 !important;border:1px solid #0a8754 !important}
+  .env-cash-status .applied{color:#0a8754 !important}
+  .env-pdf-btn,.env-accept-btn,.env-ticker,.env-system-toggle button{display:none !important}
+  /* Force the summary inline (not sticky) and below the components for clean PDF flow */
+  .env-summary{position:relative !important;top:auto !important;page-break-before:auto;page-break-inside:avoid}
+  /* Page-break hints */
+  .env-block{page-break-inside:avoid}
+  .env-diagram-card{page-break-before:auto;page-break-inside:avoid}
+  /* Trust strip + envelope footer should stay together if added */
+  .env-trust-strip{page-break-inside:avoid;display:grid;grid-template-columns:repeat(3,1fr) !important;gap:14px !important}
+  .env-trust-card{background:#f9fafb !important;border:1px solid #ccc !important;color:#1a1f2e !important;padding:18px !important}
+  .env-trust-card .et-icon{background:#fff7d6 !important;color:#7a5a32 !important;border:1px solid #fdcc02}
+  .env-trust-card h4{color:#1a1f2e !important;font-size:0.7rem !important}
+  .env-trust-card .et-stars{color:#fdcc02 !important}
+  .env-trust-card .et-rating,
+  .env-trust-card .et-rating small,
+  .env-trust-card .et-body,
+  .env-trust-card .et-list,
+  .env-trust-card .et-list li{color:#1a1f2e !important}
+  .env-trust-card .et-list li::before{color:#0a8754 !important}
+  /* Bundle savings explainer — Manus called out it stays too faint */
+  .env-savings-explainer{background:#f4f7ff !important;color:#1a1f2e !important;border-left:3px solid #1a3a8c !important;font-size:0.78rem !important;padding:8px 10px !important}
+  /* Cash meter status copy */
+  .env-cash-status,
+  .env-cash-status .applied,
+  .env-cash-status .applied b,
+  .env-cash-status b{color:#1a1f2e !important}
+  /* "i" tooltip glyph reads as small dot in PDF — make a real letter */
+  .env-info-i{background:#e9ecef !important;color:#666 !important;border:1px solid #ccc;font-style:italic}
+}
+</style>
 </head>
 <body>
+
+<!-- Anti-FOUC loading shim. Stays visible until JS decides which proposal
+     mode to show, then fades out. Prevents the legacy asphalt body from
+     flashing on load. -->
+<div class="app-loading-screen" id="appLoadingScreen">
+  <img class="als-logo" src="/brand/plus-ultra/logo.png" alt="Plus Ultra Roofing" onerror="this.style.display='none'">
+  <div class="als-text">Loading Your Proposal</div>
+  <div class="als-pulse"></div>
+</div>
+
+
+<!-- ============================================================== -->
+<!-- SYSTEM TOGGLE — visible only when estimate carries both systems -->
+<!-- ============================================================== -->
+<div id="rj-system-toggle" data-hide-in-pdf>
+  <span class="lbl">View as</span>
+  <button id="rj-toggle-asphalt" type="button" onclick="switchSystem('asphalt')">Asphalt Shingle</button>
+  <button id="rj-toggle-metal" type="button" onclick="switchSystem('metal')">Metal</button>
+</div>
+
+<!-- ============================================================== -->
+<!-- ASPHALT BODY — wrapped so toggle can hide/show without remount  -->
+<!-- ============================================================== -->
+<div id="rj-asphalt-body" hidden>
 
 <!-- ============================================================== -->
 <!-- TOPBAR                                                          -->
@@ -641,7 +1054,11 @@ footer{padding:40px 0;background:var(--bg-deep);border-top:1px solid var(--borde
     <div class="hero-actions" data-hide-in-pdf>
       <button id="downloadPdfBtn" class="btn-hero-ghost" onclick="downloadPdf()">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        Save as PDF
+        Save Proposal as PDF
+      </button>
+      <button id="downloadContractBtn" class="btn-hero-ghost" onclick="downloadContract()">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
+        Download Contract
       </button>
     </div>
   </div>
@@ -820,6 +1237,8 @@ footer{padding:40px 0;background:var(--bg-deep);border-top:1px solid var(--borde
   </div>
 </section>
 
+<div id="addonsWrap"></div>
+
 <!-- ============================================================== -->
 <!-- 8. SCOPE — what's included in selected tier                     -->
 <!-- ============================================================== -->
@@ -995,6 +1414,183 @@ footer{padding:40px 0;background:var(--bg-deep);border-top:1px solid var(--borde
   </div>
 </div>
 
+</div><!-- /#rj-asphalt-body -->
+
+<!-- ============================================================== -->
+<!-- ENVELOPE CONFIGURATOR — populated by renderEnvelope() when      -->
+<!-- estimate carries custom_prices._envelope payload                -->
+<!-- ============================================================== -->
+<section id="envelopeSection" class="envelope-section" hidden>
+  <!-- Fullscreen toggle — tiny icon, top-right, requests browser fullscreen -->
+  <button class="env-fs-btn" id="envFsBtn" type="button" onclick="envToggleFullscreen()" title="Toggle fullscreen" aria-label="Toggle fullscreen">
+    <svg id="envFsIconEnter" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V5a1 1 0 011-1h4M20 9V5a1 1 0 00-1-1h-4M4 15v4a1 1 0 001 1h4M20 15v4a1 1 0 01-1 1h-4"/></svg>
+    <svg id="envFsIconExit" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M9 4v4a1 1 0 01-1 1H4M15 4v4a1 1 0 001 1h4M9 20v-4a1 1 0 00-1-1H4M15 20v-4a1 1 0 011-1h4"/></svg>
+  </button>
+  <div class="container">
+    <!-- Envelope Hero — cover photo + customer welcome -->
+    <div class="env-hero" id="envHero" hidden>
+      <div class="env-hero-photo"><img id="envHeroImg" src="" alt="Your home" loading="eager" fetchpriority="high" decoding="async" width="1600" height="900"></div>
+      <div class="env-hero-overlay">
+        <div class="env-hero-eyebrow" id="envHeroEyebrow">A proposal for</div>
+        <h1 class="env-hero-title" id="envHeroTitle">—</h1>
+        <div class="env-hero-address" id="envHeroAddress"></div>
+      </div>
+    </div>
+
+    <div class="env-head">
+      <div class="kicker" id="envKicker">Plan Your Project</div>
+      <h2 id="envHeadline">Build the exterior plan around your home, your priorities, and your budget.</h2>
+      <p>Choose your scope below. Your package, total, and savings update in real time as you go.</p>
+    </div>
+
+    <!-- Live preview — image swaps based on selections -->
+    <div class="env-preview" id="envPreview" hidden>
+      <img id="envPreviewImg" src="" alt="Preview" loading="eager" fetchpriority="high" decoding="async" width="1600" height="900">
+      <div class="env-preview-caption" id="envPreviewCaption"></div>
+    </div>
+
+    <div class="env-grid">
+      <!-- LEFT: Components -->
+      <div class="env-components">
+        <div class="env-system-toggle" id="envSystemToggle" hidden></div>
+
+        <div class="env-block" id="envRoofBlock">
+          <h3>Roof System</h3>
+          <div class="env-block-sub" id="envRoofSub">Choose your roofing material and warranty tier.</div>
+          <div class="env-options" id="envRoofOptions"></div>
+        </div>
+
+        <div class="env-block" id="envRoofPrepBlock">
+          <h3>Roof Preparation</h3>
+          <div class="env-block-sub">Optional prep work, priced based on existing roof condition. Strap deck is required for ribbed metal panels (Vic West Americana). Redeck is only needed if the existing OSB is rotting, soft, or compromised — Mac will confirm during tear-off.</div>
+          <div class="env-trim-toggles" id="envRoofPrepToggles"></div>
+        </div>
+
+        <div class="env-block" id="envSidingBlock">
+          <h3>Siding · Wall System</h3>
+          <div class="env-block-sub">Pick a siding tier to unlock the Performance Shell. Wall assembly (OSB + foam + VentiGrid + housewrap) is included automatically with any siding.</div>
+          <div class="env-options" id="envSidingOptions"></div>
+        </div>
+
+        <div class="env-block" id="envTrimBlock">
+          <h3>Eve Protection</h3>
+          <div class="env-block-sub">Add gutters, soffit, and fascia individually. Each one upgrades your package: <em>Basic Eve Protection, then Eve Protection, then Ultra Eve Protection</em>.</div>
+          <div class="env-trim-toggles" id="envTrimToggles"></div>
+        </div>
+
+        <div class="env-diagram-card" id="envSystemCard" hidden>
+          <img id="envSystemImg" src="" alt="Complete building envelope system" loading="eager" decoding="async" width="1800" height="1013">
+          <div class="dc-cap">Your home with the complete building envelope system — roof system, wall assembly, and gutter system in one coordinated install.</div>
+        </div>
+
+        <div class="env-diagram-card env-diagram-card-detailed" id="envDiagramCard" hidden>
+          <img id="envDiagramImg" src="" alt="Building envelope diagram with detailed callouts" loading="lazy" decoding="async" width="1800" height="1013">
+          <div class="dc-cap">Detailed component breakdown — every numbered layer is a real product you can include or skip in your build.</div>
+        </div>
+
+        <!-- Trust strip — reviews + warranty + what-happens-next.
+             Manus called out that envelope mode strips legacy proof signals;
+             this block restores them in a compact, on-brand way. -->
+        <div class="env-trust-strip">
+          <div class="env-trust-card">
+            <div class="et-icon">★</div>
+            <h4>Verified Reviews</h4>
+            <div class="et-stars">★★★★★</div>
+            <div class="et-rating">5.0<small>· 35+ Google reviews</small></div>
+            <div class="et-body" style="margin-top:10px">"Amazing experience. Quick estimate, finished fast at a great price." — Norm Clark, Moncton NB</div>
+          </div>
+          <div class="env-trust-card">
+            <div class="et-icon">⚙</div>
+            <h4>Workmanship Warranty</h4>
+            <ul class="et-list">
+              <li>15–25 yr Plus Ultra workmanship (by tier)</li>
+              <li>Lifetime limited manufacturer warranty</li>
+              <li>10-yr CertainTeed SureStart™ full coverage</li>
+              <li>50-yr fade warranty on Cedar Shake siding</li>
+              <li>Leak-free guarantee year one</li>
+            </ul>
+          </div>
+          <div class="env-trust-card">
+            <div class="et-icon">&gt;</div>
+            <h4>After You Lock In</h4>
+            <ul class="et-list">
+              <li>We call within 24 hours to confirm details</li>
+              <li>Deposit invoice + FinanceIt link sent</li>
+              <li>Material order placed, install scheduled</li>
+              <li>Job documented at every stage (50–100+ photos)</li>
+              <li>Internal QA checklist before we call it done</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: Sticky summary -->
+      <aside class="env-summary">
+        <div class="env-package-name" id="envPackageName">Build Your Package</div>
+        <div class="env-selections" id="envSelections"></div>
+        <div class="env-divider"></div>
+        <div class="env-row alone"><span title="What this work would cost as four separate small projects, each with its own mobilization, setup, ordering, and project management.">Separate Project Price <span class="env-info-i" aria-label="info">i</span></span><span id="envAlonePrice">$0</span></div>
+        <div class="env-row savings" id="envSavingsRow"><span>Your bundle savings</span><span id="envSavings">$0</span></div>
+        <div class="env-savings-explainer">Bundle pricing reflects doing the work as one coordinated exterior project — single mobilization, single supervisor day, single material order — instead of separate small jobs.</div>
+        <div class="env-divider"></div>
+        <div class="env-investment-label">Your Investment</div>
+        <div class="env-investment-amount" id="envInvestment">$0</div>
+        <div class="env-finance" id="envFinance">— select a roof to see your monthly</div>
+        <div class="env-divider"></div>
+        <div class="env-cash-meter" id="envCashMeter">
+          <div class="env-cash-label">Pay-in-Full Savings</div>
+          <div class="env-cash-bar"><div class="env-cash-fill" id="envCashFill"></div></div>
+          <div class="env-cash-status" id="envCashStatus">If you choose to pay in full, additional savings apply at $50K+, $75K+, and $100K+ project sizes.</div>
+        </div>
+        <div class="env-cta-row">
+          <button class="env-pdf-btn" id="envPdfBtn" type="button" onclick="exportEnvelopePdf()">Export PDF</button>
+          <button class="env-accept-btn" id="envAcceptBtn" type="button" onclick="acceptEnvelope()">Lock Your Price</button>
+        </div>
+      </aside>
+    </div>
+
+    <div class="env-ticker" id="envTicker"></div>
+  </div>
+
+  <!-- Envelope acceptance signature modal -->
+  <div class="env-sig-modal" id="envSigModal">
+    <div class="env-sig-card">
+      <h3>Lock your price</h3>
+      <p class="sig-sub">Sign below to lock your selection at today's price for 30 days. We'll call within 24 hours to confirm details and send your deposit invoice.</p>
+      <div class="env-sig-summary">
+        <div class="sig-pkg" id="envSigPkg">—</div>
+        <div class="sig-amt" id="envSigAmt">$0<small>HST INCLUDED</small></div>
+      </div>
+      <div class="env-sig-canvas-wrap" id="envSigWrap">
+        <canvas id="envSigCanvas"></canvas>
+        <div class="sig-hint">Sign here with your finger or mouse</div>
+      </div>
+      <button class="env-sig-clear" type="button" onclick="envSigClear()">Clear signature</button>
+      <input class="env-sig-name-input" id="envSigName" type="text" placeholder="Type your full name to confirm">
+      <div class="env-sig-actions">
+        <button class="env-sig-cancel" type="button" onclick="envSigCancel()">Cancel</button>
+        <button class="env-sig-confirm" id="envSigConfirm" type="button" onclick="envSigConfirm()" disabled>Lock In</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Acceptance success modal -->
+  <div class="env-done-modal" id="envDoneModal">
+    <div class="env-done-card">
+      <div class="env-done-icon">✓</div>
+      <h3>Locked in.</h3>
+      <p>Your selection is recorded and your price is locked for 30 days.</p>
+      <div class="pkg" id="envDonePkg">—</div>
+      <p id="envDoneRepMsg">Your rep will reach out within 24 hours to confirm details and send your deposit invoice.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================== -->
+<!-- METAL BODY — populated by renderMetal() when metal data exists  -->
+<!-- ============================================================== -->
+<div id="rj-metal-body" hidden></div>
+
 <script>
 /* ─────────────────────────────────────────────
    DEFAULT / DEMO DATA (used if no ?share or ?data)
@@ -1114,8 +1710,65 @@ const state = {
   system: 'asphalt',
   finTerm: 120,
   signature: null,
-  accepted: false
+  accepted: false,
+  selectedAddons: new Set()
 };
+
+function getAddons() { return (DATA && Array.isArray(DATA.addons)) ? DATA.addons : []; }
+function addonsTotal() {
+  let sum = 0;
+  for (const a of getAddons()) {
+    if (state.selectedAddons.has(a.slug)) sum += Number(a.price) || 0;
+  }
+  return sum;
+}
+function selectedAddonsList() {
+  return getAddons().filter(a => state.selectedAddons.has(a.slug))
+    .map(a => ({ slug: a.slug, label: a.label, price: Number(a.price) || 0 }));
+}
+function toggleAddon(slug) {
+  if (state.selectedAddons.has(slug)) state.selectedAddons.delete(slug);
+  else state.selectedAddons.add(slug);
+  renderAddons();
+  if (typeof renderAccept === 'function') renderAccept();
+  try { logEvent('addon_toggled', { slug, on: state.selectedAddons.has(slug) }); } catch(e){}
+}
+window.toggleAddon = toggleAddon;
+
+function addonsSectionHtml() {
+  const addons = getAddons();
+  if (!addons.length) return '';
+  const rows = addons.map(a => {
+    const on = state.selectedAddons.has(a.slug);
+    return `
+      <label class="addon-row${on ? ' on' : ''}" onclick="event.preventDefault();toggleAddon('${a.slug}')">
+        <span class="addon-check" aria-hidden="true">${on ? '✓' : ''}</span>
+        <span class="addon-body">
+          <span class="addon-label">${a.label || a.slug}</span>
+          ${a.description ? `<span class="addon-desc">${a.description}</span>` : ''}
+        </span>
+        <span class="addon-price">+ ${money(Number(a.price) || 0)}<small>+ HST</small></span>
+      </label>`;
+  }).join('');
+  return `
+    <section class="sec-alt addons-section">
+      <div class="container">
+        <div class="section-head">
+          <div class="kicker">Optional Upgrades</div>
+          <h2>Add anything else while we're already here.</h2>
+          <p>Toggle on the items you want — your total updates live. You can change your mind any time before signing.</p>
+        </div>
+        <div class="addons-list">${rows}</div>
+      </div>
+    </section>`;
+}
+function renderAddons() {
+  const html = addonsSectionHtml();
+  const wrap = document.getElementById('addonsWrap');
+  if (wrap) wrap.innerHTML = html;
+  const metalWrap = document.getElementById('addonsWrapMetal');
+  if (metalWrap) metalWrap.innerHTML = html;
+}
 
 function money(n){ return '$' + (Math.round(n)||0).toLocaleString('en-CA'); }
 
@@ -1141,6 +1794,31 @@ function downloadPdf(){
   try { logEvent('pdf_downloaded', {}); } catch(e){}
 }
 window.downloadPdf = downloadPdf;
+
+function downloadContract(){
+  const params = new URLSearchParams(location.search);
+  const share = params.get('share');
+  if (!share) { window.print(); return; }
+  // Prefer the tier the customer has selected/accepted; fall back to recommended.
+  const tier = (state && state.tierId)
+    || (DATA && DATA.scope && DATA.scope.recommended)
+    || 'platinum';
+  const customer = (DATA && DATA.customer && DATA.customer.name) || 'contract';
+  const safe = String(customer).replace(/[^\w\-]+/g, '_').slice(0, 40);
+  const url = '/api/contract-pdf?share=' + encodeURIComponent(share)
+    + '&tier=' + encodeURIComponent(tier)
+    + '&download=' + encodeURIComponent('PU-Contract-' + safe + '.pdf');
+  const btn = document.getElementById('downloadContractBtn');
+  if (btn) {
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<span style="font-size:0.82rem">Preparing contract…</span>';
+    btn.disabled = true;
+    setTimeout(() => { btn.innerHTML = orig; btn.disabled = false; }, 10000);
+  }
+  window.open(url, '_blank', 'noopener');
+  try { logEvent('contract_downloaded', { tier: tier }); } catch(e){}
+}
+window.downloadContract = downloadContract;
 
 function financeItMonthly(principal, termMonths){
   const apr = 0.0899;
@@ -1381,7 +2059,9 @@ function renderTiers(){
     // says so — i.e. a custom multiplier under min_custom_multiplier (default 1.35).
     // Internal-only display. SOP multipliers (1.47/1.52/1.58) never trip this.
     const belowBE = DATA.internal && t.belowBreakeven === true;
-    const cls = ['tier', on, belowBE ? 'below-floor' : ''].filter(Boolean).join(' ');
+    const hasPromo = !!t.promoLabel;
+    const cls = ['tier', on, belowBE ? 'below-floor' : '', hasPromo ? 'has-promo' : ''].filter(Boolean).join(' ');
+    const promoAttr = hasPromo ? ` data-promo="${String(t.promoLabel).replace(/"/g,'&quot;')}"` : '';
     const name = t.name || '';
     const sub = t.sub ? `<div class="sub">${t.sub}</div>` : '';
     // Internal-only diagnostic block: SOP profit + real cash net per pricing_formula_v2.md.
@@ -1392,12 +2072,12 @@ function renderTiers(){
          </div>`
       : '';
     return `
-      <div class="${cls}" onclick="pickTier('${t.id}')">
+      <div class="${cls}"${promoAttr} onclick="pickTier('${t.id}')">
         <div class="tag">${t.tag || ''}${belowBE ? ' · BELOW BREAKEVEN' : ''}</div>
         <div class="name">${name}</div>
         ${sub}
         <div class="desc">${t.desc || ''}</div>
-        <div class="price">${money(total)}<small>+ HST</small></div>
+        <div class="price">${t.originalTotal && t.originalTotal > total ? `<span style="text-decoration:line-through;color:#9aa0a6;font-weight:500;font-size:0.7em;display:block;margin-bottom:2px">${money(t.originalTotal)}</span>` : ''}${money(total)}<small>+ HST</small></div>
         <div class="fin">or <b>${money(monthly)}/mo</b> via FinanceIt (10-yr)</div>
         <ul>${(t.perks || []).map(p => `<li>${p}</li>`).join('')}</ul>
         ${sopBlock}
@@ -1424,6 +2104,8 @@ function pickTier(id){
   renderTiers();
   renderScope();
   renderAccept();
+  // Re-render addons in case selection-dependent UI ever needs refresh.
+  if (typeof renderAddons === 'function') renderAddons();
   logEvent('tier_selected', { id });
 }
 
@@ -1461,12 +2143,21 @@ function renderScope(){
 function renderAccept(){
   const t = currentTier();
   if (!t) return;
-  const total = Math.round(t.total || 0);
+  const addonSum = addonsTotal();
+  const total = Math.round((t.total || 0) + addonSum);
   const monthly = financeItMonthly(total, state.finTerm);
-  document.getElementById('acceptTierName').textContent = (t.name || '') + (t.sub ? ' · ' + t.sub : '');
-  document.getElementById('acceptTotal').textContent = money(total);
-  document.getElementById('finMonthly').innerHTML = money(monthly) + '<small>/MO</small>';
-  document.querySelector('.accept-summary .right .fin').textContent = 'or ' + money(monthly) + '/mo · FinanceIt';
+  const tierLabel = (t.name || '') + (t.sub ? ' · ' + t.sub : '');
+  const selectedCount = state.selectedAddons.size;
+  const acceptName = document.getElementById('acceptTierName');
+  if (acceptName) acceptName.textContent = selectedCount > 0
+    ? `${tierLabel} + ${selectedCount} upgrade${selectedCount === 1 ? '' : 's'}`
+    : tierLabel;
+  const acceptTotal = document.getElementById('acceptTotal');
+  if (acceptTotal) acceptTotal.textContent = money(total);
+  const finM = document.getElementById('finMonthly');
+  if (finM) finM.innerHTML = money(monthly) + '<small>/MO</small>';
+  const finFin = document.querySelector('.accept-summary .right .fin');
+  if (finFin) finFin.textContent = 'or ' + money(monthly) + '/mo · FinanceIt';
 }
 
 function renderReviewsHead(){
@@ -1564,13 +2255,18 @@ function acceptProposal(){
     return;
   }
   const t = currentTier();
-  const total = Math.round((t.total || 0) * 1.15);
+  const addonsSelected = selectedAddonsList();
+  const addonsSubtotal = addonsTotal();
+  const baseTotal = (t.total || 0) + addonsSubtotal;
+  const total = Math.round(baseTotal * 1.15);
   state.accepted = true;
 
   const payload = {
     refId: DATA.refId, estimateId: DATA.estimateId, shareToken: DATA.shareToken,
     customer: DATA.customer, rep: DATA.rep,
     tier: { id: t.id, name: t.name, sub: t.sub, total: t.total, totalWithTax: total },
+    selectedAddons: addonsSelected,
+    addonsSubtotal,
     financing: { term: state.finTerm, monthly: Math.round(financeItMonthly(total, state.finTerm)) },
     signature: state.signature,
     acceptedAt: new Date().toISOString()
@@ -1598,31 +2294,1277 @@ function acceptProposal(){
 window.acceptProposal = acceptProposal;
 
 /* ─────────────────────────────────────────────
+   METAL RENDERER — branches off the asphalt template when DATA.scope.system==='metal'.
+   Mirrors proposal-715-rt-11.html: cream/bronze/navy palette, hero, rep card,
+   3 canonical tier cards, scope table, gallery, CTA.
+───────────────────────────────────────────── */
+function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function renderMetal(){
+  const m = DATA.metal || {};
+  const rep = DATA.rep || {};
+  const cust = DATA.customer || {};
+  const scope = DATA.scope || {};
+  const branding = DATA.branding || {};
+  const tiers = Array.isArray(m.tiers) ? m.tiers : [];
+  // Metal-specific cover (uploaded with caption=metal_after or metal_cover) wins.
+  // If the only cover on file is the asphalt-after photo, that's the wrong image
+  // for the metal proposal — fall through to the generic metal cover instead.
+  const cover = m.coverImage || m.coverDefault || '/proposal-assets/metal/cover-default.jpg';
+  const firstName = (cust.name || '').split(' ')[0] || 'there';
+  const addressLine = cust.address || '';
+  const sqFt = scope.roofArea ? scope.roofArea : null;
+  const sq = sqFt ? (sqFt / 100).toFixed(1) : null;
+  const featuredIdx = tiers.length === 3 ? 1 : 0;
+
+  const repPhone = rep.phone || '(506) 232-2272';
+  const repEmail = rep.email || 'plusultraroofinginfo@gmail.com';
+  const repPhoneTel = repPhone.replace(/[^\d+]/g, '');
+  const repName = rep.name || 'Darcy Mazerolle';
+  const repFirst = repName.split(' ')[0];
+  const repPhoto = rep.photo || '/brand/plus-ultra/rep-darcy.jpg';
+
+  // Metal CSS is scoped to #rj-metal-body via @scope so its class names
+  // (.intro-grid, .hero-photo, .tier, etc.) don't override the asphalt CSS
+  // that lives in <head>. Without this scope, the asphalt rep-card layout
+  // breaks (3-col instead of 1fr+300px) when the metal body renders.
+  const css = `
+    #rj-metal-body{--bg:#f8f4ea;--bg-deep:#efe7d5;--bg-card:#ffffff;--ink:#1a1f2e;--ink-body:#3d3228;--ink-muted:#7a6f5c;--accent:#1a3a8c;--accent-2:#fdcc02;--bronze:#7a5a32;--border:rgba(70,55,38,0.14);--border-strong:rgba(70,55,38,0.3);--shadow-sm:0 2px 8px rgba(60,40,20,0.08);--shadow:0 8px 30px rgba(60,40,20,0.12);--shadow-lg:0 20px 60px rgba(60,40,20,0.18);--success:#0a8754;}
+    @scope (#rj-metal-body) {
+    *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+    html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+    body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--ink-body);line-height:1.6;font-size:16px;-webkit-font-smoothing:antialiased;overflow-x:hidden;}
+    img{max-width:100%;display:block} button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+    h1,h2,h3,h4{font-family:'Montserrat',sans-serif;color:var(--ink);font-weight:700;line-height:1.2}
+    h1{font-size:clamp(2rem,5vw,3rem);letter-spacing:-0.02em} h2{font-size:clamp(1.6rem,3.6vw,2.2rem);letter-spacing:-0.01em} h3{font-size:1.25rem}
+    .container{max-width:1100px;margin:0 auto;padding:0 24px;width:100%}
+    .kicker{font-family:'Inter',sans-serif;font-size:0.75rem;font-weight:600;letter-spacing:0.2em;text-transform:uppercase;color:var(--bronze);margin-bottom:12px;}
+    .section-head{text-align:center;max-width:760px;margin:0 auto 48px} .section-head h2{margin-bottom:12px} .section-head p{color:var(--ink-muted);font-size:1.05rem}
+    .topbar{position:sticky;top:0;z-index:50;background:rgba(248,244,234,0.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--border);}
+    .topbar-inner{display:flex;align-items:center;gap:16px;padding:10px 24px;max-width:1200px;margin:0 auto}
+    .brand{display:flex;align-items:center;gap:10px} .brand img{height:36px;width:auto}
+    .brand-text{font-family:'Montserrat',sans-serif;font-weight:800;font-size:0.9rem;letter-spacing:0.05em;color:var(--ink);line-height:1.1}
+    .brand-text small{display:block;font-size:0.62rem;font-weight:500;color:var(--ink-muted);letter-spacing:0.15em;margin-top:2px}
+    .spacer{flex:1} .ref{font-family:'Inter',sans-serif;font-size:0.72rem;color:var(--ink-muted);letter-spacing:0.1em} .ref b{color:var(--ink);letter-spacing:0.05em}
+    section{padding:80px 0;position:relative} @media (max-width:720px){section{padding:56px 0}} .sec-alt{background:var(--bg-deep)}
+    .hero{padding:56px 0 80px;position:relative;overflow:hidden}
+    .hero::before{content:'';position:absolute;top:0;left:0;width:180px;height:180px;background:var(--accent-2);clip-path:polygon(0 0,100% 0,0 100%);opacity:0.9;z-index:0;}
+    .hero::after{content:'';position:absolute;bottom:0;right:0;width:220px;height:220px;background:var(--accent);clip-path:polygon(100% 0,100% 100%,0 100%);opacity:0.92;z-index:0;}
+    @media (max-width:720px){.hero::before{width:110px;height:110px}.hero::after{width:130px;height:130px}}
+    .hero .container{position:relative;z-index:1}
+    .hero-grid{display:grid;grid-template-columns:1.1fr 0.9fr;gap:48px;align-items:center}
+    @media (max-width:880px){.hero-grid{grid-template-columns:1fr;gap:32px}}
+    .hero-photo{border-radius:18px;overflow:hidden;box-shadow:var(--shadow-lg);aspect-ratio:4/3;background:linear-gradient(135deg,#efe7d5 0%,#d8cdb1 100%) center/cover no-repeat;}
+    .hero-text .kicker{margin-bottom:14px} .hero-text h1{margin-bottom:20px} .hero-lead{font-size:1.1rem;color:var(--ink-body);max-width:540px}
+    .address{display:inline-flex;align-items:center;gap:8px;margin-top:24px;padding:10px 16px;background:rgba(255,255,255,0.8);border:1px solid var(--border-strong);border-radius:10px;font-size:0.9rem;font-weight:600;color:var(--ink);}
+    .intro-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-top:32px} @media (max-width:720px){.intro-grid{grid-template-columns:1fr}}
+    .intro-card{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:24px;box-shadow:var(--shadow-sm);}
+    .intro-card h3{font-size:1.05rem;margin-bottom:8px;color:var(--accent)} .intro-card p{color:var(--ink-muted);font-size:0.95rem}
+    .tier-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-top:24px;} @media (max-width:980px){.tier-grid{grid-template-columns:1fr;max-width:520px;margin:24px auto 0}}
+    .tier{background:var(--bg-card);border:1px solid var(--border);border-radius:18px;overflow:hidden;display:flex;flex-direction:column;transition:transform 0.18s,box-shadow 0.18s;box-shadow:var(--shadow-sm);}
+    .tier:hover{transform:translateY(-3px);box-shadow:var(--shadow)}
+    .tier.featured{border:2px solid var(--accent);box-shadow:var(--shadow);position:relative;}
+    .tier.featured::before{content:'Most Popular';position:absolute;top:14px;right:14px;z-index:2;background:var(--accent);color:#fff;padding:4px 10px;border-radius:6px;font-size:0.7rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;}
+    .tier-head{padding:28px 24px 22px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,rgba(248,244,234,0.6) 0%,rgba(255,255,255,0) 100%);}
+    .tier-name{font-family:'Montserrat',sans-serif;font-weight:800;font-size:0.78rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--bronze);margin-bottom:8px;}
+    .tier-system{font-family:'Montserrat',sans-serif;font-size:1.4rem;color:var(--ink);font-weight:700;margin-bottom:6px;line-height:1.15}
+    .tier-warranty{font-size:0.85rem;color:var(--ink-muted);font-weight:600}
+    .tier-price-block{padding:24px;border-bottom:1px solid var(--border);background:var(--bg-deep)}
+    .tier-price{font-family:'Montserrat',sans-serif;font-size:2rem;font-weight:800;color:var(--ink);letter-spacing:-0.02em;}
+    .tier-price small{font-size:0.7rem;font-weight:500;color:var(--ink-muted);letter-spacing:0.08em;display:block;margin-top:2px;text-transform:uppercase}
+    .tier li{list-style:none;position:relative;padding:8px 0 8px 24px;font-size:0.92rem;color:var(--ink-body);border-bottom:1px dashed rgba(70,55,38,0.08);}
+    .tier li:last-child{border-bottom:none}
+    .tier li::before{content:'';position:absolute;left:0;top:14px;width:10px;height:6px;border-left:2px solid var(--success);border-bottom:2px solid var(--success);transform:rotate(-45deg);}
+    .tier ul{padding:18px 24px}
+    .tier-foot{padding:18px 24px;background:var(--bg-deep);border-top:1px solid var(--border);font-size:0.82rem;color:var(--ink-muted);text-align:center}
+    .always-on{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:24px;margin-top:24px;}
+    .always-on h3{margin-bottom:12px;font-size:1rem;color:var(--accent)}
+    .always-on ul{display:grid;grid-template-columns:repeat(2,1fr);gap:6px 24px;list-style:none}
+    @media (max-width:680px){.always-on ul{grid-template-columns:1fr}}
+    .always-on li{position:relative;padding:4px 0 4px 22px;font-size:0.88rem;color:var(--ink-body)}
+    .always-on li::before{content:'';position:absolute;left:0;top:10px;width:8px;height:5px;border-left:2px solid var(--accent);border-bottom:2px solid var(--accent);transform:rotate(-45deg);}
+    .scope-grid{display:grid;grid-template-columns:1fr 1fr;gap:32px;align-items:start} @media (max-width:720px){.scope-grid{grid-template-columns:1fr}}
+    .scope-table{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:0;overflow:hidden;box-shadow:var(--shadow-sm);}
+    .scope-table table{width:100%;border-collapse:collapse;font-size:0.92rem}
+    .scope-table td{padding:12px 18px;border-bottom:1px solid var(--border)}
+    .scope-table tr:last-child td{border-bottom:none}
+    .scope-table td:first-child{color:var(--ink-muted);font-weight:500}
+    .scope-table td:last-child{color:var(--ink);font-weight:600;text-align:right;font-family:'Montserrat',sans-serif}
+    .notes-card{background:#fffbe9;border:1px solid #efd97a;border-radius:14px;padding:24px;margin-top:24px;}
+    .notes-card h4{font-size:0.95rem;margin-bottom:10px;color:var(--ink);text-transform:uppercase;letter-spacing:0.08em}
+    .notes-card ul{list-style:none;padding:0}
+    .notes-card li{padding:5px 0 5px 18px;position:relative;font-size:0.9rem;color:var(--ink-body)}
+    .notes-card li::before{content:'•';position:absolute;left:0;color:var(--bronze);font-weight:700}
+    .cta-card{background:linear-gradient(135deg,var(--accent) 0%,#2a4ca8 100%);border-radius:20px;padding:48px 32px;color:#fff;text-align:center;box-shadow:var(--shadow-lg);}
+    .cta-card h2{color:#fff;margin-bottom:14px} .cta-card p{color:rgba(255,255,255,0.92);margin-bottom:28px;font-size:1.05rem;max-width:560px;margin-left:auto;margin-right:auto}
+    .cta-row{display:flex;flex-wrap:wrap;justify-content:center;gap:14px}
+    .cta-btn{background:var(--accent-2);color:var(--ink);padding:14px 26px;border-radius:10px;font-weight:700;font-size:0.98rem;letter-spacing:0.02em;transition:transform 0.15s;text-decoration:none;display:inline-flex;align-items:center;gap:8px;}
+    .cta-btn:hover{transform:translateY(-2px)} .cta-btn.secondary{background:rgba(255,255,255,0.16);color:#fff;border:1px solid rgba(255,255,255,0.3)}
+    .foot{background:var(--ink);color:rgba(255,255,255,0.75);padding:32px 0;font-size:0.85rem;}
+    .foot-inner{display:flex;flex-wrap:wrap;justify-content:space-between;gap:20px;align-items:center} .foot a{color:var(--accent-2)}
+    @media print{.topbar,.cta-card{display:none !important} body{background:#fff} section{padding:24px 0;page-break-inside:avoid} .tier-grid{grid-template-columns:repeat(3,1fr) !important}}
+    } /* end @scope */
+  `;
+
+  const tierCards = tiers.map((t, i) => `
+    <article class="tier${i === featuredIdx ? ' featured' : ''}">
+      <div class="tier-head">
+        <div class="tier-name">${escapeHtml(t.name)}</div>
+        <div class="tier-system">${escapeHtml(t.subtitle || '')}</div>
+        <div class="tier-warranty">${escapeHtml(t.warrantyLabel || (t.warrantyYears + '-year warranty'))}</div>
+      </div>
+      <div class="tier-price-block">
+        <div class="tier-price">${money(t.total)}<small>HST included</small></div>
+      </div>
+      <ul>${(t.bullets || []).map(b => `<li>${escapeHtml(b)}</li>`).join('')}</ul>
+      <div class="tier-foot">${escapeHtml(t.bestFit || '')}</div>
+    </article>
+  `).join('');
+
+  const galleryCards = (m.gallery || []).map(g => `
+    <figure style="margin:0">
+      <div style="aspect-ratio:4/3;background:url('${g.img}') center/cover no-repeat;border-radius:14px;box-shadow:var(--shadow-sm)"></div>
+      <figcaption style="font-size:0.82rem;color:var(--ink-muted);margin-top:8px;text-align:center">${escapeHtml(g.caption)}</figcaption>
+    </figure>
+  `).join('');
+
+  const includedAll = (m.includedAll || []).map(s => `<li>${escapeHtml(s)}</li>`).join('');
+
+  const scopeRows = [
+    sqFt ? `<tr><td>Total roof area</td><td>~${Math.round(sqFt).toLocaleString('en-CA')} sq ft${sq ? ` (${sq} SQ)` : ''}</td></tr>` : '',
+    scope.pitch ? `<tr><td>Pitch</td><td>${escapeHtml(scope.pitch)}</td></tr>` : '',
+    scope.ridges ? `<tr><td>Ridge length</td><td>${scope.ridges} LF</td></tr>` : '',
+    scope.eaves ? `<tr><td>Eave length</td><td>${scope.eaves} LF</td></tr>` : '',
+    typeof scope.distanceKm === 'number' && scope.distanceKm > 0 ? `<tr><td>Distance from Moncton</td><td>${scope.distanceKm} km</td></tr>` : ''
+  ].filter(Boolean).join('');
+
+  const refId = DATA.refId || '—';
+  // Title only flips when metal is the *primary* paint. Toggle-driven flips don't retitle.
+  if ((DATA.scope || {}).system === 'metal') {
+    document.title = `Your Metal Roof Plan · Plus Ultra Roofing${addressLine ? ' · ' + addressLine : ''}`;
+  }
+
+  const metalHtml = `
+    <style>${css}</style>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand">
+          <img src="/brand/plus-ultra/logo.png" alt="Plus Ultra Roofing">
+          <div class="brand-text">PLUS ULTRA ROOFING<small>METAL SYSTEMS</small></div>
+        </div>
+        <div class="spacer"></div>
+        <div class="ref">REF <b>${escapeHtml(refId)}</b></div>
+      </div>
+    </header>
+
+    <section class="hero">
+      <div class="container">
+        <div class="hero-grid">
+          <div class="hero-text">
+            <div class="kicker">Custom Metal Roof Proposal</div>
+            <h1>Three ways to put a real metal roof on your home — built to outlive you.</h1>
+            <p class="hero-lead">Hi ${escapeHtml(firstName)} — here's the breakdown for your home${addressLine ? ' at ' + escapeHtml(addressLine) : ''}. We've put three options on the table. Each one is a complete, turn-key install with your roof handled start to finish by the Plus Ultra crew.</p>
+            ${addressLine ? `<div class="address">📍 ${escapeHtml(addressLine)}${sq ? ` · ~${Math.round(sqFt).toLocaleString('en-CA')} sq ft of roof` : ''}${scope.pitch ? ` · ${escapeHtml(scope.pitch)} pitch` : ''}</div>` : ''}
+          </div>
+          <div class="hero-photo" style="background-image:url('${cover}')"></div>
+        </div>
+      </div>
+    </section>
+
+    <section style="padding:36px 0;background:var(--bg-deep);border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
+      <div class="container">
+        <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;justify-content:center;text-align:left">
+          <img src="${repPhoto}" alt="${escapeHtml(repFirst)}" style="width:84px;height:84px;border-radius:50%;object-fit:cover;border:3px solid var(--accent-2);box-shadow:var(--shadow-sm)">
+          <div>
+            <div style="font-family:'Montserrat',sans-serif;font-weight:700;font-size:0.78rem;letter-spacing:0.14em;color:var(--ink-muted);text-transform:uppercase">Your Plus Ultra Consultant</div>
+            <div style="font-family:'Montserrat',sans-serif;font-weight:700;font-size:1.4rem;color:var(--ink);margin-top:2px">${escapeHtml(repFirst)}</div>
+            <div style="color:var(--ink-body);font-size:0.95rem;margin-top:4px">Walks you through your options, locks in your selection, and stays your point of contact through scheduling.</div>
+            <div style="margin-top:8px;font-size:0.92rem"><a href="tel:${repPhoneTel}" style="color:var(--accent);text-decoration:none;font-weight:600">${escapeHtml(repPhone)}</a> · <a href="mailto:${repEmail}" style="color:var(--accent);text-decoration:none;font-weight:600">${escapeHtml(repEmail)}</a></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec-alt">
+      <div class="container">
+        <div class="section-head">
+          <div class="kicker">What you're buying</div>
+          <h2>A roof system, not just panels.</h2>
+          <p>Every Plus Ultra metal install is one of our signature systems — full underlayment, full flashing, full crew documentation, and a real warranty you can call us on.</p>
+        </div>
+        <div class="intro-grid">
+          <div class="intro-card"><h3>Real warranty backing</h3><p>Manufacturer's panel warranty plus our own workmanship guarantee. No "we'll see" handshake jobs — both go in writing on the contract.</p></div>
+          <div class="intro-card"><h3>50–100+ install photos</h3><p>Every job documented in CompanyCam from tear-off through final flashing. You get the full album link when we're done.</p></div>
+          <div class="intro-card"><h3>Crew-installed, fully insured</h3><p>$2M liability insurance, harnessed daily, no day-labor sub-outs. Same crew start to finish.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="container">
+        <div class="section-head">
+          <div class="kicker">Your three options</div>
+          <h2>Pick the system that fits your home and your timeline.</h2>
+          <p>Prices include all materials, labor, mobilization, applicable taxes, and warranty registration.</p>
+        </div>
+        <div class="tier-grid">${tierCards}</div>
+        <div class="always-on">
+          <h3>Included on all three options</h3>
+          <ul>${includedAll}</ul>
+        </div>
+      </div>
+    </section>
+
+    ${scopeRows ? `
+    <section class="sec-alt">
+      <div class="container">
+        <div class="section-head"><div class="kicker">Job specifics</div><h2>What we measured.</h2></div>
+        <div class="scope-grid">
+          <div class="scope-table"><table>${scopeRows}</table></div>
+          <div class="notes-card">
+            <h4>Conditions and assumptions</h4>
+            <ul>
+              <li>Standard option assumes single-layer shingle, flat substrate, and sound decking. If we open it up and find a second layer or rotted decking, scope shifts to Enhanced or Premium.</li>
+              <li>Enhanced and Premium include full tear-off so any deck issues are caught and addressed during the job.</li>
+              <li>Mobilization and crew lodging are baked into the price shown — no surprise charges added at signing.</li>
+              <li>Final material colour is your call. We send you the Ameri-Cana / VicWest colour chart before order.</li>
+              <li>Any unforeseen deck rot beyond redeck spec is billed at $80/sheet OSB time-and-material with photo documentation before we replace.</li>
+              <li>Lead time from acceptance: typically 4–6 weeks for material delivery and scheduling.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>` : ''}
+
+    <div id="addonsWrapMetal"></div>
+
+    <section class="sec-alt">
+      <div class="container">
+        <div class="section-head">
+          <div class="kicker">Recent work</div>
+          <h2>This is what we ship.</h2>
+          <p>Real Plus Ultra crew, real homes across the Maritimes, fully documented from tear-off to final flashing.</p>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin-top:8px">${galleryCards}</div>
+      </div>
+    </section>
+
+    <section>
+      <div class="container">
+        <div class="cta-card">
+          <h2>Ready to lock one in?</h2>
+          <p>Reply to ${escapeHtml(repFirst)} directly — they'll confirm your option, send the contract and deposit invoice, and put your install on the schedule.</p>
+          <div class="cta-row">
+            <a class="cta-btn" href="sms:${repPhoneTel}">Text ${escapeHtml(repFirst)} · ${escapeHtml(repPhone)}</a>
+            <a class="cta-btn secondary" href="mailto:${repEmail}?subject=${encodeURIComponent('Metal Roof Proposal - Option Selected')}&body=${encodeURIComponent('Hi ' + repFirst + ', I\u2019d like to move forward with the ___ Installation option. Please send the contract and deposit invoice.')}">Email ${escapeHtml(repFirst)}</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="foot">
+      <div class="container foot-inner">
+        <div>Plus Ultra Roofing · Riverview, NB · <a href="tel:${repPhoneTel}">${escapeHtml(repPhone)}</a> · <a href="mailto:${repEmail}">${escapeHtml(repEmail)}</a></div>
+        <div>Quote valid 30 days from date of issue · Pricing subject to material market</div>
+      </div>
+    </footer>
+  `;
+
+  const mount = document.getElementById('rj-metal-body');
+  if (mount) mount.innerHTML = metalHtml;
+}
+
+/* ─────────────────────────────────────────────
+   SYSTEM TOGGLE — flips visibility between asphalt and metal bodies.
+   Both DOM trees are pre-rendered; we just hide/show. State persists in
+   sessionStorage so a back-nav from accept modal/PDF restores the user's
+   last view. Window.scrollTo(0,0) on flip so the customer lands at the
+   hero of the system they just switched to.
+───────────────────────────────────────────── */
+function switchSystem(sys){
+  if (sys !== 'asphalt' && sys !== 'metal') return;
+  const a = document.getElementById('rj-asphalt-body');
+  const m = document.getElementById('rj-metal-body');
+  const bA = document.getElementById('rj-toggle-asphalt');
+  const bM = document.getElementById('rj-toggle-metal');
+  if (!a || !m) return;
+  if (sys === 'metal') {
+    a.hidden = true; m.hidden = false;
+    if (bA) bA.classList.remove('active');
+    if (bM) bM.classList.add('active');
+  } else {
+    a.hidden = false; m.hidden = true;
+    if (bA) bA.classList.add('active');
+    if (bM) bM.classList.remove('active');
+  }
+  try { sessionStorage.setItem('rj-proposal-system', sys); } catch(e){}
+  try { logEvent('proposal_system_toggled', { to: sys }); } catch(e){}
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+window.switchSystem = switchSystem;
+
+/* ════════════════════════════════════════════════════════════════════════
+   ENVELOPE CONFIGURATOR — inline engine + render
+   Activates when DATA.envelope is present. Replaces the static tier-grid +
+   accept flow with a dynamic build-your-package configurator.
+   Engine logic mirrors lib/envelopeEngine.js (kept in sync).
+   ──────────────────────────────────────────────────────────────────────── */
+
+const envelopeState = {
+  system: null,    // 'asphalt' | 'metal'
+  roof: null,      // slug
+  roofPrep: { strap: false, redeck: false }, // optional roof additions
+  siding: 'none',  // slug or 'none'
+  trim: { gutters: false, soffit: false, fascia: false },
+  prevSavings: 0,
+  prevPackageName: null,
+  unlockedThresholds: new Set()
+};
+
+const ENV_DEFAULTS = {
+  bundle_multipliers: {
+    shell:       { score: 2,        mult: 1.47, name: 'Performance Shell' },
+    shell_plus:  { score: [3, 4],   mult: 1.52, name: 'Performance Shell Plus', popular: true },
+    shell_ultra: { score: [5, 6],   mult: 1.58, name: 'Performance Shell Plus Ultra' }
+  },
+  eve_protection_modifiers: { 1: 'Basic Eve Protection', 2: 'Eve Protection', 3: 'Ultra Eve Protection' },
+  cash_discount_tiers: [
+    { threshold: 50000,  pct: 3 },
+    { threshold: 75000,  pct: 5 },
+    { threshold: 100000, pct: 7 }
+  ],
+  standalone_mob_premium: 1200,
+  standalone_multiplier: 1.52
+};
+
+function envOpt(env) { return env || ENV_DEFAULTS; }
+
+function envGetRoofTier(env, system, slug) {
+  const key = system === 'asphalt' ? 'roof_asphalt' : 'roof_metal';
+  const tiers = env?.components?.[key]?.tiers || [];
+  return tiers.find(t => t.slug === slug) || null;
+}
+function envGetSidingTier(env, slug) {
+  const tiers = env?.components?.siding?.tiers || [];
+  return tiers.find(t => t.slug === slug) || null;
+}
+function envGetTrim(env, key) { return env?.components?.[`trim_${key}`] || null; }
+function envGetPrep(env, key) { return env?.components?.[`prep_${key}`] || null; }
+
+function envStandalone(env, hardCost) {
+  const e = envOpt(env);
+  const mob = env?.standalone_mob_premium ?? e.standalone_mob_premium ?? ENV_DEFAULTS.standalone_mob_premium;
+  const mult = env?.standalone_multiplier ?? e.standalone_multiplier ?? ENV_DEFAULTS.standalone_multiplier;
+  return Math.round((hardCost + mob) * mult);
+}
+
+function envResolveBundleTier(env, roofTier, sidingTier) {
+  if (!roofTier || !sidingTier || sidingTier.tier === 0) return null;
+  const score = (roofTier.tier || 0) + (sidingTier.tier || 0);
+  const tiers = env?.bundle_multipliers || ENV_DEFAULTS.bundle_multipliers;
+  for (const k of Object.keys(tiers)) {
+    const def = tiers[k];
+    const matches = Array.isArray(def.score) ? def.score.includes(score) : def.score === score;
+    if (matches) return { ...def, key: k, score };
+  }
+  return null;
+}
+
+function envResolveEveModifier(env, trimSel) {
+  const count = ['gutters','soffit','fascia'].filter(k => !!trimSel?.[k]).length;
+  if (count === 0) return null;
+  const map = env?.eve_protection_modifiers || ENV_DEFAULTS.eve_protection_modifiers;
+  return map[count] || map[String(count)] || null;
+}
+
+function envGetPackageName(env, sel) {
+  const sys = sel.system || env?.default_system || 'metal';
+  const roof = envGetRoofTier(env, sys, sel.roof);
+  const sid = envGetSidingTier(env, sel.siding);
+  const bundle = envResolveBundleTier(env, roof, sid);
+  const eve = envResolveEveModifier(env, sel.trim || {});
+  const body = bundle ? bundle.name : (roof ? (roof.label || 'Roof Package') : 'Build Your Package');
+  return eve ? `${body} + ${eve}` : body;
+}
+
+function envCompute(env, sel) {
+  if (!env) return null;
+  const sys = sel.system || env.default_system || 'metal';
+  const roof = envGetRoofTier(env, sys, sel.roof);
+  const sid = envGetSidingTier(env, sel.siding);
+  const bundleTier = envResolveBundleTier(env, roof, sid);
+  const trimItems = ['gutters','soffit','fascia']
+    .filter(k => !!sel.trim?.[k])
+    .map(k => ({ key: k, ...(envGetTrim(env, k) || {}) }))
+    .filter(t => t.hard != null);
+
+  // Optional roof preparation items (strap deck, full redeck). These add to
+  // the bundle hard cost on top of whichever roof tier the customer picked,
+  // but do not affect the Performance Shell tier score (they're prep work,
+  // not envelope choices).
+  const prepItems = ['strap','redeck']
+    .filter(k => !!sel.roofPrep?.[k])
+    .map(k => ({ key: k, ...(envGetPrep(env, k) || {}) }))
+    .filter(p => p.hard != null);
+
+  let bundle;
+  if (bundleTier) {
+    const wallHard = env?.components?.wall_assembly?.hard || 0;
+    const roofHard = roof?.hard || 0;
+    const sidHard = sid?.hard || 0;
+    const trimHard = trimItems.reduce((s,t)=>s+(t.hard||0),0);
+    const prepHard = prepItems.reduce((s,p)=>s+(p.hard||0),0);
+    const totalHard = roofHard + wallHard + sidHard + trimHard + prepHard;
+    const sellingPre = Math.round(totalHard * bundleTier.mult);
+    bundle = { mode: 'bundle', tier: bundleTier, totalHard, sellingPre,
+               breakdown: { roof, wall: { hard: wallHard }, siding: sid, trim: trimItems, prep: prepItems } };
+  } else {
+    const roofAlone = roof ? envStandalone(env, roof.hard||0) : 0;
+    const trimAlone = trimItems.reduce((s,t) => s + envStandalone(env, t.hard||0), 0);
+    const prepAlone = prepItems.reduce((s,p) => s + envStandalone(env, p.hard||0), 0);
+    const sellingPre = roofAlone + trimAlone + prepAlone;
+    bundle = { mode: 'standalone_roof', tier: null, totalHard: (roof?.hard||0) + trimItems.reduce((s,t)=>s+(t.hard||0),0) + prepItems.reduce((s,p)=>s+(p.hard||0),0), sellingPre,
+               breakdown: { roof, wall: null, siding: null, trim: trimItems, prep: prepItems } };
+  }
+
+  // Alone total (for "if bought separately" comparison)
+  let alonePre = 0;
+  if (roof) alonePre += envStandalone(env, roof.hard||0);
+  if (sid && sid.tier > 0) {
+    const wallHard = env?.components?.wall_assembly?.hard || 0;
+    alonePre += envStandalone(env, (sid.hard||0) + wallHard);
+  }
+  for (const t of trimItems) alonePre += envStandalone(env, t.hard||0);
+  for (const p of prepItems) alonePre += envStandalone(env, p.hard||0);
+
+  const savings = Math.max(0, alonePre - bundle.sellingPre);
+
+  // Cash discount
+  const cdTiers = env?.cash_discount_tiers || ENV_DEFAULTS.cash_discount_tiers;
+  const sortedDesc = [...cdTiers].sort((a,b) => b.threshold - a.threshold);
+  let cash = null;
+  for (const t of sortedDesc) {
+    if (bundle.sellingPre >= t.threshold) {
+      cash = { ...t, applies: true, dollars: Math.round(bundle.sellingPre * t.pct / 100) };
+      break;
+    }
+  }
+  if (!cash) {
+    const ascending = [...cdTiers].sort((a,b) => a.threshold - b.threshold);
+    const next = ascending.find(t => t.threshold > bundle.sellingPre);
+    if (next) cash = { ...next, applies: false, dollars: Math.round(next.threshold * next.pct / 100), distance: next.threshold - bundle.sellingPre };
+  }
+
+  const cashOff = (cash && cash.applies) ? cash.dollars : 0;
+  const finalSelling = bundle.sellingPre - cashOff;
+  return {
+    packageName: envGetPackageName(env, sel),
+    selections: sel,
+    bundle, alonePre,
+    aloneWithTax: Math.round(alonePre * 1.15),
+    savings,
+    savingsWithTax: Math.round(savings * 1.15),
+    cashDiscount: cash, cashOff,
+    finalSelling, finalWithTax: Math.round(finalSelling * 1.15)
+  };
+}
+
+/* ─── Envelope render functions ─── */
+
+function envRenderSystemToggle() {
+  const env = DATA.envelope;
+  if (!env) return;
+  const showSystems = env.show_systems || ['metal'];
+  const wrap = document.getElementById('envSystemToggle');
+  if (!wrap) return;
+  if (showSystems.length < 2) { wrap.hidden = true; return; }
+  wrap.hidden = false;
+  wrap.innerHTML = `
+    ${showSystems.includes('asphalt') ? `<button data-sys="asphalt"${envelopeState.system==='asphalt'?' class="active"':''}>🏠 Shingle Roof</button>` : ''}
+    ${showSystems.includes('metal') ? `<button data-sys="metal"${envelopeState.system==='metal'?' class="active"':''}>⚡ Metal Roof</button>` : ''}
+  `;
+  wrap.querySelectorAll('button').forEach(b => {
+    b.onclick = () => { envSwitchSystem(b.dataset.sys); };
+  });
+}
+
+function envSwitchSystem(sys) {
+  if (envelopeState.system === sys) return;
+  const env = DATA.envelope;
+  envelopeState.system = sys;
+  // Reset roof selection to popular tier or first available
+  const key = sys === 'asphalt' ? 'roof_asphalt' : 'roof_metal';
+  const tiers = env?.components?.[key]?.tiers || [];
+  const popular = tiers.find(t => t.popular) || tiers[1] || tiers[0];
+  envelopeState.roof = popular?.slug || null;
+  envRenderAll();
+  try { logEvent('envelope_system_toggled', { sys }); } catch(e){}
+}
+
+function envRenderRoofOptions() {
+  const env = DATA.envelope;
+  if (!env) return;
+  const sys = envelopeState.system;
+  const key = sys === 'asphalt' ? 'roof_asphalt' : 'roof_metal';
+  const tiers = env?.components?.[key]?.tiers || [];
+  const wrap = document.getElementById('envRoofOptions');
+  if (!wrap) return;
+  wrap.innerHTML = tiers.map(t => {
+    const on = t.slug === envelopeState.roof;
+    const sid = envGetSidingTier(env, envelopeState.siding);
+    const inBundle = sid && sid.tier > 0;
+    const aloneSelling = envStandalone(env, t.hard||0);
+    const bundleSelling = inBundle ? Math.round(((t.hard||0) + (env?.components?.wall_assembly?.hard||0) + (sid.hard||0)) * (envResolveBundleTier(env, t, sid)?.mult || 1.47)) : null;
+    const priceMain = inBundle && bundleSelling
+      ? `<div class="env-price-bundle">$${bundleSelling.toLocaleString()}</div><div class="env-price-alone">$${aloneSelling.toLocaleString()}</div><div class="env-price-save">in bundle</div>`
+      : `<div class="env-price-bundle">$${aloneSelling.toLocaleString()}</div><div class="env-price-alone" style="visibility:hidden">·</div><div class="env-price-save" style="opacity:0.5">standalone</div>`;
+    return `
+      <div class="env-option${on?' on':''}" onclick="envPickRoof('${t.slug}')">
+        <div class="env-radio"></div>
+        <div class="env-body">
+          <div class="env-label">${escapeHtml(t.label||t.slug)}${t.popular?' <span class="env-pop">Most Popular</span>':''}</div>
+          ${t.subtitle?`<div class="env-sub">${escapeHtml(t.subtitle)}</div>`:''}
+          ${t.warranty_label?`<div class="env-sub" style="color:rgba(253,204,2,0.7);font-size:0.78rem;margin-top:2px">${escapeHtml(t.warranty_label)}</div>`:''}
+        </div>
+        <div class="env-pricing">${priceMain}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function envRenderSidingOptions() {
+  const env = DATA.envelope;
+  if (!env) return;
+  const tiers = env?.components?.siding?.tiers || [];
+  const wrap = document.getElementById('envSidingOptions');
+  if (!wrap) return;
+  const roof = envGetRoofTier(env, envelopeState.system, envelopeState.roof);
+  wrap.innerHTML = tiers.map(t => {
+    const on = t.slug === envelopeState.siding;
+    const isSkip = t.tier === 0;
+    let priceLabel;
+    if (isSkip) {
+      priceLabel = `<div class="env-price-bundle" style="color:rgba(232,237,245,0.5);font-size:0.9rem">No siding</div>`;
+    } else {
+      const wallHard = env?.components?.wall_assembly?.hard || 0;
+      const aloneSelling = envStandalone(env, (t.hard||0) + wallHard);
+      const bundleSelling = roof ? Math.round(((roof.hard||0) + wallHard + (t.hard||0)) * (envResolveBundleTier(env, roof, t)?.mult || 1.47)) - Math.round(((roof.hard||0)) * (envResolveBundleTier(env, roof, t)?.mult || 1.47)) : null;
+      priceLabel = bundleSelling
+        ? `<div class="env-price-bundle">+$${bundleSelling.toLocaleString()}</div><div class="env-price-alone">$${aloneSelling.toLocaleString()}</div><div class="env-price-save">in bundle</div>`
+        : `<div class="env-price-bundle">+$${aloneSelling.toLocaleString()}</div><div class="env-price-alone" style="visibility:hidden">·</div><div class="env-price-save" style="opacity:0.5">standalone</div>`;
+    }
+    return `
+      <div class="env-option${on?' on':''}" onclick="envPickSiding('${t.slug}')">
+        <div class="env-radio"></div>
+        <div class="env-body">
+          <div class="env-label">${escapeHtml(t.label||t.slug)}${t.popular?' <span class="env-pop">Most Popular</span>':''}</div>
+          ${t.subtitle?`<div class="env-sub">${escapeHtml(t.subtitle)}</div>`:''}
+        </div>
+        <div class="env-pricing">${priceLabel}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function envRenderTrimToggles() {
+  const env = DATA.envelope;
+  if (!env) return;
+  const wrap = document.getElementById('envTrimToggles');
+  if (!wrap) return;
+  const items = [
+    { key: 'gutters', icon: '⛓' },
+    { key: 'soffit', icon: '⊓' },
+    { key: 'fascia', icon: '─' }
+  ];
+  wrap.innerHTML = items.map(({key, icon}) => {
+    const def = envGetTrim(env, key);
+    if (!def) return '';
+    const on = !!envelopeState.trim[key];
+    const aloneSelling = envStandalone(env, def.hard||0);
+    // Manus Round 2: trim price was rendering "+$1,000$3,344" with no
+    // separator. Stack the prices vertically with explicit labels so the
+    // bundle vs alone comparison is unambiguous.
+    return `
+      <div class="env-trim-tile${on?' on':''}" onclick="envToggleTrim('${key}')">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+          <div class="env-trim-check">${on?'✓':''}</div>
+          <div class="env-trim-price-stack">
+            <div class="env-trim-price">+$${(def.hard||0).toLocaleString()}<span class="ttp-sub">in bundle</span></div>
+            <div class="env-trim-price-alone">$${aloneSelling.toLocaleString()}<span class="ttp-sub">alone</span></div>
+          </div>
+        </div>
+        <div class="env-trim-label">${escapeHtml(def.label||key)}</div>
+        ${def.subtitle?`<div class="env-trim-sub">${escapeHtml(def.subtitle)}</div>`:''}
+      </div>
+    `;
+  }).join('');
+}
+
+// Roof Preparation toggles — strap deck + full OSB redeck. Mirrors the trim
+// toggle pattern but applied to roof prep work. These add to bundle hard
+// cost without triggering Performance Shell tier changes.
+function envRenderRoofPrep() {
+  const env = DATA.envelope;
+  if (!env) return;
+  const wrap = document.getElementById('envRoofPrepToggles');
+  if (!wrap) return;
+  const items = [
+    { key: 'strap',  icon: '═' },
+    { key: 'redeck', icon: '▦' }
+  ];
+  wrap.innerHTML = items.map(({key, icon}) => {
+    const def = envGetPrep(env, key);
+    if (!def) return '';
+    const on = !!envelopeState.roofPrep[key];
+    const aloneSelling = envStandalone(env, def.hard||0);
+    return `
+      <div class="env-trim-tile${on?' on':''}" onclick="envToggleRoofPrep('${key}')">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+          <div class="env-trim-check">${on?'✓':''}</div>
+          <div class="env-trim-price-stack">
+            <div class="env-trim-price">+$${(def.hard||0).toLocaleString()}<span class="ttp-sub">in bundle</span></div>
+            <div class="env-trim-price-alone">$${aloneSelling.toLocaleString()}<span class="ttp-sub">alone</span></div>
+          </div>
+        </div>
+        <div class="env-trim-label">${escapeHtml(def.label||key)}</div>
+        ${def.subtitle?`<div class="env-trim-sub">${escapeHtml(def.subtitle)}</div>`:''}
+      </div>
+    `;
+  }).join('');
+}
+
+function envRenderSelections(result) {
+  const wrap = document.getElementById('envSelections');
+  if (!wrap || !result) return;
+  const env = DATA.envelope;
+  const sel = result.selections;
+  const rows = [];
+  const roof = envGetRoofTier(env, sel.system, sel.roof);
+  if (roof) rows.push({ lbl: 'Roof', val: roof.label });
+  ['strap','redeck'].forEach(k => {
+    if (sel.roofPrep?.[k]) {
+      const def = envGetPrep(env, k);
+      if (def) rows.push({ lbl: 'Roof Prep', val: def.label });
+    }
+  });
+  const sid = envGetSidingTier(env, sel.siding);
+  if (sid && sid.tier > 0) {
+    rows.push({ lbl: 'Wall System', val: 'OSB + Foam + VentiGrid' });
+    rows.push({ lbl: 'Siding', val: sid.label });
+  }
+  ['gutters','soffit','fascia'].forEach(k => {
+    if (sel.trim?.[k]) {
+      const def = envGetTrim(env, k);
+      if (def) rows.push({ lbl: 'Trim', val: def.label });
+    }
+  });
+  if (rows.length === 0) {
+    wrap.innerHTML = `<div class="sel-row" style="color:rgba(232,237,245,0.4);font-style:italic;justify-content:center">— start by picking a roof —</div>`;
+    return;
+  }
+  wrap.innerHTML = rows.map(r => `
+    <div class="sel-row"><span class="sel-label">${escapeHtml(r.lbl)}</span><span class="sel-val">${escapeHtml(r.val)}</span></div>
+  `).join('');
+}
+
+function envRenderSummary(result) {
+  if (!result) return;
+  // Package name (with morph animation if changed)
+  const nameEl = document.getElementById('envPackageName');
+  if (nameEl) {
+    if (envelopeState.prevPackageName !== result.packageName) {
+      nameEl.classList.remove('morph');
+      void nameEl.offsetWidth; // force reflow
+      nameEl.classList.add('morph');
+      envelopeState.prevPackageName = result.packageName;
+    }
+    nameEl.textContent = result.packageName;
+  }
+  // Alone price
+  const aloneEl = document.getElementById('envAlonePrice');
+  if (aloneEl) aloneEl.textContent = '$' + (result.alonePre || 0).toLocaleString();
+  // Savings (with bump animation if increased)
+  const savEl = document.getElementById('envSavings');
+  const savRow = document.getElementById('envSavingsRow');
+  if (savEl) {
+    const newSav = result.savings || 0;
+    if (newSav > envelopeState.prevSavings && savRow) {
+      savRow.classList.remove('flash'); void savRow.offsetWidth;
+      savRow.classList.add('flash');
+    }
+    envelopeState.prevSavings = newSav;
+    savEl.textContent = '$' + newSav.toLocaleString();
+  }
+  // Investment + finance
+  const invEl = document.getElementById('envInvestment');
+  if (invEl) invEl.textContent = '$' + (result.finalSelling || 0).toLocaleString();
+  const finEl = document.getElementById('envFinance');
+  if (finEl) {
+    const monthly = financeItMonthly ? financeItMonthly(result.finalSelling || 0, 120) : 0;
+    finEl.textContent = result.finalSelling > 0 ? `Or $${Math.round(monthly).toLocaleString()}/mo · FinanceIt 10-yr` : '— select a roof to see your monthly';
+  }
+  // Cash discount meter
+  const meterEl = document.getElementById('envCashMeter');
+  const fillEl = document.getElementById('envCashFill');
+  const statusEl = document.getElementById('envCashStatus');
+  const cd = result.cashDiscount;
+  if (meterEl && fillEl && statusEl) {
+    if (cd && cd.applies) {
+      meterEl.classList.add('unlocked');
+      fillEl.style.width = '100%';
+      // Manus Round 2 caught a copy mismatch: threshold is on bundle price
+      // (pre-discount) but the customer also sees "Your Investment" already
+      // discount-applied. Spell out the basis so $49,928 final + $51,680
+      // bundle price + active 3% savings makes sense at a glance.
+      statusEl.innerHTML = `<span class="applied">Pay in full and save an additional <b>$${cd.dollars.toLocaleString()}</b> (${cd.pct}%). Threshold is bundle price ($${result.bundle.sellingPre.toLocaleString()}), not final investment.</span>`;
+      const tKey = `cd-${cd.threshold}`;
+      if (!envelopeState.unlockedThresholds.has(tKey)) {
+        envelopeState.unlockedThresholds.add(tKey);
+        envFireConfetti();
+      }
+    } else if (cd) {
+      meterEl.classList.remove('unlocked');
+      const pct = Math.min(100, Math.round((result.bundle.sellingPre / cd.threshold) * 100));
+      fillEl.style.width = pct + '%';
+      statusEl.innerHTML = `Pay-in-full savings of <b>$${cd.dollars.toLocaleString()}</b> (${cd.pct}%) apply when bundle price reaches $${cd.threshold.toLocaleString()}+. Your bundle is currently <b>$${(cd.distance || 0).toLocaleString()}</b> below.`;
+    } else {
+      meterEl.classList.remove('unlocked');
+      fillEl.style.width = '0%';
+      statusEl.textContent = 'Pay-in-full savings apply at $50K+, $75K+, and $100K+ bundle prices.';
+    }
+  }
+}
+
+function envFireConfetti() {
+  const colors = ['#fdcc02', '#7ee787', '#22d3ee', '#f5a623', '#fff'];
+  const burst = document.createElement('div');
+  burst.className = 'env-confetti-burst';
+  const rail = document.querySelector('.env-summary');
+  if (!rail) return;
+  const rect = rail.getBoundingClientRect();
+  burst.style.left = (rect.left + rect.width/2 - 80) + 'px';
+  burst.style.top = (rect.top + 80) + 'px';
+  burst.style.position = 'fixed';
+  for (let i = 0; i < 24; i++) {
+    const c = document.createElement('span');
+    c.style.background = colors[i % colors.length];
+    c.style.left = (60 + (Math.random()-0.5) * 80) + 'px';
+    c.style.top = (40 + Math.random() * 30) + 'px';
+    c.style.animationDelay = (Math.random() * 0.2) + 's';
+    burst.appendChild(c);
+  }
+  document.body.appendChild(burst);
+  setTimeout(() => burst.remove(), 1500);
+}
+
+function envFireTicker(label, delta) {
+  if (!delta || delta === 0) return;
+  const wrap = document.getElementById('envTicker');
+  if (!wrap) return;
+  const item = document.createElement('div');
+  item.className = 'env-ticker-item';
+  const sign = delta > 0 ? '+' : '−';
+  item.innerHTML = `<div class="ti-label">${escapeHtml(label)}</div><div class="ti-amount">${sign}$${Math.abs(delta).toLocaleString()} ${delta > 0 ? 'added to your savings' : 'removed from savings'}</div>`;
+  wrap.appendChild(item);
+  setTimeout(() => item.remove(), 3200);
+}
+
+function envRenderAll() {
+  if (!DATA.envelope) return;
+  const result = envCompute(DATA.envelope, {
+    system: envelopeState.system,
+    roof: envelopeState.roof,
+    roofPrep: { ...envelopeState.roofPrep },
+    siding: envelopeState.siding,
+    trim: { ...envelopeState.trim }
+  });
+  envRenderSystemToggle();
+  envRenderRoofOptions();
+  envRenderRoofPrep();
+  envRenderSidingOptions();
+  envRenderTrimToggles();
+  envRenderSelections(result);
+  envRenderSummary(result);
+  envRenderPreview(result);
+  // Stash for accept flow
+  envelopeState.lastResult = result;
+}
+
+function envPickRoof(slug) {
+  const prev = envelopeState.lastResult;
+  envelopeState.roof = slug;
+  envRenderAll();
+  const cur = envelopeState.lastResult;
+  if (prev && cur) {
+    const env = DATA.envelope;
+    const tier = envGetRoofTier(env, envelopeState.system, slug);
+    envFireTicker(`Roof: ${tier?.label || slug}`, (cur.savings || 0) - (prev.savings || 0));
+  }
+  try { logEvent('envelope_roof_picked', { slug }); } catch(e){}
+}
+window.envPickRoof = envPickRoof;
+
+function envPickSiding(slug) {
+  const prev = envelopeState.lastResult;
+  envelopeState.siding = slug;
+  envRenderAll();
+  const cur = envelopeState.lastResult;
+  if (prev && cur && slug !== 'none') {
+    const tier = envGetSidingTier(DATA.envelope, slug);
+    envFireTicker(`Siding: ${tier?.label || slug}`, (cur.savings || 0) - (prev.savings || 0));
+  }
+  try { logEvent('envelope_siding_picked', { slug }); } catch(e){}
+}
+window.envPickSiding = envPickSiding;
+
+function envToggleTrim(key) {
+  const prev = envelopeState.lastResult;
+  envelopeState.trim[key] = !envelopeState.trim[key];
+  envRenderAll();
+  const cur = envelopeState.lastResult;
+  if (prev && cur) {
+    const def = envGetTrim(DATA.envelope, key);
+    envFireTicker(`${envelopeState.trim[key] ? '+ ' : '− '}${def?.label || key}`, (cur.savings || 0) - (prev.savings || 0));
+  }
+  try { logEvent('envelope_trim_toggled', { key, on: envelopeState.trim[key] }); } catch(e){}
+}
+window.envToggleTrim = envToggleTrim;
+
+function envToggleRoofPrep(key) {
+  const prev = envelopeState.lastResult;
+  envelopeState.roofPrep[key] = !envelopeState.roofPrep[key];
+  envRenderAll();
+  const cur = envelopeState.lastResult;
+  if (prev && cur) {
+    const def = envGetPrep(DATA.envelope, key);
+    envFireTicker(`${envelopeState.roofPrep[key] ? '+ ' : '− '}${def?.label || key}`, (cur.savings || 0) - (prev.savings || 0));
+  }
+  try { logEvent('envelope_roof_prep_toggled', { key, on: envelopeState.roofPrep[key] }); } catch(e){}
+}
+window.envToggleRoofPrep = envToggleRoofPrep;
+
+function envInit() {
+  if (!DATA?.envelope) return false;
+  document.body.classList.add('envelope-active');
+  document.getElementById('envelopeSection').hidden = false;
+  // Set initial system + roof from envelope.default_system + popular tier
+  const env = DATA.envelope;
+  envelopeState.system = env.default_system || (env.show_systems?.[0]) || 'metal';
+  const key = envelopeState.system === 'asphalt' ? 'roof_asphalt' : 'roof_metal';
+  const tiers = env?.components?.[key]?.tiers || [];
+  const popular = tiers.find(t => t.popular) || tiers[1] || tiers[0];
+  envelopeState.roof = popular?.slug || null;
+  envelopeState.siding = 'none';
+  envelopeState.trim = { gutters: false, soffit: false, fascia: false };
+
+  // PDF mode: if ?envelope=<base64> is on the URL, decode the customer's
+  // selections so the PDF renders frozen at exactly what they configured.
+  try {
+    const qsEnv = new URLSearchParams(location.search).get('envelope');
+    if (qsEnv) {
+      const decoded = JSON.parse(atob(qsEnv));
+      if (decoded.system) envelopeState.system = decoded.system;
+      if (decoded.roof) envelopeState.roof = decoded.roof;
+      if (decoded.roofPrep && typeof decoded.roofPrep === 'object') envelopeState.roofPrep = { ...envelopeState.roofPrep, ...decoded.roofPrep };
+      if (decoded.siding) envelopeState.siding = decoded.siding;
+      if (decoded.trim && typeof decoded.trim === 'object') envelopeState.trim = { ...envelopeState.trim, ...decoded.trim };
+    }
+  } catch (e) { /* ignore malformed param */ }
+
+  // Hero — cover photo + customer name + address.
+  // Wire onload + onerror so the .loaded class fires and the fade-in cue
+  // actually shows up. Without this the image renders as a black rectangle
+  // while loading on slow connections (Manus caught this on mobile capture).
+  const heroEl = document.getElementById('envHero');
+  const heroImg = document.getElementById('envHeroImg');
+  const heroTitle = document.getElementById('envHeroTitle');
+  const heroAddr = document.getElementById('envHeroAddress');
+  const heroEyebrow = document.getElementById('envHeroEyebrow');
+  if (env.media?.cover && heroImg && heroEl) {
+    heroImg.classList.remove('loaded');
+    heroImg.onload = () => heroImg.classList.add('loaded');
+    heroImg.onerror = () => { heroImg.classList.add('loaded'); /* fail-open so block doesn't stay black */ };
+    heroImg.src = env.media.cover;
+    if (heroImg.complete) heroImg.classList.add('loaded'); // already cached
+    if (heroTitle) heroTitle.textContent = DATA.customer?.name || 'Your Proposal';
+    if (heroAddr) heroAddr.textContent = DATA.customer?.address || '';
+    if (heroEyebrow) heroEyebrow.textContent = DATA.rep?.name ? `Prepared by ${DATA.rep.name} · Plus Ultra Roofing` : 'A proposal for';
+    heroEl.hidden = false;
+  }
+
+  // Diagram cards — primary clean visual (complete_system) + detailed
+  // callout-heavy diagram below at larger size (envelope_diagram). Both
+  // hide by default and reveal only after their image loads to avoid the
+  // "blank dark panel" Manus caught earlier.
+  const wireDiagram = (cardId, imgId, url) => {
+    const card = document.getElementById(cardId);
+    const img = document.getElementById(imgId);
+    if (!card || !img || !url) return;
+    card.hidden = true;
+    let revealed = false;
+    const reveal = () => { if (revealed) return; revealed = true; card.hidden = false; };
+    img.onload = reveal;
+    img.onerror = () => { /* leave hidden */ };
+    img.src = url;
+    if (img.complete && img.naturalWidth > 0) reveal();
+    setTimeout(() => {
+      if (!revealed && img.complete && img.naturalWidth > 0) reveal();
+    }, 8000);
+  };
+  // Primary: cleaner envelope visual
+  wireDiagram('envSystemCard', 'envSystemImg', env.media?.complete_system || env.media?.envelope_diagram);
+  // Secondary: detailed callout diagram (larger so writing is readable)
+  if (env.media?.envelope_diagram && env.media?.complete_system) {
+    wireDiagram('envDiagramCard', 'envDiagramImg', env.media.envelope_diagram);
+  }
+
+  envRenderAll();
+  try { logEvent('envelope_opened', { system: envelopeState.system }); } catch(e){}
+  return true;
+}
+
+// Pick the right preview image for the customer's current selections.
+// The renders Mac built map roughly to:
+//   cover           = current state of the home
+//   after_metal     = metal roof, original siding
+//   after_gutters   = metal roof + new gutters (essentially the same image)
+//   after_shingle   = asphalt shingle, original siding
+//   complete_system = full envelope w/ Gen-Tec lap siding (mid-tier siding)
+//   cedar_shake     = full envelope w/ WoodShade Cedar Shake (designer siding)
+function envPickPreviewImage(env, sel) {
+  const m = env?.media || {};
+  const sid = envGetSidingTier(env, sel.siding);
+  const hasSiding = sid && sid.tier > 0;
+  // Designer siding picked → cedar shake render
+  if (hasSiding && sid.slug === 'cedar-shake' && m.cedar_shake) {
+    return { url: m.cedar_shake, caption: 'Your home with the Cedar Shake (Designer) Performance Shell' };
+  }
+  // Any other siding picked → complete system render (Gen-Tec lap)
+  if (hasSiding && m.complete_system) {
+    return { url: m.complete_system, caption: 'Your home with the full Performance Shell — siding, foam, VentiGrid, gutters, fascia, soffit' };
+  }
+  // Metal roof, no siding → metal roof render
+  if (sel.system === 'metal' && (sel.trim?.gutters && m.after_gutters)) {
+    return { url: m.after_gutters, caption: 'Metal roof + new gutters on your home' };
+  }
+  if (sel.system === 'metal' && m.after_metal) {
+    return { url: m.after_metal, caption: 'Metal roof on your home' };
+  }
+  // Asphalt shingle render
+  if (sel.system === 'asphalt' && m.after_shingle) {
+    return { url: m.after_shingle, caption: 'New asphalt shingle roof on your home' };
+  }
+  // Fallback to cover
+  if (m.cover) return { url: m.cover, caption: 'Your home today' };
+  return null;
+}
+
+function envRenderPreview(result) {
+  const wrap = document.getElementById('envPreview');
+  const img = document.getElementById('envPreviewImg');
+  const cap = document.getElementById('envPreviewCaption');
+  if (!wrap || !img) return;
+  const env = DATA.envelope;
+  const pick = envPickPreviewImage(env, result.selections);
+  if (!pick) { wrap.hidden = true; return; }
+  // Only swap if the image URL actually changed. Avoid re-fading on every render.
+  if (img.dataset.currentSrc !== pick.url) {
+    img.classList.remove('loaded');
+    img.onload = () => img.classList.add('loaded');
+    img.onerror = () => img.classList.add('loaded');
+    img.src = pick.url;
+    img.dataset.currentSrc = pick.url;
+    if (img.complete) img.classList.add('loaded');
+  }
+  if (cap) cap.textContent = pick.caption;
+  wrap.hidden = false;
+}
+
+/* Browser fullscreen toggle — requests/exits the Fullscreen API. Icon in
+   the top-right corner swaps between expand/collapse based on current state. */
+function envToggleFullscreen() {
+  const root = document.documentElement;
+  if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+    (root.requestFullscreen || root.webkitRequestFullscreen || (() => {})).call(root);
+  } else {
+    (document.exitFullscreen || document.webkitExitFullscreen || (() => {})).call(document);
+  }
+}
+window.envToggleFullscreen = envToggleFullscreen;
+document.addEventListener('fullscreenchange', () => {
+  const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  const enter = document.getElementById('envFsIconEnter');
+  const exit = document.getElementById('envFsIconExit');
+  if (enter && exit) {
+    enter.style.display = isFs ? 'none' : '';
+    exit.style.display = isFs ? '' : 'none';
+  }
+});
+
+/* PDF + Accept stubs (Phase 4-5) — wire to existing endpoints, encode envelope state */
+function exportEnvelopePdf() {
+  const params = new URLSearchParams(location.search);
+  const share = params.get('share');
+  if (!share) { window.print(); return; }
+  // Encode current selections so the PDF mirrors what the customer sees
+  const cfg = btoa(JSON.stringify({
+    system: envelopeState.system,
+    roof: envelopeState.roof,
+    roofPrep: envelopeState.roofPrep,
+    siding: envelopeState.siding,
+    trim: envelopeState.trim
+  }));
+  const customer = (DATA?.customer?.name || 'proposal').replace(/[^\w\-]+/g, '_').slice(0, 40);
+  const url = `/api/proposal-pdf?share=${encodeURIComponent(share)}&envelope=${encodeURIComponent(cfg)}&download=PU-${customer}.pdf`;
+  const btn = document.getElementById('envPdfBtn');
+  if (btn) {
+    const orig = btn.innerHTML;
+    btn.innerHTML = 'Preparing PDF…';
+    btn.disabled = true;
+    setTimeout(() => { btn.innerHTML = orig; btn.disabled = false; }, 10000);
+  }
+  window.open(url, '_blank', 'noopener');
+  try { logEvent('envelope_pdf_exported', { selections: envelopeState }); } catch(e){}
+}
+window.exportEnvelopePdf = exportEnvelopePdf;
+
+/* ─── Envelope Signature Modal ─── */
+
+let envSigCtx = null;
+let envSigDirty = false;
+
+function envSigInit() {
+  const canvas = document.getElementById('envSigCanvas');
+  const wrap = document.getElementById('envSigWrap');
+  if (!canvas || !wrap || envSigCtx) return;
+  envSigCtx = canvas.getContext('2d');
+  function resize() {
+    const r = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = r.width * dpr;
+    canvas.height = r.height * dpr;
+    envSigCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    envSigCtx.strokeStyle = '#0b1220';
+    envSigCtx.lineWidth = 2;
+    envSigCtx.lineCap = 'round';
+    envSigCtx.lineJoin = 'round';
+  }
+  resize();
+  window.addEventListener('resize', resize);
+  let drawing = false, lastX = 0, lastY = 0;
+  function pos(e) {
+    const r = canvas.getBoundingClientRect();
+    const x = (e.touches ? e.touches[0].clientX : e.clientX) - r.left;
+    const y = (e.touches ? e.touches[0].clientY : e.clientY) - r.top;
+    return { x, y };
+  }
+  function down(e) {
+    drawing = true; envSigDirty = true;
+    wrap.classList.add('active', 'signed');
+    const p = pos(e); lastX = p.x; lastY = p.y;
+    e.preventDefault();
+    envSigCheckEnable();
+  }
+  function move(e) {
+    if (!drawing) return;
+    const p = pos(e);
+    envSigCtx.beginPath();
+    envSigCtx.moveTo(lastX, lastY);
+    envSigCtx.lineTo(p.x, p.y);
+    envSigCtx.stroke();
+    lastX = p.x; lastY = p.y;
+    e.preventDefault();
+  }
+  function up() { drawing = false; }
+  canvas.addEventListener('mousedown', down);
+  canvas.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', up);
+  canvas.addEventListener('touchstart', down, { passive: false });
+  canvas.addEventListener('touchmove', move, { passive: false });
+  window.addEventListener('touchend', up);
+  // Name input gating
+  document.getElementById('envSigName').addEventListener('input', envSigCheckEnable);
+}
+
+function envSigCheckEnable() {
+  const name = document.getElementById('envSigName').value.trim();
+  const btn = document.getElementById('envSigConfirm');
+  btn.disabled = !(envSigDirty && name.length >= 3);
+}
+
+function envSigClear() {
+  const canvas = document.getElementById('envSigCanvas');
+  const wrap = document.getElementById('envSigWrap');
+  if (envSigCtx && canvas) {
+    envSigCtx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+  envSigDirty = false;
+  wrap.classList.remove('active', 'signed');
+  envSigCheckEnable();
+}
+window.envSigClear = envSigClear;
+
+function envSigCancel() {
+  document.getElementById('envSigModal').classList.remove('on');
+}
+window.envSigCancel = envSigCancel;
+
+function envSigConfirm() {
+  const result = envelopeState.lastResult;
+  if (!result) return;
+  const canvas = document.getElementById('envSigCanvas');
+  const sigDataUrl = canvas.toDataURL('image/png');
+  const name = document.getElementById('envSigName').value.trim();
+  // Pass the typed name into the customer so the audit trail captures it
+  if (name && DATA.customer) DATA.customer.name = name;
+  document.getElementById('envSigModal').classList.remove('on');
+  envelopeAcceptSubmit(result, sigDataUrl);
+  // Show success modal
+  document.getElementById('envDonePkg').textContent = result.packageName;
+  document.getElementById('envDoneRepMsg').textContent = (DATA.rep?.name ? DATA.rep.name.split(' ')[0] : 'Your rep') + ' will reach out within 24 hours to confirm details and send your deposit invoice.';
+  document.getElementById('envDoneModal').classList.add('on');
+  setTimeout(() => { document.getElementById('envDoneModal').classList.remove('on'); }, 6000);
+}
+window.envSigConfirm = envSigConfirm;
+
+function acceptEnvelope() {
+  const result = envelopeState.lastResult;
+  if (!result || !result.bundle?.sellingPre) {
+    alert('Please select a roof first.');
+    return;
+  }
+  envSigInit();
+  envSigClear();
+  document.getElementById('envSigName').value = DATA?.customer?.name || '';
+  document.getElementById('envSigPkg').textContent = result.packageName;
+  document.getElementById('envSigAmt').innerHTML = '$' + (result.finalWithTax || 0).toLocaleString() + '<small>HST INCLUDED</small>';
+  document.getElementById('envSigModal').classList.add('on');
+  setTimeout(envSigCheckEnable, 50);
+}
+window.acceptEnvelope = acceptEnvelope;
+
+function envelopeAcceptSubmit(result, signatureDataUrl) {
+  const payload = {
+    refId: DATA.refId, estimateId: DATA.estimateId, shareToken: DATA.shareToken,
+    customer: DATA.customer, rep: DATA.rep,
+    tier: { id: result.bundle?.tier?.key || result.selections.roof, name: result.packageName, total: result.finalSelling, totalWithTax: result.finalWithTax },
+    envelope: {
+      packageName: result.packageName,
+      selections: result.selections,
+      bundle: { sellingPre: result.bundle.sellingPre, totalHard: result.bundle.totalHard, mode: result.bundle.mode, tierKey: result.bundle?.tier?.key || null },
+      alonePre: result.alonePre, savings: result.savings,
+      cashDiscount: result.cashDiscount, cashOff: result.cashOff,
+      finalSelling: result.finalSelling, finalWithTax: result.finalWithTax
+    },
+    financing: null,
+    signature: signatureDataUrl,
+    acceptedAt: new Date().toISOString()
+  };
+  fetch('/api/proposal-accept', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).catch(() => {});
+  logEvent('envelope_accepted', { selling: result.finalSelling });
+  const btn = document.getElementById('envAcceptBtn');
+  if (btn) { btn.classList.add('done'); btn.disabled = true; btn.innerHTML = '✓ ACCEPTED'; }
+}
+
+/* ─────────────────────────────────────────────
    BOOT
 ───────────────────────────────────────────── */
 (async function boot(){
   DATA = await loadData();
-  // Coerce demo-shape data from server if needed
-  if (!DATA.tiers && DEMO.tiers) DATA.tiers = DEMO.tiers;
-  if (!DATA.media) DATA.media = DEMO.media;
-  if (!DATA.scope) DATA.scope = DEMO.scope;
-  if (!DATA.rep) DATA.rep = DEMO.rep;
 
-  renderHero();
-  renderIntro();
-  renderWhy();
-  renderVideo();
-  renderBeforeAfter();
-  renderGallery();
-  renderTiers();
-  renderScope();
-  renderAccept();
-  renderReviewsHead();
-  renderReviews();
-  initBeforeAfter();
-  initFinTerms();
-  initSignature();
-  logEvent('proposal_opened', {});
+  // ── Envelope mode short-circuit ──
+  // If the estimate carries an envelope payload, the proposal switches into
+  // configurator mode: static tier-grid + accept sections collapse, and the
+  // envelope section takes over. Hero/intro/why/video/before-after/gallery/
+  // reviews/transparency still render so the proposal feels complete.
+  const envelopeMode = !!(DATA?.envelope && DATA.envelope.components);
+
+  // What's actually quoted on this estimate? Both server and DEMO use the
+  // {asphalt:[], metal:[]} object shape; renderTiers() looks up via state.system.
+  const asphaltTierList = Array.isArray(DATA?.tiers?.asphalt) ? DATA.tiers.asphalt : null;
+  const hasAsphalt = !!(asphaltTierList && asphaltTierList.length);
+  const hasMetal   = !!(DATA?.metal && Array.isArray(DATA.metal.tiers) && DATA.metal.tiers.length);
+  const showToggle = !envelopeMode && (!!DATA?.hasBothSystems || (hasAsphalt && hasMetal));
+  const primary    = (DATA?.scope?.system === 'metal' && hasMetal) ? 'metal' : (hasAsphalt ? 'asphalt' : (hasMetal ? 'metal' : 'asphalt'));
+
+  // Render asphalt body if asphalt tiers exist. Render functions populate
+  // id-anchored placeholders that are already in the DOM under #rj-asphalt-body.
+  // Body starts hidden by default (anti-FOUC); reveal explicitly if asphalt mode wins.
+  if (hasAsphalt && !envelopeMode) {
+    const ab = document.getElementById('rj-asphalt-body');
+    if (ab) ab.hidden = false;
+    if (!DATA.media) DATA.media = DEMO.media;
+    if (!DATA.scope) DATA.scope = DEMO.scope;
+    if (!DATA.rep)   DATA.rep   = DEMO.rep;
+
+    renderHero();
+    renderIntro();
+    renderWhy();
+    renderVideo();
+    renderBeforeAfter();
+    renderGallery();
+    renderTiers();
+    renderScope();
+    renderAddons();
+    renderAccept();
+    renderReviewsHead();
+    renderReviews();
+    initBeforeAfter();
+    initFinTerms();
+    initSignature();
+  } else {
+    // No asphalt tiers — collapse the asphalt body so toggle math is clean.
+    const ab = document.getElementById('rj-asphalt-body');
+    if (ab) ab.hidden = true;
+  }
+
+  // Render metal body (mounts into #rj-metal-body, doesn't touch document.body).
+  if (hasMetal && !envelopeMode) {
+    renderMetal();
+    // Mount addons section into the metal body too. Asphalt path also calls
+    // renderAddons inline above; calling again here is idempotent and
+    // ensures the metal mount picks up initial state.
+    renderAddons();
+  }
+
+  // Envelope configurator takes over when active — collapse legacy bodies,
+  // surface the new section, init state.
+  if (envelopeMode) {
+    const ab = document.getElementById('rj-asphalt-body');
+    const mb = document.getElementById('rj-metal-body');
+    if (ab) ab.hidden = true;
+    if (mb) mb.hidden = true;
+    envInit();
+    document.body.classList.add('app-ready');
+    setTimeout(() => { const ls = document.getElementById('appLoadingScreen'); if (ls) ls.remove(); }, 400);
+    logEvent('proposal_opened', { mode: 'envelope', system: envelopeState.system });
+    return;
+  }
+
+  // Wire the system toggle bar — only surface when both systems are quoted.
+  if (showToggle) {
+    const bar = document.getElementById('rj-system-toggle');
+    if (bar) bar.classList.add('on');
+  }
+
+  // Decide initial visibility. Honor sessionStorage if user has flipped before
+  // (back-nav from accept/PDF should restore the view they last had).
+  let initial = primary;
+  try {
+    const stored = sessionStorage.getItem('rj-proposal-system');
+    if (stored === 'asphalt' && hasAsphalt) initial = 'asphalt';
+    if (stored === 'metal' && hasMetal) initial = 'metal';
+  } catch(e){}
+  switchSystem(initial);
+
+  document.body.classList.add('app-ready');
+  setTimeout(() => { const ls = document.getElementById('appLoadingScreen'); if (ls) ls.remove(); }, 400);
+
+  logEvent('proposal_opened', { system: initial, both: showToggle });
 })();
 </script>
 </body>

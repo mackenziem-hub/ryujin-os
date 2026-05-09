@@ -4,7 +4,9 @@
 //   GET  /api/sub-portal?action=photos&wo_id=X&token=Y      — photos for the linked estimate
 //   GET  /api/sub-portal?action=materials&wo_id=X&token=Y   — materials list (from calculated_packages)
 //   GET  /api/sub-portal?action=schedule&wo_id=X&token=Y    — start date, address, GPS, AJ contact
+//   GET  /api/sub-portal?action=scope&wo_id=X&token=Y       — scope_items + checklist + measurements
 //   GET  /api/sub-portal?action=rates&token=Y               — rate sheet for this sub
+//   PUT  /api/sub-portal?action=update_checklist            — sub: mark a checklist step complete
 //   PUT  /api/sub-portal?action=admin-settings              — owner: update sub visibility + threshold
 //
 // Auth: every action requires a valid magic-link token. Owner action (admin-settings)
@@ -207,6 +209,83 @@ async function getSchedule(tenantId, woId) {
   };
 }
 
+// ── Scope (scope_items + checklist + measurements + tier) ───────
+// Drives the guided-execution UX in sub-portal.html. Returns enough for the sub
+// to know exactly what to do, in what order, with which materials, including
+// any per-step critical flags or notes.
+async function getScope(tenantId, woId) {
+  const { data: wo } = await supabaseAdmin
+    .from('workorders')
+    .select('id, address, customer_name, total_sq, roof_pitch, package_tier, shingle_product, shingle_color, scope_items, additional_scope, special_notes, checklist, eaves_lf, rakes_lf, ridges_lf, hips_lf, valleys_lf, walls_lf, pipes, vents, chimneys, layers_to_remove, status, start_date')
+    .eq('tenant_id', tenantId).eq('id', woId)
+    .single();
+  if (!wo) return { error: 'Work order not found', status: 404 };
+
+  const checklist = Array.isArray(wo.checklist) ? wo.checklist : [];
+  const completedCount = checklist.filter(s => s && s.completed).length;
+  const nextStepIndex = checklist.findIndex(s => s && !s.completed);
+  const nextStep = nextStepIndex >= 0 ? checklist[nextStepIndex] : null;
+
+  return {
+    wo: {
+      id: wo.id, address: wo.address, customer_name: wo.customer_name,
+      status: wo.status, start_date: wo.start_date,
+      total_sq: wo.total_sq, roof_pitch: wo.roof_pitch,
+      package_tier: wo.package_tier, shingle_product: wo.shingle_product,
+      shingle_color: wo.shingle_color, layers_to_remove: wo.layers_to_remove
+    },
+    measurements: {
+      eaves_lf: wo.eaves_lf, rakes_lf: wo.rakes_lf, ridges_lf: wo.ridges_lf,
+      hips_lf: wo.hips_lf, valleys_lf: wo.valleys_lf, walls_lf: wo.walls_lf,
+      pipes: wo.pipes, vents: wo.vents, chimneys: wo.chimneys
+    },
+    scope_items: Array.isArray(wo.scope_items) ? wo.scope_items : [],
+    additional_scope: wo.additional_scope || null,
+    special_notes: wo.special_notes || null,
+    checklist,
+    progress: {
+      completed: completedCount,
+      total: checklist.length,
+      next_step: nextStep,
+      next_step_index: nextStepIndex
+    }
+  };
+}
+
+// ── Update checklist step (sub marks a step done) ───────────────
+// Atomic: refetch checklist, mutate the target step, write back. Step matched
+// by step_number first, falling back to array index. Sets completed_at stamp
+// on completion so the owner-side review can audit who/when.
+async function updateChecklistStep(tenantId, woId, stepIndex, completed, subName) {
+  const { data: wo } = await supabaseAdmin
+    .from('workorders')
+    .select('id, checklist')
+    .eq('tenant_id', tenantId).eq('id', woId)
+    .single();
+  if (!wo) return { error: 'Work order not found', status: 404 };
+
+  const checklist = Array.isArray(wo.checklist) ? [...wo.checklist] : [];
+  if (stepIndex < 0 || stepIndex >= checklist.length) {
+    return { error: 'Step out of range', status: 400 };
+  }
+
+  const isCompleting = !!completed;
+  checklist[stepIndex] = {
+    ...checklist[stepIndex],
+    completed: isCompleting,
+    completed_at: isCompleting ? new Date().toISOString() : null,
+    completed_by: isCompleting ? (subName || 'sub') : null
+  };
+
+  const { error } = await supabaseAdmin
+    .from('workorders')
+    .update({ checklist, updated_at: new Date().toISOString() })
+    .eq('tenant_id', tenantId).eq('id', woId);
+  if (error) return { error: error.message, status: 500 };
+
+  return { step: checklist[stepIndex], total: checklist.length, completed: checklist.filter(s => s && s.completed).length };
+}
+
 // ── Rates (full Atlantic Roofing rate sheet) ────────────────────
 function getRatesForSub(sub) {
   // Map sub name/company to slug. Currently only Atlantic Roofing is in SUB_RATES.
@@ -328,6 +407,17 @@ async function handler(req, res) {
   const sub = await verifyToken(tenantId, token);
   if (!sub) return res.status(401).json({ error: 'Invalid or expired token' });
 
+  // Sub-write: checklist step toggle
+  if (action === 'update_checklist' && req.method === 'PUT') {
+    const { wo_id, step_index, completed } = req.body || {};
+    if (!wo_id || step_index === undefined) {
+      return res.status(400).json({ error: 'wo_id and step_index required' });
+    }
+    const result = await updateChecklistStep(tenantId, wo_id, Number(step_index), completed, sub.name);
+    if (result.error) return res.status(result.status || 500).json({ error: result.error });
+    return res.json(result);
+  }
+
   if (req.method !== 'GET') return res.status(405).json({ error: 'GET required for sub actions' });
 
   const woId = req.query.wo_id;
@@ -353,13 +443,20 @@ async function handler(req, res) {
     return res.json(result);
   }
 
+  if (action === 'scope') {
+    if (!woId) return res.status(400).json({ error: 'wo_id required' });
+    const result = await getScope(tenantId, woId);
+    if (result.error) return res.status(result.status || 500).json({ error: result.error });
+    return res.json(result);
+  }
+
   if (action === 'rates') {
     const result = getRatesForSub(sub);
     if (result.error) return res.status(result.status || 500).json({ error: result.error });
     return res.json(result);
   }
 
-  return res.status(400).json({ error: 'Unknown action. Valid: photos, materials, schedule, rates, admin-settings' });
+  return res.status(400).json({ error: 'Unknown action. Valid: photos, materials, schedule, scope, rates, update_checklist, admin-settings' });
 }
 
 export default requireTenant(handler);

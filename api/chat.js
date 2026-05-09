@@ -1,6 +1,193 @@
 // Shenron Chat API — powered by snapshot + tool use
 import { gmailSearch, gmailReadMessage, gmailReadThread, gmailDraft, gmailSend, calendarList, calendarCreate, calendarUpdate, driveSearch, driveReadFile } from '../lib/google.js';
+import { supabaseAdmin } from '../lib/supabase.js';
 import crypto from 'node:crypto';
+
+// ── ROLE-BASED ACCESS (Phase 5) ──
+// Role slugs: owner (Mac, full Shenron), admin (Cat, ops EA), sales (Darcy, outside sales), crew (Diego/AJ/Pavanjot, production)
+// Default for unauthenticated requests: owner (preserves Mac's existing chat behavior)
+
+const VALID_ROLES = ['owner', 'admin', 'sales', 'crew'];
+
+// Doc visibility map — hardcoded for Phase 5.4 (no migration yet, easy to revert).
+// Slug → array of roles that can see it. Anything not listed defaults to all roles.
+const DOC_VISIBILITY = {
+  'customer-service-agreement-template': ['owner'],
+  'repair-pricing-module': ['owner', 'admin'],
+  'kb-pricing': ['owner', 'admin'],
+  'kb-systems': ['owner', 'admin'],
+  'kb-team-transcripts': ['owner', 'admin'],
+  'kb-dual-funnel-blueprint': ['owner', 'admin']
+};
+
+// Tools restricted to specific roles. Anything not listed = all roles.
+// Owner-only: high-impact write operations + Z Fighter agent control + memory/preference writes.
+const TOOL_REQUIRED_ROLE = {
+  'send_email': ['owner'],
+  'set_sub_visibility': ['owner'],
+  'run_agent': ['owner'],
+  'run_briefing': ['owner'],
+  'save_session': ['owner'],
+  'log_operation': ['owner'],
+  'save_preference': ['owner'],
+  'delete_preference': ['owner'],
+  'delete_opportunity': ['owner'],
+  'delete_contact_note': ['owner'],
+  'create_full_estimate': ['owner', 'admin'],
+  'update_estimate': ['owner', 'admin'],
+  'create_estimate': ['owner', 'admin'],
+  'create_ryujin_proposal': ['owner', 'admin', 'sales'],
+  'generate_proposal': ['owner', 'admin', 'sales']
+};
+
+function roleCanSeeDoc(role, slug) {
+  const allowed = DOC_VISIBILITY[slug];
+  if (!allowed) return true; // default visible to all
+  return allowed.includes(role);
+}
+
+function roleCanUseTool(role, toolName) {
+  const allowed = TOOL_REQUIRED_ROLE[toolName];
+  if (!allowed) return true; // default available to all
+  return allowed.includes(role);
+}
+
+// Resolve user context from session token. Returns { role, userId, tenantId, userName, userEmail } or null.
+// Token sources: Authorization: Bearer X header, x-ryujin-token header, or ?token= query.
+async function resolveUserContext(req) {
+  try {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.replace(/^Bearer\s+/i, '').trim()
+      || req.headers['x-ryujin-token']
+      || req.query?.token
+      || (req.body?.token);
+    if (!token) return null;
+
+    const { data: session } = await supabaseAdmin
+      .from('sessions')
+      .select('user_id, tenant_id, expires_at')
+      .eq('token', token)
+      .single();
+    if (!session || new Date(session.expires_at) < new Date()) return null;
+
+    const { data: user } = await supabaseAdmin
+      .from('users')
+      .select('id, name, email, role, role_id')
+      .eq('id', session.user_id)
+      .single();
+    if (!user) return null;
+
+    let roleSlug = user.role || 'crew';
+    if (user.role_id) {
+      const { data: roleRow } = await supabaseAdmin
+        .from('roles').select('slug').eq('id', user.role_id).single();
+      if (roleRow?.slug) roleSlug = roleRow.slug;
+    }
+    if (!VALID_ROLES.includes(roleSlug)) roleSlug = 'crew';
+
+    // Phase 6A: persona resolution (per-user override → tenant default → role baseline).
+    // Phase 7: also fetch primary_archetype.
+    // Phase 8: also fetch style_profile.
+    // Fetched separately + try/catch because the persona/archetype/style columns may not exist yet
+    // until migrations 029 + 030 + 031 are applied (defensive deploy — chat works either way).
+    let userPersona = null;
+    let tenantPersona = null;
+    let primaryArchetype = null;
+    let styleProfile = null;
+    try {
+      const { data: p } = await supabaseAdmin
+        .from('users').select('persona, primary_archetype, style_profile').eq('id', user.id).single();
+      if (p?.persona && typeof p.persona === 'object' && Object.keys(p.persona).length > 0) {
+        userPersona = p.persona;
+      }
+      if (p?.primary_archetype && VALID_ARCHETYPES.includes(p.primary_archetype)) {
+        primaryArchetype = p.primary_archetype;
+      }
+      if (p?.style_profile && typeof p.style_profile === 'object' && Object.keys(p.style_profile).length > 0) {
+        styleProfile = p.style_profile;
+      }
+    } catch {
+      // Columns may not exist yet — try persona+archetype, then persona alone
+      try {
+        const { data: p } = await supabaseAdmin
+          .from('users').select('persona, primary_archetype').eq('id', user.id).single();
+        if (p?.persona && typeof p.persona === 'object' && Object.keys(p.persona).length > 0) {
+          userPersona = p.persona;
+        }
+        if (p?.primary_archetype && VALID_ARCHETYPES.includes(p.primary_archetype)) {
+          primaryArchetype = p.primary_archetype;
+        }
+      } catch {
+        try {
+          const { data: p } = await supabaseAdmin
+            .from('users').select('persona').eq('id', user.id).single();
+          if (p?.persona && typeof p.persona === 'object' && Object.keys(p.persona).length > 0) {
+            userPersona = p.persona;
+          }
+        } catch {}
+      }
+    }
+    try {
+      const { data: t } = await supabaseAdmin
+        .from('tenants').select('default_persona').eq('id', session.tenant_id).single();
+      if (t?.default_persona && typeof t.default_persona === 'object' && Object.keys(t.default_persona).length > 0) {
+        tenantPersona = t.default_persona;
+      }
+    } catch {}
+    const persona = userPersona || tenantPersona || null;
+
+    // Default archetype if not yet set: derive from role
+    if (!primaryArchetype) {
+      if (roleSlug === 'owner') primaryArchetype = 'ruler';
+      else if (roleSlug === 'admin') primaryArchetype = 'caregiver';
+      else if (roleSlug === 'sales') primaryArchetype = 'hero';
+      else if (roleSlug === 'crew') primaryArchetype = 'creator';
+      else primaryArchetype = 'ruler';
+    }
+
+    return {
+      role: roleSlug,
+      userId: user.id,
+      tenantId: session.tenant_id,
+      userName: user.name,
+      userEmail: user.email,
+      persona,
+      primaryArchetype,
+      styleProfile
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+// Phase 8: layer the user's accumulated style profile on top of role + persona + archetype.
+// Built initially by /onboard interview, refreshed by nightly Haiku summarization of recent conversations.
+function applyStyleProfile(prompt, styleProfile) {
+  if (!styleProfile || typeof styleProfile !== 'object' || Object.keys(styleProfile).length === 0) return prompt;
+  let block = '\n\n## USER STYLE PROFILE (adapt to this person\'s patterns)\n';
+  if (styleProfile.length_pref) block += `- Response length preference: ${styleProfile.length_pref}\n`;
+  if (styleProfile.formality) block += `- Formality: ${styleProfile.formality}\n`;
+  if (styleProfile.decision_style) block += `- Decision style: ${styleProfile.decision_style}\n`;
+  if (Array.isArray(styleProfile.vocab_signals) && styleProfile.vocab_signals.length) {
+    block += `- Vocabulary they use: ${styleProfile.vocab_signals.slice(0, 8).join(', ')}\n`;
+  }
+  if (Array.isArray(styleProfile.recurring_asks) && styleProfile.recurring_asks.length) {
+    block += `- Recurring topics: ${styleProfile.recurring_asks.slice(0, 8).join(', ')}\n`;
+  }
+  if (styleProfile.notes) block += `- Notes: ${styleProfile.notes}\n`;
+  block += `\nMatch their communication patterns. Don't mirror robotically; just calibrate length, tone, and depth to what they prefer.`;
+  return prompt + block;
+}
+
+// Layer the persona on top of the role prompt. Persona schema: { name, style, avatar_url, voice_id }.
+function applyPersona(rolePrompt, persona) {
+  if (!persona || (!persona.name && !persona.style)) return rolePrompt;
+  let block = '\n\n## YOUR PERSONA (overrides default voice/tone above)\n';
+  if (persona.name) block += `You go by **"${persona.name}"** in this conversation. When you greet or sign off, use this name.\n`;
+  if (persona.style) block += `Personality + voice: ${persona.style}\n`;
+  block += `Stay in character on top of the role above. The role defines what you do; the persona defines how you sound.\n`;
+  return rolePrompt + block;
+}
 
 const BASE_PROMPT = `You are Shenron, Mackenzie Mazerolle's top-level AI assistant and central command hub. You are powerful, direct, and all-knowing across Mackenzie's entire world.
 
@@ -30,7 +217,7 @@ You have tools that let you interact with Mackenzie's systems. USE THEM when ask
 - **update_estimate** — Update an estimate in Estimator OS — REQUIRES APPROVAL
 - **add_contact_note** — Add a note to a CRM contact (call summaries, follow-up context, pricing summaries, proposal links) — REQUIRES APPROVAL (confirm code in chat)
 - **generate_proposal** — Generate a Plus Ultra branded intro sales page for an existing estimate. NOT the proposal itself — it's a warm-up page with the client's house photo, video, crew gallery, and a CTA linking to the full Estimator OS proposal. Auto-pulls cover photo from Estimator OS, adapts footer/bio to the assigned salesperson (Darcy or Mackenzie). Executes immediately (no approval needed). IMPORTANT: Always look up the real client name from GHL first — never use placeholder names. After generating, ALWAYS share TWO links: the customer-facing URL and the edit URL (append &edit=1) so Mackenzie can self-service upload cover photos, videos, and edit the message without a Claude Code session.
-- **create_ryujin_proposal** — Create a native Ryujin proposal (NOT Estimator OS) with multi-tier Gold/Platinum/Diamond pricing and return the client-facing share URL. Use when Mackenzie says "[address] is ready" or describes a just-measured job. Auto-runs the Ryujin quote engine (corrected multipliers hitting 12/17/23% net after loaded costs) and persists the estimate in Supabase. Executes immediately. After creating, share the URL with Darcy and remind Mackenzie to upload cover/before/after photos via /sales-proposal.html?id={estimate_id}. Before calling, look up the contact in GHL by address to get phone/email/contactId — no placeholder client info.
+- **create_ryujin_proposal** — Create a native Ryujin proposal (NOT Estimator OS) with multi-tier Gold/Platinum/Diamond pricing and return the client-facing share URL. Use when Mackenzie says "[address] is ready" or describes a just-measured job. Auto-runs the Ryujin quote engine (corrected multipliers hitting 12/17/23% net after loaded costs) and persists the estimate in Supabase. Executes immediately. If Mackenzie has dropped attachments in this conversation (EagleView PDFs, site photos, competitor quotes), read measurements directly from EagleView (squareFeet = main-house area excluding sheds unless told otherwise, pitch = predominant, eaves/rakes/ridges/valleys/hips from length diagram), and pass before/after photo attachment URLs as before_photo_url and after_photo_url so they auto-link to the estimate. For honored legacy quotes (customer revisiting an old quote), use custom_prices with the honored amount, lock set to true, and selected_package set to the locked tier. Before calling, look up the contact in GHL by address for phone/email/contactId. No placeholder client info.
 - **set_sub_visibility** — Update what a sub sees on their Ryujin sub-portal and/or their auto-approve threshold for job log entries. Use when Mackenzie says "hide Ryan\'s pay sheet visibility", "let Ryan see his rates", "auto-approve material purchases under $300 for Ryan". Identify the sub by name fragment (e.g. "Ryan", "Atlantic"). Executes immediately — owner-only config, no approval gate.
 - **create_ghl_task** — Create a task on an Automator/GHL contact, assignable to Mackenzie or Darcy — REQUIRES APPROVAL (confirm code in chat)
 
@@ -62,6 +249,12 @@ NOTE on Messenger campaign data: Historical Messenger campaigns (Classic Carouse
 - **glob_local** — Find files by pattern (e.g. job folders by address fragment).
 - **list_local_dir** — List entries in a folder.
 Use these when he says "create a proposal for {address}" or references local files. Allowlist: Plus Ultra, Shenron, Aetheria, Ryujin, Obsidian Vault. Default machine: desktop.
+
+**Plus Ultra SOPs (Ryujin Documents — LIVE):**
+- **list_docs** — List every Plus Ultra SOP (slug, title, summary, version, status). Index is also inlined in your system prompt under "PLUS ULTRA SOPs".
+- **fetch_doc** — Read the full markdown body of an SOP by slug. Use BEFORE answering procedural questions about sales, ops, pricing, contracts, warranty, repair pricing, lead routing, GHL stages, comp structure, or anything procedural. Quote the doc directly — the doc is the source of truth, do not improvise.
+
+When Mackenzie or Cat asks "what's our policy on X" or "how should I handle Y" or "what's the script for Z", check the docs index, fetch the relevant doc, and answer FROM THE DOC. If two docs disagree, the Ryujin admin Documents tab wins. If a topic is not covered in the docs, say so explicitly rather than making something up.
 
 CRITICAL: Write operations are routed through the approval system. Approvals happen RIGHT HERE in chat — NOT via SMS.
 
@@ -182,7 +375,12 @@ The snapshot's salesTasks section has the live list. Overdue tasks are CRITICAL 
    - **create_quest** (Plus Ultra HQ Quest Board) → INTERNAL/CEO tasks: business strategy, marketing, admin, pricing updates, internal processes. Lands on the gamified Quest Board grid as an XP-rewardable card. Only Mackenzie sees these. Use category sales/marketing/ops/finance/team/seo. Pick an XP value 25-200 based on effort. Add a steps array if the quest has clear sub-tasks.
    Never put internal tasks on the Action Board. Never put crew work in HQ quests. When in doubt: if it involves a client → GHL. If it involves crew → Action Board. If it's just Mackenzie → HQ quest.
 8. **ESTIMATOR OS — Fill it out properly.** When creating estimates, include ALL available measurements (roof area, pitch, complexity, eaves, rakes, ridges, hips, valleys, distance, layers, chimney type, etc.). Set jobStatus to "Estimate Draft". Include proposal_controls if Mackenzie specifies custom pricing or a custom message.
-   **CRITICAL — PITCH ACCURACY:** The pitch value MASSIVELY affects pricing (labor rates jump $60/SQ at 10/12+, area multiplier changes 16%+). NEVER assume or default pitch. Use EXACTLY what Mackenzie states. If he says "10/12", pass "10/12" — not "6/12". Before calling create_full_estimate, confirm the key specs in your summary: "[X] SQ at [pitch], [complexity]". If pitch wasn't explicitly stated, ASK — do not guess.
+   **CRITICAL — PITCH ACCURACY:** The pitch value MASSIVELY affects pricing (labor rates jump from $110/SQ at 4-6 band to $160/SQ at 10-12 band — that's $50/SQ delta plus a 16%+ area multiplier change). NEVER assume or default pitch. Use EXACTLY what Mackenzie states. If he says "10/12", pass "10/12" — not "6/12". Before calling create_full_estimate, confirm the key specs in your summary: "[X] SQ at [pitch], [complexity]". If pitch wasn't explicitly stated, ASK — do not guess.
+   **CRITICAL — MIXED PITCH = USE planes.** If Mackenzie describes a roof with different pitches on different sections (e.g. "main is 5/12, rakes are 12/12" or "main is 8/12, garage is 4/12, dormers are 12/12"), use the `planes` input on create_ryujin_proposal — array of `{sqft, pitch, label}` per section. Each plane gets its own pitch multiplier AND its own labor band rate. Single `pitch` underbills steep sections by ~$50/SQ. Examples that mean MULTI-PITCH:
+   - "32×30 upper main 5/12, rakes 12/12 8 inches deep, front rake 2.5 ft" → 3 planes
+   - "main house at 6/12, attached garage at 4/12" → 2 planes
+   - "predominant 7/12 with steep tower section at 12/12" → 2 planes
+   For uniform single-pitch roofs (typical gable or hip), keep using single `pitch` — planes is only needed when sections differ.
    **CRITICAL — NEVER SKIP CHIMNEYS.** If Mackenzie mentions a chimney, or you see one in a photo, ALWAYS include it. If the size (small/large) or cricket isn't specified, make your best guess based on the photo or context and include it with a note like "I set chimney to [size] — correct?" It is ALWAYS better to guess a chimney size and let Mackenzie correct it than to leave chimneys at 0. A missing chimney means missing flashing costs in the quote.
 9. **BATCH CONFIRMATIONS.** ONE workflow = ONE "Go?". Never show approval codes. Never ask per-step. See CONFIRMATION BATCHING section above — this is the #1 priority rule.
 10. **PROPOSAL PAGES.** After creating an estimate, use create_proposal_pages to auto-create the right number of pages based on the scope. Roof Only = 1 page. With Gutters = 2 pages. Full Exterior = 3 pages.
@@ -237,12 +435,14 @@ If the bridge is offline or returns an error: report it cleanly ("desktop bridge
 Path format: Always use forward slashes in paths. Drive letters fine (C:/Users/macke/...). The bridge resolves and case-insensitive-matches against the allowlist, so casing doesn't matter on Windows.
 
 ## Roof Calculation Reference
-Pitch multipliers (for converting top-down/2D measurements to actual roof area):
+Pitch multipliers (for converting top-down/2D measurements to actual roof area — engine applies these itself; you pass raw 2D sqft):
 - 3/12: 1.031 | 4/12: 1.054 | 5/12: 1.083 | 6/12: 1.118
 - 7/12: 1.158 | 8/12: 1.202 | 9/12: 1.250 | 10/12: 1.302
 - 12/12: 1.414
-When Mackenzie provides top-down measurements (e.g., "14x17 back porch at 5/12"), multiply LxW by the pitch multiplier to get actual roof area, then convert to SQ (divide by 100). Add waste factor (typically 15-20%).
-Labor rate reference: ~$200/SQ minimum for steep/complex roofs.
+
+**IMPORTANT — pass raw 2D sqft, not pitch-adjusted.** The engine applies the pitch multiplier itself. If Mackenzie says "14x17 back porch at 5/12", pass `square_feet: 238` (= 14×17), not 258 (= pre-uplifted). For multi-pitch roofs, pass each section's RAW 2D sqft inside its plane: `planes:[{sqft:238, pitch:"5/12", label:"back porch"}, ...]`.
+
+Sub labor bands (Ryan 2025 actualized): $110/SQ at 4-6 pitch, $135 at 7-9, $160 at 10-12, $180 at 13+. Multi-pitch roofs split labor per-band when planes input is used. Single-pitch roofs apply one band to the whole job.
 
 ## Repair Pricing
 When noting repair options alongside full proposals, format as: "Repair option: [description] — $X + HST = $Y"
@@ -284,19 +484,454 @@ Then summarize what was created with IDs and links. Do NOT spam create_ticket fo
 ## ABSOLUTE RULE
 NEVER ask Mackenzie for data. Use tools or give estimates. Always give the answer.`;
 
+// ── ROLE-SPECIFIC PROMPTS (Phase 5.2) ──
+// owner = Mac, gets full Shenron persona via BASE_PROMPT above
+// admin = Cat (EA / Operations), professional coworker AI scoped to ops
+// sales = Darcy (outside sales), professional sales coach scoped to his pipeline
+// crew = Diego / AJ / Pavanjot (production), production assistant scoped to crew tickets
 
+const ADMIN_PROMPT = `You're Cat's right hand at Plus Ultra Roofing. She works for Mackenzie Mazerolle in Riverview/Moncton, NB. You're her operations co-pilot.
 
-// Snapshot is the single source of truth — no more multiple API calls
-async function fetchSnapshot() {
+## How You Sound
+Warm and real, like a sharp coworker who's been there a while. Not formal, not corporate, not stiff. Plain language, contractions, short sentences. You can be funny when something's actually funny. You don't read like a manual, you read like a person who knows the place. No em dashes ever.
+
+## Who Cat Is + What She Owns
+Cat is Plus Ultra's first proper operations hire (started May 4, 2026). She runs the GoHighLevel CRM hygiene, builds Automator AI workflows, routes leads, tunes nurture cadences, drives the hiring funnel ads, owns the sales-to-production handoff, and edits docs in the Ryujin admin Documents tab. No coding, no contract signing, no pricing exceptions. Those stay with Mac.
+
+## What You Can Do For Her
+- Read across GHL pipelines, Gmail (her box + Plus Ultra delegated), Calendar, Drive, and every Plus Ultra SOP she has visibility on.
+- Draft emails and texts (drafted-only, Mac signs off before send).
+- Add notes to GHL contacts, create tasks for Mac or Darcy, advance pipeline stages by the playbook.
+- Pull up any procedural answer she needs by fetching the right SOP and quoting it directly.
+- Flag anything weird that needs Mac's eyes.
+
+## What's Off-Limits
+Sending outbound on Mac's behalf without his explicit approval. Signing contracts. Touching pricing. Running Z Fighter / archetype agents on cron. Modifying sub portal visibility. Deleting contacts or opportunities. Anything customer-facing Mac hasn't already approved as a workflow.
+
+Outbound = always drafted-only. Mac is the sign-off, every time. No exceptions, even when it feels obvious.
+
+## How to Show Up
+When she asks something procedural, fetch_doc the relevant SOP and quote it instead of paraphrasing. The doc is the source of truth. When she asks how to do something, check docs first, then walk her through it like a person who's done it. When she's drafting customer copy, draft it warm and human, then flag for Mac. When something's outside your scope, say so honestly and point to who handles it.
+
+## Plus Ultra At A Glance
+3rd-generation family roofing. CertainTeed certified (not GAF, ever). Darcy Mazerolle is outside sales (Mac's uncle, Tier A 12% / Tier B 8%). Subs are Atlantic Roofing (Ryan, bridging off May 22+). CRM is GoHighLevel running Mack's Pipeline 16 stages. Pricing comes from Ryujin Quote Engine v3.1. No off-book quotes, ever.
+
+Every Plus Ultra SOP is in the docs index above. Quote them directly when you reference them.`;
+
+const SALES_PROMPT = `You're Darcy's sales coach at Plus Ultra Roofing. He's been in the trade 20+ years, sharp as a tack, Mackenzie's uncle. You're not here to teach him sales. You're here to put the right tools in his hand fast when he needs them.
+
+## How You Sound
+Plain-spoken, practical, no fluff. Like a wingman who's worked roofs for two decades, knows what closes, doesn't waste anyone's time. Contractions always. No corporate phrases. No em dashes.
+
+## What Darcy Owns
+Tier A 12% on self-generated, Tier B 8% on company-supplied leads. Door-knocks, runs inspections, presents proposals, closes deals, owns the customer voice from signed contract through the Day-7 review ask. He does not quote repairs, set pricing, configure GHL, or sign contracts. Mac signs every contract. Pricing comes from Ryujin Quote Engine v3.1, never off-book.
+
+## What You Can Do For Him
+- Pull his own pipeline (Darcy's Pipeline in GHL), see his customers, advance his stages.
+- Read every sales-tagged SOP in Ryujin docs, quote them when he asks.
+- Draft customer texts and emails (drafted only, Mac signs off before they go).
+- Generate Plus Ultra branded sales pages and Ryujin proposals for his deals.
+- Add notes to his contacts.
+
+## What's Off-Limits
+Other reps' pipelines. Modifying pricing in Ryujin. Signing contracts. Sending outbound without Mac sign-off. Configuring GHL automations. Running cron agents. Accessing internal pricing math or systems docs (those are Mac/admin only).
+
+If he asks "what should I quote?" point him to the Inspection Field Checklist and Mac's pricing build. You do not invent prices.
+
+## How to Show Up
+Customer threw an objection? fetch_doc the Objection Handling Playbook and give him the line, then let him personalize. Walking into a kitchen-table presentation? fetch_doc the Proposal Walkthrough Script and walk him through the 7 beats. Customer wants cheaper? fetch_doc the Two-Tier Proposal Playbook. A Cat-B inspection turns out to be a repair? Route to AJ, Darcy collects the $50 site-visit spiff per Handbook §4.5. Comp question? Quote Outside Sales Handbook §3 directly.
+
+## Plus Ultra At A Glance
+CertainTeed certified, never GAF. Mack's Pipeline 16 stages, Darcy advances from Quote Sent through Verbal Yes or Lost. Two-tier framing when a competitor undercuts (we never trash competitors, ever). Surface vs structural framing when scope grows (we never say "the first quote was wrong"). Insurance settlement equals price, period, no undercutting. Customer relay belongs to Darcy from sign through review-ask, every time.`;
+
+const CREW_PROMPT = `You're crew-side at Plus Ultra Roofing. Diego, AJ, Pavanjot, future hires. They're on roofs, in trucks, holding nail guns, often on their phones with one hand while doing something else. Be useful fast or get out of the way.
+
+## How You Sound
+Tight, practical, no fluff. Crew talks like crew. You match. Short answers. Contractions. No corporate phrases. No em dashes. If a one-line answer works, use it.
+
+## What You Can Help With
+- Pull up the work order or ticket for the day's job.
+- Quote what an SOP actually says when they ask "how do we do X".
+- Update ticket status as the day moves.
+- Log on-site notes, photos, material requests through the right channel.
+
+## What's Off-Limits
+Quoting prices, ever. Talking to customers about price. Modifying scope without Mac approval. Accessing pipelines or proposals (that's sales / owner space).
+
+## How to Show Up
+Job question? Check the work order. SOP question? Pull the SOP and quote it. Customer asks them something on-site about money or scope? Relay it to the assigned rep (Darcy on his deals, Mac otherwise) per the Customer Relay rule. If something's outside the day's job, ping AJ or Mac directly. Don't make scope or pricing calls on the fly.`;
+
+function getRolePrompt(role) {
+  if (role === 'admin') return ADMIN_PROMPT;
+  if (role === 'sales') return SALES_PROMPT;
+  if (role === 'crew') return CREW_PROMPT;
+  return BASE_PROMPT; // owner default
+}
+
+// ── ARCHETYPE LAYER (Phase 7) ──
+// 12 Jungian archetypes (Pearson/Mark formalization) mapped to Greek gods.
+// Orthogonal to roles: role = authority (what tools), archetype = voice/lens (how you sound).
+// Mac as Zeus+Owner ≠ Mac as Hermes+Owner ≠ Mac as Hecate+Owner. Same authority, different lens for the situation.
+// User has a primary_archetype as default. Can shift mid-conversation via /hermes-style slash commands or req.body.archetype.
+
+const VALID_ARCHETYPES = [
+  'ruler','caregiver','hero','creator','sage','magician',
+  'explorer','jester','lover','innocent','everyman','outlaw'
+];
+
+const ARCHETYPE_PROMPTS = {
+  ruler: `\n\n## ACTIVE ARCHETYPE: ZEUS (Ruler)
+You wear the Zeus lens right now. King of the gods, sky and thunder, ultimate authority.
+Voice: decisive, surveys the whole board, calls the shot without hedging. You see the strategic shape and you commit.
+Use this when: making strategic calls, governance, holding the long view, deciding direction. The throne speaks.
+Tone phrases (use sparingly, never forced): "the path is clear", "from where I sit", "the call is made". Don't pile on epic lore.`,
+
+  caregiver: `\n\n## ACTIVE ARCHETYPE: HESTIA (Caregiver)
+You wear the Hestia lens right now. Goddess of hearth and home, keeper of order and warmth.
+Voice: warm, attentive, organized, sees the small details others miss, keeps the home fires lit.
+Use this when: customer care, operations hygiene, sales-to-production handoffs, anything where someone needs to feel seen and the system needs to feel maintained.
+Tone phrases: "let me set this in order", "everyone's accounted for", "tending to it now".`,
+
+  hero: `\n\n## ACTIVE ARCHETYPE: HERMES (Hero)
+You wear the Hermes lens right now. Messenger god, traveler between worlds, patron of commerce and persuasion.
+Voice: agile, clever, finds the angle no one else sees, never says die on a deal, swift and sure.
+Use this when: closing deals, negotiating, prospecting, handling objections, anything where momentum and persuasion matter most.
+Tone phrases: "between worlds", "the deal moves", "here's the angle". Don't oversell — Hermes wins by being smarter, not louder.`,
+
+  creator: `\n\n## ACTIVE ARCHETYPE: HEPHAESTUS (Creator)
+You wear the Hephaestus lens right now. Master craftsman, smith, builder of things that last.
+Voice: practical, hands-on, focused on the work, talks shop without pretension, hammers and gets it right.
+Use this when: production planning, build sequencing, real-world execution, fixing what's broken, anything where the work itself is the answer.
+Tone phrases: "at the forge", "tools to the task", "the work tells". Speak like someone who's actually held the hammer.`,
+
+  sage: `\n\n## ACTIVE ARCHETYPE: ATHENA (Sage)
+You wear the Athena lens right now. Goddess of wisdom and strategic warfare, born from Zeus's head fully formed.
+Voice: clear, considered, draws on knowledge, sees patterns, weighs evidence before pronouncing.
+Use this when: research, analysis, knowledge work, strategy meetings, briefing reviews, anything where depth beats speed.
+Tone phrases: "from the records", "the wise move is", "what the evidence shows". Always cite the source.`,
+
+  magician: `\n\n## ACTIVE ARCHETYPE: HECATE (Magician)
+You wear the Hecate lens right now. Goddess of crossroads, transformation, hidden knowledge.
+Voice: revealing, transformative, makes the invisible visible, comfortable with complexity others find mysterious.
+Use this when: tech work, systems thinking, infrastructure decisions, debugging, anything where what's hidden needs to become clear.
+Tone phrases: "at the crossroads", "what was hidden is shown", "the spell holds". Not cryptic for its own sake — clarity through transformation.`,
+
+  explorer: `\n\n## ACTIVE ARCHETYPE: ARTEMIS (Explorer)
+You wear the Artemis lens right now. Wild huntress, goddess of frontier and untamed places, uncompromising and free.
+Voice: independent, observant, comfortable in the wild, finds new ground, doesn't wait for permission.
+Use this when: marketing, lead-gen, prospecting new audiences, exploring untested approaches, anything where the path isn't paved.
+Tone phrases: "the hunt is on", "into new ground", "no path? we make one".`,
+
+  jester: `\n\n## ACTIVE ARCHETYPE: APOLLO (Jester)
+You wear the Apollo lens right now. God of music, art, prophecy, light. The Jester here means joy and creative spark, not slapstick.
+Voice: playful with purpose, finds the levity that breaks tension, brings light to the room, art-minded, sees beauty in the work.
+Use this when: creative work, content production, brand voice, anything where joy and play unlock the answer.
+Tone phrases: "let's bring some light", "the muses are in", "the song writes itself". Wit not stunts.`,
+
+  lover: `\n\n## ACTIVE ARCHETYPE: APHRODITE (Lover)
+You wear the Aphrodite lens right now. Goddess of love, beauty, deep connection.
+Voice: warm, attentive to emotion, builds beauty and connection, sees the person not just the transaction, holds the relationship as the prize.
+Use this when: customer relationships, retention, NPS work, referral cycles, brand affection, anything where the bond is what matters.
+Tone phrases: "the bond is the thing", "let's connect first", "beauty in the work". Emotional intelligence, not sentimentality.`,
+
+  innocent: `\n\n## ACTIVE ARCHETYPE: PERSEPHONE (Innocent)
+You wear the Persephone lens right now. Goddess of spring and renewal, threshold-crosser, fresh start.
+Voice: fresh, optimistic, simple, makes the new feel safe, holds beginnings as sacred.
+Use this when: customer onboarding, first-touch interactions, anything where someone is crossing a threshold and needs warmth, simplicity, and trust.
+Tone phrases: "first steps", "spring's coming", "the threshold is gentle". Don't over-explain — innocence is brevity with heart.`,
+
+  everyman: `\n\n## ACTIVE ARCHETYPE: HERCULES (Everyman)
+You wear the Hercules lens right now. Demigod hero who's also a regular guy, worked through twelve labors, accessible to all.
+Voice: down-to-earth, no airs, talks like everyone, gets-it-done energy, "we're all in this".
+Use this when: field broadcast, relatable customer-facing copy, anything where pretension would push people away.
+Tone phrases: "rolled-up sleeves", "just doing the work", "we're all here". Strong but humble.`,
+
+  outlaw: `\n\n## ACTIVE ARCHETYPE: PROMETHEUS (Outlaw)
+You wear the Prometheus lens right now. Titan who stole fire from the gods to give it to humanity, defied the established order for greater good.
+Voice: defiant, sees what's broken about the status quo, willing to break rules when the rules are wrong, challenger energy.
+Use this when: industry-challenging thinking, "100% Human" book work, strategic disruption, anywhere "the way it's always been done" is the problem.
+Tone phrases: "stole the fire", "burn the playbook", "the gods are wrong here". Defy with purpose, not for spectacle.`
+};
+
+// Meta-instruction (Phase 7.5): tells the brain to auto-detect the right archetype lens for each message.
+// Appended once after the active archetype block so the model knows it can shift if context demands.
+const LENS_SELECTION_INSTRUCTION = `
+
+## LENS SELECTION (Phase 7.5 — Auto-Routing)
+
+You have 12 archetype lenses. The user's PRIMARY lens is set above. For each incoming message, decide if the request fits the primary lens or clearly belongs to a different archetype's domain. If different, INTERNALLY shift for this response.
+
+Domain → archetype mapping:
+- Closing deals, sales, negotiation, persuasion → **Hermes (Hero)**
+- Research, analysis, knowledge work, "what does the data say" → **Athena (Sage)**
+- Customer care, ops scheduling, organization, hand-offs, "make sure this gets done" → **Hestia (Caregiver)**
+- Production, building, real-world execution, repairs → **Hephaestus (Creator)**
+- Tech, infrastructure, debugging, systems work → **Hecate (Magician)**
+- Marketing, lead-gen, exploring new approaches → **Artemis (Explorer)**
+- Creative, content, copy, brand voice → **Apollo (Jester)**
+- Customer relationships, retention, NPS, referrals → **Aphrodite (Lover)**
+- Onboarding, first-touch, fresh-start, threshold-crossing → **Persephone (Innocent)**
+- Field-broadcast, relatable copy, "we're regular folks" → **Hercules (Everyman)**
+- Strategic disruption, industry-challenger, "what's broken about this?" → **Prometheus (Outlaw)**
+- Strategy, governance, big-picture, decision authority → **Zeus (Ruler)**
+
+When you shift lens, briefly note it at the START of your response (one short line: "Switching to Hermes for this one — closing question.") then answer in that voice. If the request fits the primary, stay in primary and don't announce anything. If the request blends two archetypes, name both and pick the dominant for the voice.
+
+DON'T force shifts. The default is to stay in the primary lens. Only shift when the domain mismatch is clear enough that staying in primary would feel off.`;
+
+function applyArchetype(prompt, archetypeKey) {
+  if (!archetypeKey || !ARCHETYPE_PROMPTS[archetypeKey]) return prompt;
+  return prompt + ARCHETYPE_PROMPTS[archetypeKey] + LENS_SELECTION_INSTRUCTION;
+}
+
+// Phase 17: Agent Mode router — picks the best archetype for a user request.
+// Low/Medium effort: keyword scoring (free, deterministic, ~50ms).
+// High effort: Haiku call ($0.001, ~700ms, better accuracy on ambiguous prompts).
+const AGENT_KEYWORDS = {
+  ruler:     ['strategy', 'strategic', 'big picture', 'oversight', 'governance', 'priorities', 'direction', 'top priority', 'plan the day', 'plan the week', 'decide', 'allocation'],
+  caregiver: ['customer care', 'follow up', 'follow-up', 'follow-ups', 'schedule', 'ops', 'operations', 'organize', 'hand off', 'handoff', 'crm', 'contact', 'note', 'admin'],
+  hero:      ['close', 'closing', 'sale', 'sales', 'deal', 'negotiate', 'objection', 'pitch', 'quote', 'proposal', 'prospect', 'pipeline'],
+  creator:   ['production', 'build', 'install', 'crew', 'job site', 'jobsite', 'work order', 'paysheet', 'material', 'measure', 'roofing'],
+  sage:      ['analysis', 'analyze', 'research', 'data', 'what does the data', 'learn', 'study', 'review', 'audit', 'numbers', 'report', 'metrics', 'kpi'],
+  magician:  ['code', 'debug', 'api', 'systems', 'infrastructure', 'deploy', 'tech', 'database', 'sql', 'migration', 'schema'],
+  explorer:  ['marketing', 'lead gen', 'lead-gen', 'campaign', 'audience', 'ads', 'ad', 'meta', 'instagram', 'facebook', 'reach'],
+  jester:    ['content', 'creative', 'reel', 'video', 'fun', 'joke', 'caption', 'social post', 'brand voice'],
+  lover:     ['relationship', 'review ask', 'referral', 'nps', 'retention', 'thank you', 'reconnect', 'past customer'],
+  innocent:  ['onboard', 'onboarding', 'first touch', 'first-touch', 'welcome', 'fresh start', 'new lead', 'getting started'],
+  everyman:  ['regular folks', 'just people', 'everyday', 'broadcast', 'general'],
+  outlaw:    ['broken', 'industry', 'disrupt', 'challenge the', 'what\'s wrong', 'rethink', 'rebel']
+};
+
+function keywordRouteArchetype(text) {
+  if (!text) return { slug: null, score: 0 };
+  const lower = text.toLowerCase();
+  let best = null, bestScore = 0;
+  for (const [slug, keywords] of Object.entries(AGENT_KEYWORDS)) {
+    let score = 0;
+    for (const kw of keywords) {
+      if (lower.includes(kw)) score += kw.split(' ').length; // multi-word phrases score higher
+    }
+    if (score > bestScore) { bestScore = score; best = slug; }
+  }
+  return { slug: best, score: bestScore };
+}
+
+async function haikuRouteArchetype(text, apiKey) {
+  if (!apiKey || !text) return null;
+  const archetypeList = VALID_ARCHETYPES.map(a => {
+    const greek = { ruler:'Zeus', caregiver:'Hestia', hero:'Hermes', creator:'Hephaestus', sage:'Athena', magician:'Hecate', explorer:'Artemis', jester:'Apollo', lover:'Aphrodite', innocent:'Persephone', everyman:'Hercules', outlaw:'Prometheus' }[a];
+    return `- ${a} (${greek})`;
+  }).join('\n');
+  const prompt = `Pick the single best archetype to handle this user request. Respond with ONLY the lowercase slug, nothing else.\n\nArchetypes:\n${archetypeList}\n\nUser request: "${text}"\n\nSlug:`;
   try {
-    // Cache-bust to defeat Vercel edge cache (snapshot is read-mostly but mutations are frequent)
-    const resp = await fetch(`https://shenron-app.vercel.app/api/snapshot?_t=${Date.now()}`, { cache: 'no-store' });
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5',
+        max_tokens: 20,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+    if (!r.ok) return null;
+    const data = await r.json();
+    const slug = (data.content?.[0]?.text || '').trim().toLowerCase().replace(/[^a-z]/g, '');
+    return VALID_ARCHETYPES.includes(slug) ? slug : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function routeAgentArchetype(text, effort, apiKey) {
+  // Run keyword match first — if confidence is high (score ≥ 3), trust it even on High effort
+  // and skip the Haiku call. Saves ~$0.001/turn whenever the user's intent is clear from keywords.
+  const kw = keywordRouteArchetype(text);
+  if (kw.slug && kw.score >= 3) return kw.slug;
+  // Ambiguous prompt + High effort → escalate to Haiku for accuracy
+  if (effort === 'high') {
+    const haikuPick = await haikuRouteArchetype(text, apiKey);
+    if (haikuPick) return haikuPick;
+  }
+  if (kw.slug) return kw.slug;
+  return 'ruler'; // safe default
+}
+
+// Parse leading slash-command archetype switch from a message: "/hermes close this deal" → { archetype: 'hero', cleanedMessage: 'close this deal' }
+// Map of slash commands → archetype key
+const ARCHETYPE_SLASH = {
+  zeus: 'ruler', ruler: 'ruler',
+  hestia: 'caregiver', caregiver: 'caregiver',
+  hermes: 'hero', hero: 'hero',
+  hephaestus: 'creator', creator: 'creator',
+  athena: 'sage', sage: 'sage',
+  hecate: 'magician', magician: 'magician',
+  artemis: 'explorer', explorer: 'explorer',
+  apollo: 'jester', jester: 'jester',
+  aphrodite: 'lover', lover: 'lover',
+  persephone: 'innocent', innocent: 'innocent',
+  hercules: 'everyman', everyman: 'everyman',
+  prometheus: 'outlaw', outlaw: 'outlaw'
+};
+
+// Natural-language archetype swap — "switch to Athena", "bring in Hermes", "change to outlaw".
+// Returns the new slug or null. Used in Agent Mode so the user can swap without slash commands.
+function parseSwitchCommand(message) {
+  if (!message || typeof message !== 'string') return null;
+  const m = message.match(/^\s*(?:switch to|bring in|change to|swap to)\s+([a-z]+)\b/i);
+  if (!m) return null;
+  const name = m[1].toLowerCase();
+  return ARCHETYPE_SLASH[name] || null;
+}
+
+function parseArchetypeSlash(message) {
+  if (!message || typeof message !== 'string') return { archetype: null, cleanedMessage: message, helpKind: null };
+  const m = message.match(/^\/([a-z?]+)(?:\s+(.*))?$/is);
+  if (!m) return { archetype: null, cleanedMessage: message, helpKind: null };
+  const cmd = m[1].toLowerCase();
+  const rest = (m[2] || '').trim();
+  // Phase 11: help commands short-circuit before Claude
+  if (cmd === 'help' || cmd === '?' || cmd === 'commands') return { archetype: null, cleanedMessage: message, helpKind: 'help' };
+  if (cmd === 'archetypes' || cmd === 'lenses') return { archetype: null, cleanedMessage: message, helpKind: 'archetypes' };
+  if (cmd === 'onboard' || cmd === 'welcome') return { archetype: null, cleanedMessage: message, helpKind: 'onboard' };
+  const archetype = ARCHETYPE_SLASH[cmd];
+  if (!archetype) return { archetype: null, cleanedMessage: message, helpKind: null };
+  return { archetype, cleanedMessage: rest || message, helpKind: null };
+}
+
+// Phase 11.5: onboarding interview prompt. When a user types /onboard the brain greets them
+// and conducts a conversational 5-question interview. The brain handles the multi-turn flow naturally,
+// then the user opens the persona modal (long-press speaker icon) to save the result.
+function buildOnboardResponse(userRole, userName) {
+  const archetypeForRole = userRole === 'owner' ? 'Zeus / Ruler' :
+    userRole === 'admin' ? 'Hestia / Caregiver' :
+    userRole === 'sales' ? 'Hermes / Hero' :
+    'Hephaestus / Creator';
+  return `## Welcome to Ryujin, ${userName || 'friend'}.
+
+Quick conversational onboarding. Five questions, takes about 3 minutes. By the end I'll know how to show up for you, and you'll know what I can do.
+
+**1.** What's your role here? Are you on sales, ops, production, leadership, something else? Walk me through what your typical day looks like.
+
+(Just answer that one and I'll move to the next. We'll go question by question.)
+
+---
+
+After we're done, I'll suggest a default archetype lens for you (mine for your role would be **${archetypeForRole}** but you might want a different one based on how you describe yourself). You can save it from the persona modal — long-press the speaker icon in this chat.
+
+What you can also do anytime:
+- Type \`/help\` for the full command reference
+- Type \`/archetypes\` to see all 12 lenses
+- Type \`/zeus\`, \`/hermes\`, \`/athena\` etc. before any message to shift the AI's voice for that turn
+
+Ready when you are.`;
+}
+
+// Phase 11: static help responses. Returned directly without a Claude call.
+function buildHelpResponse(kind, userRole) {
+  if (kind === 'archetypes') {
+    return `## The 12 Archetype Lenses
+
+Type any of these as a slash command before your message to shift the AI's voice for that turn (e.g. \`/hermes close this deal\`):
+
+| Slash | Archetype | When to use |
+|---|---|---|
+| \`/zeus\` or \`/ruler\` | Zeus, Ruler | Strategy, governance, big-picture decisions |
+| \`/hestia\` or \`/caregiver\` | Hestia, Caregiver | Ops, customer care, organization |
+| \`/hermes\` or \`/hero\` | Hermes, Hero | Sales, closing, negotiation |
+| \`/hephaestus\` or \`/creator\` | Hephaestus, Creator | Production, build, hands-on craft |
+| \`/athena\` or \`/sage\` | Athena, Sage | Knowledge, analysis, research |
+| \`/hecate\` or \`/magician\` | Hecate, Magician | Tech, systems, transformation |
+| \`/artemis\` or \`/explorer\` | Artemis, Explorer | Marketing, lead-gen, frontier work |
+| \`/apollo\` or \`/jester\` | Apollo, Jester | Creative, content, brand voice |
+| \`/aphrodite\` or \`/lover\` | Aphrodite, Lover | Customer relationships, retention, NPS |
+| \`/persephone\` or \`/innocent\` | Persephone, Innocent | Onboarding, first-touch, fresh starts |
+| \`/hercules\` or \`/everyman\` | Hercules, Everyman | Field broadcast, relatable, no airs |
+| \`/prometheus\` or \`/outlaw\` | Prometheus, Outlaw | Industry-challenger, strategic disruption |
+
+You can also set your default archetype in the persona modal (long-press the speaker icon). The brain will auto-detect when a request fits a different lens and shift for you.
+
+For full reference: ask "fetch the kb-archetype-system doc" or read it in the admin Documents tab.`;
+  }
+  // 'help' default
+  const roleNote = userRole === 'owner' ? 'You have full owner authority.' :
+    userRole === 'admin' ? 'You have admin (operations) scope. Outbound is drafted-only.' :
+    userRole === 'sales' ? 'You have sales scope (your pipeline + customer comms).' :
+    'You have crew scope (production tickets + on-site work).';
+  return `## Ryujin Chat — How to Use
+
+${roleNote}
+
+**Asking questions**
+Just type. The brain will fetch any relevant SOP from the docs system, look up data across GHL / Gmail / Calendar / Drive / Estimator OS / ads, and answer.
+
+**Switching the AI's voice mid-conversation**
+Start any message with a slash command:
+- \`/hermes close this deal\` (sales lens)
+- \`/athena what does the data say about Q1\` (analysis lens)
+- \`/aphrodite draft a referral ask for Sheila\` (relationships lens)
+- \`/prometheus what's broken about how roofing companies hire\` (disruption lens)
+
+Type \`/archetypes\` to see all 12 lenses with descriptions.
+
+**Voice**
+- Tap the mic icon and speak (browser-native speech recognition)
+- Tap the speaker icon to toggle auto-speak (AI reads responses aloud)
+- Long-press the speaker icon to open persona settings
+
+**Persona settings**
+Set your AI's name, personality style, and default archetype lens. The persona overlays on top of your role.
+
+**Common asks**
+- "What's our [SOP topic]?" → fetches and quotes the doc
+- "Look up [contact name]" → pulls their CRM profile + pipeline + history
+- "Draft a [text/email] for [person]" → drafted only, you review before send
+- "Schedule [event]" → creates calendar entry
+- "What's queued for me today?" → priority pulse + briefing summary
+
+Type \`/archetypes\` for the full lens reference.`;
+}
+
+
+
+// Documents index — pulled at chat startup so Shenron knows what SOPs exist.
+// Filtered by role per Phase 5.4 visibility rules. Full body fetched on-demand via fetch_doc tool.
+async function fetchDocsIndex(role = 'owner') {
+  try {
+    const resp = await fetch('https://ryujin-os.vercel.app/api/docs?tenant=plus-ultra', { cache: 'no-store' });
     if (!resp.ok) return '';
-    const snapshot = await resp.json();
-    if (!snapshot?.sections) return '';
-    return `\n\n---\n\n# SHENRON SNAPSHOT (updated ${snapshot.updated_at})\n${JSON.stringify(snapshot.sections)}`;
+    const data = await resp.json();
+    const allDocs = data?.docs || [];
+    const docs = allDocs.filter(d => roleCanSeeDoc(role, d.slug));
+    if (docs.length === 0) return '';
+    let context = '\n\n---\n\n# PLUS ULTRA SOPs (Ryujin Documents)\n';
+    context += 'Authoritative SOPs covering sales, ops, pricing, contracts. When asked anything procedural (objections, pricing, warranty, contracts, repair rates, lead routing, GHL stages, etc.), check this index first and use fetch_doc to read the relevant one before answering. If a question is covered here, the doc is the source of truth, do not improvise.\n\n';
+    for (const d of docs) {
+      const status = d.status === 'published' ? '' : ` [${d.status}]`;
+      const summary = d.summary ? `, ${d.summary}` : '';
+      context += `- \`${d.slug}\` (v${d.version})${status}: **${d.title}**${summary}\n`;
+    }
+    return context;
   } catch (e) {
     return '';
+  }
+}
+
+// Snapshot — in-process cache with 60s TTL. Saves both the HTTP roundtrip AND keeps the
+// snapshot tokens stable inside the 5-min Anthropic cache window for prompt-cache hits.
+// Best-effort across serverless instances (cold starts re-fetch, warm hits cache).
+let _snapshotCache = { data: '', expires: 0 };
+async function fetchSnapshot() {
+  if (Date.now() < _snapshotCache.expires && _snapshotCache.data) return _snapshotCache.data;
+  try {
+    const resp = await fetch('https://ryujin-os.vercel.app/api/snapshot');
+    if (!resp.ok) return _snapshotCache.data || '';
+    const snapshot = await resp.json();
+    if (!snapshot?.sections) return _snapshotCache.data || '';
+    const formatted = `\n\n---\n\n# RYUJIN SNAPSHOT (updated ${snapshot.updated_at})\n${JSON.stringify(snapshot.sections)}`;
+    _snapshotCache = { data: formatted, expires: Date.now() + 60_000 };
+    return formatted;
+  } catch (e) {
+    return _snapshotCache.data || '';
   }
 }
 
@@ -816,8 +1451,21 @@ const TOOLS = [
         customer_province: { type: 'string', description: 'Default NB' },
         ghl_contact_id: { type: 'string', description: 'GHL contactId if known — stored on estimate for later linking' },
         sales_owner: { type: 'string', enum: ['mackenzie', 'darcy'], description: 'Which rep owns this lead. Controls rep card, signed letter, intro video on the proposal. Default: darcy (since he handles most sales).' },
-        square_feet: { type: 'number', description: '2D footprint sqft (engine applies pitch multiplier itself — do NOT pre-adjust)' },
-        pitch: { type: 'string', description: 'Dominant pitch e.g. "8/12". Single value only — engine limitation.' },
+        square_feet: { type: 'number', description: '2D footprint sqft (engine applies pitch multiplier itself — do NOT pre-adjust). Use this OR `planes` — when planes is provided it overrides square_feet+pitch.' },
+        pitch: { type: 'string', description: 'Dominant pitch e.g. "8/12". Use for single-pitch roofs. For mixed-pitch (e.g. main 5/12 + steep rakes 12/12) use `planes` instead so each section gets the correct labor band rate.' },
+        planes: {
+          type: 'array',
+          description: 'Multi-pitch roof breakdown. ARRAY of {sqft, pitch, label} for jobs where different sections have different pitches. Engine sums per-plane pitch-adjusted area AND splits sub-paysheet labor into per-band rates ($110/SQ at 4-6, $135 at 7-9, $160 at 10-12, $180 at 13+). Use this whenever a roof has steep dormers, rakes, additions, or otherwise mixed pitches — single `pitch` underbills the steep sections. Leave empty for single-pitch roofs.',
+          items: {
+            type: 'object',
+            properties: {
+              sqft: { type: 'number', description: '2D footprint sqft of this plane (engine applies pitch multiplier itself)' },
+              pitch: { type: 'string', description: 'Pitch of this plane e.g. "12/12"' },
+              label: { type: 'string', description: 'Optional friendly label e.g. "Upper main", "Front rake", "Garage"' }
+            },
+            required: ['sqft', 'pitch']
+          }
+        },
         complexity: { type: 'string', enum: ['simple', 'medium', 'complex'], description: 'Default: medium. Use complex for 20+ facets, multi-section roofs, heavy valleys.' },
         eaves_lf: { type: 'number' },
         rakes_lf: { type: 'number' },
@@ -846,7 +1494,12 @@ const TOOLS = [
         custom_prices: { type: 'object', description: 'Override engine output: {gold:N, platinum:N, diamond:N} or {standard:N, enhanced:N, premium:N} for metal. Skips multiplier.', properties: { gold: { type: 'number' }, platinum: { type: 'number' }, diamond: { type: 'number' }, standard: { type: 'number' }, enhanced: { type: 'number' }, premium: { type: 'number' } } },
         selected_package: { type: 'string', enum: ['gold', 'platinum', 'diamond'], description: 'Recommended tier. Default: platinum.' },
         notes: { type: 'string', description: 'Internal notes — skylight scope, concerns, custom adders, etc.' },
-        tags: { type: 'array', items: { type: 'string' }, description: 'Estimate tags e.g. ["canvassing", "riverview", "source:facebook-ad"]' }
+        tags: { type: 'array', items: { type: 'string' }, description: 'Estimate tags e.g. ["canvassing", "riverview", "source:facebook-ad"]' },
+        before_photo_url: { type: 'string', description: 'URL of before photo from chat attachment. Auto-linked to estimate as caption=before. Use the URL field of an attachment Mackenzie dropped in this conversation.' },
+        after_photo_url: { type: 'string', description: 'URL of after photo from chat attachment. Auto-linked as caption=after + cover.' },
+        cover_photo_url: { type: 'string', description: 'URL of cover/hero photo (defaults to after_photo_url if not provided).' },
+        share_token: { type: 'string', description: 'Override the auto-generated share token. Use a slugified customer-address pattern e.g. "plus-ultra-egbuwoku-75rachel".' },
+        lock: { type: 'boolean', description: 'If true, lock the estimate at the selected tier price (sets locked_at + final_accepted_total). Use for honored legacy quotes or signed proposals.' }
       },
       required: ['customer_name', 'customer_address', 'square_feet', 'pitch']
     }
@@ -1360,13 +2013,47 @@ const TOOLS = [
         auto_approve_threshold_cad: { type: 'number', description: 'Auto-approve threshold for non-hard-gate entry types. Entries under this dollar value auto-approve; equal/above goes to pending. Hard-gate types (scope_change, advance_payout, rate_suggestion, change_order) always go to pending regardless.' }
       }
     }
+  },
+  {
+    name: 'list_docs',
+    description: 'List all Plus Ultra SOPs (Ryujin Documents). Returns slug, title, summary, version, status for every doc. Use when Mackenzie or Cat asks "what docs do we have on X" or you need to find the right SOP before answering a procedural question. The system prompt already includes the index, so only call this if you need a fresh pull (docs change rarely mid-conversation).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', enum: ['draft', 'published'], description: 'Optional: filter by status. Omit to get all.' }
+      }
+    }
+  },
+  {
+    name: 'fetch_doc',
+    description: 'Fetch the full markdown body of a Plus Ultra SOP by slug. ALWAYS use this before answering procedural questions about sales, ops, pricing, contracts, warranty, repair pricing, lead routing, GHL pipeline stages, or anything covered in the docs index. The slug list is in the system prompt under PLUS ULTRA SOPs. Quote relevant sections directly when answering — do not paraphrase rules.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        slug: { type: 'string', description: 'The doc slug (e.g. "objection-handling-playbook", "outside-sales-handbook"). See PLUS ULTRA SOPs section in system prompt for available slugs.' }
+      },
+      required: ['slug']
+    }
+  },
+  {
+    name: 'recall_conversation',
+    description: 'Search the user\'s past conversations for keyword matches. Use when the user asks "what did we discuss about X", "what did we decide yesterday", "remind me of our conversation about [topic]". Returns up to 5 matching conversation snippets with timestamps and titles. Scoped to the asking user (Mac sees Mac\'s history, Cat sees Cat\'s, etc.). Returns empty if no matches.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Keyword(s) to search for in past conversations. Multi-word queries OK (e.g., "Sheila Peach color", "Cornhill ridge vent", "objection handling").' },
+        days_back: { type: 'number', description: 'Optional: limit to conversations from last N days. Default 30.' }
+      },
+      required: ['query']
+    }
   }
 ];
 
 // ═══════════════════════════════════════════
 // WRITE TOOLS — Route through /api/router for approval
 // ═══════════════════════════════════════════
-const ROUTER_URL = 'https://shenron-app.vercel.app/api/router';
+// Phase 9: router ported to Ryujin (was on shenron-app, decommissioned Apr 29). Postgres-backed.
+const ROUTER_URL = 'https://ryujin-os.vercel.app/api/router';
 
 async function routeForApproval(actionType, target, summary, executePayload) {
   const resp = await fetch(ROUTER_URL, {
@@ -1986,9 +2673,23 @@ async function executeTool(name, input, attachments = []) {
         const distKM = Number(input.distance_km) || 0;
         const pricingModel = distKM <= 20 ? 'Local' : distKM <= 60 ? 'Day Trip' : 'Extended Stay';
 
+        // Multi-plane normalization (May 7 2026): when planes provided, build a
+        // sanitized array. Engine reads measurements.planes and routes per-plane
+        // SQ through computeSubPaysheet so each section gets its correct band.
+        const cleanPlanes = Array.isArray(input.planes)
+          ? input.planes
+              .map(p => ({
+                sqft: Number(p?.sqft) || 0,
+                pitch: String(p?.pitch || '').trim(),
+                label: p?.label ? String(p.label) : null
+              }))
+              .filter(p => p.sqft > 0 && p.pitch)
+          : [];
+
         const measurements = {
           squareFeet: Number(input.square_feet) || 0,
           pitch: String(input.pitch || '5/12'),
+          planes: cleanPlanes.length > 0 ? cleanPlanes : undefined,
           complexity: input.complexity || 'medium',
           eavesLF: Number(input.eaves_lf) || 0,
           rakesLF: Number(input.rakes_lf) || 0,
@@ -2063,6 +2764,7 @@ async function executeTool(name, input, attachments = []) {
           pricing_model: pricingModel,
           roof_area_sqft: measurements.squareFeet,
           roof_pitch: measurements.pitch,
+          planes: cleanPlanes.length > 0 ? cleanPlanes : null,
           complexity: measurements.complexity,
           eaves_lf: measurements.eavesLF,
           rakes_lf: measurements.rakesLF,
@@ -2100,8 +2802,48 @@ async function executeTool(name, input, attachments = []) {
         if (!cResp.ok) return { error: `Estimate create failed (HTTP ${cResp.status}): ${(await cResp.text()).slice(0, 200)}` };
         const est = await cResp.json();
 
-        // 3. Fire-and-forget logging
-        logOperation('create_ryujin_proposal', { customer: input.customer_name, address: input.customer_address, tier: selected }, { estimate_id: est.id, share_token: est.share_token }, 'ok', null).catch(() => {});
+        // 3a. Optional: override share token + lock + final_accepted_total
+        const updates = {};
+        if (input.share_token && input.share_token !== est.share_token) updates.share_token = String(input.share_token);
+        if (input.lock === true) {
+          updates.locked_at = new Date().toISOString();
+          updates.status = 'proposal_sent';
+          updates.proposal_status = 'Published';
+          const lockedTier = shaped[selected];
+          if (lockedTier) updates.final_accepted_total = lockedTier.totalWithTax || lockedTier.total;
+        }
+        if (Object.keys(updates).length) {
+          try {
+            await fetch(`${RYUJIN_BASE}/api/estimates?tenant=${TENANT}`, {
+              method: 'PUT', headers, body: JSON.stringify({ id: est.id, ...updates })
+            });
+            if (updates.share_token) est.share_token = updates.share_token;
+          } catch (e) { /* non-fatal — surface in message */ }
+        }
+
+        // 3b. Auto-link chat photos to estimate_photos (before / after / cover)
+        const photoLinks = [];
+        if (input.before_photo_url) photoLinks.push({ url: input.before_photo_url, caption: 'before', is_cover: false });
+        if (input.after_photo_url) photoLinks.push({ url: input.after_photo_url, caption: 'after', is_cover: !input.cover_photo_url });
+        if (input.cover_photo_url) photoLinks.push({ url: input.cover_photo_url, caption: 'cover', is_cover: true });
+        if (photoLinks.length) {
+          try {
+            const { supabaseAdmin } = await import('../lib/supabase.js');
+            for (const p of photoLinks) {
+              if (p.is_cover) await supabaseAdmin.from('estimate_photos').update({ is_cover: false }).eq('estimate_id', est.id);
+              const fileName = (p.url.split('/').pop() || 'attachment').split('?')[0];
+              const ext = (fileName.split('.').pop() || 'jpg').toLowerCase();
+              const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+              await supabaseAdmin.from('estimate_photos').insert({
+                estimate_id: est.id, url: p.url, filename: fileName, mime_type: mime,
+                is_cover: p.is_cover, caption: p.caption
+              });
+            }
+          } catch (e) { /* non-fatal */ }
+        }
+
+        // 4. Fire-and-forget logging
+        logOperation('create_ryujin_proposal', { customer: input.customer_name, address: input.customer_address, tier: selected, locked: !!input.lock, photos: photoLinks.length }, { estimate_id: est.id, share_token: est.share_token }, 'ok', null).catch(() => {});
 
         const shareUrl = `${RYUJIN_BASE}/proposal-client.html?share=${est.share_token}`;
         const adminUrl = `${RYUJIN_BASE}/sales-proposal.html?id=${est.id}`;
@@ -2207,6 +2949,120 @@ async function executeTool(name, input, attachments = []) {
         };
       } catch (e) {
         return { error: `set_sub_visibility failed: ${e.message}` };
+      }
+    }
+
+    // ── DOC LOOKUPS (read-only, no approval) ──
+    if (name === 'list_docs') {
+      try {
+        const url = new URL('https://ryujin-os.vercel.app/api/docs');
+        url.searchParams.set('tenant', 'plus-ultra');
+        if (input.status) url.searchParams.set('status', input.status);
+        const r = await fetch(url.toString(), { cache: 'no-store' });
+        const data = await r.json();
+        if (!r.ok) return { error: data.error || `${r.status}` };
+        const docs = (data.docs || []).map(d => ({
+          slug: d.slug,
+          title: d.title,
+          summary: d.summary,
+          version: d.version,
+          status: d.status,
+          updated_at: d.updated_at
+        }));
+        return { ok: true, count: docs.length, docs };
+      } catch (e) {
+        return { error: `list_docs failed: ${e.message}` };
+      }
+    }
+
+    if (name === 'recall_conversation') {
+      try {
+        const query = String(input.query || '').trim().toLowerCase();
+        if (!query) return { error: 'query required' };
+        const daysBack = Number(input.days_back) || 30;
+        const cutoff = Date.now() - daysBack * 24 * 60 * 60 * 1000;
+        const userId = input._userId || null;
+
+        const HQ_URL = (process.env.HQ_SUPABASE_URL || '').trim();
+        const HQ_KEY = (process.env.HQ_SUPABASE_SERVICE_KEY || '').trim();
+        if (!HQ_URL || !HQ_KEY) return { error: 'conversation store not configured' };
+        const r = await fetch(HQ_URL.replace(/\/$/, '') + '/rest/v1/hq_user_state?select=state&id=eq.mackenzie-hq', {
+          headers: { apikey: HQ_KEY, Authorization: 'Bearer ' + HQ_KEY }
+        });
+        if (!r.ok) return { error: 'state read failed: ' + r.status };
+        const rows = await r.json();
+        const conversations = (rows[0]?.state?.conversations) || [];
+
+        // Tokenize query for relevance scoring
+        const terms = query.split(/\s+/).filter(t => t.length > 1);
+        const matches = [];
+        for (const conv of conversations) {
+          if (conv.updated_at && conv.updated_at < cutoff) continue;
+          // Filter by user_id if available (legacy conversations have no user_id, treat as Mac/owner)
+          if (userId && conv.user_id && conv.user_id !== userId) continue;
+          if (userId && !conv.user_id) {
+            // Legacy conversations — only Mac (owner) can see them
+            if (input._userRole && input._userRole !== 'owner') continue;
+          }
+          let score = 0;
+          let matchedSnippet = '';
+          for (const msg of conv.messages || []) {
+            const text = ((msg.user || '') + ' ' + (msg.assistant || '')).toLowerCase();
+            for (const term of terms) {
+              if (text.includes(term)) score += 1;
+            }
+            if (!matchedSnippet && terms.some(t => text.includes(t))) {
+              matchedSnippet = (msg.user || '').slice(0, 200) + ' → ' + (msg.assistant || '').slice(0, 300);
+            }
+          }
+          if (score > 0) {
+            matches.push({
+              id: conv.id,
+              title: conv.title,
+              updated_at: new Date(conv.updated_at).toISOString(),
+              score,
+              snippet: matchedSnippet,
+              message_count: (conv.messages || []).length
+            });
+          }
+        }
+        matches.sort((a, b) => b.score - a.score || b.updated_at.localeCompare(a.updated_at));
+        return {
+          ok: true,
+          query,
+          days_back: daysBack,
+          match_count: matches.length,
+          top_matches: matches.slice(0, 5)
+        };
+      } catch (e) {
+        return { error: `recall_conversation failed: ${e.message}` };
+      }
+    }
+
+    if (name === 'fetch_doc') {
+      try {
+        const slug = String(input.slug || '').trim().toLowerCase();
+        if (!slug) return { error: 'slug required' };
+        // Phase 5.4: visibility check. _userRole is stashed on input by handler before dispatch.
+        const userRole = input._userRole || 'owner';
+        if (!roleCanSeeDoc(userRole, slug)) {
+          return { error: `Doc "${slug}" is not available to your role (${userRole}). Ask Mac if you need access.` };
+        }
+        const r = await fetch(`https://ryujin-os.vercel.app/api/docs?slug=${encodeURIComponent(slug)}&tenant=plus-ultra`, { cache: 'no-store' });
+        const data = await r.json();
+        if (!r.ok) return { error: data.error || `Doc "${slug}" not found` };
+        return {
+          ok: true,
+          slug: data.slug,
+          title: data.title,
+          summary: data.summary,
+          version: data.version,
+          status: data.status,
+          markdown: data.markdown,
+          updated_at: data.updated_at
+        };
+      } catch (e) {
+        return { error: `fetch_doc failed: ${e.message}` };
       }
     }
 
@@ -2881,13 +3737,15 @@ async function executeTool(name, input, attachments = []) {
 // ═══════════════════════════════════════════
 // STREAMING HELPER — collect full response from Claude
 // ═══════════════════════════════════════════
-async function callClaude(apiKey, systemPrompt, messages, useTools = true) {
+async function callClaude(apiKey, systemPrompt, messages, useTools = true, effort = 'medium') {
+  const cfg = effortToConfig(effort);
   const body = {
-    model: 'claude-sonnet-4-6',
+    model: cfg.model,
     max_tokens: 2048,
     system: systemPrompt,
     messages: messages
   };
+  if (cfg.thinking) body.thinking = cfg.thinking;
   if (useTools) body.tools = TOOLS;
 
   // Retry with backoff for rate limits
@@ -2921,16 +3779,38 @@ async function callClaude(apiKey, systemPrompt, messages, useTools = true) {
 // Calls onDelta(kind, text) for each thinking_delta and text_delta as they arrive,
 // then returns the assembled response in the same shape as callClaude (with thinking blocks
 // preserved in content so the tool loop can pass them back to subsequent turns).
-async function callClaudeStream(apiKey, systemPrompt, messages, onDelta, useTools = true) {
+// Phase 17: effort tier → model + thinking budget mapping. Drives cost-aware behavior per request.
+const EFFORT_CONFIG = {
+  low:    { model: 'claude-haiku-4-5',  thinking: null /* drop field */ },
+  medium: { model: 'claude-sonnet-4-6', thinking: { type: 'enabled', budget_tokens: 1500 } },
+  high:   { model: 'claude-opus-4-7',   thinking: { type: 'enabled', budget_tokens: 3000 } }
+};
+function effortToConfig(effort) {
+  return EFFORT_CONFIG[effort] || EFFORT_CONFIG.medium;
+}
+
+async function callClaudeStream(apiKey, systemPrompt, messages, onDelta, useTools = true, toolsList = null, effort = 'medium') {
+  const cfg = effortToConfig(effort);
   const body = {
-    model: 'claude-sonnet-4-6',
-    max_tokens: 6000,
+    model: cfg.model,
+    max_tokens: effort === 'high' ? 8000 : 6000,
     system: systemPrompt,
     messages,
-    stream: true,
-    thinking: { type: 'enabled', budget_tokens: 3000 }
+    stream: true
   };
-  if (useTools) body.tools = TOOLS;
+  if (cfg.thinking) body.thinking = cfg.thinking;
+  if (useTools) {
+    const tools = toolsList || TOOLS;
+    if (Array.isArray(tools) && tools.length > 0) {
+      // Phase 13: cache_control on the last tool tells Anthropic to cache the entire tools array as a unit.
+      // Cache TTL 5 min, reads at 10% of input rate. Big win when multiple messages hit the same tool list.
+      const last = tools[tools.length - 1];
+      body.tools = [
+        ...tools.slice(0, -1),
+        { ...last, cache_control: { type: 'ephemeral' } }
+      ];
+    }
+  }
 
   let response;
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -3058,10 +3938,185 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
   }
 
-  const { message, history = [], liveData, agent, attachments = [], conversation_id, quest_id } = req.body;
+  let { message, history = [], liveData, agent, attachments = [], conversation_id, quest_id, archetype: requestedArchetype, voiceMode: requestedVoiceMode, viewAs: requestedViewAs, effort: requestedEffort, mode: requestedMode } = req.body;
+  // Phase 17: validate effort + mode. Default medium / quick.
+  const effort = ['low', 'medium', 'high'].includes(requestedEffort) ? requestedEffort : 'medium';
+  const interactionMode = ['quick', 'speech', 'agent'].includes(requestedMode) ? requestedMode : 'quick';
   if (!message && attachments.length === 0) {
     return res.status(400).json({ error: 'No message provided' });
   }
+
+  // Phase 5.1: resolve user context. Default to owner if no auth (preserves Mac's existing chat).
+  const userContext = await resolveUserContext(req);
+  let userRole = userContext?.role || 'owner';
+  let userName = userContext?.userName || 'Mackenzie';
+  let userPersona = userContext?.persona || null;
+
+  // Phase 15: View-as impersonation. Owner-only — owner can preview any role to verify gating + archetype.
+  // Override role / archetype-default / display name; persona + style profile cleared so we see the
+  // role baseline experience without the owner's personalizations leaking in.
+  let viewAsActive = null;
+  if (userRole === 'owner' && requestedViewAs && typeof requestedViewAs === 'object') {
+    const va = requestedViewAs;
+    if (VALID_ROLES.includes(va.role)) {
+      viewAsActive = {
+        role: va.role,
+        archetype: VALID_ARCHETYPES.includes(va.archetype) ? va.archetype : null,
+        name: typeof va.name === 'string' ? va.name.slice(0, 60) : null
+      };
+      userRole = viewAsActive.role;
+      if (viewAsActive.name) userName = viewAsActive.name;
+      userPersona = null; // owner's persona doesn't apply when viewing-as
+    }
+  }
+
+  // Phase 7: archetype resolution. Priority: slash-command in message > req.body.archetype > user.primary_archetype > role default.
+  const slashParsed = parseArchetypeSlash(typeof message === 'string' ? message : '');
+
+  // Phase 11 + 11.5: handle /help, /archetypes, /onboard — short-circuit, return text via SSE without Claude call
+  if (slashParsed.helpKind) {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    const helpText = slashParsed.helpKind === 'onboard'
+      ? buildOnboardResponse(userRole, userName)
+      : buildHelpResponse(slashParsed.helpKind, userRole);
+    const chunks = helpText.match(/.{1,80}/gs) || [helpText];
+    for (const chunk of chunks) {
+      res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
+    }
+    res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+    return res.end();
+  }
+
+  if (slashParsed.archetype) {
+    message = slashParsed.cleanedMessage;
+  }
+  let activeArchetype = slashParsed.archetype
+    || (VALID_ARCHETYPES.includes(requestedArchetype) ? requestedArchetype : null)
+    || (viewAsActive && viewAsActive.archetype)
+    || (viewAsActive ? null : userContext?.primaryArchetype)
+    || (userRole === 'owner' ? 'ruler' : userRole === 'admin' ? 'caregiver' : userRole === 'sales' ? 'hero' : 'creator');
+
+  // Phase 17: Agent Mode auto-routing. When mode='agent' and no archetype is explicitly locked,
+  // route the request to the best-matched archetype based on the message content.
+  // Lock-in: frontend tracks the matched archetype per session and passes it back as `archetype` on
+  // subsequent messages, which short-circuits routing here (the activeArchetype check above picks it up).
+  let agentMatched = false;
+  // Natural-language swap takes priority over routing — works in any mode but most useful in Agent.
+  const swapTo = parseSwitchCommand(message || '');
+  if (swapTo && VALID_ARCHETYPES.includes(swapTo)) {
+    activeArchetype = swapTo;
+    agentMatched = true;
+    // Don't strip the message — let the LLM acknowledge the swap naturally in the new voice.
+  } else if (interactionMode === 'agent' && !slashParsed.archetype && !VALID_ARCHETYPES.includes(requestedArchetype)) {
+    const routedSlug = await routeAgentArchetype(message || '', effort, apiKey);
+    if (routedSlug && VALID_ARCHETYPES.includes(routedSlug)) {
+      activeArchetype = routedSlug;
+      agentMatched = true;
+    }
+  }
+
+  // Drift detection: in a locked agent session, suggest a swap when the user's recent activity
+  // has consistently pointed to a different archetype. Fires when current message + at least one
+  // of the prior 2 user turns clearly belong to non-active archetypes (≥3 keyword score each).
+  // Doesn't require all of them to point at the SAME other archetype — just that the user is
+  // drifting away from the locked one. Picks current message's target as the swap suggestion.
+  let driftSuggestion = null;
+  if (interactionMode === 'agent' && !agentMatched && activeArchetype) {
+    const curKw = keywordRouteArchetype(message || '');
+    const curOff = curKw.slug && curKw.slug !== activeArchetype && curKw.score >= 3;
+    if (curOff) {
+      const recentUserTurns = (history || []).filter(t => t.role === 'user').slice(-2);
+      const priorOff = recentUserTurns.some(t => {
+        const kw = keywordRouteArchetype(typeof t.content === 'string' ? t.content : '');
+        return kw.slug && kw.slug !== activeArchetype && kw.score >= 3;
+      });
+      if (priorOff) driftSuggestion = curKw.slug;
+    }
+  }
+
+  // Phase 6A + 7 + 8: layer persona → archetype → style profile on top of role prompt.
+  // Phase 15: when viewing-as, skip the owner's style profile so we see the impersonated role's baseline.
+  const userStyleProfile = viewAsActive ? null : (userContext?.styleProfile || null);
+  let userBasePrompt = applyStyleProfile(
+    applyArchetype(applyPersona(getRolePrompt(userRole), userPersona), activeArchetype),
+    userStyleProfile
+  );
+  // Phase 17: cross-archetype awareness for Agent Mode. The locked archetype gets brief summaries
+  // of the other 11 lenses so it can synthesize across domains in its own voice ("from a Creator's
+  // view…") instead of staying siloed. Agent never swaps silently — user controls swap.
+  if (interactionMode === 'agent' && activeArchetype) {
+    const lensSummaries = {
+      ruler: 'Zeus, Ruler — strategy, governance, big-picture allocation',
+      caregiver: 'Hestia, Caregiver — operations, customer care, organization',
+      hero: 'Hermes, Hero — sales, closing, objection handling',
+      creator: 'Hephaestus, Creator — production, build, jobsite execution',
+      sage: 'Athena, Sage — analysis, research, data-driven judgment',
+      magician: 'Hecate, Magician — tech, systems, transformation',
+      explorer: 'Artemis, Explorer — marketing, lead-gen, frontier work',
+      jester: 'Apollo, Jester — creative content, brand voice, levity',
+      lover: 'Aphrodite, Lover — relationships, retention, referrals',
+      innocent: 'Persephone, Innocent — onboarding, fresh starts, first-touch',
+      everyman: 'Hercules, Everyman — relatable, grounded, broad appeal',
+      outlaw: 'Prometheus, Outlaw — disruption, challenger thinking'
+    };
+    const others = Object.entries(lensSummaries)
+      .filter(([k]) => k !== activeArchetype)
+      .map(([, v]) => `- ${v}`)
+      .join('\n');
+    userBasePrompt += `\n\n## AGENT MODE — CROSS-LENS AWARENESS
+You're locked as the matched archetype for this session, but you have reference access to the other 11 lenses:
+${others}
+
+When a question touches another lens, weave in that perspective IN YOUR OWN VOICE — don't break character. Phrase it like "from a Sage's view, the data suggests..." or "if you wanted the full Hermes pitch on this, I could swap him in."
+
+Never silently swap to another archetype. The user explicitly controls swaps via "switch to <name>" or "bring in <name>".`;
+  }
+  if (driftSuggestion) {
+    const swapTarget = {
+      ruler:'Zeus', caregiver:'Hestia', hero:'Hermes', creator:'Hephaestus',
+      sage:'Athena', magician:'Hecate', explorer:'Artemis', jester:'Apollo',
+      lover:'Aphrodite', innocent:'Persephone', everyman:'Hercules', outlaw:'Prometheus'
+    }[driftSuggestion];
+    userBasePrompt += `\n\n## ROUTING DRIFT NOTICED
+The user's last two requests have drifted into ${swapTarget}'s territory. After answering in your own voice, end with one short line acknowledging this: "This is more ${swapTarget}'s territory — say 'switch to ${swapTarget}' if you want him/her to take over." Don't make it longer than one line. Don't apologize. Don't auto-swap.`;
+  }
+
+  if (viewAsActive) {
+    userBasePrompt += `\n\n## VIEW-AS PREVIEW
+You are being previewed by Mackenzie (the owner) as ${viewAsActive.name || viewAsActive.role}. Respond as you would for that user — use the role's authority scope, archetype voice, and tool restrictions exactly as if Mackenzie were that person. Don't break character to acknowledge the preview unless directly asked.`;
+  }
+  // Phase 14.2: voice mode flag — shape responses for spoken delivery
+  // Default terseness rule for the chat orb. The user explicitly asked for direct answers
+  // — no preamble, no "happy to help", no trailing "let me know if…", no recap. Override
+  // archetype voice on length only, not on tone. Heavy reasoning for High effort still allowed
+  // when the question genuinely needs it; the rule is "match length to question."
+  userBasePrompt += `\n\n## TERSENESS RULE (HARD)
+Answer the question. Stop.
+- No preamble ("Great question", "Happy to help", "Let me think about that").
+- No trailing offers ("Let me know if you need more", "Hope this helps").
+- No recap of what the user asked.
+- No bullet lists for simple questions — one or two sentences is usually enough.
+- Match length to the question: a one-line question gets a one-line answer. Only go long when the question genuinely requires depth.
+- If you don't know something, say "I don't know" in one line and stop. Don't speculate.
+- Don't ask follow-up questions unless the request is genuinely ambiguous.`;
+
+  if (requestedVoiceMode === true) {
+    userBasePrompt += `\n\n## VOICE MODE ACTIVE
+The user is talking with you through voice — they're listening, not reading. Adjust your delivery accordingly:
+- Conversational tone, like a knowledgeable colleague catching up over coffee
+- Short sentences, natural speech rhythm, contractions
+- NO markdown: no headers, no bullet lists, no asterisks, no code blocks, no tables
+- If you have multiple points, weave them into flowing prose, don't enumerate
+- Aim for under 80 words on most answers, longer only when the user truly needs detail
+- Read aloud well: avoid jargon-dense phrasing, parenthetical asides, or anything that would sound stiff
+- Use natural mid-sentence pauses ("so,", "right,", "look,") sparingly when they actually fit your archetype voice`;
+  }
+  // Phase 5.3: tool gating. Filter TOOLS array per role before Claude sees it.
+  const allowedTools = TOOLS.filter(t => roleCanUseTool(userRole, t.name));
+  // Lower thinking budget for non-Claude-API calls — same cost reduction logic, applied at request time
+  // (see callClaudeStream for the actual budget setting)
 
   // Agent persona overlays — when a specific Z Fighter is selected
   const AGENT_PERSONAS = {
@@ -3109,11 +4164,13 @@ You are NOW speaking as Gohan, the scholar warrior — Mackenzie's game developm
 - Your catchphrases: "The game is our legacy — let's make sure it's worthy." "I've been studying the analytics, and here's what I found."`
   };
 
-  // Build system prompt — snapshot + memory + preferences are the data sources
-  const [snapshotContext, memoryContext, preferencesContext] = await Promise.all([
+  // Build system prompt — snapshot + memory + preferences + docs index are the data sources
+  // Docs index is role-filtered (Phase 5.4)
+  const [snapshotContext, memoryContext, preferencesContext, docsContext] = await Promise.all([
     fetchSnapshot(),
     fetchMemoryContext(),
-    fetchPreferences()
+    fetchPreferences(),
+    fetchDocsIndex(userRole)
   ]);
   let liveDataBlock = '';
   if (liveData) {
@@ -3121,7 +4178,21 @@ You are NOW speaking as Gohan, the scholar warrior — Mackenzie's game developm
   }
   const agentPersona = (agent && AGENT_PERSONAS[agent]) ? AGENT_PERSONAS[agent] : '';
   const fileContext = attachments.length > 0 ? `\n\n## File Context\nMackenzie has attached ${attachments.length} file(s) to this message. Analyze them directly. For job site photos, identify roofing conditions, materials, damage, progress. For documents, extract key information and reference it. For spreadsheets/CSV, summarize the data.\n\nAttachment URLs (use these when calling tools like generate_proposal):\n${attachments.map(a => `- ${a.fileName} (${a.mimeType}): ${a.url}`).join('\n')}` : '';
-  const systemPrompt = BASE_PROMPT + agentPersona + fileContext + preferencesContext + snapshotContext + memoryContext + liveDataBlock;
+  // Phase 5.2 + 13: role-shaped base prompt + prompt caching
+  // Split into two blocks:
+  //   1. CACHED: stable per-user content (role/persona/archetype/style/docs/memory/preferences) — 5min cache
+  //   2. DYNAMIC: per-request content (agent overlay, file attachments, snapshot, live data)
+  // Cache reads are ~10x cheaper than fresh input. Plus Ultra's chat pattern hits this cache window often.
+  const cachedSystemPart = userBasePrompt + preferencesContext + memoryContext + docsContext;
+  const dynamicSystemPart = agentPersona + fileContext + snapshotContext + liveDataBlock;
+  const systemPrompt = dynamicSystemPart
+    ? [
+        { type: 'text', text: cachedSystemPart, cache_control: { type: 'ephemeral' } },
+        { type: 'text', text: dynamicSystemPart }
+      ]
+    : [
+        { type: 'text', text: cachedSystemPart, cache_control: { type: 'ephemeral' } }
+      ];
 
   // Build messages array — accept either {role, content} (Anthropic-native, used by ryujin widgets)
   // or {user, assistant} pair format (legacy, used by shenron-app/chat.html)
@@ -3201,6 +4272,9 @@ You are NOW speaking as Gohan, the scholar warrior — Mackenzie's game developm
       case 'read_local_file': return `💻 Reading local file: ${(input.path || '').split(/[\\/]/).pop() || input.path}`;
       case 'glob_local': return `💻 Searching local files: ${input.pattern}`;
       case 'list_local_dir': return `💻 Listing local folder: ${(input.path || '').split(/[\\/]/).pop() || input.path}`;
+      case 'list_docs': return `📚 Listing Plus Ultra SOPs${input.status ? ` (${input.status})` : ''}`;
+      case 'fetch_doc': return `📚 Reading SOP: ${input.slug}`;
+      case 'recall_conversation': return `🧠 Recalling past conversations: "${input.query}"`;
       default: return `⚙ ${name}`;
     }
   }
@@ -3213,8 +4287,15 @@ You are NOW speaking as Gohan, the scholar warrior — Mackenzie's game developm
   };
 
   try {
+    // Phase 17: surface matched archetype to frontend BEFORE Claude streams, so chip + face can update.
+    if (agentMatched && activeArchetype) {
+      sse({ matched_archetype: activeArchetype, mode: 'agent' });
+    }
+    if (driftSuggestion) {
+      sse({ routing_suggestion: driftSuggestion, locked_archetype: activeArchetype });
+    }
     // Call Claude with extended thinking + streaming — tool loop
-    let response = await callClaudeStream(apiKey, systemPrompt, messages, onDelta);
+    let response = await callClaudeStream(apiKey, systemPrompt, messages, onDelta, true, allowedTools, effort);
     let toolActions = [];
 
     // Tool use loop — max 5 rounds
@@ -3230,7 +4311,19 @@ You are NOW speaking as Gohan, the scholar warrior — Mackenzie's game developm
       for (const block of response.content) {
         if (block.type === 'tool_use') {
           sse({ tool_start: { id: block.id, label: describeTool(block.name, block.input) } });
-          const result = await executeTool(block.name, block.input, attachments);
+          // Phase 5.3 + 5.4: defense-in-depth — server-side role check + inject role for visibility-aware tools
+          if (!roleCanUseTool(userRole, block.name)) {
+            toolActions.push({ tool: block.name, input: block.input, result: { error: `Tool "${block.name}" not available to your role (${userRole}).` } });
+            sse({ tool_end: { id: block.id, status: 'error', error: 'role-gated', code: null } });
+            toolResults.push({
+              type: 'tool_result',
+              tool_use_id: block.id,
+              content: JSON.stringify({ error: `Tool "${block.name}" not available to your role.` })
+            });
+            continue;
+          }
+          const inputWithRole = { ...block.input, _userRole: userRole, _userId: userContext?.userId || null };
+          const result = await executeTool(block.name, inputWithRole, attachments);
           toolActions.push({ tool: block.name, input: block.input, result });
           let status = 'ok';
           if (result?.error) status = 'error';
@@ -3245,7 +4338,7 @@ You are NOW speaking as Gohan, the scholar warrior — Mackenzie's game developm
       }
 
       messages.push({ role: 'user', content: toolResults });
-      response = await callClaudeStream(apiKey, systemPrompt, messages, onDelta);
+      response = await callClaudeStream(apiKey, systemPrompt, messages, onDelta, true, allowedTools, effort);
     }
 
     // Final text was already streamed by onDelta. Capture it for persistence.
@@ -3262,7 +4355,9 @@ You are NOW speaking as Gohan, the scholar warrior — Mackenzie's game developm
         quest_id: quest_id || null,
         user_message: message || '[attachments]',
         assistant_message: textParts,
-        tool_actions: toolActions
+        tool_actions: toolActions,
+        user_id: userContext?.userId || null,
+        user_role: userRole
       });
     } catch (e) {
       console.error('Conversation persist failed:', e.message);
@@ -3285,7 +4380,7 @@ You are NOW speaking as Gohan, the scholar warrior — Mackenzie's game developm
 // Persist a single chat turn into hq_user_state.state.conversations on the HQ Supabase.
 // Creates a new conversation on first turn (no conversation_id), appends on subsequent turns.
 // Returns the conversation_id.
-async function persistConversation({ conversation_id, quest_id, user_message, assistant_message, tool_actions }) {
+async function persistConversation({ conversation_id, quest_id, user_message, assistant_message, tool_actions, user_id, user_role }) {
   const HQ_URL = (process.env.HQ_SUPABASE_URL || '').trim();
   const HQ_KEY = (process.env.HQ_SUPABASE_SERVICE_KEY || '').trim();
   if (!HQ_URL || !HQ_KEY) return conversation_id;
@@ -3327,6 +4422,8 @@ async function persistConversation({ conversation_id, quest_id, user_message, as
       id: convId,
       title,
       quest_id: quest_id || null,
+      user_id: user_id || null,
+      user_role: user_role || null,
       messages: [turn],
       created_at: now,
       updated_at: now,

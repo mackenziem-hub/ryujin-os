@@ -52,7 +52,11 @@ export default async function handler(req, res) {
       details: { share_token: share, at: new Date().toISOString() }
     }).then(() => {}, () => {});
 
-    const url = `${RYUJIN_BASE}/proposal-client.html?share=${encodeURIComponent(share)}&pdf=1`;
+    // Pass through envelope state so the configurator renders frozen at the
+    // customer's selections (no interactive widgets in the PDF).
+    const envelopeParam = String(req.query.envelope || '').trim();
+    const envQS = envelopeParam ? `&envelope=${encodeURIComponent(envelopeParam)}&pdf_envelope=1` : '';
+    const url = `${RYUJIN_BASE}/proposal-client.html?share=${encodeURIComponent(share)}&pdf=1${envQS}`;
     await page.goto(url, { waitUntil: 'networkidle0', timeout: 45000 });
 
     // Give rendering helpers a beat to finish (gallery lazy-load, hero fade-in, etc.)
@@ -74,6 +78,12 @@ export default async function handler(req, res) {
       .ba-hint, .ba-handle, [data-hide-in-pdf]{ display:none !important; }
       body{ background:#fff !important; }
       .hero-photo::before{ animation:none !important; opacity:0 !important; }
+      /* Envelope mode print suppression — hide interactive controls */
+      .env-system-toggle, .env-cta-row, .env-ticker, #envSigModal, #envDoneModal{ display:none !important; }
+      /* Force envelope summary inline (not sticky) so it lays out cleanly in PDF */
+      .env-summary{ position:relative !important; top:auto !important }
+      /* Make the right-rail content read like a frozen recap */
+      .env-package-name{ animation:none !important }
     `});
 
     const pdf = await page.pdf({

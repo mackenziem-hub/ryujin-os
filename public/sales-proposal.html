@@ -220,6 +220,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg-deep);color:va
 .em-attach{padding:8px 12px;background:rgba(34,211,238,0.07);border:1px dashed rgba(34,211,238,0.25);border-radius:8px;font-family:'Share Tech Mono',monospace;font-size:0.72em;color:var(--accent);display:flex;align-items:center;gap:8px}
 .em-foot{display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;border-top:1px solid rgba(34,211,238,0.12);flex-wrap:wrap}
 </style>
+  <script src="/assets/nav-buttons.js" defer></script>
 </head>
 <body>
 
@@ -1467,7 +1468,7 @@ function openMediaModal(){
         <h3 style="font-family:'Orbitron',sans-serif;font-weight:900;font-size:1.1em;letter-spacing:1.5px;color:#22d3ee">CUSTOMIZE MEDIA</h3>
         <button onclick="closeMediaModal()" style="background:none;border:none;color:rgba(200,220,255,0.6);font-size:1.4em;cursor:pointer">×</button>
       </div>
-      <p style="color:rgba(200,220,255,0.65);font-size:0.88em;line-height:1.5;margin-bottom:20px">Paste public image/video URLs for the client-facing proposal. Leave blank to use defaults.</p>
+      <p style="color:rgba(200,220,255,0.65);font-size:0.88em;line-height:1.5;margin-bottom:20px">Drop files or pick from your computer — they upload and the URL fills in automatically. Or paste a public URL. Leave blank to use defaults.</p>
       <div style="display:flex;flex-direction:column;gap:14px">
         ${mediaRow('Satellite image of client property', 'mm_sat', m.satelliteImage || '', 'https://… .jpg (or screenshot Google Maps sat view)')}
         ${mediaRow('Cover image (hero background)', 'mm_cover', m.coverImage || '', 'https://… .jpg')}
@@ -1495,14 +1496,69 @@ function openMediaModal(){
   `;
   document.body.appendChild(mdl);
   mdl.addEventListener('click', e => { if (e.target === mdl) closeMediaModal(); });
+  wireMediaDropzones();
 }
 function mediaRow(label, id, val, placeholder){
+  const accept = id === 'mm_cvid' || id === 'mm_vurl'
+    ? 'image/*,video/*'
+    : 'image/*';
   return `
     <div>
-      <div style="font-family:'Share Tech Mono',monospace;font-size:0.7em;color:rgba(200,220,255,0.55);letter-spacing:1.2px;margin-bottom:6px">${label.toUpperCase()}</div>
-      <input id="${id}" type="url" value="${val.replace(/"/g, '&quot;')}" placeholder="${placeholder}" style="width:100%;padding:10px 14px;background:rgba(6,10,20,0.7);border:1px solid rgba(34,211,238,0.25);border-radius:8px;color:#fff;font-family:'Share Tech Mono',monospace;font-size:0.82em" />
+      <div style="font-family:'Share Tech Mono',monospace;font-size:0.7em;color:rgba(200,220,255,0.55);letter-spacing:1.2px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <span>${label.toUpperCase()}</span>
+        <span id="${id}_status" style="color:rgba(34,211,238,0.7);font-size:0.85em;text-transform:none;letter-spacing:0.5px"></span>
+      </div>
+      <div id="${id}_drop" style="border:1px dashed rgba(34,211,238,0.35);border-radius:8px;padding:8px;background:rgba(6,10,20,0.5);display:flex;gap:8px;align-items:center" data-target="${id}">
+        <input id="${id}" type="url" value="${val.replace(/"/g, '&quot;')}" placeholder="${placeholder}" style="flex:1;padding:10px 14px;background:rgba(6,10,20,0.7);border:1px solid rgba(34,211,238,0.25);border-radius:6px;color:#fff;font-family:'Share Tech Mono',monospace;font-size:0.82em" />
+        <label style="cursor:pointer;padding:8px 12px;background:rgba(34,211,238,0.15);border:1px solid rgba(34,211,238,0.4);border-radius:6px;color:#22d3ee;font-family:'Share Tech Mono',monospace;font-size:0.72em;letter-spacing:1px;white-space:nowrap">
+          UPLOAD
+          <input type="file" accept="${accept}" style="display:none" onchange="uploadMediaFile(this.files[0], '${id}')" />
+        </label>
+      </div>
     </div>
   `;
+}
+
+async function uploadMediaFile(file, targetId){
+  if (!file) return;
+  const status = document.getElementById(targetId + '_status');
+  const input = document.getElementById(targetId);
+  if (status) status.textContent = 'Uploading…';
+  try {
+    const fd = new FormData();
+    fd.append('files', file);
+    const r = await fetch('/api/chat-upload', {
+      method: 'POST',
+      headers: { 'x-tenant-id': 'plus-ultra' },
+      body: fd
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'Upload failed');
+    const first = (j.files || [])[0];
+    if (!first || !first.url) throw new Error(first && first.error ? first.error : 'No URL returned');
+    input.value = first.url;
+    if (status) status.textContent = '✓ Uploaded';
+    setTimeout(() => { if (status) status.textContent = ''; }, 4000);
+  } catch (e) {
+    if (status) status.textContent = '✗ ' + e.message;
+    console.error('Media upload failed', e);
+  }
+}
+window.uploadMediaFile = uploadMediaFile;
+
+function wireMediaDropzones(){
+  document.querySelectorAll('[id$="_drop"]').forEach(zone => {
+    const targetId = zone.dataset.target;
+    if (!targetId) return;
+    zone.addEventListener('dragover', e => { e.preventDefault(); zone.style.background = 'rgba(34,211,238,0.12)'; });
+    zone.addEventListener('dragleave', e => { zone.style.background = 'rgba(6,10,20,0.5)'; });
+    zone.addEventListener('drop', e => {
+      e.preventDefault();
+      zone.style.background = 'rgba(6,10,20,0.5)';
+      const f = e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) uploadMediaFile(f, targetId);
+    });
+  });
 }
 function saveMediaModal(){
   state.media = state.media || {};

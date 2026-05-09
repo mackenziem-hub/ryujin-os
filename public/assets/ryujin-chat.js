@@ -6,16 +6,49 @@
   const RY = window.Ryujin = window.Ryujin || {};
   let config = null;
   let historyStack = [];
+  // Tracks the archetype locked for the current Agent Mode session (sticky route).
+  let lockedAgentArchetype = null;
+
+  // Voice-mode is OPT-IN ONLY (May 7 2026). The auto-load + auto-speak combo
+  // was hijacking sessions: every chat reply auto-spoke, full-screen overlay
+  // covered the page, hitting "stop" felt like context loss. Now:
+  //   - voice-mode.js is loaded lazily, only when the user explicitly clicks
+  //     the speaker icon
+  //   - auto-speak is forced OFF on every page load (legacy localStorage flag
+  //     reset) — user must opt in per session via the speaker toggle
+  try { localStorage.setItem('ryujin_auto_speak', '0'); } catch(e){}
+  function ensureVoiceModeLoaded(){
+    return new Promise((resolve) => {
+      if (window.RyujinVoiceMode) return resolve(true);
+      const existing = document.querySelector('script[data-ry-voice]');
+      if (existing) {
+        existing.addEventListener('load', () => resolve(!!window.RyujinVoiceMode));
+        return;
+      }
+      const s = document.createElement('script');
+      s.src = '/assets/voice-mode.js';
+      s.async = true;
+      s.dataset.ryVoice = '1';
+      s.addEventListener('load', () => resolve(!!window.RyujinVoiceMode));
+      s.addEventListener('error', () => resolve(false));
+      document.head.appendChild(s);
+    });
+  }
 
   const STYLES = `
   #ry-root{position:fixed;bottom:14px;right:14px;z-index:9000;font-family:'Inter',system-ui,sans-serif}
-  #ry-fab{width:58px;height:58px;border-radius:50%;
-    background:radial-gradient(circle at 35% 30%,rgba(220,240,255,0.3),rgba(34,211,238,0.3) 35%,rgba(10,25,50,0.9) 75%);
-    border:1px solid rgba(34,211,238,0.5);
-    box-shadow:0 6px 24px rgba(0,0,0,0.5),0 0 24px rgba(34,211,238,0.35);
+  #ry-fab{width:62px;height:62px;border-radius:50%;
+    background:#040d22 url('/assets/branding/orb.jpg') center/cover;
+    border:2px solid rgba(34,211,238,0.5);
+    box-shadow:0 6px 24px rgba(0,0,0,0.5),0 0 28px rgba(34,211,238,0.4);
     cursor:pointer;position:relative;display:flex;align-items:center;justify-content:center;
-    transition:all 0.25s;backdrop-filter:blur(10px)}
+    transition:all 0.25s}
+  #ry-fab .ry-fab-eye{display:none}
   #ry-fab:hover{transform:translateY(-2px) scale(1.05);box-shadow:0 8px 30px rgba(0,0,0,0.5),0 0 40px rgba(34,211,238,0.55)}
+  #ry-fab.pressing::before{content:'';position:absolute;inset:-4px;border-radius:50%;
+    border:2px solid rgba(34,211,238,0.8);border-top-color:transparent;
+    animation:ry-ring 0.6s linear forwards;pointer-events:none;z-index:1}
+  @keyframes ry-ring{from{transform:rotate(0);opacity:0.9}to{transform:rotate(360deg);opacity:0.4}}
   #ry-fab::after{content:'';position:absolute;top:4px;right:4px;width:10px;height:10px;border-radius:50%;
     background:#4ade80;box-shadow:0 0 10px #4ade80;border:2px solid #030611;animation:ry-pulse 2s infinite}
   #ry-fab .ry-fab-eye{width:24px;height:24px;border-radius:50%;
@@ -149,6 +182,34 @@
     border-radius:8px;color:#e0e6f0;font-family:inherit;font-size:0.78em;outline:none}
   .ry-input:focus{border-color:rgba(34,211,238,0.45);box-shadow:0 0 10px rgba(34,211,238,0.15)}
   .ry-input::placeholder{color:rgba(160,190,230,0.35)}
+  /* Phase 12: full-screen chat takeover */
+  #ry-panel.fullscreen{position:fixed!important;top:0!important;left:0!important;right:0!important;bottom:0!important;width:100vw!important;height:100vh!important;max-width:100vw!important;max-height:100vh!important;border-radius:0!important;z-index:9100}
+  #ry-panel.fullscreen .ry-msgs{padding:24px 28px;gap:14px}
+  #ry-panel.fullscreen .ry-bubble{max-width:780px;font-size:0.95em;line-height:1.55;padding:14px 18px}
+  #ry-panel.fullscreen .ry-footer{padding:14px 20px}
+  #ry-panel.fullscreen .ry-input{padding:12px 16px;font-size:0.95em}
+  #ry-panel.fullscreen .ry-msgs > *{align-self:flex-start;width:100%;max-width:780px;margin-left:auto;margin-right:auto}
+  #ry-panel.fullscreen .ry-bubble.user{align-self:flex-end!important}
+  .ry-fullscreen-btn{background:none;border:none;color:rgba(160,200,240,0.5);cursor:pointer;padding:4px;display:flex;align-items:center;justify-content:center}
+  .ry-fullscreen-btn:hover{color:#22d3ee}
+  .ry-fullscreen-btn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2}
+  /* Phase 6: voice + persona controls */
+  .ry-icon-btn{width:32px;height:32px;border-radius:8px;border:1px solid rgba(34,211,238,0.18);background:rgba(6,10,20,0.6);color:rgba(160,200,240,0.7);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all 0.15s}
+  .ry-icon-btn:hover{border-color:rgba(34,211,238,0.45);color:#22d3ee}
+  .ry-icon-btn.active{border-color:rgba(74,222,128,0.6);color:#4ade80;background:rgba(74,222,128,0.08)}
+  .ry-icon-btn.listening{border-color:rgba(248,113,113,0.6);color:#f87171;animation:ry-mic-pulse 1.2s infinite}
+  .ry-icon-btn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2}
+  @keyframes ry-mic-pulse{0%,100%{box-shadow:0 0 0 0 rgba(248,113,113,0.5)}50%{box-shadow:0 0 0 6px rgba(248,113,113,0)}}
+  .ry-persona-modal{position:absolute;inset:0;background:rgba(6,12,24,0.97);z-index:10;padding:14px;display:none;flex-direction:column;gap:10px;overflow-y:auto;backdrop-filter:blur(8px)}
+  .ry-persona-modal.on{display:flex}
+  .ry-persona-modal h3{margin:0;color:#22d3ee;font-size:0.9em;letter-spacing:0.5px;text-transform:uppercase}
+  .ry-persona-modal label{font-size:0.7em;color:rgba(160,200,240,0.6);letter-spacing:0.4px;text-transform:uppercase;margin-top:6px}
+  .ry-persona-modal input,.ry-persona-modal textarea{width:100%;background:rgba(6,10,20,0.8);border:1px solid rgba(34,211,238,0.2);color:#e0e6f0;border-radius:6px;padding:8px 10px;font-size:0.85em;font-family:inherit;box-sizing:border-box}
+  .ry-persona-modal textarea{min-height:80px;resize:vertical}
+  .ry-persona-modal-actions{display:flex;gap:8px;margin-top:8px}
+  .ry-persona-modal-actions button{flex:1;padding:8px 12px;border-radius:6px;border:1px solid rgba(34,211,238,0.3);background:linear-gradient(135deg,rgba(34,211,238,0.18),rgba(124,58,237,0.1));color:#e0e6f0;cursor:pointer;font-size:0.8em;font-family:inherit}
+  .ry-persona-modal-actions button.cancel{background:rgba(6,10,20,0.6);border-color:rgba(160,200,240,0.2)}
+  .ry-persona-modal-note{font-size:0.7em;color:rgba(160,200,240,0.5);font-style:italic;margin-top:4px}
   .ry-send{width:36px;height:36px;border-radius:8px;background:linear-gradient(135deg,rgba(34,211,238,0.25),rgba(124,58,237,0.15));
     border:1px solid rgba(34,211,238,0.35);color:#22d3ee;cursor:pointer;display:flex;align-items:center;justify-content:center}
   .ry-send svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2.5}
@@ -165,6 +226,52 @@
   .ry-embedded .ry-choice{padding:11px 14px;font-size:0.85em;background:rgba(6,10,20,0.55);border-color:rgba(34,211,238,0.22)}
   .ry-embedded .ry-choice .key{width:24px;height:24px;font-size:0.72em}
   .ry-embedded .ry-footer{padding:12px 14px;background:rgba(6,10,20,0.55);border-top:1px solid rgba(34,211,238,0.12)}
+
+  /* Mode + Effort picker */
+  #ry-picker{position:fixed;inset:0;z-index:9100;display:none;align-items:center;justify-content:center;
+    background:radial-gradient(ellipse at center,rgba(8,16,38,0.85),rgba(2,4,12,0.92));
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);cursor:pointer}
+  #ry-picker .ry-pick-card{cursor:default}
+  #ry-picker.on{display:flex;animation:ry-pick-fade 0.25s ease}
+  @keyframes ry-pick-fade{from{opacity:0}to{opacity:1}}
+  .ry-pick-card{width:340px;max-width:calc(100vw - 28px);
+    background:linear-gradient(160deg,rgba(10,20,40,0.96),rgba(6,12,24,0.96));
+    border:1px solid rgba(34,211,238,0.28);border-radius:18px;padding:18px 16px 16px;
+    box-shadow:0 20px 60px rgba(0,0,0,0.65),0 0 50px rgba(34,211,238,0.18);
+    animation:ry-pick-pop 0.35s cubic-bezier(0.16,1,0.3,1)}
+  @keyframes ry-pick-pop{from{opacity:0;transform:translateY(12px) scale(0.96)}to{opacity:1;transform:translateY(0) scale(1)}}
+  .ry-pick-head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+  .ry-pick-head .ry-pick-icon{width:36px;height:36px;border-radius:50%;
+    background:#040d22 url('/assets/branding/orb.jpg') center/cover;
+    border:1px solid rgba(34,211,238,0.5);box-shadow:0 0 14px rgba(34,211,238,0.4)}
+  .ry-pick-head .ry-pick-title{flex:1;font-family:'Orbitron',sans-serif;font-size:0.78em;letter-spacing:1.6px;color:#e0e6f0;font-weight:700}
+  .ry-pick-head .ry-pick-sub{font-family:'Share Tech Mono',monospace;font-size:0.6em;color:#22d3ee;letter-spacing:1px}
+  .ry-pick-close{width:26px;height:26px;border-radius:7px;background:rgba(34,211,238,0.06);border:1px solid rgba(34,211,238,0.18);
+    color:#a0b6d6;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:0.95em}
+  .ry-pick-close:hover{color:#22d3ee;background:rgba(34,211,238,0.14)}
+  .ry-pick-tiles{display:flex;flex-direction:column;gap:8px}
+  .ry-pick-tile{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:13px;cursor:pointer;
+    background:rgba(8,16,32,0.7);border:1px solid rgba(34,211,238,0.18);text-align:left;
+    transition:all 0.2s;font-family:inherit;color:#e0e6f0}
+  .ry-pick-tile:hover{background:rgba(34,211,238,0.08);border-color:rgba(34,211,238,0.45);transform:translateX(2px)}
+  .ry-pick-tile.last{border-color:rgba(34,211,238,0.6);box-shadow:0 0 18px rgba(34,211,238,0.25);background:rgba(34,211,238,0.07)}
+  .ry-pick-tile .ico{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(135deg,rgba(34,211,238,0.18),rgba(124,58,237,0.12));border:1px solid rgba(34,211,238,0.25);
+    color:#22d3ee;flex-shrink:0}
+  .ry-pick-tile .ico svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  .ry-pick-tile .txt{flex:1;min-width:0}
+  .ry-pick-tile .t{font-family:'Orbitron',sans-serif;font-size:0.78em;font-weight:700;letter-spacing:0.8px;color:#e0e6f0}
+  .ry-pick-tile .s{font-size:0.7em;color:rgba(160,190,230,0.65);margin-top:2px;font-family:'Inter',sans-serif}
+  .ry-pick-back{margin-top:10px;padding:7px 10px;border-radius:8px;background:none;border:none;
+    color:rgba(160,190,230,0.55);font-family:'Share Tech Mono',monospace;font-size:0.65em;letter-spacing:1px;cursor:pointer}
+  .ry-pick-back:hover{color:#22d3ee}
+
+  /* Mode chip in panel head */
+  .ry-mode-chip{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:10px;
+    background:rgba(34,211,238,0.1);border:1px solid rgba(34,211,238,0.25);
+    font-family:'Share Tech Mono',monospace;font-size:0.55em;letter-spacing:0.8px;color:#22d3ee;
+    cursor:pointer;text-transform:uppercase}
+  .ry-mode-chip:hover{background:rgba(34,211,238,0.2)}
   `;
 
   function injectStyles(){
@@ -180,6 +287,9 @@
     root.id = 'ry-root';
     root.innerHTML = `
       <button id="ry-fab" title="Wake Ryujin"><div class="ry-fab-eye"></div></button>
+      <div id="ry-picker">
+        <div class="ry-pick-card" id="ry-pick-card"></div>
+      </div>
       <div id="ry-panel">
         <div id="ry-side">
           <div class="ry-side-head">
@@ -203,6 +313,9 @@
             <div class="n">RYUJIN</div>
             <div class="s"><span class="dot"></span>ACTIVE · <span id="ry-sector-label"></span></div>
           </div>
+          <button class="ry-fullscreen-btn" id="ry-fullscreen-btn" title="Expand to full screen">
+            <svg viewBox="0 0 24 24"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+          </button>
           <button class="ry-close" id="ry-close-btn" title="Dismiss">
             <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
           </button>
@@ -216,10 +329,48 @@
           <div class="ry-choices" id="ry-choices"></div>
         </div>
         <div class="ry-footer">
+          <button class="ry-icon-btn" id="ry-mic" title="Voice input (talk to chat)">
+            <svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+          </button>
+          <button class="ry-icon-btn" id="ry-speak-toggle" title="Auto-speak AI responses">
+            <svg viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+          </button>
+          <button class="ry-icon-btn" id="ry-attach" title="Attach files (photos, EagleView PDF, competitor quote)">
+            <svg viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+          </button>
+          <input type="file" id="ry-file-input" multiple accept="image/*,application/pdf,.pdf,.txt,.csv,.md,.docx,.xlsx" style="display:none">
           <input class="ry-input" id="ry-input" placeholder="or type a command..."/>
           <button class="ry-send" id="ry-send" title="Send">
             <svg viewBox="0 0 24 24"><polyline points="5 12 12 5 19 12" transform="rotate(90 12 12)"/><line x1="12" y1="19" x2="12" y2="5"/></svg>
           </button>
+        </div>
+        <div class="ry-persona-modal" id="ry-persona-modal">
+          <h3>AI Persona &amp; Archetype</h3>
+          <div class="ry-persona-modal-note">Pick your default archetype lens (the AI's voice/style for your role). You can shift mid-conversation by typing /zeus or /hermes etc. before any message.</div>
+          <label for="ry-archetype">Default archetype</label>
+          <select id="ry-archetype" style="width:100%;background:rgba(6,10,20,0.8);border:1px solid rgba(34,211,238,0.2);color:#e0e6f0;border-radius:6px;padding:8px 10px;font-size:0.85em;font-family:inherit">
+            <option value="ruler">Zeus, Ruler (strategy + governance)</option>
+            <option value="caregiver">Hestia, Caregiver (ops + customer care)</option>
+            <option value="hero">Hermes, Hero (sales + closing)</option>
+            <option value="creator">Hephaestus, Creator (production + build)</option>
+            <option value="sage">Athena, Sage (knowledge + analysis)</option>
+            <option value="magician">Hecate, Magician (tech + transformation)</option>
+            <option value="explorer">Artemis, Explorer (marketing + frontier)</option>
+            <option value="jester">Apollo, Jester (creative + light)</option>
+            <option value="lover">Aphrodite, Lover (relationships + brand)</option>
+            <option value="innocent">Persephone, Innocent (onboarding + fresh start)</option>
+            <option value="everyman">Hercules, Everyman (relatable + grounded)</option>
+            <option value="outlaw">Prometheus, Outlaw (disruption + challenger)</option>
+          </select>
+          <label for="ry-persona-name">Custom name (optional)</label>
+          <input type="text" id="ry-persona-name" placeholder="leave blank to use the archetype default"/>
+          <label for="ry-persona-style">Custom personality (optional)</label>
+          <textarea id="ry-persona-style" placeholder="leave blank for archetype default voice. Add notes here only if you want to layer on top."></textarea>
+          <div class="ry-persona-modal-actions">
+            <button class="cancel" id="ry-persona-cancel">Cancel</button>
+            <button id="ry-persona-save">Save</button>
+          </div>
+          <div class="ry-persona-modal-note" id="ry-persona-status"></div>
         </div>
       </div>
     `;
@@ -247,12 +398,181 @@
         <div class="ry-choices" id="ry-choices"></div>
       </div>
       <div class="ry-footer">
+        <button class="ry-icon-btn" id="ry-mic" title="Voice input">
+          <svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+        </button>
+        <button class="ry-icon-btn" id="ry-speak-toggle" title="Auto-speak AI responses">
+          <svg viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+        </button>
+        <button class="ry-icon-btn" id="ry-attach" title="Attach files (photos, EagleView PDF, competitor quote)">
+          <svg viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+        </button>
+        <input type="file" id="ry-file-input" multiple accept="image/*,application/pdf,.pdf,.txt,.csv,.md,.docx,.xlsx" style="display:none">
         <input class="ry-input" id="ry-input" placeholder="ask Ryujin to handle something..."/>
         <button class="ry-send" id="ry-send" title="Send">
           <svg viewBox="0 0 24 24"><polyline points="5 12 12 5 19 12" transform="rotate(90 12 12)"/><line x1="12" y1="19" x2="12" y2="5"/></svg>
         </button>
       </div>
     `;
+  }
+
+  // ── Mode + Effort picker ───────────────────────────────────────────
+  const MODE_TILES = [
+    { slug: 'quick',  title: 'Quick Reply',  sub: 'Instant text answers',
+      svg: '<svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>' },
+    { slug: 'speech', title: 'Speech Mode',  sub: 'Voice conversation',
+      svg: '<svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>' },
+    { slug: 'agent',  title: 'Agent Mode',   sub: 'Full AI agent with tools',
+      svg: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>' }
+  ];
+  const EFFORT_TILES = [
+    { slug: 'low',    title: 'Low',    sub: 'Quick lookup · cheapest' },
+    { slug: 'medium', title: 'Medium', sub: 'Standard answer · default' },
+    { slug: 'high',   title: 'High',   sub: 'Educated opinion · deep reasoning' }
+  ];
+  function getLastMode(){ try { return localStorage.getItem('ryujin_last_mode') || 'quick'; } catch { return 'quick'; } }
+  function getLastEffort(){
+    try {
+      const arch = localStorage.getItem('ryujin_archetype');
+      if (arch) {
+        const map = JSON.parse(localStorage.getItem('ryujin_archetype_effort') || '{}');
+        if (map[arch]) return map[arch];
+      }
+      return localStorage.getItem('ryujin_last_effort') || 'medium';
+    } catch { return 'medium'; }
+  }
+  function setLastMode(m){ try { localStorage.setItem('ryujin_last_mode', m); } catch {} }
+  function setLastEffort(e){ try { localStorage.setItem('ryujin_last_effort', e); } catch {} }
+
+  function renderModeCard(){
+    const last = getLastMode();
+    const card = document.getElementById('ry-pick-card');
+    if (!card) return;
+    card.innerHTML = `
+      <div class="ry-pick-head">
+        <div class="ry-pick-icon"></div>
+        <div style="flex:1">
+          <div class="ry-pick-title">RYUJIN AI</div>
+          <div class="ry-pick-sub">choose mode</div>
+        </div>
+        <button class="ry-pick-close" id="ry-pick-x">&times;</button>
+      </div>
+      <div class="ry-pick-tiles" id="ry-mode-tiles">
+        ${MODE_TILES.map(t => `
+          <button class="ry-pick-tile ${t.slug===last?'last':''}" data-mode="${t.slug}">
+            <div class="ico">${t.svg}</div>
+            <div class="txt"><div class="t">${t.title}</div><div class="s">${t.sub}</div></div>
+          </button>`).join('')}
+      </div>`;
+    card.querySelector('#ry-pick-x').onclick = closePicker;
+    card.querySelectorAll('[data-mode]').forEach(btn => {
+      btn.onclick = () => renderEffortCard(btn.dataset.mode);
+    });
+  }
+  function renderEffortCard(mode){
+    const last = getLastEffort();
+    const card = document.getElementById('ry-pick-card');
+    if (!card) return;
+    const modeMeta = MODE_TILES.find(t => t.slug === mode);
+    card.innerHTML = `
+      <div class="ry-pick-head">
+        <div class="ry-pick-icon"></div>
+        <div style="flex:1">
+          <div class="ry-pick-title">${modeMeta.title.toUpperCase()}</div>
+          <div class="ry-pick-sub">choose effort</div>
+        </div>
+        <button class="ry-pick-close" id="ry-pick-x">&times;</button>
+      </div>
+      <div class="ry-pick-tiles" id="ry-effort-tiles">
+        ${EFFORT_TILES.map(t => `
+          <button class="ry-pick-tile ${t.slug===last?'last':''}" data-effort="${t.slug}">
+            <div class="ico"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+            <div class="txt"><div class="t">${t.title}</div><div class="s">${t.sub}</div></div>
+          </button>`).join('')}
+      </div>
+      <button class="ry-pick-back" id="ry-pick-back">← back to mode</button>`;
+    card.querySelector('#ry-pick-x').onclick = closePicker;
+    card.querySelector('#ry-pick-back').onclick = renderModeCard;
+    card.querySelectorAll('[data-effort]').forEach(btn => {
+      btn.onclick = () => {
+        setLastMode(mode);
+        setLastEffort(btn.dataset.effort);
+        closePicker();
+        dispatchMode(mode, btn.dataset.effort);
+      };
+    });
+  }
+  function openPicker(){
+    const p = document.getElementById('ry-picker');
+    if (!p) return;
+    renderModeCard();
+    p.classList.add('on');
+    if (!p._wired) {
+      p._wired = true;
+      // Click outside the card closes the picker
+      p.addEventListener('click', (e) => { if (e.target === p) closePicker(); });
+      // Escape key closes the picker
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && p.classList.contains('on')) closePicker();
+      });
+    }
+  }
+  function closePicker(){
+    const p = document.getElementById('ry-picker');
+    if (p) p.classList.remove('on');
+  }
+  function updateModeChip(){
+    const head = document.querySelector('#ry-panel .ry-head');
+    if (!head) return;
+    let chip = document.getElementById('ry-mode-chip');
+    if (!chip) {
+      chip = document.createElement('button');
+      chip.id = 'ry-mode-chip';
+      chip.className = 'ry-mode-chip';
+      chip.title = 'Change mode + effort';
+      chip.onclick = openPicker;
+      const closeBtn = head.querySelector('#ry-close-btn') || head.querySelector('.ry-close');
+      head.insertBefore(chip, closeBtn);
+    }
+    const m = MODE_TILES.find(t => t.slug === getLastMode());
+    const label = `${(m?.title || 'Quick').replace(' Mode','').replace(' Reply','')} · ${getLastEffort()}`;
+    chip.innerHTML = `<span style="display:inline-flex;align-items:center;width:11px;height:11px;margin-right:5px;color:#22d3ee">${m?.svg || ''}</span>${label}`;
+    chip.querySelectorAll('svg').forEach(s => s.setAttribute('style', 'width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round'));
+  }
+  function dispatchMode(mode, effort){
+    if (mode === 'speech') {
+      if (window.RyujinVoiceMode && window.RyujinVoiceMode.enter) {
+        const archetype = (function(){ try { return JSON.parse(localStorage.getItem('ryujin_persona')||'{}').archetype || null; } catch { return null; } })();
+        window.RyujinVoiceMode.enter(
+          archetype,
+          () => { try { window.RyujinVoiceMode.hide(); } catch {} },
+          (transcript) => {
+            const input = document.getElementById('ry-input');
+            if (input && transcript) { input.value = transcript; sendTyped(); }
+          }
+        );
+        togglePanel(true);
+        updateModeChip();
+        return;
+      }
+    }
+    if (mode === 'agent') {
+      if (window.RyujinVoiceMode && window.RyujinVoiceMode.enterAgentMode) {
+        lockedAgentArchetype = null; // fresh agent session
+        window.RyujinVoiceMode.enterAgentMode(
+          () => { lockedAgentArchetype = null; try { window.RyujinVoiceMode.hide(); } catch {} },
+          (transcript) => {
+            const input = document.getElementById('ry-input');
+            if (input && transcript) { input.value = transcript; sendTyped(); }
+          }
+        );
+        togglePanel(true);
+        updateModeChip();
+        return;
+      }
+    }
+    togglePanel(true);
+    updateModeChip();
   }
 
   function togglePanel(show){
@@ -265,6 +585,7 @@
       // First-open priorities pulse — fire-and-forget; don't block the panel.
       refreshPriorities({ withGreeting: true });
     }
+    if (show) updateModeChip();
   }
 
   // Replaces the priority chips in #ry-choices with a fresh fetch from
@@ -609,11 +930,104 @@
 
   function wireEvents(){
     const fab = document.getElementById('ry-fab');
-    if (fab) fab.addEventListener('click', () => togglePanel());
+    if (fab) {
+      let pressTimer = null;
+      let longPressed = false;
+      const startPress = (e) => {
+        longPressed = false;
+        fab.classList.add('pressing');
+        pressTimer = setTimeout(() => {
+          longPressed = true;
+          fab.classList.remove('pressing');
+          dispatchMode(getLastMode(), getLastEffort());
+        }, 600);
+      };
+      const endPress = () => { if (pressTimer) clearTimeout(pressTimer); pressTimer = null; fab.classList.remove('pressing'); };
+      fab.addEventListener('mousedown', startPress);
+      fab.addEventListener('touchstart', startPress, { passive: true });
+      fab.addEventListener('mouseup', endPress);
+      fab.addEventListener('mouseleave', endPress);
+      fab.addEventListener('touchend', endPress);
+      fab.addEventListener('click', () => {
+        if (longPressed) { longPressed = false; return; }
+        const panel = document.getElementById('ry-panel');
+        if (panel && panel.classList.contains('on')) { togglePanel(false); return; }
+        openPicker();
+      });
+    }
     const closeBtn = document.getElementById('ry-close-btn');
     if (closeBtn) closeBtn.addEventListener('click', () => togglePanel(false));
+    // Phase 12: full-screen toggle
+    const fsBtn = document.getElementById('ry-fullscreen-btn');
+    if (fsBtn) fsBtn.addEventListener('click', () => {
+      const panel = document.getElementById('ry-panel');
+      if (!panel) return;
+      panel.classList.toggle('fullscreen');
+      const isFs = panel.classList.contains('fullscreen');
+      fsBtn.title = isFs ? 'Restore corner view' : 'Expand to full screen';
+      // Swap icon for collapse when in fullscreen
+      fsBtn.innerHTML = isFs
+        ? '<svg viewBox="0 0 24 24"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>'
+        : '<svg viewBox="0 0 24 24"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
+    });
     const send = document.getElementById('ry-send');
     if (send) send.addEventListener('click', sendTyped);
+
+    // Paperclip → file picker
+    const attachBtn = document.getElementById('ry-attach');
+    const fileInput = document.getElementById('ry-file-input');
+    if (attachBtn && fileInput) {
+      attachBtn.addEventListener('click', () => fileInput.click());
+      fileInput.addEventListener('change', e => {
+        if (e.target.files?.length) uploadFiles(e.target.files);
+        e.target.value = '';
+      });
+    }
+    // Paste image into input
+    const inputEl = document.getElementById('ry-input');
+    if (inputEl) {
+      inputEl.addEventListener('paste', e => {
+        const items = e.clipboardData?.items || [];
+        const files = [];
+        for (const it of items) {
+          if (it.kind === 'file') {
+            const f = it.getAsFile();
+            if (f) files.push(f);
+          }
+        }
+        if (files.length) { e.preventDefault(); uploadFiles(files); }
+      });
+    }
+    // Drag-drop on chat panel
+    const panel = document.getElementById('ry-panel') || document.querySelector('.ry-embedded') || document.body;
+    let dragDepth = 0;
+    let dropOverlay = null;
+    const showOverlay = () => {
+      if (dropOverlay) return;
+      dropOverlay = document.createElement('div');
+      dropOverlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(6,12,24,0.85);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;color:#9be7ff;font-family:Orbitron,monospace;font-size:1.3em;font-weight:700;letter-spacing:2px;pointer-events:none;border:3px dashed rgba(34,211,238,0.6)';
+      dropOverlay.textContent = '↓ DROP FILES TO ATTACH ↓';
+      document.body.appendChild(dropOverlay);
+    };
+    const hideOverlay = () => { if (dropOverlay) { dropOverlay.remove(); dropOverlay = null; } };
+    window.addEventListener('dragenter', e => {
+      if (!e.dataTransfer?.types?.includes('Files')) return;
+      dragDepth++; showOverlay();
+    });
+    window.addEventListener('dragover', e => {
+      if (e.dataTransfer?.types?.includes('Files')) e.preventDefault();
+    });
+    window.addEventListener('dragleave', e => {
+      if (!e.dataTransfer?.types?.includes('Files')) return;
+      dragDepth = Math.max(0, dragDepth - 1);
+      if (dragDepth === 0) hideOverlay();
+    });
+    window.addEventListener('drop', e => {
+      if (!e.dataTransfer?.types?.includes('Files')) return;
+      e.preventDefault();
+      dragDepth = 0; hideOverlay();
+      if (e.dataTransfer.files?.length) uploadFiles(e.dataTransfer.files);
+    });
     const input = document.getElementById('ry-input');
     if (input) input.addEventListener('keydown', e => { if (e.key === 'Enter') sendTyped(); });
 
@@ -648,25 +1062,481 @@
     if (newConv) {
       newConv.addEventListener('click', () => startNewConversation());
     }
+
+    // ── Phase 6: voice + persona ──
+    wireVoiceAndPersona();
+  }
+
+  // Phase 6B (TTS) + 6C (STT) + 6A (persona modal) — browser-native APIs, no server keys needed
+  let speechRecognition = null;
+  let speechRecognizing = false;
+
+  let isSpeaking = false;
+  let currentAudio = null;
+  function updateSpeakBtnState(speaking){
+    const btn = document.getElementById('ry-speak-toggle');
+    if (!btn) return;
+    if (speaking) {
+      btn.classList.add('listening'); // reuse the red pulse style
+      btn.title = 'Stop speaking';
+    } else {
+      btn.classList.remove('listening');
+      const autoOn = getAutoSpeak();
+      btn.classList.toggle('active', autoOn);
+      btn.title = 'Auto-speak AI responses';
+    }
+  }
+  function cleanForSpeech(text){
+    return String(text || '')
+      .replace(/```[\s\S]*?```/g, ' code block ')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/[\*_`#>~|]/g, '')
+      .replace(/\\([\w])/g, '$1')
+      .replace(/\s[—–]\s/g, ', ')
+      .replace(/[—–]/g, ', ')
+      .replace(/\s-\s/g, ', ')
+      .replace(/[(){}\[\]]/g, ' ')
+      .replace(/\s*&\s*/g, ' and ')
+      .replace(/\b(\w+)\/(\w+)\b/g, '$1 or $2')
+      .replace(/^[\s]*[•\u2022\u25CF\-\d]+[.)]?[\s]+/gm, '')
+      .replace(/\n{2,}/g, '. ')
+      .replace(/\n/g, ' ')
+      .replace(/\s+/g, ' ')
+      .replace(/\.\s*\./g, '.')
+      .replace(/,\s*,/g, ',')
+      .trim();
+  }
+  // Phase 12: try ElevenLabs first, fall back to browser TTS on 503/error.
+  // Phase 14: show full-screen voice mode overlay during playback.
+  // Phase 14.2: request word-level timestamps when voice mode session is active for exact subtitle sync.
+  function base64ToBlob(b64, mimeType){
+    const binary = atob(b64);
+    const len = binary.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mimeType });
+  }
+  // In-memory TTS cache for short repeated phrases (≤80 chars) — saves credits on
+  // recurring lines like "Anything else?" / "Finding agent…" / common acks.
+  const TTS_CACHE = new Map(); // key: `${archetype}|${clean}` → { blob, alignment }
+  const TTS_CACHE_MAX = 24;
+
+  async function speakText(text){
+    if (!text) return;
+    stopSpeaking();
+    const clean = cleanForSpeech(text);
+    if (!clean) return;
+
+    const token = (typeof localStorage !== 'undefined' && localStorage.getItem('ryujin_token')) || '';
+    const archetype = (typeof localStorage !== 'undefined' && localStorage.getItem('ryujin_archetype')) || null;
+    const inVoice = !!(window.RyujinVoiceMode && window.RyujinVoiceMode.isActive && window.RyujinVoiceMode.isActive());
+    // Drop timestamps on Low effort to save credits — fall back to time-proportional reveal
+    let lastEffort = 'medium';
+    try { lastEffort = localStorage.getItem('ryujin_last_effort') || 'medium'; } catch {}
+    const wantTimestamps = inVoice && lastEffort !== 'low';
+
+    // Cache hit fast-path for short phrases
+    const cacheKey = `${archetype || 'default'}|${clean}`;
+    if (clean.length <= 80 && TTS_CACHE.has(cacheKey)) {
+      const hit = TTS_CACHE.get(cacheKey);
+      const url = URL.createObjectURL(hit.blob);
+      const audio = new Audio(url);
+      currentAudio = audio;
+      isSpeaking = true; updateSpeakBtnState(true);
+      const closeVm = () => { try { window.RyujinVoiceMode && window.RyujinVoiceMode.hide(); } catch {} };
+      audio.onended = () => { URL.revokeObjectURL(url); if (currentAudio === audio) { currentAudio = null; isSpeaking = false; updateSpeakBtnState(false); } closeVm(); };
+      audio.onerror = () => { URL.revokeObjectURL(url); if (currentAudio === audio) { currentAudio = null; isSpeaking = false; updateSpeakBtnState(false); } closeVm(); };
+      await audio.play().catch(() => {});
+      if (window.RyujinVoiceMode) window.RyujinVoiceMode.show(text, archetype, audio, () => stopSpeaking(), hit.alignment);
+      return;
+    }
+
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers.Authorization = 'Bearer ' + token;
+      const r = await fetch('/api/tts', {
+        method: 'POST', headers,
+        body: JSON.stringify({ text: clean, archetype, timestamps: wantTimestamps })
+      });
+      if (r.ok) {
+        const ct = r.headers.get('content-type') || '';
+        let audioBlob, alignment = null;
+        if (ct.includes('application/json')) {
+          const data = await r.json();
+          audioBlob = base64ToBlob(data.audio_base64, 'audio/mpeg');
+          alignment = data.alignment || null;
+        } else {
+          audioBlob = await r.blob();
+        }
+        // Cache short phrases (LRU-ish: prune oldest when full)
+        if (clean.length <= 80) {
+          if (TTS_CACHE.size >= TTS_CACHE_MAX) {
+            const firstKey = TTS_CACHE.keys().next().value;
+            TTS_CACHE.delete(firstKey);
+          }
+          TTS_CACHE.set(cacheKey, { blob: audioBlob, alignment });
+        }
+        const url = URL.createObjectURL(audioBlob);
+        const audio = new Audio(url);
+        currentAudio = audio;
+        isSpeaking = true; updateSpeakBtnState(true);
+        const closeVoiceMode = () => { try { window.RyujinVoiceMode && window.RyujinVoiceMode.hide(); } catch {} };
+        audio.onended = () => { URL.revokeObjectURL(url); if (currentAudio === audio) { currentAudio = null; isSpeaking = false; updateSpeakBtnState(false); } closeVoiceMode(); };
+        audio.onerror = () => { URL.revokeObjectURL(url); if (currentAudio === audio) { currentAudio = null; isSpeaking = false; updateSpeakBtnState(false); } closeVoiceMode(); };
+        await audio.play().catch(() => {
+          URL.revokeObjectURL(url);
+          currentAudio = null;
+          closeVoiceMode();
+          speakBrowserTTS(clean, text, archetype);
+        });
+        if (window.RyujinVoiceMode) {
+          window.RyujinVoiceMode.show(text, archetype, audio, () => stopSpeaking(), alignment);
+        }
+        return;
+      }
+    } catch (e) { /* fall through */ }
+    speakBrowserTTS(clean, text, archetype);
+  }
+  function speakBrowserTTS(clean, originalText, archetype){
+    if (!('speechSynthesis' in window)) return;
+    try {
+      window.speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(clean);
+      utter.rate = 1.0; utter.pitch = 1.0; utter.volume = 1.0;
+      const closeVm = () => { try { window.RyujinVoiceMode && window.RyujinVoiceMode.hide(); } catch {} };
+      utter.onstart = () => { isSpeaking = true; updateSpeakBtnState(true); };
+      utter.onend = () => { isSpeaking = false; updateSpeakBtnState(false); closeVm(); };
+      utter.onerror = () => { isSpeaking = false; updateSpeakBtnState(false); closeVm(); };
+      window.speechSynthesis.speak(utter);
+      // Phase 14: voice mode without audio element (waveform falls back to simulated)
+      if (window.RyujinVoiceMode && originalText) {
+        window.RyujinVoiceMode.show(originalText, archetype || null, null, () => stopSpeaking());
+      }
+    } catch {}
+  }
+  function stopSpeaking(){
+    try {
+      if (currentAudio) { currentAudio.pause(); currentAudio.currentTime = 0; currentAudio = null; }
+      window.speechSynthesis && window.speechSynthesis.cancel();
+      window.RyujinVoiceMode && window.RyujinVoiceMode.hide();
+    } catch {}
+    isSpeaking = false;
+    updateSpeakBtnState(false);
+  }
+
+  function getAutoSpeak(){ return localStorage.getItem('ryujin_auto_speak') === '1'; }
+  function setAutoSpeak(v){ localStorage.setItem('ryujin_auto_speak', v ? '1' : '0'); }
+
+  // Public hook called after AI response finishes streaming
+  RY.maybeSpeak = function(text){
+    if (getAutoSpeak()) speakText(text);
+  };
+
+  function wireVoiceAndPersona(){
+    // Speaker icon → simple TTS toggle (auto-speak responses on/off). It does
+    // NOT auto-launch full-screen voice mode anymore. To enter immersive voice
+    // mode, long-press the speaker icon. Default state: OFF every session.
+    const speakBtn = document.getElementById('ry-speak-toggle');
+    if (speakBtn) {
+      let pressTimer = null;
+      let longPressed = false;
+
+      const enterVoiceMode = async () => {
+        longPressed = true;
+        if (isSpeaking) stopSpeaking();
+        const ok = await ensureVoiceModeLoaded();
+        if (!ok || !window.RyujinVoiceMode) {
+          // Couldn't load voice mode — fall through to plain auto-speak toggle.
+          const next = !getAutoSpeak();
+          setAutoSpeak(next);
+          speakBtn.classList.toggle('active', next);
+          return;
+        }
+        const archetype = (localStorage.getItem('ryujin_archetype')) || 'ruler';
+        window.RyujinVoiceMode.enter(
+          archetype,
+          () => stopSpeaking(),
+          (transcript) => {
+            const wasAutoSpeak = getAutoSpeak();
+            setAutoSpeak(true);
+            const input = document.getElementById('ry-input');
+            if (input) {
+              input.value = transcript;
+              sendTyped();
+            }
+            setTimeout(() => { if (!wasAutoSpeak) setAutoSpeak(false); }, 1000);
+          }
+        );
+      };
+
+      speakBtn.addEventListener('mousedown', () => {
+        longPressed = false;
+        pressTimer = setTimeout(enterVoiceMode, 600);
+      });
+      speakBtn.addEventListener('touchstart', () => {
+        longPressed = false;
+        pressTimer = setTimeout(enterVoiceMode, 600);
+      }, { passive: true });
+      const cancelPress = () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } };
+      speakBtn.addEventListener('mouseup', cancelPress);
+      speakBtn.addEventListener('mouseleave', cancelPress);
+      speakBtn.addEventListener('touchend', cancelPress);
+      speakBtn.addEventListener('touchcancel', cancelPress);
+
+      speakBtn.addEventListener('click', (e) => {
+        // If a long-press just fired (voice mode entered), swallow the click.
+        if (longPressed) { longPressed = false; e.preventDefault(); return; }
+        // If voice mode is currently visible (entered via long-press), tap to exit.
+        if (window.RyujinVoiceMode && window.RyujinVoiceMode.isActive && window.RyujinVoiceMode.isActive()) {
+          window.RyujinVoiceMode.exit();
+          return;
+        }
+        // Plain TTS toggle — auto-speak this session's responses or stop.
+        if (isSpeaking) stopSpeaking();
+        const next = !getAutoSpeak();
+        setAutoSpeak(next);
+        speakBtn.classList.toggle('active', next);
+        speakBtn.title = next ? 'Auto-speak on (tap to mute · long-press for voice mode)' : 'Auto-speak off (tap to enable · long-press for voice mode)';
+      });
+      speakBtn.title = 'Auto-speak off (tap to enable · long-press for voice mode)';
+    }
+
+    // Mic / STT
+    const micBtn = document.getElementById('ry-mic');
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (micBtn) {
+      if (!SR) {
+        micBtn.title = 'Voice input not supported in this browser (try Chrome or Edge)';
+        micBtn.style.opacity = '0.4';
+        micBtn.style.cursor = 'not-allowed';
+      } else {
+        micBtn.addEventListener('click', () => {
+          if (speechRecognizing) {
+            try { speechRecognition && speechRecognition.stop(); } catch {}
+            return;
+          }
+          speechRecognition = new SR();
+          speechRecognition.lang = 'en-US';
+          speechRecognition.interimResults = true;
+          speechRecognition.continuous = false;
+          speechRecognition.maxAlternatives = 1;
+          speechRecognizing = true;
+          micBtn.classList.add('listening');
+          const input = document.getElementById('ry-input');
+          let finalTranscript = input ? input.value : '';
+          speechRecognition.onresult = (e) => {
+            let interim = '';
+            for (let i = e.resultIndex; i < e.results.length; i++) {
+              const r = e.results[i];
+              if (r.isFinal) finalTranscript += r[0].transcript;
+              else interim += r[0].transcript;
+            }
+            if (input) input.value = (finalTranscript + interim).trim();
+          };
+          speechRecognition.onerror = () => {};
+          speechRecognition.onend = () => {
+            speechRecognizing = false;
+            micBtn.classList.remove('listening');
+            speechRecognition = null;
+            // Auto-send if we got something
+            if (input && input.value.trim()) sendTyped();
+          };
+          try { speechRecognition.start(); } catch (err) {
+            speechRecognizing = false;
+            micBtn.classList.remove('listening');
+          }
+        });
+      }
+    }
+
+    // Persona modal (long-press speak toggle to open, since header is busy)
+    if (speakBtn) {
+      let pressTimer = null;
+      const openPersona = (e) => {
+        e.preventDefault();
+        const modal = document.getElementById('ry-persona-modal');
+        if (!modal) return;
+        loadPersona();
+        modal.classList.add('on');
+      };
+      speakBtn.addEventListener('contextmenu', openPersona);
+      speakBtn.addEventListener('mousedown', () => { pressTimer = setTimeout(() => openPersona({ preventDefault(){} }), 700); });
+      speakBtn.addEventListener('mouseup', () => { if (pressTimer) clearTimeout(pressTimer); });
+      speakBtn.addEventListener('mouseleave', () => { if (pressTimer) clearTimeout(pressTimer); });
+      speakBtn.addEventListener('touchstart', () => { pressTimer = setTimeout(() => openPersona({ preventDefault(){} }), 700); });
+      speakBtn.addEventListener('touchend', () => { if (pressTimer) clearTimeout(pressTimer); });
+    }
+
+    const personaCancel = document.getElementById('ry-persona-cancel');
+    const personaSave = document.getElementById('ry-persona-save');
+    if (personaCancel) personaCancel.addEventListener('click', () => {
+      const m = document.getElementById('ry-persona-modal');
+      if (m) m.classList.remove('on');
+    });
+    if (personaSave) personaSave.addEventListener('click', savePersona);
+  }
+
+  async function loadPersona(){
+    const status = document.getElementById('ry-persona-status');
+    const nameInput = document.getElementById('ry-persona-name');
+    const styleInput = document.getElementById('ry-persona-style');
+    const archInput = document.getElementById('ry-archetype');
+    if (!nameInput || !styleInput) return;
+    const token = localStorage.getItem('ryujin_token') || '';
+    if (!token) {
+      if (status) status.textContent = 'Log in to save a persona. Until then, your AI uses the role default.';
+      nameInput.value = '';
+      styleInput.value = '';
+      return;
+    }
+    try {
+      const r = await fetch('/api/persona', { headers: { Authorization: 'Bearer ' + token } });
+      const data = await r.json();
+      const p = data.persona || {};
+      nameInput.value = p.name || '';
+      styleInput.value = p.style || '';
+      if (archInput && data.primaryArchetype) archInput.value = data.primaryArchetype;
+      if (status) status.textContent = data.note || (data.tenantDefault && Object.keys(data.tenantDefault).length ? `Tenant default: ${data.tenantDefault.name || '(unnamed)'}` : '');
+    } catch (e) {
+      if (status) status.textContent = 'Could not load persona. Try again.';
+    }
+  }
+
+  async function savePersona(){
+    const status = document.getElementById('ry-persona-status');
+    const nameInput = document.getElementById('ry-persona-name');
+    const styleInput = document.getElementById('ry-persona-style');
+    const archInput = document.getElementById('ry-archetype');
+    const token = localStorage.getItem('ryujin_token') || '';
+    if (!token) { if (status) status.textContent = 'Log in to save.'; return; }
+    if (status) status.textContent = 'Saving...';
+    try {
+      const r = await fetch('/api/persona', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({
+          name: nameInput.value.trim(),
+          style: styleInput.value.trim(),
+          primary_archetype: archInput ? archInput.value : undefined
+        })
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        if (status) status.textContent = data.error || 'Save failed. ' + (data.hint || '');
+        return;
+      }
+      if (status) status.textContent = data.note ? `Saved (${data.note})` : 'Saved. Applies on next message.';
+      // Persist current archetype in localStorage for any UI elements that show it
+      if (archInput) localStorage.setItem('ryujin_archetype', archInput.value);
+      setTimeout(() => {
+        const m = document.getElementById('ry-persona-modal');
+        if (m) m.classList.remove('on');
+      }, 1200);
+    } catch (e) {
+      if (status) status.textContent = 'Save failed: ' + e.message;
+    }
+  }
+
+  // ── File attachments (paperclip / drag-drop / paste-image) ────────
+  const pendingAttachments = [];
+
+  function renderAttachmentChips(){
+    let host = document.getElementById('ry-attach-chips');
+    if (!host) {
+      const composer = document.querySelector('.ry-input')?.parentElement;
+      if (!composer) return;
+      host = document.createElement('div');
+      host.id = 'ry-attach-chips';
+      host.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;padding:0 14px 6px;font-size:0.72em';
+      composer.parentElement?.insertBefore(host, composer);
+    }
+    if (!pendingAttachments.length) { host.innerHTML = ''; return; }
+    host.innerHTML = pendingAttachments.map((a, i) => `
+      <span style="display:inline-flex;align-items:center;gap:6px;background:rgba(34,211,238,0.12);border:1px solid rgba(34,211,238,0.35);color:#9be7ff;padding:3px 8px 3px 10px;border-radius:12px;font-weight:600">
+        <span>📎 ${a.fileName.length > 28 ? a.fileName.slice(0,25)+'…' : a.fileName}</span>
+        <button data-idx="${i}" class="ry-att-x" style="background:none;border:none;color:#9be7ff;cursor:pointer;font-size:1.2em;line-height:1;padding:0;margin-left:2px">×</button>
+      </span>
+    `).join('');
+    host.querySelectorAll('.ry-att-x').forEach(b => b.addEventListener('click', () => {
+      pendingAttachments.splice(Number(b.dataset.idx), 1);
+      renderAttachmentChips();
+    }));
+  }
+
+  async function uploadFiles(fileList){
+    const files = Array.from(fileList || []).slice(0, 5 - pendingAttachments.length);
+    if (!files.length) return;
+    const placeholder = document.createElement('div');
+    placeholder.id = 'ry-att-uploading';
+    placeholder.style.cssText = 'padding:0 14px 6px;font-size:0.72em;color:#9be7ff;font-style:italic';
+    placeholder.textContent = `Uploading ${files.length} file${files.length > 1 ? 's' : ''}…`;
+    const composer = document.querySelector('.ry-input')?.parentElement;
+    composer?.parentElement?.insertBefore(placeholder, composer);
+    try {
+      const fd = new FormData();
+      for (const f of files) fd.append('files', f, f.name);
+      const ryujinToken = (typeof localStorage !== 'undefined' && localStorage.getItem('ryujin_token')) || '';
+      const headers = {};
+      if (ryujinToken) headers.Authorization = `Bearer ${ryujinToken}`;
+      const r = await fetch('/api/chat-upload', { method: 'POST', headers, body: fd });
+      const j = await r.json();
+      if (j.files) {
+        for (const f of j.files) {
+          if (f.url) pendingAttachments.push(f);
+        }
+      }
+    } catch (e) {
+      console.warn('[ryujin-chat] upload failed', e);
+    } finally {
+      placeholder.remove();
+      renderAttachmentChips();
+    }
   }
 
   async function sendTyped(){
     const input = document.getElementById('ry-input');
     const text = input.value.trim();
-    if (!text) return;
+    const hasAttach = pendingAttachments.length > 0;
+    if (!text && !hasAttach) return;
     input.value = '';
     const msgsEl = document.getElementById('ry-msgs');
 
-    // User bubble
+    // User bubble (with attachment chips if any)
     const userBubble = document.createElement('div');
     userBubble.className = 'ry-bubble user';
-    userBubble.textContent = text;
+    if (hasAttach) {
+      const head = document.createElement('div');
+      head.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px';
+      for (const a of pendingAttachments) {
+        const chip = document.createElement('span');
+        chip.style.cssText = 'background:rgba(34,211,238,0.14);border:1px solid rgba(34,211,238,0.35);color:#9be7ff;padding:2px 8px;border-radius:10px;font-size:0.7em;font-weight:600';
+        chip.textContent = '📎 ' + a.fileName;
+        head.appendChild(chip);
+      }
+      userBubble.appendChild(head);
+    }
+    if (text) {
+      const txtNode = document.createElement('div');
+      txtNode.textContent = text;
+      userBubble.appendChild(txtNode);
+    } else {
+      const txtNode = document.createElement('div');
+      txtNode.style.cssText = 'opacity:0.7;font-style:italic';
+      txtNode.textContent = '(analyze the attached files)';
+      userBubble.appendChild(txtNode);
+    }
     msgsEl.appendChild(userBubble);
     msgsEl.scrollTop = msgsEl.scrollHeight;
 
     // Capture PRIOR history (don't include current message — it goes in `message`)
     const historyToSend = chatHistory.slice(-10);
-    chatHistory.push({ role: 'user', content: text });
+    chatHistory.push({ role: 'user', content: text || '(attachments only)' });
+
+    // Clear pending attachments — they're committed to this turn now
+    const attachmentsForThisTurn = pendingAttachments.slice();
+    pendingAttachments.length = 0;
+    renderAttachmentChips();
 
     // Typing indicator
     const typing = document.createElement('div');
@@ -676,10 +1546,16 @@
     msgsEl.scrollTop = msgsEl.scrollHeight;
 
     try {
+      const ryujinToken = (typeof localStorage !== 'undefined' && localStorage.getItem('ryujin_token')) || '';
+      const headers = { 'Content-Type': 'application/json' };
+      if (ryujinToken) headers.Authorization = `Bearer ${ryujinToken}`;
+      const inVoiceMode = !!(window.RyujinVoiceMode && window.RyujinVoiceMode.isActive && window.RyujinVoiceMode.isActive());
+      let viewAs = null;
+      try { viewAs = JSON.parse(localStorage.getItem('ryujin_view_as') || 'null'); } catch {}
       const resp = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, history: historyToSend, conversation_id: currentConversationId || undefined })
+        headers,
+        body: JSON.stringify({ message: text || '', history: historyToSend, attachments: attachmentsForThisTurn, conversation_id: currentConversationId || undefined, voiceMode: inVoiceMode, viewAs: viewAs || undefined, mode: getLastMode(), effort: getLastEffort(), archetype: (getLastMode() === 'agent' && lockedAgentArchetype) ? lockedAgentArchetype : undefined })
       });
       typing.remove();
 
@@ -715,6 +1591,19 @@
           let data;
           try { data = JSON.parse(raw); } catch { continue; }
 
+          if (data.matched_archetype) {
+            lockedAgentArchetype = data.matched_archetype;
+            try { window.RyujinVoiceMode && window.RyujinVoiceMode.setMatchedArchetype && window.RyujinVoiceMode.setMatchedArchetype(data.matched_archetype); } catch {}
+          }
+          if (data.routing_suggestion) {
+            const swap = { ruler:'Zeus', caregiver:'Hestia', hero:'Hermes', creator:'Hephaestus', sage:'Athena', magician:'Hecate', explorer:'Artemis', jester:'Apollo', lover:'Aphrodite', innocent:'Persephone', everyman:'Hercules', outlaw:'Prometheus' }[data.routing_suggestion];
+            if (swap) {
+              const tip = document.createElement('div');
+              tip.className = 'ry-bubble sys';
+              tip.textContent = `\u25CA Tip: say "switch to ${swap}" to bring ${swap} in.`;
+              msgsEl.appendChild(tip);
+            }
+          }
           if (data.text) {
             assembled += data.text;
             bubble.textContent = assembled;
@@ -739,6 +1628,8 @@
 
       if (assembled) {
         chatHistory.push({ role: 'assistant', content: assembled });
+        // Phase 6B: TTS auto-speak if toggle on
+        if (RY.maybeSpeak) RY.maybeSpeak(assembled);
         // Persist conversation + refresh priorities for the next turn — fire and forget
         persistConversationTurn();
         refreshPriorities({ withGreeting: false });

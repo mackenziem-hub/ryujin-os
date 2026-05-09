@@ -146,7 +146,14 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
   const body = req.body || {};
-  const { refId, estimateId, shareToken, customer, rep, tier, financing, signature, acceptedAt } = body;
+  const { refId, estimateId, shareToken, customer, rep, tier, financing, signature, acceptedAt, selectedAddons, addonsSubtotal, envelope } = body;
+  const addonsList = Array.isArray(selectedAddons) ? selectedAddons : [];
+  const addonsSum = Number(addonsSubtotal) || addonsList.reduce((s, a) => s + (Number(a?.price) || 0), 0);
+  // Envelope mode payload (Performance Shell configurator). When present,
+  // this is the customer's full configuration: which roof tier, which siding
+  // tier, which trim toggles, plus the engine-computed bundle/savings/cash.
+  // Trust the client total — but record the full breakdown for audit.
+  const envelopeAccept = envelope && typeof envelope === 'object' ? envelope : null;
 
   if (!shareToken && !estimateId) {
     return res.status(400).json({ error: 'shareToken or estimateId required' });
@@ -158,7 +165,7 @@ export default async function handler(req, res) {
   // 1. Resolve estimate by share token (authoritative — do not trust estimateId from client alone)
   const query = supabaseAdmin
     .from('estimates')
-    .select('id, tenant_id, estimate_number, customer_id, status, selected_package, notes, calculated_packages, ghl_opportunity_id, share_token, customer:customers(full_name, email, phone, ghl_contact_id)')
+    .select('id, tenant_id, estimate_number, customer_id, status, selected_package, notes, calculated_packages, ghl_opportunity_id, share_token, proposal_mode, tags, customer:customers(full_name, email, phone, address, ghl_contact_id)')
     .limit(1);
   const lookup = shareToken
     ? await query.eq('share_token', shareToken).maybeSingle()
@@ -191,18 +198,54 @@ export default async function handler(req, res) {
   // 3. Update the estimate — mark accepted + lock in chosen tier + append note
   const now = new Date().toISOString();
   const existingNotes = Array.isArray(est.notes) ? est.notes : [];
-  const tierTotalWithTax = tier.totalWithTax || Math.round((tier.total || 0) * 1.15);
+  // Fold add-on / envelope selections into the contract total.
+  //
+  // Envelope mode (newer): customer's selections drive bundle pricing. Use
+  // the client-computed finalSelling (which includes any cash discount) as
+  // the authoritative pre-tax. Re-derive HST.
+  //
+  // Add-on mode (legacy): selectedAddons + addonsSubtotal layer on top of
+  // the chosen tier total.
+  let tierBaseTotal, tierTotalWithTax, acceptanceBodyExtra = '';
+
+  if (envelopeAccept && envelopeAccept.finalSelling != null) {
+    tierBaseTotal = Number(envelopeAccept.finalSelling) || 0;
+    tierTotalWithTax = Math.round(tierBaseTotal * 1.15);
+    const sel = envelopeAccept.selections || {};
+    const lines = [];
+    if (sel.roof)   lines.push(`Roof: ${sel.roof}`);
+    if (sel.siding && sel.siding !== 'none') lines.push(`Siding: ${sel.siding}`);
+    const trimOn = ['gutters','soffit','fascia'].filter(k => sel.trim?.[k]);
+    if (trimOn.length) lines.push(`Trim: ${trimOn.join(', ')}`);
+    const cashLine = (envelopeAccept.cashOff && envelopeAccept.cashOff > 0)
+      ? ` Cash discount applied: -$${Number(envelopeAccept.cashOff).toLocaleString()}.`
+      : '';
+    const savingsLine = (envelopeAccept.savings && envelopeAccept.savings > 0)
+      ? ` Bundle savings vs à la carte: $${Number(envelopeAccept.savings).toLocaleString()}.`
+      : '';
+    acceptanceBodyExtra = ` [${envelopeAccept.packageName || 'Custom Package'}] ${lines.join(' · ')}.${savingsLine}${cashLine}`;
+  } else {
+    tierBaseTotal = (Number(tier.total) || 0) + addonsSum;
+    tierTotalWithTax = tier.totalWithTax || Math.round(tierBaseTotal * 1.15);
+    if (addonsList.length) {
+      acceptanceBodyExtra = ' Add-ons: ' + addonsList.map(a => `${a.label || a.slug} ($${Number(a.price || 0).toLocaleString()})`).join(', ') + `. Add-ons subtotal pre-tax: $${addonsSum.toLocaleString()}.`;
+    }
+  }
+
   const acceptanceNote = {
     ts: now,
-    body: `PROPOSAL ACCEPTED — ${tier.name || tier.id}${tier.sub ? ' · ' + tier.sub : ''}. Pre-tax $${tier.total?.toLocaleString?.() || tier.total}. With HST $${tierTotalWithTax.toLocaleString()}. ${financing?.monthly ? `Financing: $${financing.monthly}/mo over ${(financing.term || 120) / 12} years.` : 'Paying in full.'} Signed by ${customer?.name || 'customer'} at ${now}.`,
+    body: `PROPOSAL ACCEPTED — ${envelopeAccept?.packageName || tier.name || tier.id}${tier.sub ? ' · ' + tier.sub : ''}. Pre-tax $${tierBaseTotal.toLocaleString()}. With HST $${tierTotalWithTax.toLocaleString()}.${acceptanceBodyExtra} ${financing?.monthly ? `Financing: $${financing.monthly}/mo over ${(financing.term || 120) / 12} years.` : 'Paying in full.'} Signed by ${customer?.name || 'customer'} at ${now}.`,
     kind: 'acceptance',
-    signatureUrl
+    signatureUrl,
+    addons: addonsList,
+    envelope: envelopeAccept
   };
 
   const updates = {
     status: 'accepted',
     selected_package: tier.id,
-    notes: [...existingNotes, acceptanceNote]
+    notes: [...existingNotes, acceptanceNote],
+    final_accepted_total: tierTotalWithTax
   };
 
   const { error: updateErr } = await supabaseAdmin
@@ -237,6 +280,62 @@ export default async function handler(req, res) {
   }).then(r => {
     if (r.error) console.error('[proposal-accept] activity_log insert failed', r.error);
   });
+
+  // 4b. Auto-create a repair ticket if this estimate is flagged as a repair.
+  //     Trigger: proposal_mode contains "repair" OR tags array contains "repair".
+  //     Repairs need scheduling + tracking but don't go through the full work-order
+  //     production pipeline like a re-roof. Ticket lands in the action board and
+  //     defaults to Mac for triage. Fire-and-forget — don't block the success
+  //     response if the insert fails (estimate is still accepted).
+  const isRepair =
+    String(est.proposal_mode || '').toLowerCase().includes('repair') ||
+    (Array.isArray(est.tags) && est.tags.some(t => String(t).toLowerCase().includes('repair')));
+
+  if (isRepair) {
+    const customerName = customer?.name || est.customer?.full_name || 'customer';
+    const customerAddress = est.customer?.address || '';
+    const dueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const ticketTitle = `Schedule repair · ${customerName}${customerAddress ? ' · ' + customerAddress : ''}`;
+    const ticketDescription = [
+      `Repair estimate accepted — ${tier.name || tier.id}.`,
+      `Total w/ HST: ${fmtMoney(tierTotalWithTax)}.`,
+      `Customer: ${customerName}${customerPayload.phone ? ' · ' + customerPayload.phone : ''}${customerPayload.email ? ' · ' + customerPayload.email : ''}.`,
+      `Address: ${customerAddress || '—'}.`,
+      `Estimate: PU-${est.estimate_number || est.id.slice(0, 8)}.`,
+      `Auto-created on acceptance — schedule with crew, order materials if needed, confirm timeline with customer.`
+    ].join(' ');
+
+    supabaseAdmin
+      .from('tickets')
+      .insert({
+        tenant_id: est.tenant_id,
+        title: ticketTitle,
+        description: ticketDescription,
+        estimate_id: est.id,
+        customer_id: est.customer_id || null,
+        priority: 'high',
+        status: 'open',
+        due_date: dueDate,
+        tags: ['repair', 'auto_created', 'from_proposal_accept'],
+        notes: []
+      })
+      .select('id, ticket_number')
+      .single()
+      .then(({ data, error }) => {
+        if (error) {
+          console.error('[proposal-accept] repair ticket insert failed', error?.message);
+          return;
+        }
+        supabaseAdmin.from('activity_log').insert({
+          tenant_id: est.tenant_id,
+          entity_type: 'ticket',
+          entity_id: data.id,
+          action: 'created',
+          details: { source: 'proposal_accept_repair_automation', estimate_id: est.id, ticket_number: data.ticket_number }
+        }).then(() => {}, () => {});
+      })
+      .catch(e => console.error('[proposal-accept] repair ticket insert threw', e?.message));
+  }
 
   // 5. Fire-and-forget notifications — never block the success response on these.
   //    They're non-critical: if email or GHL calls fail, the acceptance is still

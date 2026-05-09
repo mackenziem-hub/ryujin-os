@@ -22,18 +22,36 @@ async function handler(req, res) {
 
   // ── Validate magic-link ──
   if (req.method === 'GET' && token) {
-    const { data: sub } = await supabaseAdmin
-      .from('subcontractors')
-      .select('id, name, company, email, phone, trade, active, magic_link_expires_at, portal_visibility, auto_approve_threshold_cad')
-      .eq('tenant_id', tenantId)
-      .eq('magic_link_token', token)
-      .single();
+    const [subResult, settingsResult] = await Promise.all([
+      supabaseAdmin
+        .from('subcontractors')
+        .select('id, name, company, email, phone, trade, active, magic_link_expires_at, portal_visibility, auto_approve_threshold_cad')
+        .eq('tenant_id', tenantId)
+        .eq('magic_link_token', token)
+        .single(),
+      supabaseAdmin
+        .from('tenant_settings')
+        .select('company_name, company_phone, company_email, logo_url, accent_color')
+        .eq('tenant_id', tenantId)
+        .maybeSingle()
+    ]);
 
+    const sub = subResult.data;
     if (!sub || !sub.active) return res.status(401).json({ error: 'Invalid or inactive link' });
     if (sub.magic_link_expires_at && new Date(sub.magic_link_expires_at) < new Date()) {
       return res.status(401).json({ error: 'Link expired — ask the owner for a new one' });
     }
-    return res.json({ sub });
+
+    const ts = settingsResult.data;
+    const branding = {
+      company_name: ts?.company_name || req.tenant.name || 'Crew Portal',
+      company_phone: ts?.company_phone || null,
+      company_email: ts?.company_email || null,
+      logo_url: ts?.logo_url || null,
+      accent_color: ts?.accent_color || '#0b1d3a'
+    };
+
+    return res.json({ sub, branding });
   }
 
   // ── Sub's assigned jobs ──

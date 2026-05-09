@@ -614,6 +614,7 @@ tr:hover td{background:rgba(34,211,238,0.02)}
   .tk-drawer{width:100vw}
 }
 </style>
+  <script src="/assets/nav-buttons.js" defer></script>
 </head>
 <body>
 
@@ -693,6 +694,10 @@ setTimeout(() => {
     <div class="nav-icon" data-page="crew" onclick="navigate('crew')">
       <svg viewBox="0 0 24 24"><rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="10" rx="1"/><rect x="17" y="4" width="4" height="13" rx="1"/></svg>
       <div class="tooltip">Crew Ops</div>
+    </div>
+    <div class="nav-icon" data-page="documents" onclick="navigate('documents')">
+      <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
+      <div class="tooltip">Documents</div>
     </div>
     <div class="nav-icon" data-page="settings" onclick="navigate('settings')">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
@@ -932,14 +937,23 @@ function showShortcutsHelp() {
 
 // Helper to extract price from estimate (handles both old and new schema)
 function estPrice(e) {
+  // Accepted/signed estimates carry the negotiated price in final_accepted_total — that overrides
+  // the calculated package price (the contract may differ from any pre-built tier).
+  if (e.status === 'accepted' && e.final_accepted_total) return e.final_accepted_total;
   if (e.total_price) return e.total_price;
   if (e.calculated_packages && e.selected_package) {
     const pkg = e.calculated_packages[e.selected_package];
     return pkg?.sellingPrice || pkg?.totalWithTax || 0;
   }
+  // Fallback: if accepted but no selected_package and no final_accepted_total, try first calculated package
+  if (e.status === 'accepted' && e.calculated_packages && Object.keys(e.calculated_packages).length) {
+    const firstPkg = Object.values(e.calculated_packages)[0];
+    return firstPkg?.sellingPrice || firstPkg?.totalWithTax || 0;
+  }
   return 0;
 }
 function estTotalWithTax(e) {
+  if (e.status === 'accepted' && e.final_accepted_total) return e.final_accepted_total;
   if (e.total_with_tax) return e.total_with_tax;
   if (e.calculated_packages && e.selected_package) {
     const pkg = e.calculated_packages[e.selected_package];
@@ -1012,7 +1026,7 @@ const sfx = {
   }
 };
 
-const PAGE_TITLES = {dashboard:'Command Center',quote:'Quote Builder',funnel:'Funnel Builder',estimates:'Estimates',customers:'Customers',offers:'Offers',products:'Products',settings:'Settings',crew:'Crew Ops'};
+const PAGE_TITLES = {dashboard:'Command Center',quote:'Quote Builder',funnel:'Funnel Builder',estimates:'Estimates',customers:'Customers',offers:'Offers',products:'Products',settings:'Settings',crew:'Crew Ops',documents:'Documents'};
 function navigate(page) {
   currentPage = page;
   document.title = (PAGE_TITLES[page]||page) + ' — Ryujin OS';
@@ -1067,6 +1081,7 @@ function renderPage() {
     case 'products': return renderProducts(m);
     case 'settings': return renderSettings(m);
     case 'crew': return renderCrewOps(m);
+    case 'documents': return renderDocuments(m);
     default: m.innerHTML = '<div class="loading"><div class="spinner"></div>Coming soon</div>';
   }
 }
@@ -2489,8 +2504,10 @@ async function uploadQuotePhotos(fileList) {
   if (!quoteState.answers._photos) quoteState.answers._photos = [];
   for (const file of fileList) {
     if (!file.type.startsWith('image/')) continue;
-    // Convert to base64 data URL for now (works in proposal render)
-    // TODO: upload to Vercel Blob for persistent URLs
+    // Preview-only: data URLs live in-memory for the quote-build UX (autoSaveQuote
+    // strips them before persisting). Persistent photos upload through
+    // /api/estimate-photos AFTER the estimate is saved — that path stores to
+    // Vercel Blob and surfaces in proposal-client.html via the estimate query.
     const reader = new FileReader();
     reader.onload = (e) => {
       quoteState.answers._photos.push(e.target.result);
@@ -3867,6 +3884,28 @@ async function crewCreateTicket() {
   } catch (e) { toast('Network error', 'error'); }
 }
 
+async function syncEstToGHL(id, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Syncing…'; }
+  try {
+    const r = await fetch('/api/estimates-sync-ghl?id=' + id, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-tenant-id': window.TENANT_ID || 'plus-ultra' }
+    });
+    const d = await r.json();
+    if (!r.ok) {
+      toast('Sync failed: ' + (d.error || r.status) + (d.detail ? ' — ' + (typeof d.detail === 'string' ? d.detail : JSON.stringify(d.detail)) : ''), 'error');
+      if (btn) { btn.disabled = false; btn.textContent = 'Sync GHL'; }
+      return;
+    }
+    toast('Synced to GHL — estimate #' + (d.ghl_estimate_id || '').slice(-6), 'success');
+    invalidateCache('estimates');
+    renderEstimates(document.getElementById('main'));
+  } catch (e) {
+    toast('Sync error: ' + e.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Sync GHL'; }
+  }
+}
+
 async function duplicateEstimate(id) {
   const data = await api('/estimates?id=' + id);
   const est = data.estimate || data;
@@ -4109,6 +4148,9 @@ async function renderEstimates(m) {
             <button class="btn btn-sm btn-outline" onclick="generateEstOutputs('${eid}','proposal')">Proposal</button>
             <button class="btn btn-sm btn-outline" onclick="generateEstOutputs('${eid}','sales_page')">Sales Page</button>
             <button class="btn btn-sm btn-outline" onclick="generateEstOutputs('${eid}','contract')">Contract</button>
+            ${e.ghl_estimate_id
+              ? `<button class="btn btn-sm btn-outline" disabled title="Synced ${e.ghl_estimate_synced_at ? new Date(e.ghl_estimate_synced_at).toLocaleDateString() : ''}" style="color:var(--green);border-color:rgba(74,222,128,0.3)">&#10003; in GHL</button>`
+              : `<button class="btn btn-sm btn-outline" onclick="syncEstToGHL('${eid}',this)" title="Push estimate into GHL Payments">Sync GHL</button>`}
             <button class="btn btn-sm btn-outline" onclick="duplicateEstimate('${eid}')" title="Duplicate">&#128203;</button>
             <button class="btn btn-sm btn-danger" onclick="deleteEstimate('${eid}')" style="margin-left:auto" title="Delete">&#128465;</button>
           </div>
@@ -4273,6 +4315,282 @@ async function generateEstOutputs(id, type) {
   const html = await resp.text();
   const w = window.open('', '_blank');
   if (w) { w.document.write(html); w.document.close(); }
+}
+
+// ─── Documents ──────────────────────────────────────────────────────
+let _docState = { list: [], activeSlug: null, dirty: false };
+
+async function renderDocuments(m) {
+  m.innerHTML = '<div class="loading"><div class="spinner"></div>Loading documents...</div>';
+  const resp = await api('/docs');
+  _docState.list = resp.docs || [];
+  _docState.activeSlug = _docState.activeSlug || (_docState.list[0]?.slug || null);
+  _docState.dirty = false;
+  drawDocumentsShell(m);
+  if (_docState.activeSlug) loadActiveDoc();
+}
+
+function drawDocumentsShell(m) {
+  const list = _docState.list;
+  m.innerHTML = `
+    <div class="page-header">
+      <div><h1>Documents</h1><div class="sub">${list.length} ${list.length === 1 ? 'document' : 'documents'} &bull; canonical knowledge for chat brain + agents</div></div>
+      <div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="docNew()">+ New Document</button></div>
+    </div>
+    <div style="display:grid;grid-template-columns:280px 1fr;gap:14px;align-items:start">
+      <div class="panel" id="docList" style="padding:8px;max-height:75vh;overflow-y:auto">${renderDocList()}</div>
+      <div id="docEditor"></div>
+    </div>`;
+}
+
+function renderDocList() {
+  if (!_docState.list.length) return '<div style="padding:18px;color:var(--text-dim);font-size:0.86em;text-align:center">No documents yet. Click + New Document to start.</div>';
+  return _docState.list.map(d => {
+    const active = d.slug === _docState.activeSlug;
+    const badge = d.status === 'published' ? '<span class="badge badge-green" style="font-size:0.62em">LIVE</span>' : '<span class="badge" style="font-size:0.62em;background:rgba(180,180,180,0.15);color:var(--text-dim)">DRAFT</span>';
+    const sys = d.is_system_managed ? ' <span class="badge" style="font-size:0.6em;background:rgba(122,90,50,0.15);color:#7a5a32">SYS</span>' : '';
+    return `<div onclick="docSelect('${esc(d.slug)}')" style="padding:10px 12px;border-radius:8px;cursor:pointer;margin-bottom:4px;${active ? 'background:rgba(34,211,238,0.10);border:1px solid var(--cyan)' : 'border:1px solid transparent'}">
+      <div style="display:flex;justify-content:space-between;gap:6px;align-items:center">
+        <div style="font-weight:600;font-size:0.9em;line-height:1.25;flex:1;min-width:0">${esc(d.title || d.slug)}</div>
+        ${badge}
+      </div>
+      <div style="font-size:0.7em;color:var(--text-dim);margin-top:3px">${esc(d.slug)}${sys}</div>
+    </div>`;
+  }).join('');
+}
+
+async function docSelect(slug) {
+  if (_docState.dirty && !confirm('Discard unsaved changes?')) return;
+  _docState.activeSlug = slug;
+  _docState.dirty = false;
+  document.getElementById('docList').innerHTML = renderDocList();
+  await loadActiveDoc();
+}
+
+async function loadActiveDoc() {
+  const editor = document.getElementById('docEditor');
+  if (!_docState.activeSlug) { editor.innerHTML = '<div class="panel" style="padding:40px;text-align:center;color:var(--text-dim)">Select or create a document to begin.</div>'; return; }
+  editor.innerHTML = '<div class="panel" style="padding:40px"><div class="loading"><div class="spinner"></div>Loading…</div></div>';
+  const doc = await api(`/docs?slug=${encodeURIComponent(_docState.activeSlug)}`);
+  if (doc.error) { editor.innerHTML = `<div class="panel" style="padding:40px;color:var(--red)">${esc(doc.error)}</div>`; return; }
+  drawDocEditor(doc);
+}
+
+function drawDocEditor(doc) {
+  const editor = document.getElementById('docEditor');
+  const previewUrl = `/doc.html?slug=${encodeURIComponent(doc.slug)}&preview=1&_=${Date.now()}`;
+  const publicUrl = `/doc.html?slug=${encodeURIComponent(doc.slug)}`;
+  const sys = doc.is_system_managed;
+  editor.innerHTML = `
+    <div class="panel" style="padding:14px;margin-bottom:10px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        <div>
+          <label class="mega-label">Title</label>
+          <input type="text" id="docTitle" value="${esc(doc.title || '')}" oninput="docMarkDirty()" ${sys ? 'readonly' : ''} style="width:100%;padding:8px 10px;background:var(--bg-deep);border:1px solid var(--glass-border);border-radius:6px;color:var(--text);font-size:0.92em">
+        </div>
+        <div>
+          <label class="mega-label">Slug (URL)</label>
+          <input type="text" id="docSlug" value="${esc(doc.slug || '')}" readonly style="width:100%;padding:8px 10px;background:var(--bg-deep);border:1px solid var(--glass-border);border-radius:6px;color:var(--text-dim);font-size:0.92em;font-family:'JetBrains Mono',monospace">
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 180px;gap:10px;margin-bottom:10px">
+        <div>
+          <label class="mega-label">Summary (one-line tagline, optional)</label>
+          <input type="text" id="docSummary" value="${esc(doc.summary || '')}" oninput="docMarkDirty()" style="width:100%;padding:8px 10px;background:var(--bg-deep);border:1px solid var(--glass-border);border-radius:6px;color:var(--text);font-size:0.88em">
+        </div>
+        <div>
+          <label class="mega-label">Status</label>
+          <select id="docStatus" onchange="docMarkDirty()" style="width:100%;padding:8px 10px;background:var(--bg-deep);border:1px solid var(--glass-border);border-radius:6px;color:var(--text);font-size:0.88em">
+            <option value="draft" ${doc.status === 'draft' ? 'selected' : ''}>Draft</option>
+            <option value="published" ${doc.status === 'published' ? 'selected' : ''}>Published</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
+        <div>
+          <label class="mega-label">Hero image URL (optional)</label>
+          <input type="text" id="docHero" value="${esc(doc.hero_image || '')}" oninput="docMarkDirty()" placeholder="https://…" style="width:100%;padding:7px 10px;background:var(--bg-deep);border:1px solid var(--glass-border);border-radius:6px;color:var(--text);font-size:0.82em">
+        </div>
+        <div>
+          <label class="mega-label">Gamma slide deck</label>
+          <div style="display:flex;gap:6px">
+            <input type="text" id="docGamma" value="${esc(doc.gamma_url || '')}" oninput="docMarkDirty()" placeholder="https://gamma.app/…" style="flex:1;min-width:0;padding:7px 10px;background:var(--bg-deep);border:1px solid var(--glass-border);border-radius:6px;color:var(--text);font-size:0.82em">
+            <button id="gammaGenBtn" class="btn btn-outline" onclick="docGenerateGamma()" title="Generate slide deck via Gamma API (uses credits)" style="flex-shrink:0;padding:7px 12px;font-size:0.78em">Generate</button>
+          </div>
+        </div>
+        <div>
+          <label class="mega-label">NotebookLM URL (optional)</label>
+          <input type="text" id="docNotebook" value="${esc(doc.notebook_url || '')}" oninput="docMarkDirty()" placeholder="https://notebooklm.google.com/…" style="width:100%;padding:7px 10px;background:var(--bg-deep);border:1px solid var(--glass-border);border-radius:6px;color:var(--text);font-size:0.82em">
+        </div>
+      </div>
+      <div>
+        <label class="mega-label">Markdown</label>
+        <textarea id="docMarkdown" oninput="docMarkDirty()" ${sys ? 'readonly' : ''} style="width:100%;height:55vh;padding:14px;background:var(--bg-deep);border:1px solid var(--glass-border);border-radius:6px;color:var(--text);font-family:'JetBrains Mono','Menlo',monospace;font-size:0.85em;line-height:1.55;resize:vertical">${esc(doc.markdown || '')}</textarea>
+        <div style="font-size:0.72em;color:var(--text-dim);margin-top:4px">
+          Callouts: <code>&gt; [!note]</code>, <code>[!warning]</code>, <code>[!tip]</code>, <code>[!critical]</code>, <code>[!success]</code>. Frontmatter: <code>--- key: value ---</code> at top.
+          ${sys ? '<br><b>System-managed doc</b> — edit in source (Obsidian or auto-generator), not here.' : ''}
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="docSave('draft')" ${sys ? 'disabled' : ''}>Save Draft</button>
+        <button class="btn btn-primary" onclick="docSave('published')" ${sys ? 'disabled' : ''} style="background:var(--green);border-color:var(--green)">Publish</button>
+        <button class="btn btn-outline" onclick="docRefreshPreview()">Refresh Preview</button>
+        <button class="btn btn-outline" onclick="window.open('${publicUrl}','_blank')">Open Public</button>
+        <button class="btn btn-outline" onclick="window.open('/api/docs-pdf?slug=${encodeURIComponent(doc.slug)}&tenant=${TENANT}','_blank')">Download PDF</button>
+        <button class="btn btn-outline" onclick="docCopyNotebookPrompt()">Copy NotebookLM Prompt</button>
+        <div style="flex:1"></div>
+        <button class="btn btn-outline" onclick="docDelete()" ${sys ? 'disabled' : ''} style="color:var(--red);border-color:var(--red)">Delete</button>
+      </div>
+    </div>
+    <div class="panel" style="padding:0;overflow:hidden;border-radius:10px">
+      <div style="padding:8px 14px;background:var(--bg-deep);border-bottom:1px solid var(--glass-border);display:flex;justify-content:space-between;align-items:center">
+        <div class="mega-label">Live Preview</div>
+        <div style="font-size:0.72em;color:var(--text-dim)">v${doc.version || 1} &bull; updated ${doc.updated_at ? new Date(doc.updated_at).toLocaleString() : '—'}</div>
+      </div>
+      <iframe id="docPreviewFrame" src="${previewUrl}" style="width:100%;height:65vh;border:0;background:#f8f4ea"></iframe>
+    </div>`;
+}
+
+function docMarkDirty() { _docState.dirty = true; }
+
+function docCollect() {
+  return {
+    title: document.getElementById('docTitle').value.trim(),
+    summary: document.getElementById('docSummary').value.trim(),
+    hero_image: document.getElementById('docHero').value.trim(),
+    gamma_url: document.getElementById('docGamma').value.trim(),
+    notebook_url: document.getElementById('docNotebook').value.trim(),
+    status: document.getElementById('docStatus').value,
+    markdown: document.getElementById('docMarkdown').value
+  };
+}
+
+async function docSave(forceStatus) {
+  const slug = _docState.activeSlug;
+  if (!slug) return;
+  const body = docCollect();
+  if (forceStatus) body.status = forceStatus;
+  if (!body.title) { toast('Title required', 'error'); return; }
+  const r = await api(`/docs?slug=${encodeURIComponent(slug)}`, { method: 'PUT', body: JSON.stringify(body) });
+  if (r.error) { toast(r.error, 'error'); return; }
+  _docState.dirty = false;
+  toast(`Saved (v${r.version})`, 'success');
+  const idx = _docState.list.findIndex(d => d.slug === slug);
+  if (idx >= 0) _docState.list[idx] = { ..._docState.list[idx], ...r };
+  document.getElementById('docList').innerHTML = renderDocList();
+  docRefreshPreview();
+}
+
+function docRefreshPreview() {
+  const f = document.getElementById('docPreviewFrame');
+  if (!f) return;
+  f.src = `/doc.html?slug=${encodeURIComponent(_docState.activeSlug)}&preview=1&_=${Date.now()}`;
+}
+
+async function docNew() {
+  const title = prompt('Title:');
+  if (!title) return;
+  const suggestedSlug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+  const slug = prompt('Slug (URL-safe, lowercase, hyphens only):', suggestedSlug);
+  if (!slug) return;
+  const r = await api(`/docs?slug=${encodeURIComponent(slug)}`, { method: 'PUT', body: JSON.stringify({ title, markdown: `# ${title}\n\nStart writing…\n`, status: 'draft' }) });
+  if (r.error) { toast(r.error, 'error'); return; }
+  toast('Document created', 'success');
+  _docState.list.unshift(r);
+  _docState.activeSlug = slug;
+  document.getElementById('docList').innerHTML = renderDocList();
+  await loadActiveDoc();
+}
+
+async function docDelete() {
+  const slug = _docState.activeSlug;
+  if (!slug) return;
+  if (!confirm(`Delete "${slug}"? This cannot be undone.`)) return;
+  const resp = await fetch(`${API}/docs?slug=${encodeURIComponent(slug)}&tenant=${TENANT}`, { method: 'DELETE' });
+  if (!resp.ok) { toast('Delete failed', 'error'); return; }
+  toast('Deleted', 'success');
+  _docState.list = _docState.list.filter(d => d.slug !== slug);
+  _docState.activeSlug = _docState.list[0]?.slug || null;
+  drawDocumentsShell(document.getElementById('main'));
+  if (_docState.activeSlug) await loadActiveDoc();
+}
+
+let _gammaStartedAt = 0;
+
+async function docGenerateGamma() {
+  const slug = _docState.activeSlug;
+  if (!slug) return;
+  if (_docState.dirty) {
+    if (!confirm('You have unsaved changes. Gamma will use the saved version of this doc. Save and continue?')) return;
+    await docSave();
+  }
+  if (!confirm('Generate a Gamma slide deck from this document?\n\nThis uses ~50 Gamma credits. Takes 2-3 minutes. The deck will open in a new tab when ready.')) return;
+  const btn = document.getElementById('gammaGenBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Starting…'; }
+  const r = await api(`/gamma-generate?slug=${encodeURIComponent(slug)}`, { method: 'POST' });
+  if (r.error) {
+    toast(r.error, 'error', 6000);
+    if (btn) { btn.disabled = false; btn.textContent = 'Generate'; }
+    return;
+  }
+  toast('Generation started, polling Gamma…', 'info', 3500);
+  _gammaStartedAt = Date.now();
+  pollGamma();
+}
+
+async function pollGamma() {
+  const slug = _docState.activeSlug;
+  const btn = document.getElementById('gammaGenBtn');
+  if (!btn || !slug) return;
+  const elapsed = Math.round((Date.now() - _gammaStartedAt) / 1000);
+  btn.textContent = `Generating ${elapsed}s`;
+  const r = await api(`/gamma-generate?slug=${encodeURIComponent(slug)}`);
+  if (r.error) {
+    toast(r.error, 'error', 6000);
+    btn.disabled = false; btn.textContent = 'Generate';
+    return;
+  }
+  if (r.status === 'completed' && r.url) {
+    document.getElementById('docGamma').value = r.url;
+    btn.disabled = false; btn.textContent = 'Regenerate';
+    toast('Gamma deck ready, opening now', 'success', 5000);
+    window.open(r.url, '_blank');
+    docMarkDirty();
+    return;
+  }
+  if (r.status === 'failed' || r.status === 'error') {
+    btn.disabled = false; btn.textContent = 'Generate';
+    toast('Gamma generation failed', 'error', 6000);
+    return;
+  }
+  if (elapsed > 300) {
+    btn.disabled = false; btn.textContent = 'Generate';
+    toast('Gamma is taking longer than usual. It may still complete - check the URL field in a minute.', 'error', 8000);
+    return;
+  }
+  setTimeout(pollGamma, 8000);
+}
+
+function docCopyNotebookPrompt() {
+  const body = docCollect();
+  const prompt = `You are about to ingest the canonical Plus Ultra Roofing document: ${body.title}.
+
+Generate an audio overview that:
+- Stays in conversational, narrative tone (no bullet-list reading)
+- Spells out names and numbers in plain English (e.g., "twelve hundred dollars" not "$1,200")
+- Surfaces the WHY behind each decision
+- Targets fifteen to twenty minutes of content
+- Audience: ${body.summary || 'internal Plus Ultra team'}
+
+Source markdown follows:
+
+---
+
+${body.markdown}`;
+  navigator.clipboard.writeText(prompt).then(
+    () => toast('NotebookLM prompt copied — paste into a new notebook', 'success', 5000),
+    () => toast('Copy failed — clipboard blocked', 'error')
+  );
 }
 
 async function renderSettings(m) {
@@ -4990,18 +5308,27 @@ if (!cutscene.shouldPlay() && !guide.hasSeen('welcome') && guide.isAutoEnabled()
 const ryujinChat = {
   open: false,
   history: [],
+  // Tracks the archetype locked for the current Agent Mode session. Sent back to /api/chat on
+  // each subsequent turn so the server short-circuits routing instead of re-running it every time.
+  // Cleared on overlay exit / new conversation.
+  _lockedAgentArchetype: null,
   init() {
     // Inject the widget HTML
     document.body.insertAdjacentHTML('beforeend', `
       <style>
-        .ryu-orb{position:fixed;bottom:24px;right:24px;z-index:1000;width:60px;height:60px;border-radius:50%;
-          background:radial-gradient(circle at 35% 30%,rgba(200,255,255,0.2),rgba(34,211,238,0.2) 40%,rgba(6,10,20,0.8) 80%);
-          border:2px solid rgba(34,211,238,0.3);cursor:pointer;
-          box-shadow:0 0 30px rgba(34,211,238,0.25),0 0 60px rgba(34,211,238,0.08);
+        .ryu-orb{position:fixed;bottom:24px;right:24px;z-index:1000;width:64px;height:64px;border-radius:50%;
+          background:#040d22 url('/assets/branding/orb.jpg') center/cover;
+          border:2px solid rgba(34,211,238,0.5);cursor:pointer;
+          box-shadow:0 0 30px rgba(34,211,238,0.4),0 0 60px rgba(34,211,238,0.12);
           transition:all 0.4s;display:flex;align-items:center;justify-content:center;
           animation:orbFloat 3s ease infinite}
-        .ryu-orb:hover{box-shadow:0 0 40px rgba(34,211,238,0.4),0 0 80px rgba(34,211,238,0.12);transform:scale(1.08)}
+        .ryu-orb:hover{box-shadow:0 0 50px rgba(34,211,238,0.6),0 0 100px rgba(34,211,238,0.18);transform:scale(1.08)}
+        .ryu-orb svg{display:none}
         .ryu-orb.hidden{transform:scale(0);opacity:0;pointer-events:none}
+        .ryu-orb.pressing::after{content:'';position:absolute;inset:-4px;border-radius:50%;
+          border:2px solid rgba(34,211,238,0.8);border-top-color:transparent;
+          animation:ryuRing 0.6s linear forwards;pointer-events:none}
+        @keyframes ryuRing{from{transform:rotate(0);opacity:0.9}to{transform:rotate(360deg);opacity:0.4}}
         .ryu-orb svg{width:28px;height:28px;stroke:#22d3ee;fill:none;stroke-width:1.5;filter:drop-shadow(0 0 4px rgba(34,211,238,0.4))}
         @keyframes orbFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
 
@@ -5057,10 +5384,56 @@ const ryujinChat = {
           box-shadow:0 0 12px rgba(34,211,238,0.2)}
         .ryu-input button:hover{box-shadow:0 0 20px rgba(34,211,238,0.35);transform:scale(1.05)}
         .ryu-input button svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2}
+
+        /* Mode + Effort picker */
+        #ryuPicker{position:fixed;inset:0;z-index:2000;display:none;align-items:center;justify-content:center;
+          background:radial-gradient(ellipse at center,rgba(8,16,38,0.85),rgba(2,4,12,0.92));
+          backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);cursor:pointer}
+        #ryuPicker .ryu-pick-card{cursor:default}
+        #ryuPicker.on{display:flex;animation:ryuPickFade 0.25s ease}
+        @keyframes ryuPickFade{from{opacity:0}to{opacity:1}}
+        .ryu-pick-card{width:360px;max-width:calc(100vw - 28px);
+          background:linear-gradient(160deg,rgba(10,20,40,0.96),rgba(6,12,24,0.96));
+          border:1px solid rgba(34,211,238,0.28);border-radius:18px;padding:18px 16px 16px;
+          box-shadow:0 20px 60px rgba(0,0,0,0.65),0 0 50px rgba(34,211,238,0.18);
+          animation:ryuPickPop 0.35s cubic-bezier(0.16,1,0.3,1)}
+        @keyframes ryuPickPop{from{opacity:0;transform:translateY(12px) scale(0.96)}to{opacity:1;transform:translateY(0) scale(1)}}
+        .ryu-pick-head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+        .ryu-pick-head .ico{width:36px;height:36px;border-radius:50%;
+          background:#040d22 url('/assets/branding/orb.jpg') center/cover;
+          border:1px solid rgba(34,211,238,0.5);box-shadow:0 0 14px rgba(34,211,238,0.4)}
+        .ryu-pick-head .t{flex:1;font-family:'Orbitron',sans-serif;font-size:0.78em;letter-spacing:1.6px;color:#e0e6f0;font-weight:700}
+        .ryu-pick-head .s{font-family:'Share Tech Mono',monospace;font-size:0.6em;color:#22d3ee;letter-spacing:1px}
+        .ryu-pick-x{width:26px;height:26px;border-radius:7px;background:rgba(34,211,238,0.06);border:1px solid rgba(34,211,238,0.18);
+          color:#a0b6d6;cursor:pointer;display:flex;align-items:center;justify-content:center}
+        .ryu-pick-x:hover{color:#22d3ee;background:rgba(34,211,238,0.14)}
+        .ryu-pick-tiles{display:flex;flex-direction:column;gap:8px}
+        .ryu-pick-tile{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:13px;cursor:pointer;
+          background:rgba(8,16,32,0.7);border:1px solid rgba(34,211,238,0.18);text-align:left;
+          transition:all 0.2s;font-family:inherit;color:#e0e6f0;width:100%}
+        .ryu-pick-tile:hover{background:rgba(34,211,238,0.08);border-color:rgba(34,211,238,0.45);transform:translateX(2px)}
+        .ryu-pick-tile.last{border-color:rgba(34,211,238,0.6);box-shadow:0 0 18px rgba(34,211,238,0.25);background:rgba(34,211,238,0.07)}
+        .ryu-pick-tile .tico{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+          background:linear-gradient(135deg,rgba(34,211,238,0.18),rgba(124,58,237,0.12));border:1px solid rgba(34,211,238,0.25);
+          color:#22d3ee;flex-shrink:0}
+        .ryu-pick-tile .tico svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+        .ryu-pick-tile .tt{font-family:'Orbitron',sans-serif;font-size:0.78em;font-weight:700;letter-spacing:0.8px;color:#e0e6f0}
+        .ryu-pick-tile .ts{font-size:0.7em;color:rgba(160,190,230,0.65);margin-top:2px}
+        .ryu-pick-back{margin-top:10px;padding:7px 10px;border-radius:8px;background:none;border:none;
+          color:rgba(160,190,230,0.55);font-family:'Share Tech Mono',monospace;font-size:0.65em;letter-spacing:1px;cursor:pointer}
+        .ryu-pick-back:hover{color:#22d3ee}
+        .ryu-mode-chip{display:inline-flex;align-items:center;padding:3px 8px;border-radius:10px;
+          background:rgba(34,211,238,0.1);border:1px solid rgba(34,211,238,0.25);
+          font-family:'Share Tech Mono',monospace;font-size:0.55em;letter-spacing:0.8px;color:#22d3ee;
+          cursor:pointer;text-transform:uppercase;margin-right:6px}
+        .ryu-mode-chip:hover{background:rgba(34,211,238,0.2)}
       </style>
 
+      <!-- Mode + Effort picker -->
+      <div id="ryuPicker"><div class="ryu-pick-card" id="ryuPickCard"></div></div>
+
       <!-- Floating Orb -->
-      <div class="ryu-orb" id="ryuOrb" onclick="ryujinChat.toggle()">
+      <div class="ryu-orb" id="ryuOrb" onclick="ryujinChat.handleOrbClick()" onmousedown="ryujinChat.startOrbPress()" onmouseup="ryujinChat.endOrbPress()" onmouseleave="ryujinChat.endOrbPress()" ontouchstart="ryujinChat.startOrbPress()" ontouchend="ryujinChat.endOrbPress()">
         <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" stroke-width="1"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><circle cx="9" cy="10" r="0.5" fill="#22d3ee"/><circle cx="15" cy="10" r="0.5" fill="#22d3ee"/></svg>
       </div>
 
@@ -5080,10 +5453,51 @@ const ryujinChat = {
           <div class="ryu-msg ai">Ryujin OS reporting. All systems operational. Head to the Quote Builder to start pricing your next job, or check the Dashboard for your pipeline overview.</div>
         </div>
         <div class="ryu-input">
+          <button id="ryuMic" title="Voice input" onclick="ryujinChat.toggleMic()" style="background:rgba(6,10,20,0.6);border:1px solid rgba(34,211,238,0.18);color:rgba(160,200,240,0.7);width:32px;height:32px;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <svg viewBox="0 0 24 24" style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+          </button>
+          <button id="ryuSpeak" title="Auto-speak responses (long-press for persona settings)" onclick="ryujinChat.toggleSpeak()" oncontextmenu="event.preventDefault();ryujinChat.openPersona();return false;" style="background:rgba(6,10,20,0.6);border:1px solid rgba(34,211,238,0.18);color:rgba(160,200,240,0.7);width:32px;height:32px;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <svg viewBox="0 0 24 24" style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+          </button>
           <input type="text" id="ryuInput" placeholder="Ask Ryujin anything..." onkeydown="if(event.key==='Enter')ryujinChat.send()">
           <button onclick="ryujinChat.send()">
             <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
           </button>
+        </div>
+        <div id="ryuPersonaModal" style="display:none;position:absolute;inset:50px 0 0 0;background:rgba(6,12,24,0.97);padding:14px;flex-direction:column;gap:10px;overflow-y:auto;backdrop-filter:blur(8px);z-index:10">
+          <h3 style="margin:0;color:#22d3ee;font-size:0.9em;letter-spacing:0.5px;text-transform:uppercase">AI Persona &amp; Archetype</h3>
+          <div style="font-size:0.7em;color:rgba(160,200,240,0.5);font-style:italic">Pick your default archetype lens. Shift mid-conversation by typing /zeus, /hermes, /athena etc. before any message.</div>
+          <label style="font-size:0.7em;color:rgba(160,200,240,0.6);letter-spacing:0.4px;text-transform:uppercase;margin-top:6px">Default archetype</label>
+          <select id="ryuArchetype" style="background:rgba(6,10,20,0.8);border:1px solid rgba(34,211,238,0.2);color:#e0e6f0;border-radius:6px;padding:8px 10px;font-size:0.85em;font-family:inherit">
+            <option value="ruler">Zeus, Ruler (strategy + governance)</option>
+            <option value="caregiver">Hestia, Caregiver (ops + customer care)</option>
+            <option value="hero">Hermes, Hero (sales + closing)</option>
+            <option value="creator">Hephaestus, Creator (production + build)</option>
+            <option value="sage">Athena, Sage (knowledge + analysis)</option>
+            <option value="magician">Hecate, Magician (tech + transformation)</option>
+            <option value="explorer">Artemis, Explorer (marketing + frontier)</option>
+            <option value="jester">Apollo, Jester (creative + light)</option>
+            <option value="lover">Aphrodite, Lover (relationships + brand)</option>
+            <option value="innocent">Persephone, Innocent (onboarding + fresh start)</option>
+            <option value="everyman">Hercules, Everyman (relatable + grounded)</option>
+            <option value="outlaw">Prometheus, Outlaw (disruption + challenger)</option>
+          </select>
+          <label style="font-size:0.7em;color:rgba(160,200,240,0.6);letter-spacing:0.4px;text-transform:uppercase;margin-top:6px">Custom name (optional)</label>
+          <input type="text" id="ryuPersonaName" placeholder="leave blank to use archetype default" style="background:rgba(6,10,20,0.8);border:1px solid rgba(34,211,238,0.2);color:#e0e6f0;border-radius:6px;padding:8px 10px;font-size:0.85em">
+          <label style="font-size:0.7em;color:rgba(160,200,240,0.6);letter-spacing:0.4px;text-transform:uppercase;margin-top:6px">Custom personality (optional)</label>
+          <textarea id="ryuPersonaStyle" placeholder="leave blank for archetype default voice" style="background:rgba(6,10,20,0.8);border:1px solid rgba(34,211,238,0.2);color:#e0e6f0;border-radius:6px;padding:8px 10px;font-size:0.85em;min-height:80px;resize:vertical;font-family:inherit"></textarea>
+          <label style="font-size:0.7em;color:rgba(160,200,240,0.6);letter-spacing:0.4px;text-transform:uppercase;margin-top:6px">Default effort for this archetype</label>
+          <select id="ryuArchetypeEffort" style="background:rgba(6,10,20,0.8);border:1px solid rgba(34,211,238,0.2);color:#e0e6f0;border-radius:6px;padding:8px 10px;font-size:0.85em;font-family:inherit">
+            <option value="">Use last picker selection</option>
+            <option value="low">Low (cheapest)</option>
+            <option value="medium">Medium (default)</option>
+            <option value="high">High (deep reasoning)</option>
+          </select>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button onclick="ryujinChat.closePersona()" style="flex:1;padding:8px 12px;border-radius:6px;border:1px solid rgba(160,200,240,0.2);background:rgba(6,10,20,0.6);color:#e0e6f0;cursor:pointer">Cancel</button>
+            <button onclick="ryujinChat.savePersona()" style="flex:1;padding:8px 12px;border-radius:6px;border:1px solid rgba(34,211,238,0.3);background:linear-gradient(135deg,rgba(34,211,238,0.18),rgba(124,58,237,0.1));color:#e0e6f0;cursor:pointer">Save</button>
+          </div>
+          <div id="ryuPersonaStatus" style="font-size:0.7em;color:rgba(160,200,240,0.5);font-style:italic;margin-top:4px"></div>
         </div>
       </div>
     `);
@@ -5097,8 +5511,161 @@ const ryujinChat = {
     document.getElementById('ryuOrb').classList.toggle('hidden', this.open);
     document.getElementById('ryuPanel').classList.toggle('closed', !this.open);
     if (this.open) {
+      this.updateModeChip();
       setTimeout(() => document.getElementById('ryuInput').focus(), 400);
     }
+  },
+
+  // ── Mode + Effort picker ──
+  _modeTiles: [
+    { slug: 'quick',  title: 'Quick Reply',  sub: 'Instant text answers',
+      svg: '<svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>' },
+    { slug: 'speech', title: 'Speech Mode',  sub: 'Voice conversation',
+      svg: '<svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>' },
+    { slug: 'agent',  title: 'Agent Mode',   sub: 'Full AI agent with tools',
+      svg: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>' }
+  ],
+  _effortTiles: [
+    { slug: 'low',    title: 'Low',    sub: 'Quick lookup · cheapest' },
+    { slug: 'medium', title: 'Medium', sub: 'Standard answer · default' },
+    { slug: 'high',   title: 'High',   sub: 'Educated opinion · deep reasoning' }
+  ],
+  getLastMode(){ try { return localStorage.getItem('ryujin_last_mode') || 'quick'; } catch { return 'quick'; } },
+  getLastEffort(){
+    try {
+      // Per-archetype default overrides the picker's last-effort if set
+      const arch = localStorage.getItem('ryujin_archetype');
+      if (arch) {
+        const map = JSON.parse(localStorage.getItem('ryujin_archetype_effort') || '{}');
+        if (map[arch]) return map[arch];
+      }
+      return localStorage.getItem('ryujin_last_effort') || 'medium';
+    } catch { return 'medium'; }
+  },
+  _orbTimer: null,
+  _orbLong: false,
+  startOrbPress(){
+    this._orbLong = false;
+    const orb = document.getElementById('ryuOrb');
+    if (orb) orb.classList.add('pressing');
+    this._orbTimer = setTimeout(() => {
+      this._orbLong = true;
+      if (orb) orb.classList.remove('pressing');
+      this.dispatchMode(this.getLastMode(), this.getLastEffort());
+    }, 600);
+  },
+  endOrbPress(){
+    if (this._orbTimer) { clearTimeout(this._orbTimer); this._orbTimer = null; }
+    const orb = document.getElementById('ryuOrb');
+    if (orb) orb.classList.remove('pressing');
+  },
+  handleOrbClick(){
+    if (this._orbLong) { this._orbLong = false; return; }
+    if (this.open) { this.toggle(); return; }
+    this.openPicker();
+  },
+  openPicker(){
+    const p = document.getElementById('ryuPicker');
+    this._renderModeCard();
+    p.classList.add('on');
+    if (!p._wired) {
+      p._wired = true;
+      p.addEventListener('click', (e) => { if (e.target === p) this.closePicker(); });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && p.classList.contains('on')) this.closePicker();
+      });
+    }
+  },
+  closePicker(){ document.getElementById('ryuPicker').classList.remove('on'); },
+  _renderModeCard(){
+    const last = this.getLastMode();
+    const card = document.getElementById('ryuPickCard');
+    card.innerHTML = `
+      <div class="ryu-pick-head">
+        <div class="ico"></div>
+        <div style="flex:1"><div class="t">RYUJIN AI</div><div class="s">choose mode</div></div>
+        <button class="ryu-pick-x" onclick="ryujinChat.closePicker()">&times;</button>
+      </div>
+      <div class="ryu-pick-tiles">
+        ${this._modeTiles.map(t => `
+          <button class="ryu-pick-tile ${t.slug===last?'last':''}" onclick="ryujinChat._renderEffortCard('${t.slug}')">
+            <div class="tico">${t.svg}</div>
+            <div style="flex:1"><div class="tt">${t.title}</div><div class="ts">${t.sub}</div></div>
+          </button>`).join('')}
+      </div>`;
+  },
+  _renderEffortCard(mode){
+    const last = this.getLastEffort();
+    const card = document.getElementById('ryuPickCard');
+    const meta = this._modeTiles.find(t => t.slug === mode);
+    card.innerHTML = `
+      <div class="ryu-pick-head">
+        <div class="ico"></div>
+        <div style="flex:1"><div class="t">${meta.title.toUpperCase()}</div><div class="s">choose effort</div></div>
+        <button class="ryu-pick-x" onclick="ryujinChat.closePicker()">&times;</button>
+      </div>
+      <div class="ryu-pick-tiles">
+        ${this._effortTiles.map(t => `
+          <button class="ryu-pick-tile ${t.slug===last?'last':''}" onclick="ryujinChat._chooseEffort('${mode}','${t.slug}')">
+            <div class="tico"><svg viewBox="0 0 24 24" style="width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2"><polyline points="20 6 9 17 4 12"/></svg></div>
+            <div style="flex:1"><div class="tt">${t.title}</div><div class="ts">${t.sub}</div></div>
+          </button>`).join('')}
+      </div>
+      <button class="ryu-pick-back" onclick="ryujinChat._renderModeCard()">← back to mode</button>`;
+  },
+  _chooseEffort(mode, effort){
+    try { localStorage.setItem('ryujin_last_mode', mode); localStorage.setItem('ryujin_last_effort', effort); } catch {}
+    this.closePicker();
+    this.dispatchMode(mode, effort);
+  },
+  dispatchMode(mode, effort){
+    if (mode === 'speech' && window.RyujinVoiceMode && window.RyujinVoiceMode.enter) {
+      const archetype = (function(){ try { return JSON.parse(localStorage.getItem('ryujin_persona')||'{}').archetype || null; } catch { return null; } })();
+      window.RyujinVoiceMode.enter(
+        archetype,
+        () => { try { window.RyujinVoiceMode.hide(); } catch {} },
+        (transcript) => {
+          const inp = document.getElementById('ryuInput');
+          if (inp && transcript) { inp.value = transcript; this.send(); }
+        }
+      );
+      if (!this.open) this.toggle();
+      this.updateModeChip();
+      return;
+    }
+    if (mode === 'agent' && window.RyujinVoiceMode && window.RyujinVoiceMode.enterAgentMode) {
+      this._lockedAgentArchetype = null; // fresh agent session
+      window.RyujinVoiceMode.enterAgentMode(
+        () => { this._lockedAgentArchetype = null; try { window.RyujinVoiceMode.hide(); } catch {} },
+        (transcript) => {
+          const inp = document.getElementById('ryuInput');
+          if (inp && transcript) { inp.value = transcript; this.send(); }
+        }
+      );
+      if (!this.open) this.toggle();
+      this.updateModeChip();
+      return;
+    }
+    if (!this.open) this.toggle();
+    this.updateModeChip();
+  },
+  updateModeChip(){
+    const head = document.querySelector('.ryu-head');
+    if (!head) return;
+    let chip = document.getElementById('ryuModeChip');
+    if (!chip) {
+      chip = document.createElement('button');
+      chip.id = 'ryuModeChip';
+      chip.className = 'ryu-mode-chip';
+      chip.title = 'Change mode + effort';
+      chip.onclick = () => this.openPicker();
+      const closeBtn = head.querySelector('.ryu-close');
+      head.insertBefore(chip, closeBtn);
+    }
+    const m = this._modeTiles.find(t => t.slug === this.getLastMode());
+    const label = `${(m?.title || 'Quick').replace(' Mode','').replace(' Reply','')} · ${this.getLastEffort()}`;
+    chip.innerHTML = `<span style="display:inline-flex;align-items:center;width:11px;height:11px;margin-right:5px;color:#22d3ee">${m?.svg || ''}</span>${label}`;
+    chip.querySelectorAll('svg').forEach(s => s.setAttribute('style', 'width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round'));
   },
 
   async send() {
@@ -5124,12 +5691,23 @@ const ryujinChat = {
 
     // Call the full Shenron brain at /api/chat (SSE streaming, tool use enabled)
     try {
+      const ryujinToken = localStorage.getItem('ryujin_token') || '';
+      const headers = { 'Content-Type': 'application/json' };
+      if (ryujinToken) headers.Authorization = `Bearer ${ryujinToken}`;
+      const inVoiceMode = !!(window.RyujinVoiceMode && window.RyujinVoiceMode.isActive && window.RyujinVoiceMode.isActive());
+      let viewAs = null;
+      try { viewAs = JSON.parse(localStorage.getItem('ryujin_view_as') || 'null'); } catch {}
       const resp = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           message: msg,
-          history: historyToSend
+          history: historyToSend,
+          voiceMode: inVoiceMode,
+          viewAs: viewAs || undefined,
+          mode: this.getLastMode(),
+          effort: this.getLastEffort(),
+          archetype: (this.getLastMode() === 'agent' && this._lockedAgentArchetype) ? this._lockedAgentArchetype : undefined
         })
       });
 
@@ -5166,6 +5744,20 @@ const ryujinChat = {
           let data;
           try { data = JSON.parse(payload); } catch { continue; }
 
+          if (data.matched_archetype) {
+            this._lockedAgentArchetype = data.matched_archetype;
+            try { window.RyujinVoiceMode && window.RyujinVoiceMode.setMatchedArchetype && window.RyujinVoiceMode.setMatchedArchetype(data.matched_archetype); } catch {}
+          }
+          if (data.routing_suggestion) {
+            const swap = { ruler:'Zeus', caregiver:'Hestia', hero:'Hermes', creator:'Hephaestus', sage:'Athena', magician:'Hecate', explorer:'Artemis', jester:'Apollo', lover:'Aphrodite', innocent:'Persephone', everyman:'Hercules', outlaw:'Prometheus' }[data.routing_suggestion];
+            if (swap) {
+              const tip = document.createElement('div');
+              tip.className = 'ryu-msg system';
+              tip.style.color = '#22d3ee';
+              tip.textContent = `Tip: say "switch to ${swap}" to bring ${swap} in.`;
+              msgs.appendChild(tip);
+            }
+          }
           if (data.text) {
             assembled += data.text;
             bubble.textContent = assembled;
@@ -5194,6 +5786,8 @@ const ryujinChat = {
 
       if (assembled) {
         this.history.push({ role: 'assistant', content: assembled });
+        // Phase 6B: TTS auto-speak if toggle on
+        if (localStorage.getItem('ryujin_auto_speak') === '1') this.speakText(assembled);
       } else {
         bubble.textContent = 'No response.';
       }
@@ -5203,6 +5797,324 @@ const ryujinChat = {
     } catch (e) {
       typing.remove();
       this.addMessage('Connection interrupted. Standing by.', 'ai');
+    }
+  },
+
+  // ── Phase 6: voice + persona ──
+  _cleanForSpeech(text) {
+    return String(text || '')
+      .replace(/```[\s\S]*?```/g, ' code block ')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/[\*_`#>~|]/g, '')
+      .replace(/\\([\w])/g, '$1')
+      .replace(/\s[—–]\s/g, ', ')
+      .replace(/[—–]/g, ', ')
+      .replace(/\s-\s/g, ', ')
+      .replace(/[(){}\[\]]/g, ' ')
+      .replace(/\s*&\s*/g, ' and ')
+      .replace(/\b(\w+)\/(\w+)\b/g, '$1 or $2')
+      .replace(/^[\s]*[•\u2022\u25CF\-\d]+[.)]?[\s]+/gm, '')
+      .replace(/\n{2,}/g, '. ')
+      .replace(/\n/g, ' ')
+      .replace(/\s+/g, ' ')
+      .replace(/\.\s*\./g, '.')
+      .replace(/,\s*,/g, ',')
+      .trim();
+  },
+  _base64ToBlob(b64, mimeType) {
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mimeType });
+  },
+  _ttsCache: new Map(),
+  _ttsCacheMax: 24,
+  async speakText(text) {
+    if (!text) return;
+    this.stopSpeaking();
+    const clean = this._cleanForSpeech(text);
+    if (!clean) return;
+
+    const token = localStorage.getItem('ryujin_token') || '';
+    const archetype = localStorage.getItem('ryujin_archetype') || null;
+    const inVoice = !!(window.RyujinVoiceMode && window.RyujinVoiceMode.isActive && window.RyujinVoiceMode.isActive());
+    const lastEffort = this.getLastEffort ? this.getLastEffort() : 'medium';
+    const wantTimestamps = inVoice && lastEffort !== 'low';
+    const self = this;
+    const closeVm = () => { try { window.RyujinVoiceMode && window.RyujinVoiceMode.hide(); } catch {} };
+
+    const cacheKey = `${archetype || 'default'}|${clean}`;
+    if (clean.length <= 80 && this._ttsCache.has(cacheKey)) {
+      const hit = this._ttsCache.get(cacheKey);
+      const url = URL.createObjectURL(hit.blob);
+      const audio = new Audio(url);
+      this._currentAudio = audio;
+      this._isSpeaking = true; this._updateSpeakBtnState(true);
+      audio.onended = () => { URL.revokeObjectURL(url); if (self._currentAudio === audio) { self._currentAudio = null; self._isSpeaking = false; self._updateSpeakBtnState(false); } closeVm(); };
+      audio.onerror = () => { URL.revokeObjectURL(url); if (self._currentAudio === audio) { self._currentAudio = null; self._isSpeaking = false; self._updateSpeakBtnState(false); } closeVm(); };
+      await audio.play().catch(() => {});
+      if (window.RyujinVoiceMode) window.RyujinVoiceMode.show(text, archetype, audio, () => self.stopSpeaking(), hit.alignment);
+      return;
+    }
+
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers.Authorization = 'Bearer ' + token;
+      const r = await fetch('/api/tts', {
+        method: 'POST', headers,
+        body: JSON.stringify({ text: clean, archetype, timestamps: wantTimestamps })
+      });
+      if (r.ok) {
+        const ct = r.headers.get('content-type') || '';
+        let audioBlob, alignment = null;
+        if (ct.includes('application/json')) {
+          const data = await r.json();
+          audioBlob = this._base64ToBlob(data.audio_base64, 'audio/mpeg');
+          alignment = data.alignment || null;
+        } else {
+          audioBlob = await r.blob();
+        }
+        if (clean.length <= 80) {
+          if (this._ttsCache.size >= this._ttsCacheMax) {
+            const firstKey = this._ttsCache.keys().next().value;
+            this._ttsCache.delete(firstKey);
+          }
+          this._ttsCache.set(cacheKey, { blob: audioBlob, alignment });
+        }
+        const url = URL.createObjectURL(audioBlob);
+        const audio = new Audio(url);
+        this._currentAudio = audio;
+        this._isSpeaking = true; this._updateSpeakBtnState(true);
+        audio.onended = () => { URL.revokeObjectURL(url); if (self._currentAudio === audio) { self._currentAudio = null; self._isSpeaking = false; self._updateSpeakBtnState(false); } closeVm(); };
+        audio.onerror = () => { URL.revokeObjectURL(url); if (self._currentAudio === audio) { self._currentAudio = null; self._isSpeaking = false; self._updateSpeakBtnState(false); } closeVm(); };
+        await audio.play().catch(() => { URL.revokeObjectURL(url); this._currentAudio = null; closeVm(); this._speakBrowserTTS(clean, text, archetype); });
+        if (window.RyujinVoiceMode) window.RyujinVoiceMode.show(text, archetype, audio, () => self.stopSpeaking(), alignment);
+        return;
+      }
+    } catch (e) { /* fall through */ }
+    this._speakBrowserTTS(clean, text, archetype);
+  },
+  _speakBrowserTTS(clean, originalText, archetype) {
+    if (!('speechSynthesis' in window)) return;
+    const self = this;
+    const closeVm = () => { try { window.RyujinVoiceMode && window.RyujinVoiceMode.hide(); } catch {} };
+    try {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(clean);
+      u.rate = 1.0; u.pitch = 1.0;
+      this._currentUtterance = u;
+      u.onstart = () => { self._isSpeaking = true; self._updateSpeakBtnState(true); };
+      u.onend = () => { self._isSpeaking = false; self._currentUtterance = null; self._updateSpeakBtnState(false); closeVm(); };
+      u.onerror = () => { self._isSpeaking = false; self._currentUtterance = null; self._updateSpeakBtnState(false); closeVm(); };
+      window.speechSynthesis.speak(u);
+      if (window.RyujinVoiceMode && originalText) {
+        window.RyujinVoiceMode.show(originalText, archetype || null, null, () => self.stopSpeaking());
+      }
+    } catch {}
+  },
+
+  _isSpeaking: false,
+  _currentUtterance: null,
+  _updateSpeakBtnState(speaking) {
+    const btn = document.getElementById('ryuSpeak');
+    if (!btn) return;
+    if (speaking) {
+      btn.style.borderColor = 'rgba(248,113,113,0.6)';
+      btn.style.color = '#f87171';
+      btn.title = 'Stop speaking';
+    } else {
+      const autoOn = localStorage.getItem('ryujin_auto_speak') === '1';
+      btn.style.borderColor = autoOn ? 'rgba(74,222,128,0.6)' : 'rgba(34,211,238,0.18)';
+      btn.style.color = autoOn ? '#4ade80' : 'rgba(160,200,240,0.7)';
+      btn.title = 'Auto-speak responses (long-press for persona settings)';
+    }
+  },
+
+  stopSpeaking() {
+    try {
+      if (this._currentAudio) { this._currentAudio.pause(); this._currentAudio.currentTime = 0; this._currentAudio = null; }
+      window.speechSynthesis && window.speechSynthesis.cancel();
+      window.RyujinVoiceMode && window.RyujinVoiceMode.hide();
+    } catch {}
+    this._isSpeaking = false;
+    this._currentUtterance = null;
+    this._updateSpeakBtnState(false);
+  },
+  _currentAudio: null,
+
+  toggleSpeak() {
+    // Phase 14: speaker icon = enter/exit voice mode (Mac's preferred behavior).
+    // Auto-speak preference now lives inside the persona modal (long-press speaker still opens that).
+    if (window.RyujinVoiceMode && window.RyujinVoiceMode.isActive && window.RyujinVoiceMode.isActive()) {
+      window.RyujinVoiceMode.exit();
+      return;
+    }
+    if (this._isSpeaking) {
+      this.stopSpeaking();
+    }
+    const archetype = localStorage.getItem('ryujin_archetype') || 'ruler';
+    if (!window.RyujinVoiceMode) {
+      // Voice mode script not loaded yet — fall back to old auto-speak toggle for now
+      const cur = localStorage.getItem('ryujin_auto_speak') === '1';
+      localStorage.setItem('ryujin_auto_speak', cur ? '0' : '1');
+      this._updateSpeakBtnState(false);
+      return;
+    }
+    const self = this;
+    window.RyujinVoiceMode.enter(
+      archetype,
+      // exitHandler: when user closes voice mode, stop any audio
+      () => self.stopSpeaking(),
+      // micHandler: user finished speaking, send transcript through normal chat flow.
+      // Auto-speak gets enabled for this session so the response gets read aloud.
+      (transcript) => {
+        const wasAutoSpeak = localStorage.getItem('ryujin_auto_speak') === '1';
+        localStorage.setItem('ryujin_auto_speak', '1');
+        const input = document.getElementById('ryuInput');
+        if (input) {
+          input.value = transcript;
+          self.send();
+        }
+        // Restore auto-speak setting after a short delay (so this turn speaks but doesn't change preference long-term)
+        setTimeout(() => {
+          if (!wasAutoSpeak) localStorage.setItem('ryujin_auto_speak', '0');
+        }, 1000);
+      }
+    );
+  },
+
+  _speechRec: null,
+  _speechRecognizing: false,
+
+  toggleMic() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      this.addMessage('Voice input not supported in this browser. Try Chrome or Edge.', 'ai');
+      return;
+    }
+    const btn = document.getElementById('ryuMic');
+    if (this._speechRecognizing) {
+      try { this._speechRec && this._speechRec.stop(); } catch {}
+      return;
+    }
+    const r = new SR();
+    r.lang = 'en-US';
+    r.interimResults = true;
+    r.continuous = false;
+    this._speechRec = r;
+    this._speechRecognizing = true;
+    if (btn) {
+      btn.style.borderColor = 'rgba(248,113,113,0.6)';
+      btn.style.color = '#f87171';
+    }
+    const input = document.getElementById('ryuInput');
+    let finalTranscript = input ? input.value : '';
+    r.onresult = (e) => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const res = e.results[i];
+        if (res.isFinal) finalTranscript += res[0].transcript;
+        else interim += res[0].transcript;
+      }
+      if (input) input.value = (finalTranscript + interim).trim();
+    };
+    r.onerror = () => {};
+    r.onend = () => {
+      this._speechRecognizing = false;
+      this._speechRec = null;
+      if (btn) {
+        btn.style.borderColor = 'rgba(34,211,238,0.18)';
+        btn.style.color = 'rgba(160,200,240,0.7)';
+      }
+      if (input && input.value.trim()) this.send();
+    };
+    try { r.start(); } catch (e) {
+      this._speechRecognizing = false;
+      if (btn) {
+        btn.style.borderColor = 'rgba(34,211,238,0.18)';
+        btn.style.color = 'rgba(160,200,240,0.7)';
+      }
+    }
+  },
+
+  async openPersona() {
+    const modal = document.getElementById('ryuPersonaModal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    const status = document.getElementById('ryuPersonaStatus');
+    const nameInput = document.getElementById('ryuPersonaName');
+    const styleInput = document.getElementById('ryuPersonaStyle');
+    const archInput = document.getElementById('ryuArchetype');
+    const token = localStorage.getItem('ryujin_token') || '';
+    if (!token) {
+      if (status) status.textContent = 'Log in to save a persona. Until then, your AI uses the role default.';
+      return;
+    }
+    try {
+      const r = await fetch('/api/persona', { headers: { Authorization: 'Bearer ' + token } });
+      const data = await r.json();
+      const p = data.persona || {};
+      if (nameInput) nameInput.value = p.name || '';
+      if (styleInput) styleInput.value = p.style || '';
+      if (archInput && data.primaryArchetype) archInput.value = data.primaryArchetype;
+      // Per-archetype effort default (local storage only — UI sugar)
+      const effortInput = document.getElementById('ryuArchetypeEffort');
+      if (effortInput && archInput) {
+        try {
+          const map = JSON.parse(localStorage.getItem('ryujin_archetype_effort') || '{}');
+          effortInput.value = map[archInput.value] || '';
+        } catch { effortInput.value = ''; }
+      }
+      if (status) status.textContent = data.note || (data.tenantDefault && Object.keys(data.tenantDefault).length ? `Tenant default: ${data.tenantDefault.name || '(unnamed)'}` : '');
+    } catch (e) {
+      if (status) status.textContent = 'Could not load persona.';
+    }
+  },
+
+  closePersona() {
+    const m = document.getElementById('ryuPersonaModal');
+    if (m) m.style.display = 'none';
+  },
+
+  async savePersona() {
+    const status = document.getElementById('ryuPersonaStatus');
+    const nameInput = document.getElementById('ryuPersonaName');
+    const styleInput = document.getElementById('ryuPersonaStyle');
+    const archInput = document.getElementById('ryuArchetype');
+    const token = localStorage.getItem('ryujin_token') || '';
+    if (!token) { if (status) status.textContent = 'Log in to save.'; return; }
+    if (status) status.textContent = 'Saving...';
+    try {
+      const r = await fetch('/api/persona', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({
+          name: nameInput.value.trim(),
+          style: styleInput.value.trim(),
+          primary_archetype: archInput ? archInput.value : undefined
+        })
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        if (status) status.textContent = data.error || 'Save failed. ' + (data.hint || '');
+        return;
+      }
+      if (status) status.textContent = data.note ? `Saved (${data.note})` : 'Saved. Applies on next message.';
+      if (archInput) localStorage.setItem('ryujin_archetype', archInput.value);
+      // Persist per-archetype effort default
+      try {
+        const effortInput = document.getElementById('ryuArchetypeEffort');
+        if (effortInput && archInput) {
+          const map = JSON.parse(localStorage.getItem('ryujin_archetype_effort') || '{}');
+          if (effortInput.value) map[archInput.value] = effortInput.value;
+          else delete map[archInput.value];
+          localStorage.setItem('ryujin_archetype_effort', JSON.stringify(map));
+        }
+      } catch {}
+      setTimeout(() => this.closePersona(), 1200);
+    } catch (e) {
+      if (status) status.textContent = 'Save failed: ' + e.message;
     }
   },
 
@@ -5228,6 +6140,169 @@ const ryujinChat = {
 
 // Init the chat widget
 ryujinChat.init();
+
+// ───────────────────────────────────────────────────────────────
+// Settings panel + View As tester (Phase 15)
+// Owner-only impersonation: lets Mac preview the system as Cat / Darcy / AJ / Ryan
+// to verify role gating, archetype voice, doc visibility, tool restrictions all behave correctly.
+// ───────────────────────────────────────────────────────────────
+const ryujinSettings = {
+  open: false,
+  init() {
+    document.body.insertAdjacentHTML('beforeend', `
+      <style>
+        .rys-gear{position:fixed;top:max(18px,env(safe-area-inset-top));right:max(18px,env(safe-area-inset-right));z-index:9200;width:42px;height:42px;border-radius:50%;background:rgba(10,18,38,0.7);border:1px solid rgba(34,211,238,0.25);color:rgba(200,220,250,0.7);cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(8px);transition:all 0.18s}
+        .rys-gear:hover{color:#22d3ee;border-color:rgba(34,211,238,0.5);transform:rotate(30deg)}
+        .rys-gear svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2}
+        .rys-modal{position:fixed;inset:0;background:rgba(2,6,18,0.78);backdrop-filter:blur(8px);z-index:9400;display:none;align-items:flex-start;justify-content:center;padding:max(60px,env(safe-area-inset-top)) 16px 16px;overflow-y:auto}
+        .rys-modal.on{display:flex}
+        .rys-card{width:100%;max-width:560px;background:rgba(10,18,38,0.95);border:1px solid rgba(34,211,238,0.25);border-radius:18px;padding:22px;color:#e0e6f0;box-shadow:0 24px 60px rgba(0,0,0,0.6),0 0 60px rgba(34,211,238,0.12)}
+        .rys-card h2{margin:0 0 4px;font-family:'Orbitron',sans-serif;font-size:1.1em;letter-spacing:1.5px;color:#22d3ee}
+        .rys-card .sub{color:rgba(160,200,240,0.55);font-size:0.82em;margin-bottom:18px}
+        .rys-section{margin-top:16px}
+        .rys-section h3{font-size:0.78em;letter-spacing:0.6px;text-transform:uppercase;color:rgba(160,200,240,0.7);margin:0 0 10px}
+        .rys-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+        .rys-tile{padding:12px 14px;background:rgba(6,10,20,0.6);border:1.5px solid rgba(34,211,238,0.18);border-radius:10px;cursor:pointer;text-align:left;transition:all 0.15s;color:#e0e6f0;font-family:inherit;font-size:0.88em}
+        .rys-tile:hover{border-color:rgba(34,211,238,0.5);background:rgba(34,211,238,0.07)}
+        .rys-tile.active{border-color:#22d3ee;background:linear-gradient(135deg,rgba(34,211,238,0.18),rgba(124,58,237,0.1));box-shadow:0 0 0 2px rgba(34,211,238,0.15)}
+        .rys-tile .name{font-weight:600;margin-bottom:2px}
+        .rys-tile .meta{font-size:0.72em;color:rgba(160,200,240,0.55)}
+        .rys-tile .role{font-family:'Share Tech Mono',monospace;color:#22d3ee;font-size:0.72em;letter-spacing:0.3px}
+        .rys-foot{display:flex;justify-content:space-between;gap:10px;margin-top:18px;padding-top:14px;border-top:1px solid rgba(34,211,238,0.12)}
+        .rys-btn{padding:9px 16px;border-radius:8px;border:1px solid rgba(34,211,238,0.25);background:rgba(6,10,20,0.6);color:#e0e6f0;cursor:pointer;font-family:inherit;font-size:0.85em}
+        .rys-btn:hover{border-color:rgba(34,211,238,0.55)}
+        .rys-btn.primary{background:linear-gradient(135deg,rgba(34,211,238,0.2),rgba(124,58,237,0.12));border-color:rgba(34,211,238,0.4)}
+        .rys-banner{position:fixed;top:0;left:0;right:0;z-index:9100;background:linear-gradient(90deg,rgba(124,58,237,0.85),rgba(34,211,238,0.75));color:#fff;padding:8px 16px;display:none;align-items:center;justify-content:center;gap:14px;font-size:0.85em;font-weight:500;letter-spacing:0.3px;backdrop-filter:blur(6px);box-shadow:0 4px 16px rgba(0,0,0,0.3)}
+        .rys-banner.on{display:flex}
+        .rys-banner .exit{background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.4);color:#fff;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:0.85em;font-family:inherit}
+        .rys-banner .exit:hover{background:rgba(255,255,255,0.3)}
+        body.rys-banner-on{padding-top:36px}
+      </style>
+      <button class="rys-gear" id="rysGear" onclick="ryujinSettings.toggle()" title="Settings">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+      <div class="rys-banner" id="rysBanner">
+        <span>👁 Viewing as <b id="rysBannerWho"></b> · <span id="rysBannerRole"></span> / <span id="rysBannerArche"></span></span>
+        <button class="exit" onclick="ryujinSettings.exitViewAs()">Exit view-as</button>
+      </div>
+      <div class="rys-modal" id="rysModal" onclick="if(event.target===this)ryujinSettings.toggle()">
+        <div class="rys-card">
+          <h2>Settings</h2>
+          <div class="sub">Owner-only tester. Switch which user you want to experience the AI as.</div>
+          <div class="rys-section">
+            <h3>View As</h3>
+            <div class="rys-tiles" id="rysViewAsTiles"></div>
+          </div>
+          <div class="rys-foot">
+            <button class="rys-btn" onclick="ryujinSettings.toggle()">Close</button>
+            <button class="rys-btn" onclick="ryujinSettings.exitViewAs()" id="rysExitBtn" style="display:none">Exit view-as</button>
+          </div>
+        </div>
+      </div>
+    `);
+
+    // Render tiles
+    const tiles = [
+      { id: 'self',      name: 'Mackenzie',  role: 'owner', archetype: 'ruler',     meta: 'Default — full owner access' },
+      { id: 'cat',       name: 'Catherine',  role: 'admin', archetype: 'caregiver', meta: 'Operations / EA scope' },
+      { id: 'darcy',     name: 'Darcy',      role: 'sales', archetype: 'hero',      meta: 'Outside sales scope' },
+      { id: 'aj',        name: 'AJ',         role: 'crew',  archetype: 'creator',   meta: 'Production crew + setter' },
+      { id: 'ryan',      name: 'Ryan',       role: 'crew',  archetype: 'creator',   meta: 'Sub (treated as crew for chat preview)' }
+    ];
+    const container = document.getElementById('rysViewAsTiles');
+    if (container) {
+      container.innerHTML = tiles.map(t => `
+        <button class="rys-tile" data-id="${t.id}" onclick="ryujinSettings.selectViewAs('${t.id}')">
+          <div class="name">${t.name}</div>
+          <div class="meta">${t.meta}</div>
+          <div class="role">${t.role} · ${t.archetype}</div>
+        </button>`).join('');
+    }
+    this._tiles = tiles;
+    this._renderActive();
+    this._renderBanner();
+  },
+
+  toggle() {
+    const m = document.getElementById('rysModal');
+    if (!m) return;
+    this.open = !this.open;
+    m.classList.toggle('on', this.open);
+    if (this.open) {
+      this._renderActive();
+      const exitBtn = document.getElementById('rysExitBtn');
+      if (exitBtn) exitBtn.style.display = this.getViewAs() ? 'inline-block' : 'none';
+    }
+  },
+
+  getViewAs() {
+    try { return JSON.parse(localStorage.getItem('ryujin_view_as') || 'null'); } catch { return null; }
+  },
+
+  selectViewAs(id) {
+    const tile = (this._tiles || []).find(t => t.id === id);
+    if (!tile) return;
+    if (id === 'self') {
+      this.exitViewAs();
+      return;
+    }
+    localStorage.setItem('ryujin_view_as', JSON.stringify({
+      id: tile.id, name: tile.name, role: tile.role, archetype: tile.archetype
+    }));
+    // Reflect archetype change so voice mode + chat use it
+    localStorage.setItem('ryujin_archetype', tile.archetype);
+    this._renderActive();
+    this._renderBanner();
+    this.toggle();
+    // Notify chat that history should reset for the impersonated session
+    if (window.ryujinChat) {
+      window.ryujinChat.history = [];
+      window.ryujinChat.addMessage(`Now viewing as ${tile.name} (${tile.role} / ${tile.archetype}). The AI will respond using their role + archetype scope.`, 'ai');
+    }
+  },
+
+  exitViewAs() {
+    localStorage.removeItem('ryujin_view_as');
+    localStorage.setItem('ryujin_archetype', 'ruler');
+    this._renderActive();
+    this._renderBanner();
+    if (this.open) this.toggle();
+    if (window.ryujinChat) {
+      window.ryujinChat.history = [];
+      window.ryujinChat.addMessage('Back to Mackenzie (owner / ruler). Full access restored.', 'ai');
+    }
+  },
+
+  _renderActive() {
+    const cur = this.getViewAs();
+    document.querySelectorAll('.rys-tile').forEach(t => {
+      const id = t.dataset.id;
+      const isActive = (id === 'self' && !cur) || (cur && cur.id === id);
+      t.classList.toggle('active', isActive);
+    });
+  },
+
+  _renderBanner() {
+    const banner = document.getElementById('rysBanner');
+    if (!banner) return;
+    const cur = this.getViewAs();
+    if (cur) {
+      banner.classList.add('on');
+      document.body.classList.add('rys-banner-on');
+      const who = document.getElementById('rysBannerWho');
+      const role = document.getElementById('rysBannerRole');
+      const arche = document.getElementById('rysBannerArche');
+      if (who) who.textContent = cur.name;
+      if (role) role.textContent = cur.role;
+      if (arche) arche.textContent = cur.archetype;
+    } else {
+      banner.classList.remove('on');
+      document.body.classList.remove('rys-banner-on');
+    }
+  }
+};
+
+ryujinSettings.init();
 </script>
 
 <script src="assets/ryujin-tutor.js"></script>

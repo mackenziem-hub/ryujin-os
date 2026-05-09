@@ -127,6 +127,7 @@ async function handler(req, res) {
       pricing_model: body.pricing_model || 'Local',
       roof_area_sqft: body.roof_area_sqft,
       roof_pitch: body.roof_pitch,
+      planes: Array.isArray(body.planes) && body.planes.length > 0 ? body.planes : null,
       complexity: body.complexity || 'medium',
       eaves_lf: body.eaves_lf || 0,
       rakes_lf: body.rakes_lf || 0,

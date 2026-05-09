@@ -3,6 +3,7 @@
 // Returns the shape proposal-client.html expects. Public (no auth): share tokens are
 // the auth. Tracks view count and last_viewed_at on the proposals row (if present).
 import { supabaseAdmin } from '../lib/supabase.js';
+import { METAL_TIER_COPY, METAL_INCLUDED_ALL, isMetalSlug, getMetalCopy } from '../lib/metalProposalCopy.js';
 
 // Tier catalog authoritative from Plus Ultra/Sales/pricing_formula_v2.md
 // Manufacturer warranties use CertainTeed published terms (lifetime limited + SureStart).
@@ -122,8 +123,8 @@ const REVIEW_STATS = {
 };
 
 const GALLERY = [
-  { img: `${BRAND_BASE}/gallery/01-hero-lakeside-landmark.jpg`, loc: 'MONCTON · LAKESIDE', desc: 'CertainTeed Landmark · full reroof · drone' },
-  { img: `${BRAND_BASE}/gallery/02-topdown-architectural.jpg`, loc: 'MONCTON · LAKESIDE', desc: 'Complex architectural roof · top-down drone' },
+  { img: `${BRAND_BASE}/gallery/01-hero-lakeside-landmark.jpg`, loc: 'MONCTON · ROYAL OAKS', desc: 'CertainTeed Landmark · full reroof · drone' },
+  { img: `${BRAND_BASE}/gallery/02-topdown-architectural.jpg`, loc: 'MONCTON · ROYAL OAKS', desc: 'Complex architectural roof · top-down drone' },
   { img: `${BRAND_BASE}/gallery/07-valley-detail.jpg`,          loc: 'RIVERVIEW · 2025',    desc: 'Woven valley detail · architectural shingle' },
   { img: `${BRAND_BASE}/gallery/03-crew-in-action.jpg`,         loc: 'DIEPPE · 2025',       desc: 'Full tear-off · safety-harnessed crew' },
   { img: `${BRAND_BASE}/gallery/08-new-construction-2.jpg`,     loc: 'MONCTON · 2025',      desc: 'New build · crew installing deck + underlayment' },
@@ -248,11 +249,16 @@ export default async function handler(req, res) {
   } : TENANT_BRANDING_DEFAULT;
 
   const photos = Array.isArray(est.photos) ? est.photos : [];
+  const cap = p => String(p.caption || '').toLowerCase().replace(/[\s_-]+/g, '_');
   const cover = photos.find(p => p.is_cover) || photos[0];
-  const beforePhoto = photos.find(p => (p.caption || '').toLowerCase() === 'before');
-  const afterPhoto = photos.find(p => (p.caption || '').toLowerCase() === 'after');
+  const beforePhoto = photos.find(p => cap(p) === 'before');
+  const afterPhoto = photos.find(p => cap(p) === 'after');
+  // Metal proposal gets its own hero photo when the customer's home is shown
+  // with metal installed. Falls back to the asphalt cover otherwise.
+  const metalCoverPhoto = photos.find(p => cap(p) === 'metal_cover' || cap(p) === 'metal_after');
+  const ROLE_CAPTIONS = new Set(['before', 'after', 'metal_after', 'metal_cover', 'cover']);
   const customGallery = photos
-    .filter(p => !p.is_cover && !['before','after'].includes((p.caption || '').toLowerCase()))
+    .filter(p => !p.is_cover && !ROLE_CAPTIONS.has(cap(p)))
     .map(p => ({
       loc: (branding.companyName || 'Plus Ultra Roofing').toUpperCase(),
       desc: p.caption || 'Project photo',
@@ -282,6 +288,8 @@ export default async function handler(req, res) {
         sub,
         desc: meta.desc,
         total: pkg.total ?? summary.sellingPrice ?? 0,
+        originalTotal: pkg.originalTotal ?? null,
+        promoLabel: pkg.promoLabel ?? null,
         persq: pkg.persq ?? summary.pricePerSQ ?? 0,
         perks: meta.perks,
         // ── SOP + real-cash diagnostics (internal only, never rendered to customer) ──
@@ -298,6 +306,46 @@ export default async function handler(req, res) {
     })
     .filter(t => t.total > 0)
     .sort((a, b) => a.total - b.total);
+
+  // Metal branch — packages keyed by metal-* slugs render through the metal renderer.
+  const metalEntries = Object.entries(packages)
+    .filter(([id]) => isMetalSlug(id))
+    .map(([id, pkg]) => {
+      const copy = getMetalCopy(id);
+      if (!copy) return null;
+      const summary = pkg.summary || {};
+      const total = pkg.total ?? summary.sellingPrice ?? 0;
+      return {
+        id,
+        rank: copy.rank,
+        tag: copy.tag,
+        name: copy.name,
+        subtitle: copy.subtitle,
+        warrantyYears: copy.warrantyYears,
+        warrantyLabel: copy.warrantyLabel,
+        bullets: copy.bullets,
+        bestFit: copy.bestFit,
+        total,
+        persq: pkg.persq ?? summary.pricePerSQ ?? 0
+      };
+    })
+    .filter(Boolean)
+    .filter(t => t.total > 0)
+    .sort((a, b) => a.total - b.total);
+
+  // System defaulting + toggle visibility.
+  //   - isMetal:        primary system on first paint (Asphalt | Metal). The toggle
+  //                     defaults to whichever of asphalt/metal the estimate was *built*
+  //                     in, but customers can flip freely if both are present.
+  //   - hasBothSystems: surface the system toggle in the topbar.
+  const selectedPkg = String(est.selected_package || '').toLowerCase();
+  const proposalMode = String(est.proposal_mode || '').toLowerCase();
+  const isMetal = metalEntries.length > 0 && (
+    isMetalSlug(selectedPkg) ||
+    proposalMode === 'metal' ||
+    tierEntries.length === 0
+  );
+  const hasBothSystems = metalEntries.length > 0 && tierEntries.length > 0;
 
   const customerName = est.customer?.full_name || '';
   const customerAddress = [est.customer?.address, est.customer?.city, est.customer?.province]
@@ -322,17 +370,34 @@ export default async function handler(req, res) {
     testimonials: TESTIMONIALS,
     reviewStats: REVIEW_STATS,
     scope: {
-      system: 'asphalt',
+      system: isMetal ? 'metal' : 'asphalt',
       recommended: est.selected_package || 'platinum',
       roofArea: est.roof_area_sqft,
       pitch: est.roof_pitch,
       eaves: est.eaves_lf, rakes: est.rakes_lf, ridges: est.ridges_lf,
+      distanceKm: est.distance_km || 0,
+      chimneys: est.chimneys || 0,
       soffit: est.soffit_lf, fascia: est.fascia_lf, gutter: est.gutter_lf,
       osbSheets: est.osb_sheets, remediation: est.remediation_allowance,
       measure: { sq: est.roof_area_sqft ? (est.roof_area_sqft / 100).toFixed(1) : '—' },
       lineItems: buildScopeLineItems(est)
     },
-    optionalAdders: est.custom_prices || {},
+    optionalAdders: (() => {
+      // Strip reserved keys (_addons, _envelope) so they don't leak as tier overrides.
+      const cp = { ...(est.custom_prices || {}) };
+      delete cp._addons;
+      delete cp._envelope;
+      return cp;
+    })(),
+    // Legacy add-ons (simple checkbox cart). Kept for older estimates that
+    // haven't been upgraded to the envelope configurator. New estimates use
+    // _envelope (below) instead.
+    addons: Array.isArray(est.custom_prices?._addons) ? est.custom_prices._addons : [],
+    // Performance Shell envelope configurator. When present, the proposal
+    // client renders the full dynamic configurator (system toggle, tiered
+    // roof/siding selection, trim toggles, package-name morph, savings
+    // ticker, cash-discount meter) instead of (or alongside) flat tier cards.
+    envelope: est.custom_prices?._envelope || null,
     media: {
       ...PU_DEFAULT_MEDIA,
       beforeImage: beforePhoto?.url || PU_DEFAULT_MEDIA.beforeImage,
@@ -345,8 +410,22 @@ export default async function handler(req, res) {
     // the engine produced them. Internal additionally exposes SOP profit + real-
     // cash-net diagnostics on each tier.
     tiers: {
-      asphalt: tierEntries
+      asphalt: tierEntries,
+      metal: metalEntries
     },
+    metal: metalEntries.length > 0 ? {
+      tiers: metalEntries,
+      includedAll: METAL_INCLUDED_ALL,
+      coverImage: metalCoverPhoto?.url || null,
+      coverDefault: '/proposal-assets/metal/cover-default.jpg',
+      gallery: [
+        { img: '/proposal-assets/metal/gallery-1.png', caption: 'European Clay metal — terracotta finish' },
+        { img: '/proposal-assets/metal/gallery-2.jpg', caption: 'Drone-documented completion' },
+        { img: '/proposal-assets/metal/gallery-3.jpg', caption: 'Premium tier — full deck redeck in progress' },
+        { img: '/proposal-assets/metal/gallery-4.jpg', caption: 'Crew, harnessed daily, fully insured' }
+      ]
+    } : null,
+    hasBothSystems,
     internal: isInternal,
     // Internal-only audit: SOP profit per tier + breakeven flags for any custom
     // multipliers below 1.35.
