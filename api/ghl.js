@@ -3,30 +3,40 @@ const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim(
 const LOCATION_ID = 'aHotOUdq9D8m3JPrRz9n';
 const GHL_VERSION = '2021-07-28';
 
+// PIPELINE_NAMES + PIPELINE_STAGES last verified against live GHL on 2026-05-09.
+// Source: GET /opportunities/pipelines?locationId=aHotOUdq9D8m3JPrRz9n
+// When chat brain hallucinates a pipeline name, re-pull and replace these maps.
+
+const PIPELINE_NAMES = {
+  'OF6SJPdnmQS7KcgRffrb': '10 CM Pipeline',
+  'jTAc7D9RMHBb3Gzb5bQz': "Darcy's Pipeline",
+  'eJm8vgBePJStA1QdZqmA': 'Instant Estimator',
+  's78IPqC050pvYTGUDvFe': 'Internal Pipeline',
+  'zpBXZwtiHHNQQKJoEIIU': 'Operations Pipeline',
+  'MLroVluZOjTsbvs1rrkC': 'Repair Pipeline',
+  'nJqJ681y17CWjkCRzVhH': 'Voice AI'
+};
+
 const PIPELINE_STAGES = {
-  // Main Pipeline
-  'a86f1fc9-cfc7-4943-8318-de6e907b5cba': 'Unverified Lead',
-  '16ddb0ec-ec32-44b2-9fae-a65b89e555c7': 'Verified Lead - Quote Pending',
-  'a37a2218-e80e-4ff0-bf5a-360842de70b4': 'Quote Sent',
-  'f872cb17-7e0d-47ca-b1b3-f2bbd38274d9': 'Client Signed',
-  '66e83c51-aa6c-4b1f-8db1-ec03b78e5f87': 'Unresponsive',
-  'd6b4e607-fa8b-4f0d-a493-cb48fcb5c32a': 'Lost',
-  // Lead Pipeline
-  'cc572375-5a1e-4f63-a7c8-d944b9098819': 'Unverified Lead',
-  '6935b24b-b233-423e-8cb9-71d81c5a1f04': 'Verified Lead | Ready to Prep Quote',
-  '60338039-6373-4e98-840e-c878d670dea6': 'Quote Prepped',
-  '2b21e880-7538-40f6-94ab-bca6b697b8fb': 'Appointment Booked',
-  '41f3a016-1894-4469-ba57-512078f4b7ac': 'Quote Sent',
-  // Client Pipeline
-  '0b016549-a67f-4ddd-8741-cf81a19551e6': 'Scheduled & Starting',
-  'ec78a47c-6edd-4264-84f3-f4b068eb46f3': 'Deposit Invoice Sent',
-  '0e6f43dc-3cdf-4328-ad9a-06a299191d9e': 'Deposit Invoice Paid',
-  '62ba1072-7a9c-42c3-86f3-96fdf96ede04': 'Job In Progress',
-  '38dbbcd8-a5e3-4595-8a28-840ef621fe57': 'Job Complete',
-  'f906a79f-b93f-4024-8779-7226010ae941': 'Post Production',
-  '097ec4c4-1fed-4f35-a1b3-fb2c3859c1fc': 'Invoice Paid',
-  '4b1c01b4-b9d6-475a-8b47-397d2d352fd9': 'The End',
-  // Darcy's Pipeline (updated Apr 13 2026)
+  // 10 CM Pipeline
+  '20576ed3-fc88-4810-ac95-e618445a1b12': 'New Lead',
+  '6705322a-85e4-4803-9183-00fa4249704c': 'Follow Up 1 Sent',
+  'd51e712f-0f04-45c7-8208-e56947422ccf': 'Follow Up 2 Sent',
+  'b0742a38-8480-4c4b-8ead-49d538fdc387': 'Follow Up 3 Sent',
+  'c2d9aaba-99c4-481d-860a-4e84845fc7da': 'Follow Up 4 Sent',
+  '25b51d70-231f-433b-a545-d885b5a7fd6a': 'Follow Up 5 Sent',
+  'b5bb4965-5aec-4428-9c5d-b988cac1e97d': 'Follow Up 6 Sent',
+  '602f58a5-41e0-4418-af64-aff6a5887425': 'Client Responded',
+  'ffa82014-881d-4f7f-bb32-08defa4d7e2c': 'Inspection Booked',
+  '7f07e8c9-dcba-419c-8e2c-721e96955f23': 'Quote Pending',
+  'f3b6d2c1-a173-428f-a239-e7aa90f21b80': 'Quote Sent',
+  'c02e4e0a-5670-4fa2-87b8-9673e32909a0': 'Quote Follow Up 1 Sent',
+  '323248a0-842b-4754-b8dc-ed36f34afab1': 'Quote Follow Up 2 Sent',
+  '8e313586-df54-49db-bdcc-179498cc6cff': 'Quote Follow Up 3 Sent',
+  '8218b56b-581d-4e1b-b866-9edd6342bd78': 'Contract Signed',
+  '3b24c169-8d99-49c1-9e96-e2f941a53e62': 'DND',
+  'cf9de341-5aa3-42e0-8a4f-7a75c55daba8': 'Lost',
+  // Darcy's Pipeline
   '749ba027-c321-4325-a521-3f441fc1480b': 'New Lead',
   '22aba604-4876-4bbc-b796-6be7d392da3b': 'Text Sent- Awaiting Response',
   '3e796404-ada4-40e9-8458-a4863bccc8cf': 'Follow Up Text Sent',
@@ -35,36 +45,47 @@ const PIPELINE_STAGES = {
   '1b11eb16-a0e0-4865-899c-f876cb1bc614': 'Inspection Scheduled',
   '61e0e9b8-a2c7-45dd-b9dd-16f238b54cbd': 'Quote Sent',
   'aabfe851-86ff-461d-88d3-b6cbad34de56': 'Contract Signed',
-  'ee8bf132-4d11-4943-bb67-1b979fe7f64d': 'DND',
+  'ee8bf132-4d11-4943-bb67-1b979fe7f64d': 'DND/ Out of Town',
   '4ff006c7-5eda-40b9-b0ee-239134487b80': 'Lost',
-  // Mack's Pipeline
-  '20576ed3-fc88-4810-ac95-e618445a1b12': 'New Lead',
-  'b0742a38-8480-4c4b-8ead-49d538fdc387': 'Quote Sent',
-  '25b51d70-231f-433b-a545-d885b5a7fd6a': 'Approved',
-  '602f58a5-41e0-4418-af64-aff6a5887425': 'Lost',
-  // Repairs
-  '5becfb7e-64b8-4417-8403-0b26be6dac13': 'Under Review',
-  '71005d25-255b-419f-864c-b84303e249c4': 'Needs Attention (Urgent)',
-  'a7e08fe6-3a3a-4c14-98c0-66a3bb7a14de': 'Proposal Sent',
-  'ad35de61-1864-41a9-ada5-d39c2ddc6fdd': 'Closed - Repaired',
-  // Proposal Sent Pipeline
-  'a29226e2-3c7e-4d76-b7f1-7e7609a09be8': 'Proposal Sent',
-  'eb0a8ca2-b9c4-44b7-b0a6-fa0c1287217f': 'Approved',
-  'bbf0b6d4-e352-4f71-a747-9d1d55696bca': 'Not Moving Forward'
-};
-
-const PIPELINE_NAMES = {
-  'l2xOb5ApmVbAWADKtra5': 'Main Pipeline',
-  'H59xoVuJ37aZnJA0gSzg': 'Lead',
-  'Nn9VSlLSjC7FKI86oZrE': 'Email Sequence',
-  'N3RNQE1tZescb5KLwD7W': 'Client',
-  'E1Bv1tPgfTlRpapF18fY': 'Lead Revival',
-  'jTAc7D9RMHBb3Gzb5bQz': "Darcy's Pipeline",
-  'OF6SJPdnmQS7KcgRffrb': "Mack's Pipeline",
-  '6yjSlNWT1AUncuxrlz20': 'Past Customers',
-  'ahWs3qwCDkByRb1e8QSM': 'Proposal Sent',
-  'ELHzu5NIjIvIJOvIzkOS': 'Repairs',
-  'nJqJ681y17CWjkCRzVhH': 'Voice AI'
+  // Instant Estimator
+  '1e82765c-2ef2-4810-bcbf-9d6a926dba7b': 'New IE Submission',
+  '201128e6-98a0-4aef-8c81-e8226ca11135': 'Personal Video Sent',
+  '1a33335e-ae57-4c4e-984b-ccd0678ff14a': 'Day 1 Bump',
+  '2abe3fa1-7fa2-4732-9204-04b219a03ec1': 'Day 3 Bump',
+  'e0248e36-84b9-44f9-af57-9fff54039915': 'Inspection Booked',
+  '5cef659b-c45c-410b-ac9e-2defda447b64': 'Quote Ready',
+  'eeb9dd8d-7127-416c-aa11-a2d5a7d2e2d1': 'Day 14 Check-in',
+  '496b9e21-3d00-48d1-8fbf-9e83123af3ee': 'Day 21 Lost',
+  'bd7eff09-04c5-41eb-9fb2-edf0c2374780': 'DND',
+  // Internal Pipeline
+  'f0823692-8a3a-4512-a780-ad7739edd7cc': 'New Lead',
+  '13584262-7832-4c17-b17c-26df8d7659f0': 'Contacted',
+  'd2c91d4c-3fb6-46be-98cd-1465e5f75213': 'Proposal Sent',
+  'e7ea3e84-8e88-4451-be28-ed0291a23bdf': 'Closed',
+  // Operations Pipeline
+  'b8be34e8-5d97-4718-9708-44641de04b94': 'Contract Signed',
+  '4f0a5be4-5b79-47c2-a24f-cd283f289c17': 'Deposit Invoice Sent',
+  '5065357a-47eb-45f1-be5e-5fe97254c23e': 'Deposit Invoice Paid',
+  '984e1d67-616f-430c-bd19-920184b255f8': 'Pre Job Inspection',
+  'd9b41f75-1b66-48ec-a685-3fade71fafad': 'Pre Job Inspection Complete',
+  'fc3a0f28-5ca3-4c2a-9214-388842759620': 'Bundles Ordered',
+  'a4b09df6-038f-4928-8d0b-5b4a657b201d': 'Bundles Loaded',
+  'e43e70f5-8df7-4fb9-ba7a-a17be46cc9eb': 'Job In Progress',
+  '6dceec1a-9506-40de-bbfb-cd090c8758a8': 'Completed',
+  '0077a593-2548-42d9-ac66-7f46f795bc79': 'Representative Check In',
+  'be8b806a-d850-494a-a90b-14656b198bf7': 'Invoice Ready',
+  '2c956db9-4f30-4b09-abd6-7a98cb030eb6': 'Paid In Full',
+  // Repair Pipeline
+  '1f6a7d30-a537-4bac-9725-aceedaae5c2a': 'Repair Requested',
+  '3e4e1a9b-8b74-4b97-801a-1547f3c5a0d9': 'Repair Confirmed',
+  '2208dfab-2774-4b0e-9ba2-24d50969dda5': 'Repair Assigned',
+  '4f2ad3be-d3ac-4394-ad19-e210e9a7c2a7': 'Repair Complete',
+  'e68789b9-cfcb-4019-8863-7fc71520cf97': 'Invoice Sent',
+  '2cd5c35f-64a3-4d26-aa1a-4609f691e795': 'Invoice Paid',
+  // Voice AI
+  'a94b67a4-174d-4004-b122-8d2ae646fa41': 'Customer Called',
+  '25022415-6343-49b2-bae3-6140711bd8f3': 'Telemarketers',
+  'f17181c8-ef31-4c35-8ee4-efac41161b75': 'Quote Requested'
 };
 
 async function ghlFetch(path, params = {}, options = {}) {
