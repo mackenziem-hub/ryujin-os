@@ -303,6 +303,9 @@ export default async function handler(req, res) {
         promoLabel: pkg.promoLabel ?? null,
         persq: pkg.persq ?? summary.pricePerSQ ?? 0,
         perks,
+        // Per-estimate warranty_years override exposed for client-side renderScope().
+        // null means "use tier default" (Gold 15 / Plat 20 / Dmd 25).
+        warrantyYears: warrantyOverride ?? null,
         // ── SOP + real-cash diagnostics (internal only, never rendered to customer) ──
         sopTargetPct: summary.sopTargetPct ?? null,
         sopProfit: summary.sopProfit ?? null,
