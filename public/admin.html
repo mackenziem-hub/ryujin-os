@@ -808,7 +808,18 @@ async function api(path, opts = {}) {
   } catch (e) { return { error: 'Connection failed' }; }
 }
 
-function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+function esc(s) {
+  if (s == null) return '';
+  // Defensive: if a caller accidentally passes an object, coerce to JSON
+  // instead of the useless "[object Object]". Caught May 9 by Manus audit
+  // flagging admin#estimates rendering raw [object Object] in cards.
+  if (typeof s === 'object') {
+    try { s = JSON.stringify(s); } catch { s = String(s); }
+  }
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
 function fmt$(n) { return '$' + (n || 0).toLocaleString(); }
 
 // Toast notifications
