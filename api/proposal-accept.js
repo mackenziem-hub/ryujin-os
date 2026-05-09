@@ -161,21 +161,23 @@ export default async function handler(req, res) {
   // Trust the client total — but record the full breakdown for audit.
   const envelopeAccept = envelope && typeof envelope === 'object' ? envelope : null;
 
-  if (!shareToken && !estimateId) {
-    return res.status(400).json({ error: 'shareToken or estimateId required' });
+  // Bug-sweep #1/S1 (2026-04-24): shareToken is mandatory. Public endpoint cannot
+  // be authenticated by `estimateId` alone — that lets any client accept any tenant's
+  // quote by guessing/iterating IDs.
+  if (!shareToken) {
+    return res.status(400).json({ error: 'shareToken required' });
   }
   if (!tier || !tier.id) {
     return res.status(400).json({ error: 'tier.id required' });
   }
 
-  // 1. Resolve estimate by share token (authoritative — do not trust estimateId from client alone)
-  const query = supabaseAdmin
+  // 1. Resolve estimate by share token (authoritative — do not trust estimateId from client)
+  const lookup = await supabaseAdmin
     .from('estimates')
     .select('id, tenant_id, estimate_number, customer_id, status, selected_package, notes, calculated_packages, ghl_opportunity_id, share_token, proposal_mode, tags, customer:customers(full_name, email, phone, address, ghl_contact_id)')
-    .limit(1);
-  const lookup = shareToken
-    ? await query.eq('share_token', shareToken).maybeSingle()
-    : await query.eq('id', estimateId).maybeSingle();
+    .eq('share_token', shareToken)
+    .limit(1)
+    .maybeSingle();
 
   if (lookup.error || !lookup.data) {
     return res.status(404).json({ error: 'Estimate not found for that share token' });
