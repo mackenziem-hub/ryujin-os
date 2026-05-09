@@ -280,7 +280,7 @@ ${tiers.map(t => `
 
 <footer>
   <strong>Plus Ultra Roofing</strong> &middot; (506) 540-1052 &middot; plusultraroofing@gmail.com &middot; plusultraroofing.com<br>
-  CertainTeed Certified &middot; $2M general liability &middot; WCB compliant &middot; 50–100 install photos via CompanyCam<br>
+  CertainTeed Certified &middot; Licensed in NB &middot; 50–100 install photos via CompanyCam<br>
   <div class="disclaimer">
     Material quantities are calculated using EagleView measurements and our standard waste factors. Final material draw on the project may vary slightly based on site conditions; any unused material is credited back. Labor prices reflect skilled-trade rates including site setup, safety equipment, daily cleanup, project management, and the workmanship warranty for the chosen package tier. Quote valid for 30 days from issue date.
   </div>

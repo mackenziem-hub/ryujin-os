@@ -66,7 +66,9 @@ const RULES = [
   },
   {
     name: 'bbb_accredited_hardcoded',
-    pattern: /\bBBB(?:\s+accredited)?\b/i,
+    // Uppercase only — case-insensitive match catches CSS hex (#bbb) false positives.
+    // Also requires word boundary on both sides to avoid matching identifiers.
+    pattern: /\bBBB(?:\s+(?:accredited|A\+))?\b/,
     severity: 'P1',
     why: 'Plus Ultra is not currently BBB-accredited.',
     suggested_replacement: 'Remove or replace with verified Google reviews claim.'

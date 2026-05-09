@@ -83,8 +83,8 @@ const REPS = {
 
 const CERTIFICATIONS = [
   { label: 'CertainTeed ShingleMaster™', image: `${BRAND_BASE}/cert-shinglemaster.webp` },
-  { label: 'CompanyCam Verified', image: `${BRAND_BASE}/cert-companycam.png` },
-  { label: 'BBB A+ Accredited (2024)', image: null }
+  { label: 'CompanyCam Verified', image: `${BRAND_BASE}/cert-companycam.png` }
+  // Trade-association accreditation row removed 2026-05-09; restore via claims library.
 ];
 
 const TESTIMONIALS = [
@@ -422,7 +422,7 @@ export default async function handler(req, res) {
         { img: '/proposal-assets/metal/gallery-1.png', caption: 'European Clay metal — terracotta finish' },
         { img: '/proposal-assets/metal/gallery-2.jpg', caption: 'Drone-documented completion' },
         { img: '/proposal-assets/metal/gallery-3.jpg', caption: 'Premium tier — full deck redeck in progress' },
-        { img: '/proposal-assets/metal/gallery-4.jpg', caption: 'Crew, harnessed daily, fully insured' }
+        { img: '/proposal-assets/metal/gallery-4.jpg', caption: 'Crew, harnessed daily, licensed in NB' }
       ]
     } : null,
     hasBothSystems,

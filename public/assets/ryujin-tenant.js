@@ -17,7 +17,7 @@
     email: 'plusultraroofing@gmail.com',
     website: 'plusultraroofing.com',
     address: 'Riverview · Moncton NB',
-    certifications: 'CertainTeed Certified · Fully Insured · 3rd Generation',
+    certifications: 'CertainTeed Certified · Licensed in NB · 3rd Generation',
     owner: 'Mackenzie Mazerolle',
     ownerTitle: 'Owner · Plus Ultra Roofing',
     ownerInitials: 'MM',
