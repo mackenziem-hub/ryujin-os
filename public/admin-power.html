@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#060a14">
+<title>Power Level · Ryujin OS</title>
+<link rel="icon" href="/assets/logo/icon.png" onerror="this.href='/assets/logo/logo-glow.jpg'">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=optional" rel="stylesheet">
+<style>
+:root{
+  --bg:#060a14;--glass:rgba(20,30,50,0.85);--glass2:rgba(22,34,58,0.80);
+  --glass-border:rgba(34,211,238,0.16);--glass-border-hi:rgba(34,211,238,0.35);
+  --text:#d0daf0;--text-dim:rgba(160,190,230,0.55);--text-muted:rgba(140,170,220,0.30);
+  --cyan:#22d3ee;--blue:#4a9eff;--purple:#7c3aed;
+  --green:#4ade80;--yellow:#facc15;--red:#f87171;--orange:#fb923c;--gold:#fbbf24;
+  --radius:12px;--sidebar-w:72px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/textures/app-bg.png') center/cover fixed no-repeat;color:var(--text);min-height:100vh;overflow-x:hidden}
+
+.sidebar{width:var(--sidebar-w);background:rgba(8,12,24,0.98);border-right:1px solid var(--glass-border);display:flex;flex-direction:column;align-items:center;position:fixed;top:0;bottom:0;z-index:50;box-shadow:2px 0 12px rgba(0,0,0,0.4)}
+.sidebar-logo{width:44px;height:44px;margin:18px 0 12px;border-radius:12px;background:url('/assets/logo/logo-glow.jpg') center/cover;box-shadow:0 0 20px rgba(34,211,238,0.3);cursor:pointer}
+.sidebar-divider{width:32px;height:1px;background:linear-gradient(90deg,transparent,var(--cyan),transparent);opacity:0.3;margin:4px 0 8px}
+.sidebar-nav{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 0}
+.nav-icon{width:44px;height:44px;display:flex;align-items:center;justify-content:center;border-radius:12px;border:1px solid transparent;cursor:pointer;color:var(--text-dim);transition:all 0.25s;position:relative;text-decoration:none}
+.nav-icon:hover{background:rgba(34,211,238,0.06);color:var(--text)}
+.nav-icon.active{background:linear-gradient(135deg,rgba(34,211,238,0.12),rgba(124,58,237,0.06));color:var(--cyan);border-color:rgba(34,211,238,0.2);box-shadow:0 0 20px rgba(34,211,238,0.08)}
+.nav-icon.active::before{content:'';position:absolute;left:-1px;top:25%;bottom:25%;width:3px;background:var(--cyan);border-radius:0 3px 3px 0;box-shadow:0 0 8px var(--cyan)}
+.nav-icon svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+
+.main{margin-left:var(--sidebar-w);padding:18px 22px 60px;max-width:1600px}
+
+.hq-header{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-bottom:20px;flex-wrap:wrap}
+.hq-title{flex:1;min-width:280px}
+.hq-title .crumb{font-family:'Share Tech Mono',monospace;font-size:0.72em;color:var(--text-dim);letter-spacing:2px;text-transform:uppercase;margin-bottom:4px}
+.hq-title h1{font-family:'Orbitron',monospace;font-size:1.7em;font-weight:700;letter-spacing:1.5px;background:linear-gradient(135deg,#e0e6f0 20%,var(--cyan) 70%,var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hq-title .sub{font-size:0.85em;color:var(--text-dim);margin-top:6px}
+
+.user-pill-row{display:flex;align-items:center;gap:10px}
+.user-pill{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:24px;background:var(--glass);border:1px solid var(--glass-border);font-size:0.78em;cursor:pointer;color:var(--text-dim);transition:all 0.2s;letter-spacing:0.4px;font-family:inherit}
+.user-pill:hover{border-color:var(--glass-border-hi);color:var(--text)}
+.user-pill.active{background:linear-gradient(135deg,rgba(34,211,238,0.14),rgba(124,58,237,0.08));color:var(--cyan);border-color:rgba(34,211,238,0.4)}
+.user-pill .dot{width:7px;height:7px;border-radius:50%;background:var(--cyan);box-shadow:0 0 6px var(--cyan)}
+
+/* HERO POWER PANEL */
+.hero{
+  background:var(--glass);border:1px solid var(--glass-border);
+  border-radius:14px;padding:28px 30px;margin-bottom:18px;
+  display:grid;grid-template-columns:auto 1fr auto;gap:30px;align-items:center;
+  position:relative;overflow:hidden;
+}
+.hero::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--cyan) 30%,var(--purple) 70%,transparent);opacity:0.7}
+.hero-glow{position:absolute;inset:-50%;background:radial-gradient(ellipse at center,rgba(34,211,238,0.08),transparent 60%);pointer-events:none;animation:glowPulse 6s ease-in-out infinite}
+@keyframes glowPulse{0%,100%{opacity:0.5}50%{opacity:1}}
+
+.lvl-badge{
+  width:140px;height:140px;border-radius:50%;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  background:radial-gradient(circle at 30% 30%,rgba(34,211,238,0.18),rgba(124,58,237,0.1) 50%,rgba(6,10,20,0.9));
+  border:2px solid var(--glass-border-hi);
+  box-shadow:0 0 30px rgba(34,211,238,0.25),inset 0 0 20px rgba(124,58,237,0.15);
+  position:relative;flex-shrink:0;
+}
+.lvl-badge::before{
+  content:'';position:absolute;inset:-6px;border-radius:50%;
+  border:1px dashed rgba(34,211,238,0.35);animation:rot 16s linear infinite;
+}
+@keyframes rot{to{transform:rotate(360deg)}}
+.lvl-num{font-family:'Orbitron',monospace;font-size:3em;font-weight:800;line-height:1;background:linear-gradient(135deg,#fff 30%,var(--cyan) 70%,var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;filter:drop-shadow(0 0 6px rgba(34,211,238,0.4))}
+.lvl-label-small{font-family:'Orbitron',monospace;font-size:0.55em;letter-spacing:2px;color:var(--text-dim);text-transform:uppercase;margin-top:4px}
+
+.hero-mid{position:relative;z-index:1}
+.hero-rank{font-family:'Orbitron',monospace;font-size:1.2em;font-weight:700;letter-spacing:2px;color:var(--text);margin-bottom:4px}
+.hero-rank-sub{font-size:0.85em;color:var(--text-dim);margin-bottom:14px}
+.hero-bar-wrap{margin-top:8px}
+.hero-bar-meta{display:flex;justify-content:space-between;font-family:'Share Tech Mono',monospace;font-size:0.72em;color:var(--text-dim);letter-spacing:1px;margin-bottom:5px}
+.hero-bar{height:14px;border-radius:7px;background:rgba(6,10,20,0.5);border:1px solid var(--glass-border);overflow:hidden;position:relative}
+.hero-bar-fill{height:100%;background:linear-gradient(90deg,var(--cyan),var(--purple));box-shadow:0 0 12px rgba(34,211,238,0.5);transition:width 0.8s ease}
+.hero-bar-pct{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-family:'Share Tech Mono',monospace;font-size:0.7em;color:#0a0e1a;font-weight:700;letter-spacing:1px;text-shadow:0 0 4px rgba(255,255,255,0.5)}
+
+.hero-stats{display:flex;flex-direction:column;gap:8px;align-items:flex-end;font-family:'Orbitron',monospace;flex-shrink:0}
+.hs-row{display:flex;align-items:baseline;gap:8px}
+.hs-num{font-size:1.4em;font-weight:700;color:var(--cyan)}
+.hs-num.green{color:var(--green)}
+.hs-num.purple{color:#a78bfa}
+.hs-lbl{font-size:0.6em;letter-spacing:2px;color:var(--text-dim);text-transform:uppercase}
+
+/* Stat row */
+.stat-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:18px}
+.stat-tile{
+  background:var(--glass);border:1px solid var(--glass-border);
+  border-radius:var(--radius);padding:14px 16px;position:relative;overflow:hidden;
+}
+.stat-tile::before{content:'';position:absolute;bottom:-1px;right:-1px;width:18px;height:18px;border-bottom:2px solid var(--cyan);border-right:2px solid var(--cyan);border-radius:0 0 var(--radius) 0;opacity:0.25}
+.stat-label{font-family:'Orbitron',monospace;font-size:0.6em;letter-spacing:2px;color:var(--text-dim);text-transform:uppercase;margin-bottom:6px}
+.stat-value{font-family:'Orbitron',monospace;font-size:1.6em;font-weight:800;line-height:1.1;color:var(--text)}
+.stat-value.cyan{color:var(--cyan)}
+.stat-value.green{color:var(--green)}
+.stat-value.gold{color:var(--gold)}
+.stat-value.purple{color:#a78bfa}
+
+/* Section head */
+.section-head{display:flex;align-items:baseline;gap:10px;margin:22px 0 10px;font-family:'Orbitron',monospace}
+.section-head h2{font-size:0.78em;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--text)}
+.section-head .count-pill{font-size:0.65em;font-family:'Share Tech Mono',monospace;padding:2px 8px;border-radius:10px;background:rgba(34,211,238,0.1);border:1px solid var(--glass-border);color:var(--cyan)}
+
+/* Achievements */
+.ach-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+.ach{
+  background:var(--glass);border:1px solid var(--glass-border);
+  border-radius:var(--radius);padding:14px 16px;position:relative;overflow:hidden;
+  display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:center;
+  transition:all 0.2s;
+}
+.ach.unlocked{border-color:var(--gold);background:linear-gradient(135deg,rgba(251,191,36,0.05),var(--glass))}
+.ach.unlocked::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:0.7}
+.ach.unlocked:hover{box-shadow:0 0 16px rgba(251,191,36,0.15)}
+.ach-medal{
+  width:50px;height:50px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-family:'Orbitron',monospace;font-size:1.3em;font-weight:800;
+  background:rgba(6,10,20,0.4);border:2px solid var(--glass-border);
+  color:var(--text-muted);flex-shrink:0;
+}
+.ach.unlocked .ach-medal{
+  background:radial-gradient(circle at 35% 35%,rgba(251,191,36,0.4),rgba(251,191,36,0.15));
+  border-color:var(--gold);color:var(--gold);
+  box-shadow:0 0 12px rgba(251,191,36,0.3);
+}
+.ach-info{min-width:0}
+.ach-name{font-family:'Orbitron',monospace;font-size:0.78em;font-weight:700;letter-spacing:1.2px;color:var(--text);text-transform:uppercase}
+.ach.unlocked .ach-name{color:var(--gold)}
+.ach-desc{font-size:0.74em;color:var(--text-dim);margin-top:3px;line-height:1.35}
+.ach-progress{margin-top:6px;display:flex;align-items:center;gap:8px}
+.ach-bar{flex:1;height:5px;border-radius:3px;background:rgba(6,10,20,0.5);overflow:hidden}
+.ach-bar-fill{height:100%;background:var(--cyan)}
+.ach.unlocked .ach-bar-fill{background:var(--gold)}
+.ach-pct{font-family:'Share Tech Mono',monospace;font-size:0.62em;color:var(--text-muted);letter-spacing:0.5px}
+
+/* Awards / ledger */
+.award-list{display:flex;flex-direction:column;gap:5px}
+.award-row{
+  display:grid;grid-template-columns:auto 1fr auto auto;gap:12px;align-items:center;
+  background:var(--glass);border:1px solid var(--glass-border);
+  border-radius:8px;padding:8px 12px;font-size:0.82em;
+}
+.award-icon{
+  width:24px;height:24px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(34,211,238,0.1);border:1px solid var(--glass-border);
+  font-size:0.72em;flex-shrink:0;
+}
+.award-icon.quest{color:var(--cyan)}
+.award-icon.achievement{color:var(--gold);background:rgba(251,191,36,0.1)}
+.award-icon.dragon_challenge{color:var(--purple);background:rgba(124,58,237,0.1)}
+.award-icon.manual{color:var(--text-dim)}
+.award-note{color:var(--text);font-size:0.92em;line-height:1.3}
+.award-xp{font-family:'Orbitron',monospace;font-size:0.85em;font-weight:700;color:var(--cyan);white-space:nowrap}
+.award-xp.neg{color:var(--red)}
+.award-time{font-family:'Share Tech Mono',monospace;font-size:0.72em;color:var(--text-muted);letter-spacing:0.5px}
+
+.empty-state{text-align:center;padding:24px 16px;color:var(--text-dim);border:1px dashed var(--glass-border);border-radius:var(--radius);font-size:0.85em}
+.empty-state .ico{font-size:1.6em;margin-bottom:6px;opacity:0.5}
+
+.skeleton{background:linear-gradient(90deg,var(--glass) 0%,var(--glass2) 50%,var(--glass) 100%);background-size:200% 100%;animation:sk 1.4s infinite;border:1px solid var(--glass-border);border-radius:var(--radius);height:140px}
+@keyframes sk{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+.banner{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius);font-size:0.8em;margin-bottom:14px;line-height:1.4}
+.banner.warn{background:rgba(251,146,60,0.08);border:1px solid rgba(251,146,60,0.25);color:var(--orange)}
+.banner.info{background:rgba(34,211,238,0.06);border:1px solid var(--glass-border);color:var(--text-dim)}
+.banner code{font-family:'Share Tech Mono',monospace;background:rgba(0,0,0,0.3);padding:1px 6px;border-radius:4px;color:var(--text)}
+
+@media(max-width:768px){
+  .main{padding:12px}
+  .hq-title h1{font-size:1.3em}
+  .hero{grid-template-columns:1fr;text-align:center;padding:20px}
+  .hero-stats{align-items:center}
+  .lvl-badge{margin:0 auto;width:120px;height:120px}
+}
+</style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <a href="/admin.html" class="sidebar-logo" title="Admin Home"></a>
+  <div class="sidebar-divider"></div>
+  <nav class="sidebar-nav">
+    <a href="/admin-overview.html" class="nav-icon" title="Overview"><svg viewBox="0 0 24 24"><path d="M3 12l9-9 9 9M5 10v10h14V10"/></svg></a>
+    <a href="/admin-quests.html" class="nav-icon" title="Quests"><svg viewBox="0 0 24 24"><path d="M9 12l2 2 4-4M21 12c0 5-4 9-9 9s-9-4-9-9 4-9 9-9c2 0 4 1 5 2"/></svg></a>
+    <a href="/admin-agents.html" class="nav-icon" title="Agents"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0116 0v2"/></svg></a>
+    <a href="/admin-power.html" class="nav-icon active" title="Power Level"><svg viewBox="0 0 24 24"><path d="M13 2L3 14h7l-1 8 10-12h-7z"/></svg></a>
+    <a href="/admin-system.html" class="nav-icon" title="System Config"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 11-14 0 7 7 0 0114 0z"/></svg></a>
+    <a href="/admin.html" class="nav-icon" title="Full Admin"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></a>
+  </nav>
+</aside>
+
+<main class="main">
+
+  <div class="hq-header">
+    <div class="hq-title">
+      <div class="crumb">Admin · Power Level</div>
+      <h1>Power Level</h1>
+      <div class="sub">XP earned, achievements unlocked, streaks held. Each completed quest awards XP automatically.</div>
+    </div>
+    <div class="user-pill-row" id="userPills"></div>
+  </div>
+
+  <div id="banner-slot"></div>
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="hero-glow"></div>
+    <div class="lvl-badge">
+      <div class="lvl-num" id="lvlNum">—</div>
+      <div class="lvl-label-small">Level</div>
+    </div>
+    <div class="hero-mid">
+      <div class="hero-rank" id="rankName">—</div>
+      <div class="hero-rank-sub" id="rankSub">No XP earned yet.</div>
+      <div class="hero-bar-wrap">
+        <div class="hero-bar-meta"><span id="barCurr">— XP</span><span id="barNext">Level —</span></div>
+        <div class="hero-bar"><div class="hero-bar-fill" id="barFill" style="width:0%"></div><div class="hero-bar-pct" id="barPct">0%</div></div>
+      </div>
+    </div>
+    <div class="hero-stats">
+      <div class="hs-row"><div class="hs-num" id="xpToday">—</div><div class="hs-lbl">XP Today</div></div>
+      <div class="hs-row"><div class="hs-num green" id="xpWeek">—</div><div class="hs-lbl">XP This Week</div></div>
+      <div class="hs-row"><div class="hs-num purple" id="xpTotal">—</div><div class="hs-lbl">XP Total</div></div>
+    </div>
+  </div>
+
+  <!-- Stat row -->
+  <div class="stat-row" id="statRow">
+    <div class="skeleton" style="height:80px"></div>
+    <div class="skeleton" style="height:80px"></div>
+    <div class="skeleton" style="height:80px"></div>
+    <div class="skeleton" style="height:80px"></div>
+    <div class="skeleton" style="height:80px"></div>
+  </div>
+
+  <!-- Achievements -->
+  <div class="section-head">
+    <h2>Achievements</h2>
+    <span class="count-pill" id="achCount">—</span>
+  </div>
+  <div class="ach-grid" id="achGrid">
+    <div class="skeleton"></div>
+    <div class="skeleton"></div>
+    <div class="skeleton"></div>
+    <div class="skeleton"></div>
+  </div>
+
+  <!-- Recent awards -->
+  <div class="section-head">
+    <h2>Recent XP Awards</h2>
+    <span class="count-pill" id="awardCount">—</span>
+  </div>
+  <div class="award-list" id="awardList"></div>
+
+</main>
+
+<script>
+const TENANT = 'plus-ultra';
+const USERS = [
+  { id: null, label: 'All', short: 'All' },
+  { id: 'mac', label: 'Mackenzie', short: 'Mac' },
+  { id: 'catherine', label: 'Catherine', short: 'Cat' },
+  { id: 'darcy', label: 'Darcy', short: 'Darcy' }
+];
+let activeUserId = localStorage.getItem('overview_active_user') || null;
+if (activeUserId === 'null') activeUserId = null;
+
+function escapeHtml(s) { if (s == null) return ''; return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fmtRel(iso) {
+  if (!iso) return '—';
+  const dt = Date.now() - new Date(iso).getTime();
+  if (dt < 60000) return 'just now';
+  if (dt < 3600000) return `${Math.floor(dt / 60000)}m ago`;
+  if (dt < 86400000) return `${Math.floor(dt / 3600000)}h ago`;
+  return `${Math.floor(dt / 86400000)}d ago`;
+}
+
+function renderUserPills() {
+  const wrap = document.getElementById('userPills');
+  wrap.innerHTML = USERS.map(u => `
+    <button class="user-pill ${(activeUserId == u.id || (!activeUserId && !u.id)) ? 'active' : ''}" data-uid="${u.id || ''}">
+      <span class="dot"></span>${u.short}
+    </button>
+  `).join('');
+  wrap.querySelectorAll('.user-pill').forEach(b => {
+    b.addEventListener('click', () => {
+      activeUserId = b.dataset.uid || null;
+      localStorage.setItem('overview_active_user', activeUserId || 'null');
+      renderUserPills();
+      load();
+    });
+  });
+}
+
+function showBanner(msg, isHtml=false) {
+  const slot = document.getElementById('banner-slot');
+  if (isHtml) slot.innerHTML = `<div class="banner warn">${msg}</div>`;
+  else slot.innerHTML = `<div class="banner warn">${escapeHtml(msg)}</div>`;
+}
+
+function renderAll(data) {
+  const p = data.power || {};
+  document.getElementById('lvlNum').textContent = p.level || 1;
+  document.getElementById('rankName').textContent = p.level_label || 'Genin Roofer';
+  document.getElementById('rankSub').textContent = p.xp_total > 0
+    ? `${p.xp_total.toLocaleString()} total XP earned · ${p.xp_for_next_level - p.xp_in_level} to next level`
+    : 'Complete a quest to earn your first XP.';
+  document.getElementById('barCurr').textContent = `${p.xp_in_level || 0} / ${p.xp_for_next_level || 50} XP`;
+  document.getElementById('barNext').textContent = `Level ${(p.level || 1) + 1}`;
+  document.getElementById('barFill').style.width = (p.percent_to_next || 0) + '%';
+  document.getElementById('barPct').textContent = (p.percent_to_next || 0) + '%';
+  document.getElementById('xpToday').textContent = p.xp_today || 0;
+  document.getElementById('xpWeek').textContent  = p.xp_this_week || 0;
+  document.getElementById('xpTotal').textContent = (p.xp_total || 0).toLocaleString();
+
+  const s = data.stats || {};
+  document.getElementById('statRow').innerHTML = `
+    <div class="stat-tile"><div class="stat-label">Quests Completed</div><div class="stat-value cyan">${s.quests_completed_total || 0}</div></div>
+    <div class="stat-tile"><div class="stat-label">Today</div><div class="stat-value">${s.quests_completed_today || 0}</div></div>
+    <div class="stat-tile"><div class="stat-label">This Week</div><div class="stat-value">${s.quests_completed_this_week || 0}</div></div>
+    <div class="stat-tile"><div class="stat-label">Streak</div><div class="stat-value gold">${s.streak_days || 0}<span style="font-size:0.55em;font-weight:500;color:var(--text-dim)">  day${s.streak_days === 1 ? '' : 's'}</span></div></div>
+    <div class="stat-tile"><div class="stat-label">Dragon's Challenges</div><div class="stat-value purple">${s.dragon_challenges_won || 0}</div></div>
+  `;
+
+  const ach = data.achievements || [];
+  const unlockedN = ach.filter(a => a.unlocked).length;
+  document.getElementById('achCount').textContent = `${unlockedN} / ${ach.length}`;
+  document.getElementById('achGrid').innerHTML = ach.map(a => {
+    const pct = Math.min(100, Math.round((a.progress / a.target) * 100));
+    const initial = (a.label || '').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
+    return `
+      <div class="ach ${a.unlocked ? 'unlocked' : ''}">
+        <div class="ach-medal">${a.unlocked ? '★' : initial}</div>
+        <div class="ach-info">
+          <div class="ach-name">${escapeHtml(a.label)}</div>
+          <div class="ach-desc">${escapeHtml(a.description)}</div>
+          <div class="ach-progress">
+            <div class="ach-bar"><div class="ach-bar-fill" style="width:${pct}%"></div></div>
+            <span class="ach-pct">${a.progress}/${a.target}</span>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  const awards = data.awards || [];
+  document.getElementById('awardCount').textContent = awards.length;
+  const list = document.getElementById('awardList');
+  if (awards.length === 0) {
+    list.innerHTML = `<div class="empty-state"><div class="ico">⚡</div>No XP awarded yet. Complete a quest to start the ledger.</div>`;
+  } else {
+    list.innerHTML = awards.map(a => {
+      const icon = a.source_type === 'quest' ? '⚔'
+        : a.source_type === 'achievement' ? '★'
+        : a.source_type === 'dragon_challenge' ? '🐲' : '·';
+      return `
+        <div class="award-row">
+          <div class="award-icon ${a.source_type}">${icon}</div>
+          <div class="award-note">${escapeHtml(a.note || a.source_type)}</div>
+          <div class="award-xp ${a.xp < 0 ? 'neg' : ''}">${a.xp >= 0 ? '+' : ''}${a.xp} XP</div>
+          <div class="award-time">${fmtRel(a.awarded_at)}</div>
+        </div>`;
+    }).join('');
+  }
+}
+
+async function load() {
+  let url = '/api/power';
+  if (activeUserId) url += `?user_id=${encodeURIComponent(activeUserId)}`;
+  try {
+    const resp = await fetch(url, { headers: { 'x-tenant-id': TENANT } });
+    if (!resp.ok) {
+      const txt = await resp.text();
+      if (resp.status === 500 && /relation .* does not exist/i.test(txt)) {
+        showBanner(`Migration <code>041_admin_core</code> not yet applied.`, true);
+      } else {
+        showBanner(`Could not load power: HTTP ${resp.status}`);
+      }
+      return;
+    }
+    const data = await resp.json();
+    document.getElementById('banner-slot').innerHTML = '';
+    renderAll(data);
+  } catch (e) {
+    showBanner(`Network error: ${e.message}`);
+  }
+}
+
+renderUserPills();
+load();
+setInterval(load, 5 * 60 * 1000);
+</script>
+</body>
+</html>
