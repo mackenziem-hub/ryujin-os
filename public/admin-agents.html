@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#060a14">
+<title>Agents · Ryujin OS</title>
+<link rel="icon" href="/assets/logo/icon.png" onerror="this.href='/assets/logo/logo-glow.jpg'">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=optional" rel="stylesheet">
+<style>
+:root{
+  --bg:#060a14;--glass:rgba(20,30,50,0.85);--glass2:rgba(22,34,58,0.80);
+  --glass-border:rgba(34,211,238,0.16);--glass-border-hi:rgba(34,211,238,0.35);
+  --text:#d0daf0;--text-dim:rgba(160,190,230,0.55);--text-muted:rgba(140,170,220,0.30);
+  --cyan:#22d3ee;--blue:#4a9eff;--purple:#7c3aed;
+  --green:#4ade80;--yellow:#facc15;--red:#f87171;--orange:#fb923c;
+  --radius:12px;--sidebar-w:72px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/textures/app-bg.png') center/cover fixed no-repeat;color:var(--text);min-height:100vh;overflow-x:hidden}
+
+.sidebar{width:var(--sidebar-w);background:rgba(8,12,24,0.98);border-right:1px solid var(--glass-border);display:flex;flex-direction:column;align-items:center;position:fixed;top:0;bottom:0;z-index:50;box-shadow:2px 0 12px rgba(0,0,0,0.4)}
+.sidebar-logo{width:44px;height:44px;margin:18px 0 12px;border-radius:12px;background:url('/assets/logo/logo-glow.jpg') center/cover;box-shadow:0 0 20px rgba(34,211,238,0.3);cursor:pointer}
+.sidebar-divider{width:32px;height:1px;background:linear-gradient(90deg,transparent,var(--cyan),transparent);opacity:0.3;margin:4px 0 8px}
+.sidebar-nav{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 0}
+.nav-icon{width:44px;height:44px;display:flex;align-items:center;justify-content:center;border-radius:12px;border:1px solid transparent;cursor:pointer;color:var(--text-dim);transition:all 0.25s;position:relative;text-decoration:none}
+.nav-icon:hover{background:rgba(34,211,238,0.06);color:var(--text)}
+.nav-icon.active{background:linear-gradient(135deg,rgba(34,211,238,0.12),rgba(124,58,237,0.06));color:var(--cyan);border-color:rgba(34,211,238,0.2);box-shadow:0 0 20px rgba(34,211,238,0.08)}
+.nav-icon.active::before{content:'';position:absolute;left:-1px;top:25%;bottom:25%;width:3px;background:var(--cyan);border-radius:0 3px 3px 0;box-shadow:0 0 8px var(--cyan)}
+.nav-icon svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+
+.main{margin-left:var(--sidebar-w);padding:18px 22px 60px;max-width:1600px}
+
+.hq-header{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-bottom:20px;flex-wrap:wrap}
+.hq-title{flex:1;min-width:280px}
+.hq-title .crumb{font-family:'Share Tech Mono',monospace;font-size:0.72em;color:var(--text-dim);letter-spacing:2px;text-transform:uppercase;margin-bottom:4px}
+.hq-title h1{font-family:'Orbitron',monospace;font-size:1.7em;font-weight:700;letter-spacing:1.5px;background:linear-gradient(135deg,#e0e6f0 20%,var(--cyan) 70%,var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hq-title .sub{font-size:0.85em;color:var(--text-dim);margin-top:6px;max-width:680px;line-height:1.4}
+
+.run-all-btn{
+  background:linear-gradient(135deg,var(--cyan),var(--purple));color:#0a0e1a;
+  font-weight:700;font-family:'Orbitron',monospace;font-size:0.7em;letter-spacing:1.5px;text-transform:uppercase;
+  border:none;padding:10px 22px;border-radius:22px;cursor:pointer;
+  box-shadow:0 0 14px rgba(34,211,238,0.3);transition:all 0.2s;
+}
+.run-all-btn:hover{box-shadow:0 0 22px rgba(34,211,238,0.5);transform:translateY(-1px)}
+.run-all-btn:disabled{opacity:0.5;cursor:wait}
+
+/* Agent grid */
+.agent-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:14px}
+.agent-card{
+  background:var(--glass);border:1px solid var(--glass-border);
+  border-radius:14px;overflow:hidden;cursor:pointer;
+  position:relative;transition:all 0.25s;
+  display:flex;flex-direction:column;min-height:300px;
+}
+.agent-card::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,transparent,var(--cyan) 30%,var(--purple) 70%,transparent);opacity:0.6;z-index:3;
+}
+.agent-card::after{
+  content:'';position:absolute;bottom:-1px;right:-1px;width:22px;height:22px;
+  border-bottom:2px solid var(--cyan);border-right:2px solid var(--cyan);border-radius:0 0 14px 0;opacity:0.3;z-index:3;
+}
+.agent-card:hover{border-color:var(--glass-border-hi);transform:translateY(-2px);box-shadow:0 6px 24px rgba(0,0,0,0.4),0 0 16px rgba(34,211,238,0.12)}
+
+.agent-avatar{
+  position:relative;width:100%;height:160px;background:#0a0e1a;
+  overflow:hidden;
+}
+.agent-avatar video{width:100%;height:100%;object-fit:cover;opacity:0.85}
+.agent-avatar::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,transparent 50%,rgba(6,10,20,0.6) 85%,rgba(6,10,20,0.95))}
+.agent-status-dot{
+  position:absolute;top:10px;right:10px;z-index:2;
+  width:10px;height:10px;border-radius:50%;
+  border:2px solid rgba(6,10,20,0.8);
+}
+.agent-status-dot.success{background:var(--green);box-shadow:0 0 8px var(--green)}
+.agent-status-dot.partial{background:var(--yellow);box-shadow:0 0 8px var(--yellow)}
+.agent-status-dot.error{background:var(--red);box-shadow:0 0 8px var(--red)}
+.agent-status-dot.never_run{background:var(--text-muted)}
+.agent-status-dot.running{background:var(--cyan);box-shadow:0 0 8px var(--cyan);animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+
+.agent-archetype{
+  position:absolute;bottom:8px;left:12px;z-index:2;
+  font-family:'Share Tech Mono',monospace;font-size:0.62em;
+  letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);
+}
+.agent-body{padding:14px 16px;flex:1;display:flex;flex-direction:column}
+.agent-name{font-family:'Orbitron',monospace;font-size:1.05em;font-weight:700;letter-spacing:1px;color:var(--text);margin-bottom:2px}
+.agent-domain{font-size:0.78em;color:var(--text-dim);line-height:1.3;margin-bottom:10px}
+.agent-stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:auto;margin-bottom:10px}
+.astat{background:rgba(6,10,20,0.45);border:1px solid var(--glass-border);border-radius:8px;padding:6px 8px;text-align:center}
+.astat .num{font-family:'Orbitron',monospace;font-size:1em;font-weight:700;color:var(--text);line-height:1}
+.astat .lbl{font-family:'Orbitron',monospace;font-size:0.55em;letter-spacing:1.5px;color:var(--text-muted);text-transform:uppercase;margin-top:3px}
+.astat.quests .num{color:var(--cyan)}
+.astat.briefs .num{color:#a78bfa}
+.astat.kpis .num{color:var(--green)}
+
+.agent-foot{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.agent-last{font-family:'Share Tech Mono',monospace;font-size:0.62em;color:var(--text-muted);letter-spacing:0.6px}
+.run-btn{
+  background:rgba(34,211,238,0.1);border:1px solid var(--glass-border-hi);
+  color:var(--cyan);font-family:'Orbitron',monospace;font-size:0.62em;
+  letter-spacing:1.5px;text-transform:uppercase;font-weight:600;
+  padding:5px 12px;border-radius:14px;cursor:pointer;transition:all 0.2s;
+}
+.run-btn:hover{background:rgba(34,211,238,0.2);box-shadow:0 0 8px rgba(34,211,238,0.3)}
+.run-btn:disabled{opacity:0.5;cursor:wait}
+
+/* Drawer */
+.drawer-backdrop{position:fixed;inset:0;background:rgba(3,6,17,0.75);backdrop-filter:blur(4px);z-index:100;display:none;align-items:flex-end;justify-content:center}
+.drawer-backdrop.show{display:flex}
+@media(min-width:900px){.drawer-backdrop{align-items:center}}
+
+.drawer{
+  background:var(--glass);border:1px solid var(--glass-border-hi);
+  border-radius:14px 14px 0 0;width:100%;max-width:780px;
+  max-height:88vh;overflow-y:auto;position:relative;backdrop-filter:blur(20px);
+  box-shadow:0 -20px 60px rgba(0,0,0,0.6),0 0 30px rgba(34,211,238,0.1);
+}
+@media(min-width:900px){.drawer{border-radius:14px;max-height:80vh}}
+.drawer::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--cyan) 30%,var(--purple) 70%,transparent);border-radius:14px 14px 0 0}
+
+.drawer-head{
+  padding:18px 22px;border-bottom:1px solid var(--glass-border);
+  display:flex;align-items:center;gap:14px;
+}
+.drawer-avatar{width:54px;height:54px;border-radius:12px;overflow:hidden;background:#0a0e1a;flex-shrink:0;position:relative}
+.drawer-avatar video{width:100%;height:100%;object-fit:cover}
+.drawer-title-block{flex:1}
+.drawer-title{font-family:'Orbitron',monospace;font-size:1.1em;font-weight:700;letter-spacing:1.2px;color:var(--text)}
+.drawer-sub{font-size:0.78em;color:var(--text-dim);margin-top:2px}
+.drawer-close{
+  background:transparent;border:1px solid var(--glass-border);color:var(--text-dim);
+  width:32px;height:32px;border-radius:8px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;transition:all 0.2s;
+}
+.drawer-close:hover{color:var(--red);border-color:rgba(248,113,113,0.4)}
+.drawer-close svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2}
+
+.drawer-section{padding:14px 22px;border-bottom:1px solid var(--glass-border)}
+.drawer-section:last-child{border-bottom:none}
+.drawer-sh{font-family:'Orbitron',monospace;font-size:0.7em;letter-spacing:2.5px;color:var(--text-dim);text-transform:uppercase;margin-bottom:10px}
+
+.find-list{display:flex;flex-direction:column;gap:6px}
+.find-item{
+  background:rgba(6,10,20,0.4);border:1px solid var(--glass-border);
+  border-radius:8px;padding:8px 12px;font-size:0.82em;line-height:1.4;
+}
+.find-item.urgent{border-color:rgba(248,113,113,0.3);background:rgba(248,113,113,0.06)}
+.find-item.high{border-color:rgba(251,146,60,0.25);background:rgba(251,146,60,0.05)}
+
+.task-list{display:flex;flex-direction:column;gap:6px}
+.task-item{
+  display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:start;
+  background:rgba(6,10,20,0.4);border:1px solid var(--glass-border);
+  border-radius:8px;padding:9px 12px;font-size:0.82em;
+}
+.task-prio{
+  font-family:'Share Tech Mono',monospace;font-size:0.6em;letter-spacing:1.5px;
+  text-transform:uppercase;padding:2px 7px;border-radius:8px;height:fit-content;
+}
+.task-prio.top_priority,.task-prio.urgent{background:rgba(248,113,113,0.15);color:var(--red);border:1px solid rgba(248,113,113,0.3)}
+.task-prio.high{background:rgba(251,146,60,0.15);color:var(--orange);border:1px solid rgba(251,146,60,0.3)}
+.task-prio.medium,.task-prio.normal{background:rgba(34,211,238,0.1);color:var(--cyan);border:1px solid var(--glass-border)}
+.task-content{min-width:0}
+.task-title{font-weight:600;color:var(--text);margin-bottom:2px}
+.task-desc{font-size:0.85em;color:var(--text-dim);line-height:1.4;white-space:pre-wrap}
+
+.run-history{display:flex;flex-direction:column;gap:5px}
+.run-row{
+  display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:center;
+  background:rgba(6,10,20,0.35);border:1px solid var(--glass-border);
+  border-radius:8px;padding:7px 12px;font-size:0.78em;cursor:pointer;
+}
+.run-row:hover{border-color:var(--glass-border-hi)}
+.run-row.active{background:rgba(34,211,238,0.07);border-color:var(--glass-border-hi)}
+.run-dot{width:8px;height:8px;border-radius:50%}
+.run-dot.success{background:var(--green)}
+.run-dot.partial{background:var(--yellow)}
+.run-dot.error{background:var(--red)}
+.run-dot.running{background:var(--cyan);animation:pulse 1s infinite}
+.run-time{font-family:'Share Tech Mono',monospace;color:var(--text-dim);letter-spacing:0.5px}
+.run-trigger{font-family:'Share Tech Mono',monospace;font-size:0.78em;letter-spacing:0.5px;color:var(--text-muted)}
+.run-emit{font-family:'Share Tech Mono',monospace;font-size:0.78em;color:var(--cyan);letter-spacing:0.5px}
+
+.empty-state{text-align:center;padding:24px 16px;color:var(--text-dim);border:1px dashed var(--glass-border);border-radius:var(--radius);font-size:0.85em}
+.empty-state .ico{font-size:1.6em;margin-bottom:6px;opacity:0.5}
+
+.skeleton{background:linear-gradient(90deg,var(--glass) 0%,var(--glass2) 50%,var(--glass) 100%);background-size:200% 100%;animation:sk 1.4s infinite;border:1px solid var(--glass-border);border-radius:var(--radius);height:300px}
+@keyframes sk{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+.banner{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius);font-size:0.8em;margin-bottom:14px;line-height:1.4}
+.banner.warn{background:rgba(251,146,60,0.08);border:1px solid rgba(251,146,60,0.25);color:var(--orange)}
+.banner code{font-family:'Share Tech Mono',monospace;background:rgba(0,0,0,0.3);padding:1px 6px;border-radius:4px;color:var(--text)}
+
+@media(max-width:768px){
+  .main{padding:12px}
+  .hq-title h1{font-size:1.3em}
+}
+</style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <a href="/admin.html" class="sidebar-logo" title="Admin Home"></a>
+  <div class="sidebar-divider"></div>
+  <nav class="sidebar-nav">
+    <a href="/admin-overview.html" class="nav-icon" title="Overview"><svg viewBox="0 0 24 24"><path d="M3 12l9-9 9 9M5 10v10h14V10"/></svg></a>
+    <a href="/admin-quests.html" class="nav-icon" title="Quests"><svg viewBox="0 0 24 24"><path d="M9 12l2 2 4-4M21 12c0 5-4 9-9 9s-9-4-9-9 4-9 9-9c2 0 4 1 5 2"/></svg></a>
+    <a href="/admin-agents.html" class="nav-icon active" title="Agents"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0116 0v2"/></svg></a>
+    <a href="/admin-power.html" class="nav-icon" title="Power Level"><svg viewBox="0 0 24 24"><path d="M13 2L3 14h7l-1 8 10-12h-7z"/></svg></a>
+    <a href="/admin-system.html" class="nav-icon" title="System Config"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 11-14 0 7 7 0 0114 0z"/></svg></a>
+    <a href="/admin.html" class="nav-icon" title="Full Admin"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></a>
+  </nav>
+</aside>
+
+<main class="main">
+
+  <div class="hq-header">
+    <div class="hq-title">
+      <div class="crumb">Admin · Agents</div>
+      <h1>Archetypal Agents</h1>
+      <div class="sub">Six daily scans across your domains. Each emits quests, briefing items, and KPI updates into your morning pane. Click any card to see the latest report. Hit <em>Run Now</em> to refresh on demand.</div>
+    </div>
+    <button class="run-all-btn" id="btnRunAll">▶ Run All Now</button>
+  </div>
+
+  <div id="banner-slot"></div>
+
+  <div class="agent-grid" id="agentGrid">
+    <div class="skeleton"></div>
+    <div class="skeleton"></div>
+    <div class="skeleton"></div>
+    <div class="skeleton"></div>
+    <div class="skeleton"></div>
+    <div class="skeleton"></div>
+  </div>
+
+</main>
+
+<!-- Drawer for agent detail -->
+<div class="drawer-backdrop" id="drawerBackdrop">
+  <div class="drawer">
+    <div class="drawer-head">
+      <div class="drawer-avatar"><video id="drawerVideo" autoplay loop muted playsinline></video></div>
+      <div class="drawer-title-block">
+        <div class="drawer-title" id="drawerTitle">—</div>
+        <div class="drawer-sub" id="drawerSub">—</div>
+      </div>
+      <button class="drawer-close" id="btnDrawerClose">
+        <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+
+    <div class="drawer-section">
+      <div class="drawer-sh">Latest Findings</div>
+      <div class="find-list" id="drawerFindings"><div class="empty-state" style="padding:14px"><div class="ico">◇</div>No findings yet.</div></div>
+    </div>
+
+    <div class="drawer-section">
+      <div class="drawer-sh">Tasks Emitted</div>
+      <div class="task-list" id="drawerTasks"><div class="empty-state" style="padding:14px"><div class="ico">⚔</div>No tasks emitted in the latest run.</div></div>
+    </div>
+
+    <div class="drawer-section">
+      <div class="drawer-sh">Run History</div>
+      <div class="run-history" id="drawerHistory"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const TENANT = 'plus-ultra';
+
+// Plain function names + archetype videos (no DBZ branding per IP rule)
+const ARCHETYPES = {
+  sales:     { name:'Sales',     archetype:'hero',      domain:'Pipeline · close gaps · stale leads · ad ROI',                       desc:'Reads CRM pipeline, ad performance, and estimate stats. Surfaces stale leads, high-value deals, and lead-flow alarms.' },
+  marketing: { name:'Marketing', archetype:'magician',  domain:'Lead flow · ad spend · campaign health · conversion',              desc:'Watches Meta + Google ad spend, lead conversion rate, scheduled posts, and brand-account health. Catches paused campaigns and billing failures.' },
+  ops:       { name:'Ops',       archetype:'caregiver', domain:'Crew · workorders · paysheets · sub-portal',                        desc:'Tracks ticket overdue counts, workload balance, accepted-but-not-scheduled jobs, and sub-portal approval queue.' },
+  finance:   { name:'Finance',   archetype:'ruler',     domain:'AR · deposits · cashflow · supplier payments',                      desc:'Cashflow agent — invoices outstanding, deposits cleared, supplier payment due dates, P&L deltas.' },
+  customer:  { name:'Customer',  archetype:'lover',     domain:'Proposal lifecycle · follow-ups · review asks',                     desc:'Walks every estimate. Flags 3+ day proposal-sent gaps, 14+ day post-close customers ready for a Google review ask.' },
+  strategy:  { name:'Strategy',  archetype:'sage',      domain:'Cross-domain rollup · KPI drift · silent-failure radar',            desc:'Synthesizes the past 7 days of agent runs. Catches KPI declines, agents that errored, and which domain is consuming the most attention this week.' }
+};
+
+let latestRuns = {};
+let drawerAgent = null;
+
+function archetypeVideo(slug) {
+  const a = ARCHETYPES[slug];
+  if (!a) return null;
+  return `/assets/archetypes/${a.archetype}.mp4`;
+}
+function archetypeStandby(slug) {
+  const a = ARCHETYPES[slug];
+  if (!a) return null;
+  return `/assets/archetypes/${a.archetype}-standby.mp4`;
+}
+
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function fmtRelative(iso) {
+  if (!iso) return 'never';
+  const t = new Date(iso).getTime();
+  const dt = Date.now() - t;
+  if (dt < 60000) return 'just now';
+  if (dt < 3600000) return `${Math.floor(dt / 60000)} min ago`;
+  if (dt < 86400000) return `${Math.floor(dt / 3600000)}h ago`;
+  return `${Math.floor(dt / 86400000)}d ago`;
+}
+
+function showBanner(msg, isHtml=false) {
+  const slot = document.getElementById('banner-slot');
+  if (isHtml) slot.innerHTML = `<div class="banner warn">${msg}</div>`;
+  else slot.innerHTML = `<div class="banner warn">${escapeHtml(msg)}</div>`;
+}
+
+function renderGrid() {
+  const grid = document.getElementById('agentGrid');
+  grid.innerHTML = Object.keys(ARCHETYPES).map(slug => {
+    const meta = ARCHETYPES[slug];
+    const run = latestRuns[slug] || { status: 'never_run' };
+    const status = run.status || 'never_run';
+    return `
+      <div class="agent-card" data-slug="${slug}">
+        <div class="agent-avatar">
+          <video autoplay loop muted playsinline poster="/assets/archetypes/${meta.archetype}.jpg">
+            <source src="${archetypeVideo(slug)}" type="video/mp4">
+          </video>
+          <div class="agent-status-dot ${status}" title="${status}"></div>
+          <div class="agent-archetype">${meta.archetype}</div>
+        </div>
+        <div class="agent-body">
+          <div class="agent-name">${meta.name} Agent</div>
+          <div class="agent-domain">${meta.domain}</div>
+          <div class="agent-stats-row">
+            <div class="astat quests"><div class="num">${run.emitted_quests ?? '—'}</div><div class="lbl">Quests</div></div>
+            <div class="astat briefs"><div class="num">${run.emitted_briefs ?? '—'}</div><div class="lbl">Briefs</div></div>
+            <div class="astat kpis"><div class="num">${run.emitted_kpis ?? '—'}</div><div class="lbl">KPIs</div></div>
+          </div>
+          <div class="agent-foot">
+            <div class="agent-last">${fmtRelative(run.started_at)}</div>
+            <button class="run-btn" data-slug="${slug}" data-act="run">Run Now</button>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  grid.querySelectorAll('.agent-card').forEach(card => {
+    card.addEventListener('click', (e) => {
+      if (e.target.classList.contains('run-btn')) return;
+      openDrawer(card.dataset.slug);
+    });
+  });
+  grid.querySelectorAll('.run-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await runAgent(btn.dataset.slug, btn);
+    });
+  });
+}
+
+async function loadAll() {
+  try {
+    const resp = await fetch('/api/agent-runs', { headers: { 'x-tenant-id': TENANT } });
+    if (!resp.ok) {
+      const txt = await resp.text();
+      if (resp.status === 500 && /relation .* does not exist/i.test(txt)) {
+        showBanner(`Migration <code>041_admin_core</code> not yet applied. Apply via Supabase Studio SQL Editor.`, true);
+      } else {
+        showBanner(`Could not load agent runs: HTTP ${resp.status}`);
+      }
+      latestRuns = {};
+      renderGrid();
+      return;
+    }
+    const data = await resp.json();
+    latestRuns = {};
+    for (const r of data.agents || []) latestRuns[r.agent_slug] = r;
+    document.getElementById('banner-slot').innerHTML = '';
+    renderGrid();
+  } catch (e) {
+    showBanner(`Network error: ${e.message}`);
+  }
+}
+
+async function runAgent(slug, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Running…'; }
+  // Mark dot as running
+  const dot = document.querySelector(`.agent-card[data-slug="${slug}"] .agent-status-dot`);
+  if (dot) { dot.className = 'agent-status-dot running'; }
+  try {
+    const resp = await fetch(`/api/agent-runs?agent=${slug}`, {
+      method: 'POST', headers: { 'x-tenant-id': TENANT, 'Content-Type': 'application/json' }
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      alert(`Run failed: ${data.error || 'unknown'}`);
+    }
+  } catch (e) {
+    alert(`Network error: ${e.message}`);
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Run Now'; }
+  await loadAll();
+  if (drawerAgent === slug) openDrawer(slug);
+}
+
+async function runAll() {
+  const btn = document.getElementById('btnRunAll');
+  btn.disabled = true; btn.textContent = '▶ Running…';
+  // Fire all 6 in parallel client-side
+  await Promise.all(Object.keys(ARCHETYPES).map(slug => runAgent(slug, null)));
+  btn.disabled = false; btn.textContent = '▶ Run All Now';
+}
+
+// ─── Drawer ───
+async function openDrawer(slug) {
+  const meta = ARCHETYPES[slug];
+  if (!meta) return;
+  drawerAgent = slug;
+  document.getElementById('drawerTitle').textContent = `${meta.name} Agent`;
+  document.getElementById('drawerSub').textContent = meta.desc;
+  const v = document.getElementById('drawerVideo');
+  v.src = archetypeVideo(slug);
+  v.load();
+  // Reset content
+  document.getElementById('drawerFindings').innerHTML = `<div class="empty-state" style="padding:14px">Loading…</div>`;
+  document.getElementById('drawerTasks').innerHTML = `<div class="empty-state" style="padding:14px">Loading…</div>`;
+  document.getElementById('drawerHistory').innerHTML = `<div class="empty-state" style="padding:14px">Loading…</div>`;
+  document.getElementById('drawerBackdrop').classList.add('show');
+
+  // Fetch run history
+  let history = [];
+  try {
+    const r = await fetch(`/api/agent-runs?agent=${slug}&limit=10`, { headers: { 'x-tenant-id': TENANT } });
+    if (r.ok) history = (await r.json()).runs || [];
+  } catch {}
+
+  if (history.length === 0) {
+    document.getElementById('drawerHistory').innerHTML = `<div class="empty-state" style="padding:14px"><div class="ico">◇</div>${meta.name} agent hasn't run yet. Hit Run Now to fire one manually.</div>`;
+    document.getElementById('drawerFindings').innerHTML = '';
+    document.getElementById('drawerTasks').innerHTML = '';
+    return;
+  }
+
+  // Render history list
+  document.getElementById('drawerHistory').innerHTML = history.map((h, i) => `
+    <div class="run-row ${i === 0 ? 'active' : ''}" data-id="${h.id}">
+      <div class="run-dot ${h.status}"></div>
+      <div class="run-time">${fmtRelative(h.started_at)} · ${h.trigger}</div>
+      <div class="run-emit">${h.emitted_quests || 0}q · ${h.emitted_briefs || 0}b · ${h.emitted_kpis || 0}k</div>
+      <div class="run-trigger">${h.duration_ms ? Math.round(h.duration_ms/1000) + 's' : '—'}</div>
+    </div>
+  `).join('');
+
+  // Wire history click
+  document.querySelectorAll('#drawerHistory .run-row').forEach(row => {
+    row.addEventListener('click', () => loadRunDetail(row.dataset.id));
+  });
+
+  // Auto-load latest run detail
+  await loadRunDetail(history[0].id);
+}
+
+async function loadRunDetail(runId) {
+  document.querySelectorAll('#drawerHistory .run-row').forEach(r => r.classList.toggle('active', r.dataset.id === runId));
+  try {
+    const r = await fetch(`/api/agent-runs?id=${runId}`, { headers: { 'x-tenant-id': TENANT } });
+    if (!r.ok) return;
+    const { run } = await r.json();
+    const out = run.output || {};
+    const findings = out.findings || [];
+    const tasks = out.tasks || [];
+
+    const fEl = document.getElementById('drawerFindings');
+    if (findings.length === 0) fEl.innerHTML = `<div class="empty-state" style="padding:14px">No findings.</div>`;
+    else fEl.innerHTML = `<div class="find-list">${findings.map(f => {
+      const text = typeof f === 'string' ? f : (f.text || JSON.stringify(f));
+      const lower = text.toLowerCase();
+      const cls = /🚨|critical|urgent|down|zero/.test(lower) ? 'urgent' : /⚠️|warning|stale|fail/.test(lower) ? 'high' : '';
+      return `<div class="find-item ${cls}">${escapeHtml(text)}</div>`;
+    }).join('')}</div>`;
+
+    const tEl = document.getElementById('drawerTasks');
+    if (tasks.length === 0) tEl.innerHTML = `<div class="empty-state" style="padding:14px">No tasks emitted.</div>`;
+    else tEl.innerHTML = `<div class="task-list">${tasks.map(t => `
+      <div class="task-item">
+        <span class="task-prio ${escapeHtml(t.priority || 'normal')}">${escapeHtml(t.priority || 'normal')}</span>
+        <div class="task-content">
+          <div class="task-title">${escapeHtml(t.title || '—')}</div>
+          ${t.description ? `<div class="task-desc">${escapeHtml(t.description)}</div>` : ''}
+        </div>
+      </div>`).join('')}</div>`;
+  } catch {}
+}
+
+function closeDrawer() {
+  document.getElementById('drawerBackdrop').classList.remove('show');
+  drawerAgent = null;
+}
+
+document.getElementById('btnDrawerClose').addEventListener('click', closeDrawer);
+document.getElementById('drawerBackdrop').addEventListener('click', (e) => {
+  if (e.target.id === 'drawerBackdrop') closeDrawer();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.getElementById('drawerBackdrop').classList.contains('show')) closeDrawer();
+});
+document.getElementById('btnRunAll').addEventListener('click', runAll);
+
+loadAll();
+setInterval(loadAll, 60 * 1000); // poll every minute (cheap — single query)
+</script>
+</body>
+</html>
