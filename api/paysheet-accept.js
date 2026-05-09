@@ -5,9 +5,13 @@
 //
 // Public endpoint (no auth header). The sub_acceptance_token is the authentication.
 // Mirrors proposal-accept pattern: token-gated, single-shot decision, SMS Mac.
-// Requires migration 035 applied (adds sub_acceptance_* columns to paysheets).
+//
+// Requires migrations 035 + 037 applied. Reads/writes both the legacy
+// sub_acceptance_status (migration 035) AND the new state column (migration 037)
+// to keep them in sync during the transition period.
 
 import { supabaseAdmin } from '../lib/supabase.js';
+import { canTransition } from '../lib/state.js';
 
 const GHL_BASE = 'https://services.leadconnectorhq.com';
 const MACKENZIE_CONTACT = '02IhxZfSwZZAZ2fooVGu';
@@ -39,6 +43,19 @@ function fmtMoney(n) {
   return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// Resolve current state, preferring the new `state` column but falling
+// back to legacy sub_acceptance_status during the transition period.
+function resolveCurrentState(row) {
+  if (row.state) return row.state;
+  switch (row.sub_acceptance_status) {
+    case 'accepted': return 'accepted';
+    case 'declined': return 'declined';
+    case 'pending':
+    default:
+      return row.sub_acceptance_token ? 'sent' : 'draft';
+  }
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -54,7 +71,7 @@ export default async function handler(req, res) {
 
   const { data: paysheet, error: lookupErr } = await supabaseAdmin
     .from('paysheets')
-    .select('id, tenant_id, job_id, address, customer_name, subcontractor, total, sub_acceptance_status, sub_decision_at, sub_decision_note')
+    .select('id, tenant_id, job_id, address, customer_name, subcontractor, total, state, sub_acceptance_status, sub_decision_at, sub_decision_note, version')
     .eq('sub_acceptance_token', token)
     .single();
 
@@ -62,23 +79,33 @@ export default async function handler(req, res) {
     return res.status(404).json({ error: 'Pay sheet not found for this link' });
   }
 
-  if (paysheet.sub_acceptance_status === 'accepted' || paysheet.sub_acceptance_status === 'declined') {
+  // State machine guard — only `sent` and `pending_re_accept` accept incoming
+  // sub decisions. Anything else (already accepted/declined/paid/etc.) returns
+  // 409 with the current state so the UI can show a clear message.
+  const currentState = resolveCurrentState(paysheet);
+  const targetState = decision === 'accept' ? 'accepted' : 'declined';
+
+  if (!canTransition('paysheet', currentState, targetState)) {
     return res.status(409).json({
-      error: 'Already decided',
-      status: paysheet.sub_acceptance_status,
+      error: 'Transition not allowed in current state',
+      current_state: currentState,
+      attempted: targetState,
       decided_at: paysheet.sub_decision_at,
       previous_note: paysheet.sub_decision_note
     });
   }
 
-  const newStatus = decision === 'accept' ? 'accepted' : 'declined';
   const decisionNote = [note, signature_text].filter(Boolean).join(' · ').slice(0, 1000) || null;
   const decidedAt = new Date().toISOString();
 
+  // Sync both columns: new `state` is canonical, legacy `sub_acceptance_status`
+  // mirrors so older code paths still work. Once all reads are migrated to
+  // `state`, the legacy column can be dropped.
   const { error: updateErr } = await supabaseAdmin
     .from('paysheets')
     .update({
-      sub_acceptance_status: newStatus,
+      state: targetState,
+      sub_acceptance_status: targetState,
       sub_decision_at: decidedAt,
       sub_decision_note: decisionNote,
       updated_at: decidedAt
@@ -93,11 +120,12 @@ export default async function handler(req, res) {
   // SMS Mac
   const subName = paysheet.subcontractor || 'Sub';
   const verb = decision === 'accept' ? 'ACCEPTED' : 'DECLINED';
+  const reAcceptNote = currentState === 'pending_re_accept' ? ' (re-accept after edit)' : '';
   const smsLines = [
-    `${subName} ${verb} paysheet`,
+    `${subName} ${verb} paysheet${reAcceptNote}`,
     `${paysheet.job_id} — ${paysheet.customer_name || ''}`.trim(),
     `${paysheet.address || ''}`,
-    `Pay: ${fmtMoney(paysheet.total)}`
+    `Pay: ${fmtMoney(paysheet.total)} (v${paysheet.version || 1})`
   ];
   if (decision === 'decline' && decisionNote) {
     smsLines.push(`Reason: ${decisionNote.slice(0, 200)}`);
@@ -106,10 +134,12 @@ export default async function handler(req, res) {
 
   return res.status(200).json({
     ok: true,
-    status: newStatus,
+    state: targetState,
+    status: targetState, // legacy field name — kept for backward-compat with paysheet.html
     decided_at: decidedAt,
     job_id: paysheet.job_id,
     address: paysheet.address,
-    total: paysheet.total
+    total: paysheet.total,
+    version: paysheet.version || 1
   });
 }

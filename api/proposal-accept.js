@@ -16,6 +16,12 @@
 import { supabaseAdmin } from '../lib/supabase.js';
 import { put } from '@vercel/blob';
 import { gmailSend } from '../lib/google.js';
+import {
+  computeRateHoldExpiry,
+  computeRepCallDue,
+  computeDepositAmountCents,
+  ESTIMATE_TIMING
+} from '../lib/state.js';
 
 const NOTIFY_EMAIL = (process.env.NOTIFY_EMAIL || 'mackenzie.m@plusultraroofing.com').trim();
 const GHL_BASE = 'https://services.leadconnectorhq.com';
@@ -241,11 +247,39 @@ export default async function handler(req, res) {
     envelope: envelopeAccept
   };
 
+  // Resolve customer payload up front so it's available throughout (was previously
+  // defined later, causing ReferenceError in the repair-ticket auto-create block).
+  const customerPayload = {
+    name: customer?.name || est.customer?.full_name || '',
+    email: customer?.email || est.customer?.email || '',
+    phone: customer?.phone || est.customer?.phone || ''
+  };
+
+  // State machine integration (Bible §5.2 + migration 038).
+  // Accept transitions estimate from proposal_sent → approved_pending_rep_call.
+  // Sets timing windows: rep call due 24h, rate held 30 days from proposal_sent
+  // (preserve existing if already set during proposal_sent).
+  // Sets deposit_status / finance_status based on financing path:
+  //   * Financed (financing.monthly truthy) → finance_status='pending', deposit_status='not_required'
+  //   * Cash → deposit_status='pending', deposit_amount=33% of total, finance_status='not_applicable'
+  const isFinanced = !!(financing?.monthly);
+  const depositAmountCents = computeDepositAmountCents(tierTotalWithTax, isFinanced);
+  const rateHoldExpiresAt = est.rate_hold_expires_at || computeRateHoldExpiry(now);
+  const repCallDueAt = computeRepCallDue(now);
+
   const updates = {
-    status: 'accepted',
+    status: 'accepted',                                // legacy column, mirror
+    state: 'approved_pending_rep_call',                // canonical state machine field
     selected_package: tier.id,
     notes: [...existingNotes, acceptanceNote],
-    final_accepted_total: tierTotalWithTax
+    final_accepted_total: tierTotalWithTax,
+    approved_at: now,
+    rate_hold_expires_at: rateHoldExpiresAt,
+    rep_call_due_at: repCallDueAt,
+    deposit_status: isFinanced ? 'not_required' : 'pending',
+    deposit_amount: depositAmountCents,
+    finance_status: isFinanced ? 'pending' : 'not_applicable',
+    finance_provider: isFinanced ? 'financeit' : null
   };
 
   const { error: updateErr } = await supabaseAdmin
@@ -340,12 +374,7 @@ export default async function handler(req, res) {
   // 5. Fire-and-forget notifications — never block the success response on these.
   //    They're non-critical: if email or GHL calls fail, the acceptance is still
   //    recorded and Mackenzie will still see it in the next snapshot refresh.
-  const customerPayload = {
-    name: customer?.name || est.customer?.full_name || '',
-    email: customer?.email || est.customer?.email || '',
-    phone: customer?.phone || est.customer?.phone || ''
-  };
-
+  //    customerPayload was resolved earlier (before the repair-ticket block).
   notifyMackenzie({
     est, tier, financing, customer: customerPayload, rep,
     signatureUrl, tierTotalWithTax,
