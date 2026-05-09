@@ -281,6 +281,17 @@ export default async function handler(req, res) {
       const [primary, ...rest] = (meta.name || id).split(/\s*·\s*/);
       const sub = rest.join(' · ');
       const summary = pkg.summary || {};
+      // Per-estimate warranty override: if calculated_packages[tier].warranty_years
+      // is set, swap the matching "X-yr Plus Ultra workmanship warranty" perk so
+      // the customer-facing card reflects the negotiated/custom term. Falls back
+      // to TIER_CATALOG default when not overridden.
+      let perks = meta.perks;
+      const warrantyOverride = pkg.warranty_years;
+      if (warrantyOverride) {
+        perks = perks.map(p => /\d+\s*-?\s*yr\s+Plus Ultra workmanship warranty/i.test(p)
+          ? `${warrantyOverride}-yr Plus Ultra workmanship warranty`
+          : p);
+      }
       return {
         id,
         tag: meta.tag,
@@ -291,7 +302,7 @@ export default async function handler(req, res) {
         originalTotal: pkg.originalTotal ?? null,
         promoLabel: pkg.promoLabel ?? null,
         persq: pkg.persq ?? summary.pricePerSQ ?? 0,
-        perks: meta.perks,
+        perks,
         // ── SOP + real-cash diagnostics (internal only, never rendered to customer) ──
         sopTargetPct: summary.sopTargetPct ?? null,
         sopProfit: summary.sopProfit ?? null,
