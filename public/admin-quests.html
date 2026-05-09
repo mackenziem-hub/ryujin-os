@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#060a14">
+<title>Quest Board · Ryujin OS</title>
+<link rel="icon" href="/assets/logo/icon.png" onerror="this.href='/assets/logo/logo-glow.jpg'">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=optional" rel="stylesheet">
+<style>
+:root{
+  --bg:#060a14;
+  --glass:rgba(20,30,50,0.85);
+  --glass2:rgba(22,34,58,0.80);
+  --glass-border:rgba(34,211,238,0.16);
+  --glass-border-hi:rgba(34,211,238,0.35);
+  --text:#d0daf0;
+  --text-dim:rgba(160,190,230,0.55);
+  --text-muted:rgba(140,170,220,0.30);
+  --cyan:#22d3ee;
+  --blue:#4a9eff;
+  --purple:#7c3aed;
+  --green:#4ade80;
+  --yellow:#facc15;
+  --red:#f87171;
+  --orange:#fb923c;
+  --radius:12px;
+  --sidebar-w:72px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{
+  font-family:'Inter',system-ui,sans-serif;
+  background:var(--bg) url('/assets/textures/app-bg.png') center/cover fixed no-repeat;
+  color:var(--text);
+  min-height:100vh;
+  overflow-x:hidden;
+}
+
+/* Sidebar (matches admin-overview) */
+.sidebar{
+  width:var(--sidebar-w);background:rgba(8,12,24,0.98);
+  border-right:1px solid var(--glass-border);
+  display:flex;flex-direction:column;align-items:center;
+  position:fixed;top:0;bottom:0;z-index:50;
+  box-shadow:2px 0 12px rgba(0,0,0,0.4);
+}
+.sidebar-logo{width:44px;height:44px;margin:18px 0 12px;border-radius:12px;background:url('/assets/logo/logo-glow.jpg') center/cover;box-shadow:0 0 20px rgba(34,211,238,0.3);cursor:pointer}
+.sidebar-divider{width:32px;height:1px;background:linear-gradient(90deg,transparent,var(--cyan),transparent);opacity:0.3;margin:4px 0 8px}
+.sidebar-nav{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 0}
+.nav-icon{
+  width:44px;height:44px;display:flex;align-items:center;justify-content:center;
+  border-radius:12px;border:1px solid transparent;cursor:pointer;
+  color:var(--text-dim);transition:all 0.25s;position:relative;text-decoration:none;
+}
+.nav-icon:hover{background:rgba(34,211,238,0.06);color:var(--text)}
+.nav-icon.active{background:linear-gradient(135deg,rgba(34,211,238,0.12),rgba(124,58,237,0.06));color:var(--cyan);border-color:rgba(34,211,238,0.2);box-shadow:0 0 20px rgba(34,211,238,0.08)}
+.nav-icon.active::before{content:'';position:absolute;left:-1px;top:25%;bottom:25%;width:3px;background:var(--cyan);border-radius:0 3px 3px 0;box-shadow:0 0 8px var(--cyan)}
+.nav-icon svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+
+/* Main */
+.main{margin-left:var(--sidebar-w);padding:18px 22px 60px;max-width:1600px}
+
+/* Header */
+.hq-header{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-bottom:16px;flex-wrap:wrap}
+.hq-title{flex:1;min-width:280px}
+.hq-title .crumb{font-family:'Share Tech Mono',monospace;font-size:0.72em;color:var(--text-dim);letter-spacing:2px;text-transform:uppercase;margin-bottom:4px}
+.hq-title h1{font-family:'Orbitron',monospace;font-size:1.7em;font-weight:700;letter-spacing:1.5px;background:linear-gradient(135deg,#e0e6f0 20%,var(--cyan) 70%,var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hq-title .sub{font-size:0.85em;color:var(--text-dim);margin-top:6px}
+
+.user-pill-row{display:flex;align-items:center;gap:10px}
+.user-pill{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:24px;background:var(--glass);border:1px solid var(--glass-border);font-size:0.78em;cursor:pointer;color:var(--text-dim);transition:all 0.2s;letter-spacing:0.4px;font-family:inherit}
+.user-pill:hover{border-color:var(--glass-border-hi);color:var(--text)}
+.user-pill.active{background:linear-gradient(135deg,rgba(34,211,238,0.14),rgba(124,58,237,0.08));color:var(--cyan);border-color:rgba(34,211,238,0.4)}
+.user-pill .dot{width:7px;height:7px;border-radius:50%;background:var(--cyan);box-shadow:0 0 6px var(--cyan)}
+
+/* Dragon strip */
+.dragon-strip{
+  background:var(--glass);border:1px solid var(--glass-border);
+  border-radius:var(--radius);padding:12px 16px;margin-bottom:16px;
+  display:flex;align-items:center;gap:18px;position:relative;overflow:hidden;
+}
+.dragon-strip::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--cyan) 30%,var(--purple) 70%,transparent);opacity:0.6}
+.dragon-strip .ds-label{font-family:'Orbitron',monospace;font-size:0.68em;letter-spacing:2.5px;color:var(--text-dim);text-transform:uppercase;flex-shrink:0}
+.dragon-strip .ds-bar-wrap{flex:1;min-width:200px}
+.dragon-strip .ds-bar-meta{display:flex;justify-content:space-between;font-size:0.7em;color:var(--text-dim);margin-bottom:4px;font-family:'Share Tech Mono',monospace;letter-spacing:1px}
+.dragon-strip .ds-bar{height:10px;border-radius:5px;background:rgba(34,211,238,0.08);border:1px solid var(--glass-border);overflow:hidden;position:relative}
+.dragon-strip .ds-bar-fill{height:100%;background:linear-gradient(90deg,var(--cyan),var(--purple));box-shadow:0 0 10px rgba(34,211,238,0.4);transition:width 0.6s ease}
+.dragon-strip .ds-bar-fill.achieved{background:linear-gradient(90deg,var(--green),var(--cyan));box-shadow:0 0 14px rgba(74,222,128,0.5)}
+.dragon-strip .ds-bonus{font-family:'Orbitron',monospace;font-size:0.85em;font-weight:700;color:var(--cyan);white-space:nowrap}
+
+/* Filter bar */
+.filter-bar{
+  background:var(--glass);border:1px solid var(--glass-border);
+  border-radius:var(--radius);padding:10px 12px;margin-bottom:14px;
+  display:flex;flex-wrap:wrap;gap:8px;align-items:center;position:relative;
+}
+.filter-bar::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--cyan) 50%,transparent);opacity:0.4}
+.filter-group{display:flex;gap:4px;align-items:center}
+.filter-group .label{font-family:'Orbitron',monospace;font-size:0.6em;letter-spacing:1.8px;color:var(--text-muted);text-transform:uppercase;margin-right:6px}
+.fchip{
+  display:inline-flex;align-items:center;gap:4px;padding:5px 11px;border-radius:18px;
+  background:rgba(6,10,20,0.4);border:1px solid var(--glass-border);
+  font-size:0.72em;cursor:pointer;color:var(--text-dim);transition:all 0.2s;
+  font-family:inherit;letter-spacing:0.3px;
+}
+.fchip:hover{border-color:var(--glass-border-hi);color:var(--text)}
+.fchip.active{background:linear-gradient(135deg,rgba(34,211,238,0.14),rgba(124,58,237,0.08));color:var(--cyan);border-color:rgba(34,211,238,0.4)}
+.search-input{
+  background:rgba(6,10,20,0.5);border:1px solid var(--glass-border);
+  color:var(--text);padding:7px 12px;border-radius:18px;font-size:0.78em;
+  font-family:inherit;min-width:200px;flex:1;max-width:320px;outline:none;
+  transition:border-color 0.2s;
+}
+.search-input::placeholder{color:var(--text-muted)}
+.search-input:focus{border-color:var(--glass-border-hi)}
+.btn-new{
+  margin-left:auto;
+  background:linear-gradient(135deg,var(--cyan),var(--purple));
+  color:#0a0e1a;font-weight:700;font-family:'Orbitron',monospace;
+  font-size:0.7em;letter-spacing:1.5px;text-transform:uppercase;
+  border:none;padding:8px 18px;border-radius:18px;cursor:pointer;
+  box-shadow:0 0 12px rgba(34,211,238,0.3);transition:all 0.2s;
+}
+.btn-new:hover{box-shadow:0 0 18px rgba(34,211,238,0.5);transform:translateY(-1px)}
+
+/* Section header */
+.section-head{display:flex;align-items:baseline;gap:10px;margin:18px 0 10px;font-family:'Orbitron',monospace}
+.section-head h2{font-size:0.78em;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--text)}
+.section-head .count-pill{font-size:0.65em;font-family:'Share Tech Mono',monospace;padding:2px 8px;border-radius:10px;background:rgba(34,211,238,0.1);border:1px solid var(--glass-border);color:var(--cyan)}
+
+/* Quest cards (richer than overview's compact version) */
+.quest-list{display:flex;flex-direction:column;gap:8px}
+.quest-card{
+  display:grid;grid-template-columns:auto 1fr auto auto;gap:12px;align-items:center;
+  background:var(--glass);border:1px solid var(--glass-border);
+  border-radius:var(--radius);padding:12px 14px;
+  cursor:pointer;transition:all 0.2s;position:relative;overflow:hidden;
+}
+.quest-card:hover{border-color:var(--glass-border-hi);background:var(--glass2)}
+.quest-card.completed{opacity:0.55}
+.quest-card.completed .quest-title{text-decoration:line-through}
+.quest-check{
+  width:22px;height:22px;border-radius:50%;border:2px solid var(--glass-border-hi);
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+  transition:all 0.2s;flex-shrink:0;
+}
+.quest-check:hover{border-color:var(--cyan);box-shadow:0 0 8px rgba(34,211,238,0.3)}
+.quest-card.completed .quest-check{background:var(--green);border-color:var(--green);box-shadow:0 0 8px rgba(74,222,128,0.4)}
+.quest-check svg{width:12px;height:12px;stroke:#0a0e1a;fill:none;stroke-width:3;display:none}
+.quest-card.completed .quest-check svg{display:block}
+.quest-body{min-width:0}
+.quest-meta-row{display:flex;align-items:center;gap:6px;margin-bottom:3px;flex-wrap:wrap}
+.quest-cat{font-family:'Share Tech Mono',monospace;font-size:0.6em;letter-spacing:1.5px;text-transform:uppercase;padding:1px 7px;border-radius:8px;background:rgba(34,211,238,0.08);color:var(--cyan);border:1px solid var(--glass-border)}
+.quest-cat.sales{background:rgba(34,211,238,0.1);color:var(--cyan)}
+.quest-cat.marketing{background:rgba(124,58,237,0.12);color:#a78bfa;border-color:rgba(124,58,237,0.25)}
+.quest-cat.ops{background:rgba(74,222,128,0.10);color:var(--green);border-color:rgba(74,222,128,0.25)}
+.quest-cat.finance{background:rgba(250,204,21,0.10);color:var(--yellow);border-color:rgba(250,204,21,0.25)}
+.quest-cat.customer{background:rgba(74,158,255,0.10);color:var(--blue);border-color:rgba(74,158,255,0.25)}
+.quest-cat.strategy{background:rgba(124,58,237,0.10);color:#a78bfa;border-color:rgba(124,58,237,0.25)}
+.quest-cat.personal{background:rgba(140,170,220,0.08);color:var(--text-dim);border-color:var(--glass-border)}
+.quest-type{font-family:'Share Tech Mono',monospace;font-size:0.6em;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-muted)}
+.quest-type.campaign{color:var(--purple)}
+.quest-type.daily{color:var(--cyan)}
+.quest-source{font-family:'Share Tech Mono',monospace;font-size:0.6em;letter-spacing:1px;color:var(--text-muted);text-transform:uppercase}
+.quest-due{font-family:'Share Tech Mono',monospace;font-size:0.62em;letter-spacing:0.8px;color:var(--orange)}
+.quest-due.overdue{color:var(--red);font-weight:700}
+.quest-title{font-size:0.92em;font-weight:600;color:var(--text);line-height:1.3}
+.quest-desc{font-size:0.76em;color:var(--text-dim);line-height:1.35;margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.quest-xp{font-family:'Orbitron',monospace;font-size:0.75em;font-weight:700;color:var(--cyan);white-space:nowrap}
+.quest-actions{display:flex;gap:4px;align-items:center}
+.qact-btn{
+  background:transparent;border:1px solid var(--glass-border);color:var(--text-muted);
+  width:28px;height:28px;border-radius:6px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;transition:all 0.2s;
+}
+.qact-btn:hover{color:var(--text);border-color:var(--glass-border-hi)}
+.qact-btn.danger:hover{color:var(--red);border-color:rgba(248,113,113,0.4)}
+.qact-btn svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+
+/* Empty state */
+.empty-state{text-align:center;padding:30px 20px;color:var(--text-dim);border:1px dashed var(--glass-border);border-radius:var(--radius);font-size:0.85em}
+.empty-state .ico{font-size:2em;margin-bottom:8px;opacity:0.5}
+
+.skeleton{background:linear-gradient(90deg,var(--glass) 0%,var(--glass2) 50%,var(--glass) 100%);background-size:200% 100%;animation:sk 1.4s infinite;border:1px solid var(--glass-border);border-radius:var(--radius);height:60px}
+@keyframes sk{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+.banner{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius);font-size:0.8em;margin-bottom:14px;line-height:1.4}
+.banner.warn{background:rgba(251,146,60,0.08);border:1px solid rgba(251,146,60,0.25);color:var(--orange)}
+.banner code{font-family:'Share Tech Mono',monospace;background:rgba(0,0,0,0.3);padding:1px 6px;border-radius:4px;color:var(--text)}
+
+/* Modal */
+.modal-backdrop{position:fixed;inset:0;background:rgba(3,6,17,0.75);backdrop-filter:blur(4px);z-index:100;display:none;align-items:center;justify-content:center;padding:20px}
+.modal-backdrop.show{display:flex}
+.modal{
+  background:var(--glass);border:1px solid var(--glass-border-hi);border-radius:14px;
+  padding:24px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;
+  position:relative;backdrop-filter:blur(20px);
+  box-shadow:0 20px 60px rgba(0,0,0,0.6),0 0 30px rgba(34,211,238,0.08);
+}
+.modal::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--cyan) 30%,var(--purple) 70%,transparent);border-radius:14px 14px 0 0}
+.modal h3{font-family:'Orbitron',monospace;font-size:0.95em;letter-spacing:2px;color:var(--text);margin-bottom:16px;text-transform:uppercase}
+.field{margin-bottom:12px}
+.field label{display:block;font-family:'Orbitron',monospace;font-size:0.6em;letter-spacing:1.8px;color:var(--text-dim);text-transform:uppercase;margin-bottom:5px}
+.field input,.field textarea,.field select{
+  width:100%;background:rgba(6,10,20,0.5);border:1px solid var(--glass-border);
+  color:var(--text);padding:8px 12px;border-radius:8px;font-size:0.85em;
+  font-family:inherit;outline:none;transition:border-color 0.2s;
+}
+.field input:focus,.field textarea:focus,.field select:focus{border-color:var(--glass-border-hi)}
+.field textarea{resize:vertical;min-height:70px}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
+.btn{
+  padding:8px 18px;border-radius:8px;font-family:'Orbitron',monospace;
+  font-size:0.7em;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;
+  border:1px solid var(--glass-border);background:transparent;color:var(--text-dim);
+  transition:all 0.2s;
+}
+.btn:hover{color:var(--text);border-color:var(--glass-border-hi)}
+.btn.primary{background:linear-gradient(135deg,var(--cyan),var(--purple));color:#0a0e1a;border:none;font-weight:700}
+.btn.primary:hover{box-shadow:0 0 14px rgba(34,211,238,0.4)}
+
+@media(max-width:768px){
+  .main{padding:12px}
+  .hq-title h1{font-size:1.3em}
+  .filter-bar{flex-direction:column;align-items:stretch}
+  .btn-new{margin-left:0;align-self:flex-start}
+  .quest-card{grid-template-columns:auto 1fr auto;grid-template-rows:auto auto}
+  .quest-actions{grid-column:1/-1;justify-self:end}
+}
+</style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <a href="/admin.html" class="sidebar-logo" title="Admin Home"></a>
+  <div class="sidebar-divider"></div>
+  <nav class="sidebar-nav">
+    <a href="/admin-overview.html" class="nav-icon" title="Overview"><svg viewBox="0 0 24 24"><path d="M3 12l9-9 9 9M5 10v10h14V10"/></svg></a>
+    <a href="/admin-quests.html" class="nav-icon active" title="Quests"><svg viewBox="0 0 24 24"><path d="M9 12l2 2 4-4M21 12c0 5-4 9-9 9s-9-4-9-9 4-9 9-9c2 0 4 1 5 2"/></svg></a>
+    <a href="/admin-agents.html" class="nav-icon" title="Agents"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0116 0v2"/></svg></a>
+    <a href="/admin-power.html" class="nav-icon" title="Power Level"><svg viewBox="0 0 24 24"><path d="M13 2L3 14h7l-1 8 10-12h-7z"/></svg></a>
+    <a href="/admin-system.html" class="nav-icon" title="System Config"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 11-14 0 7 7 0 0114 0z"/></svg></a>
+    <a href="/admin.html" class="nav-icon" title="Full Admin"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></a>
+  </nav>
+</aside>
+
+<main class="main">
+
+  <div class="hq-header">
+    <div class="hq-title">
+      <div class="crumb">Admin · Quests</div>
+      <h1>Quest Board</h1>
+      <div class="sub">Daily, campaign, and optional quests across all six archetypal agents.</div>
+    </div>
+    <div class="user-pill-row" id="userPills"></div>
+  </div>
+
+  <div id="banner-slot"></div>
+
+  <!-- Dragon's Challenge -->
+  <div class="dragon-strip">
+    <div class="ds-label">Dragon's Challenge</div>
+    <div class="ds-bar-wrap">
+      <div class="ds-bar-meta"><span id="dsMeta">— / 15 quests this week</span><span id="dsPct">0%</span></div>
+      <div class="ds-bar"><div class="ds-bar-fill" id="dsFill" style="width:0%"></div></div>
+    </div>
+    <div class="ds-bonus" id="dsBonus">+500 XP</div>
+  </div>
+
+  <!-- Filter bar -->
+  <div class="filter-bar">
+    <div class="filter-group">
+      <span class="label">Status</span>
+      <button class="fchip active" data-fk="status" data-fv="">All</button>
+      <button class="fchip" data-fk="status" data-fv="open">Open</button>
+      <button class="fchip" data-fk="status" data-fv="completed">Done</button>
+    </div>
+    <div class="filter-group">
+      <span class="label">Type</span>
+      <button class="fchip active" data-fk="type" data-fv="">All</button>
+      <button class="fchip" data-fk="type" data-fv="daily">Daily</button>
+      <button class="fchip" data-fk="type" data-fv="campaign">Campaign</button>
+      <button class="fchip" data-fk="type" data-fv="optional">Optional</button>
+    </div>
+    <div class="filter-group">
+      <span class="label">Domain</span>
+      <button class="fchip active" data-fk="category" data-fv="">All</button>
+      <button class="fchip" data-fk="category" data-fv="sales">Sales</button>
+      <button class="fchip" data-fk="category" data-fv="marketing">Marketing</button>
+      <button class="fchip" data-fk="category" data-fv="ops">Ops</button>
+      <button class="fchip" data-fk="category" data-fv="finance">Finance</button>
+      <button class="fchip" data-fk="category" data-fv="customer">Customer</button>
+      <button class="fchip" data-fk="category" data-fv="strategy">Strategy</button>
+    </div>
+    <input class="search-input" id="searchInput" placeholder="Search quests…" />
+    <button class="btn-new" id="btnNew">+ New Quest</button>
+  </div>
+
+  <!-- Open quests -->
+  <div class="section-head">
+    <h2>Active</h2>
+    <span class="count-pill" id="activeCount">—</span>
+  </div>
+  <div class="quest-list" id="activeList">
+    <div class="skeleton"></div>
+    <div class="skeleton"></div>
+  </div>
+
+  <!-- Completed today -->
+  <div class="section-head" style="margin-top:24px">
+    <h2>Completed Today</h2>
+    <span class="count-pill" id="todayCount">—</span>
+  </div>
+  <div class="quest-list" id="todayList"></div>
+
+  <!-- Completed this week -->
+  <div class="section-head" style="margin-top:24px">
+    <h2>This Week</h2>
+    <span class="count-pill" id="weekCount">—</span>
+  </div>
+  <div class="quest-list" id="weekList"></div>
+
+</main>
+
+<!-- Modal: new/edit quest -->
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal">
+    <h3 id="modalTitle">New Quest</h3>
+    <div class="field">
+      <label>Title</label>
+      <input id="f_title" placeholder="Follow up on Royal Oaks chain…" />
+    </div>
+    <div class="field">
+      <label>Description</label>
+      <textarea id="f_description" placeholder="Optional context — what / why / who"></textarea>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Domain</label>
+        <select id="f_category">
+          <option value="sales">Sales</option>
+          <option value="marketing">Marketing</option>
+          <option value="ops">Ops</option>
+          <option value="finance">Finance</option>
+          <option value="customer">Customer</option>
+          <option value="strategy">Strategy</option>
+          <option value="personal">Personal</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Type</label>
+        <select id="f_type">
+          <option value="daily">Daily</option>
+          <option value="campaign">Campaign</option>
+          <option value="optional">Optional</option>
+        </select>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>XP Reward</label>
+        <input id="f_xp" type="number" value="10" min="0" max="500" />
+      </div>
+      <div class="field">
+        <label>Assign To</label>
+        <select id="f_assigned">
+          <option value="">Anyone</option>
+          <option value="mac">Mackenzie</option>
+          <option value="catherine">Catherine</option>
+          <option value="darcy">Darcy</option>
+        </select>
+      </div>
+    </div>
+    <div class="field">
+      <label>Due (optional)</label>
+      <input id="f_due" type="datetime-local" />
+    </div>
+    <div class="modal-actions">
+      <button class="btn" id="btnCancel">Cancel</button>
+      <button class="btn primary" id="btnSave">Save Quest</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const TENANT = 'plus-ultra';
+const USERS = [
+  { id: null, label: 'All', short: 'All' },
+  { id: 'mac', label: 'Mackenzie', short: 'Mac' },
+  { id: 'catherine', label: 'Catherine', short: 'Cat' },
+  { id: 'darcy', label: 'Darcy', short: 'Darcy' }
+];
+let activeUserId = localStorage.getItem('overview_active_user') || null;
+if (activeUserId === 'null') activeUserId = null;
+
+const filters = { status: '', type: '', category: '' };
+let searchTerm = '';
+let editingQuest = null;
+let allQuests = [];
+
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function fmtDue(d) {
+  if (!d) return null;
+  const t = new Date(d).getTime();
+  const now = Date.now();
+  const overdue = t < now;
+  const days = Math.abs(Math.round((t - now) / 86400000));
+  const label = overdue
+    ? (days === 0 ? 'Overdue today' : `Overdue ${days}d`)
+    : (days === 0 ? 'Due today' : days === 1 ? 'Due tomorrow' : `Due in ${days}d`);
+  return { label, overdue };
+}
+
+function startOfDayISO() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString();
+}
+function startOfWeekISO() {
+  const d = new Date();
+  const day = d.getDay() || 7;
+  d.setDate(d.getDate() - (day - 1));
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString();
+}
+
+function renderUserPills() {
+  const wrap = document.getElementById('userPills');
+  wrap.innerHTML = USERS.map(u => `
+    <button class="user-pill ${(activeUserId == u.id || (!activeUserId && !u.id)) ? 'active' : ''}" data-uid="${u.id || ''}">
+      <span class="dot"></span>${u.short}
+    </button>
+  `).join('');
+  wrap.querySelectorAll('.user-pill').forEach(b => {
+    b.addEventListener('click', () => {
+      activeUserId = b.dataset.uid || null;
+      localStorage.setItem('overview_active_user', activeUserId || 'null');
+      renderUserPills();
+      load();
+    });
+  });
+}
+
+function renderFilters() {
+  document.querySelectorAll('.fchip').forEach(c => {
+    const k = c.dataset.fk;
+    const v = c.dataset.fv;
+    c.classList.toggle('active', filters[k] === v);
+  });
+}
+
+function questCardHtml(q) {
+  const due = fmtDue(q.due_at);
+  return `
+    <div class="quest-card ${q.status === 'completed' ? 'completed' : ''}" data-id="${q.id}">
+      <div class="quest-check" data-id="${q.id}" data-status="${q.status}">
+        <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+      </div>
+      <div class="quest-body">
+        <div class="quest-meta-row">
+          <span class="quest-cat ${q.category}">${escapeHtml(q.category)}</span>
+          <span class="quest-type ${q.type}">${escapeHtml(q.type)}</span>
+          ${q.source_agent ? `<span class="quest-source">via ${escapeHtml(q.source_agent)}</span>` : '<span class="quest-source">manual</span>'}
+          ${due ? `<span class="quest-due ${due.overdue ? 'overdue' : ''}">${due.label}</span>` : ''}
+        </div>
+        <div class="quest-title">${escapeHtml(q.title)}</div>
+        ${q.description ? `<div class="quest-desc">${escapeHtml(q.description)}</div>` : ''}
+      </div>
+      <div class="quest-xp">+${q.xp_reward} XP</div>
+      <div class="quest-actions">
+        <button class="qact-btn" data-action="edit" data-id="${q.id}" title="Edit">
+          <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </button>
+        <button class="qact-btn danger" data-action="delete" data-id="${q.id}" title="Delete">
+          <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 01-2 2H9a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a2 2 0 012-2h2a2 2 0 012 2v2"/></svg>
+        </button>
+      </div>
+    </div>`;
+}
+
+function applyClientFilters(quests) {
+  const term = searchTerm.toLowerCase().trim();
+  return quests.filter(q => {
+    if (filters.status && q.status !== filters.status) return false;
+    if (filters.type && q.type !== filters.type) return false;
+    if (filters.category && q.category !== filters.category) return false;
+    if (activeUserId) {
+      // matches if assigned to user, or unassigned (visible to anyone)
+      if (q.assigned_to && q.assigned_to !== activeUserId) return false;
+    }
+    if (term) {
+      const blob = `${q.title || ''} ${q.description || ''} ${q.category || ''} ${q.source_agent || ''}`.toLowerCase();
+      if (!blob.includes(term)) return false;
+    }
+    return true;
+  });
+}
+
+function renderLists() {
+  const filtered = applyClientFilters(allQuests);
+  const startToday = startOfDayISO();
+  const startWeek = startOfWeekISO();
+
+  const open = filtered.filter(q => q.status === 'open' || q.status === 'in_progress');
+  const completedToday = filtered.filter(q => q.status === 'completed' && q.completed_at && q.completed_at >= startToday);
+  const completedWeek = filtered.filter(q => q.status === 'completed' && q.completed_at && q.completed_at >= startWeek && q.completed_at < startToday);
+
+  document.getElementById('activeCount').textContent = open.length;
+  document.getElementById('todayCount').textContent = completedToday.length;
+  document.getElementById('weekCount').textContent = completedWeek.length;
+
+  const aL = document.getElementById('activeList');
+  aL.innerHTML = open.length === 0
+    ? `<div class="empty-state"><div class="ico">⚔</div>No active quests match these filters. Agents emit fresh quests on each daily run, or click <b>+ New Quest</b> to create one.</div>`
+    : open.map(questCardHtml).join('');
+
+  document.getElementById('todayList').innerHTML = completedToday.length === 0
+    ? `<div class="empty-state" style="padding:14px"><div style="font-size:0.85em">Nothing completed today yet.</div></div>`
+    : completedToday.map(questCardHtml).join('');
+
+  document.getElementById('weekList').innerHTML = completedWeek.length === 0
+    ? `<div class="empty-state" style="padding:14px"><div style="font-size:0.85em">No prior completions this week.</div></div>`
+    : completedWeek.map(questCardHtml).join('');
+
+  // Wire up handlers
+  document.querySelectorAll('.quest-check').forEach(el => {
+    el.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = el.dataset.id;
+      const cur = el.dataset.status;
+      const next = cur === 'completed' ? 'open' : 'completed';
+      const resp = await fetch(`/api/quests?id=${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'x-tenant-id': TENANT },
+        body: JSON.stringify({ status: next })
+      });
+      if (resp.ok) load();
+    });
+  });
+  document.querySelectorAll('.qact-btn[data-action="edit"]').forEach(b => {
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const q = allQuests.find(x => x.id === b.dataset.id);
+      if (q) openModal(q);
+    });
+  });
+  document.querySelectorAll('.qact-btn[data-action="delete"]').forEach(b => {
+    b.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm('Delete this quest?')) return;
+      const resp = await fetch(`/api/quests?id=${b.dataset.id}`, {
+        method: 'DELETE', headers: { 'x-tenant-id': TENANT }
+      });
+      if (resp.ok) load();
+    });
+  });
+}
+
+function renderDragon(weekDone) {
+  const target = 15;
+  const pct = Math.min(100, Math.round((weekDone / target) * 100));
+  const fill = document.getElementById('dsFill');
+  fill.style.width = pct + '%';
+  fill.classList.toggle('achieved', weekDone >= target);
+  document.getElementById('dsMeta').textContent = `${weekDone} / ${target} quests this week`;
+  document.getElementById('dsPct').textContent = pct + '%';
+  const bonus = document.getElementById('dsBonus');
+  bonus.textContent = weekDone >= target ? '+500 XP ✓' : '+500 XP';
+  bonus.style.color = weekDone >= target ? 'var(--green)' : 'var(--cyan)';
+}
+
+function showBanner(msg, isHtml=false) {
+  const slot = document.getElementById('banner-slot');
+  if (isHtml) slot.innerHTML = `<div class="banner warn">${msg}</div>`;
+  else slot.innerHTML = `<div class="banner warn">${escapeHtml(msg)}</div>`;
+}
+
+async function load() {
+  try {
+    // Pull a wide window so client-side filters/search are snappy
+    const resp = await fetch('/api/quests?limit=300', { headers: { 'x-tenant-id': TENANT } });
+    if (!resp.ok) {
+      const txt = await resp.text();
+      if (resp.status === 500 && /relation .* does not exist/i.test(txt)) {
+        showBanner(`Migration <code>041_admin_core</code> not yet applied. Apply via Supabase Studio SQL Editor or <code>node scripts/run-migration.mjs schema/migration_041_admin_core.sql</code>.`, true);
+      } else {
+        showBanner(`Could not load quests: HTTP ${resp.status}`);
+      }
+      allQuests = [];
+      renderLists();
+      renderDragon(0);
+      return;
+    }
+    const data = await resp.json();
+    allQuests = data.quests || [];
+    document.getElementById('banner-slot').innerHTML = '';
+
+    // Dragon count = completed this week (any user, all categories)
+    const startWeek = startOfWeekISO();
+    const weekDone = allQuests.filter(q => q.status === 'completed' && q.completed_at && q.completed_at >= startWeek).length;
+    renderDragon(weekDone);
+
+    renderLists();
+  } catch (e) {
+    showBanner(`Network error: ${e.message}`);
+  }
+}
+
+// Modal
+function openModal(quest) {
+  editingQuest = quest;
+  document.getElementById('modalTitle').textContent = quest ? 'Edit Quest' : 'New Quest';
+  document.getElementById('f_title').value       = quest?.title || '';
+  document.getElementById('f_description').value = quest?.description || '';
+  document.getElementById('f_category').value    = quest?.category || 'personal';
+  document.getElementById('f_type').value        = quest?.type || 'daily';
+  document.getElementById('f_xp').value          = quest?.xp_reward ?? 10;
+  document.getElementById('f_assigned').value    = quest?.assigned_to || '';
+  document.getElementById('f_due').value         = quest?.due_at ? quest.due_at.slice(0, 16) : '';
+  document.getElementById('modalBackdrop').classList.add('show');
+}
+function closeModal() {
+  document.getElementById('modalBackdrop').classList.remove('show');
+  editingQuest = null;
+}
+async function saveQuest() {
+  const payload = {
+    title: document.getElementById('f_title').value.trim(),
+    description: document.getElementById('f_description').value.trim() || null,
+    category: document.getElementById('f_category').value,
+    type: document.getElementById('f_type').value,
+    xp_reward: parseInt(document.getElementById('f_xp').value) || 10,
+    assigned_to: document.getElementById('f_assigned').value || null,
+    due_at: document.getElementById('f_due').value ? new Date(document.getElementById('f_due').value).toISOString() : null
+  };
+  if (!payload.title) { alert('Title required'); return; }
+
+  const url = editingQuest ? `/api/quests?id=${editingQuest.id}` : '/api/quests';
+  const method = editingQuest ? 'PUT' : 'POST';
+  const resp = await fetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json', 'x-tenant-id': TENANT },
+    body: JSON.stringify(payload)
+  });
+  if (resp.ok) {
+    closeModal();
+    load();
+  } else {
+    const t = await resp.text();
+    alert(`Save failed: ${t.slice(0, 200)}`);
+  }
+}
+
+// Wire static handlers
+document.querySelectorAll('.fchip').forEach(c => {
+  c.addEventListener('click', () => {
+    filters[c.dataset.fk] = c.dataset.fv;
+    renderFilters();
+    renderLists();
+  });
+});
+document.getElementById('searchInput').addEventListener('input', (e) => {
+  searchTerm = e.target.value;
+  renderLists();
+});
+document.getElementById('btnNew').addEventListener('click', () => openModal(null));
+document.getElementById('btnCancel').addEventListener('click', closeModal);
+document.getElementById('btnSave').addEventListener('click', saveQuest);
+document.getElementById('modalBackdrop').addEventListener('click', (e) => {
+  if (e.target.id === 'modalBackdrop') closeModal();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.getElementById('modalBackdrop').classList.contains('show')) closeModal();
+});
+
+renderUserPills();
+renderFilters();
+load();
+setInterval(load, 5 * 60 * 1000);
+</script>
+</body>
+</html>
