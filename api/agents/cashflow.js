@@ -11,10 +11,15 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { gmailSearch, gmailReadMessage } from '../../lib/google.js';
+import { supabaseAdmin } from '../../lib/supabase.js';
 
 const ESTIMATOR_BASE = 'https://estimator-os.replit.app/api';
 const ESTIMATOR_KEY = (process.env.ESTIMATOR_KEY || process.env.ESTIMATOR_OS_KEY || 'pu-estimator-2026').trim();
 const RYUJIN_BASE = 'https://ryujin-os.vercel.app';
+
+// Cashflow currently runs hardcoded for Plus Ultra (tenant 1). When
+// multi-tenant cashflow lands post-July this will become a parameter.
+const PLUS_ULTRA_SLUG = 'plus-ultra';
 
 export async function runCashflow() {
   const report = { agent: 'Cashflow', role: 'Finance & AR', timestamp: new Date().toISOString(), findings: [], tasks: [] };
@@ -228,6 +233,47 @@ export async function runCashflow() {
     });
   } catch (e) {
     report.findings.push(`Snapshot push failed: ${e.message}`);
+  }
+
+  // 8. Write canonical payments rows (migration 051). Idempotent via
+  // email_message_id unique constraint — duplicate rows fail silently.
+  // Also tries to attach matched_estimate_id from byEstimate map.
+  try {
+    const { data: tenant } = await supabaseAdmin
+      .from('tenants').select('id').eq('slug', PLUS_ULTRA_SLUG).single();
+    if (tenant?.id) {
+      // Build emailId → estimateId lookup from the matched jobs.
+      const matchByEmail = {};
+      for (const job of jobs) {
+        for (const p of job.payments) matchByEmail[p.emailId] = job.estimateId;
+      }
+      const rows = payments.map(pmt => ({
+        tenant_id: tenant.id,
+        payment_date: pmt.date,
+        customer_name: pmt.customer,
+        amount: pmt.amount,
+        invoice_description: pmt.invoiceDescription,
+        payment_method: 'card',
+        source: 'gmail',
+        email_message_id: pmt.emailId,
+        // matched_estimate_id is a uuid for ryujin-source estimates and a
+        // string id for estimator-os; only persist real uuids to keep the FK happy.
+        matched_estimate_id: (matchByEmail[pmt.emailId] && /^[0-9a-f-]{36}$/i.test(matchByEmail[pmt.emailId]))
+          ? matchByEmail[pmt.emailId] : null,
+        status: matchByEmail[pmt.emailId] ? 'matched' : 'unmatched',
+        raw_meta: { invoiceType: pmt.invoiceType, source_estimate_ref: matchByEmail[pmt.emailId] || null },
+      }));
+      let inserted = 0, dupes = 0, failed = 0;
+      for (const r of rows) {
+        const { error } = await supabaseAdmin.from('payments').insert(r);
+        if (!error) inserted++;
+        else if (error.code === '23505') dupes++;   // unique violation = already recorded
+        else failed++;
+      }
+      report.findings.push(`Payments table: ${inserted} new, ${dupes} dupe(s) skipped, ${failed} failed`);
+    }
+  } catch (e) {
+    report.findings.push(`Payments-table write skipped: ${e.message}`);
   }
 
   return report;
