@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#060a14">
+<title>Create your Ryujin OS — Sign Up</title>
+<link rel="icon" href="/favicon.ico">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=optional" rel="stylesheet">
+<style>
+:root{--bg:#060a14;--glass:rgba(20,30,50,0.85);--glass-border:rgba(34,211,238,0.16);--text:#d0daf0;--text-dim:rgba(160,190,230,0.55);--cyan:#22d3ee;--purple:#7c3aed;--red:#f87171;--radius:12px}
+*{margin:0;padding:0;box-sizing:border-box}html,body{height:100%}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/textures/app-bg.png') center/cover fixed no-repeat;color:var(--text);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.card{background:var(--glass);border:1px solid var(--glass-border);border-radius:16px;padding:32px 30px;width:min(440px,100%);position:relative;overflow:hidden}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--cyan) 30%,var(--purple) 70%,transparent)}
+.crumb{font-family:'Share Tech Mono',monospace;font-size:0.7em;color:var(--text-dim);letter-spacing:2px;text-transform:uppercase;margin-bottom:8px}
+h1{font-family:'Orbitron',monospace;font-size:1.4em;font-weight:700;letter-spacing:1px;background:linear-gradient(135deg,#e0e6f0 20%,var(--cyan) 65%,var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px}
+.sub{font-size:0.88em;color:var(--text-dim);margin-bottom:22px;line-height:1.5}
+label{display:block;font-family:'Share Tech Mono',monospace;font-size:0.65em;letter-spacing:1.4px;color:var(--text-dim);text-transform:uppercase;margin-bottom:5px}
+input{width:100%;padding:11px 14px;background:rgba(6,10,20,0.5);color:var(--text);border:1px solid var(--glass-border);border-radius:10px;font-family:inherit;font-size:0.95em;outline:none;margin-bottom:14px}
+input:focus{border-color:rgba(34,211,238,0.4)}
+.btn{width:100%;padding:12px 16px;font-family:'Orbitron',monospace;font-size:0.78em;letter-spacing:1.6px;text-transform:uppercase;font-weight:700;cursor:pointer;border-radius:12px;background:linear-gradient(135deg,var(--cyan),var(--purple));color:#0a0e1a;border:none;margin-top:6px}
+.btn:disabled{opacity:0.5;cursor:not-allowed}
+.error{color:var(--red);font-size:0.85em;margin-bottom:12px;padding:8px 12px;background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.25);border-radius:8px;display:none}
+.tier-pill{display:inline-block;padding:4px 10px;border-radius:9px;background:rgba(34,211,238,0.12);color:var(--cyan);font-family:'Share Tech Mono',monospace;font-size:0.65em;letter-spacing:1.4px;text-transform:uppercase;margin-bottom:14px;border:1px solid var(--glass-border)}
+.foot{font-size:0.78em;color:var(--text-dim);margin-top:18px;text-align:center}
+.foot a{color:var(--cyan);text-decoration:none}.foot a:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="crumb">Sign Up · Free 14-day trial</div>
+  <h1>Create your Ryujin OS.</h1>
+  <p class="sub">Spin up a fresh tenant, own data, owner role. Pick a tier or start on the free trial — upgrade any time.</p>
+
+  <div id="tierBadge"></div>
+  <div id="errorBox" class="error"></div>
+
+  <form id="signupForm">
+    <label for="business">Business name</label>
+    <input id="business" type="text" required maxlength="80" placeholder="Plus Ultra Roofing" autofocus />
+
+    <label for="full_name">Your name</label>
+    <input id="full_name" type="text" maxlength="80" placeholder="Mackenzie Mazerolle" />
+
+    <label for="email">Email</label>
+    <input id="email" type="email" required maxlength="120" placeholder="you@yourbusiness.com" />
+
+    <label for="password">Password</label>
+    <input id="password" type="password" required minlength="8" maxlength="120" placeholder="≥ 8 characters" />
+
+    <button class="btn" type="submit" id="submitBtn">Create my Ryujin OS</button>
+  </form>
+
+  <div class="foot">
+    Already have an account? <a href="/login.html">Sign in →</a><br>
+    <span style="opacity:0.7">By signing up you agree to standard fair-use terms. No spam, no resold data.</span>
+  </div>
+</div>
+
+<script>
+const params = new URLSearchParams(location.search);
+const tier = params.get('tier');
+const interval = params.get('interval') || 'month';
+
+if (tier) {
+  document.getElementById('tierBadge').innerHTML = `<span class="tier-pill">→ ${tier} · ${interval === 'year' ? 'annual' : 'monthly'}</span>`;
+}
+
+document.getElementById('signupForm').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const btn = document.getElementById('submitBtn');
+  const errBox = document.getElementById('errorBox');
+  errBox.style.display = 'none';
+  btn.disabled = true;
+  btn.textContent = 'Creating tenant…';
+
+  const body = {
+    business_name: document.getElementById('business').value.trim(),
+    full_name: document.getElementById('full_name').value.trim(),
+    email: document.getElementById('email').value.trim(),
+    password: document.getElementById('password').value,
+    tier_slug: tier || null,
+  };
+
+  try {
+    const r = await fetch('/api/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await r.json();
+    if (!r.ok) {
+      errBox.textContent = data.error || `Signup failed (HTTP ${r.status})`;
+      errBox.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Create my Ryujin OS';
+      return;
+    }
+    // Persist session token + tenant slug.
+    localStorage.setItem('ryujin_token', data.token);
+    localStorage.setItem('ryujin_tenant', data.tenant_slug);
+
+    // If a tier was picked, route to checkout next. Otherwise → onboarding.
+    if (tier) {
+      location.href = `/upgrade.html?tier=${encodeURIComponent(tier)}&interval=${encodeURIComponent(interval)}&first_run=1`;
+    } else {
+      location.href = data.redirect_url || '/onboarding.html?welcome=1';
+    }
+  } catch (e) {
+    errBox.textContent = `Network error: ${e.message}`;
+    errBox.style.display = 'block';
+    btn.disabled = false; btn.textContent = 'Create my Ryujin OS';
+  }
+});
+</script>
+</body>
+</html>
