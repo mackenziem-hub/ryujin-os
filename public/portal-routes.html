@@ -58,7 +58,7 @@ function authHeaders() {
 
 async function load() {
   const root = document.getElementById('list');
-  const r = await fetch('/api/messages?box=sent&limit=200', { headers: authHeaders() });
+  const r = await fetch('/api/messages?box=auto_routes&limit=200', { headers: authHeaders() });
   if (!r.ok) {
     root.innerHTML = `<div class="empty-state"><div class="ico">⚠</div>Could not load (HTTP ${r.status}). ${r.status === 401 ? '<a href="/login.html">Sign in</a>' : ''}</div>`;
     return;
@@ -70,11 +70,8 @@ async function load() {
   // have from_user_id=null (system) — so we filter by metadata.source_user_id
   // matching me OR from_user_id matching me, last 7 days.
   const me = data.me || {};
-  const all = (data.messages || []).filter(m => {
-    if (new Date(m.created_at).getTime() < cutoff) return false;
-    if (m.metadata?.auto_routed && m.metadata?.source_user_id === me.id) return true;
-    return false;
-  });
+  // box=auto_routes already filters server-side; just enforce the 7-day window.
+  const all = (data.messages || []).filter(m => new Date(m.created_at).getTime() >= cutoff);
   // The same auto-route fires N rows (one per recipient) sharing thread_id —
   // collapse to one row per thread_id.
   const byThread = new Map();

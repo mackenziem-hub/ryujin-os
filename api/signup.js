@@ -21,8 +21,13 @@ import crypto from 'node:crypto';
 
 const APP_BASE = (process.env.APP_BASE_URL || 'https://ryujin-os.vercel.app').trim();
 
-function hashPw(password, salt) {
-  return crypto.pbkdf2Sync(password, salt, 100_000, 64, 'sha512').toString('hex');
+// Mirror api/auth.js:hashPassword — scrypt with salt prefixed via "${salt}:${hash}".
+// Using the SAME format means a user signed up via /api/signup can immediately
+// log in via /api/auth?action=login.
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return `${salt}:${hash}`;
 }
 
 function makeSlug(businessName) {
@@ -86,9 +91,9 @@ export default async function handler(req, res) {
     });
   if (tsErr) console.error('[signup] tenant_settings insert non-fatal:', tsErr.message);
 
-  // Provision owner user.
-  const salt = crypto.randomBytes(16).toString('hex');
-  const password_hash = hashPw(password, salt);
+  // Provision owner user. password_hash format matches api/auth.js so the
+  // login endpoint accepts these credentials immediately.
+  const password_hash = hashPassword(password);
   const { data: user, error: uErr } = await supabaseAdmin
     .from('users')
     .insert({
@@ -97,7 +102,6 @@ export default async function handler(req, res) {
       name: full_name || email.split('@')[0],
       role: 'owner',
       password_hash,
-      password_salt: salt,
     })
     .select('id, email, name')
     .single();
