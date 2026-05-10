@@ -1,3 +1,73 @@
+# Session notes — 2026-05-09 (Session 66, late evening) — Sub Portal v2 lockdown + 3-job dispatch (Fairisle, Irving, Saint Marie)
+
+## What changed this session
+
+### Code (Ryujin)
+- `api/sub-portal.js` — `maskCustomer()` helper (composite-name handling), URL whitelist on documents (Vercel Blob + Ryujin only), supplier routing rules (Coastal default · QXO for SBS+skylights · Home Depot for OSB · Kent never displayed), full COGS strip from materials API (no `total_estimated`/`supplier_summary`/`unit_cost`/`total_cost`), `package_tier` removed from all responses, `customer_name` masked, `customer_phone` removed entirely, new `approve_wo` POST endpoint with token+ownership+status guards + audit log + SMS to Mac via Automator.
+- `api/sub-auth.js` — curated SELECT columns on `?action=jobs` (was `SELECT *`), masking applied to customer_name on jobs list.
+- `public/sub-portal.html` — deliverables refactored 8 items → 4 (collapsible default-closed), pay section all-lines (was hardcoded `.slice(0,4)` truncate), Pending Approval amber-banner section + green Approve & Schedule button + Text Mac SMS fallback, Documents section with EagleView attachment cards, Special Notes render as clean bullets via `renderSpecialNotes()`, "Your pay $X" label on job cards, favicon linked to `/assets/branding/orb.jpg`, status pill labels humanized (`draft` → "Pending Approval", `issued` → "Active").
+
+### DB (Supabase via service-role)
+- WO #11 (95 Cornhill) — status `issued` → `complete`
+- WO #15 (Saint Marie) — special_notes tightened to 5 bullets, paysheet labour_breakdown +travel-fix line ($244.62 per-km v2.2)
+- WO #16 (67 Fairisle) — sub_id assigned to Ryan, customer_name="Kyle Graham", scope_items populated, special_notes 5 bullets, color="Resawn Shake", layers_to_remove=1, total_sq=20.22, paysheet labour_breakdown corrected (24.2→19.08 SQ, valley 14→53 LF, +mod-bit line)
+- WO #17 (265 Boul Irving) — sub_id assigned to Ryan, customer_name="Christian" (scrubbed parenthetical), scope_items populated, special_notes 4 bullets, total_sq=26.5, layers_to_remove=1
+- estimates Fairisle calculated_packages — bundle counts 78→63 across all tiers + mod-bit material lines added (Sopralene 180 base, Soprastick HD cap, Primer, Termination bar)
+- estimates Irving calculated_packages — bundle counts 90→82 across all tiers
+- estimates {Fairisle, Irving, Saint Marie} — commission tags added (`sales_owner:* + commission_rate:* + commission_reason:*`)
+
+### Vercel Blob
+- `eagleview/wo-16-67-fairisle.pdf` (823 KB)
+- `eagleview/wo-16-67-fairisle.json` (12 KB)
+- `eagleview/wo-17-265-irving.json` (12 KB)
+- Tagged in workorders.additional_scope as `DOCUMENTS_JSON: [...]` text-shim (no schema change)
+
+### GHL
+- Note `oyQskB8oiFhbo3T4eR19` posted on contact `JZPkWIEYZVjolTOrwG0H` (Shelagh Peach) documenting +$1,600 HST-incl redeck CO
+
+## Money bugs caught + fixed
+
+1. **Saint Marie travel surcharge** — stepped $20/SQ ($604) → per-km v2.2 ($244.62). Saved $359 + HST.
+2. **Fairisle base labour** — pre-EV stale 24.2 SQ → EV-true 19.08 SQ. Saved $665 vs over-pay.
+3. **Fairisle valley** — stale 14 LF → EV-true 53 LF (+$39 to Ryan).
+4. **Bundle counts** — Fairisle 78→63, Irving 90→82 across all tiers (engine waste defaults too aggressive for simple-facet roofs).
+5. **Fairisle low-slope strip** — 113 sqft @ 1/12 not in original quote. Added 2-ply Soprema SBS scope (mat $506 + labour $313.50). Mac absorbing.
+
+## Audits
+
+| Audit | Cost | Verdict | Real findings |
+|---|---|---|---|
+| Claude pricing-lens peer review | $0.02 | needs_changes → resolved | Saint Marie travel + Fairisle 24.2 SQ + commission tags |
+| Manus product audit Round 1 | ~$1 | minor-polish | "Your pay" label + favicon |
+| Manus product audit Round 2 | ~$1 | NO BLOCKERS | none |
+
+Manus URLs: R1 https://manus.im/app/ZfFDfjYDqbpvh3LCnxUeuY · R2 https://manus.im/app/Ug3KNXVYpEsqX2EkZqfRUU
+
+## Three jobs ready for Ryan dispatch
+
+| WO | Customer (masked) | Status | Paysheet | Mac pocket |
+|---|---|---|---|---|
+| #16 — 67 Fairisle | Kyle G. | Pending Approval | $3,506.23 | $2,630 |
+| #17 — 265 Boul Irving | Christian | Pending Approval | $4,943.85 | $4,182 |
+| #15 — 5360 NB-495 | Shelagh P. | Active (chimney Mon) | $6,842.06 | $2,411 |
+
+Combined Mac pocket: **$9,223** (rev − materials − Ryan paysheet − sales commission). All clear $700/day floor.
+
+## Ryan's portal
+
+`https://ryujin-os.vercel.app/sub-portal.html?token=fA305quBxYxWhYoOo-2h0J47e3cigGMO` (180-day token, expires Nov 5 2026, sub `7a03d15e-5d3b-4b6b-876b-59e1ba2c0a86`)
+
+## Open items
+
+- 🟢 Ryan to review + approve Fairisle + Irving via portal
+- 🟢 Saint Marie chimney finish Mon May 11
+- 🟡 EagleView JSON viewer polish (currently raw JSON in new tab)
+- 🟡 Mobile sticky footer can obscure bottom content on long pages
+- 🟡 Engine bundle-count drift — calculated_packages waste defaults too aggressive
+- 🟡 Cowork session generating Grok assets per region (Mac monitoring remotely)
+
+---
+
 # Session notes — 2026-05-09 (Session 65, evening) — Bible v0.1+v0.2 implementation + state machines + claims + agent-briefing + finance-verify + Stripe scaffold + asset handoff + Kataria metal merge
 
 ## Commits pushed this session (in order)

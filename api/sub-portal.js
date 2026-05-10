@@ -103,23 +103,31 @@ async function getMaterials(tenantId, woId) {
     items = lineItems
       .filter(li => li.category === 'materials' && li.included !== false)
       .map(li => {
-        // Bucket by supplier (Kent vs Coastal vs other)
-        const src = li.source_detail || '';
-        let supplier = 'Other';
-        if (/coastal/i.test(src)) supplier = 'Coastal Drywall';
-        else if (/kent/i.test(src)) supplier = 'Kent Building Supplies';
-        else if (/bmr/i.test(src)) supplier = 'BMR';
-        else if (/home depot/i.test(src)) supplier = 'Home Depot';
-        const cost = Number(li.total_cost) || 0;
-        supplier_summary[supplier] = (supplier_summary[supplier] || 0) + cost;
-        total_estimated += cost;
+        // Plus Ultra sourcing rules (May 9 2026 directive from Mac):
+        //   • Default supplier = Coastal Drywall (single PO for nearly everything)
+        //   • OSB / plywood / decking → Home Depot
+        //   • SBS / mod-bit / Soprema / IKO low-slope → QXO (Dieppe branch)
+        //   • Skylights / Velux → QXO
+        //   • Kent is BLACKLISTED — never display "Kent" to subs even if legacy
+        //     line item source_detail mentions it (the PO would route to Coastal)
+        const label = String(li.label || '').toLowerCase();
+        const key = String(li.item_key || '').toLowerCase();
+        const isOSB = /\bosb\b|plywood|decking|sheathing/.test(label);
+        const isSBS = /\bsbs\b|mod.?bit|sopr|sopralene|soprastick|peel.and.stick|low.?slope|torchflex|hyload|membrane|cap.sheet|base.sheet|termination.bar/.test(label) || /modbit/.test(key);
+        const isSkylight = /skylight|velux|fakro/.test(label);
+        const supplier = isOSB ? 'Home Depot' : (isSBS || isSkylight) ? 'QXO' : 'Coastal Drywall';
+
+        // source_detail historically carried supplier-routing notes + prices.
+        // For sub-facing view: strip prices AND any Kent/legacy-supplier text
+        // (sub doesn't need to know Mac's PO routing decisions).
         return {
           label: li.label,
           quantity: li.quantity,
           unit: li.unit,
-          source_detail: li.source_detail || null,
+          source_detail: null,  // hide raw source notes — supplier label is enough
           supplier,
           item_key: li.item_key
+          // No total_cost / unit_cost — Mac's COGS is not the sub's business
         };
       });
   }
@@ -133,13 +141,33 @@ async function getMaterials(tenantId, woId) {
   }
 
   return {
-    wo: { id: wo.id, address: wo.address, total_sq: wo.total_sq, package_tier: wo.package_tier },
+    wo: { id: wo.id, address: wo.address, total_sq: wo.total_sq },
     items,
-    supplier_summary,
-    total_estimated: Math.round(total_estimated * 100) / 100,
     color_status,
     shingle_product: wo.shingle_product || null
+    // No supplier_summary / total_estimated — sub does not see Mac's material spend
+    // No package_tier — sub does not see customer-side tier
   };
+}
+
+// Mask customer name for sub-facing views: first name + last initial only.
+// Strips parentheticals like "(KW realtor — pre-listing)" that could enable poaching.
+// Handles composite names ("Jim & Kelly Faulkner" → "Jim F.") by treating
+// connectors (&, and, /) as a single first-name unit and the last alpha word
+// as the surname source.
+// Used in every sub-portal endpoint that returns customer_name.
+function maskCustomer(name) {
+  if (!name) return null;
+  const stripped = String(name).replace(/\s*\([^)]+\)\s*/g, '').trim();
+  if (!stripped) return null;
+  // Tokenize, keep only words that start with a letter (drops "&", "and", "/", numbers)
+  const tokens = stripped.split(/\s+/).filter(t => /^[A-Za-z]/.test(t));
+  if (tokens.length === 0) return null;
+  if (tokens.length === 1) return tokens[0];
+  // First token = first name. Last alpha token's first letter = surname initial.
+  const first = tokens[0];
+  const surname = tokens[tokens.length - 1];
+  return `${first} ${surname[0]}.`;
 }
 
 // ── Schedule (start date, address, GPS, AJ contact) ─────────────
@@ -195,7 +223,7 @@ async function getSchedule(tenantId, woId) {
   } catch {}
 
   return {
-    wo: { id: wo.id, customer_name: wo.customer_name },
+    wo: { id: wo.id, customer_name: maskCustomer(wo.customer_name) },
     address: wo.address,
     start_date: wo.start_date,
     estimated_duration_days: wo.estimated_duration_days,
@@ -204,7 +232,7 @@ async function getSchedule(tenantId, woId) {
     map_url,
     supervisor_contact,
     onsite_contact: wo.onsite_contact || null,
-    phone: wo.phone || null,
+    // phone deliberately omitted — sub routes customer comms through AJ/Mac
     special_notes: wo.special_notes || null
   };
 }
@@ -226,21 +254,46 @@ async function getScope(tenantId, woId) {
   const nextStepIndex = checklist.findIndex(s => s && !s.completed);
   const nextStep = nextStepIndex >= 0 ? checklist[nextStepIndex] : null;
 
+  // Documents (EagleView etc.) — currently shimmed via additional_scope text-tag.
+  // Format in DB: "DOCUMENTS_JSON: [{label,url,type}]"
+  // URLs are whitelisted to Vercel Blob storage to prevent open-redirect via DB write.
+  let documents = [];
+  let cleanedAdditional = wo.additional_scope || null;
+  if (typeof cleanedAdditional === 'string' && cleanedAdditional.startsWith('DOCUMENTS_JSON: ')) {
+    try {
+      const parsed = JSON.parse(cleanedAdditional.slice('DOCUMENTS_JSON: '.length));
+      const ALLOWED_HOSTS = ['public.blob.vercel-storage.com', 'ryujin-os.vercel.app'];
+      documents = (Array.isArray(parsed) ? parsed : []).filter(d => {
+        if (!d || typeof d !== 'object') return false;
+        if (!d.url) return true; // info/note rows allowed (no link)
+        try {
+          const u = new URL(d.url);
+          if (u.protocol !== 'https:') return false;
+          return ALLOWED_HOSTS.some(host => u.hostname === host || u.hostname.endsWith('.' + host));
+        } catch { return false; }
+      });
+      cleanedAdditional = null; // hide raw shim from sub UI
+    } catch { /* ignore parse errors */ }
+  }
+
   return {
     wo: {
-      id: wo.id, address: wo.address, customer_name: wo.customer_name,
+      id: wo.id, address: wo.address,
+      customer_name: maskCustomer(wo.customer_name),
       status: wo.status, start_date: wo.start_date,
       total_sq: wo.total_sq, roof_pitch: wo.roof_pitch,
-      package_tier: wo.package_tier, shingle_product: wo.shingle_product,
+      shingle_product: wo.shingle_product,
       shingle_color: wo.shingle_color, layers_to_remove: wo.layers_to_remove
+      // package_tier deliberately omitted — sub does not see customer-side tier
     },
+    documents,
     measurements: {
       eaves_lf: wo.eaves_lf, rakes_lf: wo.rakes_lf, ridges_lf: wo.ridges_lf,
       hips_lf: wo.hips_lf, valleys_lf: wo.valleys_lf, walls_lf: wo.walls_lf,
       pipes: wo.pipes, vents: wo.vents, chimneys: wo.chimneys
     },
     scope_items: Array.isArray(wo.scope_items) ? wo.scope_items : [],
-    additional_scope: wo.additional_scope || null,
+    additional_scope: cleanedAdditional,
     special_notes: wo.special_notes || null,
     checklist,
     progress: {
@@ -406,6 +459,50 @@ async function handler(req, res) {
   const token = req.query.token;
   const sub = await verifyToken(tenantId, token);
   if (!sub) return res.status(401).json({ error: 'Invalid or expired token' });
+
+  // Sub-write: approve a draft WO and move it to issued
+  if (action === 'approve_wo' && req.method === 'POST') {
+    const { wo_id } = req.body || {};
+    if (!wo_id) return res.status(400).json({ error: 'wo_id required' });
+    const { data: wo, error: rerr } = await supabaseAdmin
+      .from('workorders')
+      .select('id, status, address, customer_name, subcontractor_id, wo_number')
+      .eq('tenant_id', tenantId).eq('id', wo_id).single();
+    if (rerr || !wo) return res.status(404).json({ error: 'Work order not found' });
+    if (wo.subcontractor_id !== sub.id) return res.status(403).json({ error: 'Not your work order' });
+    if (wo.status !== 'draft') return res.status(409).json({ error: `Cannot approve — status is ${wo.status}` });
+
+    const { error: uerr } = await supabaseAdmin
+      .from('workorders')
+      .update({ status: 'issued', issued_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('tenant_id', tenantId).eq('id', wo_id);
+    if (uerr) return res.status(500).json({ error: uerr.message });
+
+    // Log to job_log_entries so AJ + Mac see it in admin
+    await supabaseAdmin.from('job_log_entries').insert({
+      tenant_id: tenantId,
+      workorder_id: wo_id,
+      subcontractor_id: sub.id,
+      entry_type: 'note',
+      description: `Sub approved work order via portal: ${sub.name} (${sub.company || 'Atlantic Roofing'})`,
+      status: 'approved'
+    }).then(() => {}, () => {}); // non-fatal
+
+    // SMS Mac via Automator (best-effort)
+    try {
+      const automatorKey = process.env.AUTOMATOR_API_KEY?.trim();
+      if (automatorKey) {
+        const msg = `${sub.name} approved WO #${wo.wo_number} (${wo.address}). Now Active — ready to schedule.`;
+        await fetch('https://services.leadconnectorhq.com/hooks/' + (process.env.AUTOMATOR_HOOK_ID || ''), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contactId: '02IhxZfSwZZAZ2fooVGu', message: msg })
+        }).catch(() => {});
+      }
+    } catch {}
+
+    return res.json({ ok: true, wo_id, status: 'issued' });
+  }
 
   // Sub-write: checklist step toggle
   if (action === 'update_checklist' && req.method === 'PUT') {

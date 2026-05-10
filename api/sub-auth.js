@@ -56,14 +56,30 @@ async function handler(req, res) {
 
   // ── Sub's assigned jobs ──
   if (req.method === 'GET' && action === 'jobs' && sub_id) {
+    // Curated columns only — never SELECT * here. Sub doesn't see Mac's COGS,
+    // customer phone/email, package_tier, or customer-side revenue.
     const { data: workorders } = await supabaseAdmin
       .from('workorders')
-      .select('*, paysheet:paysheets!linked_paysheet_id(id, job_id, status, total, balance_due)')
+      .select('id, wo_number, address, customer_name, status, start_date, estimated_duration_days, total_sq, roof_pitch, shingle_product, shingle_color, paysheet:paysheets!linked_paysheet_id(id, job_id, status, total, balance_due)')
       .eq('tenant_id', tenantId)
       .eq('subcontractor_id', sub_id)
       .order('start_date', { ascending: true });
 
-    return res.json({ workorders: workorders || [] });
+    // Mask customer name to first + last initial. Strip parentheticals.
+    // Handles composite names ("Jim & Kelly Faulkner" → "Jim F.") via
+    // last-alpha-token-as-surname rule.
+    const maskCustomer = (name) => {
+      if (!name) return null;
+      const stripped = String(name).replace(/\s*\([^)]+\)\s*/g, '').trim();
+      if (!stripped) return null;
+      const tokens = stripped.split(/\s+/).filter(t => /^[A-Za-z]/.test(t));
+      if (tokens.length === 0) return null;
+      if (tokens.length === 1) return tokens[0];
+      return `${tokens[0]} ${tokens[tokens.length - 1][0]}.`;
+    };
+
+    const sanitized = (workorders || []).map(w => ({ ...w, customer_name: maskCustomer(w.customer_name) }));
+    return res.json({ workorders: sanitized });
   }
 
   // ── Owner: create new sub + issue magic-link ──
