@@ -24,6 +24,7 @@
 
 import { runSales, runOps, runMarketing, runFinance } from './_shared.js';
 import { runCustomerScan } from '../../lib/agents/customer_scan.js';
+import { runServiceScan } from '../../lib/agents/service_scan.js';
 import { runStrategyScan } from '../../lib/agents/strategy_scan.js';
 import { persistAgentRun } from '../../lib/agents/persistAgentRun.js';
 import { supabaseAdmin } from '../../lib/supabase.js';
@@ -69,6 +70,15 @@ const KPI_MAPS = {
     'stats.followUpGaps':         { key: 'customer.followup_gaps',     label: 'Follow-up Gaps',            unit: 'count', sort_order: 41 },
     'stats.reviewAsksReady':      { key: 'customer.review_asks_ready', label: 'Review Asks Ready',         unit: 'count', sort_order: 42 },
     'stats.lifecycle.won':        { key: 'customer.signed_count',      label: 'Signed Jobs',               unit: 'count', sort_order: 43 }
+  },
+  service: {
+    'stats.tickets_open':                  { key: 'service.tickets_open',         label: 'Tickets Open',          unit: 'count', sort_order: 60 },
+    'stats.callbacks_open':                { key: 'service.callbacks_open',       label: 'Callbacks Open',        unit: 'count', sort_order: 61 },
+    'stats.callbacks_aging':               { key: 'service.callbacks_aging',      label: 'Aging Callbacks',       unit: 'count', sort_order: 62 },
+    'stats.tickets_overdue':               { key: 'service.tickets_overdue',      label: 'Overdue Tickets',       unit: 'count', sort_order: 63 },
+    'stats.tickets_complete_12mo':         { key: 'service.tickets_complete_12mo',label: 'Completed (12mo)',      unit: 'count', sort_order: 64 },
+    'stats.callback_rate_pct':             { key: 'service.callback_rate_pct',    label: 'Callback Rate',         unit: '%',     sort_order: 65 },
+    'stats.warranty_claims_pending_response':{ key: 'service.warranty_pending_resp', label: 'Warranty Resp Pending', unit: 'count', sort_order: 66 }
   },
   strategy: {
     'stats.runsLast7d':           { key: 'strategy.agent_runs_7d',     label: 'Agent Runs (7d)',           unit: 'count', sort_order: 90 },
@@ -145,13 +155,14 @@ export default async function handler(req, res) {
   const startedAt = Date.now();
   const results = [];
 
-  // Run the first 5 in parallel — they don't depend on each other
+  // Run the first 6 in parallel — they don't depend on each other
   const parallel = await Promise.all([
     runAndPersist('sales',     () => runSales(),                                    tenantId, trigger),
     runAndPersist('marketing', () => runMarketing(),                                tenantId, trigger),
     runAndPersist('ops',       () => runOps(),                                      tenantId, trigger),
     runAndPersist('finance',   () => runFinance(),                                  tenantId, trigger),
-    runAndPersist('customer',  () => runCustomerScan({ tenantSlug: TENANT_SLUG }),  tenantId, trigger)
+    runAndPersist('customer',  () => runCustomerScan({ tenantSlug: TENANT_SLUG }),  tenantId, trigger),
+    runAndPersist('service',   () => runServiceScan({ tenantSlug: TENANT_SLUG }),   tenantId, trigger)
   ]);
   results.push(...parallel);
 
