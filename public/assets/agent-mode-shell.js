@@ -293,6 +293,7 @@
       if (data.archetype && !archetype) setArchetypeStyling(data.archetype);
       appendMessage('assistant', data.reply, data.proposed_actions || []);
       conversation.push({ role: 'assistant', content: data.reply });
+      if (Array.isArray(data.auto_routed) && data.auto_routed.length) showRouteToast(data.auto_routed);
       speak(data.reply);
     } catch (e) {
       thinking.remove();
@@ -300,6 +301,46 @@
     } finally {
       elSendBtn.disabled = false;
       elInput.focus();
+    }
+  }
+
+  // ─── Auto-route toast (RG) ─────────────────────────────────
+  function showRouteToast(routes) {
+    if (!routes?.length) return;
+    let stack = document.getElementById('ry-route-toast-stack');
+    if (!stack) {
+      stack = document.createElement('div');
+      stack.id = 'ry-route-toast-stack';
+      stack.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:200;display:flex;flex-direction:column;gap:8px;max-width:340px;font-family:Inter,system-ui,sans-serif';
+      document.body.appendChild(stack);
+    }
+    for (const r of routes) {
+      const names = (Array.isArray(r) ? r : [r]).map(x => x.name).join(' + ');
+      const intent = (r.intent || 'message').replace(/_/g, ' ');
+      const messageIds = r.message_ids || [];
+      const t = document.createElement('div');
+      t.style.cssText = 'background:linear-gradient(135deg,rgba(34,211,238,0.18),rgba(124,58,237,0.12));border:1px solid rgba(34,211,238,0.35);color:#d0daf0;padding:10px 14px;border-radius:12px;font-size:0.85em;display:flex;align-items:center;gap:10px;box-shadow:0 4px 18px rgba(0,0,0,0.4);animation:ry-toast-in 0.25s ease-out';
+      t.innerHTML = `<div style="flex:1">→ Notified <strong style="color:#22d3ee">${escapeHtml(names || 'team')}</strong><div style="font-size:0.78em;color:rgba(160,190,230,0.65);margin-top:2px">auto-route · ${escapeHtml(intent)}</div></div><button style="background:transparent;border:1px solid rgba(248,113,113,0.4);color:#f87171;padding:3px 9px;border-radius:8px;font-size:0.75em;cursor:pointer">Undo</button>`;
+      const undoBtn = t.querySelector('button');
+      undoBtn.addEventListener('click', async () => {
+        undoBtn.disabled = true; undoBtn.textContent = '…';
+        const tok = localStorage.getItem('ryujin_token');
+        for (const mid of messageIds) {
+          try {
+            await fetch('/api/messages?id=' + mid, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'x-tenant-id': TENANT, ...(tok ? { Authorization: 'Bearer ' + tok } : {}) }, body: JSON.stringify({ archived: true }) });
+          } catch {}
+        }
+        t.style.opacity = '0.4';
+        undoBtn.textContent = 'Undone';
+      });
+      stack.appendChild(t);
+      setTimeout(() => { t.style.transition = 'opacity 0.4s, transform 0.4s'; t.style.opacity = '0'; t.style.transform = 'translateX(20px)'; setTimeout(() => t.remove(), 500); }, 7000);
+    }
+    if (!document.getElementById('ry-toast-anim-styles')) {
+      const s = document.createElement('style');
+      s.id = 'ry-toast-anim-styles';
+      s.textContent = '@keyframes ry-toast-in { from { opacity: 0; transform: translateX(20px) } to { opacity: 1; transform: translateX(0) } }';
+      document.head.appendChild(s);
     }
   }
 

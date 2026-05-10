@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#060a14">
+<title>My Routes · Ryujin OS</title>
+<link rel="icon" href="/favicon.ico">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=optional" rel="stylesheet">
+<script src="/assets/portal-auth-client.js"></script>
+<style>
+:root{--bg:#060a14;--glass:rgba(20,30,50,0.85);--glass-border:rgba(34,211,238,0.16);--text:#d0daf0;--text-dim:rgba(160,190,230,0.55);--text-muted:rgba(140,170,220,0.30);--cyan:#22d3ee;--purple:#7c3aed;--green:#4ade80;--gold:#fbbf24;--red:#f87171;--orange:#fb923c;--radius:12px}
+*{margin:0;padding:0;box-sizing:border-box}html,body{height:100%}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/textures/app-bg.png') center/cover fixed no-repeat;color:var(--text);min-height:100vh;padding:32px 22px 60px}
+.wrap{max-width:880px;margin:0 auto}
+.crumb{font-family:'Share Tech Mono',monospace;font-size:0.72em;color:var(--text-dim);letter-spacing:2px;text-transform:uppercase;margin-bottom:6px}
+h1{font-family:'Orbitron',monospace;font-size:1.7em;font-weight:700;letter-spacing:1px;background:linear-gradient(135deg,#e0e6f0 20%,var(--cyan) 65%,var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px}
+.sub{font-size:0.92em;color:var(--text-dim);max-width:680px;line-height:1.5;margin-bottom:24px}
+.route-row{background:var(--glass);border:1px solid var(--glass-border);border-radius:var(--radius);padding:12px 14px;margin-bottom:8px;display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center}
+.route-row .ico{font-size:1.4em;color:var(--cyan)}
+.route-row .body{min-width:0}
+.route-row .intent{font-family:'Share Tech Mono',monospace;font-size:0.72em;letter-spacing:1.4px;text-transform:uppercase;color:var(--cyan);margin-bottom:3px}
+.route-row .who{font-size:0.92em;color:var(--text);margin-bottom:2px}
+.route-row .preview{font-size:0.78em;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.route-row .when{font-family:'Share Tech Mono',monospace;font-size:0.7em;color:var(--text-muted)}
+.route-row .undo{background:transparent;border:1px solid rgba(248,113,113,0.4);color:var(--red);padding:4px 10px;border-radius:8px;font-family:'Share Tech Mono',monospace;font-size:0.7em;letter-spacing:1.2px;text-transform:uppercase;cursor:pointer}
+.route-row .undo:hover{background:rgba(248,113,113,0.08)}
+.route-row.archived{opacity:0.5}
+.route-row.archived .undo{display:none}
+.empty-state{text-align:center;padding:40px 16px;color:var(--text-dim);border:1px dashed var(--glass-border);border-radius:var(--radius)}
+.empty-state .ico{font-size:1.8em;margin-bottom:8px;opacity:0.5}
+.foot{margin-top:18px;font-size:0.8em;color:var(--text-dim);text-align:center}
+.foot a{color:var(--cyan);text-decoration:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="crumb">My Routes · Last 7 days</div>
+  <h1>What the agent sent on your behalf.</h1>
+  <p class="sub">Every time the agent auto-fires a message to a teammate from your conversations, it lands here. Tap Undo to archive a route — the recipient still has the message but it's marked archived on your end. Use this to audit + course-correct.</p>
+
+  <div id="list"><div class="empty-state"><div class="ico">⌛</div>Loading…</div></div>
+
+  <p class="foot">Routes older than 7 days are still in the inbox under <a href="/messages.html">Messages → Sent</a>.</p>
+</div>
+
+<script>
+const TENANT = 'plus-ultra';
+function escapeHtml(s) { if (s == null) return ''; return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fmtRel(iso) { if (!iso) return ''; const dt = Date.now() - new Date(iso).getTime(); if (dt < 60000) return 'just now'; if (dt < 3600000) return Math.floor(dt/60000) + 'm ago'; if (dt < 86400000) return Math.floor(dt/3600000) + 'h ago'; if (dt < 604800000) return Math.floor(dt/86400000) + 'd ago'; return new Date(iso).toLocaleDateString(); }
+
+function authHeaders() {
+  const headers = { 'x-tenant-id': TENANT };
+  const tok = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token');
+  if (tok) headers['Authorization'] = 'Bearer ' + tok;
+  return headers;
+}
+
+async function load() {
+  const root = document.getElementById('list');
+  const r = await fetch('/api/messages?box=sent&limit=200', { headers: authHeaders() });
+  if (!r.ok) {
+    root.innerHTML = `<div class="empty-state"><div class="ico">⚠</div>Could not load (HTTP ${r.status}). ${r.status === 401 ? '<a href="/login.html">Sign in</a>' : ''}</div>`;
+    return;
+  }
+  const data = await r.json();
+  const cutoff = Date.now() - 7 * 86400000;
+  // Filter to auto-routed messages from the last 7 days. The /api/messages
+  // box=sent returns messages where you're the from_user_id, but auto-routes
+  // have from_user_id=null (system) — so we filter by metadata.source_user_id
+  // matching me OR from_user_id matching me, last 7 days.
+  const me = data.me || {};
+  const all = (data.messages || []).filter(m => {
+    if (new Date(m.created_at).getTime() < cutoff) return false;
+    if (m.metadata?.auto_routed && m.metadata?.source_user_id === me.id) return true;
+    return false;
+  });
+  // The same auto-route fires N rows (one per recipient) sharing thread_id —
+  // collapse to one row per thread_id.
+  const byThread = new Map();
+  for (const m of all) {
+    if (!byThread.has(m.thread_id)) byThread.set(m.thread_id, { ...m, recipients: [] });
+    const e = byThread.get(m.thread_id);
+    e.recipients.push(m.to_user?.name || 'unknown');
+    if (!e.archived_at && m.archived_at) e.archived_at = m.archived_at;
+  }
+  const grouped = [...byThread.values()].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+  if (grouped.length === 0) {
+    root.innerHTML = `<div class="empty-state"><div class="ico">◇</div>No auto-routes in the last 7 days yet. Talk to your pillar agent — anything you say that mentions a customer + a clear intent (reschedule, repair, payment question, etc.) auto-fires to the right teammate.</div>`;
+    return;
+  }
+  root.innerHTML = grouped.map(g => `
+    <div class="route-row ${g.archived_at ? 'archived' : ''}" data-thread="${g.thread_id}">
+      <div class="ico">→</div>
+      <div class="body">
+        <div class="intent">${escapeHtml((g.metadata?.intent || 'route').replace(/_/g,' '))}</div>
+        <div class="who">${escapeHtml(g.recipients.join(' + '))}</div>
+        <div class="preview">${escapeHtml((g.metadata?.operator_message || g.body || '').slice(0, 140))}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+        <div class="when">${fmtRel(g.created_at)}</div>
+        ${g.archived_at ? '<span style="color:var(--text-muted);font-size:0.7em">archived</span>' : `<button class="undo" data-thread="${g.thread_id}">Undo</button>`}
+      </div>
+    </div>
+  `).join('');
+  root.querySelectorAll('.undo').forEach(b => {
+    b.addEventListener('click', async () => {
+      b.disabled = true; b.textContent = '…';
+      const threadId = b.dataset.thread;
+      // Pull all rows in this thread and PATCH each to archived.
+      const tr = await fetch(`/api/messages?thread_id=${threadId}`, { headers: authHeaders() });
+      if (tr.ok) {
+        const td = await tr.json();
+        for (const msg of (td.messages || [])) {
+          await fetch(`/api/messages?id=${msg.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ archived: true }) });
+        }
+      }
+      load();
+    });
+  });
+}
+load();
+</script>
+</body>
+</html>
