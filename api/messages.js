@@ -69,9 +69,16 @@ async function handler(req, res) {
       .limit(limit);
 
     if (threadId) {
-      q = q.eq('thread_id', threadId).or(`from_user_id.eq.${me.id},to_user_id.eq.${me.id}`).order('created_at', { ascending: true });
+      // Thread visible to: from_user_id, to_user_id, or originator of an
+      // auto-route (metadata.source_user_id). Last clause lets Darcy see
+      // the system posts his agent fired alongside any human replies.
+      q = q.eq('thread_id', threadId).or(`from_user_id.eq.${me.id},to_user_id.eq.${me.id},metadata->>source_user_id.eq.${me.id}`).order('created_at', { ascending: true });
     } else if (box === 'sent') {
-      q = q.eq('from_user_id', me.id).is('archived_at', null);
+      // "sent" = your DMs + auto-routes your agent fired on your behalf.
+      q = q.or(`from_user_id.eq.${me.id},and(from_user_id.is.null,metadata->>source_user_id.eq.${me.id})`).is('archived_at', null);
+    } else if (box === 'auto_routes') {
+      // Audit-only: just the auto-routed posts originating from this user.
+      q = q.is('from_user_id', null).filter('metadata->>source_user_id', 'eq', me.id);
     } else if (box === 'unread') {
       q = q.eq('to_user_id', me.id).is('read_at', null).is('archived_at', null);
     } else {
@@ -153,12 +160,15 @@ async function handler(req, res) {
     if (body.archived === false) update.archived_at = null;
     if (Object.keys(update).length === 0) return res.status(400).json({ error: 'set read or archived' });
 
+    // Allow PATCH from: (a) from_user_id matching me, (b) to_user_id matching me,
+    // OR (c) metadata.source_user_id matching me — the last clause is what
+    // makes Undo on auto-routed messages work (system posts have from_user_id=null).
     const { data, error } = await supabaseAdmin
       .from('messages')
       .update(update)
       .eq('id', id)
       .eq('tenant_id', tenantId)
-      .or(`from_user_id.eq.${me.id},to_user_id.eq.${me.id}`)
+      .or(`from_user_id.eq.${me.id},to_user_id.eq.${me.id},metadata->>source_user_id.eq.${me.id}`)
       .select('*')
       .maybeSingle();
     if (error) return res.status(500).json({ error: error.message });
