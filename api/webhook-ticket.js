@@ -137,11 +137,49 @@ export default async function handler(req, res) {
     : new Date(Date.now() + (Number(body.due_in_days) || 7) * 24 * 60 * 60 * 1000)
         .toISOString().slice(0, 10);
 
-  const tags = Array.from(new Set([
-    ...(Array.isArray(body.tags) ? body.tags : []),
-    'ghl_inbound',
-    'auto_created'
-  ]));
+  const inboundTags = Array.isArray(body.tags) ? body.tags.map(t => String(t).toLowerCase()) : [];
+  const isRepair =
+    inboundTags.some(t => t.includes('repair') || t.includes('callback') || t.includes('warranty')) ||
+    String(body.title || '').toLowerCase().includes('repair') ||
+    String(body.title || '').toLowerCase().includes('callback');
+
+  // Repair / callback / warranty inbound → service_tickets (AJ's domain).
+  // Generic crew tasks → legacy tickets table (kept for backward compat).
+  // Per the May 10 ticket-board migration: new repair flows live on
+  // service_tickets, legacy table accepts no new repair writers.
+  if (isRepair) {
+    const ticketType = inboundTags.find(t => ['callback', 'warranty', 'maintenance'].includes(t)) || 'repair';
+    const { data, error } = await supabaseAdmin
+      .from('service_tickets')
+      .insert({
+        tenant_id: tenant.id,
+        title: body.title,
+        description: body.description || null,
+        source_estimate: body.estimate_id || null,
+        customer_id: customerId,
+        assigned_to: body.assigned_to || null,
+        ticket_type: ticketType,
+        priority: body.priority || 'high',
+        status: 'open',
+        scheduled_at: body.scheduled_at || null,
+        customer_pays: body.customer_pays !== false,
+        metadata: { source: 'webhook-ticket', ghl_contact_id: body.ghl_contact_id || null, ghl_opportunity_id: body.ghl_opportunity_id || null, inbound_tags: inboundTags }
+      })
+      .select('id, ticket_type, status, priority')
+      .single();
+    if (error) {
+      console.error('[webhook-ticket] service_ticket insert failed', error);
+      return res.status(500).json({ error: 'service_ticket insert failed', detail: error.message });
+    }
+    await supabaseAdmin.from('activity_log').insert({
+      tenant_id: tenant.id, entity_type: 'service_ticket', entity_id: data.id, action: 'created',
+      details: { source: 'webhook-ticket', via: 'inbound_webhook', ghl_contact_id: body.ghl_contact_id || null }
+    }).then(() => {}, () => {});
+    return res.status(201).json({ ok: true, route: 'service_tickets', ticket: data });
+  }
+
+  // Generic / non-repair: legacy tickets table.
+  const tags = Array.from(new Set([...inboundTags, 'ghl_inbound', 'auto_created']));
 
   const { data, error } = await supabaseAdmin
     .from('tickets')
@@ -179,5 +217,5 @@ export default async function handler(req, res) {
     }
   }).then(() => {}, () => {});
 
-  return res.status(201).json({ ok: true, ticket: data });
+  return res.status(201).json({ ok: true, route: 'tickets', ticket: data });
 }

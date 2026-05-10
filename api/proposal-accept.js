@@ -317,12 +317,12 @@ export default async function handler(req, res) {
     if (r.error) console.error('[proposal-accept] activity_log insert failed', r.error);
   });
 
-  // 4b. Auto-create a repair ticket if this estimate is flagged as a repair.
+  // 4b. Auto-create a service_tickets row if this estimate is flagged as a repair.
   //     Trigger: proposal_mode contains "repair" OR tags array contains "repair".
-  //     Repairs need scheduling + tracking but don't go through the full work-order
-  //     production pipeline like a re-roof. Ticket lands in the action board and
-  //     defaults to Mac for triage. Fire-and-forget — don't block the success
-  //     response if the insert fails (estimate is still accepted).
+  //     Repairs land in AJ's service queue (migration 047), NOT the legacy
+  //     crew-tickets table — that's the production-side ticket migration to
+  //     finish per the May 10 ticket-board punch list.
+  //     Fire-and-forget — don't block the success response if the insert fails.
   const isRepair =
     String(est.proposal_mode || '').toLowerCase().includes('repair') ||
     (Array.isArray(est.tags) && est.tags.some(t => String(t).toLowerCase().includes('repair')));
@@ -330,7 +330,7 @@ export default async function handler(req, res) {
   if (isRepair) {
     const customerName = customer?.name || est.customer?.full_name || 'customer';
     const customerAddress = est.customer?.address || '';
-    const dueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const scheduledAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
     const ticketTitle = `Schedule repair · ${customerName}${customerAddress ? ' · ' + customerAddress : ''}`;
     const ticketDescription = [
       `Repair estimate accepted — ${tier.name || tier.id}.`,
@@ -338,39 +338,40 @@ export default async function handler(req, res) {
       `Customer: ${customerName}${customerPayload.phone ? ' · ' + customerPayload.phone : ''}${customerPayload.email ? ' · ' + customerPayload.email : ''}.`,
       `Address: ${customerAddress || '—'}.`,
       `Estimate: PU-${est.estimate_number || est.id.slice(0, 8)}.`,
-      `Auto-created on acceptance — schedule with crew, order materials if needed, confirm timeline with customer.`
+      `Auto-created on acceptance — AJ to schedule with crew, order materials if needed, confirm timeline with customer.`
     ].join(' ');
 
     supabaseAdmin
-      .from('tickets')
+      .from('service_tickets')
       .insert({
         tenant_id: est.tenant_id,
         title: ticketTitle,
         description: ticketDescription,
-        estimate_id: est.id,
+        source_estimate: est.id,
         customer_id: est.customer_id || null,
+        ticket_type: 'repair',
         priority: 'high',
         status: 'open',
-        due_date: dueDate,
-        tags: ['repair', 'auto_created', 'from_proposal_accept'],
-        notes: []
+        scheduled_at: scheduledAt,
+        customer_pays: true,
+        metadata: { auto_created_by: 'proposal_accept', source_tags: ['from_proposal_accept'] }
       })
-      .select('id, ticket_number')
+      .select('id')
       .single()
       .then(({ data, error }) => {
         if (error) {
-          console.error('[proposal-accept] repair ticket insert failed', error?.message);
+          console.error('[proposal-accept] service_ticket insert failed', error?.message);
           return;
         }
         supabaseAdmin.from('activity_log').insert({
           tenant_id: est.tenant_id,
-          entity_type: 'ticket',
+          entity_type: 'service_ticket',
           entity_id: data.id,
           action: 'created',
-          details: { source: 'proposal_accept_repair_automation', estimate_id: est.id, ticket_number: data.ticket_number }
+          details: { source: 'proposal_accept_repair_automation', estimate_id: est.id }
         }).then(() => {}, () => {});
       })
-      .catch(e => console.error('[proposal-accept] repair ticket insert threw', e?.message));
+      .catch(e => console.error('[proposal-accept] service_ticket insert threw', e?.message));
   }
 
   // 5. Fire-and-forget notifications — never block the success response on these.
