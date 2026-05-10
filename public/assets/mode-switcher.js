@@ -18,24 +18,26 @@
 (function () {
   'use strict';
 
-  const MODES = ['agent', 'interactive', 'advanced'];
-  const DEFAULT_MODE = 'advanced';
+  const ALL_MODES = ['agent', 'interactive', 'advanced'];
+  const NON_ADMIN_MODES = ['agent', 'interactive'];
+  const ADMIN_ROLES = new Set(['owner', 'admin']);
   const STORAGE_KEY = 'ryujin_mode';
   const TENANT = window.__RYUJIN_TENANT__ || document.documentElement.dataset.tenant || 'plus-ultra';
 
   let lockedMode = null;        // set when entitlements force a mode
-  let currentMode = DEFAULT_MODE;
+  let availableModes = NON_ADMIN_MODES.slice();  // tightened by default; widened to all for admins
+  let currentMode = 'interactive';
 
   function readMode() {
     if (lockedMode) return lockedMode;
     const stored = (localStorage.getItem(STORAGE_KEY) || '').toLowerCase();
-    if (MODES.includes(stored)) return stored;
-    return DEFAULT_MODE;
+    if (availableModes.includes(stored)) return stored;
+    return availableModes[availableModes.length - 1]; // default to last (interactive for non-admin, advanced for admin)
   }
 
   function writeMode(mode) {
     if (lockedMode && mode !== lockedMode) return false;
-    if (!MODES.includes(mode)) return false;
+    if (!availableModes.includes(mode)) return false;
     if (mode === currentMode) return true;
     currentMode = mode;
     localStorage.setItem(STORAGE_KEY, mode);
@@ -98,13 +100,15 @@
   }
 
   function buildToggle() {
-    if (document.getElementById('ry-mode-switcher')) return;
+    // Tear down any stale toggle so a role change (login/logout) cleanly re-renders.
+    const existing = document.getElementById('ry-mode-switcher');
+    if (existing) existing.remove();
     const root = document.createElement('div');
     root.id = 'ry-mode-switcher';
     root.className = 'ry-mode-switcher';
     root.setAttribute('role', 'tablist');
     root.setAttribute('aria-label', 'Interaction mode');
-    for (const m of MODES) {
+    for (const m of availableModes) {
       const b = document.createElement('button');
       b.className = 'ry-mode-btn';
       b.dataset.mode = m;
@@ -120,6 +124,33 @@
     }
     document.body.appendChild(root);
     paintToggle();
+  }
+
+  async function resolveRole() {
+    const token = (typeof localStorage !== 'undefined' && localStorage.getItem('ryujin_token')) ||
+                  (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('ryujin_token'));
+    if (!token) return null;
+    try {
+      const r = await fetch('/api/me', { headers: { 'Authorization': `Bearer ${token}` } });
+      if (!r.ok) return null;
+      const data = await r.json();
+      return data;
+    } catch { return null; }
+  }
+
+  async function applyRoleGating() {
+    const me = await resolveRole();
+    const isAdmin = !!(me && me.is_admin);
+    availableModes = isAdmin ? ALL_MODES.slice() : NON_ADMIN_MODES.slice();
+    // If a stored mode (or current mode) isn't available for this role, snap to default.
+    if (!availableModes.includes(currentMode)) {
+      const fallback = availableModes[availableModes.length - 1];
+      currentMode = fallback;
+      localStorage.setItem(STORAGE_KEY, fallback);
+      document.documentElement.dataset.mode = fallback;
+      document.dispatchEvent(new CustomEvent('ryujin:mode-change', { detail: { mode: fallback, locked: !!lockedMode } }));
+    }
+    buildToggle();
   }
 
   async function checkEntitlements() {
@@ -148,13 +179,15 @@
     injectStyles();
     currentMode = readMode();
     document.documentElement.dataset.mode = currentMode;
-    buildToggle();
+    buildToggle();                  // Optimistic render with non-admin modes.
+    applyRoleGating();              // Async: widen to advanced if /api/me says admin.
     checkEntitlements();
     // Public API for shells
     window.RyujinMode = {
       get: () => currentMode,
       set: writeMode,
-      MODES,
+      MODES: ALL_MODES,
+      available: () => availableModes.slice(),
       isLocked: () => !!lockedMode,
       lockedTo: () => lockedMode,
     };
