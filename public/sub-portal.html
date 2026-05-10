@@ -177,6 +177,17 @@ h2{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;
 .photo-grid .ph img{width:100%;height:100%;object-fit:cover;display:block}
 .photo-grid .ph .cap{position:absolute;left:0;right:0;bottom:0;padding:4px 6px;background:linear-gradient(to top,rgba(0,0,0,0.85),transparent);font-size:10px;font-weight:600;color:#fff;text-transform:uppercase;letter-spacing:0.4px}
 .photo-grid .ph.cover-flag::before{content:'COVER';position:absolute;top:5px;right:5px;background:var(--accent);color:#fff;font-size:9px;font-weight:700;padding:2px 5px;border-radius:4px;letter-spacing:0.5px;z-index:2}
+.photo-grid .ph .del{position:absolute;top:4px;right:4px;width:26px;height:26px;border-radius:50%;background:rgba(16,24,40,0.72);color:#fff;border:none;font-size:16px;font-weight:700;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:3;padding:0;opacity:0.92;font-family:inherit}
+.photo-grid .ph .del:hover,.photo-grid .ph .del:active{background:var(--red);opacity:1}
+
+/* Rapid camera feed (inside photo modal) */
+.rapid-feed{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:12px}
+.rapid-feed .item{position:relative;aspect-ratio:1/1;border-radius:8px;overflow:hidden;background:#f2f4f7;border:1px solid var(--line)}
+.rapid-feed .item img{width:100%;height:100%;object-fit:cover;display:block}
+.rapid-feed .item.uploading::after{content:'';position:absolute;inset:0;background:rgba(16,24,40,0.45)}
+.rapid-feed .item .badge{position:absolute;bottom:2px;left:2px;right:2px;text-align:center;font-size:9px;font-weight:700;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,0.6);text-transform:uppercase;letter-spacing:0.3px}
+.rapid-feed .item .x{position:absolute;top:2px;right:2px;width:22px;height:22px;border-radius:50%;background:rgba(16,24,40,0.7);color:#fff;border:none;font-size:14px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;font-family:inherit}
+.rapid-count{font-size:13px;color:var(--green);font-weight:600;margin-top:10px;text-align:center}
 
 /* Pay block */
 .pay-line{display:flex;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--line);font-size:14px}
@@ -277,15 +288,15 @@ textarea{min-height:90px;resize:vertical}
   <button class="btn ghost" onclick="openLogModal()">+ Log</button>
 </div>
 
-<!-- Photo upload modal -->
+<!-- Photo upload modal — rapid-fire camera -->
 <div class="modal-bg" id="photoModal">
   <div class="modal">
     <div class="modal-head">
-      <h3>📷 Add Photo</h3>
-      <button class="modal-close" onclick="closeModal('photoModal')">×</button>
+      <h3>📷 Rapid Camera</h3>
+      <button class="modal-close" onclick="closeModal('photoModal')">Done</button>
     </div>
     <div class="modal-body">
-      <div style="font-size:13px;color:var(--ink-2);margin-bottom:6px">Pick what stage this photo represents:</div>
+      <div style="font-size:13px;color:var(--ink-2);margin-bottom:6px">Stage (tags every photo you take next):</div>
       <div class="stage-grid">
         <div class="stage-chip" data-stage="before"><span class="em">📐</span><span class="lbl">Before</span></div>
         <div class="stage-chip" data-stage="during"><span class="em">🔨</span><span class="lbl">During</span></div>
@@ -297,17 +308,21 @@ textarea{min-height:90px;resize:vertical}
         <div class="stage-chip" data-stage="cleanup"><span class="em">🧹</span><span class="lbl">Cleanup</span></div>
         <div class="stage-chip" data-stage="general"><span class="em">📸</span><span class="lbl">General</span></div>
       </div>
-      <label>Optional caption / context</label>
-      <input type="text" id="photoCaption" placeholder="e.g. Soft deck near chimney">
-      <label>Photo</label>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn primary" style="flex:1" onclick="document.getElementById('photoCamera').click()">📷 Camera</button>
-        <button class="btn outline" style="flex:1" onclick="document.getElementById('photoGallery').click()">🖼️ Gallery</button>
+
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+        <button class="btn primary lg" style="flex:2;min-height:64px;font-size:17px" onclick="document.getElementById('photoCamera').click()">📷 Take Photo</button>
+        <button class="btn outline lg" style="flex:1;min-height:64px" onclick="document.getElementById('photoGallery').click()">🖼️ Gallery</button>
       </div>
       <input type="file" id="photoCamera" accept="image/*" capture="environment" class="hide" onchange="handlePhotoFiles(event)">
       <input type="file" id="photoGallery" accept="image/*" multiple class="hide" onchange="handlePhotoFiles(event)">
-      <div id="photoPreview" style="margin-top:14px"></div>
-      <button class="btn primary full lg hide" id="photoSubmit" style="margin-top:14px" onclick="submitPhotos()">Upload Photo(s)</button>
+
+      <div id="rapidFeed" class="rapid-feed"></div>
+      <div id="rapidCount" class="rapid-count hide">0 uploaded this session</div>
+
+      <details style="margin-top:14px">
+        <summary style="font-size:13px;color:var(--ink-2);cursor:pointer">Add a caption to the next shots (optional)</summary>
+        <input type="text" id="photoCaption" placeholder="e.g. Soft deck near chimney" style="margin-top:8px">
+      </details>
     </div>
   </div>
 </div>
@@ -770,7 +785,8 @@ function renderPhotosSection(){
       url,
       caption: desc.replace(/^\[\w+\]\s*/, '') || 'photo',
       stage: stageMatch ? stageMatch[1] : null,
-      created_at: e.created_at
+      created_at: e.created_at,
+      entry_id: e.id // tracked so we can delete from the gallery
     }));
   });
   const all = [
@@ -793,6 +809,7 @@ function renderPhotosSection(){
     <div class="photo-grid">
       ${all.map(p => `<div class="ph ${p.is_cover ? 'cover-flag' : ''}" onclick="openLightbox(this.querySelector('img').src)">
         <img src="${esc(p.url)}" loading="lazy" alt="">
+        ${p.entry_id ? `<button class="del" title="Delete" onclick="event.stopPropagation();deletePhotoEntry('${p.entry_id}')">×</button>` : ''}
         <div class="cap">${esc(p.stage || p.caption || 'photo')}</div>
       </div>`).join('')}
     </div>
@@ -917,16 +934,18 @@ async function completeStep(idx){
   await toggleStep(idx);
 }
 
-// ─── Photo Modal ──────────────────────────────────────────
+// ─── Photo Modal (CompanyCam-style rapid fire) ──────────────────────────────
+// Each photo uploads + logs as its own job_log_entry the moment the camera returns.
+// Modal stays open, shows a live thumb feed, and re-arms with one tap.
 function openPhotoModal(presetStage){
-  STATE.pendingPhotos = [];
-  STATE.selectedStage = presetStage || 'general';
+  STATE.selectedStage = presetStage || STATE.selectedStage || 'general';
+  rapidSessionCount = 0;
   document.querySelectorAll('.stage-chip').forEach(c => c.classList.toggle('on', c.dataset.stage === STATE.selectedStage));
   document.getElementById('photoCaption').value = '';
-  document.getElementById('photoPreview').innerHTML = '';
-  document.getElementById('photoSubmit').classList.add('hide');
+  document.getElementById('rapidFeed').innerHTML = '';
+  document.getElementById('rapidCount').classList.add('hide');
+  document.getElementById('rapidCount').textContent = '0 uploaded this session';
   document.getElementById('photoModal').classList.add('on');
-  // Wire stage chips
   document.querySelectorAll('.stage-chip').forEach(c => {
     c.onclick = () => {
       STATE.selectedStage = c.dataset.stage;
@@ -936,36 +955,43 @@ function openPhotoModal(presetStage){
   });
 }
 
+let rapidSessionCount = 0;
+
 async function handlePhotoFiles(ev){
   const files = Array.from(ev.target.files || []);
+  ev.target.value = ''; // reset so the same file can be re-picked / camera re-armed
   if (!files.length) return;
-  const preview = document.getElementById('photoPreview');
-  preview.innerHTML = '<div style="font-size:13px;color:var(--ink-2)"><span class="spin"></span> Uploading…</div>';
-  for (const file of files){
-    try {
-      const fd = new FormData();
-      fd.append('file', file);
-      fd.append('workorder_id', STATE.currentWoId);
-      const r = await fetch(`/api/job-log-photo?tenant=${TENANT}`, { method:'POST', headers:{'x-tenant-id':TENANT}, body: fd });
-      const body = await r.json();
-      if (!r.ok) throw new Error(body.error || 'Upload failed');
-      STATE.pendingPhotos.push(body.url);
-    } catch (e) { toast('Upload failed: ' + e.message, 'err') }
-  }
-  preview.innerHTML = STATE.pendingPhotos.length
-    ? `<div style="display:flex;gap:6px;flex-wrap:wrap">${STATE.pendingPhotos.map(u => `<img src="${esc(u)}" style="width:74px;height:74px;object-fit:cover;border-radius:8px;border:1px solid var(--line)">`).join('')}</div><div style="font-size:13px;color:var(--green);font-weight:600;margin-top:8px">✓ ${STATE.pendingPhotos.length} uploaded</div>`
-    : '<div style="font-size:13px;color:var(--red)">No photos uploaded.</div>';
-  document.getElementById('photoSubmit').classList.toggle('hide', STATE.pendingPhotos.length === 0);
-  ev.target.value = '';
+
+  const feed = document.getElementById('rapidFeed');
+  const stageLabel = STATE.selectedStage.charAt(0).toUpperCase() + STATE.selectedStage.slice(1);
+  const caption = document.getElementById('photoCaption').value.trim();
+
+  // Process in parallel — each photo independently uploads + logs.
+  await Promise.all(files.map(file => uploadAndLogOne(file, stageLabel, caption, feed)));
 }
 
-async function submitPhotos(){
-  if (!STATE.pendingPhotos.length) { toast('Pick at least one photo'); return }
-  const caption = document.getElementById('photoCaption').value.trim();
-  const stageLabel = STATE.selectedStage.charAt(0).toUpperCase() + STATE.selectedStage.slice(1);
-  const desc = `[${stageLabel}] ${caption || `${stageLabel} photo from ${STATE.sub.name}`}`.slice(0, 280);
+async function uploadAndLogOne(file, stageLabel, caption, feed){
+  // 1. Drop placeholder in the feed immediately
+  const slotId = 'slot_' + Math.random().toString(36).slice(2, 10);
+  const objUrl = URL.createObjectURL(file);
+  const slot = document.createElement('div');
+  slot.className = 'item uploading';
+  slot.id = slotId;
+  slot.innerHTML = `<img src="${objUrl}" alt=""><div class="badge">⏳ ${esc(stageLabel)}</div>`;
+  feed.prepend(slot);
+
   try {
-    await api('/job-log', {
+    // 2. Upload the blob
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('workorder_id', STATE.currentWoId);
+    const r = await fetch(`/api/job-log-photo?tenant=${TENANT}`, { method:'POST', headers:{'x-tenant-id':TENANT}, body: fd });
+    const body = await r.json();
+    if (!r.ok) throw new Error(body.error || 'Upload failed');
+
+    // 3. Create the job_log entry (one per photo → deletable individually)
+    const desc = `[${stageLabel}] ${caption || `${stageLabel} photo from ${STATE.sub.name}`}`.slice(0, 280);
+    const entry = await api('/job-log', {
       method: 'POST',
       body: JSON.stringify({
         workorder_id: STATE.currentWoId,
@@ -974,20 +1000,57 @@ async function submitPhotos(){
         entry_type: 'photo',
         description: desc,
         amount: 0,
-        photos: STATE.pendingPhotos,
+        photos: [body.url],
         created_by_sub: true
       })
     });
-    toast(`✓ ${STATE.pendingPhotos.length} photo${STATE.pendingPhotos.length > 1 ? 's' : ''} logged`);
-    closeModal('photoModal');
-    // Refresh entries to show the new photos
-    try {
-      const r = await api(`/job-log?workorder_id=${STATE.currentWoId}`);
-      STATE.entries = r.entries || [];
-      renderJobDetail();
-    } catch {}
+
+    // 4. Update the slot — ready, with delete affordance
+    slot.classList.remove('uploading');
+    slot.innerHTML = `<img src="${esc(body.url)}" alt="">
+      <button class="x" title="Delete" onclick="deletePhotoSlot('${slotId}','${entry.id}')">×</button>
+      <div class="badge">✓ ${esc(stageLabel)}</div>`;
+
+    // 5. Push into STATE.entries so the main gallery reflects it without a full refetch
+    STATE.entries = [entry, ...STATE.entries];
+    renderJobDetail();
+
+    rapidSessionCount++;
+    const counter = document.getElementById('rapidCount');
+    counter.textContent = `✓ ${rapidSessionCount} uploaded this session`;
+    counter.classList.remove('hide');
   } catch (e) {
-    toast('Failed: ' + e.message, 'err');
+    slot.classList.remove('uploading');
+    slot.innerHTML = `<img src="${objUrl}" alt="" style="opacity:0.4"><div class="badge" style="background:var(--red);color:#fff;text-shadow:none;padding:2px 0">FAILED</div>`;
+    toast('Upload failed: ' + e.message, 'err');
+  }
+}
+
+async function deletePhotoSlot(slotId, entryId){
+  if (!confirm('Delete this photo?')) return;
+  try {
+    await api(`/job-log?id=${entryId}`, { method:'DELETE' });
+    const slot = document.getElementById(slotId);
+    if (slot) slot.remove();
+    STATE.entries = STATE.entries.filter(e => e.id !== entryId);
+    renderJobDetail();
+    toast('Deleted');
+  } catch (e) {
+    toast('Delete failed: ' + e.message, 'err');
+  }
+}
+
+// Delete a photo from the main gallery (outside the modal).
+async function deletePhotoEntry(entryId){
+  if (!entryId) return;
+  if (!confirm('Delete this photo?')) return;
+  try {
+    await api(`/job-log?id=${entryId}`, { method:'DELETE' });
+    STATE.entries = STATE.entries.filter(e => e.id !== entryId);
+    renderJobDetail();
+    toast('Deleted');
+  } catch (e) {
+    toast('Delete failed: ' + e.message, 'err');
   }
 }
 
