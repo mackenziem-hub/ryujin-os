@@ -286,9 +286,19 @@
       loadOptions('after_agent_run');
       return;
     }
-    if (k === 'compose_message') {
-      // Internal messaging endpoint (built later); for now redirect to mailto fallback
-      window.location.href = `mailto:?subject=${encodeURIComponent('From your ' + PILLAR + ' agent')}&body=${encodeURIComponent(p.body || '')}`;
+    if (k === 'compose_message' && p.to_user) {
+      try {
+        const tok = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token');
+        const r = await fetch('/api/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-tenant-id': TENANT, ...(tok ? { Authorization: 'Bearer ' + tok } : {}) },
+          body: JSON.stringify({ to_user_id: p.to_user, subject: p.subject || `From your ${PILLAR} agent`, body: p.body || '', from_label: p.from_label || `${PILLAR} agent` }),
+        });
+        elContext.textContent = r.ok ? `Message sent.` : `Send failed (${r.status}); falling back to mailto…`;
+        if (!r.ok) window.location.href = `mailto:?subject=${encodeURIComponent('From your ' + PILLAR + ' agent')}&body=${encodeURIComponent(p.body || '')}`;
+      } catch (e) {
+        elContext.textContent = `Send error: ${e.message}`;
+      }
       return;
     }
     elContext.textContent = `(action kind "${k}" not yet wired)`;
