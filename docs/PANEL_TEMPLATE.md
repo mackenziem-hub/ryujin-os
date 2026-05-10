@@ -6,17 +6,52 @@
 
 ## What is a Panel?
 
-A **panel** is a domain-scoped slice of Ryujin OS. The platform-wide single pane is `/admin-overview.html`; each domain gets its own scoped pane:
+A **panel** is a domain-scoped slice of Ryujin OS. The platform-wide single pane is `/admin-overview.html`; each domain gets its own scoped pane.
 
-| Panel | Dashboard | Domain |
+## The 8 Canonical Pillars (locked May 10 2026)
+
+Aligned with ServiceTitan / AccuLynx / Roofr industry standards for service-based contractor businesses. Validated against Plus Ultra's actual team boundaries (Mac/Catherine/Darcy/AJ/Ryan/Diego).
+
+| # | Panel | Dashboard | Domain | Status |
+|---|---|---|---|---|
+| 1 | **HQ / Dashboard** | `/admin-overview.html` | Cross-domain rollup, Morning Briefing, Quest Board | ✅ shipped |
+| 2 | **Marketing** | `/marketing.html` | Brands, posts, ads, leads, campaigns, content calendar | ✅ shipped |
+| 3 | **Sales** | `/sales-portal.html` (→ `/sales.html` panel rebuild pending) | Pipeline, proposals, follow-ups, commissions | ◐ partial |
+| 4 | **Production** | `/production.html` | Workorders, paysheets, jobs, materials, scheduling, tickets, **closeout** (post-prod folds in) | ✅ shipped |
+| 5 | **Service** | `/service.html` (TBD) | Repairs, callbacks, warranty claims, ongoing maintenance — **AJ's domain** | 🆕 |
+| 6 | **Customer / CRM** | `/customer.html` (TBD) | Customer database, history, lifetime value, **referrals**, reviews | 🆕 |
+| 7 | **Finance** | `/finance.html` (TBD) | AR/AP, deposits, supplier payments, cashflow, P&L | 🆕 |
+| 8 | **Admin / Settings** | `/admin.html` | Users, integrations, audit log, tenant settings | ✅ exists |
+
+### Why this set (industry comparison)
+
+| ServiceTitan pillar | Our pillar | Notes |
 |---|---|---|
-| Admin (platform) | `/admin-overview.html` | All-domain rollup |
-| Marketing | `/marketing.html` | Brands, posts, ads, leads, campaigns |
-| Production | `/production.html` | Crew, workorders, paysheets, jobs |
-| Sales | `/sales-portal.html` | Pipeline, commissions, follow-ups |
-| Finance | `/finance.html` (TBD) | AR/AP, deposits, supplier payments |
-| Customer | `/customer.html` (TBD) | Lifecycle, follow-ups, reviews |
-| Ops | `/ops.html` (TBD) | Internal coordination |
+| Marketing | Marketing | Aligned |
+| Sales | Sales | Aligned |
+| Dispatch / Production | Production | + post-prod closeout phase folded in |
+| Service | Service | Separate from Production — recurring revenue, AJ owns it |
+| Customer / CRM | Customer | Aligned — lifetime value + referrals are pillar concerns |
+| Accounting / Finance | Finance | Aligned |
+| Inventory / Materials | (deferred — per-WO computation handles current scale; revisit for white-label v1.1) | |
+| Reports / Analytics | (NOT a panel — admin-overview KPI Scouter + agent briefings cover this) | |
+| Phone / Communications | (NOT a panel — GHL owns this externally) | |
+| Memberships / Recurring | (N/A — replacement roofing is one-time) | |
+| Office / Admin | Admin | Aligned |
+
+### Cross-cutting (NOT panels)
+
+- **Strategy agent** — synthesis layer. Reads cross-domain agent runs, emits weekly rollup into admin-overview. Lives in `lib/agents/strategy_scan.js`. No standalone surface.
+- **Reports** — handled by admin-overview's KPI Scouter, Quest Board, and per-agent KPIs. Don't build a separate Reports panel.
+
+### Where post-production lives
+
+Post-production was originally a 5-page surface (closeout, walkthrough, reviews, warranties, hub). After comparison with ServiceTitan/AccuLynx (which use "Service" for ongoing repair work, NOT for closeout), post-production splits as follows:
+
+- **Walkthrough, closeout, final invoice, warranty filing during the original job** → Production closeout phase (stays in production toolbar)
+- **Reviews** → moves under Customer (`customer-reviews.html`)
+- **Warranty claims (long-term, post-install)** → moves under Service (`service-warranties.html`)
+- **Standalone post-production hub** → eventually deprecated
 
 ---
 
