@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en" data-portal-auth="off">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#060a14">
+<title>Accept Invite · Ryujin OS</title>
+<link rel="icon" href="/favicon.ico">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=optional" rel="stylesheet">
+<style>
+:root{--bg:#060a14;--glass:rgba(20,30,50,0.85);--glass-border:rgba(34,211,238,0.16);--text:#d0daf0;--text-dim:rgba(160,190,230,0.55);--cyan:#22d3ee;--purple:#7c3aed;--red:#f87171;--green:#4ade80;--radius:12px}
+*{margin:0;padding:0;box-sizing:border-box}html,body{height:100%}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/textures/app-bg.png') center/cover fixed no-repeat;color:var(--text);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.card{background:var(--glass);border:1px solid var(--glass-border);border-radius:16px;padding:32px 30px;width:min(440px,100%);position:relative;overflow:hidden}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--cyan) 30%,var(--purple) 70%,transparent)}
+.crumb{font-family:'Share Tech Mono',monospace;font-size:0.7em;color:var(--text-dim);letter-spacing:2px;text-transform:uppercase;margin-bottom:8px}
+h1{font-family:'Orbitron',monospace;font-size:1.4em;font-weight:700;letter-spacing:1px;background:linear-gradient(135deg,#e0e6f0 20%,var(--cyan) 65%,var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px}
+.sub{font-size:0.88em;color:var(--text-dim);margin-bottom:22px;line-height:1.5}
+label{display:block;font-family:'Share Tech Mono',monospace;font-size:0.65em;letter-spacing:1.4px;color:var(--text-dim);text-transform:uppercase;margin-bottom:5px;margin-top:14px}
+input{width:100%;padding:11px 14px;background:rgba(6,10,20,0.5);color:var(--text);border:1px solid var(--glass-border);border-radius:10px;font-family:inherit;font-size:0.95em;outline:none}
+input:focus{border-color:rgba(34,211,238,0.4)}
+.btn{width:100%;padding:12px 16px;font-family:'Orbitron',monospace;font-size:0.78em;letter-spacing:1.6px;text-transform:uppercase;font-weight:700;cursor:pointer;border-radius:12px;background:linear-gradient(135deg,var(--cyan),var(--purple));color:#0a0e1a;border:none;margin-top:16px}
+.btn:disabled{opacity:0.5;cursor:not-allowed}
+.error{color:var(--red);font-size:0.85em;margin-top:12px;padding:8px 12px;background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.25);border-radius:8px;display:none}
+.welcome-pill{display:inline-block;padding:6px 14px;border-radius:14px;background:rgba(34,211,238,0.12);color:var(--cyan);font-family:'Share Tech Mono',monospace;font-size:0.72em;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px;border:1px solid var(--glass-border)}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="crumb">Team Invite</div>
+  <div id="welcome" style="display:none">
+    <span class="welcome-pill" id="welcomePill">—</span>
+    <h1>Welcome to Ryujin OS.</h1>
+    <p class="sub">Set your email + password. Bookmark your portal link after — that's your home.</p>
+
+    <form id="acceptForm">
+      <label for="email">Your email</label>
+      <input id="email" type="email" required maxlength="120" placeholder="you@example.com" />
+      <label for="password">Choose a password</label>
+      <input id="password" type="password" required minlength="8" maxlength="120" placeholder="8+ characters" />
+      <div id="errorBox" class="error"></div>
+      <button class="btn" type="submit" id="submitBtn">Activate my Ryujin</button>
+    </form>
+  </div>
+  <div id="error-state" style="display:none">
+    <h1>Invite invalid.</h1>
+    <p class="sub" id="errMsg">This link is missing, expired, or already used. Ask Mac for a new one.</p>
+  </div>
+  <div id="loading" class="sub">Loading invite…</div>
+</div>
+
+<script>
+const params = new URLSearchParams(location.search);
+const token = params.get('token');
+
+async function init() {
+  if (!token) { showError('No token in URL.'); return; }
+  try {
+    const r = await fetch('/api/accept-invite?token=' + encodeURIComponent(token));
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}));
+      showError(data.error === 'invite_expired' ? 'This invite link has expired. Ask Mac for a fresh one.' : 'Invite not found or already used.');
+      return;
+    }
+    const data = await r.json();
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('welcome').style.display = 'block';
+    document.getElementById('welcomePill').textContent = `${data.role} · ${data.name}`;
+    if (data.email_hint) document.getElementById('email').value = data.email_hint;
+    document.getElementById('email').focus();
+  } catch (e) { showError(e.message); }
+}
+
+function showError(msg) {
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('error-state').style.display = 'block';
+  document.getElementById('errMsg').textContent = msg;
+}
+
+document.getElementById('acceptForm').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const btn = document.getElementById('submitBtn');
+  const errBox = document.getElementById('errorBox');
+  errBox.style.display = 'none';
+  btn.disabled = true; btn.textContent = 'Activating…';
+  const body = {
+    token,
+    email: document.getElementById('email').value.trim(),
+    password: document.getElementById('password').value,
+  };
+  try {
+    const r = await fetch('/api/accept-invite', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await r.json();
+    if (!r.ok) {
+      errBox.textContent = data.error || 'Activation failed';
+      errBox.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Activate my Ryujin';
+      return;
+    }
+    localStorage.setItem('ryujin_token', data.token);
+    localStorage.setItem('ryujin_tenant', 'plus-ultra');
+    location.href = data.redirect_url || '/admin-overview.html';
+  } catch (e) {
+    errBox.textContent = `Network error: ${e.message}`;
+    errBox.style.display = 'block';
+    btn.disabled = false; btn.textContent = 'Activate my Ryujin';
+  }
+});
+
+init();
+</script>
+</body>
+</html>
