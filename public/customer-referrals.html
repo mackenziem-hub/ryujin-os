@@ -85,41 +85,69 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
     <a class="btn primary" href="/customer.html">← Customer</a>
   </div>
 
-  <div class="banner info">
-    <strong>Referral tracking schema:</strong> tag estimates with <code>referred_by:&lt;customer_id&gt;</code> when a new lead names a prior customer. The agent then attributes second-gen sales here. Existing tags (e.g. <code>commission_reason:door_knocked_referral</code>) carry forward.
+  <div class="banner info" id="banner-slot">
+    <strong>How referrals get tracked:</strong> tag an estimate with <code>referred_by:&lt;customer_id&gt;</code> when a new lead names a prior customer. Migration 052 promoted those tags into the canonical <code>referrals</code> table; new tags get pulled in by the next cron run.
   </div>
 
   <div class="stat-row">
     <div class="stat-tile"><div class="num" id="totalRefs">—</div><div class="lbl">Total Referrals</div></div>
-    <div class="stat-tile"><div class="num cyan" id="referredJobs">—</div><div class="lbl">Referred Jobs (12mo)</div></div>
-    <div class="stat-tile"><div class="num green" id="overridePaid">—</div><div class="lbl">5% Override Paid</div></div>
+    <div class="stat-tile"><div class="num cyan" id="earnedRefs">—</div><div class="lbl">Earned (Closed Won)</div></div>
+    <div class="stat-tile"><div class="num green" id="paidOverride">—</div><div class="lbl">5% Override Paid</div></div>
+    <div class="stat-tile"><div class="num" style="color:var(--orange)" id="owedOverride">—</div><div class="lbl">5% Override Owed</div></div>
   </div>
 
-  <div class="section-head"><h2>Referrers</h2><span class="count-pill" id="refCount">—</span></div>
-  <div id="refList"><div class="empty-state"><div class="ico">⌥</div>Referral tracking starts when estimates are tagged <code>referred_by:&lt;customer_id&gt;</code>. None recorded yet — full referral graph + auto-attribution lands in v1.1 with a dedicated <code>referrals</code> table.</div></div>
+  <div class="section-head"><h2>Top Referrers</h2><span class="count-pill" id="refCount">—</span></div>
+  <div id="refList"><div class="empty-state"><div class="ico">⌥</div>Loading referrals…</div></div>
 
 </main>
 
 <script>
 const TENANT = 'plus-ultra';
+function escapeHtml(s) { if (s == null) return ''; return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function fmtMoney(n) { if (n == null || isNaN(n)) return '—'; return '$' + Math.round(n).toLocaleString(); }
+function showBanner(msg) { document.getElementById('banner-slot').innerHTML = `<div class="banner info">${escapeHtml(msg)}</div>`; }
+
 async function load() {
   try {
-    const r = await fetch('/api/estimates?limit=500', { headers: { 'x-tenant-id': TENANT } });
-    if (!r.ok) return;
+    const r = await fetch('/api/referrals?limit=500', { headers: { 'x-tenant-id': TENANT } });
+    if (!r.ok) {
+      const txt = await r.text();
+      if (r.status === 500 && /relation .* does not exist/i.test(txt)) {
+        showBanner('Referrals panel needs migration 052 applied.');
+      } else {
+        showBanner(`Could not load referrals: HTTP ${r.status}`);
+      }
+      document.getElementById('refList').innerHTML = '';
+      return;
+    }
     const data = await r.json();
-    const ests = data.estimates || data.data || [];
-    const referred = ests.filter(e => Array.isArray(e.tags) && e.tags.some(t => typeof t === 'string' && t.startsWith('referred_by:')));
-    document.getElementById('totalRefs').textContent = referred.length;
-    document.getElementById('referredJobs').textContent = referred.filter(e => ['closed_won','signed'].includes(e.state || e.status)).length;
-    const sellingPrice = (e) => {
-      const tier = (e.selected_package || 'gold').toLowerCase();
-      const pkg = e.calculated_packages?.[tier] || {};
-      return pkg.sellingPrice || pkg.total || 0;
-    };
-    const wonValue = referred.filter(e => ['closed_won','signed'].includes(e.state || e.status)).reduce((s, e) => s + sellingPrice(e), 0);
-    document.getElementById('overridePaid').textContent = fmtMoney(wonValue * 0.05);
-  } catch {}
+    const stats = data.stats || {};
+    document.getElementById('totalRefs').textContent = stats.total ?? '—';
+    document.getElementById('earnedRefs').textContent = stats.earned ?? 0;
+    document.getElementById('paidOverride').textContent = fmtMoney(stats.total_paid_value || 0);
+    document.getElementById('owedOverride').textContent = fmtMoney(stats.total_earned_value || 0);
+
+    const byRef = data.by_referrer || [];
+    document.getElementById('refCount').textContent = byRef.length;
+    const list = document.getElementById('refList');
+    if (byRef.length === 0) {
+      list.innerHTML = `<div class="empty-state"><div class="ico">⌥</div>No referrals recorded yet. Tag any estimate with <code>referred_by:&lt;customer_id&gt;</code> and the referrals show up after the next cron pass.</div>`;
+      return;
+    }
+    list.innerHTML = byRef.map(a => `
+      <div class="ref-row">
+        <div>
+          <div class="name">${escapeHtml(a.referrer_name)}</div>
+          <div class="meta">${a.total_referrals} referral${a.total_referrals === 1 ? '' : 's'} · ${a.earned_count} earned · ${a.open_count} open</div>
+        </div>
+        <div class="pay">${fmtMoney(a.earned_value + a.paid_value)}</div>
+        <div class="meta">${fmtMoney(a.paid_value)} paid</div>
+        <div class="stat">${a.paid_count}/${a.total_referrals}</div>
+      </div>
+    `).join('');
+  } catch (e) {
+    showBanner(`Network error: ${e.message}`);
+  }
 }
 load();
 </script>
