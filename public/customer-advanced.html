@@ -56,12 +56,12 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
 
 <main class="main">
   <div class="hq-header">
-    <div class="hq-title"><div class="crumb">Customer · Advanced</div><h1>Advanced</h1><div class="sub">LTV calculator (churn-risk + repeat-job propensity scoring land in v1.1).</div></div>
+    <div class="hq-title"><div class="crumb">Customer · Advanced</div><h1>Advanced</h1><div class="sub">LTV calculator + re-roof churn-risk projection. Repeat-job propensity scoring lands in v1.1.</div></div>
     <a class="btn primary" href="/customer.html">← Back</a>
   </div>
 
   <div class="banner info">
-    <strong>v1 scope:</strong> simple LTV calculator below using current avg deal size + assumed repeat probability + service callback rate. Churn-risk and repeat-propensity scoring lands in v1.1 with deeper customer history.
+    <strong>v1 scope:</strong> LTV calc using current avg deal size + repeat probability + service revenue, plus a re-roof churn-risk projector that buckets your past customers by years-since-last-job. Repeat-job propensity scoring (per-customer likelihood) is v1.1.
   </div>
 
   <div class="section-head"><h2>LTV Calculator</h2></div>
@@ -75,30 +75,79 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
     <div class="sim-arrow">→</div>
     <div class="sim-side"><h3>Projected LTV</h3><div class="v gold" id="projLtv">—</div><div style="font-size:0.7em;color:var(--text-muted);margin-top:2px">per acquired customer</div></div>
   </div>
+
+  <div class="section-head" style="margin-top:24px"><h2>Re-Roof Churn-Risk Projection</h2></div>
+  <div class="banner info" id="churn-banner" style="display:none"></div>
+  <div class="sim-row">
+    <div class="sim-side"><h3>Avg Re-Roof Cycle</h3><input class="sim-input" id="simCycle" type="number" value="18" step="1" min="8" max="30" /><div style="font-size:0.7em;color:var(--text-muted);margin-top:2px">years (asphalt typical 15–25)</div></div>
+    <div class="sim-arrow">→</div>
+    <div class="sim-side"><h3>Past Customers</h3><div class="v cyan" id="totalPast">—</div><div style="font-size:0.7em;color:var(--text-muted);margin-top:2px">all-time closed-won customers</div></div>
+  </div>
+  <div class="sim-row">
+    <div class="sim-side"><h3>Due Soon</h3><div class="v gold" id="dueSoonCount">—</div><div style="font-size:0.7em;color:var(--text-muted);margin-top:2px"><span id="dueSoonRange">cycle ± 2 yrs</span> · prime re-roof window</div></div>
+    <div class="sim-arrow">·</div>
+    <div class="sim-side"><h3>Overdue</h3><div class="v" style="color:var(--red)" id="overdueCount">—</div><div style="font-size:0.7em;color:var(--text-muted);margin-top:2px"><span id="overdueRange">past cycle + 2 yrs</span> · likely already replaced</div></div>
+  </div>
 </main>
 
 <script>
 const TENANT = 'plus-ultra';
 let avgDeal = 0;
+let histogram = {};
 function fmtMoney(n) { if (n == null || isNaN(n)) return '—'; return '$' + Math.round(n).toLocaleString(); }
+
 async function load() {
   try {
     const r = await fetch('/api/customer-state', { headers: { 'x-tenant-id': TENANT } });
-    if (!r.ok) return;
+    if (!r.ok) {
+      const b = document.getElementById('churn-banner');
+      b.style.display = 'flex'; b.textContent = `Could not load customer state: HTTP ${r.status}`;
+      return;
+    }
     const d = await r.json();
     avgDeal = d.stats?.avg_ltv || 0;
+    histogram = d.stats?.customer_age_histogram || {};
     document.getElementById('curDeal').textContent = fmtMoney(avgDeal);
+    document.getElementById('totalPast').textContent = Object.values(histogram).reduce((a,b) => a+b, 0) || 0;
     simulate();
-  } catch {}
+    projectChurn();
+    if (Object.keys(histogram).length === 0) {
+      const b = document.getElementById('churn-banner');
+      b.style.display = 'flex';
+      b.textContent = 'No closed-won customers yet — projection will populate as jobs close.';
+    }
+  } catch (e) {
+    const b = document.getElementById('churn-banner');
+    b.style.display = 'flex'; b.textContent = `Network: ${e.message}`;
+  }
 }
+
 function simulate() {
   const repeatPct = parseFloat(document.getElementById('simRepeat').value) || 0;
   const svc = parseFloat(document.getElementById('simSvc').value) || 0;
   const ltv = avgDeal + (avgDeal * (repeatPct / 100)) + svc;
   document.getElementById('projLtv').textContent = fmtMoney(ltv);
 }
+
+function projectChurn() {
+  const cycle = parseFloat(document.getElementById('simCycle').value) || 18;
+  const lo = Math.max(0, cycle - 2);
+  const hi = cycle + 2;
+  let dueSoon = 0, overdue = 0;
+  for (const [yearsStr, count] of Object.entries(histogram)) {
+    const years = parseInt(yearsStr, 10);
+    if (years >= lo && years <= hi) dueSoon += count;
+    else if (years > hi) overdue += count;
+  }
+  document.getElementById('dueSoonCount').textContent = dueSoon;
+  document.getElementById('overdueCount').textContent = overdue;
+  document.getElementById('dueSoonRange').textContent = `${lo}–${hi} yrs since last job`;
+  document.getElementById('overdueRange').textContent = `${hi + 1}+ yrs since last job`;
+}
+
 document.getElementById('simRepeat').addEventListener('input', simulate);
 document.getElementById('simSvc').addEventListener('input', simulate);
+document.getElementById('simCycle').addEventListener('input', projectChurn);
 load();
 </script>
 </body>

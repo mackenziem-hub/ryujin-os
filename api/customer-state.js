@@ -47,7 +47,10 @@ async function handler(req, res) {
     customers_total: 0, customers_active_12mo: 0,
     avg_ltv: 0, top_customer_value: 0,
     review_asks_pending: 0, signed_no_review: 0,
-    repeat_customers: 0
+    repeat_customers: 0,
+    // Years-since-last-job histogram for churn-risk sim on customer-advanced.html.
+    // Keyed by integer years (0,1,2,...,30). Only counts customers with ≥1 closed_won.
+    customer_age_histogram: {}
   };
 
   // Pull customers + their estimates for LTV calc
@@ -89,6 +92,16 @@ async function handler(req, res) {
       stats.top_customer_value = totals.length > 0 ? Math.max(...totals) : 0;
       stats.repeat_customers = customerValues.filter(c => c.count > 1).length;
       stats.customers_active_12mo = customerValues.filter(c => c.latest && c.latest >= oneYearAgo).length;
+
+      // Build years-since-last-job histogram for churn-risk simulator.
+      // Cap at 30 years to bound payload + match plausible roof-life range.
+      const now = Date.now();
+      for (const c of customerValues) {
+        if (!c.latest) continue;
+        const dtMs = now - new Date(c.latest).getTime();
+        const years = Math.min(30, Math.max(0, Math.floor(dtMs / (365 * 86400000))));
+        stats.customer_age_histogram[years] = (stats.customer_age_histogram[years] || 0) + 1;
+      }
 
       // Signed jobs ≥14d old without a review request → review_asks_pending heuristic
       const fourteenDaysAgo = new Date(Date.now() - 14 * 86400000).toISOString();

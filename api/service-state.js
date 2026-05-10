@@ -19,6 +19,7 @@ async function handler(req, res) {
   const userId = req.query.user_id || null;
   const today = new Date().toISOString().slice(0, 10);
   const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
+  const oneYearAgo = new Date(Date.now() - 365 * 86400000).toISOString();
 
   // ── Briefing items: filter to source_agent='service' if any agent emits there;
   //    otherwise empty (no service-specific agent yet, so this stays empty).
@@ -47,6 +48,7 @@ async function handler(req, res) {
   const stats = {
     tickets_open: 0, tickets_scheduled: 0, tickets_in_progress: 0,
     tickets_complete_30d: 0,
+    tickets_complete_12mo: 0, callbacks_complete_12mo: 0, callback_rate_pct: 0,
     callbacks_open: 0, repairs_open: 0,
     warranty_claims_open: 0, warranty_claims_filed_30d: 0,
     tickets_overdue: 0    // open + scheduled_at in past
@@ -58,7 +60,7 @@ async function handler(req, res) {
       .select('id, ticket_type, status, scheduled_at, completed_at')
       .eq('tenant_id', tenantId)
       .order('reported_at', { ascending: false })
-      .limit(500);
+      .limit(2000);
     if (!ts.error) {
       const now = Date.now();
       for (const t of ts.data || []) {
@@ -73,8 +75,15 @@ async function handler(req, res) {
           stats.tickets_in_progress++;
         } else if (t.status === 'complete') {
           if (t.completed_at && t.completed_at >= thirtyDaysAgo) stats.tickets_complete_30d++;
+          if (t.completed_at && t.completed_at >= oneYearAgo) {
+            stats.tickets_complete_12mo++;
+            if (t.ticket_type === 'callback') stats.callbacks_complete_12mo++;
+          }
         }
       }
+      stats.callback_rate_pct = stats.tickets_complete_12mo > 0
+        ? Math.round((stats.callbacks_complete_12mo / stats.tickets_complete_12mo) * 1000) / 10
+        : 0;
     }
   } catch { /* table missing — soft-fail */ }
 
