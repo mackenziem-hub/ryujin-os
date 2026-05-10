@@ -21,16 +21,22 @@
   const TENANT = window.__RYUJIN_TENANT__ || document.documentElement.dataset.tenant || 'plus-ultra';
   const PILLAR_FROM_URL = (() => {
     const path = window.location.pathname;
-    const m = path.match(/^\/([a-z]+)\.html$/);
+    const m = path.match(/^\/([a-z\-]+)\.html$/);
     if (!m) return null;
     const head = m[1];
     if (['sales','marketing','service','customer','finance','production'].includes(head)) return head;
-    if (head === 'admin-overview') return 'hq';
+    if (head === 'admin-overview' || head === 'portal') return 'hq';
     return null;
   })();
 
-  const PILLAR = window.__RYUJIN_PILLAR__ || PILLAR_FROM_URL;
-  if (!PILLAR) return;  // shell only renders on pillar pages
+  // Pillar resolution order:
+  //   1. window.__RYUJIN_PILLAR__   (set by page-level inline script)
+  //   2. <html data-pillar="…">     (set declaratively in markup)
+  //   3. URL-derived (/sales.html → 'sales', /portal.html → 'hq')
+  const PILLAR = window.__RYUJIN_PILLAR__
+    || (document.documentElement.dataset.pillar || '').toLowerCase()
+    || PILLAR_FROM_URL;
+  if (!PILLAR) return;  // shell only renders where a pillar is resolvable
 
   const conversation = [];   // [{ role, content }]
   let archetype = null;
@@ -47,7 +53,9 @@
         font-family: 'Inter', system-ui, sans-serif;
       }
       html[data-mode="agent"] .ry-agent-shell { display: flex; }
-      html[data-mode="agent"] main, html[data-mode="agent"] .main { display: none; }
+      html[data-mode="agent"] main,
+      html[data-mode="agent"] .main,
+      html[data-mode="agent"] .wrap { display: none; }
       .ry-agent-stage {
         flex: 1; display: flex; flex-direction: column;
         max-width: 920px; margin: 0 auto;
@@ -153,6 +161,30 @@
         color: rgba(160, 190, 230, 0.5); padding: 6px 10px;
       }
       .ry-agent-thinking::after { content: '...'; animation: ry-dots 1.2s infinite; }
+      .ry-agent-header {
+        position: absolute; top: 14px; left: 18px; right: 18px;
+        display: flex; justify-content: space-between; align-items: center;
+        gap: 10px; font-family: 'Share Tech Mono', monospace;
+        font-size: 0.62em; letter-spacing: 1.6px; text-transform: uppercase;
+        color: rgba(160, 190, 230, 0.55);
+        pointer-events: none;
+      }
+      .ry-agent-header > * { pointer-events: auto; }
+      .ry-agent-header-link {
+        background: transparent; border: 1px solid rgba(34, 211, 238, 0.16);
+        color: inherit; font-family: inherit; font-size: inherit;
+        letter-spacing: inherit; text-transform: inherit;
+        padding: 6px 10px; border-radius: 12px; cursor: pointer;
+      }
+      .ry-agent-header-link:hover { color: #22d3ee; border-color: rgba(34, 211, 238, 0.4); }
+      .ry-agent-close {
+        width: 32px; height: 32px; border-radius: 50%;
+        background: rgba(20, 30, 50, 0.85);
+        border: 1px solid rgba(34, 211, 238, 0.25);
+        color: rgba(208, 218, 240, 0.75);
+        cursor: pointer; font-size: 1.1em; line-height: 1; font-family: inherit;
+      }
+      .ry-agent-close:hover { color: #f87171; border-color: rgba(248, 113, 113, 0.4); }
       @keyframes ry-dots { 0%{content:'.'} 33%{content:'..'} 66%{content:'...'} }
       @media (max-width: 540px) {
         .ry-agent-stage { padding: 60px 12px 12px; }
@@ -174,6 +206,10 @@
     elShell.className = 'ry-agent-shell';
     elShell.innerHTML = `
       <div class="ry-agent-stage">
+        <div class="ry-agent-header">
+          <button type="button" class="ry-agent-header-link" id="ry-agent-suppress">Don't auto-show today</button>
+          <button type="button" class="ry-agent-close" id="ry-agent-close" aria-label="Close agent">✕</button>
+        </div>
         <div class="ry-agent-avatar" id="ry-agent-avatar">
           <div class="ry-agent-avatar-fallback">${PILLAR}</div>
         </div>
@@ -201,6 +237,23 @@
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend(); }
     });
     elVoiceBtn.addEventListener('click', toggleVoice);
+    document.getElementById('ry-agent-close').addEventListener('click', closeShell);
+    document.getElementById('ry-agent-suppress').addEventListener('click', () => {
+      if (window.RyujinMode?.suppressAutoLaunch) window.RyujinMode.suppressAutoLaunch();
+      closeShell();
+    });
+  }
+
+  function closeShell() {
+    // Flip mode away from 'agent' so the CSS-hidden <main> reappears. We pick
+    // 'interactive' because non-admins always have that available; admins can
+    // re-toggle 'advanced' via the corner switcher if they prefer.
+    if (window.RyujinMode?.set) {
+      const target = window.RyujinMode.available?.().includes('interactive') ? 'interactive' : 'advanced';
+      window.RyujinMode.set(target);
+    } else {
+      document.documentElement.dataset.mode = 'interactive';
+    }
   }
 
   function setArchetypeStyling(arch) {
@@ -468,6 +521,13 @@
     injectStyles();
     buildShell();
     document.addEventListener('ryujin:mode-change', onModeChange);
+    // mode-switcher.js fires this on mobile first-visits so we boot the
+    // greeting + focus the input even if a `ryujin:mode-change` event
+    // didn't fire (e.g. mode was already 'agent' from prior session).
+    document.addEventListener('ryujin:auto-launch-agent', () => {
+      maybeBoot();
+      setTimeout(() => elInput?.focus(), 50);
+    });
     onModeChange();
   }
 

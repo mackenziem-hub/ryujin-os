@@ -5,6 +5,26 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#060a14">
 <title>Overview · Ryujin OS</title>
+<script>
+  // Derive the archetype pillar from ?user_id= so the agent shell loads
+  // the right avatar + persona prompt for this teammate's primary domain.
+  //   mac / catherine → hq        (Sage — cross-pillar overview)
+  //   melodie         → finance   (Ruler — AP Manager)
+  //   aj              → service   (Caregiver)
+  //   darcy           → sales     (Hero)
+  //   diego/pavanjot  → production (Sovereign)
+  (function () {
+    const u = (new URLSearchParams(location.search).get('user_id') || '').toLowerCase();
+    const pillar = ({
+      mac: 'hq', mackenzie: 'hq', catherine: 'hq',
+      melodie: 'finance',
+      aj: 'service',
+      darcy: 'sales',
+      diego: 'production', pavanjot: 'production',
+    })[u] || 'hq';
+    document.documentElement.dataset.pillar = pillar;
+  })();
+</script>
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" type="image/png" href="/assets/logo/icon.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -319,6 +339,8 @@ body{
 <script src="/assets/portal-auth-client.js"></script>
 <script src="/assets/entitlements-client.js" defer></script>
 <script src="/assets/mode-switcher.js" defer></script>
+<script src="/assets/agent-mode-shell.js" defer></script>
+<script src="/assets/interactive-mode-shell.js" defer></script>
 <script src="/assets/labels-client.js" defer></script>
 </head>
 <body>
@@ -330,14 +352,11 @@ body{
     <a href="/admin-overview.html" class="nav-icon active" title="Overview">
       <svg viewBox="0 0 24 24"><path d="M3 12l9-9 9 9M5 10v10h14V10"/></svg>
     </a>
-    <a href="/admin-quests.html" class="nav-icon" title="Quests">
+    <a href="/admin-quests.html" class="nav-icon" title="Tasks">
       <svg viewBox="0 0 24 24"><path d="M9 12l2 2 4-4M21 12c0 5-4 9-9 9s-9-4-9-9 4-9 9-9c2 0 4 1 5 2"/></svg>
     </a>
     <a href="/admin-agents.html" class="nav-icon" title="Agents">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0116 0v2"/></svg>
-    </a>
-    <a href="/admin-power.html" class="nav-icon" title="Power Level">
-      <svg viewBox="0 0 24 24"><path d="M13 2L3 14h7l-1 8 10-12h-7z"/></svg>
     </a>
     <a href="/admin-system.html" class="nav-icon" title="System Config">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
@@ -361,26 +380,6 @@ body{
 
   <div id="banner-slot"></div>
 
-  <!-- Power Level Strip -->
-  <div class="power-strip" id="powerStrip">
-    <div class="power-level">
-      <div class="lvl-num" id="lvlNum">—</div>
-      <div>
-        <div class="lvl-label">Power Level</div>
-        <div style="font-size:0.7em;color:var(--text-dim);font-family:'Share Tech Mono',monospace;letter-spacing:1.5px" id="lvlSubLabel">— XP</div>
-      </div>
-    </div>
-    <div class="xp-bar-wrap">
-      <div class="xp-bar-meta"><span id="xpCurr">—</span><span id="xpNext">—</span></div>
-      <div class="xp-bar"><div class="xp-bar-fill" id="xpBarFill" style="width:0%"></div></div>
-    </div>
-    <div class="dragon-challenge">
-      <div class="dc-label">Dragon's Challenge</div>
-      <div class="dc-progress" id="dcProgress">— / 15</div>
-      <div style="font-size:0.65em;color:var(--text-dim);font-family:'Share Tech Mono',monospace;letter-spacing:1px">+500 XP at 15</div>
-    </div>
-  </div>
-
   <!-- Morning Briefing -->
   <div class="section-head" style="background:url('/assets/images/briefing-hero.png') right center/auto 100% no-repeat;background-blend-mode:overlay;border-radius:14px;padding:18px 22px;margin-bottom:10px;border:1px solid var(--glass-border);min-height:88px">
     <h2>Morning Briefing</h2>
@@ -392,24 +391,18 @@ body{
     <div class="skeleton"></div>
   </div>
 
-  <!-- Quest Board -->
+  <!-- Tasks -->
   <div class="section-head">
-    <h2>Quest Board</h2>
+    <h2>Tasks</h2>
     <span class="count-pill" id="questCount">—</span>
-  </div>
-  <div class="quest-counts-row" id="questCounts">
-    <div class="qc-tile urgent"><div class="num" id="qcUrgent">—</div><div class="lbl">Urgent</div></div>
-    <div class="qc-tile daily"><div class="num" id="qcDaily">—</div><div class="lbl">Daily</div></div>
-    <div class="qc-tile campaign"><div class="num" id="qcCampaign">—</div><div class="lbl">Campaign</div></div>
-    <div class="qc-tile optional"><div class="num" id="qcOptional">—</div><div class="lbl">Optional</div></div>
   </div>
   <div class="quest-list" id="questList">
     <div class="skeleton"></div>
   </div>
 
-  <!-- KPI Scouter -->
+  <!-- KPIs -->
   <div class="section-head" style="margin-top:24px">
-    <h2>KPI Scouter</h2>
+    <h2>KPIs</h2>
     <span class="count-pill" id="kpiCount">—</span>
   </div>
   <div class="kpi-grid" id="kpiGrid">
@@ -489,16 +482,11 @@ function renderPower(state) {
   const xpNeeded  = Math.max(1, xpForLevel(lvl + 1) - xpForLevel(lvl));
   const pct = Math.min(100, Math.round((xpThisLvl / xpNeeded) * 100));
 
-  document.getElementById('lvlNum').textContent = state.user ? lvl : '—';
-  document.getElementById('lvlSubLabel').textContent = state.user ? `${levelLabel(lvl).toUpperCase()} · ${xp} XP` : 'No user selected';
-  document.getElementById('xpCurr').textContent = state.user ? `${xpThisLvl} / ${xpNeeded} XP` : '—';
-  document.getElementById('xpNext').textContent = state.user ? `LVL ${lvl + 1}` : '—';
-  document.getElementById('xpBarFill').style.width = state.user ? `${pct}%` : '0%';
-
-  const dc = state.dragonChallenge || {};
-  const dcEl = document.getElementById('dcProgress');
-  if (dc.achieved) dcEl.innerHTML = `<span class="achieved">${dc.completedThisWeek} / ${dc.target} ✓</span>`;
-  else dcEl.textContent = `${dc.completedThisWeek || 0} / ${dc.target || 15}`;
+  // Gamification UI (power level / XP bar / dragon challenge) was retired
+  // in the mobile-simplification pass. State fields still flow from /api/state
+  // but no longer render. lvl/xp/pct kept above so we don't break the API
+  // contract if a future refactor wants to re-enable.
+  void lvl; void xp; void xpThisLvl; void xpNeeded; void pct;
 }
 
 function renderBriefing(items) {
@@ -524,10 +512,8 @@ function renderBriefing(items) {
 }
 
 function renderQuestCounts(c) {
-  document.getElementById('qcUrgent').textContent    = c.urgent ?? 0;
-  document.getElementById('qcDaily').textContent     = c.daily ?? 0;
-  document.getElementById('qcCampaign').textContent  = c.campaign ?? 0;
-  document.getElementById('qcOptional').textContent  = c.optional ?? 0;
+  // Only the open-count pill remains; category-split tiles (urgent/daily/
+  // campaign/optional) were retired in the mobile-simplification pass.
   document.getElementById('questCount').textContent  = c.open ?? 0;
 }
 
@@ -536,8 +522,8 @@ function renderQuests(quests) {
   if (quests.length === 0) {
     list.innerHTML = `
       <div class="empty-state">
-        <div class="ico">⚔</div>
-        No active quests. Agents emit quests on each daily run; you can also create one manually from the Quest Board page.
+        <div class="ico">◇</div>
+        No tasks right now. Agents emit tasks on each daily run; you can also add one manually.
       </div>`;
     return;
   }
@@ -555,7 +541,6 @@ function renderQuests(quests) {
         <div class="quest-title">${escapeHtml(q.title)}</div>
         ${q.description ? `<div class="quest-desc">${escapeHtml(q.description)}</div>` : ''}
       </div>
-      <div class="quest-xp">+${q.xp_reward} XP</div>
     </div>`).join('');
 
   list.querySelectorAll('.quest-check').forEach(el => {

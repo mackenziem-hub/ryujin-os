@@ -22,17 +22,26 @@
   const NON_ADMIN_MODES = ['agent', 'interactive'];
   const ADMIN_ROLES = new Set(['owner', 'admin']);
   const STORAGE_KEY = 'ryujin_mode';
+  const SUPPRESS_KEY = 'ryujin_agent_suppress';  // sessionStorage flag — set by the "don't auto-show today" toggle
   const TENANT = window.__RYUJIN_TENANT__ || document.documentElement.dataset.tenant || 'plus-ultra';
+
+  // Mobile phones default to the agent overlay on first visit. The shell
+  // listens for `ryujin:auto-launch-agent` and opens itself.
+  function isMobile() {
+    return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || '') && !window.matchMedia('(min-width: 1024px)').matches;
+  }
 
   let lockedMode = null;        // set when entitlements force a mode
   let availableModes = NON_ADMIN_MODES.slice();  // tightened by default; widened to all for admins
-  let currentMode = 'interactive';
+  let currentMode = isMobile() ? 'agent' : 'interactive';
 
   function readMode() {
     if (lockedMode) return lockedMode;
     const stored = (localStorage.getItem(STORAGE_KEY) || '').toLowerCase();
     if (availableModes.includes(stored)) return stored;
-    return availableModes[availableModes.length - 1]; // default to last (interactive for non-admin, advanced for admin)
+    // Mobile fresh-visit → agent; desktop → interactive (or advanced once admin role widens availableModes).
+    if (isMobile() && availableModes.includes('agent')) return 'agent';
+    return availableModes[availableModes.length - 1];
   }
 
   function writeMode(mode) {
@@ -175,6 +184,15 @@
     } catch { /* fail-open: no lock applied */ }
   }
 
+  function maybeAutoLaunchAgent() {
+    // Mobile + agent mode + not suppressed for this session → tell the
+    // agent-mode-shell to open its overlay immediately.
+    if (!isMobile()) return;
+    if (currentMode !== 'agent') return;
+    try { if (sessionStorage.getItem(SUPPRESS_KEY) === '1') return; } catch { /* ignore */ }
+    document.dispatchEvent(new CustomEvent('ryujin:auto-launch-agent', { detail: { source: 'mode-switcher-init' } }));
+  }
+
   function init() {
     injectStyles();
     currentMode = readMode();
@@ -190,7 +208,12 @@
       available: () => availableModes.slice(),
       isLocked: () => !!lockedMode,
       lockedTo: () => lockedMode,
+      isMobile,
+      suppressAutoLaunch: () => { try { sessionStorage.setItem(SUPPRESS_KEY, '1'); } catch {} },
+      clearSuppress: () => { try { sessionStorage.removeItem(SUPPRESS_KEY); } catch {} },
     };
+    // Fire after the shell has had a chance to register its listener.
+    setTimeout(maybeAutoLaunchAgent, 0);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
