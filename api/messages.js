@@ -90,14 +90,32 @@ async function handler(req, res) {
 
   if (req.method === 'POST') {
     const body = req.body || {};
-    if (!body.to_user_id) return res.status(400).json({ error: 'to_user_id required' });
+    // Accept both single recipient (to_user_id) and multi-recipient (to_user_ids array).
+    // Multi-recipient creates N rows sharing a single thread_id so the conversation
+    // is one continuous thread visible to every participant.
+    let recipients = [];
+    if (Array.isArray(body.to_user_ids) && body.to_user_ids.length) {
+      recipients = body.to_user_ids.filter(Boolean);
+    } else if (body.to_user_id) {
+      recipients = [body.to_user_id];
+    } else {
+      return res.status(400).json({ error: 'to_user_id or to_user_ids required' });
+    }
     if (!body.body) return res.status(400).json({ error: 'body required' });
 
-    const insert = {
+    // If reply_to is set, inherit its thread_id; else generate a new one
+    // shared across all recipients.
+    let sharedThreadId = body.thread_id || null;
+    if (body.reply_to && !sharedThreadId) {
+      const { data: parent } = await supabaseAdmin
+        .from('messages').select('thread_id').eq('id', body.reply_to).eq('tenant_id', tenantId).maybeSingle();
+      if (parent?.thread_id) sharedThreadId = parent.thread_id;
+    }
+
+    const baseRow = {
       tenant_id: tenantId,
       from_user_id: me?.id || null,
       from_label: body.from_label || (me?.name || null),
-      to_user_id: body.to_user_id,
       subject: body.subject || null,
       body: body.body,
       reply_to: body.reply_to || null,
@@ -105,13 +123,22 @@ async function handler(req, res) {
       ref_customer_id: body.ref_customer_id || null,
       ref_service_ticket: body.ref_service_ticket || null,
       ref_workorder_id: body.ref_workorder_id || null,
-      metadata: body.metadata || {},
+      metadata: { ...(body.metadata || {}), participant_count: recipients.length },
     };
+    if (sharedThreadId) baseRow.thread_id = sharedThreadId;
 
+    const inserts = recipients.map(uid => ({ ...baseRow, to_user_id: uid }));
     const { data, error } = await supabaseAdmin
-      .from('messages').insert(insert).select('*').single();
+      .from('messages').insert(inserts).select('*');
     if (error) return res.status(500).json({ error: error.message });
-    return res.status(201).json({ message: data });
+
+    // Return all rows + a thread_id so the client can pivot to thread-view immediately.
+    const threadId = data[0]?.thread_id || sharedThreadId;
+    return res.status(201).json({
+      messages: data,
+      thread_id: threadId,
+      recipient_count: data.length,
+    });
   }
 
   if (req.method === 'PATCH') {
