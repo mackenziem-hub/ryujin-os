@@ -45,7 +45,14 @@ const KPI_MAPS = {
     'stats.totalTickets':         { key: 'ops.tickets_total',          label: 'Crew Tickets',              unit: 'count', sort_order: 30 },
     'stats.overdueCount':         { key: 'ops.tickets_overdue',        label: 'Overdue Tickets',           unit: 'count', sort_order: 31 }
   },
-  finance: {},
+  finance: {
+    'cashflow.last90Days.totalCollected':   { key: 'finance.collected_90d',     label: 'Collected (90d)',      unit: '$',     sort_order: 50 },
+    'cashflow.last90Days.totalOutstanding': { key: 'finance.outstanding',       label: 'Outstanding',          unit: '$',     sort_order: 51 },
+    'cashflow.last90Days.totalContract':    { key: 'finance.signed_90d',        label: 'Signed (90d)',         unit: '$',     sort_order: 52 },
+    'cashflow.last7Days.collected':         { key: 'finance.collected_7d',      label: 'Collected (7d)',       unit: '$',     sort_order: 53 },
+    'cashflow.last90Days.paymentsMatched':  { key: 'finance.payments_matched',  label: 'Payments Matched',     unit: 'count', sort_order: 54 },
+    'cashflow.last90Days.paymentsReceived': { key: 'finance.payments_received', label: 'Payments Received',    unit: 'count', sort_order: 55 }
+  },
   customer: {
     'stats.estimatesScanned':     { key: 'customer.estimates_scanned', label: 'Estimates Scanned',         unit: 'count', sort_order: 40 },
     'stats.followUpGaps':         { key: 'customer.followup_gaps',     label: 'Follow-up Gaps',            unit: 'count', sort_order: 41 },

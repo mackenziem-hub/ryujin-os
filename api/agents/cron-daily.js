@@ -52,7 +52,12 @@ const KPI_MAPS = {
     'stats.activeToday':          { key: 'ops.tickets_active_today',   label: 'Active Tickets Today',      unit: 'count', sort_order: 32 }
   },
   finance: {
-    // shape varies — fill in once cashflow report shape is confirmed
+    'cashflow.last90Days.totalCollected':   { key: 'finance.collected_90d',     label: 'Collected (90d)',      unit: '$',     sort_order: 50 },
+    'cashflow.last90Days.totalOutstanding': { key: 'finance.outstanding',       label: 'Outstanding',          unit: '$',     sort_order: 51 },
+    'cashflow.last90Days.totalContract':    { key: 'finance.signed_90d',        label: 'Signed (90d)',         unit: '$',     sort_order: 52 },
+    'cashflow.last7Days.collected':         { key: 'finance.collected_7d',      label: 'Collected (7d)',       unit: '$',     sort_order: 53 },
+    'cashflow.last90Days.paymentsMatched':  { key: 'finance.payments_matched',  label: 'Payments Matched',     unit: 'count', sort_order: 54 },
+    'cashflow.last90Days.paymentsReceived': { key: 'finance.payments_received', label: 'Payments Received',    unit: 'count', sort_order: 55 }
   },
   customer: {
     'stats.estimatesScanned':     { key: 'customer.estimates_scanned', label: 'Estimates Scanned',         unit: 'count', sort_order: 40 },

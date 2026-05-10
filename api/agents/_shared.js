@@ -515,7 +515,7 @@ export async function runBulma() {
       topPerformers: meta.topPerformers?.slice(0, 3),
       exportDate: meta.exportDate
     };
-    report.findings.push(`Meta Ads: $${meta.totalSpend} total spend, ${meta.totalMessagingLeads} leads across ${meta.totalCampaigns} campaigns`);
+    report.findings.push(`Meta Ads: $${meta.totalSpend ?? 0} total spend, ${meta.totalMessagingLeads ?? meta.totalAllLeads ?? 0} leads across ${meta.totalCampaigns ?? 0} campaigns`);
 
     const alerts = (meta.activeCampaigns || []).filter(c => c.alert);
     if (alerts.length > 0) {
