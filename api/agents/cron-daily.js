@@ -49,7 +49,12 @@ const KPI_MAPS = {
   ops: {
     'stats.totalTickets':         { key: 'ops.tickets_total',          label: 'Crew Tickets',              unit: 'count', sort_order: 30 },
     'stats.overdueCount':         { key: 'ops.tickets_overdue',        label: 'Overdue Tickets',           unit: 'count', sort_order: 31 },
-    'stats.activeToday':          { key: 'ops.tickets_active_today',   label: 'Active Tickets Today',      unit: 'count', sort_order: 32 }
+    'stats.activeToday':          { key: 'ops.tickets_active_today',   label: 'Active Today',              unit: 'count', sort_order: 32 },
+    // Workload imbalance metric — Piccolo computes max-min crew load delta
+    'stats.workloadImbalance':    { key: 'ops.workload_imbalance',     label: 'Workload Imbalance',        unit: 'count', sort_order: 33 },
+    // Workorder + paysheet domain metrics — populate once Piccolo is extended
+    'stats.workordersOpen':       { key: 'ops.workorders_open',        label: 'Workorders Open',           unit: 'count', sort_order: 34 },
+    'stats.paysheetsApproval':    { key: 'ops.paysheets_pending',      label: 'Paysheet Approvals',        unit: 'count', sort_order: 35 }
   },
   finance: {
     'cashflow.last90Days.totalCollected':   { key: 'finance.collected_90d',     label: 'Collected (90d)',      unit: '$',     sort_order: 50 },
