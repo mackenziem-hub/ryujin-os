@@ -65,6 +65,10 @@ async function handler(req, res) {
   }
 
   // Briefing: today's items, optionally user-filtered (null for_user_id = all-hands)
+  // and optionally narrowed to a single source_agent (so the Service portal
+  // doesn't render Sales/Marketing items, the Sales portal doesn't render
+  // Service items, etc.).
+  const sourceAgent = (req.query.source_agent || '').toString().toLowerCase().trim() || null;
   let briefingQ = supabaseAdmin
     .from('briefing_items')
     .select('*')
@@ -74,6 +78,7 @@ async function handler(req, res) {
     .order('priority', { ascending: true })   // urgent < high < normal alphabetically — close enough; UI can resort
     .order('created_at', { ascending: false })
     .limit(50);
+  if (sourceAgent) briefingQ = briefingQ.eq('source_agent', sourceAgent);
   if (userId) briefingQ = briefingQ.or(`for_user_id.eq.${userId},for_user_id.is.null`);
   const briefing = await briefingQ;
 
