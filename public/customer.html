@@ -56,8 +56,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
 .banner{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius);font-size:0.8em;margin-bottom:14px;line-height:1.4}
 .banner.warn{background:rgba(251,146,60,0.08);border:1px solid rgba(251,146,60,0.25);color:var(--orange)}
 
-.briefing-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px}
-.brief-card{background:var(--glass);border:1px solid var(--glass-border);border-radius:var(--radius);padding:12px 14px;position:relative;overflow:hidden}
+.briefing-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));gap:10px}
+.brief-card{background:var(--glass);border:1px solid var(--glass-border);border-radius:var(--radius);padding:12px 14px;position:relative;overflow:hidden;min-width:0;overflow-wrap:anywhere}
 .brief-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--cyan) 25%,var(--purple) 75%,transparent);opacity:0.6}
 .brief-card.urgent::before{background:linear-gradient(90deg,transparent,var(--red) 25%,var(--orange) 75%,transparent);opacity:0.85}
 .brief-card.high::before{background:linear-gradient(90deg,transparent,var(--orange) 25%,var(--yellow) 75%,transparent);opacity:0.7}
@@ -174,9 +174,17 @@ function renderStats(s) {
 
 function renderBriefing(items) {
   const area = document.getElementById('briefingArea');
-  document.getElementById('briefCount').textContent = items.length;
-  if (items.length === 0) { area.innerHTML = `<div class="empty-state"><div class="ico">◇</div>No customer briefing yet today. Customer agent runs at 10:45 UTC daily.</div>`; return; }
-  area.innerHTML = `<div class="briefing-grid">${items.map(b => `<div class="brief-card ${b.priority || 'normal'}"><div class="brief-meta"><span class="brief-prio ${b.priority || 'normal'}">${(b.priority || 'normal').toUpperCase()}</span><span class="brief-source">customer agent</span></div><div class="brief-title">${escapeHtml(b.title)}</div>${b.body ? `<div class="brief-body">${escapeHtml(b.body)}</div>` : ''}</div>`).join('')}</div>`;
+  // Dedupe by (priority + title + body) — repeated agent runs can emit the
+  // same briefing twice; single canonical card per unique message reads cleaner.
+  const seen = new Set();
+  const unique = items.filter(b => {
+    const key = `${b.priority || 'normal'}|${b.title || ''}|${b.body || ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key); return true;
+  });
+  document.getElementById('briefCount').textContent = unique.length;
+  if (unique.length === 0) { area.innerHTML = `<div class="empty-state"><div class="ico">◇</div>No customer briefing yet today. Customer agent runs at 10:45 UTC daily.</div>`; return; }
+  area.innerHTML = `<div class="briefing-grid">${unique.map(b => `<div class="brief-card ${b.priority || 'normal'}"><div class="brief-meta"><span class="brief-prio ${b.priority || 'normal'}">${(b.priority || 'normal').toUpperCase()}</span><span class="brief-source">customer agent</span></div><div class="brief-title">${escapeHtml(b.title)}</div>${b.body ? `<div class="brief-body">${escapeHtml(b.body)}</div>` : ''}</div>`).join('')}</div>`;
 }
 
 function renderKpis(kpis) {
