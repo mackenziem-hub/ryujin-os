@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#060a14">
+<title>Call Log · Ryujin OS</title>
+<link rel="icon" href="/favicon.ico">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=optional" rel="stylesheet">
+<script src="/assets/portal-auth-client.js"></script>
+<style>
+:root{--bg:#060a14;--glass:rgba(20,30,50,0.85);--glass-border:rgba(34,211,238,0.16);--text:#d0daf0;--text-dim:rgba(160,190,230,0.55);--text-muted:rgba(140,170,220,0.30);--cyan:#22d3ee;--purple:#7c3aed;--green:#4ade80;--gold:#fbbf24;--red:#f87171;--orange:#fb923c;--radius:12px}
+*{margin:0;padding:0;box-sizing:border-box}html,body{height:100%}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/textures/app-bg.png') center/cover fixed no-repeat;color:var(--text);min-height:100vh;padding:32px 22px 60px}
+.wrap{max-width:980px;margin:0 auto}
+.crumb{font-family:'Share Tech Mono',monospace;font-size:0.72em;color:var(--text-dim);letter-spacing:2px;text-transform:uppercase;margin-bottom:6px}
+h1{font-family:'Orbitron',monospace;font-size:1.7em;font-weight:700;letter-spacing:1px;background:linear-gradient(135deg,#e0e6f0 20%,var(--cyan) 65%,var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px}
+.sub{font-size:0.92em;color:var(--text-dim);max-width:680px;line-height:1.5;margin-bottom:24px}
+.dial-row{background:var(--glass);border:1px solid var(--glass-border);border-radius:var(--radius);padding:14px 16px;margin-bottom:18px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.dial-row input{flex:1;min-width:200px;padding:10px 14px;background:rgba(6,10,20,0.5);color:var(--text);border:1px solid var(--glass-border);border-radius:10px;font-family:inherit;font-size:0.95em;outline:none}
+.dial-row input:focus{border-color:rgba(34,211,238,0.4)}
+.btn{padding:10px 18px;font-family:'Orbitron',monospace;font-size:0.7em;letter-spacing:1.6px;text-transform:uppercase;font-weight:700;cursor:pointer;border-radius:12px;background:linear-gradient(135deg,var(--cyan),var(--purple));color:#0a0e1a;border:none}
+.btn:disabled{opacity:0.5;cursor:not-allowed}
+.call-row{background:var(--glass);border:1px solid var(--glass-border);border-radius:var(--radius);padding:12px 16px;margin-bottom:8px;display:grid;grid-template-columns:auto 1fr auto;gap:14px;align-items:center}
+.call-row .ico{font-size:1.3em}
+.call-row .ico.in{color:var(--green)}
+.call-row .ico.out{color:var(--cyan)}
+.call-row .ico.miss{color:var(--red)}
+.call-row .body{min-width:0}
+.call-row .who{font-size:0.95em;color:var(--text);font-weight:600;margin-bottom:2px}
+.call-row .meta{font-family:'Share Tech Mono',monospace;font-size:0.7em;letter-spacing:1px;color:var(--text-dim)}
+.call-row .transcript{font-size:0.78em;color:var(--text-dim);line-height:1.4;margin-top:6px;padding:8px 10px;background:rgba(6,10,20,0.4);border-left:2px solid var(--cyan);border-radius:4px;overflow-wrap:anywhere}
+.call-row audio{width:240px;max-width:100%}
+.call-row .when{font-family:'Share Tech Mono',monospace;font-size:0.7em;color:var(--text-muted)}
+.empty-state{text-align:center;padding:40px 16px;color:var(--text-dim);border:1px dashed var(--glass-border);border-radius:var(--radius)}
+.empty-state .ico{font-size:1.8em;margin-bottom:8px;opacity:0.5}
+.banner{background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.25);color:var(--gold);padding:10px 14px;border-radius:10px;font-size:0.85em;margin-bottom:18px;line-height:1.5}
+.foot{margin-top:18px;font-size:0.78em;color:var(--text-dim);text-align:center}
+.foot a{color:var(--cyan);text-decoration:none}
+@media(max-width:540px){body{padding:20px 14px}.call-row{grid-template-columns:auto 1fr;gap:8px}.call-row .when{grid-column:1/-1;text-align:left}.call-row audio{width:100%}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="crumb">Call Log · Last 14 days</div>
+  <h1>Calls.</h1>
+  <p class="sub">Every Twilio-routed call you made or answered, with the recording + transcript inline. Searchable, permanent, no more "you said X / no I said Y."</p>
+
+  <div id="banner-slot"></div>
+
+  <div class="dial-row">
+    <input id="dialInput" type="tel" placeholder="+1 506 555 1234 — call any number" />
+    <button class="btn" id="dialBtn">📞 Call</button>
+  </div>
+
+  <div id="callList"><div class="empty-state"><div class="ico">⌛</div>Loading…</div></div>
+
+  <p class="foot">Calls older than 14 days stay in the customer's record under <a href="/messages.html">Messages</a>. The agent auto-attaches every call recording to the right customer when caller ID matches.</p>
+</div>
+
+<script>
+const TENANT = 'plus-ultra';
+function escapeHtml(s) { if (s == null) return ''; return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fmtDur(sec) { if (!sec) return '—'; const m = Math.floor(sec/60); const s = sec%60; return `${m}:${String(s).padStart(2,'0')}`; }
+function fmtRel(iso) { if (!iso) return ''; const dt = Date.now() - new Date(iso).getTime(); if (dt < 60000) return 'just now'; if (dt < 3600000) return Math.floor(dt/60000) + 'm ago'; if (dt < 86400000) return Math.floor(dt/3600000) + 'h ago'; if (dt < 604800000) return Math.floor(dt/86400000) + 'd ago'; return new Date(iso).toLocaleDateString(); }
+
+function authHeaders() {
+  const h = { 'x-tenant-id': TENANT };
+  const tok = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token');
+  if (tok) h['Authorization'] = 'Bearer ' + tok;
+  return h;
+}
+
+function showBanner(msg) {
+  document.getElementById('banner-slot').innerHTML = `<div class="banner">${escapeHtml(msg)}</div>`;
+}
+
+async function loadCalls() {
+  const root = document.getElementById('callList');
+  const r = await fetch('/api/calls?since_days=14&limit=200', { headers: authHeaders() });
+  if (!r.ok) {
+    root.innerHTML = `<div class="empty-state"><div class="ico">⚠</div>Could not load (HTTP ${r.status}).</div>`;
+    return;
+  }
+  const data = await r.json();
+  const calls = data.calls || [];
+  if (calls.length === 0) {
+    root.innerHTML = `<div class="empty-state"><div class="ico">📞</div>No calls in the last 14 days. Use the dialer above to place one.</div>`;
+    return;
+  }
+  root.innerHTML = calls.map(c => {
+    const inbound = c.direction === 'inbound';
+    const missed = ['no-answer','busy','failed','canceled'].includes(c.status);
+    const icon = missed ? '✗' : (inbound ? '←' : '→');
+    const klass = missed ? 'miss' : (inbound ? 'in' : 'out');
+    const otherName = inbound
+      ? (c.customer?.full_name || c.from_user?.name || c.from_phone || 'unknown')
+      : (c.customer?.full_name || c.to_user?.name || c.to_phone || 'unknown');
+    const otherPhone = inbound ? c.from_phone : c.to_phone;
+    const memo = c.memo;
+    const transcript = memo?.transcription || '';
+    return `
+      <div class="call-row">
+        <div class="ico ${klass}">${icon}</div>
+        <div class="body">
+          <div class="who">${escapeHtml(otherName)}</div>
+          <div class="meta">${escapeHtml(otherPhone || '')} · ${escapeHtml(c.status)} · ${fmtDur(c.duration_sec)}</div>
+          ${memo?.blob_url ? `<audio controls preload="none" src="${escapeHtml(memo.blob_url)}"></audio>` : ''}
+          ${transcript ? `<div class="transcript">${escapeHtml(transcript.slice(0, 600))}${transcript.length > 600 ? '…' : ''}</div>` : (memo?.transcription_status === 'transcribing' ? '<div class="transcript">Transcribing…</div>' : '')}
+        </div>
+        <div class="when">${fmtRel(c.started_at)}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function placeCall() {
+  const num = document.getElementById('dialInput').value.trim();
+  if (!num) return;
+  const btn = document.getElementById('dialBtn');
+  btn.disabled = true; btn.textContent = '📞 Dialing…';
+  try {
+    const r = await fetch('/api/calls', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ to_phone: num }),
+    });
+    const data = await r.json();
+    if (!r.ok) {
+      showBanner(data.error || `Call failed (HTTP ${r.status}). ${data.code === 'TWILIO_NOT_CONFIGURED' ? 'Admin must set up Twilio first.' : ''}`);
+      return;
+    }
+    showBanner(`📞 Twilio is ringing your cell first; pick up to connect to ${num}. The call will be recorded.`);
+    document.getElementById('dialInput').value = '';
+    setTimeout(loadCalls, 3000);
+  } finally {
+    btn.disabled = false; btn.textContent = '📞 Call';
+  }
+}
+
+document.getElementById('dialBtn').addEventListener('click', placeCall);
+document.getElementById('dialInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); placeCall(); }
+});
+loadCalls();
+setInterval(loadCalls, 30 * 1000);
+</script>
+</body>
+</html>
