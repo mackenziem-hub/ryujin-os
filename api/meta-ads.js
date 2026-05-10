@@ -85,6 +85,11 @@ export default async function handler(req, res) {
         avgCPL: metaAds.avgCPL,
         alerts: metaAds.alerts
       },
+      // Full campaign list — added 2026-05-09 for marketing-ads.html consumption.
+      // Earlier shape only returned summary; this is additive and safe for prior callers.
+      campaigns: metaAds.activeCampaigns || [],
+      topPerformers: metaAds.topPerformers || [],
+      exportDate: metaAds.exportDate,
       pushedToSnapshot: true
     });
 
