@@ -656,15 +656,36 @@ export default async function handler(req, res) {
 
     // === PIPELINE / OPPORTUNITIES ===
     if (resolvedMode === 'pipeline') {
-      const params = { location_id: LOCATION_ID, limit };
-      if (pipeline) params.pipeline_id = pipeline;
-      if (q) params.q = q;
-      const data = await ghlFetch('/opportunities/search', params);
-      const opportunities = (data.opportunities || []).map(enrichOpportunity);
+      // GHL /opportunities/search caps at 100 per request. Paginate via meta.startAfter / startAfterId
+      // up to the caller's requested limit (or a hard ceiling to keep request cost bounded).
+      const requested = Math.min(parseInt(limit, 10) || 100, 1000);
+      const PAGE = 100;
+      const baseParams = { location_id: LOCATION_ID };
+      if (pipeline) baseParams.pipeline_id = pipeline;
+      if (q) baseParams.q = q;
+
+      const opportunities = [];
+      let metaTotal = null;
+      let startAfter = null;
+      let startAfterId = null;
+      while (opportunities.length < requested) {
+        const params = { ...baseParams, limit: String(Math.min(PAGE, requested - opportunities.length)) };
+        if (startAfter) params.startAfter = startAfter;
+        if (startAfterId) params.startAfterId = startAfterId;
+        const data = await ghlFetch('/opportunities/search', params);
+        const page = (data.opportunities || []).map(enrichOpportunity);
+        if (metaTotal == null) metaTotal = data.meta?.total ?? null;
+        if (!page.length) break;
+        opportunities.push(...page);
+        startAfter = data.meta?.startAfter || null;
+        startAfterId = data.meta?.startAfterId || null;
+        if (!startAfter && !startAfterId) break;
+        if (page.length < PAGE) break;
+      }
 
       // Summary stats
       const stats = {
-        total: data.meta?.total || opportunities.length,
+        total: metaTotal ?? opportunities.length,
         totalValue: opportunities.reduce((s, o) => s + o.value, 0),
         byStatus: {},
         byPipeline: {},
