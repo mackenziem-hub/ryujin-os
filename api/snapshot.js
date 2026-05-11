@@ -470,7 +470,12 @@ async function buildFreshSnapshot() {
     'metaAds', 'googleAds', 'gmail', 'calendar',
     'briefing_morning', 'briefing_evening',
     'watchdog', 'heartbeat', 'tokenRefresh',
-    'cashflow'
+    'cashflow',
+    // Same bug pattern as 2026-04-11 (watchdog wipe) — daily.js writes
+    // sections.agentReports.{daily,weekly}; without preservation the
+    // hourly rebuild silently drops them and the morning briefing has
+    // no anime-agent context to pull from.
+    'agentReports', 'metaConfigAudit', 'tokenWarning'
   ];
   if (existing?.sections) {
     for (const key of preserveKeys) {
