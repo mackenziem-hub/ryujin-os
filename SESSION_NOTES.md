@@ -1,3 +1,104 @@
+# Session notes — 2026-05-11 (evening, Session 67) — pillar restore + messaging overhaul + Action Board → native migration + Option B sub-crew + six-pillar planning + Administration redesign
+
+**19 commits between mid-afternoon and ~10 PM AT.** Major surfaces: Ryujin's pillar nav, the entire Messages stack, the Administration page, sub-portal crew sub-tokens, chat-driven task creation, Crew Ops kanban (now backed by migrated tickets instead of an external Replit app).
+
+## Commits
+
+1. `2f809ea` — restore rich Sales/Marketing/Production pillar pages from git; park flat-template versions; remove mobile UA gate
+2. `6bd3aec` — cutscene click-to-skip v1 (onclick on cutscene div)
+3. `0669694` — Messages icon in admin.html sidebar
+4. `8b94ed1` — cutscene pointer-events:none on videos + Messages in bottom bar + sidebar nav scroll
+5. `9f62022` — admin-overview Messages icon + quick-access cards row
+6. `f79b032` — admin.html Settings page renamed Administration + Messages/Portals/Dispatch cards at top
+7. `ab0316e` — administration.html (SubHub panels page) — MESSAGES + TEAM PORTALS panels + chat brain choices
+8. `de2c972` — cutscene bulletproof (document-level capture-phase click/touchend/keydown)
+9. (DB patch) orphan "Scaffolding" message claimed back to Mac → AJ
+10. `1ec0994` — messages auth gate on POST + visible session banner + handleAuthResponse helper
+11. `e015f9b` — login.html ?next= fix + back button + account dropdown on messages.html + Reset session
+12. `381272c` — login.html ?force=1 escape hatch (clears stale auth + skips auto-redirect)
+13. `cdcf913` — thread chronological order fix (defensive client sort + per-branch API order calls)
+14. `5365d70` — /api/messages ?box=all + "All" tab + assets/messages-badge.js poller + Mac SMS via GHL
+15. `85f5cab` — unified Twilio direct SMS for all users with ryujin_phone_number (lib/sms.js + helper)
+16. `58706bf` — admin-activity.html + api/activity.js (filterable audit log, CSV export, pagination)
+17. `7ed75e3` — sub-portal crew sub-tokens (Option B): migration 058, dual-token verify, crew CRUD, audit fields, My Crew UI
+18. `df19c69` — task audit quick wins: assignee dropdown, dead ternary removed, no-token copy
+19. `3f6eb3f` — Action Board → Ryujin native migration: 33 tickets imported (idempotent), snapshot.js reads native, create_ticket direct-inserts
+
+## New files
+- `public/admin-activity.html`
+- `public/sales-panel.html` `public/marketing-panel.html` `public/production-panel.html` (parked)
+- `public/assets/messages-badge.js`
+- `api/activity.js`
+- `lib/sms.js`
+- `schema/migration_058_sub_crew_members.sql` (applied)
+
+## Restored from git
+- `public/sales.html` ← 6abb280  ·  `public/marketing.html` ← 82d0729  ·  `public/production.html` ← 6abb280
+
+## Migration applied
+- **058** sub_crew_members + job_log_entries audit cols
+
+## Production data writes
+- DB patch: messages row `e016ce45...` ("Scaffolding") — from_user_id null → Mac
+- 33 Action Board tickets imported into tickets table (each tagged `ab:<id>`)
+
+## Open carry-forward
+
+- Mac to authorize "send it" on the Ryan My Crew announce reply (`scripts/_oneshot/_reply_ryan_crew_announce_2026-05-11.mjs`)
+- Surface native ticket overdues in morning briefing (`api/agents/briefing.js` is GHL-only)
+- Ryan's ryujin_phone_number not assigned → no SMS notifications yet
+- service_tickets table consolidation — fold into `tickets` with `type=repair` or wire to AJ portal section
+- Action Board (Replit) banner/redirect to /admin.html#crew
+
+## Marker
+SESSION_CONTEXT.md at `OneDrive/Desktop/Plus Ultra/_brain/SESSION_CONTEXT.md`. Six-pillar plan at `~/.claude/plans/all-right-well-i-fluttering-parrot.md` (Session 1 LOCKED).
+
+---
+
+# Session notes — 2026-05-11 (mid-morning → midday) — 3 live customer wires + sub-portal photo bug fixed + Diamond bundle count fixed + Portal Inspector + proposal-page additions (breakdown + color chart)
+
+## What changed this session
+
+### Code (Ryujin)
+- **NEW `/api/proposal.js` rep resolver hardened** — accepts mac/mack/mackenzie/mazerolle aliases (was only matching `mack` substring, so 3-letter `mac` slug fell through to Darcy default — Bissett #54 was rendering Darcy in customer-facing proposal despite DB column + GHL being Mac).
+- **NEW `public/admin-portals.html`** — Portal Inspector admin page. Tabs across 15 portal surfaces (sub portal, paysheet, customer proposal, breakdown PDF, AJ/Mac/Darcy/Catherine/Diego/Pavanjot/Melodie/Ryan portals, mobile, approvals, routes). Auto-populates token pickers from `subcontractors.portal_token` / `estimates.share_token` / `paysheets.acceptance_token`. Width buttons (375/430/768/1200/full). Iframe with reload + open-in-new-tab. Sidebar entry added on admin-overview between Cron Health and System Config.
+- **`public/proposal-client.html` — Detailed Breakdown dropdown** — collapsible card below scope list. Lazy-loads `/api/breakdown-pdf?format=html` inline via iframe on first open. Action links: open-in-new-tab + download PDF. Telemetry `breakdown_opened`. Renders on every proposal automatically.
+- **`public/proposal-client.html` — Color Chart dropdown** — single chart image (Mac's `Color Chart.jpg`, Landmark Pro Max Def 14 colors). Capped at native 618px to prevent upscaling blur. Click image to open full-size in new tab.
+- **`public/brand/plus-ultra/colors/color-chart.jpg`** — Mac's chosen color chart asset.
+
+### DB / Schema fixes
+- **`job_log_entries.entry_type` CHECK constraint** — added `'photo'` to allowed list (was missing). Ryan's rapid-camera upload flow on WO#15 was failing silently with cryptic "string did not match the expected pattern" message. Fixed via Supabase Management API. Memory `project_subportal_photo_constraint_fix_may11.md` written.
+- **Diamond offer `scope_template.shingles.config`** — added `bundles_per_sq: 4, tier: 'grand_manor'`. Engine was defaulting to 3 bundles/SQ for all tiers — Grand Manor needs 4/SQ due to 5-layer Super Shangle construction. All future Diamond quotes bundle correctly. Locked Diamond quotes (Royal Oaks #46-48,#51) untouched per no-backfill rule. Memory `project_diamond_bundle_count_fix_may11.md` written.
+
+### Customer wires (3 deals)
+- **plus-ultra-54 Bissett (Racho)** — full lifecycle: estimate creation, 4 pricing iterations (engine → Echo $8,500 match → standard ladder → -15% strategic-partner strip), photos attached, Mac sales_owner, GHL Internal pipeline opp `OFPyhvnfuShPDLNtpJhh` at $11,155 Platinum, customer V2cfn6FfVOxJuRn9vKJr
+- **plus-ultra-52 El Rody (Raghda Elleithy)** — cover + after photos attached, Mac sales_owner, GHL opp `Z96Qm71RpORdRav7Zluy` reassigned, email sent
+- **plus-ultra-58 Irving (Jonald Magarin)** — back-filled from paysheet PU-2026-018 (was mis-linked to Lee Baxter #41). $14,286 Gold/Platinum-spec free upgrade. GHL Internal → Closed `O8XwKoJMKDIuvNjav2s2`. Customer corrected mid-flow Christian → Jonald. Color chart email sent. Christian remains as `referral:christian-kw` tag.
+
+### Commits pushed
+9+ commits on origin/main today including:
+- Portal Inspector + sidebar nav
+- Detailed Breakdown dropdown
+- Color Chart dropdown (initial swatch version + 2 iterations + final single-chart simplification)
+- Color chart upscaling blur fix (max-width:618px native cap)
+- Proposal rep resolver mac-alias fix
+
+### Open / pending
+- 🟡 Bissett proposal forward to Christian/Racho (Mac's call when ready)
+- 🟡 Jonald color pick → then materials order
+- 🟡 El Rody customer response
+- 🟡 Stale Gmail draft `r-5190770291926967459` (addressed to Christian about Jonald's job before customer correction) — Mac to delete manually
+- 🟡 Simple-mode proposal toggle queued at `_brain/queued-actions/2026-05-12-am-fire-bissett-quote.md` (parts obsolete since inline dropdowns satisfy most of the use case)
+- 🟡 Commercial flat roof triage — workflow sketched; awaiting Mac's per-roof rundown
+- 🟡 W-style valley pricing — discussed; not productized as SKU; ~$55/piece market estimate for future addition
+- 🟢 Sub-portal rapid camera LIVE
+- 🟢 Diamond bundle count fix LIVE
+- 🟢 Portal Inspector LIVE at /admin-portals.html
+- 🟢 Proposal page breakdown + color dropdowns LIVE
+- 🟢 Bissett/El Rody/Irving wired with Mac as rep, photos attached
+
+---
+
 # Session notes — 2026-05-09 (Session 66, late evening) — Sub Portal v2 lockdown + 3-job dispatch (Fairisle, Irving, Saint Marie)
 
 ## What changed this session
