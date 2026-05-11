@@ -37,15 +37,16 @@ async function handler(req, res) {
   const horizonIso = horizon.toISOString();
   const horizonDay = horizonIso.slice(0, 10);
 
-  // Estimates with a scheduled start in the window.
+  // Estimates with a scheduled_at in the window. (migration_038 added
+  // scheduled_at as a timestamptz; there's no separate start/end date.)
   const ests = await supabaseAdmin
     .from('estimates')
-    .select('id, estimate_number, scheduled_start_date, scheduled_end_date, state, total_price, customer:customers(full_name, phone, address)')
+    .select('id, estimate_number, scheduled_at, state, total_price, customer:customers(full_name, phone, address)')
     .eq('tenant_id', req.tenant.id)
-    .not('scheduled_start_date', 'is', null)
-    .gte('scheduled_start_date', todayDay)
-    .lte('scheduled_start_date', horizonDay)
-    .order('scheduled_start_date', { ascending: true })
+    .not('scheduled_at', 'is', null)
+    .gte('scheduled_at', todayIso)
+    .lte('scheduled_at', horizonIso)
+    .order('scheduled_at', { ascending: true })
     .limit(120);
 
   // Service tickets with a scheduled_at in the window.
@@ -68,7 +69,7 @@ async function handler(req, res) {
   }
 
   for (const e of ests.data || []) {
-    const key = (e.scheduled_start_date || '').slice(0, 10);
+    const key = (e.scheduled_at || '').slice(0, 10);
     if (!byDay.has(key)) continue;
     byDay.get(key).installs.push({
       id: e.id,
@@ -78,7 +79,7 @@ async function handler(req, res) {
       address: e.customer?.address || null,
       phone: e.customer?.phone || null,
       value: e.total_price || null,
-      end_date: e.scheduled_end_date || null,
+      time: (e.scheduled_at || '').slice(11, 16),
     });
   }
 

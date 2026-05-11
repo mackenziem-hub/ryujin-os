@@ -112,13 +112,15 @@ async function loadScheduleObservations(tenantId) {
     const now = new Date();
     const horizon = new Date(now.getTime() + 7 * 86400000);
     const [ests, tix] = await Promise.all([
+      // estimates.scheduled_at (added in migration_038) — timestamptz of
+      // when the job is on the calendar. Not scheduled_start_date.
       supabaseAdmin.from('estimates')
-        .select('id, estimate_number, scheduled_start_date, state, customer:customers(full_name)')
+        .select('id, estimate_number, scheduled_at, state, customer:customers(full_name)')
         .eq('tenant_id', tenantId)
-        .not('scheduled_start_date', 'is', null)
-        .gte('scheduled_start_date', now.toISOString().slice(0, 10))
-        .lte('scheduled_start_date', horizon.toISOString().slice(0, 10))
-        .order('scheduled_start_date', { ascending: true }).limit(8),
+        .not('scheduled_at', 'is', null)
+        .gte('scheduled_at', now.toISOString())
+        .lte('scheduled_at', horizon.toISOString())
+        .order('scheduled_at', { ascending: true }).limit(8),
       supabaseAdmin.from('service_tickets')
         .select('id, title, scheduled_at, priority, customer:customers(full_name)')
         .eq('tenant_id', tenantId)
@@ -129,7 +131,7 @@ async function loadScheduleObservations(tenantId) {
     ]);
     const items = [
       ...(ests.data || []).map(e => ({
-        when: e.scheduled_start_date,
+        when: e.scheduled_at?.slice(0, 10),
         label: `Install · ${e.customer?.full_name || ''} · ${e.estimate_number || e.id.slice(0, 6)}${e.state ? ` (${e.state})` : ''}`,
       })),
       ...(tix.data || []).map(t => ({
@@ -168,24 +170,30 @@ async function loadInboxObservations(tenantId, { userId, isAdmin }) {
 async function loadVoiceObservations(tenantId, { userId, isAdmin }) {
   try {
     const since = new Date(Date.now() - 24 * 3600000).toISOString();
+    // Real column names (per migration_055 + migration_056):
+    //   voice_memos.uploader_user_id  +  voice_memos.transcription
+    //   phone_calls.from_user_id / to_user_id  +  phone_calls.transcript
     const [memos, calls] = await Promise.all([
       supabaseAdmin.from('voice_memos')
-        .select('user_id, transcript, created_at')
+        .select('uploader_user_id, transcription, created_at')
         .eq('tenant_id', tenantId).gte('created_at', since)
         .order('created_at', { ascending: false }).limit(6),
       supabaseAdmin.from('phone_calls')
-        .select('user_id, transcript, from_number, status, started_at, customer:customers(full_name)')
+        .select('from_user_id, to_user_id, from_phone, direction, status, duration_sec, started_at, customer:customers(full_name)')
         .eq('tenant_id', tenantId).gte('started_at', since)
         .order('started_at', { ascending: false }).limit(6),
     ]);
+    // phone_calls has no `transcript` column — transcripts live in
+    // voice_memos via voice_memo_id. The memos block above already
+    // surfaces them. The call block just notes who/when/duration.
     const items = [
-      ...(memos.data || []).filter(m => isAdmin || m.user_id === userId).map(m => ({
+      ...(memos.data || []).filter(m => isAdmin || m.uploader_user_id === userId).map(m => ({
         when: m.created_at,
-        label: `Voice memo · "${(m.transcript || '(no transcript)').slice(0, 200)}${m.transcript?.length > 200 ? '…' : ''}"`,
+        label: `Voice memo · "${(m.transcription || '(transcribing)').slice(0, 200)}${m.transcription?.length > 200 ? '…' : ''}"`,
       })),
-      ...(calls.data || []).filter(c => isAdmin || c.user_id === userId).map(c => ({
+      ...(calls.data || []).filter(c => isAdmin || c.from_user_id === userId || c.to_user_id === userId).map(c => ({
         when: c.started_at,
-        label: `Call ${c.status || ''} · ${c.customer?.full_name || c.from_number || ''}${c.transcript ? ` · "${c.transcript.slice(0, 180)}${c.transcript.length > 180 ? '…' : ''}"` : ''}`,
+        label: `Call ${c.direction || ''} ${c.status || ''} · ${c.customer?.full_name || c.from_phone || 'unknown'}${c.duration_sec ? ` · ${c.duration_sec}s` : ''}`,
       })),
     ].sort((a, b) => (b.when || '').localeCompare(a.when || '')).slice(0, 6);
     if (!items.length) return '';
@@ -213,18 +221,21 @@ async function loadServiceQueueObservations(tenantId) {
 
 async function loadActivityObservations(tenantId, { userId, isAdmin }) {
   try {
+    // activity_log schema (per schema/migrations.sql):
+    //   user_id, entity_type, entity_id, action, details (jsonb), created_at
+    // No FK to customers — entity_type='customer' acts as discriminator.
     let q = supabaseAdmin.from('activity_log')
-      .select('kind, body, source_user_id, customer:customers(full_name), created_at')
+      .select('user_id, entity_type, entity_id, action, details, created_at')
       .eq('tenant_id', tenantId)
       .gte('created_at', new Date(Date.now() - 12 * 3600000).toISOString())
       .order('created_at', { ascending: false }).limit(10);
-    if (!isAdmin && userId) q = q.eq('source_user_id', userId);
+    if (!isAdmin && userId) q = q.eq('user_id', userId);
     const { data, error } = await q;
     if (error || !data?.length) return '';
     const lines = data.map(a => {
       const when = a.created_at?.slice(11, 16);
-      const cust = a.customer?.full_name ? ` (${a.customer.full_name})` : '';
-      return `- ${when} · ${a.kind}${cust} · ${(a.body || '').slice(0, 100)}`;
+      const detailSnip = a.details ? JSON.stringify(a.details).slice(0, 80).replace(/[{}"]/g, '') : '';
+      return `- ${when} · ${a.action} ${a.entity_type}${detailSnip ? ` · ${detailSnip}` : ''}`;
     });
     return `### Recent activity (last 12h)\n${lines.join('\n')}\n`;
   } catch { return ''; }
