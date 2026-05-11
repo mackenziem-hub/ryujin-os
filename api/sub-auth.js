@@ -20,15 +20,21 @@ async function handler(req, res) {
   const tenantId = req.tenant.id;
   const { action, token, sub_id } = req.query;
 
-  // ── Validate magic-link ──
+  // ── Validate magic-link (sub OR crew member) ──
   if (req.method === 'GET' && token) {
-    const [subResult, settingsResult] = await Promise.all([
+    const [parentResult, memberResult, settingsResult] = await Promise.all([
       supabaseAdmin
         .from('subcontractors')
         .select('id, name, company, email, phone, trade, active, magic_link_expires_at, portal_visibility, auto_approve_threshold_cad')
         .eq('tenant_id', tenantId)
         .eq('magic_link_token', token)
-        .single(),
+        .maybeSingle(),
+      supabaseAdmin
+        .from('sub_crew_members')
+        .select('id, sub_id, name, phone, active, archived_at')
+        .eq('tenant_id', tenantId)
+        .eq('magic_token', token)
+        .maybeSingle(),
       supabaseAdmin
         .from('tenant_settings')
         .select('company_name, company_phone, company_email, logo_url, accent_color')
@@ -36,10 +42,31 @@ async function handler(req, res) {
         .maybeSingle()
     ]);
 
-    const sub = subResult.data;
-    if (!sub || !sub.active) return res.status(401).json({ error: 'Invalid or inactive link' });
-    if (sub.magic_link_expires_at && new Date(sub.magic_link_expires_at) < new Date()) {
-      return res.status(401).json({ error: 'Link expired — ask the owner for a new one' });
+    let sub = parentResult.data;
+    let auth = null;
+
+    if (sub) {
+      if (!sub.active) return res.status(401).json({ error: 'Invalid or inactive link' });
+      if (sub.magic_link_expires_at && new Date(sub.magic_link_expires_at) < new Date()) {
+        return res.status(401).json({ error: 'Link expired — ask the owner for a new one' });
+      }
+      auth = { kind: 'sub', member_id: null, member_name: sub.name };
+    } else if (memberResult.data) {
+      const member = memberResult.data;
+      if (!member.active || member.archived_at) return res.status(401).json({ error: 'Access revoked — ask your team lead for a new link' });
+      // Resolve parent sub.
+      const { data: parent } = await supabaseAdmin
+        .from('subcontractors')
+        .select('id, name, company, email, phone, trade, active, magic_link_expires_at, portal_visibility, auto_approve_threshold_cad')
+        .eq('tenant_id', tenantId).eq('id', member.sub_id).maybeSingle();
+      if (!parent || !parent.active) return res.status(401).json({ error: 'Team lead account inactive' });
+      // Crew members don't get COGS / financial-approve visibility — neutralize.
+      sub = { ...parent };
+      auth = { kind: 'crew', member_id: member.id, member_name: member.name };
+      // Best-effort last_login bump.
+      supabaseAdmin.from('sub_crew_members').update({ last_login_at: new Date().toISOString() }).eq('id', member.id).then(() => {}, () => {});
+    } else {
+      return res.status(401).json({ error: 'Invalid or inactive link' });
     }
 
     const ts = settingsResult.data;
@@ -51,7 +78,7 @@ async function handler(req, res) {
       accent_color: ts?.accent_color || '#0b1d3a'
     };
 
-    return res.json({ sub, branding });
+    return res.json({ sub, branding, auth });
   }
 
   // ── Sub's assigned jobs ──
@@ -134,6 +161,101 @@ async function handler(req, res) {
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false });
     return res.json({ subcontractors: data || [] });
+  }
+
+  // ── Crew management (parent sub manages own roster via token auth) ──
+  // GET   ?action=crew_list&token=PARENT      — list crew of the token-holder sub
+  // POST  ?action=crew_add                    — body: {token, name, phone}
+  // POST  ?action=crew_revoke                 — body: {token, member_id}
+  // POST  ?action=crew_rotate                 — body: {token, member_id}  (new magic_token)
+  //
+  // Always re-verifies the token belongs to a parent sub (not a crew member —
+  // crew can't add other crew). Owner UI can also operate on the sub_crew_members
+  // table directly via the admin shell, but the portal-side flow uses these.
+  async function resolveParentSubByToken(t) {
+    if (!t) return null;
+    const { data } = await supabaseAdmin
+      .from('subcontractors')
+      .select('id, name, active')
+      .eq('tenant_id', tenantId)
+      .eq('magic_link_token', t)
+      .maybeSingle();
+    if (!data || !data.active) return null;
+    return data;
+  }
+
+  if (req.method === 'GET' && action === 'crew_list') {
+    const parent = await resolveParentSubByToken(token);
+    if (!parent) return res.status(401).json({ error: 'Parent token required' });
+    const { data } = await supabaseAdmin
+      .from('sub_crew_members')
+      .select('id, name, phone, active, magic_token, created_at, last_login_at, archived_at')
+      .eq('tenant_id', tenantId)
+      .eq('sub_id', parent.id)
+      .order('created_at', { ascending: false });
+    const withUrls = (data || []).map(m => ({
+      ...m,
+      portal_url: m.magic_token ? `https://ryujin-os.vercel.app/sub-portal.html?token=${m.magic_token}` : null
+    }));
+    return res.json({ members: withUrls, sub: parent });
+  }
+
+  if (req.method === 'POST' && action === 'crew_add') {
+    const { token: pTok, name, phone } = req.body || {};
+    const parent = await resolveParentSubByToken(pTok);
+    if (!parent) return res.status(401).json({ error: 'Parent token required' });
+    if (!name || !String(name).trim()) return res.status(400).json({ error: 'name required' });
+    const magic = newToken();
+    const { data, error } = await supabaseAdmin
+      .from('sub_crew_members')
+      .insert({
+        tenant_id: tenantId,
+        sub_id: parent.id,
+        name: String(name).trim(),
+        phone: phone || null,
+        magic_token: magic
+      })
+      .select('id, name, phone, active, magic_token, created_at')
+      .single();
+    if (error) return res.status(500).json({ error: error.message });
+    const portal_url = `https://ryujin-os.vercel.app/sub-portal.html?token=${magic}`;
+    return res.status(201).json({ member: { ...data, portal_url }, sub: parent });
+  }
+
+  if (req.method === 'POST' && action === 'crew_revoke') {
+    const { token: pTok, member_id } = req.body || {};
+    const parent = await resolveParentSubByToken(pTok);
+    if (!parent) return res.status(401).json({ error: 'Parent token required' });
+    if (!member_id) return res.status(400).json({ error: 'member_id required' });
+    const { data, error } = await supabaseAdmin
+      .from('sub_crew_members')
+      .update({ active: false, archived_at: new Date().toISOString() })
+      .eq('tenant_id', tenantId)
+      .eq('sub_id', parent.id)
+      .eq('id', member_id)
+      .select('id, name, active, archived_at')
+      .single();
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ member: data });
+  }
+
+  if (req.method === 'POST' && action === 'crew_rotate') {
+    const { token: pTok, member_id } = req.body || {};
+    const parent = await resolveParentSubByToken(pTok);
+    if (!parent) return res.status(401).json({ error: 'Parent token required' });
+    if (!member_id) return res.status(400).json({ error: 'member_id required' });
+    const magic = newToken();
+    const { data, error } = await supabaseAdmin
+      .from('sub_crew_members')
+      .update({ magic_token: magic, active: true, archived_at: null })
+      .eq('tenant_id', tenantId)
+      .eq('sub_id', parent.id)
+      .eq('id', member_id)
+      .select('id, name, phone, active, magic_token, created_at')
+      .single();
+    if (error) return res.status(500).json({ error: error.message });
+    const portal_url = `https://ryujin-os.vercel.app/sub-portal.html?token=${magic}`;
+    return res.json({ member: { ...data, portal_url } });
   }
 
   return res.status(400).json({ error: 'Unknown action' });

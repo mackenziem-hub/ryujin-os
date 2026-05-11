@@ -32,17 +32,50 @@ const QUESTION_ROUTING = {
 };
 
 // ── Token verification ──────────────────────────────────────────
+// Resolves a token in either of two namespaces:
+//   1. subcontractors.magic_link_token (parent sub — e.g. Ryan)
+//   2. sub_crew_members.magic_token    (Ryan's crew)
+// Crew tokens inherit the parent sub's job access; the returned `sub`
+// is always the parent. Crew context (member id + name) is attached
+// as a non-enumerable property so audit code can credit photos/logs
+// to the actual person without breaking existing destructuring.
 async function verifyToken(tenantId, token) {
   if (!token) return null;
+  // Try parent sub first.
   const { data: sub } = await supabaseAdmin
     .from('subcontractors')
     .select('id, name, company, magic_link_expires_at, active, portal_visibility')
     .eq('tenant_id', tenantId)
     .eq('magic_link_token', token)
-    .single();
-  if (!sub || !sub.active) return null;
-  if (sub.magic_link_expires_at && new Date(sub.magic_link_expires_at) < new Date()) return null;
-  return sub;
+    .maybeSingle();
+  if (sub) {
+    if (!sub.active) return null;
+    if (sub.magic_link_expires_at && new Date(sub.magic_link_expires_at) < new Date()) return null;
+    sub._auth = { kind: 'sub', member_id: null, member_name: sub.name };
+    return sub;
+  }
+  // Fall back to sub_crew_members.
+  const { data: member } = await supabaseAdmin
+    .from('sub_crew_members')
+    .select('id, sub_id, name, active, archived_at')
+    .eq('tenant_id', tenantId)
+    .eq('magic_token', token)
+    .maybeSingle();
+  if (!member || !member.active || member.archived_at) return null;
+  const { data: parent } = await supabaseAdmin
+    .from('subcontractors')
+    .select('id, name, company, magic_link_expires_at, active, portal_visibility')
+    .eq('tenant_id', tenantId)
+    .eq('id', member.sub_id)
+    .maybeSingle();
+  if (!parent || !parent.active) return null;
+  // Best-effort last_login bump — fire and forget.
+  supabaseAdmin.from('sub_crew_members')
+    .update({ last_login_at: new Date().toISOString() })
+    .eq('id', member.id)
+    .then(() => {}, () => {});
+  parent._auth = { kind: 'crew', member_id: member.id, member_name: member.name };
+  return parent;
 }
 
 // ── Photos (read-only, scoped to linked estimate) ───────────────
@@ -586,8 +619,12 @@ async function handler(req, res) {
   const sub = await verifyToken(tenantId, token);
   if (!sub) return res.status(401).json({ error: 'Invalid or expired token' });
 
-  // Sub-write: approve a draft WO and move it to issued
+  // Sub-write: approve a draft WO and move it to issued.
+  // Parent sub only — crew members can't bind their team-lead to scope.
   if (action === 'approve_wo' && req.method === 'POST') {
+    if (sub._auth?.kind === 'crew') {
+      return res.status(403).json({ error: 'Only the team lead can approve work orders' });
+    }
     const { wo_id } = req.body || {};
     if (!wo_id) return res.status(400).json({ error: 'wo_id required' });
     const { data: wo, error: rerr } = await supabaseAdmin

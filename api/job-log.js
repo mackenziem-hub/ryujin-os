@@ -123,7 +123,10 @@ async function handler(req, res) {
       vendor: body.vendor || null,
       photos: Array.isArray(body.photos) ? body.photos : [],
       status: computedStatus,
-      created_by_sub: !!body.created_by_sub
+      created_by_sub: !!body.created_by_sub,
+      // Audit: credit the actual person who uploaded (parent sub OR a specific crew member).
+      sub_crew_member_id: body.sub_crew_member_id || null,
+      uploaded_by_name: body.uploaded_by_name || null
     };
 
     // Rate suggestion fields (only relevant when entry_type='rate_suggestion')

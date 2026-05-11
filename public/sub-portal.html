@@ -445,11 +445,17 @@ async function boot(){
   try {
     const auth = await api(`/sub-auth?token=${token}`);
     STATE.sub = auth.sub;
+    STATE.auth = auth.auth || { kind: 'sub', member_id: null, member_name: auth.sub.name };
     if (auth.branding) applyBranding(auth.branding);
     if (auth.sub.portal_visibility && typeof auth.sub.portal_visibility === 'object'){
       STATE.visibility = { ...STATE.visibility, ...auth.sub.portal_visibility };
     }
-    document.getElementById('who').innerHTML = `<div class="name">${esc(auth.sub.name)}</div><div class="meta">${esc(auth.sub.company || auth.sub.trade || '')}</div>`;
+    // Crew members see their own name as the active user; team-lead view shows lead name.
+    const whoName = STATE.auth.kind === 'crew' ? STATE.auth.member_name : auth.sub.name;
+    const whoMeta = STATE.auth.kind === 'crew'
+      ? `${esc(auth.sub.company || auth.sub.trade || '')} · crew member`
+      : esc(auth.sub.company || auth.sub.trade || '');
+    document.getElementById('who').innerHTML = `<div class="name">${esc(whoName)}</div><div class="meta">${whoMeta}</div>`;
     document.getElementById('brandSub').textContent = 'Crew Portal';
     await loadJobs();
   } catch (e) {
@@ -512,11 +518,159 @@ function renderJobs(){
   };
 
   let html = '<h1>Your Jobs</h1>';
+  // Team-lead-only entry to My Crew. Crew members don't see this button.
+  if (STATE.auth?.kind === 'sub') {
+    html += `<div style="display:flex;gap:8px;margin:6px 0 14px;flex-wrap:wrap">
+      <button class="btn btn-ghost" onclick="renderCrew()" style="background:rgba(34,211,238,0.08);border:1px solid rgba(34,211,238,0.35);color:#0a8fa3;padding:9px 14px;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer">👥 My Crew</button>
+    </div>`;
+  }
   if (pending.length) html += `<h2 style="color:#b45309">⚠ Pending Your Approval (${pending.length})</h2>` + pending.map(card).join('');
   if (active.length) html += `<h2>Active (${active.length})</h2>` + active.map(card).join('');
   if (other.length) html += `<h2>Other (${other.length})</h2>` + other.map(card).join('');
   if (complete.length) html += `<h2>Completed (${complete.length})</h2>` + complete.map(card).join('');
   root.innerHTML = html;
+}
+
+// ── My Crew (parent sub only — manage own crew members) ───────────
+async function renderCrew(){
+  if (STATE.auth?.kind !== 'sub') { renderJobs(); return; }
+  const root = document.getElementById('root');
+  document.getElementById('fabBar').classList.add('hide');
+  STATE.view = 'crew';
+  root.innerHTML = `
+    <div class="nav">
+      <button class="back" onclick="renderJobs()">← All jobs</button>
+      <div class="title">My Crew</div>
+    </div>
+    <div style="margin-bottom:12px;color:var(--ink-2);font-size:14px;line-height:1.5">
+      Add your crew members so they can log photos and progress directly. Each gets their own private link — their uploads credit their name on the job log, and you can revoke access anytime.
+    </div>
+
+    <div style="background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px">
+      <div style="font-weight:700;margin-bottom:8px;font-size:14px">Invite a crew member</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input id="crewName" type="text" placeholder="Name (e.g. Tom)" style="flex:1;min-width:140px;padding:10px;border:1px solid var(--line);border-radius:8px;font-size:14px">
+        <input id="crewPhone" type="tel" placeholder="Cell (optional)" style="flex:1;min-width:140px;padding:10px;border:1px solid var(--line);border-radius:8px;font-size:14px">
+        <button class="btn btn-primary" onclick="crewAdd()" style="padding:10px 18px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">Add</button>
+      </div>
+      <div id="crewAddResult" style="margin-top:10px"></div>
+    </div>
+
+    <div id="crewList">
+      <div class="empty"><span class="spin"></span> Loading crew…</div>
+    </div>
+  `;
+  await loadCrew();
+}
+
+async function loadCrew(){
+  const tok = localStorage.getItem('ry_sub_token');
+  try {
+    const r = await api(`/sub-auth?action=crew_list&token=${tok}`);
+    renderCrewList(r.members || []);
+  } catch (e) {
+    document.getElementById('crewList').innerHTML = `<div class="empty">Failed to load crew: ${esc(e.message)}</div>`;
+  }
+}
+
+function renderCrewList(members){
+  const wrap = document.getElementById('crewList');
+  if (!wrap) return;
+  if (!members.length) {
+    wrap.innerHTML = '<div class="empty">No crew added yet. Use the form above to invite your first member.</div>';
+    return;
+  }
+  const active = members.filter(m => m.active);
+  const revoked = members.filter(m => !m.active);
+  let html = `<h2 style="font-size:14px;color:var(--ink-2);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Active (${active.length})</h2>`;
+  html += active.length ? active.map(crewCard).join('') : '<div class="empty" style="padding:14px">No active crew.</div>';
+  if (revoked.length) {
+    html += `<h2 style="font-size:14px;color:var(--ink-2);text-transform:uppercase;letter-spacing:1px;margin:18px 0 8px">Revoked (${revoked.length})</h2>`;
+    html += revoked.map(crewCard).join('');
+  }
+  wrap.innerHTML = html;
+}
+
+function crewCard(m){
+  const phoneStr = m.phone ? ` · ${esc(m.phone)}` : '';
+  const lastSeen = m.last_login_at ? `Last seen ${fmtDate(m.last_login_at)}` : 'Never signed in';
+  if (!m.active) {
+    return `<div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:8px;opacity:0.55">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <div>
+          <div style="font-weight:700;text-decoration:line-through">${esc(m.name)}${phoneStr}</div>
+          <div style="font-size:12px;color:var(--ink-2);margin-top:2px">Revoked</div>
+        </div>
+        <button onclick="crewRotate('${m.id}')" class="btn btn-ghost" style="padding:7px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;font-size:13px">Re-issue link</button>
+      </div>
+    </div>`;
+  }
+  return `<div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:8px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <div>
+        <div style="font-weight:700">${esc(m.name)}${phoneStr}</div>
+        <div style="font-size:12px;color:var(--ink-2);margin-top:2px">${lastSeen}</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button onclick="crewCopyLink('${esc(m.portal_url)}')" class="btn btn-ghost" style="padding:7px 12px;border:1px solid rgba(34,211,238,0.35);border-radius:8px;background:rgba(34,211,238,0.06);color:#0a8fa3;cursor:pointer;font-size:13px;font-weight:600">📋 Copy link</button>
+        <button onclick="crewRevoke('${m.id}', '${esc(m.name)}')" class="btn btn-ghost" style="padding:7px 12px;border:1px solid #fecaca;border-radius:8px;background:#fef2f2;color:#b91c1c;cursor:pointer;font-size:13px">Revoke</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function crewAdd(){
+  const name = document.getElementById('crewName').value.trim();
+  const phone = document.getElementById('crewPhone').value.trim();
+  if (!name) { toast('Name required', 'err'); return; }
+  const tok = localStorage.getItem('ry_sub_token');
+  try {
+    const r = await api('/sub-auth?action=crew_add', {
+      method: 'POST',
+      body: JSON.stringify({ token: tok, name, phone })
+    });
+    document.getElementById('crewName').value = '';
+    document.getElementById('crewPhone').value = '';
+    const res = document.getElementById('crewAddResult');
+    res.innerHTML = `<div style="background:#ecfdf5;border:1px solid #6ee7b7;border-radius:8px;padding:10px;font-size:13px">
+      ✓ <b>${esc(r.member.name)}</b> added. Send this private link:
+      <div style="font-family:monospace;font-size:12px;background:#fff;padding:8px;border-radius:6px;margin-top:6px;word-break:break-all">${esc(r.member.portal_url)}</div>
+      <button onclick="crewCopyLink('${esc(r.member.portal_url)}')" style="margin-top:8px;padding:7px 12px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600">📋 Copy link</button>
+    </div>`;
+    await loadCrew();
+  } catch (e) { toast('Add failed: ' + e.message, 'err'); }
+}
+
+async function crewRevoke(id, name){
+  if (!confirm(`Revoke ${name}'s access? Their link will stop working immediately.`)) return;
+  const tok = localStorage.getItem('ry_sub_token');
+  try {
+    await api('/sub-auth?action=crew_revoke', {
+      method: 'POST',
+      body: JSON.stringify({ token: tok, member_id: id })
+    });
+    toast(`${name} revoked`);
+    await loadCrew();
+  } catch (e) { toast('Revoke failed: ' + e.message, 'err'); }
+}
+
+async function crewRotate(id){
+  if (!confirm('Re-issue a fresh link? The previous link will stop working.')) return;
+  const tok = localStorage.getItem('ry_sub_token');
+  try {
+    const r = await api('/sub-auth?action=crew_rotate', {
+      method: 'POST',
+      body: JSON.stringify({ token: tok, member_id: id })
+    });
+    if (r.member?.portal_url) crewCopyLink(r.member.portal_url);
+    toast('Link re-issued and copied');
+    await loadCrew();
+  } catch (e) { toast('Rotate failed: ' + e.message, 'err'); }
+}
+
+async function crewCopyLink(url){
+  try { await navigator.clipboard.writeText(url); toast('Link copied'); }
+  catch { window.prompt('Copy this link:', url); }
 }
 
 async function openJob(woId){
@@ -1023,8 +1177,10 @@ async function uploadAndLogOne(file, stageLabel, caption, feed){
     const body = await r.json();
     if (!r.ok) throw new Error(body.error || 'Upload failed');
 
-    // 3. Create the job_log entry (one per photo → deletable individually)
-    const desc = `[${stageLabel}] ${caption || `${stageLabel} photo from ${STATE.sub.name}`}`.slice(0, 280);
+    // 3. Create the job_log entry (one per photo → deletable individually).
+    // Audit: credit the actual person — parent sub OR a specific crew member.
+    const uploaderName = STATE.auth?.member_name || STATE.sub.name;
+    const desc = `[${stageLabel}] ${caption || `${stageLabel} photo from ${uploaderName}`}`.slice(0, 280);
     const entry = await api('/job-log', {
       method: 'POST',
       body: JSON.stringify({
@@ -1035,7 +1191,9 @@ async function uploadAndLogOne(file, stageLabel, caption, feed){
         description: desc,
         amount: 0,
         photos: [body.url],
-        created_by_sub: true
+        created_by_sub: true,
+        sub_crew_member_id: STATE.auth?.member_id || null,
+        uploaded_by_name: uploaderName
       })
     });
 
@@ -1214,6 +1372,8 @@ async function submitLogEntry(){
         workorder_id: STATE.currentWoId,
         subcontractor_id: STATE.sub.id,
         paysheet_id: STATE.currentWo?.paysheet?.id || null,
+        sub_crew_member_id: STATE.auth?.member_id || null,
+        uploaded_by_name: STATE.auth?.member_name || STATE.sub.name,
         entry_type: logFormType,
         description: desc,
         amount: Number(document.getElementById('lAmt').value) || 0,
@@ -1308,6 +1468,8 @@ async function submitRateSuggestion(){
         workorder_id: STATE.currentWoId,
         subcontractor_id: STATE.sub.id,
         paysheet_id: STATE.currentWo?.paysheet?.id || null,
+        sub_crew_member_id: STATE.auth?.member_id || null,
+        uploaded_by_name: STATE.auth?.member_name || STATE.sub.name,
         entry_type: 'rate_suggestion',
         description: `Suggesting ${opt.dataset.label}: from $${opt.dataset.current} → $${proposed}. ${justify}`,
         amount: 0,
