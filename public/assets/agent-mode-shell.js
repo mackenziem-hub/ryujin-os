@@ -42,6 +42,22 @@
   let archetype = null;
   let speechRec = null;
 
+  // Client-side mirror of lib/archetypeRegistry's PILLAR_REGISTRY just deep
+  // enough to paint the avatar BEFORE the first /api/agent-chat round-trip.
+  // Without this, the shell opens with only the cyan text fallback (e.g.
+  // "HQ"/"SERVICE") and the bust never appears until the user sends a
+  // message. The server still returns the canonical archetype on first
+  // reply and may swap a richer one in.
+  const CLIENT_ARCHETYPES = {
+    hq:         { name: 'Sage',      accent_color: '#22d3ee', avatar_image: '/assets/archetypes/sage-bust.png',      avatar_video: '/assets/archetypes/sage.mp4',      avatar_poster: '/assets/archetypes/sage.jpg' },
+    sales:      { name: 'Hero',      accent_color: '#fbbf24', avatar_image: '/assets/archetypes/sovereign-bust.png', avatar_video: '/assets/archetypes/hero.mp4',      avatar_poster: '/assets/archetypes/hero.jpg' },
+    marketing:  { name: 'Magician',  accent_color: '#7c3aed', avatar_image: '/assets/archetypes/sage-bust.png',      avatar_video: '/assets/archetypes/magician.mp4',  avatar_poster: '/assets/archetypes/magician.jpg' },
+    service:    { name: 'Caregiver', accent_color: '#4ade80', avatar_image: '/assets/archetypes/caregiver-bust.png', avatar_video: '/assets/archetypes/caregiver.mp4', avatar_poster: '/assets/archetypes/caregiver.jpg' },
+    customer:   { name: 'Lover',     accent_color: '#f87171', avatar_image: '/assets/archetypes/caregiver-bust.png', avatar_video: '/assets/archetypes/lover.mp4',     avatar_poster: '/assets/archetypes/lover.jpg' },
+    finance:    { name: 'Ruler',     accent_color: '#a78bfa', avatar_image: '/assets/archetypes/sovereign-bust.png', avatar_video: '/assets/archetypes/ruler.mp4',     avatar_poster: '/assets/archetypes/ruler.jpg' },
+    production: { name: 'Sovereign', accent_color: '#fb923c', avatar_image: '/assets/archetypes/sovereign-bust.png', avatar_video: null, avatar_poster: null },
+  };
+
   // ─── Styles ────────────────────────────────────────────────────
   function injectStyles() {
     if (document.getElementById('ry-agent-shell-styles')) return;
@@ -119,28 +135,39 @@
         white-space: pre-wrap;
         word-wrap: break-word;
         overflow-wrap: break-word;
+        word-break: break-word;
         line-height: 1.5;
+        min-width: 0;
+        max-width: 100%;
       }
-      .ry-agent-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+      .ry-agent-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; width: 100%; }
       .ry-agent-action {
-        display: flex; align-items: center; gap: 10px;
+        display: flex; align-items: flex-start; gap: 10px;
         padding: 10px 14px; border-radius: 10px;
         background: rgba(20, 30, 50, 0.85);
         border: 1px solid rgba(34, 211, 238, 0.16);
         cursor: pointer; transition: all 0.15s;
         text-align: left;
         color: #d0daf0; font-family: inherit; font-size: 0.9em;
+        width: 100%;
       }
-      .ry-agent-action:hover { border-color: rgba(34, 211, 238, 0.35); transform: translateX(2px); }
+      .ry-agent-action:hover { border-color: rgba(34, 211, 238, 0.35); }
       .ry-agent-action.recommended {
         border-color: var(--archetype-color, #22d3ee);
         box-shadow: 0 0 12px rgba(34, 211, 238, 0.25);
       }
-      .ry-agent-action .label { font-weight: 600; flex: 1; }
+      .ry-agent-action .label {
+        font-weight: 600; flex: 1; min-width: 0;
+        word-wrap: break-word; overflow-wrap: break-word;
+        white-space: normal; line-height: 1.35;
+      }
       .ry-agent-action .why {
         display: block;
-        font-size: 0.78em; color: rgba(160, 190, 230, 0.55); margin-top: 2px;
+        font-size: 0.78em; color: rgba(160, 190, 230, 0.55); margin-top: 4px;
+        font-weight: 400; line-height: 1.4;
+        word-wrap: break-word; overflow-wrap: break-word;
       }
+      .ry-agent-action .badge { flex-shrink: 0; align-self: flex-start; }
       .ry-agent-action .badge {
         font-size: 0.55em; letter-spacing: 1.6px; text-transform: uppercase;
         padding: 2px 8px; border-radius: 8px;
@@ -644,6 +671,11 @@
     injectStyles();
     buildShell();
     ensureReopenFab();
+    // Paint the avatar with the pillar's default archetype IMMEDIATELY so
+    // there's a face the moment the shell opens — not just on the first
+    // /api/agent-chat reply.
+    const initialArch = CLIENT_ARCHETYPES[PILLAR] || CLIENT_ARCHETYPES.hq;
+    setArchetypeStyling(initialArch);
     document.addEventListener('ryujin:mode-change', onModeChange);
     // mode-switcher.js fires this on mobile first-visits so we boot the
     // greeting + focus the input even if a `ryujin:mode-change` event
