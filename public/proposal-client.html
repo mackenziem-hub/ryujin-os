@@ -501,6 +501,60 @@ section{padding:80px 0;position:relative}
   .scope-row .val{text-align:left;flex-basis:100%}
 }
 
+/* ─── DETAILED BREAKDOWN DROPDOWN ─── */
+.breakdown-dropdown{
+  max-width:900px;margin:14px auto 0;padding:0;
+  background:var(--bg-card);border:1px solid var(--border);border-radius:14px;
+  box-shadow:var(--shadow-sm);overflow:hidden;
+}
+.breakdown-dropdown summary{
+  list-style:none;cursor:pointer;
+  display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:14px;
+  padding:18px 24px;
+  transition:background 0.2s;
+}
+.breakdown-dropdown summary::-webkit-details-marker{display:none}
+.breakdown-dropdown summary:hover{background:rgba(196,74,23,0.04)}
+.breakdown-dropdown .bd-icon{font-size:1.4em;grid-row:1/3}
+.breakdown-dropdown .bd-title{
+  font-family:'Montserrat',sans-serif;font-weight:700;color:var(--ink);
+  letter-spacing:0.04em;font-size:0.98rem;grid-column:2/3;grid-row:1/2;
+}
+.breakdown-dropdown .bd-sub{
+  font-size:0.82rem;color:var(--ink-muted);grid-column:2/3;grid-row:2/3;
+  font-weight:400;
+}
+.breakdown-dropdown .bd-chevron{
+  font-size:1.1em;color:var(--accent);grid-row:1/3;
+  transition:transform 0.25s;
+}
+.breakdown-dropdown[open] .bd-chevron{transform:rotate(180deg)}
+.breakdown-dropdown[open] summary{border-bottom:1px dashed var(--border)}
+.breakdown-dropdown .bd-body{padding:0}
+.breakdown-dropdown .bd-actions{
+  display:flex;gap:14px;flex-wrap:wrap;
+  padding:12px 24px;background:rgba(196,74,23,0.04);
+  border-bottom:1px dashed var(--border);font-size:0.85rem;
+}
+.breakdown-dropdown .bd-actions a{
+  color:var(--accent);text-decoration:none;font-weight:600;
+  padding:4px 0;
+}
+.breakdown-dropdown .bd-actions a:hover{text-decoration:underline}
+.breakdown-dropdown .bd-frame{
+  width:100%;height:780px;background:#f4f1ec;
+}
+.breakdown-dropdown iframe{
+  width:100%;height:100%;border:0;display:block;background:#f4f1ec;
+}
+@media (max-width:560px){
+  .breakdown-dropdown summary{padding:14px 16px;gap:10px}
+  .breakdown-dropdown .bd-title{font-size:0.92rem}
+  .breakdown-dropdown .bd-sub{font-size:0.78rem}
+  .breakdown-dropdown .bd-actions{padding:10px 16px;font-size:0.8rem}
+  .breakdown-dropdown .bd-frame{height:680px}
+}
+
 /* ─── REVIEWS ─── */
 .reviews-grid{
   display:grid;grid-template-columns:repeat(3,1fr);gap:20px;
@@ -1263,6 +1317,24 @@ body:not(.envelope-active) #envelopeSection{display:none !important}
       </div>
       <div class="scope-list" id="scopeList"></div>
     </div>
+
+    <details class="breakdown-dropdown" id="breakdownDropdown">
+      <summary>
+        <span class="bd-icon" aria-hidden="true">📋</span>
+        <span class="bd-title">Detailed materials &amp; labor breakdown</span>
+        <span class="bd-sub">Line-by-line — for your records, your lender, or your insurance file.</span>
+        <span class="bd-chevron" aria-hidden="true">▾</span>
+      </summary>
+      <div class="bd-body">
+        <div class="bd-actions">
+          <a id="breakdownOpenTab" href="#" target="_blank" rel="noopener">↗ Open in new tab</a>
+          <a id="breakdownDownloadPdf" href="#" target="_blank" rel="noopener">⤓ Download PDF</a>
+        </div>
+        <div class="bd-frame">
+          <iframe id="breakdownFrame" title="Detailed breakdown" loading="lazy"></iframe>
+        </div>
+      </div>
+    </details>
   </div>
 </section>
 
@@ -1705,6 +1777,14 @@ async function loadData(){
   if (id) {
     try { const raw = localStorage.getItem('ry_v1_proposal_sent_' + id); if (raw) return JSON.parse(raw); }
     catch (e) {}
+    // Legacy Estimator OS estimates — server-side adapter at /api/proposal?id=<int>
+    // fetches from estimator-os.replit.app and returns the same shape as ?share=.
+    try {
+      const url = '/api/proposal?id=' + encodeURIComponent(id) + (internal ? '&internal=1' : '');
+      const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      if (r.ok) return await r.json();
+      console.warn('Legacy id fetch failed', r.status);
+    } catch (e) { console.warn('Legacy id fetch error', e); }
   }
   return DEMO;
 }
@@ -2150,6 +2230,31 @@ function renderScope(){
   document.getElementById('scopeList').innerHTML = rows.map(r => `
     <div class="scope-row"><span class="lbl">${r.lbl}</span><span class="val">${r.val}</span></div>
   `).join('');
+  wireBreakdownDropdown();
+}
+
+let _breakdownWired = false;
+function wireBreakdownDropdown(){
+  if (_breakdownWired) return;
+  const share = DATA?.shareToken;
+  if (!share) return;
+  const det = document.getElementById('breakdownDropdown');
+  const frame = document.getElementById('breakdownFrame');
+  const openTab = document.getElementById('breakdownOpenTab');
+  const pdfLink = document.getElementById('breakdownDownloadPdf');
+  if (!det || !frame) return;
+  const htmlUrl = '/api/breakdown-pdf?share=' + encodeURIComponent(share) + '&format=html';
+  const pdfUrl = '/api/breakdown-pdf?share=' + encodeURIComponent(share);
+  if (openTab) openTab.href = htmlUrl;
+  if (pdfLink) pdfLink.href = pdfUrl;
+  // Lazy-load: only set iframe src when first opened (saves bandwidth + render cost)
+  det.addEventListener('toggle', () => {
+    if (det.open && !frame.src) {
+      frame.src = htmlUrl;
+      try { logEvent('breakdown_opened', { share }); } catch(e){}
+    }
+  });
+  _breakdownWired = true;
 }
 
 function renderAccept(){
