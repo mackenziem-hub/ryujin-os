@@ -221,9 +221,33 @@ function renderActions() {
   ).join('');
 }
 
+// Resolve the current session user's UUID via /api/me so per-user
+// filtering on /api/state and /api/sales-state actually works. The
+// thin /portal-aj.html wrappers pass ?user=aj as a hint but state.js
+// expects a real UUID — falling back to the slug breaks the filter.
+let RESOLVED_USER_ID = null;
+async function resolveMe() {
+  try {
+    const tok = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token');
+    if (!tok) return null;
+    const r = await fetch('/api/me', { headers: { 'Authorization': `Bearer ${tok}` } });
+    if (!r.ok) return null;
+    const me = await r.json();
+    RESOLVED_USER_ID = me?.user_id || null;
+    return RESOLVED_USER_ID;
+  } catch { return null; }
+}
+
+function currentUserParam() {
+  // Prefer the live session UUID; fall back to the slug hint from the URL
+  // if we couldn't resolve (e.g. during local dev with no token).
+  return RESOLVED_USER_ID || USER_FILTER;
+}
+
 async function loadStats() {
   try {
-    const url = cfg.statsEndpoint + (USER_FILTER ? `?user_id=${encodeURIComponent(USER_FILTER)}` : '');
+    const u = currentUserParam();
+    const url = cfg.statsEndpoint + (u ? `?user_id=${encodeURIComponent(u)}` : '');
     const r = await fetch(url, { headers: { 'x-tenant-id': TENANT } });
     if (!r.ok) { renderStats({}); return; }
     const data = await r.json();
@@ -233,21 +257,31 @@ async function loadStats() {
 
 async function loadQueue() {
   try {
-    // Pull today's briefing items for the role's source agent.
+    // Pull today's tasks for this user — combines briefing items (the
+    // daily-agent feed) with open quests (the routed/manual task list).
     const today = new Date().toISOString().slice(0, 10);
-    const r = await fetch(`/api/state?source_agent=${encodeURIComponent(cfg.sourceAgent)}&for_date=${today}` + (USER_FILTER ? `&user_id=${encodeURIComponent(USER_FILTER)}` : ''), {
+    const u = currentUserParam();
+    const r = await fetch(`/api/state?source_agent=${encodeURIComponent(cfg.sourceAgent)}&for_date=${today}` + (u ? `&user_id=${encodeURIComponent(u)}` : ''), {
       headers: { 'x-tenant-id': TENANT }
     });
     if (!r.ok) { renderQueue([]); return; }
     const data = await r.json();
-    renderQueue(data.briefing || data.briefing_items || []);
+    const briefing = data.briefing || data.briefing_items || [];
+    const openQuests = (data.quests?.open || []).map(q => ({
+      title: q.title,
+      body: q.description || null,
+      priority: q.metadata?.urgency === 'urgent' ? 'urgent' : (q.metadata?.urgency === 'high' ? 'high' : 'normal'),
+      source_agent: q.source_agent || cfg.sourceAgent,
+    }));
+    renderQueue([...openQuests, ...briefing]);
   } catch { renderQueue([]); }
 }
 
 renderHeader();
 renderActions();
-loadStats();
-loadQueue();
+// Resolve the live user first so per-user filters work; then load. The
+// 5-minute interval keeps Tasks fresh as agents emit new items.
+resolveMe().then(() => { loadStats(); loadQueue(); });
 setInterval(() => { loadStats(); loadQueue(); }, 5 * 60 * 1000);
 </script>
 </body>

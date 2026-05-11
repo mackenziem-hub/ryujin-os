@@ -300,6 +300,7 @@ Use 'unknown' if no clear canonical intent. Confidence weighs both entity certai
       },
       operatorMessage: message,
       conversationId,
+      sourcePillar: pillarSlug,
     });
     if (r.ok) auto_routed = r.routed_to.map(rt => ({ ...rt, intent: extracted.intent, message_ids: r.message_ids, thread_id: r.thread_id }));
   }
