@@ -206,12 +206,14 @@ function resolveRepFromEstimate(est) {
   const slugFromTag = ownerTag ? ownerTag.split(':')[1]?.trim().toLowerCase() : '';
   const slug = (slugFromTag || est?.sales_owner_slug || '').toLowerCase();
 
-  if (slug.includes('mack')) return REPS.mackenzie;
+  // Accept multiple slug forms for Mac: mac / mack / mackenzie / mackenziem
+  const isMac = s => /^(mac|mack|mackenzie)/.test(s) || s.includes('mackenzie') || s.includes('mazerolle');
+  if (isMac(slug)) return REPS.mackenzie;
   if (slug.includes('darcy')) return REPS.darcy;
 
   // Legacy path — very occasionally sales_owner is a human name string not a UUID
   const legacyKey = String(est?.sales_owner || '').toLowerCase().trim();
-  if (legacyKey.includes('mack')) return REPS.mackenzie;
+  if (isMac(legacyKey)) return REPS.mackenzie;
   if (legacyKey.includes('darcy')) return REPS.darcy;
 
   return REPS.darcy;
@@ -222,6 +224,20 @@ export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
   const share = String(req.query.share || '').trim();
+  const legacyId = String(req.query.id || '').trim();
+
+  // Legacy Estimator OS proposals — pre-Ryujin estimates that were sent with
+  // URLs of the form /api/proposal?id=<int>. The data lives in the Estimator
+  // OS Replit app, not Ryujin. Browsers get redirected to proposal-client.html
+  // (which then calls back here with Accept: application/json for the JSON).
+  if (legacyId && !share) {
+    const wantsHtml = String(req.headers.accept || '').toLowerCase().includes('text/html');
+    if (wantsHtml) {
+      return res.redirect(302, `/proposal-client.html?id=${encodeURIComponent(legacyId)}`);
+    }
+    return renderLegacyEstimatorOs(legacyId, req, res);
+  }
+
   if (!share) return res.status(400).json({ error: 'Missing ?share=<token>' });
 
   const { data: est, error } = await supabaseAdmin
@@ -467,4 +483,193 @@ export default async function handler(req, res) {
     .then(() => {}, () => {});
 
   return res.json(data);
+}
+
+// ─────────────────────────────────────────────
+// Legacy Estimator OS shim
+//
+// Pre-Ryujin estimates were created in the Estimator OS Replit app and their
+// "view proposal" links use /api/proposal?id=<int>. The data lives in
+// estimator-os.replit.app, not Ryujin. We fetch from there and translate the
+// shape into what proposal-client.html consumes. Read-only — no view-count
+// tracking, no acceptance flow (those pages will render with the legacy flag
+// surfaced so customers can call us to confirm).
+// ─────────────────────────────────────────────
+
+const ESTIMATOR_OS_BASE = 'https://estimator-os.replit.app';
+
+async function renderLegacyEstimatorOs(legacyId, req, res) {
+  const idNum = Number(legacyId);
+  if (!Number.isInteger(idNum) || idNum < 1) {
+    return res.status(400).json({ error: 'Invalid legacy id' });
+  }
+
+  const apiKey = String(process.env.ESTIMATOR_KEY || '').trim();
+  if (!apiKey) {
+    return res.status(500).json({ error: 'ESTIMATOR_KEY not configured' });
+  }
+
+  let estOs;
+  try {
+    const r = await fetch(`${ESTIMATOR_OS_BASE}/api/estimates/${idNum}`, {
+      headers: { 'x-api-key': apiKey }
+    });
+    if (r.status === 404) return res.status(404).json({ error: 'Proposal not found' });
+    if (!r.ok) return res.status(502).json({ error: 'Estimator OS upstream error', status: r.status });
+    estOs = await r.json();
+  } catch (e) {
+    return res.status(502).json({ error: 'Estimator OS fetch failed', message: String(e && e.message || e) });
+  }
+
+  return res.json(buildLegacyProposalData(estOs));
+}
+
+function legacyImageUrl(url) {
+  if (!url) return '';
+  const u = String(url);
+  if (/^https?:\/\//i.test(u)) return u;
+  if (u.startsWith('/')) return `${ESTIMATOR_OS_BASE}${u}`;
+  return u;
+}
+
+function legacyRep(salesOwner) {
+  const o = String(salesOwner || '').toLowerCase();
+  if (o.includes('mack')) return REPS.mackenzie;
+  if (o.includes('darcy')) return REPS.darcy;
+  return REPS.darcy;
+}
+
+function buildLegacyProposalData(estOs) {
+  const customer = estOs.customer || {};
+  const pricing = estOs.pricing || {};
+  const measurements = estOs.roofMeasurements || {};
+  const photos = Array.isArray(estOs.photos) ? estOs.photos : [];
+  const sq = Number(measurements.roofAreaSq) || 0;
+
+  const tierEntries = ['gold', 'platinum', 'diamond']
+    .map(tierId => {
+      const meta = TIER_CATALOG[tierId];
+      const p = pricing[tierId];
+      const total = Number(p && p.sellingPrice) || 0;
+      if (!meta || total <= 0) return null;
+      const persq = sq > 0 ? Math.round(total / sq) : 0;
+      const [primary, ...rest] = (meta.name || tierId).split(/\s*·\s*/);
+      return {
+        id: tierId,
+        tag: meta.tag,
+        name: primary,
+        sub: rest.join(' · '),
+        desc: meta.desc,
+        total,
+        originalTotal: null,
+        promoLabel: null,
+        persq,
+        perks: meta.perks,
+        warrantyYears: null
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.total - b.total);
+
+  const cap = p => String(p && p.caption || '').toLowerCase().replace(/[\s_-]+/g, '_');
+  const cover = photos.find(p => p && p.isCover) || photos[0];
+  const beforePhoto = photos.find(p => cap(p) === 'before');
+  const afterPhoto = photos.find(p => cap(p) === 'after');
+  const ROLE_CAPTIONS = new Set(['before', 'after', 'metal_after', 'metal_cover', 'cover']);
+  const customGallery = photos
+    .filter(p => p && !p.isCover && !ROLE_CAPTIONS.has(cap(p)))
+    .map(p => ({
+      loc: 'PLUS ULTRA ROOFING',
+      desc: p.caption || 'Project photo',
+      img: legacyImageUrl(p.url)
+    }));
+
+  const rep = legacyRep(estOs.salesOwner);
+  const sel = String(estOs.selectedPackage || 'platinum').toLowerCase();
+
+  return {
+    refId: `PU-${estOs.id}`,
+    estimateId: `legacy-${estOs.id}`,
+    shareToken: estOs.shareToken || null,
+    customer: {
+      name: customer.fullName || '',
+      address: [customer.address, customer.city, customer.province].filter(Boolean).join(', '),
+      phone: customer.phone || '',
+      email: customer.email || '',
+      coverImage: legacyImageUrl(cover && cover.url) || PU_DEFAULT_MEDIA.afterImage
+    },
+    rep,
+    branding: TENANT_BRANDING_DEFAULT,
+    certifications: CERTIFICATIONS,
+    testimonials: TESTIMONIALS,
+    reviewStats: REVIEW_STATS,
+    scope: {
+      system: 'asphalt',
+      recommended: ['gold', 'platinum', 'diamond'].includes(sel) ? sel : 'platinum',
+      roofArea: sq * 100,
+      pitch: measurements.roofPitch || '',
+      eaves: measurements.eavesLf || 0,
+      rakes: measurements.rakesLf || 0,
+      ridges: measurements.ridgeLf || 0,
+      distanceKm: measurements.distanceKm || 0,
+      chimneys: measurements.chimneyType && measurements.chimneyType !== 'None' ? 1 : 0,
+      soffit: 0, fascia: 0, gutter: 0,
+      osbSheets: 0, remediation: 0,
+      measure: { sq: sq ? sq.toFixed(1) : '—' },
+      lineItems: buildLegacyScopeLineItems(estOs)
+    },
+    optionalAdders: {},
+    addons: [],
+    envelope: null,
+    media: {
+      ...PU_DEFAULT_MEDIA,
+      beforeImage: legacyImageUrl(beforePhoto && beforePhoto.url) || PU_DEFAULT_MEDIA.beforeImage,
+      afterImage: legacyImageUrl(afterPhoto && afterPhoto.url) || PU_DEFAULT_MEDIA.afterImage,
+      videoUrl: resolveIntroVideo(rep, 'shingle'),
+      gallery: customGallery.length ? [...customGallery, ...GALLERY].slice(0, 8) : GALLERY
+    },
+    tiers: { asphalt: tierEntries, metal: [] },
+    metal: null,
+    hasBothSystems: false,
+    internal: false,
+    sopAudit: null,
+    legacy: true,
+    legacySource: 'estimator-os',
+    legacyId: estOs.id
+  };
+}
+
+function buildLegacyScopeLineItems(estOs) {
+  const m = estOs.roofMeasurements || {};
+  const sq = Number(m.roofAreaSq) || 0;
+  const sel = String(estOs.selectedPackage || 'platinum').toLowerCase();
+  const prod = {
+    gold: 'CertainTeed Landmark',
+    platinum: 'CertainTeed Landmark Pro (Max Def)',
+    diamond: 'CertainTeed Grand Manor'
+  }[sel] || 'CertainTeed Landmark';
+  const workmanship = { gold: '15 yr', platinum: '20 yr', diamond: '25 yr' }[sel] || '15 yr';
+  const iwsProd = sel === 'gold' ? 'standard' : 'Grace';
+  const underlayProd = sel === 'gold' ? 'standard synthetic' : 'Roof Runner';
+  const eaves = Number(m.eavesLf) || 0;
+  const rakes = Number(m.rakesLf) || 0;
+  const ridge = Number(m.ridgeLf) || 0;
+  const valleys = Number(m.valleysLf) || 0;
+
+  const items = [
+    { label: prod + ' + install', value: (sq ? sq.toFixed(1) + ' SQ' : '—') + ' · included' },
+    { label: 'Full tear-off to deck', value: 'included' },
+    { label: iwsProd + ' ice & water shield', value: eaves ? (eaves + (valleys ? '+' + valleys : '') + ' LF eaves+valleys') : 'included' },
+    { label: underlayProd + ' underlayment', value: 'full deck' },
+    { label: 'Drip edge', value: (eaves || rakes) ? (eaves + rakes) + ' LF' : 'included' },
+    { label: 'Ridge venting', value: ridge ? ridge + ' LF' : 'included' },
+    { label: 'Valley metal', value: valleys ? valleys + ' LF' : 'included where applicable' },
+    { label: 'Hip and ridge caps', value: 'included' },
+    { label: 'Substrate inspection + re-nail', value: 'included' },
+    { label: 'Magnetic cleanup + debris haul', value: 'included' },
+    { label: '50–100+ photo documentation', value: 'every stage via Company Cam' },
+    { label: 'Manufacturer warranty', value: 'Lifetime limited + 10-yr SureStart™' },
+    { label: 'Plus Ultra workmanship', value: workmanship + ' + leak-free guarantee' }
+  ];
+  return items;
 }
