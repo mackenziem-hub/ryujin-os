@@ -23,8 +23,19 @@
     window.navigator.standalone === true;
 
   const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const isAndroid = /Android/i.test(navigator.userAgent);
 
   let deferredPrompt = null;
+
+  // Register a minimal service worker so Chrome (Android + desktop) fires
+  // the native `beforeinstallprompt` event. Without a SW, Chrome may
+  // refuse to show its "Install app" dialog and the install button
+  // silently falls through to the manual-instructions modal.
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch((e) => {
+      console.warn('[install-pwa] service worker registration failed:', e?.message || e);
+    });
+  }
 
   window.addEventListener('beforeinstallprompt', (ev) => {
     ev.preventDefault();
@@ -48,7 +59,7 @@
     });
   }
 
-  function showIOSModal() {
+  function buildModal(titleHtml, bodyHtml) {
     if (document.getElementById('ry-install-modal')) return;
     const wrap = document.createElement('div');
     wrap.id = 'ry-install-modal';
@@ -57,42 +68,48 @@
     wrap.style.cssText = 'position:fixed;inset:0;background:rgba(6,10,20,0.92);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px;font-family:system-ui,-apple-system,sans-serif';
     wrap.innerHTML = `
       <div style="background:rgba(20,30,50,0.97);border:1px solid rgba(34,211,238,0.3);border-radius:14px;padding:22px;max-width:340px;color:#d0daf0;box-shadow:0 20px 50px rgba(0,0,0,0.5)">
-        <h2 style="margin:0 0 12px;font-size:1.05em;font-weight:700;letter-spacing:0.5px;color:#22d3ee">Install Ryujin on iPhone</h2>
-        <ol style="padding-left:22px;line-height:1.65;font-size:0.93em;margin:0 0 18px;color:#d0daf0">
-          <li>Tap the <strong>Share</strong> icon
-            <svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;display:inline-block" fill="none" stroke="#22d3ee" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>
-            at the bottom of Safari.
-          </li>
-          <li>Scroll down and tap <strong>Add to Home Screen</strong>.</li>
-          <li>Tap <strong>Add</strong> in the top-right corner.</li>
-        </ol>
-        <p style="font-size:0.78em;color:rgba(160,190,230,0.55);margin:0 0 14px;line-height:1.5">Tap the Ryujin icon any time to jump straight into your portal — no login screen.</p>
-        <button type="button" id="ry-install-close" style="width:100%;padding:10px 14px;background:linear-gradient(135deg,#22d3ee,#7c3aed);color:#0a0e1a;font-family:inherit;font-weight:700;letter-spacing:1px;text-transform:uppercase;font-size:0.78em;border:none;border-radius:10px;cursor:pointer">Got it</button>
+        <h2 style="margin:0 0 12px;font-size:1.05em;font-weight:700;letter-spacing:0.5px;color:#22d3ee">${titleHtml}</h2>
+        ${bodyHtml}
+        <button type="button" id="ry-install-close" style="width:100%;padding:10px 14px;margin-top:14px;background:linear-gradient(135deg,#22d3ee,#7c3aed);color:#0a0e1a;font-family:inherit;font-weight:700;letter-spacing:1px;text-transform:uppercase;font-size:0.78em;border:none;border-radius:10px;cursor:pointer">Got it</button>
       </div>`;
     wrap.addEventListener('click', (e) => { if (e.target === wrap) wrap.remove(); });
     document.body.appendChild(wrap);
     document.getElementById('ry-install-close').addEventListener('click', () => wrap.remove());
   }
 
+  function showIOSModal() {
+    buildModal('Install Ryujin on iPhone', `
+      <ol style="padding-left:22px;line-height:1.65;font-size:0.93em;margin:0;color:#d0daf0">
+        <li>Tap the <strong>Share</strong> icon
+          <svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;display:inline-block" fill="none" stroke="#22d3ee" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>
+          at the bottom of Safari.
+        </li>
+        <li>Scroll down and tap <strong>Add to Home Screen</strong>.</li>
+        <li>Tap <strong>Add</strong> in the top-right corner.</li>
+      </ol>
+      <p style="font-size:0.78em;color:rgba(160,190,230,0.55);margin:14px 0 0;line-height:1.5">Tap the Ryujin icon any time to jump straight into your portal — no login screen.</p>`);
+  }
+
+  function showAndroidModal() {
+    buildModal('Install Ryujin on Android', `
+      <ol style="padding-left:22px;line-height:1.65;font-size:0.93em;margin:0;color:#d0daf0">
+        <li>Tap the <strong>⋮</strong> menu in the top-right of Chrome.</li>
+        <li>Tap <strong>Install app</strong> (or <strong>Add to Home screen</strong> if you don't see Install).</li>
+        <li>Confirm <strong>Install</strong> in the dialog.</li>
+      </ol>
+      <p style="font-size:0.78em;color:rgba(160,190,230,0.55);margin:14px 0 0;line-height:1.5">Once installed, Ryujin opens like a real app — no browser chrome, fast cold-start, works offline-tolerant.</p>`);
+  }
+
   function showDesktopHint() {
-    if (document.getElementById('ry-install-modal')) return;
-    const wrap = document.createElement('div');
-    wrap.id = 'ry-install-modal';
-    wrap.style.cssText = 'position:fixed;inset:0;background:rgba(6,10,20,0.92);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px;font-family:system-ui,-apple-system,sans-serif';
-    wrap.innerHTML = `
-      <div style="background:rgba(20,30,50,0.97);border:1px solid rgba(34,211,238,0.3);border-radius:14px;padding:22px;max-width:340px;color:#d0daf0">
-        <h2 style="margin:0 0 12px;font-size:1.05em;font-weight:700;color:#22d3ee">Install on your phone</h2>
-        <p style="font-size:0.92em;line-height:1.55;margin:0 0 18px">Open Ryujin on your phone (iPhone Safari or Android Chrome) and tap <strong>Install</strong> again from there.</p>
-        <button type="button" id="ry-install-close" style="width:100%;padding:10px 14px;background:linear-gradient(135deg,#22d3ee,#7c3aed);color:#0a0e1a;font-weight:700;letter-spacing:1px;text-transform:uppercase;font-size:0.78em;border:none;border-radius:10px;cursor:pointer">Got it</button>
-      </div>`;
-    wrap.addEventListener('click', (e) => { if (e.target === wrap) wrap.remove(); });
-    document.body.appendChild(wrap);
-    document.getElementById('ry-install-close').addEventListener('click', () => wrap.remove());
+    buildModal('Install on your phone', `
+      <p style="font-size:0.92em;line-height:1.55;margin:0">Open Ryujin on your phone (Android Chrome or iPhone Safari) and tap <strong>Install on phone</strong> from the portal there.</p>`);
   }
 
   async function install() {
     if (isStandalone) return;
     if (deferredPrompt) {
+      // Android Chrome (and desktop Chrome/Edge) populate this. Native
+      // install dialog is the best UX — one tap and they're installed.
       try {
         deferredPrompt.prompt();
         const { outcome } = await deferredPrompt.userChoice;
@@ -103,6 +120,7 @@
       return;
     }
     if (isIOS) return showIOSModal();
+    if (isAndroid) return showAndroidModal();   // SW not yet registered or Chrome holding off the native prompt
     return showDesktopHint();
   }
 
