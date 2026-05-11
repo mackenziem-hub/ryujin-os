@@ -23,6 +23,7 @@
 
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireTenant } from '../lib/tenant.js';
+import { sendSMS, smsPreview } from '../lib/sms.js';
 
 async function resolveCurrentUser(req) {
   const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim()
@@ -161,25 +162,31 @@ async function handler(req, res) {
       .from('messages').insert(inserts).select('*');
     if (error) return res.status(500).json({ error: error.message });
 
-    // Fire SMS notification to recipients via GHL (best-effort, non-blocking).
-    // Only fires for known contacts (Mac for now — others need ghl_contact_id
-    // resolved or migration to direct Twilio send).
+    // Fire SMS notification to each recipient via Twilio (best-effort, async).
+    // From their own ryujin_phone_number so the conversation feels native:
+    // they see "AJ Ryujin" / "Cat Ryujin" etc. as the sender and any reply
+    // they fire back lands in that user's Ryujin inbound webhook.
+    // Skip self-sends (Mac messaging Mac). Skip recipients without a ryujin
+    // number (e.g. Ryan-as-crew) or without a personal cell.
     try {
-      const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
-      const MACKENZIE_CONTACT = '02IhxZfSwZZAZ2fooVGu';
-      const MAC_USER_ID = 'e5eac641-9c49-4dac-861e-4a0710474444';
-      if (GHL_TOKEN && recipients.includes(MAC_USER_ID) && me?.id !== MAC_USER_ID) {
-        const senderName = me?.name || body.from_label || 'Ryujin';
-        const preview = (body.body || '').slice(0, 120).replace(/\s+/g, ' ');
-        const subjLine = body.subject ? ` "${body.subject}"` : '';
-        const link = `https://ryujin-os.vercel.app/messages.html`;
-        const smsBody = `[Ryujin] ${senderName} →${subjLine}: ${preview}${preview.length === 120 ? '…' : ''}  ${link}`;
-        fetch('https://services.leadconnectorhq.com/conversations/messages', {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${GHL_TOKEN}`, 'Version': '2021-07-28', 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'SMS', contactId: MACKENZIE_CONTACT, message: smsBody }),
-          signal: AbortSignal.timeout(10000)
-        }).catch(e => console.warn('[messages] SMS to Mac failed:', e.message));
+      const senderName = me?.name || body.from_label || 'Ryujin';
+      const subjLine = body.subject ? `[${body.subject}] ` : '';
+      const preview = smsPreview(body.body, 110);
+      const link = 'https://ryujin-os.vercel.app/messages.html';
+      const smsText = `[Ryujin] ${senderName}: ${subjLine}${preview} ${link}`;
+
+      const { data: recipUsers } = await supabaseAdmin
+        .from('users')
+        .select('id, name, phone, ryujin_phone_number')
+        .in('id', recipients);
+      for (const u of recipUsers || []) {
+        if (me?.id && u.id === me.id) continue;          // don't SMS yourself
+        if (!u.ryujin_phone_number) continue;             // no sender number assigned
+        if (!u.phone) continue;                           // no destination cell
+        // Fire and forget — don't block response on Twilio latency.
+        sendSMS({ from: u.ryujin_phone_number, to: u.phone, body: smsText })
+          .then(r => { if (!r.ok) console.warn(`[messages] SMS to ${u.name} failed: ${r.error}`); })
+          .catch(e => console.warn(`[messages] SMS to ${u.name} crashed: ${e.message}`));
       }
     } catch (e) { console.warn('[messages] notify block error:', e.message); }
 
