@@ -4746,6 +4746,26 @@ const cutscene = {
       return;
     }
 
+    // Bulletproof skip — document-level click + key listeners while the
+    // cutscene is open. Bubble-based onclick on the cutscene div alone
+    // was getting eaten by some descendant; this guarantees that ANY
+    // click anywhere or any of Esc/Enter/Space/Tap skips immediately.
+    this._docClickHandler = (e) => {
+      // Ignore clicks on the ACTIVATE button — it has its own path.
+      if (e.target.closest && e.target.closest('#csActivate')) return;
+      this.skip();
+    };
+    this._docKeyHandler = (e) => {
+      if (this.done) return;
+      if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+        e.preventDefault();
+        this.skip();
+      }
+    };
+    document.addEventListener('click', this._docClickHandler, true);  // capture phase = nothing can stop it
+    document.addEventListener('touchend', this._docClickHandler, true);
+    document.addEventListener('keydown', this._docKeyHandler, true);
+
     // Hide main UI during cutscene
     document.querySelector('.layout').style.visibility = 'hidden';
     document.querySelector('.video-bg').style.visibility = 'hidden';
@@ -4788,6 +4808,14 @@ const cutscene = {
   // Finish: remove cutscene, show app
   finish() {
     this.done = true;
+    // Detach the document-level skip listeners.
+    if (this._docClickHandler) {
+      document.removeEventListener('click', this._docClickHandler, true);
+      document.removeEventListener('touchend', this._docClickHandler, true);
+    }
+    if (this._docKeyHandler) {
+      document.removeEventListener('keydown', this._docKeyHandler, true);
+    }
     localStorage.setItem('ryujin_cutscene_seen', '1');
 
     const el = document.getElementById('cutscene');
