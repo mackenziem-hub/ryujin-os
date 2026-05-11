@@ -3749,15 +3749,12 @@ function drawTicketDrawer() {
         <label>Description</label>
         <textarea id="tk_desc" rows="4" onblur="crewUpdateField('description', this.value)" placeholder="What needs to happen?">${esc(t.description||'')}</textarea>
       </section>
-      <section class="grid2">
-        <div>
-          <label>Assigned To</label>
-          <input type="text" id="tk_assigned_name" value="${esc(t.assigned_user?.name||'')}" disabled placeholder="Use ID below">
-        </div>
-        <div>
-          <label>Assigned User ID</label>
-          <input type="text" id="tk_assigned_id" value="${esc(t.assigned_to||'')}" placeholder="UUID" onblur="crewUpdateField('assigned_to', this.value||null)">
-        </div>
+      <section>
+        <label>Assigned To</label>
+        <select id="tk_assigned_select" onchange="crewUpdateField('assigned_to', this.value || null)" style="width:100%">
+          <option value="">— Unassigned —</option>
+        </select>
+        <div class="form-hint" id="tk_assigned_hint" style="display:none">Loading team…</div>
       </section>
       <section>
         <label>Tags (comma separated)</label>
@@ -3784,6 +3781,30 @@ function drawTicketDrawer() {
   document.body.appendChild(d);
   // Trigger transition
   requestAnimationFrame(() => { back.classList.add('open'); d.classList.add('open'); });
+
+  // Populate the assignee dropdown (cached across drawer opens)
+  populateAssigneeSelect(t.assigned_to);
+}
+
+let _crewUsersCache = null;
+async function populateAssigneeSelect(currentAssignedId) {
+  const sel = document.getElementById('tk_assigned_select');
+  if (!sel) return;
+  if (!_crewUsersCache) {
+    try {
+      const r = await fetch('/api/users', { headers: { 'x-tenant-id': TENANT } });
+      if (r.ok) {
+        const data = await r.json();
+        _crewUsersCache = (data.users || data.data || data || []).filter(u => u.active !== false);
+      } else { _crewUsersCache = []; }
+    } catch { _crewUsersCache = []; }
+  }
+  const opts = ['<option value="">— Unassigned —</option>'];
+  for (const u of _crewUsersCache) {
+    const selected = u.id === currentAssignedId ? ' selected' : '';
+    opts.push(`<option value="${u.id}"${selected}>${esc(u.name || u.email || u.id)} · ${esc(u.role || '')}</option>`);
+  }
+  sel.innerHTML = opts.join('');
 }
 
 function closeTicketDrawer() {

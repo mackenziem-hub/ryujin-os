@@ -154,7 +154,11 @@ async function handler(req, res) {
         project_id: body.project_id || null,
         assigned_to: body.assigned_to || null,
         priority: body.priority || 'medium',
-        status: body.assigned_to ? 'open' : 'open',
+        // All new tickets default to 'open'. Workflow ('open' → 'active' → 'done')
+        // transitions via PUT, not POST. The previous ternary was identical on
+        // both branches and surfaced no distinction — kept the same final
+        // value, removed the dead code.
+        status: 'open',
         due_date: body.due_date || null,
         tags: body.tags || [],
         notes: body.notes || []
