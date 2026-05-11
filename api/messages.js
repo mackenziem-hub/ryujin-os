@@ -97,6 +97,20 @@ async function handler(req, res) {
 
   if (req.method === 'POST') {
     const body = req.body || {};
+    // Auth gate: human-sent messages MUST have a resolved session user.
+    // Agent/system messages may run without a session user IFF they
+    // (a) carry an explicit from_label AND (b) include metadata.source_user_id
+    // (so the auto-route is auditable + visible to the originating user).
+    // Without either, refuse — silent fallthrough to from_user_id=null was
+    // producing orphan "system" messages with no UI affordance.
+    const isAgentRoute = !!body.from_label && !!body.metadata?.source_user_id;
+    if (!me && !isAgentRoute) {
+      return res.status(401).json({
+        error: 'Sign in to send messages',
+        code: 'AUTH_REQUIRED',
+        hint: 'No valid session token. Visit /login.html to sign in.'
+      });
+    }
     // Accept both single recipient (to_user_id) and multi-recipient (to_user_ids array).
     // Multi-recipient creates N rows sharing a single thread_id so the conversation
     // is one continuous thread visible to every participant.

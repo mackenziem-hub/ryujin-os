@@ -161,6 +161,30 @@ function authHeaders() {
   return headers;
 }
 
+function showAuthBanner(reason) {
+  if (document.getElementById('authBanner')) return;
+  const b = document.createElement('div');
+  b.id = 'authBanner';
+  b.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:200;background:rgba(248,113,113,0.12);border:1px solid rgba(248,113,113,0.5);color:#fca5a5;padding:12px 18px;border-radius:12px;font-size:0.85em;display:flex;gap:14px;align-items:center;backdrop-filter:blur(20px);box-shadow:0 8px 30px rgba(0,0,0,0.4)';
+  b.innerHTML = `<span>⚠ ${escapeHtml(reason || 'Your session is missing or expired — messages will not send.')}</span><a href="/login.html?next=${encodeURIComponent(location.pathname)}" style="padding:6px 14px;border-radius:8px;background:#f87171;color:#0a0e1a;text-decoration:none;font-family:'Orbitron',monospace;font-size:0.78em;font-weight:700;letter-spacing:1.2px">Sign in</a>`;
+  document.body.appendChild(b);
+}
+
+(function checkTokenOnLoad() {
+  const tok = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token');
+  if (!tok) showAuthBanner('You are not signed in. Sending will not work until you sign in.');
+})();
+
+async function handleAuthResponse(r) {
+  if (r.status === 401) {
+    let info = {};
+    try { info = await r.clone().json(); } catch {}
+    showAuthBanner(info.hint || info.error || 'Your session expired. Sign in to continue.');
+    return true;
+  }
+  return false;
+}
+
 async function loadList() {
   const r = await fetch(`/api/messages?box=${activeBox}&limit=200`, { headers: authHeaders() });
   if (!r.ok) {
@@ -253,10 +277,13 @@ async function sendReply() {
     body: JSON.stringify({ to_user_id: toUser, body: text, reply_to: replyTo, thread_id: activeThread }),
   });
   document.getElementById('replyBtn').disabled = false;
+  if (await handleAuthResponse(r)) return;
   if (r.ok) {
     document.getElementById('replyText').value = '';
     openThread(activeThread);
     loadList();
+  } else {
+    alert(`Reply failed: HTTP ${r.status}`);
   }
 }
 
@@ -334,6 +361,7 @@ async function sendNew() {
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify({ to_user_ids: allRecipients, subject: subject || null, body: body.trim() }),
   });
+  if (await handleAuthResponse(r)) return;
   if (r.ok) {
     document.getElementById('composeModal').classList.remove('open');
     document.getElementById('composeBody').value = '';
@@ -344,7 +372,9 @@ async function sendNew() {
     document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.box === 'sent'));
     loadList();
   } else {
-    alert(`Send failed: HTTP ${r.status}`);
+    let errText = `Send failed: HTTP ${r.status}`;
+    try { const j = await r.json(); if (j.error) errText += ' — ' + j.error; } catch {}
+    alert(errText);
   }
 }
 
