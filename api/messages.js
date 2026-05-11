@@ -55,6 +55,12 @@ async function handler(req, res) {
     const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
     const threadId = req.query.thread_id;
 
+    // Order direction depends on view: threads display chronologically
+    // (oldest → newest, replies anchor at bottom of the scrollable pane);
+    // inbox/sent lists show newest first. We DON'T stack two .order calls
+    // because Supabase treats the first as primary — earlier code paired
+    // DESC then ASC, so thread fetches were silently returning newest-first
+    // and replies appeared at the top of the pane instead of the bottom.
     let q = supabaseAdmin
       .from('messages')
       .select(`
@@ -65,7 +71,6 @@ async function handler(req, res) {
         to_user:users!messages_to_user_id_fkey(name, email, role)
       `)
       .eq('tenant_id', tenantId)
-      .order('created_at', { ascending: false })
       .limit(limit);
 
     if (threadId) {
@@ -75,14 +80,14 @@ async function handler(req, res) {
       q = q.eq('thread_id', threadId).or(`from_user_id.eq.${me.id},to_user_id.eq.${me.id},metadata->>source_user_id.eq.${me.id}`).order('created_at', { ascending: true });
     } else if (box === 'sent') {
       // "sent" = your DMs + auto-routes your agent fired on your behalf.
-      q = q.or(`from_user_id.eq.${me.id},and(from_user_id.is.null,metadata->>source_user_id.eq.${me.id})`).is('archived_at', null);
+      q = q.or(`from_user_id.eq.${me.id},and(from_user_id.is.null,metadata->>source_user_id.eq.${me.id})`).is('archived_at', null).order('created_at', { ascending: false });
     } else if (box === 'auto_routes') {
       // Audit-only: just the auto-routed posts originating from this user.
-      q = q.is('from_user_id', null).filter('metadata->>source_user_id', 'eq', me.id);
+      q = q.is('from_user_id', null).filter('metadata->>source_user_id', 'eq', me.id).order('created_at', { ascending: false });
     } else if (box === 'unread') {
-      q = q.eq('to_user_id', me.id).is('read_at', null).is('archived_at', null);
+      q = q.eq('to_user_id', me.id).is('read_at', null).is('archived_at', null).order('created_at', { ascending: false });
     } else {
-      q = q.eq('to_user_id', me.id).is('archived_at', null);
+      q = q.eq('to_user_id', me.id).is('archived_at', null).order('created_at', { ascending: false });
     }
 
     const { data, error } = await q;

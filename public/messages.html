@@ -277,7 +277,9 @@ async function openThread(threadId) {
   const r = await fetch(`/api/messages?thread_id=${encodeURIComponent(threadId)}`, { headers: authHeaders() });
   if (!r.ok) { document.getElementById('threadBody').innerHTML = `<div class="empty-state"><div class="ico">⚠</div>Failed (HTTP ${r.status})</div>`; return; }
   const data = await r.json();
-  const msgs = data.messages || [];
+  // Force ascending by created_at — defensive sort so replies always
+  // append to the bottom regardless of API ordering quirks.
+  const msgs = (data.messages || []).slice().sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   if (msgs.length === 0) { document.getElementById('threadBody').innerHTML = `<div class="empty-state">Empty thread</div>`; return; }
   const head = msgs[0];
   const otherName = head.from_user_id === me.id ? (head.to_user?.name || 'recipient') : (head.from_user?.name || head.from_label || 'system');
