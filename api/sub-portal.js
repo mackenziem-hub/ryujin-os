@@ -202,19 +202,21 @@ async function getSchedule(tenantId, woId) {
     map_url = null;
   }
 
-  // Supervisor contact: pull AJ from users for this tenant
+  // Supervisor contact: pull AJ from users for this tenant.
+  // (Column is `name`, not `full_name` — earlier lookup silently returned 0 rows
+  // and Ryan's portal showed "Supervisor: AJ" with no tap-to-call link.)
   let supervisor_contact = { name: 'AJ', phone: null, role: 'Site Supervisor' };
   try {
     const { data: aj } = await supabaseAdmin
       .from('users')
-      .select('full_name, phone, email, role')
+      .select('name, phone, email, role')
       .eq('tenant_id', tenantId)
-      .ilike('full_name', '%aj%')
+      .ilike('name', '%aj%')
       .limit(1)
       .maybeSingle();
     if (aj) {
       supervisor_contact = {
-        name: aj.full_name || 'AJ',
+        name: aj.name || 'AJ',
         phone: aj.phone || null,
         email: aj.email || null,
         role: aj.role || 'Site Supervisor'
@@ -399,12 +401,21 @@ function getRatesForSub(sub) {
       { label: 'Carpentry — half day', value: rates.carpentry_half_day, unit: '$/half-day', key: 'carpentry_half_day' },
       { label: 'Carpentry — full day', value: rates.carpentry_full_day, unit: '$/day', key: 'carpentry_full_day' }
     ],
+    // v2.2 per-km linear formula (May 8 2026). Shown as a single line so the
+    // displayed rate matches what the paysheet computes — the old bracket
+    // values (travel_per_sq_40_60km / 60plus_km) are deprecated and were
+    // confusing Ryan because his paysheet "Travel surcharge (48 km)" line
+    // didn't reconcile with a $20 or $30 bracket.
     'Travel & Waste': [
-      { label: 'Travel surcharge — 40-60km', value: rates.travel_per_sq_40_60km, unit: '$/SQ', key: 'travel_per_sq_40_60km' },
-      { label: 'Travel surcharge — 60+km', value: rates.travel_per_sq_60plus_km, unit: '$/SQ', key: 'travel_per_sq_60plus_km' },
-      { label: 'Waste removal — in town', value: rates.waste_removal_in_town, unit: 'flat', key: 'waste_removal_in_town' },
-      { label: 'Waste removal — out of town', value: rates.waste_removal_out_of_town, unit: 'flat', key: 'waste_removal_out_of_town' },
-      { label: 'Waste removal — far', value: rates.waste_removal_far, unit: 'flat', key: 'waste_removal_far' }
+      {
+        label: `Travel surcharge (above ${rates.travel_free_zone_km ?? 40} km free zone)`,
+        value: rates.travel_per_sq_per_km_above_40 ?? 1.00,
+        unit: '$/SQ per km',
+        key: 'travel_per_sq_per_km_above_40'
+      },
+      { label: 'Waste removal — in town (<20km)', value: rates.waste_removal_in_town, unit: 'flat', key: 'waste_removal_in_town' },
+      { label: 'Waste removal — out of town (20-60km)', value: rates.waste_removal_out_of_town, unit: 'flat', key: 'waste_removal_out_of_town' },
+      { label: 'Waste removal — far (60+km)', value: rates.waste_removal_far, unit: 'flat', key: 'waste_removal_far' }
     ]
   };
 
