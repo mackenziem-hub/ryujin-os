@@ -86,6 +86,9 @@ async function handler(req, res) {
       q = q.is('from_user_id', null).filter('metadata->>source_user_id', 'eq', me.id).order('created_at', { ascending: false });
     } else if (box === 'unread') {
       q = q.eq('to_user_id', me.id).is('read_at', null).is('archived_at', null).order('created_at', { ascending: false });
+    } else if (box === 'all') {
+      // Comprehensive timeline: everything you sent OR received (excluding archived).
+      q = q.or(`to_user_id.eq.${me.id},from_user_id.eq.${me.id}`).is('archived_at', null).order('created_at', { ascending: false });
     } else {
       q = q.eq('to_user_id', me.id).is('archived_at', null).order('created_at', { ascending: false });
     }
@@ -157,6 +160,28 @@ async function handler(req, res) {
     const { data, error } = await supabaseAdmin
       .from('messages').insert(inserts).select('*');
     if (error) return res.status(500).json({ error: error.message });
+
+    // Fire SMS notification to recipients via GHL (best-effort, non-blocking).
+    // Only fires for known contacts (Mac for now — others need ghl_contact_id
+    // resolved or migration to direct Twilio send).
+    try {
+      const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
+      const MACKENZIE_CONTACT = '02IhxZfSwZZAZ2fooVGu';
+      const MAC_USER_ID = 'e5eac641-9c49-4dac-861e-4a0710474444';
+      if (GHL_TOKEN && recipients.includes(MAC_USER_ID) && me?.id !== MAC_USER_ID) {
+        const senderName = me?.name || body.from_label || 'Ryujin';
+        const preview = (body.body || '').slice(0, 120).replace(/\s+/g, ' ');
+        const subjLine = body.subject ? ` "${body.subject}"` : '';
+        const link = `https://ryujin-os.vercel.app/messages.html`;
+        const smsBody = `[Ryujin] ${senderName} →${subjLine}: ${preview}${preview.length === 120 ? '…' : ''}  ${link}`;
+        fetch('https://services.leadconnectorhq.com/conversations/messages', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${GHL_TOKEN}`, 'Version': '2021-07-28', 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'SMS', contactId: MACKENZIE_CONTACT, message: smsBody }),
+          signal: AbortSignal.timeout(10000)
+        }).catch(e => console.warn('[messages] SMS to Mac failed:', e.message));
+      }
+    } catch (e) { console.warn('[messages] notify block error:', e.message); }
 
     // Return all rows + a thread_id so the client can pivot to thread-view immediately.
     const threadId = data[0]?.thread_id || sharedThreadId;
