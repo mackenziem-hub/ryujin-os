@@ -75,7 +75,15 @@
     if (document.getElementById('ry-agent-shell-styles')) return;
     const css = `
       .ry-agent-shell {
-        position: fixed; inset: 0; z-index: 80;
+        /* Use top/left/right (not inset:0) so bottom is controlled by
+           explicit height. iOS Safari resolves 100vh to layout viewport
+           (includes URL bar area), pushing the input row off-screen.
+           100dvh shrinks with the URL bar + keyboard on modern browsers;
+           the JS visualViewport listener below covers older iOS. */
+        position: fixed; top: 0; left: 0; right: 0;
+        height: 100vh;
+        height: 100dvh;
+        z-index: 80;
         background: rgba(6, 10, 20, 0.92); backdrop-filter: blur(8px);
         display: none;
         font-family: 'Inter', system-ui, sans-serif;
@@ -86,9 +94,13 @@
       html[data-mode="agent"] .wrap { display: none; }
       .ry-agent-stage {
         flex: 1; display: flex; flex-direction: column;
-        max-width: 920px; margin: 0 auto;
-        padding: 64px 22px 22px; gap: 18px;
+        max-width: 920px; margin: 0 auto; width: 100%;
+        min-height: 0;  /* allow flex children (transcript) to actually shrink */
+        padding: max(58px, calc(14px + env(safe-area-inset-top))) 22px
+                 max(22px, calc(14px + env(safe-area-inset-bottom)));
+        gap: 18px;
         position: relative;
+        box-sizing: border-box;
       }
       .ry-agent-avatar {
         width: 220px; height: 220px; border-radius: 50%;
@@ -290,8 +302,25 @@
       .ry-agent-close:hover { color: #f87171; border-color: rgba(248, 113, 113, 0.4); }
       @keyframes ry-dots { 0%{content:'.'} 33%{content:'..'} 66%{content:'...'} }
       @media (max-width: 540px) {
-        .ry-agent-stage { padding: 60px 12px 12px; }
-        .ry-agent-avatar { width: 140px; height: 140px; }
+        .ry-agent-stage {
+          padding: max(54px, calc(10px + env(safe-area-inset-top))) 12px
+                   max(14px, calc(10px + env(safe-area-inset-bottom)));
+          gap: 10px;
+        }
+        .ry-agent-avatar { width: 96px; height: 96px; }
+        .ry-agent-name { font-size: 0.7em; letter-spacing: 2px; margin-top: -4px; }
+        /* Single-row input bar — voice + textarea + send. Keep send + voice
+           compact so the textarea gets the room. */
+        .ry-agent-input { font-size: 0.92em; padding: 10px 12px; min-height: 44px; }
+        .ry-agent-btn { padding: 0 14px; font-size: 0.65em; min-width: 44px; }
+        .ry-agent-btn.voice { padding: 0 12px; }
+      }
+      /* Very short viewports (landscape phones ~414px tall, or any phone
+         once the soft keyboard opens) — hide the avatar + name so the
+         transcript + input row stay visible. */
+      @media (max-height: 520px) {
+        .ry-agent-avatar, .ry-agent-name { display: none; }
+        .ry-agent-stage { gap: 8px; padding-top: max(40px, calc(8px + env(safe-area-inset-top))); }
       }
       /* JARVIS desktop layout — agent lives as a 380px right-side
          companion panel beside the main dashboard, not as a full-screen
@@ -351,6 +380,25 @@
       </div>
     `;
     document.body.appendChild(elShell);
+
+    // visualViewport keeps the overlay sized to the *visible* area when
+    // the soft keyboard opens. 100dvh handles this on modern browsers,
+    // but iOS Safari < 16 doesn't support dvh — this listener covers
+    // that gap so the input row never sits behind the keyboard.
+    // Also scrolls the input back into view when keyboard slides up.
+    if (window.visualViewport) {
+      const syncHeight = () => {
+        const vh = window.visualViewport.height;
+        elShell.style.height = vh + 'px';
+        if (document.activeElement === elInput) {
+          // Tiny delay lets iOS finish its keyboard animation first.
+          setTimeout(() => elInput.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 100);
+        }
+      };
+      window.visualViewport.addEventListener('resize', syncHeight);
+      window.visualViewport.addEventListener('scroll', syncHeight);
+    }
+
     elTranscript = document.getElementById('ry-agent-transcript');
     elInput = document.getElementById('ry-agent-input');
     elSendBtn = document.getElementById('ry-agent-send');
