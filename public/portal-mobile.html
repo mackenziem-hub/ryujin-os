@@ -248,6 +248,16 @@ body::before{
   border:2px solid rgba(34,211,238,0.22);
   cursor:pointer;transition:all 0.2s;flex-shrink:0;
   position:relative;
+  /* Subtle "alive" glow that pulses slowly so the trio feels present even
+     when there's no active conversation. Each bust offset its phase so they
+     don't pulse in unison. */
+  animation: ai-breathe 5.4s ease-in-out infinite;
+}
+.ai-portrait:nth-child(2){ animation-delay: -1.8s }
+.ai-portrait:nth-child(3){ animation-delay: -3.6s }
+@keyframes ai-breathe {
+  0%, 100% { box-shadow: 0 0 0 rgba(34,211,238,0), inset 0 0 0 rgba(34,211,238,0); border-color: rgba(34,211,238,0.22); }
+  50%      { box-shadow: 0 0 22px rgba(34,211,238,0.30), inset 0 0 14px rgba(34,211,238,0.05); border-color: rgba(34,211,238,0.45); }
 }
 .ai-portrait::after{
   content:'';position:absolute;inset:-4px;border-radius:50%;
@@ -255,9 +265,11 @@ body::before{
 }
 .ai-portrait:active, .ai-portrait.active{
   border-color:var(--cyan);
-  box-shadow:0 0 22px rgba(34,211,238,0.35);
+  box-shadow:0 0 26px rgba(34,211,238,0.5);
+  animation-play-state: paused;
 }
 .ai-portrait.active::after{border-color:rgba(34,211,238,0.25)}
+@media (prefers-reduced-motion: reduce){ .ai-portrait { animation: none } }
 
 /* ── Bottom tab bar ─────────────────────────────────── */
 .tabbar{
@@ -555,6 +567,33 @@ function wireTaps(){
   });
 }
 
+// ── Notification badge ──────────────────────────────
+// iOS / Android PWA app-icon badge via the Badging API. Polls the unread
+// inbox count from /api/messages?box=unread and reflects it on the home
+// screen icon when the app is installed standalone. Also paints the in-app
+// bell dot in the top bar so users see new mail without leaving this page.
+async function refreshBadge(){
+  try{
+    const tok = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token');
+    if (!tok) return;
+    const r = await fetch('/api/messages?box=unread', {
+      headers: { 'Authorization': `Bearer ${tok}`, 'x-tenant-id': TENANT },
+    });
+    if (!r.ok) return;
+    const data = await r.json();
+    const n = (data.messages || data.unread_count !== undefined ? data.unread_count : (data.messages?.length || 0));
+    const count = typeof n === 'number' ? n : (data.messages?.length || 0);
+    const bellDot = document.getElementById('notifBadge');
+    if (bellDot) bellDot.style.display = count > 0 ? 'block' : 'none';
+    if ('setAppBadge' in navigator){
+      try{
+        if (count > 0) await navigator.setAppBadge(count);
+        else await navigator.clearAppBadge();
+      }catch{ /* iOS may reject if not in standalone — harmless */ }
+    }
+  }catch{ /* offline ok */ }
+}
+
 (async function init(){
   await loadMe();
   applyGreeting();
@@ -562,7 +601,9 @@ function wireTaps(){
   renderCalendar();
   wireTaps();
   await loadFeaturedTicket();
+  await refreshBadge();
   setInterval(loadFeaturedTicket, 5 * 60 * 1000);
+  setInterval(refreshBadge, 60 * 1000);
 })();
 </script>
 

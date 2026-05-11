@@ -149,12 +149,13 @@ ${observationsText}
 
 ## Action vocabulary (kind values for record_options)
 - navigate_to: payload { url } — open a Ryujin page
-- send_email / send_sms: payload { to, subject?, body } — operator confirms before send
+- send_email: payload { to, subject?, body } — operator confirms before send
+- send_sms: payload { to, subject?, body } — ONLY between 07:00 and 19:00 local time. The current hour is ${new Date().getHours()}. Outside that window, use compose_message instead.
 - create_quest: payload { title, description, priority }
 - run_agent: payload { agent_slug }
 - open_estimate: payload { estimate_id }
 - open_customer: payload { customer_id }
-- compose_message: payload { to_user, body } — internal Ryujin operator-to-operator message
+- compose_message: payload { to_user, body } — internal Ryujin operator-to-operator message; the default for quiet hours
 - escalate_to_advanced: payload { url } — open the equivalent advanced-mode page when the action is too rich for a single click
 
 ## Rules

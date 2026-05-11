@@ -95,14 +95,32 @@
         display: flex; flex-direction: column; gap: 12px;
         font-size: 0.95em; line-height: 1.5;
       }
-      .ry-agent-msg.user { align-self: flex-end; max-width: 75%; }
-      .ry-agent-msg.assistant { align-self: flex-start; max-width: 85%; }
+      .ry-agent-msg.user {
+        align-self: flex-end; max-width: 88%;
+        background: rgba(34, 211, 238, 0.10);
+        border: 1px solid rgba(34, 211, 238, 0.18);
+        padding: 10px 14px; border-radius: 14px;
+        border-bottom-right-radius: 4px;
+      }
+      .ry-agent-msg.assistant {
+        align-self: flex-start; max-width: 92%;
+        background: rgba(20, 30, 50, 0.65);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        padding: 10px 14px; border-radius: 14px;
+        border-bottom-left-radius: 4px;
+      }
       .ry-agent-msg .role {
-        font-size: 0.6em; letter-spacing: 2px; text-transform: uppercase;
+        font-size: 0.62em; letter-spacing: 2px; text-transform: uppercase;
         color: rgba(160, 190, 230, 0.55); margin-bottom: 4px;
         font-family: 'Share Tech Mono', monospace;
       }
-      .ry-agent-msg .body { color: #d0daf0; }
+      .ry-agent-msg .body {
+        color: #eaf0fa;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        line-height: 1.5;
+      }
       .ry-agent-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
       .ry-agent-action {
         display: flex; align-items: center; gap: 10px;
@@ -137,9 +155,12 @@
         flex: 1; padding: 12px 16px; font-size: 0.95em; font-family: inherit;
         background: rgba(8, 12, 24, 0.7); color: #d0daf0;
         border: 1px solid rgba(34, 211, 238, 0.25); border-radius: 12px;
-        outline: none; min-height: 48px;
+        outline: none; min-height: 48px; max-height: 160px;
+        resize: none; line-height: 1.4;
       }
       .ry-agent-input:focus { border-color: rgba(34, 211, 238, 0.55); }
+      .ry-agent-input-row { align-items: flex-end; }
+      .ry-agent-btn { align-self: flex-end; }
       .ry-agent-btn {
         padding: 0 18px; min-width: 48px; cursor: pointer;
         background: linear-gradient(135deg, #22d3ee, #7c3aed);
@@ -219,7 +240,7 @@
         </div>
         <div class="ry-agent-input-row">
           <button class="ry-agent-btn voice" id="ry-agent-voice" title="Voice (browser SpeechRecognition)">🎤</button>
-          <input class="ry-agent-input" id="ry-agent-input" placeholder="Ask anything about ${PILLAR}…" />
+          <textarea class="ry-agent-input" id="ry-agent-input" rows="1" placeholder="Ask anything about ${PILLAR}…"></textarea>
           <button class="ry-agent-btn" id="ry-agent-send">Send</button>
         </div>
       </div>
@@ -235,6 +256,11 @@
     elSendBtn.addEventListener('click', onSend);
     elInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend(); }
+    });
+    // Auto-grow the textarea up to its max-height (CSS caps at 160px).
+    elInput.addEventListener('input', () => {
+      elInput.style.height = 'auto';
+      elInput.style.height = Math.min(160, elInput.scrollHeight) + 'px';
     });
     elVoiceBtn.addEventListener('click', toggleVoice);
     document.getElementById('ry-agent-close').addEventListener('click', closeShell);
@@ -310,22 +336,37 @@
     elShell.style.setProperty('--archetype-color', arch.accent_color);
     elShell.style.setProperty('--archetype-glow', arch.accent_color + '55');
     elAvatarName.textContent = `${arch.name.toUpperCase()} · ${PILLAR.toUpperCase()} agent`;
+    // Resolution chain: avatar_image (always present per archetypeRegistry)
+    // wins as the static base so the avatar is NEVER just a name overlaid on
+    // empty space. If avatar_video is also provided and loads cleanly, the
+    // video plays over the still. The text-only fallback only renders if
+    // every image attempt fails (rare — bust PNGs ship in the repo).
+    const fallbackHtml = `<div class="ry-agent-avatar-fallback">${arch.name}</div>`;
+    elAvatar.innerHTML = fallbackHtml;
+    if (arch.avatar_image) {
+      const img = document.createElement('img');
+      img.src = arch.avatar_image;
+      img.addEventListener('load', () => {
+        // Image rendered → ditch the text overlay so the face is unobscured.
+        const fb = elAvatar.querySelector('.ry-agent-avatar-fallback');
+        if (fb) fb.remove();
+      });
+      elAvatar.prepend(img);
+    }
     if (arch.avatar_video) {
-      // Try video first; if it 404s, fall back to poster, then to text fallback.
       const video = document.createElement('video');
       video.src = arch.avatar_video;
       video.autoplay = true; video.loop = true; video.muted = true; video.playsInline = true;
-      video.poster = arch.avatar_poster || '';
-      video.addEventListener('error', () => {
-        if (arch.avatar_poster) {
-          const img = document.createElement('img');
-          img.src = arch.avatar_poster;
-          img.addEventListener('error', () => { /* keep text fallback */ });
-          elAvatar.innerHTML = `<div class="ry-agent-avatar-fallback">${arch.name}</div>`;
-          elAvatar.prepend(img);
-        }
+      video.poster = arch.avatar_poster || arch.avatar_image || '';
+      video.addEventListener('loadeddata', () => {
+        // Video took over → the still img beneath is fine to keep (it
+        // shows during loading), but make sure no text fallback remains.
+        const fb = elAvatar.querySelector('.ry-agent-avatar-fallback');
+        if (fb) fb.remove();
       });
-      elAvatar.innerHTML = `<div class="ry-agent-avatar-fallback">${arch.name}</div>`;
+      video.addEventListener('error', () => {
+        video.remove();  // leave the image in place; no text relapse
+      });
       elAvatar.prepend(video);
     }
   }
@@ -483,17 +524,51 @@
       return `Email composer opened to ${p.to}`;
     }
     if (k === 'send_sms' && p.to) {
+      // Quiet hours: no outbound texts before 07:00 or after 19:00 local
+      // time (Mac's hard rule). Fall back to the internal inbox so the
+      // recipient still gets the message, just not as a midnight buzz.
+      const h = new Date().getHours();
+      if (h < 7 || h >= 19) {
+        const r = await fetch('/api/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-tenant-id': TENANT },
+          body: JSON.stringify({
+            to_phone: p.to,
+            subject: p.subject || `Note from ${archetype?.name || PILLAR} agent`,
+            body: p.body || '',
+            metadata: { suppressed_sms: true, reason: 'quiet_hours_7am_7pm', original_kind: 'send_sms' },
+          }),
+        });
+        if (!r.ok) {
+          const t = await r.text().catch(() => '');
+          throw new Error(`Quiet-hours fallback to /api/messages failed: ${r.status} ${t.slice(0, 100)}`);
+        }
+        return `Quiet hours — delivered to inbox instead of SMS (${p.to}).`;
+      }
       window.location.href = `sms:${encodeURIComponent(p.to)}?body=${encodeURIComponent(p.body || '')}`;
       return `SMS composer opened to ${p.to}`;
     }
     if (k === 'create_quest') {
+      // API requires category + type (CHECK constraints on the quests
+      // table). Match what lib/router.js does for routed tasks so the
+      // shape is consistent: category=personal, type=optional.
       const r = await fetch('/api/quests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-tenant-id': TENANT },
-        body: JSON.stringify({ title: p.title, description: p.description || '', priority: p.priority || 'normal' }),
+        body: JSON.stringify({
+          title: p.title,
+          description: p.description || '',
+          category: p.category || 'personal',
+          type: p.type || 'optional',
+          assigned_to: p.assigned_to || null,
+          metadata: { from_agent: PILLAR, priority: p.priority || 'normal' },
+        }),
       });
-      if (!r.ok) throw new Error(`/api/quests ${r.status}`);
-      return `Quest added: ${p.title}`;
+      if (!r.ok) {
+        const txt = await r.text().catch(() => '');
+        throw new Error(`/api/quests ${r.status}: ${txt.slice(0, 120)}`);
+      }
+      return `Task added: ${p.title}`;
     }
     if (k === 'run_agent' && p.agent_slug) {
       const r = await fetch(`/api/agents/${p.agent_slug}`, { headers: { 'x-tenant-id': TENANT } });

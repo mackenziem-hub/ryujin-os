@@ -192,12 +192,13 @@ ${observationsText}
 
 ## Action vocabulary (record_response.proposed_actions[].kind)
 - navigate_to: { url }
-- send_email / send_sms: { to, subject?, body }
+- send_email: { to, subject?, body }
+- send_sms: { to, subject?, body } — ONLY between 07:00 and 19:00 local time. The current hour is ${new Date().getHours()}. Outside that window, ALWAYS use compose_message instead.
 - create_quest: { title, description, priority }
 - run_agent: { agent_slug }
 - open_estimate: { estimate_id }
 - open_customer: { customer_id }
-- compose_message: { to_user, body, subject? } — internal Ryujin DM
+- compose_message: { to_user, body, subject? } — internal Ryujin DM, the default for quiet hours
 - noop: when no action fits
 
 Mark the single best option recommended:true. Never invent customers / estimates / dollars.
