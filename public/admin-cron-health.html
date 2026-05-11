@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#060a14">
+<title>Cron Health · Ryujin OS</title>
+<script>
+  // Mobile users get redirected to the phone UI — this is a desktop tool.
+  (function () {
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) &&
+      !window.matchMedia('(min-width: 1024px)').matches;
+    if (isMobile) location.replace('/portal-mobile.html');
+  })();
+</script>
+<link rel="icon" href="/apple-touch-icon.png">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Orbitron:wght@400;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#060a14;--card:rgba(20,30,50,0.85);--card-hi:rgba(22,34,58,0.95);
+  --border:rgba(34,211,238,0.16);--border-hi:rgba(34,211,238,0.35);
+  --text:#d0daf0;--text-dim:rgba(160,190,230,0.55);--text-muted:rgba(140,170,220,0.30);
+  --cyan:#22d3ee;--green:#4ade80;--yellow:#facc15;--red:#f87171;--orange:#fb923c;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{
+  font-family:'Inter',system-ui,sans-serif;
+  background:var(--bg) url('/assets/textures/app-bg.png') center/cover fixed no-repeat;
+  color:var(--text); min-height:100vh; padding:32px;
+}
+.wrap{max-width:1100px; margin:0 auto}
+.crumb{font-family:'Share Tech Mono',monospace;font-size:0.72em;color:var(--text-dim);letter-spacing:2px;text-transform:uppercase;margin-bottom:6px}
+h1{font-family:'Orbitron',monospace;font-size:1.5em;font-weight:700;letter-spacing:1px;
+   background:linear-gradient(135deg,#e0e6f0 20%,var(--cyan) 65%,#a78bfa);
+   -webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px}
+.sub{font-size:0.9em;color:var(--text-dim);margin-bottom:24px;line-height:1.5}
+.sub b{color:var(--text)}
+
+.section-head{font-family:'Orbitron',monospace;font-size:0.78em;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--text);margin:28px 0 12px}
+
+.panel{
+  background:var(--card);border:1px solid var(--border);border-radius:14px;
+  overflow:hidden;
+}
+.panel:hover{border-color:var(--border-hi)}
+table{width:100%;border-collapse:collapse;font-size:0.9em}
+thead th{
+  text-align:left;padding:12px 16px;background:rgba(8,12,24,0.7);
+  font-family:'Share Tech Mono',monospace;font-size:0.7em;letter-spacing:2px;
+  color:var(--text-dim);text-transform:uppercase;font-weight:600;
+  border-bottom:1px solid var(--border);
+}
+tbody tr{border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;transition:background 0.15s}
+tbody tr:hover{background:rgba(34,211,238,0.04)}
+tbody tr:last-child{border-bottom:none}
+td{padding:12px 16px;vertical-align:middle}
+td.slug{font-family:'Share Tech Mono',monospace;font-size:0.86em;color:var(--cyan)}
+td.path{font-family:'Share Tech Mono',monospace;font-size:0.82em;color:var(--text)}
+td.sched{font-family:'Share Tech Mono',monospace;font-size:0.78em;color:var(--text-dim)}
+td.when{font-size:0.85em;color:var(--text-dim)}
+td.summary{font-size:0.82em;color:var(--text-dim);max-width:340px;line-height:1.4}
+td.dur{font-size:0.82em;color:var(--text-dim);text-align:right}
+.pill{
+  display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;
+  font-family:'Share Tech Mono',monospace;font-size:0.7em;letter-spacing:1.5px;
+  text-transform:uppercase;font-weight:600;
+}
+.pill.success{background:rgba(74,222,128,0.10);color:var(--green);border:1px solid rgba(74,222,128,0.3)}
+.pill.partial{background:rgba(250,204,21,0.10);color:var(--yellow);border:1px solid rgba(250,204,21,0.3)}
+.pill.error{background:rgba(248,113,113,0.10);color:var(--red);border:1px solid rgba(248,113,113,0.3)}
+.pill.running{background:rgba(34,211,238,0.10);color:var(--cyan);border:1px solid rgba(34,211,238,0.3)}
+.dot{width:6px;height:6px;border-radius:50%}
+.dot.success{background:var(--green);box-shadow:0 0 6px var(--green)}
+.dot.partial{background:var(--yellow);box-shadow:0 0 6px var(--yellow)}
+.dot.error{background:var(--red);box-shadow:0 0 6px var(--red)}
+.dot.running{background:var(--cyan);box-shadow:0 0 6px var(--cyan)}
+
+.expand{display:none;background:rgba(8,12,24,0.5);border-top:1px solid var(--border)}
+tr.open + tr.expand{display:table-row}
+.expand td{padding:14px 16px;font-family:'Share Tech Mono',monospace;font-size:0.82em;color:var(--text);white-space:pre-wrap;line-height:1.5}
+
+.empty{padding:36px 20px;text-align:center;color:var(--text-dim);font-size:0.9em}
+.refresh{font-size:0.78em;color:var(--text-muted);text-align:right;margin-top:14px;font-family:'Share Tech Mono',monospace;letter-spacing:1px}
+.back{display:inline-block;margin-bottom:20px;font-family:'Orbitron',monospace;font-size:0.7em;letter-spacing:1.6px;text-transform:uppercase;color:var(--text-dim);text-decoration:none;border:1px solid var(--border);padding:8px 16px;border-radius:18px}
+.back:hover{color:var(--cyan);border-color:var(--border-hi)}
+</style>
+<script src="/assets/portal-auth-client.js"></script>
+</head>
+<body>
+
+<div class="wrap">
+
+  <a class="back" href="/admin-overview.html">← Overview</a>
+
+  <div class="crumb">Admin · System</div>
+  <h1>Cron Health</h1>
+  <p class="sub">Last 24h of agent runs, plus every scheduled job in <b>vercel.json</b>. Click any error row to expand the message.</p>
+
+  <div class="section-head">Agent runs · last 24h</div>
+  <div class="panel">
+    <table id="agentsTable">
+      <thead>
+        <tr><th>Agent</th><th>Status</th><th>Last run</th><th>Duration</th><th>Runs · Errors</th><th>Last summary</th></tr>
+      </thead>
+      <tbody id="agentsBody">
+        <tr><td colspan="6" class="empty">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section-head">Scheduled jobs · from vercel.json</div>
+  <div class="panel">
+    <table>
+      <thead>
+        <tr><th>Path</th><th>Cron expression</th><th>Description</th></tr>
+      </thead>
+      <tbody id="cronsBody">
+        <tr><td colspan="3" class="empty">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="refresh" id="refreshMeta">—</div>
+
+</div>
+
+<script>
+const TENANT = 'plus-ultra';
+
+function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+
+function relTime(iso){
+  if (!iso) return '—';
+  const ms = Date.now() - new Date(iso).getTime();
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}
+
+function fmtDuration(ms){
+  if (ms == null) return '—';
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+async function load(){
+  const tok = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token');
+  if (!tok) { document.getElementById('agentsBody').innerHTML = '<tr><td colspan="6" class="empty">Sign in required.</td></tr>'; return; }
+  try{
+    const r = await fetch('/api/cron-health', {
+      headers: { 'Authorization': `Bearer ${tok}`, 'x-tenant-id': TENANT },
+    });
+    if (r.status === 403) { document.getElementById('agentsBody').innerHTML = '<tr><td colspan="6" class="empty">Admin access required.</td></tr>'; return; }
+    if (!r.ok) { document.getElementById('agentsBody').innerHTML = `<tr><td colspan="6" class="empty">Couldn't load (HTTP ${r.status}).</td></tr>`; return; }
+    const data = await r.json();
+    renderAgents(data.agents || []);
+    renderCrons(data.crons || []);
+    document.getElementById('refreshMeta').textContent = `Last refreshed ${new Date(data.generated_at).toLocaleTimeString()} · auto-refresh 60s`;
+  }catch(e){
+    document.getElementById('agentsBody').innerHTML = `<tr><td colspan="6" class="empty">Network error: ${esc(e.message)}</td></tr>`;
+  }
+}
+
+function renderAgents(rows){
+  if (!rows.length) {
+    document.getElementById('agentsBody').innerHTML = '<tr><td colspan="6" class="empty">No agent runs in the last 24h. The daily cron usually runs at 06:45 AT.</td></tr>';
+    return;
+  }
+  const html = rows.map((a, i) => {
+    const st = (a.last_status || 'success').toLowerCase();
+    const summary = a.last_summary || '';
+    const hasErr = a.errors_24h > 0 || st === 'error';
+    return `
+      <tr class="row" data-idx="${i}" onclick="toggle(${i})">
+        <td class="slug">${esc(a.agent_slug)}</td>
+        <td><span class="pill ${st}"><span class="dot ${st}"></span>${esc(st)}</span></td>
+        <td class="when">${esc(relTime(a.last_run))}</td>
+        <td class="dur">${esc(fmtDuration(a.last_duration_ms))}</td>
+        <td class="when">${a.runs_24h} · <span style="color:${hasErr ? 'var(--red)' : 'var(--text-muted)'}">${a.errors_24h}</span></td>
+        <td class="summary">${esc(summary.slice(0, 140))}${summary.length > 140 ? '…' : ''}</td>
+      </tr>
+      <tr class="expand"><td colspan="6">${esc(a.last_error_message || a.last_summary || '(no detail)')}</td></tr>
+    `;
+  }).join('');
+  document.getElementById('agentsBody').innerHTML = html;
+}
+
+function renderCrons(rows){
+  if (!rows.length) {
+    document.getElementById('cronsBody').innerHTML = '<tr><td colspan="3" class="empty">No crons configured.</td></tr>';
+    return;
+  }
+  document.getElementById('cronsBody').innerHTML = rows.map(c => `
+    <tr>
+      <td class="path">${esc(c.path)}</td>
+      <td class="sched">${esc(c.schedule)}</td>
+      <td class="summary">${esc(c.description)}</td>
+    </tr>`).join('');
+}
+
+function toggle(idx){
+  const row = document.querySelector(`.row[data-idx="${idx}"]`);
+  if (!row) return;
+  row.classList.toggle('open');
+}
+
+load();
+setInterval(load, 60 * 1000);
+</script>
+
+</body>
+</html>
