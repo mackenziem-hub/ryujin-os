@@ -79,47 +79,192 @@ const EXTRACT_TOOL = {
   },
 };
 
-async function loadObservations(tenantId, pillarSlug) {
+// ─── Observation helpers ─────────────────────────────────────────
+// Each returns a plain-text block (string). Empty string means
+// "no relevant data found" or "this feed errored" — by design,
+// a single feed outage never blocks the chat.
+
+async function loadCoreObservations(tenantId, pillarSlug) {
   const today = new Date().toISOString().slice(0, 10);
-  const obs = { briefing: [], kpis: [], latest_run: null };
-  const briefing = await supabaseAdmin
-    .from('briefing_items')
-    .select('priority, title, body, source_agent, created_at')
-    .eq('tenant_id', tenantId).eq('source_agent', pillarSlug).eq('for_date', today).is('dismissed_at', null)
-    .order('priority', { ascending: true }).limit(20);
-  if (!briefing.error) obs.briefing = briefing.data || [];
-  const kpis = await supabaseAdmin
-    .from('kpis').select('key, label, value, unit')
-    .eq('tenant_id', tenantId).like('key', `${pillarSlug}.%`)
-    .order('sort_order', { ascending: true }).limit(30);
-  if (!kpis.error) obs.kpis = kpis.data || [];
-  const latest = await supabaseAdmin
-    .from('agent_runs').select('agent_slug, summary, started_at, status')
-    .eq('tenant_id', tenantId).eq('agent_slug', pillarSlug)
-    .order('started_at', { ascending: false }).limit(1).maybeSingle();
-  if (!latest.error && latest.data) obs.latest_run = latest.data;
-  return obs;
+  const out = { briefing: [], kpis: [], latest_run: null };
+  try {
+    const [b, k, l] = await Promise.all([
+      supabaseAdmin.from('briefing_items')
+        .select('priority, title, body, source_agent, created_at')
+        .eq('tenant_id', tenantId).eq('source_agent', pillarSlug).eq('for_date', today).is('dismissed_at', null)
+        .order('priority', { ascending: true }).limit(20),
+      supabaseAdmin.from('kpis').select('key, label, value, unit')
+        .eq('tenant_id', tenantId).like('key', `${pillarSlug}.%`)
+        .order('sort_order', { ascending: true }).limit(30),
+      supabaseAdmin.from('agent_runs').select('agent_slug, summary, started_at, status')
+        .eq('tenant_id', tenantId).eq('agent_slug', pillarSlug)
+        .order('started_at', { ascending: false }).limit(1).maybeSingle(),
+    ]);
+    if (!b.error) out.briefing = b.data || [];
+    if (!k.error) out.kpis = k.data || [];
+    if (!l.error && l.data) out.latest_run = l.data;
+  } catch { /* fail-open */ }
+  return out;
+}
+
+async function loadScheduleObservations(tenantId) {
+  try {
+    const now = new Date();
+    const horizon = new Date(now.getTime() + 7 * 86400000);
+    const [ests, tix] = await Promise.all([
+      supabaseAdmin.from('estimates')
+        .select('id, estimate_number, scheduled_start_date, state, customer:customers(full_name)')
+        .eq('tenant_id', tenantId)
+        .not('scheduled_start_date', 'is', null)
+        .gte('scheduled_start_date', now.toISOString().slice(0, 10))
+        .lte('scheduled_start_date', horizon.toISOString().slice(0, 10))
+        .order('scheduled_start_date', { ascending: true }).limit(8),
+      supabaseAdmin.from('service_tickets')
+        .select('id, title, scheduled_at, priority, customer:customers(full_name)')
+        .eq('tenant_id', tenantId)
+        .not('scheduled_at', 'is', null)
+        .gte('scheduled_at', now.toISOString())
+        .lte('scheduled_at', horizon.toISOString())
+        .order('scheduled_at', { ascending: true }).limit(8),
+    ]);
+    const items = [
+      ...(ests.data || []).map(e => ({
+        when: e.scheduled_start_date,
+        label: `Install · ${e.customer?.full_name || ''} · ${e.estimate_number || e.id.slice(0, 6)}${e.state ? ` (${e.state})` : ''}`,
+      })),
+      ...(tix.data || []).map(t => ({
+        when: t.scheduled_at?.slice(0, 10),
+        label: `${(t.priority === 'urgent' || t.priority === 'high') ? '⚠ ' : ''}Service · ${t.customer?.full_name || ''} · ${t.title}`,
+      })),
+    ].sort((a, b) => (a.when || '').localeCompare(b.when || '')).slice(0, 8);
+    if (!items.length) return '';
+    return `### Scheduled in the next 7 days\n${items.map(i => `- ${i.when} — ${i.label}`).join('\n')}\n`;
+  } catch { return ''; }
+}
+
+async function loadInboxObservations(tenantId, { userId, isAdmin }) {
+  try {
+    let q = supabaseAdmin.from('messages')
+      .select('subject, body, from_label, from_user_id, to_user_id, created_at')
+      .eq('tenant_id', tenantId)
+      .is('read_at', null)
+      .gte('created_at', new Date(Date.now() - 7 * 86400000).toISOString())
+      .order('created_at', { ascending: false }).limit(10);
+    if (!isAdmin && userId) q = q.eq('to_user_id', userId);
+    const { data, error } = await q;
+    if (error || !data?.length) return '';
+    const lines = data.map(m => {
+      const when = m.created_at?.slice(0, 16).replace('T', ' ');
+      const from = m.from_label || (m.from_user_id ? 'teammate' : 'agent');
+      const subject = m.subject ? ` — ${m.subject}` : '';
+      const body = (m.body || '').slice(0, 140);
+      return `- ${when} · from ${from}${subject}${body ? ` · "${body}${m.body?.length > 140 ? '…' : ''}"` : ''}`;
+    });
+    const scope = isAdmin ? 'team-wide' : 'yours';
+    return `### Unread internal messages (${scope}, ${data.length})\n${lines.join('\n')}\n`;
+  } catch { return ''; }
+}
+
+async function loadVoiceObservations(tenantId, { userId, isAdmin }) {
+  try {
+    const since = new Date(Date.now() - 24 * 3600000).toISOString();
+    const [memos, calls] = await Promise.all([
+      supabaseAdmin.from('voice_memos')
+        .select('user_id, transcript, created_at')
+        .eq('tenant_id', tenantId).gte('created_at', since)
+        .order('created_at', { ascending: false }).limit(6),
+      supabaseAdmin.from('phone_calls')
+        .select('user_id, transcript, from_number, status, started_at, customer:customers(full_name)')
+        .eq('tenant_id', tenantId).gte('started_at', since)
+        .order('started_at', { ascending: false }).limit(6),
+    ]);
+    const items = [
+      ...(memos.data || []).filter(m => isAdmin || m.user_id === userId).map(m => ({
+        when: m.created_at,
+        label: `Voice memo · "${(m.transcript || '(no transcript)').slice(0, 200)}${m.transcript?.length > 200 ? '…' : ''}"`,
+      })),
+      ...(calls.data || []).filter(c => isAdmin || c.user_id === userId).map(c => ({
+        when: c.started_at,
+        label: `Call ${c.status || ''} · ${c.customer?.full_name || c.from_number || ''}${c.transcript ? ` · "${c.transcript.slice(0, 180)}${c.transcript.length > 180 ? '…' : ''}"` : ''}`,
+      })),
+    ].sort((a, b) => (b.when || '').localeCompare(a.when || '')).slice(0, 6);
+    if (!items.length) return '';
+    return `### Voice activity (last 24h)\n${items.map(i => `- ${i.when?.slice(0, 16).replace('T', ' ')} — ${i.label}`).join('\n')}\n`;
+  } catch { return ''; }
+}
+
+async function loadServiceQueueObservations(tenantId) {
+  try {
+    const { data, error } = await supabaseAdmin.from('service_tickets')
+      .select('id, title, priority, status, customer:customers(full_name)')
+      .eq('tenant_id', tenantId)
+      .in('status', ['open', 'in_progress'])
+      .order('priority', { ascending: true }).limit(20);
+    if (error || !data?.length) return '';
+    const counts = { urgent: 0, high: 0, normal: 0, total: data.length };
+    for (const t of data) counts[t.priority] = (counts[t.priority] || 0) + 1;
+    const top = data.filter(t => t.priority === 'urgent' || t.priority === 'high').slice(0, 3);
+    const head = `### Service queue (${counts.total} open · ${counts.urgent || 0} urgent · ${counts.high || 0} high)`;
+    if (!top.length) return head + '\n';
+    const lines = top.map(t => `- [${t.priority.toUpperCase()}] ${t.title}${t.customer?.full_name ? ` (${t.customer.full_name})` : ''}`);
+    return `${head}\n${lines.join('\n')}\n`;
+  } catch { return ''; }
+}
+
+async function loadActivityObservations(tenantId, { userId, isAdmin }) {
+  try {
+    let q = supabaseAdmin.from('activity_log')
+      .select('kind, body, source_user_id, customer:customers(full_name), created_at')
+      .eq('tenant_id', tenantId)
+      .gte('created_at', new Date(Date.now() - 12 * 3600000).toISOString())
+      .order('created_at', { ascending: false }).limit(10);
+    if (!isAdmin && userId) q = q.eq('source_user_id', userId);
+    const { data, error } = await q;
+    if (error || !data?.length) return '';
+    const lines = data.map(a => {
+      const when = a.created_at?.slice(11, 16);
+      const cust = a.customer?.full_name ? ` (${a.customer.full_name})` : '';
+      return `- ${when} · ${a.kind}${cust} · ${(a.body || '').slice(0, 100)}`;
+    });
+    return `### Recent activity (last 12h)\n${lines.join('\n')}\n`;
+  } catch { return ''; }
+}
+
+async function loadObservations(tenantId, pillarSlug, opts = {}) {
+  const t0 = Date.now();
+  const [core, schedule, inbox, voice, service, activity] = await Promise.all([
+    loadCoreObservations(tenantId, pillarSlug),
+    loadScheduleObservations(tenantId),
+    loadInboxObservations(tenantId, opts),
+    loadVoiceObservations(tenantId, opts),
+    loadServiceQueueObservations(tenantId),
+    loadActivityObservations(tenantId, opts),
+  ]);
+  console.log(`[agent-chat] observations loaded in ${Date.now() - t0}ms (pillar=${pillarSlug}, admin=${opts.isAdmin ? 1 : 0})`);
+  return { core, schedule, inbox, voice, service, activity };
 }
 
 function formatObservations(obs) {
-  const lines = [];
-  if (obs.latest_run?.summary) {
-    lines.push(`### Latest agent run`);
-    lines.push(obs.latest_run.summary);
-    lines.push('');
+  const out = [];
+  // Core (briefing + KPIs + latest run) — pillar-specific
+  const c = obs.core || {};
+  if (c.latest_run?.summary) { out.push('### Latest agent run'); out.push(c.latest_run.summary); out.push(''); }
+  if (c.briefing?.length) {
+    out.push(`### Today's briefing (${c.briefing.length})`);
+    for (const b of c.briefing) out.push(`- [${(b.priority || 'normal').toUpperCase()}] ${b.title}${b.body ? ` — ${b.body}` : ''}`);
+    out.push('');
   }
-  if (obs.briefing.length) {
-    lines.push(`### Today's briefing (${obs.briefing.length})`);
-    for (const b of obs.briefing) lines.push(`- [${(b.priority || 'normal').toUpperCase()}] ${b.title}${b.body ? ` — ${b.body}` : ''}`);
-    lines.push('');
+  if (c.kpis?.length) {
+    out.push('### KPIs');
+    for (const k of c.kpis) out.push(`- ${k.label}: ${k.unit === '$' ? '$' : ''}${k.value}${k.unit && k.unit !== '$' ? ' ' + k.unit : ''}`);
+    out.push('');
   }
-  if (obs.kpis.length) {
-    lines.push(`### KPIs`);
-    for (const k of obs.kpis) lines.push(`- ${k.label}: ${k.unit === '$' ? '$' : ''}${k.value}${k.unit && k.unit !== '$' ? ' ' + k.unit : ''}`);
-    lines.push('');
+  // Cross-pillar feeds — each block is already self-titled with ### so just append.
+  for (const block of [obs.schedule, obs.inbox, obs.voice, obs.service, obs.activity]) {
+    if (block) out.push(block);
   }
-  if (lines.length === 0) return '(No observations available yet — cron may not have run today.)';
-  return lines.join('\n');
+  if (out.length === 0) return '(No observations available yet — cron may not have run today.)';
+  return out.join('\n').trimEnd();
 }
 
 async function resolveSessionUser(req) {
@@ -178,7 +323,11 @@ async function handler(req, res) {
   if (!message) return res.status(400).json({ error: 'message required' });
 
   const me = await resolveSessionUser(req);
-  const obs = await loadObservations(req.tenant.id, pillarSlug);
+  const isAdmin = me?.role === 'owner' || me?.role === 'admin';
+  const obs = await loadObservations(req.tenant.id, pillarSlug, {
+    userId: me?.id || null,
+    isAdmin,
+  });
   const observationsText = formatObservations(obs);
 
   const system = `${pillarConfig.persona_prompt}
