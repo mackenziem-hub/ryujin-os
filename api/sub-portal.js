@@ -16,6 +16,20 @@
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireTenant } from '../lib/tenant.js';
 import { SUB_RATES, RATE_SHEET_VERSION } from '../lib/subcontractor-rates.js';
+import { gmailSend } from '../lib/google.js';
+import crypto from 'node:crypto';
+
+// Topic → recipient routing for sub-portal questions.
+// Goal: subs never message the owner directly for things AJ handles day-to-day.
+// AJ is GM and owns Ryan comms (formalized May 11 2026). Pay/rate questions
+// still escalate to the owner since AJ can't unilaterally change the rate sheet.
+const QUESTION_ROUTING = {
+  schedule:  { match_names: ['aj'],          match_roles: [],                  label: 'AJ' },
+  scope:     { match_names: ['aj'],          match_roles: [],                  label: 'AJ' },
+  materials: { match_names: ['aj'],          match_roles: [],                  label: 'AJ' },
+  pay:       { match_names: [],              match_roles: ['owner'],           label: 'Mac' },
+  other:     { match_names: ['aj'],          match_roles: ['owner'],           label: 'AJ + Mac' }
+};
 
 // ── Token verification ──────────────────────────────────────────
 async function verifyToken(tenantId, token) {
@@ -428,6 +442,107 @@ function getRatesForSub(sub) {
   };
 }
 
+// ── Sub: send a routed question ────────────────────────────────
+// Routes through QUESTION_ROUTING by topic so subs don't have to know which
+// teammate handles what. Recipient is resolved by user name + role, message is
+// written to the messages table (one row per recipient sharing a thread_id),
+// and a Gmail alert fires to each so they see it even before opening the portal.
+async function sendQuestion(tenantId, sub, body) {
+  const topic = String(body.topic || 'other').toLowerCase().trim();
+  const message = String(body.message || '').trim();
+  if (!message) return { error: 'Message text required', status: 400 };
+  if (message.length > 4000) return { error: 'Message too long (4000 char max)', status: 400 };
+
+  const rule = QUESTION_ROUTING[topic] || QUESTION_ROUTING.other;
+  const woId = body.wo_id || null;
+
+  // Resolve recipients: name matches first (most specific), then role matches.
+  const recipientMap = new Map();
+  if (rule.match_names.length) {
+    const orFilter = rule.match_names.map(n => `name.ilike.%${n}%`).join(',');
+    const { data } = await supabaseAdmin
+      .from('users')
+      .select('id, name, email, role')
+      .eq('tenant_id', tenantId)
+      .or(orFilter);
+    for (const u of data || []) recipientMap.set(u.id, u);
+  }
+  if (rule.match_roles.length) {
+    const { data } = await supabaseAdmin
+      .from('users')
+      .select('id, name, email, role')
+      .eq('tenant_id', tenantId)
+      .in('role', rule.match_roles);
+    for (const u of data || []) recipientMap.set(u.id, u);
+  }
+  const recipients = Array.from(recipientMap.values());
+  if (!recipients.length) {
+    return { error: 'No teammate available to receive this — contact the owner directly', status: 500 };
+  }
+
+  // Pull WO context for subject + body — gives the recipient enough to act
+  // without opening the portal.
+  let woContext = '';
+  if (woId) {
+    const { data: wo } = await supabaseAdmin
+      .from('workorders')
+      .select('wo_number, address, customer_name')
+      .eq('tenant_id', tenantId).eq('id', woId)
+      .maybeSingle();
+    if (wo) woContext = ` · WO#${wo.wo_number} — ${wo.address}`;
+  }
+
+  const TOPIC_LABEL = { schedule: 'Schedule', scope: 'Scope', materials: 'Materials', pay: 'Pay/Rate', other: 'Question' };
+  const topicLbl = TOPIC_LABEL[topic] || topic;
+  const subject = `[${topicLbl}] from ${sub.name}${woContext}`.slice(0, 200);
+  const fromLabel = `${sub.name}${sub.company ? ' · ' + sub.company : ''} (sub portal)`;
+  const sharedThreadId = crypto.randomUUID();
+
+  const inserts = recipients.map(r => ({
+    tenant_id: tenantId,
+    thread_id: sharedThreadId,
+    from_user_id: null,
+    from_label: fromLabel,
+    to_user_id: r.id,
+    subject,
+    body: message,
+    ref_workorder_id: woId,
+    metadata: {
+      source: 'sub_portal',
+      sub_id: sub.id,
+      topic,
+      participant_count: recipients.length
+    }
+  }));
+
+  const { error: insErr } = await supabaseAdmin.from('messages').insert(inserts);
+  if (insErr) return { error: insErr.message, status: 500 };
+
+  // Best-effort Gmail alert in parallel — don't block the response if any fail.
+  Promise.allSettled(recipients.map(r => {
+    if (!r.email) return Promise.resolve();
+    const body = [
+      message,
+      ``,
+      `─────`,
+      `From: ${sub.name} (${sub.company || 'sub'}) via sub portal`,
+      `Topic: ${topicLbl}`,
+      woContext ? `Job:${woContext}` : '',
+      ``,
+      `Reply in /messages.html to keep the thread.`
+    ].filter(Boolean).join('\n');
+    return gmailSend(r.email, subject, body);
+  })).catch(() => {});
+
+  return {
+    sent_to: recipients.map(r => ({ name: r.name, role: r.role })),
+    recipient_count: recipients.length,
+    label: rule.label,
+    thread_id: sharedThreadId,
+    topic
+  };
+}
+
 // ── Owner: admin-settings PUT (visibility + threshold) ──────────
 async function updateSubSettings(tenantId, body) {
   const { sub_id, portal_visibility, auto_approve_threshold_cad } = body || {};
@@ -515,6 +630,13 @@ async function handler(req, res) {
     return res.json({ ok: true, wo_id, status: 'issued' });
   }
 
+  // Sub-write: routed question to the right teammate (AJ for most, Mac for pay)
+  if (action === 'send_question' && req.method === 'POST') {
+    const result = await sendQuestion(tenantId, sub, req.body || {});
+    if (result.error) return res.status(result.status || 500).json({ error: result.error });
+    return res.json(result);
+  }
+
   // Sub-write: checklist step toggle
   if (action === 'update_checklist' && req.method === 'PUT') {
     const { wo_id, step_index, completed } = req.body || {};
@@ -564,7 +686,7 @@ async function handler(req, res) {
     return res.json(result);
   }
 
-  return res.status(400).json({ error: 'Unknown action. Valid: photos, materials, schedule, scope, rates, update_checklist, admin-settings' });
+  return res.status(400).json({ error: 'Unknown action. Valid: photos, materials, schedule, scope, rates, update_checklist, send_question, admin-settings' });
 }
 
 export default requireTenant(handler);

@@ -228,6 +228,15 @@ h2{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;
 .stage-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 0 16px}
 .stage-chip{padding:14px 8px;background:var(--accent-soft);border:1.5px solid transparent;border-radius:10px;text-align:center;cursor:pointer;transition:all 0.1s;display:flex;flex-direction:column;align-items:center;gap:4px;color:var(--ink)}
 .stage-chip .em{font-size:24px}
+
+/* Topic chips for "Send a message" routing */
+.topic-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:8px 0 16px}
+.topic-chip{padding:12px 10px;background:var(--accent-soft);border:1.5px solid transparent;border-radius:10px;cursor:pointer;transition:all 0.1s;display:flex;align-items:center;gap:10px;color:var(--ink)}
+.topic-chip .em{font-size:22px;flex-shrink:0}
+.topic-chip .lbl{font-weight:600;font-size:14px;flex:1}
+.topic-chip .route{font-size:11px;color:var(--ink-3);font-weight:500}
+.topic-chip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.topic-chip.on .route{color:rgba(255,255,255,0.75)}
 .stage-chip .lbl{font-size:12px;font-weight:600}
 .stage-chip:active{transform:scale(0.97);opacity:0.8}
 .stage-chip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
@@ -284,7 +293,8 @@ textarea{min-height:90px;resize:vertical}
 
 <div class="fab-bar hide" id="fabBar">
   <button class="btn outline" onclick="goBack()">← Jobs</button>
-  <button class="btn primary" onclick="openPhotoModal()">📷 Take Photo</button>
+  <button class="btn primary" onclick="openPhotoModal()">📷 Photo</button>
+  <button class="btn ghost" onclick="openSendMessageModal()">💬 Ask</button>
   <button class="btn ghost" onclick="openLogModal()">+ Log</button>
 </div>
 
@@ -323,6 +333,30 @@ textarea{min-height:90px;resize:vertical}
         <summary style="font-size:13px;color:var(--ink-2);cursor:pointer">Add a caption to the next shots (optional)</summary>
         <input type="text" id="photoCaption" placeholder="e.g. Soft deck near chimney" style="margin-top:8px">
       </details>
+    </div>
+  </div>
+</div>
+
+<!-- Send Message modal — routed question to the office (AJ/Mac depending on topic) -->
+<div class="modal-bg" id="messageModal">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>💬 Send a message</h3>
+      <button class="modal-close" onclick="closeModal('messageModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:13px;color:var(--ink-2);margin-bottom:6px">What's it about? — we'll route it to the right person:</div>
+      <div class="topic-grid" id="topicGrid">
+        <div class="topic-chip" data-topic="schedule" data-route="AJ"><span class="em">📅</span><span class="lbl">Schedule</span><span class="route">→ AJ</span></div>
+        <div class="topic-chip" data-topic="scope" data-route="AJ"><span class="em">📐</span><span class="lbl">Scope</span><span class="route">→ AJ</span></div>
+        <div class="topic-chip" data-topic="materials" data-route="AJ"><span class="em">📦</span><span class="lbl">Materials</span><span class="route">→ AJ</span></div>
+        <div class="topic-chip" data-topic="pay" data-route="Mac"><span class="em">💵</span><span class="lbl">Pay / Rate</span><span class="route">→ Mac</span></div>
+        <div class="topic-chip" data-topic="other" data-route="AJ + Mac"><span class="em">❓</span><span class="lbl">Other</span><span class="route">→ AJ + Mac</span></div>
+      </div>
+      <label>Your message</label>
+      <textarea id="messageBody" placeholder="Type your question — be specific. Photos? Use the Photo button instead."></textarea>
+      <button class="btn primary full lg" style="margin-top:14px" onclick="submitMessage()">Send</button>
+      <div style="font-size:11px;color:var(--ink-3);margin-top:10px;text-align:center">You'll get a confirmation showing who it went to. Reply via this portal — they can answer the same thread.</div>
     </div>
   </div>
 </div>
@@ -511,10 +545,10 @@ async function openJob(woId){
       ${wo?.status === 'draft' ? `
         <div class="approve-banner" style="margin-top:14px;padding:14px;background:#fff7ed;border:1px solid #fdba74;border-radius:10px">
           <div style="font-weight:700;color:#9a3412;margin-bottom:4px">⚠ Pending your approval</div>
-          <div style="font-size:13px;color:#7c2d12;margin-bottom:10px">Review the scope, materials, and paysheet below. Approve to schedule the job, or message Mac with questions.</div>
+          <div style="font-size:13px;color:#7c2d12;margin-bottom:10px">Review the scope, materials, and paysheet below. Approve to schedule the job, or send a question if anything's unclear.</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn-approve" onclick="approveWO('${wo.id}')" style="flex:1;min-width:140px;padding:12px 16px;background:#16a34a;color:white;border:0;border-radius:8px;font-weight:700;font-size:15px;cursor:pointer">✓ Approve & Schedule</button>
-            <a href="sms:+15065401052?body=Question about ${encodeURIComponent(wo.address || 'job')}" style="flex:1;min-width:140px;padding:12px 16px;background:white;color:#9a3412;border:1px solid #fdba74;border-radius:8px;font-weight:600;font-size:15px;text-align:center;text-decoration:none;display:flex;align-items:center;justify-content:center">💬 Text Mac</a>
+            <button class="btn-approve" onclick="approveWO('${wo.id}')" style="flex:1;min-width:140px;padding:12px 16px;background:#16a34a;color:white;border:0;border-radius:8px;font-weight:700;font-size:15px;cursor:pointer">✓ Approve &amp; Schedule</button>
+            <button onclick="openSendMessageModal()" style="flex:1;min-width:140px;padding:12px 16px;background:white;color:#9a3412;border:1px solid #fdba74;border-radius:8px;font-weight:600;font-size:15px;cursor:pointer;font-family:inherit">💬 Send a question</button>
           </div>
         </div>
       ` : ''}
@@ -1051,6 +1085,59 @@ async function deletePhotoEntry(entryId){
     toast('Deleted');
   } catch (e) {
     toast('Delete failed: ' + e.message, 'err');
+  }
+}
+
+// ─── Send Message modal (routed to the right teammate) ──────────────────────
+// Topic determines the recipient via QUESTION_ROUTING server-side. Modal stays
+// blank-state simple — pick topic, write message, send. Confirmation toast
+// shows which person/people received it.
+let messageTopic = null;
+function openSendMessageModal(){
+  messageTopic = null;
+  document.getElementById('messageBody').value = '';
+  document.querySelectorAll('.topic-chip').forEach(c => {
+    c.classList.remove('on');
+    c.onclick = () => {
+      messageTopic = c.dataset.topic;
+      document.querySelectorAll('.topic-chip').forEach(x => x.classList.remove('on'));
+      c.classList.add('on');
+    };
+  });
+  document.getElementById('messageModal').classList.add('on');
+  // Auto-focus the textarea on desktop, but defer on mobile so the
+  // keyboard doesn't immediately cover the topic chips.
+  if (!/Mobi/.test(navigator.userAgent)) {
+    setTimeout(() => document.getElementById('messageBody').focus(), 100);
+  }
+}
+
+async function submitMessage(){
+  const body = document.getElementById('messageBody').value.trim();
+  if (!messageTopic) { toast('Pick a topic so we route it right', 'err'); return }
+  if (!body) { toast('Type a message first'); return }
+
+  const token = localStorage.getItem('ry_sub_token');
+  const btn = document.querySelector('#messageModal .btn.primary');
+  const originalText = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Sending…';
+
+  try {
+    const r = await api(`/sub-portal?action=send_question&token=${token}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        topic: messageTopic,
+        message: body,
+        wo_id: STATE.currentWoId || null
+      })
+    });
+    closeModal('messageModal');
+    const names = (r.sent_to || []).map(s => s.name).join(' + ') || r.label || 'the office';
+    toast(`✓ Sent to ${names}`);
+  } catch (e) {
+    toast('Send failed: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = originalText;
   }
 }
 
