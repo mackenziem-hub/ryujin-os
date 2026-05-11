@@ -48,6 +48,18 @@
   // "HQ"/"SERVICE") and the bust never appears until the user sends a
   // message. The server still returns the canonical archetype on first
   // reply and may swap a richer one in.
+  // Pillar-aware scenario library (Sierra / Bret Taylor pattern). 4 starter
+  // prompts per pillar so operators don't have to imagine what to ask.
+  const SCENARIOS = {
+    hq:         ["What's on my schedule tomorrow?",   "Anything I haven't responded to?",    "Any cashflow gaps this week?",          "Where's the team behind?"],
+    sales:      ["Stalest follow-up right now?",      "Today's pipeline value + close-rate", "Who's ready to sign this week?",        "Walk me through Patricia's deal"],
+    marketing:  ["This week's CPL by campaign",       "Lead funnel last 7 days",             "Any ads bleeding right now?",           "What content is converting?"],
+    service:    ["Today's open tickets by priority",  "Aging callbacks worth a check-in",    "Warranty claims pending response",      "Crew workload + overflow risk"],
+    customer:   ["Reviews waiting on a request",      "Re-roof candidates this quarter",     "Birthday / anniversary cards due",      "NPS movement vs last month"],
+    finance:    ["Unpaid invoices over 30 days",      "Last 7 days of cash in",              "Outstanding deposits + balances",       "Estimator-OS sync drift"],
+    production: ["Tomorrow's installs + crew",        "Material orders not yet placed",      "Late jobs vs scheduled finish",         "Equipment / vehicle issues"],
+  };
+
   const CLIENT_ARCHETYPES = {
     hq:         { name: 'Sage',      accent_color: '#22d3ee', avatar_image: '/assets/archetypes/sage-bust.png',      avatar_video: '/assets/archetypes/sage.mp4',      avatar_poster: '/assets/archetypes/sage.jpg' },
     sales:      { name: 'Hero',      accent_color: '#fbbf24', avatar_image: '/assets/archetypes/sovereign-bust.png', avatar_video: '/assets/archetypes/hero.mp4',      avatar_poster: '/assets/archetypes/hero.jpg' },
@@ -182,6 +194,35 @@
         color: rgba(160, 190, 230, 0.55);
       }
       .ry-agent-action-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+      /* Scenario starter chips — sit between avatar name and transcript.
+         Horizontal scroll on overflow so mobile keeps a single tidy row. */
+      .ry-agent-scenarios {
+        display: flex; gap: 8px;
+        overflow-x: auto; padding: 4px 2px;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+      }
+      .ry-agent-scenarios::-webkit-scrollbar { display: none; }
+      .ry-agent-scenario {
+        flex-shrink: 0;
+        padding: 7px 13px;
+        background: rgba(20, 30, 50, 0.7);
+        border: 1px solid rgba(34, 211, 238, 0.18);
+        border-radius: 999px;
+        color: rgba(208, 218, 240, 0.85);
+        font-family: inherit;
+        font-size: 0.78em;
+        font-weight: 500;
+        white-space: nowrap;
+        cursor: pointer;
+        transition: all 0.12s;
+      }
+      .ry-agent-scenario:hover, .ry-agent-scenario:active {
+        border-color: var(--archetype-color, #22d3ee);
+        color: var(--archetype-color, #22d3ee);
+        background: rgba(20, 30, 50, 0.95);
+      }
       .ry-agent-action .badge {
         font-size: 0.55em; letter-spacing: 1.6px; text-transform: uppercase;
         padding: 2px 8px; border-radius: 8px;
@@ -301,6 +342,7 @@
         <div class="ry-agent-transcript" id="ry-agent-transcript">
           <div class="ry-agent-msg assistant"><div class="role">Agent</div><div class="body">Loading…</div></div>
         </div>
+        <div class="ry-agent-scenarios" id="ry-agent-scenarios" aria-label="Starter prompts"></div>
         <div class="ry-agent-input-row">
           <button class="ry-agent-btn voice" id="ry-agent-voice" title="Voice (browser SpeechRecognition)">🎤</button>
           <textarea class="ry-agent-input" id="ry-agent-input" rows="1" placeholder="Ask anything about ${PILLAR}…"></textarea>
@@ -326,6 +368,21 @@
       elInput.style.height = Math.min(160, elInput.scrollHeight) + 'px';
     });
     elVoiceBtn.addEventListener('click', toggleVoice);
+    // Render scenario chips based on the resolved pillar. Tap → fills
+    // the input + focuses; user can edit before hitting send (don't
+    // auto-send — operator should review the prompt first).
+    const chipRow = document.getElementById('ry-agent-scenarios');
+    const scenarios = SCENARIOS[PILLAR] || SCENARIOS.hq;
+    chipRow.innerHTML = scenarios.map(s =>
+      `<button type="button" class="ry-agent-scenario">${escapeHtml(s)}</button>`
+    ).join('');
+    chipRow.querySelectorAll('.ry-agent-scenario').forEach((btn, i) => {
+      btn.addEventListener('click', () => {
+        elInput.value = scenarios[i];
+        elInput.dispatchEvent(new Event('input'));   // trigger auto-grow
+        elInput.focus();
+      });
+    });
     document.getElementById('ry-agent-close').addEventListener('click', closeShell);
     document.getElementById('ry-agent-suppress').addEventListener('click', () => {
       if (window.RyujinMode?.suppressAutoLaunch) window.RyujinMode.suppressAutoLaunch();
