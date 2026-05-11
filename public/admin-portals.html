@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#060a14">
+<title>Portal Inspector · Ryujin OS</title>
+<script>
+  (function () {
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) &&
+      !window.matchMedia('(min-width: 1024px)').matches;
+    if (isMobile) location.replace('/portal-mobile.html');
+  })();
+</script>
+<link rel="icon" href="/apple-touch-icon.png">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Orbitron:wght@400;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#060a14;--card:rgba(20,30,50,0.85);--card-hi:rgba(22,34,58,0.95);
+  --border:rgba(34,211,238,0.16);--border-hi:rgba(34,211,238,0.35);
+  --text:#d0daf0;--text-dim:rgba(160,190,230,0.55);--text-muted:rgba(140,170,220,0.30);
+  --cyan:#22d3ee;--green:#4ade80;--yellow:#facc15;--red:#f87171;--orange:#fb923c;--purple:#a78bfa;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{
+  font-family:'Inter',system-ui,sans-serif;
+  background:var(--bg) url('/assets/textures/app-bg.png') center/cover fixed no-repeat;
+  color:var(--text); min-height:100vh; padding:24px 32px 80px;
+}
+.wrap{max-width:1500px; margin:0 auto}
+.crumb{font-family:'Share Tech Mono',monospace;font-size:0.72em;color:var(--text-dim);letter-spacing:2px;text-transform:uppercase;margin-bottom:6px}
+.crumb a{color:var(--cyan);text-decoration:none}
+h1{font-family:'Orbitron',monospace;font-size:1.6em;font-weight:700;letter-spacing:1px;
+   background:linear-gradient(135deg,#e0e6f0 20%,var(--cyan) 65%,var(--purple));
+   -webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px}
+.sub{font-size:0.9em;color:var(--text-dim);margin-bottom:20px;line-height:1.5}
+
+.bar{
+  display:flex; gap:8px; flex-wrap:wrap; align-items:center;
+  background:var(--card); border:1px solid var(--border); border-radius:14px;
+  padding:12px 16px; margin-bottom:20px;
+}
+.bar label{font-family:'Share Tech Mono',monospace;font-size:0.7em;letter-spacing:2px;color:var(--text-dim);text-transform:uppercase;margin-right:4px}
+.bar select, .bar input{
+  background:rgba(8,12,24,0.7); border:1px solid var(--border); border-radius:8px;
+  color:var(--text); padding:7px 12px; font-family:inherit; font-size:0.85em;
+  min-width:200px; max-width:380px;
+}
+.bar select:focus, .bar input:focus{border-color:var(--border-hi);outline:none}
+.bar .grow{flex:1;min-width:200px}
+.bar button{
+  background:rgba(34,211,238,0.10); border:1px solid var(--border-hi); border-radius:8px;
+  color:var(--cyan); padding:7px 14px; font-family:inherit; font-size:0.82em; font-weight:600;
+  cursor:pointer; transition:background 0.15s;
+}
+.bar button:hover{background:rgba(34,211,238,0.20)}
+.bar button.active{background:linear-gradient(135deg,var(--cyan),var(--purple));color:#0a0f1a;border-color:transparent}
+
+.frame-wrap{
+  background:var(--card); border:1px solid var(--border); border-radius:18px;
+  padding:18px; min-height:600px;
+  display:flex; justify-content:center;
+}
+.frame-shell{
+  position:relative;
+  border:1px solid var(--border); border-radius:14px; overflow:hidden;
+  background:#0a0f1a;
+  transition:width 0.25s ease;
+  box-shadow:0 8px 40px rgba(0,0,0,0.4);
+}
+.frame-shell iframe{
+  width:100%; height:100%; border:0; display:block; background:#0a0f1a;
+}
+.empty{
+  display:flex; align-items:center; justify-content:center;
+  width:100%; min-height:560px; color:var(--text-dim);
+  font-family:'Share Tech Mono',monospace; font-size:0.85em; letter-spacing:1px;
+  text-align:center; padding:24px;
+}
+
+.tabs{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px}
+.tab{
+  background:var(--card); border:1px solid var(--border); border-radius:10px;
+  color:var(--text-dim); padding:8px 14px; font-size:0.82em; font-weight:600;
+  cursor:pointer; transition:all 0.15s; font-family:inherit;
+}
+.tab:hover{color:var(--text);border-color:var(--border-hi)}
+.tab.on{background:linear-gradient(135deg,rgba(34,211,238,0.18),rgba(167,139,250,0.18));color:var(--text);border-color:var(--border-hi)}
+.tab .count{font-family:'Share Tech Mono',monospace;font-size:0.72em;color:var(--cyan);margin-left:6px}
+
+.meta{
+  font-family:'Share Tech Mono',monospace; font-size:0.7em;
+  color:var(--text-dim); letter-spacing:1px; padding:8px 14px;
+  background:rgba(8,12,24,0.6); border-radius:8px; margin-top:10px;
+  display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;
+}
+.meta a{color:var(--cyan);text-decoration:none}
+.meta a:hover{text-decoration:underline}
+
+.pill{display:inline-block;padding:1px 8px;border-radius:6px;font-size:0.95em;margin-right:6px}
+.pill.ok{background:rgba(74,222,128,0.15);color:var(--green)}
+.pill.warn{background:rgba(250,204,21,0.15);color:var(--yellow)}
+.pill.muted{background:rgba(160,190,230,0.10);color:var(--text-dim)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="crumb"><a href="/admin-overview.html">← Admin</a> · Portal Inspector</div>
+  <h1>Portal Inspector</h1>
+  <div class="sub">Live preview every customer-, sub-, and team-facing surface. Pick a portal, pick a token if it needs one, set the viewport width, and interact in the frame as if you were them.</div>
+
+  <div class="tabs" id="tabs"></div>
+
+  <div class="bar">
+    <label>Token / Subject</label>
+    <select id="tokenPicker" class="grow"><option>—</option></select>
+    <label>Width</label>
+    <button data-w="375" onclick="setWidth(375)">📱 375</button>
+    <button data-w="430" onclick="setWidth(430)">📱+ 430</button>
+    <button data-w="768" onclick="setWidth(768)">📐 768</button>
+    <button data-w="1200" class="active" onclick="setWidth(1200)">🖥 1200</button>
+    <button data-w="100%" onclick="setWidth('100%')">↔ Full</button>
+    <button onclick="reload()" style="margin-left:auto">⟳ Reload</button>
+    <button onclick="openExternal()">↗ New tab</button>
+  </div>
+
+  <div class="frame-wrap">
+    <div class="frame-shell" id="frameShell" style="width:1200px;height:780px">
+      <div class="empty" id="frameEmpty">Pick a portal above to start.</div>
+    </div>
+  </div>
+
+  <div class="meta" id="meta">
+    <span>—</span>
+    <span><span class="pill muted">portal</span> <code id="metaUrl">—</code></span>
+  </div>
+</div>
+
+<script>
+const PORTALS = [
+  { id:'sub',          label:'Sub Portal',         needs:'sub',     url:t => `/sub-portal.html?token=${t}` },
+  { id:'paysheet',     label:'Paysheet (sub-facing)', needs:'paysheet', url:t => `/paysheet.html?token=${t}` },
+  { id:'proposal',     label:'Customer Proposal',  needs:'estimate', url:t => `/proposal-client.html?share=${t}` },
+  { id:'breakdown',    label:'Breakdown PDF (HTML)', needs:'estimate', url:t => `/api/breakdown-pdf?share=${t}&format=html` },
+  { id:'aj',           label:'AJ Portal',          needs:null,      url:() => '/portal-aj.html' },
+  { id:'mac',          label:'Mac Portal',         needs:null,      url:() => '/portal-mac.html' },
+  { id:'darcy',        label:'Darcy Portal',       needs:null,      url:() => '/portal-darcy.html' },
+  { id:'catherine',    label:'Catherine Portal',   needs:null,      url:() => '/portal-catherine.html' },
+  { id:'diego',        label:'Diego Portal',       needs:null,      url:() => '/portal-diego.html' },
+  { id:'pavanjot',     label:'Pavanjot Portal',    needs:null,      url:() => '/portal-pavanjot.html' },
+  { id:'melodie',      label:'Melodie Portal',     needs:null,      url:() => '/portal-melodie.html' },
+  { id:'ryan',         label:'Ryan Portal',        needs:null,      url:() => '/portal-ryan.html' },
+  { id:'mobile',       label:'Mobile (owner)',     needs:null,      url:() => '/portal-mobile.html' },
+  { id:'approvals',    label:'Approvals Queue',    needs:null,      url:() => '/approvals.html' },
+  { id:'routes',       label:'Route Planner',      needs:null,      url:() => '/portal-routes.html' },
+];
+
+let active = PORTALS[0];
+let tokens = { sub:[], estimate:[], paysheet:[] };
+let currentUrl = null;
+
+function renderTabs(){
+  const tabs = document.getElementById('tabs');
+  tabs.innerHTML = PORTALS.map(p =>
+    `<button class="tab ${p.id===active.id?'on':''}" data-id="${p.id}" onclick="pickPortal('${p.id}')">${p.label}</button>`
+  ).join('');
+}
+
+async function loadTokens(){
+  try {
+    const [subs, ests, ps] = await Promise.all([
+      fetch('/api/subcontractors?tenant=plus-ultra',{headers:{'x-tenant-id':'plus-ultra'}}).then(r => r.ok ? r.json() : ({subcontractors:[]})).catch(() => ({subcontractors:[]})),
+      fetch('/api/estimates?tenant=plus-ultra&limit=50',{headers:{'x-tenant-id':'plus-ultra'}}).then(r => r.ok ? r.json() : ({estimates:[]})).catch(() => ({estimates:[]})),
+      fetch('/api/paysheets?tenant=plus-ultra&limit=30',{headers:{'x-tenant-id':'plus-ultra'}}).then(r => r.ok ? r.json() : ({paysheets:[]})).catch(() => ({paysheets:[]}))
+    ]);
+    tokens.sub = (subs.subcontractors || []).filter(s => s.portal_token).map(s => ({
+      token: s.portal_token,
+      label: `${s.name}${s.company ? ' · ' + s.company : ''}`
+    }));
+    tokens.estimate = (ests.estimates || []).filter(e => e.share_token).map(e => {
+      const c = e.customer_name || e.customer?.full_name || 'Unknown';
+      const a = e.customer_address || e.customer?.address || '';
+      return { token: e.share_token, label: `${e.share_token} · ${c}${a ? ' · ' + a : ''}` };
+    });
+    tokens.paysheet = (ps.paysheets || []).filter(p => p.acceptance_token).map(p => ({
+      token: p.acceptance_token,
+      label: `${p.acceptance_token.slice(0,8)}… · ${p.address || 'Paysheet'}${p.status ? ' · ' + p.status : ''}`
+    }));
+  } catch (e) {
+    console.warn('token load partial:', e.message);
+  }
+  refreshPicker();
+}
+
+function refreshPicker(){
+  const picker = document.getElementById('tokenPicker');
+  if (!active.needs) {
+    picker.innerHTML = '<option value="">(no token needed)</option>';
+    picker.disabled = true;
+    loadFrame();
+    return;
+  }
+  picker.disabled = false;
+  const list = tokens[active.needs] || [];
+  if (!list.length) {
+    picker.innerHTML = `<option value="">— no ${active.needs} tokens available —</option>`;
+    showEmpty(`No ${active.needs} tokens available. ${active.needs==='sub'?'Provision one via Crew Ops.':active.needs==='estimate'?'Create an estimate first.':'Issue a paysheet first.'}`);
+    return;
+  }
+  picker.innerHTML = list.map((t,i) => `<option value="${t.token}">${t.label}</option>`).join('');
+  loadFrame();
+}
+
+function pickPortal(id){
+  active = PORTALS.find(p => p.id === id) || PORTALS[0];
+  renderTabs();
+  refreshPicker();
+}
+
+function showEmpty(msg){
+  document.getElementById('frameShell').innerHTML = `<div class="empty">${msg}</div>`;
+  document.getElementById('metaUrl').textContent = '—';
+  currentUrl = null;
+}
+
+function loadFrame(){
+  const picker = document.getElementById('tokenPicker');
+  const token = picker.value;
+  if (active.needs && !token) { showEmpty('Pick a token to preview.'); return; }
+  const url = active.url(token);
+  currentUrl = url;
+  const shell = document.getElementById('frameShell');
+  shell.innerHTML = `<iframe src="${url}" allow="camera; microphone; geolocation; clipboard-write" loading="lazy"></iframe>`;
+  document.getElementById('metaUrl').textContent = url;
+}
+
+function setWidth(w){
+  const shell = document.getElementById('frameShell');
+  const buttons = document.querySelectorAll('.bar button[data-w]');
+  buttons.forEach(b => b.classList.toggle('active', String(b.dataset.w) === String(w)));
+  if (w === '100%') { shell.style.width = '100%'; shell.style.height = '780px'; return; }
+  const n = Number(w);
+  shell.style.width = n + 'px';
+  shell.style.height = (n < 500 ? 800 : n < 800 ? 900 : 780) + 'px';
+}
+
+function reload(){ loadFrame(); }
+function openExternal(){ if (currentUrl) window.open(currentUrl, '_blank'); }
+
+document.getElementById('tokenPicker').addEventListener('change', loadFrame);
+
+renderTabs();
+loadTokens();
+</script>
+</body>
+</html>
