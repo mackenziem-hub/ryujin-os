@@ -213,7 +213,7 @@ You have tools that let you interact with Mackenzie's systems. USE THEM when ask
 - **lookup_data** — Search across all data (estimates, tickets, leads, CRM contacts, pipeline, conversations, **tasks**) — executes immediately. The "tasks" source returns ALL open GHL/Automator sales tasks across all contacts (location-wide).
 - **get_contact_detail** — Deep-dive on a specific contact (CRM profile + pipeline + SMS history) — executes immediately
 - **update_ticket** — Update a field crew ticket on the Action Board — REQUIRES APPROVAL
-- **create_ticket** — Create a NEW field crew ticket on the Action Board — REQUIRES APPROVAL. IMPORTANT: The Action Board is for FIELD CREW WORK ONLY (Diego, AJ, Pavignette). Never create tickets there for approvals, notes, reminders, or internal tasks. Only create tickets when Mackenzie explicitly asks for a crew task.
+- **create_ticket** — Create a NEW ticket in the Ryujin Crew Ops kanban. EXECUTES IMMEDIATELY (no approval). Use for crew/field/operations work — installs, repairs, inspections, errands, brand reps, tallies. Only when Mackenzie explicitly asks for a task to be created. Returns the ticket id and a link to admin.html#crew.
 - **update_estimate** — Update an estimate in Estimator OS — REQUIRES APPROVAL
 - **add_contact_note** — Add a note to a CRM contact (call summaries, follow-up context, pricing summaries, proposal links) — REQUIRES APPROVAL (confirm code in chat)
 - **generate_proposal** — Generate a Plus Ultra branded intro sales page for an existing estimate. NOT the proposal itself — it's a warm-up page with the client's house photo, video, crew gallery, and a CTA linking to the full Estimator OS proposal. Auto-pulls cover photo from Estimator OS, adapts footer/bio to the assigned salesperson (Darcy or Mackenzie). Executes immediately (no approval needed). IMPORTANT: Always look up the real client name from GHL first — never use placeholder names. After generating, ALWAYS share TWO links: the customer-facing URL and the edit URL (append &edit=1) so Mackenzie can self-service upload cover photos, videos, and edit the message without a Claude Code session.
@@ -1054,16 +1054,17 @@ const TOOLS = [
   },
   {
     name: 'create_ticket',
-    description: 'Create a new ticket on the Action Board for crew work.',
+    description: 'Create a new ticket in the Ryujin Crew Ops kanban (ryujin-os.vercel.app/admin.html#crew). Use for crew/operations work — installs, repairs, inspections, errands, brand reps, tallies. Executes immediately, no approval required. After 2026-05-11 migration the Action Board (Replit) is read-only history — Ryujin native is the write surface.',
     input_schema: {
       type: 'object',
       properties: {
         title: { type: 'string', description: 'Ticket title' },
         description: { type: 'string', description: 'Ticket description' },
-        priority: { type: 'string', enum: ['top_priority', 'high', 'normal'], description: 'Priority level' },
-        assignedTo: { type: 'string', description: 'Diego or AJ or leave empty' },
+        priority: { type: 'string', enum: ['urgent', 'high', 'medium', 'low'], description: 'Priority level (top_priority/normal also accepted and remapped)' },
+        assignedTo: { type: 'string', description: 'User name: Diego, AJ, Pavanjot, Catherine, Darcy, Melodie, or Mackenzie. Leave empty for unassigned.' },
         dueDate: { type: 'string', description: 'Due date YYYY-MM-DD' },
-        category: { type: 'string', description: 'Installation, Repair, Inspection, Jobsite Tally, Material Errand, or Brand Representation' }
+        category: { type: 'string', description: 'Installation, Repair, Inspection, Jobsite Tally, Material Errand, or Brand Representation' },
+        tags: { type: 'array', items: { type: 'string' }, description: 'Optional tag strings (e.g. ["photo-required", "urgent"])' }
       },
       required: ['title']
     }
@@ -2109,19 +2110,66 @@ async function executeTool(name, input, attachments = []) {
     }
 
     if (name === 'create_ticket') {
-      const result = await routeForApproval(
-        'create-ticket',
-        input.title,
-        `Create ticket: "${input.title}"${input.assignedTo ? ` assigned to ${input.assignedTo}` : ''}`,
-        { tool: 'create_ticket', ...input }
-      );
-      return {
-        status: 'pending_approval',
-        code: result.code,
-        message: `Awaiting confirmation. Reply "${result.code} confirmed" to execute.`,
-        action: `Create ticket: ${input.title}`,
-        details: input
-      };
+      // Direct insert into Ryujin tickets (no approval routing). Action Board
+      // migrated 2026-05-11; this is now the only write surface for crew tasks.
+      const PRIORITY_MAP = { top_priority: 'urgent', high: 'high', normal: 'medium', urgent: 'urgent', medium: 'medium', low: 'low' };
+      const pri = PRIORITY_MAP[String(input.priority || '').toLowerCase()] || 'medium';
+
+      // Resolve assignedTo name → user_id via /api/users
+      let assigned_to = null;
+      let assignee_label = input.assignedTo || null;
+      if (input.assignedTo) {
+        try {
+          const usersResp = await fetch('https://ryujin-os.vercel.app/api/users', {
+            headers: { 'x-tenant-id': 'plus-ultra' }
+          });
+          if (usersResp.ok) {
+            const ud = await usersResp.json();
+            const users = ud.users || ud.data || ud || [];
+            const target = String(input.assignedTo).toLowerCase().trim();
+            const aliases = { pavignette: 'pavanjot', mac: 'mackenzie', mack: 'mackenzie' };
+            const lookupName = aliases[target] || target;
+            const match = users.find(u => {
+              const n = String(u.name || '').toLowerCase();
+              return n === lookupName || n.startsWith(lookupName + ' ') || n.split(' ')[0] === lookupName;
+            });
+            if (match) { assigned_to = match.id; assignee_label = match.name; }
+          }
+        } catch (e) { /* fall through; tickets allow null assignee */ }
+      }
+
+      const tags = Array.isArray(input.tags) ? [...input.tags] : [];
+      if (input.category) tags.push(`category:${String(input.category).toLowerCase().replace(/\s+/g, '-')}`);
+
+      try {
+        const resp = await fetch('https://ryujin-os.vercel.app/api/tickets', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-tenant-id': 'plus-ultra' },
+          body: JSON.stringify({
+            title: input.title,
+            description: input.description || null,
+            assigned_to,
+            priority: pri,
+            due_date: input.dueDate || null,
+            tags
+          })
+        });
+        if (!resp.ok) {
+          const err = await resp.text();
+          return { status: 'error', message: `Ticket create failed: HTTP ${resp.status} — ${err.slice(0, 200)}` };
+        }
+        const data = await resp.json();
+        const ticket = data.ticket || data;
+        return {
+          status: 'created',
+          ticket_id: ticket.id,
+          ticket_number: ticket.ticket_number,
+          message: `🎫 Ticket #${ticket.ticket_number || ''} "${input.title}" created${assignee_label ? ` and assigned to ${assignee_label}` : ' (unassigned)'}${input.dueDate ? ` · due ${input.dueDate}` : ''}.`,
+          url: 'https://ryujin-os.vercel.app/admin.html#crew'
+        };
+      } catch (e) {
+        return { status: 'error', message: `Ticket create errored: ${e.message}` };
+      }
     }
 
     if (name === 'create_estimate') {

@@ -7,8 +7,62 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { put, list } from '@vercel/blob';
+import { supabaseAdmin } from '../lib/supabase.js';
 
 const SNAPSHOT_BLOB_KEY = 'shenron-snapshot.json';
+
+// Compute ticket stats directly from the Ryujin tickets table. Replaces the
+// old Action Board (Replit) fetch path post-2026-05-11 migration. Returns
+// the same shape the snapshot consumer expected from the Action Board API.
+async function nativeTicketStats() {
+  try {
+    const { data: tenant } = await supabaseAdmin.from('tenants').select('id').eq('slug', 'plus-ultra').maybeSingle();
+    if (!tenant) return null;
+    const { data: rows } = await supabaseAdmin
+      .from('tickets')
+      .select('id, title, status, priority, assigned_to, due_date, completed_at, created_at, updated_at, tags, assigned_user:users!tickets_assigned_to_fkey(name)')
+      .eq('tenant_id', tenant.id)
+      .order('created_at', { ascending: false })
+      .limit(500);
+    if (!rows) return null;
+    const open = ['open', 'active', 'in_progress', 'blocked'];
+    const byStatus = {};
+    const byAssignee = {};
+    let overdueCount = 0;
+    const now = new Date();
+    const activeToday = [];
+    for (const t of rows) {
+      const s = (t.status || 'open').toLowerCase();
+      byStatus[s] = (byStatus[s] || 0) + 1;
+      const owner = t.assigned_user?.name || 'Unassigned';
+      byAssignee[owner] = (byAssignee[owner] || 0) + 1;
+      if (open.includes(s) && t.due_date && new Date(t.due_date) < now) overdueCount++;
+      if (open.includes(s)) {
+        activeToday.push({
+          id: t.id,
+          title: t.title,
+          status: t.status,
+          priority: t.priority,
+          assignee: owner,
+          due_date: t.due_date,
+          days_overdue: t.due_date ? Math.max(0, Math.floor((now - new Date(t.due_date)) / 86400000)) : null
+        });
+      }
+    }
+    return {
+      stats: {
+        totalTickets: rows.length,
+        byStatus,
+        byAssignee,
+        overdueCount,
+        activeToday: activeToday.sort((a, b) => (b.days_overdue || 0) - (a.days_overdue || 0))
+      }
+    };
+  } catch (e) {
+    console.warn('[snapshot] nativeTicketStats failed:', e.message);
+    return null;
+  }
+}
 let cachedBlobUrl = null;
 let storeBase = null;
 
@@ -82,9 +136,9 @@ async function buildFreshSnapshot() {
     tf('https://ryujin-os.vercel.app/api/ghl').then(r => r.json()),
     tf('https://ryujin-os.vercel.app/api/ghl?mode=pipeline').then(r => r.json()),
     tf('https://ryujin-os.vercel.app/api/ghl?mode=conversations').then(r => r.json()),
-    tf('https://ultra-task-manager.replit.app/api/tickets', {
-      headers: { 'x-api-key': 'pu-actionboard-2026' }
-    }).then(r => r.json()),
+    // Tickets are now native to Ryujin (migrated from Action Board 2026-05-11).
+    // Action Board Replit is no longer the source of truth — read directly from Supabase.
+    nativeTicketStats(),
     tf('https://ryujin-os.vercel.app/api/ghl?mode=tasks').then(r => r.json()),
     tf('https://ryujin-os.vercel.app/api/ghl?mode=contacts&limit=100').then(r => r.json()),
   ]);
@@ -96,7 +150,6 @@ async function buildFreshSnapshot() {
   // Pipeline & Revenue
   if (stats?.results) {
     const est = stats.results.find(r => r.source === 'Estimator OS');
-    const tix = stats.results.find(r => r.source === 'Action Board');
 
     if (est?.stats) {
       snapshot.sections.revenue = {
@@ -109,13 +162,13 @@ async function buildFreshSnapshot() {
         recentActivity: (est.stats.recentActivity || []).slice(0, 5)
       };
     }
-    if (tix?.stats) {
+    if (tickets?.stats) {
       snapshot.sections.tickets = {
-        total: tix.stats.totalTickets,
-        byStatus: tix.stats.byStatus,
-        byAssignee: tix.stats.byAssignee,
-        overdueCount: tix.stats.overdueCount,
-        activeToday: (tix.stats.activeToday || []).slice(0, 10)
+        total: tickets.stats.totalTickets,
+        byStatus: tickets.stats.byStatus,
+        byAssignee: tickets.stats.byAssignee,
+        overdueCount: tickets.stats.overdueCount,
+        activeToday: (tickets.stats.activeToday || []).slice(0, 10)
       };
     }
     // Leads — tiered funnel: marketing leads → local → sales qualified → converted
