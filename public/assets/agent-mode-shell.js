@@ -244,10 +244,58 @@
     });
   }
 
+  function isMobile() {
+    return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || '') &&
+      !window.matchMedia('(min-width: 1024px)').matches;
+  }
+
+  function ensureReopenFab() {
+    if (document.getElementById('ry-agent-fab')) return;
+    const fab = document.createElement('button');
+    fab.id = 'ry-agent-fab';
+    fab.type = 'button';
+    fab.title = 'Reopen agent';
+    fab.setAttribute('aria-label', 'Reopen agent');
+    fab.textContent = '💬';
+    fab.style.cssText = [
+      'position:fixed','right:18px','bottom:18px','z-index:79',
+      'width:56px','height:56px','border-radius:50%',
+      'border:1px solid var(--archetype-color,#22d3ee)',
+      'background:rgba(8,12,24,0.9)','color:#22d3ee',
+      'font-size:1.4em','cursor:pointer',
+      'box-shadow:0 6px 18px rgba(34,211,238,0.25)',
+      'display:none',
+    ].join(';');
+    fab.addEventListener('click', openShell);
+    document.body.appendChild(fab);
+  }
+
+  function setFabVisible(visible) {
+    const fab = document.getElementById('ry-agent-fab');
+    if (fab) fab.style.display = visible ? 'block' : 'none';
+  }
+
+  function openShell() {
+    setFabVisible(false);
+    if (window.RyujinMode?.set) window.RyujinMode.set('agent');
+    else document.documentElement.dataset.mode = 'agent';
+    maybeBoot();
+    setTimeout(() => elInput?.focus(), 50);
+  }
+
   function closeShell() {
-    // Flip mode away from 'agent' so the CSS-hidden <main> reappears. We pick
-    // 'interactive' because non-admins always have that available; admins can
-    // re-toggle 'advanced' via the corner switcher if they prefer.
+    if (isMobile()) {
+      // On mobile, flip data-mode to 'interactive' in memory only — the
+      // existing CSS rule un-hides <main> and hides the shell. mode-switcher
+      // doesn't persist to localStorage on mobile, so a reload restores
+      // mode='agent' from readMode(). Surface a FAB so Mac can re-summon
+      // the shell without reloading.
+      document.documentElement.dataset.mode = 'interactive';
+      setFabVisible(true);
+      return;
+    }
+    // Desktop: flip mode away from 'agent' so the underlying admin/portal UI
+    // reappears via the existing CSS rule.
     if (window.RyujinMode?.set) {
       const target = window.RyujinMode.available?.().includes('interactive') ? 'interactive' : 'advanced';
       window.RyujinMode.set(target);
@@ -520,6 +568,7 @@
   function init() {
     injectStyles();
     buildShell();
+    ensureReopenFab();
     document.addEventListener('ryujin:mode-change', onModeChange);
     // mode-switcher.js fires this on mobile first-visits so we boot the
     // greeting + focus the input even if a `ryujin:mode-change` event

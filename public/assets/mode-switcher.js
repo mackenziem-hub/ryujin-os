@@ -37,10 +37,13 @@
 
   function readMode() {
     if (lockedMode) return lockedMode;
+    // Mobile = agent. Always. Stored localStorage is ignored on phones so
+    // a prior close-button flip (or any leftover state) can't suppress the
+    // talking head on the next visit. The "don't auto-show today" toggle
+    // uses sessionStorage and gates only the immediate overlay launch.
+    if (isMobile()) return 'agent';
     const stored = (localStorage.getItem(STORAGE_KEY) || '').toLowerCase();
     if (availableModes.includes(stored)) return stored;
-    // Mobile fresh-visit → agent; desktop → interactive (or advanced once admin role widens availableModes).
-    if (isMobile() && availableModes.includes('agent')) return 'agent';
     return availableModes[availableModes.length - 1];
   }
 
@@ -49,7 +52,8 @@
     if (!availableModes.includes(mode)) return false;
     if (mode === currentMode) return true;
     currentMode = mode;
-    localStorage.setItem(STORAGE_KEY, mode);
+    // Don't persist on mobile — mode is fixed to 'agent' there.
+    if (!isMobile()) localStorage.setItem(STORAGE_KEY, mode);
     document.documentElement.dataset.mode = mode;
     document.dispatchEvent(new CustomEvent('ryujin:mode-change', { detail: { mode, locked: !!lockedMode } }));
     paintToggle();
@@ -87,9 +91,9 @@
         color: rgba(251,191,36,0.7); padding: 4px 10px;
         border-left: 1px solid rgba(34,211,238,0.16);
       }
-      @media (max-width: 540px) {
-        .ry-mode-switcher { top: 8px; right: 8px; padding: 2px; }
-        .ry-mode-btn { min-width: 0; padding: 5px 8px; font-size: 0.55em; letter-spacing: 1.2px; }
+      /* Mobile = agent mode only, no toggle UI. */
+      @media (max-width: 1023px) {
+        .ry-mode-switcher { display: none !important; }
       }
     `;
     const tag = document.createElement('style');
