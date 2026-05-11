@@ -252,6 +252,25 @@
         .ry-agent-stage { padding: 60px 12px 12px; }
         .ry-agent-avatar { width: 140px; height: 140px; }
       }
+      /* JARVIS desktop layout — agent lives as a 380px right-side
+         companion panel beside the main dashboard, not as a full-screen
+         takeover. Mobile keeps its overlay. */
+      @media (min-width: 1024px) {
+        .ry-agent-shell {
+          left: auto;
+          width: 380px;
+          background: rgba(6, 10, 20, 0.96);
+          backdrop-filter: blur(10px);
+          border-left: 1px solid rgba(34, 211, 238, 0.18);
+          box-shadow: -10px 0 28px rgba(0, 0, 0, 0.55);
+        }
+        html[data-mode="agent"] main,
+        html[data-mode="agent"] .main,
+        html[data-mode="agent"] .wrap { display: block !important; padding-right: 400px !important; transition: padding-right 0.2s ease; }
+        .ry-agent-stage { padding: 56px 18px 18px; gap: 14px; }
+        .ry-agent-avatar { width: 132px; height: 132px; }
+        .ry-agent-header { left: 14px; right: 14px; }
+      }
     `;
     const tag = document.createElement('style');
     tag.id = 'ry-agent-shell-styles';
