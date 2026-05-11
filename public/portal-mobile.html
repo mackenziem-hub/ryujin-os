@@ -201,6 +201,18 @@ body::before{
 }
 .priority-pill svg{width:13px;height:13px;fill:currentColor}
 
+.assignee-pill{
+  display:inline-flex;align-items:center;
+  padding:5px 11px;border-radius:999px;
+  background:rgba(34,211,238,0.10);color:var(--cyan);
+  font-size:0.78em;font-weight:600;letter-spacing:0.2px;
+  border:1px solid rgba(34,211,238,0.25);
+}
+.assignee-pill.anyone{
+  background:rgba(255,255,255,0.05);color:var(--text-dim);
+  border-color:rgba(255,255,255,0.08);
+}
+
 /* ── Quick schedule card ────────────────────────────── */
 .cal-card{
   background:linear-gradient(140deg,var(--card-grad-a),var(--card-grad-b));
@@ -441,6 +453,8 @@ function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&l
 let userId = null;
 let userName = '';
 let userInitials = '—';
+let isAdmin = false;
+const USERS_BY_ID = {};  // user_id → { name, role }
 
 async function loadMe(){
   const tok = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token');
@@ -452,7 +466,26 @@ async function loadMe(){
     userId = me.user_id;
     userName = me.name || '';
     userInitials = (userName.split(/\s+/).map(s=>s[0]||'').slice(0,2).join('') || '—').toUpperCase();
+    isAdmin = !!me.is_admin;
   }catch{}
+}
+
+async function loadTeam(){
+  // Only admins need the user roster (to label each team task by assignee).
+  if (!isAdmin) return;
+  try{
+    const r = await fetch('/api/users', { headers: { 'x-tenant-id': TENANT } });
+    if (!r.ok) return;
+    const data = await r.json();
+    for (const u of (data.users || [])) USERS_BY_ID[u.id] = { name: u.name || '', role: u.role || '' };
+  }catch{}
+}
+
+function firstName(uid){
+  if (!uid) return 'Anyone';
+  const u = USERS_BY_ID[uid];
+  if (!u) return '';
+  return (u.name.split(/\s+/)[0]) || '';
 }
 
 function applyGreeting(){
@@ -474,30 +507,55 @@ function applyPortrait(){
   document.getElementById('portraitDisc').style.backgroundImage = `url('/assets/archetypes/${archetype}-bust.png')`;
 }
 
-async function loadFeaturedTicket(){
+async function loadTickets(){
   const today = new Date().toISOString().slice(0,10);
   try{
-    const u = userId ? `&user_id=${encodeURIComponent(userId)}` : '';
+    // Admins see the whole team's queue (no user_id filter — /api/state
+    // returns every briefing_item + open quest for the tenant). Non-admins
+    // stay scoped to their own assigned_to + for_user_id rows.
+    const u = (!isAdmin && userId) ? `&user_id=${encodeURIComponent(userId)}` : '';
     const r = await fetch(`/api/state?for_date=${today}${u}`, { headers: { 'x-tenant-id': TENANT } });
-    if (!r.ok) { renderFeatured(null, 0); return; }
+    if (!r.ok) { renderTickets([]); return; }
     const data = await r.json();
-    const quests = (data.quests?.open || []);
-    const briefing = data.briefing || [];
-    const all = [...quests, ...briefing];
-    const top = all.find(t => (t.priority === 'urgent' || t.priority === 'high' ||
-                               t.metadata?.urgency === 'urgent' || t.metadata?.urgency === 'high'))
-             || all[0] || null;
-    renderFeatured(top, all.length);
-  }catch{ renderFeatured(null, 0); }
+    const quests = (data.quests?.open || []).map(q => ({
+      title: q.title || 'Untitled task',
+      assigned_to: q.assigned_to || null,
+      priority: q.metadata?.urgency || (q.priority === 'urgent' || q.priority === 'high' ? q.priority : 'normal'),
+      status: q.status || 'open',
+      source: q.source_agent || (q.metadata?.intent || '').replace(/_/g,' '),
+      created_at: q.created_at,
+    }));
+    const briefing = (data.briefing || []).map(b => ({
+      title: b.title || 'Briefing item',
+      assigned_to: b.for_user_id || null,
+      priority: b.priority || 'normal',
+      status: 'open',
+      source: b.source_agent || 'agent',
+      created_at: b.created_at,
+    }));
+    // Combine, urgent/high first, dedupe by title.
+    const seen = new Set();
+    const all = [...quests, ...briefing]
+      .filter(t => { if (seen.has(t.title)) return false; seen.add(t.title); return true; })
+      .sort((a,b) => priorityRank(a.priority) - priorityRank(b.priority));
+    renderTickets(all);
+  }catch{ renderTickets([]); }
 }
 
-function renderFeatured(t, total){
+function priorityRank(p){
+  if (p === 'urgent') return 0;
+  if (p === 'high') return 1;
+  return 2;
+}
+
+function renderTickets(items){
+  const total = items.length;
   document.getElementById('greetMeta').textContent = total === 0
     ? 'All caught up'
-    : `${total} task${total === 1 ? '' : 's'} due today`;
+    : `${total} task${total === 1 ? '' : 's'}${isAdmin ? ' across the team' : ' today'}`;
 
   const slot = document.getElementById('ticketSlot');
-  if (!t){
+  if (!items.length){
     slot.innerHTML = `
       <div class="ticket-card" style="opacity:0.7">
         <div class="ticket-title-row">
@@ -506,23 +564,29 @@ function renderFeatured(t, total){
       </div>`;
     return;
   }
-  const title = t.title || 'Untitled task';
-  const status = (t.source_agent || t.metadata?.intent || 'open')
-    .replace(/_/g,' ').replace(/^./, c => c.toUpperCase());
-  const priority = (t.priority === 'urgent' || t.priority === 'high' ||
-                    t.metadata?.urgency === 'urgent' || t.metadata?.urgency === 'high');
-  slot.innerHTML = `
-    <div class="ticket-card">
-      <div class="ticket-title-row">
-        <div class="ticket-title">${esc(title)}</div>
-        <span class="ticket-chev"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span>
-      </div>
-      <div class="ticket-status"><span class="status-dot"></span>${esc(status)}</div>
-      <div class="ticket-footer">
-        <div class="ticket-due"><span class="due-ring"></span>Due Today</div>
-        ${priority ? `<span class="priority-pill"><svg viewBox="0 0 24 24"><path d="M13.5 2L4 14h7v8l9-12h-7z"/></svg>Priority</span>` : ''}
-      </div>
-    </div>`;
+
+  // Admins see up to 6 cards (team-wide), non-admins see up to 4 of their own.
+  const top = items.slice(0, isAdmin ? 6 : 4);
+  slot.innerHTML = top.map(t => {
+    const status = (t.source || t.status || 'open').replace(/_/g,' ').replace(/^./, c => c.toUpperCase());
+    const priority = t.priority === 'urgent' || t.priority === 'high';
+    const assignee = isAdmin ? firstName(t.assigned_to) : '';
+    const assigneePill = assignee
+      ? `<span class="assignee-pill">${esc(assignee)}</span>`
+      : (isAdmin ? `<span class="assignee-pill anyone">Team</span>` : '');
+    return `
+      <div class="ticket-card">
+        <div class="ticket-title-row">
+          <div class="ticket-title">${esc(t.title)}</div>
+          <span class="ticket-chev"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span>
+        </div>
+        <div class="ticket-status"><span class="status-dot"></span>${esc(status)}</div>
+        <div class="ticket-footer">
+          ${assigneePill || `<div class="ticket-due"><span class="due-ring"></span>Due Today</div>`}
+          ${priority ? `<span class="priority-pill"><svg viewBox="0 0 24 24"><path d="M13.5 2L4 14h7v8l9-12h-7z"/></svg>Priority</span>` : ''}
+        </div>
+      </div>`;
+  }).join('');
 }
 
 function renderCalendar(){
@@ -596,13 +660,14 @@ async function refreshBadge(){
 
 (async function init(){
   await loadMe();
+  await loadTeam();
   applyGreeting();
   applyPortrait();
   renderCalendar();
   wireTaps();
-  await loadFeaturedTicket();
+  await loadTickets();
   await refreshBadge();
-  setInterval(loadFeaturedTicket, 5 * 60 * 1000);
+  setInterval(loadTickets, 5 * 60 * 1000);
   setInterval(refreshBadge, 60 * 1000);
 })();
 </script>

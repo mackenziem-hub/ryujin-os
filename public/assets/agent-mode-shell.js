@@ -256,7 +256,10 @@
       <div class="ry-agent-stage">
         <div class="ry-agent-header">
           <button type="button" class="ry-agent-header-link" id="ry-agent-suppress">Don't auto-show today</button>
-          <button type="button" class="ry-agent-close" id="ry-agent-close" aria-label="Close agent">✕</button>
+          <div style="display:flex;align-items:center;gap:8px">
+            <button type="button" class="ry-agent-close" id="ry-agent-speaker" aria-label="Toggle voice" title="Voice off">🔇</button>
+            <button type="button" class="ry-agent-close" id="ry-agent-close" aria-label="Close agent">✕</button>
+          </div>
         </div>
         <div class="ry-agent-avatar" id="ry-agent-avatar">
           <div class="ry-agent-avatar-fallback">${PILLAR}</div>
@@ -295,6 +298,26 @@
       if (window.RyujinMode?.suppressAutoLaunch) window.RyujinMode.suppressAutoLaunch();
       closeShell();
     });
+
+    const speakerBtn = document.getElementById('ry-agent-speaker');
+    paintSpeakerBtn(speakerBtn);
+    speakerBtn.addEventListener('click', () => {
+      const next = !voiceEnabled();
+      try { localStorage.setItem(VOICE_KEY, next ? '1' : '0'); } catch {}
+      paintSpeakerBtn(speakerBtn);
+      if (!next && 'speechSynthesis' in window) window.speechSynthesis.cancel();
+    });
+  }
+
+  const VOICE_KEY = 'ryujin_agent_voice';
+  function voiceEnabled() {
+    try { return localStorage.getItem(VOICE_KEY) === '1'; } catch { return false; }
+  }
+  function paintSpeakerBtn(btn) {
+    if (!btn) return;
+    const on = voiceEnabled();
+    btn.textContent = on ? '🔊' : '🔇';
+    btn.title = on ? 'Voice on (tap to mute)' : 'Voice off (tap to enable)';
   }
 
   function isMobile() {
@@ -403,7 +426,16 @@
     const div = document.createElement('div');
     div.className = `ry-agent-msg ${role}`;
     div.innerHTML = `<div class="role">${role === 'user' ? 'You' : (archetype?.name || 'Agent')}</div><div class="body"></div>`;
-    div.querySelector('.body').textContent = body;
+    const bodyEl = div.querySelector('.body');
+    if (role === 'assistant') {
+      // RPG-style typewriter reveal. Tap anywhere on the bubble to skip.
+      typewrite(bodyEl, body || '');
+      div.style.cursor = 'pointer';
+      div.title = 'Tap to skip';
+      div.addEventListener('click', () => { if (bodyEl._typewriter) bodyEl._typewriter.skip(); });
+    } else {
+      bodyEl.textContent = body;
+    }
     if (actions && actions.length) {
       const wrap = document.createElement('div');
       wrap.className = 'ry-agent-actions';
@@ -436,6 +468,35 @@
   function escapeHtml(s) {
     if (s == null) return '';
     return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  // Classic RPG/visual-novel char-by-char text reveal. Saves a control
+  // handle on the element so `tap to skip` can finish the reveal early.
+  function typewrite(el, text, speedMs = 22) {
+    const full = String(text || '');
+    let i = 0;
+    el.textContent = '';
+    const tick = () => {
+      i += Math.max(1, Math.floor(28 / speedMs));  // accelerate slightly on slower tunings
+      if (i >= full.length) {
+        el.textContent = full;
+        el._typewriter = null;
+        elTranscript.scrollTop = elTranscript.scrollHeight;
+        return;
+      }
+      el.textContent = full.slice(0, i);
+      elTranscript.scrollTop = elTranscript.scrollHeight;
+      el._typewriter.timer = setTimeout(tick, speedMs);
+    };
+    el._typewriter = {
+      skip: () => {
+        if (el._typewriter?.timer) clearTimeout(el._typewriter.timer);
+        el.textContent = full;
+        el._typewriter = null;
+        elTranscript.scrollTop = elTranscript.scrollHeight;
+      },
+      timer: setTimeout(tick, speedMs),
+    };
   }
 
   async function onSend() {
@@ -641,6 +702,7 @@
   }
 
   function speak(text) {
+    if (!voiceEnabled()) return;           // opt-in only, default off
     if (!('speechSynthesis' in window)) return;
     try {
       const u = new SpeechSynthesisUtterance(text);
