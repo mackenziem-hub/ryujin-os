@@ -20,6 +20,7 @@ import { fetchMetaYesterday, reconcileYesterday, computeCacRoas } from '../../li
 import { pendingConversations, importantUnreadEmails, carryforwardFromSnapshot } from '../../lib/eaContext.js';
 import { runSystemsCheck } from '../../lib/systemsCheck.js';
 import { buildBriefMarkdown } from '../../lib/briefMarkdown.js';
+import { requireCronOrOwner } from '../../lib/cronAuth.js';
 
 const SHENRON_BASE = 'https://ryujin-os.vercel.app';
 
@@ -28,6 +29,9 @@ const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim(
 const GHL_VERSION = '2021-07-28';
 
 export default async function handler(req, res) {
+  const auth = requireCronOrOwner(req);
+  if (!auth.ok) return res.status(401).json({ error: auth.error });
+
   // Vercel cron strips query strings, so ?type=morning/evening from vercel.json doesn't reach us.
   // Detect by Atlantic Time hour: 4 AM – 1:59 PM AT → morning, 2 PM – 3:59 AM AT → evening.
   // Manual triggers can still override via explicit ?type= param.

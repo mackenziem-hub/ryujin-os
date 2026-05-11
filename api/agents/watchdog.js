@@ -7,6 +7,7 @@
 
 import { gmailSearch, gmailReadMessage } from '../../lib/google.js';
 import { put, list } from '@vercel/blob';
+import { requireCronOrOwner } from '../../lib/cronAuth.js';
 
 const GHL_BASE = 'https://services.leadconnectorhq.com';
 const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
@@ -231,6 +232,9 @@ function classifyEmail(email) {
 // ═══════════════════════════════════════════
 
 export default async function handler(req, res) {
+  const auth = requireCronOrOwner(req);
+  if (!auth.ok) return res.status(401).json({ error: auth.error });
+
   const startTime = Date.now();
   console.log('[Watchdog] Starting scan...');
 

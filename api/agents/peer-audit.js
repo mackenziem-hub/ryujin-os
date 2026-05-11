@@ -15,6 +15,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { peerReview } from '../../lib/peer_review.js';
+import { requireCronOrOwner } from '../../lib/cronAuth.js';
 
 const RYUJIN_BASE = 'https://ryujin-os.vercel.app';
 const TENANT = 'plus-ultra';
@@ -138,6 +139,8 @@ export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({ error: 'GET or POST only' });
   }
+  const auth = requireCronOrOwner(req);
+  if (!auth.ok) return res.status(401).json({ error: auth.error });
   try {
     const sinceHours = Number(req.query?.since_hours) || 24;
     const limit = Number(req.query?.limit) || 50;

@@ -7,6 +7,7 @@
 
 import { runVegeta, runPiccolo, runKrillin, runGohan, sendFallbackEmail } from './_shared.js';
 import { buildMetaAdsSnapshot, checkTokenHealth, auditAdSetConfig } from '../../lib/meta.js';
+import { requireCronOrOwner } from '../../lib/cronAuth.js';
 
 const SHENRON_BASE = 'https://ryujin-os.vercel.app';
 const AGENT_TIMEOUT = 25000; // 25s per agent
@@ -19,6 +20,9 @@ function withTimeout(promise, ms, label) {
 }
 
 export default async function handler(req, res) {
+  const auth = requireCronOrOwner(req);
+  if (!auth.ok) return res.status(401).json({ error: auth.error });
+
   const startTime = Date.now();
 
   // ── PHASE 0: Check token health + refresh Meta Ads data BEFORE agents run ──
