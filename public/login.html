@@ -194,15 +194,19 @@ async function doLogin(e) {
   }
 }
 
-// Auto-redirect if already logged in (trust stored token — fast redirect)
+// Auto-redirect if already logged in (trust stored token — fast redirect).
+// ALWAYS honor ?next= when present so deep-links to /messages.html etc.
+// from "Sign in" banners actually return to the originating page.
 const token = localStorage.getItem('ryujin_token');
 const user = localStorage.getItem('ryujin_user');
 if (token && user) {
   try {
     const u = JSON.parse(user);
     const role = u.role || 'crew';
-    if (role === 'owner' || role === 'admin' || role === 'manager') {
-      // First-time owner → onboarding, otherwise straight to 3D hub
+    const nextParam = new URLSearchParams(location.search).get('next');
+    if (nextParam && /^\/[A-Za-z0-9_\-./?=&%]*$/.test(nextParam)) {
+      window.location.href = nextParam;
+    } else if (role === 'owner' || role === 'admin' || role === 'manager') {
       const done = localStorage.getItem('ry_onboarding_done');
       window.location.href = done ? '/command-center.html' : '/onboarding.html';
     } else {

@@ -87,8 +87,19 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
 <div class="app" id="app">
   <div class="list-pane">
     <div class="list-head">
-      <h1>Messages</h1>
-      <button class="btn" id="newBtn">+ New</button>
+      <a href="/command-center.html" class="btn ghost" style="padding:6px 10px;font-size:0.62em" title="Back to Command Center">← Back</a>
+      <h1 style="flex:1;text-align:center;font-size:0.95em">Messages</h1>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="btn" id="newBtn">+ New</button>
+        <button class="btn ghost" id="acctBtn" title="Account" style="padding:6px 10px;font-size:0.62em">👤</button>
+      </div>
+    </div>
+    <div id="acctMenu" style="display:none;position:absolute;top:60px;right:14px;z-index:90;background:var(--glass);border:1px solid var(--glass-border);border-radius:12px;padding:6px;min-width:200px;backdrop-filter:blur(20px);box-shadow:0 10px 30px rgba(0,0,0,0.5)">
+      <div style="padding:10px 14px;border-bottom:1px solid var(--glass-border);font-size:0.78em;color:var(--text-dim)" id="acctIdentity">—</div>
+      <a href="/admin.html" style="display:block;padding:10px 14px;color:var(--text);text-decoration:none;font-size:0.85em;border-radius:8px" onmouseover="this.style.background='rgba(34,211,238,0.06)'" onmouseout="this.style.background=''">⌘ Command Center</a>
+      <a href="/administration.html" style="display:block;padding:10px 14px;color:var(--text);text-decoration:none;font-size:0.85em;border-radius:8px" onmouseover="this.style.background='rgba(34,211,238,0.06)'" onmouseout="this.style.background=''">⚙ Administration</a>
+      <a href="#" id="resetSessionLink" style="display:block;padding:10px 14px;color:#fca5a5;text-decoration:none;font-size:0.85em;border-radius:8px" onmouseover="this.style.background='rgba(248,113,113,0.06)'" onmouseout="this.style.background=''">↻ Reset session</a>
+      <a href="#" id="signOutLink" style="display:block;padding:10px 14px;color:#fca5a5;text-decoration:none;font-size:0.85em;border-radius:8px" onmouseover="this.style.background='rgba(248,113,113,0.06)'" onmouseout="this.style.background=''">⏏ Sign out</a>
     </div>
     <div class="tab-row">
       <button class="tab active" data-box="inbox">Inbox</button>
@@ -161,19 +172,57 @@ function authHeaders() {
   return headers;
 }
 
+function resetSessionAndLogin() {
+  ['ryujin_token','ryujin_user','ryujin_tenant'].forEach(k => { try { localStorage.removeItem(k); sessionStorage.removeItem(k); } catch {} });
+  location.href = '/login.html?next=' + encodeURIComponent(location.pathname);
+}
+
 function showAuthBanner(reason) {
   if (document.getElementById('authBanner')) return;
   const b = document.createElement('div');
   b.id = 'authBanner';
-  b.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:200;background:rgba(248,113,113,0.12);border:1px solid rgba(248,113,113,0.5);color:#fca5a5;padding:12px 18px;border-radius:12px;font-size:0.85em;display:flex;gap:14px;align-items:center;backdrop-filter:blur(20px);box-shadow:0 8px 30px rgba(0,0,0,0.4)';
-  b.innerHTML = `<span>⚠ ${escapeHtml(reason || 'Your session is missing or expired — messages will not send.')}</span><a href="/login.html?next=${encodeURIComponent(location.pathname)}" style="padding:6px 14px;border-radius:8px;background:#f87171;color:#0a0e1a;text-decoration:none;font-family:'Orbitron',monospace;font-size:0.78em;font-weight:700;letter-spacing:1.2px">Sign in</a>`;
+  b.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:200;background:rgba(248,113,113,0.14);border:1px solid rgba(248,113,113,0.5);color:#fecaca;padding:12px 18px;border-radius:12px;font-size:0.85em;display:flex;gap:10px;align-items:center;backdrop-filter:blur(20px);box-shadow:0 8px 30px rgba(0,0,0,0.4);max-width:90vw';
+  b.innerHTML = `<span style="flex:1">⚠ ${escapeHtml(reason || 'Your session is missing or expired — messages will not send.')}</span>
+    <button onclick="resetSessionAndLogin()" style="padding:6px 14px;border-radius:8px;background:#f87171;color:#0a0e1a;border:none;font-family:'Orbitron',monospace;font-size:0.72em;font-weight:700;letter-spacing:1.2px;cursor:pointer">↻ Reset & Sign In</button>`;
   document.body.appendChild(b);
 }
 
 (function checkTokenOnLoad() {
   const tok = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token');
-  if (!tok) showAuthBanner('You are not signed in. Sending will not work until you sign in.');
+  if (!tok) showAuthBanner('No session token found. Click Reset & Sign In to fix.');
 })();
+
+// Account menu wiring
+document.addEventListener('DOMContentLoaded', () => {
+  const acctBtn = document.getElementById('acctBtn');
+  const acctMenu = document.getElementById('acctMenu');
+  const acctIdentity = document.getElementById('acctIdentity');
+  const resetLink = document.getElementById('resetSessionLink');
+  const signOutLink = document.getElementById('signOutLink');
+
+  function refreshIdentity() {
+    try {
+      const u = JSON.parse(localStorage.getItem('ryujin_user') || '{}');
+      acctIdentity.textContent = u.name ? `${u.name} · ${u.role || ''}` : 'Not signed in';
+    } catch { acctIdentity.textContent = 'Not signed in'; }
+  }
+  refreshIdentity();
+
+  acctBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    acctMenu.style.display = acctMenu.style.display === 'none' ? 'block' : 'none';
+    if (acctMenu.style.display === 'block') refreshIdentity();
+  });
+  document.addEventListener('click', (e) => {
+    if (!acctMenu.contains(e.target) && e.target !== acctBtn) acctMenu.style.display = 'none';
+  });
+  resetLink?.addEventListener('click', (e) => { e.preventDefault(); resetSessionAndLogin(); });
+  signOutLink?.addEventListener('click', (e) => {
+    e.preventDefault();
+    ['ryujin_token','ryujin_user','ryujin_tenant','ry_onboarding_done'].forEach(k => { try { localStorage.removeItem(k); sessionStorage.removeItem(k); } catch {} });
+    location.href = '/login.html';
+  });
+});
 
 async function handleAuthResponse(r) {
   if (r.status === 401) {
