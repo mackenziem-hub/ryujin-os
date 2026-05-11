@@ -352,6 +352,8 @@ ${observationsText}
 
 Mark the single best option recommended:true. Never invent customers / estimates / dollars.
 
+EXPLAINABILITY: every proposed_actions[] entry MUST include a non-empty `why` (one short sentence, max 18 words) that cites the SPECIFIC observation triggering the suggestion — e.g. "Patricia replied 4 days ago, no follow-up logged" or "Estimate PU-1234 sits in 'sent' for 11 days." If you cannot tie an action to a concrete observation, drop the action. No vague justifications like "good idea" or "high impact" — the operator reads `why` to decide whether to trust the action.
+
 ## Intent vocabulary (extract_entities.intent)
 The system auto-routes to the right teammate when confidence ≥ 0.7. Pick from:
 ${INTENT_SLUGS.join(', ')}.

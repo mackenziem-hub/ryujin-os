@@ -161,13 +161,27 @@
         word-wrap: break-word; overflow-wrap: break-word;
         white-space: normal; line-height: 1.35;
       }
-      .ry-agent-action .why {
-        display: block;
-        font-size: 0.78em; color: rgba(160, 190, 230, 0.55); margin-top: 4px;
-        font-weight: 400; line-height: 1.4;
+      .ry-agent-action .badge { flex-shrink: 0; align-self: flex-start; }
+      /* Explainability row beneath the label — left-border accent so the
+         "why" is clearly the agent's reasoning, not part of the label. */
+      .ry-agent-action-why {
+        display: flex; gap: 6px; align-items: flex-start;
+        margin-top: 8px; padding: 6px 10px;
+        border-left: 2px solid rgba(34, 211, 238, 0.35);
+        background: rgba(8, 12, 24, 0.4);
+        border-radius: 0 8px 8px 0;
+        font-size: 0.82em; color: rgba(208, 218, 240, 0.78);
+        line-height: 1.4;
         word-wrap: break-word; overflow-wrap: break-word;
       }
-      .ry-agent-action .badge { flex-shrink: 0; align-self: flex-start; }
+      .ry-agent-action-why .icon { flex-shrink: 0; opacity: 0.7; }
+      .ry-agent-action-source {
+        margin-top: 4px;
+        font-family: 'Share Tech Mono', monospace;
+        font-size: 0.7em; letter-spacing: 0.5px;
+        color: rgba(160, 190, 230, 0.55);
+      }
+      .ry-agent-action-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
       .ry-agent-action .badge {
         font-size: 0.55em; letter-spacing: 1.6px; text-transform: uppercase;
         padding: 2px 8px; border-radius: 8px;
@@ -442,8 +456,19 @@
       for (const a of actions) {
         const btn = document.createElement('button');
         btn.className = 'ry-agent-action' + (a.recommended ? ' recommended' : '');
+        const sourceLine = sourceHint(a.payload || {}, a.kind);
+        const whyBlock = a.why
+          ? `<div class="ry-agent-action-why"><span class="icon">💡</span><span>${escapeHtml(a.why)}</span></div>`
+          : '';
+        const sourceBlock = sourceLine
+          ? `<div class="ry-agent-action-source">${escapeHtml(sourceLine)}</div>`
+          : '';
         btn.innerHTML = `
-          <span class="label">${escapeHtml(a.label)}${a.why ? `<span class="why">${escapeHtml(a.why)}</span>` : ''}</span>
+          <div class="ry-agent-action-body">
+            <span class="label">${escapeHtml(a.label)}</span>
+            ${whyBlock}
+            ${sourceBlock}
+          </div>
           ${a.recommended ? '<span class="badge">★ recommended</span>' : ''}
         `;
         btn.addEventListener('click', () => onActionClick(a, btn));
@@ -468,6 +493,23 @@
   function escapeHtml(s) {
     if (s == null) return '';
     return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  // Tiny helper for the "Source:" affordance under an action chip. When the
+  // payload references a known entity (estimate / customer / ticket / agent),
+  // surface a compact mono-spaced line so the operator can trace why the
+  // agent is suggesting this — without expanding into a giant explainer.
+  function sourceHint(payload, kind) {
+    if (!payload) return '';
+    const bits = [];
+    if (payload.estimate_id)  bits.push(`Estimate ${String(payload.estimate_id).slice(0, 8)}`);
+    if (payload.customer_id)  bits.push(`Customer ${String(payload.customer_id).slice(0, 8)}`);
+    if (payload.ticket_id)    bits.push(`Ticket ${String(payload.ticket_id).slice(0, 8)}`);
+    if (payload.agent_slug)   bits.push(`Agent ${payload.agent_slug}`);
+    if (payload.to_user)      bits.push(`To ${payload.to_user}`);
+    if (payload.to && (kind === 'send_email' || kind === 'send_sms')) bits.push(`To ${payload.to}`);
+    if (payload.url)          bits.push(`URL ${payload.url.replace(/^https?:\/\/[^/]+/, '')}`);
+    return bits.length ? `Source · ${bits.join(' · ')}` : '';
   }
 
   // Classic RPG/visual-novel char-by-char text reveal. Saves a control
