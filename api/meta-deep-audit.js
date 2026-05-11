@@ -5,6 +5,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { getAdSetFull, listCustomConversions, getPixelEventStats } from '../lib/meta.js';
+import { requireCronOrOwner } from '../lib/cronAuth.js';
 
 async function listAdsInAdSet(adSetId, token) {
   const url = `https://graph.facebook.com/v21.0/${adSetId}/ads?fields=id,name,status,effective_status,issues_info&access_token=${encodeURIComponent(token)}`;
@@ -20,6 +21,9 @@ const DEFAULT_AD_SETS = [
 const PIXEL_ID = '1166833781416817';
 
 export default async function handler(req, res) {
+  const auth = requireCronOrOwner(req);
+  if (!auth.ok) return res.status(401).json({ error: auth.error });
+
   try {
     const idsParam = (req.query?.adSetIds || '').toString().trim();
     const adSetIds = idsParam ? idsParam.split(',').map(s => s.trim()).filter(Boolean) : DEFAULT_AD_SETS;

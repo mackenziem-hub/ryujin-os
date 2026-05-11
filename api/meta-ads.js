@@ -10,10 +10,14 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { buildMetaAdsSnapshot, getAdSets, checkTokenHealth, listCustomAudiences } from '../lib/meta.js';
+import { requireCronOrOwner } from '../lib/cronAuth.js';
 
 const SHENRON_BASE = 'https://ryujin-os.vercel.app';
 
 export default async function handler(req, res) {
+  const auth = requireCronOrOwner(req);
+  if (!auth.ok) return res.status(401).json({ error: auth.error });
+
   const startTime = Date.now();
   const { detail, action } = req.query || {};
 

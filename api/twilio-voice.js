@@ -62,9 +62,11 @@ export default async function handler(req, res) {
   const raw = await readRawBody(req);
   const params = parseFormBody(raw);
 
-  // Verify signature (skip in dev when bypass header is set).
+  // Verify signature. Bypass header only honored when ALLOW_TWILIO_BYPASS=1
+  // is set in env (dev-only opt-in). Production deployments must NOT set this.
   const url = fullUrl(req);
-  if (!req.headers['x-skip-twilio-verify'] && !verifyTwilioSignature(req, url, params)) {
+  const bypassAllowed = process.env.ALLOW_TWILIO_BYPASS === '1' && req.headers['x-skip-twilio-verify'];
+  if (!bypassAllowed && !verifyTwilioSignature(req, url, params)) {
     return res.status(401).type('text/xml').send(twimlReject('Signature failed.'));
   }
 

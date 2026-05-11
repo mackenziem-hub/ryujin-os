@@ -21,8 +21,13 @@ import {
   updateAdSetPromotedObject,
   getCampaigns
 } from '../lib/meta.js';
+import { requireCronOrOwner } from '../lib/cronAuth.js';
 
 export default async function handler(req, res) {
+  // Gate ALL methods — both GET (campaign list exposure) and POST (state changes)
+  const auth = requireCronOrOwner(req);
+  if (!auth.ok) return res.status(401).json({ error: auth.error });
+
   if (req.method === 'GET') {
     // List active campaigns for reference
     try {

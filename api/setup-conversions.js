@@ -5,6 +5,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { listCustomConversions, createCustomConversion } from '../lib/meta.js';
+import { requireCronOrOwner } from '../lib/cronAuth.js';
 
 const CONVERSIONS_TO_CREATE = [
   {
@@ -79,6 +80,9 @@ const CONVERSIONS_TO_CREATE = [
 ];
 
 export default async function handler(req, res) {
+  const auth = requireCronOrOwner(req);
+  if (!auth.ok) return res.status(401).json({ error: auth.error });
+
   const startTime = Date.now();
   console.log('[Setup Conversions] Starting...');
 
