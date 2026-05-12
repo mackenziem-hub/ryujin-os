@@ -102,12 +102,19 @@
         position: relative;
         box-sizing: border-box;
       }
+      /* Identity row — avatar + name side-by-side so vertical space goes
+         to the transcript (Manus audit polish #3). */
+      .ry-agent-identity {
+        display: flex; align-items: center; justify-content: center;
+        gap: 14px; padding: 4px 0;
+      }
       .ry-agent-avatar {
-        width: 220px; height: 220px; border-radius: 50%;
-        margin: 0 auto; position: relative; overflow: hidden;
+        width: 96px; height: 96px; border-radius: 50%;
+        position: relative; overflow: hidden;
         background: rgba(20, 30, 50, 0.85);
         border: 2px solid var(--archetype-color, #22d3ee);
-        box-shadow: 0 0 38px var(--archetype-glow, rgba(34, 211, 238, 0.35));
+        box-shadow: 0 0 28px var(--archetype-glow, rgba(34, 211, 238, 0.35));
+        flex-shrink: 0;
       }
       .ry-agent-avatar video, .ry-agent-avatar img {
         width: 100%; height: 100%; object-fit: cover;
@@ -116,13 +123,13 @@
         position: absolute; inset: 0;
         display: flex; align-items: center; justify-content: center;
         font-family: 'Orbitron', monospace;
-        font-size: 1.6em; font-weight: 800; letter-spacing: 3px;
+        font-size: 1.2em; font-weight: 800; letter-spacing: 3px;
         text-transform: uppercase;
         color: var(--archetype-color, #22d3ee);
         background: radial-gradient(circle at center, rgba(34,211,238,0.06), transparent 60%);
       }
       .ry-agent-name {
-        text-align: center;
+        text-align: left;
         font-family: 'Share Tech Mono', monospace;
         font-size: 0.78em; letter-spacing: 3px; text-transform: uppercase;
         color: rgba(208, 218, 240, 0.7);
@@ -207,15 +214,16 @@
       }
       .ry-agent-action-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 
-      /* Scenario starter chips — sit between avatar name and transcript.
-         Horizontal scroll on overflow so mobile keeps a single tidy row. */
+      /* Scenario starter chips — live INSIDE the transcript now
+         (Manus polish #2 + #4) so the workspace feels populated on
+         first load and chips wrap cleanly instead of clipping mid-word.
+         Hidden once the user sends their first message (see onSend). */
       .ry-agent-scenarios {
-        display: flex; gap: 8px;
-        overflow-x: auto; padding: 4px 2px;
-        scrollbar-width: none;
-        -webkit-overflow-scrolling: touch;
+        display: flex; flex-wrap: wrap; gap: 6px;
+        margin-top: 4px;
+        padding: 2px 0;
       }
-      .ry-agent-scenarios::-webkit-scrollbar { display: none; }
+      .ry-agent-scenarios.hidden { display: none; }
       .ry-agent-scenario {
         flex-shrink: 0;
         padding: 7px 13px;
@@ -253,14 +261,20 @@
         resize: none; line-height: 1.4;
       }
       .ry-agent-input:focus { border-color: rgba(34, 211, 238, 0.55); }
-      .ry-agent-input-row { align-items: flex-end; }
-      .ry-agent-btn { align-self: flex-end; }
+      /* Buttons stretch to match the textarea height (Manus polish #1).
+         Was align-items: flex-end which made buttons hug the textarea
+         baseline at 13–16px tall — looked unfinished next to the 48px
+         textarea. */
+      .ry-agent-input-row { align-items: stretch; }
       .ry-agent-btn {
+        align-self: stretch;
+        min-height: 48px;
         padding: 0 18px; min-width: 48px; cursor: pointer;
         background: linear-gradient(135deg, #22d3ee, #7c3aed);
         color: #0a0e1a; border: none; border-radius: 12px;
         font-family: 'Orbitron', monospace; font-size: 0.7em;
         font-weight: 700; letter-spacing: 1.6px; text-transform: uppercase;
+        display: inline-flex; align-items: center; justify-content: center;
       }
       .ry-agent-btn:hover { box-shadow: 0 0 16px rgba(34, 211, 238, 0.4); }
       .ry-agent-btn:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -276,20 +290,25 @@
         color: rgba(160, 190, 230, 0.5); padding: 6px 10px;
       }
       .ry-agent-thinking::after { content: '...'; animation: ry-dots 1.2s infinite; }
+      /* Unified utility bar across the top, not three floating chrome
+         elements (Manus polish #5). Gradient backdrop ties it visually
+         to the overlay; safe-area padding handles the notch. */
       .ry-agent-header {
-        position: absolute; top: 14px; left: 18px; right: 18px;
+        position: absolute; top: 0; left: 0; right: 0;
+        padding: max(14px, calc(10px + env(safe-area-inset-top))) 18px 14px;
+        background: linear-gradient(180deg, rgba(8,12,24,0.82) 0%, rgba(8,12,24,0.5) 65%, rgba(8,12,24,0) 100%);
         display: flex; justify-content: space-between; align-items: center;
         gap: 10px; font-family: 'Share Tech Mono', monospace;
         font-size: 0.62em; letter-spacing: 1.6px; text-transform: uppercase;
         color: rgba(160, 190, 230, 0.55);
-        pointer-events: none;
+        z-index: 2;
       }
-      .ry-agent-header > * { pointer-events: auto; }
       .ry-agent-header-link {
-        background: transparent; border: 1px solid rgba(34, 211, 238, 0.16);
+        background: rgba(20, 30, 50, 0.55); border: 1px solid rgba(34, 211, 238, 0.18);
         color: inherit; font-family: inherit; font-size: inherit;
         letter-spacing: inherit; text-transform: inherit;
-        padding: 6px 10px; border-radius: 12px; cursor: pointer;
+        padding: 0 12px; border-radius: 999px; cursor: pointer;
+        height: 32px; display: inline-flex; align-items: center;
       }
       .ry-agent-header-link:hover { color: #22d3ee; border-color: rgba(34, 211, 238, 0.4); }
       .ry-agent-close {
@@ -307,19 +326,20 @@
                    max(14px, calc(10px + env(safe-area-inset-bottom)));
           gap: 10px;
         }
-        .ry-agent-avatar { width: 96px; height: 96px; }
-        .ry-agent-name { font-size: 0.7em; letter-spacing: 2px; margin-top: -4px; }
-        /* Single-row input bar — voice + textarea + send. Keep send + voice
-           compact so the textarea gets the room. */
+        .ry-agent-avatar { width: 56px; height: 56px; }
+        .ry-agent-identity { gap: 10px; padding: 0; }
+        .ry-agent-name { font-size: 0.68em; letter-spacing: 2px; }
+        .ry-agent-avatar-fallback { font-size: 0.9em; letter-spacing: 2px; }
+        /* Compact buttons keep the textarea wide, but still match its height. */
         .ry-agent-input { font-size: 0.92em; padding: 10px 12px; min-height: 44px; }
-        .ry-agent-btn { padding: 0 14px; font-size: 0.65em; min-width: 44px; }
+        .ry-agent-btn { padding: 0 14px; font-size: 0.65em; min-width: 44px; min-height: 44px; }
         .ry-agent-btn.voice { padding: 0 12px; }
       }
       /* Very short viewports (landscape phones ~414px tall, or any phone
-         once the soft keyboard opens) — hide the avatar + name so the
+         once the soft keyboard opens) — hide the identity row so the
          transcript + input row stay visible. */
       @media (max-height: 520px) {
-        .ry-agent-avatar, .ry-agent-name { display: none; }
+        .ry-agent-identity { display: none; }
         .ry-agent-stage { gap: 8px; padding-top: max(40px, calc(8px + env(safe-area-inset-top))); }
       }
       /* JARVIS desktop layout — agent lives as a 380px right-side
@@ -364,14 +384,16 @@
             <button type="button" class="ry-agent-close" id="ry-agent-close" aria-label="Close agent">✕</button>
           </div>
         </div>
-        <div class="ry-agent-avatar" id="ry-agent-avatar">
-          <div class="ry-agent-avatar-fallback">${PILLAR}</div>
+        <div class="ry-agent-identity">
+          <div class="ry-agent-avatar" id="ry-agent-avatar">
+            <div class="ry-agent-avatar-fallback">${PILLAR}</div>
+          </div>
+          <div class="ry-agent-name" id="ry-agent-name">${PILLAR.toUpperCase()} · agent</div>
         </div>
-        <div class="ry-agent-name" id="ry-agent-name">${PILLAR.toUpperCase()} · agent</div>
         <div class="ry-agent-transcript" id="ry-agent-transcript">
           <div class="ry-agent-msg assistant"><div class="role">Agent</div><div class="body">Loading…</div></div>
+          <div class="ry-agent-scenarios" id="ry-agent-scenarios" aria-label="Starter prompts"></div>
         </div>
-        <div class="ry-agent-scenarios" id="ry-agent-scenarios" aria-label="Starter prompts"></div>
         <div class="ry-agent-input-row">
           <button class="ry-agent-btn voice" id="ry-agent-voice" title="Voice (browser SpeechRecognition)">🎤</button>
           <textarea class="ry-agent-input" id="ry-agent-input" rows="1" placeholder="Ask anything about ${PILLAR}…"></textarea>
@@ -670,6 +692,10 @@
     if (!text) return;
     elInput.value = '';
     elSendBtn.disabled = true;
+    // Hide starter chips once the conversation begins — they served their
+    // "feel populated" job on first load (Manus polish #2). They stay in
+    // the DOM in case we want to reintroduce them on session reset.
+    document.getElementById('ry-agent-scenarios')?.classList.add('hidden');
     appendMessage('user', text);
     conversation.push({ role: 'user', content: text });
     const thinking = appendThinking();
