@@ -388,31 +388,27 @@ function applyGreeting(){
 }
 
 async function loadToday(){
-  // Pull the day's queue from /api/state. Top item becomes the hero job;
-  // rest fall into the Tasks card. If nothing is open, show a clean empty.
-  const today = new Date().toISOString().slice(0,10);
+  // Real work lives in `tickets` (39 open across the team as of 2026-05-12).
+  // /api/state returns quests (0 rows) + briefing snapshots (informational
+  // agent reports, not actions) — wrong source. Pull tickets directly.
   let items = [];
   try{
-    const u = (!isAdmin && userId) ? `&user_id=${encodeURIComponent(userId)}` : '';
-    const r = await fetch(`/api/state?for_date=${today}${u}`, { headers: { 'x-tenant-id': TENANT } });
+    const filter = (!isAdmin && userId) ? `&assigned_to=${encodeURIComponent(userId)}` : '';
+    const r = await fetch(`/api/tickets?limit=50${filter}`, { headers: { 'x-tenant-id': TENANT } });
     if (r.ok){
       const data = await r.json();
-      const quests = (data.quests?.open || []).map(q => ({
-        title: q.title || 'Untitled task',
-        priority: q.metadata?.urgency || q.priority || 'normal',
-        address: q.metadata?.job_address || q.metadata?.address || null,
-        customer: q.metadata?.customer_name || null,
-        due: q.due_date || q.scheduled_for || null,
-      }));
-      const briefing = (data.briefing || []).map(b => ({
-        title: b.title || 'Briefing item',
-        priority: b.priority || 'normal',
-      }));
-      const seen = new Set();
-      items = [...quests, ...briefing].filter(t => {
-        if (seen.has(t.title)) return false;
-        seen.add(t.title); return true;
-      }).sort((a,b) => priRank(a.priority) - priRank(b.priority));
+      const rows = Array.isArray(data) ? data : (data.tickets || data.data || []);
+      items = rows
+        .filter(t => !['done','completed','archived','closed','cancelled'].includes((t.status || '').toLowerCase()))
+        .map(t => ({
+          title: cleanTitle(t.title),
+          priority: (t.priority || 'normal').toLowerCase(),
+          address: t.project?.address || null,
+          customer: t.project?.name || null,
+          due: t.due_date || null,
+          status: t.status,
+        }))
+        .sort((a,b) => priRank(a.priority) - priRank(b.priority));
     }
   }catch{}
 
@@ -420,7 +416,13 @@ async function loadToday(){
   renderTasks(items.slice(1));
 }
 
-function priRank(p){ return p === 'urgent' ? 0 : p === 'high' ? 1 : 2 }
+// Strip the U+FFFD replacement char that came over from the Action Board
+// migration (some old titles had non-UTF8 bytes for em-dashes).
+function cleanTitle(s){
+  return String(s || '').replace(/�/g, '—').replace(/\s+/g, ' ').trim() || 'Untitled task';
+}
+
+function priRank(p){ return p === 'urgent' ? 0 : p === 'high' ? 1 : p === 'active' ? 1.5 : 2 }
 
 function renderJobHero(top, total){
   const addr = document.getElementById('jobAddr');
