@@ -909,7 +909,13 @@
   async function maybeBoot() {
     if (bootedOnce) return;
     bootedOnce = true;
-    elTranscript.innerHTML = '';
+    // Remove only message bubbles + thinking dots — preserve the starter
+    // chip row that buildShell() rendered into the same container, so
+    // the workspace feels populated on first load (Manus polish #2).
+    // Earlier this was `innerHTML = ''` which wiped chips too.
+    for (const el of elTranscript.querySelectorAll('.ry-agent-msg, .ry-agent-thinking')) {
+      el.remove();
+    }
     appendMessage('assistant', `Hi. I\'m the ${PILLAR} agent. Tell me what you want to do, or ask me what to focus on.`);
   }
 
