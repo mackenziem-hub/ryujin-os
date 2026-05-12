@@ -649,16 +649,16 @@ body{
     const res = await fetch('/api/snapshot', { cache: 'no-store' });
     if (!res.ok) throw new Error('snapshot ' + res.status);
     const snap = await res.json();
-    // Update KPI rail if structure matches
+    const s = snap.sections || {};
+    const pipelineTotal = (s.pipeline || []).reduce((sum, o) => sum + (o.value || 0), 0);
     const set = (selector, val) => { const el = document.querySelector(selector); if (el && val != null) el.textContent = val; };
-    if (snap.revenue?.signed) set('.kpi:nth-child(1) .kpi-value', '$' + (snap.revenue.signed / 1000).toFixed(1) + 'K');
-    if (snap.pipeline?.totalValue) set('.kpi:nth-child(2) .kpi-value', '$' + (snap.pipeline.totalValue / 1000).toFixed(0) + 'K');
-    if (snap.tickets?.active != null) set('.kpi:nth-child(3) .kpi-value', snap.tickets.active + '/' + (snap.tickets.total || '?'));
-    if (snap.leads?.weekly != null) set('.kpi:nth-child(4) .kpi-value', snap.leads.weekly);
-    if (snap.ads?.avgCPL != null) set('.kpi:nth-child(5) .kpi-value', '$' + snap.ads.avgCPL.toFixed(2));
-    // Signal live status
-    const tsEl = document.getElementById('ts'); if (tsEl) tsEl.textContent = new Date(snap.lastUpdated || Date.now()).toLocaleTimeString();
-    if (window.RyujinToast) RyujinToast('Live snapshot synced \u00B7 ' + (snap.lastUpdated || 'now'));
+    if (s.revenue?.signedRevenue != null) set('.kpi:nth-child(1) .kpi-value', '$' + (s.revenue.signedRevenue / 1000).toFixed(1) + 'K');
+    if (pipelineTotal) set('.kpi:nth-child(2) .kpi-value', '$' + (pipelineTotal / 1000).toFixed(0) + 'K');
+    if (s.tickets?.byStatus?.active != null) set('.kpi:nth-child(3) .kpi-value', s.tickets.byStatus.active + '/' + (s.tickets.total || '?'));
+    if (s.leads?.thisWeek != null) set('.kpi:nth-child(4) .kpi-value', s.leads.thisWeek);
+    if (s.metaAds?.avgCPL != null) set('.kpi:nth-child(5) .kpi-value', '$' + s.metaAds.avgCPL.toFixed(2));
+    const tsEl = document.getElementById('ts'); if (tsEl) tsEl.textContent = new Date(snap.updated_at || Date.now()).toLocaleTimeString();
+    if (window.RyujinToast) RyujinToast('Live snapshot synced \u00B7 ' + (snap.updated_at || 'now'));
   } catch(e) {
     // Silent fail — keep placeholder values
     console.info('Snapshot not available (local mode):', e.message);
@@ -671,9 +671,14 @@ async function refetchSnapshot(){
     const res = await fetch('/api/snapshot', { cache: 'no-store' });
     if (!res.ok) return;
     const snap = await res.json();
+    const s = snap.sections || {};
+    const pipelineTotal = (s.pipeline || []).reduce((sum, o) => sum + (o.value || 0), 0);
     const set = (selector, val) => { const el = document.querySelector(selector); if (el && val != null) el.textContent = val; };
-    if (snap.revenue?.signed) set('.kpi:nth-child(1) .kpi-value', '$' + (snap.revenue.signed / 1000).toFixed(1) + 'K');
-    if (snap.pipeline?.totalValue) set('.kpi:nth-child(2) .kpi-value', '$' + (snap.pipeline.totalValue / 1000).toFixed(0) + 'K');
+    if (s.revenue?.signedRevenue != null) set('.kpi:nth-child(1) .kpi-value', '$' + (s.revenue.signedRevenue / 1000).toFixed(1) + 'K');
+    if (pipelineTotal) set('.kpi:nth-child(2) .kpi-value', '$' + (pipelineTotal / 1000).toFixed(0) + 'K');
+    if (s.tickets?.byStatus?.active != null) set('.kpi:nth-child(3) .kpi-value', s.tickets.byStatus.active + '/' + (s.tickets.total || '?'));
+    if (s.leads?.thisWeek != null) set('.kpi:nth-child(4) .kpi-value', s.leads.thisWeek);
+    if (s.metaAds?.avgCPL != null) set('.kpi:nth-child(5) .kpi-value', '$' + s.metaAds.avgCPL.toFixed(2));
   } catch(e){}
 }
 setInterval(refetchSnapshot, 300000);
