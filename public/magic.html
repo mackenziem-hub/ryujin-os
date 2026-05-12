@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a0e1a">
+<title>Signing you in · Ryujin</title>
+<link rel="icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.json">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    font-family:'Inter',system-ui,-apple-system,sans-serif;
+    background:#0a0e1a;
+    color:#eaf0fa;
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+    display:flex; align-items:center; justify-content:center;
+    padding:24px;
+    position:relative; overflow:hidden;
+  }
+  body::before{
+    content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+    background:
+      radial-gradient(circle at 50% 0%, rgba(245,236,217,0.04), transparent 55%),
+      radial-gradient(circle at 50% 95%, rgba(34,211,238,0.06), transparent 50%),
+      linear-gradient(180deg, #0e1426 0%, #0a0e1a 100%);
+  }
+  .card{
+    position:relative; z-index:1;
+    max-width:440px; width:100%;
+    background:linear-gradient(180deg,#161e3a 0%,#0f1528 100%);
+    border:1px solid rgba(255,255,255,0.06);
+    border-radius:20px;
+    padding:36px 28px;
+    text-align:center;
+    box-shadow:0 30px 80px rgba(0,0,0,0.4);
+  }
+  .brand{font-size:0.72em;letter-spacing:3px;color:#22d3ee;font-weight:700;margin-bottom:18px;text-transform:uppercase}
+  h1{font-size:1.5em;font-weight:700;color:#f5ecd9;margin-bottom:8px;letter-spacing:0.3px}
+  p.sub{font-size:0.92em;color:#9aa8c4;line-height:1.5;margin-bottom:24px}
+  .spinner{
+    width:36px; height:36px;
+    margin:8px auto 24px;
+    border:3px solid rgba(245,236,217,0.12);
+    border-top-color:#22d3ee;
+    border-radius:50%;
+    animation:spin 0.9s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .err{color:#ff6b6b;background:rgba(255,107,107,0.08);border:1px solid rgba(255,107,107,0.24);padding:14px 16px;border-radius:12px;font-size:0.9em;line-height:1.5}
+  .ok{color:#7ed99e;background:rgba(126,217,158,0.08);border:1px solid rgba(126,217,158,0.24);padding:14px 16px;border-radius:12px;font-size:0.9em;line-height:1.5}
+  a.btn{display:inline-block;margin-top:18px;padding:12px 22px;background:#22d3ee;color:#0a0e1a;font-weight:700;text-decoration:none;border-radius:10px;font-size:0.95em;letter-spacing:0.3px}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">Plus Ultra · Crew OS</div>
+    <div id="state-loading">
+      <div class="spinner"></div>
+      <h1>Signing you in…</h1>
+      <p class="sub">One tap and you're in. This should take a second.</p>
+    </div>
+    <div id="state-ok" style="display:none">
+      <h1>You're in <span id="who"></span></h1>
+      <p class="sub">Redirecting to your dashboard…</p>
+    </div>
+    <div id="state-err" style="display:none">
+      <h1>Link issue</h1>
+      <p class="sub" id="err-detail"></p>
+      <a class="btn" href="/login.html">Use email + password instead</a>
+    </div>
+  </div>
+<script>
+(async () => {
+  const params = new URLSearchParams(location.search);
+  const token = params.get('t') || params.get('token');
+  const errState = document.getElementById('state-err');
+  const okState = document.getElementById('state-ok');
+  const loadState = document.getElementById('state-loading');
+  const showErr = (msg) => {
+    loadState.style.display = 'none';
+    document.getElementById('err-detail').textContent = msg;
+    errState.style.display = 'block';
+  };
+
+  if (!token) return showErr('No magic token in the URL. Ask Mac to resend your link.');
+
+  try {
+    const r = await fetch('/api/auth?action=magic-consume', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token })
+    });
+    const data = await r.json();
+
+    if (!r.ok) return showErr(data.error || 'Magic link could not be validated.');
+
+    localStorage.setItem('ryujin_token', data.token);
+    localStorage.setItem('ryujin_user', JSON.stringify(data.user));
+    localStorage.setItem('ryujin_tenant', JSON.stringify(data.tenant));
+
+    loadState.style.display = 'none';
+    document.getElementById('who').textContent = data.user.name ? `, ${data.user.name.split(' ')[0]}` : '';
+    okState.style.display = 'block';
+
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    setTimeout(() => { location.replace(isMobile ? '/portal-mobile.html' : '/admin.html'); }, 800);
+  } catch (e) {
+    showErr('Network error. Check signal and try the link again.');
+  }
+})();
+</script>
+</body>
+</html>

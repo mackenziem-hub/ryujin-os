@@ -290,8 +290,14 @@ async function openTimeline(shareToken, client){
   `;
 
   try {
-    const r = await fetch('/api/proposal-timeline?share=' + encodeURIComponent(shareToken));
-    const data = r.ok ? await r.json() : null;
+    const tok = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token');
+    const authH = tok ? { 'Authorization': 'Bearer ' + tok } : {};
+    const [timelineR, snapsR] = await Promise.all([
+      fetch('/api/proposal-timeline?share=' + encodeURIComponent(shareToken)),
+      fetch('/api/estimate-snapshots?share=' + encodeURIComponent(shareToken), { headers: authH })
+    ]);
+    const data = timelineR.ok ? await timelineR.json() : null;
+    const snapsData = snapsR.ok ? await snapsR.json() : null;
     const body = document.getElementById('timelineBody');
     if (!data) { body.textContent = 'Could not load timeline.'; return; }
 
@@ -333,7 +339,56 @@ async function openTimeline(shareToken, client){
       `;
     }).join('') : '<div style="padding:40px 0;text-align:center;color:var(--text-muted)">No activity yet.</div>';
 
-    body.innerHTML = statsCard + list;
+    // Version history rail — list every saved snapshot for this estimate with
+    // a downloadable archived PDF + diff summary. Owner/admin only (snaps API
+    // returns 401 for unauthed users; we just hide the rail in that case).
+    let versionRail = '';
+    if (snapsData && Array.isArray(snapsData.snapshots) && snapsData.snapshots.length) {
+      const moneyFmt = n => '$' + Number(n||0).toLocaleString();
+      const fmtDelta = (snap) => {
+        const d = snap.diff || {};
+        const lines = [];
+        if (d.initial) lines.push('Initial version');
+        if (d.packages) {
+          for (const [tier, fields] of Object.entries(d.packages)) {
+            const pieces = [];
+            if (fields.total) pieces.push(`${moneyFmt(fields.total.from)} → ${moneyFmt(fields.total.to)}`);
+            if (fields.promoLabel) pieces.push('promo: ' + (fields.promoLabel.to || '—'));
+            if (fields.warranty_years) pieces.push(`warranty: ${fields.warranty_years.from||'—'}y → ${fields.warranty_years.to||'—'}y`);
+            if (pieces.length) lines.push(`<b>${tier}</b> · ${pieces.join(' · ')}`);
+          }
+        }
+        if (d.status) lines.push(`status: ${d.status.from||'—'} → <b>${d.status.to||'—'}</b>`);
+        if (d.final_accepted_total) lines.push(`signed total: ${moneyFmt(d.final_accepted_total.to)}`);
+        if (d.tags_added && d.tags_added.length) lines.push(`+tags: ${d.tags_added.join(', ')}`);
+        if (d.tags_removed && d.tags_removed.length) lines.push(`−tags: ${d.tags_removed.join(', ')}`);
+        return lines.length ? lines.join('<br>') : '<span style="color:var(--text-muted)">No tracked changes</span>';
+      };
+      const rows = snapsData.snapshots.map(s => {
+        const pdfBtn = s.pdf_url
+          ? `<a class="btn ghost" href="${esc(s.pdf_url)}" target="_blank" rel="noopener" style="padding:4px 10px;font-size:0.72em">PDF</a>`
+          : `<button class="btn ghost" onclick="renderSnapshotPdfNow('${esc(s.id)}', this)" style="padding:4px 10px;font-size:0.72em">RENDER PDF</button>`;
+        return `
+          <div style="padding:12px 0;border-bottom:1px solid rgba(34,211,238,0.08)">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+              <div style="flex:1">
+                <div style="font-family:'Orbitron',sans-serif;font-weight:800;font-size:0.92em;color:#22d3ee">v${s.version_number} · ${esc(s.reason || 'Updated')}</div>
+                <div style="color:var(--text-dim);font-size:0.82em;margin-top:4px;line-height:1.45">${fmtDelta(s)}</div>
+                <div style="font-family:'Share Tech Mono',monospace;font-size:0.7em;color:var(--text-muted);margin-top:5px">${esc(fmtEventTime(s.created_at))}${s.created_by_name ? ' · ' + esc(s.created_by_name) : ''}</div>
+              </div>
+              <div style="flex-shrink:0">${pdfBtn}</div>
+            </div>
+          </div>`;
+      }).join('');
+      versionRail = `
+        <div style="margin:14px 0 18px 0;padding:14px;background:rgba(34,211,238,0.04);border:1px solid rgba(34,211,238,0.18);border-radius:10px">
+          <div style="font-family:'Orbitron',sans-serif;font-size:0.7em;letter-spacing:2px;color:#22d3ee;text-transform:uppercase;margin-bottom:8px">Version History · ${snapsData.snapshots.length} snapshot${snapsData.snapshots.length===1?'':'s'}</div>
+          ${rows}
+        </div>
+      `;
+    }
+
+    body.innerHTML = statsCard + versionRail + list;
   } catch (e) {
     const body = document.getElementById('timelineBody');
     if (body) body.textContent = 'Error loading timeline: ' + e.message;
@@ -342,6 +397,30 @@ async function openTimeline(shareToken, client){
 function closeTimeline(){ const d = document.getElementById('timelineDrawer'); if (d) d.remove(); }
 window.openTimeline = openTimeline;
 window.closeTimeline = closeTimeline;
+
+async function renderSnapshotPdfNow(snapshotId, btn){
+  const tok = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token');
+  if (!tok) { alert('Sign in to render PDFs.'); return; }
+  btn.textContent = 'RENDERING…';
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/estimate-snapshots?render_pdf_for=' + encodeURIComponent(snapshotId), {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + tok }
+    });
+    const j = await r.json();
+    if (j.ok && j.pdf_url) {
+      btn.outerHTML = `<a class="btn ghost" href="${j.pdf_url}" target="_blank" rel="noopener" style="padding:4px 10px;font-size:0.72em">PDF</a>`;
+    } else {
+      btn.textContent = 'FAILED';
+      console.error('PDF render error', j);
+    }
+  } catch (e) {
+    btn.textContent = 'FAILED';
+    console.error(e);
+  }
+}
+window.renderSnapshotPdfNow = renderSnapshotPdfNow;
 
 function copyLink(btn, url){
   const ta = document.createElement('textarea');
@@ -374,9 +453,11 @@ async function fetchServerEstimates(){
       const pkgs = e.calculated_packages || {};
       let topVal = 0;
       for (const k in pkgs) { const t = (pkgs[k] || {}).total || 0; if (t > topVal) topVal = t; }
-      const selVal = (pkgs[e.selected_package] || {}).total || topVal;
+      const pkgVal = (pkgs[e.selected_package] || {}).total || topVal;
+      const honored = e.final_accepted_total != null ? Number(e.final_accepted_total) : null;
+      const selVal = honored != null && honored > 0 ? honored : pkgVal;
       return {
-        at: e.updated_at || e.created_at,
+        at: e.contract_signed_at || e.accepted_at || e.proposal_sent_at || e.created_at,
         client: e.customer?.full_name || '(no name)',
         refId: 'PU-' + (e.estimate_number || e.id.slice(0, 8).toUpperCase()),
         address: [e.customer?.address, e.customer?.city].filter(Boolean).join(', '),

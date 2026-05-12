@@ -1,3 +1,369 @@
+# Session notes — 2026-05-12 late evening — Crew OS Mobile v1 SHIPPED + notification recalibration + briefing cron fix
+
+Three concurrent ships, all to prod.
+
+## 1. Briefing cron fix
+`vercel.json::api/agents/briefing.js::maxDuration` 60 → 300. Cron was timing out → `morning_briefing.last_run` was stuck at the previous day. Manual re-trigger came back HTTP 200 in 52.4s with full payload. Same fix applies to the 21:00 UTC evening cron.
+
+**Deferred:** briefing.js re-runs Vegeta/Piccolo/Krillin agents that the 10:03 UTC `daily.js` cron just ran 3 min earlier. ~$0.30-0.60/day wasted Claude API. Refactor to read existing agent reports from snapshot. ~30 min build, not done this session.
+
+## 2. Notification recalibration
+Three env-var gates added to Vercel prod:
+- `OWNER_SMS_MUTED=1` — gates 4 owner-bound SMS sites in `_shared.js`, `watchdog.js`, `paysheet-accept.js`, `sub-portal.js`. Each helper early-returns + logs the muted action.
+- `OWNER_BRIEFING_EMAIL_MUTED=1` — gates `gmailSend` in `briefing.js`. Brief still runs + writes to snapshot. Admin dashboard is now the only briefing read path.
+- Cat shift-update reply DRAFTED in Gmail (id `r4750476875182993487`). NOT SENT.
+
+## 3. Crew OS Mobile v1 SHIPPED
+
+### Migration 061
+```sql
+alter table users
+  add column if not exists magic_token text unique,
+  add column if not exists magic_expires_at timestamptz;
+create index if not exists idx_users_magic_token on users(magic_token) where magic_token is not null;
+```
+
+### Auth endpoints (api/auth.js)
+- `POST /api/auth?action=magic-create` (admin-only, Bearer + role check) — generates token, sets on user, returns URL. Default 7d TTL, max 30d. Tenant-scoped to caller session.
+- `POST /api/auth?action=magic-consume` (public) — validates token + expiry, inserts session, **clears magic_token** (single-use), returns same payload as login.
+
+### Landing page (public/magic.html)
+Auto-calls magic-consume, writes session to localStorage, redirects:
+- Mobile UA → `/portal-mobile.html`
+- Desktop UA → `/admin.html`
+
+### Portal overhaul (public/portal-mobile.html)
+~+450 lines. Five in-place panels swapping via `data-panel` attribute. Tab bar retargeted to switch panels not navigate (5 tabs + center mic FAB unchanged).
+
+| Panel | Source | Notes |
+|---|---|---|
+| Home | Existing — kept as-is | Greeting + hero + duo + tasks preview |
+| Tasks | `/api/tickets?assigned_to=<userId>` | Priority dots: urgent=red, high/active=amber, due-based fallback. Tap → modal. |
+| Chat | `/api/messages?box=inbox` then `?thread_id=X` | Thread list → tap → bubbles + reply bar. Photos render inline via `m.attachment_url \|\| m.image_url`. |
+| Alerts | `/api/snapshot` | Overdue tickets / stale leads (>10) / ad alerts / briefing errors. Red/amber/green left-border. Tappable rows jump panels. |
+| More | Static links | paysheet, jobs, activity, profile, sign out |
+
+Job Details slide-up modal — triggered by any task tap (Home preview OR Tasks panel). Shows status, address, due (formatted "Due tomorrow" / "3d overdue"), notes.
+
+### Users issued (NOT SENT)
+- Diego (existing user) — 14d magic token
+- Pavanjot Singh (created fresh user row, role `crew`, `pavanjot@plusultraroofing.com`) — 14d magic token
+
+## Mac caught a mistake
+Mid-session I declared the rollout "ready to send" after only shipping the auth + Higgsfield mockup. Mac: *"so the mobile crew portals have been updated and improved according to the mockups?"* They were not. Spent another ~75 min overhauling portal-mobile.html before declaring done. Saved as `feedback_dont_conflate_plumbing_with_surface.md`.
+
+## Repo state warning
+Local working tree is now **~10 commits behind prod** — all this session's work pushed via `vercel --prod` direct, no git commits. Reconcile next session: `git add -A && git commit` then push.
+
+---
+
+# Session notes — 2026-05-12 evening — Casey Realty Inspection Bundle SENT to David Creese
+
+Long, careful session. Three Casey Realty inspections (32 Church Food Bank · 21 Dickey · 48-50 Albion in Amherst NS) consolidated from "draft proposals built but unsendable" to "fully shipped." Email left Mac's inbox end of May 12.
+
+---
+
+## ADDENDUM — 2026-05-12 PM — Session 14 continuation (Steve Maltais ticket handoff to AJ + Ryujin internal message + customer "still looking" message sent)
+
+Continuation of earlier Steve Maltais triage from Session 14. Notes inserted here for chronology since SESSION_NOTES.md was overwritten by Casey Realty session in between.
+
+**Mac sent customer-facing "still looking" message to Steve via FB DM** (no system action — Mac wrote + sent directly).
+
+**Mac questioned the "discontinued" framing.** 5" lap is one of the most common vinyl SKUs in NB; every major brand still makes it. Suppliers calling it "discontinued" almost always mean a color/line/texture was dropped, not the profile. Captured as `reference_discontinued_siding_usually_color_not_profile.md`.
+
+**Ticket #53 reassigned Diego → AJ** via `_reassign_401_gould_to_aj_2026-05-12.mjs`:
+- Title appended " — siding source hunt in progress"
+- Due bumped 2026-05-07 → 2026-05-19
+- Detailed note added (customer history, source-hunt scope, customer-message status, 4-step playbook)
+- Tags: `reassigned:diego->aj, siding_source_hunt, steve-maltais`
+
+**Caught + reverted a misassignment.** Query `title.ilike.%Gould%` matched both #53 (intended) and #47 "Shingle Repair — 810 Route 124, Norton NB (Jonathan Gould)" (unrelated, done April repair). Reverted #47 via `_revert_47_misassignment_2026-05-12.mjs`: assignee back to Diego, title restored, due back to 2026-04-18, errant tags + note stripped. Lesson: name-substring matching is brittle when multiple people share a surname.
+
+**Sent internal Ryujin message Mac → AJ** via `_msg_aj_401_gould_handoff_2026-05-12.mjs`. Direct DB insert (Twilio SMS not auto-fired — gated to API path; AJ will see unread badge in admin sidebar).
+- Message id: `b8fa3ede-dbde-4b72-93ee-f1c27ea1a8cc`
+- Thread id: `b815a3e2-5af6-4740-9da5-2de365494ca6`
+- Subject: "401 Gould (Steve Maltais) — reassigned to you · siding source hunt"
+- 1,561 chars: customer history, discontinued skepticism, 4-step playbook, vertical-gables context
+
+**Files:**
+- New scripts: `_reassign_401_gould_to_aj_2026-05-12.mjs`, `_revert_47_misassignment_2026-05-12.mjs`, `_msg_aj_401_gould_handoff_2026-05-12.mjs`
+- DB writes: tickets #53 (reassigned), tickets #47 (reverted clean), messages `b8fa3ede-...` (Mac→AJ)
+- 0 commits, 0 deploys
+
+**Carry-forward:**
+- 🟡 AJ owns source hunt — Kaycan/Mitten/Royal reps direct, FB groups, sub pings, brand-stamp photo. Ticket #53 due May 19.
+- 🟡 Lesson: tighten WHERE clauses on bulk-update scripts — use `ticket_number` or `customer_id` not name-substring matching
+- 🟢 Customer message sent by Mac via FB DM
+- 🟢 Ticket #53 reassigned, AJ notified internally
+
+---
+
+## Casey Realty session (original)
+
+## What landed
+
+### Insurance language scrubbed across 8+ surfaces
+Mac directive: signed/sent proposals never contain wording suggesting PU lacks current coverage. Old Gamma decks had a full "Gate 1: Insurance & contractor qualification" slide naming brokers (Guilherme, Sébastien) — deal-killing for a deal closing months out. Scrubbed:
+- `_brain/claude-memory/project_casey_realty_commercial_may11.md`
+- `_brain/claude-memory/feedback_high_liability_audit_before_send.md`
+- `MEMORY.md` index entries
+- `_brain/notebook-briefs/threads/casey-realty.md`
+- `_brain/notebook-briefs/2026-05-12-pm-brief.md` (local + Drive re-upload)
+- Obsidian `01-DAILY/2026-05-12.md` + both `20-DEALS/David Creese...` files
+
+Old per-property Gamma decks (`gb17yk8j6davo76` + `0ggzb9lcpt83v8j`) still exist on Mac's Gamma account — flagged for manual deletion.
+
+### Consolidated Gamma deck (1) replaces previous two
+- Wrote 12-slide consolidated source MD: `Plus Ultra/Proposals/_GAMMA_SOURCE_casey_realty_consolidated_2026-05-12.md`
+- Generated via direct Gamma API through Ryujin's `/api/gamma-generate` endpoint — NOT Manus
+- 60 sec wall time, ~$0.40 cost
+- New URL: `gamma.app/docs/fgs0nr0h9pq30rj`
+- Slides: cover · 3-property-at-a-glance · per-property findings (2 slides each) · cost matrix · Phase 0 diagnostics · why Plus Ultra · next steps
+- NO insurance language anywhere
+- Both #56 + #57 PATCHed with `custom_prices._gamma_deck_url = new URL` + label "View Casey Realty Inspection Bundle"
+
+### Manus detour caught + corrected
+Initially routed Gamma generation through Manus task (had `MANUS_API_KEY` in env, didn't check Vercel). Mac correctly questioned: *"We have established a Gamma connection a long time ago."* `GAMMA_API_KEY` was in Vercel prod env all along. Killed Manus task (no charge), fired Gamma direct via Ryujin endpoint instead. New rule saved: `feedback_check_vercel_env_before_manus.md`.
+
+### commercial-proposal.html three fixes
+- R-20 polyiso → R-30 (Food Bank + Dickey scope items) — NS commercial code minimum
+- CTA dates "Tuesday May 12, Wednesday May 13, or Thursday May 14" → evergreen "this week or next — let us know what mornings work"
+- "Broken glass and beer bottles on roof surface" → "Debris and safety hazards on roof surface"
+
+### 48-50 Albion measurements captured
+- 42×32 main building + 16×19 lower portion + bay window porches in front + one steel chimney
+- ~17.5 SQ total
+- 60 km from base (Day Trip pricing zone)
+- Three-tab asphalt shingle, end-of-life
+- Scope: full re-roof + full redeck + ridge vent + soffit intake + steel chimney reflash
+- **Range: $19,500 - $22,500 incl HST** (Loom AI mistranscribed as $90,500; Mac confirmed actual audio is the right range)
+- NO proposal page created (Mac's call — price lives in email body + Gamma deck)
+
+### Mac recorded new consolidated Loom
+- One video replaces previous three per-property Looms
+- Title: "Roof Inspection Summary for Three Properties"
+- URL: `https://www.loom.com/share/4a2d578aec2342c4a949374eb3a7bc53`
+- Clean of insurance language
+
+### Email drafted, edited, sent
+Original draft (id `19e1ce35779ee5a0` — three per-property structure) replaced with new consolidated draft (id `r6398356519831270074`). Two corrections during drafting: removed em-dashes (matched Mac's voice with periods/commas), removed unsolicited walkthrough offer that read like accepting an invitation never made. Final body: bare URL format with `Proposal-` / `Inspection Report-` prefix labels matching Mac's original style. **Mac sent.**
+
+## Commits
+
+- `e110370` — commercial-proposal.html · Gamma deck CTA + first git entry for the file (snapshot from prod since file was previously deployed via `vercel --prod` from laptop without committing)
+- `071f3a7` — commercial-proposal.html · R-30 spec + evergreen CTA + debris finding softening
+
+Both surgical, Session 13's parallel laptop WIP preserved via stash + restored after.
+
+## DB writes
+
+- 2 PATCHes on `estimates.custom_prices` for share_tokens `plus-ultra-56` + `plus-ultra-57` (gamma_deck_url + gamma_deck_label set + cleared + re-set across the session)
+- 1 new `docs` row inserted: slug `casey-realty-bundle`, consolidated source MD, gamma_generation_id + gamma_url stored
+- ZERO touches to the `estimates` row body itself, calculated_packages, or any signed-state fields
+
+## Open
+
+- 🟡 Awaiting David Creese's response
+- 🟡 4 corrections still pending before any contract sign (pricing model A vs B, asbestos test, structural engineer letter on Dickey, R-30 adder on final pricing)
+- 🟡 Manual cleanups Mac to do: delete old Gamma decks · delete old email draft · delete old Drive brief · archive old per-property gamma source MDs
+- 🟡 Carry from earlier: Brian Dorken production docs pending confirm · My Crew announce to Ryan staged · Proposal History display patch staged
+
+---
+
+# Session notes — 2026-05-12 — Session 14 (Lefurgey gutter quote + Full Ryujin gutter capability + Steve Maltais triage — parallel terminal to Session 13)
+
+## Summary
+
+Three big things on this terminal in parallel with Session 13's promo/snapshot work:
+
+1. **Lefurgey gutter quote shipped** — Udochukwu Erondu, 46 Lefurgey Moncton, 110 LF, $2,794.50 incl HST, no deposit, Darcy rep. Static branded HTML at `/lefurgey-gutter-proposal.html`, deployed prod, frozen.
+2. **Full Ryujin gutter capability — Phase 1 + 2 end-to-end** (Mac directive "plug it all in"). Migration 060 + engine + API + customer page + admin "Quick Gutter" tile + roof-proposal upgrade addon.
+3. **Steve Maltais 401 Gould Dieppe** — siding repair triage. Past metal-roof customer with discontinued material. 2-option pitch locked (donor-wall rejected).
+
+## Lefurgey gutter quote (Udochukwu Erondu)
+
+Iterative pricing convergence over 6 turns. Final scope:
+- **110 LF total** (75 upper 2-story · 35 lower porch) · 2 corners · 4 drops · White seamless aluminum
+- **Pricing:** $1,200 materials + $280 labor lower + $900 labor upper + $50 corners = **$2,430 / $364.50 HST / $2,794.50 incl HST · NO deposit**
+
+**Workflow:**
+- Created Ryujin estimate #62 (`cef2b59a-2606-4fb7-8e90-86c4a7a8b661`) via `_create_lefurgey_gutters_2026-05-12.mjs`
+- Built static branded HTML page at `public/lefurgey-gutter-proposal.html`
+- Deployed via `vercel --prod` (4 iterations: initial → Moncton address fix → Darcy rep + Save-PDF button → remove Mac's number)
+- Engine-repointed estimate to test full pipeline, then reverted to frozen sent-state via `_revert_lefurgey_62_to_sent_state_2026-05-12.mjs`
+- Tagged `frozen_sent_2026-05-12, use_static_pdf` so future Claudes leave it alone
+- GHL contact: `aYflCBo3ccJUNq9k4KE4` (filed at 41 Fernwood Moncton)
+
+## Ryujin gutter capability — Phase 1 + 2 shipped
+
+### Phase 1 — Standalone gutter proposals
+- **Migration 060** — `'Gutters Only'` added to `estimates_proposal_mode_check` (applied via `_apply_migration_060_2026-05-12.mjs`)
+- **`lib/gutterQuoteEngine.js`** — pure calc fn: `calculateGutterQuote({ lf_lower, lf_upper, corners, drops, color, distance_km, leaf_guard }, rates)` → `{ subtotal, hst, total, lineItems, breakdown, inputs, rates }`. Loads rates from `tenant_settings.gutter_rates` with DEFAULTS fallback.
+- **`POST /api/quote?mode=gutters`** — wrapper for live preview, returns engine output
+- **`public/gutter-proposal.html`** — data-driven template, reads `?share=`, fetches /api/proposal with `Accept: application/json`, renders Plus Ultra brand layout. Multi-tenant ready (pulls branding from /api/proposal payload, not hardcoded).
+- **`api/proposal.js`** — Gutters Only branch: if `est.proposal_mode === 'Gutters Only'`:
+  - `Accept: text/html` → 302 redirect to `/gutter-proposal.html?share=...`
+  - `Accept: application/json` → returns `buildGutterProposalPayload(est)` with customer + rep + scope + pricing + terms
+
+### Phase 2 — Roof-proposal upgrade addon
+- **`api/proposal.js`** addons section extended: when `est.custom_prices._gutter_inputs` is set, gutter engine computes inline and appends a "Gutter Package" addon to `data.addons[]` with `details: [{label, cost}, ...]` array
+- **`public/proposal-client.html`** addon rendering extended:
+  - Each addon row now supports a `details[]` array
+  - When present, renders a "View breakdown ↓" toggle that expands an inline detail panel showing line-item breakdown
+  - New CSS for `.addon-toggle-details`, `.addon-details`, `.addon-detail-row`
+  - New JS: `toggleAddonDetails(slug)` flips hidden attribute + toggle label, `escAttr()` helper for safe HTML
+
+### Phase 3 — Admin entry point
+- **`public/admin.html`** — "Quick Gutter" action tile added to dashboard action grid (between New Quote and + Customer)
+- `openGutterQuoteModal()` — full modal with: 4 customer fields (name/phone/email/address) + 7 measurement fields (lf_lower/lf_upper/corners/drops/color/distance/leaf_guard) + sales-owner dropdown (Darcy default) + live preview panel + Create&Share button
+- `gqPreview()` — debounced live calc via `POST /api/quote?mode=gutters`, renders line-item breakdown in preview panel
+- `gqSubmit()` — POSTs to `/api/estimates` with `proposal_mode='Gutters Only'`, `calculated_packages.gutters = {...engineOutput}`, returns share token, prompts to open
+
+### Engine defaults (NB market median, May 12 2026, configurable per-tenant)
+- materials_per_lf: $11.00
+- labor_per_lf_lower: $8.00
+- labor_per_lf_upper: $12.00
+- corner_cost: $25.00
+- drop_cost: $0 (rolled into materials)
+- travel_threshold_km: 40
+- travel_per_km: $5.00
+- leaf_guard_per_lf: $6.00
+- hst_rate: 0.15
+- deposit_required: false (locked, Mac directive)
+
+## Steve Maltais 401 Gould Dieppe — triage
+
+Past metal-roof customer (2024, FinanceIt). FB DM May 6 returning for siding repair. Mid-wall horizontal-lap damage, material discontinued. Vertical custom gables exist but are separate material (untouched).
+
+**Mac rejected donor-wall approach.** Pitch locked at 2 options:
+1. **Partial replace damage-up:** $1,200-$1,800. Seam landed at natural break (window header / soffit / belly-band trim — floating mid-wall seams read as "patch" forever).
+2. **Full wall + paint:** $3,500-$5,500. Sherwin VinylSafe, lighter than original (darker = warp = warranty void). Disclose color drift vs adjacent walls over 5-10 yr.
+
+**Pre-reply blockers:**
+- Diego's 401 Gould ticket **4 days overdue** — close first
+- GHL conversation history check — `quoted-pending` tag may have existing floated price
+- Pull 2024 work-order — existing siding spec
+
+## Files touched
+
+### New
+- `schema/migration_060_gutters_only_mode.sql`
+- `lib/gutterQuoteEngine.js`
+- `public/lefurgey-gutter-proposal.html` (FROZEN — Darcy sending)
+- `public/gutter-proposal.html` (generalized data-driven template)
+- 5 oneshot scripts:
+  - `_create_lefurgey_gutters_2026-05-12.mjs`
+  - `_apply_migration_060_2026-05-12.mjs`
+  - `_repoint_lefurgey_62_to_gutters_only_2026-05-12.mjs`
+  - `_fix_lefurgey_rep_2026-05-12.mjs`
+  - `_revert_lefurgey_62_to_sent_state_2026-05-12.mjs`
+
+### Modified
+- `api/quote.js` — gutters mode branch + engine import
+- `api/proposal.js` — Gutters Only redirect + `buildGutterProposalPayload()` + addon `_gutter_inputs` auto-attach + engine import
+- `public/admin.html` — Quick Gutter tile + modal + gqPreview + gqSubmit
+- `public/proposal-client.html` — addon `details[]` rendering + `toggleAddonDetails` + CSS for details panel
+
+## Heads-up to Session 13 terminal
+
+My migration 060 / repoint script touched Kyle #30's `updated_at` (caught by parallel agent's "DO NOT TOUCH" reaffirmation memory). Substantive row content unchanged but timestamp bumped. Apologies; future schema-touch scripts need stricter scoping (single-row WHERE clauses on the operations that actually need to be updated, not table-wide migrations that bump all rows).
+
+## Carry-forward
+
+- 🔴 Steve Maltais reply blocked on 3 pre-actions
+- 🟡 Local Ryujin git ~9 commits behind prod — vercel CLI direct deploys piling up; reconcile next session
+- 🟡 Schema-touch scripts need stricter scoping going forward
+- 🟢 Lefurgey quote sent by Darcy — Udochukwu reviewing
+- 🟢 Ryujin gutter capability LIVE — admin "Quick Gutter" validated end-to-end
+
+---
+
+# Session notes — 2026-05-12 — Session 13 (May promo engine + Brian 3% strikethrough + estimate snapshots/PDF audit trail + Cat GHL task)
+
+Big shipping session. Three engine-level features + one workflow correction.
+
+## What landed
+
+### 1. May 2026 free-warranty auto-promo
+Render-time injection in `api/proposal.js` native tier map. Auto-applies `$25/SQ × measuredSQ × tier multiplier` (nearest $25) strikethrough to any **Platinum** quote with `created_at` in `[2026-05-12, 2026-06-01)`. New `MAY_PROMO` const, `mayPromoDiscount()` helper, `PLATINUM_MULTIPLIERS` (1.52/1.67/1.78/1.85 by pricing model), `PITCH_MULTIPLIERS` mirrored from engine for measuredSQ fallback when `calc_packages.summary` missing.
+
+Guards: skip if `accepted_at || locked_at || final_accepted_total`, `status ∈ {signed,accepted,won,closed}`, or pkg already has `originalTotal/promoLabel`.
+
+Live on:
+- Tim Boleyn #59 (Local 7/12, 22 SQ) → 25×22×1.52 = $836 → $825 off → Platinum $16,925 → $16,100
+- 41 Fernwood / Erondu #60 (Local 6/12, 27 SQ) → 25×27×1.52 = $1,026 → $1,025 off → Platinum $18,675 → $17,650
+
+### 2. Brian Dorken #39 — 3% cash strikethrough
+DB patch via Supabase Management API on `calculated_packages.platinum`: `originalTotal=18500, total=17945, promoLabel='3% Cash Discount Applied · Pay by e-transfer or cheque'`. Customer proposal page now shows the signed price with strikethrough.
+
+Invoice math (Option B preferred): $18,500 all-in − $555 (3%) = $17,945 total. Deposit $5,383.50 (30%), balance $12,561.50.
+
+### 3. Estimate Snapshots + PDF Archive system — END-TO-END
+- **Migration 059** — `estimate_snapshots` table with `version_number`, `snapshot_data`, `diff`, `pdf_url`, `created_by`. Unique on (estimate_id, version_number).
+- **`lib/estimateSnapshot.js`** — `captureEstimateSnapshot()` (capture-after-write, diff vs previous, background PDF→Blob) + `renderSnapshotPdf()` (re-render). Diff focuses on customer-facing pricing fields. No-op skip when diff is empty.
+- **`/api/estimate-snapshots`** — GET list versions, POST manual checkpoint, POST `?render_pdf_for=<id>` re-render. Owner/admin-gated via `requireOwnerOrAdmin`.
+- **`api/estimates.js`** — captureEstimateSnapshot hooks on POST + PUT. Replaced legacy partial Publish-PDF-prime block.
+- **`/proposal-history.html`** — TIMELINE drawer now fetches both `/api/proposal-timeline` (client events) + `/api/estimate-snapshots` (server versions). Version History rail above events with per-version diff summary + PDF download or RENDER PDF on-demand button.
+- **Backfilled v1** for plus-ultra-39/59/60. PDFs pending render (local `BLOB_READ_WRITE_TOKEN` missing — auto-renders on next prod edit or via UI button).
+
+### 4. Cat GHL task — routing correction
+First attempt: Ryujin Crew Ops ticket #74 assigned to Catherine for Brian invoice redraft. Mac corrected — sales/marketing tasks for Mac+Cat+Darcy go to Automator/GHL, not Ryujin. Cancelled #74. Created GHL task `14z8QFR1DIRKgMcupXcF` on Brian's contact (`wyggLnTgtInMQwcLdOv6`) assigned to Catherine (`MBLRar7MoZCQRcPb8Ghx`) due May 13 9:38 AM. Backfilled `customers.ghl_contact_id` on Brian's Ryujin row.
+
+Routing rule saved to memory: `feedback_task_routing_automator_vs_ryujin.md` with all 5 team GHL user IDs.
+
+## Open
+
+- Cat redraft of INV-2026-001 awaiting send (GHL task due May 13 9:38 AM)
+- Brian's other 3 production docs awaiting Mac review
+- v1 snapshot PDFs awaiting first render (Mac clicks RENDER PDF or wait for next edit)
+- Display patch for Kyle Graham proposal-history.html (parallel PM session, NOT deployed — file has Version History rail too, both diffs compose)
+
+---
+
+# Session notes — 2026-05-12 PM — Kyle Graham #30 photo gap + Proposal History display drift (short session, parallel to Session 13)
+
+Short, narrow session. Two questions answered for Mac, two fixes, one hard rule saved.
+
+## What landed
+
+### 1. Kyle Graham #30 audit + fix
+Mac saw "$17,550 · signed 1h ago" on Proposal History for `plus-ultra-30` and got nervous. Audit confirmed the estimate row itself is **untouched**: final_accepted_total $16,157.00, accepted_at Apr 29 15:07 UTC, locked_at same second, custom_prices `{}`, tags unchanged, notes = single Apr 29 signing note, activity_log has only Apr 28 create + Apr 29 accept. No entry today.
+
+**Root cause of the drift:** this morning's migration 060 (Gutters Only mode) added a column to `estimates`, which touched every row's `updated_at` as a schema-side-effect. Schema operations don't write to `activity_log`. Proposal History (`/proposal-history.html:458`) sorts/displays by `updated_at` → Kyle floated to top with fresh timestamp. Combined with `status=accepted` + wrong price (line 456 reads `calculated_packages[platinum].total = $17,550 SOP`, not `final_accepted_total = $16,157 honored`) → looked like a fresh sign at the wrong price.
+
+### 2. Photos uploaded
+Job folder `Plus Ultra/Jobs/67 Fairisle Drive - Kyle Graham/` had `cover photo.png` + `after photo.jpg` but they were never POSTed on Apr 29 (oversight from that session). Uploaded today via `scripts/_oneshot/_upload_kyle_30_photos_2026-05-12.mjs`. Two rows inserted into `estimate_photos` (cover + after captions). Sidecar table — **NO write to the estimate row.** Verified live on `/proposal-client.html?share=plus-ultra-30`.
+
+### 3. Display patch — STAGED in `public/proposal-history.html`
+Two-line change at the `fetchServerEstimates()` mapper (lines 455-468):
+- `selVal` now prefers `final_accepted_total` when set, falls back to package total
+- `at` sort/display key now `contract_signed_at || accepted_at || proposal_sent_at || created_at` (was `updated_at`)
+
+For Kyle: list row will read **"$16,157 · Apr 29 2026"** (truth) instead of "$17,550 · 1h ago" (drift). Universal — applies to every estimate with `final_accepted_total` override.
+
+**Not deployed** — this same file has Session 13's snapshot version-history rail edits already staged in the working tree (lines 290-440, render_pdf_now function). Won't bundle two sessions' work into one commit. Mac to decide surgical `git add -p` ship vs. wait for full working tree.
+
+### 4. Hard rule saved to memory
+`feedback_no_touch_pre_existent_proposals.md` — sent/signed/locked rows are FROZEN. No UPDATE, no calc_packages regen, no tag/note rewrites, no promo backfills. Photos (sidecar) + display-surface code OK without sign-off. **Schema migrations that auto-bump `updated_at` on locked rows are exactly the pattern this rule warns against** — flag before applying.
+
+## Files
+
+### New
+- `scripts/_oneshot/_upload_kyle_30_photos_2026-05-12.mjs` (ran, uploaded 2 photos to blob + DB)
+
+### Modified (staged, NOT committed)
+- `public/proposal-history.html` lines 455-468 (display logic only)
+
+## DB writes
+- 2 INSERT into `estimate_photos` for `b3cf2f68-beef-498c-bd83-2efc8972dbe7`
+- ZERO writes to the `estimates` row itself
+
+## Open
+- 🟡 Display patch ship decision — surgical `git add -p` vs. wait for Session 13's full working tree to land
+- 🟡 Question for next migration: should we add `IGNORE updated_at` filter to schema operations that touch locked rows? Or backfill `activity_log` with "schema migration 060" entries for the affected rows?
+
+---
+
 # Session notes — 2026-05-11 (evening, Session 67) — pillar restore + messaging overhaul + Action Board → native migration + Option B sub-crew + six-pillar planning + Administration redesign
 
 **19 commits between mid-afternoon and ~10 PM AT.** Major surfaces: Ryujin's pillar nav, the entire Messages stack, the Administration page, sub-portal crew sub-tokens, chat-driven task creation, Crew Ops kanban (now backed by migrated tickets instead of an external Replit app).

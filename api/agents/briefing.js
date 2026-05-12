@@ -321,13 +321,16 @@ export default async function handler(req, res) {
     briefMarkdown = built.markdown;
     briefStatus = built.status;
 
-    // Send email
-    try {
-      const subject = `Daily Brief — ${built.dateLabel} · ${built.status === 'red' ? '🔴' : built.status === 'yellow' ? '🟡' : '🟢'}`;
-      await gmailSend('mackenzie.m@plusultraroofing.com', subject, briefMarkdown);
-      emailSent = true;
-    } catch (e) {
-      errors.push(`Email delivery failed: ${e.message}`);
+    // Email delivery disabled per owner directive 2026-05-12 — briefing lives in
+    // snapshot + admin dashboard only. Re-enable by removing the OWNER_BRIEFING_EMAIL_MUTED gate.
+    if (process.env.OWNER_BRIEFING_EMAIL_MUTED !== '1') {
+      try {
+        const subject = `Daily Brief — ${built.dateLabel} · ${built.status === 'red' ? '🔴' : built.status === 'yellow' ? '🟡' : '🟢'}`;
+        await gmailSend('mackenzie.m@plusultraroofing.com', subject, briefMarkdown);
+        emailSent = true;
+      } catch (e) {
+        errors.push(`Email delivery failed: ${e.message}`);
+      }
     }
   }
 

@@ -437,6 +437,12 @@ section{padding:80px 0;position:relative}
 .addon-label{font-weight:700;color:var(--ink);font-size:1rem}
 .addon-desc{font-size:0.85rem;color:var(--ink-muted);line-height:1.4}
 .addon-price{font-family:'Montserrat',sans-serif;font-weight:800;color:var(--ink);font-size:1.1rem;text-align:right;white-space:nowrap}
+.addon-toggle-details{display:inline-block;margin-top:6px;font-size:0.78rem;color:var(--accent);text-decoration:underline;font-weight:600;letter-spacing:0.02em;cursor:pointer}
+.addon-toggle-details:hover{opacity:0.8}
+.addon-details{margin:6px 0 14px;padding:14px 18px;background:rgba(26,58,140,0.04);border:1px solid var(--border);border-radius:10px;display:grid;gap:8px;font-size:0.86rem;color:var(--ink-body)}
+.addon-details .addon-detail-row{display:flex;justify-content:space-between;gap:14px}
+.addon-details .addon-detail-row span:last-child{font-variant-numeric:tabular-nums;font-weight:600;color:var(--ink)}
+.addon-row-wrap{display:contents}
 .addon-price small{display:block;font-size:0.62rem;font-weight:500;color:var(--ink-muted);letter-spacing:0.08em;margin-top:2px;text-transform:uppercase}
 /* ── Internal-only floor warning (hidden on public share page) ── */
 .tier.below-floor{border-color:#dc2626;background:linear-gradient(180deg,#fff 0%,#fef2f2 100%)}
@@ -1862,21 +1868,42 @@ function toggleAddon(slug) {
   try { logEvent('addon_toggled', { slug, on: state.selectedAddons.has(slug) }); } catch(e){}
 }
 window.toggleAddon = toggleAddon;
+function toggleAddonDetails(slug){
+  const el = document.getElementById(`addon-details-${slug}`);
+  if (!el) return;
+  const isOpen = !el.hasAttribute('hidden');
+  if (isOpen) el.setAttribute('hidden', '');
+  else el.removeAttribute('hidden');
+  // Flip the toggle label
+  const toggle = document.querySelector(`a.addon-toggle-details[onclick*="${slug}"]`);
+  if (toggle) toggle.textContent = isOpen ? 'View breakdown ↓' : 'Hide breakdown ↑';
+}
+window.toggleAddonDetails = toggleAddonDetails;
+function escAttr(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 function addonsSectionHtml() {
   const addons = getAddons();
   if (!addons.length) return '';
   const rows = addons.map(a => {
     const on = state.selectedAddons.has(a.slug);
+    const hasDetails = Array.isArray(a.details) && a.details.length > 0;
+    const detailsId = `addon-details-${a.slug}`;
+    const detailRows = hasDetails ? a.details.map(d =>
+      `<div class="addon-detail-row"><span>${escAttr(d.label)}</span><span>${money(Number(d.cost)||0)}</span></div>`
+    ).join('') : '';
     return `
-      <label class="addon-row${on ? ' on' : ''}" onclick="event.preventDefault();toggleAddon('${a.slug}')">
-        <span class="addon-check" aria-hidden="true">${on ? '✓' : ''}</span>
-        <span class="addon-body">
-          <span class="addon-label">${a.label || a.slug}</span>
-          ${a.description ? `<span class="addon-desc">${a.description}</span>` : ''}
-        </span>
-        <span class="addon-price">+ ${money(Number(a.price) || 0)}<small>+ HST</small></span>
-      </label>`;
+      <div class="addon-row-wrap">
+        <label class="addon-row${on ? ' on' : ''}" onclick="event.preventDefault();toggleAddon('${a.slug}')">
+          <span class="addon-check" aria-hidden="true">${on ? '✓' : ''}</span>
+          <span class="addon-body">
+            <span class="addon-label">${a.label || a.slug}</span>
+            ${a.description ? `<span class="addon-desc">${a.description}</span>` : ''}
+            ${hasDetails ? `<a href="#" class="addon-toggle-details" onclick="event.preventDefault();event.stopPropagation();toggleAddonDetails('${a.slug}')">View breakdown ↓</a>` : ''}
+          </span>
+          <span class="addon-price">+ ${money(Number(a.price) || 0)}<small>+ HST</small></span>
+        </label>
+        ${hasDetails ? `<div id="${detailsId}" class="addon-details" hidden>${detailRows}</div>` : ''}
+      </div>`;
   }).join('');
   return `
     <section class="sec-alt addons-section">

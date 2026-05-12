@@ -13,6 +13,7 @@ import {
   generateMaterialList, getGuidedQuestions, processGuidedAnswers,
   calculateMobilizationDiscount
 } from '../lib/quoteEngineV3.js';
+import { calculateGutterQuote, loadGutterRates } from '../lib/gutterQuoteEngine.js';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireTenant } from '../lib/tenant.js';
 
@@ -47,6 +48,13 @@ async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST or GET only' });
 
   const body = req.body || {};
+
+  // ── Gutters Only ──
+  if (req.query.mode === 'gutters') {
+    const rates = await loadGutterRates(supabaseAdmin, tenantId).catch(() => ({}));
+    const result = calculateGutterQuote(body, rates);
+    return res.json(result);
+  }
 
   // ── Legacy v2 ──
   if (req.query.mode === 'v2') {

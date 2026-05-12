@@ -12,6 +12,7 @@
 // (revision) instead.
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireTenant } from '../lib/tenant.js';
+import { captureEstimateSnapshot } from '../lib/estimateSnapshot.js';
 
 // Fields that can still be appended/edited on a locked estimate.
 // Notes are jsonb arrays — we allow appends. Scheduling moves freely so
@@ -189,6 +190,14 @@ async function handler(req, res) {
       details: { proposal_mode: estimate.proposal_mode, status: estimate.status }
     });
 
+    // v1 snapshot at birth — the "original" record for the paper trail.
+    captureEstimateSnapshot(supabaseAdmin, {
+      estimate: data,
+      reason: 'Created',
+      createdBy: req.user?.id || null,
+      createdByName: req.user?.name || null
+    }).catch(e => console.error('[estimates POST] snapshot failed', e?.message));
+
     return res.status(201).json(data);
   }
 
@@ -255,20 +264,16 @@ async function handler(req, res) {
       }
     });
 
-    // ── Fire-and-forget archive on Publish transition ─────────
-    // If proposal_status just flipped to Published, snapshot a PDF
-    // for the historical record. Don't block the response on this —
-    // the archive endpoint logs its own failures.
-    if (updates.proposal_status === 'Published' && data?.share_token) {
-      const archiveBase = (process.env.RYUJIN_PUBLIC_URL || 'https://ryujin-os.vercel.app').trim();
-      fetch(`${archiveBase}/api/proposal-pdf?share=${encodeURIComponent(data.share_token)}`, {
-        method: 'GET'
-      }).then(() => {
-        // Note: the actual archive insert happens in the archive script.
-        // This GET just primes the PDF cache. A full auto-archive flow can
-        // be added when /api/proposal-pdf-archive endpoint is built.
-      }).catch(e => console.error('[estimates PUT] archive prime failed', e?.message));
-    }
+    // ── Versioned snapshot ────────────────────────────────────
+    // Capture point-in-time state + diff vs previous version. Helper
+    // skips writes when no pricing/status/promo field actually changed,
+    // so a cosmetic notes update won't pollute the version history.
+    captureEstimateSnapshot(supabaseAdmin, {
+      estimate: data,
+      reason: autoLockReason ? `Updated · auto-locked (${autoLockReason})` : 'Updated',
+      createdBy: req.user?.id || null,
+      createdByName: req.user?.name || null
+    }).catch(e => console.error('[estimates PUT] snapshot failed', e?.message));
 
     return res.json(data);
   }

@@ -284,6 +284,104 @@ export default async function handler(req, res) {
     return res.json({ ok: true, message: 'Password updated. Sign in with your new password.' });
   }
 
+  // ── MAGIC-CREATE (admin only) ──
+  // POST { user_id?, email?, tenant_slug?, ttl_days? } → generates a one-tap magic token,
+  // stores on users.magic_token, returns the full landing URL (e.g. /magic.html?t=...).
+  // Caller must be an authenticated admin/owner session. Mac generates these for crew.
+  if (action === 'magic-create' && req.method === 'POST') {
+    const sessionToken = (req.headers.authorization || '').replace('Bearer ', '').trim();
+    if (!sessionToken) return res.status(401).json({ error: 'Admin session required' });
+
+    const { data: session } = await supabaseAdmin
+      .from('sessions').select('user_id, tenant_id, expires_at').eq('token', sessionToken).single();
+    if (!session || new Date(session.expires_at) < new Date()) {
+      return res.status(401).json({ error: 'Session expired or invalid' });
+    }
+
+    const { data: caller } = await supabaseAdmin
+      .from('users').select('role').eq('id', session.user_id).single();
+    if (!caller || !['owner', 'admin'].includes(caller.role)) {
+      return res.status(403).json({ error: 'Owner or admin only' });
+    }
+
+    const { user_id, email, ttl_days } = req.body || {};
+    if (!user_id && !email) return res.status(400).json({ error: 'user_id or email required' });
+
+    let userQuery = supabaseAdmin
+      .from('users').select('id, name, email').eq('tenant_id', session.tenant_id);
+    userQuery = user_id ? userQuery.eq('id', user_id) : userQuery.eq('email', email.toLowerCase().trim());
+    const { data: target } = await userQuery.single();
+    if (!target) return res.status(404).json({ error: 'User not found in your tenant' });
+
+    const token = generateToken();
+    const ttl = Math.max(1, Math.min(30, ttl_days || 7));
+    const expires = new Date(Date.now() + ttl * 24 * 60 * 60 * 1000);
+
+    await supabaseAdmin
+      .from('users')
+      .update({ magic_token: token, magic_expires_at: expires.toISOString() })
+      .eq('id', target.id);
+
+    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    const proto = req.headers['x-forwarded-proto'] || 'https';
+    const url = `${proto}://${host}/magic.html?t=${token}`;
+    console.log(`[auth/magic-create] Magic URL for ${target.email}: ${url} (expires ${expires.toISOString()})`);
+
+    return res.json({ ok: true, url, expires_at: expires.toISOString(), user: { id: target.id, name: target.name, email: target.email } });
+  }
+
+  // ── MAGIC-CONSUME (public) ──
+  // POST { token } → validates the magic token, creates a session, returns same payload
+  // shape as login. Magic token is single-use: cleared after a successful consume.
+  if (action === 'magic-consume' && req.method === 'POST') {
+    const { token: magicToken } = req.body || {};
+    if (!magicToken) return res.status(400).json({ error: 'token required' });
+
+    const { data: user } = await supabaseAdmin
+      .from('users')
+      .select('id, tenant_id, name, email, role, role_id, magic_expires_at')
+      .eq('magic_token', magicToken)
+      .single();
+
+    if (!user) return res.status(404).json({ error: 'Magic link not found or already used' });
+    if (!user.magic_expires_at || new Date(user.magic_expires_at) < new Date()) {
+      return res.status(410).json({ error: 'Magic link has expired' });
+    }
+
+    const sessionToken = generateToken();
+    const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+    await supabaseAdmin.from('sessions').insert({
+      tenant_id: user.tenant_id, user_id: user.id, token: sessionToken, expires_at: expires.toISOString()
+    });
+
+    await supabaseAdmin
+      .from('users')
+      .update({ magic_token: null, magic_expires_at: null })
+      .eq('id', user.id);
+
+    const { data: tenant } = await supabaseAdmin
+      .from('tenants').select('id, name, slug').eq('id', user.tenant_id).single();
+    let roleInfo = null;
+    if (user.role_id) {
+      const { data: role } = await supabaseAdmin
+        .from('roles').select('name, slug, permissions').eq('id', user.role_id).single();
+      roleInfo = role;
+    }
+
+    return res.json({
+      token: sessionToken,
+      user: {
+        id: user.id, name: user.name, email: user.email,
+        role: roleInfo?.slug || user.role || 'crew',
+        roleName: roleInfo?.name || user.role || 'Crew',
+        permissions: roleInfo?.permissions || []
+      },
+      tenant: tenant || {},
+      expiresAt: expires.toISOString()
+    });
+  }
+
   // ── LOGOUT ──
   if (action === 'logout' && req.method === 'POST') {
     const token = (req.headers.authorization || '').replace('Bearer ', '').trim()
@@ -295,5 +393,5 @@ export default async function handler(req, res) {
     return res.json({ ok: true });
   }
 
-  return res.status(400).json({ error: 'Unknown action. Use login, register, me, logout, forgot, or reset.' });
+  return res.status(400).json({ error: 'Unknown action. Use login, register, me, logout, forgot, reset, magic-create, or magic-consume.' });
 }

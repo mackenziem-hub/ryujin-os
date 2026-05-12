@@ -51,6 +51,7 @@ async function saveState(state) {
 // ═══════════════════════════════════════════
 
 async function sendWatchdogSMS(message) {
+  if (process.env.OWNER_SMS_MUTED === '1') { console.log('[Watchdog] SMS muted via OWNER_SMS_MUTED'); return null; }
   if (!GHL_TOKEN) {
     console.error('[Watchdog] No GHL_TOKEN — cannot send SMS');
     return null;

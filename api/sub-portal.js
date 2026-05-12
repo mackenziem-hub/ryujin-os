@@ -654,7 +654,8 @@ async function handler(req, res) {
     // SMS Mac via Automator (best-effort)
     try {
       const automatorKey = process.env.AUTOMATOR_API_KEY?.trim();
-      if (automatorKey) {
+      if (process.env.OWNER_SMS_MUTED === '1') { /* muted */ }
+      else if (automatorKey) {
         const msg = `${sub.name} approved WO #${wo.wo_number} (${wo.address}). Now Active — ready to schedule.`;
         await fetch('https://services.leadconnectorhq.com/hooks/' + (process.env.AUTOMATOR_HOOK_ID || ''), {
           method: 'POST',

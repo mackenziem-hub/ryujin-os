@@ -4,6 +4,7 @@
 // the auth. Tracks view count and last_viewed_at on the proposals row (if present).
 import { supabaseAdmin } from '../lib/supabase.js';
 import { METAL_TIER_COPY, METAL_INCLUDED_ALL, isMetalSlug, getMetalCopy } from '../lib/metalProposalCopy.js';
+import { calculateGutterQuote } from '../lib/gutterQuoteEngine.js';
 
 // Tier catalog authoritative from Plus Ultra/Sales/pricing_formula_v2.md
 // Manufacturer warranties use CertainTeed published terms (lifetime limited + SureStart).
@@ -49,6 +50,67 @@ const TIER_CATALOG = {
     ]
   }
 };
+
+// May 2026 promo — Free 20-Year Extended Workmanship Warranty on Platinum.
+// Auto-applies at render time for any Platinum quote whose estimate was created
+// inside the window. Idempotent: skipped if the pkg already has originalTotal/promoLabel.
+// Discount math = warranty_adder_per_sq × measuredSQ × tier multiplier, nearest $25.
+// Mirrors feedback_warranty_as_promo_lever.md.
+const MAY_PROMO = {
+  // Start = May 12 2026 (the day Mac activated the promo). Pre-existing May
+  // quotes (Brian #39 May 7, Shelley #62 May 11, etc.) keep their original
+  // pricing — Mac's standing rule: "no edits to sent proposals." Tim #59 and
+  // Fernwood #60 created May 12 12:00 UTC are the first auto-promo recipients.
+  startISO: '2026-05-12T00:00:00Z',
+  endISO:   '2026-06-01T00:00:00Z',
+  tier: 'platinum',
+  warrantyAdderPerSQ: 25,
+  label: 'May Special · Free 20-Year Extended Warranty · Book by May 31'
+};
+// Platinum tier multipliers per pricing_formula_v2.md.
+const PLATINUM_MULTIPLIERS = { local: 1.52, day_trip: 1.67, extended_stay: 1.78, out_of_town: 1.85 };
+// Pitch multipliers mirror quoteEngineV3 PITCH_MULTIPLIERS. Used as a fallback
+// when calculated_packages.summary.measuredSQ isn't persisted on the estimate.
+const PITCH_MULTIPLIERS = {
+  '4/12': 1.054, '5/12': 1.083, '6/12': 1.118, '7/12': 1.158,
+  '8/12': 1.202, '9/12': 1.250, '10/12': 1.302, '11/12': 1.357,
+  '12/12': 1.414, '13/12': 1.474, '14/12': 1.537, 'flat': 1.00
+};
+
+function pricingModelKey(est) {
+  const m = String(est?.pricing_model || '').toLowerCase().replace(/[\s-]+/g, '_');
+  if (m.includes('day')) return 'day_trip';
+  if (m.includes('extended')) return 'extended_stay';
+  if (m.includes('out')) return 'out_of_town';
+  return 'local';
+}
+
+function deriveMeasuredSQ(est, pkg) {
+  const summary = pkg && pkg.summary;
+  if (summary && Number(summary.measuredSQ) > 0) return Number(summary.measuredSQ);
+  const sqft = Number(est?.roof_area_sqft) || 0;
+  if (sqft <= 0) return 0;
+  const pitchMult = PITCH_MULTIPLIERS[String(est?.roof_pitch || '5/12')] || PITCH_MULTIPLIERS['5/12'];
+  return Math.ceil((sqft * pitchMult) / 100);
+}
+
+function mayPromoDiscount(est, tierId, pkg) {
+  if (tierId !== MAY_PROMO.tier) return 0;
+  // Never retro-promo a signed/locked/accepted deal — the contract price is the price.
+  if (est && (est.accepted_at || est.locked_at || est.final_accepted_total)) return 0;
+  const status = String(est?.status || '').toLowerCase();
+  if (status === 'signed' || status === 'accepted' || status === 'won' || status === 'closed') return 0;
+  const created = est && est.created_at;
+  if (!created) return 0;
+  const iso = new Date(created).toISOString();
+  if (iso < MAY_PROMO.startISO || iso >= MAY_PROMO.endISO) return 0;
+  if (pkg && (pkg.originalTotal || pkg.promoLabel)) return 0; // already promoted
+  const measuredSQ = deriveMeasuredSQ(est, pkg);
+  if (measuredSQ <= 0) return 0;
+  const mult = PLATINUM_MULTIPLIERS[pricingModelKey(est)] || PLATINUM_MULTIPLIERS.local;
+  const raw = MAY_PROMO.warrantyAdderPerSQ * measuredSQ * mult;
+  return Math.round(raw / 25) * 25;
+}
 
 const BRAND_BASE = '/brand/plus-ultra';
 
@@ -247,6 +309,17 @@ export default async function handler(req, res) {
     .single();
   if (error || !est) return res.status(404).json({ error: 'Proposal not found' });
 
+  // ── Gutters Only branch ──
+  // Browsers (Accept: text/html) get redirected to /gutter-proposal.html which
+  // calls back here with Accept: application/json for the data payload.
+  if (est.proposal_mode === 'Gutters Only') {
+    const wantsHtml = String(req.headers.accept || '').toLowerCase().includes('text/html');
+    if (wantsHtml) {
+      return res.redirect(302, `/gutter-proposal.html?share=${encodeURIComponent(share)}`);
+    }
+    return res.json(buildGutterProposalPayload(est));
+  }
+
   const { data: tenantSettings } = await supabaseAdmin
     .from('tenant_settings')
     .select('company_name, company_phone, company_email, company_website, logo_url, accent_color, tagline')
@@ -308,16 +381,35 @@ export default async function handler(req, res) {
           ? `${warrantyOverride}-yr Plus Ultra workmanship warranty`
           : p);
       }
+
+      // May 2026 free-warranty auto-promo (Platinum only). Mirrors the
+      // Shelley Hope LEGACY_OVERRIDES pattern but evaluated at render time so
+      // every May-created Platinum quote auto-shows the strikethrough.
+      let total = pkg.total ?? summary.sellingPrice ?? 0;
+      let originalTotal = pkg.originalTotal ?? null;
+      let promoLabel = pkg.promoLabel ?? null;
+      const promoDiscount = mayPromoDiscount(est, id, pkg);
+      if (promoDiscount > 0 && promoDiscount < total) {
+        originalTotal = total;
+        total = total - promoDiscount;
+        promoLabel = MAY_PROMO.label;
+      }
+      const measuredSQ = deriveMeasuredSQ(est, pkg);
+      const persqResolved = pkg.persq ?? summary.pricePerSQ ?? 0;
+      const persq = (promoDiscount > 0 && measuredSQ > 0)
+        ? Math.round(total / measuredSQ)
+        : persqResolved;
+
       return {
         id,
         tag: meta.tag,
         name: primary,
         sub,
         desc: meta.desc,
-        total: pkg.total ?? summary.sellingPrice ?? 0,
-        originalTotal: pkg.originalTotal ?? null,
-        promoLabel: pkg.promoLabel ?? null,
-        persq: pkg.persq ?? summary.pricePerSQ ?? 0,
+        total,
+        originalTotal,
+        promoLabel,
+        persq,
         perks,
         // Per-estimate warranty_years override exposed for client-side renderScope().
         // null means "use tier default" (Gold 15 / Plat 20 / Dmd 25).
@@ -424,7 +516,25 @@ export default async function handler(req, res) {
     // Legacy add-ons (simple checkbox cart). Kept for older estimates that
     // haven't been upgraded to the envelope configurator. New estimates use
     // _envelope (below) instead.
-    addons: Array.isArray(est.custom_prices?._addons) ? est.custom_prices._addons : [],
+    // Gutter Package: when est.custom_prices._gutter_inputs is set, the gutter
+    // engine computes the quote inline and appends it as a toggleable addon
+    // with a details dropdown showing the materials/labor/corners breakdown.
+    addons: (() => {
+      const base = Array.isArray(est.custom_prices?._addons) ? [...est.custom_prices._addons] : [];
+      const gi = est.custom_prices?._gutter_inputs;
+      if (gi && (Number(gi.lf_lower) > 0 || Number(gi.lf_upper) > 0)) {
+        const gutter = calculateGutterQuote({ ...gi, distance_km: gi.distance_km ?? est.distance_km ?? 0 });
+        base.push({
+          slug: 'gutter-package',
+          label: 'Gutter Package',
+          description: `${gutter.inputs.lf_lower + gutter.inputs.lf_upper} LF of ${gutter.inputs.color} seamless aluminum gutters, supply + install, including downpipes, corners, and hardware.`,
+          price: gutter.subtotal,
+          details: gutter.lineItems.map(li => ({ label: li.label, cost: li.cost })),
+          deposit_required: false
+        });
+      }
+      return base;
+    })(),
     // Performance Shell envelope configurator. When present, the proposal
     // client renders the full dynamic configurator (system toggle, tiered
     // roof/siding selection, trim toggles, package-name morph, savings
@@ -723,3 +833,67 @@ function buildLegacyScopeLineItems(estOs) {
   ];
   return items;
 }
+
+// ─────────────────────────────────────────────
+// Gutter Proposal shape
+//
+// Pulls calculated_packages.gutters (set by gutter engine), customer info,
+// rep, and branding into the payload that /gutter-proposal.html renders.
+// Kept intentionally separate from the roof proposal shape — different
+// schema, different render template.
+// ─────────────────────────────────────────────
+function buildGutterProposalPayload(est) {
+  const pkg = est.calculated_packages?.gutters || {};
+  const inputs = pkg.inputs || {};
+  const customerAddress = [est.customer?.address, est.customer?.city, est.customer?.province]
+    .filter(Boolean).join(', ');
+  const rep = resolveRepFromEstimate(est);
+
+  return {
+    type: 'gutters',
+    refId: `PU-${est.estimate_number || est.id.slice(0, 8).toUpperCase()}`,
+    estimateId: est.id,
+    shareToken: est.share_token,
+    proposalMode: 'Gutters Only',
+    customer: {
+      name: est.customer?.full_name || '',
+      address: customerAddress,
+      phone: est.customer?.phone || '',
+      email: est.customer?.email || ''
+    },
+    rep: {
+      name: rep.name,
+      title: rep.title,
+      initials: rep.initials,
+      phone: rep.phone,
+      email: rep.email
+    },
+    branding: TENANT_BRANDING_DEFAULT,
+    scope: {
+      total_lf: (inputs.lf_lower || 0) + (inputs.lf_upper || 0),
+      lf_lower: inputs.lf_lower || 0,
+      lf_upper: inputs.lf_upper || 0,
+      corners: inputs.corners || 0,
+      drops: inputs.drops || 0,
+      color: inputs.color || 'White',
+      leaf_guard: !!inputs.leaf_guard,
+      distance_km: inputs.distance_km ?? est.distance_km ?? 0
+    },
+    pricing: {
+      lineItems: pkg.lineItems || [],
+      subtotal: pkg.subtotal ?? 0,
+      hst: pkg.hst ?? 0,
+      total: pkg.total ?? 0,
+      deposit_required: pkg.deposit_required === true,
+      label: pkg.label || 'Gutter Package'
+    },
+    terms: {
+      warranty: '5-year workmanship warranty on installation, sealing, and fastener integrity',
+      timeline: 'Install scheduled within 7-14 days of acceptance, weather permitting',
+      site_requirements: 'Power access required on site for on-the-truck gutter fabrication',
+      validity: 'Pricing held for 30 days from the date of this quote'
+    },
+    createdAt: est.created_at
+  };
+}
+

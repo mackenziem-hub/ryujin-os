@@ -37,6 +37,7 @@ export async function sendFallbackEmail(subject, body) {
 const GHL_BASE_SMS = 'https://services.leadconnectorhq.com';
 const MACKENZIE_CONTACT = '02IhxZfSwZZAZ2fooVGu';
 export async function sendFallbackSMS(message) {
+  if (process.env.OWNER_SMS_MUTED === '1') { console.log('[Fallback SMS] muted via OWNER_SMS_MUTED'); return null; }
   const token = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
   if (!token) return null;
   try {
