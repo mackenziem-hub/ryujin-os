@@ -428,6 +428,8 @@ export default async function handler(req, res) {
     // roof/siding selection, trim toggles, package-name morph, savings
     // ticker, cash-discount meter) instead of (or alongside) flat tier cards.
     envelope: est.custom_prices?._envelope || null,
+    gammaDeckUrl: est.custom_prices?._gamma_deck_url || null,
+    gammaDeckLabel: est.custom_prices?._gamma_deck_label || 'View Visual Walkthrough',
     media: {
       ...PU_DEFAULT_MEDIA,
       beforeImage: beforePhoto?.url || PU_DEFAULT_MEDIA.beforeImage,
