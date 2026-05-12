@@ -1799,7 +1799,14 @@ async function loadData(){
     try {
       const url = '/api/proposal?share=' + encodeURIComponent(share) + (internal ? '&internal=1' : '');
       const r = await fetch(url);
-      if (r.ok) return await r.json();
+      if (r.ok) {
+        const d = await r.json();
+        // Commercial estimates use a different template — redirect, don't render shingle template.
+        const tags = Array.isArray(d.estimateTags) ? d.estimateTags : [];
+        const isCommercial = tags.includes('commercial') || /commercial/i.test(d.proposalMode || '');
+        if (isCommercial) { location.replace('/commercial-proposal.html?share=' + encodeURIComponent(share)); return DEMO; }
+        return d;
+      }
       console.warn('Share fetch failed', r.status);
     } catch (e) { console.warn('Share fetch error', e); }
   }
@@ -2269,6 +2276,14 @@ function renderScope(){
 let _breakdownWired = false;
 function wireBreakdownDropdown(){
   if (_breakdownWired) return;
+  // Legacy Estimator OS proposals don't have a Ryujin row to back this endpoint —
+  // hide the dropdown entirely instead of letting customers/reps expand a 404.
+  if (DATA?.legacy === true) {
+    const det = document.getElementById('breakdownDropdown');
+    if (det) det.style.display = 'none';
+    _breakdownWired = true;
+    return;
+  }
   const share = DATA?.shareToken;
   if (!share) return;
   const det = document.getElementById('breakdownDropdown');

@@ -150,7 +150,10 @@ const PORTALS = [
   { id:'diego',        label:'Diego Portal',       needs:null,      url:() => '/portal-diego.html' },
   { id:'pavanjot',     label:'Pavanjot Portal',    needs:null,      url:() => '/portal-pavanjot.html' },
   { id:'melodie',      label:'Melodie Portal',     needs:null,      url:() => '/portal-melodie.html' },
-  { id:'ryan',         label:'Ryan Portal',        needs:null,      url:() => '/portal-ryan.html' },
+  { id:'ryan',         label:'Ryan Portal',        needs:null,      autoSub:/ryan/i, url:() => {
+    const m = tokens.sub.find(t => /ryan/i.test(t.label));
+    return m ? `/sub-portal.html?token=${encodeURIComponent(m.token)}` : null;
+  }},
   { id:'mobile',       label:'Mobile (owner)',     needs:null,      url:() => '/portal-mobile.html' },
   { id:'approvals',    label:'Approvals Queue',    needs:null,      url:() => '/approvals.html' },
   { id:'routes',       label:'Route Planner',      needs:null,      url:() => '/portal-routes.html' },
@@ -158,6 +161,7 @@ const PORTALS = [
 
 let active = PORTALS[0];
 let tokens = { sub:[], estimate:[], paysheet:[] };
+let tokensLoaded = false;
 let currentUrl = null;
 
 function renderTabs(){
@@ -190,6 +194,7 @@ async function loadTokens(){
   } catch (e) {
     console.warn('token load partial:', e.message);
   }
+  tokensLoaded = true;
   refreshPicker();
 }
 
@@ -228,7 +233,14 @@ function loadFrame(){
   const picker = document.getElementById('tokenPicker');
   const token = picker.value;
   if (active.needs && !token) { showEmpty('Pick a token to preview.'); return; }
+  if (active.autoSub && !tokensLoaded) { showEmpty('Loading subcontractor list…'); return; }
   const url = active.url(token);
+  if (!url) {
+    showEmpty(active.autoSub
+      ? `No subcontractor matching "${active.label}" found. Provision their portal token via Crew Ops, then reload.`
+      : 'Portal URL could not be resolved.');
+    return;
+  }
   currentUrl = url;
   const shell = document.getElementById('frameShell');
   shell.innerHTML = `<iframe src="${url}" allow="camera; microphone; geolocation; clipboard-write" loading="lazy"></iframe>`;

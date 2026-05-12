@@ -387,6 +387,8 @@ export default async function handler(req, res) {
     refId: `PU-${est.estimate_number || est.id.slice(0, 8).toUpperCase()}`,
     estimateId: est.id,
     shareToken: est.share_token,
+    estimateTags: Array.isArray(est.tags) ? est.tags : [],
+    proposalMode: est.proposal_mode || '',
     customer: {
       name: customerName,
       address: customerAddress,
@@ -435,7 +437,11 @@ export default async function handler(req, res) {
       beforeImage: beforePhoto?.url || PU_DEFAULT_MEDIA.beforeImage,
       afterImage: afterPhoto?.url || PU_DEFAULT_MEDIA.afterImage,
       videoUrl: resolveIntroVideo(rep, est.proposal_mode || 'shingle'),
-      gallery: customGallery.length ? [...customGallery, ...GALLERY].slice(0, 8) : GALLERY
+      // Commercial estimates show every inspection photo — no 8-photo cap.
+      // For commercial, also skip the stock-gallery fallback (only show real on-site photos).
+      gallery: (Array.isArray(est.tags) && est.tags.includes('commercial'))
+        ? (customGallery.length ? customGallery : [])
+        : (customGallery.length ? [...customGallery, ...GALLERY].slice(0, 8) : GALLERY)
     },
     // Per pricing_formula_v2.md Section 3: multiplier IS the price. No bumping,
     // no filtering. Public and internal both show calculated_packages exactly as
@@ -500,6 +506,22 @@ export default async function handler(req, res) {
 
 const ESTIMATOR_OS_BASE = 'https://estimator-os.replit.app';
 
+// Per-legacy-quote overrides — apply on top of the Estimator OS data.
+// Used for adding before/after photos, promo discounts, etc. without modifying
+// the source Estimator OS row. Keyed by Estimator OS estimate id.
+const LEGACY_OVERRIDES = {
+  62: {
+    // Shelley Hope - 34 Wilbur St
+    beforeImageUrl: 'https://oyhn4tqzifmqqj0o.public.blob.vercel-storage.com/legacy-photos/shelley-hope-62/before-2026-05-11-fqndhUg2tGTlQeRWBrvU6D36XTdrZP.png',
+    afterImageUrl: 'https://oyhn4tqzifmqqj0o.public.blob.vercel-storage.com/legacy-photos/shelley-hope-62/after-2026-05-11-RQzEn04V0p8UXf4m5QHMjxomw5n2VM.jpg',
+    promo: {
+      tier: 'platinum',
+      perSQ: 25,                           // $25/SQ discount — "Free Platinum Extended Warranty"
+      label: 'Free Platinum Extended Warranty applied'
+    }
+  }
+};
+
 async function renderLegacyEstimatorOs(legacyId, req, res) {
   const idNum = Number(legacyId);
   if (!Number.isInteger(idNum) || idNum < 1) {
@@ -547,13 +569,29 @@ function buildLegacyProposalData(estOs) {
   const measurements = estOs.roofMeasurements || {};
   const photos = Array.isArray(estOs.photos) ? estOs.photos : [];
   const sq = Number(measurements.roofAreaSq) || 0;
+  const override = LEGACY_OVERRIDES[estOs.id] || {};
 
   const tierEntries = ['gold', 'platinum', 'diamond']
     .map(tierId => {
       const meta = TIER_CATALOG[tierId];
       const p = pricing[tierId];
-      const total = Number(p && p.sellingPrice) || 0;
-      if (!meta || total <= 0) return null;
+      const baseTotal = Number(p && p.sellingPrice) || 0;
+      if (!meta || baseTotal <= 0) return null;
+
+      // Per-quote promo override (e.g., Shelley Hope's $25/SQ Platinum extended warranty deduction)
+      let total = baseTotal;
+      let originalTotal = null;
+      let promoLabel = null;
+      if (override.promo && override.promo.tier === tierId) {
+        const discount = override.promo.flat
+                       ?? Math.round((override.promo.perSQ || 0) * sq);
+        if (discount > 0 && discount < baseTotal) {
+          originalTotal = baseTotal;
+          total = baseTotal - discount;
+          promoLabel = override.promo.label || 'Promotion applied';
+        }
+      }
+
       const persq = sq > 0 ? Math.round(total / sq) : 0;
       const [primary, ...rest] = (meta.name || tierId).split(/\s*·\s*/);
       return {
@@ -563,8 +601,8 @@ function buildLegacyProposalData(estOs) {
         sub: rest.join(' · '),
         desc: meta.desc,
         total,
-        originalTotal: null,
-        promoLabel: null,
+        originalTotal,
+        promoLabel,
         persq,
         perks: meta.perks,
         warrantyYears: null
@@ -625,8 +663,18 @@ function buildLegacyProposalData(estOs) {
     envelope: null,
     media: {
       ...PU_DEFAULT_MEDIA,
-      beforeImage: legacyImageUrl(beforePhoto && beforePhoto.url) || PU_DEFAULT_MEDIA.beforeImage,
-      afterImage: legacyImageUrl(afterPhoto && afterPhoto.url) || PU_DEFAULT_MEDIA.afterImage,
+      // Estimator OS-era estimates rarely have captioned before/after photos.
+      // Resolution order: per-quote override → tagged photo → cover photo → stock fallback.
+      // Cover-as-fallback keeps Darcy/customer from seeing stock Plus Ultra portfolio
+      // images on a personalized pitch.
+      beforeImage: override.beforeImageUrl
+                 || legacyImageUrl(beforePhoto && beforePhoto.url)
+                 || legacyImageUrl(cover && cover.url)
+                 || PU_DEFAULT_MEDIA.beforeImage,
+      afterImage: override.afterImageUrl
+                 || legacyImageUrl(afterPhoto && afterPhoto.url)
+                 || legacyImageUrl(cover && cover.url)
+                 || PU_DEFAULT_MEDIA.afterImage,
       videoUrl: resolveIntroVideo(rep, 'shingle'),
       gallery: customGallery.length ? [...customGallery, ...GALLERY].slice(0, 8) : GALLERY
     },
