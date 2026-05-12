@@ -277,9 +277,9 @@ body::before{
   <!-- Earnings + Messages -->
   <div class="duo">
     <div class="duo-card" id="payCard" role="button">
-      <div class="lbl">This week's earnings</div>
+      <div class="lbl" id="payLabel">Pay</div>
       <div class="big" id="payAmount">—</div>
-      <div class="sub" id="payJobs">no data yet</div>
+      <div class="sub" id="payJobs">tap to view</div>
       <svg class="spark" id="paySpark" viewBox="0 0 120 30" preserveAspectRatio="none" aria-hidden="true"></svg>
     </div>
     <div class="duo-card" id="msgCard" role="button">
@@ -314,11 +314,11 @@ body::before{
         <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="22"/></svg>
       </button>
     </div>
-    <a class="tab active" href="#today" data-tab="today">
+    <a class="tab active" href="/portal-mobile.html" data-tab="today">
       <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg>
       <span class="lbl">Today</span>
     </a>
-    <a class="tab" href="#jobs" data-tab="jobs">
+    <a class="tab" href="/production-jobs.html" data-tab="jobs">
       <svg viewBox="0 0 24 24"><path d="M3 12 12 4l9 8"/><path d="M5 10v10h14V10"/></svg>
       <span class="lbl">Jobs</span>
     </a>
@@ -327,13 +327,13 @@ body::before{
       <span class="lbl">Messages</span>
       <span class="tab-badge" id="msgBadge" style="display:none">0</span>
     </a>
-    <a class="tab" href="#pay" data-tab="pay">
-      <svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><line x1="6" y1="12" x2="6.01" y2="12"/><line x1="18" y1="12" x2="18.01" y2="12"/></svg>
-      <span class="lbl">Pay</span>
+    <a class="tab" href="/admin-activity.html" data-tab="activity">
+      <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+      <span class="lbl">Activity</span>
     </a>
-    <a class="tab" href="#profile" data-tab="profile">
-      <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
-      <span class="lbl">Profile</span>
+    <a class="tab" href="/administration.html" data-tab="admin">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      <span class="lbl">Admin</span>
     </a>
   </div>
 </nav>
@@ -472,56 +472,101 @@ function renderTasks(rest){
 }
 
 async function loadPay(){
-  // No per-user weekly earnings endpoint yet — leave as clean stub.
-  // TODO(next session): wire /api/paysheet-mine or sum paysheets by sub_id this week.
+  // Pull this week's paysheets from the same /api/state payload via a quick
+  // count — full per-user earnings endpoint pending. Card is informational
+  // for Mac (team total) and a placeholder for crew users.
   const amount = document.getElementById('payAmount');
   const sub    = document.getElementById('payJobs');
-  amount.textContent = '—';
-  sub.textContent = 'coming soon';
-  // Decorative flat line so the card doesn't look broken.
-  const spark = document.getElementById('paySpark');
-  spark.innerHTML = '<polyline fill="none" stroke="rgba(245,236,217,0.25)" stroke-width="1.5" points="0,22 24,18 48,20 72,14 96,15 120,8"/>';
+  const lbl    = document.getElementById('payLabel');
+  const spark  = document.getElementById('paySpark');
+
+  // Decorative line so the card never reads as broken.
+  spark.innerHTML = '<polyline fill="none" stroke="rgba(245,236,217,0.30)" stroke-width="1.5" points="0,22 24,18 48,20 72,14 96,15 120,8"/>';
+
+  try{
+    // Production-state has paysheet stats baked in; use what's there.
+    const r = await fetch('/api/production-state', { headers: { 'x-tenant-id': TENANT } });
+    if (!r.ok) throw new Error();
+    const s = (await r.json()).stats || {};
+    const paid30 = s.paysheets_paid_30d ?? 0;
+    const pend   = s.paysheets_pending_approval ?? 0;
+    if (lbl) lbl.textContent = isAdmin ? 'Paid (30d)' : 'Your pay';
+    amount.textContent = isAdmin ? String(paid30) : '—';
+    sub.textContent = isAdmin
+      ? `${pend} pending approval`
+      : 'see pay page';
+  }catch{
+    if (lbl) lbl.textContent = 'Pay';
+    amount.textContent = '—';
+    sub.textContent = 'tap to view';
+  }
 }
 
 async function refreshBadge(){
+  const pill = document.getElementById('msgPill');
+  const badge = document.getElementById('msgBadge');
+  const stack = document.getElementById('msgStack');
+  const tok = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token');
+
+  if (!tok){
+    pill.textContent = 'sign in';
+    pill.classList.add('empty');
+    stack.innerHTML = '<span class="empty">Tap to view inbox</span>';
+    return;
+  }
+
   try{
-    const tok = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token');
-    if (!tok) return;
-    const r = await fetch('/api/messages?box=unread', {
+    // Pull the inbox (latest threads, read or unread) so the card always
+    // shows something. Compute unread from the same payload to drive the
+    // pill/badge — saves a second request.
+    const r = await fetch('/api/messages?box=inbox&limit=20', {
       headers: { 'Authorization': `Bearer ${tok}`, 'x-tenant-id': TENANT },
     });
-    if (!r.ok) return;
+    if (!r.ok){
+      pill.textContent = '—';
+      pill.classList.add('empty');
+      stack.innerHTML = '<span class="empty">Inbox unavailable</span>';
+      return;
+    }
     const data = await r.json();
-    const count = typeof data.unread_count === 'number' ? data.unread_count : (data.messages?.length || 0);
+    const msgs = data.messages || [];
+    const unread = (data.stats?.unread) ?? msgs.filter(m => !m.read_at).length;
 
-    const pill = document.getElementById('msgPill');
-    const badge = document.getElementById('msgBadge');
-    const stack = document.getElementById('msgStack');
-
-    if (count > 0){
-      pill.textContent = `${count} new`;
+    if (unread > 0){
+      pill.textContent = `${unread} new`;
       pill.classList.remove('empty');
       badge.style.display = 'flex';
-      badge.textContent = count > 9 ? '9+' : String(count);
-      // Show up to 3 sender avatars stacked
-      const senders = (data.messages || []).slice(0,3);
-      stack.innerHTML = senders.length
-        ? senders.map(() => `<span class="av" aria-hidden="true"></span>`).join('')
-        : `<span class="empty">${count} unread</span>`;
+      badge.textContent = unread > 9 ? '9+' : String(unread);
     } else {
-      pill.textContent = '0 new';
+      pill.textContent = `${msgs.length}`;
       pill.classList.add('empty');
       badge.style.display = 'none';
-      stack.innerHTML = '<span class="empty">No unread</span>';
+    }
+
+    // Render the most recent thread preview — sender + snippet.
+    const top = msgs[0];
+    if (top){
+      const sender = top.from_label || top.from_name || 'Ryujin';
+      const subject = top.subject || top.body || '';
+      stack.innerHTML = `
+        <div style="font-size:0.82em;line-height:1.3;color:var(--text);min-width:0;width:100%">
+          <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(sender)}</div>
+          <div style="color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(subject)}</div>
+        </div>`;
+    } else {
+      stack.innerHTML = '<span class="empty">No messages yet</span>';
     }
 
     if ('setAppBadge' in navigator){
       try{
-        if (count > 0) await navigator.setAppBadge(count);
+        if (unread > 0) await navigator.setAppBadge(unread);
         else await navigator.clearAppBadge();
       }catch{}
     }
-  }catch{}
+  }catch{
+    pill.textContent = '—';
+    stack.innerHTML = '<span class="empty">Offline</span>';
+  }
 }
 
 function summonAgent(){
@@ -539,9 +584,9 @@ function wireTaps(){
       summonAgent();
     }
   });
-  document.getElementById('payCard').addEventListener('click', () => { location.hash = '#pay' });
+  document.getElementById('payCard').addEventListener('click', () => { location.href = '/production-paysheet.html' });
   document.getElementById('msgCard').addEventListener('click', () => { location.href = '/messages.html' });
-  document.getElementById('avatarBtn').addEventListener('click', () => { location.hash = '#profile' });
+  document.getElementById('avatarBtn').addEventListener('click', () => { location.href = '/administration.html' });
 }
 
 (async function init(){
