@@ -25,6 +25,7 @@
 import { runSales, runOps, runMarketing, runFinance } from './_shared.js';
 import { runCustomerScan } from '../../lib/agents/customer_scan.js';
 import { runServiceScan } from '../../lib/agents/service_scan.js';
+import { runInventoryScan } from '../../lib/agents/inventory_scan.js';
 import { runStrategyScan } from '../../lib/agents/strategy_scan.js';
 import { persistAgentRun } from '../../lib/agents/persistAgentRun.js';
 import { supabaseAdmin } from '../../lib/supabase.js';
@@ -79,6 +80,17 @@ const KPI_MAPS = {
     'stats.tickets_complete_12mo':         { key: 'service.tickets_complete_12mo',label: 'Completed (12mo)',      unit: 'count', sort_order: 64 },
     'stats.callback_rate_pct':             { key: 'service.callback_rate_pct',    label: 'Callback Rate',         unit: '%',     sort_order: 65 },
     'stats.warranty_claims_pending_response':{ key: 'service.warranty_pending_resp', label: 'Warranty Resp Pending', unit: 'count', sort_order: 66 }
+  },
+  inventory: {
+    'stats.merchants_active':              { key: 'inventory.suppliers_active',     label: 'Suppliers Active',     unit: 'count', sort_order: 70 },
+    'stats.products_total':                { key: 'inventory.catalog_products',     label: 'Catalog Products',     unit: 'count', sort_order: 71 },
+    'stats.products_stale_price':          { key: 'inventory.stale_priced',         label: 'Stale-Priced',         unit: 'count', sort_order: 72 },
+    'stats.products_very_stale_price':     { key: 'inventory.very_stale_priced',    label: 'Very-Stale-Priced',    unit: 'count', sort_order: 73 },
+    'stats.stale_price_pct':               { key: 'inventory.stale_pct',            label: 'Catalog Stale %',      unit: '%',     sort_order: 74 },
+    'stats.products_out_of_stock':         { key: 'inventory.out_of_stock',         label: 'Out of Stock',         unit: 'count', sort_order: 75 },
+    'stats.products_missing_lead_time':    { key: 'inventory.missing_lead_time',    label: 'Missing Lead Time',    unit: 'count', sort_order: 76 },
+    'stats.suppliers_with_stale_catalog':  { key: 'inventory.suppliers_dormant',    label: 'Dormant Suppliers',    unit: 'count', sort_order: 77 },
+    'stats.po_open':                       { key: 'inventory.po_open',              label: 'Open POs',             unit: 'count', sort_order: 78 }
   },
   strategy: {
     'stats.runsLast7d':           { key: 'strategy.agent_runs_7d',     label: 'Agent Runs (7d)',           unit: 'count', sort_order: 90 },
@@ -155,14 +167,15 @@ export default async function handler(req, res) {
   const startedAt = Date.now();
   const results = [];
 
-  // Run the first 6 in parallel — they don't depend on each other
+  // Run the first 7 in parallel — they don't depend on each other
   const parallel = await Promise.all([
     runAndPersist('sales',     () => runSales(),                                    tenantId, trigger),
     runAndPersist('marketing', () => runMarketing(),                                tenantId, trigger),
     runAndPersist('ops',       () => runOps(),                                      tenantId, trigger),
     runAndPersist('finance',   () => runFinance(),                                  tenantId, trigger),
     runAndPersist('customer',  () => runCustomerScan({ tenantSlug: TENANT_SLUG }),  tenantId, trigger),
-    runAndPersist('service',   () => runServiceScan({ tenantSlug: TENANT_SLUG }),   tenantId, trigger)
+    runAndPersist('service',   () => runServiceScan({ tenantSlug: TENANT_SLUG }),   tenantId, trigger),
+    runAndPersist('inventory', () => runInventoryScan({ tenantSlug: TENANT_SLUG }), tenantId, trigger)
   ]);
   results.push(...parallel);
 
