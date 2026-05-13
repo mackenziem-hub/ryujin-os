@@ -1680,9 +1680,13 @@
   RY.isDisabled = chatDisabled;
 
   RY.init = function(cfg){
-    if (chatDisabled()) return;
-
     cfg = cfg || {};
+    // The opt-out flag is scoped to the floating dragon-orb FAB. Pages that
+    // embed the chat directly into a host element (e.g. dashboard-v2's
+    // #dragonChatMount) are the *only* AI surface on those pages — suppressing
+    // them leaves the panel blank, which is not what the toggle is for.
+    if (chatDisabled() && !cfg.embedTarget) return;
+
     if (!cfg.root) cfg.root = DEFAULT_ROOT;
     if (!cfg.states) cfg.states = {};
     config = cfg;
