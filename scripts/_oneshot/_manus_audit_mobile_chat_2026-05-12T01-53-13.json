@@ -1,0 +1,59 @@
+{
+  "ok": true,
+  "assessment": "not-shippable",
+  "summary": "RE-Audit confirms the shipped polish mostly improves mobile chat overlay chrome and interaction. Fix 1 (input row height) and Fix 3 (avatar/header) landed as expected; Fix 5 (header unification) landed with a cohesive top bar. Fix 4 (chip clipping) is partially validated through CSS but cannot be fully verified because chips aren’t rendering on first load due to the boot flow. Fix 2 (empty transcript chips on load) did not land in the live UI because chips never render on initial load, causing an empty-state deficiency. The dominant regression remains an end-to-end failure: sending a message yields a 500 server error from /api/agent-chat, with user-visible error text and a console/network signal of 500. The page is therefore not-shippable in its current state; the fastest path to ship-ready is to fix the API failure, restore starter chips on first load, and re-run the same viewport checks.",
+  "blockers": [
+    {
+      "category": "data_wrong",
+      "description": "Sending a normal user message triggers a visible server 500 error from /api/agent-chat; the UI transcript shows an error and blocks end-to-end chat.",
+      "evidence": "POST https://ryujin-os.vercel.app/api/agent-chat returned 500 for the test message; console logged \"Failed to load resource: the server responded with a status of 500 ()\"; user-visible transcript shows: \"Error 500: A server error has occurred FUNCTION_INVOCATION_FAILED iad1::5kw89-1778550381402-c3a64a633bba\" (iPhone SE 375x667). Screenshot: iphone_se_after_real_send.png.",
+      "fix": "Back-end /api/agent-chat should handle failures gracefully and return a customer-friendly message; implement error handling to avoid exposing internal IDs and ensure a valid/empty reply is shown when the service is unavailable.",
+      "location": "transcript area / chat-send action",
+      "severity": "critical"
+    },
+    {
+      "category": "flow_confusing",
+      "description": "Starter scenario chips are not visible on first load due to boot logic clearing the transcript before chips render; the empty-state polish did not land in the live UI.",
+      "evidence": "summary evidence shows chips: count=0 container=null across iPhone SE 375x667, iPhone 14 Pro 393x852, Android 360x800, and keyboard/landscape states; test data indicate maybeBoot() clears transcript before chips render.",
+      "fix": "Preserve or re-insert the #ry-agent-scenarios chips after boot so chips appear on first load; ensure tapping a chip fills the textarea and sending hides chips as intended.",
+      "location": "ry-agent-scenarios container within the transcript block",
+      "severity": "high"
+    }
+  ],
+  "polish": [
+    {
+      "description": "Input row buttons stretch to match the textarea height (44px on mobile, 48px on tablet).",
+      "fix": "Adjusted .ry-agent-input-row alignment to stretch and set min-height 44px for inputs and 44–48px for action buttons; verified measurements show 44px heights on mobile and 48px on landscape/tablet.",
+      "location": "ry-agent-input-row / .ry-agent-input / .ry-agent-btn (mobile/tablet)"
+    },
+    {
+      "description": "Avatar and name compacted into a horizontal identity header (avatar reduced to 56px).",
+      "fix": "CSS adjustments to .ry-agent-avatar and .ry-agent-identity to render a single compact header (no hero-dominant avatar).",
+      "location": "ry-agent-identity header area"
+    },
+    {
+      "description": "Chip clipping addressed by wrapping chips instead of overflow:auto.",
+      "fix": "CSS landed: .ry-agent-scenarios { display:flex; flex-wrap:wrap; gap:6px; } and .ry-agent-scenario remains compact; ensure chips reflow gracefully.",
+      "location": "ry-agent-scenarios and .ry-agent-scenario CSS (agent-mode-shell.js)"
+    },
+    {
+      "description": "Chips rendering behavior adjusted to be cohesive on first load and not float as floating chrome.",
+      "fix": "Retain chip container rendering after boot and ensure scenario chips reappear on first load; wire tap on chips to populate input.",
+      "location": "transcript chip container (ry-agent-scenarios)"
+    },
+    {
+      "description": "Header utility unification with gradient backdrop for a cohesive top bar.",
+      "fix": "Maintain the unified header bar with gradient and safe-area padding; consider subtle border to reinforce cohesion.",
+      "location": "ry-agent-header styles"
+    }
+  ],
+  "strengths": [
+    "The input row balance is consistently preserved across tested viewports (mobile 44px; landscape/tablet 48px);",
+    "Avatar header is compact and non-dominant, improving focus on chat content;",
+    "Chip wrapping CSS exists and will prevent overflow in long prompts once chips render on first load;",
+    "Header gradient backdrop provides a cohesive top chrome that visually unifies the agent shell."
+  ],
+  "taskId": "VEvT7fcNsZ5vdTPYyZD77j",
+  "taskUrl": "https://manus.im/app/VEvT7fcNsZ5vdTPYyZD77j",
+  "elapsedMs": 727331
+}

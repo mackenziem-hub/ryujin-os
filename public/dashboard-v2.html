@@ -652,13 +652,17 @@ body{
     const s = snap.sections || {};
     const pipelineTotal = (s.pipeline || []).reduce((sum, o) => sum + (o.value || 0), 0);
     const set = (selector, val) => { const el = document.querySelector(selector); if (el && val != null) el.textContent = val; };
-    if (s.revenue?.signedRevenue != null) set('.kpi:nth-child(1) .kpi-value', '$' + (s.revenue.signedRevenue / 1000).toFixed(1) + 'K');
-    if (pipelineTotal) set('.kpi:nth-child(2) .kpi-value', '$' + (pipelineTotal / 1000).toFixed(0) + 'K');
-    if (s.tickets?.byStatus?.active != null) set('.kpi:nth-child(3) .kpi-value', s.tickets.byStatus.active + '/' + (s.tickets.total || '?'));
-    if (s.leads?.thisWeek != null) set('.kpi:nth-child(4) .kpi-value', s.leads.thisWeek);
-    if (s.metaAds?.avgCPL != null) set('.kpi:nth-child(5) .kpi-value', '$' + s.metaAds.avgCPL.toFixed(2));
-    const tsEl = document.getElementById('ts'); if (tsEl) tsEl.textContent = new Date(snap.updated_at || Date.now()).toLocaleTimeString();
-    if (window.RyujinToast) RyujinToast('Live snapshot synced \u00B7 ' + (snap.updated_at || 'now'));
+    const s2 = snap.sections || snap;
+    const fmtK = n => { if (n==null) return null; const v=Number(n); return Math.abs(v)>=1000 ? '$'+(v/1000).toFixed(Math.abs(v)>=100000?0:1)+'K' : '$'+v.toFixed(0); };
+    const setSub = (n,v) => { const el=document.querySelector('.kpi:nth-child('+n+') .kpi-sub'); if(el&&v!=null) el.textContent=v; };
+    const clearDelta = n => { const el=document.querySelector('.kpi:nth-child('+n+') .kpi-delta'); if(el){el.textContent='';el.classList.remove('up','down');} };
+    if (s2.revenue?.signed_mtd != null)    { set('.kpi:nth-child(1) .kpi-value', fmtK(s2.revenue.signed_mtd));            setSub(1,'this month');                              clearDelta(1); }
+    if (s2.pipeline?.total_value != null)  { set('.kpi:nth-child(2) .kpi-value', fmtK(s2.pipeline.total_value));          setSub(2,(s2.pipeline.open_opportunities||0)+' deals'); clearDelta(2); }
+    if (s2.tickets?.open_tickets != null)  { set('.kpi:nth-child(3) .kpi-value', String(s2.tickets.open_tickets));        setSub(3,(s2.tickets.overdue_count||0)+' overdue');      clearDelta(3); }
+    if (s2.leads?.this_week != null)       { set('.kpi:nth-child(4) .kpi-value', String(s2.leads.this_week));             setSub(4,(s2.leads.conversion_rate||'-')+' close');     clearDelta(4); }
+    if (s2.marketing?.avg_cpl != null)     { set('.kpi:nth-child(5) .kpi-value', '$'+Number(s2.marketing.avg_cpl).toFixed(2)); setSub(5,'7-day avg');                          clearDelta(5); }
+    const tsEl = document.getElementById('ts'); if (tsEl && snap.updated_at) tsEl.textContent = new Date(snap.updated_at).toLocaleTimeString();
+    if (window.RyujinToast) RyujinToast('Live snapshot synced \u00B7 ' + (snap.lastUpdated || 'now'));
   } catch(e) {
     // Silent fail — keep placeholder values
     console.info('Snapshot not available (local mode):', e.message);
@@ -674,13 +678,16 @@ async function refetchSnapshot(){
     const s = snap.sections || {};
     const pipelineTotal = (s.pipeline || []).reduce((sum, o) => sum + (o.value || 0), 0);
     const set = (selector, val) => { const el = document.querySelector(selector); if (el && val != null) el.textContent = val; };
-    if (s.revenue?.signedRevenue != null) set('.kpi:nth-child(1) .kpi-value', '$' + (s.revenue.signedRevenue / 1000).toFixed(1) + 'K');
-    if (pipelineTotal) set('.kpi:nth-child(2) .kpi-value', '$' + (pipelineTotal / 1000).toFixed(0) + 'K');
-    if (s.tickets?.byStatus?.active != null) set('.kpi:nth-child(3) .kpi-value', s.tickets.byStatus.active + '/' + (s.tickets.total || '?'));
-    if (s.leads?.thisWeek != null) set('.kpi:nth-child(4) .kpi-value', s.leads.thisWeek);
-    if (s.metaAds?.avgCPL != null) set('.kpi:nth-child(5) .kpi-value', '$' + s.metaAds.avgCPL.toFixed(2));
+    const s2 = snap.sections || snap;
+    const fmtK2 = n => { if (n==null) return null; const v=Number(n); return Math.abs(v)>=1000 ? '$'+(v/1000).toFixed(Math.abs(v)>=100000?0:1)+'K' : '$'+v.toFixed(0); };
+    if (s2.revenue?.signed_mtd != null)    set('.kpi:nth-child(1) .kpi-value', fmtK2(s2.revenue.signed_mtd));
+    if (s2.pipeline?.total_value != null)  set('.kpi:nth-child(2) .kpi-value', fmtK2(s2.pipeline.total_value));
+    if (s2.tickets?.open_tickets != null)  set('.kpi:nth-child(3) .kpi-value', String(s2.tickets.open_tickets));
+    if (s2.leads?.this_week != null)       set('.kpi:nth-child(4) .kpi-value', String(s2.leads.this_week));
+    if (s2.marketing?.avg_cpl != null)     set('.kpi:nth-child(5) .kpi-value', '$'+Number(s2.marketing.avg_cpl).toFixed(2));
   } catch(e){}
 }
+refetchSnapshot();
 setInterval(refetchSnapshot, 300000);
 </script>
 <script>
@@ -698,8 +705,17 @@ document.addEventListener('keydown', e => {
   if ((e.key === '?' || e.key === 'h' || e.key === 'H') && window.RyujinTutor) { e.preventDefault(); RyujinTutor.start('dashboard'); }
 });
 
-Ryujin.init({
-  sector: 'DASHBOARD',
+// Mount the real chat brain in the dragon stage. No hardcoded multiple-choice tree —
+// the embedded panel uses /api/chat with full tool use (create_full_estimate, etc).
+// If user previously disabled chat via HUD, clear that on the dashboard since chat
+// IS the dashboard surface here.
+try { localStorage.removeItem('ry_chat_off'); } catch(e){}
+Ryujin.init({ sector: 'DASHBOARD', embedTarget: '#dragonChatMount' });
+
+// Legacy mockup states preserved below for reference (UNUSED — kept to avoid losing
+// the scripted demo flow if we ever want a tour mode). Wrapped in a never-true block.
+if (false) Ryujin.init({
+  sector: 'DASHBOARD-MOCK',
   embedTarget: '#dragonChatMount',
   root: {
     msg: "Welcome back, Mackenzie. I've scanned today's state. <b>Top priority:</b> Jonathan Gould's repair is 2 days overdue — that's your only red alert. Your pipeline is healthy at <b>$410K</b> and the Faulkner job shifts to Wednesday thanks to the weather call. What do you want to tackle first?",

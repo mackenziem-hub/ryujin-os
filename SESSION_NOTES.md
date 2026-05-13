@@ -1,3 +1,152 @@
+# Session notes — 2026-05-13 morning — Codex plugin install + admin docs UX fixes + dashboard cockpit rewire + Files folder in administration + gutterQuoteEngine.js EMERGENCY RESTORE
+
+**What:** Five-hour session, three real wins, one wrong-file mistake, one emergency restore.
+
+## What shipped
+
+**1. Codex plugin install + review gate.** `openai/codex-plugin-cc` installed in Claude Code. Codex CLI 0.130 already authed via Mac's ChatGPT login. `/codex:setup --enable-review-gate` toggled ON for `C:\Users\macke`. Subagent `codex:codex-rescue` available. Two adversarial reviews this session caught 4× P1, all fixed.
+
+**2. Phase A — admin docs UX surgical.** Three edits:
+- `public/doc.html` — sticky white "Back to Files" pill button top-left, hidden in `.pdf-mode` and `.preview-mode`. `docBack()` gated on `history.length > 1` (Codex fix — handles new-tab opens correctly).
+- `public/admin.html` `drawDocumentsShell()` — renamed header to "Files & Documents", added prominent white Back button calling `navigate('dashboard')`.
+- `public/admin.html` Today's Focus action-grid — added 4th Files action button. Added `role="button" tabindex="0"` + `onkeydown` for Enter/Space (Codex fix).
+
+**3. Phase B — pillar grid built on WRONG file.** I built a 6-pillar+Administration tile grid + Files button in bottom nav on `admin.html`. Mac's actual landing is `command-center.html`. Codex reviewed correctly for the file I touched but couldn't know the surface mismatch. Reverted command-center panel-count change (briefly bumped 6→9 which smooshed orbital layout), added a HUD Files button to command-center. Phase B work on admin.html is stranded — decide post-meeting whether to port or delete.
+
+**4. /api/quote HTTP 500 emergency.** Mac's dashboard broke. `Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/var/task/lib/gutterQuoteEngine.js' imported from /var/task/api/quote.js`. The file was created May 12 for the Lefurgey gutter quote, never committed to git, AND wiped from local OneDrive between sessions. My deploys rebuilt the function bundle from incomplete local source. Recreated `lib/gutterQuoteEngine.js` from spec in `_brain/claude-memory/reference_gutter_rates_may12.md` + Lefurgey #62 example math. Exports `calculateGutterQuote()` + `loadGutterRates()`. API back to 200. **Math may differ ~$10 from original** — Lefurgey is frozen at sent price so no live harm, new gutter quotes use restored engine, verify before next gutter sale.
+
+**5. Dashboard cockpit rewire (the real win).** Mac escalated past frustration: "I open command center, click DASHBOARD, big empty square surrounded by useless hardcoded KPIs, can't operate my system." Read `dashboard-v2.html` fully. The dragon-stage box has `id="dragonChatMount"` but `Ryujin.init()` was passing a hardcoded "Jonathan Gould 2 days overdue" multiple-choice mockup tree instead of pointing at the real `/api/chat` brain. All 5 KPIs were hardcoded HTML literals (`$90.7K`, `$410K`, `9 leads`, `$8.10 CPL`) from day 1. Snapshot fetcher used wrong field paths (`snap.revenue.signed` instead of `snap.sections.revenue.signed_mtd`) AND only updated 2 of 5 KPIs AND only fired on 5-min interval, never on load. Fixes:
+- Replaced mockup `Ryujin.init({ root: {...gould...}, states: {gould,deals,crew,...} })` with `Ryujin.init({ sector: 'DASHBOARD', embedTarget: '#dragonChatMount' })` — real /api/chat brain with full tool use.
+- Wired all 5 KPIs to `snap.sections.*` paths.
+- Fires on page load + every 5 min.
+- Forces `localStorage.removeItem('ry_chat_off')` before init.
+- Legacy mockup wrapped in `if (false)`.
+
+Mac confirmed "dashboard's working".
+
+**6. Files folder in Administration.** Renamed `administration.html` DOCUMENTS card (was 9th of 9) to FILES, moved to 1st position. Copy expanded to mention NanoSeal + Tara Court explicitly. Mac left for Ben Crocker meeting with 3 file paths confirmed: (a) Command Center → Administration → FILES, (b) Dashboard → Files action tile, (c) direct `/doc.html?slug=nanoseal-program-index`.
+
+## Artifacts
+
+- 0 git commits this session — all via `vercel --prod` direct. Ryujin local now ~18 commits behind prod.
+- 6+ vercel prod deploys.
+- 1 new lib file (RESTORED): `lib/gutterQuoteEngine.js` (~85 lines).
+- Modified: `public/doc.html`, `public/admin.html`, `public/command-center.html`, `public/dashboard-v2.html`, `public/administration.html`.
+- 4 new memory files: project_codex_plugin_review_gate_may13, project_dashboard_v2_cockpit_rewire_may13, feedback_command_center_is_landing, project_session_oncall_recovery_may13.
+
+## Carry-forward (read at next LOAD)
+
+- 🔴 **Ryujin local 18+ commits behind prod, multiple files exist only in deployed function bundles.** Full audit needed before next deploy.
+- 🔴 **Mac's Ben Crocker / NanoSeal meeting outcome** — capture pricing, exclusivity, next steps when Mac returns.
+- 🟡 **gutterQuoteEngine.js math verification** — test against a known-good gutter quote.
+- 🟡 **dashboard-v2.html action log + alert chips still hardcoded** — Phase D scope.
+- 🟡 **Phase B pillar grid stranded on admin.html** — port or delete.
+- 🟡 **NotebookLM brief NOT generated** — generate next session if Mac wants.
+
+---
+
+# Session notes — 2026-05-12 late night — NanoSeal NB partnership program (Tara Court proposal + partnership brief + summer campaign deck + math audit + admin save)
+
+Six-hour deep work session building the complete Plus Ultra × NanoSeal NB partnership package for Mac's May 13 in-person meeting with Ben Crocker.
+
+## Deliverables shipped
+
+### Public HTML pages
+- `public/tara-court-aphl.html` — client-facing APHL proposal (polished, final form)
+- `public/tara-court-proposal.html` — same content + DRAFT watermark for Ben
+- `public/nanoseal-partnership.html` — 3-section partnership brief
+- `public/summer-campaign-2026.html` — 16-slide workshop deck
+- `public/gonano-shingle-death-score.pdf` — Ben's official rubric
+
+### Ryujin admin docs (saved via Supabase Management API)
+5 records in `docs` table for plus-ultra tenant via `scripts/_oneshot/_save_nanoseal_program_to_admin_2026-05-13.mjs`:
+- `nanoseal-program-index` — master index w/ pricing summary + open decisions + history
+- `tara-court-aphl-proposal` — APHL final MD
+- `tara-court-partner-draft` — partner review MD
+- `nanoseal-partnership-brief` — partnership brief MD
+- `summer-campaign-2026` — campaign deck MD
+
+## Tara Court pricing (Plus Ultra estimate pending Ben confirmation)
+
+| Option | Total incl HST | Saved | % | Recommend |
+|---|---|---|---|---|
+| A · Pilot | $23,891 | $173,995 | 88% | |
+| B · Standard | $62,734 | $135,152 | 68% | ★ |
+| C · Comprehensive | $95,153 | $102,733 | 52% | |
+
+Full replacement baseline: $197,886 (6 × $32,981 May 2025 amended estimate incl HST).
+
+Surface breakdown (282 SQ total): 14 Fortify · 163 Revive · 9 Revive gated · 49 Bio-Boost · 47 Replace.
+
+Plus Ultra per-SQ pricing (pre-HST):
+- NuRoof Fortify™: $145/SQ
+- NuRoof Revive™: $115/SQ (gated same rate)
+- Bio-Boost™: $85/SQ
+- Replacement (Landmark Gold): $608/SQ
+
+## Math audit
+
+**Caught and fixed before publishing.** Original drafts had two material errors:
+
+1. **Double-HST on full-replacement comparison.** The $32,981 per-building figure from the May 2025 PDF is already incl HST (subtotal $28,679 + HST $4,302 = $32,981). I had used it as the pre-HST baseline and added 15% on top, getting $227,569. Corrected baseline: $197,886.
+
+2. **Wrong total SQ.** Used 260 SQ instead of 282 (6 × 47.32 per PDF). Surface counts updated across all docs.
+
+Resulting changes:
+- Option totals: A $22,437→$23,891, B $60,191→$62,734, C $93,081→$95,153
+- Saved amounts: A $205K→$174K, B $167K→$135K, C $134K→$103K
+- Percentages: 88/67/49% → 88/68/52%
+
+Honest numbers vs inflated. Captured as memory rule `feedback_verify_hst_handling.md`.
+
+## Market sizing research
+
+Built TAM/SAM/SOM for Greater Moncton:
+- TAM $69M (24,800 rejuvenation-eligible SFH × $2,250 + ~300 multi-family × $45K)
+- SAM $20M (~30% of TAM, Plus Ultra reach)
+- SOM Year 1 $500K-$1.1M
+- Year 3 trajectory $1.5-2.5M annual
+
+Sources: StatsCan 2021 Census + 2025 CMA estimate (196K population, fastest growing CMA in Canada), Roof Maxx pricing benchmarks ($45-275/SQ), local competitor scan.
+
+## Competitive landscape (verified)
+
+- **No Roof Maxx dealer in Atlantic Canada** as of May 12 2026 (300+ in US, zero in NB)
+- **No competing nanotech product** sold in Greater Moncton
+- **No local roofer markets rejuvenation** as a service — Ragnarok, BelVue, Evolve, All Angles Covered, TriForce all sell replacement only
+- **12-18 month window** before Roof Maxx franchise enters NB
+
+## Summer 2026 campaign deck (16 slides)
+
+Audience map (4 segments) → Campaign stack (5 plays) → Play deep-dives → Backlog plays → Master timeline → Investment summary → Risk pre-mortem → KPIs → Decisions.
+
+Total budget $10,900 ($7K PU · $3.9K NanoSeal). Projected $120K-$320K rev (11-29× ROAS).
+
+## Higgsfield assets
+
+5 generated (~$2 total cost):
+1. `hf_20260513_011733_808b4527` — Aerial NB condo complex (proposal cover)
+2. `hf_20260513_011736_b84dee23` — Before/after shingle split (tech section)
+3. `hf_20260513_013115_0883d101` — Family Save A Roof reveal (giveaway hero)
+4. `hf_20260513_013118_464544fd` — Webinar host setup (livestream slide)
+5. `hf_20260513_014233_712354fe` — Neighborhood market visualization (market sizing slide)
+
+## Repo state
+
+- 0 git commits this session (all via `vercel --prod` direct)
+- Local Ryujin now ~15 commits behind prod — needs reconciliation pass next session
+- New files in `public/`, `scripts/_oneshot/` not yet committed
+
+## Open for next session
+
+- 🔴 **Mac's May 13 meeting outcome** — capture pricing + terms decisions in memory
+- 🔴 **Update `tara-court-aphl.html`** with Ben's confirmed pricing if meeting goes well
+- 🟡 **Repo reconciliation** — 15 commits worth of working tree to commit
+- 🟡 **Crew OS Mobile phone QA** still pending from yesterday
+- 🟡 **Tomorrow's deal trigger** — past client re-engagement (Play B) is the fastest revenue path; build the email sequence Tuesday/Wednesday regardless of meeting outcome
+
+---
+
 # Session notes — 2026-05-12 late evening — Crew OS Mobile v1 SHIPPED + notification recalibration + briefing cron fix
 
 Three concurrent ships, all to prod.
