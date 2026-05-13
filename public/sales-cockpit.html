@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#060a14">
+<title>Ryujin OS · Sales Cockpit</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=optional" rel="stylesheet">
+<link rel="stylesheet" href="/assets/ryujin-perf.css">
+<script src="/assets/ryujin-perf.js"></script>
+<style>
+:root{
+  --bg:#060a14; --bg-deep:#030611;
+  --glass:rgba(14,22,40,0.78); --glass-hi:rgba(18,28,48,0.88);
+  --border:rgba(34,211,238,0.14); --border-hi:rgba(34,211,238,0.35);
+  --text:#e0e6f0; --text-dim:rgba(160,190,230,0.62); --text-muted:rgba(140,170,220,0.32);
+  --cyan:#22d3ee; --cyan-deep:#0891b2; --blue:#4a9eff; --purple:#7c3aed;
+  --green:#4ade80; --yellow:#facc15; --red:#f87171; --orange:#fb923c;
+  --radius:14px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg-deep);color:var(--text);overflow:hidden;letter-spacing:0.1px}
+
+/* ─── Ambient ─── */
+.bg-ambient{position:fixed;inset:0;z-index:0;background:
+  radial-gradient(ellipse at 30% 20%,rgba(34,211,238,0.10) 0%,transparent 55%),
+  radial-gradient(ellipse at 70% 85%,rgba(124,58,237,0.06) 0%,transparent 55%),
+  linear-gradient(180deg,#060a14 0%,#030611 100%)}
+.bg-grid{position:fixed;inset:0;z-index:1;pointer-events:none;
+  background-image:linear-gradient(rgba(34,211,238,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(34,211,238,0.025) 1px,transparent 1px);
+  background-size:48px 48px;
+  mask-image:radial-gradient(ellipse at center,black 40%,transparent 85%);
+  -webkit-mask-image:radial-gradient(ellipse at center,black 40%,transparent 85%)}
+
+/* ─── Shell ─── */
+.app{position:relative;z-index:2;height:100vh;display:grid;
+  grid-template-rows:52px auto 1fr 124px;
+  grid-template-columns:300px 1fr 340px;
+  gap:10px;padding:10px 12px}
+
+/* ─── Top bar ─── */
+.topbar{grid-column:1/-1;grid-row:1;display:flex;align-items:center;gap:14px;
+  background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);
+  padding:0 14px;backdrop-filter:blur(20px);position:relative;overflow:hidden}
+.topbar::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent 2%,var(--cyan) 25%,var(--purple) 75%,transparent 98%);opacity:0.5}
+.brand{display:flex;align-items:center;gap:10px}
+.brand-mark{width:30px;height:30px;border-radius:7px;
+  background:radial-gradient(circle at 35% 30%,rgba(200,240,255,0.3),rgba(34,211,238,0.22) 40%,rgba(5,15,30,0.8));
+  box-shadow:0 0 14px rgba(34,211,238,0.35);flex-shrink:0}
+.brand-name{font-family:'Orbitron',sans-serif;font-size:0.78em;font-weight:800;letter-spacing:2.5px}
+.brand-name .dim{color:var(--text-dim);font-weight:500;letter-spacing:2px;margin-left:8px}
+.tb-spacer{flex:1}
+.tb-status{display:flex;align-items:center;gap:8px;font-family:'Share Tech Mono',monospace;font-size:0.7em;color:var(--text-dim)}
+.tb-dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+.tb-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;
+  background:rgba(6,10,20,0.6);border:1px solid var(--border);color:var(--text-dim);cursor:pointer;transition:all 0.2s}
+.tb-icon:hover{color:var(--cyan);border-color:var(--border-hi);background:rgba(34,211,238,0.06)}
+.tb-icon svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.tb-pill{display:flex;align-items:center;gap:7px;height:32px;padding:0 12px;border-radius:9px;
+  background:rgba(6,10,20,0.6);border:1px solid var(--border);color:var(--text-dim);
+  font-family:'Orbitron',sans-serif;font-size:0.6em;font-weight:700;letter-spacing:1.5px;
+  text-decoration:none;cursor:pointer;transition:all 0.2s}
+.tb-pill:hover{color:var(--cyan);border-color:var(--border-hi);background:rgba(34,211,238,0.08);
+  box-shadow:0 0 12px rgba(34,211,238,0.15)}
+
+/* ─── Headline KPIs (row 2, full width) ─── */
+.kpi-rail{grid-column:1/-1;grid-row:2;display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.kpi{background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);
+  padding:12px 16px;backdrop-filter:blur(16px);position:relative;overflow:hidden;transition:border-color 0.25s}
+.kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--cyan),transparent);opacity:0.4}
+.kpi:hover{border-color:var(--border-hi)}
+.kpi-label{font-family:'Orbitron',sans-serif;font-size:0.55em;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim)}
+.kpi-value{font-family:'Orbitron',sans-serif;font-size:1.85em;font-weight:800;letter-spacing:-0.5px;margin-top:4px;line-height:1;
+  background:linear-gradient(135deg,#fff 20%,var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  filter:drop-shadow(0 0 10px rgba(34,211,238,0.2))}
+.kpi-value.green{background:linear-gradient(135deg,#fff 20%,var(--green));-webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  filter:drop-shadow(0 0 10px rgba(74,222,128,0.2))}
+.kpi-value.amber{background:linear-gradient(135deg,#fff 20%,var(--yellow));-webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  filter:drop-shadow(0 0 10px rgba(250,204,21,0.2))}
+.kpi-value.red{background:linear-gradient(135deg,#fff 20%,var(--red));-webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  filter:drop-shadow(0 0 10px rgba(248,113,113,0.2))}
+.kpi-meta{display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:0.68em}
+.kpi-sub{color:var(--text-muted)}
+.kpi-trend{font-family:'Share Tech Mono',monospace;color:var(--text-dim);letter-spacing:0.5px}
+.kpi-trend.up{color:var(--green)}.kpi-trend.down{color:var(--red)}
+
+/* ─── Body columns (row 3) ─── */
+.col{background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);
+  backdrop-filter:blur(16px);position:relative;overflow:hidden;display:flex;flex-direction:column;min-height:0}
+.col::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--cyan),transparent);opacity:0.45}
+.col-head{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;
+  border-bottom:1px solid rgba(34,211,238,0.08);flex-shrink:0}
+.col-title{font-family:'Orbitron',sans-serif;font-size:0.66em;font-weight:700;letter-spacing:2.5px;color:var(--text-dim)}
+.col-meta{font-family:'Share Tech Mono',monospace;font-size:0.65em;color:var(--cyan);letter-spacing:0.5px}
+.col-scroll{flex:1;overflow-y:auto;padding:8px}
+.col-scroll::-webkit-scrollbar{width:4px}
+.col-scroll::-webkit-scrollbar-thumb{background:rgba(34,211,238,0.15);border-radius:2px}
+
+.col-triage{grid-column:1;grid-row:3}
+.col-brain{grid-column:2;grid-row:3}
+.col-queue{grid-column:3;grid-row:3}
+
+/* ─── Triage cards ─── */
+.tri{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:11px;margin-bottom:6px;cursor:pointer;
+  background:rgba(6,10,20,0.5);border:1px solid rgba(34,211,238,0.08);transition:all 0.2s;position:relative;overflow:hidden}
+.tri:hover{border-color:rgba(34,211,238,0.25);background:rgba(6,10,20,0.7);transform:translateX(2px)}
+.tri.red{border-color:rgba(248,113,113,0.25);background:linear-gradient(135deg,rgba(248,113,113,0.08),rgba(6,10,20,0.6))}
+.tri.amber{border-color:rgba(250,204,21,0.25);background:linear-gradient(135deg,rgba(250,204,21,0.06),rgba(6,10,20,0.6))}
+.tri.green{border-color:rgba(74,222,128,0.25);background:linear-gradient(135deg,rgba(74,222,128,0.06),rgba(6,10,20,0.6))}
+.tri-num{font-family:'Orbitron',sans-serif;font-size:1.6em;font-weight:800;line-height:1;min-width:42px;text-align:center}
+.tri.red .tri-num{color:var(--red);filter:drop-shadow(0 0 10px rgba(248,113,113,0.4))}
+.tri.amber .tri-num{color:var(--yellow);filter:drop-shadow(0 0 10px rgba(250,204,21,0.4))}
+.tri.green .tri-num{color:var(--green);filter:drop-shadow(0 0 10px rgba(74,222,128,0.4))}
+.tri-body{flex:1;min-width:0}
+.tri-label{font-family:'Orbitron',sans-serif;font-size:0.62em;font-weight:700;letter-spacing:1.5px;color:var(--text);text-transform:uppercase}
+.tri-sub{font-size:0.7em;color:var(--text-dim);margin-top:3px;line-height:1.3}
+.tri-chevron{color:var(--text-muted);font-size:1.2em;flex-shrink:0;transition:color 0.2s}
+.tri:hover .tri-chevron{color:var(--cyan)}
+
+/* ─── Brain ─── */
+.brain-mount{flex:1;min-height:0;position:relative;z-index:3}
+
+/* ─── Next move queue ─── */
+.deal{padding:12px 14px;border-radius:11px;margin-bottom:8px;
+  background:rgba(6,10,20,0.5);border:1px solid rgba(34,211,238,0.1);
+  transition:all 0.2s;position:relative;overflow:hidden}
+.deal:hover{border-color:var(--border-hi);background:rgba(6,10,20,0.7)}
+.deal.red{border-color:rgba(248,113,113,0.3)}
+.deal.amber{border-color:rgba(250,204,21,0.3)}
+.deal.green{border-color:rgba(74,222,128,0.25)}
+.deal-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px}
+.deal-name{font-size:0.85em;font-weight:600;color:var(--text);line-height:1.2;cursor:pointer;transition:color 0.15s}
+.deal-name:hover{color:var(--cyan);text-decoration:underline;text-decoration-color:rgba(34,211,238,0.35);text-underline-offset:3px}
+.deal-amt{font-family:'Share Tech Mono',monospace;font-size:0.85em;color:var(--cyan);letter-spacing:0.5px;flex-shrink:0}
+.deal-ctx{font-size:0.7em;color:var(--text-dim);margin-bottom:8px;line-height:1.3}
+.deal-ctx .chip{display:inline-block;padding:1px 7px;border-radius:5px;font-family:'Share Tech Mono',monospace;font-size:0.85em;letter-spacing:0.5px;margin-right:5px}
+.deal-ctx .chip.red{background:rgba(248,113,113,0.12);color:var(--red);border:1px solid rgba(248,113,113,0.25)}
+.deal-ctx .chip.amber{background:rgba(250,204,21,0.12);color:var(--yellow);border:1px solid rgba(250,204,21,0.25)}
+.deal-ctx .chip.cyan{background:rgba(34,211,238,0.10);color:var(--cyan);border:1px solid rgba(34,211,238,0.22)}
+.deal-act{display:block;width:100%;padding:7px 10px;border-radius:8px;border:1px solid var(--border-hi);
+  background:linear-gradient(135deg,rgba(34,211,238,0.12),rgba(124,58,237,0.06));
+  color:var(--cyan);font-family:'Orbitron',sans-serif;font-size:0.62em;font-weight:700;letter-spacing:1.5px;
+  text-transform:uppercase;cursor:pointer;transition:all 0.2s;text-align:center}
+.deal-act:hover{background:linear-gradient(135deg,rgba(34,211,238,0.22),rgba(124,58,237,0.10));
+  box-shadow:0 0 14px rgba(34,211,238,0.25)}
+.deal-empty{padding:20px;text-align:center;color:var(--text-muted);font-size:0.78em;font-style:italic}
+
+/* ─── Pipeline strip (row 4) ─── */
+.strip{grid-column:1/-1;grid-row:4;background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);
+  backdrop-filter:blur(16px);position:relative;overflow:hidden;display:flex;flex-direction:column}
+.strip::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--cyan),var(--purple),transparent);opacity:0.45}
+.strip-head{display:flex;justify-content:space-between;align-items:center;padding:8px 14px;
+  border-bottom:1px solid rgba(34,211,238,0.08);flex-shrink:0}
+.strip-title{font-family:'Orbitron',sans-serif;font-size:0.6em;font-weight:700;letter-spacing:2.5px;color:var(--text-dim)}
+.strip-scroll{flex:1;display:flex;gap:8px;padding:8px 12px;overflow-x:auto}
+.strip-scroll::-webkit-scrollbar{height:4px}
+.strip-scroll::-webkit-scrollbar-thumb{background:rgba(34,211,238,0.15);border-radius:2px}
+.tile{flex:0 0 200px;background:rgba(6,10,20,0.55);border:1px solid rgba(34,211,238,0.10);border-radius:10px;
+  padding:8px 12px;cursor:pointer;transition:all 0.2s;position:relative;overflow:hidden}
+.tile:hover{border-color:var(--border-hi);transform:translateY(-1px)}
+.tile.amber{border-color:rgba(250,204,21,0.3)}
+.tile.red{border-color:rgba(248,113,113,0.3)}
+.tile.green{border-color:rgba(74,222,128,0.3)}
+.tile-name{font-size:0.78em;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.tile-name:hover{color:var(--cyan)}
+.tile-amt{font-family:'Share Tech Mono',monospace;font-size:0.85em;color:var(--cyan);margin-top:2px}
+.tile-stage{font-family:'Orbitron',sans-serif;font-size:0.5em;font-weight:700;letter-spacing:1.2px;margin-top:4px;color:var(--text-dim);text-transform:uppercase}
+.tile.amber .tile-stage{color:var(--yellow)}
+.tile.red .tile-stage{color:var(--red)}
+.tile.green .tile-stage{color:var(--green)}
+.tile-decay{font-family:'Share Tech Mono',monospace;font-size:0.62em;color:var(--text-muted);margin-top:2px}
+
+/* ─── Embed mode chrome stripping ─── */
+.embed-mode .topbar .tb-icon[data-back]{display:none}
+
+@media (max-width:1280px){
+  .app{grid-template-columns:260px 1fr 300px}
+  .kpi-rail{grid-template-columns:repeat(2,1fr)}
+}
+@media (max-width:980px){
+  .app{grid-template-columns:1fr;grid-template-rows:52px auto auto 280px auto 120px}
+  .col-triage{grid-column:1;grid-row:3}
+  .col-brain{grid-column:1;grid-row:4}
+  .col-queue{grid-column:1;grid-row:5}
+  .strip{grid-row:6}
+}
+</style>
+<script src="/assets/nav-buttons.js" defer></script>
+</head>
+<body>
+
+<div class="bg-ambient"></div>
+<div class="bg-grid"></div>
+
+<div class="app">
+
+  <!-- TOP BAR -->
+  <div class="topbar">
+    <button class="tb-icon" data-back title="Back to Hub" onclick="goBackToHub()">
+      <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <div class="brand-name">RYUJIN <span class="dim">· SALES</span></div>
+    </div>
+    <div class="tb-status"><div class="tb-dot"></div><span id="ghlStatus">GHL · SYNCED</span></div>
+    <div class="tb-spacer"></div>
+    <a class="tb-pill" href="/sales-proposals.html" title="All proposals · drafts + sent">
+      <svg viewBox="0 0 24 24" style="width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+      <span>PROPOSALS</span>
+    </a>
+    <a class="tb-pill" href="/sales-pipeline.html" title="Full pipeline kanban">
+      <svg viewBox="0 0 24 24" style="width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg>
+      <span>PIPELINE</span>
+    </a>
+    <div class="tb-status" style="font-size:0.66em">SNAP <span id="ts" style="color:var(--cyan)">—</span></div>
+    <div class="tb-status" style="font-size:0.66em" title="Morning briefing cron (Signed MTD, Pipeline KPI)">KPI <span id="kpiAge" style="color:var(--cyan)">—</span></div>
+    <div class="tb-status" style="font-size:0.66em" title="Daily agents cron (Triage counts, Awaiting Reply, Stale Leads, Conversations)">AGENTS <span id="agentsAge" style="color:var(--cyan)">—</span></div>
+    <button class="tb-icon" title="Refresh" onclick="loadAll()">
+      <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+    </button>
+    <button class="tb-icon" title="Fullscreen" onclick="toggleFs()">
+      <svg viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 00-2 2v3M21 8V5a2 2 0 00-2-2h-3M3 16v3a2 2 0 002 2h3M16 21h3a2 2 0 002-2v-3"/></svg>
+    </button>
+  </div>
+
+  <!-- KPI RAIL -->
+  <div class="kpi-rail">
+    <div class="kpi">
+      <div class="kpi-label">Signed MTD</div>
+      <div class="kpi-value green" id="k-signed">—</div>
+      <div class="kpi-meta"><span class="kpi-sub" id="k-signed-sub">this month</span><span class="kpi-trend" id="k-signed-trend"></span></div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Close Rate</div>
+      <div class="kpi-value amber" id="k-close">—</div>
+      <div class="kpi-meta"><span class="kpi-sub" id="k-close-sub">last 30d</span><span class="kpi-trend" id="k-close-trend"></span></div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Pipeline</div>
+      <div class="kpi-value" id="k-pipeline">—</div>
+      <div class="kpi-meta"><span class="kpi-sub" id="k-pipeline-sub">deals open</span><span class="kpi-trend" id="k-pipeline-trend"></span></div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Awaiting Reply</div>
+      <div class="kpi-value red" id="k-reply">—</div>
+      <div class="kpi-meta"><span class="kpi-sub" id="k-reply-sub">conversations</span><span class="kpi-trend" id="k-reply-trend"></span></div>
+    </div>
+  </div>
+
+  <!-- TRIAGE -->
+  <div class="col col-triage">
+    <div class="col-head">
+      <div class="col-title">TRIAGE</div>
+      <div class="col-meta" id="triageBadge">—</div>
+    </div>
+    <div class="col-scroll" id="triageList">
+      <div class="tri-empty" style="padding:20px;text-align:center;color:var(--text-muted);font-size:0.8em">Loading…</div>
+    </div>
+  </div>
+
+  <!-- SALES BRAIN -->
+  <div class="col col-brain">
+    <div class="col-head">
+      <div class="col-title">SALES BRAIN</div>
+      <div class="col-meta">CLAUDE · TOOL USE</div>
+    </div>
+    <div class="brain-mount" id="dragonChatMount"></div>
+  </div>
+
+  <!-- NEXT MOVE QUEUE -->
+  <div class="col col-queue">
+    <div class="col-head">
+      <div class="col-title">NEXT MOVE QUEUE</div>
+      <div class="col-meta" id="queueBadge">—</div>
+    </div>
+    <div class="col-scroll" id="queueList">
+      <div class="deal-empty">Loading…</div>
+    </div>
+  </div>
+
+  <!-- PIPELINE STRIP -->
+  <div class="strip">
+    <div class="strip-head">
+      <div class="strip-title">PIPELINE · TOP DEALS BY VELOCITY DECAY</div>
+      <div class="col-meta" id="stripBadge">—</div>
+    </div>
+    <div class="strip-scroll" id="stripList"></div>
+  </div>
+
+</div>
+
+<script src="assets/ryujin-mode.js?v=20260513"></script>
+<script src="assets/ryujin-tenant.js?v=20260513"></script>
+<script src="assets/ryujin-persist.js?v=20260513"></script>
+<script src="assets/ryujin-api.js?v=20260513"></script>
+<script src="assets/ryujin-search.js?v=20260513"></script>
+<script src="assets/ryujin-chat.js?v=20260513"></script>
+<script>
+// ── Mount the sales-mode chat brain ──
+try { localStorage.removeItem('ry_chat_off'); } catch(e){}
+Ryujin.init({ sector: 'SALES', embedTarget: '#dragonChatMount' });
+
+// ── Embed mode trim ──
+if (new URLSearchParams(location.search).has('embed')) {
+  document.documentElement.classList.add('embed-mode');
+}
+
+// ── Helpers ──
+const fmtK = n => { if (n==null) return '—'; const v=Number(n); return Math.abs(v)>=1000 ? '$'+(v/1000).toFixed(Math.abs(v)>=100000?0:1)+'K' : '$'+v.toFixed(0); };
+const $ = id => document.getElementById(id);
+const setText = (id,v) => { const el=$(id); if(el && v!=null) el.textContent=v; };
+// XSS defense — escape any snapshot-sourced text before interpolating into HTML body or attributes
+const escHtml = s => String(s == null ? '' : s)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+// Build DOM element with text + optional attrs + optional click handler. Avoids onclick="" injection.
+const el = (tag, opts = {}) => {
+  const e = document.createElement(tag);
+  if (opts.cls) e.className = opts.cls;
+  if (opts.text != null) e.textContent = opts.text;       // safe — uses textContent
+  if (opts.html != null) e.innerHTML = opts.html;          // ONLY for code-controlled HTML
+  if (opts.title) e.title = opts.title;
+  if (opts.onClick) { e.style.cursor = 'pointer'; e.addEventListener('click', opts.onClick); }
+  if (opts.attrs) for (const k in opts.attrs) e.setAttribute(k, opts.attrs[k]);
+  if (opts.children) opts.children.forEach(c => c && e.appendChild(c));
+  return e;
+};
+const fmtAge = iso => {
+  if (!iso) return '';
+  const ms = Date.now() - new Date(iso).getTime();
+  const d = Math.floor(ms/86400000);
+  if (d>=1) return d+'d';
+  const h = Math.floor(ms/3600000);
+  if (h>=1) return h+'h';
+  return Math.max(1,Math.floor(ms/60000))+'m';
+};
+const setAgeChip = (elId, iso, staleHours) => {
+  const el = $(elId); if (!el) return;
+  if (!iso) { el.textContent = '—'; el.style.color = 'var(--text-muted)'; return; }
+  const age = fmtAge(iso);
+  el.textContent = age;
+  const ms = Date.now() - new Date(iso).getTime();
+  const isStale = ms > (staleHours * 3600000);
+  el.style.color = isStale ? 'var(--yellow)' : 'var(--cyan)';
+  el.title = 'Computed ' + new Date(iso).toLocaleString() + (isStale ? ' (stale — next refresh on cron)' : '');
+};
+// Pretty-print a customer name from a possibly-messy contact field.
+// Falls back to extracting the name from a task title like "Inspection Booked | Catherine Test | ..."
+const cleanName = (raw, fallbackTitle) => {
+  if (raw && /^[A-Za-z]/.test(raw) && raw.length < 50 && !/^[a-zA-Z0-9_-]{20,}$/.test(raw)) {
+    return raw.replace(/\b\w/g, m => m.toUpperCase());
+  }
+  if (fallbackTitle) {
+    const parts = fallbackTitle.split('|').map(s => s.trim());
+    const candidate = parts.find(p => /^[A-Z][a-z]+\s+[A-Z][a-z]+/.test(p));
+    if (candidate) return candidate;
+  }
+  if (raw && /^\(\d{3}\)\s?\d{3}-\d{4}$/.test(raw)) return raw; // phone, leave as-is
+  return raw || 'Unknown';
+};
+
+function goBackToHub(){
+  const embed = new URLSearchParams(location.search).has('embed');
+  if (window.parent !== window && window.parent.exitSectionOverlay) { window.parent.exitSectionOverlay(); }
+  else if (!embed) { window.location.href = 'command-center.html'; }
+}
+function toggleFs(){
+  if(!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{});
+  else document.exitFullscreen().catch(()=>{});
+}
+window.goBackToHub=goBackToHub;
+window.toggleFs=toggleFs;
+
+document.addEventListener('keydown',e=>{
+  if((e.key==='f'||e.key==='F')&&!e.ctrlKey&&!e.metaKey)toggleFs();
+  if(e.key==='Escape')goBackToHub();
+});
+
+// ── Brain prompt helper ──
+// Inject text into the embedded chat input (#ry-input) and trigger send.
+// Retries up to 8x at 500ms intervals (max 4s wait) for async chat mount.
+function askBrain(text, attempt = 0){
+  if (!text) return;
+  const input = document.querySelector('#dragonChatMount #ry-input')
+              || document.getElementById('ry-input');
+  const sendBtn = document.querySelector('#dragonChatMount #ry-send')
+              || document.getElementById('ry-send');
+  if (!input) {
+    if (attempt >= 8) {
+      console.warn('askBrain: chat input never mounted, giving up after 4s');
+      return;
+    }
+    setTimeout(() => askBrain(text, attempt + 1), 500);
+    return;
+  }
+  input.value = text;
+  input.focus();
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  if (sendBtn) sendBtn.click();
+  else input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
+}
+window.askBrain = askBrain;
+
+// ── Open the customer's proposal context ──
+// Drops user on /sales-proposals.html with their search prefilled.
+// If exactly one match, that page's row is one click further to the proposal itself.
+function openProposalFor(name){
+  if (!name) return;
+  // Strip common email suffix or trailing context before sending as search query
+  const clean = String(name).split('@')[0].split('·')[0].trim();
+  const url = '/sales-proposals.html?q=' + encodeURIComponent(clean);
+  // If embedded in command-center overlay, open in same iframe so back-button works
+  window.location.href = url;
+}
+window.openProposalFor = openProposalFor;
+
+// ── Triage builder ──
+function renderTriage(snap){
+  const s = snap.sections || {};
+  const krillin = s.agentReports?.daily?.krillin || {};
+  const vegeta  = s.agentReports?.daily?.vegeta  || {};
+  const salesTasks = s.salesTasks || {};
+  const tasksArr = salesTasks.tasks || [];
+
+  // Derive counts from the actual task array, not the (sometimes-stale) top-level totals.
+  // A task is "due today" if it has dueSoon=true AND is NOT overdue.
+  const overdueCount = tasksArr.filter(t => t.overdue).length || (salesTasks.overdue ?? 0);
+  const dueTodayCount = tasksArr.filter(t => t.dueSoon && !t.overdue).length;
+  const adAlerts = (s.metaAds?.alerts || []).length;
+
+  const cards = [
+    {
+      level: krillin.stats?.awaitingReplyCount > 0 ? 'red' : 'green',
+      num: krillin.stats?.awaitingReplyCount ?? 0,
+      label: 'UNREPLIED CONVERSATIONS',
+      sub: 'GHL inbox · awaiting your reply',
+      ask: 'show me the conversations awaiting reply, ordered by oldest'
+    },
+    {
+      level: overdueCount > 0 ? 'red' : 'green',
+      num: overdueCount,
+      label: 'OVERDUE SALES TASKS',
+      sub: 'GHL contact tasks past due',
+      ask: 'list all overdue sales tasks with contact + amount + days overdue'
+    },
+    {
+      level: vegeta.staleLeads > 20 ? 'amber' : (vegeta.staleLeads > 0 ? 'amber' : 'green'),
+      num: vegeta.staleLeads ?? 0,
+      label: 'STALE LEADS',
+      sub: 'no touch in 3+ days',
+      ask: 'show me my stale leads sorted by last activity'
+    },
+    {
+      level: dueTodayCount > 0 ? 'amber' : 'green',
+      num: dueTodayCount,
+      label: 'DUE TODAY',
+      sub: 'sales tasks coming due',
+      ask: 'what sales tasks are due today and not yet overdue'
+    },
+    {
+      level: adAlerts > 0 ? 'red' : 'green',
+      num: adAlerts,
+      label: 'AD ALERTS',
+      sub: 'CPL above threshold',
+      ask: 'which ad campaigns are flagged and what should I do'
+    }
+  ];
+
+  // Show non-zero cards first, then zero cards (capped at 5)
+  const visible = cards.filter(c => c.num > 0).concat(cards.filter(c => c.num === 0)).slice(0,5);
+  const host = $('triageList'); host.innerHTML = '';
+  visible.forEach(c => {
+    host.appendChild(el('div', {
+      cls: 'tri ' + c.level,
+      onClick: () => askBrain(c.ask),
+      children: [
+        el('div', { cls: 'tri-num', text: String(c.num) }),
+        el('div', { cls: 'tri-body', children: [
+          el('div', { cls: 'tri-label', text: c.label }),
+          el('div', { cls: 'tri-sub', text: c.sub })
+        ]}),
+        el('div', { cls: 'tri-chevron', text: '›' })
+      ]
+    }));
+  });
+
+  const totalRed = cards.filter(c => c.level==='red').reduce((a,c)=>a+c.num,0);
+  $('triageBadge').textContent = totalRed > 0 ? totalRed + ' RED' : 'CLEAR';
+  $('triageBadge').style.color = totalRed > 0 ? 'var(--red)' : 'var(--green)';
+}
+
+// ── Next Move queue builder ──
+function renderQueue(snap){
+  const s = snap.sections || {};
+  const tasks = (s.salesTasks?.tasks || []).filter(t => t.overdue || t.dueSoon);
+  const krConvos = (s.agentReports?.daily?.krillin?.conversations || []).slice(0,3);
+
+  const cards = [];
+
+  // Overdue / due-soon GHL tasks first
+  tasks.slice(0,4).forEach(t => {
+    const overdue = t.overdue;
+    const days = t.dueDate ? Math.floor((Date.now() - new Date(t.dueDate).getTime())/86400000) : 0;
+    const action = /deposit|invoice/i.test(t.title) ? 'DRAFT INVOICE'
+                 : /follow|call/i.test(t.title)    ? 'FOLLOW UP'
+                 : /quote|proposal/i.test(t.title)  ? 'SEND QUOTE'
+                 : /inspection/i.test(t.title)      ? 'PREP INSPECTION'
+                 : 'OPEN TASK';
+    const displayName = cleanName(t.contact, t.title);
+    cards.push({
+      level: overdue ? 'red' : 'amber',
+      name: displayName,
+      amt: t.value ? fmtK(t.value) : '',
+      chipKind: overdue ? 'red' : 'amber',
+      chipText: overdue ? days + 'd overdue' : 'due today',
+      ctxText: t.title.length > 60 ? t.title.slice(0,57)+'…' : t.title,
+      action,
+      ask: 'open the ' + displayName + ' task: ' + t.title + '. draft what I should do next.'
+    });
+  });
+
+  // Awaiting-reply conversations next
+  krConvos.forEach(c => {
+    if (cards.length >= 6) return;
+    const dn = cleanName(c.contactName);
+    if (cards.find(x => x.name?.toLowerCase() === dn.toLowerCase())) return;
+    cards.push({
+      level: 'amber',
+      name: dn,
+      amt: '',
+      chipKind: 'amber',
+      chipText: 'awaiting reply',
+      ctxText: c.lastMessage ? c.lastMessage.slice(0,60) : 'no preview',
+      action: 'DRAFT REPLY',
+      ask: 'draft a reply to ' + dn + "'s last GHL message"
+    });
+  });
+
+  const host = $('queueList'); host.innerHTML = '';
+  if (cards.length === 0) {
+    host.appendChild(el('div', { cls: 'deal-empty', text: 'All clear · no overdue actions' }));
+  } else {
+    cards.forEach(c => {
+      // Build chip safely — chipKind is one of red/amber/cyan from MY code, never snapshot
+      const chip = el('span', { cls: 'chip ' + (c.chipKind || 'cyan'), text: c.chipText || '' });
+      const ctxLine = el('div', { cls: 'deal-ctx', children: [
+        chip,
+        el('span', { text: ' ' + (c.ctxText || '') })
+      ]});
+      host.appendChild(el('div', {
+        cls: 'deal ' + c.level,
+        children: [
+          el('div', { cls: 'deal-head', children: [
+            el('div', { cls: 'deal-name', text: c.name, title: 'Open ' + c.name + ' proposal',
+                        onClick: () => openProposalFor(c.name) }),
+            el('div', { cls: 'deal-amt', text: c.amt || '' })
+          ]}),
+          ctxLine,
+          el('button', { cls: 'deal-act', text: c.action, onClick: () => askBrain(c.ask) })
+        ]
+      }));
+    });
+  }
+  $('queueBadge').textContent = cards.length + ' CARDS';
+}
+
+// ── Pipeline strip builder ──
+// Rules:
+//   - Drop entries owned by Mac himself (test/self-recorded opps with $0)
+//   - Drop entries with stage UUID-only AND no value (orphan rows)
+//   - Sort by value DESC then by recency
+//   - Velocity-decay color: green <7d, amber 7-14d, red >14d since lastActivity
+function renderStrip(snap){
+  const pipe = (snap.sections?.pipeline || []).slice();
+  const isUUID = s => typeof s === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+  const cleaned = pipe.filter(d => {
+    if (!d.name) return false;
+    if (/mackenzie\s+mazerolle/i.test(d.name)) return false;          // self-test entries
+    if ((d.value || 0) === 0 && isUUID(d.stage)) return false;        // orphan row
+    return true;
+  });
+  cleaned.sort((a,b)=> (b.value||0) - (a.value||0)
+    || new Date(b.lastActivity||0) - new Date(a.lastActivity||0));
+  const top = cleaned.slice(0, 12);
+  const host = $('stripList'); host.innerHTML = '';
+  if (top.length === 0) {
+    host.appendChild(el('div', { cls: 'deal-empty', text: 'No qualifying pipeline deals',
+                                  attrs: { style: 'padding:20px' } }));
+    $('stripBadge').textContent = '0 of ' + pipe.length;
+    return;
+  }
+  top.forEach(d => {
+    const ageDays = d.lastActivity ? Math.floor((Date.now() - new Date(d.lastActivity).getTime())/86400000) : 0;
+    const level = ageDays > 14 ? 'red' : ageDays > 7 ? 'amber' : 'green';
+    const pipeName = (d.pipeline || 'OPEN').toString();
+    const stageName = isUUID(d.stage) ? '' : (d.stage || '').toString();
+    const stageDisplay = stageName ? (stageName.length > 22 ? stageName.slice(0,20)+'…' : stageName) : pipeName.slice(0,22);
+    const dealName = d.name || 'Unknown';
+    const amtNode = d.value > 0
+      ? el('div', { cls: 'tile-amt', text: fmtK(d.value) })
+      : el('div', { cls: 'tile-amt', children: [el('span', { text: 'no value', attrs: { style: 'color:var(--text-muted)' } })]});
+    host.appendChild(el('div', { cls: 'tile ' + level, children: [
+      el('div', { cls: 'tile-name', text: dealName, title: 'Open ' + dealName + ' proposal',
+                  onClick: () => openProposalFor(dealName) }),
+      amtNode,
+      el('div', { cls: 'tile-stage', text: stageDisplay }),
+      el('div', { cls: 'tile-decay', text: ageDays + 'd since touch' })
+    ]}));
+  });
+  $('stripBadge').textContent = top.length + ' SHOWN · ' + cleaned.length + ' QUALIFIED · ' + pipe.length + ' RAW';
+}
+
+// ── KPI rail ──
+function renderKPIs(snap){
+  const s = snap.sections || {};
+  const brief = s.briefing_morning?.kpiScouter || {};
+  const vegeta = s.agentReports?.daily?.vegeta || {};
+  const krillin = s.agentReports?.daily?.krillin || {};
+
+  // ---- Signed MTD ----
+  setText('k-signed', brief.signedRevenue != null ? fmtK(brief.signedRevenue) : '—');
+  setText('k-signed-sub', brief.signedRevenue != null ? 'this month' : 'no briefing');
+
+  // ---- Close rate ----
+  const closeRate = krillin.leadFlow?.conversionRate;
+  setText('k-close', closeRate != null ? closeRate.toFixed(1) + '%' : '—');
+  setText('k-close-sub', closeRate != null ? 'lead → signed' : 'no agent run');
+
+  // ---- Pipeline ----
+  // Only render dollar value if BOTH openDeals and totalValue exist on briefing_morning.
+  // Otherwise show "—" rather than $0 (which would falsely imply zero pipeline).
+  const pipeVal = s.briefing_morning?.pipeline?.totalValue;
+  const openDeals = brief.openDeals;
+  setText('k-pipeline', pipeVal != null ? fmtK(pipeVal) : '—');
+  setText('k-pipeline-sub', openDeals != null ? (openDeals + ' deals open') : 'no briefing');
+
+  // ---- Awaiting Reply ----
+  const awaitCount = krillin.stats?.awaitingReplyCount;
+  setText('k-reply', awaitCount != null ? String(awaitCount) : '—');
+  if (awaitCount == null) setText('k-reply-sub', 'no agent run');
+  else if (krillin.stats?.staleOver4hCount > 0) setText('k-reply-sub', krillin.stats.staleOver4hCount + ' stale >4h');
+  else setText('k-reply-sub', 'all under 4h');
+
+  if (snap.updated_at) setText('ts', new Date(snap.updated_at).toLocaleTimeString());
+  // Two cron-frozen sources to surface separately:
+  //   - briefing_morning.timestamp drives Signed MTD + Pipeline KPI (7am + 5pm AT crons)
+  //   - agentReports.daily.lastRun drives Awaiting Reply, Stale Leads, Triage, Conversations (7am AT cron)
+  setAgeChip('kpiAge', s.briefing_morning?.timestamp, 6);
+  setAgeChip('agentsAge', s.agentReports?.daily?.lastRun, 6);
+}
+
+// ── Loader ──
+async function loadAll(){
+  if (location.protocol === 'file:') return;
+  try {
+    const res = await fetch('/api/snapshot', { cache: 'no-store' });
+    if (!res.ok) throw new Error('snapshot ' + res.status);
+    const snap = await res.json();
+    renderKPIs(snap);
+    renderTriage(snap);
+    renderQueue(snap);
+    renderStrip(snap);
+    $('ghlStatus').textContent = 'GHL · SYNCED';
+  } catch(e){
+    console.warn('snapshot fail', e);
+    $('ghlStatus').textContent = 'OFFLINE';
+  }
+}
+loadAll();
+setInterval(loadAll, 300000);
+</script>
+
+</body>
+</html>

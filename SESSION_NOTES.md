@@ -1,3 +1,62 @@
+# Session notes — 2026-05-13 evening (late) — Production pillar live overview SHIPPED + cockpit orbit fix + HTML cache hardening + Codex review proves out
+
+**What:** Late-evening focused session, three real wins layered on top of a structural discovery.
+
+## What shipped (5 commits, all on origin/main, all deployed)
+
+**1. HTML cache hardening (`acf5782`).** Mac was still seeing 6 panels on `command-center.html` after hard-refresh. `vercel.json` had `max-age=0, must-revalidate` which lets browsers reuse the body on 304. Switched to `no-store, no-cache, must-revalidate` + `Pragma: no-cache` + `Expires: 0`. `/sw.js` added to same no-store treatment. Bumped `public/sw.js` VERSION to `ryujin-os-v2-nocache-2026-05-13` — on activate it `caches.delete(name)` for every cache + `clients.navigate(client.url)` reloads controlled windows so devices with prior SW pick up new behavior automatically.
+
+**2. Cockpit orbit radius fix (`158c76d`).** Cache fix didn't solve "screens smooshed together" because that wasn't actually a cache issue. Phase 1 IA (`51452e7` from the IA-build session earlier) bumped `PANEL_COUNT` 6 → 9 but left `ORBIT_RADIUS = 820`. Chord between adjacent panels = 2·R·sin(π/N). At R=820 N=9 chord = 572 — but `.holo-panel { width: 360px }`, so adjacent panels visibly overlap. Chord-equivalence math: R for 9-panel layout with old 6-panel chord (820) = `820 / (2·sin(π/9)) ≈ 1199`. Set `ORBIT_RADIUS = 1200`, `CAMERA_START.z = 720`, `controls.maxDistance = 1200`, `ZOOM_LEVELS = [180,410,730,1140]`. Cockpit now displays 9 pillars with breathing room equivalent to original 6.
+
+**3. Production pillar live overview (`ce48754` → `97b26df` → `0c0aa00`).** This is the headline. After cockpit fixes Mac said dashboards still feel basic despite weeks of asset building. Audited the structural issue: **pillar landing pages are static SubHub tile launchers — real data lives in sub-pages but never surfaces on the landing.** Mac sees the launcher in the cockpit iframe preview and gets no signal that anything exists. Converted `public/production.html` 146 → 681 lines against Grok mockup `C:/Users/macke/Downloads/x6kN2.jpg` as the template for the other 7 pillars.
+
+Three-step build:
+- **v1 (`ce48754`):** 4-KPI strip + 3-col middle row (Active Jobs cards · Active Production Queue · Awaiting Mac cyan-glow panel w/ waveform SVG) + Bottleneck Heatmap + 5 SubHub bottom tiles. Wired to `/api/paysheets` + `/api/tickets`. 30s polling.
+- **Hardening (`97b26df`)** triggered by Mac's "make sure code+data is good, not stale, no hallucinations, no fake data" ask:
+  - Killed fake "This Week" KPI — math identical to Active Jobs with no real date filter. Replaced with "Active $ in Flight" from real paysheet totals.
+  - Scoped pending-paysheets KPI to active jobs only — was inflated 11 → 5 by 6 historical completed/invoiced paysheets where `sub_acceptance_status` was never flipped after that field was added.
+  - Split Awaiting Mac semantically: `state='draft' AND sub_acceptance_status='pending'` = "Drafts to Send" (truly awaiting Mac, 2 jobs / $9.3K) vs `state='sent' AND sub_acceptance_status='pending'` = "Sent · Awaiting Sub" (informational, 3 jobs / $14.4K). Third line = Overdue Tickets count.
+  - Production Tickets → Open Tickets (no pillar tag exists in current data).
+  - `cache: 'no-store'` on every fetch + `credentials: 'same-origin'`. `visibilitychange` + `window.focus` immediate-refresh listeners. Partial-failure handling — if `/api/paysheets` OR `/api/tickets` fails, keep stale for the other, surface "PARTIAL · X stale" in topbar. Total-failure shows OFFLINE. Staleness watchdog: topbar amber "STALE · Xs" if no successful refresh >90s. `IN_FLIGHT` guard prevents overlapping polls. Last-sync ms latency displayed.
+  - Sub Portal tile → routes to `admin-dispatch.html` (Mac's view) instead of `sub-portal.html` (sub-facing magic-link page).
+- **Codex review fixes (`0c0aa00`):** Mac said "check with codex." First substantive Codex adversarial review since plugin install this morning. Subagent `codex:codex-rescue` ran a 134s/27K-token review and caught **5 real bugs**:
+  1. **Timezone date math** — `new Date('2026-05-13') < today.setHours(0,0,0,0)` compared UTC-midnight to local-midnight. Today-due tickets falsely marked overdue west of UTC. Fixed with `localDateKey()` using `toLocaleDateString('en-CA')` so YYYY-MM-DD strings compare timezone-safely.
+  2. **`IN_FLIGHT` could wedge forever** — render-throw left flag true, all future polls silently dropped. Wrapped `loadAll` body in try/finally + error surfacing to topbar.
+  3. **"Today's Production Queue" wasn't filtering by today** — `today` variable was dead, panel sliced API order. Renamed "Active Production Queue" since paysheets lack scheduled_date.
+  4. **Heatmap "in flight" total included completed+invoiced** — relabeled "$X active · $Y pipeline value."
+  5. **Heatmap CSS class mismatch** — JS emitted class `invoice_final` but CSS defined `.invoiced` — segments rendered without grey background. Now uses `colorClass` map for bar segments (was already used in legend).
+  Plus minor: dead-variable removal, type-safe `String(p.subcontractor||'')` parse, honest Materials-tile empty state (no POs yet → "0 · no POs created yet"), `QUEUED_REFRESH` for focus-during-flight, `POLL_HANDLE` + `pagehide`/`beforeunload` cleanup to prevent zombie pollers when iframed.
+
+## Verified end-to-end against live API at deploy time
+
+- **Active Jobs:** 5 (4 scheduled + 1 in_progress) — Shelagh Peach · Kyle Graham · Christian (KW) · Donna Boosamra · Gary & Karen Pardy
+- **Active $ in Flight:** $24K (5 jobs · avg $4.7K)
+- **Awaiting Sub Accept:** 5 ($24K · narrowed from inflated 11)
+- **Open Tickets:** 32 · 28 overdue (real data hygiene issue: April install-prep tickets never auto-closed)
+- **Heatmap:** scheduled $17K · in_prog $7K · awaiting_invoice $19K · invoiced $9K = $52K pipeline value
+- **Drafts to Send:** 2 ($9.3K) — Mac's actionable pile
+- **Sent · Awaiting Sub:** 3 ($14.4K)
+
+Zero hardcoded customer names. Zero fake amounts. grep-verified.
+
+## Parallel-session note
+
+This session ran AFTER the IA-build session (also evening) — I sequenced commits cleanly onto `origin/main` with `git fetch + rev-list` parity checks before each push. Different files (production.html + vercel.json + sw.js) — no merge conflicts. Sales pillar work was happening in yet another terminal earlier in the afternoon per Mac's "another terminal is running that" comment when he downloaded the production mockup.
+
+## Carry-forward
+
+- 🔴 **Replicate template across 7 remaining pillars** — marketing, finance, service, customer, materials, administration, dashboard. ~30-45 min each = 4-5 hrs total.
+- 🔴 **28 overdue tickets cleanup** — most are April install-prep that should auto-close on job completion. One-shot script could flip status='done' on open tickets where their project's job is completed.
+- 🟡 **Inline `onclick=...${esc(id)}...` → delegated `data-*` listeners** — Codex flagged escaping class mismatch. Not active bug (UUIDs have no quotes) but should land cleanly across all pillars when refactoring.
+- 🟡 **Optional v1.5 aggregator endpoint** `/api/production-overview` to bundle 6 fetches — defer until v1 proven across pillars.
+- 🟢 **Codex review gate validated** — run on every aggregator dashboard / date+money math file from now on.
+
+## Sales-cockpit file
+
+`public/sales-cockpit.html` exists from the parallel terminal earlier — surfaced for next session to decide whether it represents the canonical Sales pillar overview (which would predate this Production template) or is something else.
+
+---
+
 # Session notes — 2026-05-13 morning — Codex plugin install + admin docs UX fixes + dashboard cockpit rewire + Files folder in administration + gutterQuoteEngine.js EMERGENCY RESTORE
 
 **What:** Five-hour session, three real wins, one wrong-file mistake, one emergency restore.
