@@ -177,18 +177,18 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
       <div class="val" id="kpiActive">—</div>
       <div class="sub" id="kpiActiveSub">scheduled + in progress</div>
     </div>
-    <div class="kpi glass accent-amber" onclick="location.href='production-schedule.html'">
-      <div class="lbl">This Week</div>
+    <div class="kpi glass accent-amber" onclick="location.href='production-paysheet.html'">
+      <div class="lbl">Active $ in Flight</div>
       <div class="val" id="kpiWeek">—</div>
-      <div class="sub" id="kpiWeekSub">scheduled · in progress</div>
+      <div class="sub" id="kpiWeekSub">scheduled + in progress payout</div>
     </div>
-    <div class="kpi glass accent-green" onclick="location.href='production-paysheet.html'">
-      <div class="lbl">Paysheets Pending</div>
+    <div class="kpi glass accent-green" onclick="location.href='production-paysheet.html?filter=pending'">
+      <div class="lbl">Awaiting Sub Accept</div>
       <div class="val" id="kpiPending">—</div>
-      <div class="sub" id="kpiPendingSub">awaiting sub acceptance</div>
+      <div class="sub" id="kpiPendingSub">on active jobs only</div>
     </div>
     <div class="kpi glass accent-red" onclick="location.href='production-tickets.html'">
-      <div class="lbl">Production Tickets</div>
+      <div class="lbl">Open Tickets</div>
       <div class="val" id="kpiTickets">—</div>
       <div class="sub" id="kpiTicketsSub">open · overdue</div>
     </div>
@@ -245,10 +245,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
       <div class="name">Material Orders</div>
       <div class="meta" id="tileMatmeta">POs · deliveries</div>
     </div>
-    <div class="tile glass" onclick="location.href='sub-portal.html'">
+    <div class="tile glass" onclick="location.href='admin-dispatch.html'">
       <div class="marker">SubHub</div>
       <div class="count" id="tileSub">—</div>
-      <div class="name">Sub Portal</div>
+      <div class="name">Sub Dispatch</div>
       <div class="meta" id="tileSubmeta">active subs · dispatch</div>
     </div>
     <div class="tile glass" onclick="location.href='production-schedule.html'">
@@ -293,20 +293,49 @@ const STATUS_PILL = {
 
 // State
 let DATA = { paysheets: [], tickets: [] };
+let LAST_OK_AT = null;
+let IN_FLIGHT = false;
 
-async function fetchSafe(url, opts){
-  try { const r = await fetch(url, opts); if (!r.ok) return null; return await r.json(); }
-  catch(e){ console.warn('[production] fetch failed', url, e.message); return null; }
+async function fetchSafe(url){
+  try {
+    const r = await fetch(url, {
+      headers: HEAD,
+      cache: 'no-store',
+      credentials: 'same-origin'
+    });
+    if (!r.ok){ console.warn('[production]', url, 'HTTP', r.status); return { ok: false, status: r.status }; }
+    const data = await r.json();
+    return { ok: true, data };
+  } catch(e){
+    console.warn('[production] fetch failed', url, e.message);
+    return { ok: false, error: e.message };
+  }
 }
 
 async function loadAll(forceVisualPulse){
+  if (IN_FLIGHT) return; // prevent overlap
+  IN_FLIGHT = true;
   if (forceVisualPulse) $('liveDot').textContent = 'REFRESHING…';
-  const [ps, tk] = await Promise.all([
-    fetchSafe('/api/paysheets?limit=200', { headers: HEAD }),
-    fetchSafe('/api/tickets?status=open&limit=200', { headers: HEAD })
+
+  const t0 = Date.now();
+  const [psR, tkR] = await Promise.all([
+    fetchSafe('/api/paysheets?limit=200'),
+    fetchSafe('/api/tickets?status=open&limit=200')
   ]);
-  DATA.paysheets = ps?.paysheets || [];
-  DATA.tickets   = tk?.tickets   || [];
+
+  const psOk = psR.ok && Array.isArray(psR.data?.paysheets);
+  const tkOk = tkR.ok && Array.isArray(tkR.data?.tickets);
+
+  if (!psOk && !tkOk){
+    // Total failure — leave existing data alone, surface error
+    $('liveDot').textContent = 'OFFLINE · RETRYING';
+    $('liveDot').style.color = '#ef4444';
+    IN_FLIGHT = false;
+    return;
+  }
+
+  if (psOk) DATA.paysheets = psR.data.paysheets;
+  if (tkOk) DATA.tickets   = tkR.data.tickets;
 
   renderKPIs();
   renderActiveJobs();
@@ -315,9 +344,24 @@ async function loadAll(forceVisualPulse){
   renderHeatmap();
   renderTiles();
 
-  $('lastSync').textContent = 'SYNC · ' + new Date().toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit' });
-  $('liveDot').textContent = 'CREW · DISPATCH · LIVE';
+  LAST_OK_AT = Date.now();
+  const took = Date.now() - t0;
+  $('lastSync').textContent = 'SYNC · ' + new Date().toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit' }) + ' · ' + took + 'ms';
+  $('liveDot').textContent = (psOk && tkOk) ? 'CREW · DISPATCH · LIVE' : 'PARTIAL · ' + (psOk ? 'tickets stale' : 'paysheets stale');
+  $('liveDot').style.color = '';
+  IN_FLIGHT = false;
 }
+
+// Staleness watchdog — if no successful refresh for >90s, dim the page
+function watchStaleness(){
+  if (!LAST_OK_AT) return;
+  const ageMs = Date.now() - LAST_OK_AT;
+  if (ageMs > 90000){
+    $('liveDot').textContent = 'STALE · ' + Math.round(ageMs/1000) + 's';
+    $('liveDot').style.color = '#fbbf24';
+  }
+}
+setInterval(watchStaleness, 5000);
 
 // ─── KPI strip ───────────────────────────────────────────
 function renderKPIs(){
@@ -325,23 +369,34 @@ function renderKPIs(){
   const active = ps.filter(p => p.status === 'scheduled' || p.status === 'in_progress');
   const inProg = ps.filter(p => p.status === 'in_progress');
   const sched  = ps.filter(p => p.status === 'scheduled');
-  const pending = ps.filter(p => p.sub_acceptance_status === 'pending');
-  const pendingTotal = pending.reduce((s,p) => s + (Number(p.total)||0), 0);
+  // Pending acceptance ONLY counts on active jobs — historical completed
+  // paysheets that never had sub_acceptance_status flipped are noise.
+  const pendingActive = active.filter(p => p.sub_acceptance_status === 'pending');
+  const activeTotal = active.reduce((s,p) => s + (Number(p.total)||0), 0);
+  const pendingActiveTotal = pendingActive.reduce((s,p) => s + (Number(p.total)||0), 0);
 
   $('kpiActive').textContent = active.length;
-  $('kpiActiveSub').textContent = `${sched.length} scheduled · ${inProg.length} in progress`;
+  $('kpiActiveSub').textContent = active.length
+    ? `${sched.length} scheduled · ${inProg.length} in progress`
+    : 'no jobs in flight';
 
-  $('kpiWeek').textContent = sched.length + inProg.length;
-  $('kpiWeekSub').textContent = `${sched.length} sched · ${inProg.length} in prog`;
+  $('kpiWeek').textContent = money(activeTotal);
+  $('kpiWeekSub').textContent = active.length
+    ? `${active.length} job${active.length===1?'':'s'} · avg ${money(activeTotal/active.length)}`
+    : 'no active dispatches';
 
-  $('kpiPending').textContent = pending.length;
-  $('kpiPendingSub').textContent = pending.length ? `${money(pendingTotal)} awaiting sub accept` : 'all caught up';
+  $('kpiPending').textContent = pendingActive.length;
+  $('kpiPendingSub').textContent = pendingActive.length
+    ? `${money(pendingActiveTotal)} on ${pendingActive.length} job${pendingActive.length===1?'':'s'}`
+    : 'all active jobs accepted';
 
   const open = DATA.tickets.length;
   const today = new Date(); today.setHours(0,0,0,0);
   const overdue = DATA.tickets.filter(t => t.due_date && new Date(t.due_date) < today).length;
   $('kpiTickets').textContent = open;
-  $('kpiTicketsSub').textContent = overdue ? `${open} open · ${overdue} overdue` : `${open} open · on track`;
+  $('kpiTicketsSub').textContent = open
+    ? (overdue ? `${overdue} overdue · ${open - overdue} on track` : `all ${open} on track`)
+    : 'inbox zero';
 }
 
 // ─── Active Jobs cards ───────────────────────────────────
@@ -384,9 +439,11 @@ function renderActiveJobs(){
 }
 
 function nextActionFor(p){
-  if (p.sub_acceptance_status === 'pending') return 'Awaiting sub to accept paysheet';
-  if (p.status === 'scheduled') return 'Materials + crew dispatch';
-  if (p.status === 'in_progress') return 'Install in progress';
+  const pending = p.sub_acceptance_status === 'pending';
+  if (pending && p.state === 'draft') return '✎ Mac needs to send paysheet';
+  if (pending && p.state === 'sent')  return '⟳ Sent · awaiting sub click';
+  if (p.status === 'in_progress')     return '⚒ Install in progress';
+  if (p.status === 'scheduled')       return '◷ Scheduled · ready to dispatch';
   return null;
 }
 
@@ -427,33 +484,41 @@ function renderQueue(){
 }
 
 // ─── Awaiting Mac panel ──────────────────────────────────
+// Real semantic split:
+//   state=draft  + sub_acceptance_status=pending → Mac needs to send (truly awaiting MAC)
+//   state=sent   + sub_acceptance_status=pending → Sub needs to click (informational)
+//   Overdue production tickets → Mac needs to chase or reassign
 function renderAwaiting(){
-  const pending = DATA.paysheets.filter(p => p.sub_acceptance_status === 'pending');
-  const pendingTotal = pending.reduce((s,p) => s + (Number(p.total)||0), 0);
-  const dispatch = DATA.paysheets.filter(p => p.status === 'scheduled' && p.sub_acceptance_status === 'pending').length;
-  const woApproval = DATA.paysheets.filter(p => p.state === 'sent' && p.sub_acceptance_status === 'pending').length;
+  const active = DATA.paysheets.filter(p => p.status === 'scheduled' || p.status === 'in_progress');
+  const draftToSend = active.filter(p => p.state === 'draft' && p.sub_acceptance_status === 'pending');
+  const sentAwaitingSub = active.filter(p => p.state === 'sent' && p.sub_acceptance_status === 'pending');
+  const draftTotal = draftToSend.reduce((s,p) => s + (Number(p.total)||0), 0);
+  const sentTotal  = sentAwaitingSub.reduce((s,p) => s + (Number(p.total)||0), 0);
+
+  const today = new Date(); today.setHours(0,0,0,0);
+  const overdueTickets = DATA.tickets.filter(t => t.due_date && new Date(t.due_date) < today);
 
   const sections = [
     {
-      lbl: 'Pending Paysheets',
-      val: pending.length ? `${pending.length} · ${money(pendingTotal)}` : 'None pending',
-      meta: pending.length ? 'awaiting sub accept' : '',
-      zero: !pending.length,
-      href: 'production-paysheet.html?filter=pending'
+      lbl: 'Drafts to Send',
+      val: draftToSend.length ? `${draftToSend.length} · ${money(draftTotal)}` : 'None drafted',
+      meta: draftToSend.length ? 'magic-link not issued yet' : '',
+      zero: !draftToSend.length,
+      href: 'production-paysheet.html'
     },
     {
-      lbl: 'Sub Dispatch',
-      val: dispatch ? `${dispatch} pending` : 'None pending',
-      meta: dispatch ? 'magic-link send queue' : '',
-      zero: !dispatch,
-      href: 'sub-portal.html'
+      lbl: 'Sent · Awaiting Sub',
+      val: sentAwaitingSub.length ? `${sentAwaitingSub.length} · ${money(sentTotal)}` : 'None outstanding',
+      meta: sentAwaitingSub.length ? 'sub hasn\'t clicked accept' : '',
+      zero: !sentAwaitingSub.length,
+      href: 'production-paysheet.html'
     },
     {
-      lbl: 'Work Orders Approval',
-      val: woApproval ? `${woApproval} need sign-off` : 'None pending',
-      meta: woApproval ? 'review + dispatch' : '',
-      zero: !woApproval,
-      href: 'production-workorders.html'
+      lbl: 'Overdue Tickets',
+      val: overdueTickets.length ? `${overdueTickets.length} overdue` : 'No overdue',
+      meta: overdueTickets.length ? 'needs reassign or close' : '',
+      zero: !overdueTickets.length,
+      href: 'production-tickets.html'
     }
   ];
 
@@ -495,7 +560,8 @@ function renderHeatmap(){
   $('heatmap').innerHTML = present.map(k => {
     const b = buckets[k];
     const pct = (b.total / grand * 100);
-    return `<div class="heat-seg ${k}" style="flex:${b.total}" title="${esc(b.label)} · ${money(b.total)} · ${b.count} job${b.count===1?'':'s'}">${b.count}·${money(b.total)}</div>`;
+    const showLabel = pct >= 12; // hide label on too-narrow segments
+    return `<div class="heat-seg ${k}" style="flex:${b.total}" title="${esc(b.label)} · ${money(b.total)} · ${b.count} job${b.count===1?'':'s'}">${showLabel ? money(b.total) : ''}</div>`;
   }).join('');
 
   const colorClass = { scheduled:'scheduled', in_progress:'in_progress', completed:'completed', invoice_final:'invoiced' };
@@ -508,24 +574,24 @@ function renderHeatmap(){
 // ─── Bottom tile counts ──────────────────────────────────
 function renderTiles(){
   const ps = DATA.paysheets;
-  const active = ps.filter(p => p.status === 'scheduled' || p.status === 'in_progress').length;
-  const pending = ps.filter(p => p.sub_acceptance_status === 'pending').length;
-  const subs = new Set(ps.filter(p => p.status === 'scheduled' || p.status === 'in_progress').map(p => p.subcontractor).filter(Boolean));
+  const activePs = ps.filter(p => p.status === 'scheduled' || p.status === 'in_progress');
+  const pendingActive = activePs.filter(p => p.sub_acceptance_status === 'pending').length;
+  const subs = new Set(activePs.map(p => p.subcontractor).filter(Boolean));
 
-  $('tileWO').textContent = active;
-  $('tileWOmeta').textContent = active ? `${active} signed · awaiting dispatch` : 'signed jobs · crew · tasks';
+  $('tileWO').textContent = activePs.length;
+  $('tileWOmeta').textContent = activePs.length ? `${activePs.length} in flight · scope + crew` : 'signed jobs · crew · tasks';
 
-  $('tilePS').textContent = ps.length;
-  $('tilePSmeta').textContent = pending ? `${pending} pending sub accept` : 'sub pay · uplifts · PDF';
+  $('tilePS').textContent = activePs.length;
+  $('tilePSmeta').textContent = pendingActive ? `${pendingActive} active · sub accept pending` : 'active paysheets · all accepted';
 
-  $('tileMat').textContent = '—';
-  $('tileMatmeta').textContent = 'POs · deliveries';
+  $('tileMat').textContent = '·';
+  $('tileMatmeta').textContent = 'POs · empty (no data yet)';
 
   $('tileSub').textContent = subs.size;
-  $('tileSubmeta').textContent = subs.size ? `${subs.size} active sub${subs.size===1?'':'s'}` : 'active subs · dispatch';
+  $('tileSubmeta').textContent = subs.size ? `${subs.size} active sub${subs.size===1?'':'s'} dispatched` : 'active subs · dispatch';
 
-  $('tileSched').textContent = active;
-  $('tileSchedmeta').textContent = `${active} job${active===1?'':'s'} in flight`;
+  $('tileSched').textContent = activePs.length;
+  $('tileSchedmeta').textContent = activePs.length ? `${activePs.length} job${activePs.length===1?'':'s'} in flight` : '7-day · week view';
 }
 
 // ─── Boot ────────────────────────────────────────────────
@@ -535,8 +601,17 @@ function goBackToMainHub(){
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); goBackToMainHub(); } });
 
+// Refresh immediately when the tab returns to foreground (cache window may
+// have expired or data may have moved while away).
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') loadAll(true);
+});
+
+// Refresh on window focus too (covers cases visibilitychange misses)
+window.addEventListener('focus', () => loadAll(true));
+
 loadAll();
-setInterval(loadAll, 30000);
+setInterval(() => loadAll(false), 30000);
 </script>
 
 <script src="assets/ryujin-mode.js"></script>
