@@ -1,28 +1,31 @@
 // Ryujin OS — minimal service worker.
 //
-// Sole purpose right now: meet Chrome's PWA-installability criteria so
-// the `beforeinstallprompt` event fires on Android Chrome (and desktop
-// Chrome/Edge). Without a registered service worker, Chrome refuses to
-// surface the native "Install app" dialog and our in-app install button
-// silently falls back to the manual-steps modal.
+// Purpose: meet Chrome's PWA-installability criteria so `beforeinstallprompt`
+// fires. Strategy: pass-through fetch, NO caching — Ryujin OS is data-heavy
+// and stale UI is worse than slightly slower loads.
 //
-// Strategy: pass-through fetch. We don't cache anything yet — Ryujin OS
-// is data-heavy and stale UI would be worse than slightly slower loads.
-// When we want offline-tolerance later we'll add a cache shell here.
+// On activate, deletes any caches from earlier SW revisions and reloads
+// controlled clients so HTML updates ship immediately even when an older
+// SW was previously registered.
 
-const VERSION = 'ryujin-os-v1';
+const VERSION = 'ryujin-os-v2-nocache-2026-05-13';
 
 self.addEventListener('install', (event) => {
-  // No precaching — just take over fast.
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil((async () => {
+    const names = await caches.keys();
+    await Promise.all(names.map((n) => caches.delete(n)));
+    await self.clients.claim();
+    const clients = await self.clients.matchAll({ type: 'window' });
+    for (const client of clients) {
+      try { client.navigate(client.url); } catch (_) {}
+    }
+  })());
 });
 
 self.addEventListener('fetch', (event) => {
-  // Pass-through. No caching. This is intentional — Chrome only requires
-  // a non-empty fetch handler, not an offline shell.
-  // (Listener exists so Lighthouse's installability check passes.)
+  // Pass-through. No caching, ever. HTML uses no-store at the edge.
 });
