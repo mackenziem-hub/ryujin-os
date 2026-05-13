@@ -80,7 +80,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
 .job-card .val{font-family:'Share Tech Mono',monospace;font-weight:700;color:#fb923c;background:rgba(251,146,60,0.12);padding:3px 8px;border-radius:6px}
 .job-card .next{font-size:0.72em;color:rgba(160,190,230,0.55);margin-top:4px;font-style:italic}
 
-/* Today's Production Queue */
+/* Active Production Queue */
 .queue-head{display:grid;grid-template-columns:1.4fr 1.6fr 0.9fr;gap:8px;padding:0 4px 8px;font-family:'Share Tech Mono',monospace;font-size:0.68em;color:rgba(160,190,230,0.5);letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid rgba(251,146,60,0.14)}
 .queue-row{display:grid;grid-template-columns:1.4fr 1.6fr 0.9fr;gap:8px;align-items:center;padding:10px 4px;border-bottom:1px solid rgba(251,146,60,0.08);font-size:0.84em}
 .queue-row:last-child{border-bottom:none}
@@ -201,9 +201,9 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
       <h2>Active Jobs <span class="refresh" onclick="loadAll(true)" title="Refresh">↻</span></h2>
       <div class="panel-body" id="activeJobs"><div class="loading">LOADING…</div></div>
     </div>
-    <!-- Today's Production Queue -->
+    <!-- Active Production Queue -->
     <div class="panel glass">
-      <h2>Today's Production Queue</h2>
+      <h2>Active Production Queue</h2>
       <div class="queue-head"><div>Crew</div><div>Address</div><div style="text-align:center">Payout</div></div>
       <div class="panel-body" id="prodQueue"><div class="loading">LOADING…</div></div>
     </div>
@@ -282,6 +282,19 @@ const shortAddr = (a) => {
   return String(a).split(',').slice(0,2).join(',').trim();
 };
 
+// Normalize a due_date or scheduled_date string to YYYY-MM-DD in local time.
+// Why: `new Date('2026-04-19') < new Date()` compares UTC-midnight to the
+// local timestamp, which marks today as overdue in any timezone west of UTC.
+// 28-overdue-of-32 was inflated by exactly this bug.
+function localDateKey(v){
+  if (!v) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;          // already date-only
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return null;
+  return d.toLocaleDateString('en-CA');                  // en-CA → YYYY-MM-DD
+}
+function todayKey(){ return new Date().toLocaleDateString('en-CA'); }
+
 // Map paysheet.status → status pill class + label
 const STATUS_PILL = {
   scheduled:     { cls: 'pill-sched',    label: 'SCHEDULED' },
@@ -312,44 +325,51 @@ async function fetchSafe(url){
   }
 }
 
+let QUEUED_REFRESH = false;
 async function loadAll(forceVisualPulse){
-  if (IN_FLIGHT) return; // prevent overlap
+  if (IN_FLIGHT){ QUEUED_REFRESH = true; return; }
   IN_FLIGHT = true;
-  if (forceVisualPulse) $('liveDot').textContent = 'REFRESHING…';
+  try {
+    if (forceVisualPulse) $('liveDot').textContent = 'REFRESHING…';
 
-  const t0 = Date.now();
-  const [psR, tkR] = await Promise.all([
-    fetchSafe('/api/paysheets?limit=200'),
-    fetchSafe('/api/tickets?status=open&limit=200')
-  ]);
+    const t0 = Date.now();
+    const [psR, tkR] = await Promise.all([
+      fetchSafe('/api/paysheets?limit=200'),
+      fetchSafe('/api/tickets?status=open&limit=200')
+    ]);
 
-  const psOk = psR.ok && Array.isArray(psR.data?.paysheets);
-  const tkOk = tkR.ok && Array.isArray(tkR.data?.tickets);
+    const psOk = psR.ok && Array.isArray(psR.data?.paysheets);
+    const tkOk = tkR.ok && Array.isArray(tkR.data?.tickets);
 
-  if (!psOk && !tkOk){
-    // Total failure — leave existing data alone, surface error
-    $('liveDot').textContent = 'OFFLINE · RETRYING';
+    if (!psOk && !tkOk){
+      $('liveDot').textContent = 'OFFLINE · RETRYING';
+      $('liveDot').style.color = '#ef4444';
+      return; // finally still runs
+    }
+
+    if (psOk) DATA.paysheets = psR.data.paysheets;
+    if (tkOk) DATA.tickets   = tkR.data.tickets;
+
+    renderKPIs();
+    renderActiveJobs();
+    renderQueue();
+    renderAwaiting();
+    renderHeatmap();
+    renderTiles();
+
+    LAST_OK_AT = Date.now();
+    const took = Date.now() - t0;
+    $('lastSync').textContent = 'SYNC · ' + new Date().toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit' }) + ' · ' + took + 'ms';
+    $('liveDot').textContent = (psOk && tkOk) ? 'CREW · DISPATCH · LIVE' : 'PARTIAL · ' + (psOk ? 'tickets stale' : 'paysheets stale');
+    $('liveDot').style.color = '';
+  } catch (err) {
+    console.error('[production] loadAll threw', err);
+    $('liveDot').textContent = 'ERROR · ' + (err.message||'').slice(0,30);
     $('liveDot').style.color = '#ef4444';
+  } finally {
     IN_FLIGHT = false;
-    return;
+    if (QUEUED_REFRESH){ QUEUED_REFRESH = false; setTimeout(() => loadAll(false), 0); }
   }
-
-  if (psOk) DATA.paysheets = psR.data.paysheets;
-  if (tkOk) DATA.tickets   = tkR.data.tickets;
-
-  renderKPIs();
-  renderActiveJobs();
-  renderQueue();
-  renderAwaiting();
-  renderHeatmap();
-  renderTiles();
-
-  LAST_OK_AT = Date.now();
-  const took = Date.now() - t0;
-  $('lastSync').textContent = 'SYNC · ' + new Date().toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit' }) + ' · ' + took + 'ms';
-  $('liveDot').textContent = (psOk && tkOk) ? 'CREW · DISPATCH · LIVE' : 'PARTIAL · ' + (psOk ? 'tickets stale' : 'paysheets stale');
-  $('liveDot').style.color = '';
-  IN_FLIGHT = false;
 }
 
 // Staleness watchdog — if no successful refresh for >90s, dim the page
@@ -391,8 +411,11 @@ function renderKPIs(){
     : 'all active jobs accepted';
 
   const open = DATA.tickets.length;
-  const today = new Date(); today.setHours(0,0,0,0);
-  const overdue = DATA.tickets.filter(t => t.due_date && new Date(t.due_date) < today).length;
+  const tk = todayKey();
+  const overdue = DATA.tickets.filter(t => {
+    const k = localDateKey(t.due_date);
+    return k && k < tk;
+  }).length;
   $('kpiTickets').textContent = open;
   $('kpiTicketsSub').textContent = open
     ? (overdue ? `${overdue} overdue · ${open - overdue} on track` : `all ${open} on track`)
@@ -419,7 +442,9 @@ function renderActiveJobs(){
   $('activeJobs').innerHTML = cards.map(p => {
     const pill = STATUS_PILL[p.status] || { cls:'pill-sched', label: (p.status||'—').toUpperCase() };
     const next = nextActionFor(p);
-    const sub = (p.subcontractor || 'Crew').split('(').pop().replace(')','').trim() || 'Crew';
+    const subRaw = String(p.subcontractor || '');
+    const lead = subRaw.match(/\(([^)]+)\)/)?.[1];
+    const sub = lead || subRaw.split('(')[0].trim() || 'Crew';
     return `
       <div class="job-card" onclick="window.open('/production-paysheet.html?id=${esc(p.id)}','_blank')">
         <div class="head">
@@ -447,12 +472,17 @@ function nextActionFor(p){
   return null;
 }
 
-// ─── Today's Production Queue ────────────────────────────
+// ─── Active Production Queue ─────────────────────────────
+// Renamed from "Today's Queue" because /api/schedule requires auth and
+// paysheets lack a scheduled_date today — would be lying to call it today's.
 function renderQueue(){
-  // Without /api/schedule auth, today's queue = active paysheets sorted by status
-  const today = new Date(); today.setHours(0,0,0,0);
   const list = DATA.paysheets
     .filter(p => p.status === 'scheduled' || p.status === 'in_progress')
+    .sort((a,b) => {
+      if (a.status === 'in_progress' && b.status !== 'in_progress') return -1;
+      if (b.status === 'in_progress' && a.status !== 'in_progress') return 1;
+      return new Date(b.updated_at||0) - new Date(a.updated_at||0);
+    })
     .slice(0, 7);
 
   if (!list.length){
@@ -461,9 +491,11 @@ function renderQueue(){
   }
 
   $('prodQueue').innerHTML = list.map(p => {
-    const sub = (p.subcontractor || 'Crew').replace(/\(.*?\)/,'').replace(/\s+/g,' ').trim() || 'Crew';
+    const subRaw = String(p.subcontractor || '');
+    const sub = subRaw.replace(/\(.*?\)/,'').replace(/\s+/g,' ').trim() || 'Crew';
     const subShort = sub.length > 18 ? sub.slice(0,16) + '…' : sub;
-    const lead = (p.subcontractor && p.subcontractor.match(/\(([^)]+)\)/)) ? p.subcontractor.match(/\(([^)]+)\)/)[1] : '';
+    const leadMatch = subRaw.match(/\(([^)]+)\)/);
+    const lead = leadMatch ? leadMatch[1] : '';
     const dotCls = p.status === 'in_progress' ? 'amber' : '';
     return `
       <div class="queue-row" onclick="window.open('/production-paysheet.html?id=${esc(p.id)}','_blank')" style="cursor:pointer">
@@ -495,8 +527,11 @@ function renderAwaiting(){
   const draftTotal = draftToSend.reduce((s,p) => s + (Number(p.total)||0), 0);
   const sentTotal  = sentAwaitingSub.reduce((s,p) => s + (Number(p.total)||0), 0);
 
-  const today = new Date(); today.setHours(0,0,0,0);
-  const overdueTickets = DATA.tickets.filter(t => t.due_date && new Date(t.due_date) < today);
+  const tk = todayKey();
+  const overdueTickets = DATA.tickets.filter(t => {
+    const k = localDateKey(t.due_date);
+    return k && k < tk;
+  });
 
   const sections = [
     {
@@ -532,6 +567,10 @@ function renderAwaiting(){
 }
 
 // ─── Bottleneck Heatmap ──────────────────────────────────
+// Segments include every paysheet stage to show where dollars sit; the
+// header total scopes to ACTIVE work only so it reads "in flight" honestly.
+// Note: heat-seg class must use the colorClass map — `invoice_final` has
+// no CSS rule (the class is `.invoiced`).
 function renderHeatmap(){
   const buckets = {
     scheduled:     { label: 'Scheduled',   total: 0, count: 0 },
@@ -539,6 +578,7 @@ function renderHeatmap(){
     completed:     { label: 'Awaiting Invoice', total: 0, count: 0 },
     invoice_final: { label: 'Invoiced',    total: 0, count: 0 }
   };
+  const colorClass = { scheduled:'scheduled', in_progress:'in_progress', completed:'completed', invoice_final:'invoiced' };
 
   for (const p of DATA.paysheets){
     const b = buckets[p.status];
@@ -546,10 +586,13 @@ function renderHeatmap(){
   }
 
   const order = ['scheduled','in_progress','completed','invoice_final'];
-  const present = order.filter(k => buckets[k].total > 0);
-  const grand = present.reduce((s,k) => s + buckets[k].total, 0);
+  const present = order.filter(k => buckets[k].count > 0);          // include zero-total stages
+  const grand   = present.reduce((s,k) => s + buckets[k].total, 0);
+  const activeTotal = (buckets.scheduled.total + buckets.in_progress.total);
 
-  $('heatTotal').textContent = grand ? `total $${(grand/1000).toFixed(1)}K in flight` : '';
+  $('heatTotal').textContent = grand
+    ? `${money(activeTotal)} active · ${money(grand)} pipeline value`
+    : '';
 
   if (!grand){
     $('heatmap').innerHTML = '<div class="loading" style="margin:auto">No jobs in flight.</div>';
@@ -559,12 +602,12 @@ function renderHeatmap(){
 
   $('heatmap').innerHTML = present.map(k => {
     const b = buckets[k];
+    const flexBasis = Math.max(b.total, grand * 0.04);                // keep zero/tiny segments visible
     const pct = (b.total / grand * 100);
-    const showLabel = pct >= 12; // hide label on too-narrow segments
-    return `<div class="heat-seg ${k}" style="flex:${b.total}" title="${esc(b.label)} · ${money(b.total)} · ${b.count} job${b.count===1?'':'s'}">${showLabel ? money(b.total) : ''}</div>`;
+    const showLabel = pct >= 12;
+    return `<div class="heat-seg ${colorClass[k]}" style="flex:${flexBasis}" title="${esc(b.label)} · ${money(b.total)} · ${b.count} job${b.count===1?'':'s'}">${showLabel ? money(b.total) : ''}</div>`;
   }).join('');
 
-  const colorClass = { scheduled:'scheduled', in_progress:'in_progress', completed:'completed', invoice_final:'invoiced' };
   $('heatLegend').innerHTML = present.map(k => {
     const b = buckets[k];
     return `<span><i class="heat-seg ${colorClass[k]}" style="width:8px;height:8px;display:inline-block;border:none"></i>${esc(b.label)} · ${b.count}</span>`;
@@ -584,8 +627,8 @@ function renderTiles(){
   $('tilePS').textContent = activePs.length;
   $('tilePSmeta').textContent = pendingActive ? `${pendingActive} active · sub accept pending` : 'active paysheets · all accepted';
 
-  $('tileMat').textContent = '·';
-  $('tileMatmeta').textContent = 'POs · empty (no data yet)';
+  $('tileMat').textContent = '0';
+  $('tileMatmeta').textContent = 'no POs created yet';
 
   $('tileSub').textContent = subs.size;
   $('tileSubmeta').textContent = subs.size ? `${subs.size} active sub${subs.size===1?'':'s'} dispatched` : 'active subs · dispatch';
@@ -611,7 +654,13 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('focus', () => loadAll(true));
 
 loadAll();
-setInterval(() => loadAll(false), 30000);
+const POLL_HANDLE = setInterval(() => loadAll(false), 30000);
+
+// Clean up the poll if this page is unloaded (e.g. iframe disposed by
+// command-center swapping panels). Prevents zombie pollers when the host
+// page lingers across many panel switches.
+window.addEventListener('pagehide', () => clearInterval(POLL_HANDLE));
+window.addEventListener('beforeunload', () => clearInterval(POLL_HANDLE));
 </script>
 
 <script src="assets/ryujin-mode.js"></script>
