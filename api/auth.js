@@ -333,20 +333,36 @@ export default async function handler(req, res) {
   // ── MAGIC-CONSUME (public) ──
   // POST { token } → validates the magic token, creates a session, returns same payload
   // shape as login. Magic token is single-use: cleared after a successful consume.
+  //
+  // Atomic claim: the clear-and-fetch is a single UPDATE...WHERE token=? AND
+  // expires>now() RETURNING *, so two concurrent consumes can't both pass the
+  // validation step before one writes the clear.
   if (action === 'magic-consume' && req.method === 'POST') {
     const { token: magicToken } = req.body || {};
     if (!magicToken) return res.status(400).json({ error: 'token required' });
 
-    const { data: user } = await supabaseAdmin
+    const nowIso = new Date().toISOString();
+    const { data: claimed } = await supabaseAdmin
       .from('users')
-      .select('id, tenant_id, name, email, role, role_id, magic_expires_at')
+      .update({ magic_token: null, magic_expires_at: null })
       .eq('magic_token', magicToken)
+      .gt('magic_expires_at', nowIso)
+      .select('id, tenant_id, name, email, role, role_id')
       .single();
 
-    if (!user) return res.status(404).json({ error: 'Magic link not found or already used' });
-    if (!user.magic_expires_at || new Date(user.magic_expires_at) < new Date()) {
-      return res.status(410).json({ error: 'Magic link has expired' });
+    if (!claimed) {
+      // Either the token never existed, was already consumed, or has expired.
+      // Disambiguate for UX — does a row with this token still exist with an
+      // expired timestamp?
+      const { data: stale } = await supabaseAdmin
+        .from('users')
+        .select('id, magic_expires_at')
+        .eq('magic_token', magicToken)
+        .maybeSingle();
+      if (stale) return res.status(410).json({ error: 'Magic link has expired' });
+      return res.status(404).json({ error: 'Magic link not found or already used' });
     }
+    const user = claimed;
 
     const sessionToken = generateToken();
     const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
@@ -354,11 +370,6 @@ export default async function handler(req, res) {
     await supabaseAdmin.from('sessions').insert({
       tenant_id: user.tenant_id, user_id: user.id, token: sessionToken, expires_at: expires.toISOString()
     });
-
-    await supabaseAdmin
-      .from('users')
-      .update({ magic_token: null, magic_expires_at: null })
-      .eq('id', user.id);
 
     const { data: tenant } = await supabaseAdmin
       .from('tenants').select('id, name, slug').eq('id', user.tenant_id).single();

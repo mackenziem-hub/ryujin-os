@@ -75,8 +75,17 @@
   </div>
 <script>
 (async () => {
-  const params = new URLSearchParams(location.search);
-  const token = params.get('t') || params.get('token');
+  // Accept the token from either ?t=... (legacy) or #t=... (preferred).
+  // As soon as we have it, scrub the address bar — keeping the token in
+  // location.search means it ends up in browser history and any outbound
+  // Referer header. Done before any await so we strip it even if the
+  // network call hangs or the user navigates away.
+  const qs = new URLSearchParams(location.search);
+  const hash = new URLSearchParams((location.hash || '').replace(/^#/, ''));
+  const token = qs.get('t') || qs.get('token') || hash.get('t') || hash.get('token');
+  if (token) {
+    try { history.replaceState(null, '', '/magic.html'); } catch {}
+  }
   const errState = document.getElementById('state-err');
   const okState = document.getElementById('state-ok');
   const loadState = document.getElementById('state-loading');

@@ -79,11 +79,13 @@ async function verifyToken(tenantId, token) {
 }
 
 // ── Photos (read-only, scoped to linked estimate) ───────────────
-async function getPhotos(tenantId, woId) {
+// Ownership: WO must belong to the authed sub. We 404 (not 403) on a foreign WO
+// so the sub can't enumerate which workorder IDs exist in the tenant.
+async function getPhotos(tenantId, woId, subId) {
   const { data: wo } = await supabaseAdmin
     .from('workorders')
     .select('id, linked_estimate_id, address, customer_name')
-    .eq('tenant_id', tenantId).eq('id', woId)
+    .eq('tenant_id', tenantId).eq('subcontractor_id', subId).eq('id', woId)
     .single();
   if (!wo) return { error: 'Work order not found', status: 404 };
 
@@ -122,11 +124,11 @@ async function getPhotos(tenantId, woId) {
 }
 
 // ── Materials (from calculated_packages.<tier>.lineItems where category=materials) ──
-async function getMaterials(tenantId, woId) {
+async function getMaterials(tenantId, woId, subId) {
   const { data: wo } = await supabaseAdmin
     .from('workorders')
     .select('id, linked_estimate_id, package_tier, shingle_color, shingle_product, total_sq, address')
-    .eq('tenant_id', tenantId).eq('id', woId)
+    .eq('tenant_id', tenantId).eq('subcontractor_id', subId).eq('id', woId)
     .single();
   if (!wo) return { error: 'Work order not found', status: 404 };
 
@@ -218,11 +220,11 @@ function maskCustomer(name) {
 }
 
 // ── Schedule (start date, address, GPS, AJ contact) ─────────────
-async function getSchedule(tenantId, woId) {
+async function getSchedule(tenantId, woId, subId) {
   const { data: wo } = await supabaseAdmin
     .from('workorders')
     .select('id, address, start_date, estimated_duration_days, special_notes, customer_name, phone, onsite_contact')
-    .eq('tenant_id', tenantId).eq('id', woId)
+    .eq('tenant_id', tenantId).eq('subcontractor_id', subId).eq('id', woId)
     .single();
   if (!wo) return { error: 'Work order not found', status: 404 };
 
@@ -290,11 +292,11 @@ async function getSchedule(tenantId, woId) {
 // Drives the guided-execution UX in sub-portal.html. Returns enough for the sub
 // to know exactly what to do, in what order, with which materials, including
 // any per-step critical flags or notes.
-async function getScope(tenantId, woId) {
+async function getScope(tenantId, woId, subId) {
   const { data: wo } = await supabaseAdmin
     .from('workorders')
     .select('id, address, customer_name, total_sq, roof_pitch, package_tier, shingle_product, shingle_color, scope_items, additional_scope, special_notes, checklist, eaves_lf, rakes_lf, ridges_lf, hips_lf, valleys_lf, walls_lf, pipes, vents, chimneys, layers_to_remove, status, start_date')
-    .eq('tenant_id', tenantId).eq('id', woId)
+    .eq('tenant_id', tenantId).eq('subcontractor_id', subId).eq('id', woId)
     .single();
   if (!wo) return { error: 'Work order not found', status: 404 };
 
@@ -358,11 +360,11 @@ async function getScope(tenantId, woId) {
 // Atomic: refetch checklist, mutate the target step, write back. Step matched
 // by step_number first, falling back to array index. Sets completed_at stamp
 // on completion so the owner-side review can audit who/when.
-async function updateChecklistStep(tenantId, woId, stepIndex, completed, subName) {
+async function updateChecklistStep(tenantId, woId, subId, stepIndex, completed, subName) {
   const { data: wo } = await supabaseAdmin
     .from('workorders')
     .select('id, checklist')
-    .eq('tenant_id', tenantId).eq('id', woId)
+    .eq('tenant_id', tenantId).eq('subcontractor_id', subId).eq('id', woId)
     .single();
   if (!wo) return { error: 'Work order not found', status: 404 };
 
@@ -382,7 +384,7 @@ async function updateChecklistStep(tenantId, woId, stepIndex, completed, subName
   const { error } = await supabaseAdmin
     .from('workorders')
     .update({ checklist, updated_at: new Date().toISOString() })
-    .eq('tenant_id', tenantId).eq('id', woId);
+    .eq('tenant_id', tenantId).eq('subcontractor_id', subId).eq('id', woId);
   if (error) return { error: error.message, status: 500 };
 
   return { step: checklist[stepIndex], total: checklist.length, completed: checklist.filter(s => s && s.completed).length };
@@ -681,7 +683,7 @@ async function handler(req, res) {
     if (!wo_id || step_index === undefined) {
       return res.status(400).json({ error: 'wo_id and step_index required' });
     }
-    const result = await updateChecklistStep(tenantId, wo_id, Number(step_index), completed, sub.name);
+    const result = await updateChecklistStep(tenantId, wo_id, sub.id, Number(step_index), completed, sub.name);
     if (result.error) return res.status(result.status || 500).json({ error: result.error });
     return res.json(result);
   }
@@ -692,28 +694,28 @@ async function handler(req, res) {
 
   if (action === 'photos') {
     if (!woId) return res.status(400).json({ error: 'wo_id required' });
-    const result = await getPhotos(tenantId, woId);
+    const result = await getPhotos(tenantId, woId, sub.id);
     if (result.error) return res.status(result.status || 500).json({ error: result.error });
     return res.json(result);
   }
 
   if (action === 'materials') {
     if (!woId) return res.status(400).json({ error: 'wo_id required' });
-    const result = await getMaterials(tenantId, woId);
+    const result = await getMaterials(tenantId, woId, sub.id);
     if (result.error) return res.status(result.status || 500).json({ error: result.error });
     return res.json(result);
   }
 
   if (action === 'schedule') {
     if (!woId) return res.status(400).json({ error: 'wo_id required' });
-    const result = await getSchedule(tenantId, woId);
+    const result = await getSchedule(tenantId, woId, sub.id);
     if (result.error) return res.status(result.status || 500).json({ error: result.error });
     return res.json(result);
   }
 
   if (action === 'scope') {
     if (!woId) return res.status(400).json({ error: 'wo_id required' });
-    const result = await getScope(tenantId, woId);
+    const result = await getScope(tenantId, woId, sub.id);
     if (result.error) return res.status(result.status || 500).json({ error: result.error });
     return res.json(result);
   }
