@@ -71,22 +71,58 @@ async function handler(req, res) {
     .eq('tenant_id', tenantId);
   if (products.count != null) stats.products_count = products.count;
 
-  // purchase_orders table lands in Phase 3 — soft-fail until then
+  // Purchase orders (migration 063). Soft-fails before migration applied.
+  let recentPos = [];
   try {
     const poOpen = await supabaseAdmin
       .from('purchase_orders')
       .select('id', { count: 'exact', head: true })
       .eq('tenant_id', tenantId)
-      .in('status', ['draft', 'sent', 'confirmed']);
+      .in('status', ['draft', 'sent', 'confirmed', 'partial']);
     if (poOpen.count != null) stats.po_open = poOpen.count;
-  } catch { /* table doesn't exist yet */ }
+
+    const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+    const poReceived = await supabaseAdmin
+      .from('purchase_orders')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', tenantId)
+      .eq('status', 'received')
+      .gte('actual_delivery_date', sevenDaysAgo);
+    if (poReceived.count != null) stats.po_received_7d = poReceived.count;
+
+    const todayDate = new Date().toISOString().slice(0, 10);
+    const poOverdue = await supabaseAdmin
+      .from('purchase_orders')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', tenantId)
+      .in('status', ['sent', 'confirmed', 'partial'])
+      .lt('expected_delivery_date', todayDate);
+    if (poOverdue.count != null) stats.po_overdue = poOverdue.count;
+
+    const recent = await supabaseAdmin
+      .from('purchase_orders')
+      .select('id, po_number, status, total_amount, expected_delivery_date, created_at, merchant:merchants(name)')
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false })
+      .limit(5);
+    if (!recent.error) recentPos = recent.data || [];
+  } catch { /* purchase_orders table doesn't exist yet — migration 063 pending */ }
+
+  // ── Activity timeline: recent PO events ──
+  const activity = recentPos.map(po => ({
+    at: po.created_at,
+    kind: `PO ${po.status}`,
+    label: `${po.po_number} · ${po.merchant?.name || 'supplier'} · $${(po.total_amount || 0).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+    ref_id: po.id,
+  }));
 
   return res.status(200).json({
     date: today,
     briefing: briefing.data || [],
     kpis: kpis.data || [],
-    activity: [],
+    activity,
     stats,
+    recent_pos: recentPos,
     latest_run: latest.data || null,
     last_updated_at: new Date().toISOString(),
   });

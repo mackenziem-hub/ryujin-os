@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#060a14">
+<title>Purchase Orders · Materials · Ryujin OS</title>
+<link rel="icon" href="/assets/logo/icon.png" onerror="this.href='/assets/logo/logo-glow.jpg'">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=optional" rel="stylesheet">
+<style>
+:root{--bg:#060a14;--glass:rgba(20,30,50,0.85);--glass2:rgba(22,34,58,0.80);--glass-border:rgba(34,211,238,0.16);--glass-border-hi:rgba(34,211,238,0.35);--text:#d0daf0;--text-dim:rgba(160,190,230,0.55);--text-muted:rgba(140,170,220,0.30);--cyan:#22d3ee;--blue:#4a9eff;--purple:#7c3aed;--green:#4ade80;--yellow:#facc15;--red:#f87171;--orange:#fb923c;--gold:#fbbf24;--radius:12px;--sidebar-w:72px}
+*{margin:0;padding:0;box-sizing:border-box}html,body{height:100%}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/textures/app-bg.png') center/cover fixed no-repeat;color:var(--text);min-height:100vh;overflow-x:hidden}
+
+.sidebar{width:var(--sidebar-w);background:rgba(8,12,24,0.98);border-right:1px solid var(--glass-border);display:flex;flex-direction:column;align-items:center;position:fixed;top:0;bottom:0;z-index:50;box-shadow:2px 0 12px rgba(0,0,0,0.4)}
+.sidebar-logo{width:44px;height:44px;margin:18px 0 12px;border-radius:12px;background:url('/assets/logo/logo-glow.jpg') center/cover;box-shadow:0 0 20px rgba(34,211,238,0.3);cursor:pointer}
+.sidebar-divider{width:32px;height:1px;background:linear-gradient(90deg,transparent,var(--cyan),transparent);opacity:0.3;margin:4px 0 8px}
+.sidebar-nav{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 0}
+.nav-icon{width:44px;height:44px;display:flex;align-items:center;justify-content:center;border-radius:12px;border:1px solid transparent;cursor:pointer;color:var(--text-dim);transition:all 0.25s;position:relative;text-decoration:none}
+.nav-icon:hover{background:rgba(34,211,238,0.06);color:var(--text)}
+.nav-icon.active{background:linear-gradient(135deg,rgba(34,211,238,0.12),rgba(124,58,237,0.06));color:var(--cyan);border-color:rgba(34,211,238,0.2);box-shadow:0 0 20px rgba(34,211,238,0.08)}
+.nav-icon svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+
+.main{margin-left:var(--sidebar-w);padding:18px 22px 60px;max-width:1600px}
+.hq-header{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-bottom:18px;flex-wrap:wrap}
+.hq-title{flex:1;min-width:280px}
+.hq-title .crumb{font-family:'Share Tech Mono',monospace;font-size:0.72em;color:var(--text-dim);letter-spacing:2px;text-transform:uppercase;margin-bottom:4px}
+.hq-title .crumb a{color:var(--text-dim);text-decoration:none}
+.hq-title .crumb a:hover{color:var(--cyan)}
+.hq-title h1{font-family:'Orbitron',monospace;font-size:1.7em;font-weight:700;letter-spacing:1.5px;background:linear-gradient(135deg,#e0e6f0 20%,var(--cyan) 70%,var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hq-title .sub{font-size:0.85em;color:var(--text-dim);margin-top:6px;max-width:680px;line-height:1.4}
+
+.btn{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:10px;font-family:inherit;font-size:0.85em;font-weight:600;cursor:pointer;border:1px solid var(--glass-border);background:var(--glass);color:var(--text);transition:all 0.2s;text-decoration:none}
+.btn:hover{border-color:var(--glass-border-hi);transform:translateY(-1px)}
+.btn.primary{background:linear-gradient(135deg,rgba(34,211,238,0.20),rgba(124,58,237,0.10));border-color:rgba(34,211,238,0.40);color:var(--cyan)}
+.btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round}
+
+.status-pills{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.pill{padding:6px 12px;border-radius:18px;background:var(--glass);border:1px solid var(--glass-border);font-size:0.78em;color:var(--text-dim);cursor:pointer;transition:all 0.2s;display:inline-flex;align-items:center;gap:6px;font-family:inherit}
+.pill:hover{color:var(--text)}
+.pill.active{background:linear-gradient(135deg,rgba(34,211,238,0.14),rgba(124,58,237,0.08));color:var(--cyan);border-color:rgba(34,211,238,0.4)}
+.pill .count{font-family:'Share Tech Mono',monospace;font-size:0.85em;opacity:0.8}
+
+.po-table{background:var(--glass);border:1px solid var(--glass-border);border-radius:var(--radius);overflow:hidden}
+.po-row{display:grid;grid-template-columns:120px 1fr 200px 110px 110px 110px 28px;gap:10px;align-items:center;padding:12px 16px;border-bottom:1px solid rgba(34,211,238,0.08);font-size:0.85em;cursor:pointer;transition:background 0.15s}
+.po-row:last-child{border-bottom:0}
+.po-row:hover{background:rgba(34,211,238,0.04)}
+.po-row.header{cursor:default;background:rgba(8,12,24,0.5);font-family:'Orbitron',monospace;font-size:0.62em;letter-spacing:1.8px;color:var(--text-dim);text-transform:uppercase}
+.po-row.header:hover{background:rgba(8,12,24,0.5)}
+.po-num{font-family:'Share Tech Mono',monospace;font-size:0.95em;color:var(--cyan)}
+.po-merchant{color:var(--text);font-weight:600}
+.po-total{font-family:'Share Tech Mono',monospace;text-align:right;color:var(--text)}
+.po-date{font-family:'Share Tech Mono',monospace;font-size:0.85em;color:var(--text-dim)}
+.po-status{font-family:'Share Tech Mono',monospace;font-size:0.7em;letter-spacing:1.4px;text-transform:uppercase;padding:3px 8px;border-radius:9px;display:inline-block;text-align:center}
+.po-status.draft     {background:rgba(160,190,230,0.10);color:var(--text-dim);border:1px solid var(--glass-border)}
+.po-status.sent      {background:rgba(74,158,255,0.12);color:var(--blue);border:1px solid rgba(74,158,255,0.3)}
+.po-status.confirmed {background:rgba(34,211,238,0.10);color:var(--cyan);border:1px solid rgba(34,211,238,0.35)}
+.po-status.partial   {background:rgba(251,191,36,0.12);color:var(--gold);border:1px solid rgba(251,191,36,0.3)}
+.po-status.received  {background:rgba(74,222,128,0.12);color:var(--green);border:1px solid rgba(74,222,128,0.3)}
+.po-status.cancelled {background:rgba(248,113,113,0.10);color:var(--red);border:1px solid rgba(248,113,113,0.3)}
+.po-chev{color:var(--text-muted);font-size:1.2em;line-height:1}
+
+.empty-state{text-align:center;padding:48px 16px;color:var(--text-dim);font-size:0.9em}
+.empty-state .ico{font-size:2em;margin-bottom:12px;opacity:0.4}
+.skeleton{background:linear-gradient(90deg,var(--glass) 0%,var(--glass2) 50%,var(--glass) 100%);background-size:200% 100%;animation:sk 1.4s infinite;border:1px solid var(--glass-border);border-radius:var(--radius);height:48px;margin-bottom:6px}
+@keyframes sk{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+/* Modal */
+.modal-backdrop{position:fixed;inset:0;background:rgba(6,10,20,0.75);backdrop-filter:blur(6px);z-index:100;display:none;align-items:center;justify-content:center;padding:20px}
+.modal-backdrop.open{display:flex}
+.modal{background:var(--bg);border:1px solid var(--glass-border-hi);border-radius:14px;max-width:700px;width:100%;max-height:90vh;overflow-y:auto;padding:24px;box-shadow:0 12px 60px rgba(0,0,0,0.6)}
+.modal h2{font-family:'Orbitron',monospace;font-size:1.1em;letter-spacing:1.2px;text-transform:uppercase;color:var(--cyan);margin-bottom:18px}
+.modal-row{display:grid;grid-template-columns:120px 1fr;gap:12px;align-items:start;margin-bottom:12px}
+.modal-row label{font-family:'Orbitron',monospace;font-size:0.66em;letter-spacing:1.4px;text-transform:uppercase;color:var(--text-dim);padding-top:8px}
+.modal-row input,.modal-row select,.modal-row textarea{width:100%;background:rgba(6,10,20,0.6);border:1px solid var(--glass-border);border-radius:8px;padding:8px 10px;color:var(--text);font-family:inherit;font-size:0.9em}
+.modal-row input:focus,.modal-row select:focus,.modal-row textarea:focus{outline:none;border-color:rgba(34,211,238,0.5)}
+.modal-row textarea{min-height:60px;resize:vertical}
+.modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px;padding-top:14px;border-top:1px solid var(--glass-border)}
+.btn.danger{color:var(--red);border-color:rgba(248,113,113,0.3)}
+.btn.danger:hover{background:rgba(248,113,113,0.08)}
+
+/* Line items editor */
+.line-items-section{margin:14px 0;border-top:1px solid var(--glass-border);padding-top:14px}
+.line-items-section h3{font-family:'Orbitron',monospace;font-size:0.72em;letter-spacing:1.6px;text-transform:uppercase;color:var(--text-dim);margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}
+.li-row{display:grid;grid-template-columns:1fr 80px 60px 90px 90px 28px;gap:8px;align-items:center;margin-bottom:8px;font-size:0.85em}
+.li-row input{background:rgba(6,10,20,0.6);border:1px solid var(--glass-border);border-radius:6px;padding:6px 8px;color:var(--text);font-family:inherit;font-size:0.85em;width:100%}
+.li-row .remove-li{background:transparent;border:1px solid var(--glass-border);color:var(--red);width:24px;height:24px;border-radius:6px;cursor:pointer;font-size:1.2em;line-height:1;padding:0}
+.li-row .remove-li:hover{border-color:var(--red)}
+.li-add{background:transparent;border:1px dashed var(--glass-border);color:var(--text-dim);padding:8px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:0.8em;width:100%;margin-top:4px}
+.li-add:hover{color:var(--cyan);border-color:rgba(34,211,238,0.4)}
+.totals{text-align:right;margin-top:10px;font-family:'Share Tech Mono',monospace;font-size:0.95em;color:var(--text)}
+
+@media(max-width:1100px){.po-row{grid-template-columns:90px 1fr 100px 90px 28px}.po-row .po-date,.po-row .po-merchant.city{display:none}}
+@media(max-width:768px){.main{padding:12px}.hq-title h1{font-size:1.3em}.modal-row{grid-template-columns:1fr}.modal-row label{padding-top:0;padding-bottom:4px}.li-row{grid-template-columns:1fr 60px 70px 28px}.li-row .li-unit,.li-row .li-total{display:none}}
+</style>
+<script src="/assets/portal-auth-client.js"></script>
+</head>
+<body>
+
+<aside class="sidebar">
+  <a href="/admin.html" class="sidebar-logo" title="Admin Home"></a>
+  <div class="sidebar-divider"></div>
+  <nav class="sidebar-nav">
+    <a href="/admin-overview.html" class="nav-icon" title="Overview"><svg viewBox="0 0 24 24"><path d="M3 12l9-9 9 9M5 10v10h14V10"/></svg></a>
+    <a href="/marketing.html" class="nav-icon" title="Marketing"><svg viewBox="0 0 24 24"><path d="M3 11l18-9v18l-18-9zM7 13v6"/></svg></a>
+    <a href="/sales.html" class="nav-icon" title="Sales"><svg viewBox="0 0 24 24"><path d="M12 1v22M17 5H9a4 4 0 100 8h6a4 4 0 110 8H6"/></svg></a>
+    <a href="/production.html" class="nav-icon" title="Production"><svg viewBox="0 0 24 24"><path d="M2 22V12l10-7 10 7v10M2 12l10 7 10-7M9 22V14h6v8"/></svg></a>
+    <a href="/service.html" class="nav-icon" title="Service"><svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg></a>
+    <a href="/inventory.html" class="nav-icon active" title="Materials"><svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></a>
+    <a href="/admin.html" class="nav-icon" title="Full Admin"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></a>
+  </nav>
+</aside>
+
+<main class="main">
+
+  <div class="hq-header">
+    <div class="hq-title">
+      <div class="crumb"><a href="/inventory.html">Materials</a> · Purchase Orders</div>
+      <h1>Purchase Orders</h1>
+      <div class="sub">Supplier orders + delivery tracking. Replaces the spreadsheet/email/WhatsApp dance for material coordination.</div>
+    </div>
+    <button class="btn primary" id="newPoBtn">
+      <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      New PO
+    </button>
+  </div>
+
+  <div class="status-pills" id="statusPills"></div>
+
+  <div class="po-table" id="poTable">
+    <div class="po-row header">
+      <div>PO #</div>
+      <div>Supplier</div>
+      <div>Notes</div>
+      <div>Status</div>
+      <div>Expected</div>
+      <div style="text-align:right">Total</div>
+      <div></div>
+    </div>
+    <div id="poRows">
+      <div class="skeleton"></div>
+      <div class="skeleton"></div>
+      <div class="skeleton"></div>
+    </div>
+  </div>
+
+</main>
+
+<!-- Modal -->
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal" id="modal">
+    <h2 id="modalTitle">New Purchase Order</h2>
+
+    <input type="hidden" id="poId">
+
+    <div class="modal-row">
+      <label>PO Number</label>
+      <input id="poNumber" placeholder="auto-assigns if blank">
+    </div>
+    <div class="modal-row">
+      <label>Supplier</label>
+      <select id="merchantSelect"><option value="">— select supplier —</option></select>
+    </div>
+    <div class="modal-row">
+      <label>Status</label>
+      <select id="statusSelect">
+        <option value="draft">Draft</option>
+        <option value="sent">Sent</option>
+        <option value="confirmed">Confirmed</option>
+        <option value="partial">Partial</option>
+        <option value="received">Received</option>
+        <option value="cancelled">Cancelled</option>
+      </select>
+    </div>
+    <div class="modal-row">
+      <label>Expected Delivery</label>
+      <input type="date" id="expectedDate">
+    </div>
+    <div class="modal-row">
+      <label>Notes</label>
+      <textarea id="poNotes" placeholder="Job address, special instructions..."></textarea>
+    </div>
+
+    <div class="line-items-section">
+      <h3>
+        <span>Line Items</span>
+        <span id="liCount" style="color:var(--cyan);font-family:'Share Tech Mono',monospace">0</span>
+      </h3>
+      <div class="li-row li-header" style="font-family:'Orbitron',monospace;font-size:0.6em;letter-spacing:1.4px;color:var(--text-dim);text-transform:uppercase">
+        <div>Description</div>
+        <div>Qty</div>
+        <div class="li-unit">Unit</div>
+        <div>Unit $</div>
+        <div class="li-total" style="text-align:right">Line $</div>
+        <div></div>
+      </div>
+      <div id="lineItems"></div>
+      <button class="li-add" id="addLineBtn">+ Add line item</button>
+      <div class="totals">Subtotal: <span id="subtotalDisplay">$0.00</span></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn danger" id="deleteBtn" style="display:none">Delete</button>
+      <button class="btn" id="cancelBtn">Cancel</button>
+      <button class="btn primary" id="saveBtn">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const TENANT = 'plus-ultra';
+const STATUSES = ['all', 'draft', 'sent', 'confirmed', 'partial', 'received', 'cancelled'];
+let activeStatus = 'all';
+let allPos = [];
+let merchants = [];
+let editingId = null;
+
+function escapeHtml(s) { if (s == null) return ''; return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fmt$(n) { return '$' + (Number(n) || 0).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function fmtDate(s) { if (!s) return '—'; const d = new Date(s); return d.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }); }
+
+function renderPills() {
+  const counts = STATUSES.reduce((acc, s) => { acc[s] = 0; return acc; }, {});
+  counts.all = allPos.length;
+  for (const po of allPos) if (po.status in counts) counts[po.status]++;
+
+  document.getElementById('statusPills').innerHTML = STATUSES.map(s => `
+    <button class="pill ${s === activeStatus ? 'active' : ''}" data-status="${s}">
+      <span>${s.charAt(0).toUpperCase() + s.slice(1)}</span>
+      <span class="count">${counts[s]}</span>
+    </button>`).join('');
+  document.querySelectorAll('.pill').forEach(p => p.addEventListener('click', () => {
+    activeStatus = p.dataset.status;
+    renderPills();
+    renderRows();
+  }));
+}
+
+function renderRows() {
+  const filtered = activeStatus === 'all' ? allPos : allPos.filter(p => p.status === activeStatus);
+  const el = document.getElementById('poRows');
+  if (filtered.length === 0) {
+    el.innerHTML = `<div class="empty-state"><div class="ico">◇</div>${activeStatus === 'all' ? 'No purchase orders yet. Click <b>New PO</b> to create one.' : `No POs in <b>${activeStatus}</b> status.`}</div>`;
+    return;
+  }
+  el.innerHTML = filtered.map(po => `
+    <div class="po-row" data-id="${po.id}">
+      <div class="po-num">${escapeHtml(po.po_number)}</div>
+      <div class="po-merchant">${escapeHtml(po.merchant?.name || '—')}</div>
+      <div class="po-date" style="font-family:inherit;font-size:0.82em;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(po.notes || '')}</div>
+      <div><span class="po-status ${po.status}">${po.status}</span></div>
+      <div class="po-date">${fmtDate(po.expected_delivery_date)}</div>
+      <div class="po-total">${fmt$(po.total_amount)}</div>
+      <div class="po-chev">›</div>
+    </div>`).join('');
+  document.querySelectorAll('.po-row[data-id]').forEach(r => r.addEventListener('click', () => openEdit(r.dataset.id)));
+}
+
+function renderLineItems(items) {
+  const wrap = document.getElementById('lineItems');
+  wrap.innerHTML = items.map((it, i) => `
+    <div class="li-row" data-idx="${i}">
+      <input class="li-desc" placeholder="Description" value="${escapeHtml(it.description || '')}">
+      <input class="li-qty" type="number" step="0.01" placeholder="Qty" value="${it.qty ?? ''}">
+      <input class="li-unit" placeholder="Unit" value="${escapeHtml(it.unit || '')}">
+      <input class="li-price" type="number" step="0.01" placeholder="0.00" value="${it.unit_price ?? ''}">
+      <input class="li-total" type="number" step="0.01" placeholder="auto" value="${it.line_total ?? ''}" readonly>
+      <button class="remove-li" data-idx="${i}">×</button>
+    </div>`).join('');
+  document.getElementById('liCount').textContent = items.length;
+  wrap.querySelectorAll('.remove-li').forEach(b => b.addEventListener('click', e => {
+    const i = +e.target.dataset.idx;
+    const all = currentLineItems();
+    all.splice(i, 1);
+    renderLineItems(all);
+    recomputeSubtotal();
+  }));
+  wrap.querySelectorAll('input:not([readonly])').forEach(inp => inp.addEventListener('input', () => {
+    const row = inp.closest('.li-row');
+    const qty = +row.querySelector('.li-qty').value || 0;
+    const price = +row.querySelector('.li-price').value || 0;
+    row.querySelector('.li-total').value = (qty * price).toFixed(2);
+    recomputeSubtotal();
+  }));
+}
+
+function currentLineItems() {
+  return Array.from(document.querySelectorAll('#lineItems .li-row')).map(r => ({
+    description: r.querySelector('.li-desc').value.trim(),
+    qty: +r.querySelector('.li-qty').value || 0,
+    unit: r.querySelector('.li-unit').value.trim(),
+    unit_price: +r.querySelector('.li-price').value || 0,
+    line_total: +r.querySelector('.li-total').value || 0,
+  })).filter(it => it.description || it.qty || it.unit_price);
+}
+
+function recomputeSubtotal() {
+  const items = currentLineItems();
+  const sub = items.reduce((s, it) => s + (it.line_total || (it.qty * it.unit_price) || 0), 0);
+  document.getElementById('subtotalDisplay').textContent = fmt$(sub);
+}
+
+function openNew() {
+  editingId = null;
+  document.getElementById('modalTitle').textContent = 'New Purchase Order';
+  document.getElementById('poId').value = '';
+  document.getElementById('poNumber').value = '';
+  document.getElementById('merchantSelect').value = '';
+  document.getElementById('statusSelect').value = 'draft';
+  document.getElementById('expectedDate').value = '';
+  document.getElementById('poNotes').value = '';
+  renderLineItems([{ description: '', qty: 1, unit: '', unit_price: 0, line_total: 0 }]);
+  recomputeSubtotal();
+  document.getElementById('deleteBtn').style.display = 'none';
+  document.getElementById('modalBackdrop').classList.add('open');
+}
+
+async function openEdit(id) {
+  editingId = id;
+  document.getElementById('modalTitle').textContent = 'Edit Purchase Order';
+  document.getElementById('modalBackdrop').classList.add('open');
+  try {
+    const r = await fetch(`/api/purchase-orders?id=${id}`, { headers: { 'x-tenant-id': TENANT } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const po = await r.json();
+    document.getElementById('poId').value = po.id;
+    document.getElementById('poNumber').value = po.po_number || '';
+    document.getElementById('merchantSelect').value = po.merchant_id || '';
+    document.getElementById('statusSelect').value = po.status || 'draft';
+    document.getElementById('expectedDate').value = po.expected_delivery_date || '';
+    document.getElementById('poNotes').value = po.notes || '';
+    renderLineItems(Array.isArray(po.line_items) && po.line_items.length ? po.line_items : [{ description: '', qty: 1, unit: '', unit_price: 0, line_total: 0 }]);
+    recomputeSubtotal();
+    document.getElementById('deleteBtn').style.display = po.status === 'draft' ? 'inline-flex' : 'none';
+  } catch (e) {
+    alert('Could not load PO: ' + e.message);
+    closeModal();
+  }
+}
+
+function closeModal() {
+  document.getElementById('modalBackdrop').classList.remove('open');
+  editingId = null;
+}
+
+async function save() {
+  const merchant_id = document.getElementById('merchantSelect').value;
+  if (!merchant_id) { alert('Pick a supplier first.'); return; }
+  const body = {
+    po_number: document.getElementById('poNumber').value.trim() || undefined,
+    merchant_id,
+    status: document.getElementById('statusSelect').value,
+    expected_delivery_date: document.getElementById('expectedDate').value || null,
+    notes: document.getElementById('poNotes').value.trim() || null,
+    line_items: currentLineItems(),
+  };
+  try {
+    const method = editingId ? 'PUT' : 'POST';
+    if (editingId) body.id = editingId;
+    const r = await fetch('/api/purchase-orders', {
+      method,
+      headers: { 'Content-Type': 'application/json', 'x-tenant-id': TENANT },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error(await r.text() || 'HTTP ' + r.status);
+    closeModal();
+    load();
+  } catch (e) {
+    alert('Save failed: ' + e.message);
+  }
+}
+
+async function deletePo() {
+  if (!editingId) return;
+  if (!confirm('Delete this draft PO? This cannot be undone.')) return;
+  try {
+    const r = await fetch(`/api/purchase-orders?id=${editingId}`, {
+      method: 'DELETE', headers: { 'x-tenant-id': TENANT }
+    });
+    if (!r.ok) throw new Error(await r.text() || 'HTTP ' + r.status);
+    closeModal();
+    load();
+  } catch (e) {
+    alert('Delete failed: ' + e.message);
+  }
+}
+
+async function loadMerchants() {
+  try {
+    const r = await fetch('/api/merchants', { headers: { 'x-tenant-id': TENANT } });
+    if (!r.ok) return;
+    const data = await r.json();
+    merchants = data.merchants || [];
+    const sel = document.getElementById('merchantSelect');
+    sel.innerHTML = '<option value="">— select supplier —</option>' +
+      merchants.map(m => `<option value="${m.id}">${escapeHtml(m.name)}${m.city ? ' · ' + escapeHtml(m.city) : ''}</option>`).join('');
+  } catch (e) { /* fail silent */ }
+}
+
+async function load() {
+  try {
+    const r = await fetch('/api/purchase-orders', { headers: { 'x-tenant-id': TENANT } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    allPos = data.purchase_orders || [];
+    renderPills();
+    renderRows();
+  } catch (e) {
+    document.getElementById('poRows').innerHTML = `<div class="empty-state"><div class="ico">⚠</div>Could not load purchase orders.<br><span style="font-size:0.8em">${escapeHtml(e.message)}</span></div>`;
+  }
+}
+
+// Wire events
+document.getElementById('newPoBtn').addEventListener('click', openNew);
+document.getElementById('cancelBtn').addEventListener('click', closeModal);
+document.getElementById('saveBtn').addEventListener('click', save);
+document.getElementById('deleteBtn').addEventListener('click', deletePo);
+document.getElementById('addLineBtn').addEventListener('click', () => {
+  const items = currentLineItems();
+  items.push({ description: '', qty: 1, unit: '', unit_price: 0, line_total: 0 });
+  renderLineItems(items);
+});
+document.getElementById('modalBackdrop').addEventListener('click', e => { if (e.target.id === 'modalBackdrop') closeModal(); });
+
+loadMerchants();
+load();
+setInterval(load, 5 * 60 * 1000);
+</script>
+</body>
+</html>

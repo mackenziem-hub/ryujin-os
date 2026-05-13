@@ -90,7 +90,9 @@ const KPI_MAPS = {
     'stats.products_out_of_stock':         { key: 'inventory.out_of_stock',         label: 'Out of Stock',         unit: 'count', sort_order: 75 },
     'stats.products_missing_lead_time':    { key: 'inventory.missing_lead_time',    label: 'Missing Lead Time',    unit: 'count', sort_order: 76 },
     'stats.suppliers_with_stale_catalog':  { key: 'inventory.suppliers_dormant',    label: 'Dormant Suppliers',    unit: 'count', sort_order: 77 },
-    'stats.po_open':                       { key: 'inventory.po_open',              label: 'Open POs',             unit: 'count', sort_order: 78 }
+    'stats.po_open':                       { key: 'inventory.po_open',              label: 'Open POs',             unit: 'count', sort_order: 78 },
+    'stats.po_overdue':                    { key: 'inventory.po_overdue',           label: 'Overdue POs',          unit: 'count', sort_order: 79 },
+    'stats.po_drafts_stale':               { key: 'inventory.po_drafts_stale',      label: 'Stale Draft POs',      unit: 'count', sort_order: 80 }
   },
   strategy: {
     'stats.runsLast7d':           { key: 'strategy.agent_runs_7d',     label: 'Agent Runs (7d)',           unit: 'count', sort_order: 90 },
