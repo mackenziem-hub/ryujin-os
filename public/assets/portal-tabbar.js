@@ -47,7 +47,10 @@
     if (document.querySelector('.ry-portal-tabbar')) return;
 
     const css = `
-      :root { --ry-cream: #f5ecd9; }
+      /* Teal-mint per Grok mockup — matches portal-mobile.html accent.
+         Variable name kept --ry-cream for now to avoid touching every active-tab
+         color in production-jobs/paysheet/messages until those pages get the swap. */
+      :root { --ry-cream: #2dd4bf; }
       .ry-portal-tabbar {
         position: fixed; left: 0; right: 0; bottom: 0;
         padding: 8px 10px calc(8px + env(safe-area-inset-bottom)) 10px;
