@@ -1,5 +1,5 @@
 // Ad Performance Data Reader
-// Reads ad data from the Shenron snapshot (populated by live Meta API or CSV enrichment).
+// Reads ad data from the Ryujin snapshot (populated by live Meta API or CSV enrichment).
 //
 // Data sources:
 //   Meta: Live Graph API via /api/meta-ads → snapshot.sections.metaAds (primary)
@@ -8,10 +8,10 @@
 //
 // Since agents run on Vercel (no filesystem), they read from the snapshot API.
 
-const SHENRON_BASE = 'https://ryujin-os.vercel.app';
+const BASE_URL = 'https://ryujin-os.vercel.app';
 
 /**
- * Fetch ad performance data from the Shenron snapshot.
+ * Fetch ad performance data from the Ryujin snapshot.
  * Returns structured Meta + Google Ads metrics.
  */
 export async function fetchAdData() {
@@ -24,7 +24,7 @@ export async function fetchAdData() {
 
   try {
     // Cache-bust to defeat Vercel edge cache (see _shared.js fetchJSON note)
-    const resp = await fetch(`${SHENRON_BASE}/api/snapshot?_t=${Date.now()}`, { cache: 'no-store' });
+    const resp = await fetch(`${BASE_URL}/api/snapshot?_t=${Date.now()}`, { cache: 'no-store' });
     if (!resp.ok) {
       result.errors.push(`Snapshot fetch failed: HTTP ${resp.status}`);
       return result;

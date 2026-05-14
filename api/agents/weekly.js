@@ -8,7 +8,7 @@
 import { runTrunks, runBulma } from './_shared.js';
 import { requireCronOrOwner } from '../../lib/cronAuth.js';
 
-const SHENRON_BASE = 'https://ryujin-os.vercel.app';
+const BASE_URL = 'https://ryujin-os.vercel.app';
 
 export default async function handler(req, res) {
   const auth = requireCronOrOwner(req);
@@ -35,7 +35,7 @@ export default async function handler(req, res) {
 
   // Persist reports to snapshot so audits can confirm each agent ran.
   try {
-    await fetch(`${SHENRON_BASE}/api/snapshot`, {
+    await fetch(`${BASE_URL}/api/snapshot`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

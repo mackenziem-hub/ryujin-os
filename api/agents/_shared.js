@@ -12,7 +12,7 @@ import { fetchAdData, analyzeAdPerformance } from './_adData.js';
 import { gmailSend } from '../../lib/google.js';
 import { runCashflow } from './cashflow.js';
 
-const SHENRON_BASE = 'https://ryujin-os.vercel.app';
+const BASE_URL = 'https://ryujin-os.vercel.app';
 
 export async function fetchJSON(url, headers = {}) {
   // Cache-bust to defeat Vercel edge caching that otherwise serves stale snapshot
@@ -54,7 +54,7 @@ export async function sendFallbackSMS(message) {
 export async function runVegeta() {
   const report = { agent: 'Vegeta', role: 'Sales & Pipeline', timestamp: new Date().toISOString(), findings: [], tasks: [] };
 
-  const pipeline = await fetchJSON(`${SHENRON_BASE}/api/ghl?mode=pipeline&limit=100`);
+  const pipeline = await fetchJSON(`${BASE_URL}/api/ghl?mode=pipeline&limit=100`);
   if (pipeline.error) { report.findings.push(`Pipeline fetch failed: ${pipeline.error}`); return report; }
 
   const opps = pipeline.opportunities || [];
@@ -88,7 +88,7 @@ export async function runVegeta() {
   }
 
   // Estimator stats
-  const stats = await fetchJSON(`${SHENRON_BASE}/api/lookup?mode=stats`);
+  const stats = await fetchJSON(`${BASE_URL}/api/lookup?mode=stats`);
   const estStats = stats.results?.find(r => r.source === 'Estimator OS');
   if (estStats?.stats) {
     report.estimatorStats = {
@@ -117,13 +117,13 @@ export async function runVegeta() {
   // No ad data = no way to detect paused campaigns, no way to track CPL, no early warning.
   // This must be top_priority because a stale ad feed is how we missed the lead-flow stoppage.
   try {
-    const snapshot = await fetchJSON(`${SHENRON_BASE}/api/snapshot`);
+    const snapshot = await fetchJSON(`${BASE_URL}/api/snapshot`);
     const metaAds = snapshot?.sections?.metaAds;
     if (!metaAds) {
       report.findings.push(`🚨 Meta Ads section MISSING from snapshot — ad performance is invisible.`);
       report.tasks.push({
-        title: `🚨 Meta Ads data missing — Shenron is blind to ad performance`,
-        description: `snapshot.sections.metaAds is not populated. Vegeta cannot detect paused campaigns, high CPL, or budget issues. Action: re-enrich the snapshot from the Meta CSV in Shenron/Facebook Ads Export/, or wire up live Meta Ads API.`,
+        title: `🚨 Meta Ads data missing — Ryujin is blind to ad performance`,
+        description: `snapshot.sections.metaAds is not populated. Vegeta cannot detect paused campaigns, high CPL, or budget issues. Action: re-enrich the snapshot from the Meta CSV in Plus Ultra/Marketing/Facebook Ads Export/, or wire up live Meta Ads API.`,
         priority: 'top_priority'
       });
     } else {
@@ -150,7 +150,7 @@ export async function runVegeta() {
 export async function runPiccolo() {
   const report = { agent: 'Piccolo', role: 'Operations & Crew', timestamp: new Date().toISOString(), findings: [], tasks: [] };
 
-  const stats = await fetchJSON(`${SHENRON_BASE}/api/lookup?mode=stats`);
+  const stats = await fetchJSON(`${BASE_URL}/api/lookup?mode=stats`);
   const ticketStats = stats.results?.find(r => r.source === 'Action Board');
 
   if (ticketStats?.stats) {
@@ -184,7 +184,7 @@ export async function runPiccolo() {
     }
   }
 
-  const estData = await fetchJSON(`${SHENRON_BASE}/api/lookup?source=estimates`);
+  const estData = await fetchJSON(`${BASE_URL}/api/lookup?source=estimates`);
   const accepted = (estData.results?.[0]?.data || []).filter(e => e.status === 'Proposal Accepted');
   if (accepted.length > 0) {
     report.findings.push(`${accepted.length} accepted proposals — verify crew tickets exist`);
@@ -197,7 +197,7 @@ export async function runPiccolo() {
 export async function runKrillin() {
   const report = { agent: 'Krillin', role: 'Comms & Marketing', timestamp: new Date().toISOString(), findings: [], tasks: [] };
 
-  const convos = await fetchJSON(`${SHENRON_BASE}/api/ghl?mode=conversations&limit=30`);
+  const convos = await fetchJSON(`${BASE_URL}/api/ghl?mode=conversations&limit=30`);
   if (convos.conversations) {
     const list = convos.conversations;
     const now = Date.now();
@@ -236,7 +236,7 @@ export async function runKrillin() {
   let krillinSnapshot = null;
   try {
     try {
-      krillinSnapshot = await fetchJSON(`${SHENRON_BASE}/api/snapshot`);
+      krillinSnapshot = await fetchJSON(`${BASE_URL}/api/snapshot`);
     } catch (e) { /* snapshot fetch optional */ }
 
     const leadData = krillinSnapshot?.sections?.leads || {};
@@ -313,7 +313,7 @@ export async function runKrillin() {
     report.findings.push(`Lead-flow check failed: ${e.message}`);
   }
 
-  const voiceAI = await fetchJSON(`${SHENRON_BASE}/api/ghl?mode=pipeline&pipeline=nJqJ681y17CWjkCRzVhH`);
+  const voiceAI = await fetchJSON(`${BASE_URL}/api/ghl?mode=pipeline&pipeline=nJqJ681y17CWjkCRzVhH`);
   const voiceOpps = voiceAI.opportunities || [];
   if (voiceOpps.length > 0) {
     report.findings.push(`${voiceOpps.length} Voice AI pipeline entries`);
@@ -327,7 +327,7 @@ export async function runKrillin() {
   report.adPerformance = adData.combined || null;
 
   // Gmail urgents from enriched snapshot (reuse krillinSnapshot if available)
-  const snapshot = krillinSnapshot || await fetchJSON(`${SHENRON_BASE}/api/snapshot`);
+  const snapshot = krillinSnapshot || await fetchJSON(`${BASE_URL}/api/snapshot`);
   if (snapshot?.sections?.gmail?.urgentUnread) {
     const urgent = snapshot.sections.gmail.urgentUnread;
     if (urgent.length > 0) {
@@ -369,7 +369,7 @@ export async function runGohan() {
   // Dynamic game health check — Supabase player stats when available
   const gameHealth = { online: report.gameOnline, hqOnline: report.hqOnline };
   try {
-    const snapshot = await fetchJSON(`${SHENRON_BASE}/api/snapshot`);
+    const snapshot = await fetchJSON(`${BASE_URL}/api/snapshot`);
     if (snapshot?.sections?.aetheria) {
       gameHealth.players = snapshot.sections.aetheria.players || null;
       gameHealth.sessions = snapshot.sections.aetheria.sessions || null;
@@ -389,7 +389,7 @@ export async function runTrunks() {
     { name: 'Aetheria Game', url: 'https://pwa-six-iota.vercel.app' },
     { name: 'Aetheria HQ', url: 'https://pwa-hq.vercel.app' },
     { name: 'Plus Ultra HQ', url: 'https://plus-ultra-hq.vercel.app' },
-    { name: 'Shenron AI', url: 'https://ryujin-os.vercel.app' }
+    { name: 'Ryujin OS', url: 'https://ryujin-os.vercel.app' }
   ];
 
   let appsOnline = 0;
@@ -415,7 +415,7 @@ export async function runTrunks() {
     { name: 'Estimator OS', url: 'https://estimator-os.replit.app/api/stats', headers: { 'x-api-key': 'pu-estimator-2026' } },
     { name: 'Action Board', url: 'https://ultra-task-manager.replit.app/api/stats', headers: { 'x-api-key': 'pu-actionboard-2026' } },
     { name: 'Instant Estimator', url: 'https://plus-ultra-roof-estimator.replit.app/api/stats', headers: { 'x-api-key': 'pu-instantest-2026' } },
-    { name: 'GHL CRM', url: `${SHENRON_BASE}/api/ghl`, headers: {} }
+    { name: 'GHL CRM', url: `${BASE_URL}/api/ghl`, headers: {} }
   ];
 
   let keysValid = 0;
@@ -444,9 +444,9 @@ export async function runBulma() {
   const report = { agent: 'Bulma', role: 'Intel & Analytics', timestamp: new Date().toISOString(), findings: [], tasks: [] };
 
   const [lookupStats, ghlOverview, ghlPipeline] = await Promise.all([
-    fetchJSON(`${SHENRON_BASE}/api/lookup?mode=stats`),
-    fetchJSON(`${SHENRON_BASE}/api/ghl`),
-    fetchJSON(`${SHENRON_BASE}/api/ghl?mode=pipeline&limit=100`)
+    fetchJSON(`${BASE_URL}/api/lookup?mode=stats`),
+    fetchJSON(`${BASE_URL}/api/ghl`),
+    fetchJSON(`${BASE_URL}/api/ghl?mode=pipeline&limit=100`)
   ]);
 
   const estStats = lookupStats.results?.find(r => r.source === 'Estimator OS')?.stats || {};
@@ -505,7 +505,7 @@ export async function runBulma() {
     report.tasks.push({ title: 'No proposals sent — pipeline risk', description: 'Estimator OS shows 0 proposals sent. Check if quotes are being prepared.', priority: 'high' });
   }
 
-  const snapshot = await fetchJSON(`${SHENRON_BASE}/api/snapshot`);
+  const snapshot = await fetchJSON(`${BASE_URL}/api/snapshot`);
   if (snapshot?.sections?.metaAds) {
     const meta = snapshot.sections.metaAds;
     report.metaAds = {

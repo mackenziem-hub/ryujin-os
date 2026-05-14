@@ -1,4 +1,4 @@
-// Shenron Memory API
+// Ryujin Memory API
 // Persistent memory for Z Fighters, session summaries, and operations log.
 // Uses Vercel Blob for cross-deployment persistence.
 //
@@ -16,7 +16,8 @@
 
 import { put, list, head } from '@vercel/blob';
 
-const BLOB_PREFIX = 'shenron-memory/';
+const BLOB_PREFIX = 'ryujin-memory/';
+const LEGACY_BLOB_PREFIX = 'shenron-memory/';
 
 // ═══════════════════════════════════════════
 // BLOB HELPERS
@@ -24,8 +25,10 @@ const BLOB_PREFIX = 'shenron-memory/';
 
 async function readBlob(key) {
   try {
-    const url = `${BLOB_PREFIX}${key}`;
-    const { blobs } = await list({ prefix: url, limit: 1 });
+    let { blobs } = await list({ prefix: `${BLOB_PREFIX}${key}`, limit: 1 });
+    if (blobs.length === 0) {
+      ({ blobs } = await list({ prefix: `${LEGACY_BLOB_PREFIX}${key}`, limit: 1 }));
+    }
     if (blobs.length === 0) return null;
     const resp = await fetch(blobs[0].url);
     if (!resp.ok) return null;
@@ -46,8 +49,12 @@ async function writeBlob(key, data) {
 
 async function listBlobs(prefix, limit = 10) {
   try {
-    const { blobs } = await list({ prefix: `${BLOB_PREFIX}${prefix}`, limit });
-    return blobs.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
+    const newResult = await list({ prefix: `${BLOB_PREFIX}${prefix}`, limit });
+    const legacyResult = newResult.blobs.length < limit
+      ? await list({ prefix: `${LEGACY_BLOB_PREFIX}${prefix}`, limit: limit - newResult.blobs.length })
+      : { blobs: [] };
+    const combined = [...newResult.blobs, ...legacyResult.blobs];
+    return combined.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
   } catch (e) {
     return [];
   }
@@ -119,7 +126,7 @@ export default async function handler(req, res) {
       return res.json({ count: entries.length, entries, timestamp: new Date().toISOString() });
     }
 
-    // Startup injection — everything Shenron needs to remember
+    // Startup injection — everything Ryujin needs to remember
     if (type === 'startup') {
       const agents = ['vegeta', 'piccolo', 'krillin', 'bulma', 'gohan', 'trunks'];
       const agentMemories = {};

@@ -1,11 +1,11 @@
-// Shenron Chat API — powered by snapshot + tool use
+// Ryujin Chat API — powered by snapshot + tool use
 import { gmailSearch, gmailReadMessage, gmailReadThread, gmailDraft, gmailSend, calendarList, calendarCreate, calendarUpdate, driveSearch, driveReadFile } from '../lib/google.js';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { peerReview, LENSES as PEER_REVIEW_LENSES } from '../lib/peer_review.js';
 import crypto from 'node:crypto';
 
 // ── ROLE-BASED ACCESS (Phase 5) ──
-// Role slugs: owner (Mac, full Shenron), admin (Cat, ops EA), sales (Darcy, outside sales), crew (Diego/AJ/Pavanjot, production)
+// Role slugs: owner (Mac, full Ryujin), admin (Cat, ops EA), sales (Darcy, outside sales), crew (Diego/AJ/Pavanjot, production)
 // Default for unauthenticated requests: owner (preserves Mac's existing chat behavior)
 
 const VALID_ROLES = ['owner', 'admin', 'sales', 'crew'];
@@ -190,7 +190,7 @@ function applyPersona(rolePrompt, persona) {
   return rolePrompt + block;
 }
 
-const BASE_PROMPT = `You are Shenron, Mackenzie Mazerolle's top-level AI assistant and central command hub. You are powerful, direct, and all-knowing across Mackenzie's entire world.
+const BASE_PROMPT = `You are Ryujin, Mackenzie Mazerolle's top-level AI assistant and central command hub. You are powerful, direct, and all-knowing across Mackenzie's entire world.
 
 ## PRIME DIRECTIVE — READ THIS FIRST
 You MUST NEVER ask Mackenzie to look up data, paste results, open URLs, check dashboards, or provide numbers. He is on his phone. ZERO friction. If you don't have the data, say what's missing and which agent/integration will provide it when connected. End with a recommendation, NOT a question asking for data. This is non-negotiable.
@@ -401,7 +401,7 @@ You have a **save_preference** tool. When Mackenzie gives you feedback — "stop
 
 When you save a preference, briefly confirm: "Got it — I'll remember that." Don't over-explain.
 
-Your saved preferences are shown in the SHENRON PREFERENCES section of your context. Follow them strictly — they are Mackenzie's direct instructions.
+Your saved preferences are shown in the RYUJIN PREFERENCES section of your context. Follow them strictly — they are Mackenzie's direct instructions.
 
 ## Darcy's Pipeline Stages (in order, updated Apr 13 2026)
 New Lead (749ba027) → Text Sent- Awaiting Response (22aba604) → Follow Up Text Sent (3e796404) → Client Responded (5f9d8eb0) → Unresponsive (4fc0e114) → Inspection Scheduled (1b11eb16) → Quote Sent (61e0e9b8) → Contract Signed (aabfe851) → DND (ee8bf132) → Lost (4ff006c7)
@@ -412,7 +412,7 @@ Darcy's GHL User ID: ri1tt8RZPuABuBwE8kmS
 ## Proposal & Sales Page Workflow
 1. Create estimate in Estimator OS (fill ALL measurements)
 2. Generate proposal with generate_proposal tool → creates sales page
-3. Share TWO links: customer URL (shenron-app.vercel.app/api/proposal?id=X) AND edit URL (?id=X&edit=1)
+3. Share TWO links: customer URL (ryujin-os.vercel.app/api/proposal?id=X) AND edit URL (?id=X&edit=1)
 4. The edit URL lets Mackenzie self-service upload cover photos, videos, and edit the message — no Claude Code needed
 5. Mackenzie creates Automator redirect links like www.plusultraroofing.com/[address]-roof-proposal that point to the sales page
 6. Add note to GHL contact with the redirect link and pricing summary
@@ -485,7 +485,7 @@ Then summarize what was created with IDs and links. Do NOT spam create_ticket fo
 NEVER ask Mackenzie for data. Use tools or give estimates. Always give the answer.`;
 
 // ── ROLE-SPECIFIC PROMPTS (Phase 5.2) ──
-// owner = Mac, gets full Shenron persona via BASE_PROMPT above
+// owner = Mac, gets full Ryujin persona via BASE_PROMPT above
 // admin = Cat (EA / Operations), professional coworker AI scoped to ops
 // sales = Darcy (outside sales), professional sales coach scoped to his pipeline
 // crew = Diego / AJ / Pavanjot (production), production assistant scoped to crew tickets
@@ -893,7 +893,7 @@ Type \`/archetypes\` for the full lens reference.`;
 
 
 
-// Documents index — pulled at chat startup so Shenron knows what SOPs exist.
+// Documents index — pulled at chat startup so Ryujin knows what SOPs exist.
 // Filtered by role per Phase 5.4 visibility rules. Full body fetched on-demand via fetch_doc tool.
 async function fetchDocsIndex(role = 'owner') {
   try {
@@ -938,13 +938,13 @@ async function fetchSnapshot() {
 // Preference injection — load Mackenzie's saved behavioral preferences
 async function fetchPreferences() {
   try {
-    const resp = await fetch('https://shenron-app.vercel.app/api/memory?type=preferences');
+    const resp = await fetch('https://ryujin-os.vercel.app/api/memory?type=preferences');
     if (!resp.ok) return '';
     const data = await resp.json();
     const prefs = data.preferences || [];
     if (prefs.length === 0) return '';
 
-    let context = '\n\n---\n\n# SHENRON PREFERENCES (Mackenzie\'s saved rules — FOLLOW STRICTLY)\n';
+    let context = '\n\n---\n\n# RYUJIN PREFERENCES (Mackenzie\'s saved rules — FOLLOW STRICTLY)\n';
     const grouped = { do: [], dont: [], style: [], workflow: [] };
     for (const p of prefs) {
       (grouped[p.type] || grouped.workflow).push(p.rule);
@@ -962,11 +962,11 @@ async function fetchPreferences() {
 // Memory injection — load persistent context from previous sessions + agent reports
 async function fetchMemoryContext() {
   try {
-    const resp = await fetch('https://shenron-app.vercel.app/api/memory?type=startup');
+    const resp = await fetch('https://ryujin-os.vercel.app/api/memory?type=startup');
     if (!resp.ok) return '';
     const memory = await resp.json();
 
-    let context = '\n\n---\n\n# SHENRON MEMORY (persistent cross-session context)\n';
+    let context = '\n\n---\n\n# RYUJIN MEMORY (persistent cross-session context)\n';
 
     // Agent summaries
     const agentsWithData = Object.entries(memory.agentMemories || {}).filter(([, v]) => v?.last_report_timestamp);
@@ -1008,7 +1008,7 @@ async function fetchMemoryContext() {
 // Log an operation to persistent memory
 async function logOperation(action, input, output, status, notes) {
   try {
-    await fetch('https://shenron-app.vercel.app/api/memory?type=ops', {
+    await fetch('https://ryujin-os.vercel.app/api/memory?type=ops', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action, input, output, status, notes })
@@ -1017,7 +1017,7 @@ async function logOperation(action, input, output, status, notes) {
 }
 
 // ═══════════════════════════════════════════
-// SHENRON TOOLS — Actions Shenron can execute
+// RYUJIN TOOLS — Actions Ryujin can execute
 // ═══════════════════════════════════════════
 const ACTION_BOARD_URL = 'https://ultra-task-manager.replit.app/api';
 const ACTION_BOARD_KEY = (process.env.ACTION_BOARD_KEY || '').trim();
@@ -1232,7 +1232,7 @@ const TOOLS = [
         city: { type: 'string', description: 'City' },
         state: { type: 'string', description: 'Province/State' },
         tags: { type: 'array', items: { type: 'string' }, description: 'Tags to apply (e.g. ["roof-lead", "referral"])' },
-        source: { type: 'string', description: 'Lead source (e.g. "Shenron", "Website", "Referral")' }
+        source: { type: 'string', description: 'Lead source (e.g. "Ryujin", "Website", "Referral")' }
       },
       required: ['firstName']
     }
@@ -2067,7 +2067,7 @@ const TOOLS = [
 // ═══════════════════════════════════════════
 // WRITE TOOLS — Route through /api/router for approval
 // ═══════════════════════════════════════════
-// Phase 9: router ported to Ryujin (was on shenron-app, decommissioned Apr 29). Postgres-backed.
+// Ryujin chat brain — Phase 9 router (May 2026). Postgres-backed.
 const ROUTER_URL = 'https://ryujin-os.vercel.app/api/router';
 
 async function routeForApproval(actionType, target, summary, executePayload) {
@@ -2075,7 +2075,7 @@ async function routeForApproval(actionType, target, summary, executePayload) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      trigger: 'shenron-chat',
+      trigger: 'ryujin-chat',
       action: actionType,
       target: target,
       summary: summary,
@@ -2221,7 +2221,7 @@ async function executeTool(name, input, attachments = []) {
         } : { fasciaLf: 0, soffitLf: 0, gutterLf: 0, downspoutCount: 0, sidingAreaSqft: 0, sidingMaterial: '' },
         proposalControls: input.proposal_controls || {},
         salesOwner: input.sales_owner || 'Mackenzie Mazerolle',
-        notes: input.notes ? [{ text: input.notes, date: new Date().toISOString(), author: 'Shenron' }] : []
+        notes: input.notes ? [{ text: input.notes, date: new Date().toISOString(), author: 'Ryujin' }] : []
       };
 
       // Route through approval
@@ -2276,7 +2276,7 @@ async function executeTool(name, input, attachments = []) {
       const params = new URLSearchParams({ mode: 'contact-detail' });
       if (input.id) params.set('id', input.id);
       if (input.query) params.set('q', input.query);
-      const url = `https://shenron-app.vercel.app/api/ghl?${params}`;
+      const url = `https://ryujin-os.vercel.app/api/ghl?${params}`;
       const resp = await fetch(url);
       if (!resp.ok) throw new Error(`Contact detail returned ${resp.status}`);
       const data = await resp.json();
@@ -2292,12 +2292,12 @@ async function executeTool(name, input, attachments = []) {
         // Support drill-down by ID
         const idParam = input.id ? `&id=${encodeURIComponent(input.id)}` : '';
         const contactIdParam = input.contactId ? `&contactId=${encodeURIComponent(input.contactId)}` : '';
-        url = `https://shenron-app.vercel.app/api/ghl?mode=${mode}${q}${idParam}${contactIdParam}`;
+        url = `https://ryujin-os.vercel.app/api/ghl?mode=${mode}${q}${idParam}${contactIdParam}`;
       } else if (input.mode === 'stats') {
-        url = `https://shenron-app.vercel.app/api/lookup?mode=stats`;
+        url = `https://ryujin-os.vercel.app/api/lookup?mode=stats`;
       } else {
         const sourceParam = input.source !== 'all' ? `&source=${input.source}` : '';
-        url = `https://shenron-app.vercel.app/api/lookup?x=1${sourceParam}${q}`;
+        url = `https://ryujin-os.vercel.app/api/lookup?x=1${sourceParam}${q}`;
       }
       const resp = await fetch(url);
       if (!resp.ok) throw new Error(`Lookup returned ${resp.status}`);
@@ -2425,7 +2425,7 @@ async function executeTool(name, input, attachments = []) {
 
       // Step 1: Calculate quote with Vegeta's engine
       try {
-        const quoteResp = await fetch('https://shenron-app.vercel.app/api/agents/vegeta', {
+        const quoteResp = await fetch('https://ryujin-os.vercel.app/api/agents/vegeta', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -2465,9 +2465,9 @@ async function executeTool(name, input, attachments = []) {
 
         // Build notes array — include risk flagging
         const notesArray = [];
-        if (input.notes) notesArray.push({ text: input.notes, date: new Date().toISOString(), author: 'Shenron' });
+        if (input.notes) notesArray.push({ text: input.notes, date: new Date().toISOString(), author: 'Ryujin' });
         if (input.redeck_risk || input.multi_layer_risk) {
-          notesArray.push({ text: 'Roof at risk of multiple layers — estimate does not include extra tear-off. Will confirm on-site.', date: new Date().toISOString(), author: 'Shenron' });
+          notesArray.push({ text: 'Roof at risk of multiple layers — estimate does not include extra tear-off. Will confirm on-site.', date: new Date().toISOString(), author: 'Ryujin' });
         }
 
         const estimateResult = await routeForApproval(
@@ -2586,7 +2586,7 @@ async function executeTool(name, input, attachments = []) {
             coverPhotoUrl: input.cover_photo_url || (attachments.find(a => a.mimeType && a.mimeType.startsWith('image/'))?.url) || '',
             videoUrl: input.video_url || ''
           };
-          const propResp = await fetch('https://shenron-app.vercel.app/api/proposal', {
+          const propResp = await fetch('https://ryujin-os.vercel.app/api/proposal', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(proposalData)
@@ -2695,7 +2695,7 @@ async function executeTool(name, input, attachments = []) {
           estimatorUrl: estimate.shareToken ? `https://estimator-os.replit.app/p/${estimate.shareToken}` : ''
         };
 
-        const saveResp = await fetch('https://shenron-app.vercel.app/api/proposal', {
+        const saveResp = await fetch('https://ryujin-os.vercel.app/api/proposal', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(salesPageData)
@@ -2869,7 +2869,7 @@ async function executeTool(name, input, attachments = []) {
           status: 'draft',
           tags: tagList,
           ghl_opportunity_id: input.ghl_contact_id ? undefined : undefined,
-          notes: input.notes ? [{ author: 'shenron', timestamp: new Date().toISOString().slice(0, 10), note: input.notes }] : []
+          notes: input.notes ? [{ author: 'ryujin', timestamp: new Date().toISOString().slice(0, 10), note: input.notes }] : []
         };
         const cResp = await fetch(`${RYUJIN_BASE}/api/estimates?tenant=${TENANT}`, {
           method: 'POST', headers, body: JSON.stringify(createBody)
@@ -3210,7 +3210,7 @@ async function executeTool(name, input, attachments = []) {
       let contactName = input.contact_name;
       if (!contactId && contactName) {
         try {
-          const searchResp = await fetch(`https://shenron-app.vercel.app/api/ghl?mode=contacts&q=${encodeURIComponent(contactName)}&limit=1`);
+          const searchResp = await fetch(`https://ryujin-os.vercel.app/api/ghl?mode=contacts&q=${encodeURIComponent(contactName)}&limit=1`);
           const searchData = await searchResp.json();
           const found = (searchData.contacts || [])[0];
           if (found) {
@@ -3246,14 +3246,14 @@ async function executeTool(name, input, attachments = []) {
 
     // ── INLINE APPROVAL EXECUTION ──
     if (name === 'approve_action') {
-      const approveUrl = 'https://shenron-app.vercel.app/api/approve';
+      const approveUrl = 'https://ryujin-os.vercel.app/api/approve';
       const resp = await fetch(approveUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           code: input.code,
           response: input.action || 'approve',
-          source: 'shenron-chat'
+          source: 'ryujin-chat'
         })
       });
       const result = await resp.json();
@@ -3275,10 +3275,10 @@ async function executeTool(name, input, attachments = []) {
       const results = [];
       for (const code of (input.codes || [])) {
         try {
-          const resp = await fetch('https://shenron-app.vercel.app/api/approve', {
+          const resp = await fetch('https://ryujin-os.vercel.app/api/approve', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code, response: 'approve', source: 'shenron-chat-batch' })
+            body: JSON.stringify({ code, response: 'approve', source: 'ryujin-chat-batch' })
           });
           const result = await resp.json();
           results.push({
@@ -3348,7 +3348,7 @@ async function executeTool(name, input, attachments = []) {
         pending_actions: input.pending_actions || [],
         key_context: input.key_context || ''
       };
-      const resp = await fetch('https://shenron-app.vercel.app/api/memory?type=session', {
+      const resp = await fetch('https://ryujin-os.vercel.app/api/memory?type=session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(sessionData)
@@ -3366,7 +3366,7 @@ async function executeTool(name, input, attachments = []) {
     // ── PREFERENCE LEARNING ──
     if (name === 'save_preference') {
       try {
-        const resp = await fetch('https://shenron-app.vercel.app/api/memory?type=preferences', {
+        const resp = await fetch('https://ryujin-os.vercel.app/api/memory?type=preferences', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ key: input.key, rule: input.rule, type: input.type })
@@ -3381,7 +3381,7 @@ async function executeTool(name, input, attachments = []) {
 
     if (name === 'delete_preference') {
       try {
-        const resp = await fetch(`https://shenron-app.vercel.app/api/memory?type=preferences&key=${encodeURIComponent(input.key)}`, {
+        const resp = await fetch(`https://ryujin-os.vercel.app/api/memory?type=preferences&key=${encodeURIComponent(input.key)}`, {
           method: 'DELETE'
         });
         if (!resp.ok) throw new Error(`Delete failed: ${resp.status}`);
@@ -3401,7 +3401,7 @@ async function executeTool(name, input, attachments = []) {
 
       // Vegeta quote action — POST with spec
       if (agentName === 'vegeta' && input.action === 'quote' && input.spec) {
-        const resp = await fetch(`https://shenron-app.vercel.app/api/agents/vegeta`, {
+        const resp = await fetch(`https://ryujin-os.vercel.app/api/agents/vegeta`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'quote', spec: input.spec })
@@ -3412,7 +3412,7 @@ async function executeTool(name, input, attachments = []) {
       }
 
       // Standard agent run
-      const resp = await fetch(`https://shenron-app.vercel.app/api/agents/${agentName}`);
+      const resp = await fetch(`https://ryujin-os.vercel.app/api/agents/${agentName}`);
       if (!resp.ok) throw new Error(`Agent ${agentName} returned HTTP ${resp.status}`);
       const data = await resp.json();
       const str = JSON.stringify(data);
@@ -3421,7 +3421,7 @@ async function executeTool(name, input, attachments = []) {
 
     if (name === 'run_briefing') {
       const briefingType = input.type || 'morning';
-      const resp = await fetch(`https://shenron-app.vercel.app/api/agents/briefing?type=${briefingType}`);
+      const resp = await fetch(`https://ryujin-os.vercel.app/api/agents/briefing?type=${briefingType}`);
       if (!resp.ok) throw new Error(`Briefing returned HTTP ${resp.status}`);
       const data = await resp.json();
       const str = JSON.stringify(data);
@@ -3504,14 +3504,14 @@ async function executeTool(name, input, attachments = []) {
     // ── META ADS OPERATIONS ──
     if (name === 'refresh_meta_ads') {
       const url = input.detail
-        ? `https://shenron-app.vercel.app/api/meta-ads?detail=${input.detail}`
-        : 'https://shenron-app.vercel.app/api/meta-ads';
+        ? `https://ryujin-os.vercel.app/api/meta-ads?detail=${input.detail}`
+        : 'https://ryujin-os.vercel.app/api/meta-ads';
       const resp = await fetch(url);
       if (!resp.ok) throw new Error(`Meta Ads API returned HTTP ${resp.status}`);
       const data = await resp.json();
       // Also pull the full snapshot metaAds for complete campaign list
       if (!input.detail) {
-        const snapResp = await fetch('https://shenron-app.vercel.app/api/snapshot?_t=' + Date.now(), { cache: 'no-store' });
+        const snapResp = await fetch('https://ryujin-os.vercel.app/api/snapshot?_t=' + Date.now(), { cache: 'no-store' });
         if (snapResp.ok) {
           const snap = await snapResp.json();
           if (snap?.metaAds) data.fullCampaignData = snap.metaAds;
@@ -3523,8 +3523,8 @@ async function executeTool(name, input, attachments = []) {
 
     if (name === 'audit_pixel') {
       const url = input.pixelId
-        ? `https://shenron-app.vercel.app/api/pixel-audit?pixelId=${input.pixelId}`
-        : 'https://shenron-app.vercel.app/api/pixel-audit';
+        ? `https://ryujin-os.vercel.app/api/pixel-audit?pixelId=${input.pixelId}`
+        : 'https://ryujin-os.vercel.app/api/pixel-audit';
       const resp = await fetch(url);
       if (!resp.ok) throw new Error(`Pixel Audit returned HTTP ${resp.status}`);
       const data = await resp.json();
@@ -3533,7 +3533,7 @@ async function executeTool(name, input, attachments = []) {
     }
 
     if (name === 'send_capi_event') {
-      const resp = await fetch('https://shenron-app.vercel.app/api/capi', {
+      const resp = await fetch('https://ryujin-os.vercel.app/api/capi', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -3553,7 +3553,7 @@ async function executeTool(name, input, attachments = []) {
     }
 
     if (name === 'manage_meta_campaign') {
-      const resp = await fetch(`https://shenron-app.vercel.app/api/meta-ads?detail=${input.campaignId}`);
+      const resp = await fetch(`https://ryujin-os.vercel.app/api/meta-ads?detail=${input.campaignId}`);
       if (!resp.ok) throw new Error(`Meta campaign detail returned HTTP ${resp.status}`);
       return await resp.json();
     }
@@ -4306,7 +4306,7 @@ You are now Mackenzie's game development and product specialist.
       ];
 
   // Build messages array — accept either {role, content} (Anthropic-native, used by ryujin widgets)
-  // or {user, assistant} pair format (legacy, used by shenron-app/chat.html)
+  // or {user, assistant} pair format (legacy chat.html shape)
   const messages = [];
   history.forEach(h => {
     if (!h) return;

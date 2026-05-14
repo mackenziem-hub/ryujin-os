@@ -6,7 +6,7 @@ const GHL_BASE = 'https://services.leadconnectorhq.com';
 const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
 const GHL_VERSION = '2021-07-28';
 const LOCATION_ID = 'aHotOUdq9D8m3JPrRz9n';
-const SHENRON_KEY = process.env.SHENRON_API_KEY || 'shenron-write-2026';
+const RYUJIN_API_KEY = (process.env.RYUJIN_API_KEY || process.env.SHENRON_API_KEY || '').trim();
 
 // GHL User ID mappings
 const USER_MAP = {
@@ -24,7 +24,7 @@ function checkAuth(req) {
   const origin = req.headers.origin || req.headers.referer || '';
   const isSameOrigin = origin.includes('ryujin-os.vercel.app') || origin.includes('localhost');
   if (isSameOrigin) return true;
-  return key === SHENRON_KEY;
+  return key === RYUJIN_API_KEY;
 }
 
 async function ghlFetch(path, options = {}) {

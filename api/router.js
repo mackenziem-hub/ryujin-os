@@ -1,4 +1,4 @@
-// Phase 9a: Approval router — replaces Shenron's /api/router
+// Phase 9a: Approval router (Ryujin-native, replaced the legacy blob queue May 2026)
 // POST   /api/router       → Create approval request, return code
 // GET    /api/router       → List pending approvals (current user / tenant)
 // GET    /api/router?code=X→ Look up specific approval by code
@@ -13,7 +13,7 @@ import { supabaseAdmin } from '../lib/supabase.js';
 
 const APPROVAL_TIMEOUT_MS = 3 * 60 * 60 * 1000; // 3 hours
 
-// Agent prefix routing (carry-over from Shenron for chat.js compat).
+// Agent prefix routing for chat.js tool calls.
 const AGENT_PREFIX = {
   vegeta: 'VEG', piccolo: 'PIC', krillin: 'KRI', gohan: 'GOH',
   bulma: 'BUL', trunks: 'TRU', android18: 'A18',

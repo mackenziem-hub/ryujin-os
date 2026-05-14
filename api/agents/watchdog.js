@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════
-// SHENRON WATCHDOG — Passive email & system monitor
+// RYUJIN WATCHDOG — Passive email & system monitor
 // Runs every 2 hours via Vercel cron
 // Checks Gmail for priority emails, sends SMS alert if critical
 // Stores last-alerted state in Vercel Blob to prevent double-pings
@@ -14,7 +14,8 @@ const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim(
 const GHL_VERSION = '2021-07-28';
 const MACKENZIE_CONTACT_ID = '02IhxZfSwZZAZ2fooVGu';
 
-const WATCHDOG_BLOB_KEY = 'shenron-watchdog-state.json';
+const WATCHDOG_BLOB_KEY = 'ryujin-watchdog-state.json';
+const LEGACY_WATCHDOG_BLOB_KEY = 'shenron-watchdog-state.json';
 let storeBase = null;
 
 // ═══════════════════════════════════════════
@@ -23,7 +24,10 @@ let storeBase = null;
 
 async function getState() {
   try {
-    const { blobs } = await list({ prefix: WATCHDOG_BLOB_KEY, limit: 1 });
+    let { blobs } = await list({ prefix: WATCHDOG_BLOB_KEY, limit: 1 });
+    if (blobs.length === 0) {
+      ({ blobs } = await list({ prefix: LEGACY_WATCHDOG_BLOB_KEY, limit: 1 }));
+    }
     if (blobs.length === 0) return { alertedIds: [], lastRun: null };
     if (!storeBase) {
       const match = blobs[0].url.match(/^(https:\/\/[^/]+)/);
@@ -314,7 +318,7 @@ export default async function handler(req, res) {
 
     let smsResult = null;
     if (tier1.length > 0) {
-      const lines = [`🐉 SHENRON WATCHDOG\n`];
+      const lines = [`🐉 RYUJIN WATCHDOG\n`];
       lines.push(`📬 ${tier1.length} email${tier1.length > 1 ? 's' : ''} need your attention:\n`);
 
       for (const alert of tier1.slice(0, 5)) {

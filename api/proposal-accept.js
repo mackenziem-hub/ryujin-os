@@ -47,7 +47,7 @@ async function ghlCall(path, { method = 'GET', body = null } = {}) {
 }
 
 // Stage IDs per pipeline — map a pipelineId to its "accepted/signed" equivalent.
-// Mirrors Shenron's ghl.js PIPELINE_STAGES, filtered to the terminal-success stage
+// Mirrors the ghl.js PIPELINE_STAGES, filtered to the terminal-success stage
 // for each pipeline. Update here if GHL stages are reshuffled.
 const ACCEPTED_STAGE_BY_PIPELINE = {
   'l2xOb5ApmVbAWADKtra5': 'f872cb17-7e0d-47ca-b1b3-f2bbd38274d9', // Main → Client Signed

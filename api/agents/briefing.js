@@ -22,7 +22,7 @@ import { runSystemsCheck } from '../../lib/systemsCheck.js';
 import { buildBriefMarkdown } from '../../lib/briefMarkdown.js';
 import { requireCronOrOwner } from '../../lib/cronAuth.js';
 
-const SHENRON_BASE = 'https://ryujin-os.vercel.app';
+const BASE_URL = 'https://ryujin-os.vercel.app';
 
 const GHL_BASE = 'https://services.leadconnectorhq.com';
 const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
@@ -48,7 +48,7 @@ export default async function handler(req, res) {
   // Refresh Meta Ads data before agents run (same as daily.js)
   try {
     const metaAds = await buildMetaAdsSnapshot();
-    await fetch(`${SHENRON_BASE}/api/snapshot`, {
+    await fetch(`${BASE_URL}/api/snapshot`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ metaAds })
@@ -73,7 +73,7 @@ export default async function handler(req, res) {
       runVegeta().catch(e => { errors.push(`Vegeta: ${e.message}`); return null; }),
       runPiccolo().catch(e => { errors.push(`Piccolo: ${e.message}`); return null; }),
       runKrillin().catch(e => { errors.push(`Krillin: ${e.message}`); return null; }),
-      fetchJSON(`${SHENRON_BASE}/api/snapshot`).catch(() => null),
+      fetchJSON(`${BASE_URL}/api/snapshot`).catch(() => null),
       calendarList(todayStart.toISOString(), todayEnd.toISOString()).catch(e => {
         errors.push(`Calendar: ${e.message}`);
         return null;
@@ -86,7 +86,7 @@ export default async function handler(req, res) {
   // Pull live GHL/Automator sales tasks (these are CEO-priority and must be in every briefing)
   let ghlTasks = null;
   try {
-    const tr = await fetch(`${SHENRON_BASE}/api/ghl?mode=tasks`);
+    const tr = await fetch(`${BASE_URL}/api/ghl?mode=tasks`);
     if (tr.ok) ghlTasks = await tr.json();
   } catch (e) {
     errors.push(`GHL tasks fetch failed: ${e.message}`);
@@ -222,11 +222,11 @@ export default async function handler(req, res) {
     errors
   };
 
-  // Push briefing to snapshot so Shenron chat can reference it.
+  // Push briefing to snapshot so Ryujin chat can reference it.
   // NOTE: We push BEFORE SMS dispatch (so even if SMS dies, the briefing survives),
   // and then push a small follow-up update with smsSent + errors AFTER SMS attempt.
   try {
-    await fetch(`${SHENRON_BASE}/api/snapshot`, {
+    await fetch(`${BASE_URL}/api/snapshot`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -340,7 +340,7 @@ export default async function handler(req, res) {
 
   // Update snapshot with the brief markdown so the local vault-writer can pull it.
   try {
-    await fetch(`${SHENRON_BASE}/api/snapshot`, {
+    await fetch(`${BASE_URL}/api/snapshot`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

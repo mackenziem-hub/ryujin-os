@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════
-// SHENRON SNAPSHOT — Central data cache for all agent intelligence
+// RYUJIN SNAPSHOT — Central data cache for all agent intelligence
 // GET  /api/snapshot — Read the current snapshot
 // POST /api/snapshot — Update snapshot (called by agents after runs)
 // PUT  /api/snapshot — Force full refresh
@@ -9,7 +9,8 @@
 import { put, list } from '@vercel/blob';
 import { supabaseAdmin } from '../lib/supabase.js';
 
-const SNAPSHOT_BLOB_KEY = 'shenron-snapshot.json';
+const SNAPSHOT_BLOB_KEY = 'ryujin-snapshot.json';
+const LEGACY_SNAPSHOT_BLOB_KEY = 'shenron-snapshot.json';
 
 // Compute ticket stats directly from the Ryujin tickets table. Replaces the
 // old Action Board (Replit) fetch path post-2026-05-11 migration. Returns
@@ -84,7 +85,10 @@ async function ensureStoreBase() {
 
 async function discoverBlobUrl() {
   if (cachedBlobUrl) return cachedBlobUrl;
-  const { blobs } = await list({ prefix: SNAPSHOT_BLOB_KEY, limit: 1 });
+  let { blobs } = await list({ prefix: SNAPSHOT_BLOB_KEY, limit: 1 });
+  if (blobs.length === 0) {
+    ({ blobs } = await list({ prefix: LEGACY_SNAPSHOT_BLOB_KEY, limit: 1 }));
+  }
   if (blobs.length > 0) {
     cachedBlobUrl = blobs[0].url;
     if (!storeBase) storeBase = extractStoreBase(cachedBlobUrl);
@@ -355,7 +359,7 @@ async function buildFreshSnapshot() {
   // Crew tickets (real ones only, not system tickets)
   if (Array.isArray(tickets)) {
     snapshot.sections.crewTickets = tickets
-      .filter(t => !t.title.startsWith('[SHENRON') && !t.title.startsWith('[APPROVAL'))
+      .filter(t => !t.title.startsWith('[SHENRON') && !t.title.startsWith('[RYUJIN') && !t.title.startsWith('[APPROVAL'))
       .map(t => ({
         id: t.id, title: t.title, status: t.status,
         priority: t.priority, assignedTo: t.assignedTo,
@@ -388,7 +392,7 @@ async function buildFreshSnapshot() {
   // ── GHL CONTACT NOTES — Cataloged for active contacts ──
   // Notes contain critical client context (Darcy's handoffs, special requests, pricing
   // discussions). Pull notes for every contact attached to an open opportunity or sales task
-  // so Shenron has them in daily context without per-call fetches.
+  // so Ryujin has them in daily context without per-call fetches.
   try {
     const activeContactIds = new Set();
 

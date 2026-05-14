@@ -2,8 +2,8 @@
 //
 // GET /api/chat-priorities
 //   Returns "what should I focus on right now" — surfaced as the first thing
-//   the user sees when they tap the Ryujin chat fab. Lightweight proxy over
-//   Shenron's snapshot so we don't duplicate the heavy aggregation job.
+//   the user sees when they tap the Ryujin chat fab. Lightweight read over
+//   Ryujin's own snapshot.
 //
 // Response shape:
 //   {
@@ -15,17 +15,17 @@
 //     timestamp: "2026-04-26T..."
 //   }
 //
-// Public endpoint — no tenant header required (Shenron is single-tenant
-// for Plus Ultra; multi-tenant proxy can come later when other tenants land).
+// Public endpoint — no tenant header required (Plus Ultra is single-tenant for
+// now; multi-tenant routing can come later when other tenants land).
 
-const SHENRON_SNAPSHOT_URL = 'https://shenron-app.vercel.app/api/snapshot';
+const SNAPSHOT_URL = 'https://ryujin-os.vercel.app/api/snapshot';
 const FETCH_TIMEOUT_MS = 4000;
 
 async function fetchSnapshot() {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
-    const r = await fetch(SHENRON_SNAPSHOT_URL, { signal: ctrl.signal });
+    const r = await fetch(SNAPSHOT_URL, { signal: ctrl.signal });
     if (!r.ok) throw new Error(`snapshot ${r.status}`);
     return await r.json();
   } finally {

@@ -9,7 +9,7 @@ import { runVegeta, runPiccolo, runKrillin, runGohan, sendFallbackEmail } from '
 import { buildMetaAdsSnapshot, checkTokenHealth, auditAdSetConfig } from '../../lib/meta.js';
 import { requireCronOrOwner } from '../../lib/cronAuth.js';
 
-const SHENRON_BASE = 'https://ryujin-os.vercel.app';
+const BASE_URL = 'https://ryujin-os.vercel.app';
 const AGENT_TIMEOUT = 25000; // 25s per agent
 
 function withTimeout(promise, ms, label) {
@@ -33,7 +33,7 @@ export default async function handler(req, res) {
     tokenStatus = await checkTokenHealth();
     if (tokenStatus.expiryWarning) {
       console.log(`[Z Fighter Daily] ${tokenStatus.expiryWarning}`);
-      await fetch(`${SHENRON_BASE}/api/snapshot`, {
+      await fetch(`${BASE_URL}/api/snapshot`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tokenWarning: { timestamp: new Date().toISOString(), daysLeft: tokenStatus.daysLeft, message: tokenStatus.expiryWarning } })
@@ -41,7 +41,7 @@ export default async function handler(req, res) {
       // Escalation at 14d / 7d / 3d / expired so it doesn't just sit silent in the snapshot.
       const d = tokenStatus.daysLeft;
       if (d !== null && (d <= 3 || d === 7 || d === 14)) {
-        await sendFallbackEmail(`META TOKEN expires in ${d} days`, `Generate a System User token in Meta Business Settings → System Users → Shenron → Generate Token, then update META_ACCESS_TOKEN in Vercel. System User tokens never expire.`);
+        await sendFallbackEmail(`META TOKEN expires in ${d} days`, `Generate a System User token in Meta Business Settings → System Users → (Shenron or Ryujin) → Generate Token, then update META_ACCESS_TOKEN in Vercel. System User tokens never expire.`);
       }
     }
   } catch (e) {
@@ -54,7 +54,7 @@ export default async function handler(req, res) {
   try {
     const audit = await auditAdSetConfig();
     configAudit = { status: 'ok', total: audit.totalAdSets, active: audit.activeAdSets, flagged: audit.flaggedCount };
-    await fetch(`${SHENRON_BASE}/api/snapshot`, {
+    await fetch(`${BASE_URL}/api/snapshot`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ metaConfigAudit: audit })
@@ -74,7 +74,7 @@ export default async function handler(req, res) {
     const metaAds = await buildMetaAdsSnapshot();
     // Include token expiry info in the snapshot for the recommendations panel
     if (tokenStatus?.expiresAt) metaAds._tokenExpiresAt = tokenStatus.expiresAt;
-    await fetch(`${SHENRON_BASE}/api/snapshot`, {
+    await fetch(`${BASE_URL}/api/snapshot`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ metaAds })
@@ -125,7 +125,7 @@ export default async function handler(req, res) {
   // Persist reports to snapshot so audits/briefings can confirm each agent ran.
   // Without this, daily reports vanish on HTTP response and only metaAds is visible.
   try {
-    await fetch(`${SHENRON_BASE}/api/snapshot`, {
+    await fetch(`${BASE_URL}/api/snapshot`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

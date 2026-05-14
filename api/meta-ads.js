@@ -12,7 +12,7 @@
 import { buildMetaAdsSnapshot, getAdSets, checkTokenHealth, listCustomAudiences } from '../lib/meta.js';
 import { requireCronOrOwner } from '../lib/cronAuth.js';
 
-const SHENRON_BASE = 'https://ryujin-os.vercel.app';
+const BASE_URL = 'https://ryujin-os.vercel.app';
 
 export default async function handler(req, res) {
   const auth = requireCronOrOwner(req);
@@ -59,7 +59,7 @@ export default async function handler(req, res) {
     const metaAds = await buildMetaAdsSnapshot();
 
     // Push to snapshot
-    const pushResp = await fetch(`${SHENRON_BASE}/api/snapshot`, {
+    const pushResp = await fetch(`${BASE_URL}/api/snapshot`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ metaAds })

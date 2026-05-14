@@ -1,12 +1,15 @@
-// Ryujin OS — GHL Contact Lookup (proxied via Shenron)
+// Ryujin OS — GHL Contact Lookup
 // GET /api/ghl-lookup?q=Amy       — Search contacts by name/phone/email
 // GET /api/ghl-lookup?id=<ghl_id> — Fetch single contact with opportunities
 //
-// Shenron holds the GHL token and pipeline mappings; Ryujin proxies through
-// to avoid duplicating credentials. Only tenants with GHL wired return data.
+// Wraps the internal /api/ghl endpoint (which holds the GHL token + pipeline
+// mappings). Only tenants with GHL wired return data.
 import { requireTenant } from '../lib/tenant.js';
 
-const SHENRON_URL = (process.env.SHENRON_URL || 'https://shenron-app.vercel.app').trim();
+// Self-call within the same Vercel deployment. Override via RYUJIN_BASE_URL if
+// running multi-region/preview. Legacy SHENRON_URL kept as fallback for the 7-day
+// transition window (drop 2026-05-21).
+const RYUJIN_BASE_URL = (process.env.RYUJIN_BASE_URL || process.env.SHENRON_URL || 'https://ryujin-os.vercel.app').trim();
 const GHL_TENANTS = new Set(['plus-ultra']);
 
 async function handler(req, res) {
@@ -21,7 +24,7 @@ async function handler(req, res) {
 
   try {
     if (id) {
-      const r = await fetch(`${SHENRON_URL}/api/ghl?mode=contact-detail&id=${encodeURIComponent(id)}`);
+      const r = await fetch(`${RYUJIN_BASE_URL}/api/ghl?mode=contact-detail&id=${encodeURIComponent(id)}`);
       if (!r.ok) return res.status(r.status).json({ error: await r.text() });
       const data = await r.json();
       return res.json({ contact: normalize(data.contact, data.opportunities) });
@@ -31,8 +34,8 @@ async function handler(req, res) {
     if (trimmed.length < 2) return res.json({ contacts: [] });
 
     const [contactsResp, oppsResp] = await Promise.all([
-      fetch(`${SHENRON_URL}/api/ghl?mode=contacts&q=${encodeURIComponent(trimmed)}&limit=10`),
-      fetch(`${SHENRON_URL}/api/ghl?mode=pipeline&q=${encodeURIComponent(trimmed)}&limit=20`)
+      fetch(`${RYUJIN_BASE_URL}/api/ghl?mode=contacts&q=${encodeURIComponent(trimmed)}&limit=10`),
+      fetch(`${RYUJIN_BASE_URL}/api/ghl?mode=pipeline&q=${encodeURIComponent(trimmed)}&limit=20`)
     ]);
     if (!contactsResp.ok) return res.status(contactsResp.status).json({ error: await contactsResp.text() });
     const contactsData = await contactsResp.json();

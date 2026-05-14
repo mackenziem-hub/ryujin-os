@@ -107,7 +107,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.json({
       status: 'ok',
-      endpoint: 'Shenron CAPI Bridge',
+      endpoint: 'Ryujin CAPI Bridge',
       description: 'POST webhook events from GHL to forward to Meta Conversions API',
       recentEvents: recentEvents.slice(0, 20),
       totalProcessed: recentEvents.length,

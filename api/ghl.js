@@ -240,7 +240,7 @@ export default async function handler(req, res) {
       if (!body || !body.firstName) {
         return res.status(400).json({
           error: 'Missing required fields.',
-          example: { firstName: 'John', lastName: 'Doe', email: 'john@example.com', phone: '+15065551234', tags: ['roof-lead'], source: 'Shenron' }
+          example: { firstName: 'John', lastName: 'Doe', email: 'john@example.com', phone: '+15065551234', tags: ['roof-lead'], source: 'Ryujin' }
         });
       }
       try {
