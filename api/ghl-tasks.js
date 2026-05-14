@@ -24,6 +24,7 @@ function checkAuth(req) {
   const origin = req.headers.origin || req.headers.referer || '';
   const isSameOrigin = origin.includes('ryujin-os.vercel.app') || origin.includes('localhost');
   if (isSameOrigin) return true;
+  if (!RYUJIN_API_KEY) return false; // fail closed if no key configured
   return key === RYUJIN_API_KEY;
 }
 
