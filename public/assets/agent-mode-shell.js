@@ -940,9 +940,17 @@
     // mode-switcher.js fires this on mobile first-visits so we boot the
     // greeting + focus the input even if a `ryujin:mode-change` event
     // didn't fire (e.g. mode was already 'agent' from prior session).
-    document.addEventListener('ryujin:auto-launch-agent', () => {
+    document.addEventListener('ryujin:auto-launch-agent', (e) => {
       maybeBoot();
-      setTimeout(() => elInput?.focus(), 50);
+      const seedPrompt = e?.detail?.prompt;
+      setTimeout(() => {
+        if (!elInput) return;
+        if (seedPrompt){
+          elInput.value = seedPrompt;
+          elInput.dispatchEvent(new Event('input'));
+        }
+        elInput.focus();
+      }, 50);
     });
     onModeChange();
   }
