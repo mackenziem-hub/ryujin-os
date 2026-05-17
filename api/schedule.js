@@ -48,7 +48,7 @@ async function handler(req, res) {
   const ests = await supabaseAdmin
     .from('estimates')
     .select(`
-      id, estimate_number, scheduled_at, state, total_price,
+      id, estimate_number, scheduled_at, state, final_accepted_total, deposit_amount,
       customer:customers(full_name, phone, address),
       projects(id, share_token, status, crew_lead:users!projects_crew_lead_id_fkey(id, name))
     `)
@@ -58,6 +58,11 @@ async function handler(req, res) {
     .lte('scheduled_at', horizonIso)
     .order('scheduled_at', { ascending: true })
     .limit(120);
+
+  if (ests.error) {
+    console.error('[schedule] estimates query failed:', ests.error.message);
+    return res.status(500).json({ error: 'schedule_query_failed', message: ests.error.message });
+  }
 
   // Service tickets with a scheduled_at in the window.
   const tix = await supabaseAdmin
@@ -69,6 +74,11 @@ async function handler(req, res) {
     .lte('scheduled_at', horizonIso)
     .order('scheduled_at', { ascending: true })
     .limit(120);
+
+  if (tix.error) {
+    console.error('[schedule] service_tickets query failed (non-fatal):', tix.error.message);
+    tix.data = [];
+  }
 
   // Photo count per project, single round-trip for the whole window.
   const projectIds = (ests.data || [])
@@ -108,7 +118,7 @@ async function handler(req, res) {
       state: e.state || null,
       address: e.customer?.address || null,
       phone: e.customer?.phone || null,
-      value: e.total_price || null,
+      value: e.final_accepted_total || e.deposit_amount || null,
       time: (e.scheduled_at || '').slice(11, 16),
       // Mobile dispatch fields (mirror the install shape but expose the
       // project id + photo count so the card can render a Photos button
