@@ -161,3 +161,27 @@ Full contract: `docs/MARKETING_CLIPS_API.md`.
 - `.trim()` all env var reads (Vercel newline bug).
 - Run Supabase migrations directly via CLI — don't ask user to paste SQL.
 - Plus Ultra is CertainTeed certified, NOT GAF.
+
+## PR / Deploy Checklist
+
+**Every change to this repo follows this loop. Skipping steps has burned us — see the auto-memory entries each rule references.**
+
+### Before pushing a branch
+1. **Branch from `main`.** Never commit directly to `main`. Branch protection is enforced.
+2. **`node --check` every modified API handler.** Vercel does not syntax-check serverless functions; a broken handler ships clean and crashes on first request as `FUNCTION_INVOCATION_FAILED`. *(See `feedback_node_check_api_handlers`.)*
+3. **For HTML pages with inline `<script>`:** extract and `node --check` the script block before pushing. Same reasoning.
+4. **For any new agent slug:** widen the `agent_runs` CHECK constraint in a migration first — missing slug = silent no-op (no rows, no errors, empty portals). *(See `feedback_agent_slug_check_constraint`.)*
+5. **For any new `sections.*` key written by an agent or in `api/state`:** add it to `api/snapshot.js` preserveKeys or the hourly snapshot rebuild silently wipes it. *(See `feedback_snapshot_preservekeys`.)*
+
+### Before requesting review on the PR
+6. **`codex review --base main`** (or `--uncommitted` pre-commit, `--commit <sha>` post-commit). **Non-negotiable.** Codex catches concrete bugs in the diff that I miss — including P1s I confidently shipped (May 17 2026: JSON PUT body parser, share-token expiry, GPS cache leak, all caught in two review rounds). Fix every P1 + P2 finding before merging. P3/style is judgment-call.
+7. **Open in browser locally if it's a UI change.** Test the golden path + one edge case before opening the PR. Vercel preview deploys are not a substitute for local sanity-check.
+
+### After merge
+8. **`npx vercel --prod --yes` from the repo root.** Auto-deploy is broken since ~April 18 2026 — every push to `main` needs a manual prod deploy. *(See `feedback_vercel_manual_deploy_required`.)*
+9. **Curl-smoke each touched endpoint against `ryujin-os.vercel.app`** (not just `vercel ls` status). Build success ≠ runtime success. *(See `feedback_post_deploy_curl_smoke_test`.)*
+10. **No em dashes anywhere** — body, subjects, chat output, internal docs, code comments. AI tell. *(See `feedback_no_em_dashes`.)*
+
+### Files that DO NOT live in this repo
+- Secrets / `.env` — pulled by Vercel from its dashboard. Never commit.
+- Customer-facing copy that uses Jewels' visual rules — those pages (`proposal-client.html`, `photos-share.html`) follow cream + royal-blue branding. Internal portals (`portal-mobile.html`, `command-center.html`, `admin.html`) follow the Grok teal-mint mockup. Mixing the two is an instant tell. *(See `feedback_jewels_visual_rules` + `feedback_grok_mockup_internal_portals`.)*
