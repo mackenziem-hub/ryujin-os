@@ -181,13 +181,23 @@ async function handler(req, res) {
     if (e1 || !existing) return res.status(404).json({ error: 'Project not found' });
 
     const expired = existing.share_expires_at && new Date(existing.share_expires_at) < new Date();
+
+    // Photo galleries are intended to be indefinite. If we're reusing an existing
+    // (unexpired) token but it still carries a future expiry from the legacy client
+    // portal flow, clear that expiry so the freshly-minted gallery URL doesn't
+    // 410 on a date the customer can't see coming.
     if (existing.share_token && !expired) {
+      if (existing.share_expires_at) {
+        await supabaseAdmin
+          .from('projects')
+          .update({ share_expires_at: null })
+          .eq('id', existing.id)
+          .eq('tenant_id', tenantId);
+      }
       return res.json({ id: existing.id, share_token: existing.share_token });
     }
 
-    // Either no token or token's expiry has lapsed — mint a fresh one and clear the expiry
-    // so the gallery link works indefinitely (photo galleries aren't time-limited the way
-    // the legacy client portal was).
+    // Either no token or token's expiry has lapsed — mint a fresh one and clear the expiry.
     const newToken = `${tenant.slug}-proj-${Date.now().toString(36)}`;
     const { data: updated, error: e2 } = await supabaseAdmin
       .from('projects')
