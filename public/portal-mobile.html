@@ -961,9 +961,12 @@ window.__schedule = (function(){
     </span>` : '';
     const statusTag = `<span class="status-tag ${status}">${status.replace('_',' ')}</span>`;
 
-    const photoBtnAttr = hasProject ? `data-photos="${esc(job.project_id)}"` : 'class="disabled" disabled title="No project linked"';
-    const dirAttr = addr ? `data-directions="${esc(addr)}"` : 'class="disabled" disabled';
-    const callAttr = phone ? `data-call="${esc(phone)}"` : 'class="disabled" disabled';
+    const photoClass = hasProject ? 'primary' : 'primary disabled';
+    const photoAttrs = hasProject ? `data-photos="${esc(job.project_id)}"` : 'disabled title="No project linked"';
+    const dirClass = addr ? '' : 'disabled';
+    const dirAttrs = addr ? `data-directions="${esc(addr)}"` : 'disabled';
+    const callClass = phone ? '' : 'disabled';
+    const callAttrs = phone ? `data-call="${esc(phone)}"` : 'disabled title="No phone on file"';
 
     return `
       <div class="job-card-v2 ${isToday ? 'today' : ''}" data-job-id="${esc(job.id)}" data-project-id="${esc(job.project_id || '')}">
@@ -980,15 +983,15 @@ window.__schedule = (function(){
           ${crewBadge}
         </div>
         <div class="actions">
-          <button class="primary" ${photoBtnAttr}>
+          <button class="${photoClass}" ${photoAttrs}>
             <svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
             Photos
           </button>
-          <button ${dirAttr}>
+          <button class="${dirClass}" ${dirAttrs}>
             <svg viewBox="0 0 24 24"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
             Directions
           </button>
-          <button ${callAttr}>
+          <button class="${callClass}" ${callAttrs}>
             <svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
             Call
           </button>
@@ -1021,8 +1024,8 @@ window.__schedule = (function(){
 
     if (!jobs.length){
       renderEmpty({
-        title: 'No jobs scheduled this week',
-        body: 'Flip an estimate&rsquo;s status to <b>accepted</b> and set a <b>scheduled_at</b>. The trigger auto-creates the project and it shows up here.'
+        title: 'No jobs on the books this week',
+        body: 'Once a sale is closed and scheduled, it shows up here with a Photos button. Use the admin cockpit to schedule.'
       });
       renderStats();
       updateGreetLine();
@@ -1075,6 +1078,20 @@ window.__schedule = (function(){
       b.addEventListener('click', (e) => {
         e.stopPropagation();
         location.href = `tel:${b.dataset.call}`;
+      });
+    });
+
+    // Tap anywhere on the card body (not on an action button) opens the gallery.
+    list.querySelectorAll('.job-card-v2').forEach(card => {
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('button')) return;
+        const pid = card.dataset.projectId;
+        if (!pid) return;
+        const meta = {
+          address: card.querySelector('.addr')?.textContent || '',
+          customer: card.querySelector('.who')?.textContent || ''
+        };
+        window.__photos?.openGalleryFor(pid, meta);
       });
     });
 
@@ -1248,14 +1265,26 @@ function wireModal(){
 // ──── Tasks panel (full list) ────────────────────────
 let allTasks = [];
 async function loadTasksPanel(){
+  const tok = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token');
+  const headers = { 'x-tenant-id': TENANT };
+  if (tok) headers['Authorization'] = `Bearer ${tok}`;
   const filter = (!isAdmin && userId) ? `&assigned_to=${encodeURIComponent(userId)}` : '';
   try{
-    const r = await fetch(`/api/tickets?limit=100${filter}`, { headers: { 'x-tenant-id': TENANT } });
+    const r = await fetch(`/api/tickets?limit=100${filter}`, { headers });
     if (!r.ok) throw new Error();
     const data = await r.json();
     const rows = Array.isArray(data) ? data : (data.tickets || data.data || []);
     allTasks = rows
       .filter(t => !['done','completed','archived','closed','cancelled'].includes((t.status || '').toLowerCase()))
+      // Hide unassigned pollution: operational tickets with no customer/
+      // project link AND not assigned to anyone clutter the crew view
+      // ("Reliable Rentals", "Handyman Scaffolding"). Preserve any ticket
+      // assigned to the current user — admin/operational work assigned to
+      // Cat or Mac stays visible even without a job link.
+      .filter(t =>
+        t.project_id || t.customer_id || t.project?.id || t.project?.address ||
+        (userId && t.assigned_to === userId)
+      )
       .map(t => ({
         id: t.id,
         title: cleanTitle(t.title),
