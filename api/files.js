@@ -39,6 +39,26 @@ function parseMultipart(req) {
   });
 }
 
+// bodyParser is disabled at the handler level (multipart needs raw stream), so JSON
+// bodies on PUT/DELETE arrive unparsed. Read the stream once and JSON.parse it.
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on('data', c => {
+      size += c.length;
+      if (size > 256 * 1024) { reject(new Error('Body too large')); req.destroy(); return; }
+      chunks.push(c);
+    });
+    req.on('end', () => {
+      if (!chunks.length) return resolve({});
+      try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
+      catch (e) { reject(e); }
+    });
+    req.on('error', reject);
+  });
+}
+
 // Read EXIF DateTimeOriginal + GPS from an image buffer. Returns nulls on any parse failure.
 async function extractExif(buffer) {
   try {
@@ -192,7 +212,10 @@ async function handler(req, res) {
 
   // ── PUT (Update metadata) ──
   if (req.method === 'PUT') {
-    const { id, ...updates } = req.body || {};
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return res.status(400).json({ error: 'Invalid JSON body' }); }
+    const { id, ...updates } = body || {};
     if (!id) return res.status(400).json({ error: 'Missing id' });
 
     // Only allow safe fields to be updated

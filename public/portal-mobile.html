@@ -1377,16 +1377,30 @@ window.__photos = (function(){
   const photoCount = $('photoCount');
   const photoStrip = $('photoStrip');
 
-  // ── Geolocation cache (one read per session, reused per upload) ──
+  // ── Geolocation cache (per-job, expires after 5 min so crew moving between
+  // sites without switching jobs still re-reads location instead of stamping
+  // the previous coords on later photos). ──
   let cachedLoc = null;
+  let cachedLocAt = 0;
+  let cachedLocProjectId = null;
+  const LOC_TTL_MS = 5 * 60 * 1000;
+  function resetLocationCache(){ cachedLoc = null; cachedLocAt = 0; cachedLocProjectId = null; }
   function getLocation(){
-    if (cachedLoc) return Promise.resolve(cachedLoc);
+    const fresh = cachedLoc
+      && cachedLocProjectId === state.projectId
+      && (Date.now() - cachedLocAt) < LOC_TTL_MS;
+    if (fresh) return Promise.resolve(cachedLoc);
     if (!navigator.geolocation) return Promise.resolve(null);
     return new Promise(resolve => {
       navigator.geolocation.getCurrentPosition(
-        p => { cachedLoc = { lat: p.coords.latitude, lng: p.coords.longitude }; resolve(cachedLoc); },
+        p => {
+          cachedLoc = { lat: p.coords.latitude, lng: p.coords.longitude };
+          cachedLocAt = Date.now();
+          cachedLocProjectId = state.projectId;
+          resolve(cachedLoc);
+        },
         () => resolve(null),
-        { enableHighAccuracy: false, timeout: 4000, maximumAge: 120000 }
+        { enableHighAccuracy: false, timeout: 4000, maximumAge: 60000 }
       );
     });
   }
@@ -1591,12 +1605,14 @@ window.__photos = (function(){
 
   // ── Public: activate / deactivate ──
   async function setActiveProject(projectId, meta){
+    const prevId = state.projectId;
     state.projectId = projectId || null;
     state.projectMeta = meta || null;
     state.files = [];
     state.pending.clear();
     state.lightboxIdx = -1;
     photoBtn.disabled = !state.projectId;
+    if (prevId !== state.projectId) resetLocationCache();
 
     if (!state.projectId){
       renderStrip();

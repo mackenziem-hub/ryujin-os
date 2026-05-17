@@ -169,23 +169,29 @@ async function handler(req, res) {
 
   // ── Ensure share token (idempotent, used by the photo-share button) ──
   if (req.method === 'POST' && req.query.action === 'ensure-share') {
-    const projectId = req.query.id || req.body?.id;
+    const projectId = req.query.id;
     if (!projectId) return res.status(400).json({ error: 'project id required' });
 
     const { data: existing, error: e1 } = await supabaseAdmin
       .from('projects')
-      .select('id, share_token')
+      .select('id, share_token, share_expires_at')
       .eq('id', projectId)
       .eq('tenant_id', tenantId)
       .single();
     if (e1 || !existing) return res.status(404).json({ error: 'Project not found' });
 
-    if (existing.share_token) return res.json({ id: existing.id, share_token: existing.share_token });
+    const expired = existing.share_expires_at && new Date(existing.share_expires_at) < new Date();
+    if (existing.share_token && !expired) {
+      return res.json({ id: existing.id, share_token: existing.share_token });
+    }
 
+    // Either no token or token's expiry has lapsed — mint a fresh one and clear the expiry
+    // so the gallery link works indefinitely (photo galleries aren't time-limited the way
+    // the legacy client portal was).
     const newToken = `${tenant.slug}-proj-${Date.now().toString(36)}`;
     const { data: updated, error: e2 } = await supabaseAdmin
       .from('projects')
-      .update({ share_token: newToken })
+      .update({ share_token: newToken, share_expires_at: null })
       .eq('id', existing.id)
       .eq('tenant_id', tenantId)
       .select('id, share_token')
