@@ -5,6 +5,23 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#060a14">
 <title>Ryujin OS — Command Center</title>
+<script>
+// Boot-time UI mode detector. Runs before any other script so the Three.js
+// module + perf-lite CSS can branch on these flags from line 1 of paint.
+(function(){
+  try {
+    var m = localStorage.getItem('ry_ui_mode');
+    if (m === '8bit') {
+      document.documentElement.classList.add('perf-lite');
+      document.documentElement.classList.add('mode-8bit');
+      window.__RY_8BIT__ = true;
+    } else if (m === 'agent') {
+      document.documentElement.classList.add('mode-agent');
+      window.__RY_AGENT__ = true;
+    }
+  } catch(e){}
+})();
+</script>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700&family=Share+Tech+Mono&display=optional" rel="stylesheet">
 <link rel="stylesheet" href="/assets/ryujin-perf.css">
 <script src="/assets/ryujin-perf.js"></script>
@@ -956,6 +973,458 @@ body.gp-mode * { cursor: none !important; }
 }
 /* When overlay is open, force cursor visible even if gamepad lock was on */
 #sectionOverlay.on, #sectionOverlay.on * { cursor: auto !important; }
+
+/* ── Settings gear + modal ───────────────────────────────────────── */
+.hud-icon-btn {
+  pointer-events: auto;
+  width: 38px; height: 38px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(6,10,20,0.7);
+  border: 1px solid rgba(34,211,238,0.25);
+  border-radius: 10px;
+  color: rgba(160,190,230,0.6);
+  cursor: pointer;
+  margin-left: 14px;
+  transition: all 0.2s;
+}
+.hud-icon-btn:hover { color: #22d3ee; border-color: rgba(34,211,238,0.55); box-shadow: 0 0 14px rgba(34,211,238,0.25); }
+.hud-icon-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.hud-top-right { display: flex; align-items: flex-start; gap: 4px; pointer-events: auto; }
+
+.hud-avatar {
+  pointer-events: auto;
+  width: 38px; height: 38px;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, rgba(124,58,237,0.4), rgba(34,211,238,0.4));
+  border: 1px solid rgba(124,58,237,0.5);
+  border-radius: 50%;
+  color: #e0e6f0;
+  font-family: 'Orbitron', monospace;
+  font-size: 0.7em;
+  font-weight: 700;
+  letter-spacing: 1px;
+  cursor: pointer;
+  margin-left: 14px;
+  position: relative;
+  transition: all 0.2s;
+}
+.hud-avatar:hover { border-color: rgba(124,58,237,0.9); box-shadow: 0 0 16px rgba(124,58,237,0.35); transform: scale(1.05); }
+.hud-avatar .avatar-badge {
+  position: absolute; top: -4px; right: -4px;
+  min-width: 16px; height: 16px;
+  padding: 0 4px;
+  background: #f87171;
+  border: 2px solid #060a14;
+  border-radius: 8px;
+  color: #fff;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.55em;
+  font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 6px rgba(248,113,113,0.6);
+}
+
+/* ── Workspace drawer (slide-in from right) ─────────────────────── */
+#workspaceBackdrop {
+  position: fixed; inset: 0; z-index: 8500;
+  background: rgba(2,4,12,0.55);
+  backdrop-filter: blur(4px);
+}
+#workspaceDrawer {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  z-index: 8600;
+  width: min(540px, 96vw);
+  background: linear-gradient(180deg, rgba(10,16,32,0.98), rgba(6,10,20,0.98));
+  border-left: 1px solid rgba(124,58,237,0.4);
+  box-shadow: -20px 0 60px rgba(0,0,0,0.5);
+  display: flex; flex-direction: column;
+  font-family: 'Inter', system-ui, sans-serif;
+  color: #d0daf0;
+  transform: translateX(100%);
+  transition: transform 0.25s ease-out;
+}
+#workspaceDrawer.open { transform: translateX(0); }
+
+.ws-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 22px;
+  border-bottom: 1px solid rgba(124,58,237,0.2);
+  background: rgba(6,10,20,0.7);
+}
+.ws-user { display: flex; align-items: center; gap: 12px; }
+.ws-avatar-big {
+  width: 44px; height: 44px;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, rgba(124,58,237,0.5), rgba(34,211,238,0.5));
+  border: 1px solid rgba(124,58,237,0.6);
+  border-radius: 50%;
+  font-family: 'Orbitron', monospace;
+  font-size: 0.85em;
+  font-weight: 700;
+  color: #fff;
+}
+.ws-name { font-family: 'Orbitron', monospace; font-size: 0.85em; font-weight: 700; letter-spacing: 1.5px; color: #e0e6f0; }
+.ws-role { font-size: 0.65em; color: rgba(160,190,230,0.55); letter-spacing: 1.5px; text-transform: uppercase; margin-top: 2px; }
+.ws-close {
+  width: 32px; height: 32px;
+  background: none; border: 1px solid rgba(160,190,230,0.2);
+  border-radius: 8px;
+  color: rgba(160,190,230,0.6);
+  font-size: 1.3em; line-height: 1; cursor: pointer;
+}
+.ws-close:hover { color: #f87171; border-color: rgba(248,113,113,0.5); }
+
+.ws-tabs { display: flex; border-bottom: 1px solid rgba(124,58,237,0.18); background: rgba(6,10,20,0.5); }
+.ws-tab {
+  flex: 1;
+  padding: 14px 8px;
+  background: none; border: 0;
+  color: rgba(160,190,230,0.55);
+  font-family: 'Orbitron', monospace;
+  font-size: 0.65em;
+  font-weight: 600;
+  letter-spacing: 2px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  position: relative;
+  transition: all 0.15s;
+}
+.ws-tab:hover { color: #d0daf0; }
+.ws-tab.active { color: #c4b5fd; border-bottom-color: #7c3aed; background: rgba(124,58,237,0.06); }
+.ws-tab .pill {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  background: rgba(248,113,113,0.18);
+  border: 1px solid rgba(248,113,113,0.4);
+  border-radius: 8px;
+  color: #f87171;
+  font-size: 0.85em;
+  letter-spacing: 0;
+}
+
+.ws-body { flex: 1; min-height: 0; overflow: hidden; position: relative; }
+.ws-pane { position: absolute; inset: 0; display: none; overflow-y: auto; padding: 18px 22px; }
+.ws-pane.active { display: block; }
+.ws-pane.no-pad { padding: 0; }
+.ws-pane iframe { width: 100%; height: 100%; border: 0; background: #030611; }
+
+.ws-empty { padding: 40px 20px; text-align: center; color: rgba(160,190,230,0.45); font-size: 0.85em; }
+.ws-loading { padding: 30px; text-align: center; color: rgba(34,211,238,0.55); font-family: 'Share Tech Mono', monospace; font-size: 0.8em; letter-spacing: 1.5px; }
+
+.ws-task-list { display: flex; flex-direction: column; gap: 8px; }
+.ws-task {
+  padding: 12px 14px;
+  background: rgba(6,10,20,0.55);
+  border: 1px solid rgba(124,58,237,0.18);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.ws-task:hover { border-color: rgba(124,58,237,0.5); }
+.ws-task .t-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.ws-task .t-title { font-size: 0.85em; font-weight: 600; color: #e0e6f0; line-height: 1.3; }
+.ws-task .t-meta { font-size: 0.7em; color: rgba(160,190,230,0.5); margin-top: 4px; display: flex; gap: 10px; }
+.ws-task .t-prio { padding: 2px 8px; border-radius: 6px; font-size: 0.65em; letter-spacing: 1px; font-family: 'Orbitron', monospace; font-weight: 700; flex-shrink: 0; }
+.ws-task .t-prio.urgent { background: rgba(248,113,113,0.15); color: #f87171; border: 1px solid rgba(248,113,113,0.4); }
+.ws-task .t-prio.high { background: rgba(251,146,60,0.15); color: #fb923c; border: 1px solid rgba(251,146,60,0.4); }
+.ws-task .t-prio.medium { background: rgba(74,158,255,0.12); color: #4a9eff; border: 1px solid rgba(74,158,255,0.35); }
+.ws-task .t-prio.low { background: rgba(160,190,230,0.08); color: rgba(160,190,230,0.6); border: 1px solid rgba(160,190,230,0.2); }
+.ws-task .t-prio.overdue { background: rgba(248,113,113,0.25); color: #fca5a5; }
+
+.ws-section-head {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 12px;
+}
+.ws-section-title { font-family: 'Orbitron', monospace; font-size: 0.7em; font-weight: 700; letter-spacing: 2.5px; color: #c4b5fd; }
+.ws-action-btn {
+  padding: 8px 14px;
+  background: rgba(124,58,237,0.12);
+  border: 1px solid rgba(124,58,237,0.4);
+  border-radius: 8px;
+  color: #c4b5fd;
+  font-family: 'Orbitron', monospace;
+  font-size: 0.65em;
+  letter-spacing: 1.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.ws-action-btn:hover { background: rgba(124,58,237,0.25); color: #fff; }
+
+.ws-account-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(124,58,237,0.1);
+  font-size: 0.82em;
+}
+.ws-account-row .lbl { color: rgba(160,190,230,0.5); font-family: 'Share Tech Mono', monospace; font-size: 0.85em; letter-spacing: 1px; text-transform: uppercase; }
+.ws-account-row .val { color: #d0daf0; font-weight: 500; }
+.ws-logout {
+  width: 100%;
+  margin-top: 22px;
+  padding: 12px;
+  background: rgba(248,113,113,0.1);
+  border: 1px solid rgba(248,113,113,0.4);
+  border-radius: 10px;
+  color: #f87171;
+  font-family: 'Orbitron', monospace;
+  font-size: 0.7em;
+  letter-spacing: 2px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.ws-logout:hover { background: rgba(248,113,113,0.2); color: #fff; }
+
+.ws-cal-event {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px;
+  background: rgba(6,10,20,0.55);
+  border: 1px solid rgba(34,211,238,0.18);
+  border-radius: 10px;
+  margin-bottom: 8px;
+}
+.ws-cal-time { font-family: 'Orbitron', monospace; font-size: 0.8em; color: #22d3ee; flex-shrink: 0; min-width: 70px; }
+.ws-cal-title { font-size: 0.85em; color: #e0e6f0; }
+
+html.mode-8bit #workspaceDrawer { background: #060a14; box-shadow: -4px 0 0 rgba(124,58,237,0.4); }
+html.mode-8bit #workspaceBackdrop { backdrop-filter: none; }
+
+/* Inline new-task form (workspace drawer) */
+.ws-action-btn.ghost { background: transparent; border-color: rgba(160,190,230,0.2); color: rgba(160,190,230,0.6); }
+.ws-action-btn.ghost:hover { color: #f87171; border-color: rgba(248,113,113,0.4); background: rgba(248,113,113,0.08); }
+#wsNewTaskForm {
+  margin-bottom: 14px;
+  padding: 14px;
+  background: rgba(124,58,237,0.06);
+  border: 1px solid rgba(124,58,237,0.3);
+  border-radius: 10px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+#wsNewTaskForm input[type="text"], #wsNewTaskForm input[type="date"], #wsNewTaskForm select {
+  width: 100%;
+  padding: 10px 12px;
+  background: rgba(6,10,20,0.6);
+  border: 1px solid rgba(124,58,237,0.25);
+  border-radius: 8px;
+  color: #e0e6f0;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 0.85em;
+  outline: none;
+}
+#wsNewTaskForm input[type="text"]:focus, #wsNewTaskForm input[type="date"]:focus, #wsNewTaskForm select:focus {
+  border-color: rgba(124,58,237,0.7);
+  box-shadow: 0 0 12px rgba(124,58,237,0.18);
+}
+#wsNewTaskForm input[type="text"]#ntTitle {
+  font-size: 0.95em;
+  font-weight: 500;
+}
+#wsNewTaskForm select {
+  appearance: none; -webkit-appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, rgba(160,190,230,0.5) 50%), linear-gradient(135deg, rgba(160,190,230,0.5) 50%, transparent 50%);
+  background-position: calc(100% - 18px) center, calc(100% - 13px) center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 30px;
+}
+.nt-row { display: flex; gap: 8px; }
+.nt-row label {
+  flex: 1;
+  display: flex; flex-direction: column; gap: 4px;
+  font-family: 'Orbitron', monospace;
+  font-size: 0.55em;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: rgba(160,190,230,0.55);
+}
+.nt-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.nt-error {
+  padding: 8px 12px;
+  background: rgba(248,113,113,0.1);
+  border: 1px solid rgba(248,113,113,0.4);
+  border-radius: 8px;
+  color: #fca5a5;
+  font-size: 0.78em;
+}
+
+#settingsBackdrop {
+  position: fixed; inset: 0; z-index: 9000;
+  background: rgba(2,4,12,0.7);
+  backdrop-filter: blur(6px);
+}
+#settingsModal {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  z-index: 9001;
+  width: min(440px, 92vw);
+  background: linear-gradient(155deg, rgba(10,16,32,0.96), rgba(6,10,20,0.96));
+  border: 1px solid rgba(34,211,238,0.35);
+  border-radius: 16px;
+  box-shadow: 0 0 60px rgba(34,211,238,0.25), inset 0 0 30px rgba(34,211,238,0.04);
+  font-family: 'Inter', system-ui, sans-serif;
+  color: #d0daf0;
+  overflow: hidden;
+}
+#settingsModal header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px;
+  font-family: 'Orbitron', monospace;
+  font-size: 0.78em; font-weight: 700; letter-spacing: 3px;
+  color: #22d3ee;
+  border-bottom: 1px solid rgba(34,211,238,0.15);
+  background: rgba(6,10,20,0.6);
+}
+#settingsModal .x-close {
+  background: none; border: 0; color: rgba(160,190,230,0.6);
+  font-size: 1.6em; line-height: 1; cursor: pointer; padding: 0 4px;
+}
+#settingsModal .x-close:hover { color: #22d3ee; }
+#settingsModal .setting-block { padding: 18px 20px; border-bottom: 1px solid rgba(34,211,238,0.08); }
+#settingsModal .setting-block:last-of-type { border-bottom: 0; }
+#settingsModal label.block-label {
+  display: block;
+  font-family: 'Orbitron', monospace;
+  font-size: 0.6em; letter-spacing: 2.5px; text-transform: uppercase;
+  color: rgba(160,190,230,0.55); margin-bottom: 12px;
+}
+#settingsModal .mode-picker { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+#settingsModal .mode-picker button {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 14px 6px;
+  background: rgba(6,10,20,0.6);
+  border: 1px solid rgba(34,211,238,0.18);
+  border-radius: 10px;
+  color: rgba(200,220,255,0.7);
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: 'Orbitron', monospace;
+}
+#settingsModal .mode-picker button:hover { border-color: rgba(34,211,238,0.5); color: #d0daf0; }
+#settingsModal .mode-picker button.active {
+  background: rgba(34,211,238,0.12);
+  border-color: rgba(34,211,238,0.6);
+  color: #22d3ee;
+  box-shadow: 0 0 18px rgba(34,211,238,0.18);
+}
+#settingsModal .mode-picker button strong { font-size: 0.8em; letter-spacing: 1.5px; font-weight: 700; }
+#settingsModal .mode-picker button span { font-size: 0.55em; letter-spacing: 1px; color: rgba(160,190,230,0.5); font-weight: 400; }
+#settingsModal .hint { margin-top: 10px; font-size: 0.7em; color: rgba(160,190,230,0.45); line-height: 1.4; }
+#settingsModal .row-btn {
+  display: flex; justify-content: space-between; align-items: center;
+  width: 100%;
+  padding: 10px 12px;
+  margin-top: 6px;
+  background: rgba(6,10,20,0.45);
+  border: 1px solid rgba(34,211,238,0.12);
+  border-radius: 8px;
+  color: #d0daf0;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 0.78em;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+#settingsModal .row-btn:hover { border-color: rgba(34,211,238,0.4); color: #22d3ee; }
+#settingsModal .row-btn .v { font-family: 'Orbitron', monospace; font-size: 0.85em; color: #22d3ee; letter-spacing: 1.5px; }
+#settingsModal footer {
+  padding: 12px 20px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.65em;
+  color: rgba(160,190,230,0.35);
+  text-align: center;
+  letter-spacing: 1.5px;
+  border-top: 1px solid rgba(34,211,238,0.06);
+}
+#settingsToast {
+  position: fixed; top: 24px; left: 50%; transform: translateX(-50%);
+  z-index: 9002;
+  padding: 10px 22px;
+  background: rgba(34,211,238,0.15);
+  border: 1px solid rgba(34,211,238,0.5);
+  border-radius: 8px;
+  color: #22d3ee;
+  font-family: 'Orbitron', monospace;
+  font-size: 0.7em;
+  letter-spacing: 2px;
+}
+
+/* ── 8-bit static fallback grid ──────────────────────────────────── */
+#panel-grid-8bit {
+  position: fixed; inset: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-auto-rows: 1fr;
+  gap: 18px;
+  padding: 100px 32px 90px;
+  z-index: 5;
+  overflow-y: auto;
+}
+#panel-grid-8bit .grid-tile {
+  display: flex; flex-direction: column; justify-content: space-between;
+  padding: 28px;
+  background: rgba(8,16,32,0.85);
+  border: 1px solid rgba(34,211,238,0.4);
+  border-radius: 12px;
+  color: #d0daf0;
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  min-height: 140px;
+}
+#panel-grid-8bit .grid-tile:hover { border-color: #22d3ee; background: rgba(34,211,238,0.08); }
+#panel-grid-8bit .t-title {
+  font-family: 'Orbitron', monospace;
+  font-size: 1.05em; font-weight: 700; letter-spacing: 2px;
+  color: #22d3ee;
+}
+#panel-grid-8bit .t-go {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.78em; letter-spacing: 1.5px;
+  color: rgba(160,190,230,0.6);
+}
+
+/* ── Agent mode: full-screen orb + chat ──────────────────────────── */
+html.mode-agent body { background: radial-gradient(ellipse at 50% 30%, rgba(34,211,238,0.06) 0%, #020408 60%); }
+html.mode-agent #sentinel-orb {
+  width: min(360px, 32vw) !important;
+  height: min(360px, 32vw) !important;
+  top: 30% !important;
+}
+#agent-chat-mount {
+  position: fixed;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: min(820px, 94vw);
+  height: 56vh;
+  z-index: 6;
+  display: flex; flex-direction: column;
+  pointer-events: auto;
+}
+#agentChatTarget { flex: 1; min-height: 0; position: relative; }
+html.mode-agent .hud-bottom,
+html.mode-agent .skin-label,
+html.mode-agent .gp-hints,
+html.mode-agent .gamepad-indicator,
+html.mode-agent .instruction { display: none !important; }
+
+/* ── 8-bit visual accents (typography + flat panel chrome) ───────── */
+html.mode-8bit .hud-title,
+html.mode-8bit .hud-time,
+html.mode-8bit #panel-grid-8bit .t-title {
+  font-family: 'Share Tech Mono', ui-monospace, Menlo, monospace !important;
+  letter-spacing: 1.5px !important;
+  text-shadow: none !important;
+  background: none !important;
+  -webkit-text-fill-color: #22d3ee !important;
+  color: #22d3ee !important;
+}
+html.mode-8bit .hud-logo-mark { box-shadow: 0 0 0 1px #22d3ee inset; background: #060a14; }
+html.mode-8bit #panel-grid-8bit .grid-tile { box-shadow: none; }
+html.mode-8bit .skin-label,
+html.mode-8bit .instruction,
+html.mode-8bit .gp-hints,
+html.mode-8bit .gamepad-indicator,
+html.mode-8bit .hud-bottom { display: none !important; }
 </style>
   <script src="/assets/nav-buttons.js" defer></script>
 </head>
@@ -985,9 +1454,12 @@ body.gp-mode * { cursor: none !important; }
 #sentinel-video{width:100%;height:100%;object-fit:cover;display:block;mix-blend-mode:screen}
 </style>
 <script>
-window.setSentinelState=function(state){const v=document.getElementById('sentinel-video');const o=document.getElementById('sentinel-orb');if(!v||!o||o.dataset.state===state)return;if(!['idle','listening','speaking','thinking','alert'].includes(state))return;v.src='/assets/orbs/'+state+'.mp4';o.dataset.state=state;};
+// In 8-bit mode the orb video is suppressed (poster/empty src) and state changes are no-ops.
+window.setSentinelState=function(state){if(window.__RY_8BIT__)return;const v=document.getElementById('sentinel-video');const o=document.getElementById('sentinel-orb');if(!v||!o||o.dataset.state===state)return;if(!['idle','listening','speaking','thinking','alert'].includes(state))return;v.src='/assets/orbs/'+state+'.mp4';o.dataset.state=state;};
 window.addEventListener('ryujin:agent-state',e=>{if(e.detail?.state)window.setSentinelState(e.detail.state);});
 window.addEventListener('message',e=>{if(e.data?.type==='ryujin:agent-state'&&e.data.state)window.setSentinelState(e.data.state);});
+// 8-bit: strip the orb video entirely — no decode, no bandwidth.
+if(window.__RY_8BIT__){var _v=document.getElementById('sentinel-video');if(_v){_v.removeAttribute('autoplay');_v.removeAttribute('src');try{_v.load();}catch(e){}}}
 </script>
 
 <!-- CSS3D panels rendered here -->
@@ -1002,9 +1474,18 @@ window.addEventListener('message',e=>{if(e.data?.type==='ryujin:agent-state'&&e.
       <div class="hud-subtitle">COMMAND CENTER v3.1</div>
     </div>
   </div>
-  <div class="hud-status">
-    <div class="hud-time" id="hudTime"></div>
-    <div class="hud-date" id="hudDate"></div>
+  <div class="hud-top-right">
+    <div class="hud-status">
+      <div class="hud-time" id="hudTime"></div>
+      <div class="hud-date" id="hudDate"></div>
+    </div>
+    <button class="hud-avatar" id="btnWorkspace" title="My Workspace — messages, tasks, calendar (W)" aria-label="My Workspace">
+      <span id="avatarInitials">··</span>
+      <span class="avatar-badge" id="avatarBadge" hidden></span>
+    </button>
+    <button class="hud-icon-btn" id="btnSettings" title="Ryujin Settings (S)" aria-label="Settings">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+    </button>
   </div>
 </div>
 
@@ -1134,6 +1615,499 @@ window.addEventListener('message',e=>{if(e.data?.type==='ryujin:agent-state'&&e.
   <iframe id="sectionFrame" src=""></iframe>
 </div>
 
+<!-- Ryujin Settings modal -->
+<div id="settingsBackdrop" hidden></div>
+<div id="settingsModal" hidden role="dialog" aria-label="Ryujin Settings">
+  <header>RYUJIN SETTINGS<button class="x-close" id="btnSettingsClose" aria-label="Close">&times;</button></header>
+  <section class="setting-block">
+    <label class="block-label">Interface mode</label>
+    <div class="mode-picker" role="radiogroup" id="modePicker">
+      <button data-mode="agent"><strong>AGENT</strong><span>chat + orb</span></button>
+      <button data-mode="normal"><strong>NORMAL</strong><span>full cockpit</span></button>
+      <button data-mode="8bit"><strong>8-BIT</strong><span>low power</span></button>
+    </div>
+    <p class="hint">Switching modes reloads the page so the cockpit rebuilds cleanly. 8-bit skips Three.js entirely — best for laptop battery.</p>
+  </section>
+  <section class="setting-block">
+    <label class="block-label">Other</label>
+    <button class="row-btn" id="btnTglChat">Chat FAB <span class="v" id="vChat">ON</span></button>
+    <button class="row-btn" id="btnTglTutor">Tutorial popups <span class="v" id="vTutor">ON</span></button>
+    <button class="row-btn" id="btnResetOnboard">Reset onboarding <span class="v">›</span></button>
+  </section>
+  <footer>v3.1 · RYUJIN OS</footer>
+</div>
+
+<script>
+(function(){
+  const KEY = 'ry_ui_mode';
+  const CKEY = 'ry_chat_off';
+  const TKEY = 'ry_suppress_tutorials';
+  const $ = (id) => document.getElementById(id);
+  const backdrop = $('settingsBackdrop');
+  const modal = $('settingsModal');
+  const picker = $('modePicker');
+  const btnOpen = $('btnSettings');
+  const btnClose = $('btnSettingsClose');
+
+  function currentMode(){
+    try { return localStorage.getItem(KEY) || 'normal'; } catch(e){ return 'normal'; }
+  }
+  function refreshPicker(){
+    const cur = currentMode();
+    picker.querySelectorAll('button').forEach(b => {
+      b.classList.toggle('active', b.dataset.mode === cur);
+    });
+    $('vChat').textContent = (localStorage.getItem(CKEY) === '1') ? 'OFF' : 'ON';
+    $('vTutor').textContent = (localStorage.getItem(TKEY) === '1') ? 'OFF' : 'ON';
+  }
+  function open(){ backdrop.hidden = false; modal.hidden = false; refreshPicker(); }
+  function close(){ backdrop.hidden = true; modal.hidden = true; }
+
+  function toast(msg){
+    const t = document.createElement('div');
+    t.id = 'settingsToast';
+    t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 1200);
+  }
+
+  // Apply agent <-> normal in place; 8-bit transitions reload.
+  function applyAgent(){
+    document.documentElement.classList.add('mode-agent');
+    document.documentElement.classList.remove('mode-8bit');
+    document.documentElement.classList.remove('perf-lite');
+    window.__RY_AGENT__ = true;
+    window.__RY_8BIT__ = false;
+    // Reload — Three.js was instantiated and CSS3D scene is mounted; cleanest
+    // teardown is a reload since Three init isn't designed to be idempotent.
+    toast('Switching to AGENT…');
+    setTimeout(() => location.reload(), 400);
+  }
+  function applyNormal(){
+    document.documentElement.classList.remove('mode-agent');
+    document.documentElement.classList.remove('mode-8bit');
+    document.documentElement.classList.remove('perf-lite');
+    window.__RY_AGENT__ = false;
+    window.__RY_8BIT__ = false;
+    toast('Switching to NORMAL…');
+    setTimeout(() => location.reload(), 400);
+  }
+  function apply8bit(){
+    toast('Switching to 8-BIT…');
+    setTimeout(() => location.reload(), 400);
+  }
+
+  function pickMode(mode){
+    const prev = currentMode();
+    if (mode === prev) { close(); return; }
+    try { localStorage.setItem(KEY, mode === 'normal' ? '' : mode); } catch(e){}
+    if (mode === 'normal') { try { localStorage.removeItem(KEY); } catch(e){} }
+    refreshPicker();
+    close();
+    if (mode === '8bit' || prev === '8bit') return apply8bit();
+    if (mode === 'agent') return applyAgent();
+    if (mode === 'normal') return applyNormal();
+  }
+
+  if (btnOpen) btnOpen.addEventListener('click', open);
+  if (btnClose) btnClose.addEventListener('click', close);
+  if (backdrop) backdrop.addEventListener('click', close);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !modal.hidden) close();
+    if ((e.key === 's' || e.key === 'S') && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA' && !e.target.isContentEditable && !e.metaKey && !e.ctrlKey) {
+      if (modal.hidden) open(); else close();
+    }
+  });
+  picker.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-mode]');
+    if (b) pickMode(b.dataset.mode);
+  });
+  $('btnTglChat').addEventListener('click', () => {
+    const off = localStorage.getItem(CKEY) === '1';
+    if (off) { localStorage.removeItem(CKEY); window.Ryujin?.enable?.(); }
+    else { localStorage.setItem(CKEY, '1'); window.Ryujin?.disable?.(); }
+    refreshPicker();
+  });
+  $('btnTglTutor').addEventListener('click', () => {
+    const off = localStorage.getItem(TKEY) === '1';
+    if (off) { localStorage.removeItem(TKEY); localStorage.removeItem('ry_suppress_proposal_gate'); }
+    else { localStorage.setItem(TKEY, '1'); localStorage.setItem('ry_suppress_proposal_gate', '1'); }
+    refreshPicker();
+  });
+  $('btnResetOnboard').addEventListener('click', () => {
+    try {
+      localStorage.removeItem('ry_onboarding_done');
+      localStorage.removeItem('ry_firstrun_hub');
+      sessionStorage.removeItem('ry_boot_seen');
+    } catch(e){}
+    toast('Reloading…');
+    setTimeout(() => location.reload(), 400);
+  });
+
+  // Expose for keyboard / external triggers
+  window.RyujinSettings = { open, close, mode: currentMode };
+})();
+</script>
+
+<!-- My Workspace drawer (slide-in from right) -->
+<div id="workspaceBackdrop" hidden></div>
+<div id="workspaceDrawer" role="dialog" aria-label="My Workspace">
+  <div class="ws-header">
+    <div class="ws-user">
+      <div class="ws-avatar-big" id="wsAvatarBig">··</div>
+      <div>
+        <div class="ws-name" id="wsName">Loading…</div>
+        <div class="ws-role" id="wsRole">—</div>
+      </div>
+    </div>
+    <button class="ws-close" id="wsClose" aria-label="Close">&times;</button>
+  </div>
+  <div class="ws-tabs" role="tablist">
+    <button class="ws-tab active" data-tab="messages">Messages<span class="pill" id="tabBadgeMsgs" hidden>0</span></button>
+    <button class="ws-tab" data-tab="tasks">Tasks<span class="pill" id="tabBadgeTasks" hidden>0</span></button>
+    <button class="ws-tab" data-tab="calendar">Calendar</button>
+    <button class="ws-tab" data-tab="account">Account</button>
+  </div>
+  <div class="ws-body">
+    <div class="ws-pane active no-pad" data-pane="messages">
+      <iframe id="wsMessagesFrame" src="about:blank" loading="lazy"></iframe>
+    </div>
+    <div class="ws-pane" data-pane="tasks">
+      <div class="ws-section-head">
+        <div class="ws-section-title">MY OPEN TASKS</div>
+        <div style="display:flex;gap:6px">
+          <button class="ws-action-btn" id="wsViewKanban" title="Open the full Crew Ops kanban">KANBAN ↗</button>
+          <button class="ws-action-btn" id="wsNewTask">+ NEW</button>
+        </div>
+      </div>
+      <form id="wsNewTaskForm" hidden>
+        <input type="text" id="ntTitle" placeholder="What needs doing?" required maxlength="160">
+        <div class="nt-row">
+          <label>Assign to
+            <select id="ntAssignee"><option value="">Loading…</option></select>
+          </label>
+          <label>Priority
+            <select id="ntPriority">
+              <option value="low">Low</option>
+              <option value="medium" selected>Medium</option>
+              <option value="high">High</option>
+              <option value="urgent">Urgent</option>
+            </select>
+          </label>
+        </div>
+        <div class="nt-row">
+          <label>Due
+            <input type="date" id="ntDue">
+          </label>
+          <label style="flex:2">Note (optional)
+            <input type="text" id="ntNote" placeholder="extra context — visible on the ticket" maxlength="240">
+          </label>
+        </div>
+        <div class="nt-actions">
+          <button type="button" class="ws-action-btn ghost" id="ntCancel">CANCEL</button>
+          <button type="submit" class="ws-action-btn" id="ntSubmit">CREATE TASK</button>
+        </div>
+        <div id="ntError" class="nt-error" hidden></div>
+      </form>
+      <div id="wsTaskList" class="ws-task-list"><div class="ws-loading">Loading tasks…</div></div>
+    </div>
+    <div class="ws-pane" data-pane="calendar">
+      <div class="ws-section-head">
+        <div class="ws-section-title">TODAY · NEXT 24H</div>
+        <a class="ws-action-btn" href="https://calendar.google.com" target="_blank" rel="noopener" style="text-decoration:none">OPEN GCAL ↗</a>
+      </div>
+      <div id="wsCalList"><div class="ws-loading">Loading calendar…</div></div>
+    </div>
+    <div class="ws-pane" data-pane="account">
+      <div id="wsAccountFields"><div class="ws-loading">Loading account…</div></div>
+      <button class="ws-logout" id="wsLogout">SIGN OUT</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const $ = (id) => document.getElementById(id);
+  const drawer = $('workspaceDrawer');
+  const backdrop = $('workspaceBackdrop');
+  const btnOpen = $('btnWorkspace');
+  const btnClose = $('wsClose');
+  const tabs = drawer.querySelectorAll('.ws-tab');
+  const panes = drawer.querySelectorAll('.ws-pane');
+  let me = null;
+  let loaded = { messages: false, tasks: false, calendar: false, account: false };
+
+  function initials(name){
+    if (!name) return '··';
+    return name.trim().split(/\s+/).slice(0,2).map(p => p[0]?.toUpperCase() || '').join('') || '··';
+  }
+
+  async function loadMe(){
+    if (me) return me;
+    try {
+      const token = localStorage.getItem('ryujin_token');
+      const r = await fetch('/api/me', { headers: token ? { 'Authorization': 'Bearer ' + token } : {} });
+      if (r.ok) me = await r.json();
+    } catch(e){}
+    if (!me) me = { name: 'Mackenzie Mazerolle', role: 'owner', email: '', user_id: null };
+    const init = initials(me.name);
+    $('avatarInitials').textContent = init;
+    $('wsAvatarBig').textContent = init;
+    $('wsName').textContent = me.name || '—';
+    $('wsRole').textContent = (me.role || '—').toUpperCase();
+    return me;
+  }
+
+  function fmtDate(iso){
+    if (!iso) return '';
+    const d = new Date(iso);
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const dKey = new Date(d).setHours(0,0,0,0);
+    const dayDiff = Math.round((dKey - today) / 86400000);
+    if (dayDiff < 0) return Math.abs(dayDiff) + 'd overdue';
+    if (dayDiff === 0) return 'today';
+    if (dayDiff === 1) return 'tomorrow';
+    if (dayDiff < 7) return d.toLocaleDateString('en-CA', { weekday: 'short' });
+    return d.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' });
+  }
+
+  async function loadTasks(){
+    const list = $('wsTaskList');
+    list.innerHTML = '<div class="ws-loading">Loading tasks…</div>';
+    try {
+      await loadMe();
+      const token = localStorage.getItem('ryujin_token');
+      const params = new URLSearchParams({ status: 'open', limit: '50' });
+      if (me.user_id) params.set('assigned_to', me.user_id);
+      const r = await fetch('/api/tickets?' + params.toString(), {
+        headers: Object.assign({ 'x-tenant-id': 'plus-ultra' }, token ? { 'Authorization': 'Bearer ' + token } : {})
+      });
+      if (!r.ok) throw new Error('Tickets fetch failed: ' + r.status);
+      const data = await r.json();
+      const tickets = Array.isArray(data) ? data : (data.tickets || data.data || []);
+      const today = new Date(); today.setHours(0,0,0,0);
+      const sorted = tickets.slice().sort((a,b) => {
+        const ad = a.due_date ? new Date(a.due_date).getTime() : Infinity;
+        const bd = b.due_date ? new Date(b.due_date).getTime() : Infinity;
+        return ad - bd;
+      });
+      if (!sorted.length) {
+        list.innerHTML = '<div class="ws-empty">No open tasks. Nice.</div>';
+        $('tabBadgeTasks').hidden = true;
+        return;
+      }
+      const overdue = sorted.filter(t => t.due_date && new Date(t.due_date).setHours(0,0,0,0) < today.getTime()).length;
+      const badge = $('tabBadgeTasks');
+      badge.textContent = sorted.length + (overdue ? ' · ' + overdue + ' OD' : '');
+      badge.hidden = false;
+      list.innerHTML = sorted.map(t => {
+        const isOverdue = t.due_date && new Date(t.due_date).setHours(0,0,0,0) < today.getTime();
+        const prio = (isOverdue ? 'overdue' : (t.priority || 'medium')).toLowerCase();
+        const meta = [];
+        if (t.due_date) meta.push(fmtDate(t.due_date));
+        if (t.project_id) meta.push('#' + (t.id || '').toString().slice(-4));
+        return `<div class="ws-task" data-id="${t.id}">
+          <div class="t-row">
+            <div>
+              <div class="t-title">${(t.title || 'Untitled').replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'})[c])}</div>
+              <div class="t-meta">${meta.join(' · ') || 'no due date'}</div>
+            </div>
+            <div class="t-prio ${prio}">${prio.toUpperCase()}</div>
+          </div>
+        </div>`;
+      }).join('');
+      list.querySelectorAll('.ws-task').forEach(el => {
+        el.addEventListener('click', () => {
+          window.location.href = '/admin.html#crew';
+        });
+      });
+    } catch(e) {
+      list.innerHTML = '<div class="ws-empty">Couldn\'t load tasks.<br><span style="font-size:0.8em;opacity:0.6">' + (e.message || e) + '</span></div>';
+    }
+  }
+
+  async function loadCalendar(){
+    const list = $('wsCalList');
+    list.innerHTML = '<div class="ws-loading">Loading…</div>';
+    try {
+      const r = await fetch('/api/snapshot', { cache: 'no-store' });
+      if (!r.ok) throw new Error('snapshot ' + r.status);
+      const snap = await r.json();
+      const events = snap?.briefing_morning?.calendar?.events
+                   || snap?.briefing_morning?.todayEvents
+                   || snap?.calendar?.events
+                   || [];
+      if (!events.length) {
+        list.innerHTML = '<div class="ws-empty">No events surfaced for today.<br><span style="font-size:0.8em;opacity:0.6">Open Google Calendar above for the full view.</span></div>';
+        return;
+      }
+      list.innerHTML = events.slice(0, 10).map(ev => {
+        const t = ev.start || ev.time || '';
+        const title = ev.summary || ev.title || ev.name || 'Untitled';
+        return `<div class="ws-cal-event"><div class="ws-cal-time">${t}</div><div class="ws-cal-title">${title.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'})[c])}</div></div>`;
+      }).join('');
+    } catch(e) {
+      list.innerHTML = '<div class="ws-empty">Calendar bridge not yet wired.<br><a href="https://calendar.google.com" target="_blank" style="color:#22d3ee">Open Google Calendar ↗</a></div>';
+    }
+  }
+
+  async function loadAccount(){
+    await loadMe();
+    const wrap = $('wsAccountFields');
+    const rows = [
+      ['Name', me.name || '—'],
+      ['Email', me.email || '—'],
+      ['Role', (me.role || '—').toUpperCase()],
+      ['User ID', me.user_id ? me.user_id.slice(0, 8) + '…' : '—'],
+      ['Tenant', me.tenant_id || 'plus-ultra'],
+    ];
+    wrap.innerHTML = rows.map(([l, v]) =>
+      `<div class="ws-account-row"><span class="lbl">${l}</span><span class="val">${v}</span></div>`
+    ).join('');
+  }
+
+  function loadMessages(){
+    const f = $('wsMessagesFrame');
+    if (f.src === 'about:blank' || !f.src.includes('messages.html')) {
+      f.src = '/messages.html';
+    }
+  }
+
+  function activateTab(name){
+    tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+    panes.forEach(p => p.classList.toggle('active', p.dataset.pane === name));
+    if (name === 'messages' && !loaded.messages) { loadMessages(); loaded.messages = true; }
+    if (name === 'tasks') { loadTasks(); loaded.tasks = true; }
+    if (name === 'calendar') { loadCalendar(); loaded.calendar = true; }
+    if (name === 'account') { loadAccount(); loaded.account = true; }
+  }
+
+  function open(){
+    backdrop.hidden = false;
+    drawer.classList.add('open');
+    loadMe().then(() => {
+      // Default to Messages on first open; preload it.
+      if (!loaded.messages) { loadMessages(); loaded.messages = true; }
+    });
+  }
+  function close(){
+    backdrop.hidden = true;
+    drawer.classList.remove('open');
+  }
+
+  if (btnOpen) btnOpen.addEventListener('click', open);
+  if (btnClose) btnClose.addEventListener('click', close);
+  if (backdrop) backdrop.addEventListener('click', close);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && drawer.classList.contains('open')) { close(); return; }
+    if ((e.key === 'w' || e.key === 'W') && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA' && !e.target.isContentEditable && !e.metaKey && !e.ctrlKey) {
+      drawer.classList.contains('open') ? close() : open();
+    }
+  });
+  tabs.forEach(t => t.addEventListener('click', () => activateTab(t.dataset.tab)));
+  // ── Inline task creation ──────────────────────────────────
+  let usersCache = null;
+  async function loadUsers(){
+    if (usersCache) return usersCache;
+    try {
+      const token = localStorage.getItem('ryujin_token');
+      const r = await fetch('/api/users', {
+        headers: Object.assign({ 'x-tenant-id': 'plus-ultra' }, token ? { 'Authorization': 'Bearer ' + token } : {})
+      });
+      if (!r.ok) throw new Error('users ' + r.status);
+      const data = await r.json();
+      usersCache = (data.users || []).filter(u => u.active !== false);
+    } catch(e) { usersCache = []; }
+    return usersCache;
+  }
+
+  async function showNewTaskForm(){
+    const form = $('wsNewTaskForm');
+    const list = $('wsTaskList');
+    form.hidden = false;
+    list.style.display = 'none';
+    $('ntError').hidden = true;
+    $('ntTitle').value = '';
+    $('ntNote').value = '';
+    $('ntDue').value = '';
+    $('ntPriority').value = 'medium';
+    await loadMe();
+    const users = await loadUsers();
+    const sel = $('ntAssignee');
+    const myId = me?.user_id || '';
+    const opts = ['<option value="">— Unassigned —</option>'];
+    if (myId) opts.push(`<option value="${myId}">${escAttr(me.name || 'Me')} (me)</option>`);
+    for (const u of users) {
+      if (u.id === myId) continue;
+      opts.push(`<option value="${u.id}">${escAttr(u.name || u.email || u.id)}</option>`);
+    }
+    sel.innerHTML = opts.join('');
+    sel.value = myId || '';
+    setTimeout(() => $('ntTitle').focus(), 50);
+  }
+  function hideNewTaskForm(){
+    $('wsNewTaskForm').hidden = true;
+    $('wsTaskList').style.display = '';
+  }
+  function escAttr(s){ return String(s).replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'})[c]); }
+
+  $('wsNewTask').addEventListener('click', showNewTaskForm);
+  $('wsViewKanban').addEventListener('click', () => { window.location.href = '/admin.html#crew'; });
+  $('ntCancel').addEventListener('click', hideNewTaskForm);
+
+  $('wsNewTaskForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const title = $('ntTitle').value.trim();
+    if (!title) return;
+    const submit = $('ntSubmit');
+    submit.disabled = true;
+    submit.textContent = 'CREATING…';
+    $('ntError').hidden = true;
+    try {
+      const token = localStorage.getItem('ryujin_token');
+      const headers = { 'Content-Type': 'application/json', 'x-tenant-id': 'plus-ultra' };
+      if (token) headers['Authorization'] = 'Bearer ' + token;
+      const note = $('ntNote').value.trim();
+      const body = {
+        title,
+        assigned_to: $('ntAssignee').value || null,
+        priority: $('ntPriority').value || 'medium',
+        due_date: $('ntDue').value || null,
+        description: note || null
+      };
+      const r = await fetch('/api/tickets', { method: 'POST', headers, body: JSON.stringify(body) });
+      if (!r.ok) {
+        const txt = await r.text();
+        throw new Error('Create failed (' + r.status + '): ' + txt.slice(0, 120));
+      }
+      hideNewTaskForm();
+      // Refresh task list to show the new one (or assigned-to-someone-else stays out)
+      loadTasks();
+    } catch(err) {
+      $('ntError').textContent = err.message || String(err);
+      $('ntError').hidden = false;
+    } finally {
+      submit.disabled = false;
+      submit.textContent = 'CREATE TASK';
+    }
+  });
+  $('wsLogout').addEventListener('click', () => {
+    if (!confirm('Sign out?')) return;
+    try {
+      localStorage.removeItem('ryujin_token');
+      sessionStorage.removeItem('ry_boot_seen');
+    } catch(e){}
+    window.location.href = '/login.html';
+  });
+
+  // Eager-load identity on page load so the avatar shows initials immediately.
+  loadMe();
+
+  window.RyujinWorkspace = { open, close, activateTab };
+})();
+</script>
+
 <!-- Auth guard + first-run onboarding + per-session boot cinematic -->
 <script>
 (function(){
@@ -1222,6 +2196,49 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS3DRenderer, CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
 
+// 8-bit + agent modes never instantiate Three.js. Both render flat alternatives.
+if (window.__RY_8BIT__) {
+  // 8-bit: hide WebGL/CSS3D layers, render a static 9-tile pillar grid.
+  const cssC = document.getElementById('css3d-container'); if (cssC) cssC.style.display = 'none';
+  const bgC = document.getElementById('bg-canvas'); if (bgC) bgC.style.display = 'none';
+  const dragon = document.getElementById('bg-dragon'); if (dragon) dragon.style.display = 'none';
+  const orb = document.getElementById('sentinel-orb'); if (orb) orb.style.display = 'none';
+  const panels = [
+    { id:'dashboard',  title:'HQ / DASHBOARD', url:'dashboard-v2.html'    },
+    { id:'marketing',  title:'MARKETING',      url:'marketing.html'       },
+    { id:'sales',      title:'SALES',          url:'sales-cockpit.html'   },
+    { id:'production', title:'PRODUCTION',     url:'production.html'      },
+    { id:'service',    title:'SERVICE',        url:'service.html'         },
+    { id:'customer',   title:'CUSTOMER / CRM', url:'customer.html'        },
+    { id:'finance',    title:'FINANCE',        url:'finance.html'         },
+    { id:'admin',      title:'ADMINISTRATION', url:'administration.html'  },
+  ];
+  const grid = document.createElement('div');
+  grid.id = 'panel-grid-8bit';
+  grid.innerHTML = panels.map(p =>
+    `<a class="grid-tile" href="${p.url}"><div class="t-title">${p.title}</div><div class="t-go">OPEN ›</div></a>`
+  ).join('');
+  document.body.appendChild(grid);
+} else if (window.__RY_AGENT__) {
+  // Agent: hide cockpit, scale orb, mount full-screen chat brain via Ryujin.init when ready.
+  const cssC = document.getElementById('css3d-container'); if (cssC) cssC.style.display = 'none';
+  const bgC = document.getElementById('bg-canvas'); if (bgC) bgC.style.display = 'none';
+  const dragon = document.getElementById('bg-dragon'); if (dragon) dragon.style.display = 'none';
+  const mount = document.createElement('div');
+  mount.id = 'agent-chat-mount';
+  mount.innerHTML = '<div id="agentChatTarget"></div>';
+  document.body.appendChild(mount);
+  let tries = 0;
+  const tryInit = () => {
+    if (window.Ryujin && typeof window.Ryujin.init === 'function') {
+      try { window.Ryujin.init({ sector: 'GLOBAL', embedTarget: '#agentChatTarget', autoOpen: true }); } catch(e){}
+    } else if (++tries < 60) {
+      setTimeout(tryInit, 100);
+    }
+  };
+  tryInit();
+} else {
+
 // ── Perf mode: auto-detect low-end + manual override per-machine ──
 // Force via URL: ?lite=1 (on) or ?lite=0 (off). Persists to localStorage, so do it once per machine.
 (function syncLiteFlag(){
@@ -1281,10 +2298,10 @@ const LOW_PERF = LITE_FORCED || (
 // ──────────────────────────────────────────
 // CONFIG
 // ──────────────────────────────────────────
-const PANEL_COUNT = 9;
+const PANEL_COUNT = 8;
 // ORBIT_RADIUS chosen so the chord between adjacent panels matches the
-// 6-panel layout's spacing (2·R·sin(π/N) ≈ 820). Required when PANEL_COUNT
-// went 6 → 9 — otherwise the 360px-wide panels overlap visibly.
+// 6-panel layout's spacing (2·R·sin(π/N) ≈ 820). At N=8 with 360px panels
+// the chord is ~918, comfortable breathing room with no overlap.
 const ORBIT_RADIUS = 1200;
 const ORBIT_Y_VARIANCE = 30;
 const CAMERA_START = { x: 0, y: 160, z: 720 };
@@ -1523,7 +2540,6 @@ const panels = [
   { id: 'service',    title: 'SERVICE',        url: 'service.html?embed=1',       badge: '<span class="panel-badge badge-live">LIVE</span>' },
   { id: 'customer',   title: 'CUSTOMER / CRM', url: 'customer.html?embed=1',      badge: '<span class="panel-badge badge-live">LIVE</span>' },
   { id: 'finance',    title: 'FINANCE',        url: 'finance.html?embed=1',       badge: '<span class="panel-badge badge-live">LIVE</span>' },
-  { id: 'materials',  title: 'MATERIALS',      url: 'inventory.html?embed=1',     badge: '<span class="panel-badge badge-live">NEW</span>' },
   { id: 'admin',      title: 'ADMINISTRATION', url: 'administration.html?embed=1',badge: '<span class="panel-badge badge-online">v3.1</span>' },
 ];
 
@@ -2191,6 +3207,7 @@ setTimeout(() => {
   if (inst) inst.style.opacity = '0';
 }, 6000);
 
+}  // end else (Three.js path — skipped in __RY_8BIT__ / __RY_AGENT__)
 </script>
 
 <script src="assets/ryujin-mode.js"></script>
