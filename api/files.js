@@ -7,6 +7,7 @@ import { supabaseAdmin } from '../lib/supabase.js';
 import { requireTenant } from '../lib/tenant.js';
 import { put } from '@vercel/blob';
 import Busboy from 'busboy';
+import exifr from 'exifr';
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB (video support)
 const ALLOWED_TYPES = new Set([
@@ -19,7 +20,8 @@ function parseMultipart(req) {
   return new Promise((resolve, reject) => {
     const files = [];
     const fields = {};
-    const busboy = Busboy({ headers: req.headers, limits: { files: 10, fileSize: MAX_FILE_SIZE } });
+    // Allow up to 20 slots: 10 originals + 10 client-generated thumbnails (named thumb_0..thumb_9)
+    const busboy = Busboy({ headers: req.headers, limits: { files: 20, fileSize: MAX_FILE_SIZE } });
 
     busboy.on('field', (name, val) => { fields[name] = val; });
     busboy.on('file', (name, stream, info) => {
@@ -28,13 +30,27 @@ function parseMultipart(req) {
       stream.on('data', chunk => chunks.push(chunk));
       stream.on('limit', () => { truncated = true; });
       stream.on('end', () => {
-        files.push({ buffer: Buffer.concat(chunks), mimeType: info.mimeType, fileName: info.filename, truncated });
+        files.push({ fieldName: name, buffer: Buffer.concat(chunks), mimeType: info.mimeType, fileName: info.filename, truncated });
       });
     });
     busboy.on('close', () => resolve({ files, fields }));
     busboy.on('error', reject);
     req.pipe(busboy);
   });
+}
+
+// Read EXIF DateTimeOriginal + GPS from an image buffer. Returns nulls on any parse failure.
+async function extractExif(buffer) {
+  try {
+    const exif = await exifr.parse(buffer, ['DateTimeOriginal', 'GPSLatitude', 'GPSLongitude']);
+    return {
+      captured_at: exif?.DateTimeOriginal instanceof Date ? exif.DateTimeOriginal.toISOString() : null,
+      latitude: typeof exif?.GPSLatitude === 'number' ? Number(exif.GPSLatitude.toFixed(7)) : null,
+      longitude: typeof exif?.GPSLongitude === 'number' ? Number(exif.GPSLongitude.toFixed(7)) : null
+    };
+  } catch {
+    return { captured_at: null, latitude: null, longitude: null };
+  }
 }
 
 async function handler(req, res) {
@@ -81,11 +97,19 @@ async function handler(req, res) {
 
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
+    // Separate originals from client-generated thumbnails (named thumb_0, thumb_1, ...)
+    const originals = files.filter(f => !/^thumb_\d+$/.test(f.fieldName));
+    const thumbsByIndex = new Map();
+    for (const f of files) {
+      const m = /^thumb_(\d+)$/.exec(f.fieldName);
+      if (m) thumbsByIndex.set(Number(m[1]), f);
+    }
+
     const results = [];
     const ts = Date.now();
 
-    for (let i = 0; i < files.length; i++) {
-      const f = files[i];
+    for (let i = 0; i < originals.length; i++) {
+      const f = originals[i];
 
       if (f.truncated) {
         results.push({ fileName: f.fileName, error: 'File exceeds 50MB limit' });
@@ -96,7 +120,7 @@ async function handler(req, res) {
         continue;
       }
 
-      const clean = f.fileName.replace(/[^\w.\-]/g, '_').substring(0, 80);
+      const clean = (f.fileName || 'upload').replace(/[^\w.\-]/g, '_').substring(0, 80);
       const blobPath = `${req.tenant.slug}/projects/${projectId}/${ts}-${i}-${clean}`;
 
       const blob = await put(blobPath, f.buffer, {
@@ -104,7 +128,37 @@ async function handler(req, res) {
         contentType: f.mimeType
       });
 
-      // Insert file record
+      // Upload paired client-generated thumbnail if present (image uploads only)
+      let thumbnailUrl = null;
+      const thumb = thumbsByIndex.get(i);
+      if (thumb && !thumb.truncated && thumb.buffer.length > 0) {
+        try {
+          const thumbPath = `${req.tenant.slug}/projects/${projectId}/thumbs/${ts}-${i}-${clean}.jpg`;
+          const thumbBlob = await put(thumbPath, thumb.buffer, {
+            access: 'public',
+            contentType: thumb.mimeType || 'image/jpeg'
+          });
+          thumbnailUrl = thumbBlob.url;
+        } catch (e) {
+          // Thumb is a nice-to-have; never fail the original upload over it
+          console.warn('[files] thumbnail upload failed:', e?.message);
+        }
+      }
+
+      // EXIF: only for images, server-side fallback. Photos taken via the rear-camera capture
+      // typically lose EXIF when re-encoded by the canvas thumbnailer; this is the safety net
+      // for direct-from-gallery uploads where EXIF survives.
+      let exif = { captured_at: null, latitude: null, longitude: null };
+      if (f.mimeType?.startsWith('image/')) {
+        exif = await extractExif(f.buffer);
+      }
+
+      // Captured_at / lat / lng can also be passed as form fields (client-side geolocation
+      // overrides null EXIF — phones don't write GPS to capture-mode photos in Safari).
+      const formCapturedAt = fields[`captured_at_${i}`] || fields.captured_at || null;
+      const formLat = parseFloat(fields[`latitude_${i}`] ?? fields.latitude);
+      const formLng = parseFloat(fields[`longitude_${i}`] ?? fields.longitude);
+
       const { data: fileRecord, error: fErr } = await supabaseAdmin
         .from('project_files')
         .insert({
@@ -112,12 +166,16 @@ async function handler(req, res) {
           tenant_id: tenantId,
           uploaded_by: fields.uploaded_by || null,
           url: blob.url,
+          thumbnail_url: thumbnailUrl,
           filename: f.fileName,
           mime_type: f.mimeType,
           file_size: f.buffer.length,
           category: fields.category || 'general',
           caption: fields.caption || null,
-          client_visible: fields.client_visible === 'true'
+          client_visible: fields.client_visible === 'true',
+          captured_at: exif.captured_at || formCapturedAt || null,
+          latitude: exif.latitude ?? (Number.isFinite(formLat) ? formLat : null),
+          longitude: exif.longitude ?? (Number.isFinite(formLng) ? formLng : null)
         })
         .select('*')
         .single();
@@ -142,6 +200,25 @@ async function handler(req, res) {
     const safeUpdates = {};
     for (const key of allowed) {
       if (updates[key] !== undefined) safeUpdates[key] = updates[key];
+    }
+
+    // Single-cover rule: if this update sets is_cover=true, clear is_cover on every other
+    // file in the same project first. We look up the project_id from the target row.
+    if (safeUpdates.is_cover === true) {
+      const { data: target } = await supabaseAdmin
+        .from('project_files')
+        .select('project_id')
+        .eq('id', id)
+        .eq('tenant_id', tenantId)
+        .single();
+      if (target?.project_id) {
+        await supabaseAdmin
+          .from('project_files')
+          .update({ is_cover: false })
+          .eq('tenant_id', tenantId)
+          .eq('project_id', target.project_id)
+          .neq('id', id);
+      }
     }
 
     const { data, error } = await supabaseAdmin
