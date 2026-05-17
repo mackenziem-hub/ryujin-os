@@ -18,16 +18,22 @@ async function maybeNotifyFirstGalleryOpen(project) {
     const tags = Array.isArray(project.tags) ? project.tags : [];
     if (tags.includes(PHOTO_GALLERY_NOTIFIED_TAG)) return;
 
+    // Atomic claim: only the request that flips the tag into place proceeds
+    // to send the email. Filtering on `not.cs.` (NOT contains) means concurrent
+    // requests find 0 rows once one has won, defeating the duplicate-email race.
     const newTags = [...tags, PHOTO_GALLERY_NOTIFIED_TAG];
-    const { error: tagErr } = await supabaseAdmin
+    const { data: claimed, error: tagErr } = await supabaseAdmin
       .from('projects')
       .update({ tags: newTags })
       .eq('id', project.id)
-      .eq('tenant_id', project.tenant_id);
+      .eq('tenant_id', project.tenant_id)
+      .not('tags', 'cs', `{${PHOTO_GALLERY_NOTIFIED_TAG}}`)
+      .select('id');
     if (tagErr) {
       console.error('[projects] gallery first-open tag write failed', tagErr.message);
       return;
     }
+    if (!claimed || claimed.length === 0) return; // Lost the race; someone else is sending
 
     const customerName = project.customer?.full_name || 'Customer';
     const shareUrl = `https://ryujin-os.vercel.app/photos-share.html?share=${encodeURIComponent(project.share_token || '')}`;
