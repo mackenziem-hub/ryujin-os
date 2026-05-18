@@ -173,6 +173,58 @@ async function handler(req, res) {
   if (!tenant) return res.status(400).json({ error: 'Tenant required' });
   const tenantId = tenant.id;
 
+  // ── State transition (Start / Pause / Complete / Reset) ──
+  // POST /api/projects?action=state-transition  body: { id, transition }
+  // Used by the Jobs card v2 action buttons.
+  if (req.method === 'POST' && req.query.action === 'state-transition') {
+    const { id, transition } = (req.body || {});
+    if (!id || !transition) return res.status(400).json({ error: 'id and transition required' });
+    const allowed = ['start', 'pause', 'complete', 'reset', 'punch_list'];
+    if (!allowed.includes(transition)) return res.status(400).json({ error: 'invalid transition' });
+
+    // Look up current state so 'start' on a previously-paused job preserves
+    // the original started_at (resume should NOT clobber the first-start
+    // timestamp — Codex round flagged this).
+    const { data: current } = await supabaseAdmin
+      .from('projects')
+      .select('id, status, started_at')
+      .eq('id', id)
+      .eq('tenant_id', tenantId)
+      .single();
+    if (!current) return res.status(404).json({ error: 'Project not found' });
+
+    const updates = { updated_at: new Date().toISOString() };
+    if (transition === 'start') {
+      updates.status = 'active';
+      // Only stamp started_at if the job has never been started. Resume
+      // from paused → keep the original timestamp.
+      if (!current.started_at) updates.started_at = new Date().toISOString();
+    }
+    if (transition === 'pause')      { updates.status = 'paused'; }
+    if (transition === 'complete')   { updates.status = 'complete';    updates.progress_pct = 100; }
+    if (transition === 'punch_list') { updates.status = 'punch_list'; }
+    if (transition === 'reset')      { updates.status = 'not_started'; updates.started_at = null; updates.progress_pct = null; }
+
+    const { data, error } = await supabaseAdmin
+      .from('projects')
+      .update(updates)
+      .eq('id', id)
+      .eq('tenant_id', tenantId)
+      .select('id, status, started_at, progress_pct')
+      .single();
+    if (error) return res.status(500).json({ error: error.message });
+
+    await supabaseAdmin.from('activity_log').insert({
+      tenant_id: tenantId,
+      entity_type: 'project',
+      entity_id: id,
+      action: `state_${transition}`,
+      details: { transition, new_status: updates.status }
+    });
+
+    return res.json(data);
+  }
+
   // ── Ensure share token (idempotent, used by the photo-share button) ──
   if (req.method === 'POST' && req.query.action === 'ensure-share') {
     const projectId = req.query.id;
@@ -242,7 +294,12 @@ async function handler(req, res) {
 
     let query = supabaseAdmin
       .from('projects')
-      .select('*, customer:customers(full_name, address)', { count: 'exact' })
+      .select(`
+        *,
+        customer:customers(full_name, address, phone),
+        crew_lead:users!projects_crew_lead_id_fkey(id, name, avatar_url),
+        estimate:estimates!projects_estimate_id_fkey(estimate_number, final_accepted_total)
+      `, { count: 'exact' })
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false })
       .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
@@ -251,7 +308,33 @@ async function handler(req, res) {
 
     const { data, error, count } = await query;
     if (error) return res.status(500).json({ error: error.message });
-    return res.json({ projects: data, total: count });
+
+    // Resolve crew_members uuid[] → {id, name, avatar_url} per project +
+    // mark live = (status === 'active'). One round-trip for all crew ids.
+    const crewIds = new Set();
+    for (const p of (data || [])) for (const uid of (p.crew_members || [])) crewIds.add(uid);
+    const crewById = {};
+    if (crewIds.size > 0) {
+      const cr = await supabaseAdmin
+        .from('users')
+        .select('id, name, avatar_url')
+        .in('id', [...crewIds]);
+      for (const u of (cr.data || [])) crewById[u.id] = u;
+    }
+    const enriched = (data || []).map(p => {
+      // Build crew list from crew_members[]; if empty, fall back to the
+      // crew_lead so projects with only a lead assigned still show one
+      // avatar instead of "No crew assigned".
+      let crew = (p.crew_members || []).map(id => crewById[id]).filter(Boolean);
+      if (crew.length === 0 && p.crew_lead) crew = [p.crew_lead];
+      return {
+        ...p,
+        live: (p.status || '').toLowerCase() === 'active',
+        crew,
+      };
+    });
+
+    return res.json({ projects: enriched, total: count });
   }
 
   // ── POST ──

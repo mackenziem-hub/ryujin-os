@@ -50,7 +50,8 @@ async function handler(req, res) {
     .select(`
       id, estimate_number, scheduled_at, state, final_accepted_total, deposit_amount,
       customer:customers(full_name, phone, address),
-      projects(id, share_token, status, crew_lead:users!projects_crew_lead_id_fkey(id, name))
+      projects(id, share_token, status, progress_pct, started_at, scheduled_end, crew_members,
+               crew_lead:users!projects_crew_lead_id_fkey(id, name, avatar_url))
     `)
     .eq('tenant_id', req.tenant.id)
     .not('scheduled_at', 'is', null)
@@ -62,6 +63,23 @@ async function handler(req, res) {
   if (ests.error) {
     console.error('[schedule] estimates query failed:', ests.error.message);
     return res.status(500).json({ error: 'schedule_query_failed', message: ests.error.message });
+  }
+
+  // Resolve crew_members uuid[] → list of {id, name, avatar_url} for every
+  // project in the window in a single round-trip. Cheap with small N.
+  const allCrewIds = new Set();
+  for (const e of ests.data || []) {
+    for (const p of (e.projects || [])) {
+      for (const uid of (p.crew_members || [])) allCrewIds.add(uid);
+    }
+  }
+  const crewById = {};
+  if (allCrewIds.size > 0) {
+    const cr = await supabaseAdmin
+      .from('users')
+      .select('id, name, avatar_url')
+      .in('id', [...allCrewIds]);
+    for (const u of (cr.data || [])) crewById[u.id] = u;
   }
 
   // Service tickets with a scheduled_at in the window.
@@ -111,6 +129,12 @@ async function handler(req, res) {
     const key = (e.scheduled_at || '').slice(0, 10);
     if (!byDay.has(key)) continue;
     const linkedProject = (e.projects && e.projects[0]) || null;
+    const crewIds = linkedProject?.crew_members || [];
+    let crew = crewIds.map(id => crewById[id]).filter(Boolean);
+    // Fallback: if crew_members[] is empty but crew_lead exists, show the
+    // lead as the single crew avatar (Codex round caught the "No crew
+    // assigned" state on crew-lead-only projects).
+    if (crew.length === 0 && linkedProject?.crew_lead) crew = [linkedProject.crew_lead];
     const install = {
       id: e.id,
       label: e.customer?.full_name || 'Unnamed customer',
@@ -120,14 +144,19 @@ async function handler(req, res) {
       phone: e.customer?.phone || null,
       value: e.final_accepted_total || e.deposit_amount || null,
       time: (e.scheduled_at || '').slice(11, 16),
-      // Mobile dispatch fields (mirror the install shape but expose the
-      // project id + photo count so the card can render a Photos button
-      // and the cover thumbnail without re-fetching).
+      // Mobile dispatch + Jobs card v2 fields. Bundles the auto-created
+      // project + state machine + crew. Jobs card uses `live` (computed
+      // from status === 'active') to render the pulsing LIVE pill.
       scheduled_at: e.scheduled_at,
       project_id: linkedProject?.id || null,
       share_token: linkedProject?.share_token || null,
       project_status: linkedProject?.status || null,
+      live: (linkedProject?.status || '').toLowerCase() === 'active',
+      progress_pct: linkedProject?.progress_pct ?? null,
+      started_at: linkedProject?.started_at || null,
+      scheduled_end: linkedProject?.scheduled_end || null,
       crew_lead: linkedProject?.crew_lead || null,
+      crew,
       photo_count: linkedProject ? (photoCountByProject[linkedProject.id] || 0) : 0,
     };
     byDay.get(key).installs.push(install);
