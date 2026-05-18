@@ -941,6 +941,13 @@
     // greeting + focus the input even if a `ryujin:mode-change` event
     // didn't fire (e.g. mode was already 'agent' from prior session).
     document.addEventListener('ryujin:auto-launch-agent', (e) => {
+      // Flip mode → 'agent' so the CSS overlay rule actually displays the
+      // shell. Previously this only called maybeBoot which builds the DOM
+      // but doesn't toggle visibility on pages that start in 'interactive'
+      // mode (portal-mobile, command-center). Without the mode flip, the
+      // shell was rendering off-screen and chip taps appeared to do nothing.
+      if (window.RyujinMode?.set) window.RyujinMode.set('agent');
+      else document.documentElement.dataset.mode = 'agent';
       maybeBoot();
       const seedPrompt = e?.detail?.prompt;
       setTimeout(() => {
@@ -950,7 +957,7 @@
           elInput.dispatchEvent(new Event('input'));
         }
         elInput.focus();
-      }, 50);
+      }, 80);
     });
     onModeChange();
   }

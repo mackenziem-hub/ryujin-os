@@ -365,6 +365,34 @@ body::before{
   .duo-card .big{font-size:1.3em}
 }
 
+/* ── Jobs panel ─────────────────────────────────────────────────────────── */
+.jobs-filter{display:flex;gap:6px;margin-bottom:14px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.jobs-filter::-webkit-scrollbar{display:none}
+.jobs-filter .jf{
+  flex:0 0 auto;background:rgba(255,255,255,0.04);border:1px solid var(--border);
+  color:var(--text-dim);padding:8px 14px;border-radius:999px;
+  font-size:0.82em;font-weight:600;cursor:pointer;letter-spacing:0.2px;
+}
+.jobs-filter .jf.active{
+  background:rgba(45,212,191,0.14);border-color:rgba(45,212,191,0.40);color:var(--accent-hi);
+}
+.job-row{
+  background:linear-gradient(140deg,var(--card-grad-a),var(--card-grad-b));
+  border:1px solid var(--border);border-radius:16px;padding:14px 16px 12px;
+  margin-bottom:10px;cursor:pointer;transition:border-color 0.12s, transform 0.08s;
+}
+.job-row:active{transform:scale(0.997)}
+.job-row.active-job{border-color:var(--border-hi)}
+.job-row .row-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:6px}
+.job-row .row-head .name{font-size:1.0em;font-weight:700;color:var(--text);line-height:1.25;flex:1;min-width:0}
+.job-row .row-meta{display:flex;flex-wrap:wrap;gap:10px;font-size:0.78em;color:var(--text-dim);margin:2px 0 8px}
+.job-row .row-meta .badge{display:inline-flex;align-items:center;gap:5px;font-weight:600}
+.job-row .row-meta .badge.photos{color:var(--accent-hi)}
+.job-row .row-meta .badge svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2}
+.job-row .row-foot{display:flex;align-items:center;gap:10px;font-size:0.76em;color:var(--text-muted)}
+.job-row .row-foot .when{flex:1}
+.job-row .row-foot .chev svg{width:16px;height:16px;stroke:var(--text-dim);fill:none;stroke-width:2.2}
+
 /* ── More panel (profile + stats + list) ───────────────────────────────── */
 .profile-hero{text-align:center;padding:20px 14px 18px}
 .profile-avatar{
@@ -876,14 +904,20 @@ body::before{
 
   </section><!-- /home -->
 
-  <!-- ════ TASKS PANEL ════ -->
+  <!-- ════ JOBS PANEL ════ -->
   <section class="panel" data-panel="tasks" hidden>
     <div class="panel-head">
       <div>
-        <h1>Tasks</h1>
+        <h1>Jobs</h1>
         <div class="sub" id="tasksSub">—</div>
       </div>
       <div class="pill" id="tasksPill">0</div>
+    </div>
+    <div class="jobs-filter" id="jobsFilter">
+      <button class="jf active" data-filter="all">All</button>
+      <button class="jf" data-filter="active">Active</button>
+      <button class="jf" data-filter="not_started">Upcoming</button>
+      <button class="jf" data-filter="punch_list">Punch list</button>
     </div>
     <div id="tasksFull"><div class="tasks-empty">Loading…</div></div>
   </section>
@@ -1492,40 +1526,76 @@ function wireModal(){
 
 // ──── Tasks panel (full list) ────────────────────────
 let allTasks = [];
+let jobsFilter = 'all';
 async function loadTasksPanel(){
   const tok = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token');
   const headers = { 'x-tenant-id': TENANT };
   if (tok) headers['Authorization'] = `Bearer ${tok}`;
-  const filter = (!isAdmin && userId) ? `&assigned_to=${encodeURIComponent(userId)}` : '';
+  if (!tok){ allTasks = []; renderTasksPanel(); return; }
   try{
-    const r = await fetch(`/api/tickets?limit=100${filter}`, { headers });
-    if (!r.ok) throw new Error();
-    const data = await r.json();
-    const rows = Array.isArray(data) ? data : (data.tickets || data.data || []);
-    allTasks = rows
-      .filter(t => !['done','completed','archived','closed','cancelled'].includes((t.status || '').toLowerCase()))
-      // Hide unassigned pollution: operational tickets with no customer/
-      // project link AND not assigned to anyone clutter the crew view
-      // ("Reliable Rentals", "Handyman Scaffolding"). Preserve any ticket
-      // assigned to the current user — admin/operational work assigned to
-      // Cat or Mac stays visible even without a job link.
-      .filter(t =>
-        t.project_id || t.customer_id || t.project?.id || t.project?.address ||
-        (userId && t.assigned_to === userId)
-      )
-      .map(t => ({
-        id: t.id,
-        title: cleanTitle(t.title),
-        priority: (t.priority || 'normal').toLowerCase(),
-        status: t.status,
-        address: t.project?.address || null,
-        customer: t.project?.name || null,
-        due: t.due_date || null,
-        notes: t.notes || null,
-      }))
-      .sort((a,b) => priRank(a.priority) - priRank(b.priority));
-  }catch{ allTasks = []; }
+    const [projRes, schedRes] = await Promise.all([
+      fetch(`/api/projects?limit=100`, { headers }),
+      fetch(`/api/schedule?days=21`, { headers })
+    ]);
+    if (!projRes.ok) throw new Error('projects ' + projRes.status);
+    const projData = await projRes.json();
+    const projects = projData.projects || projData.data || [];
+    // schedule.jobs has scheduled_at + photo_count keyed by project_id
+    const schedByProject = new Map();
+    if (schedRes.ok){
+      const sd = await schedRes.json();
+      for (const j of (sd.jobs || [])) if (j.project_id) schedByProject.set(j.project_id, j);
+    }
+    // Fetch photo counts for all projects in one batch via /api/files looping
+    // skipped — kept lazy; will lean on schedule's photo_count where available
+    allTasks = projects.map(p => {
+      const sched = schedByProject.get(p.id);
+      return {
+        id: p.id,
+        title: p.name || p.address || 'Project',
+        address: p.address || '',
+        customer: p.customer?.full_name || '',
+        status: p.status || 'not_started',
+        scheduled_at: sched?.scheduled_at || null,
+        photo_count: sched?.photo_count || 0,
+        share_token: p.share_token || sched?.share_token || null,
+        project_id: p.id,
+      };
+    }).sort((a, b) => {
+      // Active first, then scheduled (earliest first), then everything else by name
+      const ar = statusRank(a.status), br = statusRank(b.status);
+      if (ar !== br) return ar - br;
+      const as = a.scheduled_at ? new Date(a.scheduled_at).getTime() : Infinity;
+      const bs = b.scheduled_at ? new Date(b.scheduled_at).getTime() : Infinity;
+      if (as !== bs) return as - bs;
+      return (a.title || '').localeCompare(b.title || '');
+    });
+  }catch (e){ console.warn('[jobs] load failed', e); allTasks = []; }
   renderTasksPanel();
+}
+
+function statusRank(s){
+  const v = (s || '').toLowerCase();
+  if (v === 'active' || v === 'in_progress') return 0;
+  if (v === 'punch_list') return 1;
+  if (v === 'not_started') return 2;
+  if (v === 'complete' || v === 'completed') return 3;
+  return 4;
+}
+
+function statusLabel(s){
+  const v = (s || '').toLowerCase();
+  const map = { active:'Active', in_progress:'Active', punch_list:'Punch list',
+                not_started:'Not started', complete:'Complete', cancelled:'Cancelled' };
+  return map[v] || v.replace(/_/g, ' ');
+}
+
+function statusClassForJob(s){
+  const v = (s || '').toLowerCase();
+  if (['active','in_progress'].includes(v)) return 'active';
+  if (v === 'punch_list') return 'punch_list';
+  if (['complete','completed'].includes(v)) return 'complete';
+  return 'not_started';
 }
 function priColor(t){
   if (t.priority === 'urgent') return 'red';
@@ -1552,37 +1622,77 @@ function renderTasksPanel(){
   const sub = document.getElementById('tasksSub');
   const pill = document.getElementById('tasksPill');
   const badge = document.getElementById('tasksBadge');
-  if (!allTasks.length){
-    wrap.innerHTML = '<div class="tasks-empty">Nothing on your plate. Tap the mic to ask for work.</div>';
-    sub.textContent = 'All clear';
-    pill.textContent = '0';
-    badge.style.display = 'none';
+
+  // Apply current filter
+  let visible = allTasks;
+  if (jobsFilter !== 'all'){
+    visible = allTasks.filter(t => statusClassForJob(t.status) === jobsFilter);
+  }
+
+  if (!visible.length){
+    wrap.innerHTML = allTasks.length === 0
+      ? '<div class="tasks-empty">No jobs yet. Once a sale is accepted, the project auto-creates and shows up here.</div>'
+      : '<div class="tasks-empty">No jobs match this filter. Try All.</div>';
+    sub.textContent = allTasks.length ? `${allTasks.length} total` : 'No jobs yet';
+    pill.textContent = String(allTasks.length);
+    if (badge) badge.style.display = 'none';
+    wireJobsFilter();
     return;
   }
-  const overdue = allTasks.filter(t => t.due && new Date(t.due) < new Date()).length;
-  sub.textContent = overdue ? `${overdue} overdue` : `${allTasks.length} open`;
+
+  const active = allTasks.filter(t => statusClassForJob(t.status) === 'active').length;
+  sub.textContent = active ? `${active} active · ${allTasks.length} total` : `${allTasks.length} on the books`;
   pill.textContent = String(allTasks.length);
-  if (overdue > 0){
-    badge.style.display = 'flex';
-    badge.textContent = overdue > 9 ? '9+' : String(overdue);
-  } else {
-    badge.style.display = 'none';
-  }
-  wrap.innerHTML = allTasks.map((t,i) => `
-    <div class="task-row" data-idx="${i}">
-      <span class="task-dot ${priColor(t)}"></span>
-      <div class="task-body">
-        <div class="task-ttl">${esc(t.title)}</div>
-        <div class="task-meta">
-          ${t.address ? `<span>${esc(t.address)}</span>` : ''}
-          ${t.due ? `<span class="due">${esc(fmtDue(t.due))}</span>` : ''}
+  if (badge) badge.style.display = 'none';
+
+  wrap.innerHTML = visible.map((t, i) => {
+    const dt = t.scheduled_at ? new Date(t.scheduled_at) : null;
+    const dateStr = dt ? dt.toLocaleString('en-CA', { weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }) : 'No date set';
+    const statusCls = statusClassForJob(t.status);
+    const cardCls = statusCls === 'active' ? 'job-row active-job' : 'job-row';
+    return `
+      <div class="${cardCls}" data-idx="${i}" data-pid="${esc(t.project_id || '')}">
+        <div class="row-head">
+          <div class="name">${esc(t.title)}</div>
+          <span class="status-tag ${statusCls}">${esc(statusLabel(t.status))}</span>
+        </div>
+        <div class="row-meta">
+          ${t.customer ? `<span class="badge"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>${esc(t.customer)}</span>` : ''}
+          <span class="badge photos">
+            <svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+            <span data-photo-count="${esc(t.project_id || '')}">${t.photo_count || 0}</span> photos
+          </span>
+        </div>
+        <div class="row-foot">
+          <span class="when">${esc(dateStr)}</span>
+          <span class="chev"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span>
         </div>
       </div>
-      <div class="task-chev"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
-    </div>
-  `).join('');
-  wrap.querySelectorAll('.task-row').forEach(row => {
-    row.addEventListener('click', () => openJobModal(allTasks[+row.dataset.idx]));
+    `;
+  }).join('');
+
+  wrap.querySelectorAll('.job-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const pid = row.dataset.pid;
+      const job = visible[+row.dataset.idx];
+      if (pid) window.__photos?.openGalleryFor(pid, { address: job.address, customer: job.customer });
+    });
+  });
+
+  wireJobsFilter();
+}
+
+let _jobsFilterWired = false;
+function wireJobsFilter(){
+  if (_jobsFilterWired) return;
+  _jobsFilterWired = true;
+  document.querySelectorAll('#jobsFilter .jf').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#jobsFilter .jf').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      jobsFilter = btn.dataset.filter;
+      renderTasksPanel();
+    });
   });
 }
 PANEL_LOADERS.tasks = loadTasksPanel;
@@ -1617,7 +1727,12 @@ async function loadChatPanel(){
   sub.textContent = unread ? `${unread} unread` : `${chatThreads.length} threads`;
   pill.textContent = String(chatThreads.length);
   if (!chatThreads.length){
-    wrap.innerHTML = '<div class="tasks-empty">No messages yet.</div>';
+    wrap.innerHTML = `
+      <div class="tasks-empty" style="text-align:center;padding:50px 24px;line-height:1.55">
+        <div style="font-size:1.05em;color:var(--text);font-weight:700;margin-bottom:6px">No messages yet</div>
+        <div style="color:var(--text-dim);font-size:0.92em">Your inbox is empty. New crew messages, sub-portal questions, and system notifications will land here.</div>
+      </div>
+    `;
     return;
   }
   wrap.innerHTML = chatThreads.map((m,i) => {
