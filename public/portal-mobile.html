@@ -774,8 +774,14 @@ body::before{
     </div>
   </div>
 
-  <!-- Shared photo input (used by all job cards via window.__photos) -->
-  <input type="file" id="photoInput" accept="image/*,video/*" capture="environment" multiple hidden>
+  <!-- Shared photo input. iOS Safari opens the camera directly when
+       `capture` is set + `multiple` is absent. Removing `multiple` makes
+       the "Photos" button reliably open the rear camera instead of the
+       photo picker. Batch upload from library is exposed separately
+       inside the gallery overlay. -->
+  <input type="file" id="photoInput" accept="image/*,video/*" capture="environment" hidden>
+  <!-- Secondary input for batch library upload (no capture, multi-select) -->
+  <input type="file" id="photoLibraryInput" accept="image/*,video/*" multiple hidden>
 
   </section><!-- /home -->
 
@@ -1187,7 +1193,11 @@ window.__schedule = (function(){
           address: card.querySelector('.addr')?.textContent || '',
           customer: card.querySelector('.who')?.textContent || ''
         } : null;
-        window.__photos?.openGalleryFor(pid, meta);
+        // Photos button on a job card = "I'm here, take a photo now".
+        // Camera opens immediately. To view existing photos, tap the
+        // card body itself (handler below) or use the gallery's grid
+        // after at least one photo is on the project.
+        window.__photos?.openCameraFor(pid, meta);
       });
     });
     list.querySelectorAll('[data-directions]').forEach(b => {
@@ -1768,7 +1778,8 @@ window.__photos = (function(){
   // photo button or inline strip anymore. Capture + view both go through the
   // gallery overlay, opened per-card from the schedule cards.
   const $ = id => document.getElementById(id);
-  const photoInput = $('photoInput');
+  const photoInput = $('photoInput');         // single shot, opens camera (no multiple + capture)
+  const photoLibraryInput = $('photoLibraryInput'); // batch, opens library (multiple, no capture)
 
   // ── Geolocation cache (per-job, expires after 5 min so crew moving between
   // sites without switching jobs still re-reads location instead of stamping
@@ -2002,8 +2013,11 @@ window.__photos = (function(){
           <div class="ttl">${esc(meta.address || meta.customer || 'Project photos')}</div>
           <div class="sub">${state.files.length} photo${state.files.length === 1 ? '' : 's'} · tap to edit</div>
         </div>
-        <button class="share-btn" id="galCamera" style="margin-right:6px">
+        <button class="share-btn" id="galCamera" style="margin-right:4px" title="Take a photo">
           <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2" style="vertical-align:-2px;margin-right:4px"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>Take
+        </button>
+        <button class="share-btn" id="galLibrary" style="margin-right:4px" title="Pick from library">
+          <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2" style="vertical-align:-2px;margin-right:4px"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>Library
         </button>
         <button class="share-btn" id="galShare">Share</button>
       </div>
@@ -2014,6 +2028,7 @@ window.__photos = (function(){
 
     $('galBack').addEventListener('click', () => closeOverlay('galleryOverlay'));
     $('galCamera').addEventListener('click', () => photoInput.click());
+    $('galLibrary').addEventListener('click', () => photoLibraryInput.click());
     $('galShare').addEventListener('click', openShareModal);
 
     if (Number.isInteger(initialIdx) && initialIdx >= 0){
@@ -2232,9 +2247,14 @@ window.__photos = (function(){
   }
 
   // ── Wire root controls ──
-  // photoInput is a single hidden <input> shared across all entry points
-  // (per-card Photos button on the schedule, gallery's "Take more" FAB).
+  // Two inputs: camera (single shot, capture=environment) + library (batch).
+  // Each routes through the same handleUpload pipeline.
   photoInput.addEventListener('change', e => {
+    const fl = e.target.files;
+    e.target.value = '';
+    handleUpload(fl);
+  });
+  photoLibraryInput.addEventListener('change', e => {
     const fl = e.target.files;
     e.target.value = '';
     handleUpload(fl);
