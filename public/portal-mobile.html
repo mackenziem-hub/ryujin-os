@@ -389,6 +389,63 @@ body::before{
 .more-row.danger .more-lbl{color:var(--danger);font-weight:600}
 .more-ico.danger-ico{background:rgba(255,107,107,0.10);color:var(--danger)}
 
+/* ── Native camera overlay (getUserMedia) ───────────────────────────────── */
+.cam-overlay{
+  position:fixed;inset:0;z-index:150;background:#000;
+  display:flex;flex-direction:column;
+  animation:gallery-in 0.18s ease-out;
+}
+.cam-stage{flex:1;position:relative;overflow:hidden;background:#000}
+.cam-video{width:100%;height:100%;object-fit:cover;background:#000}
+.cam-preview{width:100%;height:100%;object-fit:contain;background:#000}
+.cam-bar-top{
+  position:absolute;top:0;left:0;right:0;padding:14px 16px calc(14px + env(safe-area-inset-top));
+  display:flex;align-items:center;justify-content:space-between;color:#fff;
+  background:linear-gradient(180deg,rgba(0,0,0,0.55),rgba(0,0,0,0));
+  z-index:2;
+}
+.cam-bar-top button{
+  width:40px;height:40px;border-radius:50%;border:none;cursor:pointer;
+  background:rgba(255,255,255,0.12);color:#fff;
+  display:flex;align-items:center;justify-content:center;
+}
+.cam-bar-top button svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2.4}
+.cam-bar-top .caption{color:#fff;font-size:0.9em;font-weight:600;text-align:center;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 12px}
+.cam-controls{
+  padding:24px 24px calc(28px + env(safe-area-inset-bottom));
+  background:#000;display:flex;align-items:center;justify-content:center;gap:32px;
+}
+.cam-shutter{
+  width:78px;height:78px;border-radius:50%;border:none;cursor:pointer;
+  background:#fff;box-shadow:0 0 0 4px #000, 0 0 0 7px rgba(255,255,255,0.85);
+  transition:transform 0.08s;
+}
+.cam-shutter:active{transform:scale(0.93)}
+.cam-side-btn{
+  width:54px;height:54px;border-radius:50%;border:none;cursor:pointer;
+  background:rgba(255,255,255,0.12);color:#fff;
+  display:flex;align-items:center;justify-content:center;
+}
+.cam-side-btn svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2}
+.cam-preview-controls{
+  padding:18px 18px calc(22px + env(safe-area-inset-bottom));
+  background:#000;display:flex;align-items:center;justify-content:space-between;gap:10px;
+}
+.cam-preview-controls button{
+  flex:1;padding:14px 16px;border-radius:14px;font-size:0.95em;font-weight:700;
+  cursor:pointer;border:1.5px solid rgba(255,255,255,0.18);background:transparent;color:#fff;
+}
+.cam-preview-controls button.use{background:var(--accent);color:#0a0e1a;border-color:var(--accent)}
+.cam-error{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  color:#fff;text-align:center;padding:30px;font-size:0.95em;line-height:1.5;
+}
+.cam-error .ico{font-size:2.4em;margin-bottom:10px;opacity:0.6}
+.cam-error button{
+  margin-top:14px;padding:10px 18px;border-radius:10px;
+  background:var(--accent);color:#0a0e1a;border:none;font-weight:700;cursor:pointer;
+}
+
 /* ── Bell button (top bar) ──────────────────────────────────────────────── */
 .bell-btn{
   position:relative;width:44px;height:44px;border-radius:50%;
@@ -2027,7 +2084,7 @@ window.__photos = (function(){
     renderGalleryGrid();
 
     $('galBack').addEventListener('click', () => closeOverlay('galleryOverlay'));
-    $('galCamera').addEventListener('click', () => photoInput.click());
+    $('galCamera').addEventListener('click', () => openNativeCamera(state.projectMeta));
     $('galLibrary').addEventListener('click', () => photoLibraryInput.click());
     $('galShare').addEventListener('click', openShareModal);
 
@@ -2260,11 +2317,152 @@ window.__photos = (function(){
     handleUpload(fl);
   });
 
+  // ── Native camera overlay (getUserMedia) ──
+  // iOS Safari's `capture=environment` is inconsistent across versions —
+  // some show the picker action sheet anyway, breaking the "tap Photos →
+  // camera" expectation. This overlay opens the rear camera stream
+  // directly with a full-screen UI + shutter button. Falls back to the
+  // file picker if mediaDevices is unavailable or permission is denied.
+  let camStream = null;
+  let camFacing = 'environment';
+
+  function stopCameraStream(){
+    if (camStream){
+      camStream.getTracks().forEach(t => { try { t.stop(); } catch {} });
+      camStream = null;
+    }
+  }
+
+  async function startCameraStream(facing){
+    stopCameraStream();
+    camFacing = facing || 'environment';
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: camFacing }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      audio: false
+    });
+    return camStream;
+  }
+
+  function closeCameraOverlay(){
+    stopCameraStream();
+    const el = document.getElementById('camOverlay');
+    if (el) el.remove();
+  }
+
+  async function captureFrameToFile(video){
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    return new Promise(resolve => {
+      canvas.toBlob(b => {
+        if (!b) return resolve(null);
+        const file = new File([b], `capture-${Date.now()}.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
+        resolve(file);
+      }, 'image/jpeg', 0.92);
+    });
+  }
+
+  async function openNativeCamera(meta){
+    const supports = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+    if (!supports) {
+      // Browser too old — fall back to file picker
+      photoInput.click();
+      return;
+    }
+    const overlay = document.createElement('div');
+    overlay.className = 'cam-overlay';
+    overlay.id = 'camOverlay';
+    overlay.innerHTML = `
+      <div class="cam-stage" id="camStage">
+        <video class="cam-video" id="camVideo" autoplay playsinline muted></video>
+        <div class="cam-bar-top">
+          <button id="camClose" aria-label="Close"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+          <div class="caption">${esc(meta?.address || meta?.customer || 'Take a photo')}</div>
+          <button id="camFlip" aria-label="Flip camera"><svg viewBox="0 0 24 24"><path d="M3 7h18M3 7l4-4M3 7l4 4"/><path d="M21 17H3M21 17l-4-4M21 17l-4 4"/></svg></button>
+        </div>
+      </div>
+      <div class="cam-controls" id="camControls">
+        <button class="cam-side-btn" id="camLibrary" aria-label="Pick from library">
+          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        </button>
+        <button class="cam-shutter" id="camShutter" aria-label="Capture"></button>
+        <div style="width:54px"></div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const video = document.getElementById('camVideo');
+    const stage = document.getElementById('camStage');
+
+    function showError(msg, allowFallback){
+      stopCameraStream();
+      stage.innerHTML = `
+        <div class="cam-error">
+          <div>
+            <div class="ico">📷</div>
+            <div>${esc(msg)}</div>
+            ${allowFallback ? '<button id="camFallback">Use photo library instead</button>' : ''}
+          </div>
+        </div>
+      `;
+      const fb = document.getElementById('camFallback');
+      if (fb) fb.addEventListener('click', () => { closeCameraOverlay(); photoInput.click(); });
+    }
+
+    try {
+      const stream = await startCameraStream('environment');
+      video.srcObject = stream;
+    } catch (e) {
+      const denied = e?.name === 'NotAllowedError' || e?.name === 'PermissionDeniedError';
+      showError(denied
+        ? 'Camera permission denied. Enable it in Settings → Safari → Camera, or use your library.'
+        : `Couldn't open the camera (${e?.name || 'error'}).`, true);
+      return;
+    }
+
+    document.getElementById('camClose').addEventListener('click', closeCameraOverlay);
+    document.getElementById('camFlip').addEventListener('click', async () => {
+      try { await startCameraStream(camFacing === 'environment' ? 'user' : 'environment'); video.srcObject = camStream; } catch {}
+    });
+    document.getElementById('camLibrary').addEventListener('click', () => {
+      closeCameraOverlay();
+      photoLibraryInput.click();
+    });
+
+    document.getElementById('camShutter').addEventListener('click', async () => {
+      const file = await captureFrameToFile(video);
+      if (!file) return;
+      // Show preview + Retake/Use
+      stage.innerHTML = `<img class="cam-preview" id="camPreviewImg" alt="">`;
+      document.getElementById('camPreviewImg').src = URL.createObjectURL(file);
+      const controls = document.getElementById('camControls');
+      controls.outerHTML = `
+        <div class="cam-preview-controls" id="camPreviewControls">
+          <button id="camRetake">Retake</button>
+          <button class="use" id="camUse">Use photo</button>
+        </div>
+      `;
+      stopCameraStream();
+      document.getElementById('camRetake').addEventListener('click', async () => {
+        // Reopen the camera fresh
+        closeCameraOverlay();
+        openNativeCamera(meta);
+      });
+      document.getElementById('camUse').addEventListener('click', async () => {
+        closeCameraOverlay();
+        // Synthesize a FileList-like and hand to the existing upload pipeline
+        await handleUpload([file]);
+      });
+    });
+  }
+
   // ── Public: open camera for a specific project (per-card entry point) ──
   async function openCameraFor(projectId, meta){
     if (!projectId) return;
     await setActiveProject(projectId, meta);
-    photoInput.click();
+    openNativeCamera(meta);
   }
 
   // ── Public: open gallery for a specific project ──
