@@ -1258,17 +1258,31 @@ window.__schedule = (function(){
     const line = document.getElementById('agentLine');
     if (!line) return;
     if (!jobs.length){
-      line.innerHTML = 'Nothing scheduled this week — <b>tap the mic</b> to schedule a job.';
+      // Hardcoded static HTML — safe to innerHTML
+      line.innerHTML = 'Nothing scheduled this week. <b>Tap the mic</b> to schedule a job.';
       return;
     }
     const today = new Date(); today.setHours(0,0,0,0);
     const todayIso = today.toISOString().slice(0,10);
     const todays = jobs.filter(j => (j.scheduled_at || '').slice(0,10) === todayIso);
+    // Build via textContent + appendChild so dynamic values can never be
+    // misinterpreted as HTML. Future refactors won't accidentally introduce
+    // an XSS vector by interpolating customer data into the line.
+    line.textContent = '';
     if (todays.length){
       const first = todays[0];
-      line.innerHTML = `You've got <b>${todays.length} today</b> — first stop <b>${esc(first.address || first.label || 'TBD')}</b>.`;
+      const addr = first.address || first.label || 'TBD';
+      const b1 = document.createElement('b');
+      b1.textContent = `${todays.length} today`;
+      const b2 = document.createElement('b');
+      b2.textContent = addr;
+      line.appendChild(document.createTextNode("You've got "));
+      line.appendChild(b1);
+      line.appendChild(document.createTextNode(' — first stop '));
+      line.appendChild(b2);
+      line.appendChild(document.createTextNode('.'));
     } else {
-      line.innerHTML = `${jobs.length} job${jobs.length === 1 ? '' : 's'} on the books this week.`;
+      line.textContent = `${jobs.length} job${jobs.length === 1 ? '' : 's'} on the books this week.`;
     }
   }
 
@@ -1400,37 +1414,6 @@ window.__schedule = (function(){
 
   return { load, bumpPhotoCount };
 })();
-
-async function loadPay(){
-  // Pull this week's paysheets from the same /api/state payload via a quick
-  // count — full per-user earnings endpoint pending. Card is informational
-  // for Mac (team total) and a placeholder for crew users.
-  const amount = document.getElementById('payAmount');
-  const sub    = document.getElementById('payJobs');
-  const lbl    = document.getElementById('payLabel');
-  const spark  = document.getElementById('paySpark');
-
-  // Decorative line so the card never reads as broken.
-  spark.innerHTML = '<polyline fill="none" stroke="rgba(45,212,191,0.30)" stroke-width="1.5" points="0,22 24,18 48,20 72,14 96,15 120,8"/>';
-
-  try{
-    // Production-state has paysheet stats baked in; use what's there.
-    const r = await fetch('/api/production-state', { headers: { 'x-tenant-id': TENANT } });
-    if (!r.ok) throw new Error();
-    const s = (await r.json()).stats || {};
-    const paid30 = s.paysheets_paid_30d ?? 0;
-    const pend   = s.paysheets_pending_approval ?? 0;
-    if (lbl) lbl.textContent = isAdmin ? 'Paid (30d)' : 'Your pay';
-    amount.textContent = isAdmin ? String(paid30) : '—';
-    sub.textContent = isAdmin
-      ? `${pend} pending approval`
-      : 'see pay page';
-  }catch{
-    if (lbl) lbl.textContent = 'Pay';
-    amount.textContent = '—';
-    sub.textContent = 'tap to view';
-  }
-}
 
 async function refreshBadge(){
   // Home panel's preview cards were removed; this function now only updates
@@ -2109,13 +2092,6 @@ window.__photos = (function(){
     return r.json();
   }
 
-  // ── Strip rendering — DEPRECATED ──
-  // The inline strip was removed when the home panel became a dispatch list.
-  // Per-card photo counts come from /api/schedule's photo_count field. The
-  // gallery overlay is now the only photo view. Function kept as a no-op so
-  // other module call sites don't throw if they reference it.
-  function renderStrip(){ /* intentionally empty */ }
-
   // Notify the schedule list to refresh a card's photo count after an upload.
   function notifyPhotoCountChanged(projectId, delta){
     if (typeof window.__schedule?.bumpPhotoCount === 'function') {
@@ -2142,7 +2118,14 @@ window.__photos = (function(){
       state.pending.set(tempId, { tempId, fileName: f.name, previewUrl, status: 'uploading' });
       pendingIds.push(tempId);
     }
-    renderStrip();
+
+    // Revoke each pending preview URL once its tempId resolves to a real row
+    // or errors out. Without this the browser holds every captured blob in
+    // memory indefinitely — real OOM risk on a long rapid-fire session.
+    function releasePending(id){
+      const p = state.pending.get(id);
+      if (p?.previewUrl){ try { URL.revokeObjectURL(p.previewUrl); } catch {} }
+    }
 
     let processed = 0;
     for (const batch of batches){
@@ -2153,11 +2136,12 @@ window.__photos = (function(){
           const id = pendingIds[processed + i];
           const row = inserted[i];
           if (row && !row.error){
+            releasePending(id);
             state.pending.delete(id);
             state.files.unshift(row);
           } else {
             const p = state.pending.get(id);
-            if (p){ p.status = 'error'; }
+            if (p){ p.status = 'error'; releasePending(id); }
           }
         }
       } catch (e){
@@ -2165,11 +2149,10 @@ window.__photos = (function(){
         for (let i = 0; i < batch.length; i++){
           const id = pendingIds[processed + i];
           const p = state.pending.get(id);
-          if (p){ p.status = 'error'; }
+          if (p){ p.status = 'error'; releasePending(id); }
         }
       }
       processed += batch.length;
-      renderStrip();
     }
 
     // Notify the dispatch list so the per-card photo badge increments live.
@@ -2191,17 +2174,13 @@ window.__photos = (function(){
     state.lightboxIdx = -1;
     if (prevId !== state.projectId) resetLocationCache();
 
-    if (!state.projectId){
-      renderStrip();
-      return;
-    }
+    if (!state.projectId) return;
     try {
       state.files = await apiListFiles(state.projectId);
     } catch (e){
       console.warn('[photos] list failed', e?.message);
       state.files = [];
     }
-    renderStrip();
   }
 
   // ── Gallery (S2) ──
@@ -2400,7 +2379,6 @@ window.__photos = (function(){
       state.lightboxIdx = Math.min(state.lightboxIdx, state.files.length - 1);
       closeOverlay('lightbox');
       renderGalleryGrid();
-      renderStrip();
     } catch (e){
       console.error('[photos] delete failed', e);
       alert('Delete failed. Try again.');
@@ -2495,8 +2473,27 @@ window.__photos = (function(){
   function closeCameraOverlay(){
     stopCameraStream();
     const el = document.getElementById('camOverlay');
-    if (el) el.remove();
+    if (el) {
+      // Revoke every blob URL we minted for the strip thumbnails — without
+      // this they sit in memory until the tab dies. Real OOM risk on iOS
+      // after a long rapid-fire session.
+      el.querySelectorAll('.cam-strip-tile[data-obj-url]').forEach(t => {
+        try { URL.revokeObjectURL(t.dataset.objUrl); } catch {}
+      });
+      el.remove();
+    }
   }
+
+  // If the user hits browser back, swipes to another tab, or the OS kills
+  // the page, ensure the camera stream + blob URLs get released. pagehide
+  // covers all real "tab is leaving" cases. We deliberately do NOT pause on
+  // visibilitychange — Codex caught that stopping the stream when the tab
+  // backgrounds left the video element with dead tracks on return, breaking
+  // capture until the user reopened the overlay.
+  window.addEventListener('pagehide', () => {
+    const el = document.getElementById('camOverlay');
+    if (el) closeCameraOverlay();
+  });
 
   async function captureFrameToFile(video){
     const canvas = document.createElement('canvas');
@@ -2565,6 +2562,7 @@ window.__photos = (function(){
       const tile = document.createElement('div');
       tile.className = 'cam-strip-tile uploading';
       tile.dataset.id = id;
+      tile.dataset.objUrl = url;  // tracked so closeCameraOverlay can revoke
       tile.innerHTML = `<img src="${url}" alt=""><div class="spin"></div>`;
       strip.appendChild(tile);
       // Auto-scroll to newest
