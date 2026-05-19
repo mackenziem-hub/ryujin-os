@@ -33,25 +33,31 @@ async function handler(req, res) {
   const tenantId = req.tenant.id;
 
   // GET ?wo_id=X. Return unified media list for the workorder. Walks
-  // workorder -> customer -> estimates + projects, then unions
-  // estimate_photos (legacy gallery) with image/video project_files (crew
-  // captures via /api/files). Used by job.html ?wo= folder view.
+  // workorder -> linked estimate -> customer -> estimates + projects, then
+  // unions estimate_photos (legacy gallery) with image/video project_files
+  // (crew captures via /api/files). Used by job.html ?wo= folder view.
   if (req.method === 'GET' && req.query?.wo_id) {
     const woId = req.query.wo_id;
     const { data: wo, error: woErr } = await supabaseAdmin
       .from('workorders')
-      .select('id, tenant_id, customer_id, linked_estimate_id')
+      .select('id, tenant_id, linked_estimate_id, customer_name')
       .eq('id', woId)
       .eq('tenant_id', tenantId)
       .single();
     if (woErr || !wo) return res.status(404).json({ error: 'Workorder not found for this tenant' });
 
-    // Resolve customer_id either directly or via linked estimate
-    let customerId = wo.customer_id;
-    if (!customerId && wo.linked_estimate_id) {
+    // workorders table has no customer_id column. Resolve via linked estimate.
+    let customerId = null;
+    if (wo.linked_estimate_id) {
       const { data: est } = await supabaseAdmin
         .from('estimates').select('customer_id').eq('id', wo.linked_estimate_id).eq('tenant_id', tenantId).single();
       customerId = est?.customer_id || null;
+    }
+    // Last-ditch fallback: match by customer_name when no estimate link exists.
+    if (!customerId && wo.customer_name) {
+      const { data: cust } = await supabaseAdmin
+        .from('customers').select('id').eq('tenant_id', tenantId).ilike('full_name', wo.customer_name).limit(1).maybeSingle();
+      customerId = cust?.id || null;
     }
 
     // Estimate gallery: every estimate row for this customer
