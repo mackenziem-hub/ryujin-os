@@ -76,17 +76,29 @@ async function handleGetSingle(req, res, slug) {
     .maybeSingle();
   if (error) return bad(res, 500, 'db_error', { detail: error.message });
   if (!data) return bad(res, 404, 'not_found', { slug });
-  return res.status(200).json(data);
+  return res.status(200).json({ proposal: data });
 }
 
 async function handleList(req, res) {
   const tenant = await resolveTenant(req);
   if (!tenant) return bad(res, 400, 'tenant_required');
-  const { data, error } = await supabaseAdmin
+
+  const statusFilter = req.query?.status ? String(req.query.status).trim().toLowerCase() : '';
+  const includeArchived = req.query?.include_archived === '1' || req.query?.include_archived === 'true';
+
+  let q = supabaseAdmin
     .from('custom_proposals')
     .select(FIELDS)
     .eq('tenant_id', tenant.id)
     .order('issued_date', { ascending: false });
+
+  if (statusFilter) {
+    q = q.eq('status', statusFilter);
+  } else if (!includeArchived) {
+    q = q.neq('status', 'archived');
+  }
+
+  const { data, error } = await q;
   if (error) return bad(res, 500, 'db_error', { detail: error.message });
   return res.status(200).json({ proposals: data || [] });
 }
