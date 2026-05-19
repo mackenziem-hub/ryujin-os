@@ -1,5 +1,6 @@
 // Ryujin OS — Estimate Photos (cover + gallery)
-// POST   /api/estimate-photos   — multipart upload: file + estimate_id + is_cover + caption
+// GET    /api/estimate-photos?wo_id=X : Union of estimate_photos + project_files (image/video) for the workorder's customer
+// POST   /api/estimate-photos          : multipart upload: file + estimate_id + is_cover + caption
 // DELETE /api/estimate-photos?id=X
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireTenant } from '../lib/tenant.js';
@@ -30,6 +31,75 @@ function parseMultipart(req) {
 async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   const tenantId = req.tenant.id;
+
+  // GET ?wo_id=X. Return unified media list for the workorder. Walks
+  // workorder -> customer -> estimates + projects, then unions
+  // estimate_photos (legacy gallery) with image/video project_files (crew
+  // captures via /api/files). Used by job.html ?wo= folder view.
+  if (req.method === 'GET' && req.query?.wo_id) {
+    const woId = req.query.wo_id;
+    const { data: wo, error: woErr } = await supabaseAdmin
+      .from('workorders')
+      .select('id, tenant_id, customer_id, linked_estimate_id')
+      .eq('id', woId)
+      .eq('tenant_id', tenantId)
+      .single();
+    if (woErr || !wo) return res.status(404).json({ error: 'Workorder not found for this tenant' });
+
+    // Resolve customer_id either directly or via linked estimate
+    let customerId = wo.customer_id;
+    if (!customerId && wo.linked_estimate_id) {
+      const { data: est } = await supabaseAdmin
+        .from('estimates').select('customer_id').eq('id', wo.linked_estimate_id).eq('tenant_id', tenantId).single();
+      customerId = est?.customer_id || null;
+    }
+
+    // Estimate gallery: every estimate row for this customer
+    let estimatePhotos = [];
+    if (customerId) {
+      const { data: estIds } = await supabaseAdmin
+        .from('estimates').select('id').eq('tenant_id', tenantId).eq('customer_id', customerId);
+      const ids = (estIds || []).map(e => e.id);
+      if (ids.length) {
+        const { data: rows } = await supabaseAdmin
+          .from('estimate_photos')
+          .select('id, url, filename, mime_type, caption, is_cover, uploaded_at, estimate_id')
+          .in('estimate_id', ids)
+          .order('uploaded_at', { ascending: false });
+        estimatePhotos = (rows || []).map(r => ({ ...r, source: 'estimate_photos' }));
+      }
+    }
+
+    // Project files: crew captures keyed by project belonging to this customer.
+    // project_files has its own tenant_id column, so apply a direct tenant
+    // predicate as defense-in-depth (belt-and-suspenders alongside the
+    // project_id IN filter resolved through tenant-scoped projects).
+    let projectFiles = [];
+    if (customerId) {
+      const { data: projs } = await supabaseAdmin
+        .from('projects').select('id').eq('tenant_id', tenantId).eq('customer_id', customerId);
+      const pids = (projs || []).map(p => p.id);
+      if (pids.length) {
+        const { data: rows } = await supabaseAdmin
+          .from('project_files')
+          .select('id, url, thumbnail_url, filename, mime_type, category, caption, captured_at, uploaded_at, sort_order, is_cover, project_id')
+          .eq('tenant_id', tenantId)
+          .in('project_id', pids)
+          .order('uploaded_at', { ascending: false });
+        projectFiles = (rows || [])
+          .filter(r => typeof r.mime_type === 'string' && (r.mime_type.startsWith('image/') || r.mime_type.startsWith('video/')))
+          .map(r => ({ ...r, source: 'project_files' }));
+      }
+    }
+
+    // Union, newest first. Same shape so client renders uniformly.
+    const photos = [...estimatePhotos, ...projectFiles].sort((a, b) => {
+      const da = new Date(a.captured_at || a.uploaded_at || 0).getTime();
+      const db = new Date(b.captured_at || b.uploaded_at || 0).getTime();
+      return db - da;
+    });
+    return res.json({ photos, counts: { estimate_photos: estimatePhotos.length, project_files: projectFiles.length } });
+  }
 
   if (req.method === 'POST') {
     const { files, fields } = await parseMultipart(req);
