@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ryujin OS · New Custom Scope Proposal</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=optional" rel="stylesheet">
+<link rel="stylesheet" href="/assets/ryujin-perf.css">
+<script src="/assets/ryujin-perf.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; width: 100%; }
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background: #030611;
+  color: #e0e6f0;
+  overflow-x: hidden;
+  min-height: 100vh;
+  position: relative;
+}
+.bg-ambient {
+  position: fixed; inset: 0; z-index: 0;
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(74,158,255,0.12) 0%, transparent 55%),
+    radial-gradient(ellipse at 70% 85%, rgba(124,58,237,0.08) 0%, transparent 55%),
+    linear-gradient(180deg, #060a14 0%, #030611 100%);
+}
+.topbar {
+  position: fixed; top: 10px; left: 12px; right: 12px; height: 52px;
+  display: flex; align-items: center; gap: 12px;
+  background: rgba(14,22,40,0.78);
+  border: 1px solid rgba(74,158,255,0.24);
+  border-radius: 14px;
+  padding: 0 14px;
+  backdrop-filter: blur(20px);
+  z-index: 20;
+}
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-mark {
+  width: 30px; height: 30px; border-radius: 7px;
+  background: radial-gradient(circle at 35% 30%, rgba(200,230,255,0.3), rgba(74,158,255,0.22) 40%, rgba(5,15,30,0.8));
+  box-shadow: 0 0 14px rgba(74,158,255,0.35);
+}
+.brand-name {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.78em; font-weight: 800;
+  letter-spacing: 2.5px;
+}
+.brand-name .dim {
+  color: rgba(160,190,230,0.62);
+  font-weight: 500;
+  letter-spacing: 2px;
+  margin-left: 8px;
+}
+.tb-spacer { flex: 1; }
+.tb-icon {
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(6,10,20,0.6);
+  border: 1px solid rgba(74,158,255,0.24);
+  color: rgba(160,190,230,0.62);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.tb-icon:hover {
+  color: #4a9eff;
+  border-color: rgba(74,158,255,0.5);
+  background: rgba(74,158,255,0.08);
+}
+.tb-icon svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+main {
+  position: relative;
+  z-index: 5;
+  padding: 84px 24px 60px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+h1.page-title {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 1.5em;
+  font-weight: 800;
+  letter-spacing: 2px;
+  margin-bottom: 8px;
+}
+h1.page-title .accent { color: #4a9eff; }
+.page-sub {
+  font-size: 0.85em;
+  color: rgba(160,190,230,0.62);
+  margin-bottom: 24px;
+}
+
+fieldset {
+  background: rgba(14,22,40,0.62);
+  border: 1px solid rgba(74,158,255,0.22);
+  border-radius: 12px;
+  padding: 18px 22px;
+  margin-bottom: 18px;
+}
+legend {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.8em;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #4a9eff;
+  padding: 0 8px;
+  text-transform: uppercase;
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.grid-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+}
+
+label {
+  display: block;
+  font-size: 0.75em;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: rgba(160,190,230,0.7);
+  margin-bottom: 5px;
+  margin-top: 10px;
+}
+input[type="text"], input[type="email"], input[type="tel"], input[type="number"], input[type="date"], textarea, select {
+  width: 100%;
+  background: rgba(6,10,20,0.6);
+  border: 1px solid rgba(74,158,255,0.24);
+  border-radius: 6px;
+  padding: 9px 12px;
+  color: #e0e6f0;
+  font-family: inherit;
+  font-size: 0.92em;
+}
+input[type="file"] {
+  width: 100%;
+  font-family: inherit;
+  color: rgba(160,190,230,0.7);
+  font-size: 0.88em;
+  margin-top: 4px;
+}
+textarea { min-height: 80px; resize: vertical; }
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: #4a9eff;
+  box-shadow: 0 0 0 2px rgba(74,158,255,0.18);
+}
+
+.checkbox-row {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 0.88em; color: rgba(200,220,240,0.85);
+  margin: 12px 0;
+}
+.checkbox-row input { width: auto; }
+
+.list-rows .item {
+  display: flex; gap: 8px; margin-top: 8px;
+  align-items: flex-start;
+}
+.list-rows .item input { flex: 1; }
+.list-rows .item .remove-btn {
+  flex: 0 0 32px;
+  background: rgba(220,38,38,0.15);
+  border: 1px solid rgba(220,38,38,0.4);
+  color: #f87171;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1.1em;
+  height: 38px;
+}
+.list-rows .item .remove-btn:hover { background: rgba(220,38,38,0.3); }
+
+.add-row-btn {
+  margin-top: 10px;
+  background: rgba(74,158,255,0.12);
+  border: 1px dashed rgba(74,158,255,0.4);
+  color: #4a9eff;
+  border-radius: 6px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 0.85em;
+  font-family: inherit;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+.add-row-btn:hover { background: rgba(74,158,255,0.22); }
+
+.scope-grid-rows .item {
+  display: grid;
+  grid-template-columns: 1fr 1fr 32px;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.pricing-preview {
+  background: rgba(74,158,255,0.06);
+  border: 1px solid rgba(74,158,255,0.22);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-top: 14px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.85em;
+}
+.pricing-preview .row {
+  display: flex; justify-content: space-between;
+  padding: 4px 0;
+}
+.pricing-preview .row.total {
+  border-top: 1px dashed rgba(160,190,230,0.3);
+  padding-top: 8px; margin-top: 4px;
+  font-weight: 700;
+  color: #fdd835;
+}
+
+.submit-row {
+  display: flex; gap: 12px;
+  margin-top: 24px;
+  align-items: center;
+}
+.btn-primary {
+  background: #4a9eff;
+  color: #030611;
+  border: none;
+  border-radius: 8px;
+  padding: 14px 28px;
+  font-family: inherit;
+  font-size: 0.95em;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-primary:hover { background: #6cb0ff; }
+.btn-primary:disabled { background: #5a5a5a; cursor: not-allowed; }
+.btn-ghost {
+  background: transparent;
+  color: rgba(160,190,230,0.7);
+  border: 1px solid rgba(160,190,230,0.3);
+  border-radius: 8px;
+  padding: 14px 22px;
+  font-family: inherit;
+  font-size: 0.9em;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+}
+.btn-ghost:hover { color: #e0e6f0; border-color: rgba(160,190,230,0.6); }
+
+.status-msg {
+  margin-top: 14px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 0.9em;
+  display: none;
+}
+.status-msg.success { background: rgba(74,222,128,0.1); border: 1px solid rgba(74,222,128,0.35); color: #4ade80; display: block; }
+.status-msg.error { background: rgba(220,38,38,0.1); border: 1px solid rgba(220,38,38,0.35); color: #f87171; display: block; }
+
+small.hint {
+  display: block;
+  font-size: 0.72em;
+  color: rgba(160,190,230,0.5);
+  margin-top: 3px;
+}
+</style>
+<script src="/assets/nav-buttons.js" defer></script>
+</head>
+<body>
+
+<div class="bg-ambient"></div>
+
+<div class="topbar">
+  <button class="tb-icon" onclick="goBack()" title="Back"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
+  <div class="brand"><div class="brand-mark"></div><div class="brand-name">RYUJIN <span class="dim">· NEW CUSTOM SCOPE PROPOSAL</span></div></div>
+  <div class="tb-spacer"></div>
+  <div style="font-family:'Share Tech Mono',monospace;font-size:0.7em;color:rgba(160,190,230,0.5);letter-spacing:1.5px">GENERATOR · DRAFT</div>
+</div>
+
+<main>
+  <h1 class="page-title">NEW <span class="accent">CUSTOM SCOPE PROPOSAL</span></h1>
+  <div class="page-sub">Fill in below. On submit, the proposal goes live at <code>/proposals/custom/&lt;slug&gt;</code>, gets a shareable URL, and inherits the Accept button + email notification flow.</div>
+
+  <form id="proposalForm">
+
+    <fieldset>
+      <legend>Customer</legend>
+      <div class="grid-2">
+        <div>
+          <label>Customer name *</label>
+          <input type="text" name="customer_name" required autocomplete="off">
+        </div>
+        <div>
+          <label>Address *</label>
+          <input type="text" name="address" placeholder="123 Main St, Moncton" required autocomplete="off">
+        </div>
+        <div>
+          <label>Email</label>
+          <input type="email" name="customer_email" autocomplete="off">
+        </div>
+        <div>
+          <label>Phone</label>
+          <input type="tel" name="customer_phone" placeholder="+1 506-555-1234" autocomplete="off">
+        </div>
+      </div>
+      <label>GHL Contact ID <small class="hint">(optional, links the proposal to a GHL contact for opp tracking)</small></label>
+      <input type="text" name="ghl_contact_id" autocomplete="off">
+    </fieldset>
+
+    <fieldset>
+      <legend>Proposal Identity</legend>
+      <div class="grid-3">
+        <div>
+          <label>Quote ID <small class="hint">(auto if blank)</small></label>
+          <input type="text" name="quote_id" placeholder="PU-2026-XX00" autocomplete="off">
+        </div>
+        <div>
+          <label>Sales rep</label>
+          <select name="sales_rep">
+            <option value="Mackenzie Mazerolle">Mackenzie Mazerolle</option>
+            <option value="Darcy Mazerolle">Darcy Mazerolle</option>
+          </select>
+        </div>
+        <div>
+          <label>Slug <small class="hint">(auto from address + last name if blank)</small></label>
+          <input type="text" name="slug" placeholder="123-main-smith" autocomplete="off">
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Scope</legend>
+      <label>Scope title</label>
+      <input type="text" name="scope_title" value="Custom Partial Reroof">
+
+      <label>Scope summary paragraph <small class="hint">(the intro shown above the measurement table)</small></label>
+      <textarea name="scope_long" placeholder="Complete tear-off and reroof of...">Complete tear-off and reroof of the work area as detailed below. All workmanship to current building code and CertainTeed installation standards.</textarea>
+
+      <label>Measurement table</label>
+      <div class="scope-grid-rows" id="scopeGrid"></div>
+      <button type="button" class="add-row-btn" onclick="addScopeRow()">+ Add measurement row</button>
+    </fieldset>
+
+    <fieldset>
+      <legend>What's Included</legend>
+      <div class="list-rows" id="deliverables"></div>
+      <button type="button" class="add-row-btn" onclick="addDeliverable()">+ Add inclusion</button>
+    </fieldset>
+
+    <fieldset>
+      <legend>Not Included</legend>
+      <div class="list-rows" id="exclusions"></div>
+      <button type="button" class="add-row-btn" onclick="addExclusion()">+ Add exclusion</button>
+    </fieldset>
+
+    <fieldset>
+      <legend>Re-decking Risk</legend>
+      <div class="checkbox-row">
+        <input type="checkbox" name="redecking_risk" id="redeckingRisk">
+        <label for="redeckingRisk" style="display:inline;margin:0;">Flag this proposal as high re-decking risk (renders the amber notice block on the proposal)</label>
+      </div>
+      <div class="grid-2">
+        <div>
+          <label>Sheet price (CAD, all-in)</label>
+          <input type="number" name="redecking_sheet_price" value="85.00" step="0.50" min="0">
+          <small class="hint">Includes OSB + removal + install + labor. Default $85.</small>
+        </div>
+      </div>
+      <label>Custom notice text <small class="hint">(leave blank for the default home-age + pitch wording)</small></label>
+      <textarea name="redecking_notice_text" placeholder="(default fallback used if blank)"></textarea>
+    </fieldset>
+
+    <fieldset>
+      <legend>Pricing</legend>
+      <div class="grid-3">
+        <div>
+          <label>Subtotal (pre-HST) *</label>
+          <input type="number" name="subtotal" id="subtotal" step="0.01" min="0" required>
+        </div>
+        <div>
+          <label>HST %</label>
+          <input type="number" name="hst_pct" id="hstPct" value="15" step="0.5" min="0">
+        </div>
+        <div>
+          <label>Deposit %</label>
+          <input type="number" name="deposit_pct" id="depositPct" value="30" step="1" min="0" max="100">
+        </div>
+      </div>
+      <div class="pricing-preview" id="pricingPreview">
+        <div class="row"><span>Subtotal</span><span id="prevSub">$0.00</span></div>
+        <div class="row"><span>HST</span><span id="prevHst">$0.00</span></div>
+        <div class="row total"><span>Total incl HST</span><span id="prevTotal">$0.00</span></div>
+        <div class="row"><span>Deposit on signing</span><span id="prevDep">$0.00</span></div>
+        <div class="row"><span>Balance on completion</span><span id="prevBal">$0.00</span></div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Warranty</legend>
+      <div class="grid-2">
+        <div>
+          <label>Warranty years</label>
+          <input type="number" name="warranty_years" value="15" min="0" max="50">
+        </div>
+      </div>
+      <label>Custom warranty text <small class="hint">(blank uses the standard 15-year combined CertainTeed + workmanship paragraph)</small></label>
+      <textarea name="warranty_text" placeholder="(default fallback used if blank)"></textarea>
+    </fieldset>
+
+    <fieldset>
+      <legend>Cover Image</legend>
+      <label>Upload a photo of the property <small class="hint">(JPG/PNG/WebP, up to 10 MB)</small></label>
+      <input type="file" id="coverFile" accept="image/*">
+      <label>Or paste an existing URL</label>
+      <input type="text" name="cover_url" id="coverUrl" placeholder="https://..." autocomplete="off">
+    </fieldset>
+
+    <fieldset>
+      <legend>Lifecycle</legend>
+      <div class="grid-3">
+        <div>
+          <label>Issued date</label>
+          <input type="date" name="issued_date" id="issuedDate">
+        </div>
+        <div>
+          <label>Valid days</label>
+          <input type="number" name="valid_days" value="30" min="1" max="365">
+        </div>
+        <div>
+          <label>Status</label>
+          <select name="status">
+            <option value="draft">Draft</option>
+            <option value="sent">Sent</option>
+          </select>
+        </div>
+      </div>
+    </fieldset>
+
+    <div class="submit-row">
+      <button type="submit" class="btn-primary" id="submitBtn">Create Proposal</button>
+      <a href="custom-proposals.html" class="btn-ghost">Cancel</a>
+    </div>
+
+    <div class="status-msg" id="statusMsg"></div>
+  </form>
+</main>
+
+<script>
+function goBack() {
+  if (window.parent !== window && window.parent.exitSectionOverlay) { window.parent.exitSectionOverlay(); return; }
+  window.location.href = 'custom-proposals.html';
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !e.target.closest('input,textarea,select')) goBack(); });
+
+// ── Dynamic row helpers ──
+function addScopeRow(label, value) {
+  const c = document.getElementById('scopeGrid');
+  const item = document.createElement('div');
+  item.className = 'item';
+  item.innerHTML =
+    '<input type="text" placeholder="Label, e.g., Main section" value="' + (label || '').replace(/"/g, '&quot;') + '">' +
+    '<input type="text" placeholder="Value, e.g., 32 ft x 18 ft" value="' + (value || '').replace(/"/g, '&quot;') + '">' +
+    '<button type="button" class="remove-btn" onclick="this.parentElement.remove()">×</button>';
+  c.appendChild(item);
+}
+function addDeliverable(v) {
+  const c = document.getElementById('deliverables');
+  const item = document.createElement('div');
+  item.className = 'item';
+  item.innerHTML =
+    '<input type="text" placeholder="What is included..." value="' + (v || '').replace(/"/g, '&quot;') + '">' +
+    '<button type="button" class="remove-btn" onclick="this.parentElement.remove()">×</button>';
+  c.appendChild(item);
+}
+function addExclusion(v) {
+  const c = document.getElementById('exclusions');
+  const item = document.createElement('div');
+  item.className = 'item';
+  item.innerHTML =
+    '<input type="text" placeholder="What is not included..." value="' + (v || '').replace(/"/g, '&quot;') + '">' +
+    '<button type="button" class="remove-btn" onclick="this.parentElement.remove()">×</button>';
+  c.appendChild(item);
+}
+
+// ── Pre-fill sensible defaults ──
+function prefillDefaults() {
+  // Today's date
+  const today = new Date().toISOString().slice(0, 10);
+  document.getElementById('issuedDate').value = today;
+
+  // Standard measurement rows (blank values)
+  const rows = ['Work area', 'Roof pitch', 'Ridges', 'Hips', 'Rakes', 'Eaves', 'Total measured roof area', 'Waste allowance'];
+  rows.forEach(r => addScopeRow(r, ''));
+
+  // Standard CertainTeed Landmark inclusions
+  const stdIncl = [
+    "Full tear-off of existing shingles down to deck (1 layer assumed)",
+    "CertainTeed Landmark architectural shingles, customer's choice of color",
+    "Synthetic underlayment over entire roof field",
+    "Ice & water shield along all eaves",
+    "Aluminum drip edge along all rakes and eaves",
+    "Hip & ridge cap shingles",
+    "Continuous ridge vent",
+    "Step + counter flashing where required",
+    "Pipe flashings (standard penetrations)",
+    "Job-site cleanup with magnetic nail sweep",
+    "Full disposal of tear-off debris",
+    "15-year manufacturer + workmanship warranty"
+  ];
+  stdIncl.forEach(addDeliverable);
+
+  // Standard exclusions for limited-scope custom
+  const stdExcl = [
+    "Additional shingle layers beyond the first (+$40/SQ per added layer)",
+    "Work on roof sections outside the area described above"
+  ];
+  stdExcl.forEach(addExclusion);
+}
+prefillDefaults();
+
+// ── Live pricing preview ──
+function fmt(n) { return '$' + Number(n || 0).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function recomputePricing() {
+  const sub = Number(document.getElementById('subtotal').value || 0);
+  const hp = Number(document.getElementById('hstPct').value || 0);
+  const dp = Number(document.getElementById('depositPct').value || 0);
+  const hst = Math.round(sub * (hp / 100) * 100) / 100;
+  const total = Math.round((sub + hst) * 100) / 100;
+  const dep = Math.round(total * (dp / 100) * 100) / 100;
+  const bal = Math.round((total - dep) * 100) / 100;
+  document.getElementById('prevSub').textContent = fmt(sub);
+  document.getElementById('prevHst').textContent = fmt(hst);
+  document.getElementById('prevTotal').textContent = fmt(total);
+  document.getElementById('prevDep').textContent = fmt(dep);
+  document.getElementById('prevBal').textContent = fmt(bal);
+}
+['subtotal', 'hstPct', 'depositPct'].forEach(id => {
+  document.getElementById(id).addEventListener('input', recomputePricing);
+});
+
+// ── Submit ──
+function setStatus(kind, message) {
+  const el = document.getElementById('statusMsg');
+  el.className = 'status-msg ' + kind;
+  el.textContent = message;
+}
+
+async function uploadCoverIfNeeded(slugHint) {
+  const fileInput = document.getElementById('coverFile');
+  const pastedUrl = document.getElementById('coverUrl').value.trim();
+  if (pastedUrl) return pastedUrl;
+  if (!fileInput.files || !fileInput.files[0]) return null;
+  const fd = new FormData();
+  fd.append('cover', fileInput.files[0]);
+  if (slugHint) fd.append('slug', slugHint);
+  const r = await fetch('/api/custom-proposal-cover?tenant=plus-ultra', { method: 'POST', body: fd });
+  if (!r.ok) {
+    const body = await r.text();
+    throw new Error('Cover upload failed (' + r.status + '): ' + body.substring(0, 200));
+  }
+  const j = await r.json();
+  return j.url;
+}
+
+function collectRows(containerId, keyA, keyB) {
+  const out = [];
+  document.querySelectorAll('#' + containerId + ' .item').forEach(item => {
+    const inputs = item.querySelectorAll('input[type="text"]');
+    if (keyB) {
+      const a = inputs[0]?.value.trim();
+      const b = inputs[1]?.value.trim();
+      if (a || b) out.push({ [keyA]: a, [keyB]: b });
+    } else {
+      const v = inputs[0]?.value.trim();
+      if (v) out.push(v);
+    }
+  });
+  return out;
+}
+
+document.getElementById('proposalForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const submitBtn = document.getElementById('submitBtn');
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Creating...';
+
+  try {
+    const form = e.target;
+    const slugHint = form.slug.value.trim() || (form.customer_name.value.trim().split(/\s+/).pop() || 'cover').toLowerCase();
+    const coverUrl = await uploadCoverIfNeeded(slugHint);
+
+    const payload = {
+      customer_name: form.customer_name.value.trim(),
+      address: form.address.value.trim(),
+      customer_email: form.customer_email.value.trim() || null,
+      customer_phone: form.customer_phone.value.trim() || null,
+      ghl_contact_id: form.ghl_contact_id.value.trim() || null,
+      quote_id: form.quote_id.value.trim() || null,
+      slug: form.slug.value.trim() || null,
+      sales_rep: form.sales_rep.value,
+      scope_title: form.scope_title.value.trim() || 'Custom Partial Reroof',
+      scope_long: form.scope_long.value.trim() || null,
+      scope_grid: collectRows('scopeGrid', 'label', 'value'),
+      deliverables: collectRows('deliverables'),
+      exclusions: collectRows('exclusions'),
+      redecking_risk: form.redecking_risk.checked,
+      redecking_sheet_price: Number(form.redecking_sheet_price.value || 85),
+      redecking_notice_text: form.redecking_notice_text.value.trim() || null,
+      subtotal: Number(form.subtotal.value),
+      hst_pct: Number(form.hst_pct.value || 15),
+      deposit_pct: Number(form.deposit_pct.value || 30),
+      warranty_years: Number(form.warranty_years.value || 15),
+      warranty_text: form.warranty_text.value.trim() || null,
+      cover_url: coverUrl,
+      issued_date: form.issued_date.value || null,
+      valid_days: Number(form.valid_days.value || 30),
+      status: form.status.value
+    };
+
+    const r = await fetch('/api/custom-proposals?tenant=plus-ultra', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!r.ok) {
+      const errBody = await r.text();
+      throw new Error('Create failed (' + r.status + '): ' + errBody.substring(0, 400));
+    }
+    const j = await r.json();
+    setStatus('success', 'Proposal created. Redirecting to /proposals/custom/' + j.proposal.slug);
+    setTimeout(() => { window.location.href = '/proposals/custom/' + j.proposal.slug; }, 800);
+  } catch (e) {
+    setStatus('error', e.message);
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Create Proposal';
+  }
+});
+
+recomputePricing();
+</script>
+
+<script src="assets/ryujin-mode.js"></script>
+<script src="assets/ryujin-tenant.js"></script>
+<script src="assets/ryujin-persist.js"></script>
+<script src="assets/ryujin-api.js"></script>
+<script src="/assets/portal-tabbar.js" defer></script>
+
+</body>
+</html>
