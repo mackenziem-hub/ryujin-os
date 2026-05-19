@@ -284,7 +284,7 @@ main {
   <div class="page-header">
     <div>
       <div class="page-title">CUSTOM SCOPE <span class="accent">PROPOSAL GENERATOR</span></div>
-      <div class="page-sub">Format template for limited-scope, non-standard, repair-only, and partial-job proposals. Every entry below was generated off the same template. Each is a self-contained static HTML page with a shareable URL, Accept button, and email notify on accept.</div>
+      <div class="page-sub">Format template for limited-scope, non-standard, repair-only, and partial-job proposals. Every entry below was generated off the same template. Each is a self-contained page with a shareable URL, Accept button, and email notify on accept.</div>
     </div>
     <div class="stats">
       <div class="stat"><span class="num" id="stat-total">0</span><span class="lbl">Total</span></div>
@@ -294,12 +294,16 @@ main {
     </div>
   </div>
 
+  <div style="margin-bottom: 18px;">
+    <a href="custom-proposal-new.html" style="display:inline-block;background:#fdd835;color:#1d3a8a;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;padding:12px 22px;border-radius:8px;text-decoration:none;font-size:0.85em;border:2px solid #1d3a8a;">+ New Custom Proposal</a>
+  </div>
+
   <div class="info-strip">
-    <strong>Generating a new one:</strong> Copy any existing proposal HTML in <code>public/proposals/custom/</code> as a new <code>&lt;slug&gt;.html</code>, swap customer + scope + totals + cover image, then append an entry to <code>/proposals/custom/index.json</code>. The new proposal appears here automatically, gets a shareable URL at <code>/proposals/custom/&lt;slug&gt;.html</code>, and inherits the Accept button + email notify flow.
+    <strong>Generating a new one:</strong> Click <strong>+ New Custom Proposal</strong> above. Fill in customer, scope, measurements, what's included, exclusions, pricing, and (optionally) drag in a cover image. Submit and the proposal goes live at <code>/proposals/custom/&lt;slug&gt;</code> with a shareable URL, working Accept button, and email notify on accept.
   </div>
 
   <div id="grid" class="grid"></div>
-  <div id="empty" class="empty" style="display:none">No custom proposals yet. Drop an HTML file into <code>public/proposals/custom/</code> and add it to <code>index.json</code>.</div>
+  <div id="empty" class="empty" style="display:none">No custom proposals yet. Click <strong>+ New Custom Proposal</strong> above to generate one.</div>
 </main>
 
 <script>
@@ -326,10 +330,40 @@ function escapeHtml(s) {
     .replace(/'/g, '&#039;');
 }
 
+function normalize(raw) {
+  // Accept rows from /api/custom-proposals OR legacy /proposals/custom/index.json
+  return {
+    slug: raw.slug,
+    customer: raw.customer_name || raw.customer || 'Customer',
+    address: raw.address || '',
+    scope_summary: raw.scope_long || raw.scope_summary || raw.scope_title || '',
+    total_incl_hst: Number(raw.total_incl_hst || 0),
+    issued: raw.issued_date || raw.issued,
+    quote_id: raw.quote_id || '',
+    status: (raw.status || 'draft').toLowerCase(),
+    cover: raw.cover_url || raw.cover,
+    url: '/proposals/custom/' + raw.slug
+  };
+}
+
+async function fetchProposals() {
+  // Primary: DB-backed API. Fall back to legacy static manifest only if API totally errors.
+  try {
+    const res = await fetch('/api/custom-proposals?tenant=plus-ultra', { cache: 'no-store' });
+    if (res.ok) {
+      const data = await res.json();
+      return (data.proposals || []).map(normalize);
+    }
+  } catch (_) {}
+  try {
+    const res = await fetch('/proposals/custom/index.json', { cache: 'no-store' });
+    const data = await res.json();
+    return (data.proposals || []).map(normalize);
+  } catch (_) { return []; }
+}
+
 async function load() {
-  const res = await fetch('/proposals/custom/index.json', { cache: 'no-store' });
-  const data = await res.json();
-  const proposals = (data && data.proposals) || [];
+  const proposals = await fetchProposals();
 
   const grid = document.getElementById('grid');
   const empty = document.getElementById('empty');
@@ -343,10 +377,9 @@ async function load() {
 
   let draft = 0, sent = 0, openValue = 0;
   for (const p of proposals) {
-    const status = (p.status || 'draft').toLowerCase();
-    if (status === 'draft') draft++;
-    if (status === 'sent') sent++;
-    if (status !== 'signed' && status !== 'expired') openValue += Number(p.total_incl_hst || 0);
+    if (p.status === 'draft') draft++;
+    if (p.status === 'sent') sent++;
+    if (p.status !== 'signed' && p.status !== 'expired') openValue += Number(p.total_incl_hst || 0);
   }
 
   document.getElementById('stat-total').textContent = proposals.length;
@@ -361,7 +394,6 @@ async function load() {
     card.className = 'card';
     card.onclick = () => window.open(p.url, '_blank', 'noopener');
 
-    const status = (p.status || 'draft').toLowerCase();
     const coverHtml = p.cover
       ? '<img src="' + escapeHtml(p.cover) + '" alt="' + escapeHtml(p.address || p.customer) + '">'
       : '<div class="placeholder">NO COVER</div>';
@@ -369,14 +401,14 @@ async function load() {
     card.innerHTML =
       '<div class="cover">' + coverHtml + '</div>' +
       '<div class="body">' +
-        '<div class="customer">' + escapeHtml(p.customer || 'Customer') + '</div>' +
-        '<div class="address">' + escapeHtml(p.address || '') + '</div>' +
-        '<div class="row"><span class="k">Scope</span><span class="v">' + escapeHtml(p.scope_summary || '') + '</span></div>' +
-        '<div class="row"><span class="k">Total</span><span class="v money">' + fmtMoney(p.total_incl_hst || 0) + '</span></div>' +
+        '<div class="customer">' + escapeHtml(p.customer) + '</div>' +
+        '<div class="address">' + escapeHtml(p.address) + '</div>' +
+        '<div class="row"><span class="k">Scope</span><span class="v">' + escapeHtml(p.scope_summary.slice(0, 80)) + '</span></div>' +
+        '<div class="row"><span class="k">Total</span><span class="v money">' + fmtMoney(p.total_incl_hst) + '</span></div>' +
         '<div class="row"><span class="k">Issued</span><span class="v">' + escapeHtml(fmtDate(p.issued)) + '</span></div>' +
         '<div class="meta">' +
-          '<div class="quote-id">' + escapeHtml(p.quote_id || '') + '</div>' +
-          '<div class="badge ' + status + '">' + status.toUpperCase() + '</div>' +
+          '<div class="quote-id">' + escapeHtml(p.quote_id) + '</div>' +
+          '<div class="badge ' + p.status + '">' + p.status.toUpperCase() + '</div>' +
         '</div>' +
       '</div>';
     grid.appendChild(card);
