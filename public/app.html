@@ -109,7 +109,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 /* ─── Project Detail ─── */
 .photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px}
 .photo-thumb{aspect-ratio:1;border-radius:8px;overflow:hidden;position:relative;border:1px solid var(--border);transition:border-color 0.15s, box-shadow 0.15s}
-.photo-thumb img{width:100%;height:100%;object-fit:cover}
+.photo-thumb img,.photo-thumb video{width:100%;height:100%;object-fit:cover;display:block}
+.photo-thumb .vid-badge{position:absolute;bottom:6px;left:6px;background:rgba(0,0,0,0.7);color:var(--cyan,#22d3ee);font-family:'Share Tech Mono',monospace;font-size:0.6em;letter-spacing:1.2px;padding:2px 6px;border-radius:4px;border:1px solid rgba(34,211,238,0.4);pointer-events:none}
 .photo-thumb.starred{border-color:var(--yellow);box-shadow:0 0 0 1px var(--yellow), 0 0 12px rgba(250,204,21,0.25)}
 .thumb-btn{position:absolute;width:26px;height:26px;border-radius:13px;border:none;background:rgba(0,0,0,0.72);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:0.8em;font-weight:700;padding:0;line-height:1;transition:all 0.15s;z-index:2}
 .thumb-btn:active{transform:scale(0.9)}
@@ -175,6 +176,22 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 /* ─── Rapid-fire camera ─── */
 .cam-overlay{position:fixed;inset:0;z-index:500;background:#000;display:none;flex-direction:column}
 .cam-overlay.open{display:flex}
+.vidrec-overlay{position:fixed;inset:0;z-index:501;background:#000;display:none;flex-direction:column}
+.vidrec-overlay.open{display:flex}
+.vidrec-overlay .preview{flex:1;width:100%;height:auto;background:#000;object-fit:contain}
+.vidrec-topbar{position:absolute;top:14px;left:14px;right:14px;display:flex;justify-content:space-between;align-items:center;z-index:2}
+.vidrec-close{background:rgba(0,0,0,0.55);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:50%;width:36px;height:36px;font-size:1.05em;cursor:pointer}
+.vidrec-status{display:flex;align-items:center;gap:8px;background:rgba(0,0,0,0.55);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:20px;padding:6px 12px;font-family:'Share Tech Mono',monospace;font-size:0.78em;letter-spacing:1.4px}
+.vidrec-status .dot{width:9px;height:9px;border-radius:50%;background:rgba(248,113,113,0.4)}
+.vidrec-status.recording .dot{background:#f87171;box-shadow:0 0 8px #f87171;animation:vrPulse 1s ease-in-out infinite}
+@keyframes vrPulse{50%{opacity:0.35}}
+.vidrec-controls{padding:14px;background:rgba(0,0,0,0.92);display:flex;flex-direction:column;gap:10px;position:relative;z-index:2}
+.vidrec-btn{padding:14px;border:none;border-radius:12px;font-family:'Orbitron',sans-serif;font-weight:800;letter-spacing:1.5px;font-size:0.88em;cursor:pointer}
+.vidrec-btn.record{background:#f87171;color:#fff}
+.vidrec-btn.record.live{background:#1a1a1a;color:#f87171;border:1px solid #f87171}
+.vidrec-btn.done{background:rgba(255,255,255,0.12);color:#fff;border:1px solid rgba(255,255,255,0.25)}
+.vidrec-btn:disabled{opacity:0.45;cursor:not-allowed}
+.vidrec-hint{text-align:center;color:rgba(255,255,255,0.55);font-family:'Share Tech Mono',monospace;font-size:0.66em;letter-spacing:1.2px}
 .cam-video-wrap{flex:1;position:relative;overflow:hidden;background:#000}
 .cam-video{width:100%;height:100%;object-fit:cover;background:#000}
 .cam-flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity 0.1s}
@@ -282,6 +299,27 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 
 <!-- Content -->
 <div class="content" id="content"></div>
+
+<!-- Video Recorder Overlay (MediaRecorder, audio + video, 30s cap) -->
+<div class="vidrec-overlay" id="vidrecOverlay">
+  <video class="preview" id="vidrecPreview" autoplay playsinline muted></video>
+  <div class="vidrec-topbar">
+    <button class="vidrec-close" onclick="closeVideoRecorder()" aria-label="Close">✕</button>
+    <div class="vidrec-status" id="vidrecStatus"><span class="dot"></span><span id="vidrecTime">0:00</span> <span id="vidrecLabel">READY</span></div>
+  </div>
+  <div class="vidrec-controls">
+    <div class="cam-cats" id="vidrecCats" style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap">
+      <button type="button" class="cam-cat" data-vrcat="before">BEFORE</button>
+      <button type="button" class="cam-cat on" data-vrcat="during">PROGRESS</button>
+      <button type="button" class="cam-cat" data-vrcat="after">AFTER</button>
+      <button type="button" class="cam-cat" data-vrcat="damage">DAMAGE</button>
+      <button type="button" class="cam-cat" data-vrcat="safety">SAFETY</button>
+    </div>
+    <button class="vidrec-btn record" id="vidrecBtn" onclick="toggleVideoRec()">● RECORD</button>
+    <button class="vidrec-btn done" onclick="closeVideoRecorder()">DONE</button>
+    <div class="vidrec-hint">Tap RECORD to start, again to stop · auto-stops at 30s · audio captured</div>
+  </div>
+</div>
 
 <!-- Rapid-fire Camera Overlay -->
 <div class="cam-overlay" id="camOverlay">
@@ -1025,6 +1063,183 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 })();
 
+// ═══ VIDEO RECORDER ═══
+// MediaRecorder-based in-app capture. Reuses category chips from the photo
+// camera. Default 30s auto-stop. Upload via /api/files (which already accepts
+// mp4/webm/quicktime up to 50MB per ALLOWED_TYPES on the server).
+const VIDREC_MAX_SECONDS = 30;
+let vidStream = null;
+let vidRecorder = null;
+let vidChunks = [];
+let vidTimer = null;
+let vidStartTs = 0;
+let vidProjectId = null;
+let vidCategory = 'during';
+// Per-recording session token. closeVideoRecorder() bumps it so any onstop
+// fired after close is treated as cancelled and skips the upload.
+let vidSessionId = 0;
+let vidCancelled = false;
+
+document.addEventListener('click', (e) => {
+  const chip = e.target.closest('#vidrecCats .cam-cat');
+  if (!chip) return;
+  document.querySelectorAll('#vidrecCats .cam-cat').forEach(c => c.classList.remove('on'));
+  chip.classList.add('on');
+  vidCategory = chip.dataset.vrcat;
+});
+
+async function openVideoRecorder(projectId) {
+  vidProjectId = projectId;
+  vidChunks = [];
+  vidSessionId++;
+  vidCancelled = false;
+  document.getElementById('vidrecTime').textContent = '0:00';
+  document.getElementById('vidrecLabel').textContent = 'READY';
+  document.getElementById('vidrecStatus').classList.remove('recording');
+  const btn = document.getElementById('vidrecBtn');
+  btn.textContent = '● RECORD';
+  btn.classList.remove('live');
+  btn.disabled = false;
+  document.getElementById('vidrecOverlay').classList.add('open');
+
+  try {
+    vidStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: true
+    });
+    const preview = document.getElementById('vidrecPreview');
+    preview.srcObject = vidStream;
+    await preview.play().catch(() => {});
+  } catch (e) {
+    closeVideoRecorder();
+    toast('Camera access blocked · cannot record video', 'warn');
+  }
+}
+
+function closeVideoRecorder() {
+  // Mark this session cancelled so any onstop firing after we close drops
+  // the upload (race: MediaRecorder.stop() is async wrt onstop callback).
+  vidCancelled = true;
+  if (vidRecorder && vidRecorder.state !== 'inactive') {
+    try { vidRecorder.stop(); } catch {}
+  }
+  if (vidStream) {
+    try { vidStream.getTracks().forEach(t => t.stop()); } catch {}
+    vidStream = null;
+  }
+  clearInterval(vidTimer);
+  vidTimer = null;
+  document.getElementById('vidrecOverlay').classList.remove('open');
+}
+
+function toggleVideoRec() {
+  if (!vidRecorder || vidRecorder.state === 'inactive') {
+    startVideoRec();
+  } else {
+    stopVideoRec();
+  }
+}
+
+function startVideoRec() {
+  if (!vidStream) return;
+  vidChunks = [];
+  vidCancelled = false;
+  // Snapshot session context so the onstop handler uploads against the
+  // recording's own session, not whatever globals may have changed by then.
+  const sessionId = vidSessionId;
+  const sessionProjectId = vidProjectId;
+  const sessionCategory = vidCategory;
+  // MIME fallback chain: prefer broadly-compatible mp4 if supported, else webm
+  const mimeCandidates = ['video/mp4;codecs=h264,aac', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+  const picked = mimeCandidates.find(t => { try { return MediaRecorder.isTypeSupported(t); } catch { return false; } });
+  vidRecorder = new MediaRecorder(vidStream, picked ? { mimeType: picked } : undefined);
+  vidRecorder.ondataavailable = e => { if (e.data && e.data.size > 0) vidChunks.push(e.data); };
+  vidRecorder.onstop = () => handleVideoStopped({ sessionId, projectId: sessionProjectId, category: sessionCategory });
+  vidRecorder.start(1000);
+
+  vidStartTs = Date.now();
+  const btn = document.getElementById('vidrecBtn');
+  btn.textContent = '■ STOP';
+  btn.classList.add('live');
+  document.getElementById('vidrecStatus').classList.add('recording');
+  document.getElementById('vidrecLabel').textContent = 'REC';
+
+  vidTimer = setInterval(() => {
+    const s = Math.floor((Date.now() - vidStartTs) / 1000);
+    document.getElementById('vidrecTime').textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    if (s >= VIDREC_MAX_SECONDS) stopVideoRec();
+  }, 250);
+}
+
+function stopVideoRec() {
+  if (vidRecorder && vidRecorder.state !== 'inactive') {
+    try { vidRecorder.stop(); } catch {}
+  }
+  clearInterval(vidTimer);
+  vidTimer = null;
+  const btn = document.getElementById('vidrecBtn');
+  btn.textContent = '● RECORD';
+  btn.classList.remove('live');
+  btn.disabled = true;
+  document.getElementById('vidrecStatus').classList.remove('recording');
+  document.getElementById('vidrecLabel').textContent = 'UPLOADING';
+}
+
+async function handleVideoStopped(ctx) {
+  // Drop the upload if the user closed the overlay (cancelled) or a fresh
+  // session has started since this recording began.
+  if (vidCancelled || (ctx && ctx.sessionId !== vidSessionId)) return;
+  if (!vidChunks.length || !ctx?.projectId) {
+    const lbl = document.getElementById('vidrecLabel');
+    if (lbl) lbl.textContent = 'NO CLIP';
+    const btn = document.getElementById('vidrecBtn');
+    if (btn) btn.disabled = false;
+    return;
+  }
+  const type = vidChunks[0]?.type || (vidRecorder?.mimeType) || 'video/webm';
+  const blob = new Blob(vidChunks, { type });
+  const ext = type.includes('mp4') ? 'mp4' : 'webm';
+  const filename = `clip-${Date.now()}-${Math.random().toString(36).slice(2,6)}.${ext}`;
+  const form = new FormData();
+  form.append('project_id', ctx.projectId);
+  form.append('uploaded_by', currentUser?.id || '');
+  form.append('category', ctx.category || 'general');
+  form.append('files', blob, filename);
+  try {
+    const r = await fetch(API + '/files?tenant=' + TENANT, { method: 'POST', body: form });
+    if (!r.ok) {
+      let msg = 'HTTP ' + r.status;
+      try { const j = await r.json(); if (j.error) msg = j.error; } catch {}
+      throw new Error(msg);
+    }
+    const j = await r.json().catch(() => null);
+    const row = j?.files?.[0];
+    if (row && row.error) throw new Error(row.error);
+    // The overlay may have been closed during the upload; only touch the UI
+    // when it's still open.
+    if (!vidCancelled && ctx.sessionId === vidSessionId) {
+      const lbl = document.getElementById('vidrecLabel');
+      if (lbl) lbl.textContent = 'DONE';
+      toast('Video uploaded · ' + (blob.size / 1024 / 1024).toFixed(1) + 'MB', 'ok');
+      setTimeout(() => closeVideoRecorder(), 800);
+    }
+    if (ctx.projectId) setTimeout(() => showProject(ctx.projectId), 1000);
+  } catch (e) {
+    if (!vidCancelled && ctx.sessionId === vidSessionId) {
+      const lbl = document.getElementById('vidrecLabel');
+      if (lbl) lbl.textContent = 'FAILED';
+      const btn = document.getElementById('vidrecBtn');
+      if (btn) btn.disabled = false;
+      toast('Video upload failed · ' + (e.message || 'unknown'), 'err');
+    }
+    console.error('[video upload]', e);
+  }
+}
+
+window.addEventListener('beforeunload', () => {
+  if (vidStream) try { vidStream.getTracks().forEach(t => t.stop()); } catch {}
+});
+
 // ═══ Task Detail ═══
 async function showTask(id) {
   const c = document.getElementById('content');
@@ -1258,7 +1473,7 @@ async function showProject(id) {
   const c = document.getElementById('content');
   const p = await api(`/projects?id=${id}`);
   const files = p.files || [];
-  const photos = files.filter(f => f.mime_type && f.mime_type.startsWith('image/'));
+  const photos = files.filter(f => f.mime_type && (f.mime_type.startsWith('image/') || f.mime_type.startsWith('video/')));
   const tickets = (p.tickets || []).filter(t => t.status !== 'cancelled');
   const projName = p.name || p.address || 'Project';
 
@@ -1334,17 +1549,24 @@ async function showProject(id) {
       html += `<div class="gallery-group">
         <div class="gallery-group-head"><span class="lbl">${CAT_LABEL[cat] || cat.toUpperCase()}</span><span class="badge badge-open">${list.length}</span></div>
         <div class="photo-grid">
-          ${list.map(f => `<div class="photo-thumb ${f.client_visible?'starred':''}">
-            <img src="${esc(f.url)}" alt="${esc(f.caption||'')}" loading="lazy">
-            <button class="thumb-btn thumb-star ${f.client_visible?'on':''}" onclick="event.stopPropagation();togglePhotoStar('${f.id}',${!f.client_visible},'${id}')" title="Add to customer showcase">★</button>
-            <button class="thumb-btn thumb-del" onclick="event.stopPropagation();deletePhoto('${f.id}','${id}')" title="Delete">✕</button>
-          </div>`).join('')}
+          ${list.map(f => {
+            const isVid = typeof f.mime_type === 'string' && f.mime_type.startsWith('video/');
+            const media = isVid
+              ? `<video src="${esc(f.url)}" preload="metadata" muted playsinline></video><div class="vid-badge">▶ VIDEO</div>`
+              : `<img src="${esc(f.url)}" alt="${esc(f.caption||'')}" loading="lazy">`;
+            return `<div class="photo-thumb ${f.client_visible?'starred':''}">
+              ${media}
+              <button class="thumb-btn thumb-star ${f.client_visible?'on':''}" onclick="event.stopPropagation();togglePhotoStar('${f.id}',${!f.client_visible},'${id}')" title="Add to customer showcase">★</button>
+              <button class="thumb-btn thumb-del" onclick="event.stopPropagation();deletePhoto('${f.id}','${id}')" title="Delete">✕</button>
+            </div>`;
+          }).join('')}
         </div>
       </div>`;
     }
   }
-  html += `<div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-top:10px">
+  html += `<div style="display:grid;grid-template-columns:2fr 1.4fr 1fr;gap:8px;margin-top:10px">
       <button class="btn btn-primary" style="padding:14px;font-size:0.9em" onclick="openCamera('${id}')">📸 Take Photos</button>
+      <button class="btn btn-outline" style="padding:14px;font-size:0.84em" onclick="openVideoRecorder('${id}')">📹 Take Video</button>
       <button class="btn btn-outline" style="padding:14px;font-size:0.82em" onclick="document.getElementById('libraryInput').click()">📁 Library</button>
     </div>
     <input type="file" id="libraryInput" accept="image/*,video/*" multiple style="display:none" onchange="handlePhotoUpload('${id}',this.files)">`;
@@ -1497,7 +1719,7 @@ async function renderMedia(c) {
       .then(j => (j.files || []).map(f => ({ ...f, _projectName: p.name || p.address || 'Project', _projectId: p.id })))
       .catch(() => [])
   ));
-  const allPhotos = results.flat().filter(f => f.mime_type && f.mime_type.startsWith('image/'));
+  const allPhotos = results.flat().filter(f => f.mime_type && (f.mime_type.startsWith('image/') || f.mime_type.startsWith('video/')));
   allPhotos.sort((a,b) => (b.uploaded_at || '').localeCompare(a.uploaded_at || ''));
 
   renderMediaGrid(allPhotos);
@@ -1535,11 +1757,17 @@ function renderMediaGrid(allPhotos) {
         <span class="badge badge-open">${photos.length}</span>
       </div>
       <div class="photo-grid">
-        ${photos.map(f => `<div class="photo-thumb ${f.client_visible?'starred':''}">
-          <img src="${esc(f.url)}" alt="${esc(f.caption||'')}" loading="lazy">
-          <button class="thumb-btn thumb-star ${f.client_visible?'on':''}" onclick="event.stopPropagation();togglePhotoStarMedia('${f.id}',${!f.client_visible})" title="Add to customer showcase">★</button>
-          <button class="thumb-btn thumb-del" onclick="event.stopPropagation();deletePhotoMedia('${f.id}')" title="Delete">✕</button>
-        </div>`).join('')}
+        ${photos.map(f => {
+          const isVid = typeof f.mime_type === 'string' && f.mime_type.startsWith('video/');
+          const media = isVid
+            ? `<video src="${esc(f.url)}" preload="metadata" muted playsinline></video><div class="vid-badge">▶ VIDEO</div>`
+            : `<img src="${esc(f.url)}" alt="${esc(f.caption||'')}" loading="lazy">`;
+          return `<div class="photo-thumb ${f.client_visible?'starred':''}">
+            ${media}
+            <button class="thumb-btn thumb-star ${f.client_visible?'on':''}" onclick="event.stopPropagation();togglePhotoStarMedia('${f.id}',${!f.client_visible})" title="Add to customer showcase">★</button>
+            <button class="thumb-btn thumb-del" onclick="event.stopPropagation();deletePhotoMedia('${f.id}')" title="Delete">✕</button>
+          </div>`;
+        }).join('')}
       </div>
     </div>`;
   }

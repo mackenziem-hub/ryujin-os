@@ -3780,8 +3780,18 @@ function drawCrewBoard() {
   const dueToday = tickets.filter(t => t.due_date === today && t.status !== 'done' && t.status !== 'cancelled').length;
   const activeTotal = tickets.filter(t => t.status === 'open' || t.status === 'active').length;
 
-  let html = `<div class="page-header"><div><h1>Crew Ops</h1><div class="sub">Kanban &middot; ${tickets.length} total &middot; ${activeTotal} active${overdue?` &middot; <span class="text-red">${overdue} overdue</span>`:''}${dueToday?` &middot; <span class="text-yellow">${dueToday} due today</span>`:''}</div></div>
-    <div style="display:flex;gap:6px"><button class="btn btn-primary btn-sm" onclick="crewNewTicket()">+ New Ticket</button>
+  // Header context: in Cat's Queue, show "Cat's Queue" + a tailored quick-task button.
+  // Defensive: only interpolate assignedFilter into the onclick when it parses
+  // as a UUID. Anything else routes to the generic handler.
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const isCatView = crewState.viewName === "Cat's Queue" && UUID_RE.test(String(crewState.assignedFilter || ''));
+  const headerTitle = isCatView ? "Cat's Queue" : 'Crew Ops';
+  const newBtnLabel = isCatView ? '+ Task for Cat' : '+ New Ticket';
+  const newBtnHandler = isCatView
+    ? `crewNewTicket({ assignedTo: '${crewState.assignedFilter}', priority: 'high' })`
+    : 'crewNewTicket()';
+  let html = `<div class="page-header"><div><h1>${headerTitle}</h1><div class="sub">Kanban &middot; ${tickets.length} total &middot; ${activeTotal} active${overdue?` &middot; <span class="text-red">${overdue} overdue</span>`:''}${dueToday?` &middot; <span class="text-yellow">${dueToday} due today</span>`:''}</div></div>
+    <div style="display:flex;gap:6px"><button class="btn btn-primary btn-sm" onclick="${newBtnHandler}">${newBtnLabel}</button>
     <button class="btn btn-outline btn-sm" onclick="refreshCrewBoard()">Refresh</button></div></div>`;
 
   html += `<div class="crew-toolbar">
@@ -4095,7 +4105,7 @@ async function crewDeleteTicket() {
   } catch (e) { toast('Network error', 'error'); }
 }
 
-function crewNewTicket() {
+function crewNewTicket(opts = {}) {
   const m = document.getElementById('main');
   // Inject a modal-style form on top of current view
   document.getElementById('crewNewModal')?.remove();
@@ -4103,13 +4113,16 @@ function crewNewTicket() {
   wrap.id = 'crewNewModal';
   wrap.style.cssText = 'position:fixed;inset:0;z-index:9996;background:rgba(6,10,20,0.7);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:20px';
   wrap.onclick = (e) => { if (e.target === wrap) wrap.remove(); };
+  const modalTitle = opts.assignedTo && crewState.assignedFilter === opts.assignedTo && crewState.viewName === "Cat's Queue"
+    ? 'Task for Cat'
+    : 'New Ticket';
   wrap.innerHTML = `<div class="panel" style="width:100%;max-width:520px;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">
-    <div class="panel-header"><div class="panel-title">New Ticket</div></div>
+    <div class="panel-header"><div class="panel-title">${modalTitle}</div></div>
     <div class="form-group"><label class="form-label">Title *</label><input type="text" id="ntk_title" placeholder="Job title or task name" autofocus></div>
     <div class="form-group"><label class="form-label">Description</label><textarea id="ntk_desc" rows="3" placeholder="Details, scope, instructions..."></textarea></div>
     <div class="form-grid">
       <div class="form-group"><label class="form-label">Priority</label><select id="ntk_priority">
-        <option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option><option value="urgent">Urgent</option>
+        <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="urgent">Urgent</option>
       </select></div>
       <div class="form-group"><label class="form-label">Status</label><select id="ntk_status">
         <option value="open" selected>To Do</option><option value="active">In Progress</option><option value="blocked">Blocked</option>
@@ -4128,13 +4141,18 @@ function crewNewTicket() {
   // as HTML).
   const assignSel = document.getElementById('ntk_assigned');
   const sortedUsers = (crewState.users || []).slice().sort((a,b) => (a.name||'').localeCompare(b.name||''));
+  const preselectId = opts.assignedTo || crewState.assignedFilter || null;
   for (const u of sortedUsers) {
     const opt = document.createElement('option');
     opt.value = u.id;
     opt.textContent = (u.name || u.email || u.id) + (u.role ? ' · ' + u.role : '');
-    if (crewState.assignedFilter && crewState.assignedFilter === u.id) opt.selected = true;
+    if (preselectId && preselectId === u.id) opt.selected = true;
     assignSel.appendChild(opt);
   }
+  // Apply priority pre-fill (default medium when no override). Done after
+  // markup so the option is populated and selection sticks.
+  const priSel = document.getElementById('ntk_priority');
+  if (priSel) priSel.value = opts.priority || 'medium';
 }
 
 async function crewCreateTicket() {
