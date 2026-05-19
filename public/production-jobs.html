@@ -30,8 +30,9 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
 .hero .eyebrow{font-family:'Share Tech Mono',monospace;font-size:0.72em;color:#fb923c;letter-spacing:3px;margin-bottom:6px}
 .hero h1{font-family:'Orbitron',sans-serif;font-size:2em;font-weight:900;letter-spacing:-0.5px;background:linear-gradient(135deg,#fff 30%,#fb923c);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
 
-.board{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
-@media (max-width:1280px){.board{grid-template-columns:repeat(3,1fr)}}
+.board{display:grid;grid-template-columns:repeat(6,1fr);gap:10px}
+@media (max-width:1500px){.board{grid-template-columns:repeat(4,1fr)}}
+@media (max-width:1100px){.board{grid-template-columns:repeat(3,1fr)}}
 @media (max-width:880px){.board{grid-template-columns:repeat(2,1fr)}}
 @media (max-width:600px){.board{grid-template-columns:1fr}}
 
@@ -39,6 +40,11 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
 .col-head{padding:14px 16px;background:rgba(6,10,20,0.65);border-bottom:1px solid rgba(251,146,60,0.14);display:flex;justify-content:space-between;align-items:center}
 .col-head .name{font-family:'Orbitron',sans-serif;font-size:0.76em;font-weight:800;letter-spacing:2px;color:#fb923c}
 .col-head .count{font-family:'Share Tech Mono',monospace;font-size:0.72em;color:rgba(200,220,255,0.55);letter-spacing:1.5px}
+.col.activenow .col-head{background:rgba(34,211,238,0.16)}
+.col.activenow .col-head .name{color:#22d3ee}
+.col.activenow{border-color:rgba(34,211,238,0.35);box-shadow:0 0 0 1px rgba(34,211,238,0.18),0 0 22px rgba(34,211,238,0.08)}
+.col.activenow .card{border-color:rgba(34,211,238,0.28)}
+.col.activenow .card .date{color:#22d3ee}
 .col.today .col-head{background:rgba(251,146,60,0.12)}
 .col.today .col-head .name{color:#fb923c}
 .col.week .col-head .name{color:#facc15}
@@ -135,12 +141,16 @@ async function loadAll(){
     const r = await fetch('/api/workorders?limit=200', { headers: { 'x-tenant-id': 'plus-ultra' } });
     if (!r.ok) { document.getElementById('board').innerHTML = '<div class="loading" style="grid-column:1/-1">HTTP ' + r.status + '</div>'; return; }
     const { workorders } = await r.json();
-    const active = (workorders || []).filter(w => ['issued','in_progress'].includes(w.status));
+    // ACTIVE NOW = anything in_progress, regardless of date. Pulls jobs you are physically on right now.
+    const activeNow = (workorders || []).filter(w => w.status === 'in_progress')
+      .sort((a,b) => new Date(a.start_date || 0) - new Date(b.start_date || 0));
+    // Scheduled = issued but not yet started. Bucket these by date.
+    const scheduled = (workorders || []).filter(w => w.status === 'issued');
     const completed = (workorders || []).filter(w => w.status === 'complete')
       .sort((a,b) => new Date(b.completed_at || b.updated_at || 0) - new Date(a.completed_at || a.updated_at || 0));
 
     const today = [], thisWeek = [], upcoming = [], overdue = [], unscheduled = [];
-    active.forEach(w => {
+    scheduled.forEach(w => {
       const diff = daysBetween(w.start_date);
       if (diff === null) unscheduled.push(w);
       else if (diff < 0) overdue.push(w);
@@ -162,14 +172,15 @@ async function loadAll(){
     `;
 
     document.getElementById('board').innerHTML =
-      col('overdue', 'OVERDUE', overdue, {overdue: true}) +
+      col('activenow', 'ACTIVE NOW', activeNow) +
       col('today', 'TODAY + TOMORROW', today) +
       col('week', 'THIS WEEK', thisWeek) +
       col('upcoming', 'UPCOMING + UNSCHEDULED', [...upcoming, ...unscheduled]) +
+      col('overdue', 'OVERDUE', overdue, {overdue: true}) +
       col('completed', 'COMPLETED', completed, {complete: true});
 
-    const total = active.length + completed.length;
-    document.getElementById('countBadge').textContent = active.length + ' ACTIVE · ' + completed.length + ' DONE';
+    const activeTotal = activeNow.length + scheduled.length;
+    document.getElementById('countBadge').textContent = activeNow.length + ' ACTIVE NOW · ' + scheduled.length + ' SCHEDULED · ' + completed.length + ' DONE';
   } catch(e) {
     document.getElementById('board').innerHTML = '<div class="loading" style="grid-column:1/-1">Error: ' + e.message + '</div>';
   }

@@ -705,6 +705,10 @@ setTimeout(() => {
       <svg viewBox="0 0 24 24"><rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="10" rx="1"/><rect x="17" y="4" width="4" height="13" rx="1"/></svg>
       <div class="tooltip">Crew Ops</div>
     </div>
+    <div class="nav-icon" data-page="cat-queue" onclick="navigate('cat-queue')">
+      <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+      <div class="tooltip">Cat's Queue</div>
+    </div>
     <div class="nav-icon" data-page="documents" onclick="navigate('documents')">
       <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
       <div class="tooltip">Documents</div>
@@ -1061,7 +1065,7 @@ const sfx = {
   }
 };
 
-const PAGE_TITLES = {dashboard:'Command Center',quote:'Quote Builder',funnel:'Funnel Builder',estimates:'Estimates',customers:'Customers',offers:'Offers',products:'Products',settings:'Settings',crew:'Crew Ops',documents:'Documents'};
+const PAGE_TITLES = {dashboard:'Command Center',quote:'Quote Builder',funnel:'Funnel Builder',estimates:'Estimates',customers:'Customers',offers:'Offers',products:'Products',settings:'Settings',crew:'Crew Ops','cat-queue':"Cat's Queue",documents:'Documents'};
 
 // ── Quick Gutter Quote modal ──
 // Standalone gutter estimate flow that uses lib/gutterQuoteEngine via the
@@ -1251,6 +1255,7 @@ function renderPage() {
     case 'products': return renderProducts(m);
     case 'settings': return renderSettings(m);
     case 'crew': return renderCrewOps(m);
+    case 'cat-queue': return renderCatQueue(m);
     case 'documents': return renderDocuments(m);
     default: m.innerHTML = '<div class="loading"><div class="spinner"></div>Coming soon</div>';
   }
@@ -3714,21 +3719,57 @@ const CREW_COLUMNS = [
   { key: 'cancelled', label: 'Cancelled' }
 ];
 const CREW_PRIORITIES = ['low','medium','high','urgent'];
-let crewState = { view: 'kanban', tickets: [], showNew: false, selected: null, statusFilter: 'open-active', priorityFilter: 'all' };
+let crewState = { view: 'kanban', tickets: [], users: [], showNew: false, selected: null, statusFilter: 'open-active', priorityFilter: 'all', assignedFilter: null, viewName: null };
 
-async function renderCrewOps(m) {
-  m.innerHTML = `<div class="page-header"><div><h1>Crew Ops</h1><div class="sub">Kanban Task Board</div></div>
+// Refresh button handler: preserves the current view's filter context
+// (e.g. staying on Cat's Queue after Refresh instead of resetting to full board).
+function refreshCrewBoard() {
+  const m = document.getElementById('main');
+  if (crewState.viewName === "Cat's Queue") return renderCatQueue(m);
+  return renderCrewOps(m);
+}
+
+async function renderCrewOps(m, opts = {}) {
+  // Reset filter unless caller explicitly sets one (Cat's Queue passes assignedFilter)
+  crewState.assignedFilter = opts.assignedFilter || null;
+  crewState.viewName = opts.viewName || null;
+  const headerLabel = crewState.viewName || 'Crew Ops';
+  m.innerHTML = `<div class="page-header"><div><h1>${esc(headerLabel)}</h1><div class="sub">Kanban Task Board</div></div>
     <div style="display:flex;gap:6px"><button class="btn btn-primary btn-sm" onclick="crewNewTicket()">+ New Ticket</button>
-    <button class="btn btn-outline btn-sm" onclick="renderCrewOps(document.getElementById('main'))">Refresh</button></div></div>
+    <button class="btn btn-outline btn-sm" onclick="refreshCrewBoard()">Refresh</button></div></div>
     <div class="loading"><div class="spinner"></div>Loading tickets...</div>`;
   try {
-    const data = await api('/tickets?limit=200');
-    crewState.tickets = data.tickets || [];
+    const [ticketsData, usersData] = await Promise.all([
+      api('/tickets?limit=200'),
+      api('/users').catch(() => ({ users: [] }))
+    ]);
+    crewState.tickets = ticketsData.tickets || [];
+    crewState.users = usersData.users || [];
   } catch (e) {
     m.innerHTML = '<div class="panel"><div style="color:var(--red)">Failed to load tickets: ' + esc(e.message||'unknown') + '</div></div>';
     return;
   }
   drawCrewBoard();
+}
+
+// Cat's Queue: filtered view of Crew Ops scoped to Catherine. Same renderer,
+// same kanban, just pre-filtered by assigned_to. Resolves Cat's user_id from
+// /api/users by matching name or email; if she's not in the tenant users
+// table the view falls back with an explanatory message.
+async function renderCatQueue(m) {
+  m.innerHTML = `<div class="page-header"><div><h1>Cat's Queue</h1><div class="sub">Priority-sorted task board</div></div></div>
+    <div class="loading"><div class="spinner"></div>Resolving Catherine's user...</div>`;
+  let users = crewState.users;
+  if (!users || !users.length) {
+    try { const d = await api('/users'); users = d.users || []; crewState.users = users; } catch {}
+  }
+  // Match Catherine specifically. Avoid matching "cathy", "catelyn" etc.
+  const cat = (users || []).find(u => /\bcatherine\b/i.test(u.name || '') || /^catherine[.@]/i.test(u.email || ''));
+  if (!cat) {
+    m.innerHTML = '<div class="panel"><div style="color:var(--red)">Could not find Catherine in the users table. Add her via Team management before using Cat\'s Queue.</div></div>';
+    return;
+  }
+  return renderCrewOps(m, { assignedFilter: cat.id, viewName: "Cat's Queue" });
 }
 
 function drawCrewBoard() {
@@ -3741,7 +3782,7 @@ function drawCrewBoard() {
 
   let html = `<div class="page-header"><div><h1>Crew Ops</h1><div class="sub">Kanban &middot; ${tickets.length} total &middot; ${activeTotal} active${overdue?` &middot; <span class="text-red">${overdue} overdue</span>`:''}${dueToday?` &middot; <span class="text-yellow">${dueToday} due today</span>`:''}</div></div>
     <div style="display:flex;gap:6px"><button class="btn btn-primary btn-sm" onclick="crewNewTicket()">+ New Ticket</button>
-    <button class="btn btn-outline btn-sm" onclick="renderCrewOps(document.getElementById('main'))">Refresh</button></div></div>`;
+    <button class="btn btn-outline btn-sm" onclick="refreshCrewBoard()">Refresh</button></div></div>`;
 
   html += `<div class="crew-toolbar">
     <div class="view-toggle">
@@ -3758,8 +3799,9 @@ function drawCrewBoard() {
     </select>
   </div>`;
 
-  // Filter tickets per current statusFilter
+  // Filter tickets per current statusFilter + optional assignedFilter (Cat's Queue)
   const visible = tickets.filter(t => {
+    if (crewState.assignedFilter && t.assigned_to !== crewState.assignedFilter) return false;
     if (crewState.priorityFilter !== 'all' && t.priority !== crewState.priorityFilter) return false;
     if (crewState.statusFilter === 'open-active') return ['open','active','blocked'].includes(t.status);
     if (crewState.statusFilter === 'done') return t.status === 'done' || t.status === 'cancelled';
@@ -4074,11 +4116,25 @@ function crewNewTicket() {
       </select></div>
       <div class="form-group"><label class="form-label">Due Date</label><input type="date" id="ntk_due"></div>
       <div class="form-group"><label class="form-label">Tags (comma)</label><input type="text" id="ntk_tags" placeholder="repair, callback"></div>
-      <div class="form-group form-full"><label class="form-label">Assigned User ID (optional)</label><input type="text" id="ntk_assigned" placeholder="UUID"></div>
+      <div class="form-group form-full"><label class="form-label">Assigned To</label>
+        <select id="ntk_assigned"><option value="">Unassigned</option></select>
+      </div>
     </div>
     <div style="display:flex;gap:8px;margin-top:14px"><button class="btn btn-primary" onclick="crewCreateTicket()">Create</button><button class="btn btn-outline" onclick="document.getElementById('crewNewModal').remove()">Cancel</button></div>
   </div>`;
   document.body.appendChild(wrap);
+  // Populate Assigned To dropdown via DOM (avoids attribute-context XSS from
+  // any user-controlled fields; option.value is set as a property, not parsed
+  // as HTML).
+  const assignSel = document.getElementById('ntk_assigned');
+  const sortedUsers = (crewState.users || []).slice().sort((a,b) => (a.name||'').localeCompare(b.name||''));
+  for (const u of sortedUsers) {
+    const opt = document.createElement('option');
+    opt.value = u.id;
+    opt.textContent = (u.name || u.email || u.id) + (u.role ? ' · ' + u.role : '');
+    if (crewState.assignedFilter && crewState.assignedFilter === u.id) opt.selected = true;
+    assignSel.appendChild(opt);
+  }
 }
 
 async function crewCreateTicket() {
