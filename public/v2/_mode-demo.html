@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ryujin OS · Mode infrastructure demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/ryujin-tokens.css">
+<link rel="stylesheet" href="/assets/ryujin-base.css">
+<link rel="stylesheet" href="/assets/agent-dock.css">
+<style>
+  body {
+    padding: 0 0 var(--rj-space-24);
+    background:
+      radial-gradient(circle at top right, rgba(168, 90, 44, 0.04), transparent 60%),
+      url('/assets/motifs/birchbark-tile.webp') center / 600px repeat,
+      var(--rj-bg-page);
+    background-blend-mode: multiply, normal, normal;
+  }
+
+  .mode-toggle {
+    display: inline-flex;
+    background: var(--rj-bg-surface);
+    border-radius: var(--rj-radius-pill);
+    padding: 3px;
+    border: 1px solid var(--rj-border-subtle);
+  }
+  .mode-toggle button {
+    border: 0;
+    background: transparent;
+    padding: var(--rj-space-1) var(--rj-space-4);
+    border-radius: var(--rj-radius-pill);
+    font-family: var(--rj-font-sans);
+    font-size: var(--rj-text-xs);
+    font-weight: var(--rj-weight-semibold);
+    letter-spacing: var(--rj-tracking-wide);
+    text-transform: uppercase;
+    color: var(--rj-text-secondary);
+    cursor: pointer;
+    transition: all var(--rj-duration-fast) var(--rj-ease-out);
+  }
+  .mode-toggle button.active {
+    background: var(--rj-copper-600);
+    color: var(--rj-text-inverse);
+    box-shadow: var(--rj-shadow-sm);
+  }
+  .mode-toggle button:not(.active):hover { color: var(--rj-text-primary); }
+
+  .stage {
+    max-width: 1200px;
+    margin: var(--rj-space-8) auto 0;
+    padding: 0 var(--rj-space-6);
+  }
+
+  .view {
+    display: none;
+    animation: rj-view-enter var(--rj-duration-slow) var(--rj-ease-out);
+  }
+  body[data-view-mode="graph"]  .view-graph  { display: block; }
+  body[data-view-mode="canvas"] .view-canvas { display: block; }
+  body[data-view-mode="river"]  .view-river  { display: block; }
+
+  @keyframes rj-view-enter {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* GRAPH view */
+  .breadcrumb {
+    font-family: var(--rj-font-mono);
+    font-size: var(--rj-text-sm);
+    color: var(--rj-text-muted);
+    margin-bottom: var(--rj-space-4);
+  }
+  .breadcrumb b { color: var(--rj-copper-700); }
+
+  /* CANVAS view */
+  .canvas-stage {
+    position: relative;
+    height: 540px;
+    background:
+      radial-gradient(circle at center, rgba(168, 90, 44, 0.04), transparent 70%),
+      var(--rj-bg-elevated);
+    border: 1px solid var(--rj-border-subtle);
+    border-radius: var(--rj-radius-lg);
+    overflow: hidden;
+  }
+  .canvas-stage svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+  .cluster {
+    position: absolute;
+    min-width: 180px;
+    padding: var(--rj-space-3);
+    background: var(--rj-bg-page);
+    border: 1px solid var(--rj-border-default);
+    border-radius: var(--rj-radius-md);
+    box-shadow: var(--rj-shadow-sm);
+  }
+  .cluster h3 {
+    margin: 0 0 var(--rj-space-2);
+    font-size: var(--rj-text-xs);
+    text-transform: uppercase;
+    letter-spacing: var(--rj-tracking-caps);
+    color: var(--rj-copper-700);
+    font-weight: var(--rj-weight-bold);
+  }
+  .cluster ul { margin: 0; padding: 0; list-style: none; font-size: var(--rj-text-sm); }
+  .cluster ul li { padding: 2px 0; color: var(--rj-text-body); }
+  .canvas-zoom {
+    position: absolute;
+    bottom: var(--rj-space-3);
+    right: var(--rj-space-3);
+    font-family: var(--rj-font-mono);
+    font-size: var(--rj-text-xs);
+    color: var(--rj-text-muted);
+    background: var(--rj-bg-elevated);
+    padding: var(--rj-space-1) var(--rj-space-2);
+    border-radius: var(--rj-radius-sm);
+    border: 1px solid var(--rj-border-subtle);
+  }
+
+  /* RIVER view */
+  .river-feed { display: grid; grid-template-columns: 80px 1fr; gap: var(--rj-space-3); }
+  .river-time { font-family: var(--rj-font-mono); font-size: var(--rj-text-sm); color: var(--rj-text-muted); padding-top: var(--rj-space-2); }
+  .river-card {
+    background: var(--rj-bg-elevated);
+    border: 1px solid var(--rj-border-subtle);
+    border-radius: var(--rj-radius-md);
+    padding: var(--rj-space-3) var(--rj-space-4);
+    margin-bottom: var(--rj-space-3);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--rj-space-3);
+  }
+  .river-card .body { flex: 1; }
+  .river-card .body b { display: block; color: var(--rj-text-primary); font-weight: var(--rj-weight-semibold); }
+  .river-card .body span.sub { color: var(--rj-text-muted); font-size: var(--rj-text-sm); }
+</style>
+</head>
+<body>
+
+<!-- Topbar with mode toggle wired to view-mode.js -->
+<header class="rj-topbar">
+  <div class="rj-topbar-brand">
+    <svg class="rj-topbar-emblem" viewBox="0 0 24 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+      <path d="M2 7 Q 6 1 10 7 Q 14 13 18 7 Q 22 1 22 1 M 2 7 L 22 7"/>
+      <circle cx="12" cy="7" r="1.5" fill="currentColor"/>
+    </svg>
+    Ryujin OS
+  </div>
+  <nav class="rj-topbar-nav">
+    <a href="#" class="active">Cockpit</a>
+    <a href="#">Sales</a>
+    <a href="#">Production</a>
+    <a href="#">Finance</a>
+    <a href="#">Admin</a>
+  </nav>
+  <div class="mode-toggle">
+    <button class="rj-mode-toggle-btn" data-mode="graph">Graph</button>
+    <button class="rj-mode-toggle-btn" data-mode="canvas">Canvas</button>
+    <button class="rj-mode-toggle-btn" data-mode="river">River</button>
+  </div>
+</header>
+
+<div class="stage">
+
+  <p class="rj-eyebrow" style="margin-bottom: var(--rj-space-2);">Phase 1 · Mode infrastructure</p>
+  <h1 class="rj-h1">Three view modes, one dataset</h1>
+  <p class="rj-secondary" style="margin: var(--rj-space-2) 0 var(--rj-space-8); max-width: var(--rj-width-prose);">
+    The same noun renders three ways. Switch via the top-right toggle. Mode persists in <code>localStorage.ry_view_mode</code>. The agent dock at bottom-right stays mounted across mode changes.
+  </p>
+
+  <!-- ============= GRAPH ============= -->
+  <section class="view view-graph">
+    <div class="breadcrumb">Sales › Customers › <b>Demo Customer</b> › Job: 123 Sample</div>
+
+    <div class="rj-panel rj-panel-featured rj-panel-flush">
+      <div class="rj-panel-header rj-panel-header-ornate">
+        <div>
+          <p class="rj-eyebrow" style="margin: 0;">Customer</p>
+          <h3 class="rj-h3" style="margin-top: 2px;">Demo Customer</h3>
+        </div>
+        <span class="rj-chip rj-pillar rj-pillar-customer">Customer</span>
+      </div>
+      <div class="rj-panel-body">
+        <p class="rj-secondary" style="margin: 0 0 var(--rj-space-4);">123 Sample St, Example NB · 555-0100 · since 2026-01</p>
+        <div class="rj-stat-ornate">
+          <div class="rj-stat-label">Lifetime value</div>
+          <div class="rj-stat-value">$1,000</div>
+        </div>
+        <div class="rj-progress" style="margin-top: var(--rj-space-4); max-width: 420px;">
+          <div class="rj-progress-bar" style="width: 62%;"></div>
+        </div>
+
+        <hr class="rj-divider">
+
+        <div class="rj-stack">
+          <div class="rj-card rj-card-interactive rj-card-ornate">
+            <div class="rj-row rj-row-between">
+              <div class="rj-row">
+                <span class="rj-chip rj-pillar rj-pillar-production">Jobs</span>
+                <b style="font-size: var(--rj-text-base);">123 Sample · draft · $1,000</b>
+              </div>
+              <span class="rj-muted">›</span>
+            </div>
+          </div>
+          <div class="rj-card rj-card-interactive rj-card-ornate">
+            <div class="rj-row rj-row-between">
+              <div class="rj-row">
+                <span class="rj-chip rj-pillar rj-pillar-sales">Proposals</span>
+                <b style="font-size: var(--rj-text-base);">DEMO-0001 · signed · 2026-01-15</b>
+              </div>
+              <span class="rj-muted">›</span>
+            </div>
+          </div>
+          <div class="rj-card rj-card-interactive rj-card-ornate">
+            <div class="rj-row rj-row-between">
+              <div class="rj-row">
+                <span class="rj-chip rj-pillar rj-pillar-marketing">Comms</span>
+                <b style="font-size: var(--rj-text-base);">3 messages · last 2026-01-20</b>
+              </div>
+              <span class="rj-muted">›</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============= CANVAS ============= -->
+  <section class="view view-canvas">
+    <div class="canvas-stage">
+      <svg viewBox="0 0 1200 540" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="connector" x1="0" x2="1">
+            <stop offset="0%" stop-color="#d9a37a" stop-opacity="0.6"/>
+            <stop offset="100%" stop-color="#a85a2c" stop-opacity="0.8"/>
+          </linearGradient>
+        </defs>
+        <!-- Curved connectors between cluster centers -->
+        <path d="M 230 110 Q 400 60 560 200" stroke="url(#connector)" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <path d="M 230 110 Q 220 280 290 400" stroke="url(#connector)" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <path d="M 560 200 Q 760 240 920 140" stroke="url(#connector)" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <path d="M 560 200 Q 700 360 880 420" stroke="url(#connector)" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <path d="M 290 400 Q 580 420 880 420" stroke="url(#connector)" stroke-width="2" fill="none" stroke-linecap="round"/>
+      </svg>
+
+      <div class="cluster" style="top: 60px; left: 80px;">
+        <h3>Sales · 12 leads</h3>
+        <ul><li>Demo C.</li><li>Sample H.</li><li>Anna W.</li><li>Example F.</li></ul>
+      </div>
+      <div class="cluster" style="top: 150px; left: 460px;">
+        <h3>Customers</h3>
+        <ul><li>Demo Customer</li><li>Sample Customer</li><li>Anna Whitepine</li></ul>
+      </div>
+      <div class="cluster" style="top: 80px; left: 820px;">
+        <h3>Production · 8 active</h3>
+        <ul><li>123 Sample</li><li>456 Birch</li><li>78 Maple</li><li>9 Cedar</li></ul>
+      </div>
+      <div class="cluster" style="top: 360px; left: 200px;">
+        <h3>Crew</h3>
+        <ul><li>AJ</li><li>Diego</li><li>Ryan</li></ul>
+      </div>
+      <div class="cluster" style="top: 380px; left: 780px;">
+        <h3>Materials</h3>
+        <ul><li>Coastal · order #233</li><li>GenTek · order #244</li></ul>
+      </div>
+
+      <div class="canvas-zoom">zoom 0.6×</div>
+    </div>
+  </section>
+
+  <!-- ============= RIVER ============= -->
+  <section class="view view-river">
+    <div class="river-feed">
+      <div class="river-time">23:13</div>
+      <div class="river-card">
+        <div class="body">
+          <b>Demo Smoke Test accepted · $1,150</b>
+          <span class="sub">Proposal DEMO-0001 flipped to signed</span>
+        </div>
+        <span class="rj-chip rj-pillar rj-pillar-sales">Sales</span>
+      </div>
+
+      <div class="river-time">21:53</div>
+      <div class="river-card">
+        <div class="body">
+          <b>EA replied: re morning brief</b>
+          <span class="sub">Comms thread updated</span>
+        </div>
+        <span class="rj-chip rj-pillar rj-pillar-marketing">Comms</span>
+      </div>
+
+      <div class="river-time">16:30</div>
+      <div class="river-card">
+        <div class="body">
+          <b>Sample lead converted · $5,200</b>
+          <span class="sub">Estimate accepted, deposit invoice queued</span>
+        </div>
+        <span class="rj-chip rj-pillar rj-pillar-sales">Sales</span>
+      </div>
+
+      <div class="river-time">14:12</div>
+      <div class="river-card">
+        <div class="body">
+          <b>New lead · Demo via intake form</b>
+          <span class="sub">Routed to follow-up sequence</span>
+        </div>
+        <span class="rj-chip rj-pillar rj-pillar-marketing">Marketing</span>
+      </div>
+
+      <div class="rj-divider-bead rj-divider-bead-compact" style="grid-column: 1 / -1;"></div>
+
+      <div class="river-time">10:00</div>
+      <div class="river-card">
+        <div class="body">
+          <b>Cornhill closeout due</b>
+          <span class="sub">Final paysheet pending</span>
+        </div>
+        <span class="rj-chip rj-pillar rj-pillar-production">Production</span>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script type="module" src="/assets/view-mode.js"></script>
+<script type="module" src="/assets/agent-dock.js"></script>
+
+</body>
+</html>

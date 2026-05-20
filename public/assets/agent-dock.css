@@ -1,0 +1,311 @@
+/*
+ * Ryujin OS · Agent dock
+ *
+ * Persistent assistant chat surface that lives across all three view modes.
+ * Floats at the bottom-right when collapsed (small circular emblem button),
+ * expands to a vertical panel docked to the right edge.
+ *
+ * Companion: /assets/agent-dock.js (self-mounting).
+ * Requires: /assets/ryujin-tokens.css (for the design tokens it references).
+ */
+
+.rj-agent-dock {
+  position: fixed;
+  z-index: var(--rj-z-dock);
+  font-family: var(--rj-font-sans);
+  color: var(--rj-text-body);
+}
+
+/* ----------------------------------------------------------------------
+ * Collapsed state · circular FAB at bottom-right
+ * ---------------------------------------------------------------------- */
+.rj-agent-dock[data-open="false"] {
+  bottom: var(--rj-space-6);
+  right: var(--rj-space-6);
+  width: 56px;
+  height: 56px;
+}
+
+.rj-agent-dock[data-open="false"] .rj-agent-panel { display: none; }
+
+.rj-agent-fab {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--rj-action-primary);
+  color: var(--rj-action-on-primary);
+  border: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--rj-shadow-lg);
+  transition:
+    transform var(--rj-duration-base) var(--rj-ease-out),
+    background-color var(--rj-duration-fast) var(--rj-ease-out),
+    box-shadow var(--rj-duration-base) var(--rj-ease-out);
+}
+
+.rj-agent-fab:hover {
+  background: var(--rj-action-primary-hover);
+  transform: translateY(-2px) scale(1.04);
+  box-shadow: var(--rj-shadow-xl);
+}
+
+.rj-agent-fab:active { transform: translateY(0) scale(1); }
+
+.rj-agent-fab svg { width: 28px; height: 16px; }
+
+.rj-agent-dock[data-open="true"] .rj-agent-fab { display: none; }
+
+/* ----------------------------------------------------------------------
+ * Expanded state · right-side dock panel
+ * ---------------------------------------------------------------------- */
+.rj-agent-dock[data-open="true"] {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 380px;
+  max-width: 100vw;
+  display: flex;
+}
+
+.rj-agent-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--rj-bg-elevated);
+  border-left: 1px solid var(--rj-border-subtle);
+  box-shadow: -8px 0 32px rgba(31, 26, 20, 0.08);
+  animation: rj-dock-slide-in var(--rj-duration-slow) var(--rj-ease-out);
+}
+
+@keyframes rj-dock-slide-in {
+  from { transform: translateX(40px); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+
+.rj-agent-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--rj-space-4) var(--rj-space-5);
+  border-bottom: 1px solid var(--rj-border-subtle);
+  position: relative;
+}
+
+.rj-agent-header::after {
+  content: '';
+  position: absolute;
+  left: var(--rj-space-5);
+  right: var(--rj-space-5);
+  bottom: -1px;
+  height: 2px;
+  background:
+    linear-gradient(to right,
+      transparent 0,
+      var(--rj-copper-400) 30%,
+      var(--rj-copper-500) 50%,
+      var(--rj-copper-400) 70%,
+      transparent 100%);
+  opacity: 0.5;
+}
+
+.rj-agent-title {
+  display: flex;
+  align-items: center;
+  gap: var(--rj-space-2);
+  font-weight: var(--rj-weight-bold);
+  font-size: var(--rj-text-base);
+  color: var(--rj-text-primary);
+}
+
+.rj-agent-title svg {
+  width: 20px;
+  height: 12px;
+  color: var(--rj-copper-600);
+}
+
+.rj-agent-title .status {
+  font-size: var(--rj-text-xs);
+  font-weight: var(--rj-weight-medium);
+  color: var(--rj-state-success);
+  text-transform: uppercase;
+  letter-spacing: var(--rj-tracking-caps);
+  margin-left: var(--rj-space-2);
+}
+
+.rj-agent-close {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  background: transparent;
+  border-radius: var(--rj-radius-md);
+  color: var(--rj-text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  transition: background-color var(--rj-duration-fast) var(--rj-ease-out);
+}
+.rj-agent-close:hover { background: var(--rj-bg-surface); color: var(--rj-text-primary); }
+
+/* ----------------------------------------------------------------------
+ * Message thread
+ * ---------------------------------------------------------------------- */
+.rj-agent-thread {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--rj-space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--rj-space-3);
+  scroll-behavior: smooth;
+}
+
+.rj-msg {
+  max-width: 80%;
+  padding: var(--rj-space-2) var(--rj-space-3);
+  border-radius: var(--rj-radius-lg);
+  font-size: var(--rj-text-sm);
+  line-height: var(--rj-leading-snug);
+  animation: rj-msg-pop var(--rj-duration-base) var(--rj-ease-out);
+}
+
+@keyframes rj-msg-pop {
+  from { transform: translateY(4px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+.rj-msg-agent {
+  align-self: flex-start;
+  background: var(--rj-bg-surface);
+  color: var(--rj-text-body);
+  border-bottom-left-radius: var(--rj-radius-sm);
+}
+
+.rj-msg-user {
+  align-self: flex-end;
+  background: var(--rj-action-primary);
+  color: var(--rj-action-on-primary);
+  border-bottom-right-radius: var(--rj-radius-sm);
+}
+
+.rj-msg-meta {
+  font-size: 10px;
+  font-weight: var(--rj-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--rj-tracking-caps);
+  color: var(--rj-text-muted);
+  align-self: center;
+  margin: var(--rj-space-2) 0;
+}
+
+/* ----------------------------------------------------------------------
+ * Suggestion chips
+ * ---------------------------------------------------------------------- */
+.rj-agent-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--rj-space-2);
+  padding: var(--rj-space-3) var(--rj-space-5);
+  border-top: 1px solid var(--rj-border-subtle);
+  background: var(--rj-bg-surface);
+}
+
+.rj-agent-chip {
+  padding: var(--rj-space-1) var(--rj-space-3);
+  border-radius: var(--rj-radius-pill);
+  font-size: var(--rj-text-xs);
+  font-weight: var(--rj-weight-semibold);
+  background: var(--rj-bg-elevated);
+  color: var(--rj-text-secondary);
+  border: 1px solid var(--rj-border-default);
+  cursor: pointer;
+  transition: all var(--rj-duration-fast) var(--rj-ease-out);
+  white-space: nowrap;
+}
+
+.rj-agent-chip:hover {
+  border-color: var(--rj-copper-500);
+  color: var(--rj-copper-700);
+  background: var(--rj-copper-200);
+}
+
+/* ----------------------------------------------------------------------
+ * Composer
+ * ---------------------------------------------------------------------- */
+.rj-agent-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--rj-space-2);
+  padding: var(--rj-space-4) var(--rj-space-5);
+  border-top: 1px solid var(--rj-border-subtle);
+  background: var(--rj-bg-elevated);
+}
+
+.rj-agent-input {
+  flex: 1;
+  resize: none;
+  min-height: 36px;
+  max-height: 120px;
+  padding: var(--rj-space-2) var(--rj-space-3);
+  font-family: var(--rj-font-sans);
+  font-size: var(--rj-text-sm);
+  line-height: var(--rj-leading-snug);
+  color: var(--rj-text-primary);
+  background: var(--rj-bg-surface);
+  border: 1px solid var(--rj-border-default);
+  border-radius: var(--rj-radius-md);
+  transition: border-color var(--rj-duration-fast) var(--rj-ease-out);
+}
+
+.rj-agent-input:focus {
+  outline: none;
+  border-color: var(--rj-copper-500);
+  box-shadow: var(--rj-focus-ring);
+}
+
+.rj-agent-send {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: var(--rj-radius-md);
+  background: var(--rj-action-primary);
+  color: var(--rj-action-on-primary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background-color var(--rj-duration-fast) var(--rj-ease-out);
+}
+.rj-agent-send:hover { background: var(--rj-action-primary-hover); }
+.rj-agent-send:disabled { background: var(--rj-charcoal-200); cursor: not-allowed; }
+
+.rj-agent-send svg { width: 16px; height: 16px; }
+
+/* ----------------------------------------------------------------------
+ * Mobile · expand to full-screen overlay
+ * ---------------------------------------------------------------------- */
+@media (max-width: 640px) {
+  .rj-agent-dock[data-open="true"] {
+    width: 100vw;
+  }
+  .rj-agent-dock[data-open="false"] {
+    bottom: var(--rj-space-4);
+    right: var(--rj-space-4);
+  }
+}
+
+/* ----------------------------------------------------------------------
+ * Body padding nudge · only when dock is open on desktop, so the
+ * page content doesn't sit behind it. Applied via a class on body.
+ * ---------------------------------------------------------------------- */
+@media (min-width: 1024px) {
+  body.rj-agent-open {
+    padding-right: 380px;
+    transition: padding-right var(--rj-duration-slow) var(--rj-ease-out);
+  }
+}
