@@ -155,7 +155,8 @@
 </div>
 
 <script type="module">
-  import { RJ_DATA, fmtMoney } from '/v2/_data.js';
+  import { loadLiveData, fmtMoney, escapeHtml as esc } from '/v2/_live-data.js';
+  const RJ_DATA = await loadLiveData('plus-ultra');
 
   // Hero · _tenant.js will override with the live company_name once
   // /api/settings resolves. If that fetch fails (offline/dev), keep the
@@ -168,37 +169,44 @@
   RJ_DATA.pillars.forEach(p => {
     const stats = (RJ_DATA.stats[p.slug] || []).slice(0, 2);
     const card = document.createElement('a');
-    card.href = `/v2/pillar.html?pillar=${p.slug}`;
+    card.href = `/v2/pillar.html?pillar=${encodeURIComponent(p.slug)}`;
     card.className = 'rj-panel rj-card-interactive pillar-card';
     card.innerHTML = `
       <div class="head">
-        <h3>${p.label}</h3>
-        <span class="rj-chip rj-pillar rj-pillar-${p.slug}">${p.label.charAt(0)}</span>
+        <h3>${esc(p.label)}</h3>
+        <span class="rj-chip rj-pillar rj-pillar-${esc(p.slug)}">${esc(p.label.charAt(0))}</span>
       </div>
-      <p class="rj-secondary" style="margin: 0; font-size: var(--rj-text-sm);">${p.blurb}</p>
+      <p class="rj-secondary" style="margin: 0; font-size: var(--rj-text-sm);">${esc(p.blurb)}</p>
       <div class="stats">
-        ${stats.map(s => `<div><div class="label">${s.label}</div><div class="value">${s.value}</div></div>`).join('')}
+        ${stats.map(s => `<div><div class="label">${esc(s.label)}</div><div class="value">${esc(s.value)}</div></div>`).join('')}
       </div>
     `;
     pg.appendChild(card);
   });
 
-  // Graph view: most active customer
-  const focus = RJ_DATA.customers.sort((a, b) => b.ltv - a.ltv)[0];
-  document.getElementById('focus-name').textContent = focus.name;
-  document.getElementById('focus-body').innerHTML = `
-    <p class="rj-secondary" style="margin: 0 0 var(--rj-space-4);">${focus.address} · ${focus.phone} · since ${focus.since}</p>
-    <div class="rj-stat-ornate"><div class="rj-stat-label">Lifetime value</div><div class="rj-stat-value">${fmtMoney(focus.ltv)}</div></div>
-    <hr class="rj-divider">
-    <div class="rj-stack">
-      ${RJ_DATA.jobs.filter(j => j.customerId === focus.id).map(j => `
-        <div class="rj-card rj-card-interactive rj-card-ornate"><div class="rj-row rj-row-between"><div class="rj-row"><span class="rj-chip rj-pillar rj-pillar-production">Job</span><b>${j.address} · ${j.stage} · ${fmtMoney(j.value)}</b></div><span class="rj-muted">›</span></div></div>
-      `).join('')}
-      ${RJ_DATA.proposals.filter(p => p.customerId === focus.id).map(p => `
-        <div class="rj-card rj-card-interactive rj-card-ornate"><div class="rj-row rj-row-between"><div class="rj-row"><span class="rj-chip rj-pillar rj-pillar-sales">Proposal</span><b>${p.quoteId} · ${p.status} · ${fmtMoney(p.value)}</b></div><span class="rj-muted">›</span></div></div>
-      `).join('')}
-    </div>
-  `;
+  // Graph view: most active customer (or empty state)
+  const focus = RJ_DATA.customers.slice().sort((a, b) => b.ltv - a.ltv)[0];
+  if (!focus) {
+    document.getElementById('focus-name').textContent = 'No customers yet';
+    document.getElementById('focus-body').innerHTML = `
+      <p class="rj-secondary">When you add customers, the most active one appears here with their jobs, proposals, and tickets inline.</p>
+    `;
+  } else {
+    document.getElementById('focus-name').textContent = focus.name;
+    document.getElementById('focus-body').innerHTML = `
+      <p class="rj-secondary" style="margin: 0 0 var(--rj-space-4);">${esc(focus.address)} · ${esc(focus.phone)} · since ${esc(focus.since)}</p>
+      <div class="rj-stat-ornate"><div class="rj-stat-label">Lifetime value</div><div class="rj-stat-value">${fmtMoney(focus.ltv)}</div></div>
+      <hr class="rj-divider">
+      <div class="rj-stack">
+        ${RJ_DATA.jobs.filter(j => j.customerId === focus.id).map(j => `
+          <div class="rj-card rj-card-interactive rj-card-ornate"><div class="rj-row rj-row-between"><div class="rj-row"><span class="rj-chip rj-pillar rj-pillar-production">Job</span><b>${esc(j.address)} · ${esc(j.stage)} · ${fmtMoney(j.value)}</b></div><span class="rj-muted">›</span></div></div>
+        `).join('')}
+        ${RJ_DATA.proposals.filter(p => p.customerId === focus.id).map(p => `
+          <div class="rj-card rj-card-interactive rj-card-ornate"><div class="rj-row rj-row-between"><div class="rj-row"><span class="rj-chip rj-pillar rj-pillar-sales">Proposal</span><b>${esc(p.quoteId)} · ${esc(p.status)} · ${fmtMoney(p.value)}</b></div><span class="rj-muted">›</span></div></div>
+        `).join('')}
+      </div>
+    `;
+  }
 
   // Canvas
   const clusters = [
@@ -210,20 +218,20 @@
   ];
   document.getElementById('canvas-clusters').innerHTML = clusters.map(c => `
     <div class="cluster" style="top: ${c.top}px; left: ${c.left}px;">
-      <h3>${c.title}</h3>
-      <ul>${c.items.map(i => `<li>${i}</li>`).join('')}</ul>
+      <h3>${esc(c.title)}</h3>
+      <ul>${c.items.map(i => `<li>${esc(i)}</li>`).join('')}</ul>
     </div>
   `).join('');
 
   // River
   document.getElementById('river-feed').innerHTML = RJ_DATA.events.map(ev => `
-    <div class="river-time">${ev.time}</div>
+    <div class="river-time">${esc(ev.time)}</div>
     <div class="river-card">
       <div class="body">
-        <b>${ev.title}${ev.value ? ' · ' + fmtMoney(ev.value) : ''}</b>
-        <span class="sub">${ev.sub}</span>
+        <b>${esc(ev.title)}${ev.value ? ' · ' + fmtMoney(ev.value) : ''}</b>
+        <span class="sub">${esc(ev.sub)}</span>
       </div>
-      <span class="rj-chip rj-pillar rj-pillar-${ev.pillar}">${ev.pillar}</span>
+      <span class="rj-chip rj-pillar rj-pillar-${esc(ev.pillar)}">${esc(ev.pillar)}</span>
     </div>
   `).join('');
 
