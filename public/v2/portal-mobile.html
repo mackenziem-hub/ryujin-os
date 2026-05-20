@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ryujin OS · Field crew</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/ryujin-tokens.css">
+<link rel="stylesheet" href="/assets/ryujin-base.css">
+<link rel="stylesheet" href="/assets/agent-dock.css">
+<style>
+  body {
+    padding: 0 0 96px;
+    background:
+      url('/assets/motifs/birchbark-tile.webp') center / 600px repeat,
+      var(--rj-bg-page);
+    background-blend-mode: multiply, normal;
+    max-width: 480px;
+    margin: 0 auto;
+  }
+
+  .mob-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--rj-space-4) var(--rj-space-5);
+    background: var(--rj-bg-elevated);
+    border-bottom: 1px solid var(--rj-border-subtle);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .mob-header::after {
+    content: ''; position: absolute; left: 0; right: 0; bottom: -2px; height: 2px;
+    background: linear-gradient(to right, transparent 0, var(--rj-copper-300) 8%, var(--rj-copper-500) 50%, var(--rj-copper-300) 92%, transparent 100%);
+    opacity: 0.6;
+  }
+  .mob-header .brand { display: flex; align-items: center; gap: var(--rj-space-2); font-weight: var(--rj-weight-bold); color: var(--rj-text-primary); }
+  .mob-header .brand svg { width: 22px; height: 12px; color: var(--rj-copper-600); }
+  .mob-mode-chip {
+    padding: 4px 10px;
+    border-radius: var(--rj-radius-pill);
+    background: var(--rj-bg-surface);
+    border: 1px solid var(--rj-border-default);
+    font-size: var(--rj-text-xs);
+    font-weight: var(--rj-weight-semibold);
+    color: var(--rj-copper-700);
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: var(--rj-tracking-wide);
+  }
+
+  .mob-greeting { padding: var(--rj-space-5) var(--rj-space-5) var(--rj-space-3); }
+  .mob-greeting h1 { margin: 0; font-size: var(--rj-text-2xl); font-weight: var(--rj-weight-bold); color: var(--rj-text-primary); }
+  .mob-greeting p  { margin: var(--rj-space-1) 0 0; color: var(--rj-text-secondary); }
+
+  .queue { padding: 0 var(--rj-space-5); }
+  .task-card {
+    display: block;
+    background: var(--rj-bg-elevated);
+    border: 1px solid var(--rj-border-subtle);
+    border-left: 4px solid var(--rj-copper-500);
+    border-radius: var(--rj-radius-md);
+    padding: var(--rj-space-3) var(--rj-space-4);
+    margin-bottom: var(--rj-space-3);
+    text-decoration: none;
+    color: inherit;
+    transition: transform var(--rj-duration-base) var(--rj-ease-out), box-shadow var(--rj-duration-base) var(--rj-ease-out);
+  }
+  .task-card:hover { transform: translateY(-1px); box-shadow: var(--rj-shadow-md); }
+  .task-card.is-active { border-left-color: var(--rj-copper-700); background: linear-gradient(to right, rgba(168, 90, 44, 0.04), transparent 30%); }
+  .task-meta { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--rj-space-1); }
+  .task-meta .time { font-family: var(--rj-font-mono); font-size: var(--rj-text-xs); color: var(--rj-text-muted); }
+  .task-title { font-weight: var(--rj-weight-semibold); color: var(--rj-text-primary); margin-bottom: 2px; }
+  .task-sub { font-size: var(--rj-text-sm); color: var(--rj-text-secondary); }
+
+  .clock-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: var(--rj-space-3) var(--rj-space-5) calc(var(--rj-space-3) + env(safe-area-inset-bottom));
+    background: var(--rj-bg-elevated);
+    border-top: 1px solid var(--rj-border-subtle);
+    display: flex;
+    gap: var(--rj-space-2);
+    z-index: 20;
+    max-width: 480px;
+    margin: 0 auto;
+  }
+  .clock-btn {
+    flex: 1;
+    padding: var(--rj-space-3);
+    border: 0;
+    border-radius: var(--rj-radius-md);
+    background: var(--rj-action-primary);
+    color: var(--rj-action-on-primary);
+    font-family: var(--rj-font-sans);
+    font-size: var(--rj-text-base);
+    font-weight: var(--rj-weight-bold);
+    letter-spacing: var(--rj-tracking-wide);
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background-color var(--rj-duration-fast) var(--rj-ease-out);
+  }
+  .clock-btn:hover { background: var(--rj-action-primary-hover); }
+  .clock-btn.secondary { background: var(--rj-bg-surface); color: var(--rj-text-primary); border: 1px solid var(--rj-border-default); }
+
+  /* Two-mode toggle for mobile: River and Graph only. Canvas is desktop-only. */
+  body[data-view-mode="canvas"] .queue { opacity: 0.4; }
+  body[data-view-mode="canvas"] .canvas-not-here { display: block !important; }
+  .canvas-not-here {
+    display: none;
+    padding: var(--rj-space-12) var(--rj-space-5);
+    text-align: center;
+    color: var(--rj-text-muted);
+  }
+</style>
+</head>
+<body data-view-mode="river">
+
+<header class="mob-header">
+  <div class="brand">
+    <svg viewBox="0 0 24 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+      <path d="M2 7 Q 6 1 10 7 Q 14 13 18 7 Q 22 1 22 1 M 2 7 L 22 7"/>
+      <circle cx="12" cy="7" r="1.5" fill="currentColor"/>
+    </svg>
+    Today
+  </div>
+  <button class="mob-mode-chip rj-mode-toggle-btn" data-mode="graph" id="mode-chip">Mode · River</button>
+</header>
+
+<div class="mob-greeting">
+  <h1 id="greeting">Hi crew</h1>
+  <p id="queue-count">Loading...</p>
+</div>
+
+<div class="canvas-not-here">
+  <p>Canvas mode is desktop-only. Tap the mode chip to switch back.</p>
+</div>
+
+<div class="queue" id="queue"></div>
+
+<div class="clock-bar">
+  <button class="clock-btn secondary">Photos</button>
+  <button class="clock-btn">Clock In</button>
+</div>
+
+<script type="module">
+  import { RJ_DATA, customerById } from '/v2/_data.js';
+
+  const me = 'AJ';
+  const myTickets = RJ_DATA.tickets.filter(t => t.assignedTo === me || t.assignedTo === 'crew');
+  const myDueToday = myTickets.filter(t => t.dueDate <= RJ_DATA.tenant.today);
+  const showTickets = myDueToday.length ? myDueToday : myTickets.slice(0, 5);
+
+  document.getElementById('greeting').textContent = `Hi ${me}.`;
+  document.getElementById('queue-count').textContent = `${showTickets.length} jobs queued.`;
+
+  const queue = document.getElementById('queue');
+  showTickets.forEach((t, idx) => {
+    const c = customerById(t.customerId);
+    const a = document.createElement('a');
+    a.href = '#';
+    a.className = 'task-card' + (idx === 0 ? ' is-active' : '');
+    const pillarTone = t.priority === 'high' ? 'service' : 'production';
+    a.innerHTML = `
+      <div class="task-meta">
+        <span class="rj-chip rj-pillar rj-pillar-${pillarTone}">${t.priority === 'high' ? 'Service' : 'Production'}</span>
+        <span class="time">${t.dueDate}</span>
+      </div>
+      <div class="task-title">${t.title}</div>
+      <div class="task-sub">${c ? c.address : 'Unassigned'}</div>
+    `;
+    queue.appendChild(a);
+  });
+
+  // Mode chip cycles River → Graph → Canvas → River
+  const chip = document.getElementById('mode-chip');
+  const order = ['river', 'graph', 'canvas'];
+  chip.addEventListener('click', () => {
+    const cur = document.body.getAttribute('data-view-mode') || 'river';
+    const next = order[(order.indexOf(cur) + 1) % order.length];
+    if (window.RyujinView) window.RyujinView.set(next);
+    else document.body.setAttribute('data-view-mode', next);
+    chip.dataset.mode = next;
+    chip.textContent = 'Mode · ' + next.charAt(0).toUpperCase() + next.slice(1);
+  });
+
+  // Listen for external mode changes (e.g. via view-mode.js wiring)
+  document.addEventListener('viewmodechange', (e) => {
+    chip.textContent = 'Mode · ' + e.detail.mode.charAt(0).toUpperCase() + e.detail.mode.slice(1);
+  });
+</script>
+
+<script>
+  // First-visit mobile default: River (daily queue is the field crew's
+  // primary view). Set before view-mode.js loads so it reads this and
+  // doesn't fall back to the global default of graph.
+  try {
+    if (!localStorage.getItem('ry_view_mode')) {
+      localStorage.setItem('ry_view_mode', 'river');
+    }
+  } catch { /* private mode, fine */ }
+</script>
+
+<script type="module" src="/assets/view-mode.js"></script>
+<script type="module" src="/assets/agent-dock.js"></script>
+
+</body>
+</html>
