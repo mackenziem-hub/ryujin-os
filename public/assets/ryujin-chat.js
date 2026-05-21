@@ -1572,6 +1572,10 @@
       msgsEl.appendChild(bubble);
       let assembled = '';
       let toolBubble = null;
+      let serverError = null;
+      let stopReasonSeen = null;
+      let toolsAttempted = 0;
+      let toolsFailed = 0;
 
       const reader = resp.body.getReader();
       const decoder = new TextDecoder();
@@ -1607,15 +1611,22 @@
           if (data.text) {
             assembled += data.text;
             bubble.textContent = assembled;
+          } else if (data.error) {
+            serverError = data.error;
+            console.error('[ryujin-chat] server error:', data.error);
+          } else if (data.done && data.stop_reason) {
+            stopReasonSeen = data.stop_reason;
           } else if (data.tool_start) {
             toolBubble = document.createElement('div');
             toolBubble.className = 'ry-bubble sys';
             toolBubble.textContent = '◊ ' + (data.tool_start.label || 'Running tool...');
             msgsEl.insertBefore(toolBubble, bubble);
+            toolsAttempted += 1;
           } else if (data.tool_end) {
             if (toolBubble) {
               if (data.tool_end.status === 'error') {
-                toolBubble.textContent = '⚠ ' + toolBubble.textContent.replace(/^◊ /, '') + ' (failed)';
+                toolBubble.textContent = '⚠ ' + toolBubble.textContent.replace(/^◊ /, '') + ' (failed: ' + (data.tool_end.error || 'unknown') + ')';
+                toolsFailed += 1;
               } else {
                 toolBubble.remove();
                 toolBubble = null;
@@ -1633,8 +1644,17 @@
         // Persist conversation + refresh priorities for the next turn — fire and forget
         persistConversationTurn();
         refreshPriorities({ withGreeting: false });
+      } else if (serverError) {
+        bubble.textContent = 'Server error: ' + serverError;
       } else {
-        bubble.textContent = 'No response.';
+        // Empty stream — surface every clue we have so the next debug isn't blind
+        const clues = [];
+        if (toolsAttempted) clues.push(toolsAttempted + ' tool call' + (toolsAttempted > 1 ? 's' : '') + (toolsFailed ? ' (' + toolsFailed + ' failed)' : ''));
+        if (stopReasonSeen) clues.push('stop: ' + stopReasonSeen);
+        if (attachmentsForThisTurn.length) clues.push(attachmentsForThisTurn.length + ' attachment' + (attachmentsForThisTurn.length > 1 ? 's' : ''));
+        bubble.textContent = clues.length
+          ? 'No reply text. (' + clues.join(' · ') + '). Check browser console + Vercel logs.'
+          : 'No response. Check browser console + Vercel logs.';
       }
     } catch (e) {
       typing.remove();

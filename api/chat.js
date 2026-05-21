@@ -4475,7 +4475,7 @@ You are now Mackenzie's game development and product specialist.
       console.error('Conversation persist failed:', e.message);
     }
 
-    sse({ done: true, conversation_id: finalConversationId });
+    sse({ done: true, conversation_id: finalConversationId, stop_reason: response.stop_reason || null, tool_rounds: rounds });
     res.end();
   } catch (err) {
     // Headers already set above; just stream the error
