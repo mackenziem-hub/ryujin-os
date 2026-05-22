@@ -204,27 +204,37 @@ export async function loadLiveData(tenantSlug) {
   // values: draft → issued → in_progress → complete (or cancelled).
   // customerId: workorder has customer_name string; resolve by name index
   // since workorders don't carry a customer_id FK directly.
-  const workorders = (wo?.workorders || []).map(w => ({
-    id: w.id,
-    woNumber: w.wo_number,
-    customerId: findCustomerIdByName(w.customer_name),
-    customerName: w.customer_name || '',
-    address: w.address || '(no address)',
-    phone: w.phone || '',
-    status: w.status || 'draft',
-    stage: w.status || 'draft',
-    startDate: isoToDate(w.start_date) || '',
-    completedAt: isoToDate(w.completed_at) || '',
-    durationDays: w.estimated_duration_days || null,
-    packageTier: w.package_tier || '',
-    totalSq: Number(w.total_sq || 0),
-    subCrewLead: w.sub_crew_lead || '',
-    jobType: w.job_type || '',
-    estimateNumber: w.estimate?.estimate_number || null,
-    paysheetStatus: w.paysheet?.status || null,
-    notes: w.special_notes || w.notes || '',
-    raw: w
-  }));
+  const workorders = (wo?.workorders || []).map(w => {
+    // Trust completed_at as the source of truth for "is this job done?".
+    // The closeout flow can leave w.status='issued' (or other) while
+    // stamping completed_at — caught on WO-17 Jonald Magarin 2026-05-22.
+    // A completed workorder should always render as complete in v2 buckets
+    // regardless of what the status column says, until that flow is fixed.
+    const rawStatus = w.status || 'draft';
+    const effectiveStatus = w.completed_at ? 'complete' : rawStatus;
+    return {
+      id: w.id,
+      woNumber: w.wo_number,
+      customerId: findCustomerIdByName(w.customer_name),
+      customerName: w.customer_name || '',
+      address: w.address || '(no address)',
+      phone: w.phone || '',
+      status: effectiveStatus,
+      stage: effectiveStatus,
+      rawStatus,
+      startDate: isoToDate(w.start_date) || '',
+      completedAt: isoToDate(w.completed_at) || '',
+      durationDays: w.estimated_duration_days || null,
+      packageTier: w.package_tier || '',
+      totalSq: Number(w.total_sq || 0),
+      subCrewLead: w.sub_crew_lead || '',
+      jobType: w.job_type || '',
+      estimateNumber: w.estimate?.estimate_number || null,
+      paysheetStatus: w.paysheet?.status || null,
+      notes: w.special_notes || w.notes || '',
+      raw: w
+    };
+  });
 
   // Compute lifetime value per customer from their jobs and proposals.
   // Use the already-normalized customerId on each proposal; the per-iteration
