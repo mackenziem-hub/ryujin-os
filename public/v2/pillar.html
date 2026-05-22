@@ -187,7 +187,24 @@
         ${renderRail('proposals', RJ_DATA.proposals.filter(p => p.customerId === c.id))}
         ${renderRail('tickets', RJ_DATA.tickets.filter(t => t.customerId === c.id))}
       `;
-    } else if (pillar.slug === 'production' || pillar.slug === 'service') {
+    } else if (pillar.slug === 'production') {
+      // Production graph keys off workorders (real jobs), not estimates.
+      // Active in_progress takes precedence; fall back to most recent issued
+      // or completed if there's nothing live right now.
+      const W = RJ_DATA.workorders || [];
+      const w = W.find(x => x.status === 'in_progress')
+             || W.find(x => x.status === 'issued')
+             || W[0];
+      if (!w) return renderEmpty('Workorder');
+      graphEyebrow.textContent = `WO-${w.woNumber} · ${w.status}`;
+      graphTitle.textContent = w.customerName + ' · ' + w.address;
+      graphBody.innerHTML = `
+        <p class="rj-secondary" style="margin: 0 0 var(--rj-space-4);">${esc(w.packageTier || '')} · ${esc(w.jobType || '')}${w.subCrewLead ? ' · ' + esc(w.subCrewLead) : ''} · starts ${esc(w.startDate || 'TBD')}${w.completedAt ? ' · done ' + esc(w.completedAt) : ''}</p>
+        <div class="rj-stat-ornate"><div class="rj-stat-label">Roof squares</div><div class="rj-stat-value">${w.totalSq || '—'}</div></div>
+        <hr class="rj-divider">
+        ${renderRail('tickets', RJ_DATA.tickets.filter(t => t.customerId === w.customerId))}
+      `;
+    } else if (pillar.slug === 'service') {
       const j = RJ_DATA.jobs.find(x => x.stage === 'active') || RJ_DATA.jobs[0];
       if (!j) return renderEmpty('Job');
       graphEyebrow.textContent = 'Job · most recent';
@@ -252,12 +269,14 @@
         { top: 300, left: 300, title: 'Customers',  items: RJ_DATA.customers.slice(0, 3).map(c => c.name) }
       ];
     } else if (pillar.slug === 'production') {
+      const W = RJ_DATA.workorders || [];
+      const wLabel = w => `WO-${w.woNumber} · ${w.customerName} · ${w.address}`;
       clusters = [
-        { top: 80,  left: 80,  title: 'Active jobs',  items: RJ_DATA.jobs.filter(j => j.stage === 'active').map(j => j.address) },
-        { top: 80,  left: 480, title: 'Closing',      items: RJ_DATA.jobs.filter(j => j.stage === 'closing').map(j => j.address) },
-        { top: 80,  left: 840, title: 'Draft',        items: RJ_DATA.jobs.filter(j => j.stage === 'draft').map(j => j.address) },
-        { top: 320, left: 200, title: 'Crew',         items: ['AJ', 'Diego', 'Ryan'] },
-        { top: 320, left: 720, title: 'Tickets open', items: RJ_DATA.tickets.map(t => t.title) }
+        { top: 80,  left: 80,  title: 'In progress',  items: W.filter(w => w.status === 'in_progress').map(wLabel) },
+        { top: 80,  left: 480, title: 'Scheduled',    items: W.filter(w => w.status === 'issued').map(wLabel) },
+        { top: 80,  left: 840, title: 'Complete',     items: W.filter(w => w.status === 'complete').slice(0, 5).map(wLabel) },
+        { top: 320, left: 200, title: 'Tickets open', items: RJ_DATA.tickets.filter(t => t.status !== 'done' && t.status !== 'cancelled').slice(0, 8).map(t => t.title) },
+        { top: 320, left: 720, title: 'Draft / Cancelled', items: W.filter(w => w.status === 'draft' || w.status === 'cancelled').map(wLabel) }
       ];
     } else {
       clusters = [

@@ -102,11 +102,12 @@ export async function loadLiveData(tenantSlug) {
   // pages here is the right next step.
   const sep = qs ? '&' : '?';
   const LIMIT = `${sep}limit=1000`;
-  const [cust, tix, est, cprop] = await Promise.all([
+  const [cust, tix, est, cprop, wo] = await Promise.all([
     safeFetch(`/api/customers${qs}${LIMIT}`),
     safeFetch(`/api/tickets${qs}${LIMIT}`),
     safeFetch(`/api/estimates${qs}${LIMIT}`),
-    safeFetch(`/api/custom-proposals${qs}${LIMIT}`)
+    safeFetch(`/api/custom-proposals${qs}${LIMIT}`),
+    safeFetch(`/api/workorders${qs}${LIMIT}`)
   ]);
 
   // Normalize each into v2 shape.
@@ -197,6 +198,34 @@ export async function loadLiveData(tenantSlug) {
     date: isoToDate(p.issued_date) || isoToDate(p.created_at) || ''
   }));
 
+  // Workorders are the production source of truth (the actual jobs the crew
+  // works) — distinct from estimates (sales pipeline). v1 production.html
+  // pulls from this same table; v2 production pillar should match. Status
+  // values: draft → issued → in_progress → complete (or cancelled).
+  // customerId: workorder has customer_name string; resolve by name index
+  // since workorders don't carry a customer_id FK directly.
+  const workorders = (wo?.workorders || []).map(w => ({
+    id: w.id,
+    woNumber: w.wo_number,
+    customerId: findCustomerIdByName(w.customer_name),
+    customerName: w.customer_name || '',
+    address: w.address || '(no address)',
+    phone: w.phone || '',
+    status: w.status || 'draft',
+    stage: w.status || 'draft',
+    startDate: isoToDate(w.start_date) || '',
+    completedAt: isoToDate(w.completed_at) || '',
+    durationDays: w.estimated_duration_days || null,
+    packageTier: w.package_tier || '',
+    totalSq: Number(w.total_sq || 0),
+    subCrewLead: w.sub_crew_lead || '',
+    jobType: w.job_type || '',
+    estimateNumber: w.estimate?.estimate_number || null,
+    paysheetStatus: w.paysheet?.status || null,
+    notes: w.special_notes || w.notes || '',
+    raw: w
+  }));
+
   // Compute lifetime value per customer from their jobs and proposals.
   // Use the already-normalized customerId on each proposal; the per-iteration
   // first-token substring match used to bucket a single "John Smith" proposal
@@ -247,9 +276,31 @@ export async function loadLiveData(tenantSlug) {
       eventCandidates.push({
         ts: j.raw.created_at,
         time: isoToHHMM(j.raw.created_at),
-        pillar: 'production',
+        pillar: 'sales',
         title: `Estimate #${j.estimateNumber} · ${j.stage}${j.value ? ' · $' + j.value.toLocaleString('en-CA') : ''}`,
         sub: j.address
+      });
+    }
+  });
+  // Workorders drive the production event stream. Completion events take
+  // priority (most informative); newly-issued workorders are still surfaced
+  // via their created_at.
+  workorders.forEach(w => {
+    if (w.raw?.completed_at) {
+      eventCandidates.push({
+        ts: w.raw.completed_at,
+        time: isoToHHMM(w.raw.completed_at),
+        pillar: 'production',
+        title: `WO-${w.woNumber} complete · ${w.customerName}`,
+        sub: w.address
+      });
+    } else if (w.raw?.created_at) {
+      eventCandidates.push({
+        ts: w.raw.created_at,
+        time: isoToHHMM(w.raw.created_at),
+        pillar: 'production',
+        title: `WO-${w.woNumber} · ${w.status} · ${w.customerName}`,
+        sub: w.address
       });
     }
   });
@@ -269,11 +320,17 @@ export async function loadLiveData(tenantSlug) {
   const today = new Date().toISOString().slice(0, 10);
   const ticketsDueToday = tickets.filter(t => t.dueDate === today).length;
 
+  // Production stats now key off workorders (real jobs), not estimates.
+  const activeWO = workorders.filter(w => w.status === 'in_progress').length;
+  const scheduledWO = workorders.filter(w => w.status === 'issued').length;
+  const completeWO = workorders.filter(w => w.status === 'complete').length;
+  const todaysWO = workorders.filter(w => w.startDate === today).length;
+
   const stats = {
     hq: [
       { label: 'Today',       value: `${events.length} events` },
       { label: 'Pipeline',    value: '$' + Math.round(pipelineValue).toLocaleString('en-CA') },
-      { label: 'Active jobs', value: String(jobs.filter(j => j.stage === 'active' || j.stage === 'closing').length || jobs.length) },
+      { label: 'Active jobs', value: String(activeWO + scheduledWO) },
       { label: 'Customers',   value: String(customers.length) }
     ],
     sales: [
@@ -283,10 +340,10 @@ export async function loadLiveData(tenantSlug) {
       { label: 'Custom prop', value: String(proposals.length) }
     ],
     production: [
-      { label: 'Active jobs', value: String(jobs.filter(j => j.stage === 'active').length || jobs.length) },
-      { label: 'Tickets open', value: String(openTickets) },
-      { label: 'Customers',   value: String(customers.length) },
-      { label: 'Today',       value: String(ticketsDueToday) }
+      { label: 'Active',      value: String(activeWO) },
+      { label: 'Scheduled',   value: String(scheduledWO) },
+      { label: 'Complete',    value: String(completeWO) },
+      { label: 'Today',       value: String(todaysWO) }
     ],
     service: [
       { label: 'Open tickets', value: String(openTickets) },
@@ -324,6 +381,7 @@ export async function loadLiveData(tenantSlug) {
     ],
     customers,
     jobs,
+    workorders,
     tickets,
     proposals,
     events,
@@ -339,6 +397,7 @@ export function fmtMoney(n) {
 
 export function customerById(LIVE, id)   { return LIVE.customers.find(c => c.id === id) || null; }
 export function jobsForCustomer(LIVE, id) { return LIVE.jobs.filter(j => j.customerId === id); }
+export function workordersForCustomer(LIVE, id) { return (LIVE.workorders || []).filter(w => w.customerId === id); }
 export function ticketsForCustomer(LIVE, id) { return LIVE.tickets.filter(t => t.customerId === id); }
 export function pillarBySlug(LIVE, slug)  { return LIVE.pillars.find(p => p.slug === slug) || null; }
 export function eventsForPillar(LIVE, slug) {
