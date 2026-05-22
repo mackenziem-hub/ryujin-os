@@ -630,6 +630,7 @@ tr:hover td{background:rgba(34,211,238,0.02)}
   .tk-drawer{width:100vw}
 }
 </style>
+  <script src="/assets/auth-guard.js"></script>
   <script src="/assets/nav-buttons.js" defer></script>
 </head>
 <body>
@@ -833,9 +834,14 @@ let cacheTimestamps = {};
 
 async function api(path, opts = {}) {
   const sep = path.includes('?') ? '&' : '?';
+  const baseHeaders = { 'Content-Type': 'application/json' };
+  try {
+    const tok = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token');
+    if (tok) baseHeaders['Authorization'] = 'Bearer ' + tok;
+  } catch { /* ignore */ }
   try {
     const resp = await fetch(`${API}${path}${sep}tenant=${TENANT}`, {
-      ...opts, headers: { 'Content-Type': 'application/json', ...opts.headers }
+      ...opts, headers: { ...baseHeaders, ...opts.headers }
     });
     if (!resp.ok) return await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
     return resp.json();
@@ -1973,23 +1979,11 @@ async function renderQuoteForm() {
       ${templates.map(t => `<button class="btn btn-sm btn-outline" style="font-size:0.7em;padding:4px 10px" onclick="quoteState.system='${t.sys}';quoteState.answers={...quoteState.answers,...${JSON.stringify(t.answers).replace(/"/g,'&quot;')}};renderQuoteBuilder(document.getElementById('main'))">${t.icon} ${t.label}</button>`).join('')}
     </div>`;
 
-    // ═══ Cover Photo (always visible at top) ═══
-    html += `<div class="panel" style="padding:12px 14px;margin-bottom:10px">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-        <span style="font-size:1.1em">📸</span>
-        <span class="panel-title" style="font-size:0.7em">Cover Photo</span>
-      </div>
-      <div style="display:flex;gap:8px;margin-bottom:8px">
-        <button class="btn btn-sm ${!quoteState.answers.coverPhotoUrl?'btn-primary':'btn-outline'}" onclick="quoteState.answers.coverPhotoUrl='';renderQuoteForm()">Default (Drone Shot)</button>
-        <button class="btn btn-sm ${quoteState.answers.coverPhotoUrl?'btn-primary':'btn-outline'}" onclick="var u=prompt('Paste image URL:');if(u){quoteState.answers.coverPhotoUrl=u;renderQuoteForm()}">Custom Photo</button>
-      </div>
-      <div style="border-radius:8px;overflow:hidden;height:80px;background:#0a1628">
-        ${quoteState.answers.coverPhotoUrl
-          ? `<img src="${esc(quoteState.answers.coverPhotoUrl)}" style="width:100%;height:100%;object-fit:cover;opacity:0.8" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div style="display:none;width:100%;height:100%;align-items:center;justify-content:center;color:var(--red);font-size:0.72em">Image failed to load</div>`
-          : `<img src="https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/683df2a1e1360e210d25da2f.jpeg" style="width:100%;height:100%;object-fit:cover;opacity:0.5"><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center"><span style="font-size:0.72em;color:var(--text-dim);background:rgba(0,0,0,0.5);padding:4px 10px;border-radius:6px">Default — Aerial drone shot</span></div>`
-        }
-      </div>
-    </div>`;
+    // Cover photo is now derived from the Property Photos manager below
+    // (whichever photo is tagged `cover`). The standalone "paste a URL"
+    // shortcut was a UX dead-end: Cat would paste a Drive link, hit save,
+    // and get a broken image on the proposal because Drive doesn't serve
+    // raw image bytes. The manager handles Drive normalization end-to-end.
 
     // ═══ Section 1: Property & Customer Info ═══
     html += formSection('Property & Customer', '📍',
@@ -2102,23 +2096,46 @@ async function renderQuoteForm() {
       qField('introVideoUrl','Intro Video URL','text',{hint:'Video from your salesperson. Leave blank for Darcy\'s default intro.'})
     , false);
 
-    // ═══ Section 6: Property Photos ═══
+    // ═══ Section 6: Property Photos: versatile manager ═══
+    // Persists directly to /api/estimate-photos with category labels
+    // (Cover / Before / After / Damage / Material / Inspection / Site / Other)
+    // plus URL ingest for Drive/EagleView/Higgsfield links.
+    const _estId = quoteState.answers._estimate_id;
+    const _catOptions = ['general','cover','before','after','damage','material','inspection','site','other']
+      .map(c => `<option value="${c}">Label as: ${c.charAt(0).toUpperCase()+c.slice(1)}</option>`).join('');
     html += formSection('Property Photos', '📷',
-      `<div class="form-full">
-        <div id="photoPreview" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-          ${(quoteState.answers._photos||[]).map((url,i) => `<div style="position:relative;width:100px;height:75px;border-radius:8px;overflow:hidden;border:1px solid var(--glass-border)">
-            <img src="${esc(url)}" style="width:100%;height:100%;object-fit:cover">
-            <button onclick="quoteState.answers._photos.splice(${i},1);renderQuoteForm()" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:4px;width:18px;height:18px;cursor:pointer;font-size:0.7em">x</button>
-          </div>`).join('')}
-        </div>
-        <label style="display:flex;align-items:center;justify-content:center;gap:8px;padding:20px;border:2px dashed var(--glass-border);border-radius:10px;cursor:pointer;color:var(--text-dim);font-size:0.82em;transition:all 0.2s" onmouseover="this.style.borderColor='var(--cyan)'" onmouseout="this.style.borderColor='var(--glass-border)'">
-          <svg viewBox="0 0 24 24" style="width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-          Click or drag photos here
-          <input type="file" accept="image/*" multiple style="display:none" onchange="uploadQuotePhotos(this.files)">
-        </label>
-        <div class="form-hint">Property photos appear in proposals and sales pages</div>
+      `<div class="form-full" id="estPhotoManager">
+        ${_estId
+          ? `<div id="estPhotoList" data-est-id="${esc(_estId)}" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+               <div style="color:var(--text-dim);font-size:0.78em">Loading photos...</div>
+             </div>
+             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+               <div>
+                 <label style="display:flex;align-items:center;justify-content:center;gap:8px;padding:14px;border:2px dashed var(--glass-border);border-radius:10px;cursor:pointer;color:var(--text-dim);font-size:0.82em" onmouseover="this.style.borderColor='var(--cyan)'" onmouseout="this.style.borderColor='var(--glass-border)'">
+                   <svg viewBox="0 0 24 24" style="width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+                   <span>Upload files</span>
+                   <input type="file" accept="image/*,video/*" multiple style="display:none" onchange="uploadEstimatePhotosWithCategory(this.files)">
+                 </label>
+                 <select id="uploadCategory" style="width:100%;margin-top:6px;padding:6px;font-size:0.75em;background:var(--panel);color:var(--text);border:1px solid var(--glass-border);border-radius:6px">${_catOptions}</select>
+               </div>
+               <div>
+                 <div style="display:flex;gap:6px;align-items:stretch">
+                   <input type="url" id="urlIngestInput" placeholder="Paste image URL (Drive, EagleView, etc.)" style="flex:1;padding:8px;font-size:0.78em;background:var(--panel);color:var(--text);border:1px solid var(--glass-border);border-radius:6px">
+                   <button class="btn btn-sm btn-primary" onclick="ingestPhotoFromUrl()" style="white-space:nowrap">Add</button>
+                 </div>
+                 <select id="ingestCategory" style="width:100%;margin-top:6px;padding:6px;font-size:0.75em;background:var(--panel);color:var(--text);border:1px solid var(--glass-border);border-radius:6px">${_catOptions}</select>
+               </div>
+             </div>
+             <div class="form-hint" style="margin-top:8px">Photos persist to this estimate. Drive share-URLs auto-normalize. Set one as "cover" and it becomes the proposal cover photo.</div>`
+          : `<div style="padding:18px;border:2px dashed var(--glass-border);border-radius:10px;color:var(--text-dim);text-align:center;font-size:0.82em">
+               Save the estimate first to attach photos.<br>
+               <span style="font-size:0.72em;opacity:0.7">Once saved, you can drag-drop files, paste image URLs, and label each as Cover / Before / After / Damage / Inspection / Site / etc.</span>
+             </div>`
+        }
       </div>`
     , false);
+    // Defer the photo-list fetch until the DOM exists.
+    if (_estId) setTimeout(() => loadEstimatePhotos(_estId), 0);
 
     // ═══ Section 7: Site Conditions ═══
     html += formSection('Site & Access', '📋',
@@ -2718,21 +2735,231 @@ function copyQuoteSummary() {
   });
 }
 
-async function uploadQuotePhotos(fileList) {
-  if (!quoteState.answers._photos) quoteState.answers._photos = [];
-  for (const file of fileList) {
-    if (!file.type.startsWith('image/')) continue;
-    // Preview-only: data URLs live in-memory for the quote-build UX (autoSaveQuote
-    // strips them before persisting). Persistent photos upload through
-    // /api/estimate-photos AFTER the estimate is saved — that path stores to
-    // Vercel Blob and surfaces in proposal-client.html via the estimate query.
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      quoteState.answers._photos.push(e.target.result);
-      renderQuoteForm();
-    };
-    reader.readAsDataURL(file);
+// Versatile estimate-photo manager. Persists straight to /api/estimate-photos
+// with category labels and supports URL ingest. Replaces the preview-only
+// upload that silently discarded everything on save (autoSaveQuote stripped
+// _photos before persisting).
+
+async function loadEstimatePhotos(estId) {
+  const list = document.getElementById('estPhotoList');
+  if (!list) return;
+  try {
+    const r = await fetch(`/api/estimate-photos?estimate_id=${encodeURIComponent(estId)}`, {
+      headers: { 'x-tenant-id': TENANT, ...window.RyujinAuth.headers() }
+    });
+    if (!r.ok) { list.innerHTML = `<div style="color:var(--red);font-size:0.78em">Failed to load photos (${r.status})</div>`; return; }
+    const { photos } = await r.json();
+    renderEstPhotos(photos || []);
+    // Keep coverPhotoUrl in sync so the existing proposal generator
+    // (sends cover_photo to /api/outputs) doesn't need rewiring.
+    const cover = (photos || []).find(p => p.is_cover) || (photos || []).find(p => p.category === 'cover');
+    quoteState.answers.coverPhotoUrl = cover?.url || '';
+  } catch (e) {
+    list.innerHTML = `<div style="color:var(--red);font-size:0.78em">${esc(e.message)}</div>`;
   }
+}
+
+// Module-level cache so the photo editor modal can look up a photo by id
+// without a refetch (loadEstimatePhotos populates this on every refresh).
+let _estPhotosCache = [];
+
+function renderEstPhotos(photos) {
+  _estPhotosCache = photos;
+  const list = document.getElementById('estPhotoList');
+  if (!list) return;
+  if (!photos.length) {
+    list.innerHTML = `<div style="color:var(--text-dim);font-size:0.78em;padding:8px">No photos yet. Drag files in, or paste an image URL below.</div>`;
+    return;
+  }
+  const cats = ['general','cover','before','after','damage','material','inspection','site','other'];
+  const optsFor = (current) => cats.map(c => `<option value="${c}" ${c===current?'selected':''}>${c}</option>`).join('');
+  list.innerHTML = photos.map(p => {
+    const isVideo = (p.mime_type || '').startsWith('video/');
+    const thumb = isVideo
+      ? `<video src="${esc(p.url)}" style="width:100%;height:80px;object-fit:cover;background:#0a1628;pointer-events:none" muted></video>`
+      : `<img src="${esc(p.url)}" style="width:100%;height:80px;object-fit:cover" loading="lazy">`;
+    return `<div style="width:140px;border:1px solid var(--glass-border);border-radius:8px;overflow:hidden;background:var(--panel);position:relative">
+      <div onclick="openPhotoEditor('${esc(p.id)}')" style="cursor:pointer;position:relative" title="Click to edit, view full size, or delete">${thumb}
+      <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0) 60%,rgba(0,0,0,0.55));display:flex;align-items:flex-end;justify-content:flex-end;padding:4px;pointer-events:none">
+        <span style="font-size:0.6em;letter-spacing:1px;color:#fff;background:rgba(0,0,0,0.5);padding:2px 6px;border-radius:4px">EDIT</span>
+      </div></div>
+      ${p.is_cover ? `<div style="position:absolute;top:4px;left:4px;background:var(--cyan);color:#001a1a;font-size:0.62em;font-weight:700;padding:2px 6px;border-radius:4px;letter-spacing:1px;pointer-events:none">COVER</div>` : ''}
+      <div style="padding:6px 8px;display:flex;flex-direction:column;gap:4px">
+        <select onchange="patchEstPhoto('${esc(p.id)}', this.value === 'cover' ? {category: 'cover', is_cover: true} : (${p.is_cover} ? {category: this.value, is_cover: false} : {category: this.value}))" style="font-size:0.7em;padding:3px;background:var(--bg);color:var(--text);border:1px solid var(--glass-border);border-radius:4px">${optsFor(p.category || 'general')}</select>
+        <div style="display:flex;gap:4px">
+          <button onclick="patchEstPhoto('${esc(p.id)}', {is_cover: true})" style="flex:1;font-size:0.65em;padding:3px;background:transparent;color:var(--text-dim);border:1px solid var(--glass-border);border-radius:4px;cursor:pointer">Set Cover</button>
+          <button onclick="deleteEstPhoto('${esc(p.id)}')" style="font-size:0.65em;padding:3px 6px;background:transparent;color:var(--red);border:1px solid var(--glass-border);border-radius:4px;cursor:pointer">x</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Click-to-edit media modal. Full-size view + caption + category + cover
+// toggle + delete, all batched into a single PATCH on Save so the gallery
+// only re-renders once.
+function openPhotoEditor(photoId) {
+  const p = _estPhotosCache.find(x => x.id === photoId);
+  if (!p) { toast('Photo not found in cache', 'error'); return; }
+  closePhotoEditor();
+  const cats = ['general','cover','before','after','damage','material','inspection','site','other'];
+  const optsFor = (current) => cats.map(c => `<option value="${c}" ${c===current?'selected':''}>${c}</option>`).join('');
+  const isVideo = (p.mime_type || '').startsWith('video/');
+  const media = isVideo
+    ? `<video src="${esc(p.url)}" controls style="max-width:100%;max-height:60vh;background:#000;border-radius:8px"></video>`
+    : `<img src="${esc(p.url)}" style="max-width:100%;max-height:60vh;object-fit:contain;border-radius:8px;background:#000">`;
+  const backdrop = document.createElement('div');
+  backdrop.id = 'photoEditorBackdrop';
+  backdrop.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.78);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(4px)';
+  backdrop.onclick = (e) => { if (e.target === backdrop) closePhotoEditor(); };
+  backdrop.innerHTML = `
+    <div style="background:var(--panel);border:1px solid var(--glass-border);border-radius:14px;max-width:900px;width:100%;max-height:90vh;overflow:auto;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 18px;border-bottom:1px solid var(--glass-border)">
+        <div style="font-family:'Orbitron',sans-serif;font-size:0.8em;letter-spacing:2px;color:var(--cyan)">EDIT PHOTO</div>
+        <button onclick="closePhotoEditor()" style="background:transparent;border:none;color:var(--text-dim);font-size:1.4em;cursor:pointer;padding:0 6px">&times;</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 280px;gap:16px;padding:16px;align-items:start">
+        <div style="text-align:center">${media}</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div>
+            <div style="font-size:0.7em;text-transform:uppercase;letter-spacing:1.4px;color:var(--text-dim);margin-bottom:4px">Category</div>
+            <select id="pe_category" style="width:100%;padding:7px;font-size:0.82em;background:var(--bg);color:var(--text);border:1px solid var(--glass-border);border-radius:6px">${optsFor(p.category || 'general')}</select>
+          </div>
+          <div>
+            <div style="font-size:0.7em;text-transform:uppercase;letter-spacing:1.4px;color:var(--text-dim);margin-bottom:4px">Caption</div>
+            <textarea id="pe_caption" rows="3" placeholder="Optional description shown on the proposal" style="width:100%;padding:7px;font-size:0.82em;background:var(--bg);color:var(--text);border:1px solid var(--glass-border);border-radius:6px;font-family:inherit;resize:vertical">${esc(p.caption || '')}</textarea>
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:0.82em;color:var(--text);cursor:pointer">
+            <input type="checkbox" id="pe_isCover" ${p.is_cover ? 'checked' : ''} style="accent-color:var(--cyan);width:auto">
+            Use as proposal cover photo
+          </label>
+          <div style="font-size:0.66em;color:var(--text-dim);line-height:1.5">
+            ${esc(p.filename || 'photo')}<br>
+            ${p.uploaded_at ? new Date(p.uploaded_at).toLocaleString() : ''}
+          </div>
+          <div style="display:flex;gap:8px;margin-top:6px">
+            <button class="btn btn-sm btn-primary" onclick="savePhotoEditor('${esc(p.id)}')" style="flex:1">Save</button>
+            <button class="btn btn-sm" onclick="closePhotoEditor()" style="flex:1">Cancel</button>
+          </div>
+          <button class="btn btn-sm" onclick="deleteFromEditor('${esc(p.id)}')" style="background:transparent;color:var(--red);border:1px solid var(--red);margin-top:4px">Delete photo</button>
+          <a href="${esc(p.url)}" target="_blank" rel="noopener" style="font-size:0.7em;color:var(--text-dim);text-align:center;margin-top:4px">Open full file in new tab</a>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+  // Esc-to-close
+  backdrop._escHandler = (e) => { if (e.key === 'Escape') closePhotoEditor(); };
+  document.addEventListener('keydown', backdrop._escHandler);
+}
+
+function closePhotoEditor() {
+  const el = document.getElementById('photoEditorBackdrop');
+  if (!el) return;
+  if (el._escHandler) document.removeEventListener('keydown', el._escHandler);
+  el.remove();
+}
+
+async function savePhotoEditor(photoId) {
+  const cur = _estPhotosCache.find(x => x.id === photoId);
+  const newCat = document.getElementById('pe_category').value;
+  const newCaption = document.getElementById('pe_caption').value;
+  const newCover = document.getElementById('pe_isCover').checked;
+  // Build a delta so we only PATCH fields that actually changed.
+  const patch = {};
+  if (newCat !== (cur?.category || 'general')) patch.category = newCat;
+  if (newCaption !== (cur?.caption || '')) patch.caption = newCaption;
+  if (newCover !== !!cur?.is_cover) patch.is_cover = newCover;
+  // If the new category is "cover", it implies cover; the API does this
+  // server-side too, but mirror the implication here so the toggle and
+  // the dropdown stay coherent.
+  if (newCat === 'cover' && newCover === false) patch.is_cover = false;
+  if (!Object.keys(patch).length) { closePhotoEditor(); return; }
+  await patchEstPhoto(photoId, patch);
+  closePhotoEditor();
+}
+
+async function deleteFromEditor(photoId) {
+  await deleteEstPhoto(photoId);
+  closePhotoEditor();
+}
+
+async function uploadEstimatePhotosWithCategory(fileList) {
+  const estId = quoteState.answers._estimate_id;
+  if (!estId) { toast('Save the estimate first', 'error'); return; }
+  const category = document.getElementById('uploadCategory')?.value || 'general';
+  for (const file of fileList) {
+    const fd = new FormData();
+    fd.append('estimate_id', estId);
+    fd.append('category', category);
+    if (category === 'cover') fd.append('is_cover', 'true');
+    fd.append('file', file, file.name);
+    toast(`Uploading ${file.name}...`, 'info', 2000);
+    const r = await fetch('/api/estimate-photos', {
+      method: 'POST',
+      headers: { 'x-tenant-id': TENANT, ...window.RyujinAuth.headers() },
+      body: fd
+    });
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({}));
+      toast(`Upload failed: ${e.error || r.status}`, 'error');
+      continue;
+    }
+  }
+  await loadEstimatePhotos(estId);
+  toast('Photos uploaded', 'success');
+}
+
+async function ingestPhotoFromUrl() {
+  const estId = quoteState.answers._estimate_id;
+  if (!estId) { toast('Save the estimate first', 'error'); return; }
+  const input = document.getElementById('urlIngestInput');
+  const url = (input?.value || '').trim();
+  if (!url) { toast('Paste a URL first', 'error'); return; }
+  const category = document.getElementById('ingestCategory')?.value || 'general';
+  toast('Fetching remote photo...', 'info', 4000);
+  const r = await fetch('/api/estimate-photos', {
+    method: 'POST',
+    headers: { 'x-tenant-id': TENANT, 'Content-Type': 'application/json', ...window.RyujinAuth.headers() },
+    body: JSON.stringify({ estimate_id: estId, source_url: url, category, is_cover: category === 'cover' })
+  });
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({}));
+    toast(`URL ingest failed: ${e.error || r.status}`, 'error');
+    return;
+  }
+  input.value = '';
+  await loadEstimatePhotos(estId);
+  toast('Photo added from URL', 'success');
+}
+
+async function patchEstPhoto(id, patch) {
+  const estId = quoteState.answers._estimate_id;
+  const r = await fetch(`/api/estimate-photos?id=${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'x-tenant-id': TENANT, 'Content-Type': 'application/json', ...window.RyujinAuth.headers() },
+    body: JSON.stringify(patch)
+  });
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({}));
+    toast(`Update failed: ${e.error || r.status}`, 'error');
+    return;
+  }
+  await loadEstimatePhotos(estId);
+}
+
+async function deleteEstPhoto(id) {
+  if (!confirm('Delete this photo?')) return;
+  const estId = quoteState.answers._estimate_id;
+  const r = await fetch(`/api/estimate-photos?id=${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: { 'x-tenant-id': TENANT, ...window.RyujinAuth.headers() }
+  });
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({}));
+    toast(`Delete failed: ${e.error || r.status}`, 'error');
+    return;
+  }
+  await loadEstimatePhotos(estId);
 }
 
 async function generateOutputs(type) {

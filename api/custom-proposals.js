@@ -14,6 +14,7 @@
 
 import { supabaseAdmin } from '../lib/supabase.js';
 import { resolveTenant } from '../lib/tenant.js';
+import { resolveSession } from '../lib/portalAuth.js';
 
 const FIELDS = `
   id, slug, quote_id,
@@ -80,8 +81,11 @@ async function handleGetSingle(req, res, slug) {
 }
 
 async function handleList(req, res) {
+  const session = await resolveSession(req);
+  if (!session) return bad(res, 401, 'sign_in_required', { code: 'NO_SESSION' });
   const tenant = await resolveTenant(req);
   if (!tenant) return bad(res, 400, 'tenant_required');
+  if (tenant.id !== session.tenant_id) return bad(res, 403, 'cross_tenant_blocked');
   const { data, error } = await supabaseAdmin
     .from('custom_proposals')
     .select(FIELDS)
@@ -92,8 +96,11 @@ async function handleList(req, res) {
 }
 
 async function handleCreate(req, res) {
+  const session = await resolveSession(req);
+  if (!session) return bad(res, 401, 'sign_in_required', { code: 'NO_SESSION' });
   const tenant = await resolveTenant(req);
   if (!tenant) return bad(res, 400, 'tenant_required');
+  if (tenant.id !== session.tenant_id) return bad(res, 403, 'cross_tenant_blocked');
 
   const body = req.body && typeof req.body === 'object' ? req.body : (() => {
     try { return JSON.parse(req.body || '{}'); } catch { return {}; }
@@ -181,8 +188,11 @@ async function handleCreate(req, res) {
 }
 
 async function handleUpdate(req, res, slug) {
+  const session = await resolveSession(req);
+  if (!session) return bad(res, 401, 'sign_in_required', { code: 'NO_SESSION' });
   const tenant = await resolveTenant(req);
   if (!tenant) return bad(res, 400, 'tenant_required');
+  if (tenant.id !== session.tenant_id) return bad(res, 403, 'cross_tenant_blocked');
 
   const body = req.body && typeof req.body === 'object' ? req.body : (() => {
     try { return JSON.parse(req.body || '{}'); } catch { return {}; }

@@ -92,7 +92,13 @@ export async function runCashflow() {
   }
 
   try {
-    const r = await fetch(`${RYUJIN_BASE}/api/estimates?tenant=plus-ultra&status=accepted&limit=100`, { signal: AbortSignal.timeout(15000) });
+    const r = await fetch(`${RYUJIN_BASE}/api/estimates?tenant=plus-ultra&status=accepted&limit=100`, {
+      signal: AbortSignal.timeout(15000),
+      headers: {
+        'x-tenant-id': 'plus-ultra',
+        ...(process.env.RYUJIN_SERVICE_TOKEN ? { Authorization: `Bearer ${process.env.RYUJIN_SERVICE_TOKEN.trim()}` } : {})
+      }
+    });
     if (r.ok) {
       const data = await r.json();
       const arr = Array.isArray(data) ? data : (data.estimates || data.data || []);

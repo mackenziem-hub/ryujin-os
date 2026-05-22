@@ -6,7 +6,7 @@
 // POST   /api/tickets                — Create ticket
 // PUT    /api/tickets                — Update ticket (acknowledge, complete, reassign)
 import { supabaseAdmin } from '../lib/supabase.js';
-import { requireTenant } from '../lib/tenant.js';
+import { requirePortalSessionAndTenant } from '../lib/portalAuth.js';
 
 async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -240,4 +240,4 @@ async function handler(req, res) {
   return res.status(405).json({ error: 'Method not allowed' });
 }
 
-export default requireTenant(handler);
+export default requirePortalSessionAndTenant(handler);
