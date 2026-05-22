@@ -113,17 +113,110 @@ function append(role, text) {
   return node;
 }
 
-function send(text) {
+// Maintained across turns so /api/agent-chat threads stay coherent.
+let conversationId = null;
+const conversationHistory = [];
+
+function currentPillarSlug() {
+  // Pillar.html drilldown passes ?pillar=<slug>; treat /v2/command-center
+  // and other surfaces as "hq" (the cockpit's owner archetype). Fallback
+  // covers stray pages that load the dock without a pillar context.
+  try {
+    const param = new URLSearchParams(window.location.search).get('pillar');
+    if (param) return param.toLowerCase();
+  } catch { /* ignore */ }
+  const path = (window.location.pathname || '').toLowerCase();
+  if (path.includes('/command-center')) return 'hq';
+  if (path.includes('/portal-mobile')) return 'service';
+  return 'hq';
+}
+
+// Mirror _tenant.js readTenantSlug() chain so the agent dock always talks to
+// the same tenant the visible page is scoped to. On custom domains we
+// deliberately return null and let the server resolve tenant from the host —
+// honoring a client-controlled slug there would let a stale localStorage
+// value leak the wrong tenant's conversations into someone else's portal.
+function isHostWithoutTenantInference() {
+  const host = (window.location && window.location.hostname) || '';
+  if (host === 'localhost' || host === '127.0.0.1') return true;
+  if (host.endsWith('.vercel.app')) return true;
+  return false;
+}
+
+function resolveTenantSlug() {
+  if (!isHostWithoutTenantInference()) return null;
+  try {
+    const url = new URL(window.location.href);
+    const q = url.searchParams.get('tenant');
+    if (q) return q;
+  } catch { /* ignore */ }
+  try {
+    const stored = localStorage.getItem('ry_tenant');
+    if (stored) return stored;
+  } catch { /* ignore */ }
+  try {
+    const raw = localStorage.getItem('ryujin_tenant');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.slug) return parsed.slug;
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
+function authHeaders() {
+  const headers = { 'Content-Type': 'application/json' };
+  try {
+    const tok = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token');
+    if (tok) headers['Authorization'] = `Bearer ${tok}`;
+  } catch { /* ignore */ }
+  const slug = resolveTenantSlug();
+  if (slug) headers['x-tenant-id'] = slug;
+  return headers;
+}
+
+async function send(text) {
   const trimmed = String(text || '').trim();
   if (!trimmed) return;
   append('user', trimmed);
+  conversationHistory.push({ role: 'user', content: trimmed });
   document.dispatchEvent(new CustomEvent('rj-agent-send', { detail: { text: trimmed } }));
-  // Phase 1 stub: local echo so the dock feels alive.
-  setTimeout(() => {
-    append('agent', `Heard. (Phase 1 stub: agent backend wires in next phase.) You said: ${trimmed}`);
-  }, 320);
   if (inputEl) inputEl.value = '';
   updateSendDisabled();
+
+  const thinkingNode = append('meta', '…');
+
+  try {
+    const resp = await fetch('/api/agent-chat', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({
+        pillar: currentPillarSlug(),
+        message: trimmed,
+        conversation: conversationHistory.slice(-12),
+        conversation_id: conversationId
+      })
+    });
+    if (thinkingNode) thinkingNode.remove();
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => '');
+      append('meta', `Agent error: HTTP ${resp.status}${errText ? ' — ' + errText.slice(0, 200) : ''}`);
+      return;
+    }
+    const data = await resp.json();
+    if (data.conversation_id) conversationId = data.conversation_id;
+    if (data.reply) {
+      append('agent', data.reply);
+      conversationHistory.push({ role: 'assistant', content: data.reply });
+    }
+    if (Array.isArray(data.auto_routed) && data.auto_routed.length) {
+      const summary = data.auto_routed.map(r => `routed → ${r.recipient || r.target || r.intent || 'recipient'}`).join('; ');
+      append('meta', summary);
+    }
+  } catch (e) {
+    if (thinkingNode) thinkingNode.remove();
+    append('meta', `Agent error: ${e.message}`);
+  }
 }
 
 function updateSendDisabled() {

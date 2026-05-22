@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ryujin OS · Pillar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/ryujin-tokens.css">
+<link rel="stylesheet" href="/assets/ryujin-base.css">
+<link rel="stylesheet" href="/assets/agent-dock.css">
+<style>
+  body {
+    padding: 0 0 var(--rj-space-24);
+    background:
+      radial-gradient(circle at top right, rgba(168, 90, 44, 0.04), transparent 60%),
+      url('/assets/motifs/birchbark-tile.webp') center / 600px repeat,
+      var(--rj-bg-page);
+    background-blend-mode: multiply, normal, normal;
+  }
+
+  .mode-toggle { display: inline-flex; background: var(--rj-bg-surface); border-radius: var(--rj-radius-pill); padding: 3px; border: 1px solid var(--rj-border-subtle); }
+  .mode-toggle button { border: 0; background: transparent; padding: var(--rj-space-1) var(--rj-space-4); border-radius: var(--rj-radius-pill); font-family: var(--rj-font-sans); font-size: var(--rj-text-xs); font-weight: var(--rj-weight-semibold); letter-spacing: var(--rj-tracking-wide); text-transform: uppercase; color: var(--rj-text-secondary); cursor: pointer; transition: all var(--rj-duration-fast) var(--rj-ease-out); }
+  .mode-toggle button.active { background: var(--rj-copper-600); color: var(--rj-text-inverse); box-shadow: var(--rj-shadow-sm); }
+  .mode-toggle button:not(.active):hover { color: var(--rj-text-primary); }
+
+  .pillar-hero {
+    max-width: 1200px;
+    margin: var(--rj-space-8) auto 0;
+    padding: 0 var(--rj-space-6);
+  }
+  .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--rj-space-4); margin: var(--rj-space-6) 0 var(--rj-space-8); }
+  @media (max-width: 720px) { .stat-grid { grid-template-columns: repeat(2, 1fr); } }
+
+  .stage { max-width: 1200px; margin: 0 auto; padding: 0 var(--rj-space-6); }
+  .view { display: none; animation: rj-view-enter var(--rj-duration-slow) var(--rj-ease-out); }
+  body[data-view-mode="graph"]  .view-graph  { display: block; }
+  body[data-view-mode="canvas"] .view-canvas { display: block; }
+  body[data-view-mode="river"]  .view-river  { display: block; }
+  @keyframes rj-view-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+  .canvas-stage { position: relative; height: 480px; background: radial-gradient(circle at center, rgba(168, 90, 44, 0.04), transparent 70%), var(--rj-bg-elevated); border: 1px solid var(--rj-border-subtle); border-radius: var(--rj-radius-lg); overflow: hidden; }
+  .canvas-stage svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .cluster { position: absolute; min-width: 180px; padding: var(--rj-space-3); background: var(--rj-bg-page); border: 1px solid var(--rj-border-default); border-radius: var(--rj-radius-md); box-shadow: var(--rj-shadow-sm); }
+  .cluster h3 { margin: 0 0 var(--rj-space-2); font-size: var(--rj-text-xs); text-transform: uppercase; letter-spacing: var(--rj-tracking-caps); color: var(--rj-copper-700); font-weight: var(--rj-weight-bold); }
+  .cluster ul { margin: 0; padding: 0; list-style: none; font-size: var(--rj-text-sm); }
+  .cluster ul li { padding: 2px 0; color: var(--rj-text-body); }
+
+  .river-feed { display: grid; grid-template-columns: 80px 1fr; gap: var(--rj-space-3); }
+  .river-time { font-family: var(--rj-font-mono); font-size: var(--rj-text-sm); color: var(--rj-text-muted); padding-top: var(--rj-space-2); }
+  .river-card { background: var(--rj-bg-elevated); border: 1px solid var(--rj-border-subtle); border-radius: var(--rj-radius-md); padding: var(--rj-space-3) var(--rj-space-4); margin-bottom: var(--rj-space-3); display: flex; align-items: center; justify-content: space-between; gap: var(--rj-space-3); }
+  .river-card .body { flex: 1; }
+  .river-card .body b { display: block; color: var(--rj-text-primary); font-weight: var(--rj-weight-semibold); }
+  .river-card .body span.sub { color: var(--rj-text-muted); font-size: var(--rj-text-sm); }
+</style>
+<script src="/assets/auth-guard.js"></script>
+</head>
+<body>
+
+<header class="rj-topbar">
+  <div class="rj-topbar-brand">
+    <svg class="rj-topbar-emblem" viewBox="0 0 24 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+      <path d="M2 7 Q 6 1 10 7 Q 14 13 18 7 Q 22 1 22 1 M 2 7 L 22 7"/>
+      <circle cx="12" cy="7" r="1.5" fill="currentColor"/>
+    </svg>
+    <span id="brand-text" data-tenant-name>Ryujin OS</span>
+  </div>
+  <nav class="rj-topbar-nav" id="pillar-nav"></nav>
+  <div class="mode-toggle">
+    <button class="rj-mode-toggle-btn" data-mode="graph">Graph</button>
+    <button class="rj-mode-toggle-btn" data-mode="canvas">Canvas</button>
+    <button class="rj-mode-toggle-btn" data-mode="river">River</button>
+  </div>
+</header>
+
+<div class="pillar-hero">
+  <p class="rj-eyebrow" id="pillar-label">PILLAR</p>
+  <h1 class="rj-h1" id="pillar-title">Loading...</h1>
+  <p class="rj-secondary" id="pillar-blurb" style="margin: var(--rj-space-2) 0 0; font-size: var(--rj-text-lg);"></p>
+  <div class="stat-grid" id="stat-grid"></div>
+</div>
+
+<div class="stage">
+  <section class="view view-graph">
+    <div class="rj-panel rj-panel-featured rj-panel-flush" id="graph-panel">
+      <div class="rj-panel-header rj-panel-header-ornate">
+        <div>
+          <p class="rj-eyebrow" style="margin: 0;" id="graph-eyebrow">Focused noun</p>
+          <h3 class="rj-h3" style="margin-top: 2px;" id="graph-title">...</h3>
+        </div>
+        <span class="rj-chip rj-pillar" id="graph-chip">...</span>
+      </div>
+      <div class="rj-panel-body" id="graph-body">Loading...</div>
+    </div>
+  </section>
+
+  <section class="view view-canvas">
+    <div class="canvas-stage" id="canvas-stage">
+      <svg viewBox="0 0 1200 480" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="connector" x1="0" x2="1">
+            <stop offset="0%" stop-color="#d9a37a" stop-opacity="0.6"/>
+            <stop offset="100%" stop-color="#a85a2c" stop-opacity="0.8"/>
+          </linearGradient>
+        </defs>
+        <path d="M 230 110 Q 400 60 560 200" stroke="url(#connector)" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <path d="M 230 110 Q 220 280 290 380" stroke="url(#connector)" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <path d="M 560 200 Q 760 240 920 140" stroke="url(#connector)" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <path d="M 560 200 Q 700 360 880 380" stroke="url(#connector)" stroke-width="2" fill="none" stroke-linecap="round"/>
+      </svg>
+      <div id="canvas-clusters"></div>
+    </div>
+  </section>
+
+  <section class="view view-river">
+    <div class="river-feed" id="river-feed"></div>
+  </section>
+</div>
+
+<script type="module">
+  import { loadLiveData, fmtMoney, escapeHtml as esc, pillarBySlug as _pillarBySlug, eventsForPillar as _eventsForPillar } from '/v2/_live-data.js';
+  import { readTenantSlug } from '/v2/_tenant.js';
+  const RJ_DATA = await loadLiveData(readTenantSlug());
+  const pillarBySlug = (slug) => _pillarBySlug(RJ_DATA, slug);
+  const eventsForPillar = (slug) => _eventsForPillar(RJ_DATA, slug);
+
+  const params = new URLSearchParams(window.location.search);
+  const pillarSlug = (params.get('pillar') || 'hq').toLowerCase();
+  const pillar = pillarBySlug(pillarSlug) || pillarBySlug('hq');
+
+  // Topbar nav
+  const nav = document.getElementById('pillar-nav');
+  RJ_DATA.pillars.forEach(p => {
+    const a = document.createElement('a');
+    a.href = `?pillar=${p.slug}`;
+    a.textContent = p.label;
+    if (p.slug === pillar.slug) a.classList.add('active');
+    nav.appendChild(a);
+  });
+
+  // Hero
+  document.getElementById('pillar-label').textContent = pillar.label.toUpperCase();
+  document.getElementById('pillar-title').textContent = pillar.label;
+  document.getElementById('pillar-blurb').textContent = pillar.blurb;
+
+  // Stats
+  const statGrid = document.getElementById('stat-grid');
+  const stats = RJ_DATA.stats[pillar.slug] || [];
+  stats.forEach(s => {
+    const panel = document.createElement('div');
+    panel.className = 'rj-panel';
+    panel.innerHTML = `
+      <div class="rj-stat-ornate">
+        <div class="rj-stat-label">${s.label}</div>
+        <div class="rj-stat-value">${s.value}</div>
+      </div>
+    `;
+    statGrid.appendChild(panel);
+  });
+
+  // Graph view: render the most prominent noun + edges
+  const graphEyebrow = document.getElementById('graph-eyebrow');
+  const graphTitle = document.getElementById('graph-title');
+  const graphChip = document.getElementById('graph-chip');
+  const graphBody = document.getElementById('graph-body');
+  graphChip.classList.add(`rj-pillar-${pillar.slug}`);
+  graphChip.textContent = pillar.label;
+
+  function renderEmpty(label) {
+    graphEyebrow.textContent = label;
+    graphTitle.textContent = 'No data yet';
+    graphBody.innerHTML = `<p class="rj-secondary">When records exist for this pillar, they appear here with their linked nouns inline.</p>`;
+  }
+
+  function renderGraph() {
+    if (pillar.slug === 'sales' || pillar.slug === 'customer' || pillar.slug === 'hq') {
+      const c = RJ_DATA.customers[0];
+      if (!c) return renderEmpty('Customer');
+      graphEyebrow.textContent = 'Customer · top';
+      graphTitle.textContent = c.name;
+      graphBody.innerHTML = `
+        <p class="rj-secondary" style="margin: 0 0 var(--rj-space-4);">${esc(c.address)} · ${esc(c.phone)} · since ${esc(c.since)}</p>
+        <div class="rj-stat-ornate"><div class="rj-stat-label">Lifetime value</div><div class="rj-stat-value">${fmtMoney(c.ltv)}</div></div>
+        <hr class="rj-divider">
+        ${renderRail('jobs', RJ_DATA.jobs.filter(j => j.customerId === c.id))}
+        ${renderRail('proposals', RJ_DATA.proposals.filter(p => p.customerId === c.id))}
+        ${renderRail('tickets', RJ_DATA.tickets.filter(t => t.customerId === c.id))}
+      `;
+    } else if (pillar.slug === 'production' || pillar.slug === 'service') {
+      const j = RJ_DATA.jobs.find(x => x.stage === 'active') || RJ_DATA.jobs[0];
+      if (!j) return renderEmpty('Job');
+      graphEyebrow.textContent = 'Job · most recent';
+      graphTitle.textContent = j.address;
+      graphBody.innerHTML = `
+        <p class="rj-secondary" style="margin: 0 0 var(--rj-space-4);">Stage ${esc(j.stage)}${j.crew && j.crew.length ? ' · ' + esc(j.crew.join(', ')) : ''} · starts ${esc(j.startDate)}</p>
+        <div class="rj-stat-ornate"><div class="rj-stat-label">Contract value</div><div class="rj-stat-value">${fmtMoney(j.value)}</div></div>
+        <hr class="rj-divider">
+        ${renderRail('tickets', RJ_DATA.tickets.filter(t => t.customerId === j.customerId))}
+      `;
+    } else if (pillar.slug === 'finance') {
+      graphBody.innerHTML = `<p class="rj-secondary">Finance Graph view shows the AR/AP graph: customer → invoices → payments → vendor bills. Wires up in Phase 4.</p>`;
+      graphEyebrow.textContent = 'Cashflow graph';
+      graphTitle.textContent = 'AR · AP · P&L';
+    } else if (pillar.slug === 'materials') {
+      graphBody.innerHTML = `<p class="rj-secondary">Materials Graph view shows orders → suppliers → in-stock items → assigned jobs. Wires up in Phase 4.</p>`;
+      graphEyebrow.textContent = 'Materials graph';
+      graphTitle.textContent = 'POs · Inventory · Jobs';
+    } else if (pillar.slug === 'marketing') {
+      graphBody.innerHTML = `<p class="rj-secondary">Marketing Graph view shows brand → accounts → clips → posts. Wires up in Phase 4.</p>`;
+      graphEyebrow.textContent = 'Marketing graph';
+      graphTitle.textContent = 'Brands · Channels · Clips';
+    } else {
+      graphBody.innerHTML = `<p class="rj-secondary">${pillar.label} Graph view scaffold. Real data wires in Phase 4.</p>`;
+      graphEyebrow.textContent = pillar.label;
+      graphTitle.textContent = pillar.label + ' overview';
+    }
+  }
+
+  function renderRail(type, items) {
+    if (!items.length) {
+      return `<div class="rj-card"><div class="rj-row rj-row-between"><div class="rj-row"><span class="rj-chip rj-pillar rj-pillar-${type === 'jobs' ? 'production' : type === 'proposals' ? 'sales' : 'service'}">${esc(type)}</span><b style="color: var(--rj-text-muted);">None</b></div></div></div>`;
+    }
+    const cards = items.map(it => {
+      const tone = type === 'jobs' ? 'production' : type === 'proposals' ? 'sales' : 'service';
+      const text = type === 'jobs' ? `${esc(it.address)} · ${esc(it.stage)} · ${fmtMoney(it.value)}`
+                : type === 'proposals' ? `${esc(it.quoteId)} · ${esc(it.status)} · ${fmtMoney(it.value)}`
+                : esc(it.title);
+      return `<div class="rj-card rj-card-interactive rj-card-ornate"><div class="rj-row rj-row-between"><div class="rj-row"><span class="rj-chip rj-pillar rj-pillar-${tone}">${esc(type)}</span><b>${text}</b></div><span class="rj-muted">›</span></div></div>`;
+    }).join('');
+    return `<div class="rj-stack" style="margin-bottom: var(--rj-space-3);">${cards}</div>`;
+  }
+
+  // Canvas view: render clusters based on pillar
+  const canvasClusters = document.getElementById('canvas-clusters');
+  function renderCanvas() {
+    let clusters = [];
+    if (pillar.slug === 'hq') {
+      clusters = [
+        { top: 60,  left: 80,  title: 'Sales · 12 leads',     items: RJ_DATA.customers.slice(0, 4).map(c => c.name) },
+        { top: 150, left: 460, title: 'Customers',             items: RJ_DATA.customers.slice(0, 3).map(c => c.name) },
+        { top: 80,  left: 820, title: 'Production · 4 active', items: RJ_DATA.jobs.map(j => j.address) },
+        { top: 340, left: 200, title: 'Crew',                  items: ['AJ', 'Diego', 'Ryan'] },
+        { top: 340, left: 780, title: 'Materials',             items: ['Coastal · PO 233', 'GenTek · PO 244'] }
+      ];
+    } else if (pillar.slug === 'sales') {
+      clusters = [
+        { top: 80,  left: 80,  title: 'Leads (5)',  items: ['Sample F.', 'Demo H.'] },
+        { top: 80,  left: 360, title: 'Estimates (4)', items: ['DEMO-0042', 'DEMO-0051'] },
+        { top: 80,  left: 640, title: 'Quotes (2)', items: ['DEMO-0001', 'DEMO-0042'] },
+        { top: 80,  left: 920, title: 'Signed (1)', items: ['DEMO-0001'] },
+        { top: 300, left: 300, title: 'Customers',  items: RJ_DATA.customers.slice(0, 3).map(c => c.name) }
+      ];
+    } else if (pillar.slug === 'production') {
+      clusters = [
+        { top: 80,  left: 80,  title: 'Active jobs',  items: RJ_DATA.jobs.filter(j => j.stage === 'active').map(j => j.address) },
+        { top: 80,  left: 480, title: 'Closing',      items: RJ_DATA.jobs.filter(j => j.stage === 'closing').map(j => j.address) },
+        { top: 80,  left: 840, title: 'Draft',        items: RJ_DATA.jobs.filter(j => j.stage === 'draft').map(j => j.address) },
+        { top: 320, left: 200, title: 'Crew',         items: ['AJ', 'Diego', 'Ryan'] },
+        { top: 320, left: 720, title: 'Tickets open', items: RJ_DATA.tickets.map(t => t.title) }
+      ];
+    } else {
+      clusters = [
+        { top: 80,  left: 80,  title: pillar.label + ' overview', items: ['Phase 2 scaffold', 'Real data in Phase 4'] },
+        { top: 200, left: 480, title: 'Coming soon',              items: ['Cluster layout per pillar'] }
+      ];
+    }
+    canvasClusters.innerHTML = clusters.map(c => `
+      <div class="cluster" style="top: ${c.top}px; left: ${c.left}px;">
+        <h3>${esc(c.title)}</h3>
+        <ul>${c.items.map(i => `<li>${esc(i)}</li>`).join('')}</ul>
+      </div>
+    `).join('');
+  }
+
+  // River view: render events for this pillar
+  const riverFeed = document.getElementById('river-feed');
+  function renderRiver() {
+    const events = eventsForPillar(pillar.slug);
+    if (!events.length) {
+      riverFeed.innerHTML = `<div style="grid-column: 1 / -1; padding: var(--rj-space-8); text-align: center;"><p class="rj-secondary">No events for ${pillar.label} today.</p></div>`;
+      return;
+    }
+    riverFeed.innerHTML = events.map(ev => `
+      <div class="river-time">${esc(ev.time)}</div>
+      <div class="river-card">
+        <div class="body">
+          <b>${esc(ev.title)}${ev.value ? ' · ' + fmtMoney(ev.value) : ''}</b>
+          <span class="sub">${esc(ev.sub)}</span>
+        </div>
+        <span class="rj-chip rj-pillar rj-pillar-${esc(ev.pillar)}">${esc(ev.pillar)}</span>
+      </div>
+    `).join('');
+  }
+
+  renderGraph();
+  renderCanvas();
+  renderRiver();
+
+  document.title = `Ryujin OS · ${pillar.label}`;
+</script>
+
+<script type="module" src="/v2/_tenant.js"></script>
+<script type="module" src="/assets/view-mode.js"></script>
+<script type="module" src="/assets/agent-dock.js"></script>
+
+</body>
+</html>

@@ -1426,6 +1426,18 @@ html.mode-8bit .gp-hints,
 html.mode-8bit .gamepad-indicator,
 html.mode-8bit .hud-bottom { display: none !important; }
 </style>
+  <script>
+    // Opt-in v2 cockpit redirect. Toggled from Settings → Other →
+    // "Try new cockpit (beta)". Default OFF: localStorage value is
+    // null/undefined → no redirect, classic cockpit renders.
+    // The v2 cockpit has a "← Classic" link that clears the flag,
+    // so flipping back is one click.
+    try {
+      if (localStorage.getItem('ryujin_cockpit_version') === 'v2') {
+        window.location.replace('/v2/command-center.html');
+      }
+    } catch (e) { /* no localStorage = no redirect, safe default */ }
+  </script>
   <script src="/assets/auth-guard.js"></script>
   <script src="/assets/nav-buttons.js" defer></script>
 </head>
@@ -1637,6 +1649,7 @@ if(window.__RY_8BIT__){var _v=document.getElementById('sentinel-video');if(_v){_
     <label class="block-label">Other</label>
     <button class="row-btn" id="btnTglChat">Chat FAB <span class="v" id="vChat">ON</span></button>
     <button class="row-btn" id="btnTglTutor">Tutorial popups <span class="v" id="vTutor">ON</span></button>
+    <button class="row-btn" id="btnTglV2Cockpit" title="Beta: a Mi'kmaq-themed cockpit with Graph / Canvas / River views and a persistent agent dock. Default off — flip on to try it; the new cockpit has a one-click link back here.">New cockpit (beta) <span class="v" id="vV2Cockpit">OFF</span></button>
     <button class="row-btn" id="btnResetOnboard">Reset onboarding <span class="v">›</span></button>
   </section>
   <footer>v3.1 · RYUJIN OS</footer>
@@ -1647,6 +1660,7 @@ if(window.__RY_8BIT__){var _v=document.getElementById('sentinel-video');if(_v){_
   const KEY = 'ry_ui_mode';
   const CKEY = 'ry_chat_off';
   const TKEY = 'ry_suppress_tutorials';
+  const VKEY = 'ryujin_cockpit_version';
   const $ = (id) => document.getElementById(id);
   const backdrop = $('settingsBackdrop');
   const modal = $('settingsModal');
@@ -1664,6 +1678,7 @@ if(window.__RY_8BIT__){var _v=document.getElementById('sentinel-video');if(_v){_
     });
     $('vChat').textContent = (localStorage.getItem(CKEY) === '1') ? 'OFF' : 'ON';
     $('vTutor').textContent = (localStorage.getItem(TKEY) === '1') ? 'OFF' : 'ON';
+    $('vV2Cockpit').textContent = (localStorage.getItem(VKEY) === 'v2') ? 'ON' : 'OFF';
   }
   function open(){ backdrop.hidden = false; modal.hidden = false; refreshPicker(); }
   function close(){ backdrop.hidden = true; modal.hidden = true; }
@@ -1738,6 +1753,21 @@ if(window.__RY_8BIT__){var _v=document.getElementById('sentinel-video');if(_v){_
     if (off) { localStorage.removeItem(TKEY); localStorage.removeItem('ry_suppress_proposal_gate'); }
     else { localStorage.setItem(TKEY, '1'); localStorage.setItem('ry_suppress_proposal_gate', '1'); }
     refreshPicker();
+  });
+  $('btnTglV2Cockpit').addEventListener('click', () => {
+    const on = localStorage.getItem(VKEY) === 'v2';
+    if (on) {
+      // Currently on, turn it off. Just clear the flag and stay here.
+      localStorage.removeItem(VKEY);
+      refreshPicker();
+      toast('Beta cockpit OFF');
+    } else {
+      // Flip on and navigate immediately so the user lands on the new cockpit.
+      localStorage.setItem(VKEY, 'v2');
+      refreshPicker();
+      toast('Loading new cockpit…');
+      setTimeout(() => { location.href = '/v2/command-center.html'; }, 400);
+    }
   });
   $('btnResetOnboard').addEventListener('click', () => {
     try {
