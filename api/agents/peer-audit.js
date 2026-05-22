@@ -66,6 +66,10 @@ export async function runPeerAudit({ sinceHours = 24, limit = 50 } = {}) {
   try {
     const r = await fetch(`${RYUJIN_BASE}/api/estimates?tenant=${TENANT}&limit=${limit}`, {
       signal: AbortSignal.timeout(15000),
+      headers: {
+        'x-tenant-id': TENANT,
+        ...(process.env.RYUJIN_SERVICE_TOKEN ? { Authorization: `Bearer ${process.env.RYUJIN_SERVICE_TOKEN.trim()}` } : {})
+      }
     });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const j = await r.json();

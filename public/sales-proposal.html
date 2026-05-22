@@ -220,6 +220,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg-deep);color:va
 .em-attach{padding:8px 12px;background:rgba(34,211,238,0.07);border:1px dashed rgba(34,211,238,0.25);border-radius:8px;font-family:'Share Tech Mono',monospace;font-size:0.72em;color:var(--accent);display:flex;align-items:center;gap:8px}
 .em-foot{display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;border-top:1px solid rgba(34,211,238,0.12);flex-wrap:wrap}
 </style>
+  <script src="/assets/auth-guard.js"></script>
   <script src="/assets/nav-buttons.js" defer></script>
 </head>
 <body>
@@ -443,7 +444,7 @@ let existingLeads = [
 
 async function loadCustomersFromCRM(){
   try {
-    const r = await fetch('/api/customers?tenant=plus-ultra&limit=50', { headers: { 'x-tenant-id': 'plus-ultra' } });
+    const r = await fetch('/api/customers?tenant=plus-ultra&limit=50', { headers: { 'x-tenant-id': 'plus-ultra', ...window.RyujinAuth.headers() } });
     if (!r.ok) return;
     const { customers } = await r.json();
     if (!Array.isArray(customers) || customers.length === 0) return;
@@ -972,7 +973,7 @@ function printProposal(){
   const estimateId = RyujinStore.load('proposal_draft_id', null);
   if (estimateId && window.RyujinAPI) {
     fetch('/api/estimates?id=' + encodeURIComponent(estimateId), {
-      headers: { 'x-tenant-id': 'plus-ultra' }
+      headers: { 'x-tenant-id': 'plus-ultra', ...window.RyujinAuth.headers() }
     }).then(r => r.ok ? r.json() : null).then(e => {
       if (e && e.share_token) {
         downloadProposalPdf(e.share_token, (e.customer && e.customer.full_name) || state.customer.name);
@@ -1313,7 +1314,7 @@ async function generateClientLink(){
     } else if (estimateId && window.RyujinAPI) {
       // Flip existing draft to proposal_sent + pull its share_token
       const existing = await fetch('/api/estimates?id=' + encodeURIComponent(estimateId), {
-        headers: { 'x-tenant-id': 'plus-ultra' }
+        headers: { 'x-tenant-id': 'plus-ultra', ...window.RyujinAuth.headers() }
       }).then(r => r.ok ? r.json() : null).catch(() => null);
       if (existing && existing.share_token) {
         shareToken = existing.share_token;
@@ -1704,7 +1705,7 @@ function pgStep(s){
 async function loadExistingProposals(){
   const rows = [];
   try {
-    const r = await fetch('/api/estimates?limit=200', { headers: { 'x-tenant-id': 'plus-ultra' } });
+    const r = await fetch('/api/estimates?limit=200', { headers: { 'x-tenant-id': 'plus-ultra', ...window.RyujinAuth.headers() } });
     if (r.ok) {
       const { estimates } = await r.json();
       (estimates || []).forEach(e => {

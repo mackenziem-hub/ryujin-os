@@ -2144,7 +2144,11 @@ async function executeTool(name, input, attachments = []) {
       try {
         const resp = await fetch('https://ryujin-os.vercel.app/api/tickets', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-tenant-id': 'plus-ultra' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-tenant-id': 'plus-ultra',
+            ...(process.env.RYUJIN_SERVICE_TOKEN ? { Authorization: `Bearer ${process.env.RYUJIN_SERVICE_TOKEN.trim()}` } : {})
+          },
           body: JSON.stringify({
             title: input.title,
             description: input.description || null,
@@ -2728,7 +2732,11 @@ async function executeTool(name, input, attachments = []) {
       try {
         const RYUJIN_BASE = (process.env.RYUJIN_BASE_URL || 'https://ryujin-os.vercel.app').trim();
         const TENANT = 'plus-ultra';
-        const headers = { 'Content-Type': 'application/json', 'x-tenant-id': TENANT };
+        const headers = {
+          'Content-Type': 'application/json',
+          'x-tenant-id': TENANT,
+          ...(process.env.RYUJIN_SERVICE_TOKEN ? { Authorization: `Bearer ${process.env.RYUJIN_SERVICE_TOKEN.trim()}` } : {})
+        };
 
         // 1. Compare quote across Gold / Platinum / Diamond
         // Pricing model derives from distance: <=20km local, <=60km dayTrip, else extendedStay
@@ -2947,7 +2955,11 @@ async function executeTool(name, input, attachments = []) {
       try {
         const RYUJIN_BASE = (process.env.RYUJIN_BASE_URL || 'https://ryujin-os.vercel.app').trim();
         const TENANT = 'plus-ultra';
-        const headers = { 'Content-Type': 'application/json', 'x-tenant-id': TENANT };
+        const headers = {
+          'Content-Type': 'application/json',
+          'x-tenant-id': TENANT,
+          ...(process.env.RYUJIN_SERVICE_TOKEN ? { Authorization: `Bearer ${process.env.RYUJIN_SERVICE_TOKEN.trim()}` } : {})
+        };
 
         // Resolve sub_id by name if not provided
         let sub_id = input.sub_id;
@@ -3714,7 +3726,11 @@ async function executeTool(name, input, attachments = []) {
       try {
         const RYUJIN_BASE = (process.env.RYUJIN_BASE_URL || 'https://ryujin-os.vercel.app').trim();
         const TENANT = 'plus-ultra';
-        const headers = { 'Content-Type': 'application/json', 'x-tenant-id': TENANT };
+        const headers = {
+          'Content-Type': 'application/json',
+          'x-tenant-id': TENANT,
+          ...(process.env.RYUJIN_SERVICE_TOKEN ? { Authorization: `Bearer ${process.env.RYUJIN_SERVICE_TOKEN.trim()}` } : {})
+        };
 
         let measurements = input.measurements || null;
         let choices = input.choices || {};
