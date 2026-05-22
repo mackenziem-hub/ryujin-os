@@ -131,17 +131,37 @@ function currentPillarSlug() {
   return 'hq';
 }
 
+// Mirror _tenant.js readTenantSlug() chain so the agent dock always talks to
+// the same tenant the visible page is scoped to (?tenant= URL param wins,
+// then ry_tenant for v2 dev-pin, then the login-flow ryujin_tenant.slug).
+function resolveTenantSlug() {
+  try {
+    const url = new URL(window.location.href);
+    const q = url.searchParams.get('tenant');
+    if (q) return q;
+  } catch { /* ignore */ }
+  try {
+    const stored = localStorage.getItem('ry_tenant');
+    if (stored) return stored;
+  } catch { /* ignore */ }
+  try {
+    const raw = localStorage.getItem('ryujin_tenant');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.slug) return parsed.slug;
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
 function authHeaders() {
   const headers = { 'Content-Type': 'application/json' };
   try {
     const tok = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token');
     if (tok) headers['Authorization'] = `Bearer ${tok}`;
-    const tenantRaw = localStorage.getItem('ryujin_tenant');
-    if (tenantRaw) {
-      const tenant = JSON.parse(tenantRaw);
-      if (tenant?.slug) headers['x-tenant-id'] = tenant.slug;
-    }
   } catch { /* ignore */ }
+  const slug = resolveTenantSlug();
+  if (slug) headers['x-tenant-id'] = slug;
   return headers;
 }
 
