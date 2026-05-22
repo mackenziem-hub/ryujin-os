@@ -11,7 +11,7 @@
 // updates are restricted. To make pricing/scope edits, create a NEW estimate
 // (revision) instead.
 import { supabaseAdmin } from '../lib/supabase.js';
-import { requireTenant } from '../lib/tenant.js';
+import { requirePortalSessionAndTenant } from '../lib/portalAuth.js';
 import { captureEstimateSnapshot } from '../lib/estimateSnapshot.js';
 
 // Fields that can still be appended/edited on a locked estimate.
@@ -316,4 +316,4 @@ async function handler(req, res) {
   return res.status(405).json({ error: 'Method not allowed' });
 }
 
-export default requireTenant(handler);
+export default requirePortalSessionAndTenant(handler);
