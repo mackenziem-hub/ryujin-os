@@ -146,10 +146,14 @@ async function loadAll(){
     if (!r.ok) { document.getElementById('board').innerHTML = '<div class="loading" style="grid-column:1/-1">HTTP ' + r.status + '</div>'; return; }
     const { workorders } = await r.json();
     // ACTIVE NOW = anything in_progress, regardless of date. Pulls jobs you are physically on right now.
-    // Sort active jobs by most-recently-updated first so the job you just
-    // touched bubbles to the top.
+    // Sort by start_date ASC so the column reads chronologically — earliest roof day at the top.
+    // Unscheduled jobs (no start_date) sink to the bottom.
     const activeNow = (workorders || []).filter(w => w.status === 'in_progress')
-      .sort((a,b) => new Date(b.updated_at || b.start_date || 0) - new Date(a.updated_at || a.start_date || 0));
+      .sort((a,b) => {
+        const ad = a.start_date ? new Date(a.start_date).getTime() : Infinity;
+        const bd = b.start_date ? new Date(b.start_date).getTime() : Infinity;
+        return ad - bd;
+      });
     // Scheduled = issued but not yet started. Bucket these by date.
     const scheduled = (workorders || []).filter(w => w.status === 'issued');
     const completed = (workorders || []).filter(w => w.status === 'complete')

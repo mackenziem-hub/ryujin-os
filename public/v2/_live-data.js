@@ -367,9 +367,9 @@ export async function loadLiveData(tenantSlug) {
       { label: 'With LTV', value: String(customers.filter(c => c.ltv > 0).length) },
       { label: 'Phone',    value: String(customers.filter(c => c.phone).length) }
     ],
-    finance:   [ { label: 'Pipeline',  value: '$' + Math.round(pipelineValue).toLocaleString('en-CA') }, { label: 'Signed MTD', value: '$' + Math.round(signedMtd).toLocaleString('en-CA') }, { label: 'Phase 4', value: 'AR · AP' }, { label: 'Phase 4', value: 'P&L' } ],
-    materials: [ { label: 'Phase 4',   value: 'wires up next' }, { label: 'POs',    value: '-' }, { label: 'In stock', value: '-' }, { label: 'Low',  value: '-' } ],
-    marketing: [ { label: 'Phase 4',   value: 'wires up next' }, { label: 'Clips',  value: '-' }, { label: 'Scheduled', value: '-' }, { label: 'Posted', value: '-' } ],
+    finance:   [ { label: 'Pipeline',  value: '$' + Math.round(pipelineValue).toLocaleString('en-CA') }, { label: 'Signed MTD', value: '$' + Math.round(signedMtd).toLocaleString('en-CA') }, { label: 'AR · AP', value: '—' }, { label: 'P&L', value: '—' } ],
+    materials: [ { label: 'PO log',    value: '—' }, { label: 'POs',    value: '—' }, { label: 'In stock', value: '—' }, { label: 'Low',  value: '—' } ],
+    marketing: [ { label: 'Clip queue', value: '—' }, { label: 'Clips',  value: '—' }, { label: 'Scheduled', value: '—' }, { label: 'Posted', value: '—' } ],
     admin:     [ { label: 'Customers', value: String(customers.length) }, { label: 'Tickets', value: String(tickets.length) }, { label: 'Estimates', value: String(jobs.length) }, { label: 'Proposals', value: String(proposals.length) } ]
   };
 

@@ -214,13 +214,26 @@
   // Canvas. Cluster items can be plain strings or { label, href } for
   // clickable rows. Production WOs link to the v1 job folder; pillar
   // headers link to the dedicated drilldown.
-  const activeWO = (RJ_DATA.workorders || []).filter(w => w.status === 'in_progress' || w.status === 'issued');
+  // Chronological by start_date / roof day: in_progress first, then scheduled by date ASC.
+  const activeWO = (RJ_DATA.workorders || [])
+    .filter(w => w.status === 'in_progress' || w.status === 'issued')
+    .sort((a, b) => {
+      if (a.status === 'in_progress' && b.status !== 'in_progress') return -1;
+      if (b.status === 'in_progress' && a.status !== 'in_progress') return 1;
+      const ad = a.start_date ? new Date(a.start_date).getTime() : Infinity;
+      const bd = b.start_date ? new Date(b.start_date).getTime() : Infinity;
+      return ad - bd;
+    });
+  // All clusters key off RJ_DATA (live data adapter). No hardcoded names,
+  // no fake POs — when a source isn't wired yet, the cluster says so
+  // honestly rather than seeding fake data.
+  const openTix = (RJ_DATA.tickets || []).filter(t => t.status !== 'done' && t.status !== 'cancelled');
   const clusters = [
     { top: 60,  left: 80,  title: `Sales · ${RJ_DATA.jobs.length} estimates`, items: RJ_DATA.jobs.slice(0, 6).map(j => ({ label: j.address, href: '/v2/pillar.html?pillar=sales' })) },
-    { top: 150, left: 460, title: 'Customers',            items: RJ_DATA.customers.slice(0, 5).map(c => ({ label: c.name, href: '/v2/pillar.html?pillar=customer' })) },
+    { top: 150, left: 460, title: `Customers · ${RJ_DATA.customers.length}`, items: RJ_DATA.customers.slice(0, 5).map(c => ({ label: c.name, href: '/v2/pillar.html?pillar=customer' })) },
     { top: 80,  left: 820, title: `Production · ${activeWO.length} live`, items: activeWO.slice(0, 6).map(w => ({ label: `WO-${w.woNumber} · ${w.customerName}`, href: `/job.html?wo=${encodeURIComponent(w.id)}` })) },
-    { top: 380, left: 200, title: 'Crew',                 items: ['AJ', 'Diego', 'Ryan'] },
-    { top: 400, left: 780, title: 'Materials',            items: ['Coastal · PO 233', 'GenTek · PO 244'] }
+    { top: 380, left: 200, title: `Service · ${openTix.length} open`, items: openTix.slice(0, 6).map(t => ({ label: `#${t.ticketNumber} · ${t.title}`, href: '/v2/pillar.html?pillar=service' })) },
+    { top: 400, left: 780, title: `Proposals · ${RJ_DATA.proposals.length}`, items: RJ_DATA.proposals.slice(0, 5).map(p => ({ label: `${p.quoteId} · ${p.customerName}`, href: '/v2/pillar.html?pillar=sales' })) }
   ];
   function renderClusterItem(i) {
     if (i && typeof i === 'object' && i.href) {
