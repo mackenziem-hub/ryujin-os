@@ -3850,6 +3850,7 @@ async function callClaude(apiKey, systemPrompt, messages, useTools = true, effor
     messages: messages
   };
   if (cfg.thinking) body.thinking = cfg.thinking;
+  if (cfg.output_config) body.output_config = cfg.output_config;
   if (useTools) body.tools = TOOLS;
 
   // Retry with backoff for rate limits
@@ -3883,14 +3884,14 @@ async function callClaude(apiKey, systemPrompt, messages, useTools = true, effor
 // Calls onDelta(kind, text) for each thinking_delta and text_delta as they arrive,
 // then returns the assembled response in the same shape as callClaude (with thinking blocks
 // preserved in content so the tool loop can pass them back to subsequent turns).
-// Phase 17: effort tier → model + thinking budget mapping. Drives cost-aware behavior per request.
+// Phase 17: effort tier → model + thinking mode mapping. Drives cost-aware behavior per request.
+// Opus 4.7 retired thinking.enabled + budget_tokens. Adaptive thinking is the only on-mode,
+// and depth is controlled via output_config.effort. The model decides when and how much to
+// think within that effort band, so the old "1500 budget on every chat" footgun is gone.
 const EFFORT_CONFIG = {
-  // Bug-sweep #2/$1 (2026-04-24): thinking moved to opt-in via the `high` tier only.
-  // Medium fires on every default chat — was burning ~1500 thinking tokens × every message.
-  // Users who need deep reasoning explicitly pick `high` from the effort picker UI.
-  low:    { model: 'claude-haiku-4-5',  thinking: null /* drop field */ },
-  medium: { model: 'claude-sonnet-4-6', thinking: null /* drop field — was 1500 budget, now opt-in via high tier */ },
-  high:   { model: 'claude-opus-4-7',   thinking: { type: 'enabled', budget_tokens: 3000 } }
+  low:    { model: 'claude-haiku-4-5',  thinking: null, output_config: null },
+  medium: { model: 'claude-sonnet-4-6', thinking: null, output_config: null },
+  high:   { model: 'claude-opus-4-7',   thinking: { type: 'adaptive', display: 'summarized' }, output_config: { effort: 'high' } }
 };
 function effortToConfig(effort) {
   return EFFORT_CONFIG[effort] || EFFORT_CONFIG.medium;
@@ -3906,6 +3907,7 @@ async function callClaudeStream(apiKey, systemPrompt, messages, onDelta, useTool
     stream: true
   };
   if (cfg.thinking) body.thinking = cfg.thinking;
+  if (cfg.output_config) body.output_config = cfg.output_config;
   if (useTools) {
     const tools = toolsList || TOOLS;
     if (Array.isArray(tools) && tools.length > 0) {
