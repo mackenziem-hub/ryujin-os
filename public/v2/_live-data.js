@@ -16,8 +16,20 @@
  * than visibly empty).
  */
 
+// Inlined Bearer header pull. The auth-guard.js script loaded synchronously
+// from the HTML page redirects logged-out users before this module ever
+// runs, so a token should always be present when these calls fire. Endpoints
+// (api/customers, api/tickets, api/estimates, api/custom-proposals) require
+// the bearer as of 2026-05-22 (see v2-auth-guard PR).
+function authHeader() {
+  try {
+    const tok = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token');
+    return tok ? { Authorization: `Bearer ${tok}` } : {};
+  } catch { return {}; }
+}
+
 function safeFetch(url) {
-  return fetch(url, { cache: 'no-store' })
+  return fetch(url, { cache: 'no-store', headers: authHeader() })
     .then(r => r.ok ? r.json() : Promise.reject(new Error(`http ${r.status}`)))
     .catch(e => {
       console.warn('[ry-live] fetch failed', url, e.message);

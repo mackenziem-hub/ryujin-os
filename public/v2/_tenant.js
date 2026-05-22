@@ -146,7 +146,12 @@ async function fetchSettings(slug) {
   const url = slug
     ? `/api/tenant-branding?tenant=${encodeURIComponent(slug)}`
     : '/api/tenant-branding';
-  const res = await fetch(url, { cache: 'no-store' });
+  let authHeader = {};
+  try {
+    const tok = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token');
+    if (tok) authHeader = { Authorization: `Bearer ${tok}` };
+  } catch { /* ignore */ }
+  const res = await fetch(url, { cache: 'no-store', headers: authHeader });
   if (!res.ok) throw new Error(`tenant-branding http ${res.status}`);
   const body = await res.json();
   // Response shape: { tenant: { id, slug }, branding: { ... } }.
