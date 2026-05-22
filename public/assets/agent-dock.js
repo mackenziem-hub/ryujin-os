@@ -132,9 +132,19 @@ function currentPillarSlug() {
 }
 
 // Mirror _tenant.js readTenantSlug() chain so the agent dock always talks to
-// the same tenant the visible page is scoped to (?tenant= URL param wins,
-// then ry_tenant for v2 dev-pin, then the login-flow ryujin_tenant.slug).
+// the same tenant the visible page is scoped to. On custom domains we
+// deliberately return null and let the server resolve tenant from the host —
+// honoring a client-controlled slug there would let a stale localStorage
+// value leak the wrong tenant's conversations into someone else's portal.
+function isHostWithoutTenantInference() {
+  const host = (window.location && window.location.hostname) || '';
+  if (host === 'localhost' || host === '127.0.0.1') return true;
+  if (host.endsWith('.vercel.app')) return true;
+  return false;
+}
+
 function resolveTenantSlug() {
+  if (!isHostWithoutTenantInference()) return null;
   try {
     const url = new URL(window.location.href);
     const q = url.searchParams.get('tenant');
