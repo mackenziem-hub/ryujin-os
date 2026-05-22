@@ -37,7 +37,7 @@ function isHostWithoutTenantInference() {
   return false;
 }
 
-function readTenantSlug() {
+export function readTenantSlug() {
   const isDevHost = isHostWithoutTenantInference();
 
   // On custom domains, the host IS the tenant. Refuse to honor query

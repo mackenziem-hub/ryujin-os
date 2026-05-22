@@ -78,7 +78,11 @@ function isoToHHMM(iso) {
   }
 }
 
-export async function loadLiveData(tenantSlug = 'plus-ultra') {
+// Passing a null/undefined tenantSlug omits the ?tenant= query param so the
+// server resolves tenant from the request host (custom-domain tenants). Do
+// NOT default to a literal slug here; that's exactly the multi-tenant leak
+// codex caught on PR #17 (P1, 2026-05-22).
+export async function loadLiveData(tenantSlug) {
   const qs = tenantParam(tenantSlug);
   // Existing endpoints default to limit=50 server-side. The cockpit
   // overview wants to count and link across all records, so request
