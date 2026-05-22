@@ -221,6 +221,13 @@ You have tools that let you interact with Mackenzie's systems. USE THEM when ask
 - **set_sub_visibility** — Update what a sub sees on their Ryujin sub-portal and/or their auto-approve threshold for job log entries. Use when Mackenzie says "hide Ryan\'s pay sheet visibility", "let Ryan see his rates", "auto-approve material purchases under $300 for Ryan". Identify the sub by name fragment (e.g. "Ryan", "Atlantic"). Executes immediately — owner-only config, no approval gate.
 - **create_ghl_task** — Create a task on an Automator/GHL contact, assignable to Mackenzie or Darcy — REQUIRES APPROVAL (confirm code in chat)
 
+**Photo workflow (dragging photos into chat to attach to estimates):**
+- **upload_estimate_photo** — When the user drops photos in chat AND tells you where they should go ("use this as the cover for Kevin Chase 67 Berry", "this is the before photo for the Magarin job"), call this once per photo. Resolves the estimate by customer name / address / number. Categories: cover (proposal cover, one per estimate), before / after (comparison pair), damage / material / inspection (scope evidence), site / other. If the user says "first/second/third photo", use attachment_index. If they reference filenames, use attachment_filename. Executes immediately.
+- **set_estimate_photo_role** — Relabel an existing photo by natural language ("make the chimney photo the cover", "the EagleView aerial is actually the before not the cover"). The tool picks the best-matching photo from the estimate's gallery via caption / category / filename / ordinal. Executes immediately.
+- **set_working_estimate** — Pin an estimate as the conversation's working scope when the user signals focus ("let's work on Kevin Chase 67 Berry", "switch to the Magarin job"). Subsequent photo tool calls can omit estimate_identifier.
+
+When Cat or Mackenzie drops photos and says "first is cover, second is before, third is after for 67 Berry" — fan out three upload_estimate_photo calls in parallel: attachment_index 0/cover, 1/before, 2/after. Confirm what you did concisely once they all return.
+
 **Meta Ads (LIVE — Graph API v21.0):**
 - **refresh_meta_ads** — Pull live ad data from Meta. Returns all 50 campaigns, active/inactive, spend, CPL, leads, alerts, last 7 days trends. Also pushes fresh data to snapshot. Use for any ad performance, spend, or CPL questions. Pass a campaign ID to get ad set breakdown.
 - **audit_pixel** — Full pixel health audit: pixel firing stats, diagnostics, custom conversions, alerts. Use when asked about tracking, pixel issues, or conversion accuracy.
@@ -2061,6 +2068,51 @@ const TOOLS = [
       },
       required: ['artifact', 'lens']
     }
+  },
+  // ═══════════════════════════════════════════
+  // PHOTO TOOLS — drag/drop photos in chat and attach them to estimates
+  // by natural language. Cat says "use this as cover for 67 Berry" and
+  // the agent handles the upload + labelling end-to-end.
+  // ═══════════════════════════════════════════
+  {
+    name: 'upload_estimate_photo',
+    description: 'Attach a chat-dropped photo (or video) to an estimate with a category label. Use when the user drops media in chat AND says where it should go ("use this as the cover for Kevin Chase 67 Berry", "this is the before photo for the Magarin job", "after photo for #68"). For multiple photos with different roles, call the tool once per photo. Resolves the estimate by customer name, address, or estimate number via fuzzy match. If no estimate identifier is given, falls back to the conversation\'s working estimate context (set via set_working_estimate or implied by recent tool use).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        estimate_identifier: { type: 'string', description: 'Customer name, address, or "estimate <number>". Examples: "Kevin Chase", "67 Berry", "Magarin", "estimate 68". Optional if a working estimate is already set on the conversation.' },
+        attachment_index: { type: 'integer', description: '0-indexed position of the photo in the chat attachments array. Use this for "the first photo", "the second one", etc.' },
+        attachment_filename: { type: 'string', description: 'Alternative to attachment_index: match by filename. Use whichever is more reliable based on what the user said.' },
+        category: { type: 'string', enum: ['cover', 'before', 'after', 'damage', 'material', 'inspection', 'site', 'other'], description: 'cover = proposal cover (one per estimate, replaces any previous cover). before / after = comparison pair shown side-by-side. damage / material / inspection = scope evidence. site / other = misc.' },
+        caption: { type: 'string', description: 'Optional human caption shown on the proposal alongside the photo.' }
+      },
+      required: ['category']
+    }
+  },
+  {
+    name: 'set_estimate_photo_role',
+    description: 'Relabel an existing photo on an estimate by natural-language target. Use when the user says things like "make the chimney photo the cover instead", "the EagleView aerial is actually the before, not the cover", or "the one from this morning is the damage shot". The tool looks at the estimate\'s gallery and picks the best match by caption, category, filename, or upload timestamp, then PATCHes the category and is_cover flag.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        estimate_identifier: { type: 'string', description: 'Customer name, address, or estimate number. Optional if a working estimate is set.' },
+        target_description: { type: 'string', description: 'How the user described the photo. Examples: "the chimney one", "the EagleView aerial", "the photo Cat uploaded this morning", "the after photo", "the third photo".' },
+        new_category: { type: 'string', enum: ['cover', 'before', 'after', 'damage', 'material', 'inspection', 'site', 'other'], description: 'Where to move it.' },
+        new_caption: { type: 'string', description: 'Optional: update the caption while you\'re at it.' }
+      },
+      required: ['target_description', 'new_category']
+    }
+  },
+  {
+    name: 'set_working_estimate',
+    description: 'Pin an estimate as the conversation\'s working scope so subsequent tool calls (upload_estimate_photo, set_estimate_photo_role, etc.) can omit the estimate_identifier arg. Use when the user signals focus: "let\'s work on Kevin Chase 67 Berry", "switch to the Magarin job", "I\'m doing the Sandra Parker proposal now". Persists until the user names a different one or clears it.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        estimate_identifier: { type: 'string', description: 'Customer name, address, or estimate number. Pass an empty string to clear the working context.' }
+      },
+      required: ['estimate_identifier']
+    }
   }
 ];
 
@@ -2090,7 +2142,116 @@ async function routeForApproval(actionType, target, summary, executePayload) {
   return await resp.json();
 }
 
-async function executeTool(name, input, attachments = []) {
+// ═══════════════════════════════════════════
+// PHOTO TOOL HELPERS — estimate resolution + sticky working context
+// ═══════════════════════════════════════════
+
+const PHOTO_CATEGORIES = new Set(['cover', 'before', 'after', 'damage', 'material', 'inspection', 'site', 'other', 'general']);
+function normalizePhotoCategory(c) {
+  const lower = String(c || '').trim().toLowerCase();
+  return PHOTO_CATEGORIES.has(lower) ? lower : 'general';
+}
+
+let _PU_TENANT_CACHE = null;
+async function getPlusUltraTenantId() {
+  if (_PU_TENANT_CACHE) return _PU_TENANT_CACHE;
+  const { data } = await supabaseAdmin.from('tenants').select('id').eq('slug', 'plus-ultra').maybeSingle();
+  _PU_TENANT_CACHE = data?.id || null;
+  return _PU_TENANT_CACHE;
+}
+
+// Fuzzy-resolve an estimate from a natural-language identifier (customer
+// name, address, "estimate 68", "67 Berry", "Magarin", etc). Returns the
+// best-scoring active estimate, or null if nothing matches.
+async function resolveEstimateFromIdentifier(identifier, tenantId) {
+  const raw = String(identifier || '').trim();
+  if (!raw) return null;
+  const tid = tenantId || await getPlusUltraTenantId();
+  if (!tid) return null;
+
+  const numMatch = raw.match(/(?:estimate\s*#?|#)\s*(\d+)/i) || raw.match(/^(\d+)$/);
+  if (numMatch) {
+    const { data } = await supabaseAdmin
+      .from('estimates')
+      .select('id, estimate_number, status, customer_id, customer:customers(full_name, address)')
+      .eq('tenant_id', tid)
+      .eq('estimate_number', Number(numMatch[1]))
+      .maybeSingle();
+    if (data) return { id: data.id, estimate_number: data.estimate_number, customer_name: data.customer?.full_name, address: data.customer?.address };
+  }
+
+  const tokens = raw.toLowerCase().split(/[\s,]+/).filter(t => t.length >= 2);
+  if (!tokens.length) return null;
+
+  const { data: candidates } = await supabaseAdmin
+    .from('estimates')
+    .select('id, estimate_number, status, created_at, customer_id, customer:customers(full_name, address)')
+    .eq('tenant_id', tid)
+    .order('created_at', { ascending: false })
+    .limit(80);
+  if (!candidates || !candidates.length) return null;
+
+  let best = null, bestScore = 0;
+  for (const c of candidates) {
+    const haystack = `${c.customer?.full_name || ''} ${c.customer?.address || ''}`.toLowerCase();
+    let score = 0;
+    for (const t of tokens) if (haystack.includes(t)) score += 1;
+    if (c.status === 'draft' || c.status === 'sent') score += 0.5;
+    if (score > bestScore) { bestScore = score; best = c; }
+  }
+  if (!best || bestScore < 1) return null;
+  return { id: best.id, estimate_number: best.estimate_number, customer_name: best.customer?.full_name, address: best.customer?.address };
+}
+
+async function loadWorkingEstimate(conversationId) {
+  if (!conversationId) return null;
+  const { data } = await supabaseAdmin
+    .from('chat_conversations').select('working_on').eq('id', conversationId).maybeSingle();
+  return data?.working_on?.estimate_id ? data.working_on : null;
+}
+
+async function saveWorkingEstimate(conversationId, payload) {
+  if (!conversationId) return;
+  await supabaseAdmin.from('chat_conversations')
+    .update({ working_on: payload, updated_at: new Date().toISOString() })
+    .eq('id', conversationId);
+}
+
+// Best-match resolver across an estimate's existing gallery for the
+// natural-language target ("the chimney one", "the after photo", "the
+// third photo", "the one Cat uploaded this morning").
+function pickPhotoByDescription(photos, description) {
+  if (!photos || !photos.length) return null;
+  const desc = String(description || '').toLowerCase().trim();
+  if (!desc) return photos[0];
+
+  // Ordinal hints first: "first", "1st", "third", "the third one"
+  const ordinalMap = { first: 0, '1st': 0, one: 0, second: 1, '2nd': 1, two: 1, third: 2, '3rd': 2, three: 2, fourth: 3, '4th': 3, fifth: 4, '5th': 4, last: photos.length - 1 };
+  for (const [word, idx] of Object.entries(ordinalMap)) {
+    if (desc.includes(word) && photos[idx]) return photos[idx];
+  }
+
+  // Category hint
+  for (const cat of PHOTO_CATEGORIES) {
+    if (desc.includes(cat) && cat !== 'general') {
+      const hit = photos.find(p => p.category === cat);
+      if (hit) return hit;
+    }
+  }
+
+  // Token overlap across caption + filename
+  const tokens = desc.split(/\s+/).filter(t => t.length >= 3);
+  let best = null, bestScore = 0;
+  for (const p of photos) {
+    const hay = `${p.caption || ''} ${p.filename || ''} ${p.category || ''}`.toLowerCase();
+    let score = 0;
+    for (const t of tokens) if (hay.includes(t)) score += 1;
+    if (score > bestScore) { bestScore = score; best = p; }
+  }
+  return best || photos[0];
+}
+
+async function executeTool(name, input, attachments = [], conversationId = null) {
   try {
     // ── WRITE OPERATIONS — route through approval system ──
     if (name === 'update_ticket') {
@@ -3848,6 +4009,136 @@ async function executeTool(name, input, attachments = []) {
       }
     }
 
+    // ═══════════════════════════════════════════
+    // PHOTO TOOLS
+    // ═══════════════════════════════════════════
+    if (name === 'set_working_estimate') {
+      if (!conversationId) return { error: 'No conversation context; this is the first turn. Try again after the conversation is established.' };
+      const ident = String(input.estimate_identifier || '').trim();
+      if (!ident) {
+        await saveWorkingEstimate(conversationId, null);
+        return { ok: true, cleared: true };
+      }
+      const tid = await getPlusUltraTenantId();
+      const est = await resolveEstimateFromIdentifier(ident, tid);
+      if (!est) return { error: `Could not find an estimate matching "${ident}". Try a more specific customer name, address, or estimate number.` };
+      const payload = { estimate_id: est.id, customer_name: est.customer_name, address: est.address, estimate_number: est.estimate_number, set_at: new Date().toISOString(), source: 'explicit' };
+      await saveWorkingEstimate(conversationId, payload);
+      return { ok: true, working_on: payload };
+    }
+
+    if (name === 'upload_estimate_photo') {
+      const tid = await getPlusUltraTenantId();
+      // Resolve estimate: explicit arg first, then conversation context.
+      let est = null;
+      if (input.estimate_identifier) {
+        est = await resolveEstimateFromIdentifier(input.estimate_identifier, tid);
+        if (!est) return { error: `Could not find an estimate matching "${input.estimate_identifier}".` };
+      } else {
+        const working = await loadWorkingEstimate(conversationId);
+        if (!working?.estimate_id) return { error: 'No estimate identified. Either pass estimate_identifier or call set_working_estimate first.' };
+        est = { id: working.estimate_id, customer_name: working.customer_name, address: working.address, estimate_number: working.estimate_number };
+      }
+
+      // Find the attachment.
+      if (!attachments.length) return { error: 'No attachments in this chat turn. Cat needs to drop a photo into the chat input first.' };
+      let att = null;
+      if (typeof input.attachment_index === 'number') att = attachments[input.attachment_index];
+      else if (input.attachment_filename) att = attachments.find(a => (a.fileName || '').toLowerCase() === String(input.attachment_filename).toLowerCase());
+      else if (attachments.length === 1) att = attachments[0]; // single-photo shortcut
+      if (!att) return { error: `Attachment not found. ${attachments.length} attachment(s) available: ${attachments.map((a, i) => `[${i}] ${a.fileName}`).join(', ')}.` };
+      if (!att.mimeType || (!att.mimeType.startsWith('image/') && !att.mimeType.startsWith('video/'))) {
+        return { error: `Attachment "${att.fileName}" has type ${att.mimeType || 'unknown'} which is not an image or video.` };
+      }
+
+      const category = normalizePhotoCategory(input.category);
+      const isCover = category === 'cover';
+      if (isCover) {
+        await supabaseAdmin.from('estimate_photos').update({ is_cover: false }).eq('estimate_id', est.id);
+      }
+      const { data: photo, error } = await supabaseAdmin
+        .from('estimate_photos')
+        .insert({
+          estimate_id: est.id,
+          url: att.url,
+          filename: att.fileName,
+          mime_type: att.mimeType,
+          caption: input.caption || null,
+          category,
+          is_cover: isCover,
+        })
+        .select('*').single();
+      if (error) return { error: `DB insert failed: ${error.message}` };
+
+      // Auto-set this estimate as the working context if not already.
+      const working = await loadWorkingEstimate(conversationId);
+      if (!working || working.estimate_id !== est.id) {
+        await saveWorkingEstimate(conversationId, {
+          estimate_id: est.id, customer_name: est.customer_name, address: est.address,
+          estimate_number: est.estimate_number, set_at: new Date().toISOString(), source: 'inferred'
+        });
+      }
+      return {
+        ok: true,
+        estimate_id: est.id,
+        estimate_number: est.estimate_number,
+        customer_name: est.customer_name,
+        photo_id: photo.id,
+        category,
+        is_cover: isCover,
+        filename: att.fileName,
+        url: att.url,
+        message: `Saved "${att.fileName}" as ${category}${isCover ? ' (cover)' : ''} on estimate #${est.estimate_number} for ${est.customer_name}.`
+      };
+    }
+
+    if (name === 'set_estimate_photo_role') {
+      const tid = await getPlusUltraTenantId();
+      let est = null;
+      if (input.estimate_identifier) {
+        est = await resolveEstimateFromIdentifier(input.estimate_identifier, tid);
+        if (!est) return { error: `Could not find an estimate matching "${input.estimate_identifier}".` };
+      } else {
+        const working = await loadWorkingEstimate(conversationId);
+        if (!working?.estimate_id) return { error: 'No estimate identified. Pass estimate_identifier or set the working estimate first.' };
+        est = { id: working.estimate_id, customer_name: working.customer_name, estimate_number: working.estimate_number };
+      }
+
+      const { data: photos } = await supabaseAdmin
+        .from('estimate_photos')
+        .select('id, url, filename, mime_type, category, caption, is_cover, uploaded_at')
+        .eq('estimate_id', est.id)
+        .order('uploaded_at', { ascending: false });
+      if (!photos || !photos.length) return { error: `No photos on estimate #${est.estimate_number} yet.` };
+
+      const target = pickPhotoByDescription(photos, input.target_description);
+      if (!target) return { error: `Could not match "${input.target_description}" to any of the ${photos.length} photo(s) on this estimate.` };
+
+      const newCat = normalizePhotoCategory(input.new_category);
+      const newIsCover = newCat === 'cover';
+      const patch = {};
+      if (newCat !== target.category) patch.category = newCat;
+      if (newIsCover && !target.is_cover) patch.is_cover = true;
+      if (!newIsCover && target.is_cover) patch.is_cover = false;
+      if (input.new_caption !== undefined) patch.caption = input.new_caption || null;
+
+      if (newIsCover) {
+        await supabaseAdmin.from('estimate_photos').update({ is_cover: false }).eq('estimate_id', est.id);
+      }
+      const { data: updated, error } = await supabaseAdmin
+        .from('estimate_photos').update(patch).eq('id', target.id).select('*').single();
+      if (error) return { error: `DB update failed: ${error.message}` };
+      return {
+        ok: true,
+        photo_id: target.id,
+        previous_category: target.category,
+        new_category: newCat,
+        is_cover: newIsCover,
+        filename: target.filename,
+        message: `Updated "${target.filename}" on estimate #${est.estimate_number}: ${target.category} → ${newCat}${newIsCover ? ' (now the cover)' : ''}.`
+      };
+    }
+
     return { error: `Unknown tool: ${name}` };
   } catch (e) {
     return { error: e.message };
@@ -4453,7 +4744,7 @@ You are now Mackenzie's game development and product specialist.
             continue;
           }
           const inputWithRole = { ...block.input, _userRole: userRole, _userId: userContext?.userId || null };
-          const result = await executeTool(block.name, inputWithRole, attachments);
+          const result = await executeTool(block.name, inputWithRole, attachments, conversation_id);
           toolActions.push({ tool: block.name, input: block.input, result });
           let status = 'ok';
           if (result?.error) status = 'error';
