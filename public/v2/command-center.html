@@ -97,7 +97,7 @@
     <button class="rj-mode-toggle-btn" data-mode="canvas">Canvas</button>
     <button class="rj-mode-toggle-btn" data-mode="river">River</button>
   </div>
-  <a href="/command-center.html" title="Back to the classic cockpit (turns the beta toggle off)" style="margin-left:var(--rj-space-3);font-size:var(--rj-text-xs);color:var(--rj-text-muted);text-decoration:none;letter-spacing:var(--rj-tracking-wide);text-transform:uppercase" onclick="try{localStorage.removeItem('ryujin_cockpit_version');}catch(e){}">← Classic</a>
+  <a href="/command-center.html" title="Back to the classic cockpit (turns the beta toggle off)" style="margin-left:var(--rj-space-3);font-size:var(--rj-text-xs);font-weight:var(--rj-weight-semibold);color:var(--rj-copper-700);text-decoration:none;letter-spacing:var(--rj-tracking-wide);text-transform:uppercase;padding:6px 12px;border:1px solid var(--rj-copper-600);border-radius:var(--rj-radius-pill);background:var(--rj-bg-page)" onclick="try{localStorage.removeItem('ryujin_cockpit_version');}catch(e){}">← Classic cockpit</a>
 </header>
 
 <div class="hero">
@@ -211,19 +211,28 @@
     `;
   }
 
-  // Canvas
+  // Canvas. Cluster items can be plain strings or { label, href } for
+  // clickable rows. Production WOs link to the v1 job folder; pillar
+  // headers link to the dedicated drilldown.
   const activeWO = (RJ_DATA.workorders || []).filter(w => w.status === 'in_progress' || w.status === 'issued');
   const clusters = [
-    { top: 60,  left: 80,  title: `Sales · ${RJ_DATA.jobs.length} estimates`, items: RJ_DATA.jobs.slice(0, 6).map(j => j.address) },
-    { top: 150, left: 460, title: 'Customers',            items: RJ_DATA.customers.slice(0, 5).map(c => c.name) },
-    { top: 80,  left: 820, title: `Production · ${activeWO.length} live`, items: activeWO.slice(0, 6).map(w => `WO-${w.woNumber} · ${w.customerName}`) },
+    { top: 60,  left: 80,  title: `Sales · ${RJ_DATA.jobs.length} estimates`, items: RJ_DATA.jobs.slice(0, 6).map(j => ({ label: j.address, href: '/v2/pillar.html?pillar=sales' })) },
+    { top: 150, left: 460, title: 'Customers',            items: RJ_DATA.customers.slice(0, 5).map(c => ({ label: c.name, href: '/v2/pillar.html?pillar=customer' })) },
+    { top: 80,  left: 820, title: `Production · ${activeWO.length} live`, items: activeWO.slice(0, 6).map(w => ({ label: `WO-${w.woNumber} · ${w.customerName}`, href: `/job.html?wo=${encodeURIComponent(w.id)}` })) },
     { top: 380, left: 200, title: 'Crew',                 items: ['AJ', 'Diego', 'Ryan'] },
     { top: 400, left: 780, title: 'Materials',            items: ['Coastal · PO 233', 'GenTek · PO 244'] }
   ];
+  function renderClusterItem(i) {
+    if (i && typeof i === 'object' && i.href) {
+      return `<li><a href="${esc(i.href)}" style="color:var(--rj-text-body);text-decoration:none;display:block;padding:2px 0" onmouseover="this.style.color='var(--rj-copper-700)';this.style.textDecoration='underline'" onmouseout="this.style.color='var(--rj-text-body)';this.style.textDecoration='none'">${esc(i.label)}</a></li>`;
+    }
+    const label = typeof i === 'object' ? (i.label || '') : i;
+    return `<li>${esc(label)}</li>`;
+  }
   document.getElementById('canvas-clusters').innerHTML = clusters.map(c => `
     <div class="cluster" style="top: ${c.top}px; left: ${c.left}px;">
       <h3>${esc(c.title)}</h3>
-      <ul>${c.items.map(i => `<li>${esc(i)}</li>`).join('')}</ul>
+      <ul>${c.items.map(renderClusterItem).join('')}</ul>
     </div>
   `).join('');
 

@@ -72,6 +72,7 @@
     <button class="rj-mode-toggle-btn" data-mode="canvas">Canvas</button>
     <button class="rj-mode-toggle-btn" data-mode="river">River</button>
   </div>
+  <a href="/command-center.html" title="Back to the classic cockpit (turns the beta toggle off)" style="margin-left:var(--rj-space-3);font-size:var(--rj-text-xs);font-weight:var(--rj-weight-semibold);color:var(--rj-copper-700);text-decoration:none;letter-spacing:var(--rj-tracking-wide);text-transform:uppercase;padding:6px 12px;border:1px solid var(--rj-copper-600);border-radius:var(--rj-radius-pill);background:var(--rj-bg-page)" onclick="try{localStorage.removeItem('ryujin_cockpit_version');}catch(e){}">← Classic cockpit</a>
 </header>
 
 <div class="pillar-hero">
@@ -201,6 +202,7 @@
       graphBody.innerHTML = `
         <p class="rj-secondary" style="margin: 0 0 var(--rj-space-4);">${esc(w.packageTier || '')} · ${esc(w.jobType || '')}${w.subCrewLead ? ' · ' + esc(w.subCrewLead) : ''} · starts ${esc(w.startDate || 'TBD')}${w.completedAt ? ' · done ' + esc(w.completedAt) : ''}</p>
         <div class="rj-stat-ornate"><div class="rj-stat-label">Roof squares</div><div class="rj-stat-value">${w.totalSq || '—'}</div></div>
+        <p style="margin: var(--rj-space-3) 0 0;"><a href="/job.html?wo=${encodeURIComponent(w.id)}" style="color:var(--rj-copper-700);font-weight:var(--rj-weight-semibold);text-decoration:none">Open job folder →</a></p>
         <hr class="rj-divider">
         ${renderRail('tickets', RJ_DATA.tickets.filter(t => t.customerId === w.customerId))}
       `;
@@ -270,13 +272,16 @@
       ];
     } else if (pillar.slug === 'production') {
       const W = RJ_DATA.workorders || [];
-      const wLabel = w => `WO-${w.woNumber} · ${w.customerName} · ${w.address}`;
+      const wItem = w => ({
+        label: `WO-${w.woNumber} · ${w.customerName} · ${w.address}`,
+        href: `/job.html?wo=${encodeURIComponent(w.id)}`
+      });
       clusters = [
-        { top: 80,  left: 80,  title: 'In progress',  items: W.filter(w => w.status === 'in_progress').map(wLabel) },
-        { top: 80,  left: 480, title: 'Scheduled',    items: W.filter(w => w.status === 'issued').map(wLabel) },
-        { top: 80,  left: 840, title: 'Complete',     items: W.filter(w => w.status === 'complete').slice(0, 5).map(wLabel) },
+        { top: 80,  left: 80,  title: 'In progress',  items: W.filter(w => w.status === 'in_progress').map(wItem) },
+        { top: 80,  left: 480, title: 'Scheduled',    items: W.filter(w => w.status === 'issued').map(wItem) },
+        { top: 80,  left: 840, title: 'Complete',     items: W.filter(w => w.status === 'complete').slice(0, 5).map(wItem) },
         { top: 320, left: 200, title: 'Tickets open', items: RJ_DATA.tickets.filter(t => t.status !== 'done' && t.status !== 'cancelled').slice(0, 8).map(t => t.title) },
-        { top: 320, left: 720, title: 'Draft / Cancelled', items: W.filter(w => w.status === 'draft' || w.status === 'cancelled').map(wLabel) }
+        { top: 320, left: 720, title: 'Draft / Cancelled', items: W.filter(w => w.status === 'draft' || w.status === 'cancelled').map(wItem) }
       ];
     } else {
       clusters = [
@@ -284,10 +289,20 @@
         { top: 200, left: 480, title: 'Coming soon',              items: ['Cluster layout per pillar'] }
       ];
     }
+    // Cluster items can be either strings (legacy) or { label, href }
+    // (preferred — makes the item clickable). Links inherit the canvas tone
+    // and underline-on-hover for affordance.
+    function renderItem(i) {
+      if (i && typeof i === 'object' && i.href) {
+        return `<li><a href="${esc(i.href)}" style="color:var(--rj-text-body);text-decoration:none;display:block;padding:2px 0" onmouseover="this.style.color='var(--rj-copper-700)';this.style.textDecoration='underline'" onmouseout="this.style.color='var(--rj-text-body)';this.style.textDecoration='none'">${esc(i.label)}</a></li>`;
+      }
+      const label = typeof i === 'object' ? (i.label || '') : i;
+      return `<li>${esc(label)}</li>`;
+    }
     canvasClusters.innerHTML = clusters.map(c => `
       <div class="cluster" style="top: ${c.top}px; left: ${c.left}px;">
         <h3>${esc(c.title)}</h3>
-        <ul>${c.items.map(i => `<li>${esc(i)}</li>`).join('')}</ul>
+        <ul>${c.items.map(renderItem).join('')}</ul>
       </div>
     `).join('');
   }
