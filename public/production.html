@@ -305,7 +305,7 @@ const STATUS_PILL = {
 };
 
 // State
-let DATA = { paysheets: [], tickets: [] };
+let DATA = { paysheets: [], tickets: [], psToWoId: new Map() };
 let LAST_OK_AT = null;
 let IN_FLIGHT = false;
 
@@ -333,13 +333,15 @@ async function loadAll(forceVisualPulse){
     if (forceVisualPulse) $('liveDot').textContent = 'REFRESHING…';
 
     const t0 = Date.now();
-    const [psR, tkR] = await Promise.all([
+    const [psR, tkR, woR] = await Promise.all([
       fetchSafe('/api/paysheets?limit=200'),
-      fetchSafe('/api/tickets?status=open&limit=200')
+      fetchSafe('/api/tickets?status=open&limit=200'),
+      fetchSafe('/api/workorders?limit=200')
     ]);
 
     const psOk = psR.ok && Array.isArray(psR.data?.paysheets);
     const tkOk = tkR.ok && Array.isArray(tkR.data?.tickets);
+    const woOk = woR.ok && Array.isArray(woR.data?.workorders);
 
     if (!psOk && !tkOk){
       $('liveDot').textContent = 'OFFLINE · RETRYING';
@@ -349,6 +351,16 @@ async function loadAll(forceVisualPulse){
 
     if (psOk) DATA.paysheets = psR.data.paysheets;
     if (tkOk) DATA.tickets   = tkR.data.tickets;
+    if (woOk) {
+      // Build paysheet_id to workorder_id index for job-folder navigation.
+      // The FK direction is workorders.linked_paysheet_id, so we reverse it
+      // here once instead of per-card.
+      DATA.psToWoId = new Map(
+        (woR.data.workorders || [])
+          .filter(w => w.linked_paysheet_id)
+          .map(w => [w.linked_paysheet_id, w.id])
+      );
+    }
 
     renderKPIs();
     renderActiveJobs();
@@ -446,7 +458,7 @@ function renderActiveJobs(){
     const lead = subRaw.match(/\(([^)]+)\)/)?.[1];
     const sub = lead || subRaw.split('(')[0].trim() || 'Crew';
     return `
-      <div class="job-card" onclick="window.open(${p.job_id ? `'/job.html?wo=${esc(p.job_id)}'` : `'/production-paysheet.html?id=${esc(p.id)}'`},'_blank')">
+      <div class="job-card" onclick="window.open(${(DATA.psToWoId && DATA.psToWoId.get(p.id)) ? `'/job.html?wo=${esc(DATA.psToWoId.get(p.id))}'` : `'/production-paysheet.html?id=${esc(p.id)}'`},'_blank')">
         <div class="head">
           <div>
             <div class="cust">${esc(p.customer_name || '—')}</div>
