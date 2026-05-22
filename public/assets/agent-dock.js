@@ -99,11 +99,15 @@ function scrollThreadToBottom() {
   requestAnimationFrame(() => { threadEl.scrollTop = threadEl.scrollHeight; });
 }
 
-function append(role, htmlOrText) {
+// Safe-by-default: messages are rendered as text via createTextNode (in el's
+// children path), never innerHTML. Any future caller that needs to render
+// trusted markup (e.g. markdown-formatted agent replies) must build a DOM
+// subtree and pass it as a child element, never a raw HTML string.
+function append(role, text) {
   if (!threadEl) return;
   const classMap = { user: 'rj-msg rj-msg-user', agent: 'rj-msg rj-msg-agent', meta: 'rj-msg-meta' };
   const cls = classMap[role] || classMap.agent;
-  const node = el('div', { class: cls, html: String(htmlOrText) });
+  const node = el('div', { class: cls }, [String(text)]);
   threadEl.appendChild(node);
   scrollThreadToBottom();
   return node;
@@ -112,23 +116,14 @@ function append(role, htmlOrText) {
 function send(text) {
   const trimmed = String(text || '').trim();
   if (!trimmed) return;
-  append('user', escapeHtml(trimmed));
+  append('user', trimmed);
   document.dispatchEvent(new CustomEvent('rj-agent-send', { detail: { text: trimmed } }));
   // Phase 1 stub: local echo so the dock feels alive.
   setTimeout(() => {
-    append('agent', `Heard. (Phase 1 stub: agent backend wires in next phase.) You said: <em>${escapeHtml(trimmed)}</em>`);
+    append('agent', `Heard. (Phase 1 stub: agent backend wires in next phase.) You said: ${trimmed}`);
   }, 320);
   if (inputEl) inputEl.value = '';
   updateSendDisabled();
-}
-
-function escapeHtml(s) {
-  return String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
 }
 
 function updateSendDisabled() {
