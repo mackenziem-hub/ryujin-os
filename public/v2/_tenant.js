@@ -58,6 +58,17 @@ export function readTenantSlug() {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) return stored;
   } catch { /* ignore */ }
+  // The login flow (login.html / magic.html) stores the resolved tenant as
+  // JSON under 'ryujin_tenant'. Read that for users who logged in but never
+  // pinned a v2-specific ry_tenant slug. Without this fallback every
+  // non-Plus-Ultra account would see DEV_FALLBACK_TENANT data on /v2/*.
+  try {
+    const raw = localStorage.getItem('ryujin_tenant');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.slug) return parsed.slug;
+    }
+  } catch { /* ignore */ }
   const bodyAttr = document.body.getAttribute('data-tenant');
   if (bodyAttr) return bodyAttr;
   return DEV_FALLBACK_TENANT;
