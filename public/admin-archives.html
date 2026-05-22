@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ryujin OS · Archives · CompanyCam</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Orbitron:wght@500;700;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<script src="/assets/auth-guard.js"></script>
+<style>
+:root {
+  --bg:#030611; --panel:rgba(14,22,40,0.55); --glass-border:rgba(74,158,255,0.18);
+  --text:#e0e6f0; --text-dim:rgba(200,220,255,0.55); --cyan:#22d3ee; --red:#ef4444;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; padding:20px; }
+.topbar { display:flex; align-items:center; gap:14px; margin-bottom:18px; }
+.topbar a { color:var(--cyan); text-decoration:none; font-size:0.72em; letter-spacing:1.6px; text-transform:uppercase; }
+.title { font-family:'Orbitron',sans-serif; font-size:1.2em; letter-spacing:3px; }
+.subtitle { font-family:'Share Tech Mono',monospace; font-size:0.7em; color:var(--text-dim); letter-spacing:1px; }
+.bar { display:flex; gap:10px; align-items:center; margin-bottom:14px; flex-wrap:wrap; }
+.bar input {
+  flex:1; min-width:240px; padding:9px 12px; background:rgba(6,10,20,0.55); color:var(--text);
+  border:1px solid var(--glass-border); border-radius:8px; font-size:0.86em;
+}
+.bar .count { font-family:'Share Tech Mono',monospace; font-size:0.72em; color:var(--text-dim); letter-spacing:1px; }
+.grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:14px; }
+.card {
+  background:var(--panel); border:1px solid var(--glass-border); border-radius:12px; overflow:hidden;
+  cursor:pointer; transition:transform 0.15s, border-color 0.15s; display:flex; flex-direction:column;
+}
+.card:hover { transform:translateY(-2px); border-color:var(--cyan); }
+.card .thumb { aspect-ratio:4/3; background:#0a1628; overflow:hidden; position:relative; }
+.card .thumb img { width:100%; height:100%; object-fit:cover; }
+.card .thumb .empty { display:flex; align-items:center; justify-content:center; height:100%; color:var(--text-dim); font-size:0.72em; font-family:'Share Tech Mono',monospace; }
+.card .body { padding:10px 12px; flex:1; display:flex; flex-direction:column; gap:4px; }
+.card .name { font-weight:600; font-size:0.88em; line-height:1.3; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+.card .addr { font-size:0.72em; color:var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.card .meta { display:flex; justify-content:space-between; font-size:0.66em; color:var(--text-dim); font-family:'Share Tech Mono',monospace; letter-spacing:0.8px; margin-top:4px; }
+.card .photo-pill { background:rgba(34,211,238,0.15); color:var(--cyan); padding:2px 7px; border-radius:4px; font-weight:600; }
+.empty-state { text-align:center; padding:60px 20px; color:var(--text-dim); font-size:0.9em; }
+.loading { text-align:center; padding:40px; color:var(--text-dim); font-family:'Share Tech Mono',monospace; }
+.modal-backdrop {
+  position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:1000;
+  display:flex; align-items:flex-start; justify-content:center; padding:30px; overflow:auto;
+  backdrop-filter:blur(4px);
+}
+.modal {
+  background:var(--panel); border:1px solid var(--glass-border); border-radius:14px;
+  max-width:1100px; width:100%;
+}
+.modal-head { padding:16px 20px; border-bottom:1px solid var(--glass-border); display:flex; align-items:center; justify-content:space-between; }
+.modal-head .x { background:transparent; border:none; color:var(--text-dim); font-size:1.6em; cursor:pointer; padding:0 8px; }
+.modal-body { padding:16px 20px; }
+.proj-meta { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; margin-bottom:16px; font-size:0.78em; }
+.proj-meta .field { background:rgba(6,10,20,0.45); padding:8px 12px; border-radius:8px; border:1px solid var(--glass-border); }
+.proj-meta .label { font-size:0.6em; letter-spacing:1.5px; color:var(--text-dim); text-transform:uppercase; margin-bottom:2px; }
+.photo-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:8px; }
+.photo-tile { aspect-ratio:1; background:#0a1628; border-radius:8px; overflow:hidden; cursor:pointer; position:relative; }
+.photo-tile img { width:100%; height:100%; object-fit:cover; }
+.photo-tile .badge { position:absolute; bottom:4px; right:4px; background:rgba(0,0,0,0.7); color:#fff; font-size:0.62em; padding:2px 5px; border-radius:3px; font-family:'Share Tech Mono',monospace; }
+.lightbox {
+  position:fixed; inset:0; background:rgba(0,0,0,0.95); z-index:1100;
+  display:flex; align-items:center; justify-content:center; padding:30px; cursor:zoom-out;
+}
+.lightbox img { max-width:100%; max-height:100%; }
+.lightbox-meta { position:fixed; bottom:20px; left:20px; right:20px; color:#fff; font-size:0.78em; font-family:'Share Tech Mono',monospace; text-align:center; pointer-events:none; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a href="/admin.html">&larr; Admin</a>
+  <div>
+    <div class="title">ARCHIVES</div>
+    <div class="subtitle">CompanyCam · 13,198 photos · 255 projects</div>
+  </div>
+</div>
+
+<div class="bar">
+  <input id="searchInput" type="search" placeholder="Search by customer, address, city, or creator..." oninput="onSearch(this.value)">
+  <span class="count" id="countLabel">loading...</span>
+</div>
+
+<div id="grid" class="grid">
+  <div class="loading" style="grid-column:1/-1">Loading projects...</div>
+</div>
+
+<script>
+const TENANT = 'plus-ultra';
+let _searchTimer = null;
+let _projects = [];
+
+function _headers(extra) {
+  const base = { 'x-tenant-id': TENANT, ...(extra || {}) };
+  if (window.RyujinAuth?.headers) Object.assign(base, window.RyujinAuth.headers());
+  return base;
+}
+
+function esc(s) {
+  if (s == null) return '';
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function fmtDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+}
+
+async function loadProjects(search) {
+  const grid = document.getElementById('grid');
+  const count = document.getElementById('countLabel');
+  grid.innerHTML = `<div class="loading" style="grid-column:1/-1">Loading...</div>`;
+  const params = new URLSearchParams({ limit: '200' });
+  if (search) params.set('search', search);
+  try {
+    const r = await fetch(`/api/companycam-archive?${params}`, { headers: _headers() });
+    if (!r.ok) {
+      grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">Failed to load (${r.status})</div>`;
+      return;
+    }
+    const { projects, total } = await r.json();
+    _projects = projects || [];
+    count.textContent = `${_projects.length}${total != null && total > _projects.length ? ' of ' + total : ''} project${_projects.length===1?'':'s'}`;
+    if (!_projects.length) {
+      grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">No projects match.</div>`;
+      return;
+    }
+    grid.innerHTML = _projects.map(p => {
+      const name = p.name && p.name.trim() ? p.name : '(unnamed)';
+      const addr = [p.address, p.city, p.state].filter(Boolean).join(', ');
+      const cover = p.cover_url
+        ? `<img src="${esc(p.cover_url)}" alt="" loading="lazy" onerror="this.parentElement.innerHTML='<div class=&quot;empty&quot;>no preview</div>'">`
+        : `<div class="empty">no preview</div>`;
+      return `<div class="card" onclick="openProject('${esc(p.id)}')">
+        <div class="thumb">${cover}</div>
+        <div class="body">
+          <div class="name">${esc(name)}</div>
+          <div class="addr">${esc(addr || '(no address)')}</div>
+          <div class="meta">
+            <span class="photo-pill">${p.photo_count || 0} photo${p.photo_count === 1 ? '' : 's'}</span>
+            <span>${esc(fmtDate(p.updated_at_companycam))}</span>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">${esc(e.message)}</div>`;
+  }
+}
+
+function onSearch(v) {
+  clearTimeout(_searchTimer);
+  _searchTimer = setTimeout(() => loadProjects(v.trim()), 250);
+}
+
+async function openProject(id) {
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+  backdrop.onclick = e => { if (e.target === backdrop) backdrop.remove(); };
+  backdrop.innerHTML = `<div class="modal"><div class="modal-head"><div>Loading project...</div><button class="x" onclick="this.closest('.modal-backdrop').remove()">&times;</button></div></div>`;
+  document.body.appendChild(backdrop);
+  try {
+    const r = await fetch(`/api/companycam-archive?id=${encodeURIComponent(id)}`, { headers: _headers() });
+    if (!r.ok) { backdrop.querySelector('.modal').innerHTML = `<div class="modal-head"><div>Failed (${r.status})</div><button class="x" onclick="this.closest('.modal-backdrop').remove()">&times;</button></div>`; return; }
+    const { project, photos } = await r.json();
+    const addr = [project.address, project.city, project.state, project.postal_code].filter(Boolean).join(', ');
+    const name = (project.name || '').trim() || '(unnamed project)';
+    backdrop.querySelector('.modal').innerHTML = `
+      <div class="modal-head">
+        <div>
+          <div style="font-family:'Orbitron',sans-serif;font-size:0.92em;letter-spacing:2px">${esc(name)}</div>
+          <div style="font-size:0.72em;color:var(--text-dim);margin-top:2px">${esc(addr)}</div>
+        </div>
+        <button class="x" onclick="this.closest('.modal-backdrop').remove()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="proj-meta">
+          <div class="field"><div class="label">Photos</div>${photos.length}</div>
+          <div class="field"><div class="label">Status</div>${esc(project.status || '—')}${project.archived?' (deleted)':''}</div>
+          <div class="field"><div class="label">Updated</div>${esc(fmtDate(project.updated_at_companycam) || '—')}</div>
+          <div class="field"><div class="label">Creator</div>${esc(project.creator_name || '—')}</div>
+        </div>
+        <div class="photo-grid">
+          ${photos.map(p => `<div class="photo-tile" onclick="openLightbox('${esc(p.url_archived || p.url_source)}','${esc(p.filename||'')}', '${esc(p.creator_name||'')}', '${esc(fmtDate(p.captured_at))}')">
+            <img src="${esc(p.url_archived || p.url_source)}" alt="${esc(p.filename||'')}" loading="lazy">
+            ${p.creator_name ? `<div class="badge">${esc(p.creator_name)}</div>` : ''}
+          </div>`).join('')}
+        </div>
+      </div>`;
+  } catch (e) {
+    backdrop.querySelector('.modal').innerHTML = `<div class="modal-head"><div>${esc(e.message)}</div><button class="x" onclick="this.closest('.modal-backdrop').remove()">&times;</button></div>`;
+  }
+}
+
+function openLightbox(url, filename, creator, dateStr) {
+  const lb = document.createElement('div');
+  lb.className = 'lightbox';
+  lb.onclick = () => lb.remove();
+  lb.innerHTML = `<img src="${esc(url)}" alt=""><div class="lightbox-meta">${esc(filename)} ${creator?'· '+esc(creator):''} ${dateStr?'· '+esc(dateStr):''}</div>`;
+  document.body.appendChild(lb);
+}
+
+loadProjects('');
+</script>
+</body>
+</html>
