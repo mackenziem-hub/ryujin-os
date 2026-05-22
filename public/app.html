@@ -265,6 +265,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .user-info .name{font-weight:700;font-size:0.9em}
 .user-info .role-label{font-size:0.68em;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;margin-top:1px}
 </style>
+  <script src="/assets/auth-guard.js"></script>
   <script src="/assets/nav-buttons.js" defer></script>
 </head>
 <body>
@@ -440,8 +441,13 @@ let currentTab = 'home';
 
 async function api(path, opts = {}) {
   const sep = path.includes('?') ? '&' : '?';
+  const baseHeaders = { 'Content-Type': 'application/json' };
   try {
-    const resp = await fetch(`${API}${path}${sep}tenant=${TENANT}`, {...opts, headers:{'Content-Type':'application/json',...opts.headers}});
+    const tok = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token');
+    if (tok) baseHeaders['Authorization'] = 'Bearer ' + tok;
+  } catch { /* ignore */ }
+  try {
+    const resp = await fetch(`${API}${path}${sep}tenant=${TENANT}`, {...opts, headers:{...baseHeaders, ...opts.headers}});
     return resp.json();
   } catch(e) { return {error:'Connection failed'}; }
 }

@@ -40,6 +40,13 @@
       'Content-Type': 'application/json',
       'x-tenant-id': tenant()
     };
+    // Pick up the session token so endpoints behind requirePortalSession
+    // (customers/tickets/estimates/custom-proposals as of 2026-05-22) get
+    // a valid bearer. Harmless on still-public endpoints.
+    try {
+      const tok = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token');
+      if (tok) headers['Authorization'] = 'Bearer ' + tok;
+    } catch { /* ignore */ }
     const opts = { method, headers, credentials: 'same-origin' };
     if (body !== undefined) opts.body = JSON.stringify(body);
     try {
