@@ -186,10 +186,13 @@ export async function loadLiveData(tenantSlug) {
   }));
 
   // Compute lifetime value per customer from their jobs and proposals.
+  // Use the already-normalized customerId on each proposal; the per-iteration
+  // first-token substring match used to bucket a single "John Smith" proposal
+  // into every customer whose name starts with "john".
   for (const c of customers) {
     const fromJobs = jobs.filter(j => j.customerId === c.id).reduce((s, j) => s + (j.value || 0), 0);
     const fromProps = proposals
-      .filter(p => p.customerName && p.customerName.toLowerCase().includes((c.name || '').toLowerCase().split(' ')[0] || ''))
+      .filter(p => p.customerId === c.id)
       .reduce((s, p) => s + (p.value || 0), 0);
     c.ltv = Math.round(fromJobs + fromProps);
   }

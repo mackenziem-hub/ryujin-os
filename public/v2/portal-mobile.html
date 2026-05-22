@@ -154,12 +154,19 @@
   const RJ_DATA = await loadLiveData(readTenantSlug());
   const customerById = (id) => _customerById(RJ_DATA, id);
 
-  const me = 'AJ';
-  const myTickets = RJ_DATA.tickets.filter(t => t.assignedTo === me || t.assignedTo === 'crew');
+  // Per-user filtering isn't wired yet (auth lands in a later phase). Until
+  // then, accept ?as=<name> for previewing one crew member's view; otherwise
+  // show every assigned ticket so the portal isn't empty for tenants whose
+  // crew has no member literally named "AJ".
+  const asParam = new URLSearchParams(window.location.search).get('as');
+  const me = asParam || null;
+  const myTickets = me
+    ? RJ_DATA.tickets.filter(t => t.assignedTo === me || t.assignedTo === 'crew')
+    : RJ_DATA.tickets.filter(t => t.assignedTo);
   const myDueToday = myTickets.filter(t => t.dueDate && t.dueDate <= RJ_DATA.tenant.today);
   const showTickets = myDueToday.length ? myDueToday : myTickets.slice(0, 5);
 
-  document.getElementById('greeting').textContent = `Hi ${me}.`;
+  document.getElementById('greeting').textContent = me ? `Hi ${me}.` : 'Today';
   document.getElementById('queue-count').textContent = `${showTickets.length} jobs queued.`;
 
   const queue = document.getElementById('queue');
