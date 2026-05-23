@@ -1,11 +1,11 @@
-// Ryujin OS — Project Files (Photos/Videos/Docs)
-// GET    /api/files?project_id=X    — List files for a project
-// POST   /api/files                 — Upload file(s) to a project
-// PUT    /api/files                 — Update file metadata (caption, tags, annotations, visibility)
-// DELETE /api/files?id=X            — Delete a file
+// Ryujin OS - Project Files (Photos/Videos/Docs)
+// GET    /api/files?project_id=X    - List files for a project
+// POST   /api/files                 - Upload file(s) to a project
+// PUT    /api/files                 - Update file metadata (caption, tags, annotations, visibility)
+// DELETE /api/files?id=X            - Delete a file (Vercel Blob cleanup too)
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireTenant } from '../lib/tenant.js';
-import { put } from '@vercel/blob';
+import { put, del } from '@vercel/blob';
 import Busboy from 'busboy';
 import exifr from 'exifr';
 
@@ -174,7 +174,7 @@ async function handler(req, res) {
       }
 
       // Captured_at / lat / lng can also be passed as form fields (client-side geolocation
-      // overrides null EXIF — phones don't write GPS to capture-mode photos in Safari).
+      // overrides null EXIF - phones do not write GPS to capture-mode photos in Safari).
       const formCapturedAt = fields[`captured_at_${i}`] || fields.captured_at || null;
       const formLat = parseFloat(fields[`latitude_${i}`] ?? fields.latitude);
       const formLng = parseFloat(fields[`longitude_${i}`] ?? fields.longitude);
@@ -257,9 +257,24 @@ async function handler(req, res) {
   }
 
   // ── DELETE ──
+  // Mirrors api/estimate-photos.js DELETE: fetch row first to get the Blob
+  // URLs (original + thumbnail), best-effort delete from Blob, then delete
+  // the DB row. Without the Blob delete the file orphans in storage (the
+  // DB row is the only reference back to the URL).
   if (req.method === 'DELETE') {
     const { id } = req.query;
     if (!id) return res.status(400).json({ error: 'Missing ?id=' });
+
+    const { data: row } = await supabaseAdmin
+      .from('project_files')
+      .select('id, url, thumbnail_url')
+      .eq('id', id)
+      .eq('tenant_id', tenantId)
+      .maybeSingle();
+    if (!row) return res.status(404).json({ error: 'File not found' });
+
+    if (row.url) { try { await del(row.url); } catch {} }
+    if (row.thumbnail_url) { try { await del(row.thumbnail_url); } catch {} }
 
     const { error } = await supabaseAdmin
       .from('project_files')
