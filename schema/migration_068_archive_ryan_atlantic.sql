@@ -21,9 +21,16 @@ alter table subcontractors
 create index if not exists idx_subcontractors_archived_at
   on subcontractors(archived_at);
 
--- 2. Archive Ryan / Atlantic rows (idempotent)
+-- 2. Archive Ryan / Atlantic rows (idempotent). Set BOTH archived_at AND
+--    active=false so the existing sub-portal magic-link check (which only
+--    inspects `active`) immediately starts rejecting any token tied to
+--    one of these rows. Defense-in-depth: api/sub-portal.js also gets an
+--    explicit `archived_at IS NULL` guard in this same PR so future
+--    archive-only writes stay safe even if someone forgets to flip
+--    `active` at the same time.
 update subcontractors
-  set archived_at = now()
+  set archived_at = now(),
+      active = false
   where (
     name ilike '%ryan%'
     or name ilike '%atlantic roofing%'

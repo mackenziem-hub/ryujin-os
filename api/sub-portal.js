@@ -41,15 +41,18 @@ const QUESTION_ROUTING = {
 // to the actual person without breaking existing destructuring.
 async function verifyToken(tenantId, token) {
   if (!token) return null;
-  // Try parent sub first.
+  // Try parent sub first. Reject any sub whose archived_at is set, even if
+  // active=true is stale - defense-in-depth alongside migration 068 which
+  // flips active=false at archive time. Either gate alone is enough; both
+  // together close any window where one column drifts.
   const { data: sub } = await supabaseAdmin
     .from('subcontractors')
-    .select('id, name, company, magic_link_expires_at, active, portal_visibility')
+    .select('id, name, company, magic_link_expires_at, active, archived_at, portal_visibility')
     .eq('tenant_id', tenantId)
     .eq('magic_link_token', token)
     .maybeSingle();
   if (sub) {
-    if (!sub.active) return null;
+    if (!sub.active || sub.archived_at) return null;
     if (sub.magic_link_expires_at && new Date(sub.magic_link_expires_at) < new Date()) return null;
     sub._auth = { kind: 'sub', member_id: null, member_name: sub.name };
     return sub;
@@ -64,11 +67,11 @@ async function verifyToken(tenantId, token) {
   if (!member || !member.active || member.archived_at) return null;
   const { data: parent } = await supabaseAdmin
     .from('subcontractors')
-    .select('id, name, company, magic_link_expires_at, active, portal_visibility')
+    .select('id, name, company, magic_link_expires_at, active, archived_at, portal_visibility')
     .eq('tenant_id', tenantId)
     .eq('id', member.sub_id)
     .maybeSingle();
-  if (!parent || !parent.active) return null;
+  if (!parent || !parent.active || parent.archived_at) return null;
   // Best-effort last_login bump — fire and forget.
   supabaseAdmin.from('sub_crew_members')
     .update({ last_login_at: new Date().toISOString() })
