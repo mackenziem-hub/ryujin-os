@@ -251,24 +251,43 @@ async function getSchedule(tenantId, woId, subId) {
     map_url = null;
   }
 
-  // Supervisor contact: pull AJ from users for this tenant.
-  // (Column is `name`, not `full_name` — earlier lookup silently returned 0 rows
-  // and Ryan's portal showed "Supervisor: AJ" with no tap-to-call link.)
-  let supervisor_contact = { name: 'AJ', phone: null, role: 'Site Supervisor' };
+  // Supervisor contact: prefer tenant_settings.default_supervisor_user_id
+  // (configurable per tenant via migration 068). Falls back to AJ ilike for
+  // tenants that have not set the default yet. Either path returns a tap-to-
+  // call ready phone when the resolved user has one.
+  let supervisor_contact = { name: 'Site Supervisor', phone: null, role: 'Site Supervisor' };
   try {
-    const { data: aj } = await supabaseAdmin
-      .from('users')
-      .select('name, phone, email, role')
+    let supRow = null;
+    const { data: settings } = await supabaseAdmin
+      .from('tenant_settings')
+      .select('default_supervisor_user_id')
       .eq('tenant_id', tenantId)
-      .ilike('name', '%aj%')
-      .limit(1)
       .maybeSingle();
-    if (aj) {
+    if (settings?.default_supervisor_user_id) {
+      const { data } = await supabaseAdmin
+        .from('users')
+        .select('name, phone, email, role')
+        .eq('tenant_id', tenantId)
+        .eq('id', settings.default_supervisor_user_id)
+        .maybeSingle();
+      supRow = data || null;
+    }
+    if (!supRow) {
+      const { data } = await supabaseAdmin
+        .from('users')
+        .select('name, phone, email, role')
+        .eq('tenant_id', tenantId)
+        .ilike('name', '%aj%')
+        .limit(1)
+        .maybeSingle();
+      supRow = data || null;
+    }
+    if (supRow) {
       supervisor_contact = {
-        name: aj.name || 'AJ',
-        phone: aj.phone || null,
-        email: aj.email || null,
-        role: aj.role || 'Site Supervisor'
+        name: supRow.name || 'Site Supervisor',
+        phone: supRow.phone || null,
+        email: supRow.email || null,
+        role: supRow.role || 'Site Supervisor'
       };
     }
   } catch {}
