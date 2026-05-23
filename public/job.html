@@ -578,8 +578,13 @@ function render({ customer, estimates, workorders, paysheets, photos, roster }){
       // Push the linked WO into the matching status if there is one. The
       // server side does this too via api/paysheets.js, but we want the
       // local woStatusPick to reflect the change without a reload.
+      // Compare against the live DOM value, not the captured activeWo.status -
+      // multiple PS status changes in one session would otherwise compare
+      // against a stale snapshot and skip the WO update.
       const woTarget = PS_TO_WO[newStatus];
-      if (activeWo && woTarget && activeWo.status !== woTarget) {
+      const woSel = document.getElementById('woStatusPick');
+      const currentWoStatus = woSel ? woSel.value : (activeWo && activeWo.status);
+      if (activeWo && woTarget && currentWoStatus !== woTarget) {
         const woExtras = {};
         if (woTarget === 'complete') woExtras.completed_at = new Date().toISOString();
         await fetch('/api/workorders', {
@@ -587,7 +592,6 @@ function render({ customer, estimates, workorders, paysheets, photos, roster }){
           headers: { ...ah(), 'Content-Type': 'application/json' },
           body: JSON.stringify({ id: activeWo.id, status: woTarget, ...woExtras }),
         });
-        const woSel = document.getElementById('woStatusPick');
         if (woSel) woSel.value = woTarget;
         flashSaved('woSaved');
       }
