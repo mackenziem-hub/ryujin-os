@@ -254,21 +254,51 @@
   const canvasClusters = document.getElementById('canvas-clusters');
   function renderCanvas() {
     let clusters = [];
+    // Reusable helpers for real-data clusters
+    const W = RJ_DATA.workorders || [];
+    const E = RJ_DATA.jobs || [];
+    const C = RJ_DATA.customers || [];
+    const T = RJ_DATA.tickets || [];
+    const P = RJ_DATA.proposals || [];
+    // Item-level links route to pages that actually exist in /public.
+    // Estimates: admin.html drives the estimates list internally — no
+    //   per-estimate route in v1 — so link the row to the list page.
+    // Proposals: custom-proposals.html is the catalog page; the share
+    //   link is the customer-facing surface (slug param, not id).
+    // Tickets: service-tickets.html is the open-tickets page.
+    // Workorders: job.html?wo=<id> is the canonical per-job folder.
+    // Customers: customer.html?id=<id> is the canonical per-customer page.
+    const woItem = w => ({ label: `WO-${w.woNumber} · ${w.customerName}`, href: `/job.html?wo=${encodeURIComponent(w.id)}` });
+    const estItem = e => ({ label: `#${e.estimateNumber || (e.id || '').slice(0,6)} · ${e.address}`, href: '/admin.html?page=estimates' });
+    const propItem = p => ({ label: `${p.quoteId} · ${p.customerName}`, href: '/custom-proposals.html' });
+    const tixItem = t => ({ label: `#${t.ticketNumber} · ${t.title}`, href: '/service-tickets.html' });
+    const custItem = c => ({ label: c.name, href: `/customer.html?id=${encodeURIComponent(c.id)}` });
+
     if (pillar.slug === 'hq') {
+      const activeWOs = W.filter(w => w.status === 'in_progress' || w.status === 'issued');
+      const openTix = T.filter(t => t.status !== 'done' && t.status !== 'cancelled');
       clusters = [
-        { top: 60,  left: 80,  title: 'Sales · 12 leads',     items: RJ_DATA.customers.slice(0, 4).map(c => c.name) },
-        { top: 150, left: 460, title: 'Customers',             items: RJ_DATA.customers.slice(0, 3).map(c => c.name) },
-        { top: 80,  left: 820, title: 'Production · 4 active', items: RJ_DATA.jobs.map(j => j.address) },
-        { top: 340, left: 200, title: 'Crew',                  items: ['AJ', 'Diego', 'Ryan'] },
-        { top: 340, left: 780, title: 'Materials',             items: ['Coastal · PO 233', 'GenTek · PO 244'] }
+        { top: 60,  left: 80,  title: `Sales · ${E.length} estimates`, items: E.slice(0, 5).map(estItem) },
+        { top: 150, left: 460, title: `Customers · ${C.length}`,       items: C.slice(0, 5).map(custItem) },
+        { top: 80,  left: 820, title: `Production · ${activeWOs.length} live`, items: activeWOs.slice(0, 5).map(woItem) },
+        { top: 340, left: 200, title: `Service · ${openTix.length} open`, items: openTix.slice(0, 5).map(tixItem) },
+        { top: 340, left: 780, title: `Proposals · ${P.length}`,       items: P.slice(0, 5).map(propItem) }
       ];
     } else if (pillar.slug === 'sales') {
+      // Real estimates grouped by status. The estimate.status enum in this
+      // repo isn't fully normalized — bucket pragmatically by what we see
+      // (draft/estimated vs sent vs signed) and group the rest under "Other".
+      const draft = E.filter(e => ['draft', 'estimated', null, undefined, ''].includes(e.stage));
+      const sent  = E.filter(e => e.stage === 'sent');
+      const signed = E.filter(e => e.stage === 'signed' || e.stage === 'accepted');
+      const other = E.filter(e => !['draft','estimated','sent','signed','accepted','',null,undefined].includes(e.stage));
       clusters = [
-        { top: 80,  left: 80,  title: 'Leads (5)',  items: ['Sample F.', 'Demo H.'] },
-        { top: 80,  left: 360, title: 'Estimates (4)', items: ['DEMO-0042', 'DEMO-0051'] },
-        { top: 80,  left: 640, title: 'Quotes (2)', items: ['DEMO-0001', 'DEMO-0042'] },
-        { top: 80,  left: 920, title: 'Signed (1)', items: ['DEMO-0001'] },
-        { top: 300, left: 300, title: 'Customers',  items: RJ_DATA.customers.slice(0, 3).map(c => c.name) }
+        { top: 80,  left: 80,  title: `Drafts · ${draft.length}`,    items: draft.slice(0, 8).map(estItem) },
+        { top: 80,  left: 360, title: `Sent · ${sent.length}`,       items: sent.slice(0, 8).map(estItem) },
+        { top: 80,  left: 640, title: `Signed · ${signed.length}`,   items: signed.slice(0, 8).map(estItem) },
+        { top: 80,  left: 920, title: `Custom proposals · ${P.length}`, items: P.slice(0, 8).map(propItem) },
+        { top: 300, left: 300, title: `Customers · ${C.length}`,     items: C.slice(0, 5).map(custItem) },
+        ...(other.length ? [{ top: 300, left: 700, title: `Other · ${other.length}`, items: other.slice(0, 6).map(estItem) }] : [])
       ];
     } else if (pillar.slug === 'production') {
       const W = RJ_DATA.workorders || [];
@@ -276,17 +306,84 @@
         label: `WO-${w.woNumber} · ${w.customerName} · ${w.address}`,
         href: `/job.html?wo=${encodeURIComponent(w.id)}`
       });
+      // _live-data.js normalizes workorder dates to camelCase (startDate /
+      // completedAt). The snake_case originals only live inside w.raw — read
+      // the normalized fields directly so sorting is not a no-op.
+      const byStartAsc = (a, b) => {
+        const ad = a.startDate ? new Date(a.startDate).getTime() : Infinity;
+        const bd = b.startDate ? new Date(b.startDate).getTime() : Infinity;
+        return ad - bd;
+      };
+      const byCompletedDesc = (a, b) => {
+        const ad = a.completedAt || (a.raw && a.raw.updated_at);
+        const bd = b.completedAt || (b.raw && b.raw.updated_at);
+        return new Date(bd || 0) - new Date(ad || 0);
+      };
       clusters = [
-        { top: 80,  left: 80,  title: 'In progress',  items: W.filter(w => w.status === 'in_progress').map(wItem) },
-        { top: 80,  left: 480, title: 'Scheduled',    items: W.filter(w => w.status === 'issued').map(wItem) },
-        { top: 80,  left: 840, title: 'Complete',     items: W.filter(w => w.status === 'complete').slice(0, 5).map(wItem) },
+        { top: 80,  left: 80,  title: 'In progress',  items: W.filter(w => w.status === 'in_progress').sort(byStartAsc).map(wItem) },
+        { top: 80,  left: 480, title: 'Scheduled',    items: W.filter(w => w.status === 'issued').sort(byStartAsc).map(wItem) },
+        { top: 80,  left: 840, title: 'Complete',     items: W.filter(w => w.status === 'complete').sort(byCompletedDesc).slice(0, 5).map(wItem) },
         { top: 320, left: 200, title: 'Tickets open', items: RJ_DATA.tickets.filter(t => t.status !== 'done' && t.status !== 'cancelled').slice(0, 8).map(t => t.title) },
-        { top: 320, left: 720, title: 'Draft / Cancelled', items: W.filter(w => w.status === 'draft' || w.status === 'cancelled').map(wItem) }
+        { top: 320, left: 720, title: 'Draft / Cancelled', items: W.filter(w => w.status === 'draft' || w.status === 'cancelled').sort(byStartAsc).map(wItem) }
+      ];
+    } else if (pillar.slug === 'service') {
+      const open = T.filter(t => t.status !== 'done' && t.status !== 'cancelled');
+      const high = open.filter(t => t.priority === 'high');
+      const dueToday = (() => {
+        const today = new Date().toISOString().slice(0, 10);
+        return open.filter(t => t.dueDate === today);
+      })();
+      clusters = [
+        { top: 80,  left: 80,  title: `Open · ${open.length}`,        items: open.slice(0, 10).map(tixItem) },
+        { top: 80,  left: 480, title: `Due today · ${dueToday.length}`, items: dueToday.slice(0, 8).map(tixItem) },
+        { top: 80,  left: 840, title: `High priority · ${high.length}`, items: high.slice(0, 8).map(tixItem) }
+      ];
+    } else if (pillar.slug === 'customer') {
+      const topLtv = C.slice().sort((a, b) => (b.ltv || 0) - (a.ltv || 0)).slice(0, 8);
+      const recent = C.slice().sort((a, b) => String(b.since || '').localeCompare(String(a.since || ''))).slice(0, 8);
+      const phoneCount = C.filter(c => c.phone).length;
+      clusters = [
+        { top: 80,  left: 80,  title: `All customers · ${C.length}`, items: C.slice(0, 10).map(custItem) },
+        { top: 80,  left: 480, title: `Highest LTV`,                 items: topLtv.map(custItem) },
+        { top: 80,  left: 840, title: `Recently added`,              items: recent.map(custItem) },
+        { top: 320, left: 200, title: `With phone · ${phoneCount}`,  items: C.filter(c => c.phone).slice(0, 8).map(custItem) }
+      ];
+    } else if (pillar.slug === 'finance') {
+      // Pipeline = open estimates × value; Signed = signed estimates this month.
+      const today = new Date().toISOString().slice(0, 7);
+      const signedThisMonth = E.filter(e => (e.stage === 'signed' || e.stage === 'accepted') && (e.startDate || '').startsWith(today));
+      const openEst = E.filter(e => e.stage !== 'signed' && e.stage !== 'accepted' && e.stage !== 'cancelled');
+      clusters = [
+        { top: 80,  left: 80,  title: `Pipeline · ${openEst.length} open est`, items: openEst.slice(0, 8).map(estItem) },
+        { top: 80,  left: 480, title: `Signed this month · ${signedThisMonth.length}`, items: signedThisMonth.slice(0, 8).map(estItem) },
+        { top: 80,  left: 840, title: `Proposals · ${P.length}`, items: P.slice(0, 8).map(propItem) },
+        { top: 320, left: 200, title: `AR · AP · P&L`,           items: [{ label: 'Wires to QuickBooks / Wave next', href: '#' }] }
+      ];
+    } else if (pillar.slug === 'materials') {
+      // No material_orders API surfaced in v2 yet. Be honest: name what's
+      // missing rather than hardcode fake POs.
+      clusters = [
+        { top: 80,  left: 80,  title: 'Material orders',  items: [{ label: 'Wires to /api/material-orders next', href: '#' }] },
+        { top: 80,  left: 480, title: 'Inventory',        items: [{ label: 'No SKU-level tracking yet', href: '#' }] },
+        { top: 80,  left: 840, title: 'Suppliers',        items: [{ label: 'Coastal · GenTek · IKO', href: '#' }] }
+      ];
+    } else if (pillar.slug === 'marketing') {
+      clusters = [
+        { top: 80,  left: 80,  title: 'Clip pipeline',  items: [{ label: 'Wires to /api/marketing next', href: '/marketing-schedule.html' }] },
+        { top: 80,  left: 480, title: 'Brands',         items: [{ label: 'View brand accounts', href: '/marketing-brands.html' }] },
+        { top: 80,  left: 840, title: 'Campaigns',      items: [{ label: 'Summer 2026 · NanoSeal Revive', href: '/summer-campaign-2026.html' }] }
+      ];
+    } else if (pillar.slug === 'admin') {
+      clusters = [
+        { top: 80,  left: 80,  title: `Customers · ${C.length}`,  items: C.slice(0, 6).map(custItem) },
+        { top: 80,  left: 480, title: `Tickets · ${T.length}`,    items: T.slice(0, 6).map(tixItem) },
+        { top: 80,  left: 840, title: `Estimates · ${E.length}`,  items: E.slice(0, 6).map(estItem) },
+        { top: 320, left: 200, title: `Workorders · ${W.length}`, items: W.slice(0, 6).map(woItem) },
+        { top: 320, left: 720, title: `Proposals · ${P.length}`,  items: P.slice(0, 6).map(propItem) }
       ];
     } else {
       clusters = [
-        { top: 80,  left: 80,  title: pillar.label + ' overview', items: ['Phase 2 scaffold', 'Real data in Phase 4'] },
-        { top: 200, left: 480, title: 'Coming soon',              items: ['Cluster layout per pillar'] }
+        { top: 80,  left: 80,  title: pillar.label, items: [{ label: 'No cluster layout defined for this pillar yet.', href: '#' }] }
       ];
     }
     // Cluster items can be either strings (legacy) or { label, href }

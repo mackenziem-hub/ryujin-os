@@ -270,9 +270,11 @@ setTimeout(() => {                         // Phase 7 — press any key
 }, 4600);
 
 // ── Activation ──
-const activated = { fired: false, ready: false };
+// Any user input (click, key, touch, gamepad) skips the intro immediately.
+// The full cinematic still plays if no one touches it; ready gate is gone.
+const activated = { fired: false };
 function activate(){
-  if (activated.fired || !activated.ready) return;
+  if (activated.fired) return;
   activated.fired = true;
   // Flash + zoom into the orb
   document.getElementById('flash').classList.add('on');
@@ -297,15 +299,17 @@ function skip(){
   document.getElementById('blackout').classList.add('on');
   setTimeout(() => window.location.href = 'command-center.html?skip-onboarding=1', 450);
 }
-document.addEventListener('keydown', activate);
-document.addEventListener('click', e => { if (e.target.id !== 'skip') activate(); });
-document.addEventListener('touchstart', activate, { passive: true });
+// Any input (key / click / touch / gamepad) = skip() = quick blackout-and-go.
+// The zoom-in cinematic is reachable only when the page is left untouched.
+document.addEventListener('keydown', e => { skip(); });
+document.addEventListener('click', e => { if (e.target.id !== 'skip') skip(); });
+document.addEventListener('touchstart', e => { skip(); }, { passive: true });
 document.getElementById('skip').addEventListener('click', skip);
 
 // Gamepad
 function pollGamepad(){
   const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-  for (const p of pads) { if (!p) continue; if (p.buttons.some(b => b && b.pressed)) activate(); }
+  for (const p of pads) { if (!p) continue; if (p.buttons.some(b => b && b.pressed)) skip(); }
   requestAnimationFrame(pollGamepad);
 }
 requestAnimationFrame(pollGamepad);

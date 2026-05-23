@@ -1400,7 +1400,7 @@ async function renderDashboard(m) {
   const timeStr = now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
 
   let html = `<div class="page-header"><div><h1>Command Center</h1><div class="sub">${dateStr} &mdash; ${timeStr}</div></div>
-    <div style="display:flex;gap:6px"><button class="btn btn-sm btn-outline" onclick="guide.start('dashboard')" style="color:var(--cyan);border-color:rgba(34,211,238,0.2)"><svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button><button class="btn btn-primary btn-sm" onclick="navigate('quote')">+ Quote</button><button class="btn btn-outline btn-sm" onclick="renderDashboard(document.getElementById('main'))">Refresh</button></div></div>`;
+    <div style="display:flex;gap:6px"><a class="btn btn-sm btn-outline" href="/command-center.html" title="Back to the 3D cockpit" style="color:var(--cyan);border-color:rgba(34,211,238,0.3);text-decoration:none">&larr; Cockpit</a><button class="btn btn-sm btn-outline" onclick="guide.start('dashboard')" style="color:var(--cyan);border-color:rgba(34,211,238,0.2)"><svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button><button class="btn btn-primary btn-sm" onclick="navigate('quote')">+ Quote</button><button class="btn btn-outline btn-sm" onclick="renderDashboard(document.getElementById('main'))">Refresh</button></div></div>`;
 
   // Weekly summary
   const weekAgo = Date.now() - 7*86400000;
@@ -1566,20 +1566,37 @@ async function renderDashboard(m) {
   </div>`;
 
   // Panel 8: Active Operations (ticket list)
+  // Sort by due_date ASC so the most pressing items rise; bucket anything
+  // 60+ days overdue as "stale" so 6-month-old open tickets don't read as
+  // current action items.
+  const STALE_DAYS = 60;
+  const dueOf = t => t.due_date ? new Date(t.due_date).getTime() : Infinity;
+  const daysOverdueOf = t => t.due_date ? Math.floor((Date.now() - new Date(t.due_date).getTime()) / 86400000) : null;
+  const activeSorted = activeTickets.slice().sort((a, b) => dueOf(a) - dueOf(b));
+  const stale = activeSorted.filter(t => (daysOverdueOf(t) || 0) > STALE_DAYS);
+  const current = activeSorted.filter(t => !stale.includes(t));
   html += `<div class="panel span-2">
-    <div class="panel-header"><div class="panel-title">Active Operations</div><span class="badge badge-blue">${activeTickets.length}</span></div>`;
-  if (activeTickets.length === 0) {
+    <div class="panel-header"><div class="panel-title">Active Operations</div><span class="badge badge-blue">${current.length}${stale.length ? ' + ' + stale.length + ' stale' : ''}</span></div>`;
+  if (current.length === 0 && stale.length === 0) {
     html += '<div style="text-align:center;padding:16px;color:var(--text-dim);font-size:0.82em">All systems clear.</div>';
+  } else if (current.length === 0) {
+    html += `<div style="text-align:center;padding:10px;color:var(--text-dim);font-size:0.82em">No current actions. ${stale.length} stale ticket${stale.length===1?'':'s'} need cleanup.</div>`;
   } else {
-    for (const t of activeTickets.slice(0, 5)) {
-      const dotClass = t.priority === 'urgent' ? 'urgent' : t.status === 'active' ? 'active' : 'open';
+    for (const t of current.slice(0, 5)) {
+      const overdue = daysOverdueOf(t);
+      const dotClass = (overdue !== null && overdue > 0) ? 'urgent' : t.priority === 'urgent' ? 'urgent' : t.status === 'active' ? 'active' : 'open';
+      const dueLabel = !t.due_date ? 'no due date'
+        : overdue > 0 ? `${overdue}d overdue`
+        : overdue === 0 ? 'due today'
+        : `due in ${-overdue}d`;
       html += `<div class="ticket-row">
         <div class="ticket-dot ${dotClass}"></div>
         <div class="ticket-info"><div class="ticket-name">${esc(t.title)}</div>
-          <div class="ticket-meta">${t.assigned_to_name||'Unassigned'}${t.due_date?' &bull; '+new Date(t.due_date).toLocaleDateString():''}</div></div>
-        <span class="badge badge-${dotClass==='urgent'?'red':dotClass==='active'?'green':'blue'}">${t.status}</span></div>`;
+          <div class="ticket-meta">${esc(t.assigned_to_name||'Unassigned')} &bull; ${dueLabel}</div></div>
+        <span class="badge badge-${dotClass==='urgent'?'red':dotClass==='active'?'green':'blue'}">${esc(t.status)}</span></div>`;
     }
-    if (activeTickets.length > 5) html += `<div style="text-align:center;padding:6px;font-size:0.72em;color:var(--text-dim)">+${activeTickets.length-5} more</div>`;
+    if (current.length > 5) html += `<div style="text-align:center;padding:6px;font-size:0.72em;color:var(--text-dim)">+${current.length-5} more current</div>`;
+    if (stale.length) html += `<div style="text-align:center;padding:6px;font-size:0.7em;color:var(--text-dim);border-top:1px solid rgba(34,211,238,0.06);margin-top:6px"><a href="javascript:void(0)" onclick="navigate('crew')" style="color:var(--text-dim)">${stale.length} stale ticket${stale.length===1?'':'s'} (60+d overdue) hidden</a></div>`;
   }
   html += '</div>';
 
@@ -1668,31 +1685,54 @@ async function renderDashboard(m) {
   html += '</tbody></table></div></div>';
 
   // ═══ ROW 6: Activity Feed (span 4) ═══
+  // Sort by timestamp DESC and de-duplicate by (customer, action) so a
+  // single customer with three draft/sent/accepted estimates doesn't
+  // flood the feed with three near-identical rows. Estimate panel above
+  // already lists Recent Estimates as a table, so here we focus the feed
+  // on the highest-signal status per customer.
   const recentActivity = [];
-  for (const e of estList.slice(0, 8)) {
-    const when = e.created_at ? timeAgo(new Date(e.created_at)) : '';
+  for (const e of estList.slice(0, 20)) {
+    if (!e.created_at) continue;
+    const ts = new Date(e.created_at).getTime();
+    if (!ts) continue;
+    const customer = e.customer?.full_name || e.customer?.name || '';
     recentActivity.push({
+      _ts: ts,
+      _key: customer.toLowerCase() + '|estimate',
       icon: e.status === 'accepted' ? '&#10003;' : e.status === 'sent' ? '&#9993;' : '&#128196;',
       color: e.status === 'accepted' ? 'var(--green)' : e.status === 'sent' ? 'var(--blue)' : 'var(--text-dim)',
-      text: `${e.status === 'accepted' ? 'Accepted' : e.status === 'sent' ? 'Sent' : 'Created'} estimate for <strong>${esc(e.customer?.full_name||'—')}</strong>${estPrice(e) ? ' — '+fmt$(estPrice(e)) : ''}`,
-      when
+      text: `${e.status === 'accepted' ? 'Accepted' : e.status === 'sent' ? 'Sent' : 'Created'} estimate for <strong>${esc(customer || '—')}</strong>${estPrice(e) ? ' — '+fmt$(estPrice(e)) : ''}`,
+      when: timeAgo(new Date(e.created_at))
     });
   }
-  for (const c of custList.slice(0, 4)) {
-    if (c.created_at) {
-      recentActivity.push({
-        icon: '&#128100;', color: 'var(--purple)',
-        text: `Added <strong>${esc(c.full_name||c.name||'—')}</strong> to database`,
-        when: timeAgo(new Date(c.created_at))
-      });
-    }
+  for (const c of custList.slice(0, 10)) {
+    if (!c.created_at) continue;
+    const ts = new Date(c.created_at).getTime();
+    if (!ts) continue;
+    const name = c.full_name || c.name || '';
+    recentActivity.push({
+      _ts: ts,
+      _key: name.toLowerCase() + '|customer-add',
+      icon: '&#128100;', color: 'var(--purple)',
+      text: `Added <strong>${esc(name || '—')}</strong> to database`,
+      when: timeAgo(new Date(c.created_at))
+    });
   }
-  recentActivity.sort((a,b) => (b._ts||0) - (a._ts||0));
+  recentActivity.sort((a, b) => b._ts - a._ts);
+  // De-dupe: keep only the most-recent row for each (customer, action) key.
+  const seenKeys = new Set();
+  const dedupedActivity = [];
+  for (const a of recentActivity) {
+    if (seenKeys.has(a._key)) continue;
+    seenKeys.add(a._key);
+    dedupedActivity.push(a);
+    if (dedupedActivity.length >= 8) break;
+  }
 
-  if (recentActivity.length > 0) {
+  if (dedupedActivity.length > 0) {
     html += `<div class="panel span-4">
       <div class="panel-header"><div class="panel-title">Recent Activity</div></div>`;
-    for (const a of recentActivity.slice(0, 8)) {
+    for (const a of dedupedActivity) {
       html += `<div style="display:flex;align-items:flex-start;gap:10px;padding:6px 0;border-bottom:1px solid rgba(34,211,238,0.03);font-size:0.8em">
         <span style="color:${a.color};font-size:1.1em;width:20px;text-align:center;flex-shrink:0">${a.icon}</span>
         <span style="flex:1;line-height:1.4">${a.text}</span>
