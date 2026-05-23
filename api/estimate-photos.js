@@ -122,7 +122,7 @@ async function handler(req, res) {
       if (ids.length) {
         const { data: rows } = await supabaseAdmin
           .from('estimate_photos')
-          .select('id, url, filename, mime_type, caption, is_cover, uploaded_at, estimate_id')
+          .select('id, url, filename, mime_type, caption, category, is_cover, uploaded_at, estimate_id')
           .in('estimate_id', ids)
           .order('uploaded_at', { ascending: false });
         estimatePhotos = (rows || []).map(r => ({ ...r, source: 'estimate_photos' }));

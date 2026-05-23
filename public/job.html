@@ -74,12 +74,29 @@ details.acc[open]>summary .chev{transform:rotate(90deg)}
 .scope-list li.off .chk{background:rgba(200,220,255,0.05);color:rgba(200,220,255,0.3);border-color:rgba(200,220,255,0.15)}
 
 /* Gallery (PR-B replaces with interactive tiles) */
-.gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}
-.gallery .photo{aspect-ratio:4/3;border-radius:8px;overflow:hidden;background:rgba(6,10,20,0.6);border:1px solid rgba(251,146,60,0.1);cursor:pointer;transition:all 0.15s;position:relative}
-.gallery .photo:hover{border-color:#fb923c;transform:scale(1.02)}
-.gallery .photo img,.gallery .photo video{width:100%;height:100%;object-fit:cover;display:block}
-.gallery .photo .cap{position:absolute;bottom:0;left:0;right:0;padding:4px 8px;font-family:'Share Tech Mono',monospace;font-size:0.62em;color:#fff;background:rgba(0,0,0,0.7);letter-spacing:0.5px}
-.gallery .photo .play-badge{position:absolute;top:6px;right:6px;background:rgba(0,0,0,0.65);color:#22d3ee;font-family:'Share Tech Mono',monospace;font-size:0.62em;letter-spacing:1.2px;padding:2px 7px;border-radius:4px;border:1px solid rgba(34,211,238,0.4);pointer-events:none}
+.gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.ptile{aspect-ratio:4/3;border-radius:10px;overflow:hidden;background:rgba(6,10,20,0.6);border:1px solid rgba(251,146,60,0.14);transition:border-color 0.15s;position:relative}
+.ptile:hover{border-color:#fb923c}
+.ptile .pthumb{position:absolute;inset:0;cursor:pointer}
+.ptile .pthumb img,.ptile .pthumb video{width:100%;height:100%;object-fit:cover;display:block}
+.ptile .badges{position:absolute;top:6px;left:6px;display:flex;gap:4px;flex-wrap:wrap;pointer-events:none}
+.ptile .bd{padding:2px 7px;border-radius:4px;font-family:'Share Tech Mono',monospace;font-size:0.6em;font-weight:700;letter-spacing:1.2px;border:1px solid;background:rgba(0,0,0,0.65)}
+.ptile .bd.cover{color:#22d3ee;border-color:rgba(34,211,238,0.5)}
+.ptile .bd.before{color:#fb923c;border-color:rgba(251,146,60,0.5)}
+.ptile .bd.after{color:#4ade80;border-color:rgba(74,222,128,0.5)}
+.ptile .bd.video{color:#a78bfa;border-color:rgba(167,139,250,0.5)}
+.ptile .menu-btn{position:absolute;top:6px;right:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.65);border:1px solid rgba(251,146,60,0.3);border-radius:6px;color:#fb923c;cursor:pointer;font-family:'Inter',system-ui,sans-serif;font-size:1em;line-height:1;padding:0;z-index:2;font-weight:700}
+.ptile .menu-btn:hover{background:rgba(251,146,60,0.18);border-color:#fb923c}
+.ptile .pmenu{position:absolute;top:38px;right:6px;background:rgba(14,22,40,0.96);border:1px solid rgba(251,146,60,0.32);border-radius:8px;padding:4px;min-width:160px;z-index:5;display:none;backdrop-filter:blur(10px);box-shadow:0 8px 20px rgba(0,0,0,0.5)}
+.ptile .pmenu.on{display:block}
+.ptile .pmenu button{display:block;width:100%;text-align:left;padding:7px 10px;background:transparent;border:none;color:#e0e6f0;font-family:'Share Tech Mono',monospace;font-size:0.68em;letter-spacing:1px;cursor:pointer;border-radius:5px}
+.ptile .pmenu button:hover{background:rgba(251,146,60,0.14);color:#fb923c}
+.ptile .pmenu button.danger{color:#f87171}
+.ptile .pmenu button.danger:hover{background:rgba(248,113,113,0.14);color:#fca5a5}
+.ptile .pcap{position:absolute;bottom:0;left:0;right:0;padding:5px 8px;font-family:'Share Tech Mono',monospace;font-size:0.62em;color:#fff;background:rgba(0,0,0,0.78);letter-spacing:0.5px;outline:none;cursor:text}
+.ptile .pcap:focus{background:rgba(251,146,60,0.22);color:#fff}
+.gallery-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center}
+.gallery-actions .count{font-family:'Share Tech Mono',monospace;font-size:0.7em;color:rgba(200,220,255,0.55);letter-spacing:1.2px;margin-left:auto}
 
 /* Info rows */
 .info-row{display:grid;grid-template-columns:130px 1fr;gap:12px;padding:6px 0;font-size:0.88em;align-items:baseline}
@@ -444,23 +461,20 @@ function render({ customer, estimates, workorders, paysheets, photos, roster }){
     </details>
   `);
 
-  // 6. PHOTOS & VIDEO (PR-B will make interactive; placeholder UX with deeplinks)
+  // 6. PHOTOS & VIDEO (interactive grid: delete, cover, mark before/after, inline caption)
+  // The grid is mounted as live DOM after innerHTML render so el() builds tiles XSS-safe.
   sections.push(`
     <details class="acc" open data-section="photos">
       <summary>
         <div class="title"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg> PHOTOS &amp; VIDEO</div>
-        <div class="meta"><span>${photos.length} item${photos.length===1?'':'s'}</span><svg class="chev" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
+        <div class="meta"><span id="photoCount">${photos.length} item${photos.length===1?'':'s'}</span><svg class="chev" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
       </summary>
       <div class="acc-body">
-        ${photos.length ? `<div class="gallery">${photos.map(p => {
-          const isVid = typeof p.mime_type === 'string' && p.mime_type.startsWith('video/');
-          const inner = isVid
-            ? `<video src="${esc(p.url)}" preload="metadata" muted playsinline></video><div class="play-badge">VIDEO</div>`
-            : `<img src="${esc(p.url)}" loading="lazy" alt="${esc(p.caption||'')}"/>`;
-          const captionHtml = p.caption ? `<div class="cap">${esc(p.caption)}</div>` : '';
-          return `<a class="photo" href="${esc(p.url)}" target="_blank">${inner}${captionHtml}</a>`;
-        }).join('')}</div>` : '<div class="empty-sec">NO PHOTOS OR VIDEOS / upload via crew portal or proposal builder</div>'}
-        <div style="margin-top:10px;font-size:0.72em;color:rgba(200,220,255,0.45);font-family:'Share Tech Mono',monospace;letter-spacing:1px">Inline delete + cover swap + mark-before/after lands in the next release.</div>
+        <div id="photoMount"></div>
+        <div class="gallery-actions">
+          <a class="act ghost" id="genBeforeAfterBtn" href="#" title="Pick a before + an after to generate a side-by-side social post">GENERATE BEFORE/AFTER</a>
+          <span class="count" id="photoMix">-</span>
+        </div>
       </div>
     </details>
   `);
@@ -598,6 +612,20 @@ function render({ customer, estimates, workorders, paysheets, photos, roster }){
     });
   }
 
+  // Interactive photo gallery + before/after generator link
+  const photoMount = document.getElementById('photoMount');
+  if (photoMount) {
+    renderPhotoGallery(photoMount, photos, activeWo);
+  }
+  const genBtn = document.getElementById('genBeforeAfterBtn');
+  if (genBtn && activeWo) {
+    genBtn.addEventListener('click', e => {
+      e.preventDefault();
+      // PR-C lands /before-after-preview.html; until then this is a fast-fail link.
+      window.location.href = '/before-after-preview.html?wo=' + encodeURIComponent(activeWo.id);
+    });
+  }
+
   // Topbar expand / collapse
   document.querySelectorAll('details.acc').forEach(d => d._initial = d.open);
   $('expandAllBtn').addEventListener('click', e => {
@@ -667,6 +695,249 @@ function buildSubSelect(wo, roster){
   });
   return sel;
 }
+
+// -----------------------------------------------------------------
+// Photo gallery (PR-B) - interactive tiles backed by estimate_photos
+// and project_files. Live DOM, XSS-safe (el() builder, textContent
+// only). Mutating ops branch on row.source.
+// -----------------------------------------------------------------
+const CANONICAL_CAPTIONS = new Set(['before', 'after', 'cover', 'cover_video', '']);
+
+function photoRole(p) {
+  const cat = String(p.category || '').toLowerCase();
+  const cap = String(p.caption || '').toLowerCase();
+  if (cat === 'before' || cap === 'before') return 'before';
+  if (cat === 'after' || cap === 'after') return 'after';
+  return null;
+}
+
+function isVideo(p) {
+  return typeof p.mime_type === 'string' && p.mime_type.startsWith('video/');
+}
+
+// PATCH/PUT a photo. Branches on source (estimate_photos vs project_files).
+async function patchPhoto(p, body) {
+  if (p.source === 'estimate_photos') {
+    const r = await fetch('/api/estimate-photos?id=' + encodeURIComponent(p.id), {
+      method: 'PATCH',
+      headers: { ...ah(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error('estimate-photos PATCH failed: HTTP ' + r.status);
+    const data = await r.json();
+    return data.photo || data;
+  }
+  if (p.source === 'project_files') {
+    const r = await fetch('/api/files', {
+      method: 'PUT',
+      headers: { ...ah(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: p.id, ...body }),
+    });
+    if (!r.ok) throw new Error('files PUT failed: HTTP ' + r.status);
+    return r.json();
+  }
+  throw new Error('Unknown photo source: ' + p.source);
+}
+
+async function deletePhoto(p) {
+  const path = p.source === 'project_files' ? '/api/files' : '/api/estimate-photos';
+  const r = await fetch(path + '?id=' + encodeURIComponent(p.id), {
+    method: 'DELETE',
+    headers: ah(),
+  });
+  if (!r.ok) throw new Error('DELETE failed: HTTP ' + r.status);
+  return r.json();
+}
+
+function renderPhotoGallery(mount, photos, refWo) {
+  mount.innerHTML = '';
+  const countEl = document.getElementById('photoCount');
+  const mixEl = document.getElementById('photoMix');
+
+  if (!photos || !photos.length) {
+    mount.appendChild(el('div', { class: 'empty-sec' },
+      'NO PHOTOS OR VIDEOS / upload via crew portal or proposal builder'));
+    if (countEl) countEl.textContent = '0 items';
+    if (mixEl) mixEl.textContent = 'no media';
+    const genBtn = document.getElementById('genBeforeAfterBtn');
+    if (genBtn) genBtn.style.opacity = '0.4';
+    return;
+  }
+
+  const grid = el('div', { class: 'gallery' });
+  const state = photos.map(p => ({ ...p })); // local mutable copy
+
+  state.forEach(p => grid.appendChild(buildTile(p, refWo, state)));
+  mount.appendChild(grid);
+
+  updateGalleryMeta(state);
+}
+
+function updateGalleryMeta(state) {
+  const countEl = document.getElementById('photoCount');
+  const mixEl = document.getElementById('photoMix');
+  if (countEl) countEl.textContent = state.length + ' item' + (state.length === 1 ? '' : 's');
+  const before = state.filter(p => photoRole(p) === 'before').length;
+  const after = state.filter(p => photoRole(p) === 'after').length;
+  const cover = state.filter(p => p.is_cover).length;
+  if (mixEl) mixEl.textContent = before + ' before / ' + after + ' after / ' + cover + ' cover';
+  const genBtn = document.getElementById('genBeforeAfterBtn');
+  if (genBtn) {
+    const enabled = before > 0 && after > 0;
+    genBtn.style.opacity = enabled ? '1' : '0.4';
+    genBtn.title = enabled
+      ? 'Generate a side-by-side post from the marked before + after'
+      : 'Mark at least one before AND one after to enable';
+  }
+}
+
+function buildTile(p, refWo, state) {
+  const tile = el('div', { class: 'ptile', dataset: { id: p.id, source: p.source || '' } });
+  const thumbWrap = el('div', { class: 'pthumb' });
+
+  if (isVideo(p)) {
+    thumbWrap.appendChild(el('video', { src: p.url, preload: 'metadata', muted: 'true', playsinline: 'true' }));
+  } else {
+    thumbWrap.appendChild(el('img', { src: p.url, loading: 'lazy', alt: p.caption || '' }));
+  }
+  thumbWrap.addEventListener('click', () => window.open(p.url, '_blank', 'noopener,noreferrer'));
+  tile.appendChild(thumbWrap);
+
+  // Badges
+  const badges = el('div', { class: 'badges' });
+  if (p.is_cover) badges.appendChild(el('span', { class: 'bd cover' }, 'COVER'));
+  const role = photoRole(p);
+  if (role === 'before') badges.appendChild(el('span', { class: 'bd before' }, 'BEFORE'));
+  if (role === 'after') badges.appendChild(el('span', { class: 'bd after' }, 'AFTER'));
+  if (isVideo(p)) badges.appendChild(el('span', { class: 'bd video' }, 'VIDEO'));
+  tile.appendChild(badges);
+
+  // Menu button + dropdown
+  const menuBtn = el('button', { class: 'menu-btn', type: 'button', title: 'Photo actions' }, '⋮');
+  tile.appendChild(menuBtn);
+  const menu = el('div', { class: 'pmenu' });
+  const actions = [
+    { label: 'View original', action: 'view' },
+    { label: p.is_cover ? 'Unset cover' : 'Set as cover', action: 'cover' },
+    { label: role === 'before' ? 'Unmark before' : 'Mark as before', action: 'before' },
+    { label: role === 'after' ? 'Unmark after' : 'Mark as after', action: 'after' },
+    { label: 'Delete photo', action: 'delete', danger: true },
+  ];
+  actions.forEach(a => {
+    const b = el('button', { type: 'button', class: a.danger ? 'danger' : '' }, a.label);
+    b.addEventListener('click', async ev => {
+      ev.stopPropagation();
+      menu.classList.remove('on');
+      await handleAction(a.action, p, tile, state);
+    });
+    menu.appendChild(b);
+  });
+  tile.appendChild(menu);
+
+  menuBtn.addEventListener('click', ev => {
+    ev.stopPropagation();
+    document.querySelectorAll('.ptile .pmenu.on').forEach(m => { if (m !== menu) m.classList.remove('on'); });
+    menu.classList.toggle('on');
+  });
+
+  // Caption (contenteditable on click)
+  const cap = el('div', {
+    class: 'pcap',
+    contenteditable: 'true',
+    spellcheck: 'false',
+    title: 'Click to edit caption',
+  });
+  cap.textContent = p.caption || '';
+  let originalCaption = p.caption || '';
+  cap.addEventListener('focus', () => { originalCaption = cap.textContent; });
+  cap.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); cap.blur(); }
+    if (e.key === 'Escape') { cap.textContent = originalCaption; cap.blur(); }
+  });
+  cap.addEventListener('blur', async () => {
+    const newCap = cap.textContent.trim();
+    if (newCap === originalCaption) return;
+    // Block overwriting a canonical role caption with free text via this control;
+    // role changes go through the menu so they update category + caption together.
+    if (CANONICAL_CAPTIONS.has(newCap.toLowerCase())) {
+      cap.textContent = originalCaption;
+      alert('Use the actions menu to change BEFORE / AFTER / COVER markers.');
+      return;
+    }
+    try {
+      await patchPhoto(p, { caption: newCap });
+      p.caption = newCap;
+      originalCaption = newCap;
+    } catch (e) {
+      alert(e.message);
+      cap.textContent = originalCaption;
+    }
+  });
+  tile.appendChild(cap);
+
+  return tile;
+}
+
+async function handleAction(action, p, tile, state) {
+  try {
+    if (action === 'view') {
+      window.open(p.url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    if (action === 'cover') {
+      const next = !p.is_cover;
+      await patchPhoto(p, { is_cover: next });
+      // Reflect single-cover constraint locally.
+      if (next) state.forEach(o => { if (o.id !== p.id) o.is_cover = false; });
+      p.is_cover = next;
+      // Re-render the whole grid because cover affects every tile.
+      const mount = document.getElementById('photoMount');
+      if (mount) renderPhotoGallery(mount, state, null);
+      return;
+    }
+    if (action === 'before' || action === 'after') {
+      const currentRole = photoRole(p);
+      const toggleOff = currentRole === action;
+      const value = toggleOff ? null : action;
+      // estimate_photos: set both category + caption (defensive: legacy reads
+      // looked at caption, newer code reads category). project_files: category only.
+      const body = p.source === 'project_files'
+        ? { category: value || 'general' }
+        : { category: value || 'general', caption: value || '' };
+      await patchPhoto(p, body);
+      if (p.source === 'project_files') {
+        p.category = value || 'general';
+      } else {
+        p.category = value || 'general';
+        p.caption = value || '';
+      }
+      replaceTile(tile, p, state);
+      updateGalleryMeta(state);
+      return;
+    }
+    if (action === 'delete') {
+      if (!confirm('Delete this photo permanently? The file will be removed from storage too.')) return;
+      await deletePhoto(p);
+      const idx = state.findIndex(o => o.id === p.id);
+      if (idx >= 0) state.splice(idx, 1);
+      tile.remove();
+      updateGalleryMeta(state);
+      return;
+    }
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+function replaceTile(tile, p, state) {
+  const fresh = buildTile(p, null, state);
+  tile.parentNode.replaceChild(fresh, tile);
+}
+
+// Close any open photo menu when clicking outside.
+document.addEventListener('click', () => {
+  document.querySelectorAll('.ptile .pmenu.on').forEach(m => m.classList.remove('on'));
+});
 
 document.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); history.back(); } });
 loadJob();
