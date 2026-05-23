@@ -21,11 +21,15 @@ async function handler(req, res) {
   const { action, token, sub_id } = req.query;
 
   // ── Validate magic-link (sub OR crew member) ──
+  // Both branches reject any subcontractor row with archived_at IS NOT NULL.
+  // Migration 071 sets active=false at archive time too, so the active
+  // check would also catch it; this column is the defense-in-depth gate
+  // for any future code path that archives without flipping active.
   if (req.method === 'GET' && token) {
     const [parentResult, memberResult, settingsResult] = await Promise.all([
       supabaseAdmin
         .from('subcontractors')
-        .select('id, name, company, email, phone, trade, active, magic_link_expires_at, portal_visibility, auto_approve_threshold_cad')
+        .select('id, name, company, email, phone, trade, active, archived_at, magic_link_expires_at, portal_visibility, auto_approve_threshold_cad')
         .eq('tenant_id', tenantId)
         .eq('magic_link_token', token)
         .maybeSingle(),
@@ -46,20 +50,20 @@ async function handler(req, res) {
     let auth = null;
 
     if (sub) {
-      if (!sub.active) return res.status(401).json({ error: 'Invalid or inactive link' });
+      if (!sub.active || sub.archived_at) return res.status(401).json({ error: 'Invalid or inactive link' });
       if (sub.magic_link_expires_at && new Date(sub.magic_link_expires_at) < new Date()) {
-        return res.status(401).json({ error: 'Link expired — ask the owner for a new one' });
+        return res.status(401).json({ error: 'Link expired - ask the owner for a new one' });
       }
       auth = { kind: 'sub', member_id: null, member_name: sub.name };
     } else if (memberResult.data) {
       const member = memberResult.data;
-      if (!member.active || member.archived_at) return res.status(401).json({ error: 'Access revoked — ask your team lead for a new link' });
+      if (!member.active || member.archived_at) return res.status(401).json({ error: 'Access revoked - ask your team lead for a new link' });
       // Resolve parent sub.
       const { data: parent } = await supabaseAdmin
         .from('subcontractors')
-        .select('id, name, company, email, phone, trade, active, magic_link_expires_at, portal_visibility, auto_approve_threshold_cad')
+        .select('id, name, company, email, phone, trade, active, archived_at, magic_link_expires_at, portal_visibility, auto_approve_threshold_cad')
         .eq('tenant_id', tenantId).eq('id', member.sub_id).maybeSingle();
-      if (!parent || !parent.active) return res.status(401).json({ error: 'Team lead account inactive' });
+      if (!parent || !parent.active || parent.archived_at) return res.status(401).json({ error: 'Team lead account inactive' });
       // Crew members don't get COGS / financial-approve visibility — neutralize.
       sub = { ...parent };
       auth = { kind: 'crew', member_id: member.id, member_name: member.name };

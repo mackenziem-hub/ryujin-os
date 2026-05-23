@@ -41,15 +41,18 @@ const QUESTION_ROUTING = {
 // to the actual person without breaking existing destructuring.
 async function verifyToken(tenantId, token) {
   if (!token) return null;
-  // Try parent sub first.
+  // Try parent sub first. Reject any sub whose archived_at is set, even if
+  // active=true is stale - defense-in-depth alongside migration 068 which
+  // flips active=false at archive time. Either gate alone is enough; both
+  // together close any window where one column drifts.
   const { data: sub } = await supabaseAdmin
     .from('subcontractors')
-    .select('id, name, company, magic_link_expires_at, active, portal_visibility')
+    .select('id, name, company, magic_link_expires_at, active, archived_at, portal_visibility')
     .eq('tenant_id', tenantId)
     .eq('magic_link_token', token)
     .maybeSingle();
   if (sub) {
-    if (!sub.active) return null;
+    if (!sub.active || sub.archived_at) return null;
     if (sub.magic_link_expires_at && new Date(sub.magic_link_expires_at) < new Date()) return null;
     sub._auth = { kind: 'sub', member_id: null, member_name: sub.name };
     return sub;
@@ -64,11 +67,11 @@ async function verifyToken(tenantId, token) {
   if (!member || !member.active || member.archived_at) return null;
   const { data: parent } = await supabaseAdmin
     .from('subcontractors')
-    .select('id, name, company, magic_link_expires_at, active, portal_visibility')
+    .select('id, name, company, magic_link_expires_at, active, archived_at, portal_visibility')
     .eq('tenant_id', tenantId)
     .eq('id', member.sub_id)
     .maybeSingle();
-  if (!parent || !parent.active) return null;
+  if (!parent || !parent.active || parent.archived_at) return null;
   // Best-effort last_login bump — fire and forget.
   supabaseAdmin.from('sub_crew_members')
     .update({ last_login_at: new Date().toISOString() })
@@ -251,24 +254,43 @@ async function getSchedule(tenantId, woId, subId) {
     map_url = null;
   }
 
-  // Supervisor contact: pull AJ from users for this tenant.
-  // (Column is `name`, not `full_name` — earlier lookup silently returned 0 rows
-  // and Ryan's portal showed "Supervisor: AJ" with no tap-to-call link.)
-  let supervisor_contact = { name: 'AJ', phone: null, role: 'Site Supervisor' };
+  // Supervisor contact: prefer tenant_settings.default_supervisor_user_id
+  // (configurable per tenant via migration 068). Falls back to AJ ilike for
+  // tenants that have not set the default yet. Either path returns a tap-to-
+  // call ready phone when the resolved user has one.
+  let supervisor_contact = { name: 'Site Supervisor', phone: null, role: 'Site Supervisor' };
   try {
-    const { data: aj } = await supabaseAdmin
-      .from('users')
-      .select('name, phone, email, role')
+    let supRow = null;
+    const { data: settings } = await supabaseAdmin
+      .from('tenant_settings')
+      .select('default_supervisor_user_id')
       .eq('tenant_id', tenantId)
-      .ilike('name', '%aj%')
-      .limit(1)
       .maybeSingle();
-    if (aj) {
+    if (settings?.default_supervisor_user_id) {
+      const { data } = await supabaseAdmin
+        .from('users')
+        .select('name, phone, email, role')
+        .eq('tenant_id', tenantId)
+        .eq('id', settings.default_supervisor_user_id)
+        .maybeSingle();
+      supRow = data || null;
+    }
+    if (!supRow) {
+      const { data } = await supabaseAdmin
+        .from('users')
+        .select('name, phone, email, role')
+        .eq('tenant_id', tenantId)
+        .ilike('name', '%aj%')
+        .limit(1)
+        .maybeSingle();
+      supRow = data || null;
+    }
+    if (supRow) {
       supervisor_contact = {
-        name: aj.name || 'AJ',
-        phone: aj.phone || null,
-        email: aj.email || null,
-        role: aj.role || 'Site Supervisor'
+        name: supRow.name || 'Site Supervisor',
+        phone: supRow.phone || null,
+        email: supRow.email || null,
+        role: supRow.role || 'Site Supervisor'
       };
     }
   } catch {}
