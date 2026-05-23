@@ -641,12 +641,27 @@ function buildSubSelect(wo, roster){
   const subs = (roster && roster.subs) || [];
   const sel = el('select', { class: 'field-edit' });
   sel.appendChild(el('option', { value: '' }, 'In-house / no sub'));
+  let matched = false;
   subs.forEach(s => {
     const label = s.company ? s.name + ' (' + s.company + ')' : s.name;
     const opt = el('option', { value: s.id }, label);
-    if (wo.subcontractor_id && wo.subcontractor_id === s.id) opt.selected = true;
+    if (wo.subcontractor_id && wo.subcontractor_id === s.id) {
+      opt.selected = true;
+      matched = true;
+    }
     sel.appendChild(opt);
   });
+  // Preserve an archived-sub FK so historical assignments are not silently
+  // overwritten. /api/crew-roster excludes archived subs (archived_at IS
+  // NOT NULL), so when wo.subcontractor_id is set but no active sub matches
+  // we surface it as "(archived sub - reassign to change)" with the FK
+  // intact. Picking another option saves the new sub; picking In-house
+  // clears the FK.
+  if (!matched && wo.subcontractor_id) {
+    const legacy = el('option', { value: wo.subcontractor_id, selected: true },
+      'Archived sub (reassign to change)');
+    sel.appendChild(legacy);
+  }
   sel.addEventListener('change', async () => {
     await saveField('workorders', wo.id, 'subcontractor_id', sel.value || null, 'crewSaved');
   });
