@@ -61,13 +61,14 @@ const SAFE_UPDATE_FIELDS = new Set([
   'vents',
   'chimneys',
   'osb_sheets',
+  // Support crew (text[] - per migration 013, distinct from sub_crew_lead)
+  'support_crew',
   // Scope + notes
   'scope_items',
   'additional_scope',
   'notes',
-  // Re-decking
-  'redeck_sheets_estimated',
-  'redeck_sheets_actual',
+  // Re-decking (single canonical column from migrations.sql:117)
+  'redeck_sheets',
 ]);
 
 const WO_TO_PS = {
