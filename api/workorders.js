@@ -11,25 +11,55 @@ import { requireTenant } from '../lib/tenant.js';
 // Fields a client is allowed to set via PUT/PATCH. tenant_id, id, created_at,
 // linked_estimate_id, linked_paysheet_id are NOT on this list - changing them
 // would let a client repoint a WO at a different tenant or estimate.
+// Every field below is one that production-workorders.html's saveEditWo()
+// submits, plus the lifecycle/status fields that job.html drives. When
+// adding a new editable field to either surface, add it here too or the
+// PUT will silently drop it and return a successful 200.
 const SAFE_UPDATE_FIELDS = new Set([
+  // Lifecycle + assignment
   'status',
   'sub_crew_lead',
   'sub_id',
   'subcontractor_id',
   'start_date',
   'estimated_duration_days',
-  'shingle_product',
-  'shingle_color',
-  'roof_pitch',
-  'package_tier',
-  'total_sq',
-  'scope_items',
-  'customer_name',
-  'address',
-  'notes',
   'completed_at',
   'issued_at',
   'wo_number',
+  // Customer-on-WO contact + access
+  'customer_name',
+  'address',
+  'phone',
+  'email',
+  'onsite_contact',
+  'special_notes',
+  'work_hours',
+  // Job specs
+  'job_type',
+  'package_tier',
+  'total_sq',
+  'roof_pitch',
+  'layers_to_remove',
+  'shingle_product',
+  'shingle_color',
+  // Measurements (production-workorders.html numOrZero fields)
+  'eaves_lf',
+  'rakes_lf',
+  'ridges_lf',
+  'hips_lf',
+  'valleys_lf',
+  'walls_lf',
+  'pipes',
+  'vents',
+  'chimneys',
+  'osb_sheets',
+  // Scope + notes
+  'scope_items',
+  'additional_scope',
+  'notes',
+  // Re-decking
+  'redeck_sheets_estimated',
+  'redeck_sheets_actual',
 ]);
 
 const WO_TO_PS = {
