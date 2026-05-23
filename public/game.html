@@ -521,7 +521,7 @@
 'use strict';
 
 // ═══════════════════════════════════════════════════════════════
-// RYUJIN OS — Plus Ultra Operations · Game Shell v1.0
+// RYUJIN OS -- Plus Ultra Operations · Game Shell v1.0
 // ═══════════════════════════════════════════════════════════════
 
 const TENANT = 'plus-ultra';
@@ -596,15 +596,45 @@ function el(tag, attrs, children) {
   return e;
 }
 const $ = id => document.getElementById(id);
-function fmt$(n) { if (n == null) return '—'; if (n >= 1000) return '$' + Math.round(n/1000) + 'K'; return '$' + Math.round(n); }
-function pct(n) { return n == null ? '—' : Math.round(n * 100) + '%'; }
+function fmt$(n) { if (n == null) return '--'; if (n >= 1000) return '$' + Math.round(n/1000) + 'K'; return '$' + Math.round(n); }
+function pct(n) { return n == null ? '--' : Math.round(n * 100) + '%'; }
+
+// ═════ Snapshot normalization ═════
+// Prod /api/snapshot returns { sections: {...}, updated_at }. Unwrap so
+// consumers can read s.revenue, s.tickets, etc. Also reshape pipeline
+// (server returns an array of deals) into the object shape the UI expects,
+// and synthesize an alerts[] from watchdog state since alerts is not in
+// the prod payload.
+function normalizeSnapshot(raw) {
+  if (!raw) return raw;
+  const s = raw.sections ? { ...raw.sections } : { ...raw };
+  if (Array.isArray(s.pipeline)) {
+    const arr = s.pipeline;
+    const openish = arr.filter(d => !/lost|cancelled|won|signed/i.test(d.status || 'open'));
+    s.pipeline = {
+      deals: arr,
+      totalValue: openish.reduce((a, d) => a + (d.value || 0), 0),
+      openDeals: openish.length,
+      top5_deals: openish.slice().sort((a, b) => (b.value || 0) - (a.value || 0)).slice(0, 5)
+    };
+  }
+  if (!Array.isArray(s.alerts)) {
+    const out = [];
+    const wd = s.watchdog || {};
+    if ((wd.tier1Count || 0) > 0) out.push(`Watchdog: ${wd.tier1Count} tier-1 items`);
+    if ((wd.tier2Count || 0) > 5) out.push(`Watchdog: ${wd.tier2Count} tier-2 items`);
+    s.alerts = out;
+  }
+  return s;
+}
 
 // ═════ Data fetches ═════
 async function fetchSnapshot() {
   try {
     const r = await fetch(`${API_BASE}/api/snapshot?tenant=${TENANT}`, { credentials: 'omit' });
     if (!r.ok) throw new Error('snapshot ' + r.status);
-    state.snapshot = await r.json();
+    const raw = await r.json();
+    state.snapshot = normalizeSnapshot(raw);
     state.snapshotErr = null;
     state.snapshotAt = Date.now();
   } catch (e) {
@@ -713,7 +743,7 @@ function sectorStatBlocks(sectorId) {
 
   switch (sectorId) {
     case 'HQ': return [
-      { k:'BRIEFING', v:(brief.status || '—').toUpperCase() },
+      { k:'BRIEFING', v:(brief.status || '--').toUpperCase() },
       { k:'TOP 3', v: (brief.top3 || []).length },
       { k:'ALERTS', v: alerts.length },
       { k:'SECTORS', v: '8' }
@@ -722,7 +752,7 @@ function sectorStatBlocks(sectorId) {
       { k:'SIGNED MTD', v: fmt$(rev.signedRevenue) },
       { k:'PIPELINE', v: fmt$(pipe.totalValue) },
       { k:'OPEN DEALS', v: pipe.openDeals || 0 },
-      { k:'TOP DEAL', v: pipe.top5_deals && pipe.top5_deals[0] ? fmt$(pipe.top5_deals[0].value) : '—' }
+      { k:'TOP DEAL', v: pipe.top5_deals && pipe.top5_deals[0] ? fmt$(pipe.top5_deals[0].value) : '--' }
     ];
     case 'PRODUCTION': return [
       { k:'ACTIVE', v: (t.byStatus && t.byStatus.active) || 0 },
@@ -740,12 +770,12 @@ function sectorStatBlocks(sectorId) {
       { k:'TICKETS', v: t.total || 0 },
       { k:'OVERDUE', v: t.overdueCount || 0 },
       { k:'TOTAL LEADS', v: leads.total || 0 },
-      { k:'CONVERSION', v: leads.conversionRate != null ? leads.conversionRate.toFixed(1) + '%' : '—' }
+      { k:'CONVERSION', v: leads.conversionRate != null ? leads.conversionRate.toFixed(1) + '%' : '--' }
     ];
     case 'FINANCE': return [
       { k:'SIGNED MTD', v: fmt$(rev.signedRevenue) },
       { k:'PENDING', v: fmt$(rev.pendingRevenue) },
-      { k:'AD ROI', v: (brief.kpiScouter && brief.kpiScouter.adROI) || '—' },
+      { k:'AD ROI', v: (brief.kpiScouter && brief.kpiScouter.adROI) || '--' },
       { k:'ACTIVE CAMPAIGNS', v: ads.activeCampaigns || 0 }
     ];
     case 'ADMIN': {
@@ -753,12 +783,12 @@ function sectorStatBlocks(sectorId) {
       return [
         { k:'ALERTS', v: alerts.length },
         { k:'WATCHDOG', v: watchdog ? 'DOWN' : 'OK' },
-        { k:'CRON', v: brief.timestamp ? new Date(brief.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '—' },
+        { k:'CRON', v: brief.timestamp ? new Date(brief.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '--' },
         { k:'TENANT', v: TENANT }
       ];
     }
     case 'MARKETING': return [
-      { k:'AVG CPL', v: ads.avgCPL != null ? '$' + ads.avgCPL.toFixed(2) : '—' },
+      { k:'AVG CPL', v: ads.avgCPL != null ? '$' + ads.avgCPL.toFixed(2) : '--' },
       { k:'LEADS THIS WK', v: leads.thisWeek || 0 },
       { k:'ALL LEADS', v: leads.total || 0 },
       { k:'CAMPAIGNS', v: ads.activeCampaigns || 0 }
@@ -864,8 +894,7 @@ function renderTopbar() {
   const brief = s.briefing_morning || {};
   const alerts = s.alerts || [];
 
-  const ts = new Date(s.timestamp || Date.now());
-  const ageMin = Math.round((Date.now() - ts.getTime()) / 60000);
+  const ageMin = state.snapshotAt ? Math.round((Date.now() - state.snapshotAt) / 60000) : 0;
   const dot = el('span', { class: 'freshness-dot' + (state.snapshotErr ? ' down' : ageMin > 60 ? ' stale' : '') });
 
   const chips = [
@@ -903,7 +932,7 @@ function setView(v) {
     const isActive = ('VIEW' + name.toUpperCase()).slice(4) === v;
     node.classList.toggle('active', isActive);
   });
-  // The above is buggy if names mismatch — explicit map:
+  // The above is buggy if names mismatch -- explicit map:
   $('viewTitle').classList.toggle('active', v === 'TITLE');
   $('viewMap').classList.toggle('active', v === 'MAP');
   $('viewSector').classList.toggle('active', v === 'SECTOR');
@@ -1183,7 +1212,7 @@ function openInventoryModal() {
       list.appendChild(el('div', { class: 'quest-card normal' }, [
         el('div', { class: 'pri' }),
         el('div', { class: 'body' }, [
-          el('div', { class: 'title', text: (r.customer || 'Customer') + ' — ' + (r.action || 'event') }),
+          el('div', { class: 'title', text: (r.customer || 'Customer') + ' -- ' + (r.action || 'event') }),
           el('div', { class: 'ctx', text: r.date || '' })
         ])
       ]));
