@@ -21,22 +21,30 @@ alter table subcontractors
 create index if not exists idx_subcontractors_archived_at
   on subcontractors(archived_at);
 
--- 2. Archive Ryan / Atlantic rows (idempotent). Set BOTH archived_at AND
---    active=false so the existing sub-portal magic-link check (which only
---    inspects `active`) immediately starts rejecting any token tied to
---    one of these rows. Defense-in-depth: api/sub-portal.js also gets an
---    explicit `archived_at IS NULL` guard in this same PR so future
---    archive-only writes stay safe even if someone forgets to flip
---    `active` at the same time.
-update subcontractors
+-- 2. Archive Ryan / Atlantic rows (idempotent). Scoped to the Plus Ultra
+--    tenant only - other tenants on this multi-tenant DB may have their
+--    own subcontractors named Ryan or with "Atlantic" in the company name
+--    and must not be affected by this migration. The join through tenants
+--    by slug='plus-ultra' is the canonical scope guard.
+--
+--    Set BOTH archived_at AND active=false so the existing sub-portal
+--    magic-link check (which only inspects `active`) immediately starts
+--    rejecting any token tied to one of these rows. Defense-in-depth:
+--    api/sub-portal.js also gets an explicit `archived_at IS NULL` guard
+--    in this same PR so future archive-only writes stay safe even if
+--    someone forgets to flip `active` at the same time.
+update subcontractors s
   set archived_at = now(),
       active = false
-  where (
-    name ilike '%ryan%'
-    or name ilike '%atlantic roofing%'
-    or company ilike '%atlantic roofing%'
-  )
-  and archived_at is null;
+  from tenants t
+  where t.id = s.tenant_id
+    and t.slug = 'plus-ultra'
+    and (
+      s.name ilike '%ryan%'
+      or s.name ilike '%atlantic roofing%'
+      or s.company ilike '%atlantic roofing%'
+    )
+    and s.archived_at is null;
 
 -- 3. Default supervisor pointer on tenant_settings
 alter table tenant_settings

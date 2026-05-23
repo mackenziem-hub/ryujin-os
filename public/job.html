@@ -548,20 +548,49 @@ function render({ customer, estimates, workorders, paysheets, photos, roster }){
     });
   }
 
-  // Paysheet status pick
+  // Paysheet status pick - also syncs the linked workorder so a paysheet
+  // marked completed/cancelled doesn't leave its WO stale. Mirror of the
+  // pre-PR-A behaviour that was lost in the rewrite. The PS_TO_WO map
+  // matches the one in api/paysheets.js (server-side sync also runs, but
+  // the client mirror keeps the WO dropdown in sync without a refresh).
   const psPick = document.getElementById('psStatusPick');
   if (psPick && activePs) {
+    const PS_TO_WO = {
+      'scheduled': 'issued',
+      'in_progress': 'in_progress',
+      'completed': 'complete',
+      'invoice_final': 'complete',
+      'cancelled': 'cancelled',
+    };
     psPick.addEventListener('change', async ev => {
       const newStatus = ev.target.value;
       const extras = {};
       if (newStatus === 'completed') extras.completed_date = new Date().toISOString().slice(0,10);
       if (newStatus === 'invoice_final') extras.invoice_finalized_at = new Date().toISOString();
-      await fetch('/api/paysheets', {
+      const r = await fetch('/api/paysheets', {
         method: 'PUT',
         headers: { ...ah(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: activePs.id, status: newStatus, ...extras }),
       });
+      if (!r.ok) { alert('Pay sheet update failed: HTTP ' + r.status); return; }
       flashSaved('psSaved');
+
+      // Push the linked WO into the matching status if there is one. The
+      // server side does this too via api/paysheets.js, but we want the
+      // local woStatusPick to reflect the change without a reload.
+      const woTarget = PS_TO_WO[newStatus];
+      if (activeWo && woTarget && activeWo.status !== woTarget) {
+        const woExtras = {};
+        if (woTarget === 'complete') woExtras.completed_at = new Date().toISOString();
+        await fetch('/api/workorders', {
+          method: 'PUT',
+          headers: { ...ah(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: activeWo.id, status: woTarget, ...woExtras }),
+        });
+        const woSel = document.getElementById('woStatusPick');
+        if (woSel) woSel.value = woTarget;
+        flashSaved('woSaved');
+      }
     });
   }
 
