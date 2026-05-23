@@ -1,0 +1,1347 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<meta name="theme-color" content="#060a14" />
+<title>RYUJIN OS · Plus Ultra Operations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=Orbitron:wght@500;700;900&family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg-deep: #060a14;
+    --bg-mid: #0a1024;
+    --bg-panel: rgba(10,16,36,0.78);
+    --bg-panel-solid: #0a1024;
+    --fg: #e0e8f5;
+    --fg-dim: #9aa8c4;
+    --cyan: #22d3ee;
+    --cyan-glow: rgba(34,211,238,0.6);
+    --gold: #fde047;
+    --gold-soft: #fbbf24;
+    --magenta: #ec4899;
+    --green: #34d399;
+    --orange: #fdba74;
+    --violet: #a78bfa;
+    --pink: #f9a8d4;
+    --red: #ef4444;
+    --amber: #fbbf24;
+
+    --sec-HQ: var(--gold);
+    --sec-SALES: var(--magenta);
+    --sec-PRODUCTION: var(--amber);
+    --sec-SERVICE: var(--green);
+    --sec-CUSTOMER: var(--orange);
+    --sec-FINANCE: var(--cyan);
+    --sec-ADMIN: var(--violet);
+    --sec-MARKETING: var(--pink);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg-deep);
+    color: var(--fg);
+    font-family: 'Inter', system-ui, sans-serif;
+    height: 100%; overflow: hidden;
+    user-select: none; -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  img { display: block; max-width: 100%; user-drag: none; -webkit-user-drag: none; }
+
+  /* CRT scanlines + vignette */
+  body::before {
+    content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 5000;
+    background: repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0, rgba(0,0,0,0) 2px, rgba(0,0,0,0.10) 3px, rgba(0,0,0,0) 4px);
+  }
+  body::after {
+    content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 5001;
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.55) 100%);
+  }
+
+  #app { position: fixed; inset: 0; overflow: hidden; }
+
+  /* Global title bar */
+  .topbar {
+    position: fixed; top: 12px; left: 12px; right: 12px;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; padding: 8px 16px; z-index: 200;
+    background: linear-gradient(180deg, rgba(10,16,36,0.92), rgba(10,16,36,0.78));
+    border: 1px solid rgba(34,211,238,0.35);
+    box-shadow: 0 0 24px rgba(34,211,238,0.15), inset 0 0 0 1px rgba(10,16,36,0.8);
+    font-family: 'Orbitron', monospace;
+  }
+  .topbar.hidden { display: none; }
+  .topbar-left { display: flex; align-items: center; gap: 14px; }
+  .topbar-brand { font-weight: 900; font-size: 14px; color: var(--gold); letter-spacing: 3px; }
+  .topbar-brand .sub { font-weight: 500; font-size: 9px; color: var(--cyan); letter-spacing: 2px; display: block; margin-top: -2px; }
+  .topbar-stats { display: flex; align-items: center; gap: 16px; font-size: 11px; }
+  .stat-chip { display: flex; align-items: center; gap: 6px; padding: 4px 10px; background: rgba(34,211,238,0.08); border: 1px solid rgba(34,211,238,0.25); }
+  .stat-chip .label { color: var(--fg-dim); font-size: 9px; letter-spacing: 1px; }
+  .stat-chip .value { color: var(--gold); font-weight: 700; }
+  .stat-chip.alert .value { color: var(--red); }
+  .stat-chip.warn .value { color: var(--amber); }
+  .topbar-right { display: flex; align-items: center; gap: 8px; }
+  .ico-btn {
+    width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center;
+    background: rgba(10,16,36,0.7); border: 1px solid rgba(34,211,238,0.4); color: var(--cyan);
+    cursor: pointer; font-family: 'Press Start 2P', monospace; font-size: 12px; padding: 0;
+  }
+  .ico-btn:hover { background: rgba(34,211,238,0.15); border-color: var(--cyan); }
+  .freshness-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--green); box-shadow: 0 0 8px var(--green); margin-right: 4px;
+  }
+  .freshness-dot.stale { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+  .freshness-dot.down { background: var(--red); box-shadow: 0 0 8px var(--red); animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: 0.3; } }
+
+  /* View container */
+  .view { position: fixed; inset: 0; opacity: 0; pointer-events: none; transition: opacity .25s ease; }
+  .view.active { opacity: 1; pointer-events: auto; }
+
+  /* ───── TITLE ───── */
+  .view-title {
+    background: #000;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .view-title .bg {
+    position: absolute; inset: 0;
+    background: url('/assets/rpg/ui/title-screen.webp') center/cover no-repeat;
+    opacity: 0.9;
+  }
+  .view-title .scrim {
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.45) 100%);
+  }
+  .title-press {
+    position: absolute; bottom: 12%; left: 0; right: 0; text-align: center;
+    font-family: 'Press Start 2P', monospace; font-size: 18px; color: var(--gold);
+    letter-spacing: 4px; text-shadow: 0 0 16px rgba(253,224,71,0.7);
+    animation: blink 0.9s steps(2,end) infinite;
+    z-index: 10;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  .title-version {
+    position: absolute; bottom: 4%; right: 4%;
+    font-family: 'VT323', monospace; font-size: 14px; color: var(--cyan);
+    z-index: 10;
+  }
+  .title-loading {
+    position: absolute; top: 4%; left: 4%;
+    font-family: 'VT323', monospace; font-size: 14px; color: var(--fg-dim);
+    z-index: 10;
+  }
+
+  /* ───── MAP ───── */
+  .view-map {
+    background: var(--bg-deep);
+    display: flex; align-items: center; justify-content: center;
+    padding: 70px 12px 12px;
+  }
+  .map-frame {
+    position: relative; width: 100%; height: 100%; max-width: 1600px;
+    border: 1px solid rgba(34,211,238,0.3);
+    box-shadow: 0 0 32px rgba(34,211,238,0.15);
+  }
+  .map-bg {
+    position: absolute; inset: 0;
+    background: url('/assets/rpg/scenes/strategic-map.webp') center/contain no-repeat;
+    background-color: var(--bg-deep);
+  }
+  .map-grid {
+    position: absolute; inset: 0;
+    display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(2, 1fr);
+    gap: 0;
+  }
+  .map-hot {
+    position: relative; cursor: pointer; transition: all .12s ease;
+    border: 2px solid transparent;
+    display: flex; flex-direction: column; justify-content: space-between;
+    padding: 10px;
+  }
+  .map-hot:hover, .map-hot.focused {
+    border-color: var(--cyan);
+    background: rgba(34,211,238,0.1);
+    box-shadow: inset 0 0 30px rgba(34,211,238,0.25);
+  }
+  .map-hot.alert { border-color: var(--red); box-shadow: inset 0 0 30px rgba(239,68,68,0.2); }
+  .map-hot.warn { border-color: var(--amber); }
+  .map-hot .hot-label {
+    font-family: 'Press Start 2P', monospace; font-size: 10px;
+    background: rgba(6,10,20,0.85); padding: 4px 8px;
+    color: var(--gold); align-self: flex-start;
+    border: 1px solid rgba(253,224,71,0.4);
+  }
+  .map-hot .hot-stat {
+    font-family: 'VT323', monospace; font-size: 16px;
+    background: rgba(6,10,20,0.85); padding: 3px 8px;
+    color: var(--fg); align-self: flex-start;
+    border: 1px solid rgba(34,211,238,0.3);
+    max-width: 100%;
+  }
+  .map-hot .hot-stat.alert { color: var(--red); border-color: var(--red); }
+  .map-hot .hot-stat.warn { color: var(--amber); border-color: var(--amber); }
+  .map-hot[data-sector="HQ"] .hot-label { color: var(--gold); border-color: var(--gold); }
+  .map-hot[data-sector="SALES"] .hot-label { color: var(--magenta); border-color: var(--magenta); }
+  .map-hot[data-sector="PRODUCTION"] .hot-label { color: var(--amber); border-color: var(--amber); }
+  .map-hot[data-sector="SERVICE"] .hot-label { color: var(--green); border-color: var(--green); }
+  .map-hot[data-sector="CUSTOMER"] .hot-label { color: var(--orange); border-color: var(--orange); }
+  .map-hot[data-sector="FINANCE"] .hot-label { color: var(--cyan); border-color: var(--cyan); }
+  .map-hot[data-sector="ADMIN"] .hot-label { color: var(--violet); border-color: var(--violet); }
+  .map-hot[data-sector="MARKETING"] .hot-label { color: var(--pink); border-color: var(--pink); }
+
+  /* CC wizard pip on map */
+  .wizard-pip {
+    position: absolute; top: 8px; right: 8px;
+    display: flex; align-items: center; gap: 4px;
+    background: rgba(167,139,250,0.18); border: 1px solid var(--violet);
+    padding: 3px 6px; font-family: 'Press Start 2P', monospace; font-size: 7px;
+    color: var(--violet);
+    animation: pulseWiz 1.8s ease-in-out infinite;
+  }
+  @keyframes pulseWiz { 50% { box-shadow: 0 0 12px rgba(167,139,250,0.5); } }
+
+  /* ───── SECTOR ───── */
+  .view-sector { padding-top: 70px; }
+  .sector-bg {
+    position: absolute; inset: 0;
+    background-size: cover; background-position: center; background-repeat: no-repeat;
+  }
+  .sector-bg::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgba(6,10,20,0.0) 0%, rgba(6,10,20,0.4) 60%, rgba(6,10,20,0.95) 100%);
+  }
+  .sector-shell {
+    position: absolute; inset: 70px 12px 12px;
+    display: grid; grid-template-rows: 1fr auto; gap: 12px;
+    pointer-events: none;
+  }
+  .sector-shell > * { pointer-events: auto; }
+  .sector-hero {
+    position: relative;
+    display: grid; grid-template-columns: 1fr 360px; gap: 16px;
+    align-items: end; min-height: 0;
+  }
+  .sector-stats-panel {
+    background: var(--bg-panel); border: 1px solid rgba(34,211,238,0.4);
+    padding: 14px 18px; backdrop-filter: blur(8px);
+    box-shadow: 0 0 20px rgba(34,211,238,0.12);
+    align-self: end;
+  }
+  .sector-stats-panel .eyebrow {
+    font-family: 'Press Start 2P', monospace; font-size: 9px; letter-spacing: 2px;
+    color: var(--cyan); margin-bottom: 6px;
+  }
+  .sector-stats-panel .head {
+    font-family: 'Orbitron', monospace; font-size: 22px; font-weight: 700;
+    color: var(--gold); margin-bottom: 10px; letter-spacing: 2px;
+  }
+  .sector-stats-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px;
+    font-size: 13px;
+  }
+  .sector-stats-grid .k { color: var(--fg-dim); font-size: 11px; letter-spacing: 1px; text-transform: uppercase; }
+  .sector-stats-grid .v { color: var(--fg); font-weight: 600; font-family: 'VT323', monospace; font-size: 18px; }
+  .npc-portrait-card {
+    position: relative;
+    border: 2px solid rgba(34,211,238,0.5);
+    background: var(--bg-panel-solid);
+    overflow: hidden;
+    box-shadow: 0 0 28px rgba(34,211,238,0.18);
+    aspect-ratio: 3/4;
+    max-height: 60vh;
+    align-self: end;
+  }
+  .npc-portrait-card img {
+    width: 100%; height: 100%; object-fit: cover;
+    image-rendering: auto;
+  }
+  .npc-portrait-card .npc-tag {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    padding: 10px 14px; background: linear-gradient(180deg, rgba(10,16,36,0) 0%, rgba(10,16,36,0.95) 100%);
+  }
+  .npc-portrait-card .npc-tag .greek {
+    font-family: 'Press Start 2P', monospace; font-size: 14px; letter-spacing: 2px; color: var(--gold);
+  }
+  .npc-portrait-card .npc-tag .role {
+    font-family: 'VT323', monospace; font-size: 16px; color: var(--cyan); margin-top: 2px;
+  }
+  .sector-actions {
+    display: flex; gap: 10px; flex-wrap: wrap; padding: 4px;
+  }
+  .btn-ry {
+    background: linear-gradient(180deg, rgba(34,211,238,0.18), rgba(34,211,238,0.06));
+    border: 1px solid var(--cyan); color: var(--cyan);
+    padding: 10px 18px; font-family: 'Press Start 2P', monospace; font-size: 10px;
+    letter-spacing: 2px; cursor: pointer;
+    box-shadow: inset 0 0 0 1px rgba(10,16,36,0.6);
+  }
+  .btn-ry:hover { background: rgba(34,211,238,0.25); color: var(--gold); }
+  .btn-ry.primary { color: var(--gold); border-color: var(--gold); background: linear-gradient(180deg, rgba(253,224,71,0.18), rgba(253,224,71,0.06)); }
+  .btn-ry.primary:hover { background: rgba(253,224,71,0.25); }
+  .btn-ry.danger { color: var(--red); border-color: var(--red); }
+
+  /* ───── DIALOGUE overlay ───── */
+  .dialogue {
+    position: fixed; left: 12px; right: 12px; bottom: 12px;
+    display: none; z-index: 400;
+  }
+  .dialogue.open { display: block; }
+  .dialogue-box {
+    position: relative;
+    background: linear-gradient(180deg, rgba(10,16,36,0.96), rgba(10,16,36,0.92));
+    border: 2px solid var(--cyan);
+    box-shadow: 0 0 30px rgba(34,211,238,0.3), inset 0 0 0 1px rgba(6,10,20,0.9);
+    padding: 20px 24px 18px;
+    min-height: 130px;
+  }
+  .dialogue-speaker {
+    position: absolute; top: -14px; left: 18px;
+    padding: 5px 14px;
+    background: var(--bg-panel-solid); border: 2px solid var(--cyan);
+    font-family: 'Press Start 2P', monospace; font-size: 10px; letter-spacing: 2px;
+    color: var(--gold);
+  }
+  .dialogue-body {
+    font-family: 'VT323', monospace; font-size: 22px;
+    color: var(--fg); line-height: 1.35;
+    white-space: pre-wrap;
+    min-height: 90px;
+  }
+  .dialogue-advance {
+    position: absolute; bottom: 8px; right: 14px;
+    font-family: 'Press Start 2P', monospace; font-size: 12px; color: var(--cyan);
+    animation: blink 0.9s steps(2,end) infinite;
+  }
+  .dialogue-portrait {
+    position: absolute; bottom: 100%; right: 12px;
+    width: 90px; height: 120px;
+    border: 2px solid var(--cyan); background: var(--bg-panel-solid);
+    overflow: hidden; margin-bottom: 4px;
+    box-shadow: 0 0 16px rgba(34,211,238,0.3);
+  }
+  .dialogue-portrait img { width: 100%; height: 100%; object-fit: cover; }
+
+  /* ───── PAUSE / MODAL ───── */
+  .modal-back {
+    position: fixed; inset: 0; z-index: 600;
+    display: none; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.78);
+    padding: 20px;
+  }
+  .modal-back.open { display: flex; }
+  .modal {
+    background: linear-gradient(180deg, var(--bg-panel-solid), #0e1530);
+    border: 2px solid var(--cyan);
+    box-shadow: 0 0 30px rgba(34,211,238,0.3), inset 0 0 0 2px rgba(10,16,36,0.7);
+    padding: 24px 28px;
+    min-width: 360px; max-width: 92vw; max-height: 90vh; overflow: auto;
+    color: var(--fg);
+  }
+  .modal h2 {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 14px; color: var(--gold);
+    letter-spacing: 3px; margin: 0 0 18px 0;
+  }
+  .menu-item {
+    padding: 10px 14px; display: flex; align-items: center; gap: 12px;
+    cursor: pointer; border-left: 3px solid transparent;
+    font-family: 'VT323', monospace; font-size: 20px;
+  }
+  .menu-item:hover, .menu-item.focused {
+    background: rgba(34,211,238,0.15); border-left-color: var(--cyan);
+    color: var(--cyan);
+  }
+  .menu-item .arrow { opacity: 0; }
+  .menu-item.focused .arrow, .menu-item:hover .arrow { opacity: 1; }
+  .modal-hint {
+    margin-top: 14px; color: var(--fg-dim); font-size: 12px; font-family: 'Inter', sans-serif;
+  }
+
+  /* Quest log */
+  .quest-list { display: flex; flex-direction: column; gap: 10px; }
+  .quest-card {
+    border: 1px solid rgba(34,211,238,0.3); padding: 10px 14px;
+    background: rgba(34,211,238,0.04);
+    display: grid; grid-template-columns: 8px 1fr auto; gap: 12px; align-items: center;
+  }
+  .quest-card .pri { width: 8px; height: 100%; min-height: 36px; }
+  .quest-card.urgent .pri { background: var(--red); }
+  .quest-card.high .pri { background: var(--amber); }
+  .quest-card.normal .pri { background: var(--cyan); }
+  .quest-card .body .title { font-weight: 600; font-size: 14px; color: var(--fg); }
+  .quest-card .body .ctx { font-size: 11px; color: var(--fg-dim); margin-top: 2px; }
+  .quest-card .dismiss {
+    background: transparent; border: 1px solid var(--fg-dim); color: var(--fg-dim);
+    width: 26px; height: 26px; cursor: pointer; font-family: monospace; font-size: 14px;
+  }
+  .quest-card .dismiss:hover { color: var(--red); border-color: var(--red); }
+
+  /* Crew party panel */
+  .party-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .party-card {
+    border: 1px solid rgba(34,211,238,0.3); background: var(--bg-panel-solid);
+    text-align: center; overflow: hidden;
+  }
+  .party-card img { width: 100%; aspect-ratio: 3/4; object-fit: cover; }
+  .party-card .name {
+    font-family: 'Press Start 2P', monospace; font-size: 8px; padding: 6px 0;
+    color: var(--gold); letter-spacing: 1px;
+  }
+
+  /* CC wizard popup in sector */
+  .wiz-pop {
+    position: fixed; right: 14px; bottom: 160px; z-index: 300;
+    width: 64px; height: 80px;
+    border: 2px solid var(--violet); background: var(--bg-panel-solid);
+    overflow: hidden; cursor: pointer;
+    box-shadow: 0 0 18px rgba(167,139,250,0.45);
+    animation: pulseWiz 2s ease-in-out infinite;
+  }
+  .wiz-pop img { width: 100%; height: 100%; object-fit: cover; }
+  .wiz-pop .badge {
+    position: absolute; top: -8px; right: -8px;
+    background: var(--violet); color: var(--bg-deep);
+    width: 22px; height: 22px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Press Start 2P', monospace; font-size: 9px;
+  }
+
+  /* Toast notifications */
+  .toast-stack {
+    position: fixed; top: 76px; right: 12px; z-index: 700;
+    display: flex; flex-direction: column; gap: 8px;
+    max-width: 320px;
+  }
+  .toast {
+    border: 1px solid var(--cyan); background: var(--bg-panel-solid);
+    padding: 10px 14px; font-size: 13px;
+    box-shadow: 0 0 14px rgba(34,211,238,0.25);
+    animation: toastIn .2s ease;
+  }
+  .toast.amber { border-color: var(--amber); }
+  .toast.red { border-color: var(--red); }
+  @keyframes toastIn { from { transform: translateX(20px); opacity: 0; } }
+
+  /* Tap textarea */
+  textarea, input[type="text"] {
+    width: 100%; padding: 8px 10px;
+    background: var(--bg-deep); color: var(--fg); border: 1px solid var(--cyan);
+    font-family: 'VT323', monospace; font-size: 18px;
+  }
+
+  /* Mobile */
+  @media (max-width: 720px) {
+    .topbar { padding: 6px 10px; gap: 6px; flex-wrap: wrap; }
+    .topbar-brand { font-size: 11px; letter-spacing: 2px; }
+    .topbar-brand .sub { font-size: 7px; }
+    .topbar-stats { gap: 8px; }
+    .stat-chip { padding: 3px 6px; font-size: 10px; }
+    .stat-chip .label { font-size: 7px; }
+    .map-hot .hot-label { font-size: 8px; }
+    .map-hot .hot-stat { font-size: 13px; }
+    .sector-hero { grid-template-columns: 1fr; }
+    .npc-portrait-card { max-height: 45vh; max-width: 60vw; margin: 0 auto; }
+    .party-grid { grid-template-columns: repeat(3, 1fr); }
+    .title-press { font-size: 14px; }
+    .dialogue-body { font-size: 18px; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- Topbar -->
+  <div class="topbar hidden" id="topbar">
+    <div class="topbar-left">
+      <div class="topbar-brand">RYUJIN OS<span class="sub">PLUS ULTRA OPERATIONS</span></div>
+    </div>
+    <div class="topbar-stats" id="topbarStats"></div>
+    <div class="topbar-right">
+      <button class="ico-btn" id="btnMute" title="Mute SFX (M)">♪</button>
+      <button class="ico-btn" id="btnPause" title="Menu (Esc)">☰</button>
+    </div>
+  </div>
+
+  <!-- TITLE view -->
+  <div class="view view-title active" id="viewTitle">
+    <div class="bg"></div>
+    <div class="scrim"></div>
+    <div class="title-loading" id="titleLoading">connecting to plus ultra…</div>
+    <div class="title-press" id="titlePress">PRESS START</div>
+    <div class="title-version">v1.0 · cyberpunk overworld</div>
+  </div>
+
+  <!-- MAP view -->
+  <div class="view view-map" id="viewMap">
+    <div class="map-frame">
+      <div class="map-bg"></div>
+      <div class="map-grid" id="mapGrid"></div>
+    </div>
+  </div>
+
+  <!-- SECTOR view -->
+  <div class="view view-sector" id="viewSector">
+    <div class="sector-bg" id="sectorBg"></div>
+    <div class="sector-shell">
+      <div class="sector-hero">
+        <div class="sector-stats-panel" id="sectorStatsPanel"></div>
+        <div class="npc-portrait-card" id="npcCard">
+          <img id="npcImg" alt="NPC" />
+          <div class="npc-tag">
+            <div class="greek" id="npcGreek">ZEUS</div>
+            <div class="role" id="npcRole">Governance</div>
+          </div>
+        </div>
+      </div>
+      <div class="sector-actions" id="sectorActions"></div>
+    </div>
+  </div>
+
+  <!-- Dialogue overlay -->
+  <div class="dialogue" id="dialogue">
+    <div class="dialogue-portrait" id="dialoguePortrait"><img id="dialoguePortraitImg" alt="" /></div>
+    <div class="dialogue-box">
+      <div class="dialogue-speaker" id="dialogueSpeaker">ZEUS</div>
+      <div class="dialogue-body" id="dialogueBody"></div>
+      <div class="dialogue-advance" id="dialogueAdvance">▼</div>
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div class="modal-back" id="modalBack">
+    <div class="modal" id="modal"></div>
+  </div>
+
+  <!-- Toasts -->
+  <div class="toast-stack" id="toastStack"></div>
+</div>
+
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════════════════════
+// RYUJIN OS — Plus Ultra Operations · Game Shell v1.0
+// ═══════════════════════════════════════════════════════════════
+
+const TENANT = 'plus-ultra';
+const API_BASE = window.location.protocol === 'file:' ? 'https://ryujin-os.vercel.app' : '';
+const SNAPSHOT_REFRESH_MS = 5 * 60 * 1000;
+const CC_REFRESH_MS = 30 * 1000;
+const SAVE_KEY = 'ryujin_game_save_v1';
+
+const SECTORS = [
+  { id:'HQ',        npc:'ZEUS',       role:'Governance',  href:'/command-center.html',         bg:'/assets/rpg/scenes/sectors/hq-throne.webp' },
+  { id:'SALES',     npc:'HERMES',     role:'Messenger',   href:'/sales-cockpit.html',          bg:'/assets/rpg/scenes/sectors/sales-floor.webp' },
+  { id:'PRODUCTION',npc:'HEPHAESTUS', role:'Forge',       href:'/production.html',             bg:'/assets/rpg/scenes/sectors/production-forge.webp' },
+  { id:'SERVICE',   npc:'ARTEMIS',    role:'Hunter',      href:'/service-tickets.html',        bg:'/assets/rpg/scenes/sectors/service-dispatch.webp' },
+  { id:'CUSTOMER',  npc:'HESTIA',     role:'Hearth',      href:'/customers.html',              bg:'/assets/rpg/scenes/sectors/customer-hearth.webp' },
+  { id:'FINANCE',   npc:'ATHENA',     role:'Sage',        href:'/admin.html?page=finance',     bg:'/assets/rpg/scenes/sectors/finance-vault.webp' },
+  { id:'ADMIN',     npc:'HECATE',     role:'Witch',       href:'/administration.html',         bg:'/assets/rpg/scenes/sectors/admin-server.webp' },
+  { id:'MARKETING', npc:'APOLLO',     role:'Muse',        href:'/admin.html?page=marketing',   bg:'/assets/rpg/scenes/sectors/marketing-plaza.webp' }
+];
+
+const NPC_ACCENT = {
+  ZEUS:'#fde047', HERMES:'#ec4899', HEPHAESTUS:'#fbbf24', ARTEMIS:'#34d399',
+  HESTIA:'#fdba74', ATHENA:'#22d3ee', HECATE:'#a78bfa', APOLLO:'#f9a8d4'
+};
+const NPC_PORTRAIT = (npc) => `/assets/rpg/portraits/${npc.toLowerCase()}.webp`;
+
+const CREW = [
+  { id:'mackenzie', name:'CEO MACK',  img:'/assets/rpg/portraits/crew/mackenzie.webp' },
+  { id:'cat',       name:'CAT',       img:'/assets/rpg/portraits/crew/cat.webp' },
+  { id:'darcy',     name:'DARCY',     img:'/assets/rpg/portraits/crew/darcy.webp' },
+  { id:'diego',     name:'DIEGO',     img:'/assets/rpg/portraits/crew/diego.webp' },
+  { id:'aj',        name:'AJ',        img:'/assets/rpg/portraits/crew/aj.webp' },
+  { id:'pavanjot',  name:'PAVANJOT',  img:'/assets/rpg/portraits/crew/pavanjot.webp' },
+  { id:'melodie',   name:'MELODIE',   img:'/assets/rpg/portraits/crew/melodie.webp' }
+];
+
+// ═════ State ═════
+const state = {
+  view: 'TITLE',
+  focusedSector: 0,
+  snapshot: null,
+  snapshotErr: null,
+  snapshotAt: 0,
+  me: null,
+  ccSessions: [],
+  dialogue: null,        // { speaker, portrait, body, revealed, doneAt }
+  modal: null,           // { kind, focusable[], focusIdx }
+  save: loadSave()
+};
+
+function loadSave() {
+  try { return JSON.parse(localStorage.getItem(SAVE_KEY)) || defaultSave(); }
+  catch { return defaultSave(); }
+}
+function defaultSave() {
+  return { dismissed_quests: [], visited_sectors: [], muted: false, last_visit_at: null };
+}
+function persistSave() {
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(state.save)); } catch {}
+}
+
+// ═════ DOM helpers (XSS-safe) ═════
+function el(tag, attrs, children) {
+  const e = document.createElement(tag);
+  if (attrs) Object.keys(attrs).forEach(k => {
+    if (k === 'class') e.className = attrs[k];
+    else if (k === 'text') e.textContent = attrs[k];
+    else if (k.startsWith('on') && typeof attrs[k] === 'function') e.addEventListener(k.slice(2), attrs[k]);
+    else if (k === 'style' && typeof attrs[k] === 'object') Object.assign(e.style, attrs[k]);
+    else e.setAttribute(k, attrs[k]);
+  });
+  (children || []).forEach(c => { if (c != null) e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+  return e;
+}
+const $ = id => document.getElementById(id);
+function fmt$(n) { if (n == null) return '—'; if (n >= 1000) return '$' + Math.round(n/1000) + 'K'; return '$' + Math.round(n); }
+function pct(n) { return n == null ? '—' : Math.round(n * 100) + '%'; }
+
+// ═════ Data fetches ═════
+async function fetchSnapshot() {
+  try {
+    const r = await fetch(`${API_BASE}/api/snapshot?tenant=${TENANT}`, { credentials: 'omit' });
+    if (!r.ok) throw new Error('snapshot ' + r.status);
+    state.snapshot = await r.json();
+    state.snapshotErr = null;
+    state.snapshotAt = Date.now();
+  } catch (e) {
+    state.snapshotErr = String(e.message || e);
+  }
+  renderTopbar();
+  if (state.view === 'MAP') renderMap();
+  if (state.view === 'SECTOR') renderSector();
+}
+async function fetchMe() {
+  try {
+    const r = await fetch(`${API_BASE}/api/me`, { credentials: 'omit' });
+    if (r.ok) state.me = await r.json();
+  } catch {}
+}
+async function fetchCcSessions() {
+  try {
+    const r = await fetch(`${API_BASE}/api/cc-presence?tenant=${TENANT}`, { credentials: 'omit' });
+    if (!r.ok) throw new Error('cc-presence ' + r.status);
+    const data = await r.json();
+    state.ccSessions = Array.isArray(data.sessions) ? data.sessions : [];
+  } catch { state.ccSessions = []; }
+  if (state.view === 'MAP') renderMap();
+  renderWizardPop();
+}
+
+// ═════ Per-god daily line (from snapshot) ═════
+function godLine(npc) {
+  const s = state.snapshot;
+  if (!s) return 'Awaiting today\'s briefing…';
+  const rev = s.revenue || {};
+  const t = s.tickets || {};
+  const pipe = s.pipeline || {};
+  const leads = s.leads || {};
+  const ads = s.metaAds || {};
+  const brief = s.briefing_morning || {};
+  const alerts = s.alerts || [];
+
+  const byStat = t.byStatus || {};
+  const recent = (rev.recentActivity || []).slice(0, 3);
+
+  switch (npc) {
+    case 'ZEUS': {
+      const stat = (brief.status || 'unknown').toUpperCase();
+      const top = brief.top3 && brief.top3[0];
+      const topLine = top ? (top.action || top.title || '') : 'No flagged priorities.';
+      return `Briefing status: ${stat}.\nTop priority: ${topLine}`;
+    }
+    case 'HERMES': {
+      const signed = Math.round((rev.signedRevenue || 0) / 1000);
+      const pipeVal = Math.round((pipe.totalValue || 0) / 1000);
+      const accepted = recent.filter(r => /accepted|signed/i.test(r.action || '')).length;
+      return `Signed $${signed}K MTD. Pipeline $${pipeVal}K across ${pipe.openDeals || 0} open deals. ${accepted ? accepted + ' proposal' + (accepted > 1 ? 's' : '') + ' accepted today.' : 'No new acceptances today.'}`;
+    }
+    case 'HEPHAESTUS': {
+      const open = byStat.open || 0;
+      const active = byStat.active || 0;
+      const overdue = t.overdueCount || 0;
+      return `${active} jobs active. ${open} open. ${overdue} overdue. ${overdue > 20 ? 'The forge is hot.' : 'Workload steady.'}`;
+    }
+    case 'ARTEMIS': {
+      const active = byStat.active || 0;
+      const today = (t.activeToday || []).length;
+      return `${active} active service calls. ${today} on dispatch today. ${active > 5 ? 'Arrows ready.' : 'The hunt is calm.'}`;
+    }
+    case 'HESTIA': {
+      const conv = (state.snapshot.ghl_conversations_24h_count) || (alerts.find(a => /conversation/i.test(a)) ? '?' : 0);
+      const totalTix = t.total || 0;
+      return `${conv || 'a handful of'} conversations updated today. ${totalTix} tickets warm.`;
+    }
+    case 'ATHENA': {
+      const signed = Math.round((rev.signedRevenue || 0) / 1000);
+      const pend = rev.pendingRevenue || 0;
+      const adRoi = brief.kpiScouter && brief.kpiScouter.adROI;
+      const adLine = adRoi ? ` Ad ROI ${adRoi}.` : '';
+      const pendNote = pend === 0 && signed > 0 ? ' Pending revenue accumulator stale, recommend audit.' : '';
+      return `Signed $${signed}K month-to-date. Pending $${Math.round(pend/1000)}K.${adLine}${pendNote}`;
+    }
+    case 'HECATE': {
+      const watchdog = alerts.find(a => /watchdog|cron/i.test(String(a)));
+      const stale = alerts.find(a => /stale/i.test(String(a)));
+      if (watchdog) return `⚠ ${watchdog} Cross the threshold carefully.`;
+      if (stale) return `${stale} Worth a sweep.`;
+      return 'Systems nominal. The keys are quiet.';
+    }
+    case 'APOLLO': {
+      const cpl = ads.avgCPL;
+      const lw = leads.thisWeek || 0;
+      const total = leads.total || 0;
+      return `Lead flow ${lw} this week (${total} all-time). CPL ${cpl != null ? '$' + cpl.toFixed(2) : '?'}. ${lw < 3 ? 'Time to amplify.' : 'Channels singing.'}`;
+    }
+  }
+  return 'Quiet today.';
+}
+
+function sectorStatBlocks(sectorId) {
+  const s = state.snapshot;
+  if (!s) return [{k:'STATUS',v:'loading…'}];
+  const rev = s.revenue || {};
+  const t = s.tickets || {};
+  const pipe = s.pipeline || {};
+  const leads = s.leads || {};
+  const ads = s.metaAds || {};
+  const brief = s.briefing_morning || {};
+  const alerts = s.alerts || [];
+
+  switch (sectorId) {
+    case 'HQ': return [
+      { k:'BRIEFING', v:(brief.status || '—').toUpperCase() },
+      { k:'TOP 3', v: (brief.top3 || []).length },
+      { k:'ALERTS', v: alerts.length },
+      { k:'SECTORS', v: '8' }
+    ];
+    case 'SALES': return [
+      { k:'SIGNED MTD', v: fmt$(rev.signedRevenue) },
+      { k:'PIPELINE', v: fmt$(pipe.totalValue) },
+      { k:'OPEN DEALS', v: pipe.openDeals || 0 },
+      { k:'TOP DEAL', v: pipe.top5_deals && pipe.top5_deals[0] ? fmt$(pipe.top5_deals[0].value) : '—' }
+    ];
+    case 'PRODUCTION': return [
+      { k:'ACTIVE', v: (t.byStatus && t.byStatus.active) || 0 },
+      { k:'OPEN', v: (t.byStatus && t.byStatus.open) || 0 },
+      { k:'OVERDUE', v: t.overdueCount || 0 },
+      { k:'DONE', v: (t.byStatus && t.byStatus.done) || 0 }
+    ];
+    case 'SERVICE': return [
+      { k:'ACTIVE CALLS', v: (t.byStatus && t.byStatus.active) || 0 },
+      { k:'DISPATCH TODAY', v: (t.activeToday || []).length },
+      { k:'UNASSIGNED', v: (t.byAssignee && t.byAssignee.Unassigned) || 0 },
+      { k:'CREW LOAD', v: t.byAssignee ? Object.keys(t.byAssignee).length : 0 }
+    ];
+    case 'CUSTOMER': return [
+      { k:'TICKETS', v: t.total || 0 },
+      { k:'OVERDUE', v: t.overdueCount || 0 },
+      { k:'TOTAL LEADS', v: leads.total || 0 },
+      { k:'CONVERSION', v: leads.conversionRate != null ? leads.conversionRate.toFixed(1) + '%' : '—' }
+    ];
+    case 'FINANCE': return [
+      { k:'SIGNED MTD', v: fmt$(rev.signedRevenue) },
+      { k:'PENDING', v: fmt$(rev.pendingRevenue) },
+      { k:'AD ROI', v: (brief.kpiScouter && brief.kpiScouter.adROI) || '—' },
+      { k:'ACTIVE CAMPAIGNS', v: ads.activeCampaigns || 0 }
+    ];
+    case 'ADMIN': {
+      const watchdog = alerts.find(a => /watchdog|cron/i.test(String(a)));
+      return [
+        { k:'ALERTS', v: alerts.length },
+        { k:'WATCHDOG', v: watchdog ? 'DOWN' : 'OK' },
+        { k:'CRON', v: brief.timestamp ? new Date(brief.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '—' },
+        { k:'TENANT', v: TENANT }
+      ];
+    }
+    case 'MARKETING': return [
+      { k:'AVG CPL', v: ads.avgCPL != null ? '$' + ads.avgCPL.toFixed(2) : '—' },
+      { k:'LEADS THIS WK', v: leads.thisWeek || 0 },
+      { k:'ALL LEADS', v: leads.total || 0 },
+      { k:'CAMPAIGNS', v: ads.activeCampaigns || 0 }
+    ];
+  }
+  return [];
+}
+
+function sectorAlertLevel(sectorId) {
+  const s = state.snapshot;
+  if (!s) return 'ok';
+  const t = s.tickets || {};
+  const alerts = s.alerts || [];
+  const brief = s.briefing_morning || {};
+
+  if (sectorId === 'HQ') {
+    return (brief.status === 'red') ? 'alert' : (brief.status === 'yellow' ? 'warn' : 'ok');
+  }
+  if (sectorId === 'PRODUCTION') {
+    const ov = t.overdueCount || 0;
+    return ov > 20 ? 'alert' : ov > 5 ? 'warn' : 'ok';
+  }
+  if (sectorId === 'ADMIN') {
+    return alerts.find(a => /watchdog|cron|down/i.test(String(a))) ? 'alert' : 'ok';
+  }
+  if (sectorId === 'FINANCE') {
+    const rev = s.revenue || {};
+    return (rev.pendingRevenue === 0 && (rev.signedRevenue || 0) > 0) ? 'warn' : 'ok';
+  }
+  return 'ok';
+}
+
+function sectorHeadline(sectorId) {
+  // One-line headline for map tile
+  const s = state.snapshot;
+  if (!s) return 'loading…';
+  const rev = s.revenue || {};
+  const t = s.tickets || {};
+  const pipe = s.pipeline || {};
+  const ads = s.metaAds || {};
+  const brief = s.briefing_morning || {};
+  const alerts = s.alerts || [];
+  const leads = s.leads || {};
+
+  switch (sectorId) {
+    case 'HQ': return `Briefing ${(brief.status || '?').toUpperCase()}`;
+    case 'SALES': return `${fmt$(rev.signedRevenue)} signed`;
+    case 'PRODUCTION': return `${(t.byStatus && t.byStatus.open) || 0} open · ${t.overdueCount || 0} overdue`;
+    case 'SERVICE': return `${(t.byStatus && t.byStatus.active) || 0} active`;
+    case 'CUSTOMER': return `${t.total || 0} tickets`;
+    case 'FINANCE': return `${fmt$(rev.signedRevenue)} MTD`;
+    case 'ADMIN': {
+      const watchdog = alerts.find(a => /watchdog|cron/i.test(String(a)));
+      return watchdog ? 'WATCHDOG DOWN' : 'systems nominal';
+    }
+    case 'MARKETING': return `CPL $${ads.avgCPL != null ? ads.avgCPL.toFixed(2) : '?'} · ${leads.thisWeek || 0}/wk`;
+  }
+}
+
+// ═════ WebAudio chiptune SFX ═════
+let audioCtx = null;
+function ensureAudio() {
+  if (audioCtx || state.save.muted) return audioCtx;
+  try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch {}
+  return audioCtx;
+}
+function beep(freq, durMs, type, vol) {
+  if (state.save.muted) return;
+  const a = ensureAudio(); if (!a) return;
+  const t0 = a.currentTime;
+  const o = a.createOscillator();
+  const g = a.createGain();
+  o.type = type || 'square';
+  o.frequency.setValueAtTime(freq, t0);
+  g.gain.setValueAtTime(vol || 0.05, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + durMs / 1000);
+  o.connect(g); g.connect(a.destination);
+  o.start(t0); o.stop(t0 + durMs / 1000);
+}
+const sfxStep    = () => beep(220, 50, 'square', 0.03);
+const sfxConfirm = () => { beep(660, 50, 'square', 0.05); setTimeout(() => beep(880, 60, 'square', 0.05), 40); };
+const sfxOpen    = () => { beep(440, 40, 'triangle', 0.05); beep(660, 80, 'triangle', 0.04); };
+const sfxClose   = () => beep(330, 60, 'triangle', 0.04);
+const sfxAdvance = () => beep(990, 20, 'square', 0.025);
+const sfxBoss    = () => { beep(110, 250, 'sawtooth', 0.06); setTimeout(() => beep(82, 350, 'sawtooth', 0.06), 200); };
+['click','keydown','touchstart'].forEach(ev => window.addEventListener(ev, function once() { ensureAudio(); window.removeEventListener(ev, once); }, { once: true }));
+
+// ═════ Topbar render ═════
+function renderTopbar() {
+  const tb = $('topbar');
+  tb.classList.toggle('hidden', state.view === 'TITLE');
+  if (state.view === 'TITLE') return;
+
+  const s = state.snapshot;
+  const stats = $('topbarStats');
+  stats.textContent = '';
+  if (!s) {
+    stats.appendChild(el('span', { class: 'stat-chip', text: 'loading…' }));
+    return;
+  }
+  const rev = s.revenue || {};
+  const t = s.tickets || {};
+  const brief = s.briefing_morning || {};
+  const alerts = s.alerts || [];
+
+  const ts = new Date(s.timestamp || Date.now());
+  const ageMin = Math.round((Date.now() - ts.getTime()) / 60000);
+  const dot = el('span', { class: 'freshness-dot' + (state.snapshotErr ? ' down' : ageMin > 60 ? ' stale' : '') });
+
+  const chips = [
+    { l: 'CEO MACK', v: 'Lv ' + computeLevel(rev.signedRevenue || 0) },
+    { l: 'MTD', v: fmt$(rev.signedRevenue) },
+    { l: 'TICKETS', v: ((t.byStatus && t.byStatus.open) || 0) + ' open' },
+    { l: 'OVERDUE', v: t.overdueCount || 0, level: (t.overdueCount || 0) > 20 ? 'alert' : (t.overdueCount || 0) > 5 ? 'warn' : '' },
+    { l: 'BRIEF', v: (brief.status || '?').toUpperCase(), level: brief.status === 'red' ? 'alert' : brief.status === 'yellow' ? 'warn' : '' },
+    { l: 'ALERTS', v: alerts.length, level: alerts.length ? 'warn' : '' },
+    { l: 'CC', v: state.ccSessions.length },
+    { l: 'SYNC', v: ageMin + 'm ago' }
+  ];
+  chips.forEach(c => {
+    const chip = el('div', { class: 'stat-chip' + (c.level ? ' ' + c.level : '') }, [
+      el('span', { class: 'label', text: c.l }),
+      el('span', { class: 'value', text: String(c.v) })
+    ]);
+    if (c.l === 'SYNC') chip.insertBefore(dot, chip.firstChild);
+    stats.appendChild(chip);
+  });
+}
+
+function computeLevel(signedRev) {
+  // Simple level curve: each level = $25K signed MTD threshold, max display 99
+  if (!signedRev) return 1;
+  return Math.min(99, Math.max(1, Math.floor(signedRev / 25000) + 1));
+}
+
+// ═════ View transitions ═════
+function setView(v) {
+  ['Title','Map','Sector'].forEach(name => {
+    const id = 'view' + name;
+    const node = $(id);
+    if (!node) return;
+    const isActive = ('VIEW' + name.toUpperCase()).slice(4) === v;
+    node.classList.toggle('active', isActive);
+  });
+  // The above is buggy if names mismatch — explicit map:
+  $('viewTitle').classList.toggle('active', v === 'TITLE');
+  $('viewMap').classList.toggle('active', v === 'MAP');
+  $('viewSector').classList.toggle('active', v === 'SECTOR');
+  state.view = v;
+  renderTopbar();
+  renderWizardPop();
+}
+
+// ═════ TITLE view ═════
+function enterTitle() {
+  setView('TITLE');
+  $('titlePress').style.display = 'block';
+  $('titleLoading').textContent = state.snapshot ? '✓ live data ready' : 'connecting…';
+  closeDialogue();
+}
+function bootPressStart() {
+  sfxConfirm();
+  $('titlePress').textContent = 'LOADING…';
+  $('titlePress').style.animation = 'none';
+  setTimeout(() => { setView('MAP'); renderMap(); $('titlePress').textContent = 'PRESS START'; $('titlePress').style.animation = ''; }, 380);
+}
+
+// ═════ MAP view ═════
+function renderMap() {
+  const grid = $('mapGrid');
+  grid.textContent = '';
+  SECTORS.forEach((sec, i) => {
+    const lvl = sectorAlertLevel(sec.id);
+    const tile = el('div', {
+      class: 'map-hot' + (i === state.focusedSector ? ' focused' : '') + (lvl === 'alert' ? ' alert' : lvl === 'warn' ? ' warn' : ''),
+      'data-sector': sec.id,
+      onclick: () => { state.focusedSector = i; sfxStep(); enterSector(); },
+      onmouseenter: () => { if (state.focusedSector !== i) { state.focusedSector = i; renderMap(); } }
+    }, [
+      el('div', { class: 'hot-label', text: sec.id }),
+      el('div', { class: 'hot-stat' + (lvl === 'alert' ? ' alert' : lvl === 'warn' ? ' warn' : ''), text: sectorHeadline(sec.id) })
+    ]);
+    // CC wizards stationed here
+    const wizardsHere = state.ccSessions.filter(c => (c.current_sector || '').toUpperCase() === sec.id);
+    if (wizardsHere.length) {
+      tile.appendChild(el('div', { class: 'wizard-pip', title: wizardsHere.map(w => w.user_label || 'Claude').join(', ') }, ['🧙 ', String(wizardsHere.length)]));
+    }
+    grid.appendChild(tile);
+  });
+}
+
+// ═════ SECTOR view ═════
+function enterSector() {
+  const sec = SECTORS[state.focusedSector];
+  if (!sec) return;
+  setView('SECTOR');
+  sfxOpen();
+  if (!state.save.visited_sectors.includes(sec.id)) {
+    state.save.visited_sectors.push(sec.id);
+    persistSave();
+  }
+  state.save.last_visit_at = new Date().toISOString();
+  persistSave();
+  renderSector();
+}
+
+function renderSector() {
+  const sec = SECTORS[state.focusedSector];
+  if (!sec) return;
+  $('sectorBg').style.backgroundImage = `url('${sec.bg}')`;
+
+  $('npcImg').src = NPC_PORTRAIT(sec.npc);
+  $('npcImg').alt = sec.npc;
+  $('npcGreek').textContent = sec.npc;
+  $('npcGreek').style.color = NPC_ACCENT[sec.npc] || '#fde047';
+  $('npcRole').textContent = sec.role;
+
+  const panel = $('sectorStatsPanel');
+  panel.textContent = '';
+  panel.appendChild(el('div', { class: 'eyebrow', text: 'SECTOR · ' + sec.id }));
+  panel.appendChild(el('div', { class: 'head', text: sec.npc + ' · ' + sec.role.toUpperCase(), style: { color: NPC_ACCENT[sec.npc] } }));
+  const grid = el('div', { class: 'sector-stats-grid' });
+  sectorStatBlocks(sec.id).forEach(b => {
+    grid.appendChild(el('div', { class: 'k', text: b.k }));
+    grid.appendChild(el('div', { class: 'v', text: String(b.v) }));
+  });
+  panel.appendChild(grid);
+
+  const actions = $('sectorActions');
+  actions.textContent = '';
+  actions.appendChild(el('button', { class: 'btn-ry primary', text: '◀ MAP', onclick: () => { sfxClose(); setView('MAP'); renderMap(); } }));
+  actions.appendChild(el('button', { class: 'btn-ry', text: 'TALK', onclick: () => { sfxConfirm(); talkToNpc(sec); } }));
+  actions.appendChild(el('button', { class: 'btn-ry', text: 'ENTER LIVE PANEL ▶', onclick: () => { sfxConfirm(); window.location.href = sec.href; } }));
+  actions.appendChild(el('button', { class: 'btn-ry', text: 'QUESTS', onclick: () => { sfxOpen(); openQuestModal(); } }));
+
+  // Auto-talk on first entry per sector (only if we haven't talked to this NPC yet this session)
+  if (!state._spokenTo) state._spokenTo = new Set();
+  if (!state._spokenTo.has(sec.id)) {
+    state._spokenTo.add(sec.id);
+    setTimeout(() => talkToNpc(sec), 300);
+  }
+}
+
+// ═════ DIALOGUE ═════
+function talkToNpc(sec) {
+  const speaker = sec.npc;
+  const body = godLine(speaker);
+  openDialogue({ speaker, accent: NPC_ACCENT[speaker], portrait: NPC_PORTRAIT(speaker), body });
+}
+function openDialogue(d) {
+  state.dialogue = Object.assign({ revealed: 0 }, d);
+  $('dialogue').classList.add('open');
+  $('dialogueSpeaker').textContent = d.speaker;
+  $('dialogueSpeaker').style.color = d.accent || '#fde047';
+  $('dialogueSpeaker').style.borderColor = d.accent || 'var(--cyan)';
+  $('dialogueBody').textContent = '';
+  $('dialogueAdvance').style.display = 'none';
+  if (d.portrait) {
+    $('dialoguePortrait').style.display = 'block';
+    $('dialoguePortraitImg').src = d.portrait;
+  } else {
+    $('dialoguePortrait').style.display = 'none';
+  }
+  // Start typewriter
+  if (state._typewriterTimer) clearInterval(state._typewriterTimer);
+  state._typewriterTimer = setInterval(() => {
+    if (!state.dialogue) { clearInterval(state._typewriterTimer); return; }
+    state.dialogue.revealed += 2;
+    const visible = state.dialogue.body.slice(0, state.dialogue.revealed);
+    $('dialogueBody').textContent = visible;
+    if (state.dialogue.revealed % 8 === 0) sfxAdvance();
+    if (state.dialogue.revealed >= state.dialogue.body.length) {
+      clearInterval(state._typewriterTimer);
+      $('dialogueAdvance').style.display = 'block';
+    }
+  }, 30);
+}
+function closeDialogue() {
+  state.dialogue = null;
+  $('dialogue').classList.remove('open');
+  if (state._typewriterTimer) clearInterval(state._typewriterTimer);
+}
+function advanceDialogue() {
+  if (!state.dialogue) return;
+  if (state.dialogue.revealed < state.dialogue.body.length) {
+    state.dialogue.revealed = state.dialogue.body.length;
+    $('dialogueBody').textContent = state.dialogue.body;
+    $('dialogueAdvance').style.display = 'block';
+    if (state._typewriterTimer) clearInterval(state._typewriterTimer);
+    sfxAdvance();
+  } else {
+    closeDialogue();
+    sfxClose();
+  }
+}
+
+// ═════ MODALS ═════
+function openModal(node, focusable) {
+  $('modal').textContent = '';
+  $('modal').appendChild(node);
+  $('modalBack').classList.add('open');
+  state.modal = { focusable: focusable || [], focusIdx: 0 };
+  refreshModalFocus();
+  sfxOpen();
+}
+function closeModal() {
+  $('modalBack').classList.remove('open');
+  state.modal = null;
+  sfxClose();
+}
+function refreshModalFocus() {
+  if (!state.modal) return;
+  (state.modal.focusable || []).forEach((node, i) => node.classList.toggle('focused', i === state.modal.focusIdx));
+}
+
+function openMainMenu() {
+  const items = [
+    { label: 'QUEST LOG', kind: 'quests' },
+    { label: 'CREW PARTY', kind: 'party' },
+    { label: 'INVENTORY', kind: 'inventory' },
+    { label: 'STRATEGIC MAP', kind: 'map' },
+    { label: 'SETTINGS', kind: 'settings' },
+    { label: 'EXIT TO COCKPIT', kind: 'exit' },
+    { label: 'EXIT TO TITLE', kind: 'title' }
+  ];
+  const body = el('div', {}, [el('h2', { text: 'PAUSE MENU' })]);
+  const focusable = [];
+  items.forEach((it) => {
+    const row = el('div', { class: 'menu-item', onclick: () => handleMenuPick(it.kind) }, [
+      el('span', { class: 'arrow', text: '▶' }),
+      el('span', { text: it.label })
+    ]);
+    focusable.push(row);
+    body.appendChild(row);
+  });
+  body.appendChild(el('div', { class: 'modal-hint', text: '↑↓ select · Z/Enter confirm · X/Esc close · M mute' }));
+  openModal(body, focusable);
+}
+
+function handleMenuPick(kind) {
+  closeModal();
+  if (kind === 'quests') openQuestModal();
+  else if (kind === 'party') openPartyModal();
+  else if (kind === 'inventory') openInventoryModal();
+  else if (kind === 'map') { setView('MAP'); renderMap(); }
+  else if (kind === 'settings') openSettingsModal();
+  else if (kind === 'exit') { try { localStorage.setItem('ry_ui_mode', 'normal'); } catch {} window.location.href = '/command-center.html'; }
+  else if (kind === 'title') { setView('TITLE'); enterTitle(); }
+}
+
+function openQuestModal() {
+  const s = state.snapshot;
+  const briefTop = (s && s.briefing_morning && s.briefing_morning.top3) || [];
+  const activeToday = (s && s.tickets && s.tickets.activeToday) || [];
+
+  const allQuests = [
+    ...briefTop.map((q, i) => ({
+      id: 'brief-' + (q.rank || i),
+      title: q.action || q.title || ('Priority ' + (i+1)),
+      ctx: q.context || q.priority || '',
+      pri: (q.priority === 'top_priority' || q.priority === 'urgent') ? 'urgent' : (q.priority === 'high' ? 'high' : 'normal'),
+      origin: 'BRIEFING'
+    })),
+    ...activeToday.slice(0, 6).map(t => ({
+      id: 'tix-' + t.id,
+      title: t.title || t.id,
+      ctx: (t.assignee || 'unassigned') + ' · ' + (t.days_overdue ? t.days_overdue + 'd overdue' : (t.priority || 'normal')),
+      pri: (t.priority === 'urgent' || (t.days_overdue || 0) > 7) ? 'urgent' : (t.priority === 'high' ? 'high' : 'normal'),
+      origin: 'TICKETS'
+    }))
+  ].filter(q => !state.save.dismissed_quests.includes(q.id));
+
+  const body = el('div', {}, [el('h2', { text: 'QUEST LOG' })]);
+  if (!allQuests.length) {
+    body.appendChild(el('div', { class: 'modal-hint', text: 'No active quests. Either you\'re winning or the briefing hasn\'t fired today.' }));
+  } else {
+    const list = el('div', { class: 'quest-list' });
+    allQuests.forEach(q => {
+      const card = el('div', { class: 'quest-card ' + q.pri }, [
+        el('div', { class: 'pri' }),
+        el('div', { class: 'body' }, [
+          el('div', { class: 'title', text: q.title }),
+          el('div', { class: 'ctx', text: q.origin + ' · ' + q.ctx })
+        ]),
+        el('button', { class: 'dismiss', text: '✕', title: 'Dismiss', onclick: () => {
+          state.save.dismissed_quests.push(q.id);
+          persistSave();
+          openQuestModal();
+        }})
+      ]);
+      list.appendChild(card);
+    });
+    body.appendChild(list);
+  }
+  body.appendChild(el('div', { class: 'modal-hint', text: 'Dismissals persist across sessions. Reset in Settings.' }));
+  openModal(body, []);
+}
+
+function openPartyModal() {
+  const body = el('div', {}, [el('h2', { text: 'CREW PARTY' })]);
+  const grid = el('div', { class: 'party-grid' });
+  CREW.forEach(c => {
+    grid.appendChild(el('div', { class: 'party-card' }, [
+      el('img', { src: c.img, alt: c.name }),
+      el('div', { class: 'name', text: c.name })
+    ]));
+  });
+  body.appendChild(grid);
+  body.appendChild(el('div', { class: 'modal-hint', text: 'Plus Ultra crew roster. Click a portrait to load their dossier (coming soon).' }));
+  openModal(body, []);
+}
+
+function openInventoryModal() {
+  const s = state.snapshot;
+  const recent = (s && s.revenue && s.revenue.recentActivity) || [];
+  const body = el('div', {}, [el('h2', { text: 'RECENT ACTIVITY' })]);
+  if (!recent.length) {
+    body.appendChild(el('div', { class: 'modal-hint', text: 'No recent activity in current snapshot.' }));
+  } else {
+    const list = el('div', { class: 'quest-list' });
+    recent.forEach(r => {
+      list.appendChild(el('div', { class: 'quest-card normal' }, [
+        el('div', { class: 'pri' }),
+        el('div', { class: 'body' }, [
+          el('div', { class: 'title', text: (r.customer || 'Customer') + ' — ' + (r.action || 'event') }),
+          el('div', { class: 'ctx', text: r.date || '' })
+        ])
+      ]));
+    });
+    body.appendChild(list);
+  }
+  openModal(body, []);
+}
+
+function openSettingsModal() {
+  const body = el('div', {}, [el('h2', { text: 'SETTINGS' })]);
+  const muteRow = el('div', { class: 'menu-item', onclick: () => {
+    state.save.muted = !state.save.muted; persistSave(); openSettingsModal();
+    if (!state.save.muted) sfxConfirm();
+  }}, [
+    el('span', { class: 'arrow', text: '▶' }),
+    el('span', { text: state.save.muted ? 'SFX: MUTED' : 'SFX: ON' })
+  ]);
+  body.appendChild(muteRow);
+  const resetRow = el('div', { class: 'menu-item', onclick: () => {
+    if (confirm('Reset save? Dismissed quests will return.')) { state.save = defaultSave(); persistSave(); closeModal(); toast('Save reset'); }
+  }}, [
+    el('span', { class: 'arrow', text: '▶' }),
+    el('span', { text: 'RESET SAVE' })
+  ]);
+  body.appendChild(resetRow);
+  const closeRow = el('div', { class: 'menu-item', onclick: closeModal }, [
+    el('span', { class: 'arrow', text: '▶' }),
+    el('span', { text: 'CLOSE' })
+  ]);
+  body.appendChild(closeRow);
+  body.appendChild(el('div', { class: 'modal-hint', text: 'Save is local to this browser. Cross-device sync is on the roadmap.' }));
+  openModal(body, [muteRow, resetRow, closeRow]);
+}
+
+// ═════ CC wizard NPC popup ═════
+function renderWizardPop() {
+  // Show wizard popup in SECTOR view if there's an active CC session
+  document.querySelectorAll('.wiz-pop').forEach(n => n.remove());
+  if (state.view !== 'SECTOR' || !state.ccSessions.length) return;
+  const wiz = el('div', {
+    class: 'wiz-pop',
+    title: 'Talk to Claude · ' + state.ccSessions.length + ' active',
+    onclick: openWizardDialogue
+  }, [
+    el('img', { src: '/assets/rpg/portraits/claude-wizard.webp', alt: 'Claude' }),
+    el('div', { class: 'badge', text: String(state.ccSessions.length) })
+  ]);
+  $('app').appendChild(wiz);
+}
+
+function openWizardDialogue() {
+  const sessions = state.ccSessions;
+  const lines = sessions.map(s => {
+    const label = s.user_label || s.session_id.slice(0, 12);
+    const tool = s.last_tool || 'idle';
+    const summ = s.last_action_summary ? ' (' + s.last_action_summary + ')' : '';
+    return '· ' + label + ' · ' + tool + summ;
+  });
+  const body = 'Active Claude Code sessions:\n\n' + lines.join('\n') + '\n\n[Press X to close · M to message]';
+  openDialogue({
+    speaker: 'CLAUDE',
+    accent: '#a78bfa',
+    portrait: '/assets/rpg/portraits/claude-wizard.webp',
+    body
+  });
+}
+
+// ═════ Toasts ═════
+function toast(msg, level) {
+  const t = el('div', { class: 'toast' + (level ? ' ' + level : ''), text: msg });
+  $('toastStack').appendChild(t);
+  setTimeout(() => { t.style.transition = 'opacity .4s'; t.style.opacity = '0'; setTimeout(() => t.remove(), 400); }, 3500);
+}
+
+// ═════ Input ═════
+document.addEventListener('keydown', (e) => {
+  const k = e.key;
+  // Modal-open: ESC/X closes
+  if (state.modal) {
+    if (k === 'Escape' || k === 'x' || k === 'X' || k === 'b' || k === 'B') { e.preventDefault(); closeModal(); return; }
+    if (k === 'ArrowDown' || k === 'ArrowUp') {
+      e.preventDefault();
+      const f = state.modal.focusable || [];
+      if (!f.length) return;
+      state.modal.focusIdx = (state.modal.focusIdx + (k === 'ArrowDown' ? 1 : -1) + f.length) % f.length;
+      refreshModalFocus();
+      return;
+    }
+    if (k === 'Enter' || k === 'z' || k === 'Z') {
+      e.preventDefault();
+      const node = state.modal.focusable[state.modal.focusIdx];
+      if (node && typeof node.click === 'function') node.click();
+      return;
+    }
+    return;
+  }
+  // Dialogue open: any key advances
+  if (state.dialogue) {
+    if (k === 'Escape' || k === 'x' || k === 'X' || k === 'b' || k === 'B') { e.preventDefault(); closeDialogue(); sfxClose(); return; }
+    if (k === 'Enter' || k === 'z' || k === 'Z' || k === ' ') { e.preventDefault(); advanceDialogue(); return; }
+    return;
+  }
+  // TITLE
+  if (state.view === 'TITLE') {
+    if (k === 'Enter' || k === 'z' || k === 'Z' || k === ' ') { e.preventDefault(); bootPressStart(); return; }
+    return;
+  }
+  // MAP
+  if (state.view === 'MAP') {
+    if (k === 'ArrowRight' || k === 'd' || k === 'D') { e.preventDefault(); state.focusedSector = Math.min(7, state.focusedSector + 1); renderMap(); sfxStep(); return; }
+    if (k === 'ArrowLeft' || k === 'a' || k === 'A') { e.preventDefault(); state.focusedSector = Math.max(0, state.focusedSector - 1); renderMap(); sfxStep(); return; }
+    if (k === 'ArrowDown' || k === 's' || k === 'S') { e.preventDefault(); state.focusedSector = Math.min(7, state.focusedSector + 4); renderMap(); sfxStep(); return; }
+    if (k === 'ArrowUp' || k === 'w' || k === 'W') { e.preventDefault(); state.focusedSector = Math.max(0, state.focusedSector - 4); renderMap(); sfxStep(); return; }
+    if (k === 'Enter' || k === 'z' || k === 'Z') { e.preventDefault(); enterSector(); return; }
+  }
+  // SECTOR
+  if (state.view === 'SECTOR') {
+    if (k === 'Escape' || k === 'x' || k === 'X' || k === 'b' || k === 'B') { e.preventDefault(); sfxClose(); setView('MAP'); renderMap(); return; }
+    if (k === 'Enter' || k === 'z' || k === 'Z' || k === 't' || k === 'T') { e.preventDefault(); const sec = SECTORS[state.focusedSector]; if (sec) talkToNpc(sec); return; }
+    if (k === 'q' || k === 'Q') { e.preventDefault(); openQuestModal(); return; }
+  }
+  // Global
+  if (k === 'Escape' && state.view !== 'TITLE') { e.preventDefault(); openMainMenu(); return; }
+  if (k === 'm' || k === 'M') { e.preventDefault(); state.save.muted = !state.save.muted; persistSave(); $('btnMute').style.opacity = state.save.muted ? '0.4' : '1'; if (!state.save.muted) sfxConfirm(); return; }
+});
+
+// Click handlers for global buttons
+document.addEventListener('DOMContentLoaded', () => {
+  $('btnMute').addEventListener('click', () => {
+    state.save.muted = !state.save.muted; persistSave();
+    $('btnMute').style.opacity = state.save.muted ? '0.4' : '1';
+    if (!state.save.muted) sfxConfirm();
+  });
+  $('btnPause').addEventListener('click', () => openMainMenu());
+  $('viewTitle').addEventListener('click', () => { if (state.view === 'TITLE') bootPressStart(); });
+  $('dialogue').addEventListener('click', () => advanceDialogue());
+  $('modalBack').addEventListener('click', (e) => { if (e.target.id === 'modalBack') closeModal(); });
+  $('btnMute').style.opacity = state.save.muted ? '0.4' : '1';
+});
+
+// ═════ Boot ═════
+async function boot() {
+  // Begin parallel data fetch
+  Promise.allSettled([fetchSnapshot(), fetchMe(), fetchCcSessions()]);
+  // Update title-screen status after data lands
+  setTimeout(() => { if ($('titleLoading')) $('titleLoading').textContent = state.snapshot ? '✓ live data ready · press start' : (state.snapshotErr ? '⚠ offline mode · press start' : 'connecting…'); }, 2500);
+  // Refresh loops
+  setInterval(fetchSnapshot, SNAPSHOT_REFRESH_MS);
+  setInterval(fetchCcSessions, CC_REFRESH_MS);
+  // Watchdog alert toast
+  setTimeout(() => {
+    const alerts = (state.snapshot && state.snapshot.alerts) || [];
+    const wd = alerts.find(a => /watchdog|cron/i.test(String(a)));
+    if (wd) { toast(wd, 'amber'); sfxBoss(); }
+  }, 3500);
+}
+boot();
+</script>
+</body>
+</html>
