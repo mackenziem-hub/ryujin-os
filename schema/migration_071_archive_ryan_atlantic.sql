@@ -1,12 +1,16 @@
--- Ryujin OS - Migration 068: Archive Ryan / Atlantic Roofing subcontractor
+-- Ryujin OS - Migration 071: Archive Ryan / Atlantic Roofing subcontractor
 --
 -- Background: The Atlantic Roofing & Contracting Inc. (Ryan) subcontractor
 -- arrangement was terminated effective May 18, 2026. Plus Ultra now uses
 -- in-house crew (Mac + Diego + AJ + Pavanjot + new hires) instead of subs.
 --
+-- Numbered 071 because migrations 068 (estimate_photos_category), 069
+-- (chat_working_context), and 070 (companycam_archive) already landed on
+-- main.
+--
 -- This migration:
 --   1. Adds `archived_at` to subcontractors (soft archive, preserves history)
---   2. Marks Ryan / Atlantic rows as archived (idempotent)
+--   2. Archives the specific Ryan/Atlantic row seeded by migration 016
 --   3. Adds tenant_settings.default_supervisor_user_id so api/sub-portal.js
 --      no longer hardcodes AJ as supervisor
 --
@@ -21,13 +25,13 @@ alter table subcontractors
 create index if not exists idx_subcontractors_archived_at
   on subcontractors(archived_at);
 
--- 2. Archive Ryan / Atlantic rows (idempotent). Scoped to the Plus Ultra
---    tenant only - other tenants on this multi-tenant DB may have their
---    own subcontractors named Ryan or with "Atlantic" in the company name
---    and must not be affected by this migration. The join through tenants
---    by slug='plus-ultra' is the canonical scope guard.
+-- 2. Archive the exact Ryan / Atlantic Roofing row that migration 016 seeded.
+--    Scoped to the Plus Ultra tenant. Matched on the EXACT company string
+--    "Atlantic Roofing & Contracting Inc." (the canonical seed value) so
+--    other subs whose name happens to contain "ryan" (e.g. "Bryan ...") or
+--    "atlantic" elsewhere in their company string are not touched.
 --
---    Set BOTH archived_at AND active=false so the existing sub-portal
+--    Sets BOTH archived_at AND active=false so the existing sub-portal
 --    magic-link check (which only inspects `active`) immediately starts
 --    rejecting any token tied to one of these rows. Defense-in-depth:
 --    api/sub-portal.js also gets an explicit `archived_at IS NULL` guard
@@ -40,9 +44,9 @@ update subcontractors s
   where t.id = s.tenant_id
     and t.slug = 'plus-ultra'
     and (
-      s.name ilike '%ryan%'
-      or s.name ilike '%atlantic roofing%'
-      or s.company ilike '%atlantic roofing%'
+      s.email = 'ryan@atlanticroofing.local'
+      or (s.name = 'Ryan' and s.company = 'Atlantic Roofing & Contracting Inc.')
+      or s.company = 'Atlantic Roofing & Contracting Inc.'
     )
     and s.archived_at is null;
 
