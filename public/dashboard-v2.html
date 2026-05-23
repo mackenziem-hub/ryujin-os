@@ -554,9 +554,18 @@ function renderKpis(s) {
     setVal(2, fmtK(s.revenue.pendingRevenue));
     setSub(2, (s.revenue.proposalsSent || 0) + ' sent · ' + (s.revenue.awaitingSchedule || 0) + ' awaiting');
   }
-  if (s.tickets && s.tickets.total != null) {
-    setVal(3, String(s.tickets.total));
-    setSub(3, 'overdue: ' + (s.tickets.overdueCount || 0));
+  if (s.tickets) {
+    // s.tickets.total counts ALL rows including done/cancelled; derive
+    // the open count from byStatus excluding terminal states so the
+    // "Open Tickets" KPI doesn't include history.
+    const TERMINAL = new Set(['done', 'cancelled', 'complete', 'completed', 'closed']);
+    const openCount = s.tickets.byStatus
+      ? Object.entries(s.tickets.byStatus).reduce((sum, [k, v]) => sum + (TERMINAL.has(String(k).toLowerCase()) ? 0 : Number(v || 0)), 0)
+      : null;
+    if (openCount != null) {
+      setVal(3, String(openCount));
+      setSub(3, 'overdue: ' + (s.tickets.overdueCount || 0));
+    }
   }
   if (s.leads && s.leads.thisWeek != null) {
     setVal(4, String(s.leads.thisWeek));
@@ -651,9 +660,14 @@ function renderAlerts(s) {
   const items = document.getElementById('alertsItems');
   const counter = document.getElementById('alertsCount');
   if (!items) return;
-  const overdue = ((s.tickets && s.tickets.activeToday) || []).filter(t => (t.days_overdue || 0) > 0);
-  const top5 = overdue.slice(0, 5);
-  if (counter) counter.textContent = 'ALERTS · ' + overdue.length;
+  // activeToday is capped at 10 by the snapshot backend, so use it only
+  // for the displayed chip list. The real overdue total lives in
+  // tickets.overdueCount — drive the counter off that so the strip
+  // doesn't say "ALERTS · 10" when there are actually 35 overdue.
+  const overdueSample = ((s.tickets && s.tickets.activeToday) || []).filter(t => (t.days_overdue || 0) > 0);
+  const overdueTotal = s.tickets && typeof s.tickets.overdueCount === 'number' ? s.tickets.overdueCount : overdueSample.length;
+  const top5 = overdueSample.slice(0, 5);
+  if (counter) counter.textContent = 'ALERTS · ' + overdueTotal;
   if (!top5.length) {
     items.innerHTML = '<div class="alert-chip" style="opacity:0.6"><div class="dot green"></div>No overdue tickets. All clear.</div>';
     return;
