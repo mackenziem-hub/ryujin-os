@@ -8,7 +8,7 @@
 // pair picker. The Photos & Video gallery in job.html also reads it
 // to render BEFORE/AFTER badges without re-derivation.
 import { supabaseAdmin } from '../lib/supabase.js';
-import { requireTenant } from '../lib/tenant.js';
+import { requirePortalSessionAndTenant } from '../lib/portalAuth.js';
 
 async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -124,4 +124,7 @@ async function handler(req, res) {
   return res.json({ before, after, counts: { before: before.length, after: after.length } });
 }
 
-export default requireTenant(handler);
+// Match api/estimate-photos.js auth model: portal session + tenant. The
+// returned photo URLs are public Vercel Blob links so a missing auth here
+// would leak customer media; tenant header alone is spoofable.
+export default requirePortalSessionAndTenant(handler);
