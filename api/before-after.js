@@ -82,15 +82,24 @@ async function handler(req, res) {
       .select('id, url, filename, mime_type, caption, category, is_cover, uploaded_at, estimate_id')
       .in('estimate_id', estIds)
       .or('caption.eq.before,caption.eq.after,category.eq.before,category.eq.after');
-    estPhotos = (data || []).map(r => ({ ...r, source: 'estimate_photos' }));
+    // Photo-only filter: the side-by-side generator composites still images.
+    // Videos can legitimately carry a 'before'/'after' caption (cover_video
+    // for example) but must be excluded from the picker.
+    estPhotos = (data || [])
+      .filter(r => typeof r.mime_type === 'string' && r.mime_type.startsWith('image/'))
+      .map(r => ({ ...r, source: 'estimate_photos' }));
   }
 
   // Project files. category column is the source of truth here.
-  const { data: projects } = await supabaseAdmin
+  // When the caller specifies ?estimate_id=X, narrow to projects linked
+  // to THAT estimate so multi-estimate customers don't see siblings.
+  let projectQuery = supabaseAdmin
     .from('projects')
     .select('id')
     .eq('tenant_id', tenantId)
     .eq('customer_id', customerId);
+  if (estimate_id) projectQuery = projectQuery.eq('estimate_id', estimate_id);
+  const { data: projects } = await projectQuery;
   const pids = (projects || []).map(p => p.id);
 
   let projFiles = [];
