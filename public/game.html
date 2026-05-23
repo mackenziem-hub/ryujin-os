@@ -525,7 +525,9 @@
 // ═══════════════════════════════════════════════════════════════
 
 const TENANT = 'plus-ultra';
-const API_BASE = window.location.protocol === 'file:' ? 'https://ryujin-os.vercel.app' : '';
+const API_BASE = (window.location.protocol === 'file:' ||
+                  /^(localhost|127\.0\.0\.1)$/.test(window.location.hostname))
+                 ? 'https://ryujin-os.vercel.app' : '';
 const SNAPSHOT_REFRESH_MS = 5 * 60 * 1000;
 const CC_REFRESH_MS = 30 * 1000;
 const SAVE_KEY = 'ryujin_game_save_v1';
@@ -630,6 +632,7 @@ function normalizeSnapshot(raw) {
 
 // ═════ Data fetches ═════
 async function fetchSnapshot() {
+  const isFirstLoad = !state.snapshot;
   try {
     const r = await fetch(`${API_BASE}/api/snapshot?tenant=${TENANT}`, { credentials: 'omit' });
     if (!r.ok) throw new Error('snapshot ' + r.status);
@@ -637,6 +640,10 @@ async function fetchSnapshot() {
     state.snapshot = normalizeSnapshot(raw);
     state.snapshotErr = null;
     state.snapshotAt = Date.now();
+    if (isFirstLoad) {
+      const wd = (state.snapshot.alerts || []).find(a => /watchdog|cron/i.test(String(a)));
+      if (wd) { toast(wd, 'amber'); sfxBoss(); }
+    }
   } catch (e) {
     state.snapshotErr = String(e.message || e);
   }
@@ -925,14 +932,6 @@ function computeLevel(signedRev) {
 
 // ═════ View transitions ═════
 function setView(v) {
-  ['Title','Map','Sector'].forEach(name => {
-    const id = 'view' + name;
-    const node = $(id);
-    if (!node) return;
-    const isActive = ('VIEW' + name.toUpperCase()).slice(4) === v;
-    node.classList.toggle('active', isActive);
-  });
-  // The above is buggy if names mismatch -- explicit map:
   $('viewTitle').classList.toggle('active', v === 'TITLE');
   $('viewMap').classList.toggle('active', v === 'MAP');
   $('viewSector').classList.toggle('active', v === 'SECTOR');
@@ -1360,15 +1359,10 @@ async function boot() {
   Promise.allSettled([fetchSnapshot(), fetchMe(), fetchCcSessions()]);
   // Update title-screen status after data lands
   setTimeout(() => { if ($('titleLoading')) $('titleLoading').textContent = state.snapshot ? '✓ live data ready · press start' : (state.snapshotErr ? '⚠ offline mode · press start' : 'connecting…'); }, 2500);
-  // Refresh loops
+  // Refresh loops. Watchdog alert toast is fired by fetchSnapshot on first
+  // successful load so it does not race the cold-start fetch latency.
   setInterval(fetchSnapshot, SNAPSHOT_REFRESH_MS);
   setInterval(fetchCcSessions, CC_REFRESH_MS);
-  // Watchdog alert toast
-  setTimeout(() => {
-    const alerts = (state.snapshot && state.snapshot.alerts) || [];
-    const wd = alerts.find(a => /watchdog|cron/i.test(String(a)));
-    if (wd) { toast(wd, 'amber'); sfxBoss(); }
-  }, 3500);
 }
 boot();
 </script>

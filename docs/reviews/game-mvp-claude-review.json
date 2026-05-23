@@ -1,0 +1,76 @@
+{
+  "branch": "feature/game-mvp",
+  "commit": "1a4d538",
+  "model": "claude-sonnet-4-6",
+  "elapsedSec": "75.4",
+  "usage": {
+    "input_tokens": 24905,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 4169,
+    "service_tier": "standard",
+    "inference_geo": "global"
+  },
+  "verdict": "needs_changes",
+  "summary": "The branch is directionally solid and the self-review fixes are in good shape. However, there are several real issues: (1) a race condition in boot() where the watchdog toast fires before snapshot data can possibly be ready for slow connections; (2) the command-center.html redirect runs synchronously in a `<script>` tag with no `</script>` end yet relies on `return` in top-level script which is fragile; (3) the optimize-rpg-assets.mjs script queues source files for deletion even when the webp write hasn't been verified (no integrity check), and also has a delete-after-write atomicity gap where deletions happen in a final loop long after conversion—but critically, if `--delete-originals` is combined with `--dry-run` the deletion list is still populated and printed but nothing happens, which is correct, however the code adds to the `deletions` array even in DRY_RUN mode for the \"upToDate\" cached path, meaning the dry-run count is inflated by already-converted files (a minor logic issue); (4) `setView()` contains dead/redundant code that double-applies `.active` class toggles with a broken first pass; (5) the `_spokenTo` Set is initialised inside `renderSector()` rather than at state definition level, creating a subtle reset-on-re-render bug where re-renders can re-initialise the set; (6) mute keyboard handler is reachable even when a modal is open (the `return` in the modal block fires before the global `m/M` check, which is actually fine—but the Escape key global handler at the bottom is reachable when `state.view !== 'TITLE'` only if no modal/dialogue branch matched, which is correct). The most production-impactful issues are the DRY_RUN + delete atomicity gap, the setView double-render dead code (low risk but confusing), and the _spokenTo re-initialisation bug.",
+  "issues": [
+    {
+      "severity": "error",
+      "location": "scripts/optimize-rpg-assets.mjs:73-79",
+      "description": "Delete-after-write atomicity gap: source files are added to `deletions` array at convert-time but only unlinked at the very end of the script. If the process is killed between the last `writeFile(webp, outBuf)` and the final `for (const f of deletions) await unlink(f)` loop, the webp exists but so does the original — harmless. However if `sharp` throws mid-buffer but the `writeFile` already wrote a truncated/corrupt webp, the source is still queued for deletion and will be deleted in the final loop. There is no verification that the written webp is valid before queuing deletion.\n\nProblematic lines:\n```js\nawait writeFile(webp, outBuf);\noutSize = outBuf.byteLength;\nif (DELETE_ORIGINALS) deletions.push(src);\n```",
+      "fix": "Verify the written file's size matches the buffer before queuing for deletion, and wrap in a try/catch that skips the deletion queue on error:\n```js\ntry {\n  const inBuf = await readFile(src);\n  const outBuf = await sharp(inBuf)\n    .rotate()\n    .resize({ width: MAX_WIDTH, height: MAX_HEIGHT, fit: 'inside', withoutEnlargement: true })\n    .webp({ quality: QUALITY, effort: EFFORT })\n    .toBuffer();\n  await writeFile(webp, outBuf);\n  // Verify written size before queuing deletion\n  const written = await stat(webp);\n  if (written.size !== outBuf.byteLength) throw new Error(`Size mismatch after write: ${webp}`);\n  outSize = outBuf.byteLength;\n  if (DELETE_ORIGINALS) deletions.push(src);\n} catch (err) {\n  console.error(`FAILED ${rel}: ${err.message}`);\n  continue;\n}\n```"
+    },
+    {
+      "severity": "error",
+      "location": "scripts/optimize-rpg-assets.mjs:55-65",
+      "description": "DRY_RUN mode still populates `deletions` for the 'upToDate / cached' path, causing the dry-run deletion count to be inflated by already-converted files that were merely skipped. More importantly, in non-DRY_RUN mode with `--delete-originals`, a file whose webp is already up-to-date is queued for deletion in the same block where we `continue` — meaning already-converted files get their originals deleted on every subsequent run, defeating idempotency.\n\nProblematic code:\n```js\nif (upToDate && !DRY_RUN) {\n  ...\n  if (DELETE_ORIGINALS) deletions.push(src);  // <-- deletes already-cached originals every run\n  continue;\n}\n```",
+      "fix": "Only queue deletions for files that were actually converted in this run, not for cached/skipped ones — unless that's intentional, in which case document it clearly. If the intent is 'delete originals only for newly converted files':\n```js\nif (upToDate && !DRY_RUN) {\n  // already up-to-date, no deletion queued\n  ...\n  continue;\n}\n```\nIf the intent is 'delete all originals that have a corresponding webp' (a clean-up sweep), add a separate clearly-named pass after conversion."
+    },
+    {
+      "severity": "warning",
+      "location": "public/game.html:1075-1086",
+      "description": "Race condition in boot(): the watchdog alert toast fires after a fixed 3500ms timeout, but `fetchSnapshot()` is async and may not have resolved yet on slow connections or cold Vercel starts (cold start can easily exceed 3.5 s). When it hasn't resolved, `state.snapshot` is `null`, so `state.snapshot.alerts` is never read and no toast fires — the real issue is the inverse: if the snapshot resolves *after* 3.5 s, the user never sees the watchdog alert toast.\n\nProblematic code:\n```js\nsetTimeout(() => {\n  const alerts = (state.snapshot && state.snapshot.alerts) || [];\n  const wd = alerts.find(a => /watchdog|cron/i.test(String(a)));\n  if (wd) { toast(wd, 'amber'); sfxBoss(); }\n}, 3500);\n```",
+      "fix": "Move the watchdog toast into `fetchSnapshot()` itself, triggered on the first successful load:\n```js\nasync function fetchSnapshot() {\n  const isFirstLoad = !state.snapshot;\n  try {\n    ...\n    state.snapshot = normalizeSnapshot(raw);\n    state.snapshotErr = null;\n    state.snapshotAt = Date.now();\n    if (isFirstLoad) checkWatchdogToast();\n  } catch (e) { ... }\n  ...\n}\nfunction checkWatchdogToast() {\n  const alerts = (state.snapshot && state.snapshot.alerts) || [];\n  const wd = alerts.find(a => /watchdog|cron/i.test(String(a)));\n  if (wd) { toast(wd, 'amber'); sfxBoss(); }\n}\n```\nRemove the `setTimeout` in `boot()`."
+    },
+    {
+      "severity": "warning",
+      "location": "public/game.html:939-947",
+      "description": "`setView()` contains a dead first loop that computes an incorrect `isActive` value (the `.slice(4)` arithmetic is wrong — `'VIEW' + 'TITLE'.toUpperCase()).slice(4)` yields `'TITLE'` coincidentally for 'TITLE' but fails for 'MAP' → gives `'P'` and 'SECTOR' → `'OR'`), then immediately overwrites the work with three explicit toggle lines. The first loop's DOM writes are therefore wrong for MAP and SECTOR views before being immediately corrected, causing two style recalculations and potential flash.\n\nProblematic code:\n```js\n['Title','Map','Sector'].forEach(name => {\n  const id = 'view' + name;\n  const node = $(id);\n  if (!node) return;\n  const isActive = ('VIEW' + name.toUpperCase()).slice(4) === v;  // WRONG for MAP, SECTOR\n  node.classList.toggle('active', isActive);\n});\n// The above is buggy if names mismatch -- explicit map:\n$('viewTitle').classList.toggle('active', v === 'TITLE');\n$('viewMap').classList.toggle('active', v === 'MAP');\n$('viewSector').classList.toggle('active', v === 'SECTOR');\n```",
+      "fix": "Remove the broken first loop entirely since the three explicit lines below it are correct:\n```js\nfunction setView(v) {\n  $('viewTitle').classList.toggle('active', v === 'TITLE');\n  $('viewMap').classList.toggle('active', v === 'MAP');\n  $('viewSector').classList.toggle('active', v === 'SECTOR');\n  state.view = v;\n  renderTopbar();\n  renderWizardPop();\n}\n```"
+    },
+    {
+      "severity": "warning",
+      "location": "public/game.html:853-857",
+      "description": "`_spokenTo` Set is lazily initialised inside `renderSector()` rather than at state initialisation. Since `renderSector()` is called both on `enterSector()` and on snapshot refresh (`if (state.view === 'SECTOR') renderSector()`), the Set will survive refreshes because `state._spokenTo` persists on the object. However if `renderSector()` were ever called before `enterSector()` (e.g. during a future refactor), `state._spokenTo` would be re-initialised, clearing spoken history.\n\nProblematic code:\n```js\nif (!state._spokenTo) state._spokenTo = new Set();\nif (!state._spokenTo.has(sec.id)) {\n  state._spokenTo.add(sec.id);\n  setTimeout(() => talkToNpc(sec), 300);\n}\n```",
+      "fix": "Add `_spokenTo: new Set()` to the `state` object initialiser at line ~570:\n```js\nconst state = {\n  view: 'TITLE',\n  focusedSector: 0,\n  snapshot: null,\n  snapshotErr: null,\n  snapshotAt: 0,\n  me: null,\n  ccSessions: [],\n  dialogue: null,\n  modal: null,\n  _spokenTo: new Set(),\n  save: loadSave()\n};\n```\nThen remove the `if (!state._spokenTo) state._spokenTo = new Set();` guard from `renderSector()`."
+    },
+    {
+      "severity": "warning",
+      "location": "public/command-center.html (diff, +4)",
+      "description": "The redirect `window.location.replace('/game.html')` is followed by `return`, but this is inside an inline `<script>` block. `return` in a top-level script (non-module, non-function) is a syntax error in strict mode and throws in some engines (V8 prior to certain versions in some contexts). While most browsers tolerate it in classic inline scripts, it's non-standard. More critically: if `localStorage.getItem` throws (e.g. in a sandboxed iframe or Safari ITP private mode), the entire try/catch means the redirect silently fails and the user lands on the normal command-center view — which is probably the desired fallback, but there's no visual indication or logging.\n\nProblematic code:\n```js\nif (m === '8bit') {\n  window.location.replace('/game.html');\n  return;  // non-standard in top-level script\n}```",
+      "fix": "Wrap in an IIFE to make `return` valid, and add a console.warn for the error case:\n```js\n(function() {\n  try {\n    var m = localStorage.getItem('ry_ui_mode');\n    if (m === '8bit') {\n      window.location.replace('/game.html');\n      return;\n    } else if (m === 'agent') {\n      document.documentElement.classList.add('mode-agent');\n      window.__RY_AGENT__ = true;\n    }\n  } catch(e) {\n    console.warn('RY: mode detection failed', e);\n  }\n})();\n```"
+    },
+    {
+      "severity": "warning",
+      "location": "public/game.html:680-688",
+      "description": "Touch/mobile: the map hot-zones only handle `onclick` for entry. On touch devices, `onmouseenter` never fires, so hovering to change `focusedSector` before tapping doesn't work — the focused sector visually highlights only via `onclick` after the tap already committed. More importantly, there are no swipe gesture handlers anywhere; the only mobile navigation path is tap-to-enter which bypasses keyboard sector selection entirely. The `focusedSector` state therefore can be stale (pointing to whichever sector was last keyboard-navigated) when a touch user taps a different tile, though `onclick` does set `state.focusedSector = i` before calling `enterSector()` so the enter itself is correct.",
+      "fix": "Add `ontouchstart` or a `pointerenter` handler on each map tile to update focused state on touch hover, and consider adding swipe detection on the map view for left/right/up/down sector navigation:\n```js\nconst tile = el('div', {\n  class: '...',\n  'data-sector': sec.id,\n  onclick: () => { state.focusedSector = i; sfxStep(); enterSector(); },\n  onmouseenter: () => { if (state.focusedSector !== i) { state.focusedSector = i; renderMap(); } },\n  onpointerenter: () => { if (state.focusedSector !== i) { state.focusedSector = i; renderMap(); } }\n}, [...]);\n```"
+    },
+    {
+      "severity": "info",
+      "location": "public/game.html:724-732",
+      "description": "`enterSector()` calls `persistSave()` twice in quick succession — once for `visited_sectors` and once for `last_visit_at`. Each call does a `localStorage.setItem` synchronously. This is harmless but wasteful.",
+      "fix": "Combine into a single `persistSave()` call:\n```js\nfunction enterSector() {\n  const sec = SECTORS[state.focusedSector];\n  if (!sec) return;\n  setView('SECTOR');\n  sfxOpen();\n  if (!state.save.visited_sectors.includes(sec.id)) {\n    state.save.visited_sectors.push(sec.id);\n  }\n  state.save.last_visit_at = new Date().toISOString();\n  persistSave(); // single write\n  renderSector();\n}\n```"
+    },
+    {
+      "severity": "info",
+      "location": "public/game.html:1004-1010",
+      "description": "`openWizardDialogue()` constructs dialogue body text by concatenating `s.last_action_summary` which comes from untrusted API data (`/api/cc-presence`). Although the text is assigned via `textContent` through the `el()` helper (which uses `textContent` for the `text` key), the `openDialogue` function sets `$('dialogueBody').textContent = visible` via the typewriter, which is safe. However `$('dialogueSpeaker').textContent = d.speaker` also uses textContent. All paths appear safe, but document this assumption so future maintainers don't switch to innerHTML.",
+      "fix": "Add a comment in `openDialogue()` near the speaker/body assignments:\n```js\n// NOTE: all text is set via .textContent — never switch to innerHTML\n// as speaker/body/portrait values can originate from API responses.\n$('dialogueSpeaker').textContent = d.speaker;\n```"
+    }
+  ]
+}

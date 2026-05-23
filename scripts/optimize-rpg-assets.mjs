@@ -79,7 +79,6 @@ for (const src of sources) {
     totalOut += outSize;
     skipped++;
     console.log(`${rel.padEnd(52)} ${fmt(srcSize).padStart(9)} -> ${fmt(outSize).padStart(8)}  (cached)`);
-    if (DELETE_ORIGINALS) deletions.push(src);
     continue;
   }
 
@@ -94,6 +93,11 @@ for (const src of sources) {
       .webp({ quality: QUALITY, effort: EFFORT })
       .toBuffer();
     await writeFile(webp, outBuf);
+    const written = await stat(webp);
+    if (written.size !== outBuf.byteLength) {
+      console.log(`FAILED ${rel} -- write size ${written.size} != buffer ${outBuf.byteLength}, skipping`);
+      continue;
+    }
     outSize = outBuf.byteLength;
     if (DELETE_ORIGINALS) deletions.push(src);
   }
