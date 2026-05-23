@@ -8,11 +8,16 @@
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireTenant } from '../lib/tenant.js';
 
-// Fields a client is allowed to set via PUT/PATCH. tenant_id, id, created_at,
-// linked_estimate_id, linked_paysheet_id are NOT on this list - changing them
-// would let a client repoint a WO at a different tenant or estimate.
+// Fields a client is allowed to set via PUT/PATCH. tenant_id, id, created_at
+// are NEVER editable - changing them would let a client repoint a WO at a
+// different tenant. linked_estimate_id + linked_paysheet_id ARE editable
+// here (the documented production flow creates the WO before the paysheet
+// then PATCHes the link), but those values are revalidated server-side
+// against the tenant before being persisted - see verifyLinkedRefs below.
+//
 // Every field below is one that production-workorders.html's saveEditWo()
-// submits, plus the lifecycle/status fields that job.html drives. When
+// submits, plus the lifecycle/status fields that job.html drives, plus
+// the linked-id fields the post-creation production flow PATCHes. When
 // adding a new editable field to either surface, add it here too or the
 // PUT will silently drop it and return a successful 200.
 const SAFE_UPDATE_FIELDS = new Set([
@@ -26,6 +31,9 @@ const SAFE_UPDATE_FIELDS = new Set([
   'completed_at',
   'issued_at',
   'wo_number',
+  // Linked refs (validated against the tenant in verifyLinkedRefs below)
+  'linked_estimate_id',
+  'linked_paysheet_id',
   // Customer-on-WO contact + access
   'customer_name',
   'address',
@@ -78,8 +86,36 @@ function pickSafe(body) {
   return out;
 }
 
+// Cross-tenant guard: if a client tries to link this WO to an estimate or
+// paysheet they do not own, reject the whole update. Each ID is checked
+// against its parent table with the same tenant_id - the lookup will return
+// null for any row owned by another tenant and we return an error.
+async function verifyLinkedRefs(tenantId, updates) {
+  if (updates.linked_estimate_id) {
+    const { data } = await supabaseAdmin
+      .from('estimates')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('id', updates.linked_estimate_id)
+      .maybeSingle();
+    if (!data) return { error: 'linked_estimate_id not found for this tenant' };
+  }
+  if (updates.linked_paysheet_id) {
+    const { data } = await supabaseAdmin
+      .from('paysheets')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('id', updates.linked_paysheet_id)
+      .maybeSingle();
+    if (!data) return { error: 'linked_paysheet_id not found for this tenant' };
+  }
+  return { ok: true };
+}
+
 async function applyUpdate(tenantId, id, rawBody) {
   const updates = pickSafe(rawBody);
+  const linkCheck = await verifyLinkedRefs(tenantId, updates);
+  if (linkCheck.error) return { error: { message: linkCheck.error }, status: 400 };
   updates.updated_at = new Date().toISOString();
   const { data, error } = await supabaseAdmin
     .from('workorders')
@@ -148,9 +184,12 @@ async function handler(req, res) {
   if (req.method === 'PUT' || req.method === 'PATCH') {
     const { id, ...rest } = req.body || {};
     if (!id) return res.status(400).json({ error: 'Missing id' });
-    const { data, error } = await applyUpdate(tenantId, id, rest);
-    if (error) return res.status(500).json({ error: error.message });
-    return res.json(data);
+    const result = await applyUpdate(tenantId, id, rest);
+    if (result.error) {
+      const status = result.status || 500;
+      return res.status(status).json({ error: result.error.message });
+    }
+    return res.json(result.data);
   }
 
   if (req.method === 'DELETE') {
