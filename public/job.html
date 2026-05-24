@@ -223,6 +223,66 @@ async function loadRoster(){
   return _roster;
 }
 
+// Empty-state picker: no id/share/wo in URL → render a "Pick a job" list
+// from recent workorders. Replaces the bare "No customer..." console-error
+// string that used to ship in prod. Includes a "+ Create new job" CTA that
+// delegates to the global quick-create FAB (assets/quick-create.js).
+async function renderJobPicker(){
+  $('stage').innerHTML = `
+    <div style="max-width:880px;margin:0 auto">
+      <div class="hero-job" style="padding:28px">
+        <div class="eyebrow" style="font-family:'Share Tech Mono',monospace;font-size:0.7em;color:#fb923c;letter-spacing:3px;margin-bottom:8px">PRODUCTION · PICK A JOB</div>
+        <h1 style="font-family:'Orbitron',sans-serif;font-size:1.6em;font-weight:900;letter-spacing:-0.5px;background:linear-gradient(135deg,#fff 30%,#fb923c);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px">Job Folder</h1>
+        <div style="font-size:0.9em;color:rgba(200,220,255,0.62);margin-bottom:16px">Open this page with <code style="color:#22d3ee">?wo=&lt;id&gt;</code> or <code style="color:#22d3ee">?share=&lt;token&gt;</code>, or pick from recent jobs below.</div>
+        <button type="button" id="jpNew" style="padding:10px 18px;border-radius:10px;background:linear-gradient(135deg,rgba(45,212,191,0.3),rgba(45,212,191,0.12));border:1px solid rgba(45,212,191,0.55);color:#2dd4bf;font-family:'Orbitron',sans-serif;font-size:0.72em;font-weight:800;letter-spacing:1.3px;cursor:pointer">+ CREATE NEW JOB</button>
+        <a href="production-jobs.html" style="margin-left:10px;padding:10px 18px;border-radius:10px;background:transparent;border:1px solid rgba(251,146,60,0.35);color:#fb923c;font-family:'Orbitron',sans-serif;font-size:0.72em;font-weight:800;letter-spacing:1.3px;text-decoration:none;display:inline-block">FULL JOB BOARD →</a>
+      </div>
+      <div id="jpList" class="gallery" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr));margin-top:6px"><div class="empty-sec">LOADING RECENT JOBS…</div></div>
+    </div>
+  `;
+  document.getElementById('jpNew').addEventListener('click', () => {
+    if (window.RyujinQuickCreate?.actions?.job) window.RyujinQuickCreate.actions.job();
+    else if (window.RyujinQuickCreate?.open) window.RyujinQuickCreate.open();
+    else alert('Quick-create not loaded yet — open production-jobs.html and use the + NEW button.');
+  });
+  try {
+    const r = await fetch('/api/workorders?limit=24', { headers: ah() });
+    if (!r.ok) { document.getElementById('jpList').innerHTML = `<div class="empty-sec">HTTP ${r.status}</div>`; return; }
+    const { workorders } = await r.json();
+    const rows = (workorders || [])
+      .filter(w => w.status !== 'cancelled')
+      .sort((a,b) => {
+        const sa = a.status === 'in_progress' ? 0 : a.status === 'issued' ? 1 : a.status === 'draft' ? 2 : 3;
+        const sb = b.status === 'in_progress' ? 0 : b.status === 'issued' ? 1 : b.status === 'draft' ? 2 : 3;
+        if (sa !== sb) return sa - sb;
+        return new Date(b.start_date || b.created_at || 0) - new Date(a.start_date || a.created_at || 0);
+      })
+      .slice(0, 18);
+    if (!rows.length) {
+      document.getElementById('jpList').innerHTML = `<div class="empty-sec">NO ACTIVE JOBS YET — TAP "+ CREATE NEW JOB"</div>`;
+      return;
+    }
+    document.getElementById('jpList').innerHTML = rows.map(w => {
+      const href = w.estimate?.share_token
+        ? 'job.html?share=' + encodeURIComponent(w.estimate.share_token)
+        : 'job.html?wo=' + encodeURIComponent(w.id);
+      const st = (w.status || 'draft').replace('_', ' ').toUpperCase();
+      const date = w.start_date
+        ? new Date(w.start_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        : 'UNSCHEDULED';
+      return `
+        <a href="${esc(href)}" style="display:block;padding:14px 16px;background:rgba(6,10,20,0.55);border:1px solid rgba(251,146,60,0.16);border-radius:12px;text-decoration:none;color:inherit;transition:all 0.18s" onmouseover="this.style.borderColor='rgba(251,146,60,0.45)'" onmouseout="this.style.borderColor='rgba(251,146,60,0.16)'">
+          <div style="font-family:'Share Tech Mono',monospace;font-size:0.68em;color:#fb923c;letter-spacing:1.5px;margin-bottom:4px">${esc(date)} · ${esc(st)}</div>
+          <div style="font-weight:700;font-size:0.96em;margin-bottom:2px">${esc(w.customer_name || '(no name)')}</div>
+          <div style="font-family:'Share Tech Mono',monospace;font-size:0.74em;color:rgba(200,220,255,0.55);letter-spacing:0.5px">${esc(w.address || '')}</div>
+        </a>
+      `;
+    }).join('');
+  } catch (e) {
+    document.getElementById('jpList').innerHTML = `<div class="empty-sec">${esc(e.message)}</div>`;
+  }
+}
+
 async function loadJob(){
   const params = new URLSearchParams(location.search);
   const custId = params.get('id') || params.get('customer_id');
@@ -230,7 +290,7 @@ async function loadJob(){
   const woParam = params.get('wo');
 
   if (!custId && !estShare && !woParam) {
-    $('stage').innerHTML = '<div class="loading">No customer, share token, or workorder id passed.</div>';
+    await renderJobPicker();
     return;
   }
 
@@ -947,6 +1007,7 @@ loadJob();
 <script src="assets/ryujin-mode.js"></script>
 <script src="assets/ryujin-tenant.js"></script>
 <script src="assets/ryujin-persist.js"></script>
+<script src="/assets/quick-create.js" defer></script>
 
 </body>
 </html>
