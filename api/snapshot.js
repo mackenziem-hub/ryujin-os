@@ -64,6 +64,40 @@ async function nativeTicketStats() {
     return null;
   }
 }
+
+// Estimator OS stats.recentActivity stamps every record with `updatedAt`, which
+// is bumped to "right now" by the daily Google Sheets sync at 08:00 UTC. The
+// result is that every recent activity item lands with today's date even when
+// the actual proposal acceptance happened weeks ago. This helper re-stamps the
+// items using each estimate's `publishedAt || createdAt`, which reflect the
+// real proposal lifecycle. Silent no-op if Estimator is unreachable.
+async function restampRecentActivity(items) {
+  if (!Array.isArray(items) || items.length === 0) return items;
+  try {
+    const key = (process.env.ESTIMATOR_KEY || process.env.ESTIMATOR_OS_KEY || 'pu-estimator-2026').trim();
+    const r = await fetch('https://estimator-os.replit.app/api/estimates', {
+      headers: { 'x-api-key': key },
+      signal: AbortSignal.timeout(10000)
+    });
+    if (!r.ok) return items;
+    const data = await r.json();
+    const arr = Array.isArray(data) ? data : (data.estimates || data.data || []);
+    const realDateById = new Map();
+    for (const e of arr) {
+      if (e?.id == null) continue;
+      const real = e.publishedAt || e.createdAt;
+      if (real) realDateById.set(e.id, String(real).slice(0, 10));
+    }
+    return items.map(item => {
+      const real = realDateById.get(item?.id);
+      return real ? { ...item, date: real } : item;
+    });
+  } catch (e) {
+    console.warn('[snapshot] restampRecentActivity failed:', e.message);
+    return items;
+  }
+}
+
 let cachedBlobUrl = null;
 let storeBase = null;
 
@@ -156,6 +190,7 @@ async function buildFreshSnapshot() {
     const est = stats.results.find(r => r.source === 'Estimator OS');
 
     if (est?.stats) {
+      const recentActivity = await restampRecentActivity((est.stats.recentActivity || []).slice(0, 5));
       snapshot.sections.revenue = {
         signedRevenue: est.stats.signedRevenue,
         pendingRevenue: est.stats.pendingRevenue,
@@ -163,7 +198,7 @@ async function buildFreshSnapshot() {
         byStatus: est.stats.byStatus,
         proposalsSent: est.stats.proposalsSent,
         awaitingSchedule: est.stats.awaitingSchedule,
-        recentActivity: (est.stats.recentActivity || []).slice(0, 5)
+        recentActivity
       };
     }
     if (tickets?.stats) {
