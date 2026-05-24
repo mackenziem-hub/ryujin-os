@@ -1041,6 +1041,29 @@ window.exportProposal = exportProposal;
 function sendProposal(){
   if (!state.customer.name || !state.customer.email) { toast('Add customer name + email before sending'); goToStep(1); return; }
   if (!state.scope.tier || !state.measure.sq) { toast('Complete scope + measurements before sending'); goToStep(state.scope.tier ? 3 : 2); return; }
+  // Bug-sweep #10 (2026-04-24): live input handlers above use
+  // `Number(e.target.value) || 0` which silently turns '123abc' or pasted
+  // garbage into 0. For gutter / soffit / fascia LF that means accessory
+  // pricing quietly drops to $0 and the customer is under-quoted. Block
+  // send if any visible measurement input has non-empty non-numeric text.
+  const numericFields = [
+    { id: 'm_sq',          label: 'Roof squares (SQ)' },
+    { id: 'm_gutter',      label: 'Gutter LF' },
+    { id: 'm_soffit',      label: 'Soffit LF' },
+    { id: 'm_fascia',      label: 'Fascia LF' },
+    { id: 'o_osb_sheets',  label: 'OSB sheets' },
+    { id: 'o_rem_amt',     label: 'Remediation amount' },
+  ];
+  for (const f of numericFields) {
+    const el = document.getElementById(f.id);
+    if (!el) continue;
+    const raw = (el.value || '').trim();
+    if (raw !== '' && !Number.isFinite(Number(raw))) {
+      toast(`${f.label} must be a number. Got: "${raw}"`);
+      goToStep(2);
+      return;
+    }
+  }
   openEmailComposer();
 }
 
