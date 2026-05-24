@@ -116,10 +116,14 @@ async function handler(req, res) {
     return res.status(500).json({ error: 'Render failed: ' + e.message });
   }
 
-  // Idempotent path: same inputs -> same hash -> same blob key -> overwrite.
+  // Idempotent path: same inputs -> same hash -> same blob key. Bump the
+  // RENDERER_VERSION suffix whenever the overlay/SVG changes so a fresh
+  // upload writes to a new URL (Vercel Blob's CDN caches by URL and even
+  // allowOverwrite re-uploads can serve stale bytes for many minutes).
+  const RENDERER_VERSION = 'v2';
   const hash = crypto
     .createHash('sha1')
-    .update([before_id, after_id, format, address || '', product || ''].join('|'))
+    .update([before_id, after_id, format, address || '', product || '', RENDERER_VERSION].join('|'))
     .digest('hex')
     .slice(0, 16);
   const slug = wo_id ? wo_id.slice(0, 8) : 'job';
@@ -132,6 +136,7 @@ async function handler(req, res) {
       contentType: 'image/jpeg',
       addRandomSuffix: false,
       allowOverwrite: true,
+      cacheControlMaxAge: 60,
     });
   } catch (e) {
     return res.status(500).json({ error: 'Blob upload failed: ' + e.message });
