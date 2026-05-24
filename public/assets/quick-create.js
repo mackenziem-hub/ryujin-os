@@ -35,6 +35,23 @@
   const UPLOAD_DEDUPE_WINDOW_MS = 60 * 1000;
   const UPLOAD_DEDUPE_KEY = 'ry_qc_upload_hashes';
 
+  // /api/customers + /api/estimates are wrapped in
+  // requirePortalSessionAndTenant, which reads the session token from
+  // Authorization / x-ryujin-token headers (NOT cookies). So we must
+  // forward the same Bearer token that auth-guard.js stores in localStorage,
+  // or those endpoints 401. Workorders / marketing only need x-tenant-id
+  // but it's harmless to send the auth header to them as well.
+  function authHeaders(extra) {
+    const h = { 'x-tenant-id': TENANT };
+    try {
+      const tok = localStorage.getItem('ryujin_token')
+        || sessionStorage.getItem('ryujin_token')
+        || null;
+      if (tok) h['Authorization'] = `Bearer ${tok}`;
+    } catch { /* storage disabled, fall through */ }
+    return extra ? Object.assign(h, extra) : h;
+  }
+
   const state = {
     open: false,
     busy: { job: false, estimate: false, customer: false, upload: false },
@@ -417,6 +434,11 @@
 
   // ── Upload (the high-risk action) ──────────────────────────────────
   function triggerUpload() {
+    // ensureSheet() injects the file input as a sibling of the sheet. If
+    // a caller invokes RyujinQuickCreate.actions.upload() directly without
+    // ever opening the sheet first (chat-driven, deep-link, etc.) the
+    // input wouldn't exist yet and we'd silently no-op. ensure first.
+    ensureSheet();
     const fileInput = document.querySelector('[data-ry-qc="file-input"]');
     if (!fileInput) return;
     fileInput.value = ''; // allow re-pick of same file to trigger change
@@ -450,8 +472,7 @@
       fd.append('platforms', 'facebook,instagram');
       const r = await fetch('/api/marketing', {
         method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'x-tenant-id': TENANT },
+        headers: authHeaders(),
         body: fd,
       });
       if (!r.ok) {
@@ -564,8 +585,7 @@
         if (body.total_sq) body.total_sq = Number(body.total_sq);
         const r = await fetch('/api/workorders', {
           method: 'POST',
-          credentials: 'same-origin',
-          headers: { 'x-tenant-id': TENANT, 'Content-Type': 'application/json' },
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify(body),
         });
         if (!r.ok) {
@@ -608,8 +628,7 @@
         };
         const r = await fetch('/api/estimates', {
           method: 'POST',
-          credentials: 'same-origin',
-          headers: { 'x-tenant-id': TENANT, 'Content-Type': 'application/json' },
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify(body),
         });
         if (!r.ok) {
@@ -638,8 +657,7 @@
       onSubmit: async (data) => {
         const r = await fetch('/api/customers', {
           method: 'POST',
-          credentials: 'same-origin',
-          headers: { 'x-tenant-id': TENANT, 'Content-Type': 'application/json' },
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify(data),
         });
         if (!r.ok) {
