@@ -161,31 +161,54 @@
   .map-world { position: absolute; inset: 0; }
   .map-building {
     position: absolute;
-    width: 13%; aspect-ratio: 1/1;
-    transform: translate(-50%, -100%);   /* anchor on the building's bottom-middle */
+    width: 8%; aspect-ratio: 1/1.2;
+    transform: translate(-50%, -100%);   /* anchor on the door's bottom edge */
     cursor: pointer;
     image-rendering: pixelated;
-    /* Medieval building sprite hidden: painted shipdeck.webp already shows
-       the rooms. Only the cyan-bordered nameplate (.b-label) renders so
-       the player has a clickable hotspot at each sector's coords. */
+    /* Cyan reticle/door-marker frame on top of the painted shipdeck door.
+       Pure CSS pixel-art: four corner brackets via clip-path layered with
+       a subtle cyan glow pulse so each door reads as an interactive
+       targeting reticle without obscuring the painted door behind it. */
     background-image: none !important;
-    background-color: rgba(34,211,238,0.06);
-    border: 1px dashed rgba(34,211,238,0.35);
-    transition: background-color .15s ease, border-color .15s ease, transform .15s ease;
+    background-color: rgba(34,211,238,0.08);
+    border: 2px solid rgba(34,211,238,0.55);
+    box-shadow: 0 0 14px rgba(34,211,238,0.25), inset 0 0 8px rgba(34,211,238,0.15);
+    transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+    animation: doorIdle 3s ease-in-out infinite;
   }
-  .map-building.tall { aspect-ratio: 1/1.4; width: 11%; }  /* admin */
+  /* Sci-fi corner brackets so the hotspot reads as a reticle, not a box.
+     Top corners via ::before, bottom corners via ::after. */
+  .map-building::before,
+  .map-building::after {
+    content: ''; position: absolute; left: -3px; right: -3px;
+    height: 8px; pointer-events: none;
+    border-left: 3px solid var(--cyan); border-right: 3px solid var(--cyan);
+  }
+  .map-building::before { top: -3px; border-top: 3px solid var(--cyan); }
+  .map-building::after  { bottom: -3px; border-bottom: 3px solid var(--cyan); }
+  @keyframes doorIdle {
+    0%, 100% { box-shadow: 0 0 14px rgba(34,211,238,0.20), inset 0 0 8px rgba(34,211,238,0.12); }
+    50%      { box-shadow: 0 0 22px rgba(34,211,238,0.40), inset 0 0 14px rgba(34,211,238,0.20); }
+  }
+  .map-building.tall { aspect-ratio: 1/1.4; width: 9%; }
   .map-building:hover, .map-building.near {
-    background-color: rgba(253,224,71,0.18);
+    background-color: rgba(253,224,71,0.22);
     border-color: var(--gold);
-    transform: translate(-50%, -102%);
+    box-shadow: 0 0 22px rgba(253,224,71,0.5), inset 0 0 14px rgba(253,224,71,0.25);
+    transform: translate(-50%, -103%) scale(1.03);
     z-index: 5;
+    animation: none;
   }
+  .map-building:hover::before, .map-building.near::before,
+  .map-building:hover::after,  .map-building.near::after { border-color: var(--gold); }
   .map-building.alert {
     background-color: rgba(239,68,68,0.18);
     border-color: var(--red);
     animation: pulseAlert 1.2s ease-in-out infinite;
   }
+  .map-building.alert::before, .map-building.alert::after { border-color: var(--red); }
   .map-building.warn { background-color: rgba(251,191,36,0.18); border-color: var(--amber); }
+  .map-building.warn::before, .map-building.warn::after { border-color: var(--amber); }
   @keyframes pulseAlert { 50% { box-shadow: 0 0 22px var(--red), inset 0 0 12px rgba(239,68,68,0.45); } }
   /* Per-building nameplate sits below the sprite — classic FF town label */
   .map-building .b-label {
@@ -541,6 +564,18 @@
     letter-spacing: 1px; margin-top: 6px; padding-top: 6px;
     border-top: 1px dashed rgba(34,211,238,0.25);
   }
+  /* Always-visible "back to ship" button so the player never has to hunt
+     for the door. Pairs with the [B] keyboard shortcut. */
+  .hud-exit-btn {
+    display: block; margin-top: 8px; padding: 6px 10px;
+    background: rgba(34,211,238,0.10); color: var(--cyan);
+    border: 1px solid rgba(34,211,238,0.55); cursor: pointer;
+    font-family: 'Press Start 2P', monospace; font-size: 8px;
+    letter-spacing: 1px; pointer-events: auto;
+    transition: background .15s, color .15s;
+  }
+  .hud-exit-btn:hover { background: rgba(34,211,238,0.25); color: var(--fg); }
+  .hud-exit-btn:active { transform: translateY(1px); }
   .sector-hud .head .role {
     display: block; font-size: 11px; color: var(--fg-dim); font-weight: 500;
     letter-spacing: 1px; margin-top: 2px;
@@ -758,7 +793,7 @@
     .map-hot .hot-stat { font-size: 13px; }
     /* Mobile overworld: shrink player + buildings to fit 9:16 viewport */
     .player-avatar { width: 7%; }
-    .map-building { width: 22%; height: 18%; padding: 6px; }
+    .map-building { width: 12%; height: 14%; padding: 4px; }
     .map-building .b-label { font-size: 8px; }
     .map-building .b-stat { font-size: 12px; }
     .npc-sprite { width: 18%; }
@@ -819,6 +854,7 @@
         <div class="eyebrow">SECTOR · <span id="hudSecId">--</span></div>
         <div class="head"><span id="hudSecNpc">--</span><span class="role" id="hudSecRole">--</span></div>
         <div class="ticker" id="hudSecTicker">--</div>
+        <button type="button" class="hud-exit-btn" id="hudExitBtn" title="Back to ship (B)">◄ BACK TO SHIP</button>
       </div>
       <!-- NPC sprite, terminal zone, door zone, player avatar injected here -->
     </div>
@@ -875,16 +911,23 @@ const SAVE_KEY = 'ryujin_game_save_v1';
 // (origin top-left, x→right, y→down). `bg` is the interior scene WebP
 // shown when player enters; `sprite` is the small pixel-art building
 // shown on the overworld map.
+// x/y in % of the overworld viewport. Each entry is positioned over the
+// matching painted door on /assets/rpg/scenes/overworld/shipdeck.webp:
+//   row 1 (HQ throne)         y~22, x=50
+//   row 2 (6 mid-deck rooms)  y~50, x=9/22/36 (left half) and 64/76/90 (right half)
+//   row 3 (2 bottom rooms)    y~82, x=13/33
+// Building footprint shrunk via .map-building width:8% so the 6-wide
+// middle row doesn't visually collide.
 const SECTORS = [
-  { id:'HQ',        npc:'MACK',     role:'Owner',        href:'/command-center.html',         bg:'/assets/rpg/scenes/sectors/hq.webp',         sprite:'/assets/rpg/sprites/buildings/hq.webp',         x:50, y:24 },
-  { id:'SALES',     npc:'MACK',     role:'Sales',        href:'/sales-cockpit.html',          bg:'/assets/rpg/scenes/sectors/sales.webp',      sprite:'/assets/rpg/sprites/buildings/sales.webp',      x:20, y:40 },
-  { id:'FINANCE',   npc:'MEL',      role:'Books',        href:'/admin.html?page=finance',     bg:'/assets/rpg/scenes/sectors/finance.webp',    sprite:'/assets/rpg/sprites/buildings/finance.webp',    x:80, y:40 },
-  { id:'ADMIN',     npc:'CAT',      role:'EA',           href:'/administration.html',         bg:'/assets/rpg/scenes/sectors/admin.webp',      sprite:'/assets/rpg/sprites/buildings/admin.webp',      x:50, y:58, tall:true },
-  { id:'MATERIALS', npc:'PAVANJOT', role:'Quartermaster',href:'/production-materials.html',   bg:'/assets/rpg/scenes/sectors/materials.webp',  sprite:'/assets/rpg/sprites/buildings/production.webp', x:88, y:18 },
-  { id:'PRODUCTION',npc:'DIEGO',    role:'Foreman',      href:'/production.html',             bg:'/assets/rpg/scenes/sectors/production.webp', sprite:'/assets/rpg/sprites/buildings/production.webp', x:20, y:74 },
-  { id:'SERVICE',   npc:'AJ',       role:'Repairs',      href:'/service-tickets.html',        bg:'/assets/rpg/scenes/sectors/service.webp',    sprite:'/assets/rpg/sprites/buildings/service.webp',    x:80, y:74 },
-  { id:'CUSTOMER',  npc:'MEL',      role:'Customer Care',href:'/customers.html',              bg:'/assets/rpg/scenes/sectors/customer.webp',   sprite:'/assets/rpg/sprites/buildings/customer.webp',   x:32, y:92 },
-  { id:'MARKETING', npc:'CAT',      role:'Marketing',    href:'/admin.html?page=marketing',   bg:'/assets/rpg/scenes/sectors/marketing.webp',  sprite:'/assets/rpg/sprites/buildings/marketing.webp',  x:68, y:92 }
+  { id:'HQ',        npc:'MACK',     role:'Owner',        href:'/command-center.html',       bg:'/assets/rpg/scenes/sectors/hq.webp',         sprite:'/assets/rpg/sprites/buildings/hq.webp',         x:50, y:22 },
+  { id:'SALES',     npc:'MACK',     role:'Sales',        href:'/sales-cockpit.html',        bg:'/assets/rpg/scenes/sectors/sales.webp',      sprite:'/assets/rpg/sprites/buildings/sales.webp',      x: 9, y:50 },
+  { id:'MARKETING', npc:'CAT',      role:'Marketing',    href:'/admin.html?page=marketing', bg:'/assets/rpg/scenes/sectors/marketing.webp',  sprite:'/assets/rpg/sprites/buildings/marketing.webp',  x:22, y:50 },
+  { id:'FINANCE',   npc:'MEL',      role:'Books',        href:'/admin.html?page=finance',   bg:'/assets/rpg/scenes/sectors/finance.webp',    sprite:'/assets/rpg/sprites/buildings/finance.webp',    x:36, y:50 },
+  { id:'ADMIN',     npc:'CAT',      role:'EA',           href:'/administration.html',       bg:'/assets/rpg/scenes/sectors/admin.webp',      sprite:'/assets/rpg/sprites/buildings/admin.webp',      x:64, y:50 },
+  { id:'MATERIALS', npc:'PAVANJOT', role:'Quartermaster',href:'/production-materials.html', bg:'/assets/rpg/scenes/sectors/materials.webp',  sprite:'/assets/rpg/sprites/buildings/production.webp', x:76, y:50 },
+  { id:'PRODUCTION',npc:'DIEGO',    role:'Foreman',      href:'/production.html',           bg:'/assets/rpg/scenes/sectors/production.webp', sprite:'/assets/rpg/sprites/buildings/production.webp', x:90, y:50 },
+  { id:'SERVICE',   npc:'AJ',       role:'Repairs',      href:'/service-tickets.html',      bg:'/assets/rpg/scenes/sectors/service.webp',    sprite:'/assets/rpg/sprites/buildings/service.webp',    x:13, y:82 },
+  { id:'CUSTOMER',  npc:'MEL',      role:'Customer Care',href:'/customers.html',            bg:'/assets/rpg/scenes/sectors/customer.webp',   sprite:'/assets/rpg/sprites/buildings/customer.webp',   x:33, y:82 }
 ];
 
 // Overworld movement: classic-FF tile-snap. Each held key queues one step;
@@ -902,9 +945,13 @@ const INTERIOR_SPEED_PCT_PER_MS = 0.038;
 // sec.y - h. Half-width is symmetric around sec.x. Tall ADMIN building
 // gets a larger footprint matching its sprite.
 function getBuildingFoot(sec) {
+  // Footprint shrunk to match the tighter 8%-wide hotspot grid that lines
+  // up with painted ship-deck doors. Six rooms across the middle deck row
+  // mean each hotspot can only afford ~6% half-width before adjacent ones
+  // overlap their collision boxes; previous 6.5% caused overlaps.
   const mobile = window.matchMedia('(max-width: 720px)').matches;
-  if (sec && sec.tall) return mobile ? { hw: 6,  h: 18 } : { hw: 5,   h: 18 };
-  return                       mobile ? { hw: 9,  h: 14 } : { hw: 6.5, h: 13 };
+  if (sec && sec.tall) return mobile ? { hw: 5, h: 14 } : { hw: 4.5, h: 14 };
+  return                       mobile ? { hw: 6, h: 11 } : { hw: 4,   h: 10 };
 }
 const INTERACT_PAD = { w: 3, h: 3 };  // extra % beyond footprint where "near" prompt shows
 // NPC interaction radius inside a room (% from NPC center)
@@ -2068,6 +2115,12 @@ function updateInterior(dtMs) {
 }
 
 function exitToOverworld() {
+  // Cancel any pending first-entry auto-talk timer; otherwise the dialogue
+  // would pop on the overworld a moment after a quick exit (B key / button).
+  if (state._autoTalkTimer) { clearTimeout(state._autoTalkTimer); state._autoTalkTimer = null; }
+  // Also close any open dialogue (comms terminal etc) so the player lands
+  // cleanly on the map without a stale dialog stuck open over it.
+  if (state.dialogue) { try { closeDialogue(); } catch {} }
   state.interior = null;
   state.nearTarget = null;
   setView('MAP');
@@ -2785,6 +2838,13 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
+  // Quick back-to-ship from any room. B is intuitive ("back") and gives
+  // an explicit one-key exit even from a 'terminal portal' or any sector
+  // interior - the player never feels trapped.
+  if ((k === 'b' || k === 'B') && state.view === 'SECTOR') {
+    e.preventDefault(); sfxClose(); exitToOverworld(); return;
+  }
+
   // Global hotkeys (work in MAP + SECTOR)
   if (k === 'Escape') { e.preventDefault(); openMainMenu(); return; }
   if (k === 'm' || k === 'M') {
@@ -2921,6 +2981,17 @@ document.addEventListener('DOMContentLoaded', () => {
   const fireAction = (e) => { e.preventDefault(); actBtn.classList.add('held'); handleAction(); setTimeout(() => actBtn.classList.remove('held'), 120); };
   actBtn.addEventListener('touchstart', fireAction, { passive: false });
   actBtn.addEventListener('mousedown',  fireAction);
+
+  // Sector HUD's persistent "Back to ship" button. Guards against double
+  // exit if the player is already on the overworld (no-op if no interior).
+  const exitBtn = $('hudExitBtn');
+  if (exitBtn) {
+    exitBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (state.view !== 'SECTOR' || !state.interior) return;
+      sfxClose(); exitToOverworld();
+    });
+  }
 });
 
 // ═════ Boot ═════
