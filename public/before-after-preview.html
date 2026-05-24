@@ -87,17 +87,9 @@ h1.hd{font-family:'Orbitron',sans-serif;font-size:1.6em;font-weight:900;letter-s
 
 <div class="stage" id="stage">
   <h1 class="hd">BEFORE / AFTER POST</h1>
-  <div class="hd-sub">Pick one before + one after. Edit the burned-in text. Download.</div>
+  <div class="hd-sub">Pick one before + one after. Download. (No address burned in -- these are for public social-media posts.)</div>
 
   <div class="toolbar">
-    <div class="field">
-      <label for="addrInput">Address (burned in)</label>
-      <input id="addrInput" type="text" placeholder="265 Irving Blvd"/>
-    </div>
-    <div class="field">
-      <label for="prodInput">Product (burned in)</label>
-      <input id="prodInput" type="text" placeholder="CertainTeed Landmark Pro - Pewterwood"/>
-    </div>
     <div class="field">
       <label>Format</label>
       <div class="fmt-toggle" id="fmtToggle">
@@ -151,8 +143,7 @@ const state = {
   selectedBefore: null,
   selectedAfter: null,
   format: 'square',
-  address: '',
-  product: '',
+  customerLabel: '',
   generating: false,
   lastUrl: null,
   reqSeq: 0,
@@ -205,21 +196,20 @@ async function bootstrap(){
     return;
   }
 
-  // Prefill address + product from the workorder when present.
+  // Fetch the workorder just for the download-filename label. Customer
+  // name + WO number stay client-side -- they are NOT burned into the
+  // image (this is a public social-media render).
   if (state.woId) {
     try {
       const r = await fetch('/api/workorders?id=' + encodeURIComponent(state.woId), { headers: ah() });
       if (r.ok) {
         const wo = await r.json();
-        state.product = [wo.shingle_product, wo.shingle_color].filter(Boolean).join(' - ');
-        state.address = wo.address || '';
+        state.customerLabel = wo.customer_name || '';
         if (wo.customer_name) $('ctxLabel').textContent = 'WO ' + (wo.wo_number || '').toString().slice(0, 6) + ' / ' + wo.customer_name;
       }
     } catch {}
   }
 
-  $('addrInput').value = state.address || '';
-  $('prodInput').value = state.product || '';
   renderRails();
   bindToolbar();
 }
@@ -255,8 +245,6 @@ function fillRail(mount, photos, side){
 }
 
 function bindToolbar(){
-  $('addrInput').addEventListener('input', e => { state.address = e.target.value; scheduleGen(); });
-  $('prodInput').addEventListener('input', e => { state.product = e.target.value; scheduleGen(); });
   document.querySelectorAll('#fmtToggle button').forEach(b => {
     b.addEventListener('click', () => {
       state.format = b.dataset.fmt;
@@ -285,8 +273,6 @@ async function generate(){
         before_source: state.selectedBefore.source,
         after_source: state.selectedAfter.source,
         format: state.format,
-        address: state.address,
-        product: state.product,
         wo_id: state.woId || null,
       }),
     });
@@ -313,7 +299,7 @@ async function generate(){
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         const blobBytes = await resp.blob();
         const objUrl = URL.createObjectURL(blobBytes);
-        const fname = (state.address || 'before-after').replace(/[^\w\-]+/g, '_').slice(0, 40) + '-' + state.format + '.jpg';
+        const fname = (state.customerLabel || 'before-after').replace(/[^\w\-]+/g, '_').slice(0, 40) + '-' + state.format + '.jpg';
         const a = document.createElement('a');
         a.href = objUrl;
         a.download = fname;

@@ -120,10 +120,10 @@ async function handler(req, res) {
   // RENDERER_VERSION suffix whenever the overlay/SVG changes so a fresh
   // upload writes to a new URL (Vercel Blob's CDN caches by URL and even
   // allowOverwrite re-uploads can serve stale bytes for many minutes).
-  const RENDERER_VERSION = 'v3';
+  const RENDERER_VERSION = 'v4';
   const hash = crypto
     .createHash('sha1')
-    .update([before_id, after_id, format, address || '', product || '', RENDERER_VERSION].join('|'))
+    .update([before_id, after_id, format, RENDERER_VERSION].join('|'))
     .digest('hex')
     .slice(0, 16);
   const slug = wo_id ? wo_id.slice(0, 8) : 'job';
