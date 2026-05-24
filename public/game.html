@@ -836,14 +836,15 @@ const SAVE_KEY = 'ryujin_game_save_v1';
 // shown when player enters; `sprite` is the small pixel-art building
 // shown on the overworld map.
 const SECTORS = [
-  { id:'HQ',        npc:'ZEUS',       role:'Governance',  href:'/command-center.html',         bg:'/assets/rpg/scenes/sectors/hq-throne.webp',        sprite:'/assets/rpg/sprites/buildings/hq.png',         x:50, y:24 },
-  { id:'SALES',     npc:'HERMES',     role:'Messenger',   href:'/sales-cockpit.html',          bg:'/assets/rpg/scenes/sectors/sales-floor.webp',      sprite:'/assets/rpg/sprites/buildings/sales.png',      x:20, y:40 },
-  { id:'FINANCE',   npc:'ATHENA',     role:'Sage',        href:'/admin.html?page=finance',     bg:'/assets/rpg/scenes/sectors/finance-vault.webp',    sprite:'/assets/rpg/sprites/buildings/finance.png',    x:80, y:40 },
-  { id:'ADMIN',     npc:'HECATE',     role:'Witch',       href:'/administration.html',         bg:'/assets/rpg/scenes/sectors/admin-server.webp',     sprite:'/assets/rpg/sprites/buildings/admin.png',      x:50, y:58, tall:true },
-  { id:'PRODUCTION',npc:'HEPHAESTUS', role:'Forge',       href:'/production.html',             bg:'/assets/rpg/scenes/sectors/production-forge.webp', sprite:'/assets/rpg/sprites/buildings/production.png', x:20, y:74 },
-  { id:'SERVICE',   npc:'ARTEMIS',    role:'Hunter',      href:'/service-tickets.html',        bg:'/assets/rpg/scenes/sectors/service-dispatch.webp', sprite:'/assets/rpg/sprites/buildings/service.png',    x:80, y:74 },
-  { id:'CUSTOMER',  npc:'HESTIA',     role:'Hearth',      href:'/customers.html',              bg:'/assets/rpg/scenes/sectors/customer-hearth.webp',  sprite:'/assets/rpg/sprites/buildings/customer.png',   x:32, y:92 },
-  { id:'MARKETING', npc:'APOLLO',     role:'Muse',        href:'/admin.html?page=marketing',   bg:'/assets/rpg/scenes/sectors/marketing-plaza.webp',  sprite:'/assets/rpg/sprites/buildings/marketing.png',  x:68, y:92 }
+  { id:'HQ',        npc:'MACK',     role:'Owner',        href:'/command-center.html',         bg:'/assets/rpg/scenes/sectors/hq-throne.webp',        sprite:'/assets/rpg/sprites/buildings/hq.png',         x:50, y:24 },
+  { id:'SALES',     npc:'MACK',     role:'Sales',        href:'/sales-cockpit.html',          bg:'/assets/rpg/scenes/sectors/sales-floor.webp',      sprite:'/assets/rpg/sprites/buildings/sales.png',      x:20, y:40 },
+  { id:'FINANCE',   npc:'MEL',      role:'Books',        href:'/admin.html?page=finance',     bg:'/assets/rpg/scenes/sectors/finance-vault.webp',    sprite:'/assets/rpg/sprites/buildings/finance.png',    x:80, y:40 },
+  { id:'ADMIN',     npc:'CAT',      role:'EA',           href:'/administration.html',         bg:'/assets/rpg/scenes/sectors/admin-server.webp',     sprite:'/assets/rpg/sprites/buildings/admin.png',      x:50, y:58, tall:true },
+  { id:'MATERIALS', npc:'PAVANJOT', role:'Quartermaster',href:'/production-materials.html',   bg:'/assets/rpg/scenes/sectors/production-forge.webp', sprite:'/assets/rpg/sprites/buildings/production.png', x:88, y:18 },
+  { id:'PRODUCTION',npc:'DIEGO',    role:'Foreman',      href:'/production.html',             bg:'/assets/rpg/scenes/sectors/production-forge.webp', sprite:'/assets/rpg/sprites/buildings/production.png', x:20, y:74 },
+  { id:'SERVICE',   npc:'AJ',       role:'Repairs',      href:'/service-tickets.html',        bg:'/assets/rpg/scenes/sectors/service-dispatch.webp', sprite:'/assets/rpg/sprites/buildings/service.png',    x:80, y:74 },
+  { id:'CUSTOMER',  npc:'MEL',      role:'Customer Care',href:'/customers.html',              bg:'/assets/rpg/scenes/sectors/customer-hearth.webp',  sprite:'/assets/rpg/sprites/buildings/customer.png',   x:32, y:92 },
+  { id:'MARKETING', npc:'CAT',      role:'Marketing',    href:'/admin.html?page=marketing',   bg:'/assets/rpg/scenes/sectors/marketing-plaza.webp',  sprite:'/assets/rpg/sprites/buildings/marketing.png',  x:68, y:92 }
 ];
 
 // Overworld movement: classic-FF tile-snap. Each held key queues one step;
@@ -873,11 +874,25 @@ const TERM_INTERACT_R = 10;
 // Door zone hit radius (% from bottom-center of room)
 const DOOR_ZONE_TOP = 88;
 
+// Crew accent palette — each crew member gets a distinct color used for
+// HUD chrome, dialogue border, and the room glow when they're the lead
+// NPC. Multiple sectors can share a crew member (Mack runs HQ + Sales,
+// Mel runs Finance + Customer, Cat runs Admin + Marketing) and the
+// accent follows the person, not the room.
 const NPC_ACCENT = {
-  ZEUS:'#fde047', HERMES:'#ec4899', HEPHAESTUS:'#fbbf24', ARTEMIS:'#34d399',
-  HESTIA:'#fdba74', ATHENA:'#22d3ee', HECATE:'#a78bfa', APOLLO:'#f9a8d4'
+  MACK:'#fde047', CAT:'#f9a8d4', MEL:'#22d3ee', AJ:'#34d399',
+  DIEGO:'#fbbf24', PAVANJOT:'#fdba74', DARCY:'#a78bfa'
 };
-const NPC_PORTRAIT = (npc) => `/assets/rpg/portraits/${npc.toLowerCase()}.webp`;
+// Crew NPCs use the /crew/ portrait directory; lookups not found there
+// fall back to the legacy top-level path so older identifiers (gods,
+// claude-wizard) still resolve.
+const _CREW_PORTRAIT_IDS = new Set(['mack','mackenzie','cat','mel','melodie','aj','diego','pavanjot','darcy']);
+const NPC_PORTRAIT = (npc) => {
+  const lc = npc.toLowerCase();
+  const fileId = lc === 'mack' ? 'mackenzie' : (lc === 'mel' ? 'melodie' : lc);
+  if (_CREW_PORTRAIT_IDS.has(lc)) return `/assets/rpg/portraits/crew/${fileId}.webp`;
+  return `/assets/rpg/portraits/${lc}.webp`;
+};
 const FALLBACK_PORTRAIT = '/assets/rpg/ui/dragon-sigil.webp';
 // Attach a graceful 404 fallback to any portrait image element. Called
 // after setting src, so a broken WebP path swaps to the dragon sigil
@@ -900,15 +915,20 @@ const CREW_BY_ID = Object.fromEntries(CREW.map(c => [c.id, c]));
 
 // Which crew wander each sector interior — drives the always-on motion
 // that gives the room its "office full of agents" feel (per Pixel Agents).
+// Supporting cast — the lead NPC at each sector is set in SECTORS[].npc,
+// these are the other crew who hang out / pace the room. Kept as ONE
+// extra wanderer per sector to avoid clutter; lead crew never appears
+// as their own wanderer (they're already the desk NPC).
 const CREW_PER_SECTOR = {
-  HQ:         ['mackenzie', 'cat'],
-  SALES:      ['cat', 'mackenzie'],
-  MARKETING:  ['cat', 'darcy'],
-  FINANCE:    ['melodie', 'mackenzie'],
-  PRODUCTION: ['diego', 'pavanjot'],
-  SERVICE:    ['aj', 'pavanjot'],
-  CUSTOMER:   ['darcy', 'melodie'],
-  ADMIN:      ['cat', 'melodie']
+  HQ:         ['cat'],         // Cat (EA) drops by to brief
+  SALES:      ['darcy'],       // Darcy on the floor
+  MARKETING:  ['mackenzie'],   // Mac checks creative
+  FINANCE:    ['mackenzie'],   // Mac reviews numbers
+  PRODUCTION: ['pavanjot'],    // Pavanjot on the bench
+  SERVICE:    ['pavanjot'],    // Pavanjot helps repairs
+  CUSTOMER:   ['darcy'],       // Darcy handles inbound
+  ADMIN:      ['melodie'],     // Mel cross-checks
+  MATERIALS:  ['diego']        // Diego pulls stock
 };
 
 // ═════ State ═════
@@ -1116,10 +1136,16 @@ async function fetchCcSessions() {
   renderWizardPop();
 }
 
-// ═════ Per-god daily line (from snapshot) ═════
-function godLine(npc) {
+// ═════ Per-sector daily line (from snapshot) ═════
+// Switches on sec.id so multiple sectors can share the same crew member
+// (Mack runs HQ + Sales, Mel runs Finance + Customer, Cat runs Admin +
+// Marketing) with sector-specific dialogue. Voice is the crew member
+// speaking in plain shop-talk - no more Greek metaphors.
+function godLine(sec) {
+  const npcOrSec = (typeof sec === 'string') ? null : sec;
+  const sectorId = npcOrSec ? npcOrSec.id : null;
   const s = state.snapshot;
-  if (!s) return 'Awaiting today\'s briefing…';
+  if (!s) return 'Awaiting today\'s briefing...';
   const rev = s.revenue || {};
   const t = s.tickets || {};
   const pipe = s.pipeline || {};
@@ -1131,55 +1157,59 @@ function godLine(npc) {
   const byStat = t.byStatus || {};
   const recent = (rev.recentActivity || []).slice(0, 3);
 
-  switch (npc) {
-    case 'ZEUS': {
+  switch (sectorId) {
+    case 'HQ': {
       const stat = (brief.status || 'unknown').toUpperCase();
       const top = brief.top3 && brief.top3[0];
-      const topLine = top ? (top.action || top.title || '') : 'No flagged priorities.';
-      return `Briefing status: ${stat}.\nTop priority: ${topLine}`;
+      const topLine = top ? (top.action || top.title || '') : 'Nothing flagged.';
+      return `Briefing: ${stat}.\nTop priority: ${topLine}`;
     }
-    case 'HERMES': {
+    case 'SALES': {
       const signed = Math.round((rev.signedRevenue || 0) / 1000);
       const pipeVal = Math.round((pipe.totalValue || 0) / 1000);
       const accepted = recent.filter(r => /accepted|signed/i.test(r.action || '')).length;
-      return `Signed $${signed}K MTD. Pipeline $${pipeVal}K across ${pipe.openDeals || 0} open deals. ${accepted ? accepted + ' proposal' + (accepted > 1 ? 's' : '') + ' accepted today.' : 'No new acceptances today.'}`;
+      return `Closed $${signed}K MTD. Pipeline holds $${pipeVal}K across ${pipe.openDeals || 0} deals. ${accepted ? accepted + ' proposal' + (accepted > 1 ? 's' : '') + ' accepted today.' : 'No new acceptances today.'}`;
     }
-    case 'HEPHAESTUS': {
+    case 'PRODUCTION': {
       const open = byStat.open || 0;
       const active = byStat.active || 0;
       const overdue = t.overdueCount || 0;
-      return `${active} jobs active. ${open} open. ${overdue} overdue. ${overdue > 20 ? 'The forge is hot.' : 'Workload steady.'}`;
+      return `${active} jobs running. ${open} queued. ${overdue} overdue. ${overdue > 20 ? "We're swamped, boss." : 'Crew is keeping pace.'}`;
     }
-    case 'ARTEMIS': {
+    case 'SERVICE': {
       const active = byStat.active || 0;
       const today = (t.activeToday || []).length;
-      return `${active} active service calls. ${today} on dispatch today. ${active > 5 ? 'Arrows ready.' : 'The hunt is calm.'}`;
+      return `${active} active calls. ${today} on the dispatch board today. ${active > 5 ? 'Truck is loaded up.' : 'Quiet day so far.'}`;
     }
-    case 'HESTIA': {
+    case 'CUSTOMER': {
       const conv = (state.snapshot.ghl_conversations_24h_count) || (alerts.find(a => /conversation/i.test(a)) ? '?' : 0);
       const totalTix = t.total || 0;
-      return `${conv || 'a handful of'} conversations updated today. ${totalTix} tickets warm.`;
+      return `${conv || 'a handful of'} conversations moved today. ${totalTix} tickets open with customers.`;
     }
-    case 'ATHENA': {
+    case 'FINANCE': {
       const signed = Math.round((rev.signedRevenue || 0) / 1000);
       const pend = rev.pendingRevenue || 0;
-      const adRoi = brief.kpiScouter && brief.kpiScouter.adROI;
-      const adLine = adRoi ? ` Ad ROI ${adRoi}.` : '';
-      const pendNote = pend === 0 && signed > 0 ? ' Pending revenue accumulator stale, recommend audit.' : '';
-      return `Signed $${signed}K month-to-date. Pending $${Math.round(pend/1000)}K.${adLine}${pendNote}`;
+      const pendNote = pend === 0 && signed > 0 ? ' Pending revenue counter looks stuck, want me to audit?' : '';
+      return `Signed $${signed}K month-to-date. Pending $${Math.round(pend/1000)}K.${pendNote}`;
     }
-    case 'HECATE': {
+    case 'ADMIN': {
       const watchdog = alerts.find(a => /watchdog|cron/i.test(String(a)));
       const stale = alerts.find(a => /stale/i.test(String(a)));
-      if (watchdog) return `⚠ ${watchdog} Cross the threshold carefully.`;
-      if (stale) return `${stale} Worth a sweep.`;
-      return 'Systems nominal. The keys are quiet.';
+      if (watchdog) return `Heads up: ${watchdog}. I'll keep tabs.`;
+      if (stale) return `${stale}. Want me to sweep it?`;
+      return 'All systems quiet. Inbox under control.';
     }
-    case 'APOLLO': {
+    case 'MATERIALS': {
+      const mat = s.materialOrders;
+      if (!mat || typeof mat !== 'object') return 'Inventory feed not wired up yet. Walk in and I will show you what we have.';
+      const ords = mat.openCount || 0;
+      return ords ? `${ords} material order${ords > 1 ? 's' : ''} open with suppliers.` : 'Pallets stacked, shelves stocked. We are good.';
+    }
+    case 'MARKETING': {
       const cpl = ads.avgCPL;
       const lw = leads.thisWeek || 0;
       const total = leads.total || 0;
-      return `Lead flow ${lw} this week (${total} all-time). CPL ${cpl != null ? '$' + cpl.toFixed(2) : '?'}. ${lw < 3 ? 'Time to amplify.' : 'Channels singing.'}`;
+      return `${lw} leads this week (${total} all-time). CPL ${cpl != null ? '$' + cpl.toFixed(2) : '?'}. ${lw < 3 ? 'Want me to push more spend?' : 'Funnel is humming.'}`;
     }
   }
   return 'Quiet today.';
@@ -1201,7 +1231,7 @@ function sectorStatBlocks(sectorId) {
       { k:'BRIEFING', v:(brief.status || '--').toUpperCase() },
       { k:'TOP 3', v: (brief.top3 || []).length },
       { k:'ALERTS', v: alerts.length },
-      { k:'SECTORS', v: '8' }
+      { k:'SECTORS', v: String(SECTORS.length) }
     ];
     case 'SALES': return [
       { k:'SIGNED MTD', v: fmt$(rev.signedRevenue) },
@@ -1248,6 +1278,20 @@ function sectorStatBlocks(sectorId) {
       { k:'ALL LEADS', v: leads.total || 0 },
       { k:'CAMPAIGNS', v: ads.activeCampaigns || 0 }
     ];
+    case 'MATERIALS': {
+      // materialOrders is not yet produced by the snapshot pipeline; show
+      // explicit "--" rather than defaulting to 0/OK so we don't lie about
+      // a healthy state when we just have no data. Wire snapshot section
+      // in a follow-up before relying on these counters.
+      const mat = s.materialOrders;
+      const have = mat && typeof mat === 'object';
+      return [
+        { k:'OPEN ORDERS', v: have ? (mat.openCount || 0) : '--' },
+        { k:'LOW STOCK',   v: have ? (mat.lowStockCount || 0) : '--' },
+        { k:'SUPPLIERS',   v: have ? (mat.suppliersCount || '--') : '--' },
+        { k:'STATUS',      v: have ? ((mat.openCount || 0) > 5 ? 'BUSY' : 'OK') : 'NO DATA' }
+      ];
+    }
   }
   return [];
 }
@@ -1300,6 +1344,10 @@ function sectorHeadline(sectorId) {
       return watchdog ? 'WATCHDOG DOWN' : 'systems nominal';
     }
     case 'MARKETING': return `CPL $${ads.avgCPL != null ? ads.avgCPL.toFixed(2) : '?'} · ${leads.thisWeek || 0}/wk`;
+    case 'MATERIALS': {
+      const mat = s.materialOrders;
+      return (mat && typeof mat === 'object') ? ((mat.openCount || 0) + ' orders open') : 'no data yet';
+    }
   }
 }
 
@@ -2057,101 +2105,115 @@ function buildDialogueChoices(sec) {
   const enterPanel = { label: `Open ${sec.id} live panel`, kind: 'href', href: sec.href };
   const leave      = { label: 'Leave',                    kind: 'leave', danger: true };
 
-  switch (sec.npc) {
-    case 'ZEUS': {
+  switch (sec.id) {
+    case 'HQ': {
       const top3 = brief.top3 || [];
       return [
         { label: 'Today\'s briefing', kind: 'reply',
-          body: `Status: ${(brief.status || 'unknown').toUpperCase()}. ${top3.length ? top3.length + ' priority items flagged.' : 'No flagged priorities.'}` },
+          body: `Status: ${(brief.status || 'unknown').toUpperCase()}. ${top3.length ? top3.length + ' priority items flagged.' : 'Nothing flagged.'}` },
         { label: 'Top 3 priorities', kind: 'reply',
-          body: top3.length ? top3.slice(0,3).map((q,i) => `${i+1}. ${q.action || q.title || 'priority ' + (i+1)}`).join('\n') : 'No flagged priorities right now.' },
+          body: top3.length ? top3.slice(0,3).map((q,i) => `${i+1}. ${q.action || q.title || 'priority ' + (i+1)}`).join('\n') : 'Nothing flagged right now.' },
         { label: 'Open the quest log', kind: 'modal', modal: 'quests' },
         enterPanel,
         leave
       ];
     }
-    case 'HERMES': {
+    case 'SALES': {
       const signed = Math.round((rev.signedRevenue || 0) / 1000);
       const pipeVal = Math.round((pipe.totalValue || 0) / 1000);
       const top = (pipe.top5_deals || [])[0];
       return [
         { label: 'How is the pipeline?', kind: 'reply',
-          body: `Pipeline $${pipeVal}K across ${pipe.openDeals || 0} open deals. Signed $${signed}K month-to-date.` },
+          body: `Pipeline holds $${pipeVal}K across ${pipe.openDeals || 0} open deals. Closed $${signed}K month-to-date.` },
         { label: 'Top deal right now', kind: 'reply',
           body: top ? `${top.customer || top.name || 'top deal'} · ${fmt$(top.value)}` : 'No open deals in pipeline.' },
         { label: 'New leads this week', kind: 'reply',
-          body: `${leads.thisWeek || 0} new leads this week · ${leads.total || 0} all-time.` },
+          body: `${leads.thisWeek || 0} new leads this week, ${leads.total || 0} all-time.` },
         enterPanel,
         leave
       ];
     }
-    case 'HEPHAESTUS': {
+    case 'PRODUCTION': {
       const byStat = t.byStatus || {};
       const active = byStat.active || 0;
       const open = byStat.open || 0;
       const overdue = t.overdueCount || 0;
       return [
         { label: 'Active jobs right now', kind: 'reply',
-          body: `${active} active · ${open} open · ${overdue} overdue. ${overdue > 20 ? 'The forge is roaring.' : overdue > 5 ? 'Some catching up to do.' : 'Workload steady.'}` },
+          body: `${active} active · ${open} open · ${overdue} overdue. ${overdue > 20 ? "We're swamped, boss." : overdue > 5 ? 'Need to catch up a bit.' : 'Workload steady.'}` },
         { label: 'Who has the most overdue?', kind: 'reply',
           body: bottleneckAssignee() },
         { label: 'Open production cockpit', kind: 'href', href: sec.href },
         leave
       ];
     }
-    case 'ARTEMIS': {
+    case 'SERVICE': {
       const byStat = t.byStatus || {};
       const active = byStat.active || 0;
       const today = (t.activeToday || []).length;
       return [
         { label: 'Dispatch board status', kind: 'reply',
-          body: `${active} active service calls · ${today} on dispatch today.` },
+          body: `${active} active calls, ${today} on dispatch today.` },
         { label: 'Unassigned tickets', kind: 'reply',
           body: `${(t.byAssignee && t.byAssignee.Unassigned) || 0} unassigned tickets in queue.` },
         enterPanel,
         leave
       ];
     }
-    case 'HESTIA': {
+    case 'CUSTOMER': {
       const totalTix = t.total || 0;
       const recent = (rev.recentActivity || []).slice(0,3);
       return [
         { label: 'Customer pulse', kind: 'reply',
-          body: `${totalTix} tickets warm across all customers right now.` },
+          body: `${totalTix} tickets open across all customers right now.` },
         { label: 'Recent activity (top 3)', kind: 'reply',
-          body: recent.length ? recent.map(r => `· ${(r.customer || 'customer')} — ${(r.action || 'event')}`).join('\n') : 'No recent customer activity in current snapshot.' },
+          body: recent.length ? recent.map(r => `· ${(r.customer || 'customer')}, ${(r.action || 'event')}`).join('\n') : 'No recent customer activity in current snapshot.' },
         enterPanel,
         leave
       ];
     }
-    case 'ATHENA': {
+    case 'FINANCE': {
       const signed = Math.round((rev.signedRevenue || 0) / 1000);
       const pend = Math.round((rev.pendingRevenue || 0) / 1000);
       const adRoi = brief.kpiScouter && brief.kpiScouter.adROI;
       return [
         { label: 'Show me the money (MTD)', kind: 'reply',
-          body: `Signed $${signed}K · Pending $${pend}K month-to-date.` },
+          body: `Signed $${signed}K, pending $${pend}K month-to-date.` },
         { label: 'Ad ROI right now', kind: 'reply',
           body: adRoi != null ? `Ad ROI ${adRoi}.` : 'Ad ROI signal not present in this snapshot.' },
         { label: 'Open finance dashboard', kind: 'href', href: sec.href },
         leave
       ];
     }
-    case 'HECATE': {
+    case 'ADMIN': {
       const watchdog = alerts.find(a => /watchdog|cron/i.test(String(a)));
       const stale = alerts.find(a => /stale/i.test(String(a)));
       return [
         { label: 'Watchdog status', kind: 'reply',
-          body: watchdog ? `⚠ ${watchdog}` : 'Watchdog clean. Cron firing as scheduled.' },
+          body: watchdog ? watchdog : 'Watchdog clean. Cron firing as scheduled.' },
         { label: 'Any stale data?', kind: 'reply',
-          body: stale ? `${stale}` : 'No stale data flagged. Snapshot is current.' },
+          body: stale ? stale : 'No stale data flagged. Snapshot is current.' },
         { label: 'Active Claude sessions', kind: 'reply',
-          body: state.ccSessions.length ? state.ccSessions.map(c => `· ${c.user_label || 'Claude'} — ${c.last_tool || 'idle'}`).join('\n') : 'No active Claude Code sessions right now.' },
+          body: state.ccSessions.length ? state.ccSessions.map(c => `· ${c.user_label || 'Claude'} ${c.last_tool || 'idle'}`).join('\n') : 'No active Claude Code sessions right now.' },
         { label: 'Open admin console', kind: 'href', href: sec.href },
         leave
       ];
     }
-    case 'APOLLO': {
+    case 'MATERIALS': {
+      const mat = s.materialOrders;
+      const have = mat && typeof mat === 'object';
+      const ords = have ? (mat.openCount || 0) : null;
+      let inv;
+      if (!have) inv = 'Inventory feed not wired into the snapshot pipeline yet, but you can open the board.';
+      else if (ords) inv = `${ords} material order${ords > 1 ? 's' : ''} open with suppliers right now.`;
+      else inv = 'Pallets stacked, shelves stocked. We are good.';
+      return [
+        { label: 'Inventory check', kind: 'reply', body: inv },
+        { label: 'Open materials board', kind: 'href', href: sec.href },
+        leave
+      ];
+    }
+    case 'MARKETING': {
       const cpl = ads.avgCPL;
       const lw = leads.thisWeek || 0;
       const total = leads.total || 0;
@@ -2180,7 +2242,7 @@ function bottleneckAssignee() {
 
 function openNpcDialogueTree(sec, options) {
   const speaker = sec.npc;
-  const body = (options && options.body) || godLine(speaker);
+  const body = (options && options.body) || godLine(sec);
   const choices = buildDialogueChoices(sec);
   openDialogue({
     speaker,
