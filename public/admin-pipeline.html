@@ -96,6 +96,17 @@
 const STAGES = ['unknown','prospect','proposal_sent','accepted','scheduled','in_progress','completed','paid','lost','cold'];
 let currentFilter = 'pending';
 
+// Auth: portal session lives in localStorage.ryujin_token; mirror the pattern
+// used by command-center.html and the other portal pages so deep-links from
+// the Workspace Drawer (which authenticate via Bearer token) resolve correctly.
+function authHeaders(extra) {
+  const headers = Object.assign({ 'x-tenant-id': 'plus-ultra' }, extra || {});
+  let token = null;
+  try { token = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token'); } catch {}
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  return headers;
+}
+
 function ago(iso) {
   const ms = Date.now() - new Date(iso).getTime();
   const m = Math.floor(ms / 60000);
@@ -111,7 +122,7 @@ async function load() {
   list.textContent = '';
   counter.textContent = 'loading…';
   try {
-    const r = await fetch('/api/pipeline-suggestions?status=' + currentFilter, { credentials: 'include' });
+    const r = await fetch('/api/pipeline-suggestions?status=' + currentFilter, { credentials: 'include', headers: authHeaders() });
     if (!r.ok) {
       list.innerHTML = '<div class="err">' + r.status + ' ' + r.statusText + ' -- ' + (await r.text()).slice(0, 200) + '</div>';
       counter.textContent = '';
@@ -125,6 +136,16 @@ async function load() {
       return;
     }
     items.forEach(s => list.appendChild(card(s)));
+    // Honour #suggestion-<id> deep-link from the Workspace Drawer.
+    if (location.hash && location.hash.indexOf('#suggestion-') === 0) {
+      const target = document.getElementById(location.hash.slice(1));
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        target.style.outline = '2px solid #c4b5fd';
+        target.style.outlineOffset = '4px';
+        setTimeout(() => { target.style.outline = ''; target.style.outlineOffset = ''; }, 2500);
+      }
+    }
   } catch (e) {
     list.innerHTML = '<div class="err">' + e.message + '</div>';
   }
@@ -134,6 +155,10 @@ function card(s) {
   const jf = s.job_folder || {};
   const wrap = document.createElement('div');
   wrap.className = 'card';
+  if (s.id) {
+    wrap.id = 'suggestion-' + s.id;
+    wrap.dataset.suggestionId = s.id;
+  }
 
   const head = document.createElement('div');
   head.className = 'card-head';
@@ -221,7 +246,7 @@ async function resolveSuggestion(id, action, stage, cardEl) {
   cardEl.style.opacity = '0.5';
   const r = await fetch('/api/pipeline-suggestions?id=' + encodeURIComponent(id), {
     method: 'PATCH', credentials: 'include',
-    headers: { 'content-type': 'application/json' },
+    headers: authHeaders({ 'content-type': 'application/json' }),
     body: JSON.stringify({ action, stage }),
   });
   if (!r.ok) {
