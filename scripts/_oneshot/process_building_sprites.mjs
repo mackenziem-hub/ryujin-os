@@ -16,9 +16,29 @@ const IDS = ['hq','sales','finance','admin','production','service','customer','m
 async function processOne(id) {
   const src = path.join(TMPDIR, id + '.png');
   const buf = await fs.readFile(src);
-  // 1) Alpha-key white pixels
+  // 1) Chroma-key: sample the 4 corners, find the dominant background
+  //    color, then alpha-key any pixel within COLOR_TOL of it. This
+  //    handles Higgsfield outputs that ignored the "white background"
+  //    prompt and gave us grey, beige, or pastel backgrounds instead.
   const { data, info } = await sharp(buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const { width, height, channels } = info;
+  // Sample the four corners — most likely all background
+  const samplePix = (x, y) => {
+    const i = (y * width + x) * channels;
+    return [data[i], data[i+1], data[i+2]];
+  };
+  const corners = [
+    samplePix(2, 2),
+    samplePix(width - 3, 2),
+    samplePix(2, height - 3),
+    samplePix(width - 3, height - 3),
+  ];
+  // Average the corner colors as the background key
+  const bg = [0, 0, 0];
+  corners.forEach(c => { bg[0] += c[0]; bg[1] += c[1]; bg[2] += c[2]; });
+  bg[0] = Math.round(bg[0] / 4); bg[1] = Math.round(bg[1] / 4); bg[2] = Math.round(bg[2] / 4);
+  const COLOR_TOL = 22;  // Manhattan-ish distance; building shadows survive
+  console.log(`  [${id}] bg key = rgb(${bg[0]},${bg[1]},${bg[2]})`);
   const out = Buffer.alloc(width * height * 4);
   let minX = width, minY = height, maxX = 0, maxY = 0;
   for (let y = 0; y < height; y++) {
@@ -27,7 +47,12 @@ async function processOne(id) {
       const j = (y * width + x) * 4;
       const r = data[i], g = data[i+1], b = data[i+2];
       const a = (channels === 4) ? data[i+3] : 255;
-      if (r >= 245 && g >= 245 && b >= 245) {
+      const dr = Math.abs(r - bg[0]), dg = Math.abs(g - bg[1]), db = Math.abs(b - bg[2]);
+      // Also catch pure white (>=245) explicitly in case the corner sample
+      // happened to land on a building edge for some weird crop.
+      const isBg = (dr < COLOR_TOL && dg < COLOR_TOL && db < COLOR_TOL) ||
+                   (r >= 245 && g >= 245 && b >= 245);
+      if (isBg) {
         out[j] = 0; out[j+1] = 0; out[j+2] = 0; out[j+3] = 0;
       } else {
         out[j] = r; out[j+1] = g; out[j+2] = b; out[j+3] = a;
