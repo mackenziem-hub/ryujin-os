@@ -189,14 +189,29 @@ function baseUrl(req) {
 
 function kickoffRender(req, tenantSlug, clipId) {
   const url = `${baseUrl(req)}/api/marketing-render?id=${clipId}`;
-  // fire-and-forget — upload handler returns immediately; render runs in its own invocation
-  fetch(url, {
-    method: 'POST',
-    headers: {
-      'x-tenant-id': tenantSlug,
-      'x-internal-key': (process.env.INTERNAL_RENDER_KEY || '').trim(),
-    },
-  }).catch((e) => console.error('[marketing] render kickoff failed', e?.message));
+  const headers = {
+    'x-tenant-id': tenantSlug,
+    'x-internal-key': (process.env.INTERNAL_RENDER_KEY || '').trim(),
+  };
+  // Bug-sweep C3 (2026-04-24): kickoff failure leaves the clip at status=
+  // 'queued' until the next /api/marketing-render?next=1 cron sweep (≤10 min).
+  // Single immediate retry on failure — setTimeout-delayed retries are
+  // unreliable in Vercel serverless because the runtime can freeze the
+  // invocation after the response is sent. The cron sweep is the real
+  // reliability net for kickoff failures; this retry just shortens the
+  // common-case window for instant transient blips. Logged, not awaited.
+  fetch(url, { method: 'POST', headers })
+    .then((r) => {
+      if (r.ok) return;
+      console.error(`[marketing] render kickoff returned ${r.status}, immediate retry`);
+      return fetch(url, { method: 'POST', headers })
+        .catch((e) => console.error('[marketing] kickoff retry failed:', e?.message));
+    })
+    .catch((e) => {
+      console.error('[marketing] render kickoff failed:', e?.message, '— immediate retry');
+      return fetch(url, { method: 'POST', headers })
+        .catch((e2) => console.error('[marketing] kickoff retry also failed:', e2?.message));
+    });
 }
 
 async function handler(req, res) {
