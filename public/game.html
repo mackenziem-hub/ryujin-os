@@ -744,10 +744,10 @@ const SECTORS = [
   { id:'MARKETING', npc:'APOLLO',     role:'Muse',        href:'/admin.html?page=marketing',   bg:'/assets/rpg/scenes/sectors/marketing-plaza.webp',   x:68, y:86 }
 ];
 
-// Overworld + interior physics: speed is %-of-frame per ms, scaled so it
-// feels like a JRPG town walk at normal monitor refresh. Building hit
-// half-extents are based on .map-building width/height in CSS.
-const OVERWORLD_SPEED_PCT_PER_MS = 0.045;   // ~4.5%/s actually no — 0.045 per ms = 45%/s; tune to 0.028
+// Overworld + interior physics: speed is %-of-map per ms. 0.045 = ~45%/s
+// = roughly a 2s crossing of the full overworld at normal monitor refresh.
+// Interior speed is slightly lower for the "tighter indoor" walk feel.
+const OVERWORLD_SPEED_PCT_PER_MS = 0.045;
 const INTERIOR_SPEED_PCT_PER_MS  = 0.038;
 const PLAYER_AVATAR_IMG = '/assets/rpg/portraits/crew/mackenzie.webp';
 // Building footprint for collision (matches .map-building width/height in CSS)
@@ -798,7 +798,9 @@ const state = {
   save: loadSave(),
 
   // Walkable player. world = overworld (TITLE→MAP); room = current sector interior.
-  player: { x: 50, y: 50, facing: 0 },         // overworld position (%); facing in radians
+  // Initial spawn (50, 32) sits in the open band between HQ (top) and ADMIN
+  // (center) — far enough from both so no building is "near" on first frame.
+  player: { x: 50, y: 32, facing: 0 },         // overworld position (%); facing in radians
   interior: null,                              // { sec, playerX, playerY, facing, lastEnter }
   worldReturn: { x: 50, y: 50 },               // remember player overworld pos when entering a sector
   nearBuilding: null,                          // overworld: building player is currently touching
@@ -2252,12 +2254,13 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   $('btnPause').addEventListener('click', () => openMainMenu());
   $('viewTitle').addEventListener('click', () => { if (state.view === 'TITLE') bootPressStart(); });
-  // Dialogue click: advance body OR (if choices visible) keep choice-only
-  // interaction. Buttons inside .dialogue-choices stopPropagation themselves
-  // so this click handler only fires when player taps outside the choice list.
+  // Dialogue click: only skips the typewriter. We never auto-pick a choice
+  // from a body-click because the choice list is the explicit menu; the
+  // dialogue-choice buttons handle their own clicks and stopPropagation.
   $('dialogue').addEventListener('click', (e) => {
     if (e.target.closest('.dialogue-choice')) return;
-    advanceDialogue();
+    if (!state.dialogue) return;
+    if (state.dialogue.revealed < state.dialogue.body.length) advanceDialogue();
   });
   $('modalBack').addEventListener('click', (e) => { if (e.target.id === 'modalBack') closeModal(); });
   $('btnMute').style.opacity = state.save.muted ? '0.4' : '1';
