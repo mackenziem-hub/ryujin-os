@@ -96,6 +96,17 @@
 const STAGES = ['unknown','prospect','proposal_sent','accepted','scheduled','in_progress','completed','paid','lost','cold'];
 let currentFilter = 'pending';
 
+// Auth: portal session lives in localStorage.ryujin_token; mirror the pattern
+// used by command-center.html and the other portal pages so deep-links from
+// the Workspace Drawer (which authenticate via Bearer token) resolve correctly.
+function authHeaders(extra) {
+  const headers = Object.assign({ 'x-tenant-id': 'plus-ultra' }, extra || {});
+  let token = null;
+  try { token = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token'); } catch {}
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  return headers;
+}
+
 function ago(iso) {
   const ms = Date.now() - new Date(iso).getTime();
   const m = Math.floor(ms / 60000);
@@ -111,7 +122,7 @@ async function load() {
   list.textContent = '';
   counter.textContent = 'loading…';
   try {
-    const r = await fetch('/api/pipeline-suggestions?status=' + currentFilter, { credentials: 'include' });
+    const r = await fetch('/api/pipeline-suggestions?status=' + currentFilter, { credentials: 'include', headers: authHeaders() });
     if (!r.ok) {
       list.innerHTML = '<div class="err">' + r.status + ' ' + r.statusText + ' -- ' + (await r.text()).slice(0, 200) + '</div>';
       counter.textContent = '';
@@ -235,7 +246,7 @@ async function resolveSuggestion(id, action, stage, cardEl) {
   cardEl.style.opacity = '0.5';
   const r = await fetch('/api/pipeline-suggestions?id=' + encodeURIComponent(id), {
     method: 'PATCH', credentials: 'include',
-    headers: { 'content-type': 'application/json' },
+    headers: authHeaders({ 'content-type': 'application/json' }),
     body: JSON.stringify({ action, stage }),
   });
   if (!r.ok) {
