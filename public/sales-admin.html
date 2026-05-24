@@ -225,7 +225,41 @@ async function load() {
   } catch {}
 }
 
+// Bug-sweep #10 (2026-04-24): readForm() falls back to defaults on
+// non-numeric input (parseFloat || 0 / parseInt || N). Commission rates
+// silently saving as 0 would zero-out Darcy's pay calc. Stale day counts
+// flipping to defaults silently would change pipeline triage windows.
+// Validate raw inputs at save time using strict Number() so '15%abc'
+// type pastes don't slip through as 15.
+function validateSalesConfigSave(){
+  const numericFields = [
+    { id: 'cm_mac_self',  label: 'Mac self-gen commission %' },
+    { id: 'cm_darcy_dk',  label: 'Darcy door-knock commission %' },
+    { id: 'cm_darcy_pl',  label: 'Darcy pipeline commission %' },
+    { id: 'cm_darcy_pr',  label: 'Darcy premium commission %' },
+    { id: 'f_stale',      label: 'Stale threshold (days)' },
+    { id: 'f_cold',       label: 'Cold threshold (days)' },
+  ];
+  for (const f of numericFields) {
+    const el = document.getElementById(f.id);
+    if (!el) continue;
+    // <input type="number"> returns el.value === '' for non-numeric pastes
+    // ('15%', '15 abc', etc.) but sets el.validity.badInput=true. Check
+    // validity first so bad input doesn't get treated as "empty/use default".
+    if (el.validity?.badInput) {
+      return { ok: false, error: `${f.label} contains text that's not a number — please clear and re-enter.` };
+    }
+    const raw = (el.value || '').trim();
+    if (raw !== '' && !Number.isFinite(Number(raw))) {
+      return { ok: false, error: `${f.label} must be a number. Got: "${raw}"` };
+    }
+  }
+  return { ok: true };
+}
+
 document.getElementById('btnSave').addEventListener('click', async () => {
+  const v = validateSalesConfigSave();
+  if (!v.ok) { showBanner(`Save blocked: ${v.error}`, 'warn'); return; }
   const btn = document.getElementById('btnSave');
   btn.disabled = true; btn.textContent = 'Saving…';
   try {

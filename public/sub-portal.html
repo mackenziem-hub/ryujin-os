@@ -1376,6 +1376,25 @@ async function submitLogEntry(){
   if (!logFormType) { toast('Pick a type'); return }
   const desc = document.getElementById('lDesc').value.trim();
   if (!desc) { toast('Description required'); return }
+  // Bug-sweep #10 (2026-04-24): amount uses Number(x) || 0. For a material-
+  // order entry where the sub typed "$100" or "100.0 0" the value silently
+  // saves as 0, which means the cost never makes it to the paysheet roll-up
+  // and Mac discovers it later when reconciling vendor invoices. Validate
+  // raw input strictly; empty is fine (most entries don't have amount).
+  //
+  // <input type="number"> returns value='' for non-numeric pastes but sets
+  // validity.badInput=true — check validity FIRST so '$100' pastes don't
+  // silently fall through the empty-is-OK branch.
+  const amtEl = document.getElementById('lAmt');
+  if (amtEl?.validity?.badInput) {
+    toast(`Amount contains text that's not a number — clear and re-enter.`, 'err');
+    return;
+  }
+  const amtRaw = (amtEl.value || '').trim();
+  if (amtRaw !== '' && !Number.isFinite(Number(amtRaw))) {
+    toast(`Amount must be a number. Got: "${amtRaw}"`, 'err');
+    return;
+  }
   try {
     const result = await api('/job-log', {
       method: 'POST',

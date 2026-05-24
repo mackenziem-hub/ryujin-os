@@ -285,13 +285,22 @@ function readForm(){
 // NaN for any string that isn't a clean numeric, including scientific
 // notation passing strict ('1e2' === 100 in both — verified).
 //
+// ALSO: <input type="number"> returns el.value === '' for non-numeric
+// pastes ('$140', '0.15%', etc.) but sets el.validity.badInput=true.
+// Check the validity flag FIRST so bad input doesn't slip through the
+// "empty is optional" branch (codex round-2 P2 on PR #53).
+//
 // Returns { ok: true } if save is allowed, { ok: false, error } otherwise.
 function validateForSave(){
-  const subRateRaw = $('f_subRate').value.trim();
-  const hstRaw = $('f_hst').value.trim();
+  const subRateEl = $('f_subRate');
+  if (subRateEl?.validity?.badInput) {
+    return { ok: false, error: 'Sub rate (per SQ) contains text that\'s not a number — clear and re-enter.' };
+  }
+  const subRateRaw = subRateEl.value.trim();
   if (subRateRaw !== '' && !Number.isFinite(Number(subRateRaw))) {
     return { ok: false, error: `Sub rate (per SQ) must be a number. Got: "${subRateRaw}"` };
   }
+  const hstRaw = $('f_hst').value.trim();
   if (hstRaw === '') {
     return { ok: false, error: 'HST rate is required (it drives every quote\'s tax line).' };
   }
@@ -299,8 +308,16 @@ function validateForSave(){
   if (!Number.isFinite(hst) || hst < 0 || hst > 1) {
     return { ok: false, error: `HST rate must be a decimal between 0 and 1 (e.g. 0.15 for 15%). Got: "${hstRaw}"` };
   }
-  const latRaw = $('f_weatherLat').value.trim();
-  const lonRaw = $('f_weatherLon').value.trim();
+  const latEl = $('f_weatherLat');
+  const lonEl = $('f_weatherLon');
+  if (latEl?.validity?.badInput) {
+    return { ok: false, error: 'Weather lat contains text that\'s not a number — clear or re-enter.' };
+  }
+  if (lonEl?.validity?.badInput) {
+    return { ok: false, error: 'Weather lon contains text that\'s not a number — clear or re-enter.' };
+  }
+  const latRaw = latEl.value.trim();
+  const lonRaw = lonEl.value.trim();
   if (latRaw !== '' && !Number.isFinite(Number(latRaw))) {
     return { ok: false, error: `Weather lat must be a number or blank. Got: "${latRaw}"` };
   }

@@ -1190,6 +1190,31 @@ window.gqPreview = gqPreview;
 async function gqSubmit(){
   const name = (document.getElementById('gq-name').value || '').trim();
   const address = (document.getElementById('gq-address').value || '').trim();
+  // Bug-sweep #10 (2026-04-24): gqInputs() uses Number(x) || 0 which silently
+  // turns '123abc' or any non-numeric into 0. For corners / drops / distance_km
+  // that means an unintended typo quietly omits a charge line from the gutter
+  // quote and the customer is under-billed. Validate raw inputs at SAVE time.
+  const numericFields = [
+    { id: 'gq-lf-lower', label: 'LF lower-level' },
+    { id: 'gq-lf-upper', label: 'LF upper-level' },
+    { id: 'gq-corners', label: 'Corners' },
+    { id: 'gq-drops', label: 'Downspouts' },
+    { id: 'gq-dist', label: 'Distance (km)' },
+  ];
+  for (const f of numericFields) {
+    const el = document.getElementById(f.id);
+    if (!el) continue;
+    // <input type="number"> returns el.value === '' for non-numeric pastes
+    // ($100, 1,000, etc.) but sets el.validity.badInput=true. Check the
+    // validity flag first so bad-input doesn't get treated as "empty/optional".
+    if (el.validity?.badInput) {
+      return alert(`${f.label} contains text that's not a number — please clear and re-enter.`);
+    }
+    const raw = (el.value || '').trim();
+    if (raw !== '' && !Number.isFinite(Number(raw))) {
+      return alert(`${f.label} must be a number. Got: "${raw}"`);
+    }
+  }
   const inputs = gqInputs();
   if (!name) return alert('Customer name required');
   if (!address) return alert('Address required');
