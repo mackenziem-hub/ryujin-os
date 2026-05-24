@@ -750,9 +750,17 @@ const SECTORS = [
 const OVERWORLD_SPEED_PCT_PER_MS = 0.045;
 const INTERIOR_SPEED_PCT_PER_MS  = 0.038;
 const PLAYER_AVATAR_IMG = '/assets/rpg/portraits/crew/mackenzie.webp';
-// Building footprint for collision (matches .map-building width/height in CSS)
-const BUILDING_HALF = { w: 8, h: 11 }; // half-extents in %
-const INTERACT_PAD  = { w: 2.5, h: 3 };  // extra % to register interact-range glow before collision
+// Building footprint for collision. CSS defines .map-building as 16x22%
+// on desktop (=> half 8x11) and 22x18% on mobile (=> half 11x9). The
+// collision/near checks must mirror whichever the viewport renders or
+// the player visually walks through the wall on mobile / gets blocked
+// by empty space. Recompute on every check so resize re-aligns.
+function getBuildingHalf() {
+  return window.matchMedia('(max-width: 720px)').matches
+    ? { w: 11, h: 9 }
+    : { w: 8,  h: 11 };
+}
+const INTERACT_PAD = { w: 2.5, h: 3 };  // extra % to register interact-range glow before collision
 // NPC interaction radius inside a room (% from NPC center)
 const NPC_INTERACT_R = 13;
 // Terminal interaction radius
@@ -1345,11 +1353,12 @@ function updateOverworld(dtMs) {
   // Building collision — don't allow the player center to enter the
   // building's solid rect (we'll use a slightly smaller inset so the
   // player visually overlaps the door edge before being stopped).
+  const bh = getBuildingHalf();
   let blocked = false;
   for (const sec of SECTORS) {
     const dx = Math.abs(nx - sec.x);
     const dy = Math.abs(ny - sec.y);
-    if (dx < BUILDING_HALF.w - 1 && dy < BUILDING_HALF.h - 1.5) { blocked = true; break; }
+    if (dx < bh.w - 1 && dy < bh.h - 1.5) { blocked = true; break; }
   }
   if (!blocked) { p.x = nx; p.y = ny; }
   else {
@@ -1369,20 +1378,22 @@ function updateOverworld(dtMs) {
 }
 
 function collidesOverworld(x, y) {
+  const bh = getBuildingHalf();
   for (const sec of SECTORS) {
-    if (Math.abs(x - sec.x) < BUILDING_HALF.w - 1 && Math.abs(y - sec.y) < BUILDING_HALF.h - 1.5) return true;
+    if (Math.abs(x - sec.x) < bh.w - 1 && Math.abs(y - sec.y) < bh.h - 1.5) return true;
   }
   return false;
 }
 
 function refreshNearBuilding() {
   const p = state.player;
+  const bh = getBuildingHalf();
   let near = null;
   for (let i = 0; i < SECTORS.length; i++) {
     const sec = SECTORS[i];
     const dx = Math.abs(p.x - sec.x);
     const dy = Math.abs(p.y - sec.y);
-    if (dx < BUILDING_HALF.w + INTERACT_PAD.w && dy < BUILDING_HALF.h + INTERACT_PAD.h) {
+    if (dx < bh.w + INTERACT_PAD.w && dy < bh.h + INTERACT_PAD.h) {
       near = { sec, index: i };
       break;
     }
@@ -1393,7 +1404,7 @@ function refreshNearBuilding() {
     // Highlight the new building
     document.querySelectorAll('.map-building').forEach(el => el.classList.toggle('near', el.getAttribute('data-sector') === near.sec.id));
     state.focusedSector = near.index;
-    showInteractPrompt('PRESS [SPACE] TO ENTER', near.sec.x, near.sec.y - BUILDING_HALF.h);
+    showInteractPrompt('PRESS [SPACE] TO ENTER', near.sec.x, near.sec.y - bh.h);
   } else if (!near && prev) {
     document.querySelectorAll('.map-building').forEach(el => el.classList.remove('near'));
     hideInteractPrompt();
@@ -1566,11 +1577,33 @@ function exitToOverworld() {
   state.interior = null;
   state.nearTarget = null;
   setView('MAP');
-  // Place player back on the overworld at remembered return position,
-  // but nudge slightly so we don't re-trigger building collision instantly.
+  // Prefer the exact pre-entry position so the player walks out exactly
+  // where they walked in. Fall back to a collision-safe spawn next to the
+  // building if worldReturn would itself collide (defensive — shouldn't
+  // happen because worldReturn was a walkable cell, but resize between
+  // enter and exit could shift the collision footprint).
   const sec = SECTORS[state.focusedSector];
-  state.player.x = sec ? clamp(sec.x, 10, 90) : 50;
-  state.player.y = sec ? clamp(sec.y + BUILDING_HALF.h + 4, 10, 90) : 60;
+  const bh = getBuildingHalf();
+  const ret = state.worldReturn || {};
+  let nx = (typeof ret.x === 'number') ? ret.x : (sec ? sec.x : 50);
+  let ny = (typeof ret.y === 'number') ? ret.y : (sec ? sec.y : 60);
+  if (collidesOverworld(nx, ny) && sec) {
+    // Pick the first cardinal direction outside the building that's clear,
+    // preferring the side that keeps the player on-map.
+    const offsets = [
+      { dx: 0,           dy:  bh.h + 4 }, // below
+      { dx: 0,           dy: -bh.h - 4 }, // above
+      { dx:  bh.w + 4,   dy: 0          }, // right
+      { dx: -bh.w - 4,   dy: 0          }, // left
+    ];
+    for (const o of offsets) {
+      const cx = clamp(sec.x + o.dx, 5, 95);
+      const cy = clamp(sec.y + o.dy, 7, 93);
+      if (!collidesOverworld(cx, cy)) { nx = cx; ny = cy; break; }
+    }
+  }
+  state.player.x = clamp(nx, 3, 97);
+  state.player.y = clamp(ny, 5, 95);
   hideInteractPrompt();
   state.nearBuilding = null;
   renderWorld();
