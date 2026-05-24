@@ -340,9 +340,13 @@
     image-rendering: pixelated;
   }
   .npc-sprite.near {
-    animation: npcBob .9s ease-in-out infinite alternate;
+    /* Bob the shadow, not the transform, so it composes with face-left mirror */
+    animation: npcGlow .9s ease-in-out infinite alternate;
   }
-  @keyframes npcBob { from { transform: translate(-50%, -50%) scale(1); } to { transform: translate(-50%, -52%) scale(1.02); } }
+  /* Horizontal mirror — player on NPC's left side flips the portrait to face them */
+  .npc-sprite.face-left { transform: translate(-50%, -50%) scaleX(-1); }
+  .npc-sprite.face-left .npc-nameplate { transform: translateX(-50%) scaleX(-1); }
+  @keyframes npcGlow { from { filter: brightness(1) drop-shadow(0 0 0 transparent); } to { filter: brightness(1.06) drop-shadow(0 0 12px currentColor); } }
   .npc-sprite .npc-nameplate {
     position: absolute; bottom: -28px; left: 50%; transform: translateX(-50%);
     background: rgba(6,10,20,0.92);
@@ -806,9 +810,10 @@ const state = {
   save: loadSave(),
 
   // Walkable player. world = overworld (TITLE→MAP); room = current sector interior.
-  // Initial spawn (50, 32) sits in the open band between HQ (top) and ADMIN
-  // (center) — far enough from both so no building is "near" on first frame.
-  player: { x: 50, y: 32, facing: 0 },         // overworld position (%); facing in radians
+  // Initial spawn is read from save.player_x/y so the player returns to wherever
+  // they were on last visit. Default (50, 32) sits in the open band between HQ
+  // (top) and ADMIN (center) so no building is "near" on first frame.
+  player: { x: 50, y: 32, facing: 0 },         // overworld position (%); facing in radians (rehydrated from save in boot)
   interior: null,                              // { sec, playerX, playerY, facing, lastEnter }
   worldReturn: { x: 50, y: 50 },               // remember player overworld pos when entering a sector
   nearBuilding: null,                          // overworld: building player is currently touching
@@ -826,7 +831,11 @@ const state = {
 };
 
 function defaultSave() {
-  return { dismissed_quests: [], visited_sectors: [], spoken_to: [], muted: false, last_visit_at: null };
+  return {
+    dismissed_quests: [], visited_sectors: [], spoken_to: [],
+    muted: false, last_visit_at: null,
+    player_x: 50, player_y: 32
+  };
 }
 function loadSave() {
   let parsed;
@@ -837,16 +846,34 @@ function loadSave() {
   // (or a future bug writing the wrong shape) shouldn't crash quest log
   // or sector entry when .includes()/.push() runs on a non-array.
   const def = defaultSave();
+  const numOr = (v, d) => (typeof v === 'number' && !isNaN(v)) ? v : d;
   return {
     dismissed_quests: Array.isArray(parsed.dismissed_quests) ? parsed.dismissed_quests : def.dismissed_quests,
     visited_sectors: Array.isArray(parsed.visited_sectors) ? parsed.visited_sectors : def.visited_sectors,
     spoken_to: Array.isArray(parsed.spoken_to) ? parsed.spoken_to : def.spoken_to,
     muted: typeof parsed.muted === 'boolean' ? parsed.muted : def.muted,
     last_visit_at: parsed.last_visit_at || def.last_visit_at,
+    player_x: numOr(parsed.player_x, def.player_x),
+    player_y: numOr(parsed.player_y, def.player_y),
   };
 }
 function persistSave() {
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(state.save)); } catch {}
+}
+
+// Player position persistence is throttled so we don't write localStorage on
+// every animation frame. ~500ms feels snappy enough that a reload during a
+// walk drops back within half a step.
+let _playerSavePending = false;
+function schedulePlayerSave() {
+  if (_playerSavePending) return;
+  _playerSavePending = true;
+  setTimeout(() => {
+    _playerSavePending = false;
+    state.save.player_x = state.player.x;
+    state.save.player_y = state.player.y;
+    persistSave();
+  }, 500);
 }
 
 // ═════ DOM helpers (XSS-safe) ═════
@@ -1149,6 +1176,13 @@ function beep(freq, durMs, type, vol) {
   o.start(t0); o.stop(t0 + durMs / 1000);
 }
 const sfxStep    = () => beep(220, 50, 'square', 0.03);
+const sfxFootstep = () => beep(140 + Math.random() * 40, 28, 'square', 0.012);
+// Footstep cadence accumulator — ticked by updateOverworld/updateInterior.
+let _footstepAcc = 0;
+function maybeFootstep(dtMs) {
+  _footstepAcc += dtMs;
+  if (_footstepAcc >= 240) { _footstepAcc = 0; sfxFootstep(); }
+}
 const sfxConfirm = () => { beep(660, 50, 'square', 0.05); setTimeout(() => beep(880, 60, 'square', 0.05), 40); };
 const sfxOpen    = () => { beep(440, 40, 'triangle', 0.05); beep(660, 80, 'triangle', 0.04); };
 const sfxClose   = () => beep(330, 60, 'triangle', 0.04);
@@ -1375,6 +1409,8 @@ function updateOverworld(dtMs) {
     av.classList.add('moving');
   }
   refreshNearBuilding();
+  schedulePlayerSave();
+  maybeFootstep(dtMs);
 }
 
 function collidesOverworld(x, y) {
@@ -1547,6 +1583,7 @@ function updateInterior(dtMs) {
     intr.playerY = clamp(intr.playerY + vy * step, 4, 98);
     const av = $('playerAvatar');
     if (av) { av.style.left = intr.playerX + '%'; av.style.top = intr.playerY + '%'; av.classList.add('moving'); }
+    maybeFootstep(dtMs);
     // Walking into the door zone exits to overworld
     if (intr.playerY > DOOR_ZONE_TOP + 3) {
       exitToOverworld();
@@ -1570,6 +1607,18 @@ function updateInterior(dtMs) {
     state.nearTarget = target;
     if (target) showInteractPrompt(label, tx, ty); else hideInteractPrompt();
     document.querySelectorAll('.npc-sprite').forEach(n => n.classList.toggle('near', target === 'npc'));
+  }
+  // NPC mirrors to face the player when they pass on the left/right side.
+  // Small but recognizable touch — the god turns to greet you.
+  const npc = $('npcSprite');
+  if (npc) {
+    const flip = intr.playerX < intr.npcX;
+    npc.style.setProperty('--bg-flip', flip ? '-1' : '1');
+    // We can't `scaleX(-1)` because the npc-sprite uses translate(-50%,-50%)
+    // and its keyframe animation. Instead, mirror via background-position
+    // by toggling a data attribute the CSS could read; or scale the inner.
+    // Simpler: flip the entire transform by adding/removing a class.
+    npc.classList.toggle('face-left', flip);
   }
 }
 
@@ -2265,6 +2314,27 @@ window.addEventListener('blur', () => {
   state.input.up = state.input.down = state.input.left = state.input.right = false;
 });
 
+// On viewport resize the BUILDING_HALF footprint changes (desktop 8x11 vs
+// mobile 11x9). If the player's current position is now inside a building's
+// collision rect, nudge them out so movement isn't soft-locked. Debounced.
+let _resizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(_resizeTimer);
+  _resizeTimer = setTimeout(() => {
+    if (state.view === 'MAP' && collidesOverworld(state.player.x, state.player.y)) {
+      // Walk player out to the nearest open cell — try cardinal nudges first
+      const tries = [[0, -4], [0, 4], [-4, 0], [4, 0], [0, -10], [0, 10]];
+      for (const [dx, dy] of tries) {
+        const nx = clamp(state.player.x + dx, 3, 97);
+        const ny = clamp(state.player.y + dy, 5, 95);
+        if (!collidesOverworld(nx, ny)) { state.player.x = nx; state.player.y = ny; break; }
+      }
+      const av = $('playerAvatar');
+      if (av) { av.style.left = state.player.x + '%'; av.style.top = state.player.y + '%'; }
+    }
+  }, 200);
+});
+
 // "Action" button — interact with the closest target in the current view
 function handleAction() {
   if (state.view === 'MAP') {
@@ -2343,6 +2413,13 @@ async function boot() {
   // Defensive clamp: if state.focusedSector ever picks up an out-of-range
   // value from a future save migration or URL hash, snap it to a real index.
   state.focusedSector = Math.max(0, Math.min(SECTORS.length - 1, state.focusedSector | 0));
+
+  // Rehydrate player position from save (default = (50, 32) open band). If
+  // the saved cell collides with a building (e.g. a save written before
+  // BUILDING_HALF turned dynamic), nudge to default.
+  state.player.x = clamp(state.save.player_x, 3, 97);
+  state.player.y = clamp(state.save.player_y, 5, 95);
+  if (collidesOverworld(state.player.x, state.player.y)) { state.player.x = 50; state.player.y = 32; }
 
   // Preload sector backdrops so the first SECTOR view doesn't flash blank
   // while the WebP loads over the network. Cheap parallel image warmup.
