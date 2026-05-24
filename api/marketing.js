@@ -193,28 +193,24 @@ function kickoffRender(req, tenantSlug, clipId) {
     'x-tenant-id': tenantSlug,
     'x-internal-key': (process.env.INTERNAL_RENDER_KEY || '').trim(),
   };
-  // Bug-sweep C3 (2026-04-24): the render kickoff was fire-and-forget with
-  // no retry. A transient network blip on this single fetch left the clip
-  // stuck at status='queued' until the next /api/marketing-publish?next=1
-  // cron sweep (up to 10 min later). Now we do a single delayed retry on
-  // failure so a network blip costs ~3s, not 10 min.
-  // Still fire-and-forget — the upload handler returns immediately and the
-  // render runs in its own invocation. We don't await this.
+  // Bug-sweep C3 (2026-04-24): kickoff failure leaves the clip at status=
+  // 'queued' until the next /api/marketing-render?next=1 cron sweep (≤10 min).
+  // Single immediate retry on failure — setTimeout-delayed retries are
+  // unreliable in Vercel serverless because the runtime can freeze the
+  // invocation after the response is sent. The cron sweep is the real
+  // reliability net for kickoff failures; this retry just shortens the
+  // common-case window for instant transient blips. Logged, not awaited.
   fetch(url, { method: 'POST', headers })
     .then((r) => {
       if (r.ok) return;
-      console.error(`[marketing] render kickoff returned ${r.status}, retrying in 3s`);
-      setTimeout(() => {
-        fetch(url, { method: 'POST', headers })
-          .catch((e) => console.error('[marketing] render kickoff retry failed:', e?.message));
-      }, 3000);
+      console.error(`[marketing] render kickoff returned ${r.status}, immediate retry`);
+      return fetch(url, { method: 'POST', headers })
+        .catch((e) => console.error('[marketing] kickoff retry failed:', e?.message));
     })
     .catch((e) => {
-      console.error('[marketing] render kickoff failed:', e?.message, '— retrying in 3s');
-      setTimeout(() => {
-        fetch(url, { method: 'POST', headers })
-          .catch((e2) => console.error('[marketing] render kickoff retry also failed:', e2?.message));
-      }, 3000);
+      console.error('[marketing] render kickoff failed:', e?.message, '— immediate retry');
+      return fetch(url, { method: 'POST', headers })
+        .catch((e2) => console.error('[marketing] kickoff retry also failed:', e2?.message));
     });
 }
 
