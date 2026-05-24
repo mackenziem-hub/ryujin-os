@@ -79,7 +79,7 @@ h1.hd{font-family:'Orbitron',sans-serif;font-size:1.6em;font-weight:900;letter-s
 <div class="bg-grid"></div>
 
 <div class="topbar">
-  <a class="btn-back" id="backBtn" href="job.html"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg> BACK TO JOB</a>
+  <a class="btn-back" id="backBtn" href="#"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg> BACK TO JOB</a>
   <div style="display:flex;align-items:center;gap:10px"><div class="brand-mark"></div><div class="brand-name">RYUJIN <span class="dim">/ BEFORE-AFTER STUDIO</span></div></div>
   <div class="tb-spacer"></div>
   <div class="muted" id="ctxLabel">-</div>
@@ -170,7 +170,23 @@ async function bootstrap(){
     $('previewPane').appendChild(el('div', { class: 'preview-error' }, 'Missing ?wo= or ?estimate_id= in the URL. Open this page from the job folder.'));
     return;
   }
-  if (state.woId) $('backBtn').href = 'job.html?wo=' + encodeURIComponent(state.woId);
+  // Back button: prefer woId, then estId, then history.back() as the catch-all
+  // so the user is never dumped back to /hub when arriving from the job folder.
+  const backBtn = $('backBtn');
+  if (state.woId) {
+    backBtn.href = 'job.html?wo=' + encodeURIComponent(state.woId);
+  } else if (state.estId) {
+    backBtn.href = 'job.html?estimate_id=' + encodeURIComponent(state.estId);
+  } else {
+    backBtn.addEventListener('click', e => {
+      e.preventDefault();
+      if (document.referrer && document.referrer !== location.href) {
+        history.back();
+      } else {
+        location.href = 'production-jobs.html';
+      }
+    });
+  }
 
   // Fetch job context for prefill (address + product) and the before/after pool.
   try {
@@ -284,8 +300,35 @@ async function generate(){
     $('previewPane').innerHTML = '';
     $('previewPane').appendChild(el('img', { class: 'poster', src: data.url, alt: 'Before-After preview' }));
     const actions = el('div', { class: 'preview-actions' });
-    const dl = el('a', { class: 'act primary', href: data.url, download: '' }, 'DOWNLOAD JPEG');
-    const open = el('a', { class: 'act cyan', href: data.url, target: '_blank' }, 'OPEN FULL SIZE');
+    // Cross-origin blob URLs ignore the anchor `download` attribute, so the
+    // browser opens the file in a new tab instead of saving. Fetch the bytes
+    // and save via object URL so the click always produces a real download.
+    const dl = el('button', { class: 'act primary', type: 'button' }, 'DOWNLOAD JPEG');
+    dl.addEventListener('click', async () => {
+      const original = dl.textContent;
+      dl.disabled = true;
+      dl.textContent = 'DOWNLOADING...';
+      try {
+        const resp = await fetch(data.url);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const blobBytes = await resp.blob();
+        const objUrl = URL.createObjectURL(blobBytes);
+        const fname = (state.address || 'before-after').replace(/[^\w\-]+/g, '_').slice(0, 40) + '-' + state.format + '.jpg';
+        const a = document.createElement('a');
+        a.href = objUrl;
+        a.download = fname;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(objUrl), 60_000);
+      } catch (err) {
+        alert('Download failed: ' + err.message);
+      } finally {
+        dl.disabled = false;
+        dl.textContent = original;
+      }
+    });
+    const open = el('a', { class: 'act cyan', href: data.url, target: '_blank', rel: 'noopener' }, 'OPEN FULL SIZE');
     actions.appendChild(dl);
     actions.appendChild(open);
     $('previewPane').appendChild(actions);
