@@ -1057,6 +1057,15 @@ function sendProposal(){
   for (const f of numericFields) {
     const el = document.getElementById(f.id);
     if (!el) continue;
+    // <input type="number"> returns el.value === '' for non-numeric pastes
+    // ('$100', '12 sq', etc.) but sets el.validity.badInput=true. Check
+    // validity first so bad input doesn't get treated as "empty/optional"
+    // — which would let the email composer open with the charge dropped.
+    if (el.validity?.badInput) {
+      toast(`${f.label} contains text that's not a number — clear and re-enter.`);
+      goToStep(2);
+      return;
+    }
     const raw = (el.value || '').trim();
     if (raw !== '' && !Number.isFinite(Number(raw))) {
       toast(`${f.label} must be a number. Got: "${raw}"`);
