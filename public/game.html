@@ -433,11 +433,13 @@
 
   /* Mobile */
   @media (max-width: 720px) {
-    .topbar { padding: 6px 10px; gap: 6px; flex-wrap: wrap; }
+    .topbar { padding: 6px 10px; gap: 6px; flex-wrap: nowrap; }
     .topbar-brand { font-size: 11px; letter-spacing: 2px; }
     .topbar-brand .sub { font-size: 7px; }
-    .topbar-stats { gap: 8px; }
-    .stat-chip { padding: 3px 6px; font-size: 10px; }
+    /* 8 stat chips at ~50px each don't fit 375px -- scroll horizontally instead
+       of wrapping (which shoved the map below the viewport). */
+    .topbar-stats { gap: 8px; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
+    .stat-chip { padding: 3px 6px; font-size: 10px; flex-shrink: 0; }
     .stat-chip .label { font-size: 7px; }
     .map-hot .hot-label { font-size: 8px; }
     .map-hot .hot-stat { font-size: 13px; }
@@ -446,6 +448,15 @@
     .party-grid { grid-template-columns: repeat(3, 1fr); }
     .title-press { font-size: 14px; }
     .dialogue-body { font-size: 18px; }
+  }
+
+  /* User text the operator might want to copy/paste (customer names,
+     quest titles, recent activity rows). The global user-select:none on
+     html/body would block this otherwise. */
+  .dialogue-body, .quest-card .title, .quest-card .ctx, .modal .addr,
+  .recent-activity .title, .stat-chip .value {
+    user-select: text;
+    -webkit-user-select: text;
   }
 </style>
 </head>
@@ -499,18 +510,18 @@
   </div>
 
   <!-- Dialogue overlay -->
-  <div class="dialogue" id="dialogue">
-    <div class="dialogue-portrait" id="dialoguePortrait"><img id="dialoguePortraitImg" alt="" /></div>
+  <div class="dialogue" id="dialogue" role="dialog" aria-modal="true" aria-live="polite">
+    <div class="dialogue-portrait" id="dialoguePortrait"><img id="dialoguePortraitImg" alt="NPC portrait" /></div>
     <div class="dialogue-box">
       <div class="dialogue-speaker" id="dialogueSpeaker">ZEUS</div>
       <div class="dialogue-body" id="dialogueBody"></div>
-      <div class="dialogue-advance" id="dialogueAdvance">▼</div>
+      <div class="dialogue-advance" id="dialogueAdvance" aria-hidden="true">▼</div>
     </div>
   </div>
 
   <!-- Modal -->
   <div class="modal-back" id="modalBack">
-    <div class="modal" id="modal"></div>
+    <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" tabindex="-1"></div>
   </div>
 
   <!-- Toasts -->
@@ -548,6 +559,14 @@ const NPC_ACCENT = {
   HESTIA:'#fdba74', ATHENA:'#22d3ee', HECATE:'#a78bfa', APOLLO:'#f9a8d4'
 };
 const NPC_PORTRAIT = (npc) => `/assets/rpg/portraits/${npc.toLowerCase()}.webp`;
+const FALLBACK_PORTRAIT = '/assets/rpg/ui/dragon-sigil.webp';
+// Attach a graceful 404 fallback to any portrait image element. Called
+// after setting src, so a broken WebP path swaps to the dragon sigil
+// rather than collapsing the card layout to a broken-image icon.
+function attachPortraitFallback(imgEl) {
+  if (!imgEl) return;
+  imgEl.onerror = () => { imgEl.onerror = null; imgEl.src = FALLBACK_PORTRAIT; };
+}
 
 const CREW = [
   { id:'mackenzie', name:'CEO MACK',  img:'/assets/rpg/portraits/crew/mackenzie.webp' },
@@ -570,15 +589,32 @@ const state = {
   ccSessions: [],
   dialogue: null,        // { speaker, portrait, body, revealed, doneAt }
   modal: null,           // { kind, focusable[], focusIdx }
-  save: loadSave()
+  save: loadSave(),
+  // Per-render-cycle ephemeral state
+  _intervals: [],         // setInterval IDs captured here so we can clear on teardown
+  _autoTalkTimer: null,   // setTimeout id for sector auto-talk on first entry
+  _typewriterTimer: null, // setInterval id for dialogue typewriter
 };
 
-function loadSave() {
-  try { return JSON.parse(localStorage.getItem(SAVE_KEY)) || defaultSave(); }
-  catch { return defaultSave(); }
-}
 function defaultSave() {
-  return { dismissed_quests: [], visited_sectors: [], muted: false, last_visit_at: null };
+  return { dismissed_quests: [], visited_sectors: [], spoken_to: [], muted: false, last_visit_at: null };
+}
+function loadSave() {
+  let parsed;
+  try { parsed = JSON.parse(localStorage.getItem(SAVE_KEY)); }
+  catch { parsed = null; }
+  if (!parsed || typeof parsed !== 'object') return defaultSave();
+  // Coerce shape: arrays must be arrays, booleans booleans. Earlier saves
+  // (or a future bug writing the wrong shape) shouldn't crash quest log
+  // or sector entry when .includes()/.push() runs on a non-array.
+  const def = defaultSave();
+  return {
+    dismissed_quests: Array.isArray(parsed.dismissed_quests) ? parsed.dismissed_quests : def.dismissed_quests,
+    visited_sectors: Array.isArray(parsed.visited_sectors) ? parsed.visited_sectors : def.visited_sectors,
+    spoken_to: Array.isArray(parsed.spoken_to) ? parsed.spoken_to : def.spoken_to,
+    muted: typeof parsed.muted === 'boolean' ? parsed.muted : def.muted,
+    last_visit_at: parsed.last_visit_at || def.last_visit_at,
+  };
 }
 function persistSave() {
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(state.save)); } catch {}
@@ -637,6 +673,12 @@ async function fetchSnapshot() {
     const r = await fetch(`${API_BASE}/api/snapshot?tenant=${TENANT}`, { credentials: 'omit' });
     if (!r.ok) throw new Error('snapshot ' + r.status);
     const raw = await r.json();
+    // Reject empty/null body. A 200 with `{}` or `null` would otherwise
+    // normalize to an empty-but-truthy snapshot and the UI would silently
+    // render zero everywhere with no error indicator.
+    if (!raw || typeof raw !== 'object' || (!raw.sections && !raw.revenue && !raw.tickets)) {
+      throw new Error('snapshot empty or malformed');
+    }
     state.snapshot = normalizeSnapshot(raw);
     state.snapshotErr = null;
     state.snapshotAt = Date.now();
@@ -1000,6 +1042,7 @@ function renderSector() {
 
   $('npcImg').src = NPC_PORTRAIT(sec.npc);
   $('npcImg').alt = sec.npc;
+  attachPortraitFallback($('npcImg'));
   $('npcGreek').textContent = sec.npc;
   $('npcGreek').style.color = NPC_ACCENT[sec.npc] || '#fde047';
   $('npcRole').textContent = sec.role;
@@ -1022,11 +1065,14 @@ function renderSector() {
   actions.appendChild(el('button', { class: 'btn-ry', text: 'ENTER LIVE PANEL ▶', onclick: () => { sfxConfirm(); window.location.href = sec.href; } }));
   actions.appendChild(el('button', { class: 'btn-ry', text: 'QUESTS', onclick: () => { sfxOpen(); openQuestModal(); } }));
 
-  // Auto-talk on first entry per sector (only if we haven't talked to this NPC yet this session)
-  if (!state._spokenTo) state._spokenTo = new Set();
-  if (!state._spokenTo.has(sec.id)) {
-    state._spokenTo.add(sec.id);
-    setTimeout(() => talkToNpc(sec), 300);
+  // Auto-talk on first entry per sector (persisted across reloads via save.spoken_to).
+  // Cancel any prior auto-talk timer if user re-enters a different sector before
+  // the previous 300ms timeout fires.
+  if (state._autoTalkTimer) { clearTimeout(state._autoTalkTimer); state._autoTalkTimer = null; }
+  if (!state.save.spoken_to.includes(sec.id)) {
+    state.save.spoken_to.push(sec.id);
+    persistSave();
+    state._autoTalkTimer = setTimeout(() => { state._autoTalkTimer = null; talkToNpc(sec); }, 300);
   }
 }
 
@@ -1355,15 +1401,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ═════ Boot ═════
 async function boot() {
+  // Defensive clamp: if state.focusedSector ever picks up an out-of-range
+  // value from a future save migration or URL hash, snap it to a real index.
+  state.focusedSector = Math.max(0, Math.min(SECTORS.length - 1, state.focusedSector | 0));
+
+  // Preload sector backdrops so the first SECTOR view doesn't flash blank
+  // while the WebP loads over the network. Cheap parallel image warmup.
+  SECTORS.forEach(s => { const img = new Image(); img.src = s.bg; });
+
   // Begin parallel data fetch
   Promise.allSettled([fetchSnapshot(), fetchMe(), fetchCcSessions()]);
   // Update title-screen status after data lands
   setTimeout(() => { if ($('titleLoading')) $('titleLoading').textContent = state.snapshot ? '✓ live data ready · press start' : (state.snapshotErr ? '⚠ offline mode · press start' : 'connecting…'); }, 2500);
-  // Refresh loops. Watchdog alert toast is fired by fetchSnapshot on first
-  // successful load so it does not race the cold-start fetch latency.
-  setInterval(fetchSnapshot, SNAPSHOT_REFRESH_MS);
-  setInterval(fetchCcSessions, CC_REFRESH_MS);
+  // Refresh loops. IDs captured in state._intervals so a future teardown
+  // path (or BFCache restoration) can clear them. Watchdog alert toast is
+  // fired by fetchSnapshot on first successful load so it does not race
+  // the cold-start fetch latency.
+  state._intervals.push(setInterval(fetchSnapshot, SNAPSHOT_REFRESH_MS));
+  state._intervals.push(setInterval(fetchCcSessions, CC_REFRESH_MS));
 }
+// On BFCache restore (back/forward navigation), clear stale intervals and
+// re-boot so we don't double-poll.
+window.addEventListener('pageshow', (e) => {
+  if (e.persisted) {
+    state._intervals.forEach(id => clearInterval(id));
+    state._intervals = [];
+    boot();
+  }
+});
 boot();
 </script>
 </body>
