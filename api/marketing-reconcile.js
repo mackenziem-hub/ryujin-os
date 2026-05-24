@@ -115,18 +115,41 @@ export default async function handler(req, res) {
   const counts = { posted: 0, failed: 0, cancelled: 0, untouched: 0, errors: 0 };
   const items = [];
 
-  for (const row of candidates) {
-    let ghlPost, mapped;
-    try {
-      ghlPost = await getSocialPost(row.ghl_post_id);
-    } catch (e) {
+  // Bug-sweep #7 (2026-04-24): serial for-loop here meant N × ~500ms GHL
+  // calls. At default limit=50 → ~25s (fits the 60s vercel.json maxDuration).
+  // At limit=200 → ~100s, exceeds the timeout, cron dies mid-batch, leaving
+  // half the posts un-reconciled. Now we parallelize the GHL fetches in
+  // chunks of 10. Each chunk completes in ~500ms (max of 10 parallel calls),
+  // so 200 candidates → ~10s end-to-end. DB updates stay sequential within
+  // the post-fetch pass so we don't blast Supabase or scramble per-row counts.
+  const CHUNK_SIZE = 10;
+  const fetched = []; // [{ row, ghlPost, mapped, error }, ...] in input order
+
+  for (let i = 0; i < candidates.length; i += CHUNK_SIZE) {
+    const chunk = candidates.slice(i, i + CHUNK_SIZE);
+    const chunkResults = await Promise.all(chunk.map(async (row) => {
+      try {
+        const ghlPost = await getSocialPost(row.ghl_post_id);
+        return { row, ghlPost, mapped: mapGhlStatus(ghlPost), error: null };
+      } catch (e) {
+        return { row, ghlPost: null, mapped: null, error: e };
+      }
+    }));
+    fetched.push(...chunkResults);
+  }
+
+  // Sequential DB-update pass — preserves the original per-row side-effect
+  // ordering and keeps counts predictable. Updates are cheap relative to GHL
+  // round-trips, so doing them serially here costs effectively nothing.
+  for (const { row, ghlPost, mapped, error } of fetched) {
+    if (error) {
       counts.errors++;
       items.push({
         id: row.id, ghl_post_id: row.ghl_post_id, action: 'error',
-        error: e.message, status: e.status || null
+        error: error.message, status: error.status || null
       });
       // 404 from GHL = post no longer exists. Mark cancelled so we don't keep polling.
-      if (e.status === 404 && !dryRun) {
+      if (error.status === 404 && !dryRun) {
         await supabaseAdmin.from('scheduled_posts')
           .update({
             status: 'cancelled',
@@ -139,7 +162,6 @@ export default async function handler(req, res) {
       continue;
     }
 
-    mapped = mapGhlStatus(ghlPost);
     if (!mapped.status) {
       counts.untouched++;
       items.push({ id: row.id, ghl_post_id: row.ghl_post_id, action: 'untouched', reason: mapped.reason });
