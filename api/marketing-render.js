@@ -56,14 +56,39 @@ async function handler(req, res) {
   if (!clip || clip.tenant_id !== tenantId) {
     return res.status(404).json({ error: 'Clip not found' });
   }
-  if (clip.status === 'rendering') {
-    return res.status(409).json({ error: 'Already rendering' });
+
+  // Bug-sweep #4 (2026-04-24 → fixed 2026-05-24): atomic claim. The previous
+  // pattern was read-then-check-then-call renderClip, which TOCTOU-races two
+  // concurrent invocations (e.g. upload kickoff + cron ?next=1 firing at the
+  // same moment) — both pass the status check, both burn ffmpeg + Whisper +
+  // Claude credits + Vercel function-seconds rendering the same clip twice.
+  // Now we claim with a conditional UPDATE; if 0 rows came back, somebody else
+  // got it and we refuse cleanly without doing any work.
+  const { data: claimed, error: claimErr } = await supabaseAdmin
+    .from('marketing_clips')
+    .update({ status: 'rendering' })
+    .eq('id', clipId)
+    .eq('tenant_id', tenantId)
+    .in('status', ['queued', 'failed']) // failed-status retries are allowed; 'rendering' / 'ready' / etc. are not
+    .select('id')
+    .maybeSingle();
+  if (claimErr) {
+    return res.status(500).json({ error: 'Claim failed: ' + claimErr.message });
+  }
+  if (!claimed) {
+    return res.status(409).json({ error: 'Already rendering or in a non-renderable state' });
   }
 
   try {
     const result = await renderClip(clipId);
     return res.json(result);
   } catch (err) {
+    // If the renderer crashes after we claimed, flip back to 'failed' so the
+    // next sweep can retry (otherwise the row gets stranded in 'rendering'
+    // forever and the cron will skip it).
+    await supabaseAdmin.from('marketing_clips')
+      .update({ status: 'failed', error_message: 'Renderer crashed: ' + (err.message || String(err)) })
+      .eq('id', clipId).eq('tenant_id', tenantId).eq('status', 'rendering');
     return res.status(500).json({ error: err.message || String(err), clipId });
   }
 }

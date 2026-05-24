@@ -30,7 +30,24 @@
   if (window.__ryujinQuickCreateLoaded) return;
   window.__ryujinQuickCreateLoaded = true;
 
-  const TENANT = (window.RyujinTenant?.get?.()?.slug) || 'plus-ultra';
+  // Tenant slug resolution. Reads localStorage directly to be load-order
+  // safe (window.RyujinTenant may not be ready yet). Three sources, in
+  // priority order:
+  //   1. ryujin_tenant — written by login/magic (JSON) or signup (bare slug)
+  //   2. ry_tenant_cfg — branding-config fallback
+  //   3. 'plus-ultra' — dev/preview default
+  const TENANT = (function () {
+    function pick(key) {
+      try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return null;
+        try { const o = JSON.parse(raw); if (o && o.slug) return o.slug; } catch (e) {}
+        if (typeof raw === 'string' && /^[a-z0-9-]{1,80}$/i.test(raw.trim())) return raw.trim();
+      } catch (e) {}
+      return null;
+    }
+    return pick('ryujin_tenant') || pick('ry_tenant_cfg') || 'plus-ultra';
+  })();
   const MOBILE_BP = 768;
   const UPLOAD_DEDUPE_WINDOW_MS = 60 * 1000;
   const UPLOAD_DEDUPE_KEY = 'ry_qc_upload_hashes';

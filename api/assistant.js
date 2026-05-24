@@ -111,7 +111,11 @@ async function handler(req, res) {
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        // Bug-sweep #6 (2026-04-24 → fixed 2026-05-24): proposal-page FAQ chat
+        // is short, single-turn, navigation-y. Sonnet-4 cost ~15× Haiku-4-5
+        // for the task. Spot-checked 5 common questions before flip; quality
+        // indistinguishable. See feedback_codex_review_pr_gate / cost wins.
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 300,
         system: RYUJIN_PERSONA + contextSummary,
         messages
