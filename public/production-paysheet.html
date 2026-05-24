@@ -272,8 +272,47 @@ function cancelEdit(){
   if (id) openDetailById(id);
 }
 
+// Bug-sweep #10 extended (2026-05-24): updateLine() above coerces with
+// Number(value), so typing 'abc' or '$100' into a total cell stores NaN
+// on the line. recomputeTotals then sums Number(NaN)||0 = 0 for that
+// line and the rest of the subtotal/HST/total cascade silently
+// under-reports. The paysheet saves with the under-reported number and
+// Mac discovers the gap at vendor reconciliation. Same 95 Cornhill class
+// as PR #57 (workorders) — different surface, same root cause.
+function validatePaysheetBeforeSave(p){
+  const sections = [
+    { key: 'labour_breakdown', label: 'Labour Breakdown' },
+    { key: 'add_ons',          label: 'Add-Ons' },
+    { key: 'surcharges',       label: 'Surcharges' },
+  ];
+  for (const s of sections) {
+    const rows = p[s.key] || [];
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i] || {};
+      // Total: must be a finite number if present at all. updateLine stores
+      // NaN for non-numeric input (typeof === 'number' but isNaN), so the
+      // check must catch BOTH NaN and non-numeric strings.
+      if (r.total != null && r.total !== '') {
+        const n = typeof r.total === 'number' ? r.total : Number(r.total);
+        if (!Number.isFinite(n)) {
+          return { ok: false, error: `${s.label} row ${i + 1}: Total must be a number. Got: "${r.total}"` };
+        }
+      }
+      if (r.qty_sq != null && r.qty_sq !== '') {
+        const n = typeof r.qty_sq === 'number' ? r.qty_sq : Number(r.qty_sq);
+        if (!Number.isFinite(n)) {
+          return { ok: false, error: `${s.label} row ${i + 1}: Qty (SQ) must be a number. Got: "${r.qty_sq}"` };
+        }
+      }
+    }
+  }
+  return { ok: true };
+}
+
 async function saveEdit(){
   if (!EDIT_WORKING) return;
+  const v = validatePaysheetBeforeSave(EDIT_WORKING);
+  if (!v.ok) { alert(`Save blocked: ${v.error}`); return; }
   recomputeTotals(EDIT_WORKING);
   try {
     const r = await fetch('/api/paysheets', {
