@@ -295,6 +295,37 @@
   }
   @keyframes pulseWiz { 50% { box-shadow: 0 0 12px rgba(167,139,250,0.7); } }
 
+  /* Snapshot-delta sprite reactions — borrowed from Pixel Agents / Tokburn:
+     a live data event (revenue signed, deal added, ticket overdue) spawns
+     a floating value above the relevant NPC sprite and pulses the building
+     tile on the overworld. */
+  /* Floating pop is anchored to #sectorRoom at the NPC's %-coords (NOT a
+     child of .npc-sprite) so it never inherits the face-left scaleX(-1)
+     mirror — otherwise the text would render backwards. */
+  .sprite-pop {
+    position: absolute;
+    transform: translate(-50%, 0);
+    font-family: 'Press Start 2P', monospace; font-size: 12px;
+    letter-spacing: 1px; white-space: nowrap;
+    text-shadow: 0 0 8px currentColor, 1px 1px 0 #000, -1px 1px 0 #000, 1px -1px 0 #000, -1px -1px 0 #000;
+    pointer-events: none; z-index: 60;
+    animation: spritePop 1.6s ease-out forwards;
+  }
+  @keyframes spritePop {
+    0%   { transform: translate(-50%, 0)     scale(0.6); opacity: 0; }
+    20%  { transform: translate(-50%, -20px) scale(1.2); opacity: 1; }
+    70%  { transform: translate(-50%, -48px) scale(1.0); opacity: 1; }
+    100% { transform: translate(-50%, -64px) scale(0.9); opacity: 0; }
+  }
+  .map-building.react-pulse {
+    animation: reactPulse 1.6s ease-out;
+  }
+  @keyframes reactPulse {
+    0%, 100% { filter: drop-shadow(0 0 0 transparent) drop-shadow(0 4px 0 rgba(6,10,20,0.5)); }
+    30%      { filter: drop-shadow(0 0 24px var(--pulse-color, #fde047)) drop-shadow(0 4px 0 rgba(6,10,20,0.5)); }
+    60%      { filter: drop-shadow(0 0 14px var(--pulse-color, #fde047)) drop-shadow(0 4px 0 rgba(6,10,20,0.5)); }
+  }
+
   /* Virtual D-pad + action button for touch devices */
   .virtual-pad {
     position: fixed; left: 16px; bottom: 16px;
@@ -424,6 +455,11 @@
   .sector-hud .head {
     font-family: 'Orbitron', monospace; font-size: 18px; font-weight: 700;
     color: var(--gold); letter-spacing: 2px;
+  }
+  .sector-hud .ticker {
+    font-family: 'VT323', monospace; font-size: 14px; color: var(--cyan);
+    letter-spacing: 1px; margin-top: 6px; padding-top: 6px;
+    border-top: 1px dashed rgba(34,211,238,0.25);
   }
   .sector-hud .head .role {
     display: block; font-size: 11px; color: var(--fg-dim); font-weight: 500;
@@ -702,6 +738,7 @@
       <div class="sector-hud" id="sectorHud">
         <div class="eyebrow">SECTOR · <span id="hudSecId">--</span></div>
         <div class="head"><span id="hudSecNpc">--</span><span class="role" id="hudSecRole">--</span></div>
+        <div class="ticker" id="hudSecTicker">--</div>
       </div>
       <!-- NPC sprite, terminal zone, door zone, player avatar injected here -->
     </div>
@@ -946,9 +983,38 @@ function normalizeSnapshot(raw) {
   return s;
 }
 
+// ═════ Event bus (snapshot deltas → sprite reactions) ═════
+// Lightweight pub/sub so any handler can subscribe to "X just happened"
+// without coupling to fetchSnapshot. Patterned after Tokburn/Pixel Agents
+// where live state diffs drive on-screen sprite animations.
+const _bus = {};
+function on(evt, fn)  { (_bus[evt] = _bus[evt] || []).push(fn); }
+function emit(evt, data) { (_bus[evt] || []).forEach(fn => { try { fn(data); } catch {} }); }
+
+// Compute event list from prev→curr snapshot diff. Pure function — no DOM.
+// Add new diff rules here as more sprite reactions get wired up.
+function diffSnapshot(prev, curr) {
+  const out = [];
+  if (!prev || !curr) return out;
+  const pRev = prev.revenue || {}, cRev = curr.revenue || {};
+  const pT   = prev.tickets || {}, cT   = curr.tickets || {};
+  const pP   = prev.pipeline || {}, cP   = curr.pipeline || {};
+  if ((cRev.signedRevenue || 0) > (pRev.signedRevenue || 0)) {
+    out.push({ type: 'revenue.signed.up', sector: 'FINANCE', from: pRev.signedRevenue || 0, to: cRev.signedRevenue, delta: cRev.signedRevenue - (pRev.signedRevenue || 0) });
+  }
+  if ((cT.overdueCount || 0) > (pT.overdueCount || 0)) {
+    out.push({ type: 'tickets.overdue.up', sector: 'PRODUCTION', from: pT.overdueCount || 0, to: cT.overdueCount, delta: cT.overdueCount - (pT.overdueCount || 0) });
+  }
+  if ((cP.openDeals || 0) > (pP.openDeals || 0)) {
+    out.push({ type: 'pipeline.deal.new', sector: 'SALES', from: pP.openDeals || 0, to: cP.openDeals, delta: cP.openDeals - (pP.openDeals || 0) });
+  }
+  return out;
+}
+
 // ═════ Data fetches ═════
 async function fetchSnapshot() {
   const isFirstLoad = !state.snapshot;
+  const prev = state.snapshot;
   try {
     const r = await fetch(`${API_BASE}/api/snapshot?tenant=${TENANT}`, { credentials: 'omit' });
     if (!r.ok) throw new Error('snapshot ' + r.status);
@@ -965,6 +1031,10 @@ async function fetchSnapshot() {
     if (isFirstLoad) {
       const wd = (state.snapshot.alerts || []).find(a => /watchdog|cron/i.test(String(a)));
       if (wd) { toast(wd, 'amber'); sfxBoss(); }
+    } else {
+      // Subsequent polls: diff against the prior snapshot and broadcast
+      // any positive deltas so subscribed sprite reactions can fire.
+      diffSnapshot(prev, state.snapshot).forEach(ev => emit(ev.type, ev));
     }
   } catch (e) {
     state.snapshotErr = String(e.message || e);
@@ -1394,9 +1464,8 @@ function viewFlash(swapFn) {
 
 function refreshInteriorHud() {
   const intr = state.interior; if (!intr) return;
-  // HUD already reflects the static sector; nothing dynamic to update here
-  // unless we want a live KPI line. Reserved for a future "ambient ticker"
-  // showing this sector's headline KPI as snapshot refreshes.
+  const t = document.getElementById('hudSecTicker');
+  if (t) t.textContent = sectorHeadline(intr.sec.id) || '--';
 }
 
 function renderWorld() {
@@ -1617,6 +1686,7 @@ function renderInterior() {
   $('hudSecRole').textContent = sec.role;
   $('sectorHud').style.borderColor = NPC_ACCENT[sec.npc] || 'var(--cyan)';
   $('hudSecNpc').style.color = NPC_ACCENT[sec.npc] || 'var(--gold)';
+  refreshInteriorHud();
 
   // Tear down old interior interactables (re-rendered each enter)
   room.querySelectorAll('.npc-sprite, .terminal-zone, .door-zone, .player-avatar, .interact-prompt').forEach(n => n.remove());
@@ -2581,6 +2651,58 @@ window.addEventListener('pageshow', (e) => {
     if (state.view !== 'TITLE') startGameLoop();
   }
 });
+// ═════ Sprite reactions (subscribed to snapshot-delta events) ═════
+// One handler per event type. Each picks the right surface to react on
+// based on current view: floating pop above the NPC if you're inside the
+// sector, a pulse on the building tile if you're on the overworld, plus
+// a topbar toast either way so the moment is never silent.
+function spawnFloatingPop(text, color, sectorId) {
+  // Only render the pop above the NPC when the player is actually inside
+  // the matching sector. Otherwise a FINANCE event would spawn over the
+  // SALES or ADMIN NPC the player happens to be standing in front of.
+  if (state.view !== 'SECTOR') return;
+  const intr = state.interior;
+  if (!intr || (sectorId && intr.sec.id !== sectorId)) return;
+  const room = document.getElementById('sectorRoom');
+  if (!room) return;
+  // Anchor at the NPC's % position (not a child of #npcSprite) so face-left
+  // scaleX(-1) on the sprite doesn't mirror our pop text.
+  const pop = document.createElement('div');
+  pop.className = 'sprite-pop';
+  pop.textContent = text;
+  pop.style.color = color || '#fde047';
+  pop.style.left = intr.npcX + '%';
+  pop.style.top  = (intr.npcY - 8) + '%';
+  room.appendChild(pop);
+  setTimeout(() => pop.remove(), 1800);
+}
+function pulseBuilding(sectorId, color) {
+  if (state.view !== 'MAP') return;
+  const tile = document.querySelector('.map-building[data-sector="' + sectorId + '"]');
+  if (!tile) return;
+  tile.style.setProperty('--pulse-color', color || '#fde047');
+  tile.classList.add('react-pulse');
+  setTimeout(() => tile.classList.remove('react-pulse'), 1600);
+}
+on('revenue.signed.up', (ev) => {
+  spawnFloatingPop('+' + fmt$(ev.delta), '#fde047', ev.sector);
+  pulseBuilding('FINANCE', '#fde047');
+  toast('Revenue signed: +' + fmt$(ev.delta), 'gold');
+  sfxConfirm();
+});
+on('pipeline.deal.new', (ev) => {
+  spawnFloatingPop('+' + ev.delta + ' DEAL', '#ec4899', ev.sector);
+  pulseBuilding('SALES', '#ec4899');
+  toast('New deal in pipeline (' + ev.to + ' open)', 'pink');
+  sfxConfirm();
+});
+on('tickets.overdue.up', (ev) => {
+  spawnFloatingPop('+' + ev.delta + ' OVERDUE', '#ef4444', ev.sector);
+  pulseBuilding('PRODUCTION', '#ef4444');
+  toast('Overdue tickets rising: ' + ev.to, 'red');
+  sfxBoss();
+});
+
 boot();
 </script>
 </body>
