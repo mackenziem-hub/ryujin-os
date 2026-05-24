@@ -13,6 +13,7 @@
 import { supabaseAdmin } from '../../lib/supabase.js';
 import { requireCronOrOwner } from '../../lib/cronAuth.js';
 import { getAccessToken } from '../../lib/google.js';
+import { normalizeAddress } from '../agents/production.js';
 
 const DRIVE_API = 'https://www.googleapis.com/drive/v3';
 const PLUS_ULTRA_SLUG = 'plus-ultra';
@@ -67,11 +68,73 @@ async function listFolderChildren(folderId) {
   return (await r.json()).files || [];
 }
 
+// Search Drive for FOLDERS (only) whose name contains the address fragment.
+// Returns array of { id, name }. Used by the discovery pass to auto-link
+// unknown job_folders rows to a Drive folder.
+async function searchDriveFolders(nameFragment) {
+  const token = await getAccessToken();
+  const safe = nameFragment.replace(/'/g, "\\'");
+  const params = new URLSearchParams({
+    q: `mimeType = 'application/vnd.google-apps.folder' and name contains '${safe}' and trashed = false`,
+    pageSize: '5',
+    fields: 'files(id,name)',
+  });
+  const r = await fetch(`${DRIVE_API}/files?${params}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!r.ok) throw new Error(`Drive search ${nameFragment} -> ${r.status}`);
+  return (await r.json()).files || [];
+}
+
+// Discovery: for unlinked job_folders rows, try to find a matching Drive
+// folder by name. Only link when match is unambiguous (exactly 1 candidate
+// whose normalized name equals the row's address_key). Ambiguous matches
+// surface in the report and skip -- no silent guessing.
+async function runDriveDiscovery({ tenantId, report }) {
+  const { data: unlinked } = await supabaseAdmin
+    .from('job_folders')
+    .select('id, address, address_key')
+    .eq('tenant_id', tenantId)
+    .is('linked_drive_folder_id', null);
+
+  if (!unlinked?.length) return;
+  report.discovery_attempted = unlinked.length;
+  report.discovery_linked = 0;
+  report.discovery_ambiguous = [];
+
+  for (const f of unlinked) {
+    try {
+      // Use the address PREFIX (first 2 tokens) as the search fragment,
+      // e.g. "178 Summerhill Dr" -> "178 Summerhill" -> hits Cat's folders
+      // named "178 Summerhill" or "178 Summerhill Dr - Faulkner" etc.
+      const fragment = (f.address || '').split(/[\s,]+/).slice(0, 2).join(' ').trim();
+      if (!fragment) continue;
+      const candidates = await searchDriveFolders(fragment);
+      // Filter to those whose normalized name matches the address_key
+      const matches = candidates.filter(c => {
+        const candKey = normalizeAddress(c.name);
+        return candKey && candKey.startsWith(f.address_key.split(' ').slice(0, 2).join(' '));
+      });
+      if (matches.length === 1) {
+        await supabaseAdmin.from('job_folders').update({ linked_drive_folder_id: matches[0].id }).eq('id', f.id);
+        report.discovery_linked += 1;
+      } else if (matches.length > 1) {
+        report.discovery_ambiguous.push({ address: f.address, candidate_count: matches.length, candidate_names: matches.map(m => m.name) });
+      }
+    } catch (e) {
+      report.errors.push(`discovery ${f.address}: ${e.message}`);
+    }
+  }
+}
+
 export async function runDriveFeeder({ tenantSlug = PLUS_ULTRA_SLUG } = {}) {
   const report = { feeder: 'drive', tenant: tenantSlug, timestamp: new Date().toISOString(), folders_processed: 0, artifacts_posted: 0, errors: [] };
 
   const { data: tenant } = await supabaseAdmin.from('tenants').select('id').eq('slug', tenantSlug).maybeSingle();
   if (!tenant) { report.errors.push(`tenant ${tenantSlug} not found`); return report; }
+
+  // Discovery first: try to link any unlinked job_folders rows.
+  await runDriveDiscovery({ tenantId: tenant.id, report });
 
   const { data: folders } = await supabaseAdmin
     .from('job_folders')
@@ -79,7 +142,7 @@ export async function runDriveFeeder({ tenantSlug = PLUS_ULTRA_SLUG } = {}) {
     .eq('tenant_id', tenant.id)
     .not('linked_drive_folder_id', 'is', null);
 
-  if (!folders?.length) { report.errors.push('no job_folders have linked_drive_folder_id; discovery pass not yet built'); return report; }
+  if (!folders?.length) return report;
 
   // Batch the sync call by accumulating all folders + their artifacts, then
   // one POST to /api/job-folder-sync.

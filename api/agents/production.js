@@ -196,8 +196,14 @@ export async function runProduction({ tenantSlug = PLUS_ULTRA_SLUG } = {}) {
           .from('workorders').select('id, status, completed_at, start_date').eq('id', folder.linked_workorder_id).maybeSingle();
         workorder = data;
       }
-      // ghlInvoice: deferred. When the GHL invoice feeder lands, look up by linked_ghl_contact_id.
-      const ghlInvoice = null;
+      // Resolve ghlInvoice from artifacts (populated by api/feeders/ghl-job-artifacts.js).
+      // Pick the most recently updated invoice with a paid-ish status if present;
+      // otherwise the most recent invoice regardless of status. Falls through to null.
+      const invoiceArtifacts = (artifacts || []).filter(a => a.artifact_kind === 'invoice');
+      const paidInv = invoiceArtifacts.find(a => /^paid$/i.test(a.raw_meta?.status || ''));
+      const ghlInvoice = paidInv
+        ? { id: paidInv.raw_meta?.ghl_invoice_id, status: 'paid' }
+        : (invoiceArtifacts[0] ? { id: invoiceArtifacts[0].raw_meta?.ghl_invoice_id, status: invoiceArtifacts[0].raw_meta?.status || 'unknown' } : null);
 
       const { stage, reasoning, evidence } = deriveStage({ artifacts: artifacts || [], estimate, workorder, ghlInvoice });
 
