@@ -4598,21 +4598,25 @@ You are now Mackenzie's game development and product specialist.
   }
   const agentPersona = (agent && AGENT_PERSONAS[agent]) ? AGENT_PERSONAS[agent] : '';
   const fileContext = attachments.length > 0 ? `\n\n## File Context\nMackenzie has attached ${attachments.length} file(s) to this message. Analyze them directly. For job site photos, identify roofing conditions, materials, damage, progress. For documents, extract key information and reference it. For spreadsheets/CSV, summarize the data.\n\nAttachment URLs (use these when calling tools like generate_proposal):\n${attachments.map(a => `- ${a.fileName} (${a.mimeType}): ${a.url}`).join('\n')}` : '';
-  // Phase 5.2 + 13: role-shaped base prompt + prompt caching
-  // Split into two blocks:
-  //   1. CACHED: stable per-user content (role/persona/archetype/style/docs/memory/preferences) — 5min cache
-  //   2. DYNAMIC: per-request content (agent overlay, file attachments, snapshot, live data)
-  // Cache reads are ~10x cheaper than fresh input. Plus Ultra's chat pattern hits this cache window often.
-  const cachedSystemPart = userBasePrompt + preferencesContext + memoryContext + docsContext;
-  const dynamicSystemPart = agentPersona + fileContext + snapshotContext + liveDataBlock;
-  const systemPrompt = dynamicSystemPart
-    ? [
-        { type: 'text', text: cachedSystemPart, cache_control: { type: 'ephemeral' } },
-        { type: 'text', text: dynamicSystemPart }
-      ]
-    : [
-        { type: 'text', text: cachedSystemPart, cache_control: { type: 'ephemeral' } }
-      ];
+  // Phase 5.2 + 13 + 17: role-shaped base prompt + 2-tier prompt caching
+  // Three blocks, two cache breakpoints:
+  //   1. STABLE-CACHED: role + style + preferences + memory + docs — rarely changes.
+  //   2. SNAPSHOT-CACHED: hourly-rebuilt /api/snapshot blob (10-50KB). Separate breakpoint
+  //      so that when Mac sends a burst of chats and snapshot hasn't refreshed, the
+  //      snapshot tokens are read at 10% (~$0 instead of ~50KB-worth per turn).
+  //      When snapshot DOES change, only the "A+snapshot" prefix invalidates;
+  //      the "A only" prefix from block 1 still hits.
+  //   3. PER-REQUEST: agent persona overlay + file attachments + live data. Uncached.
+  // Bug-sweep #2 (2026-04-24): system prompt cost was the largest single $ leak.
+  // Phase 5.2 + 13 caught BASE_PROMPT + memory + docs; this catches snapshot too.
+  const stableCached  = userBasePrompt + preferencesContext + memoryContext + docsContext;
+  const snapshotBlock = snapshotContext || '';
+  const perRequest    = agentPersona + fileContext + liveDataBlock;
+  const systemPrompt = [
+    { type: 'text', text: stableCached, cache_control: { type: 'ephemeral' } },
+    ...(snapshotBlock ? [{ type: 'text', text: snapshotBlock, cache_control: { type: 'ephemeral' } }] : []),
+    ...(perRequest    ? [{ type: 'text', text: perRequest }] : []),
+  ];
 
   // Build messages array — accept either {role, content} (Anthropic-native, used by ryujin widgets)
   // or {user, assistant} pair format (legacy chat.html shape)
