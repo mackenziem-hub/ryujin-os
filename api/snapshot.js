@@ -352,7 +352,12 @@ async function buildFreshSnapshot() {
     const est = stats.results.find(r => r.source === 'Estimator OS');
 
     if (est?.stats) {
-      const recentActivity = await restampRecentActivity((est.stats.recentActivity || []).slice(0, 5));
+      // Restamp the FULL upstream list before slicing — if many items share a
+      // synthetic same-day `updatedAt`, ordering is meaningless until the real
+      // dates land. Re-sort by replacement date desc, then take the top 5.
+      const restamped = await restampRecentActivity(est.stats.recentActivity || []);
+      restamped.sort((a, b) => String(b?.date || '').localeCompare(String(a?.date || '')));
+      const recentActivity = restamped.slice(0, 5);
       snapshot.sections.revenue = {
         signedRevenue: est.stats.signedRevenue,
         pendingRevenue: est.stats.pendingRevenue,
