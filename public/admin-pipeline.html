@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pipeline Suggestions · Ryujin OS</title>
+<style>
+  :root {
+    --bg: #0a0f1e;
+    --panel: #0e1530;
+    --border: #1f2a4f;
+    --fg: #e0e8f5;
+    --fg-dim: #8896b8;
+    --accent: #2dd4bf;
+    --accent-2: #0ea5e9;
+    --warn: #fbbf24;
+    --bad: #ef4444;
+    --ok: #34d399;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; background: var(--bg); color: var(--fg); font: 14px/1.5 'Inter', system-ui, sans-serif; }
+  h1 { font-size: 20px; font-weight: 700; margin: 0 0 4px; letter-spacing: 0.02em; }
+  .sub { color: var(--fg-dim); font-size: 13px; margin-bottom: 24px; }
+  .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+  .toolbar button {
+    background: transparent; color: var(--fg-dim); border: 1px solid var(--border);
+    padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;
+    font-family: inherit; transition: 80ms;
+  }
+  .toolbar button.active { background: var(--accent); color: #052e2a; border-color: var(--accent); }
+  .toolbar button:hover:not(.active) { color: var(--fg); border-color: var(--accent); }
+  .toolbar .spacer { flex: 1; }
+  .toolbar .meta { color: var(--fg-dim); font-size: 12px; }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px; margin-bottom: 12px;
+  }
+  .card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 8px; }
+  .addr { font-size: 16px; font-weight: 600; }
+  .cust { color: var(--fg-dim); font-size: 13px; }
+  .arrow { color: var(--fg-dim); font-family: monospace; padding: 0 6px; }
+
+  .stage {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+    background: rgba(45,212,191,0.15); color: var(--accent); border: 1px solid rgba(45,212,191,0.3);
+  }
+  .stage.prev { opacity: 0.55; }
+  .stage.completed { background: rgba(52,211,153,0.15); color: var(--ok); border-color: rgba(52,211,153,0.3); }
+  .stage.paid     { background: rgba(52,211,153,0.25); color: var(--ok); border-color: rgba(52,211,153,0.5); }
+  .stage.cold     { background: rgba(136,150,184,0.15); color: var(--fg-dim); border-color: rgba(136,150,184,0.3); }
+  .stage.lost     { background: rgba(239,68,68,0.15); color: var(--bad); border-color: rgba(239,68,68,0.3); }
+
+  .reasoning { color: var(--fg); font-size: 13px; margin: 8px 0; }
+  .evidence { margin: 8px 0 12px; padding: 8px 12px; background: rgba(0,0,0,0.25); border-radius: 6px; font-size: 12px; }
+  .evidence li { color: var(--fg-dim); margin: 2px 0; }
+
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .actions button {
+    padding: 6px 14px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer;
+    border: 1px solid var(--border); background: transparent; color: var(--fg); font-family: inherit;
+  }
+  .actions .confirm { background: var(--accent); color: #052e2a; border-color: var(--accent); }
+  .actions .dismiss { color: var(--fg-dim); }
+  .actions .confirm:hover { filter: brightness(1.15); }
+  .actions .correct select {
+    background: var(--panel); color: var(--fg); border: 1px solid var(--border);
+    padding: 6px 8px; border-radius: 6px; font-size: 12px; font-family: inherit;
+  }
+
+  .empty { text-align: center; color: var(--fg-dim); padding: 48px 16px; }
+  .empty .big { font-size: 32px; color: var(--accent); margin-bottom: 8px; }
+  .err { color: var(--bad); padding: 16px; border: 1px solid rgba(239,68,68,0.3); border-radius: 8px; background: rgba(239,68,68,0.08); }
+  .age { color: var(--fg-dim); font-size: 11px; }
+</style>
+</head>
+<body>
+
+<h1>Pipeline Suggestions</h1>
+<div class="sub">Production agent's stage proposals. Confirm or correct before they apply to job folders. Nothing here auto-updates.</div>
+
+<div class="toolbar">
+  <button data-filter="pending" class="active">Pending</button>
+  <button data-filter="confirmed">Confirmed</button>
+  <button data-filter="corrected">Corrected</button>
+  <button data-filter="dismissed">Dismissed</button>
+  <div class="spacer"></div>
+  <button id="btnRun">Re-run agent now</button>
+  <span class="meta" id="counter">loading…</span>
+</div>
+
+<div id="list"></div>
+
+<script>
+const STAGES = ['unknown','prospect','proposal_sent','accepted','scheduled','in_progress','completed','paid','lost','cold'];
+let currentFilter = 'pending';
+
+function ago(iso) {
+  const ms = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return m + 'm ago';
+  const h = Math.floor(m / 60); if (h < 24) return h + 'h ago';
+  const d = Math.floor(h / 24); return d + 'd ago';
+}
+
+async function load() {
+  const list = document.getElementById('list');
+  const counter = document.getElementById('counter');
+  list.textContent = '';
+  counter.textContent = 'loading…';
+  try {
+    const r = await fetch('/api/pipeline-suggestions?status=' + currentFilter, { credentials: 'include' });
+    if (!r.ok) {
+      list.innerHTML = '<div class="err">' + r.status + ' ' + r.statusText + ' -- ' + (await r.text()).slice(0, 200) + '</div>';
+      counter.textContent = '';
+      return;
+    }
+    const data = await r.json();
+    const items = data.suggestions || [];
+    counter.textContent = items.length + ' ' + currentFilter;
+    if (!items.length) {
+      list.innerHTML = '<div class="empty"><div class="big">' + (currentFilter === 'pending' ? '✓' : '·') + '</div>nothing ' + currentFilter + '</div>';
+      return;
+    }
+    items.forEach(s => list.appendChild(card(s)));
+  } catch (e) {
+    list.innerHTML = '<div class="err">' + e.message + '</div>';
+  }
+}
+
+function card(s) {
+  const jf = s.job_folder || {};
+  const wrap = document.createElement('div');
+  wrap.className = 'card';
+
+  const head = document.createElement('div');
+  head.className = 'card-head';
+  head.innerHTML = `
+    <div>
+      <div class="addr">${esc(jf.address || '(no address)')}</div>
+      ${jf.customer_name ? `<div class="cust">${esc(jf.customer_name)}</div>` : ''}
+    </div>
+    <div>
+      <span class="stage prev ${s.previous_stage || 'unknown'}">${s.previous_stage || 'unknown'}</span>
+      <span class="arrow">→</span>
+      <span class="stage ${s.suggested_stage}">${s.suggested_stage}</span>
+    </div>
+  `;
+  wrap.appendChild(head);
+
+  const reason = document.createElement('div');
+  reason.className = 'reasoning';
+  reason.textContent = s.reasoning;
+  wrap.appendChild(reason);
+
+  if (Array.isArray(s.evidence) && s.evidence.length) {
+    const ev = document.createElement('div');
+    ev.className = 'evidence';
+    const ul = document.createElement('ul'); ul.style.cssText = 'margin:0;padding-left:20px;';
+    s.evidence.forEach(e => {
+      const li = document.createElement('li');
+      li.textContent = e.fact || JSON.stringify(e);
+      ul.appendChild(li);
+    });
+    ev.appendChild(ul);
+    wrap.appendChild(ev);
+  }
+
+  if (s.status === 'pending') {
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+
+    const confirmBtn = document.createElement('button');
+    confirmBtn.className = 'confirm';
+    confirmBtn.textContent = '✓ Confirm';
+    confirmBtn.onclick = () => resolveSuggestion(s.id, 'confirm', null, wrap);
+    actions.appendChild(confirmBtn);
+
+    const correctWrap = document.createElement('div'); correctWrap.className = 'correct'; correctWrap.style.display = 'flex'; correctWrap.style.gap = '4px';
+    const sel = document.createElement('select');
+    STAGES.forEach(st => {
+      const o = document.createElement('option'); o.value = st; o.textContent = st;
+      if (st === s.suggested_stage) o.selected = true;
+      sel.appendChild(o);
+    });
+    const correctBtn = document.createElement('button');
+    correctBtn.textContent = '✏ Correct to';
+    correctBtn.onclick = () => resolveSuggestion(s.id, 'correct', sel.value, wrap);
+    correctWrap.appendChild(correctBtn);
+    correctWrap.appendChild(sel);
+    actions.appendChild(correctWrap);
+
+    const dismissBtn = document.createElement('button');
+    dismissBtn.className = 'dismiss';
+    dismissBtn.textContent = '✕ Dismiss';
+    dismissBtn.onclick = () => resolveSuggestion(s.id, 'dismiss', null, wrap);
+    actions.appendChild(dismissBtn);
+
+    wrap.appendChild(actions);
+  } else {
+    const meta = document.createElement('div');
+    meta.className = 'age';
+    meta.textContent = `${s.status}${s.confirmed_stage ? ` as "${s.confirmed_stage}"` : ''} · resolved ${s.resolved_at ? ago(s.resolved_at) : '?'}`;
+    wrap.appendChild(meta);
+  }
+
+  const created = document.createElement('div');
+  created.className = 'age';
+  created.style.marginTop = '6px';
+  created.textContent = 'suggested ' + ago(s.created_at);
+  wrap.appendChild(created);
+
+  return wrap;
+}
+
+function esc(s) { return String(s).replace(/[<>&"]/g, c => ({ '<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;' }[c])); }
+
+async function resolveSuggestion(id, action, stage, cardEl) {
+  cardEl.style.opacity = '0.5';
+  const r = await fetch('/api/pipeline-suggestions?id=' + encodeURIComponent(id), {
+    method: 'PATCH', credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action, stage }),
+  });
+  if (!r.ok) {
+    cardEl.style.opacity = '1';
+    alert(`${action} failed: ${r.status} ${(await r.text()).slice(0, 200)}`);
+    return;
+  }
+  setTimeout(load, 200);
+}
+
+document.querySelectorAll('.toolbar button[data-filter]').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.toolbar button[data-filter]').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    currentFilter = b.dataset.filter;
+    load();
+  });
+});
+
+document.getElementById('btnRun').addEventListener('click', async () => {
+  const btn = document.getElementById('btnRun');
+  btn.disabled = true; btn.textContent = 'running...';
+  try {
+    const r = await fetch('/api/agents/production?tenant=plus-ultra', {
+      headers: { 'x-owner-call': '1' }
+    });
+    const j = await r.json();
+    btn.textContent = `${j.data?.suggestions_emitted ?? '?'} new`;
+    setTimeout(() => { btn.textContent = 'Re-run agent now'; btn.disabled = false; load(); }, 1500);
+  } catch (e) {
+    btn.textContent = 'failed'; btn.disabled = false;
+  }
+});
+
+load();
+</script>
+</body>
+</html>
