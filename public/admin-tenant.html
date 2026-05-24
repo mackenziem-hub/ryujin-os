@@ -280,26 +280,31 @@ function readForm(){
 // or sub=$0/SQ until somebody notices. Same root cause as the 95 Cornhill
 // 1-roll-of-I&W incident: silent fallback in a calculation input.
 //
+// Validation uses Number() not parseFloat() because parseFloat is prefix-
+// greedy ('123abc' → 123) and would let garbage through. Number() returns
+// NaN for any string that isn't a clean numeric, including scientific
+// notation passing strict ('1e2' === 100 in both — verified).
+//
 // Returns { ok: true } if save is allowed, { ok: false, error } otherwise.
 function validateForSave(){
   const subRateRaw = $('f_subRate').value.trim();
   const hstRaw = $('f_hst').value.trim();
-  if (subRateRaw !== '' && !Number.isFinite(parseFloat(subRateRaw))) {
+  if (subRateRaw !== '' && !Number.isFinite(Number(subRateRaw))) {
     return { ok: false, error: `Sub rate (per SQ) must be a number. Got: "${subRateRaw}"` };
   }
   if (hstRaw === '') {
     return { ok: false, error: 'HST rate is required (it drives every quote\'s tax line).' };
   }
-  const hst = parseFloat(hstRaw);
+  const hst = Number(hstRaw);
   if (!Number.isFinite(hst) || hst < 0 || hst > 1) {
     return { ok: false, error: `HST rate must be a decimal between 0 and 1 (e.g. 0.15 for 15%). Got: "${hstRaw}"` };
   }
   const latRaw = $('f_weatherLat').value.trim();
   const lonRaw = $('f_weatherLon').value.trim();
-  if (latRaw !== '' && !Number.isFinite(parseFloat(latRaw))) {
+  if (latRaw !== '' && !Number.isFinite(Number(latRaw))) {
     return { ok: false, error: `Weather lat must be a number or blank. Got: "${latRaw}"` };
   }
-  if (lonRaw !== '' && !Number.isFinite(parseFloat(lonRaw))) {
+  if (lonRaw !== '' && !Number.isFinite(Number(lonRaw))) {
     return { ok: false, error: `Weather lon must be a number or blank. Got: "${lonRaw}"` };
   }
   return { ok: true };
