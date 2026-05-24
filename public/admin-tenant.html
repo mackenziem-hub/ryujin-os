@@ -273,6 +273,43 @@ function readForm(){
   return out;
 }
 
+// Bug-sweep #10 (2026-04-24): readForm() uses parseFloat(...) || 0 because
+// it's also called from the live preview render path — empty mid-type
+// fields should not throw. But SAVE must validate. Empty / non-numeric HST
+// or sub rate silently saving as 0 means every downstream quote uses HST=0
+// or sub=$0/SQ until somebody notices. Same root cause as the 95 Cornhill
+// 1-roll-of-I&W incident: silent fallback in a calculation input.
+//
+// Validation uses Number() not parseFloat() because parseFloat is prefix-
+// greedy ('123abc' → 123) and would let garbage through. Number() returns
+// NaN for any string that isn't a clean numeric, including scientific
+// notation passing strict ('1e2' === 100 in both — verified).
+//
+// Returns { ok: true } if save is allowed, { ok: false, error } otherwise.
+function validateForSave(){
+  const subRateRaw = $('f_subRate').value.trim();
+  const hstRaw = $('f_hst').value.trim();
+  if (subRateRaw !== '' && !Number.isFinite(Number(subRateRaw))) {
+    return { ok: false, error: `Sub rate (per SQ) must be a number. Got: "${subRateRaw}"` };
+  }
+  if (hstRaw === '') {
+    return { ok: false, error: 'HST rate is required (it drives every quote\'s tax line).' };
+  }
+  const hst = Number(hstRaw);
+  if (!Number.isFinite(hst) || hst < 0 || hst > 1) {
+    return { ok: false, error: `HST rate must be a decimal between 0 and 1 (e.g. 0.15 for 15%). Got: "${hstRaw}"` };
+  }
+  const latRaw = $('f_weatherLat').value.trim();
+  const lonRaw = $('f_weatherLon').value.trim();
+  if (latRaw !== '' && !Number.isFinite(Number(latRaw))) {
+    return { ok: false, error: `Weather lat must be a number or blank. Got: "${latRaw}"` };
+  }
+  if (lonRaw !== '' && !Number.isFinite(Number(lonRaw))) {
+    return { ok: false, error: `Weather lon must be a number or blank. Got: "${lonRaw}"` };
+  }
+  return { ok: true };
+}
+
 function renderPreview(){
   const d = readForm();
   $('pv-name').textContent = (d.nameShort || d.name || '').toUpperCase();
@@ -285,6 +322,8 @@ function renderPreview(){
 }
 
 function saveAll(){
+  const v = validateForSave();
+  if (!v.ok) { alert(v.error); return; }
   const d = readForm();
   RyujinTenant.set(d);
   // Manually rebrand the CURRENT page topbar (others update on next nav)
