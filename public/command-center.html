@@ -1130,6 +1130,11 @@ body.gp-mode * { cursor: none !important; }
 .ws-task .t-prio.medium { background: rgba(74,158,255,0.12); color: #4a9eff; border: 1px solid rgba(74,158,255,0.35); }
 .ws-task .t-prio.low { background: rgba(160,190,230,0.08); color: rgba(160,190,230,0.6); border: 1px solid rgba(160,190,230,0.2); }
 .ws-task .t-prio.overdue { background: rgba(248,113,113,0.25); color: #fca5a5; }
+.ws-task .t-kind { padding: 1px 6px; border-radius: 4px; font-size: 0.95em; letter-spacing: 0.5px; font-weight: 700; font-family: 'Orbitron', monospace; }
+.ws-task .t-kind.sales { background: rgba(74,158,255,0.12); color: #4a9eff; border: 1px solid rgba(74,158,255,0.35); }
+.ws-task .t-kind.ops   { background: rgba(160,190,230,0.10); color: rgba(200,220,240,0.85); border: 1px solid rgba(160,190,230,0.25); }
+.ws-task .t-kind.stage { background: rgba(124,58,237,0.15); color: #c4b5fd; border: 1px solid rgba(124,58,237,0.45); }
+.ws-task .t-sub { font-size: 0.7em; color: rgba(160,190,230,0.45); margin-top: 2px; line-height: 1.25; }
 
 .ws-section-head {
   display: flex; justify-content: space-between; align-items: center;
@@ -1915,9 +1920,12 @@ if(window.__RY_8BIT__){var _v=document.getElementById('sentinel-video');if(_v){_
       const wsHeaders = Object.assign({ 'x-tenant-id': 'plus-ultra' }, token ? { 'Authorization': 'Bearer ' + token } : {});
 
       // Parallel: workorders (cockpit-honest source, real active jobs) + snapshot (GHL salesTasks)
-      const [woRes, snap] = await Promise.all([
+      // + pipeline-suggestions (Production Pipeline Agent output awaiting resolve)
+      const [woRes, snap, psRes] = await Promise.all([
         fetch('/api/workorders?limit=100', { headers: wsHeaders }).then(r => r.ok ? r.json() : null).catch(() => null),
-        fetch('/api/snapshot', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null)
+        fetch('/api/snapshot', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch('/api/pipeline-suggestions?status=pending&limit=20', { headers: wsHeaders })
+          .then(r => r.ok ? r.json() : null).catch(() => null)
       ]);
 
       const wos = Array.isArray(woRes) ? woRes : ((woRes && (woRes.workorders || woRes.data)) || []);
@@ -1952,7 +1960,24 @@ if(window.__RY_8BIT__){var _v=document.getElementById('sentinel-video');if(_v){_
             : '/admin.html#crew'
         }));
 
-      const all = [...rxTix, ...sales];
+      // Pipeline suggestions (admin/owner only). Endpoint returns 401 otherwise, which
+      // the catch above turns into null, so non-admins simply see no STAGE rows.
+      const psRaw = (psRes && Array.isArray(psRes.suggestions)) ? psRes.suggestions : [];
+      const stage = psRaw.map(s => {
+        const jf = s.job_folder || {};
+        return {
+          _kind: 'stage',
+          id: s.id,
+          customer: jf.customer_name || '',
+          address: jf.address || '',
+          currentStage: jf.current_stage || s.previous_stage || 'unknown',
+          suggestedStage: s.suggested_stage || 'unknown',
+          due: null,
+          link: '/admin-pipeline.html#suggestion-' + encodeURIComponent(s.id)
+        };
+      });
+
+      const all = [...stage, ...rxTix, ...sales];
       const today = new Date(); today.setHours(0,0,0,0);
 
       if (!all.length) {
@@ -1961,7 +1986,13 @@ if(window.__RY_8BIT__){var _v=document.getElementById('sentinel-video');if(_v){_
         return;
       }
 
+      // Sort: STAGE first (agent output awaiting human resolve = highest priority),
+      // then overdue SALES, then SALES by due asc, then OPS.
+      const kindRank = (k) => k === 'stage' ? 0 : k === 'sales' ? 1 : 2;
       const sorted = all.slice().sort((a,b) => {
+        const ar = kindRank(a._kind);
+        const br = kindRank(b._kind);
+        if (ar !== br) return ar - br;
         const aOd = a.due && new Date(a.due).setHours(0,0,0,0) < today.getTime();
         const bOd = b.due && new Date(b.due).setHours(0,0,0,0) < today.getTime();
         if (aOd !== bOd) return aOd ? -1 : 1;
@@ -1978,10 +2009,7 @@ if(window.__RY_8BIT__){var _v=document.getElementById('sentinel-video');if(_v){_
       list.innerHTML = '';
       sorted.forEach(t => {
         const isOverdue = t.due && new Date(t.due).setHours(0,0,0,0) < today.getTime();
-        const prio = (isOverdue ? 'overdue' : (t.priority || 'medium')).toLowerCase();
-        const metaParts = [];
-        if (t.due) metaParts.push(fmtDate(t.due));
-        metaParts.push(t._kind === 'sales' ? 'SALES' : 'OPS');
+        const prio = (isOverdue ? 'overdue' : (t.priority || (t._kind === 'stage' ? 'high' : 'medium'))).toLowerCase();
 
         const row = document.createElement('div');
         row.className = 'ws-task';
@@ -1989,9 +2017,38 @@ if(window.__RY_8BIT__){var _v=document.getElementById('sentinel-video');if(_v){_
 
         const tRow = document.createElement('div'); tRow.className = 't-row';
         const left = document.createElement('div');
-        const titleEl = document.createElement('div'); titleEl.className = 't-title'; titleEl.textContent = t.title;
-        const metaEl = document.createElement('div'); metaEl.className = 't-meta'; metaEl.textContent = metaParts.join(' · ');
-        left.appendChild(titleEl); left.appendChild(metaEl);
+
+        const titleEl = document.createElement('div');
+        titleEl.className = 't-title';
+        if (t._kind === 'stage') {
+          titleEl.textContent = (t.customer || t.address || 'Job') + ' → ' + t.suggestedStage;
+        } else {
+          titleEl.textContent = t.title;
+        }
+        left.appendChild(titleEl);
+
+        if (t._kind === 'stage') {
+          const subParts = [];
+          if (t.address && t.address !== t.customer) subParts.push(t.address);
+          subParts.push('from ' + t.currentStage);
+          const subEl = document.createElement('div');
+          subEl.className = 't-sub';
+          subEl.textContent = subParts.join(' · ');
+          left.appendChild(subEl);
+        }
+
+        const metaEl = document.createElement('div'); metaEl.className = 't-meta';
+        if (t.due) {
+          const dueEl = document.createElement('span');
+          dueEl.textContent = fmtDate(t.due);
+          metaEl.appendChild(dueEl);
+        }
+        const kindEl = document.createElement('span');
+        kindEl.className = 't-kind ' + t._kind;
+        kindEl.textContent = t._kind === 'sales' ? 'SALES' : t._kind === 'stage' ? 'STAGE' : 'OPS';
+        metaEl.appendChild(kindEl);
+        left.appendChild(metaEl);
+
         const prioEl = document.createElement('div'); prioEl.className = 't-prio ' + prio; prioEl.textContent = prio.toUpperCase();
         tRow.appendChild(left); tRow.appendChild(prioEl);
         row.appendChild(tRow);
@@ -2001,7 +2058,8 @@ if(window.__RY_8BIT__){var _v=document.getElementById('sentinel-video');if(_v){_
       list.querySelectorAll('.ws-task').forEach(el => {
         el.addEventListener('click', () => {
           const link = el.dataset.link || '/admin.html#crew';
-          if (/^https?:\/\//i.test(link)) {
+          const isPipeline = link.indexOf('/admin-pipeline.html') === 0;
+          if (/^https?:\/\//i.test(link) || isPipeline) {
             window.open(link, '_blank', 'noopener,noreferrer');
           } else {
             window.location.href = link;
