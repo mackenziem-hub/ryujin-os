@@ -53,8 +53,18 @@ export function normalizeAddress(raw) {
   let s = String(raw).toLowerCase();
   s = s.split(',')[0];                                  // drop city/province/postal
   s = s.replace(/\s+/g, ' ').trim();
-  for (const suf of STREET_SUFFIXES) {
-    s = s.replace(new RegExp(`\\b${suf}\\.?\\b`, 'g'), '');
+  // Suffix-strip only the LAST token, never a middle/start token. This
+  // prevents the regex from eating 'st' out of '1st Ave' (which contains
+  // the substring 'st' but isn't a street suffix). Each iteration may
+  // expose a new last-token if a compound suffix existed (e.g. trailing
+  // period), so loop until stable.
+  for (let i = 0; i < 3; i++) {
+    const tokens = s.split(' ');
+    const last = (tokens[tokens.length - 1] || '').replace(/\.$/, '');
+    if (STREET_SUFFIXES.includes(last)) {
+      tokens.pop();
+      s = tokens.join(' ').trim();
+    } else break;
   }
   return s.replace(/\s+/g, ' ').trim();
 }
@@ -79,7 +89,7 @@ export function deriveStage({ artifacts, estimate, workorder, ghlInvoice }) {
 
   // paid: ghl invoice paid
   if (ghlInvoice && ghlInvoice.status === 'paid') {
-    ev.push({ artifact_id: null, fact: `ghl invoice ${ghlInvoice.id} status=paid` });
+    ev.push({ artifact_id: ghlInvoice.artifact_id || null, fact: `ghl invoice ${ghlInvoice.id} status=paid` });
     return { stage: 'paid', reasoning: 'GHL invoice marked paid.', evidence: ev };
   }
 
@@ -160,7 +170,8 @@ export async function runProduction({ tenantSlug = PLUS_ULTRA_SLUG } = {}) {
   const { data: settings } = await supabaseAdmin
     .from('tenant_settings').select('production_agent_enabled').eq('tenant_id', tid).maybeSingle();
   if (!settings?.production_agent_enabled) {
-    report.errors.push(`tenant_settings.production_agent_enabled is false for ${tenantSlug} -- agent is opt-in`);
+    report.disabled = true;
+    report.note = `tenant_settings.production_agent_enabled is false for ${tenantSlug} (opt-in; flip the flag to activate)`;
     return report;
   }
 
@@ -202,8 +213,8 @@ export async function runProduction({ tenantSlug = PLUS_ULTRA_SLUG } = {}) {
       const invoiceArtifacts = (artifacts || []).filter(a => a.artifact_kind === 'invoice');
       const paidInv = invoiceArtifacts.find(a => /^paid$/i.test(a.raw_meta?.status || ''));
       const ghlInvoice = paidInv
-        ? { id: paidInv.raw_meta?.ghl_invoice_id, status: 'paid' }
-        : (invoiceArtifacts[0] ? { id: invoiceArtifacts[0].raw_meta?.ghl_invoice_id, status: invoiceArtifacts[0].raw_meta?.status || 'unknown' } : null);
+        ? { id: paidInv.raw_meta?.ghl_invoice_id, status: 'paid', artifact_id: paidInv.id }
+        : (invoiceArtifacts[0] ? { id: invoiceArtifacts[0].raw_meta?.ghl_invoice_id, status: invoiceArtifacts[0].raw_meta?.status || 'unknown', artifact_id: invoiceArtifacts[0].id } : null);
 
       const { stage, reasoning, evidence } = deriveStage({ artifacts: artifacts || [], estimate, workorder, ghlInvoice });
 
@@ -234,6 +245,14 @@ export async function runProduction({ tenantSlug = PLUS_ULTRA_SLUG } = {}) {
         evidence,
       });
       if (insErr) {
+        // Postgres 23505 = unique_violation. The partial unique index
+        // on (job_folder_id, suggested_stage) WHERE status='pending'
+        // catches a concurrent run that beat us to the insert. Treat
+        // as a benign no-op, not an error.
+        if (insErr.code === '23505') {
+          report.stages_unchanged += 1;
+          continue;
+        }
         report.errors.push(`insert failed for ${folder.address}: ${insErr.message}`);
         continue;
       }

@@ -42,12 +42,15 @@ import { normalizeAddress } from './agents/production.js';
 const KNOWN_SOURCES = new Set(['onedrive', 'drive', 'ghl', 'obsidian', 'ryujin']);
 
 function authOk(req) {
+  // Service-token only. The earlier x-owner-call branch was a header-string
+  // bypass with no session resolution -- anyone could forge it. This endpoint
+  // is called by feeders + the laptop scanner, both of which carry the bearer
+  // token. Admin UI triggers should call the agent endpoints (which use
+  // requireCronOrOwner) rather than this sync receiver directly.
   const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '').trim()
     || (req.headers['x-ryujin-token'] || '').toString().trim();
   const expected = (process.env.RYUJIN_SERVICE_TOKEN || '').trim();
   if (expected && token === expected) return true;
-  // Manual trigger from admin UI: x-owner-call header is enough (mirrors cronAuth pattern)
-  if (req.headers['x-owner-call']) return true;
   return false;
 }
 

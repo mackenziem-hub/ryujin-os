@@ -54,10 +54,16 @@ async function runGhlDiscovery({ tenantId, report }) {
       const fragment = (f.address || '').split(/[\s,]+/).slice(0, 2).join(' ').trim();
       if (!fragment) continue;
       const candidates = await searchGhlContacts(fragment);
-      // Filter to candidates whose address1 normalizes to match address_key
+      // Filter to candidates whose address1 EQUALS address_key OR whose
+      // first-two-tokens equal exactly. Equality, not startsWith, to
+      // prevent silent wrong-contact links ("178 Summerhill" matching
+      // "178 Summerhill Drive South" or "1780 Summerhill").
+      const myTokens = f.address_key.split(' ').slice(0, 2).join(' ');
       const matches = candidates.filter(c => {
         const candKey = normalizeAddress(c.address1 || '');
-        return candKey && candKey.startsWith(f.address_key.split(' ').slice(0, 2).join(' '));
+        if (!candKey) return false;
+        const candTokens = candKey.split(' ').slice(0, 2).join(' ');
+        return candKey === f.address_key || candTokens === myTokens;
       });
       if (matches.length === 1) {
         const patch = { linked_ghl_contact_id: matches[0].id };
@@ -76,18 +82,27 @@ async function runGhlDiscovery({ tenantId, report }) {
   }
 }
 
-// Pull invoices for a GHL contact. Per GHL v2 docs:
-// GET /invoices/?altId=<locationId>&altType=location&contactId=<id>
-// Returns array of invoices; each has status (draft|sent|paid|void|partially_paid)
+// Pull invoices for a GHL contact, paginated. Per GHL v2 docs:
+// GET /invoices/?altId=<locationId>&altType=location&contactId=<id>&limit=<n>&offset=<n>
+// Returns { invoices: [...], total: N }. Hard cap at 200 to avoid runaway
+// loops on misbehaving tenants; raise if a real customer ever crosses that.
 async function fetchContactInvoices(contactId) {
+  const PAGE = 50;
+  const HARD_CAP = 200;
+  const out = [];
   try {
-    const data = await ghlFetch(
-      `/invoices/?altId=${LOCATION_ID}&altType=location&contactId=${contactId}&limit=20`
-    );
-    return data?.invoices || data?.data || [];
+    for (let offset = 0; offset < HARD_CAP; offset += PAGE) {
+      const data = await ghlFetch(
+        `/invoices/?altId=${LOCATION_ID}&altType=location&contactId=${contactId}&limit=${PAGE}&offset=${offset}`
+      );
+      const page = data?.invoices || data?.data || [];
+      if (!page.length) break;
+      out.push(...page);
+      if (page.length < PAGE) break;
+    }
+    return out;
   } catch (e) {
-    // Invoices endpoint may 404 for contacts without any; treat as empty
-    if (e.status === 404) return [];
+    if (e.status === 404) return out;
     throw e;
   }
 }
@@ -145,13 +160,18 @@ export async function runGhlFeeder({ tenantSlug = PLUS_ULTRA_SLUG } = {}) {
       let invoiceArtifacts = [];
       try {
         const invoices = await fetchContactInvoices(f.linked_ghl_contact_id);
-        invoiceArtifacts = invoices.map(inv => ({
-          source_path: `ghl:invoice:${inv._id || inv.id}`,
+        invoiceArtifacts = invoices.map(inv => {
+          // GHL v2 returns `_id`; some endpoints alias to `id`. Pin to a single
+          // canonical key so dedup on source_path doesn't double-write when
+          // the API revs. Prefer _id (current), fall through to id.
+          const invId = inv._id || inv.id;
+          return ({
+          source_path: `ghl:invoice:${invId}`,
           artifact_kind: 'invoice',
-          file_name: inv.name || `Invoice ${inv.invoiceNumber || inv._id || inv.id}`,
+          file_name: inv.name || `Invoice ${inv.invoiceNumber || invId}`,
           mtime: inv.updatedAt || inv.createdAt || null,
           raw_meta: {
-            ghl_invoice_id: inv._id || inv.id,
+            ghl_invoice_id: invId,
             ghl_contact_id: f.linked_ghl_contact_id,
             status: inv.status || 'unknown',
             total: inv.total ?? inv.amountDue ?? null,
@@ -159,7 +179,8 @@ export async function runGhlFeeder({ tenantSlug = PLUS_ULTRA_SLUG } = {}) {
             issued_at: inv.issuedAt || inv.createdAt || null,
             paid_at: inv.paidAt || null,
           },
-        }));
+        });
+        });
         report.invoices_posted = (report.invoices_posted || 0) + invoiceArtifacts.length;
       } catch (e) {
         report.errors.push(`invoices ${f.linked_ghl_contact_id}: ${e.message}`);

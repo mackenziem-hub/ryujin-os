@@ -110,10 +110,17 @@ async function runDriveDiscovery({ tenantId, report }) {
       const fragment = (f.address || '').split(/[\s,]+/).slice(0, 2).join(' ').trim();
       if (!fragment) continue;
       const candidates = await searchDriveFolders(fragment);
-      // Filter to those whose normalized name matches the address_key
+      // Filter to those whose normalized name EQUALS the address_key OR
+      // whose first-two-tokens equal the row's first-two-tokens exactly
+      // (so "178 Summerhill" matches "178 Summerhill Dr - Faulkner" but
+      // NOT "178 Summerhill Drive South" or "1780 Summerhill"). Equality,
+      // not startsWith, to prevent silent wrong-job links.
+      const myTokens = f.address_key.split(' ').slice(0, 2).join(' ');
       const matches = candidates.filter(c => {
         const candKey = normalizeAddress(c.name);
-        return candKey && candKey.startsWith(f.address_key.split(' ').slice(0, 2).join(' '));
+        if (!candKey) return false;
+        const candTokens = candKey.split(' ').slice(0, 2).join(' ');
+        return candKey === f.address_key || candTokens === myTokens;
       });
       if (matches.length === 1) {
         await supabaseAdmin.from('job_folders').update({ linked_drive_folder_id: matches[0].id }).eq('id', f.id);

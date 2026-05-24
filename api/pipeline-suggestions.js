@@ -34,8 +34,13 @@ export default async function handler(req, res) {
   return res.status(405).json({ error: 'GET or PATCH only' });
 }
 
+const VALID_STATUSES = new Set(['pending', 'confirmed', 'corrected', 'dismissed', 'expired']);
+
 async function list(req, res, session) {
   const status = (req.query.status || 'pending').toString();
+  if (!VALID_STATUSES.has(status)) {
+    return res.status(400).json({ error: `invalid status "${status}"; valid: ${[...VALID_STATUSES].join(', ')}` });
+  }
   const { data, error } = await supabaseAdmin
     .from('pipeline_suggestions')
     .select(`

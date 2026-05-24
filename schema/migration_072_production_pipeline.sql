@@ -146,6 +146,16 @@ create index if not exists idx_pipeline_suggestions_pending
 create index if not exists idx_pipeline_suggestions_job
   on pipeline_suggestions (job_folder_id, created_at desc);
 
+-- Concurrent-run dedup. Two cron / manual invocations of the production
+-- agent can race past the app-side "skip if pending exists" check and
+-- both insert. A partial UNIQUE on (job_folder_id, suggested_stage)
+-- WHERE status='pending' blocks the second insert at the DB level. Once
+-- the human resolves the suggestion (status flips out of 'pending'),
+-- the constraint allows a new pending row for that folder/stage pair.
+create unique index if not exists uq_pipeline_suggestions_pending_dedup
+  on pipeline_suggestions (job_folder_id, suggested_stage)
+  where status = 'pending';
+
 -- ─────────────────────────────────────────────────────────────────────
 -- 4. updated_at trigger on job_folders (mirror the workorders pattern)
 -- ─────────────────────────────────────────────────────────────────────
