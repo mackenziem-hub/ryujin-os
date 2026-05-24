@@ -265,15 +265,15 @@
   /* Player avatar — pixel-art sprite. The sprite faces right by default;
      facing-left flips horizontally via scaleX(-1). Tile-snap movement
      animates the left/top properties between tile steps. */
-  /* Player avatar - Chrono Trigger style pixel-art sprite of Mac (blue
-     captain's coat, gold trim, blonde hair). Anchor on feet, sized to
-     match the room interior scale. No circular border anymore - this
-     is the actual character, not a portrait icon. */
+  /* Player avatar - CT-style pixel-art sprite of Mac. Background image
+     swaps per facing direction; face-right uses side.webp horizontally
+     flipped via scaleX(-1). Anchor on feet so the bob keyframe reads
+     as the character lifting weight, not bouncing whole. */
   .player-avatar {
     position: absolute;
     width: 5.5%; aspect-ratio: 1 / 1;
     transform: translate(-50%, -100%);
-    background-image: url('/assets/rpg/sprites/crew/mack.webp');
+    background-image: url('/assets/rpg/sprites/crew/mack.webp');  /* default = front */
     background-size: contain; background-position: center bottom; background-repeat: no-repeat;
     image-rendering: pixelated;
     z-index: 10;
@@ -281,10 +281,14 @@
     filter: drop-shadow(0 3px 0 rgba(0,0,0,0.55));
     transition: left .14s linear, top .14s linear;
   }
-  /* Walk-bob: subtle vertical bob during a step */
-  .player-avatar.moving.step-b { transform: translate(-50%, -103%); }
-  .player-avatar.face-right { transform: translate(-50%, -100%) scaleX(-1); }
-  .player-avatar.moving.face-right.step-b { transform: translate(-50%, -103%) scaleX(-1); }
+  .player-avatar.face-up    { background-image: url('/assets/rpg/sprites/crew/mack-back.webp'); }
+  .player-avatar.face-down  { background-image: url('/assets/rpg/sprites/crew/mack.webp'); }
+  .player-avatar.face-left  { background-image: url('/assets/rpg/sprites/crew/mack-side.webp'); }
+  .player-avatar.face-right { background-image: url('/assets/rpg/sprites/crew/mack-side.webp'); transform: translate(-50%, -100%) scaleX(-1); }
+  /* Walk-bob: subtle vertical bob during a step. The face-right keyframe
+     preserves the horizontal flip so the character doesn't snap when bobbing. */
+  .player-avatar.moving.step-b              { transform: translate(-50%, -103%); }
+  .player-avatar.moving.face-right.step-b   { transform: translate(-50%, -103%) scaleX(-1); }
 
   /* Interact prompt that appears above building/NPC when player is near */
   .interact-prompt {
@@ -346,8 +350,11 @@
     image-rendering: pixelated;
     filter: drop-shadow(0 2px 0 rgba(0,0,0,0.55));
   }
-  .crew-wanderer.face-left { transform: translate(-50%, -100%) scaleX(-1); }
-  .crew-wanderer.face-left .wander-nameplate { transform: translateX(-50%) scaleX(-1); }
+  /* Each wanderer's side.webp natively faces LEFT, so face-left renders
+     it as-is (no flip) and face-right flips horizontally via scaleX(-1).
+     The face-right keyframe preserves the mirror so the bob doesn't snap. */
+  .crew-wanderer.face-right { transform: translate(-50%, -100%) scaleX(-1); }
+  .crew-wanderer.face-right .wander-nameplate { transform: translateX(-50%) scaleX(-1); }
   .wander-nameplate {
     position: absolute; bottom: -16px; left: 50%;
     transform: translateX(-50%);
@@ -358,7 +365,7 @@
     text-shadow: 1px 1px 0 #000;
   }
   @keyframes crewBob { 50% { transform: translate(-50%, -103%); } }
-  .crew-wanderer.face-left { animation: crewBobFlip 1.8s ease-in-out infinite; }
+  .crew-wanderer.face-right { animation: crewBobFlip 1.8s ease-in-out infinite; }
   @keyframes crewBobFlip { 50% { transform: translate(-50%, -103%) scaleX(-1); } }
 
   /* Idle "breathing" on the central god so the room never feels frozen.
@@ -1705,6 +1712,15 @@ function initWanderers(sec) {
     };
   }).filter(Boolean);
 }
+// Resolve the directional sprite URL for a wanderer based on facing.
+// `w.img` is like '/assets/rpg/sprites/crew/cat.webp' (front). Up uses
+// '-back.webp' and left/right share '-side.webp' (right is CSS-flipped).
+function wandererSpriteUrl(w, dir) {
+  const base = w.img.replace(/\.webp$/, '');
+  if (dir === 'up')   return base + '-back.webp';
+  if (dir === 'left' || dir === 'right') return base + '-side.webp';
+  return w.img; // down / default
+}
 function tickWanderers(dtMs) {
   const intr = state.interior; if (!intr || !intr.wanderers) return;
   const now = performance.now();
@@ -1724,12 +1740,18 @@ function tickWanderers(dtMs) {
     const ny = w.y + (dy / dist) * step;
     w.x = nx; w.y = ny;
     const absx = Math.abs(dx), absy = Math.abs(dy);
-    w.facingDir = (absy >= absx) ? (dy < 0 ? 'up' : 'down') : (dx < 0 ? 'left' : 'right');
+    const newDir = (absy >= absx) ? (dy < 0 ? 'up' : 'down') : (dx < 0 ? 'left' : 'right');
+    const dirChanged = newDir !== w.facingDir;
+    w.facingDir = newDir;
     const node = document.getElementById('wander-' + w.id);
     if (node) {
       node.style.left = w.x + '%';
       node.style.top  = w.y + '%';
-      node.classList.toggle('face-left', w.facingDir === 'left');
+      node.classList.toggle('face-left',  newDir === 'left');
+      node.classList.toggle('face-right', newDir === 'right');
+      // Only repaint background-image on facing change (avoids hitting the
+      // browser image cache 60 times per second).
+      if (dirChanged) node.style.backgroundImage = `url('${wandererSpriteUrl(w, newDir)}')`;
     }
   });
 }
@@ -1744,10 +1766,9 @@ function renderWanderers(room) {
       style: {
         left: w.x + '%',
         top:  w.y + '%',
-        backgroundImage: `url('${w.img}')`,
-        /* No hue-rotate now that each crew has distinct character art -
-           shifting hues would mangle the per-crew colors (Cat's pink,
-           AJ's green, etc.) which are already part of the sprite. */
+        // Start with the front-facing sprite. tickWanderers swaps it
+        // when the wanderer changes facing direction.
+        backgroundImage: `url('${wandererSpriteUrl(w, 'down')}')`
       }
     }, [
       el('div', { class: 'wander-nameplate', text: w.name })
