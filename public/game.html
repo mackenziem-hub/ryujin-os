@@ -436,6 +436,37 @@
     cursor: pointer;
     image-rendering: pixelated;
   }
+  /* Field-ops comms terminal: glowing console instead of a portrait.
+     Pixel-blue scanline pattern with a centered amber "TX" glyph and a
+     blinking cyan cursor so it reads as an interactive comms station. */
+  .npc-sprite.comms-terminal {
+    background:
+      repeating-linear-gradient(to bottom, rgba(34,211,238,0.18) 0, rgba(34,211,238,0.18) 2px, transparent 3px, transparent 4px),
+      linear-gradient(180deg, #0c1a3e 0%, #060a14 100%);
+    border-color: var(--cyan);
+    box-shadow: 0 0 28px rgba(34,211,238,0.55), inset 0 0 18px rgba(34,211,238,0.25);
+    aspect-ratio: 1/1.1;
+    width: 11%;
+    animation: commsPulse 2.4s ease-in-out infinite;
+  }
+  .npc-sprite.comms-terminal::before {
+    content: 'TX'; position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Press Start 2P', monospace; font-size: 22px;
+    color: var(--gold); text-shadow: 0 0 8px var(--gold);
+  }
+  .npc-sprite.comms-terminal::after {
+    content: ''; position: absolute; bottom: 14%; left: 50%;
+    transform: translateX(-50%);
+    width: 8px; height: 12px; background: var(--cyan);
+    box-shadow: 0 0 10px var(--cyan);
+    animation: commsBlink 0.9s steps(1, end) infinite;
+  }
+  @keyframes commsPulse {
+    0%, 100% { box-shadow: 0 0 24px rgba(34,211,238,0.45), inset 0 0 14px rgba(34,211,238,0.20); }
+    50%      { box-shadow: 0 0 36px rgba(34,211,238,0.70), inset 0 0 22px rgba(34,211,238,0.30); }
+  }
+  @keyframes commsBlink { 50% { opacity: 0; } }
   .npc-sprite.near {
     /* Bob the shadow, not the transform, so it composes with face-left mirror */
     animation: npcGlow .9s ease-in-out infinite alternate;
@@ -929,20 +960,37 @@ const CREW_BY_ID = Object.fromEntries(CREW.map(c => [c.id, c]));
 
 // Which crew wander each sector interior — drives the always-on motion
 // that gives the room its "office full of agents" feel (per Pixel Agents).
-// Supporting cast — the lead NPC at each sector is set in SECTORS[].npc,
-// these are the other crew who hang out / pace the room. Kept as ONE
-// extra wanderer per sector to avoid clutter; lead crew never appears
-// as their own wanderer (they're already the desk NPC).
+// Only the office trio (Mack, Cat, Mel) wander rooms physically. Field
+// ops (Diego, AJ, Pavanjot) are out on jobs - they show up as comms
+// TERMINALS instead of standing sprites. Darcy isn't in the office
+// cast either.
 const CREW_PER_SECTOR = {
-  HQ:         ['cat'],         // Cat (EA) drops by to brief
-  SALES:      ['darcy'],       // Darcy on the floor
-  MARKETING:  ['mackenzie'],   // Mac checks creative
-  FINANCE:    ['mackenzie'],   // Mac reviews numbers
-  PRODUCTION: ['pavanjot'],    // Pavanjot on the bench
-  SERVICE:    ['pavanjot'],    // Pavanjot helps repairs
-  CUSTOMER:   ['darcy'],       // Darcy handles inbound
-  ADMIN:      ['melodie'],     // Mel cross-checks
-  MATERIALS:  ['diego']        // Diego pulls stock
+  HQ:         ['cat'],
+  SALES:      ['cat'],
+  MARKETING:  ['mackenzie'],
+  FINANCE:    ['mackenzie'],
+  CUSTOMER:   ['cat'],
+  ADMIN:      ['melodie'],
+  PRODUCTION: [],    // field ops - rendered as a comms terminal
+  SERVICE:    [],
+  MATERIALS:  []
+};
+
+// Sectors where the lead NPC is in the field, not at a desk. These get
+// a glowing comms-terminal in the NPC slot instead of a character sprite.
+// Approaching the terminal lets the player text or email the field crew.
+const FIELD_SECTORS = new Set(['PRODUCTION', 'SERVICE', 'MATERIALS']);
+
+// Crew contact directory. Configure here; the comms terminal renders
+// SMS + email buttons that defer to tel:/mailto: handlers on the
+// player's device. Leave a field empty to grey out that channel.
+// TODO: move to tenant_settings so Mac doesn't have to redeploy to
+// update a phone number (per [[prefer-customizable-config]]).
+const CREW_CONTACTS = {
+  DIEGO:    { name: 'Diego',    sms: '', email: '' },
+  AJ:       { name: 'AJ',       sms: '', email: 'arielle@plusultraroofing.com' },
+  PAVANJOT: { name: 'Pavanjot', sms: '', email: '' },
+  DARCY:    { name: 'Darcy',    sms: '', email: '' }
 };
 
 // ═════ State ═════
@@ -1888,21 +1936,28 @@ function renderInterior() {
   // CSS keeps them below the player avatar even on overlap.
   renderWanderers(room);
 
-  // NPC sprite (positioned absolutely via %)
+  // NPC / comms-terminal at the back of the room. Field-ops sectors
+  // (Production, Service, Materials) render a glowing comms terminal
+  // instead of a character sprite - those crew members are out on
+  // jobs, you reach them via SMS or email through the terminal.
   const accent = NPC_ACCENT[sec.npc] || '#fde047';
+  const isField = FIELD_SECTORS.has(sec.id);
   const npc = el('div', {
-    class: 'npc-sprite',
+    class: 'npc-sprite' + (isField ? ' comms-terminal' : ''),
     id: 'npcSprite',
-    style: {
-      left: intr.npcX + '%',
-      top:  intr.npcY + '%',
-      backgroundImage: `url('${NPC_PORTRAIT(sec.npc)}')`,
-      borderColor: accent,
-      boxShadow: `0 0 24px ${accent}55`
-    },
-    onclick: () => { if (state.dialogue) return; sfxConfirm(); openNpcDialogueTree(sec); }
+    // Skip inline backgroundImage when isField so the .comms-terminal CSS
+    // gradient/scanline isn't overridden by higher-specificity inline style.
+    style: Object.assign(
+      { left: intr.npcX + '%', top: intr.npcY + '%', borderColor: accent, boxShadow: `0 0 24px ${accent}55` },
+      isField ? {} : { backgroundImage: `url('${NPC_PORTRAIT(sec.npc)}')` }
+    ),
+    onclick: () => {
+      if (state.dialogue) return;
+      sfxConfirm();
+      if (isField) openCommsDialog(sec); else openNpcDialogueTree(sec);
+    }
   }, [
-    el('div', { class: 'npc-nameplate', text: sec.npc, style: { color: accent, borderColor: accent } })
+    el('div', { class: 'npc-nameplate', text: isField ? ('MESSAGE ' + sec.npc) : sec.npc, style: { color: accent, borderColor: accent } })
   ]);
   room.appendChild(npc);
 
@@ -1928,12 +1983,16 @@ function renderInterior() {
   });
   room.appendChild(av);
 
-  // Auto-talk on first entry per sector (preserved from prior version)
+  // Auto-talk on first entry per sector. Field sectors skip the auto-talk
+  // since there's no one in the room - the player can walk up to the comms
+  // terminal and message the field crew when they want to, not on entry.
   if (state._autoTalkTimer) { clearTimeout(state._autoTalkTimer); state._autoTalkTimer = null; }
   if (!state.save.spoken_to.includes(sec.id)) {
     state.save.spoken_to.push(sec.id);
     persistSave();
-    state._autoTalkTimer = setTimeout(() => { state._autoTalkTimer = null; openNpcDialogueTree(sec); }, 450);
+    if (!FIELD_SECTORS.has(sec.id)) {
+      state._autoTalkTimer = setTimeout(() => { state._autoTalkTimer = null; openNpcDialogueTree(sec); }, 450);
+    }
   }
 }
 
@@ -1979,7 +2038,13 @@ function updateInterior(dtMs) {
   const dd = intr.playerY - DOOR_ZONE_TOP;
 
   let target = null, label = '', tx = 0, ty = 0;
-  if (dn < NPC_INTERACT_R) { target = 'npc';   label = `PRESS [SPACE] TO TALK · ${intr.sec.npc}`; tx = intr.npcX; ty = intr.npcY - 11; }
+  if (dn < NPC_INTERACT_R) {
+    target = 'npc';
+    label = FIELD_SECTORS.has(intr.sec.id)
+      ? `PRESS [SPACE] TO MESSAGE ${intr.sec.npc}`
+      : `PRESS [SPACE] TO TALK · ${intr.sec.npc}`;
+    tx = intr.npcX; ty = intr.npcY - 11;
+  }
   else if (dt < TERM_INTERACT_R) { target = 'terminal'; label = 'PRESS [SPACE] TO READ TERMINAL'; tx = intr.termX; ty = intr.termY - 8; }
   else if (dd > -2) { target = 'door'; label = 'PRESS [SPACE] OR WALK DOWN TO EXIT'; tx = 50; ty = DOOR_ZONE_TOP - 4; }
 
@@ -2256,6 +2321,39 @@ function bottleneckAssignee() {
   return who ? `${who} has the heaviest load (${max} tickets).` : 'No assignee breakdown in current snapshot.';
 }
 
+// Field-ops comms terminal dialog. Renders a dialogue with SMS / Email
+// choices that defer to the device's tel: and mailto: handlers - no
+// server-side messaging API required. Greys out a channel when the
+// crew member's contact field is empty so Mac can see what to fill in.
+function openCommsDialog(sec) {
+  const c = CREW_CONTACTS[sec.npc] || { name: sec.npc, sms: '', email: '' };
+  const accent = NPC_ACCENT[sec.npc] || '#22d3ee';
+  // Only render the channels that are configured. A footer note flags any
+  // missing channel so Mac knows to fill CREW_CONTACTS - the disabled rows
+  // can't be presented as 'reply' choices because the generic reply path
+  // would rebuild choices from buildDialogueChoices() and kick the player
+  // out of the comms dialog into the unrelated sector NPC tree.
+  const missing = [];
+  if (!c.sms) missing.push('SMS number');
+  if (!c.email) missing.push('email');
+  const footer = missing.length ? `\n\n(${missing.join(' and ')} not configured for ${c.name} - update CREW_CONTACTS in game.html.)` : '';
+  const body = `${c.name} is in the field. Reach them by SMS or email - the message opens in your device's default app.` + footer;
+  const choices = [];
+  if (c.sms)   choices.push({ label: `Text ${c.name} (${c.sms})`,    kind: 'href', href: 'sms:' + c.sms });
+  if (c.email) choices.push({ label: `Email ${c.name} (${c.email})`, kind: 'href', href: 'mailto:' + c.email });
+  choices.push({ label: 'Leave', kind: 'leave', danger: true });
+  openDialogue({
+    speaker: 'COMMS · ' + sec.id,
+    accent,
+    portrait: NPC_PORTRAIT(sec.npc),
+    body,
+    choices,
+    choiceIdx: 0,
+    kind: 'comms',
+    sec
+  });
+}
+
 function openNpcDialogueTree(sec, options) {
   const speaker = sec.npc;
   const body = (options && options.body) || godLine(sec);
@@ -2273,7 +2371,10 @@ function openNpcDialogueTree(sec, options) {
 }
 
 // Legacy single-line talk (kept so existing code paths still work)
-function talkToNpc(sec) { openNpcDialogueTree(sec); }
+function talkToNpc(sec) {
+  if (FIELD_SECTORS.has(sec.id)) openCommsDialog(sec);
+  else openNpcDialogueTree(sec);
+}
 function openDialogue(d) {
   state.dialogue = Object.assign({ revealed: 0, choiceIdx: 0 }, d);
   $('dialogue').classList.add('open');
@@ -2756,7 +2857,7 @@ function handleAction() {
   } else if (state.view === 'SECTOR') {
     const intr = state.interior;
     if (!intr) return;
-    if (state.nearTarget === 'npc') { sfxConfirm(); openNpcDialogueTree(intr.sec); }
+    if (state.nearTarget === 'npc') { sfxConfirm(); talkToNpc(intr.sec); }
     else if (state.nearTarget === 'terminal') { sfxOpen(); openSectorTerminalModal(intr.sec); }
     else if (state.nearTarget === 'door') { sfxClose(); exitToOverworld(); }
   }
