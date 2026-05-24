@@ -47,6 +47,26 @@ async function handler(req, res) {
   if (!scheduledAt) return res.status(400).json({ error: 'scheduledAt required (ISO 8601)' });
   if (!Array.isArray(posts) || !posts.length) return res.status(400).json({ error: 'posts[] required' });
 
+  // Bug-sweep S5 (2026-04-24): cap posts[] length and validate each
+  // ghl_account_id format before any DB / GHL work. Without these guards,
+  // a malicious or buggy caller could fan out arbitrarily many GHL post
+  // attempts in one request (e.g. exhaust the location's posting quota,
+  // burn function-seconds, or inject malformed account IDs that hit the
+  // brand_accounts query unsanitized). 50 is well above any legitimate
+  // single-clip fan-out (one post per brand-account, typical 5-10).
+  const MAX_POSTS = 50;
+  if (posts.length > MAX_POSTS) {
+    return res.status(400).json({ error: `posts[] cannot exceed ${MAX_POSTS} entries (got ${posts.length})` });
+  }
+  const ACCOUNT_ID_RE = /^[a-zA-Z0-9_-]{1,80}$/;
+  const malformed = posts.filter(p => typeof p?.ghl_account_id !== 'string' || !ACCOUNT_ID_RE.test(p.ghl_account_id));
+  if (malformed.length) {
+    return res.status(400).json({
+      error: 'Invalid ghl_account_id format (expected alphanumeric + underscore + dash, 1-80 chars)',
+      invalid_count: malformed.length,
+    });
+  }
+
   // Validate scheduleAt is in the future (GHL rejects past times)
   if (new Date(scheduledAt).getTime() <= Date.now() + 30_000) {
     return res.status(400).json({ error: 'scheduledAt must be at least 30 seconds in the future' });
