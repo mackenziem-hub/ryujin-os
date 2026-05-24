@@ -1572,6 +1572,11 @@ function enterSector() {
   const sec = SECTORS[state.focusedSector];
   if (!sec) return;
   sfxOpen();
+  // Any in-flight overworld step is abandoned; snap to current position
+  // so exit doesn't teleport the player to a stale tile target.
+  state.player.stepEndsAt = 0;
+  state.player.targetX = state.player.x;
+  state.player.targetY = state.player.y;
   // Remember overworld position so we can spawn there on exit
   state.worldReturn = { x: state.player.x, y: state.player.y };
   state.interior = {
@@ -1758,6 +1763,11 @@ function exitToOverworld() {
   }
   state.player.x = clamp(nx, 3, 97);
   state.player.y = clamp(ny, 5, 95);
+  // Re-sync the tile-step target to the new spawn so the next tick
+  // doesn't lerp from a stale target into the spawn cell.
+  state.player.targetX = state.player.x;
+  state.player.targetY = state.player.y;
+  state.player.stepEndsAt = 0;
   hideInteractPrompt();
   state.nearBuilding = null;
   sfxClose();
