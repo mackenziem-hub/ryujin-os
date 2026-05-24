@@ -299,6 +299,46 @@
      a live data event (revenue signed, deal added, ticket overdue) spawns
      a floating value above the relevant NPC sprite and pulses the building
      tile on the overworld. */
+  /* Wandering crew NPCs — give each sector interior the always-on motion
+     of Pixel Agents. 32x32 circular portrait, name label, smooth motion
+     via left/top % transitions, and a hue-rotate to differentiate. */
+  .crew-wanderer {
+    position: absolute; width: 44px; height: 44px;
+    transform: translate(-50%, -100%);
+    background-size: cover; background-position: center top;
+    border-radius: 50%;
+    border: 2px solid rgba(34,211,238,0.55);
+    box-shadow: 0 2px 0 rgba(0,0,0,0.45), 0 0 10px rgba(34,211,238,0.25);
+    transition: left 0.18s linear, top 0.18s linear;
+    z-index: 8;
+    animation: crewBob 1.8s ease-in-out infinite;
+    image-rendering: pixelated;
+  }
+  .crew-wanderer.face-left { transform: translate(-50%, -100%) scaleX(-1); }
+  .crew-wanderer.face-left .wander-nameplate { transform: translateX(-50%) scaleX(-1); }
+  .wander-nameplate {
+    position: absolute; bottom: -16px; left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Press Start 2P', monospace; font-size: 6px;
+    letter-spacing: 1px; white-space: nowrap;
+    color: var(--fg); background: rgba(6,10,20,0.85);
+    padding: 2px 6px; border: 1px solid rgba(34,211,238,0.35);
+    text-shadow: 1px 1px 0 #000;
+  }
+  @keyframes crewBob { 50% { transform: translate(-50%, -103%); } }
+  .crew-wanderer.face-left { animation: crewBobFlip 1.8s ease-in-out infinite; }
+  @keyframes crewBobFlip { 50% { transform: translate(-50%, -103%) scaleX(-1); } }
+
+  /* Idle "breathing" on the central god so the room never feels frozen.
+     Animates filter brightness only, which composes with the inline
+     box-shadow accent glow set per-sector in renderInterior — so the
+     per-sector cyan/gold/magenta accent is preserved. */
+  .npc-sprite { animation: npcBreathe 3.2s ease-in-out infinite; }
+  @keyframes npcBreathe {
+    0%, 100% { filter: brightness(1.0); }
+    50%      { filter: brightness(1.15); }
+  }
+
   /* Floating pop is anchored to #sectorRoom at the NPC's %-coords (NOT a
      child of .npc-sprite) so it never inherits the face-left scaleX(-1)
      mirror — otherwise the text would render backwards. */
@@ -856,6 +896,20 @@ const CREW = [
   { id:'pavanjot',  name:'PAVANJOT',  img:'/assets/rpg/portraits/crew/pavanjot.webp' },
   { id:'melodie',   name:'MELODIE',   img:'/assets/rpg/portraits/crew/melodie.webp' }
 ];
+const CREW_BY_ID = Object.fromEntries(CREW.map(c => [c.id, c]));
+
+// Which crew wander each sector interior — drives the always-on motion
+// that gives the room its "office full of agents" feel (per Pixel Agents).
+const CREW_PER_SECTOR = {
+  HQ:         ['mackenzie', 'cat'],
+  SALES:      ['cat', 'mackenzie'],
+  MARKETING:  ['cat', 'darcy'],
+  FINANCE:    ['melodie', 'mackenzie'],
+  PRODUCTION: ['diego', 'pavanjot'],
+  SERVICE:    ['aj', 'pavanjot'],
+  CUSTOMER:   ['darcy', 'melodie'],
+  ADMIN:      ['cat', 'melodie']
+};
 
 // ═════ State ═════
 const state = {
@@ -1468,6 +1522,81 @@ function refreshInteriorHud() {
   if (t) t.textContent = sectorHeadline(intr.sec.id) || '--';
 }
 
+// ═════ Wandering crew NPCs (constant motion = Pixel Agents feel) ═════
+// Each sector gets 1-3 crew members who pace random targets inside the
+// room. Slow speed + occasional pause keeps it ambient, not hectic.
+const WANDERER_SPEED_PCT_PER_MS = 0.012;
+function pickWanderTarget() {
+  // Keep wanderers in the open band between NPC (top) and door (bottom),
+  // avoiding the terminal corner so they don't visually overlap the desk.
+  const tx = 18 + Math.random() * 64;   // 18..82
+  const ty = 50 + Math.random() * 28;   // 50..78
+  return { tx, ty };
+}
+function initWanderers(sec) {
+  const roster = CREW_PER_SECTOR[sec.id] || [];
+  return roster.map((id, i) => {
+    const c = CREW_BY_ID[id]; if (!c) return null;
+    const spawn = pickWanderTarget();
+    return {
+      id, name: c.name, img: c.img,
+      x: spawn.tx, y: spawn.ty,
+      tx: spawn.tx, ty: spawn.ty,
+      pauseUntil: performance.now() + 300 + i * 200,
+      facingDir: 'down',
+      hue: (i * 137) % 360   // hue-rotate spread, Pixel Agents palette trick
+    };
+  }).filter(Boolean);
+}
+function tickWanderers(dtMs) {
+  const intr = state.interior; if (!intr || !intr.wanderers) return;
+  const now = performance.now();
+  intr.wanderers.forEach(w => {
+    if (now < w.pauseUntil) return;
+    const dx = w.tx - w.x, dy = w.ty - w.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 0.5) {
+      // Arrived — pause briefly, then pick a new target
+      const next = pickWanderTarget();
+      w.tx = next.tx; w.ty = next.ty;
+      w.pauseUntil = now + 600 + Math.random() * 1200;
+      return;
+    }
+    const step = WANDERER_SPEED_PCT_PER_MS * dtMs;
+    const nx = w.x + (dx / dist) * step;
+    const ny = w.y + (dy / dist) * step;
+    w.x = nx; w.y = ny;
+    const absx = Math.abs(dx), absy = Math.abs(dy);
+    w.facingDir = (absy >= absx) ? (dy < 0 ? 'up' : 'down') : (dx < 0 ? 'left' : 'right');
+    const node = document.getElementById('wander-' + w.id);
+    if (node) {
+      node.style.left = w.x + '%';
+      node.style.top  = w.y + '%';
+      node.classList.toggle('face-left', w.facingDir === 'left');
+    }
+  });
+}
+function renderWanderers(room) {
+  const intr = state.interior; if (!intr) return;
+  intr.wanderers = initWanderers(intr.sec);
+  intr.wanderers.forEach(w => {
+    const node = el('div', {
+      class: 'crew-wanderer',
+      id: 'wander-' + w.id,
+      title: w.name,
+      style: {
+        left: w.x + '%',
+        top:  w.y + '%',
+        backgroundImage: `url('${w.img}')`,
+        filter: `hue-rotate(${w.hue}deg)`
+      }
+    }, [
+      el('div', { class: 'wander-nameplate', text: w.name })
+    ]);
+    room.appendChild(node);
+  });
+}
+
 function renderWorld() {
   const world = $('mapWorld');
   world.textContent = '';
@@ -1689,7 +1818,11 @@ function renderInterior() {
   refreshInteriorHud();
 
   // Tear down old interior interactables (re-rendered each enter)
-  room.querySelectorAll('.npc-sprite, .terminal-zone, .door-zone, .player-avatar, .interact-prompt').forEach(n => n.remove());
+  room.querySelectorAll('.npc-sprite, .terminal-zone, .door-zone, .player-avatar, .interact-prompt, .crew-wanderer, .sprite-pop').forEach(n => n.remove());
+
+  // Spawn the wandering crew so they fill the room ambiently. z-index in
+  // CSS keeps them below the player avatar even on overlap.
+  renderWanderers(room);
 
   // NPC sprite (positioned absolutely via %)
   const accent = NPC_ACCENT[sec.npc] || '#fde047';
@@ -1742,6 +1875,7 @@ function renderInterior() {
 
 function updateInterior(dtMs) {
   const intr = state.interior; if (!intr) return;
+  tickWanderers(dtMs);
   let vx = 0, vy = 0;
   if (state.input.left)  vx -= 1;
   if (state.input.right) vx += 1;
