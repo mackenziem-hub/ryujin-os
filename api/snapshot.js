@@ -12,44 +12,67 @@ import { supabaseAdmin } from '../lib/supabase.js';
 const SNAPSHOT_BLOB_KEY = 'ryujin-snapshot.json';
 const LEGACY_SNAPSHOT_BLOB_KEY = 'shenron-snapshot.json';
 
-// Compute ticket stats directly from the Ryujin tickets table. Replaces the
-// old Action Board (Replit) fetch path post-2026-05-11 migration. Returns
-// the same shape the snapshot consumer expected from the Action Board API.
+// Compute "tickets" stats from the WORKORDERS table (the real source of
+// truth for active jobs). The legacy `tickets` table went dormant in May
+// 2026 -- the cockpit was showing 35 abandoned April checklist items as
+// "overdue." Per project_job_folders_source_of_truth, job state derives
+// from workorders + job_folders, not tickets. This function keeps the
+// same return shape (sections.tickets.*) so dashboard-v2, briefing top3,
+// and command-center workspace drawer all read fresh data without UI changes.
+//
+// Field mapping:
+//   workorders.completed_at IS NULL  -> still active
+//   workorders.start_date < today (and not completed) -> overdue
+//   workorders.status   -> byStatus key ("complete" renamed to "done"
+//                                        so the legacy enum stays intact)
+//   workorders.sub_crew_lead -> byAssignee key (Unassigned when null)
 async function nativeTicketStats() {
   try {
     const { data: tenant } = await supabaseAdmin.from('tenants').select('id').eq('slug', 'plus-ultra').maybeSingle();
     if (!tenant) return null;
     const { data: rows } = await supabaseAdmin
-      .from('tickets')
-      .select('id, title, status, priority, assigned_to, due_date, completed_at, created_at, updated_at, tags, assigned_user:users!tickets_assigned_to_fkey(name)')
+      .from('workorders')
+      .select('id, wo_number, customer_name, address, status, start_date, completed_at, sub_crew_lead, job_type, created_at')
       .eq('tenant_id', tenant.id)
-      .order('created_at', { ascending: false })
+      .order('start_date', { ascending: false, nullsFirst: false })
       .limit(500);
     if (!rows) return null;
-    const open = ['open', 'active', 'in_progress', 'blocked'];
+
     const byStatus = {};
     const byAssignee = {};
     let overdueCount = 0;
     const now = new Date();
     const activeToday = [];
-    for (const t of rows) {
-      const s = (t.status || 'open').toLowerCase();
+
+    for (const w of rows) {
+      // Normalize status: workorders use 'complete', the consumer enum expects 'done'
+      const rawStatus = (w.status || 'open').toLowerCase();
+      const s = rawStatus === 'complete' ? 'done' : rawStatus;
       byStatus[s] = (byStatus[s] || 0) + 1;
-      const owner = t.assigned_user?.name || 'Unassigned';
+
+      const owner = w.sub_crew_lead || 'Unassigned';
       byAssignee[owner] = (byAssignee[owner] || 0) + 1;
-      if (open.includes(s) && t.due_date && new Date(t.due_date) < now) overdueCount++;
-      if (open.includes(s)) {
+
+      const isActive = !w.completed_at;
+      if (isActive && w.start_date && new Date(w.start_date) < now) overdueCount++;
+
+      if (isActive) {
+        const title = w.customer_name
+          ? `${w.customer_name} (${w.address || `WO-${w.wo_number}`})`
+          : (w.address || `WO-${w.wo_number}`);
         activeToday.push({
-          id: t.id,
-          title: t.title,
-          status: t.status,
-          priority: t.priority,
+          id: w.id,
+          title,
+          status: s,
+          priority: null,
           assignee: owner,
-          due_date: t.due_date,
-          days_overdue: t.due_date ? Math.max(0, Math.floor((now - new Date(t.due_date)) / 86400000)) : null
+          due_date: w.start_date,
+          days_overdue: w.start_date ? Math.max(0, Math.floor((now - new Date(w.start_date)) / 86400000)) : null,
+          wo_number: w.wo_number
         });
       }
     }
+
     return {
       stats: {
         totalTickets: rows.length,
@@ -60,7 +83,7 @@ async function nativeTicketStats() {
       }
     };
   } catch (e) {
-    console.warn('[snapshot] nativeTicketStats failed:', e.message);
+    console.warn('[snapshot] nativeTicketStats (workorder rollup) failed:', e.message);
     return null;
   }
 }

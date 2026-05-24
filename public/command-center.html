@@ -1912,15 +1912,32 @@ if(window.__RY_8BIT__){var _v=document.getElementById('sentinel-video');if(_v){_
     list.innerHTML = '<div class="ws-loading">Loading tasks…</div>';
     try {
       await loadMe();
+      // Tasks tab feeds from WORKORDERS now (the dormant tickets table was
+      // surfacing 35 stale April checklist items as "overdue" per
+      // project_job_folders_source_of_truth). Workorder = real active job.
       const token = localStorage.getItem('ryujin_token');
-      const params = new URLSearchParams({ status: 'open', limit: '50' });
-      if (me.user_id) params.set('assigned_to', me.user_id);
-      const r = await fetch('/api/tickets?' + params.toString(), {
+      const r = await fetch('/api/workorders?limit=100', {
         headers: Object.assign({ 'x-tenant-id': 'plus-ultra' }, token ? { 'Authorization': 'Bearer ' + token } : {})
       });
-      if (!r.ok) throw new Error('Tickets fetch failed: ' + r.status);
+      if (!r.ok) throw new Error('Workorders fetch failed: ' + r.status);
       const data = await r.json();
-      const tickets = Array.isArray(data) ? data : (data.tickets || data.data || []);
+      const wos = Array.isArray(data) ? data : (data.workorders || data.data || []);
+      // Active jobs only; if this user has a name, soft-match against sub_crew_lead.
+      const myToken = (me.name || '').split(' ')[0].toLowerCase();
+      const isPrivileged = me.is_admin || me.role === 'owner' || me.role === 'admin';
+      const tickets = wos
+        .filter(w => !w.completed_at && (w.status || '').toLowerCase() !== 'cancelled')
+        .filter(w => isPrivileged || !myToken || (w.sub_crew_lead || '').toLowerCase().includes(myToken))
+        .map(w => ({
+          id: w.id,
+          title: w.customer_name
+            ? (w.customer_name + ' (' + (w.address || ('WO-' + w.wo_number)) + ')')
+            : (w.address || ('WO-' + w.wo_number)),
+          status: w.status,
+          priority: null,
+          due_date: w.start_date,
+          assignee: w.sub_crew_lead || 'Unassigned'
+        }));
       const today = new Date(); today.setHours(0,0,0,0);
       const sorted = tickets.slice().sort((a,b) => {
         const ad = a.due_date ? new Date(a.due_date).getTime() : Infinity;
