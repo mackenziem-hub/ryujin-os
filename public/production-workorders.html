@@ -279,8 +279,48 @@ function cancelEditWo(){
 
 const numOrZero = v => { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : 0; };
 
+// Bug-sweep #10 / feedback_measurements_persist extended (2026-05-24):
+// numOrZero above silently coerces 'abc', '12 sq', etc. → 0. For LF
+// measurements this is the 95 Cornhill 1-roll-of-I&W bug class — the
+// downstream material list (production-materials.html) orders zero drip
+// edge / starter / I&W for an eaves_lf=0 workorder. Validate raw inputs
+// at save time; empty is fine (means optional / default 0), but non-empty
+// non-numeric MUST throw.
+function validateWoFieldsBeforeSave(){
+  const fields = [
+    { key: 'eaves_lf',                label: 'Eaves (LF)' },
+    { key: 'rakes_lf',                label: 'Rakes (LF)' },
+    { key: 'ridges_lf',               label: 'Ridges (LF)' },
+    { key: 'hips_lf',                 label: 'Hips (LF)' },
+    { key: 'valleys_lf',              label: 'Valleys (LF)' },
+    { key: 'walls_lf',                label: 'Walls (LF)' },
+    { key: 'pipes',                   label: 'Pipes' },
+    { key: 'vents',                   label: 'Vents' },
+    { key: 'chimneys',                label: 'Chimneys' },
+    { key: 'osb_sheets',              label: 'OSB sheets' },
+    { key: 'total_sq',                label: 'Total SQ' },
+    { key: 'layers_to_remove',        label: 'Layers to remove' },
+    { key: 'estimated_duration_days', label: 'Duration (days)' },
+  ];
+  for (const f of fields) {
+    const raw = WO_EDIT[f.key];
+    if (raw == null) continue;
+    if (typeof raw === 'number' && Number.isFinite(raw)) continue;
+    if (typeof raw === 'string') {
+      const trimmed = raw.trim();
+      if (trimmed === '') continue; // empty = optional
+      if (!Number.isFinite(Number(trimmed))) {
+        return { ok: false, error: `${f.label} must be a number. Got: "${trimmed}"` };
+      }
+    }
+  }
+  return { ok: true };
+}
+
 async function saveEditWo(){
   if (!WO_EDIT) return;
+  const v = validateWoFieldsBeforeSave();
+  if (!v.ok) { alert(`Save blocked: ${v.error}`); return; }
   const body = {
     id: WO_EDIT.id,
     customer_name: WO_EDIT.customer_name,
