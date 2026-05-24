@@ -86,9 +86,13 @@ export default async function handler(req, res) {
   const tenantSlug = req.query.tenant;
 
   // Find candidates: status='scheduled', scheduled_at in the past, has ghl_post_id
+  // clip_id IS selected so the propagation pass below can recompute parent
+  // marketing_clips.status from the children. The pre-2026-05-24 version of
+  // this query omitted clip_id, which silently no-op'd the entire clip
+  // propagation loop — caught while fixing the stranded-draft sweep.
   let q = supabaseAdmin
     .from('scheduled_posts')
-    .select('id, tenant_id, ghl_post_id, status, scheduled_at, platform, brand_id')
+    .select('id, tenant_id, clip_id, ghl_post_id, status, scheduled_at, platform, brand_id')
     .eq('status', 'scheduled')
     .not('ghl_post_id', 'is', null)
     .lt('scheduled_at', new Date().toISOString())
@@ -105,10 +109,26 @@ export default async function handler(req, res) {
   const { data: candidates, error: qErr } = await q;
   if (qErr) return res.status(500).json({ error: 'Candidate query failed: ' + qErr.message });
 
+  // Stranded-draft sweep — must run UNCONDITIONALLY (extracted to its own
+  // helper) because the common case of "the only problem is an orphaned
+  // draft with no overdue scheduled candidates" would otherwise skip the
+  // cleanup via the early-return below. Codex round-1 P2 catch.
+  // Returns { counts, touchedClipIds } so we can recompute parent clip
+  // status for any clips whose stranded draft just got marked failed.
+  const stranded = await sweepStrandedDrafts({ tenantSlug, dryRun });
+
   if (!candidates || candidates.length === 0) {
+    // Codex round-2 P2: even with no scheduled candidates, the stranded
+    // sweep may have flipped scheduled_posts → failed. Recompute parent
+    // clip status for those, or the clip stays stuck on 'scheduled' and
+    // marketing-publish refuses to retry (it only acts on 'ready' clips).
+    const strandedClipProp = await propagateClipStatuses(stranded.touchedClipIds, dryRun);
     return res.json({
       via: auth.via, dryRun, reconciled: 0, posted: 0, failed: 0, cancelled: 0,
-      untouched: 0, errors: 0, items: [], note: 'No overdue scheduled posts to reconcile.'
+      untouched: 0, errors: 0, items: [],
+      stranded_drafts: stranded.counts,
+      clip_propagation: strandedClipProp,
+      note: 'No overdue scheduled posts to reconcile.'
     });
   }
 
@@ -189,53 +209,119 @@ export default async function handler(req, res) {
   const reconciled = counts.posted + counts.failed + counts.cancelled;
 
   // ── Propagate scheduled_posts aggregates → parent marketing_clips ──
-  // For each clip touched in this run, recompute the aggregate state from ALL
-  // its scheduled_posts rows and update marketing_clips.status accordingly:
-  //   • all linked posts in {posted,cancelled} and at least one posted → clip 'posted'
-  //   • any linked post 'failed' AND no remaining 'scheduled'/'posting'   → clip 'failed'
-  //   • otherwise leave alone (still in flight)
-  const clipPropagation = { posted: 0, failed: 0, untouched: 0 };
-  if (!dryRun) {
-    const clipIds = [...new Set(
-      candidates.map((r) => r.clip_id).filter(Boolean)
-    )];
-    for (const clipId of clipIds) {
-      const { data: rows } = await supabaseAdmin
-        .from('scheduled_posts')
-        .select('status, posted_at')
-        .eq('clip_id', clipId);
-      if (!rows || !rows.length) { clipPropagation.untouched++; continue; }
-
-      const stats = rows.reduce((a, r) => {
-        a[r.status] = (a[r.status] || 0) + 1;
-        if (r.posted_at && (!a.lastPostedAt || r.posted_at > a.lastPostedAt)) {
-          a.lastPostedAt = r.posted_at;
-        }
-        return a;
-      }, {});
-      const inFlight = (stats.scheduled || 0) + (stats.posting || 0) + (stats.draft || 0);
-
-      if ((stats.posted || 0) > 0 && inFlight === 0) {
-        await supabaseAdmin.from('marketing_clips').update({
-          status: 'posted',
-          posted_at: stats.lastPostedAt || new Date().toISOString(),
-        }).eq('id', clipId);
-        clipPropagation.posted++;
-      } else if ((stats.failed || 0) > 0 && inFlight === 0 && !(stats.posted > 0)) {
-        await supabaseAdmin.from('marketing_clips').update({
-          status: 'failed',
-          error_message: `${stats.failed} scheduled_posts failed — see scheduled_posts.error_msg`,
-        }).eq('id', clipId);
-        clipPropagation.failed++;
-      } else {
-        clipPropagation.untouched++;
-      }
-    }
-  }
+  // Includes clip_ids from BOTH the scheduled-candidates loop AND the
+  // stranded-draft sweep, so a stranded-only run still updates the parent.
+  const clipIdsToPropagate = [...new Set([
+    ...candidates.map((r) => r.clip_id).filter(Boolean),
+    ...stranded.touchedClipIds,
+  ])];
+  const clipPropagation = await propagateClipStatuses(clipIdsToPropagate, dryRun);
 
   return res.json({
     via: auth.via, dryRun, candidates: candidates.length,
     reconciled, ...counts, items,
     clip_propagation: clipPropagation,
+    stranded_drafts: stranded.counts,
   });
+}
+
+// Recompute parent marketing_clips.status for each clip_id from the
+// aggregate state of its scheduled_posts rows:
+//   • all linked posts in {posted, cancelled} and at least one posted → clip 'posted'
+//   • any linked post 'failed' AND no remaining 'scheduled'/'posting'/'draft' → clip 'failed'
+//   • otherwise leave alone (still in flight)
+// Pre-2026-05-24 this lived inline inside the main handler with a typo
+// (read clip_id from a select that didn't include it) so it was a silent
+// no-op. Extracted + fixed during the C4 stranded-draft work.
+async function propagateClipStatuses(clipIds, dryRun) {
+  const out = { posted: 0, failed: 0, untouched: 0 };
+  if (dryRun || !Array.isArray(clipIds) || clipIds.length === 0) return out;
+  for (const clipId of clipIds) {
+    const { data: rows } = await supabaseAdmin
+      .from('scheduled_posts')
+      .select('status, posted_at')
+      .eq('clip_id', clipId);
+    if (!rows || !rows.length) { out.untouched++; continue; }
+
+    const stats = rows.reduce((a, r) => {
+      a[r.status] = (a[r.status] || 0) + 1;
+      if (r.posted_at && (!a.lastPostedAt || r.posted_at > a.lastPostedAt)) {
+        a.lastPostedAt = r.posted_at;
+      }
+      return a;
+    }, {});
+    const inFlight = (stats.scheduled || 0) + (stats.posting || 0) + (stats.draft || 0);
+
+    if ((stats.posted || 0) > 0 && inFlight === 0) {
+      await supabaseAdmin.from('marketing_clips').update({
+        status: 'posted',
+        posted_at: stats.lastPostedAt || new Date().toISOString(),
+      }).eq('id', clipId);
+      out.posted++;
+    } else if ((stats.failed || 0) > 0 && inFlight === 0 && !(stats.posted > 0)) {
+      await supabaseAdmin.from('marketing_clips').update({
+        status: 'failed',
+        error_message: `${stats.failed} scheduled_posts failed — see scheduled_posts.error_msg`,
+      }).eq('id', clipId);
+      out.failed++;
+    } else {
+      out.untouched++;
+    }
+  }
+  return out;
+}
+
+// Bug-sweep C4 (2026-04-24): /api/schedule-clip inserts a draft row, then
+// calls GHL, then updates to 'scheduled'/'failed'. If the serverless
+// invocation crashes or times out between the insert and the GHL response,
+// the row stays status='draft' with no ghl_post_id forever — no cron picks
+// it up because the main reconcile loop only looks at status='scheduled'.
+// This helper runs UNCONDITIONALLY at the top of every reconcile invocation
+// (cron-driven every 15 min per vercel.json) so stranded drafts get cleaned
+// up even when there are zero scheduled candidates.
+//
+// Also surfaces touchedClipIds so the caller can propagate the failure to
+// the parent marketing_clips row (otherwise the clip stays stuck on
+// 'scheduled' and marketing-publish won't retry).
+//
+// 10 min cutoff = generous (typical GHL call is <2s); anything older is
+// genuinely stranded, not in-flight. Cap at 100 per run.
+async function sweepStrandedDrafts({ tenantSlug, dryRun }) {
+  const STRANDED_DRAFT_CUTOFF_MIN = 10;
+  const out = { counts: { found: 0, marked_failed: 0, errors: 0 }, touchedClipIds: [] };
+  if (dryRun) return out;
+  try {
+    const cutoff = new Date(Date.now() - STRANDED_DRAFT_CUTOFF_MIN * 60_000).toISOString();
+    let q = supabaseAdmin
+      .from('scheduled_posts')
+      .select('id, tenant_id, clip_id, created_at')
+      .eq('status', 'draft')
+      .is('ghl_post_id', null)
+      .lt('created_at', cutoff)
+      .limit(100);
+    if (tenantSlug) {
+      const { data: tenant } = await supabaseAdmin
+        .from('tenants').select('id').eq('slug', tenantSlug).single();
+      if (tenant) q = q.eq('tenant_id', tenant.id);
+    }
+    const { data: stranded, error: strandedErr } = await q;
+    if (strandedErr) { out.counts.errors++; return out; }
+    if (!stranded || !stranded.length) return out;
+    out.counts.found = stranded.length;
+    out.touchedClipIds = [...new Set(stranded.map((r) => r.clip_id).filter(Boolean))];
+    const { error: updErr } = await supabaseAdmin
+      .from('scheduled_posts')
+      .update({
+        status: 'failed',
+        error_msg: `Stranded draft: no ghl_post_id ${STRANDED_DRAFT_CUTOFF_MIN}min after insert — process likely crashed between schedule-clip insert and GHL call.`,
+        updated_at: new Date().toISOString(),
+      })
+      .in('id', stranded.map((r) => r.id));
+    if (updErr) out.counts.errors++;
+    else out.counts.marked_failed = stranded.length;
+    return out;
+  } catch (e) {
+    out.counts.errors++;
+    return out;
+  }
 }
