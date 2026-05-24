@@ -189,14 +189,33 @@ function baseUrl(req) {
 
 function kickoffRender(req, tenantSlug, clipId) {
   const url = `${baseUrl(req)}/api/marketing-render?id=${clipId}`;
-  // fire-and-forget — upload handler returns immediately; render runs in its own invocation
-  fetch(url, {
-    method: 'POST',
-    headers: {
-      'x-tenant-id': tenantSlug,
-      'x-internal-key': (process.env.INTERNAL_RENDER_KEY || '').trim(),
-    },
-  }).catch((e) => console.error('[marketing] render kickoff failed', e?.message));
+  const headers = {
+    'x-tenant-id': tenantSlug,
+    'x-internal-key': (process.env.INTERNAL_RENDER_KEY || '').trim(),
+  };
+  // Bug-sweep C3 (2026-04-24): the render kickoff was fire-and-forget with
+  // no retry. A transient network blip on this single fetch left the clip
+  // stuck at status='queued' until the next /api/marketing-publish?next=1
+  // cron sweep (up to 10 min later). Now we do a single delayed retry on
+  // failure so a network blip costs ~3s, not 10 min.
+  // Still fire-and-forget — the upload handler returns immediately and the
+  // render runs in its own invocation. We don't await this.
+  fetch(url, { method: 'POST', headers })
+    .then((r) => {
+      if (r.ok) return;
+      console.error(`[marketing] render kickoff returned ${r.status}, retrying in 3s`);
+      setTimeout(() => {
+        fetch(url, { method: 'POST', headers })
+          .catch((e) => console.error('[marketing] render kickoff retry failed:', e?.message));
+      }, 3000);
+    })
+    .catch((e) => {
+      console.error('[marketing] render kickoff failed:', e?.message, '— retrying in 3s');
+      setTimeout(() => {
+        fetch(url, { method: 'POST', headers })
+          .catch((e2) => console.error('[marketing] render kickoff retry also failed:', e2?.message));
+      }, 3000);
+    });
 }
 
 async function handler(req, res) {
