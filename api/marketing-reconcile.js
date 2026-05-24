@@ -105,10 +105,18 @@ export default async function handler(req, res) {
   const { data: candidates, error: qErr } = await q;
   if (qErr) return res.status(500).json({ error: 'Candidate query failed: ' + qErr.message });
 
+  // Stranded-draft sweep — must run UNCONDITIONALLY (extracted to its own
+  // helper) because the common case of "the only problem is an orphaned
+  // draft with no overdue scheduled candidates" would otherwise skip the
+  // cleanup via the early-return below. Codex round-1 P2 catch.
+  const strandedCounts = await sweepStrandedDrafts({ tenantSlug, dryRun });
+
   if (!candidates || candidates.length === 0) {
     return res.json({
       via: auth.via, dryRun, reconciled: 0, posted: 0, failed: 0, cancelled: 0,
-      untouched: 0, errors: 0, items: [], note: 'No overdue scheduled posts to reconcile.'
+      untouched: 0, errors: 0, items: [],
+      stranded_drafts: strandedCounts,
+      note: 'No overdue scheduled posts to reconcile.'
     });
   }
 
@@ -233,20 +241,32 @@ export default async function handler(req, res) {
     }
   }
 
-  // ── Stranded-draft sweep (bug-sweep C4, 2026-04-24) ──
-  // /api/schedule-clip inserts a draft row, then calls GHL, then updates the
-  // row to 'scheduled' (with ghl_post_id) or 'failed'. If the serverless
-  // invocation crashes or times out between the insert and the GHL response,
-  // the row stays status='draft' with no ghl_post_id forever — no cron picks
-  // it up because the main scheduled→posted reconcile loop only looks at
-  // status='scheduled'. Sweep these here so they don't accumulate.
-  // 10 min cutoff = generous (typical GHL call is <2s); anything older is
-  // genuinely stranded, not in-flight.
+  return res.json({
+    via: auth.via, dryRun, candidates: candidates.length,
+    reconciled, ...counts, items,
+    clip_propagation: clipPropagation,
+    stranded_drafts: strandedCounts,
+  });
+}
+
+// Bug-sweep C4 (2026-04-24): /api/schedule-clip inserts a draft row, then
+// calls GHL, then updates to 'scheduled'/'failed'. If the serverless
+// invocation crashes or times out between the insert and the GHL response,
+// the row stays status='draft' with no ghl_post_id forever — no cron picks
+// it up because the main reconcile loop only looks at status='scheduled'.
+// This helper runs UNCONDITIONALLY at the top of every reconcile invocation
+// (cron-driven every 15 min per vercel.json) so stranded drafts get cleaned
+// up even when there are zero scheduled candidates.
+//
+// 10 min cutoff = generous (typical GHL call is <2s); anything older is
+// genuinely stranded, not in-flight. Cap at 100 per run.
+async function sweepStrandedDrafts({ tenantSlug, dryRun }) {
   const STRANDED_DRAFT_CUTOFF_MIN = 10;
-  const strandedCounts = { found: 0, marked_failed: 0, errors: 0 };
-  if (!dryRun) {
+  const out = { found: 0, marked_failed: 0, errors: 0 };
+  if (dryRun) return out;
+  try {
     const cutoff = new Date(Date.now() - STRANDED_DRAFT_CUTOFF_MIN * 60_000).toISOString();
-    let strandedQuery = supabaseAdmin
+    let q = supabaseAdmin
       .from('scheduled_posts')
       .select('id, tenant_id, created_at')
       .eq('status', 'draft')
@@ -254,33 +274,27 @@ export default async function handler(req, res) {
       .lt('created_at', cutoff)
       .limit(100);
     if (tenantSlug) {
-      // Reuse tenant resolution from the candidates query above
       const { data: tenant } = await supabaseAdmin
         .from('tenants').select('id').eq('slug', tenantSlug).single();
-      if (tenant) strandedQuery = strandedQuery.eq('tenant_id', tenant.id);
+      if (tenant) q = q.eq('tenant_id', tenant.id);
     }
-    const { data: stranded, error: strandedErr } = await strandedQuery;
-    if (strandedErr) {
-      strandedCounts.errors++;
-    } else if (stranded && stranded.length) {
-      strandedCounts.found = stranded.length;
-      const { error: updErr } = await supabaseAdmin
-        .from('scheduled_posts')
-        .update({
-          status: 'failed',
-          error_msg: `Stranded draft: no ghl_post_id ${STRANDED_DRAFT_CUTOFF_MIN}min after insert — process likely crashed between schedule-clip insert and GHL call.`,
-          updated_at: new Date().toISOString(),
-        })
-        .in('id', stranded.map((r) => r.id));
-      if (updErr) strandedCounts.errors++;
-      else strandedCounts.marked_failed = stranded.length;
-    }
+    const { data: stranded, error: strandedErr } = await q;
+    if (strandedErr) { out.errors++; return out; }
+    if (!stranded || !stranded.length) return out;
+    out.found = stranded.length;
+    const { error: updErr } = await supabaseAdmin
+      .from('scheduled_posts')
+      .update({
+        status: 'failed',
+        error_msg: `Stranded draft: no ghl_post_id ${STRANDED_DRAFT_CUTOFF_MIN}min after insert — process likely crashed between schedule-clip insert and GHL call.`,
+        updated_at: new Date().toISOString(),
+      })
+      .in('id', stranded.map((r) => r.id));
+    if (updErr) out.errors++;
+    else out.marked_failed = stranded.length;
+    return out;
+  } catch (e) {
+    out.errors++;
+    return out;
   }
-
-  return res.json({
-    via: auth.via, dryRun, candidates: candidates.length,
-    reconciled, ...counts, items,
-    clip_propagation: clipPropagation,
-    stranded_drafts: strandedCounts,
-  });
 }
