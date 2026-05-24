@@ -18,6 +18,7 @@ import { supabaseAdmin } from '../lib/supabase.js';
 import { requireTenant } from '../lib/tenant.js';
 import { put } from '@vercel/blob';
 import Busboy from 'busboy';
+import sharp from 'sharp';
 import { nextOpenSlotForTenant } from '../lib/scheduling.js';
 
 const MAX_MEDIA_SIZE = 200 * 1024 * 1024; // 200 MB
@@ -249,9 +250,32 @@ async function handler(req, res) {
     if (f.truncated) return res.status(413).json({ error: `File exceeds ${MAX_MEDIA_SIZE / 1024 / 1024}MB limit` });
 
     const isVideo = ALLOWED_VIDEO_TYPES.has(f.mimeType);
-    const isPhoto = ALLOWED_IMAGE_TYPES.has(f.mimeType);
+    let isPhoto = ALLOWED_IMAGE_TYPES.has(f.mimeType);
     if (!isVideo && !isPhoto) {
       return res.status(415).json({ error: `Unsupported media type: ${f.mimeType}. Allowed: mp4/mov/webm or jpeg/png/heic/webp` });
+    }
+
+    // Server-side HEIC→JPEG transcode. iPhone defaults to HEIC, but Facebook,
+    // Instagram, and the GHL social poster can't display it. Previously Mac
+    // had to manually re-save through iOS Photos → Share → Save to Files
+    // before upload (session_context 2026-05-24). Now we transcode here so
+    // rendered_url is always a real JPEG. If sharp's libvips doesn't have
+    // libheif on this Vercel runtime, we log and fall through with the
+    // original buffer (same behavior as before the fix — graceful degrade).
+    if (isPhoto && (f.mimeType === 'image/heic' || f.mimeType === 'image/heif')) {
+      try {
+        const transcoded = await sharp(f.buffer, { failOn: 'none' })
+          .rotate()              // honor EXIF orientation
+          .jpeg({ quality: 88 }) // 88 = good quality, much smaller than HEIC source
+          .toBuffer();
+        f.buffer = transcoded;
+        f.mimeType = 'image/jpeg';
+        f.fileName = (f.fileName || 'photo.heic').replace(/\.(heic|heif)$/i, '.jpg');
+        console.log(`[marketing] HEIC→JPEG transcoded: ${f.fileName} (${transcoded.length} bytes)`);
+      } catch (e) {
+        console.error(`[marketing] HEIC transcode failed, uploading original: ${e.message}`);
+        // Continue with original — Facebook will reject, user can re-save manually.
+      }
     }
 
     // Store source in Blob
