@@ -30,7 +30,16 @@
   if (window.__ryujinQuickCreateLoaded) return;
   window.__ryujinQuickCreateLoaded = true;
 
-  const TENANT = (window.RyujinTenant?.get?.()?.slug) || 'plus-ultra';
+  // Tenant slug resolution. Same dual-key logic the sweep PR applied to all
+  // inline TENANT consts: auth-set 'ryujin_tenant' first (authoritative for
+  // non-default tenants), then branding 'ry_tenant_cfg', then default.
+  // window.RyujinTenant.get() reads only the branding key, which leaves
+  // non-Plus-Ultra logged-in users scoped to plus-ultra. Avoid.
+  const TENANT = (function () {
+    try { const a = JSON.parse(localStorage.getItem('ryujin_tenant') || 'null'); if (a && a.slug) return a.slug; } catch (e) {}
+    try { const c = JSON.parse(localStorage.getItem('ry_tenant_cfg') || 'null'); if (c && c.slug) return c.slug; } catch (e) {}
+    return 'plus-ultra';
+  })();
   const MOBILE_BP = 768;
   const UPLOAD_DEDUPE_WINDOW_MS = 60 * 1000;
   const UPLOAD_DEDUPE_KEY = 'ry_qc_upload_hashes';
