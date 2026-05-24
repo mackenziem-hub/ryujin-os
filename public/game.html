@@ -210,6 +210,38 @@
   .map-building[data-sector="ADMIN"] .b-label { color: var(--violet); border-color: var(--violet); }
   .map-building[data-sector="MARKETING"] .b-label { color: var(--pink); border-color: var(--pink); }
 
+  /* Wandering Claude wizard on the overworld — appears wherever the most
+     recent CC session has a current_sector. Click/SPACE-near to talk. */
+  .wizard-walker {
+    position: absolute;
+    width: 5.5%; aspect-ratio: 1/1;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    border: 3px solid var(--violet);
+    box-shadow: 0 0 18px rgba(167,139,250,0.6), inset 0 0 0 1px rgba(6,10,20,0.6);
+    overflow: hidden;
+    background: var(--bg-panel-solid) center/cover;
+    z-index: 9;
+    cursor: pointer;
+    transition: left .4s ease, top .4s ease;
+    animation: pulseWiz 1.8s ease-in-out infinite;
+  }
+  .wizard-walker .badge {
+    position: absolute; top: -8px; right: -8px;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--violet); color: var(--bg-deep);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Press Start 2P', monospace; font-size: 9px;
+    border: 2px solid var(--bg-deep);
+  }
+
+  /* Brief black flash overlay used when entering/exiting buildings */
+  .view-flash {
+    position: fixed; inset: 0; background: #000; pointer-events: none;
+    opacity: 0; z-index: 4900; transition: opacity .14s ease-out;
+  }
+  .view-flash.on { opacity: 1; }
+
   /* Player avatar (top-down circular sprite) — overworld + interior */
   .player-avatar {
     position: absolute;
@@ -716,6 +748,9 @@
 
   <!-- Toasts -->
   <div class="toast-stack" id="toastStack"></div>
+
+  <!-- View flash (brief black overlay on enter/exit building) -->
+  <div class="view-flash" id="viewFlash"></div>
 </div>
 
 <script>
@@ -1310,6 +1345,62 @@ function refreshBuildingWizardPips() {
       node.appendChild(el('div', { class: 'wizard-pip', text: String(wizardsHere.length), title: wizardsHere.map(w => w.user_label || 'Claude').join(', ') }));
     }
   });
+  renderWizardWalker();
+}
+
+// Wandering wizard sprite on the overworld — appears next to whichever
+// building has the most-recent CC session. Tappable / walkable-up-to.
+function renderWizardWalker() {
+  if (state.view !== 'MAP') return;
+  const world = $('mapWorld');
+  if (!world) return;
+  const existing = $('wizardWalker');
+  if (!state.ccSessions.length) { if (existing) existing.remove(); return; }
+  // Pick the freshest session that has a current_sector
+  const sess = state.ccSessions
+    .filter(c => c.current_sector)
+    .sort((a, b) => (Date.parse(b.last_activity_at || 0) || 0) - (Date.parse(a.last_activity_at || 0) || 0))[0];
+  if (!sess) { if (existing) existing.remove(); return; }
+  const sec = SECTORS.find(s => s.id === (sess.current_sector || '').toUpperCase());
+  if (!sec) { if (existing) existing.remove(); return; }
+  // Park the wizard just outside the building's south face
+  const bh = getBuildingHalf();
+  const wx = clamp(sec.x + bh.w + 2.5, 5, 95);
+  const wy = clamp(sec.y, 5, 95);
+  const label = sess.user_label || 'Claude';
+  const count = state.ccSessions.length;
+  if (existing) {
+    existing.style.left = wx + '%';
+    existing.style.top  = wy + '%';
+    existing.title = `Talk to Claude · ${count} active`;
+    const badge = existing.querySelector('.badge');
+    if (badge) badge.textContent = String(count);
+  } else {
+    const wiz = el('div', {
+      class: 'wizard-walker',
+      id: 'wizardWalker',
+      title: `Talk to Claude · ${count} active`,
+      style: { left: wx + '%', top: wy + '%', backgroundImage: `url('/assets/rpg/portraits/claude-wizard.webp')` },
+      onclick: () => { sfxConfirm(); openWizardDialogue(); }
+    }, [
+      el('div', { class: 'badge', text: String(count) })
+    ]);
+    world.appendChild(wiz);
+  }
+}
+
+// Brief black flash overlay for entering/exiting sectors. The CSS transition
+// is 140ms; we hold opacity for ~50ms in the middle of that for a clean
+// "fade-out / swap / fade-in" feel. Total ~280ms — short enough to be snappy.
+function viewFlash(swapFn) {
+  const f = $('viewFlash');
+  if (!f) { swapFn(); return; }
+  f.classList.add('on');
+  setTimeout(() => {
+    try { swapFn(); } finally {
+      setTimeout(() => f.classList.remove('on'), 50);
+    }
+  }, 140);
 }
 
 function refreshInteriorHud() {
@@ -1361,6 +1452,9 @@ function renderWorld() {
     el('div', { class: 'facing-arrow', id: 'facingArrow' })
   ]);
   world.appendChild(av);
+
+  // Re-render the wandering wizard now that the world container is fresh
+  renderWizardWalker();
 }
 
 function updateOverworld(dtMs) {
@@ -1478,6 +1572,7 @@ function hideInteractPrompt() {
 function enterSector() {
   const sec = SECTORS[state.focusedSector];
   if (!sec) return;
+  sfxOpen();
   // Remember overworld position so we can spawn there on exit
   state.worldReturn = { x: state.player.x, y: state.player.y };
   state.interior = {
@@ -1489,8 +1584,6 @@ function enterSector() {
     termX: 14, termY: 28,
     lastEnter: Date.now()
   };
-  setView('SECTOR');
-  sfxOpen();
   if (!state.save.visited_sectors.includes(sec.id)) {
     state.save.visited_sectors.push(sec.id);
     persistSave();
@@ -1498,7 +1591,11 @@ function enterSector() {
   state.save.last_visit_at = new Date().toISOString();
   persistSave();
   hideInteractPrompt();
-  renderInterior();
+  // Flash → swap to SECTOR view → render interior — feels like walking through a door
+  viewFlash(() => {
+    setView('SECTOR');
+    renderInterior();
+  });
 }
 
 function renderInterior() {
@@ -1655,8 +1752,9 @@ function exitToOverworld() {
   state.player.y = clamp(ny, 5, 95);
   hideInteractPrompt();
   state.nearBuilding = null;
-  renderWorld();
   sfxClose();
+  // Flash → swap to MAP view → re-render world
+  viewFlash(() => { setView('MAP'); renderWorld(); });
 }
 
 // Stats terminal (replaces the old static stats panel)
