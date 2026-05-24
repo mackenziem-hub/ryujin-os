@@ -30,15 +30,23 @@
   if (window.__ryujinQuickCreateLoaded) return;
   window.__ryujinQuickCreateLoaded = true;
 
-  // Tenant slug resolution. Same dual-key logic the sweep PR applied to all
-  // inline TENANT consts: auth-set 'ryujin_tenant' first (authoritative for
-  // non-default tenants), then branding 'ry_tenant_cfg', then default.
-  // window.RyujinTenant.get() reads only the branding key, which leaves
-  // non-Plus-Ultra logged-in users scoped to plus-ultra. Avoid.
+  // Tenant slug resolution. Reads localStorage directly to be load-order
+  // safe (window.RyujinTenant may not be ready yet). Three sources, in
+  // priority order:
+  //   1. ryujin_tenant — written by login/magic (JSON) or signup (bare slug)
+  //   2. ry_tenant_cfg — branding-config fallback
+  //   3. 'plus-ultra' — dev/preview default
   const TENANT = (function () {
-    try { const a = JSON.parse(localStorage.getItem('ryujin_tenant') || 'null'); if (a && a.slug) return a.slug; } catch (e) {}
-    try { const c = JSON.parse(localStorage.getItem('ry_tenant_cfg') || 'null'); if (c && c.slug) return c.slug; } catch (e) {}
-    return 'plus-ultra';
+    function pick(key) {
+      try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return null;
+        try { const o = JSON.parse(raw); if (o && o.slug) return o.slug; } catch (e) {}
+        if (typeof raw === 'string' && /^[a-z0-9-]{1,80}$/i.test(raw.trim())) return raw.trim();
+      } catch (e) {}
+      return null;
+    }
+    return pick('ryujin_tenant') || pick('ry_tenant_cfg') || 'plus-ultra';
   })();
   const MOBILE_BP = 768;
   const UPLOAD_DEDUPE_WINDOW_MS = 60 * 1000;
