@@ -146,132 +146,305 @@
   }
   .map-bg {
     position: absolute; inset: 0;
-    background: url('/assets/rpg/scenes/strategic-map.webp') center/contain no-repeat;
+    background: url('/assets/rpg/scenes/strategic-map.webp') center/cover no-repeat;
     background-color: var(--bg-deep);
+    opacity: 0.55; filter: brightness(0.65) saturate(1.3);
   }
-  .map-grid {
-    position: absolute; inset: 0;
-    display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(2, 1fr);
-    gap: 0;
+  .map-bg::after {
+    content: ''; position: absolute; inset: 0;
+    background-image:
+      repeating-linear-gradient(0deg, rgba(34,211,238,0.05) 0, rgba(34,211,238,0.05) 1px, transparent 1px, transparent 32px),
+      repeating-linear-gradient(90deg, rgba(34,211,238,0.05) 0, rgba(34,211,238,0.05) 1px, transparent 1px, transparent 32px);
   }
-  .map-hot {
-    position: relative; cursor: pointer; transition: all .12s ease;
-    border: 2px solid transparent;
+  /* Walkable overworld layer: buildings + player avatar positioned with % coords */
+  .map-world { position: absolute; inset: 0; }
+  .map-building {
+    position: absolute;
+    width: 16%; height: 22%;
+    transform: translate(-50%, -50%);
+    cursor: pointer;
     display: flex; flex-direction: column; justify-content: space-between;
-    padding: 10px;
+    padding: 8px;
     background-size: cover; background-position: center; background-repeat: no-repeat;
+    border: 2px solid rgba(34,211,238,0.5);
+    box-shadow: 0 0 16px rgba(34,211,238,0.2), inset 0 0 24px rgba(6,10,20,0.7);
+    transition: box-shadow .15s ease, border-color .15s ease;
+    image-rendering: pixelated;
   }
-  .map-hot:hover, .map-hot.focused {
+  .map-building::before {
+    /* Dark gradient overlay so labels stay readable over scene art */
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(rgba(6,10,20,0.45), rgba(6,10,20,0.7));
+    pointer-events: none;
+  }
+  .map-building > * { position: relative; z-index: 1; }
+  .map-building:hover, .map-building.near {
     border-color: var(--cyan);
-    background: rgba(34,211,238,0.1);
-    box-shadow: inset 0 0 30px rgba(34,211,238,0.25);
+    box-shadow: 0 0 30px rgba(34,211,238,0.55), inset 0 0 20px rgba(6,10,20,0.55);
+    z-index: 5;
   }
-  .map-hot.alert { border-color: var(--red); box-shadow: inset 0 0 30px rgba(239,68,68,0.2); }
-  .map-hot.warn { border-color: var(--amber); }
-  .map-hot .hot-label {
-    font-family: 'Press Start 2P', monospace; font-size: 10px;
-    background: rgba(6,10,20,0.85); padding: 4px 8px;
+  .map-building.alert { border-color: var(--red); box-shadow: 0 0 22px rgba(239,68,68,0.45), inset 0 0 24px rgba(6,10,20,0.7); }
+  .map-building.warn  { border-color: var(--amber); box-shadow: 0 0 22px rgba(251,191,36,0.4), inset 0 0 24px rgba(6,10,20,0.7); }
+  .map-building .b-label {
+    font-family: 'Press Start 2P', monospace; font-size: 9px;
+    background: rgba(6,10,20,0.88); padding: 3px 6px;
     color: var(--gold); align-self: flex-start;
     border: 1px solid rgba(253,224,71,0.4);
+    letter-spacing: 1px;
   }
-  .map-hot .hot-stat {
-    font-family: 'VT323', monospace; font-size: 16px;
-    background: rgba(6,10,20,0.85); padding: 3px 8px;
+  .map-building .b-stat {
+    font-family: 'VT323', monospace; font-size: 14px;
+    background: rgba(6,10,20,0.88); padding: 2px 6px;
     color: var(--fg); align-self: flex-start;
-    border: 1px solid rgba(34,211,238,0.3);
-    max-width: 100%;
+    border: 1px solid rgba(34,211,238,0.35);
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .map-hot .hot-stat.alert { color: var(--red); border-color: var(--red); }
-  .map-hot .hot-stat.warn { color: var(--amber); border-color: var(--amber); }
-  .map-hot[data-sector="HQ"] .hot-label { color: var(--gold); border-color: var(--gold); }
-  .map-hot[data-sector="SALES"] .hot-label { color: var(--magenta); border-color: var(--magenta); }
-  .map-hot[data-sector="PRODUCTION"] .hot-label { color: var(--amber); border-color: var(--amber); }
-  .map-hot[data-sector="SERVICE"] .hot-label { color: var(--green); border-color: var(--green); }
-  .map-hot[data-sector="CUSTOMER"] .hot-label { color: var(--orange); border-color: var(--orange); }
-  .map-hot[data-sector="FINANCE"] .hot-label { color: var(--cyan); border-color: var(--cyan); }
-  .map-hot[data-sector="ADMIN"] .hot-label { color: var(--violet); border-color: var(--violet); }
-  .map-hot[data-sector="MARKETING"] .hot-label { color: var(--pink); border-color: var(--pink); }
+  .map-building .b-stat.alert { color: var(--red); border-color: var(--red); }
+  .map-building .b-stat.warn { color: var(--amber); border-color: var(--amber); }
+  .map-building[data-sector="HQ"] .b-label { color: var(--gold); border-color: var(--gold); }
+  .map-building[data-sector="SALES"] .b-label { color: var(--magenta); border-color: var(--magenta); }
+  .map-building[data-sector="PRODUCTION"] .b-label { color: var(--amber); border-color: var(--amber); }
+  .map-building[data-sector="SERVICE"] .b-label { color: var(--green); border-color: var(--green); }
+  .map-building[data-sector="CUSTOMER"] .b-label { color: var(--orange); border-color: var(--orange); }
+  .map-building[data-sector="FINANCE"] .b-label { color: var(--cyan); border-color: var(--cyan); }
+  .map-building[data-sector="ADMIN"] .b-label { color: var(--violet); border-color: var(--violet); }
+  .map-building[data-sector="MARKETING"] .b-label { color: var(--pink); border-color: var(--pink); }
 
-  /* CC wizard pip on map */
+  /* Player avatar (top-down circular sprite) — overworld + interior */
+  .player-avatar {
+    position: absolute;
+    width: 5.2%; aspect-ratio: 1/1;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    border: 3px solid var(--gold);
+    box-shadow: 0 0 18px rgba(253,224,71,0.55), inset 0 0 0 1px rgba(6,10,20,0.6);
+    overflow: hidden;
+    background: var(--bg-panel-solid) center/cover;
+    z-index: 10;
+    pointer-events: none;
+  }
+  .player-avatar.moving { animation: walkBob .32s ease-in-out infinite alternate; }
+  @keyframes walkBob { from { box-shadow: 0 0 14px rgba(253,224,71,0.45), inset 0 0 0 1px rgba(6,10,20,0.6); } to { box-shadow: 0 0 22px rgba(253,224,71,0.75), inset 0 0 0 1px rgba(6,10,20,0.6); } }
+  .player-avatar .facing-arrow {
+    position: absolute; left: 50%; top: 50%;
+    width: 0; height: 0;
+    border-left: 6px solid transparent; border-right: 6px solid transparent;
+    border-bottom: 9px solid var(--gold);
+    filter: drop-shadow(0 0 4px var(--gold));
+    pointer-events: none;
+    transform-origin: 50% 50%;
+  }
+
+  /* Interact prompt that appears above building/NPC when player is near */
+  .interact-prompt {
+    position: absolute;
+    transform: translate(-50%, -100%);
+    background: rgba(6,10,20,0.95);
+    border: 2px solid var(--gold);
+    color: var(--gold);
+    font-family: 'Press Start 2P', monospace; font-size: 8px;
+    padding: 6px 10px; letter-spacing: 1px;
+    box-shadow: 0 0 16px rgba(253,224,71,0.5);
+    animation: promptBob 1s ease-in-out infinite alternate;
+    z-index: 12;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  @keyframes promptBob { from { margin-top: -10px; } to { margin-top: -18px; } }
+
+  /* Status pip on a building (overdue/alert/warn counter) */
+  .b-pip {
+    position: absolute; top: -10px; right: -10px;
+    min-width: 22px; height: 22px; padding: 0 6px;
+    border-radius: 11px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Press Start 2P', monospace; font-size: 8px;
+    border: 2px solid var(--bg-deep);
+    z-index: 6;
+  }
+  .b-pip.alert { background: var(--red); color: #fff; box-shadow: 0 0 10px var(--red); animation: pulse 1s ease-in-out infinite; }
+  .b-pip.warn  { background: var(--amber); color: var(--bg-deep); box-shadow: 0 0 8px var(--amber); }
+
+  /* CC wizard pip on a building */
   .wizard-pip {
-    position: absolute; top: 8px; right: 8px;
-    display: flex; align-items: center; gap: 4px;
-    background: rgba(167,139,250,0.18); border: 1px solid var(--violet);
-    padding: 3px 6px; font-family: 'Press Start 2P', monospace; font-size: 7px;
-    color: var(--violet);
+    position: absolute; top: -10px; left: -10px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--violet); border: 2px solid var(--bg-deep);
+    width: 22px; height: 22px; border-radius: 50%;
+    font-family: 'Press Start 2P', monospace; font-size: 9px;
+    color: var(--bg-deep);
     animation: pulseWiz 1.8s ease-in-out infinite;
+    z-index: 7;
   }
-  @keyframes pulseWiz { 50% { box-shadow: 0 0 12px rgba(167,139,250,0.5); } }
+  @keyframes pulseWiz { 50% { box-shadow: 0 0 12px rgba(167,139,250,0.7); } }
 
-  /* ───── SECTOR ───── */
+  /* Virtual D-pad + action button for touch devices */
+  .virtual-pad {
+    position: fixed; left: 16px; bottom: 16px;
+    display: none; z-index: 150;
+    width: 132px; height: 132px;
+    touch-action: none;
+  }
+  .virtual-pad.show { display: block; }
+  .vp-btn {
+    position: absolute;
+    width: 44px; height: 44px;
+    background: rgba(10,16,36,0.78); border: 2px solid var(--cyan);
+    color: var(--cyan); font-family: 'Press Start 2P', monospace; font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; touch-action: none;
+  }
+  .vp-btn.held { background: rgba(34,211,238,0.35); color: var(--gold); }
+  .vp-up    { top: 0;    left: 44px; }
+  .vp-down  { bottom: 0; left: 44px; }
+  .vp-left  { left: 0;   top: 44px; }
+  .vp-right { right: 0;  top: 44px; }
+  .vp-action {
+    position: fixed; right: 18px; bottom: 18px;
+    width: 64px; height: 64px; border-radius: 50%;
+    background: rgba(253,224,71,0.18); border: 2px solid var(--gold);
+    color: var(--gold); font-family: 'Press Start 2P', monospace; font-size: 10px;
+    display: none; align-items: center; justify-content: center;
+    z-index: 150; cursor: pointer; touch-action: none;
+    box-shadow: 0 0 16px rgba(253,224,71,0.4);
+  }
+  .vp-action.show { display: flex; }
+  .vp-action.held { background: rgba(253,224,71,0.4); }
+
+  /* ───── SECTOR (walkable interior) ───── */
   .view-sector { padding-top: 70px; }
+  .sector-room {
+    position: absolute; inset: 70px 12px 12px;
+    border: 2px solid var(--cyan);
+    box-shadow: 0 0 30px rgba(34,211,238,0.18), inset 0 0 0 1px rgba(6,10,20,0.9);
+    overflow: hidden;
+  }
   .sector-bg {
     position: absolute; inset: 0;
     background-size: cover; background-position: center; background-repeat: no-repeat;
   }
   .sector-bg::after {
     content: ''; position: absolute; inset: 0;
-    background: linear-gradient(180deg, rgba(6,10,20,0.0) 0%, rgba(6,10,20,0.4) 60%, rgba(6,10,20,0.95) 100%);
+    background: linear-gradient(180deg, rgba(6,10,20,0.2) 0%, rgba(6,10,20,0.35) 50%, rgba(6,10,20,0.65) 100%);
   }
-  .sector-shell {
-    position: absolute; inset: 70px 12px 12px;
-    display: grid; grid-template-rows: 1fr auto; gap: 12px;
+  /* The NPC sprite in interior — uses portrait WebP at fixed position */
+  .npc-sprite {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    width: 13%; aspect-ratio: 3/4;
+    background-size: cover; background-position: center top;
+    border: 3px solid;
+    box-shadow: 0 0 24px;
+    z-index: 8;
+    cursor: pointer;
+    image-rendering: pixelated;
+  }
+  .npc-sprite.near {
+    animation: npcBob .9s ease-in-out infinite alternate;
+  }
+  @keyframes npcBob { from { transform: translate(-50%, -50%) scale(1); } to { transform: translate(-50%, -52%) scale(1.02); } }
+  .npc-sprite .npc-nameplate {
+    position: absolute; bottom: -28px; left: 50%; transform: translateX(-50%);
+    background: rgba(6,10,20,0.92);
+    padding: 4px 10px;
+    font-family: 'Press Start 2P', monospace; font-size: 9px;
+    color: var(--gold); letter-spacing: 2px;
+    white-space: nowrap;
+    border: 1px solid;
+  }
+  /* Door zone — visible glow at bottom-center, walk-into exits */
+  .door-zone {
+    position: absolute;
+    left: 50%; bottom: 0;
+    transform: translateX(-50%);
+    width: 14%; height: 7%;
+    background: linear-gradient(0deg, rgba(34,211,238,0.45), rgba(34,211,238,0.0));
+    border-top: 2px dashed var(--cyan);
+    z-index: 5;
     pointer-events: none;
   }
-  .sector-shell > * { pointer-events: auto; }
-  .sector-hero {
-    position: relative;
-    display: grid; grid-template-columns: 1fr 360px; gap: 16px;
-    align-items: end; min-height: 0;
+  .door-zone::before {
+    content: 'EXIT'; position: absolute; top: 8px; left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Press Start 2P', monospace; font-size: 8px;
+    color: var(--cyan); letter-spacing: 2px;
+    text-shadow: 0 0 6px var(--cyan);
   }
-  .sector-stats-panel {
-    background: var(--bg-panel); border: 1px solid rgba(34,211,238,0.4);
-    padding: 14px 18px; backdrop-filter: blur(8px);
-    box-shadow: 0 0 20px rgba(34,211,238,0.12);
-    align-self: end;
+  /* Terminal zone (computer desk) — interactable for stats panel */
+  .terminal-zone {
+    position: absolute;
+    width: 8%; height: 10%;
+    transform: translate(-50%, -50%);
+    background: linear-gradient(180deg, rgba(34,211,238,0.25), rgba(34,211,238,0.08));
+    border: 2px solid var(--cyan);
+    z-index: 6;
+    cursor: pointer;
+    box-shadow: 0 0 14px rgba(34,211,238,0.4), inset 0 0 12px rgba(6,10,20,0.5);
   }
-  .sector-stats-panel .eyebrow {
-    font-family: 'Press Start 2P', monospace; font-size: 9px; letter-spacing: 2px;
-    color: var(--cyan); margin-bottom: 6px;
+  .terminal-zone::after {
+    content: 'TERM'; position: absolute; bottom: -22px; left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Press Start 2P', monospace; font-size: 8px;
+    color: var(--cyan); white-space: nowrap;
   }
-  .sector-stats-panel .head {
-    font-family: 'Orbitron', monospace; font-size: 22px; font-weight: 700;
-    color: var(--gold); margin-bottom: 10px; letter-spacing: 2px;
+  /* Sector mini-HUD (sector name + alert level, top-left of room) */
+  .sector-hud {
+    position: absolute; top: 12px; left: 12px;
+    z-index: 11;
+    background: rgba(6,10,20,0.85);
+    border: 1px solid var(--cyan);
+    padding: 8px 14px;
+    pointer-events: none;
   }
+  .sector-hud .eyebrow {
+    font-family: 'Press Start 2P', monospace; font-size: 8px; letter-spacing: 2px;
+    color: var(--cyan); margin-bottom: 4px;
+  }
+  .sector-hud .head {
+    font-family: 'Orbitron', monospace; font-size: 18px; font-weight: 700;
+    color: var(--gold); letter-spacing: 2px;
+  }
+  .sector-hud .head .role {
+    display: block; font-size: 11px; color: var(--fg-dim); font-weight: 500;
+    letter-spacing: 1px; margin-top: 2px;
+  }
+
+  /* Dialogue choices (below body once typewriter completes) */
+  .dialogue-choices {
+    display: none;
+    margin-top: 12px;
+    flex-direction: column; gap: 6px;
+  }
+  .dialogue-choices.show { display: flex; }
+  .dialogue-choice {
+    background: rgba(6,10,20,0.7);
+    border: 1px solid rgba(34,211,238,0.4);
+    color: var(--fg);
+    font-family: 'VT323', monospace; font-size: 18px;
+    padding: 8px 14px; cursor: pointer;
+    display: flex; align-items: center; gap: 10px;
+    text-align: left;
+  }
+  .dialogue-choice .num {
+    color: var(--cyan); font-family: 'Press Start 2P', monospace; font-size: 10px;
+    min-width: 18px;
+  }
+  .dialogue-choice:hover, .dialogue-choice.focused {
+    background: rgba(34,211,238,0.18);
+    border-color: var(--cyan);
+    color: var(--gold);
+    box-shadow: inset 3px 0 0 var(--gold);
+  }
+  .dialogue-choice.danger:hover, .dialogue-choice.danger.focused {
+    border-color: var(--red); color: var(--red); box-shadow: inset 3px 0 0 var(--red);
+  }
+  /* Stats grid is still used inside modals (terminal opens the stats view) */
   .sector-stats-grid {
     display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px;
     font-size: 13px;
   }
   .sector-stats-grid .k { color: var(--fg-dim); font-size: 11px; letter-spacing: 1px; text-transform: uppercase; }
   .sector-stats-grid .v { color: var(--fg); font-weight: 600; font-family: 'VT323', monospace; font-size: 18px; }
-  .npc-portrait-card {
-    position: relative;
-    border: 2px solid rgba(34,211,238,0.5);
-    background: var(--bg-panel-solid);
-    overflow: hidden;
-    box-shadow: 0 0 28px rgba(34,211,238,0.18);
-    aspect-ratio: 3/4;
-    max-height: 60vh;
-    align-self: end;
-  }
-  .npc-portrait-card img {
-    width: 100%; height: 100%; object-fit: cover;
-    image-rendering: auto;
-  }
-  .npc-portrait-card .npc-tag {
-    position: absolute; bottom: 0; left: 0; right: 0;
-    padding: 10px 14px; background: linear-gradient(180deg, rgba(10,16,36,0) 0%, rgba(10,16,36,0.95) 100%);
-  }
-  .npc-portrait-card .npc-tag .greek {
-    font-family: 'Press Start 2P', monospace; font-size: 14px; letter-spacing: 2px; color: var(--gold);
-  }
-  .npc-portrait-card .npc-tag .role {
-    font-family: 'VT323', monospace; font-size: 16px; color: var(--cyan); margin-top: 2px;
-  }
-  .sector-actions {
-    display: flex; gap: 10px; flex-wrap: wrap; padding: 4px;
-  }
-  body.dialogue-open .sector-actions { display: none; }
   .btn-ry {
     background: linear-gradient(180deg, rgba(34,211,238,0.18), rgba(34,211,238,0.06));
     border: 1px solid var(--cyan); color: var(--cyan);
@@ -446,8 +619,12 @@
     .map-grid { grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(4, 1fr); }
     .map-hot .hot-label { font-size: 8px; }
     .map-hot .hot-stat { font-size: 13px; }
-    .sector-hero { grid-template-columns: 1fr; }
-    .npc-portrait-card { max-height: 45vh; max-width: 60vw; margin: 0 auto; }
+    /* Mobile overworld: shrink player + buildings to fit 9:16 viewport */
+    .player-avatar { width: 7%; }
+    .map-building { width: 22%; height: 18%; padding: 6px; }
+    .map-building .b-label { font-size: 8px; }
+    .map-building .b-stat { font-size: 12px; }
+    .npc-sprite { width: 18%; }
     .party-grid { grid-template-columns: repeat(3, 1fr); }
     .title-press { font-size: 14px; }
     .dialogue-body { font-size: 18px; }
@@ -486,31 +663,36 @@
     <div class="title-version">v1.0 · cyberpunk overworld</div>
   </div>
 
-  <!-- MAP view -->
+  <!-- MAP view (walkable overworld) -->
   <div class="view view-map" id="viewMap">
     <div class="map-frame">
       <div class="map-bg"></div>
-      <div class="map-grid" id="mapGrid"></div>
+      <div class="map-world" id="mapWorld">
+        <!-- Buildings + player avatar injected here -->
+      </div>
     </div>
   </div>
 
-  <!-- SECTOR view -->
+  <!-- SECTOR view (walkable interior) -->
   <div class="view view-sector" id="viewSector">
-    <div class="sector-bg" id="sectorBg"></div>
-    <div class="sector-shell">
-      <div class="sector-hero">
-        <div class="sector-stats-panel" id="sectorStatsPanel"></div>
-        <div class="npc-portrait-card" id="npcCard">
-          <img id="npcImg" alt="NPC" />
-          <div class="npc-tag">
-            <div class="greek" id="npcGreek">ZEUS</div>
-            <div class="role" id="npcRole">Governance</div>
-          </div>
-        </div>
+    <div class="sector-room" id="sectorRoom">
+      <div class="sector-bg" id="sectorBg"></div>
+      <div class="sector-hud" id="sectorHud">
+        <div class="eyebrow">SECTOR · <span id="hudSecId">--</span></div>
+        <div class="head"><span id="hudSecNpc">--</span><span class="role" id="hudSecRole">--</span></div>
       </div>
-      <div class="sector-actions" id="sectorActions"></div>
+      <!-- NPC sprite, terminal zone, door zone, player avatar injected here -->
     </div>
   </div>
+
+  <!-- Virtual D-pad + action button (touch-only, shown on mobile) -->
+  <div class="virtual-pad" id="virtualPad" aria-hidden="true">
+    <div class="vp-btn vp-up"    data-dir="up"    title="Up">▲</div>
+    <div class="vp-btn vp-down"  data-dir="down"  title="Down">▼</div>
+    <div class="vp-btn vp-left"  data-dir="left"  title="Left">◀</div>
+    <div class="vp-btn vp-right" data-dir="right" title="Right">▶</div>
+  </div>
+  <div class="vp-action" id="vpAction" title="Action (interact)" aria-label="Interact">A</div>
 
   <!-- Dialogue overlay -->
   <div class="dialogue" id="dialogue" role="dialog" aria-modal="true" aria-live="polite">
@@ -518,6 +700,7 @@
     <div class="dialogue-box">
       <div class="dialogue-speaker" id="dialogueSpeaker">ZEUS</div>
       <div class="dialogue-body" id="dialogueBody"></div>
+      <div class="dialogue-choices" id="dialogueChoices" role="menu" aria-label="Dialogue options"></div>
       <div class="dialogue-advance" id="dialogueAdvance" aria-hidden="true">▼</div>
     </div>
   </div>
@@ -546,16 +729,44 @@ const SNAPSHOT_REFRESH_MS = 5 * 60 * 1000;
 const CC_REFRESH_MS = 30 * 1000;
 const SAVE_KEY = 'ryujin_game_save_v1';
 
+// Each sector has a fixed position on the overworld in % coordinates
+// (origin top-left, x→right, y→down). The 8 buildings are laid out around
+// a central ADMIN tower so the player can walk freely between any pair
+// without crossing through another building's hit-box.
 const SECTORS = [
-  { id:'HQ',        npc:'ZEUS',       role:'Governance',  href:'/command-center.html',         bg:'/assets/rpg/scenes/sectors/hq-throne.webp' },
-  { id:'SALES',     npc:'HERMES',     role:'Messenger',   href:'/sales-cockpit.html',          bg:'/assets/rpg/scenes/sectors/sales-floor.webp' },
-  { id:'PRODUCTION',npc:'HEPHAESTUS', role:'Forge',       href:'/production.html',             bg:'/assets/rpg/scenes/sectors/production-forge.webp' },
-  { id:'SERVICE',   npc:'ARTEMIS',    role:'Hunter',      href:'/service-tickets.html',        bg:'/assets/rpg/scenes/sectors/service-dispatch.webp' },
-  { id:'CUSTOMER',  npc:'HESTIA',     role:'Hearth',      href:'/customers.html',              bg:'/assets/rpg/scenes/sectors/customer-hearth.webp' },
-  { id:'FINANCE',   npc:'ATHENA',     role:'Sage',        href:'/admin.html?page=finance',     bg:'/assets/rpg/scenes/sectors/finance-vault.webp' },
-  { id:'ADMIN',     npc:'HECATE',     role:'Witch',       href:'/administration.html',         bg:'/assets/rpg/scenes/sectors/admin-server.webp' },
-  { id:'MARKETING', npc:'APOLLO',     role:'Muse',        href:'/admin.html?page=marketing',   bg:'/assets/rpg/scenes/sectors/marketing-plaza.webp' }
+  { id:'HQ',        npc:'ZEUS',       role:'Governance',  href:'/command-center.html',         bg:'/assets/rpg/scenes/sectors/hq-throne.webp',         x:50, y:14 },
+  { id:'SALES',     npc:'HERMES',     role:'Messenger',   href:'/sales-cockpit.html',          bg:'/assets/rpg/scenes/sectors/sales-floor.webp',       x:18, y:32 },
+  { id:'FINANCE',   npc:'ATHENA',     role:'Sage',        href:'/admin.html?page=finance',     bg:'/assets/rpg/scenes/sectors/finance-vault.webp',     x:82, y:32 },
+  { id:'ADMIN',     npc:'HECATE',     role:'Witch',       href:'/administration.html',         bg:'/assets/rpg/scenes/sectors/admin-server.webp',      x:50, y:50 },
+  { id:'PRODUCTION',npc:'HEPHAESTUS', role:'Forge',       href:'/production.html',             bg:'/assets/rpg/scenes/sectors/production-forge.webp',  x:18, y:68 },
+  { id:'SERVICE',   npc:'ARTEMIS',    role:'Hunter',      href:'/service-tickets.html',        bg:'/assets/rpg/scenes/sectors/service-dispatch.webp',  x:82, y:68 },
+  { id:'CUSTOMER',  npc:'HESTIA',     role:'Hearth',      href:'/customers.html',              bg:'/assets/rpg/scenes/sectors/customer-hearth.webp',   x:32, y:86 },
+  { id:'MARKETING', npc:'APOLLO',     role:'Muse',        href:'/admin.html?page=marketing',   bg:'/assets/rpg/scenes/sectors/marketing-plaza.webp',   x:68, y:86 }
 ];
+
+// Overworld + interior physics: speed is %-of-map per ms. 0.045 = ~45%/s
+// = roughly a 2s crossing of the full overworld at normal monitor refresh.
+// Interior speed is slightly lower for the "tighter indoor" walk feel.
+const OVERWORLD_SPEED_PCT_PER_MS = 0.045;
+const INTERIOR_SPEED_PCT_PER_MS  = 0.038;
+const PLAYER_AVATAR_IMG = '/assets/rpg/portraits/crew/mackenzie.webp';
+// Building footprint for collision. CSS defines .map-building as 16x22%
+// on desktop (=> half 8x11) and 22x18% on mobile (=> half 11x9). The
+// collision/near checks must mirror whichever the viewport renders or
+// the player visually walks through the wall on mobile / gets blocked
+// by empty space. Recompute on every check so resize re-aligns.
+function getBuildingHalf() {
+  return window.matchMedia('(max-width: 720px)').matches
+    ? { w: 11, h: 9 }
+    : { w: 8,  h: 11 };
+}
+const INTERACT_PAD = { w: 2.5, h: 3 };  // extra % to register interact-range glow before collision
+// NPC interaction radius inside a room (% from NPC center)
+const NPC_INTERACT_R = 13;
+// Terminal interaction radius
+const TERM_INTERACT_R = 10;
+// Door zone hit radius (% from bottom-center of room)
+const DOOR_ZONE_TOP = 88;
 
 const NPC_ACCENT = {
   ZEUS:'#fde047', HERMES:'#ec4899', HEPHAESTUS:'#fbbf24', ARTEMIS:'#34d399',
@@ -584,19 +795,34 @@ const CREW = [
 // ═════ State ═════
 const state = {
   view: 'TITLE',
-  focusedSector: 0,
+  focusedSector: 0,            // which sector the player is "near" (overworld) or "in" (interior)
   snapshot: null,
   snapshotErr: null,
   snapshotAt: 0,
   me: null,
   ccSessions: [],
-  dialogue: null,        // { speaker, portrait, body, revealed, doneAt }
+  dialogue: null,        // { speaker, portrait, body, revealed, doneAt, choices?, choiceIdx, kind? }
   modal: null,           // { kind, focusable[], focusIdx }
   save: loadSave(),
+
+  // Walkable player. world = overworld (TITLE→MAP); room = current sector interior.
+  // Initial spawn (50, 32) sits in the open band between HQ (top) and ADMIN
+  // (center) — far enough from both so no building is "near" on first frame.
+  player: { x: 50, y: 32, facing: 0 },         // overworld position (%); facing in radians
+  interior: null,                              // { sec, playerX, playerY, facing, lastEnter }
+  worldReturn: { x: 50, y: 50 },               // remember player overworld pos when entering a sector
+  nearBuilding: null,                          // overworld: building player is currently touching
+  nearTarget: null,                            // interior: 'npc' | 'terminal' | 'door' | null
+
+  // Input. Tracks held movement keys + touch dpad presses + last action edge.
+  input: { up: false, down: false, left: false, right: false, action: false },
+
   // Per-render-cycle ephemeral state
   _intervals: [],         // setInterval IDs captured here so we can clear on teardown
   _autoTalkTimer: null,   // setTimeout id for sector auto-talk on first entry
   _typewriterTimer: null, // setInterval id for dialogue typewriter
+  _rafId: null,           // requestAnimationFrame id for the game loop
+  _lastTick: 0,           // ms timestamp of last animation frame
 };
 
 function defaultSave() {
@@ -693,8 +919,9 @@ async function fetchSnapshot() {
     state.snapshotErr = String(e.message || e);
   }
   renderTopbar();
-  if (state.view === 'MAP') renderMap();
-  if (state.view === 'SECTOR') renderSector();
+  // Update the building stat chips + HUD without nuking the player avatar
+  if (state.view === 'MAP') refreshBuildingStats();
+  else if (state.view === 'SECTOR') refreshInteriorHud();
 }
 async function fetchMe() {
   try {
@@ -709,7 +936,8 @@ async function fetchCcSessions() {
     const data = await r.json();
     state.ccSessions = Array.isArray(data.sessions) ? data.sessions : [];
   } catch { state.ccSessions = []; }
-  if (state.view === 'MAP') renderMap();
+  // Wizards moved in/out of sectors: refresh pip counts without rebuilding
+  if (state.view === 'MAP') refreshBuildingWizardPips();
   renderWizardPop();
 }
 
@@ -996,38 +1224,235 @@ function bootPressStart() {
   sfxConfirm();
   $('titlePress').textContent = 'LOADING…';
   $('titlePress').style.animation = 'none';
-  setTimeout(() => { setView('MAP'); renderMap(); $('titlePress').textContent = 'PRESS START'; $('titlePress').style.animation = ''; }, 380);
+  setTimeout(() => {
+    setView('MAP');
+    renderWorld();
+    startGameLoop();
+    $('titlePress').textContent = 'PRESS START';
+    $('titlePress').style.animation = '';
+  }, 380);
 }
 
-// ═════ MAP view ═════
-function renderMap() {
-  const grid = $('mapGrid');
-  grid.textContent = '';
-  SECTORS.forEach((sec, i) => {
-    const lvl = sectorAlertLevel(sec.id);
-    const tile = el('div', {
-      class: 'map-hot' + (i === state.focusedSector ? ' focused' : '') + (lvl === 'alert' ? ' alert' : lvl === 'warn' ? ' warn' : ''),
-      'data-sector': sec.id,
-      style: { backgroundImage: `linear-gradient(rgba(6,10,20,0.55), rgba(6,10,20,0.78)), url('${sec.bg}')` },
-      onclick: () => { state.focusedSector = i; sfxStep(); enterSector(); },
-      onmouseenter: () => { if (state.focusedSector !== i) { state.focusedSector = i; renderMap(); } }
-    }, [
-      el('div', { class: 'hot-label', text: sec.id }),
-      el('div', { class: 'hot-stat' + (lvl === 'alert' ? ' alert' : lvl === 'warn' ? ' warn' : ''), text: sectorHeadline(sec.id) })
-    ]);
-    // CC wizards stationed here
-    const wizardsHere = state.ccSessions.filter(c => (c.current_sector || '').toUpperCase() === sec.id);
-    if (wizardsHere.length) {
-      tile.appendChild(el('div', { class: 'wizard-pip', title: wizardsHere.map(w => w.user_label || 'Claude').join(', ') }, ['🧙 ', String(wizardsHere.length)]));
+// ═══════════════════════════════════════════════════════════════
+// OVERWORLD (walkable MAP) — buildings positioned with %-coords,
+// player avatar drifts continuously, AABB collision triggers the
+// near-building prompt; SPACE/Action enters the sector interior.
+// ═══════════════════════════════════════════════════════════════
+
+// Live-update building stat lines + alert classes when snapshot refreshes,
+// without re-rendering the whole world (so we don't trample player position
+// or interact prompt mid-walk).
+function refreshBuildingStats() {
+  document.querySelectorAll('.map-building').forEach(node => {
+    const id = node.getAttribute('data-sector');
+    const sec = SECTORS.find(s => s.id === id);
+    if (!sec) return;
+    const lvl = sectorAlertLevel(id);
+    node.classList.toggle('alert', lvl === 'alert');
+    node.classList.toggle('warn',  lvl === 'warn');
+    const stat = node.querySelector('.b-stat');
+    if (stat) {
+      stat.textContent = sectorHeadline(id);
+      stat.classList.toggle('alert', lvl === 'alert');
+      stat.classList.toggle('warn',  lvl === 'warn');
     }
-    grid.appendChild(tile);
+    // Pip refresh
+    node.querySelectorAll('.b-pip').forEach(n => n.remove());
+    const overdueCount = (state.snapshot && id === 'PRODUCTION') ? (state.snapshot.tickets && state.snapshot.tickets.overdueCount) : 0;
+    if (lvl === 'alert' && overdueCount > 0) {
+      node.appendChild(el('div', { class: 'b-pip alert', text: String(overdueCount) }));
+    } else if (lvl === 'warn') {
+      node.appendChild(el('div', { class: 'b-pip warn', text: '!' }));
+    }
   });
 }
 
-// ═════ SECTOR view ═════
+function refreshBuildingWizardPips() {
+  document.querySelectorAll('.map-building').forEach(node => {
+    const id = node.getAttribute('data-sector');
+    const wizardsHere = state.ccSessions.filter(c => (c.current_sector || '').toUpperCase() === id);
+    node.querySelectorAll('.wizard-pip').forEach(n => n.remove());
+    if (wizardsHere.length) {
+      node.appendChild(el('div', { class: 'wizard-pip', text: String(wizardsHere.length), title: wizardsHere.map(w => w.user_label || 'Claude').join(', ') }));
+    }
+  });
+}
+
+function refreshInteriorHud() {
+  const intr = state.interior; if (!intr) return;
+  // HUD already reflects the static sector; nothing dynamic to update here
+  // unless we want a live KPI line. Reserved for a future "ambient ticker"
+  // showing this sector's headline KPI as snapshot refreshes.
+}
+
+function renderWorld() {
+  const world = $('mapWorld');
+  world.textContent = '';
+
+  SECTORS.forEach((sec, i) => {
+    const lvl = sectorAlertLevel(sec.id);
+    const overdueCount = (state.snapshot && sec.id === 'PRODUCTION') ? (state.snapshot.tickets && state.snapshot.tickets.overdueCount) : 0;
+    const tile = el('div', {
+      class: 'map-building' + (lvl === 'alert' ? ' alert' : lvl === 'warn' ? ' warn' : ''),
+      'data-sector': sec.id,
+      style: { left: sec.x + '%', top: sec.y + '%', backgroundImage: `url('${sec.bg}')` },
+      onclick: () => { state.focusedSector = i; sfxStep(); enterSector(); }
+    }, [
+      el('div', { class: 'b-label', text: sec.id }),
+      el('div', { class: 'b-stat' + (lvl === 'alert' ? ' alert' : lvl === 'warn' ? ' warn' : ''), text: sectorHeadline(sec.id) })
+    ]);
+
+    // Alert/warn pip (overdue count, etc.)
+    if (lvl === 'alert' && overdueCount > 0) {
+      tile.appendChild(el('div', { class: 'b-pip alert', text: String(overdueCount) }));
+    } else if (lvl === 'warn') {
+      tile.appendChild(el('div', { class: 'b-pip warn', text: '!' }));
+    }
+
+    // CC wizards stationed here
+    const wizardsHere = state.ccSessions.filter(c => (c.current_sector || '').toUpperCase() === sec.id);
+    if (wizardsHere.length) {
+      tile.appendChild(el('div', { class: 'wizard-pip', text: String(wizardsHere.length), title: wizardsHere.map(w => w.user_label || 'Claude').join(', ') }));
+    }
+
+    world.appendChild(tile);
+  });
+
+  // Player avatar (one per view; rebuilt fresh so transitions don't compound)
+  const av = el('div', {
+    class: 'player-avatar' + (anyMoveKeyHeld() ? ' moving' : ''),
+    id: 'playerAvatar',
+    style: { left: state.player.x + '%', top: state.player.y + '%', backgroundImage: `url('${PLAYER_AVATAR_IMG}')` }
+  }, [
+    el('div', { class: 'facing-arrow', id: 'facingArrow' })
+  ]);
+  world.appendChild(av);
+}
+
+function updateOverworld(dtMs) {
+  const p = state.player;
+  let vx = 0, vy = 0;
+  if (state.input.left)  vx -= 1;
+  if (state.input.right) vx += 1;
+  if (state.input.up)    vy -= 1;
+  if (state.input.down)  vy += 1;
+  if (vx === 0 && vy === 0) {
+    const av = $('playerAvatar'); if (av) av.classList.remove('moving');
+    // Still re-check near-building since camera moved or building list re-rendered
+    refreshNearBuilding();
+    return;
+  }
+  // Normalize diagonal speed
+  const len = Math.hypot(vx, vy);
+  vx /= len; vy /= len;
+  p.facing = Math.atan2(vy, vx);
+  const step = OVERWORLD_SPEED_PCT_PER_MS * dtMs;
+  const nx = clamp(p.x + vx * step, 3, 97);
+  const ny = clamp(p.y + vy * step, 5, 95);
+
+  // Building collision — don't allow the player center to enter the
+  // building's solid rect (we'll use a slightly smaller inset so the
+  // player visually overlaps the door edge before being stopped).
+  const bh = getBuildingHalf();
+  let blocked = false;
+  for (const sec of SECTORS) {
+    const dx = Math.abs(nx - sec.x);
+    const dy = Math.abs(ny - sec.y);
+    if (dx < bh.w - 1 && dy < bh.h - 1.5) { blocked = true; break; }
+  }
+  if (!blocked) { p.x = nx; p.y = ny; }
+  else {
+    // Try axis-separated step so player can slide along walls
+    if (!collidesOverworld(nx, p.y)) p.x = nx;
+    if (!collidesOverworld(p.x, ny)) p.y = ny;
+  }
+
+  // Apply transform to avatar (don't rebuild the entire DOM each tick)
+  const av = $('playerAvatar');
+  if (av) {
+    av.style.left = p.x + '%';
+    av.style.top  = p.y + '%';
+    av.classList.add('moving');
+  }
+  refreshNearBuilding();
+}
+
+function collidesOverworld(x, y) {
+  const bh = getBuildingHalf();
+  for (const sec of SECTORS) {
+    if (Math.abs(x - sec.x) < bh.w - 1 && Math.abs(y - sec.y) < bh.h - 1.5) return true;
+  }
+  return false;
+}
+
+function refreshNearBuilding() {
+  const p = state.player;
+  const bh = getBuildingHalf();
+  let near = null;
+  for (let i = 0; i < SECTORS.length; i++) {
+    const sec = SECTORS[i];
+    const dx = Math.abs(p.x - sec.x);
+    const dy = Math.abs(p.y - sec.y);
+    if (dx < bh.w + INTERACT_PAD.w && dy < bh.h + INTERACT_PAD.h) {
+      near = { sec, index: i };
+      break;
+    }
+  }
+  const prev = state.nearBuilding;
+  state.nearBuilding = near;
+  if (near && (!prev || prev.sec.id !== near.sec.id)) {
+    // Highlight the new building
+    document.querySelectorAll('.map-building').forEach(el => el.classList.toggle('near', el.getAttribute('data-sector') === near.sec.id));
+    state.focusedSector = near.index;
+    showInteractPrompt('PRESS [SPACE] TO ENTER', near.sec.x, near.sec.y - bh.h);
+  } else if (!near && prev) {
+    document.querySelectorAll('.map-building').forEach(el => el.classList.remove('near'));
+    hideInteractPrompt();
+  }
+}
+
+function showInteractPrompt(text, xPct, yPct) {
+  let p = $('interactPrompt');
+  if (!p) {
+    p = el('div', { class: 'interact-prompt', id: 'interactPrompt' });
+    // Append to whichever view is active (map-world or sector-room)
+    const host = state.view === 'MAP' ? $('mapWorld') : $('sectorRoom');
+    host.appendChild(p);
+  } else if (p.parentElement.id !== (state.view === 'MAP' ? 'mapWorld' : 'sectorRoom')) {
+    // Move prompt between hosts if view changed
+    p.remove();
+    const host = state.view === 'MAP' ? $('mapWorld') : $('sectorRoom');
+    host.appendChild(p);
+  }
+  p.textContent = text;
+  p.style.left = xPct + '%';
+  p.style.top  = yPct + '%';
+}
+function hideInteractPrompt() {
+  const p = $('interactPrompt'); if (p) p.remove();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SECTOR INTERIOR (walkable room) — sector scene WebP as bg, NPC
+// at fixed position, terminal in corner, door at bottom. Player
+// walks around; SPACE near NPC/terminal/door triggers respective
+// interaction.
+// ═══════════════════════════════════════════════════════════════
+
 function enterSector() {
   const sec = SECTORS[state.focusedSector];
   if (!sec) return;
+  // Remember overworld position so we can spawn there on exit
+  state.worldReturn = { x: state.player.x, y: state.player.y };
+  state.interior = {
+    sec,
+    playerX: 50,                  // spawn at door
+    playerY: 82,
+    facing: -Math.PI / 2,         // facing up toward NPC
+    npcX: 50, npcY: 38,
+    termX: 14, termY: 28,
+    lastEnter: Date.now()
+  };
   setView('SECTOR');
   sfxOpen();
   if (!state.save.visited_sectors.includes(sec.id)) {
@@ -1036,58 +1461,372 @@ function enterSector() {
   }
   state.save.last_visit_at = new Date().toISOString();
   persistSave();
-  renderSector();
+  hideInteractPrompt();
+  renderInterior();
 }
 
-function renderSector() {
-  const sec = SECTORS[state.focusedSector];
-  if (!sec) return;
+function renderInterior() {
+  const intr = state.interior;
+  if (!intr) return;
+  const sec = intr.sec;
+  const room = $('sectorRoom');
   $('sectorBg').style.backgroundImage = `url('${sec.bg}')`;
 
-  $('npcImg').src = NPC_PORTRAIT(sec.npc);
-  $('npcImg').alt = sec.npc;
-  attachPortraitFallback($('npcImg'));
-  $('npcGreek').textContent = sec.npc;
-  $('npcGreek').style.color = NPC_ACCENT[sec.npc] || '#fde047';
-  $('npcRole').textContent = sec.role;
+  // Update HUD (top-left chrome)
+  $('hudSecId').textContent = sec.id;
+  $('hudSecNpc').textContent = sec.npc;
+  $('hudSecRole').textContent = sec.role;
+  $('sectorHud').style.borderColor = NPC_ACCENT[sec.npc] || 'var(--cyan)';
+  $('hudSecNpc').style.color = NPC_ACCENT[sec.npc] || 'var(--gold)';
 
-  const panel = $('sectorStatsPanel');
-  panel.textContent = '';
-  panel.appendChild(el('div', { class: 'eyebrow', text: 'SECTOR · ' + sec.id }));
-  panel.appendChild(el('div', { class: 'head', text: sec.npc + ' · ' + sec.role.toUpperCase(), style: { color: NPC_ACCENT[sec.npc] } }));
+  // Tear down old interior interactables (re-rendered each enter)
+  room.querySelectorAll('.npc-sprite, .terminal-zone, .door-zone, .player-avatar, .interact-prompt').forEach(n => n.remove());
+
+  // NPC sprite (positioned absolutely via %)
+  const accent = NPC_ACCENT[sec.npc] || '#fde047';
+  const npc = el('div', {
+    class: 'npc-sprite',
+    id: 'npcSprite',
+    style: {
+      left: intr.npcX + '%',
+      top:  intr.npcY + '%',
+      backgroundImage: `url('${NPC_PORTRAIT(sec.npc)}')`,
+      borderColor: accent,
+      boxShadow: `0 0 24px ${accent}55`
+    },
+    onclick: () => { if (state.dialogue) return; sfxConfirm(); openNpcDialogueTree(sec); }
+  }, [
+    el('div', { class: 'npc-nameplate', text: sec.npc, style: { color: accent, borderColor: accent } })
+  ]);
+  room.appendChild(npc);
+
+  // Terminal (computer / desk) — opens the stats modal
+  const term = el('div', {
+    class: 'terminal-zone',
+    id: 'termZone',
+    style: { left: intr.termX + '%', top: intr.termY + '%' },
+    onclick: () => { sfxOpen(); openSectorTerminalModal(sec); }
+  });
+  room.appendChild(term);
+
+  // Door zone (bottom-center) — walking into it returns to overworld
+  const door = el('div', { class: 'door-zone', id: 'doorZone' });
+  room.appendChild(door);
+
+  // Player avatar at spawn
+  const av = el('div', {
+    class: 'player-avatar',
+    id: 'playerAvatar',
+    style: { left: intr.playerX + '%', top: intr.playerY + '%', backgroundImage: `url('${PLAYER_AVATAR_IMG}')` }
+  });
+  room.appendChild(av);
+
+  // Auto-talk on first entry per sector (preserved from prior version)
+  if (state._autoTalkTimer) { clearTimeout(state._autoTalkTimer); state._autoTalkTimer = null; }
+  if (!state.save.spoken_to.includes(sec.id)) {
+    state.save.spoken_to.push(sec.id);
+    persistSave();
+    state._autoTalkTimer = setTimeout(() => { state._autoTalkTimer = null; openNpcDialogueTree(sec); }, 450);
+  }
+}
+
+function updateInterior(dtMs) {
+  const intr = state.interior; if (!intr) return;
+  let vx = 0, vy = 0;
+  if (state.input.left)  vx -= 1;
+  if (state.input.right) vx += 1;
+  if (state.input.up)    vy -= 1;
+  if (state.input.down)  vy += 1;
+
+  if (vx !== 0 || vy !== 0) {
+    const len = Math.hypot(vx, vy);
+    vx /= len; vy /= len;
+    intr.facing = Math.atan2(vy, vx);
+    const step = INTERIOR_SPEED_PCT_PER_MS * dtMs;
+    intr.playerX = clamp(intr.playerX + vx * step, 4, 96);
+    intr.playerY = clamp(intr.playerY + vy * step, 4, 98);
+    const av = $('playerAvatar');
+    if (av) { av.style.left = intr.playerX + '%'; av.style.top = intr.playerY + '%'; av.classList.add('moving'); }
+    // Walking into the door zone exits to overworld
+    if (intr.playerY > DOOR_ZONE_TOP + 3) {
+      exitToOverworld();
+      return;
+    }
+  } else {
+    const av = $('playerAvatar'); if (av) av.classList.remove('moving');
+  }
+
+  // Recompute near-target each tick
+  const dn = Math.hypot(intr.playerX - intr.npcX, intr.playerY - intr.npcY);
+  const dt = Math.hypot(intr.playerX - intr.termX, intr.playerY - intr.termY);
+  const dd = intr.playerY - DOOR_ZONE_TOP;
+
+  let target = null, label = '', tx = 0, ty = 0;
+  if (dn < NPC_INTERACT_R) { target = 'npc';   label = `PRESS [SPACE] TO TALK · ${intr.sec.npc}`; tx = intr.npcX; ty = intr.npcY - 11; }
+  else if (dt < TERM_INTERACT_R) { target = 'terminal'; label = 'PRESS [SPACE] TO READ TERMINAL'; tx = intr.termX; ty = intr.termY - 8; }
+  else if (dd > -2) { target = 'door'; label = 'PRESS [SPACE] OR WALK DOWN TO EXIT'; tx = 50; ty = DOOR_ZONE_TOP - 4; }
+
+  if (target !== state.nearTarget) {
+    state.nearTarget = target;
+    if (target) showInteractPrompt(label, tx, ty); else hideInteractPrompt();
+    document.querySelectorAll('.npc-sprite').forEach(n => n.classList.toggle('near', target === 'npc'));
+  }
+}
+
+function exitToOverworld() {
+  state.interior = null;
+  state.nearTarget = null;
+  setView('MAP');
+  // Prefer the exact pre-entry position so the player walks out exactly
+  // where they walked in. Fall back to a collision-safe spawn next to the
+  // building if worldReturn would itself collide (defensive — shouldn't
+  // happen because worldReturn was a walkable cell, but resize between
+  // enter and exit could shift the collision footprint).
+  const sec = SECTORS[state.focusedSector];
+  const bh = getBuildingHalf();
+  const ret = state.worldReturn || {};
+  let nx = (typeof ret.x === 'number') ? ret.x : (sec ? sec.x : 50);
+  let ny = (typeof ret.y === 'number') ? ret.y : (sec ? sec.y : 60);
+  if (collidesOverworld(nx, ny) && sec) {
+    // Pick the first cardinal direction outside the building that's clear,
+    // preferring the side that keeps the player on-map.
+    const offsets = [
+      { dx: 0,           dy:  bh.h + 4 }, // below
+      { dx: 0,           dy: -bh.h - 4 }, // above
+      { dx:  bh.w + 4,   dy: 0          }, // right
+      { dx: -bh.w - 4,   dy: 0          }, // left
+    ];
+    for (const o of offsets) {
+      const cx = clamp(sec.x + o.dx, 5, 95);
+      const cy = clamp(sec.y + o.dy, 7, 93);
+      if (!collidesOverworld(cx, cy)) { nx = cx; ny = cy; break; }
+    }
+  }
+  state.player.x = clamp(nx, 3, 97);
+  state.player.y = clamp(ny, 5, 95);
+  hideInteractPrompt();
+  state.nearBuilding = null;
+  renderWorld();
+  sfxClose();
+}
+
+// Stats terminal (replaces the old static stats panel)
+function openSectorTerminalModal(sec) {
+  const body = el('div', {}, [el('h2', { text: `${sec.npc} TERMINAL · ${sec.id}` })]);
+  body.appendChild(el('div', { class: 'modal-hint', text: sec.role.toUpperCase(), style: { color: NPC_ACCENT[sec.npc], marginBottom: '10px' } }));
   const grid = el('div', { class: 'sector-stats-grid' });
   sectorStatBlocks(sec.id).forEach(b => {
     grid.appendChild(el('div', { class: 'k', text: b.k }));
     grid.appendChild(el('div', { class: 'v', text: String(b.v) }));
   });
-  panel.appendChild(grid);
+  body.appendChild(grid);
+  const enterRow = el('div', { class: 'menu-item', onclick: () => { sfxConfirm(); window.location.href = sec.href; } }, [
+    el('span', { class: 'arrow', text: '▶' }),
+    el('span', { text: 'OPEN LIVE PANEL' })
+  ]);
+  const closeRow = el('div', { class: 'menu-item', onclick: closeModal }, [
+    el('span', { class: 'arrow', text: '▶' }),
+    el('span', { text: 'CLOSE [X]' })
+  ]);
+  body.appendChild(el('div', { style: { marginTop: '14px' } }, [enterRow, closeRow]));
+  body.appendChild(el('div', { class: 'modal-hint', text: 'Live panel is the real cockpit page for this pillar.' }));
+  openModal(body, [enterRow, closeRow]);
+}
 
-  const actions = $('sectorActions');
-  actions.textContent = '';
-  actions.appendChild(el('button', { class: 'btn-ry primary', text: '◀ MAP', onclick: () => { sfxClose(); setView('MAP'); renderMap(); } }));
-  actions.appendChild(el('button', { class: 'btn-ry', text: 'TALK', onclick: () => { sfxConfirm(); talkToNpc(sec); } }));
-  actions.appendChild(el('button', { class: 'btn-ry', text: 'ENTER LIVE PANEL ▶', onclick: () => { sfxConfirm(); window.location.href = sec.href; } }));
-  actions.appendChild(el('button', { class: 'btn-ry', text: 'QUESTS', onclick: () => { sfxOpen(); openQuestModal(); } }));
+function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+function anyMoveKeyHeld() { return state.input.up || state.input.down || state.input.left || state.input.right; }
 
-  // Auto-talk on first entry per sector (persisted across reloads via save.spoken_to).
-  // Cancel any prior auto-talk timer if user re-enters a different sector before
-  // the previous 300ms timeout fires.
-  if (state._autoTalkTimer) { clearTimeout(state._autoTalkTimer); state._autoTalkTimer = null; }
-  if (!state.save.spoken_to.includes(sec.id)) {
-    state.save.spoken_to.push(sec.id);
-    persistSave();
-    state._autoTalkTimer = setTimeout(() => { state._autoTalkTimer = null; talkToNpc(sec); }, 300);
+// ═══════════════════════════════════════════════════════════════
+// GAME LOOP — requestAnimationFrame driven while view is MAP or
+// SECTOR. Auto-pauses while a dialogue or modal is open (input is
+// still captured for the menu / dialogue handlers).
+// ═══════════════════════════════════════════════════════════════
+
+function startGameLoop() {
+  if (state._rafId) return;
+  state._lastTick = performance.now();
+  const loop = (now) => {
+    const dt = Math.min(48, now - state._lastTick); // clamp huge gaps (tab return)
+    state._lastTick = now;
+    // Movement only happens when not in a dialogue/modal
+    if (!state.dialogue && !state.modal) {
+      if (state.view === 'MAP') updateOverworld(dt);
+      else if (state.view === 'SECTOR') updateInterior(dt);
+    } else {
+      // Stop avatar walk-animation while paused
+      const av = $('playerAvatar'); if (av) av.classList.remove('moving');
+    }
+    state._rafId = requestAnimationFrame(loop);
+  };
+  state._rafId = requestAnimationFrame(loop);
+}
+function stopGameLoop() {
+  if (state._rafId) { cancelAnimationFrame(state._rafId); state._rafId = null; }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DIALOGUE — branching tree per NPC. Each option is either an
+// action (`do:`) that returns a follow-up dialogue text, a leaf
+// (`leave`), or a navigation (`href`/`modal`).
+// ═══════════════════════════════════════════════════════════════
+
+// Build the choice tree for a given NPC. Choices return their own
+// follow-up body when selected, then re-enter the same tree so the
+// player can ask a second question without re-opening dialogue.
+function buildDialogueChoices(sec) {
+  const s = state.snapshot || {};
+  const rev = s.revenue || {};
+  const t = s.tickets || {};
+  const pipe = s.pipeline || {};
+  const ads = s.metaAds || {};
+  const brief = s.briefing_morning || {};
+  const leads = s.leads || {};
+  const alerts = s.alerts || [];
+
+  const enterPanel = { label: `Open ${sec.id} live panel`, kind: 'href', href: sec.href };
+  const leave      = { label: 'Leave',                    kind: 'leave', danger: true };
+
+  switch (sec.npc) {
+    case 'ZEUS': {
+      const top3 = brief.top3 || [];
+      return [
+        { label: 'Today\'s briefing', kind: 'reply',
+          body: `Status: ${(brief.status || 'unknown').toUpperCase()}. ${top3.length ? top3.length + ' priority items flagged.' : 'No flagged priorities.'}` },
+        { label: 'Top 3 priorities', kind: 'reply',
+          body: top3.length ? top3.slice(0,3).map((q,i) => `${i+1}. ${q.action || q.title || 'priority ' + (i+1)}`).join('\n') : 'No flagged priorities right now.' },
+        { label: 'Open the quest log', kind: 'modal', modal: 'quests' },
+        enterPanel,
+        leave
+      ];
+    }
+    case 'HERMES': {
+      const signed = Math.round((rev.signedRevenue || 0) / 1000);
+      const pipeVal = Math.round((pipe.totalValue || 0) / 1000);
+      const top = (pipe.top5_deals || [])[0];
+      return [
+        { label: 'How is the pipeline?', kind: 'reply',
+          body: `Pipeline $${pipeVal}K across ${pipe.openDeals || 0} open deals. Signed $${signed}K month-to-date.` },
+        { label: 'Top deal right now', kind: 'reply',
+          body: top ? `${top.customer || top.name || 'top deal'} · ${fmt$(top.value)}` : 'No open deals in pipeline.' },
+        { label: 'New leads this week', kind: 'reply',
+          body: `${leads.thisWeek || 0} new leads this week · ${leads.total || 0} all-time.` },
+        enterPanel,
+        leave
+      ];
+    }
+    case 'HEPHAESTUS': {
+      const byStat = t.byStatus || {};
+      const active = byStat.active || 0;
+      const open = byStat.open || 0;
+      const overdue = t.overdueCount || 0;
+      return [
+        { label: 'Active jobs right now', kind: 'reply',
+          body: `${active} active · ${open} open · ${overdue} overdue. ${overdue > 20 ? 'The forge is roaring.' : overdue > 5 ? 'Some catching up to do.' : 'Workload steady.'}` },
+        { label: 'Who has the most overdue?', kind: 'reply',
+          body: bottleneckAssignee() },
+        { label: 'Open production cockpit', kind: 'href', href: sec.href },
+        leave
+      ];
+    }
+    case 'ARTEMIS': {
+      const byStat = t.byStatus || {};
+      const active = byStat.active || 0;
+      const today = (t.activeToday || []).length;
+      return [
+        { label: 'Dispatch board status', kind: 'reply',
+          body: `${active} active service calls · ${today} on dispatch today.` },
+        { label: 'Unassigned tickets', kind: 'reply',
+          body: `${(t.byAssignee && t.byAssignee.Unassigned) || 0} unassigned tickets in queue.` },
+        enterPanel,
+        leave
+      ];
+    }
+    case 'HESTIA': {
+      const totalTix = t.total || 0;
+      const recent = (rev.recentActivity || []).slice(0,3);
+      return [
+        { label: 'Customer pulse', kind: 'reply',
+          body: `${totalTix} tickets warm across all customers right now.` },
+        { label: 'Recent activity (top 3)', kind: 'reply',
+          body: recent.length ? recent.map(r => `· ${(r.customer || 'customer')} — ${(r.action || 'event')}`).join('\n') : 'No recent customer activity in current snapshot.' },
+        enterPanel,
+        leave
+      ];
+    }
+    case 'ATHENA': {
+      const signed = Math.round((rev.signedRevenue || 0) / 1000);
+      const pend = Math.round((rev.pendingRevenue || 0) / 1000);
+      const adRoi = brief.kpiScouter && brief.kpiScouter.adROI;
+      return [
+        { label: 'Show me the money (MTD)', kind: 'reply',
+          body: `Signed $${signed}K · Pending $${pend}K month-to-date.` },
+        { label: 'Ad ROI right now', kind: 'reply',
+          body: adRoi != null ? `Ad ROI ${adRoi}.` : 'Ad ROI signal not present in this snapshot.' },
+        { label: 'Open finance dashboard', kind: 'href', href: sec.href },
+        leave
+      ];
+    }
+    case 'HECATE': {
+      const watchdog = alerts.find(a => /watchdog|cron/i.test(String(a)));
+      const stale = alerts.find(a => /stale/i.test(String(a)));
+      return [
+        { label: 'Watchdog status', kind: 'reply',
+          body: watchdog ? `⚠ ${watchdog}` : 'Watchdog clean. Cron firing as scheduled.' },
+        { label: 'Any stale data?', kind: 'reply',
+          body: stale ? `${stale}` : 'No stale data flagged. Snapshot is current.' },
+        { label: 'Active Claude sessions', kind: 'reply',
+          body: state.ccSessions.length ? state.ccSessions.map(c => `· ${c.user_label || 'Claude'} — ${c.last_tool || 'idle'}`).join('\n') : 'No active Claude Code sessions right now.' },
+        { label: 'Open admin console', kind: 'href', href: sec.href },
+        leave
+      ];
+    }
+    case 'APOLLO': {
+      const cpl = ads.avgCPL;
+      const lw = leads.thisWeek || 0;
+      const total = leads.total || 0;
+      return [
+        { label: 'Lead flow this week', kind: 'reply',
+          body: `${lw} new leads this week. ${total} all-time. ${lw < 3 ? 'Time to amplify.' : lw < 8 ? 'Steady channel.' : 'Channel singing.'}` },
+        { label: 'Cost per lead', kind: 'reply',
+          body: cpl != null ? `Average CPL $${cpl.toFixed(2)} across active campaigns.` : 'CPL not present in this snapshot.' },
+        { label: 'Active campaigns', kind: 'reply',
+          body: `${ads.activeCampaigns || 0} active campaigns.` },
+        { label: 'Open marketing dashboard', kind: 'href', href: sec.href },
+        leave
+      ];
+    }
   }
+  return [enterPanel, leave];
 }
 
-// ═════ DIALOGUE ═════
-function talkToNpc(sec) {
-  const speaker = sec.npc;
-  const body = godLine(speaker);
-  openDialogue({ speaker, accent: NPC_ACCENT[speaker], portrait: NPC_PORTRAIT(speaker), body });
+function bottleneckAssignee() {
+  const t = (state.snapshot && state.snapshot.tickets) || {};
+  const byA = t.byAssignee || {};
+  let max = 0, who = null;
+  Object.keys(byA).forEach(name => { if ((byA[name] || 0) > max) { max = byA[name]; who = name; } });
+  return who ? `${who} has the heaviest load (${max} tickets).` : 'No assignee breakdown in current snapshot.';
 }
+
+function openNpcDialogueTree(sec, options) {
+  const speaker = sec.npc;
+  const body = (options && options.body) || godLine(speaker);
+  const choices = buildDialogueChoices(sec);
+  openDialogue({
+    speaker,
+    accent: NPC_ACCENT[speaker],
+    portrait: NPC_PORTRAIT(speaker),
+    body,
+    choices,
+    choiceIdx: 0,
+    kind: 'npc-tree',
+    sec
+  });
+}
+
+// Legacy single-line talk (kept so existing code paths still work)
+function talkToNpc(sec) { openNpcDialogueTree(sec); }
 function openDialogue(d) {
-  state.dialogue = Object.assign({ revealed: 0 }, d);
+  state.dialogue = Object.assign({ revealed: 0, choiceIdx: 0 }, d);
   $('dialogue').classList.add('open');
   document.body.classList.add('dialogue-open');
   $('dialogueSpeaker').textContent = d.speaker;
@@ -1095,13 +1834,16 @@ function openDialogue(d) {
   $('dialogueSpeaker').style.borderColor = d.accent || 'var(--cyan)';
   $('dialogueBody').textContent = '';
   $('dialogueAdvance').style.display = 'none';
+  $('dialogueChoices').classList.remove('show');
+  $('dialogueChoices').textContent = '';
   if (d.portrait) {
     $('dialoguePortrait').style.display = 'block';
     $('dialoguePortraitImg').src = d.portrait;
+    attachPortraitFallback($('dialoguePortraitImg'));
   } else {
     $('dialoguePortrait').style.display = 'none';
   }
-  // Start typewriter
+  // Start typewriter; on completion, either show advance-arrow or branching choices
   if (state._typewriterTimer) clearInterval(state._typewriterTimer);
   state._typewriterTimer = setInterval(() => {
     if (!state.dialogue) { clearInterval(state._typewriterTimer); return; }
@@ -1111,24 +1853,112 @@ function openDialogue(d) {
     if (state.dialogue.revealed % 8 === 0) sfxAdvance();
     if (state.dialogue.revealed >= state.dialogue.body.length) {
       clearInterval(state._typewriterTimer);
-      $('dialogueAdvance').style.display = 'block';
+      onDialogueBodyComplete();
     }
-  }, 30);
+  }, 24);
 }
+
+function onDialogueBodyComplete() {
+  if (!state.dialogue) return;
+  if (state.dialogue.choices && state.dialogue.choices.length) {
+    renderDialogueChoices();
+  } else {
+    $('dialogueAdvance').style.display = 'block';
+  }
+}
+
+function renderDialogueChoices() {
+  const box = $('dialogueChoices');
+  box.textContent = '';
+  const choices = state.dialogue.choices || [];
+  choices.forEach((c, i) => {
+    const row = el('button', {
+      type: 'button',
+      class: 'dialogue-choice' + (c.danger ? ' danger' : '') + (i === state.dialogue.choiceIdx ? ' focused' : ''),
+      onclick: (e) => { e.stopPropagation(); selectChoice(i); }
+    }, [
+      el('span', { class: 'num', text: String(i + 1) }),
+      el('span', { text: c.label })
+    ]);
+    box.appendChild(row);
+  });
+  box.classList.add('show');
+  $('dialogueAdvance').style.display = 'none';
+}
+
+function moveChoiceFocus(delta) {
+  if (!state.dialogue || !state.dialogue.choices) return;
+  const n = state.dialogue.choices.length;
+  state.dialogue.choiceIdx = (state.dialogue.choiceIdx + delta + n) % n;
+  document.querySelectorAll('.dialogue-choice').forEach((node, i) => node.classList.toggle('focused', i === state.dialogue.choiceIdx));
+  sfxStep();
+}
+
+function selectChoice(idx) {
+  if (!state.dialogue || !state.dialogue.choices) return;
+  const c = state.dialogue.choices[idx];
+  if (!c) return;
+  sfxConfirm();
+  if (c.kind === 'leave') {
+    closeDialogue();
+  } else if (c.kind === 'href') {
+    closeDialogue();
+    window.location.href = c.href;
+  } else if (c.kind === 'modal') {
+    closeDialogue();
+    if (c.modal === 'quests') openQuestModal();
+    else if (c.modal === 'party') openPartyModal();
+    else if (c.modal === 'inventory') openInventoryModal();
+    else if (c.modal === 'settings') openSettingsModal();
+  } else if (c.kind === 'reply') {
+    // Replace body with the reply, then re-show same choice list so the
+    // player can ask another question without re-opening.
+    const sec = state.dialogue.sec;
+    const speaker = state.dialogue.speaker;
+    state.dialogue.body = c.body;
+    state.dialogue.revealed = 0;
+    state.dialogue.choiceIdx = 0;
+    $('dialogueChoices').classList.remove('show');
+    $('dialogueChoices').textContent = '';
+    $('dialogueBody').textContent = '';
+    $('dialogueAdvance').style.display = 'none';
+    if (state._typewriterTimer) clearInterval(state._typewriterTimer);
+    // Speed up reply typewriter so chained Q&A feels snappy
+    state._typewriterTimer = setInterval(() => {
+      if (!state.dialogue) { clearInterval(state._typewriterTimer); return; }
+      state.dialogue.revealed += 3;
+      $('dialogueBody').textContent = state.dialogue.body.slice(0, state.dialogue.revealed);
+      if (state.dialogue.revealed % 10 === 0) sfxAdvance();
+      if (state.dialogue.revealed >= state.dialogue.body.length) {
+        clearInterval(state._typewriterTimer);
+        // Refresh the choice list so it stays available
+        state.dialogue.choices = buildDialogueChoices(sec);
+        renderDialogueChoices();
+      }
+    }, 22);
+  }
+}
+
 function closeDialogue() {
   state.dialogue = null;
   $('dialogue').classList.remove('open');
   document.body.classList.remove('dialogue-open');
+  $('dialogueChoices').classList.remove('show');
+  $('dialogueChoices').textContent = '';
   if (state._typewriterTimer) clearInterval(state._typewriterTimer);
 }
 function advanceDialogue() {
   if (!state.dialogue) return;
   if (state.dialogue.revealed < state.dialogue.body.length) {
+    // Skip typewriter
     state.dialogue.revealed = state.dialogue.body.length;
     $('dialogueBody').textContent = state.dialogue.body;
-    $('dialogueAdvance').style.display = 'block';
     if (state._typewriterTimer) clearInterval(state._typewriterTimer);
+    onDialogueBodyComplete();
     sfxAdvance();
+  } else if (state.dialogue.choices && state.dialogue.choices.length) {
+    // Choices showing: Enter selects current focus
+    selectChoice(state.dialogue.choiceIdx);
   } else {
     closeDialogue();
     sfxClose();
@@ -1183,7 +2013,7 @@ function handleMenuPick(kind) {
   if (kind === 'quests') openQuestModal();
   else if (kind === 'party') openPartyModal();
   else if (kind === 'inventory') openInventoryModal();
-  else if (kind === 'map') { setView('MAP'); renderMap(); }
+  else if (kind === 'map') { state.interior = null; setView('MAP'); renderWorld(); }
   else if (kind === 'settings') openSettingsModal();
   else if (kind === 'exit') { try { localStorage.setItem('ry_ui_mode', 'normal'); } catch {} window.location.href = '/command-center.html'; }
   else if (kind === 'title') { setView('TITLE'); enterTitle(); }
@@ -1340,9 +2170,24 @@ function toast(msg, level) {
 }
 
 // ═════ Input ═════
+// Movement keys are tracked as held state and consumed by the game loop.
+// Discrete keys (Enter, Esc, number keys, etc.) fire on the keydown edge.
+function setMoveKey(k, down) {
+  if (k === 'ArrowUp'    || k === 'w' || k === 'W') { state.input.up = down; return true; }
+  if (k === 'ArrowDown'  || k === 's' || k === 'S') { state.input.down = down; return true; }
+  if (k === 'ArrowLeft'  || k === 'a' || k === 'A') { state.input.left = down; return true; }
+  if (k === 'ArrowRight' || k === 'd' || k === 'D') { state.input.right = down; return true; }
+  return false;
+}
+
 document.addEventListener('keydown', (e) => {
+  // Don't capture input when the user is typing in a real input/textarea
+  // (none today, but defensive against future modals with text fields)
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
   const k = e.key;
-  // Modal-open: ESC/X closes
+
+  // Modal open: navigate menu items
   if (state.modal) {
     if (k === 'Escape' || k === 'x' || k === 'X' || k === 'b' || k === 'B') { e.preventDefault(); closeModal(); return; }
     if (k === 'ArrowDown' || k === 'ArrowUp') {
@@ -1353,7 +2198,7 @@ document.addEventListener('keydown', (e) => {
       refreshModalFocus();
       return;
     }
-    if (k === 'Enter' || k === 'z' || k === 'Z') {
+    if (k === 'Enter' || k === 'z' || k === 'Z' || k === ' ') {
       e.preventDefault();
       const node = state.modal.focusable[state.modal.focusIdx];
       if (node && typeof node.click === 'function') node.click();
@@ -1361,38 +2206,79 @@ document.addEventListener('keydown', (e) => {
     }
     return;
   }
-  // Dialogue open: any key advances
+
+  // Dialogue open: choices navigation OR advance/skip
   if (state.dialogue) {
     if (k === 'Escape' || k === 'x' || k === 'X' || k === 'b' || k === 'B') { e.preventDefault(); closeDialogue(); sfxClose(); return; }
-    if (k === 'Enter' || k === 'z' || k === 'Z' || k === ' ') { e.preventDefault(); advanceDialogue(); return; }
+    // Choices visible: arrow keys cycle, Enter selects, number keys jump
+    if (state.dialogue.choices && state.dialogue.revealed >= state.dialogue.body.length) {
+      if (k === 'ArrowDown' || k === 's' || k === 'S') { e.preventDefault(); moveChoiceFocus(1); return; }
+      if (k === 'ArrowUp' || k === 'w' || k === 'W')   { e.preventDefault(); moveChoiceFocus(-1); return; }
+      if (/^[1-9]$/.test(k)) {
+        const idx = parseInt(k, 10) - 1;
+        if (idx < state.dialogue.choices.length) { e.preventDefault(); selectChoice(idx); return; }
+      }
+      if (k === 'Enter' || k === 'z' || k === 'Z' || k === ' ' || k === 'e' || k === 'E') {
+        e.preventDefault(); selectChoice(state.dialogue.choiceIdx); return;
+      }
+      return;
+    }
+    if (k === 'Enter' || k === 'z' || k === 'Z' || k === ' ' || k === 'e' || k === 'E') {
+      e.preventDefault(); advanceDialogue(); return;
+    }
     return;
   }
-  // TITLE
+
+  // TITLE: any START key boots
   if (state.view === 'TITLE') {
     if (k === 'Enter' || k === 'z' || k === 'Z' || k === ' ') { e.preventDefault(); bootPressStart(); return; }
     return;
   }
-  // MAP
-  if (state.view === 'MAP') {
-    const mapCols = window.matchMedia('(max-width: 720px)').matches ? 2 : 4;
-    if (k === 'ArrowRight' || k === 'd' || k === 'D') { e.preventDefault(); state.focusedSector = Math.min(7, state.focusedSector + 1); renderMap(); sfxStep(); return; }
-    if (k === 'ArrowLeft' || k === 'a' || k === 'A') { e.preventDefault(); state.focusedSector = Math.max(0, state.focusedSector - 1); renderMap(); sfxStep(); return; }
-    if (k === 'ArrowDown' || k === 's' || k === 'S') { e.preventDefault(); state.focusedSector = Math.min(7, state.focusedSector + mapCols); renderMap(); sfxStep(); return; }
-    if (k === 'ArrowUp' || k === 'w' || k === 'W') { e.preventDefault(); state.focusedSector = Math.max(0, state.focusedSector - mapCols); renderMap(); sfxStep(); return; }
-    if (k === 'Enter' || k === 'z' || k === 'Z') { e.preventDefault(); enterSector(); return; }
+
+  // Global hotkeys (work in MAP + SECTOR)
+  if (k === 'Escape') { e.preventDefault(); openMainMenu(); return; }
+  if (k === 'm' || k === 'M') {
+    e.preventDefault(); state.save.muted = !state.save.muted; persistSave();
+    $('btnMute').style.opacity = state.save.muted ? '0.4' : '1';
+    if (!state.save.muted) sfxConfirm();
+    return;
   }
-  // SECTOR
-  if (state.view === 'SECTOR') {
-    if (k === 'Escape' || k === 'x' || k === 'X' || k === 'b' || k === 'B') { e.preventDefault(); sfxClose(); setView('MAP'); renderMap(); return; }
-    if (k === 'Enter' || k === 'z' || k === 'Z' || k === 't' || k === 'T') { e.preventDefault(); const sec = SECTORS[state.focusedSector]; if (sec) talkToNpc(sec); return; }
-    if (k === 'q' || k === 'Q') { e.preventDefault(); openQuestModal(); return; }
+  if (k === 'q' || k === 'Q') { e.preventDefault(); openQuestModal(); return; }
+
+  // Movement (held)
+  if (setMoveKey(k, true)) { e.preventDefault(); return; }
+
+  // Action (interact)
+  if (k === ' ' || k === 'Enter' || k === 'z' || k === 'Z' || k === 'e' || k === 'E') {
+    e.preventDefault();
+    handleAction();
+    return;
   }
-  // Global
-  if (k === 'Escape' && state.view !== 'TITLE') { e.preventDefault(); openMainMenu(); return; }
-  if (k === 'm' || k === 'M') { e.preventDefault(); state.save.muted = !state.save.muted; persistSave(); $('btnMute').style.opacity = state.save.muted ? '0.4' : '1'; if (!state.save.muted) sfxConfirm(); return; }
 });
 
-// Click handlers for global buttons
+document.addEventListener('keyup', (e) => {
+  if (setMoveKey(e.key, false)) e.preventDefault();
+});
+// Defensive: if window loses focus mid-walk, clear all held keys so the
+// player doesn't keep walking after Alt-Tab back.
+window.addEventListener('blur', () => {
+  state.input.up = state.input.down = state.input.left = state.input.right = false;
+});
+
+// "Action" button — interact with the closest target in the current view
+function handleAction() {
+  if (state.view === 'MAP') {
+    if (state.nearBuilding) { sfxConfirm(); enterSector(); }
+  } else if (state.view === 'SECTOR') {
+    const intr = state.interior;
+    if (!intr) return;
+    if (state.nearTarget === 'npc') { sfxConfirm(); openNpcDialogueTree(intr.sec); }
+    else if (state.nearTarget === 'terminal') { sfxOpen(); openSectorTerminalModal(intr.sec); }
+    else if (state.nearTarget === 'door') { sfxClose(); exitToOverworld(); }
+  }
+}
+
+// Click handlers for global buttons + touch D-pad wiring
 document.addEventListener('DOMContentLoaded', () => {
   $('btnMute').addEventListener('click', () => {
     state.save.muted = !state.save.muted; persistSave();
@@ -1401,9 +2287,55 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   $('btnPause').addEventListener('click', () => openMainMenu());
   $('viewTitle').addEventListener('click', () => { if (state.view === 'TITLE') bootPressStart(); });
-  $('dialogue').addEventListener('click', () => advanceDialogue());
+  // Dialogue click:
+  //   - With choices visible: only skip the typewriter; never auto-pick a
+  //     choice from a body click (the choice list is the explicit menu).
+  //   - Without choices (single-line dialogues like the Claude wizard popup):
+  //     click advances/closes the dialogue, same as Enter.
+  $('dialogue').addEventListener('click', (e) => {
+    if (e.target.closest('.dialogue-choice')) return;
+    if (!state.dialogue) return;
+    if (state.dialogue.choices) {
+      if (state.dialogue.revealed < state.dialogue.body.length) advanceDialogue();
+    } else {
+      advanceDialogue();
+    }
+  });
   $('modalBack').addEventListener('click', (e) => { if (e.target.id === 'modalBack') closeModal(); });
   $('btnMute').style.opacity = state.save.muted ? '0.4' : '1';
+
+  // Touch device detection — show virtual D-pad + action button if any
+  // touch input is supported. Hidden by default on mouse/keyboard so it
+  // doesn't crowd the desktop view.
+  const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+  if (isTouch) {
+    $('virtualPad').classList.add('show');
+    $('vpAction').classList.add('show');
+  }
+
+  // D-pad: held while pressed; works on both mouse + touch
+  document.querySelectorAll('.vp-btn').forEach(btn => {
+    const dir = btn.getAttribute('data-dir');
+    const set = (down) => {
+      if (dir === 'up')    state.input.up = down;
+      if (dir === 'down')  state.input.down = down;
+      if (dir === 'left')  state.input.left = down;
+      if (dir === 'right') state.input.right = down;
+      btn.classList.toggle('held', down);
+    };
+    btn.addEventListener('touchstart', (e) => { e.preventDefault(); set(true); }, { passive: false });
+    btn.addEventListener('touchend',   (e) => { e.preventDefault(); set(false); });
+    btn.addEventListener('touchcancel',(e) => { e.preventDefault(); set(false); });
+    btn.addEventListener('mousedown',  (e) => { e.preventDefault(); set(true); });
+    btn.addEventListener('mouseup',    () => set(false));
+    btn.addEventListener('mouseleave', () => set(false));
+  });
+
+  // Action (A) button — single-tap action
+  const actBtn = $('vpAction');
+  const fireAction = (e) => { e.preventDefault(); actBtn.classList.add('held'); handleAction(); setTimeout(() => actBtn.classList.remove('held'), 120); };
+  actBtn.addEventListener('touchstart', fireAction, { passive: false });
+  actBtn.addEventListener('mousedown',  fireAction);
 });
 
 // ═════ Boot ═════
@@ -1433,7 +2365,11 @@ window.addEventListener('pageshow', (e) => {
   if (e.persisted) {
     state._intervals.forEach(id => clearInterval(id));
     state._intervals = [];
+    stopGameLoop();
     boot();
+    // If user is mid-walk when navigating back, restart the loop. The
+    // loop boots itself on PRESS START otherwise.
+    if (state.view !== 'TITLE') startGameLoop();
   }
 });
 boot();
