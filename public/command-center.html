@@ -1912,66 +1912,101 @@ if(window.__RY_8BIT__){var _v=document.getElementById('sentinel-video');if(_v){_
     list.innerHTML = '<div class="ws-loading">Loading tasks…</div>';
     try {
       await loadMe();
-      // Tasks tab feeds from WORKORDERS now (the dormant tickets table was
-      // surfacing 35 stale April checklist items as "overdue" per
-      // project_job_folders_source_of_truth). Workorder = real active job.
       const token = localStorage.getItem('ryujin_token');
-      const r = await fetch('/api/workorders?limit=100', {
-        headers: Object.assign({ 'x-tenant-id': 'plus-ultra' }, token ? { 'Authorization': 'Bearer ' + token } : {})
-      });
-      if (!r.ok) throw new Error('Workorders fetch failed: ' + r.status);
-      const data = await r.json();
-      const wos = Array.isArray(data) ? data : (data.workorders || data.data || []);
-      // Active jobs only; if this user has a name, soft-match against sub_crew_lead.
+      const wsHeaders = Object.assign({ 'x-tenant-id': 'plus-ultra' }, token ? { 'Authorization': 'Bearer ' + token } : {});
+
+      // Parallel: workorders (cockpit-honest source, real active jobs) + snapshot (GHL salesTasks)
+      const [woRes, snap] = await Promise.all([
+        fetch('/api/workorders?limit=100', { headers: wsHeaders }).then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch('/api/snapshot', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null)
+      ]);
+
+      const wos = Array.isArray(woRes) ? woRes : ((woRes && (woRes.workorders || woRes.data)) || []);
       const myToken = (me.name || '').split(' ')[0].toLowerCase();
       const isPrivileged = me.is_admin || me.role === 'owner' || me.role === 'admin';
-      const tickets = wos
+      const rxTix = wos
         .filter(w => !w.completed_at && (w.status || '').toLowerCase() !== 'cancelled')
         .filter(w => isPrivileged || !myToken || (w.sub_crew_lead || '').toLowerCase().includes(myToken))
         .map(w => ({
+          _kind: 'ops',
           id: w.id,
           title: w.customer_name
             ? (w.customer_name + ' (' + (w.address || ('WO-' + w.wo_number)) + ')')
             : (w.address || ('WO-' + w.wo_number)),
-          status: w.status,
-          priority: null,
-          due_date: w.start_date,
-          assignee: w.sub_crew_lead || 'Unassigned'
+          priority: w.priority || 'medium',
+          due: w.start_date || null,
+          link: '/admin.html#crew'
         }));
+
+      const meFirst = (me.name || '').toLowerCase().split(/\s+/)[0];
+      const salesRaw = (snap && snap.sections && snap.sections.salesTasks && snap.sections.salesTasks.tasks) || [];
+      const sales = salesRaw
+        .filter(t => meFirst && (t.assignedTo || '').toLowerCase().includes(meFirst))
+        .map(t => ({
+          _kind: 'sales',
+          id: t.id || t.contactId || '',
+          title: (t.title || 'Untitled') + (t.contact ? ' · ' + t.contact : ''),
+          priority: t.overdue ? 'overdue' : 'high',
+          due: t.dueDate || null,
+          link: t.contactId
+            ? ('https://app.gohighlevel.com/v2/location/aHotOUdq9D8m3JPrRz9n/contacts/detail/' + encodeURIComponent(t.contactId))
+            : '/admin.html#crew'
+        }));
+
+      const all = [...rxTix, ...sales];
       const today = new Date(); today.setHours(0,0,0,0);
-      const sorted = tickets.slice().sort((a,b) => {
-        const ad = a.due_date ? new Date(a.due_date).getTime() : Infinity;
-        const bd = b.due_date ? new Date(b.due_date).getTime() : Infinity;
-        return ad - bd;
-      });
-      if (!sorted.length) {
+
+      if (!all.length) {
         list.innerHTML = '<div class="ws-empty">No open tasks. Nice.</div>';
         $('tabBadgeTasks').hidden = true;
         return;
       }
-      const overdue = sorted.filter(t => t.due_date && new Date(t.due_date).setHours(0,0,0,0) < today.getTime()).length;
+
+      const sorted = all.slice().sort((a,b) => {
+        const aOd = a.due && new Date(a.due).setHours(0,0,0,0) < today.getTime();
+        const bOd = b.due && new Date(b.due).setHours(0,0,0,0) < today.getTime();
+        if (aOd !== bOd) return aOd ? -1 : 1;
+        const ad = a.due ? new Date(a.due).getTime() : Infinity;
+        const bd = b.due ? new Date(b.due).getTime() : Infinity;
+        return ad - bd;
+      });
+
+      const overdue = sorted.filter(t => t.due && new Date(t.due).setHours(0,0,0,0) < today.getTime()).length;
       const badge = $('tabBadgeTasks');
       badge.textContent = sorted.length + (overdue ? ' · ' + overdue + ' OD' : '');
       badge.hidden = false;
-      list.innerHTML = sorted.map(t => {
-        const isOverdue = t.due_date && new Date(t.due_date).setHours(0,0,0,0) < today.getTime();
+
+      list.innerHTML = '';
+      sorted.forEach(t => {
+        const isOverdue = t.due && new Date(t.due).setHours(0,0,0,0) < today.getTime();
         const prio = (isOverdue ? 'overdue' : (t.priority || 'medium')).toLowerCase();
-        const meta = [];
-        if (t.due_date) meta.push(fmtDate(t.due_date));
-        if (t.project_id) meta.push('#' + (t.id || '').toString().slice(-4));
-        return `<div class="ws-task" data-id="${t.id}">
-          <div class="t-row">
-            <div>
-              <div class="t-title">${(t.title || 'Untitled').replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'})[c])}</div>
-              <div class="t-meta">${meta.join(' · ') || 'no due date'}</div>
-            </div>
-            <div class="t-prio ${prio}">${prio.toUpperCase()}</div>
-          </div>
-        </div>`;
-      }).join('');
+        const metaParts = [];
+        if (t.due) metaParts.push(fmtDate(t.due));
+        metaParts.push(t._kind === 'sales' ? 'SALES' : 'OPS');
+
+        const row = document.createElement('div');
+        row.className = 'ws-task';
+        row.dataset.link = t.link || '/admin.html#crew';
+
+        const tRow = document.createElement('div'); tRow.className = 't-row';
+        const left = document.createElement('div');
+        const titleEl = document.createElement('div'); titleEl.className = 't-title'; titleEl.textContent = t.title;
+        const metaEl = document.createElement('div'); metaEl.className = 't-meta'; metaEl.textContent = metaParts.join(' · ');
+        left.appendChild(titleEl); left.appendChild(metaEl);
+        const prioEl = document.createElement('div'); prioEl.className = 't-prio ' + prio; prioEl.textContent = prio.toUpperCase();
+        tRow.appendChild(left); tRow.appendChild(prioEl);
+        row.appendChild(tRow);
+        list.appendChild(row);
+      });
+
       list.querySelectorAll('.ws-task').forEach(el => {
         el.addEventListener('click', () => {
-          window.location.href = '/admin.html#crew';
+          const link = el.dataset.link || '/admin.html#crew';
+          if (/^https?:\/\//i.test(link)) {
+            window.open(link, '_blank', 'noopener,noreferrer');
+          } else {
+            window.location.href = link;
+          }
         });
       });
     } catch(e) {
