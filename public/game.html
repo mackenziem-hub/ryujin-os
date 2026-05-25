@@ -445,6 +445,47 @@
     cursor: pointer;
     image-rendering: pixelated;
   }
+  /* Floating speech bubble that pops above the painted character (or
+     comms terminal) while a dialogue is open. Pixel-art classic-JRPG
+     style: white box with rounded corners, three bouncing dots, dark
+     tail pointing down toward the speaker. */
+  .speech-bubble {
+    position: absolute;
+    transform: translate(-50%, -100%);
+    width: 48px; height: 32px;
+    background: #fff;
+    border: 3px solid #060a14;
+    border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Press Start 2P', monospace; font-size: 14px;
+    color: #060a14; letter-spacing: 3px;
+    box-shadow: 0 3px 0 rgba(0,0,0,0.55), 0 0 12px rgba(34,211,238,0.35);
+    z-index: 50;
+    pointer-events: none;
+    animation: speechBob 0.55s ease-in-out infinite;
+    image-rendering: pixelated;
+  }
+  .speech-bubble::after {
+    content: ''; position: absolute; bottom: -11px; left: 50%;
+    transform: translateX(-50%);
+    width: 0; height: 0;
+    border: 7px solid transparent;
+    border-top: 9px solid #060a14;
+  }
+  .speech-bubble::before {
+    content: ''; position: absolute; bottom: -6px; left: 50%;
+    transform: translateX(-50%);
+    width: 0; height: 0;
+    border: 5px solid transparent;
+    border-top: 7px solid #fff;
+    z-index: 1;
+  }
+  @keyframes speechBob {
+    0%, 100% { transform: translate(-50%, -100%); }
+    50%      { transform: translate(-50%, -112%); }
+  }
+  .speech-bubble.done { animation: none; opacity: 0.55; }
+
   /* Office NPC hotspot: invisible click target overlaid on the painted
      character in the room background. Only the floating "TALK · X"
      nameplate above is rendered. Idle breathe animation removed since
@@ -915,16 +956,20 @@ const SAVE_KEY = 'ryujin_game_save_v1';
 //   row 3 (2 bottom rooms)    y~82, x=13/33
 // Building footprint shrunk via .map-building width:8% so the 6-wide
 // middle row doesn't visually collide.
+// talk.x/y is the approximate mouth position of the painted character
+// inside the room background (in % of the room canvas). Drives where
+// the speech bubble pops while a dialogue is open. Field sectors omit
+// talk and fall back to the comms-terminal position.
 const SECTORS = [
-  { id:'HQ',        npc:'RYUJIN',   role:'Electro Dragon God', href:'/command-center.html', bg:'/assets/rpg/scenes/sectors/hq.webp',         sprite:'/assets/rpg/sprites/buildings/hq.webp',         x:50, y:22 },
-  { id:'SALES',     npc:'MACK',     role:'Sales',        href:'/sales-cockpit.html',        bg:'/assets/rpg/scenes/sectors/sales.webp',      sprite:'/assets/rpg/sprites/buildings/sales.webp',      x: 9, y:50 },
-  { id:'MARKETING', npc:'CAT',      role:'Marketing',    href:'/admin.html?page=marketing', bg:'/assets/rpg/scenes/sectors/marketing.webp',  sprite:'/assets/rpg/sprites/buildings/marketing.webp',  x:22, y:50 },
-  { id:'FINANCE',   npc:'MEL',      role:'Books',        href:'/admin.html?page=finance',   bg:'/assets/rpg/scenes/sectors/finance.webp',    sprite:'/assets/rpg/sprites/buildings/finance.webp',    x:36, y:50 },
-  { id:'ADMIN',     npc:'CAT',      role:'EA',           href:'/administration.html',       bg:'/assets/rpg/scenes/sectors/admin.webp',      sprite:'/assets/rpg/sprites/buildings/admin.webp',      x:64, y:50 },
+  { id:'HQ',        npc:'RYUJIN',   role:'Electro Dragon God', href:'/command-center.html', bg:'/assets/rpg/scenes/sectors/hq.webp',         sprite:'/assets/rpg/sprites/buildings/hq.webp',         x:50, y:22, talk:{x:38,y:35} },
+  { id:'SALES',     npc:'MACK',     role:'Sales',        href:'/sales-cockpit.html',        bg:'/assets/rpg/scenes/sectors/sales.webp',      sprite:'/assets/rpg/sprites/buildings/sales.webp',      x: 9, y:50, talk:{x:30,y:42} },
+  { id:'MARKETING', npc:'CAT',      role:'Marketing',    href:'/admin.html?page=marketing', bg:'/assets/rpg/scenes/sectors/marketing.webp',  sprite:'/assets/rpg/sprites/buildings/marketing.webp',  x:22, y:50, talk:{x:30,y:42} },
+  { id:'FINANCE',   npc:'MEL',      role:'Books',        href:'/admin.html?page=finance',   bg:'/assets/rpg/scenes/sectors/finance.webp',    sprite:'/assets/rpg/sprites/buildings/finance.webp',    x:36, y:50, talk:{x:48,y:42} },
+  { id:'ADMIN',     npc:'CAT',      role:'EA',           href:'/administration.html',       bg:'/assets/rpg/scenes/sectors/admin.webp',      sprite:'/assets/rpg/sprites/buildings/admin.webp',      x:64, y:50, talk:{x:42,y:48} },
   { id:'MATERIALS', npc:'PAVANJOT', role:'Quartermaster',href:'/production-materials.html', bg:'/assets/rpg/scenes/sectors/materials.webp',  sprite:'/assets/rpg/sprites/buildings/production.webp', x:76, y:50 },
   { id:'PRODUCTION',npc:'DIEGO',    role:'Foreman',      href:'/production.html',           bg:'/assets/rpg/scenes/sectors/production.webp', sprite:'/assets/rpg/sprites/buildings/production.webp', x:90, y:50 },
   { id:'SERVICE',   npc:'AJ',       role:'Repairs',      href:'/service-tickets.html',      bg:'/assets/rpg/scenes/sectors/service.webp',    sprite:'/assets/rpg/sprites/buildings/service.webp',    x:13, y:82 },
-  { id:'CUSTOMER',  npc:'MEL',      role:'Customer Care',href:'/customers.html',            bg:'/assets/rpg/scenes/sectors/customer.webp',   sprite:'/assets/rpg/sprites/buildings/customer.webp',   x:33, y:82 }
+  { id:'CUSTOMER',  npc:'MEL',      role:'Customer Care',href:'/customers.html',            bg:'/assets/rpg/scenes/sectors/customer.webp',   sprite:'/assets/rpg/sprites/buildings/customer.webp',   x:33, y:82, talk:{x:48,y:42} }
 ];
 
 // Overworld movement: classic-FF tile-snap. Each held key queues one step;
@@ -2367,6 +2412,9 @@ function openDialogue(d) {
   state.dialogue = Object.assign({ revealed: 0, choiceIdx: 0 }, d);
   $('dialogue').classList.add('open');
   document.body.classList.add('dialogue-open');
+  // Speech bubble above the painted speaker (sector interior only).
+  // Position is sec.talk if set, else slightly above intr.npcX/Y.
+  spawnSpeechBubble();
   $('dialogueSpeaker').textContent = d.speaker;
   $('dialogueSpeaker').style.color = d.accent || '#fde047';
   $('dialogueSpeaker').style.borderColor = d.accent || 'var(--cyan)';
@@ -2398,6 +2446,7 @@ function openDialogue(d) {
 
 function onDialogueBodyComplete() {
   if (!state.dialogue) return;
+  setSpeechBubbleDone();   // stop the bouncing once the speaker finishes
   if (state.dialogue.choices && state.dialogue.choices.length) {
     renderDialogueChoices();
   } else {
@@ -2461,6 +2510,7 @@ function selectChoice(idx) {
     $('dialogueBody').textContent = '';
     $('dialogueAdvance').style.display = 'none';
     if (state._typewriterTimer) clearInterval(state._typewriterTimer);
+    spawnSpeechBubble();   // restart bouncing dots for the reply
     // Speed up reply typewriter so chained Q&A feels snappy
     state._typewriterTimer = setInterval(() => {
       if (!state.dialogue) { clearInterval(state._typewriterTimer); return; }
@@ -2469,6 +2519,7 @@ function selectChoice(idx) {
       if (state.dialogue.revealed % 5 === 0) sfxChatter(state.dialogue.speaker);
       if (state.dialogue.revealed >= state.dialogue.body.length) {
         clearInterval(state._typewriterTimer);
+        setSpeechBubbleDone();   // stop bubble bouncing after reply finishes
         // Refresh the choice list so it stays available
         state.dialogue.choices = buildDialogueChoices(sec);
         renderDialogueChoices();
@@ -2484,6 +2535,31 @@ function closeDialogue() {
   $('dialogueChoices').classList.remove('show');
   $('dialogueChoices').textContent = '';
   if (state._typewriterTimer) clearInterval(state._typewriterTimer);
+  removeSpeechBubble();
+}
+
+// Speech bubble helpers. Bubble is animated while text is revealing
+// (bouncing dots), then fades / stops bouncing once typewriter
+// finishes so the player knows it's their turn to advance/choose.
+function spawnSpeechBubble() {
+  if (state.view !== 'SECTOR' || !state.interior) return;
+  removeSpeechBubble();
+  const room = $('sectorRoom'); if (!room) return;
+  const intr = state.interior;
+  const talk = (intr.sec && intr.sec.talk) || {};
+  const tx = (typeof talk.x === 'number') ? talk.x : intr.npcX;
+  const ty = (typeof talk.y === 'number') ? talk.y : (intr.npcY - 10);
+  const bubble = el('div', { class: 'speech-bubble', id: 'speechBubble', style: { left: tx + '%', top: ty + '%' } });
+  bubble.textContent = '...';
+  room.appendChild(bubble);
+}
+function setSpeechBubbleDone() {
+  const b = document.getElementById('speechBubble');
+  if (b) b.classList.add('done');
+}
+function removeSpeechBubble() {
+  const b = document.getElementById('speechBubble');
+  if (b) b.remove();
 }
 function advanceDialogue() {
   if (!state.dialogue) return;
