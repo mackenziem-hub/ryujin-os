@@ -146,61 +146,81 @@
   }
   .map-bg {
     position: absolute; inset: 0;
-    background: url('/assets/rpg/scenes/strategic-map.webp') center/cover no-repeat;
-    background-color: var(--bg-deep);
-    opacity: 0.55; filter: brightness(0.65) saturate(1.3);
+    /* Painted Chrono Trigger style ship deck plan as the live overworld.
+       Building sprite overlays are hidden via .map-building below so the
+       painted doors don't visually compete with floating house sprites -
+       only clickable name plates show on top. SECTORS x/y are tuned to
+       roughly land each name plate near its painted room on the ship. */
+    background: url('/assets/rpg/scenes/overworld/shipdeck.webp') center/cover no-repeat;
+    background-color: #060a14;
+    image-rendering: pixelated;
   }
-  .map-bg::after {
-    content: ''; position: absolute; inset: 0;
-    background-image:
-      repeating-linear-gradient(0deg, rgba(34,211,238,0.05) 0, rgba(34,211,238,0.05) 1px, transparent 1px, transparent 32px),
-      repeating-linear-gradient(90deg, rgba(34,211,238,0.05) 0, rgba(34,211,238,0.05) 1px, transparent 1px, transparent 32px);
-  }
-  /* Walkable overworld layer: buildings + player avatar positioned with % coords */
+  /* Walkable overworld layer: pixel-art buildings + player + wizard on the
+     tile-art world. Buildings render as bare PNG sprites with a drop shadow;
+     no modern panel chrome. */
   .map-world { position: absolute; inset: 0; }
   .map-building {
     position: absolute;
-    width: 16%; height: 22%;
-    transform: translate(-50%, -50%);
+    width: 8%; aspect-ratio: 1/1.2;
+    transform: translate(-50%, -100%);   /* anchor on the door's bottom edge */
     cursor: pointer;
-    display: flex; flex-direction: column; justify-content: space-between;
-    padding: 8px;
-    background-size: cover; background-position: center; background-repeat: no-repeat;
-    border: 2px solid rgba(34,211,238,0.5);
-    box-shadow: 0 0 16px rgba(34,211,238,0.2), inset 0 0 24px rgba(6,10,20,0.7);
-    transition: box-shadow .15s ease, border-color .15s ease;
     image-rendering: pixelated;
+    /* Cyan reticle/door-marker frame on top of the painted shipdeck door.
+       Pure CSS pixel-art: four corner brackets via clip-path layered with
+       a subtle cyan glow pulse so each door reads as an interactive
+       targeting reticle without obscuring the painted door behind it. */
+    background-image: none !important;
+    background-color: rgba(34,211,238,0.08);
+    border: 2px solid rgba(34,211,238,0.55);
+    box-shadow: 0 0 14px rgba(34,211,238,0.25), inset 0 0 8px rgba(34,211,238,0.15);
+    transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+    animation: doorIdle 3s ease-in-out infinite;
   }
-  .map-building::before {
-    /* Dark gradient overlay so labels stay readable over scene art */
-    content: ''; position: absolute; inset: 0;
-    background: linear-gradient(rgba(6,10,20,0.45), rgba(6,10,20,0.7));
+  /* Sci-fi corner brackets so the hotspot reads as a reticle, not a box.
+     Top corners via ::before, bottom corners via ::after. */
+  .map-building::before,
+  .map-building::after {
+    content: ''; position: absolute; left: -3px; right: -3px;
+    height: 8px; pointer-events: none;
+    border-left: 3px solid var(--cyan); border-right: 3px solid var(--cyan);
+  }
+  .map-building::before { top: -3px; border-top: 3px solid var(--cyan); }
+  .map-building::after  { bottom: -3px; border-bottom: 3px solid var(--cyan); }
+  @keyframes doorIdle {
+    0%, 100% { box-shadow: 0 0 14px rgba(34,211,238,0.20), inset 0 0 8px rgba(34,211,238,0.12); }
+    50%      { box-shadow: 0 0 22px rgba(34,211,238,0.40), inset 0 0 14px rgba(34,211,238,0.20); }
+  }
+  .map-building.tall { aspect-ratio: 1/1.4; width: 9%; }
+  .map-building:hover, .map-building.near {
+    background-color: rgba(253,224,71,0.22);
+    border-color: var(--gold);
+    box-shadow: 0 0 22px rgba(253,224,71,0.5), inset 0 0 14px rgba(253,224,71,0.25);
+    transform: translate(-50%, -103%) scale(1.03);
+    z-index: 5;
+    animation: none;
+  }
+  .map-building:hover::before, .map-building.near::before,
+  .map-building:hover::after,  .map-building.near::after { border-color: var(--gold); }
+  .map-building.alert {
+    background-color: rgba(239,68,68,0.18);
+    border-color: var(--red);
+    animation: pulseAlert 1.2s ease-in-out infinite;
+  }
+  .map-building.alert::before, .map-building.alert::after { border-color: var(--red); }
+  .map-building.warn { background-color: rgba(251,191,36,0.18); border-color: var(--amber); }
+  .map-building.warn::before, .map-building.warn::after { border-color: var(--amber); }
+  @keyframes pulseAlert { 50% { box-shadow: 0 0 22px var(--red), inset 0 0 12px rgba(239,68,68,0.45); } }
+  /* Per-building nameplate sits below the sprite — classic FF town label */
+  .map-building .b-label {
+    position: absolute; bottom: -22px; left: 50%; transform: translateX(-50%);
+    font-family: 'Press Start 2P', monospace; font-size: 8px;
+    background: rgba(6,10,20,0.92); color: var(--gold);
+    padding: 3px 8px; border: 1px solid rgba(253,224,71,0.4);
+    letter-spacing: 1px; white-space: nowrap;
     pointer-events: none;
   }
-  .map-building > * { position: relative; z-index: 1; }
-  .map-building:hover, .map-building.near {
-    border-color: var(--cyan);
-    box-shadow: 0 0 30px rgba(34,211,238,0.55), inset 0 0 20px rgba(6,10,20,0.55);
-    z-index: 5;
-  }
-  .map-building.alert { border-color: var(--red); box-shadow: 0 0 22px rgba(239,68,68,0.45), inset 0 0 24px rgba(6,10,20,0.7); }
-  .map-building.warn  { border-color: var(--amber); box-shadow: 0 0 22px rgba(251,191,36,0.4), inset 0 0 24px rgba(6,10,20,0.7); }
-  .map-building .b-label {
-    font-family: 'Press Start 2P', monospace; font-size: 9px;
-    background: rgba(6,10,20,0.88); padding: 3px 6px;
-    color: var(--gold); align-self: flex-start;
-    border: 1px solid rgba(253,224,71,0.4);
-    letter-spacing: 1px;
-  }
-  .map-building .b-stat {
-    font-family: 'VT323', monospace; font-size: 14px;
-    background: rgba(6,10,20,0.88); padding: 2px 6px;
-    color: var(--fg); align-self: flex-start;
-    border: 1px solid rgba(34,211,238,0.35);
-    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
-  .map-building .b-stat.alert { color: var(--red); border-color: var(--red); }
-  .map-building .b-stat.warn { color: var(--amber); border-color: var(--amber); }
+  /* Headline stat is now in the topbar + dialogue, not on every tile */
+  .map-building .b-stat { display: none; }
   .map-building[data-sector="HQ"] .b-label { color: var(--gold); border-color: var(--gold); }
   .map-building[data-sector="SALES"] .b-label { color: var(--magenta); border-color: var(--magenta); }
   .map-building[data-sector="PRODUCTION"] .b-label { color: var(--amber); border-color: var(--amber); }
@@ -242,30 +262,37 @@
   }
   .view-flash.on { opacity: 1; }
 
-  /* Player avatar (top-down circular sprite) — overworld + interior */
+  /* Player avatar — pixel-art sprite. The sprite faces right by default;
+     facing-left flips horizontally via scaleX(-1). Tile-snap movement
+     animates the left/top properties between tile steps. */
+  /* Player avatar - CT-style pixel-art sprite of Mac. Background image
+     swaps per facing direction; face-right uses side.webp horizontally
+     flipped via scaleX(-1). Anchor on feet so the bob keyframe reads
+     as the character lifting weight, not bouncing whole. */
   .player-avatar {
     position: absolute;
-    width: 5.2%; aspect-ratio: 1/1;
-    transform: translate(-50%, -50%);
-    border-radius: 50%;
-    border: 3px solid var(--gold);
-    box-shadow: 0 0 18px rgba(253,224,71,0.55), inset 0 0 0 1px rgba(6,10,20,0.6);
-    overflow: hidden;
-    background: var(--bg-panel-solid) center/cover;
+    width: 7%; aspect-ratio: 1 / 1;       /* overworld size */
+    transform: translate(-50%, -100%);
+    background-image: url('/assets/rpg/sprites/crew/mack.webp');  /* default = front */
+    background-size: contain; background-position: center bottom; background-repeat: no-repeat;
+    image-rendering: pixelated;
     z-index: 10;
     pointer-events: none;
+    filter: drop-shadow(0 4px 0 rgba(0,0,0,0.55));
+    transition: left .14s linear, top .14s linear;
   }
-  .player-avatar.moving { animation: walkBob .32s ease-in-out infinite alternate; }
-  @keyframes walkBob { from { box-shadow: 0 0 14px rgba(253,224,71,0.45), inset 0 0 0 1px rgba(6,10,20,0.6); } to { box-shadow: 0 0 22px rgba(253,224,71,0.75), inset 0 0 0 1px rgba(6,10,20,0.6); } }
-  .player-avatar .facing-arrow {
-    position: absolute; left: 50%; top: 50%;
-    width: 0; height: 0;
-    border-left: 6px solid transparent; border-right: 6px solid transparent;
-    border-bottom: 9px solid var(--gold);
-    filter: drop-shadow(0 0 4px var(--gold));
-    pointer-events: none;
-    transform-origin: 50% 50%;
-  }
+  /* In a sector interior, the player is the prominent character in the
+     room (not a tiny dot on a map). Scaled up so blonde Mac reads as a
+     proper FF-style protagonist in the middle of the space. */
+  .sector-room .player-avatar { width: 14%; }
+  .player-avatar.face-up    { background-image: url('/assets/rpg/sprites/crew/mack-back.webp'); }
+  .player-avatar.face-down  { background-image: url('/assets/rpg/sprites/crew/mack.webp'); }
+  .player-avatar.face-left  { background-image: url('/assets/rpg/sprites/crew/mack-side.webp'); }
+  .player-avatar.face-right { background-image: url('/assets/rpg/sprites/crew/mack-side.webp'); transform: translate(-50%, -100%) scaleX(-1); }
+  /* Walk-bob: subtle vertical bob during a step. The face-right keyframe
+     preserves the horizontal flip so the character doesn't snap when bobbing. */
+  .player-avatar.moving.step-b              { transform: translate(-50%, -103%); }
+  .player-avatar.moving.face-right.step-b   { transform: translate(-50%, -103%) scaleX(-1); }
 
   /* Interact prompt that appears above building/NPC when player is near */
   .interact-prompt {
@@ -309,6 +336,53 @@
     z-index: 7;
   }
   @keyframes pulseWiz { 50% { box-shadow: 0 0 12px rgba(167,139,250,0.7); } }
+
+  /* Snapshot-delta sprite reactions — borrowed from Pixel Agents / Tokburn:
+     a live data event (revenue signed, deal added, ticket overdue) spawns
+     a floating value above the relevant NPC sprite and pulses the building
+     tile on the overworld. */
+  /* Wandering crew NPC system was removed per Mac - the painted crew
+     in each room background art are the canonical "static pixel
+     characters". Office NPC dialog still works via an invisible
+     .npc-sprite hotspot anchored at the painted character's position;
+     field rooms use the visible comms-terminal overlay. */
+
+  /* Idle "breathing" on the central god so the room never feels frozen.
+     Animates filter brightness only, which composes with the inline
+     box-shadow accent glow set per-sector in renderInterior — so the
+     per-sector cyan/gold/magenta accent is preserved. */
+  .npc-sprite { animation: npcBreathe 3.2s ease-in-out infinite; }
+  @keyframes npcBreathe {
+    0%, 100% { filter: brightness(1.0); }
+    50%      { filter: brightness(1.15); }
+  }
+
+  /* Floating pop is anchored to #sectorRoom at the NPC's %-coords (NOT a
+     child of .npc-sprite) so it never inherits the face-left scaleX(-1)
+     mirror — otherwise the text would render backwards. */
+  .sprite-pop {
+    position: absolute;
+    transform: translate(-50%, 0);
+    font-family: 'Press Start 2P', monospace; font-size: 12px;
+    letter-spacing: 1px; white-space: nowrap;
+    text-shadow: 0 0 8px currentColor, 1px 1px 0 #000, -1px 1px 0 #000, 1px -1px 0 #000, -1px -1px 0 #000;
+    pointer-events: none; z-index: 60;
+    animation: spritePop 1.6s ease-out forwards;
+  }
+  @keyframes spritePop {
+    0%   { transform: translate(-50%, 0)     scale(0.6); opacity: 0; }
+    20%  { transform: translate(-50%, -20px) scale(1.2); opacity: 1; }
+    70%  { transform: translate(-50%, -48px) scale(1.0); opacity: 1; }
+    100% { transform: translate(-50%, -64px) scale(0.9); opacity: 0; }
+  }
+  .map-building.react-pulse {
+    animation: reactPulse 1.6s ease-out;
+  }
+  @keyframes reactPulse {
+    0%, 100% { filter: drop-shadow(0 0 0 transparent) drop-shadow(0 4px 0 rgba(6,10,20,0.5)); }
+    30%      { filter: drop-shadow(0 0 24px var(--pulse-color, #fde047)) drop-shadow(0 4px 0 rgba(6,10,20,0.5)); }
+    60%      { filter: drop-shadow(0 0 14px var(--pulse-color, #fde047)) drop-shadow(0 4px 0 rgba(6,10,20,0.5)); }
+  }
 
   /* Virtual D-pad + action button for touch devices */
   .virtual-pad {
@@ -371,6 +445,105 @@
     cursor: pointer;
     image-rendering: pixelated;
   }
+  /* Floating speech bubble that pops above the painted character (or
+     comms terminal) while a dialogue is open. Pixel-art classic-JRPG
+     style: white box with rounded corners, three bouncing dots, dark
+     tail pointing down toward the speaker. */
+  .speech-bubble {
+    position: absolute;
+    transform: translate(-50%, -100%);
+    width: 48px; height: 32px;
+    background: #fff;
+    border: 3px solid #060a14;
+    border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Press Start 2P', monospace; font-size: 14px;
+    color: #060a14; letter-spacing: 3px;
+    box-shadow: 0 3px 0 rgba(0,0,0,0.55), 0 0 12px rgba(34,211,238,0.35);
+    z-index: 50;
+    pointer-events: none;
+    animation: speechBob 0.55s ease-in-out infinite;
+    image-rendering: pixelated;
+  }
+  .speech-bubble::after {
+    content: ''; position: absolute; bottom: -11px; left: 50%;
+    transform: translateX(-50%);
+    width: 0; height: 0;
+    border: 7px solid transparent;
+    border-top: 9px solid #060a14;
+  }
+  .speech-bubble::before {
+    content: ''; position: absolute; bottom: -6px; left: 50%;
+    transform: translateX(-50%);
+    width: 0; height: 0;
+    border: 5px solid transparent;
+    border-top: 7px solid #fff;
+    z-index: 1;
+  }
+  @keyframes speechBob {
+    0%, 100% { transform: translate(-50%, -100%); }
+    50%      { transform: translate(-50%, -112%); }
+  }
+  .speech-bubble.done { animation: none; opacity: 0.55; }
+
+  /* Office NPC hotspot: invisible click target overlaid on the painted
+     character in the room background. Only the floating "TALK · X"
+     nameplate above is rendered. Idle breathe animation removed since
+     there's no sprite to breathe; the painted character is the visual. */
+  .npc-sprite.office-hotspot {
+    background-image: none !important;
+    background-color: transparent;
+    border: none !important;
+    box-shadow: none !important;
+    animation: none !important;
+  }
+  /* Crew guest: visible CT-style pixel sprite overlay for crew who are
+     posted in someone else's sector (e.g. Mel + Cat in HQ alongside
+     Ryujin). Background-image is set inline from the crew sprite WebP.
+     No border or glow box - the sprite IS the visual, like the painted
+     office characters. Inherits the breathe animation from .npc-sprite. */
+  .npc-sprite.crew-guest {
+    width: 11%;
+    aspect-ratio: 3/4;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: bottom center;
+    background-color: transparent;
+    border: none !important;
+    box-shadow: none !important;
+    image-rendering: pixelated;
+  }
+  /* Field-ops comms terminal: glowing console instead of a portrait.
+     Pixel-blue scanline pattern with a centered amber "TX" glyph and a
+     blinking cyan cursor so it reads as an interactive comms station. */
+  .npc-sprite.comms-terminal {
+    background:
+      repeating-linear-gradient(to bottom, rgba(34,211,238,0.18) 0, rgba(34,211,238,0.18) 2px, transparent 3px, transparent 4px),
+      linear-gradient(180deg, #0c1a3e 0%, #060a14 100%);
+    border-color: var(--cyan);
+    box-shadow: 0 0 28px rgba(34,211,238,0.55), inset 0 0 18px rgba(34,211,238,0.25);
+    aspect-ratio: 1/1.1;
+    width: 11%;
+    animation: commsPulse 2.4s ease-in-out infinite;
+  }
+  .npc-sprite.comms-terminal::before {
+    content: 'TX'; position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Press Start 2P', monospace; font-size: 22px;
+    color: var(--gold); text-shadow: 0 0 8px var(--gold);
+  }
+  .npc-sprite.comms-terminal::after {
+    content: ''; position: absolute; bottom: 14%; left: 50%;
+    transform: translateX(-50%);
+    width: 8px; height: 12px; background: var(--cyan);
+    box-shadow: 0 0 10px var(--cyan);
+    animation: commsBlink 0.9s steps(1, end) infinite;
+  }
+  @keyframes commsPulse {
+    0%, 100% { box-shadow: 0 0 24px rgba(34,211,238,0.45), inset 0 0 14px rgba(34,211,238,0.20); }
+    50%      { box-shadow: 0 0 36px rgba(34,211,238,0.70), inset 0 0 22px rgba(34,211,238,0.30); }
+  }
+  @keyframes commsBlink { 50% { opacity: 0; } }
   .npc-sprite.near {
     /* Bob the shadow, not the transform, so it composes with face-left mirror */
     animation: npcGlow .9s ease-in-out infinite alternate;
@@ -440,6 +613,23 @@
     font-family: 'Orbitron', monospace; font-size: 18px; font-weight: 700;
     color: var(--gold); letter-spacing: 2px;
   }
+  .sector-hud .ticker {
+    font-family: 'VT323', monospace; font-size: 14px; color: var(--cyan);
+    letter-spacing: 1px; margin-top: 6px; padding-top: 6px;
+    border-top: 1px dashed rgba(34,211,238,0.25);
+  }
+  /* Always-visible "back to ship" button so the player never has to hunt
+     for the door. Pairs with the [B] keyboard shortcut. */
+  .hud-exit-btn {
+    display: block; margin-top: 8px; padding: 6px 10px;
+    background: rgba(34,211,238,0.10); color: var(--cyan);
+    border: 1px solid rgba(34,211,238,0.55); cursor: pointer;
+    font-family: 'Press Start 2P', monospace; font-size: 8px;
+    letter-spacing: 1px; pointer-events: auto;
+    transition: background .15s, color .15s;
+  }
+  .hud-exit-btn:hover { background: rgba(34,211,238,0.25); color: var(--fg); }
+  .hud-exit-btn:active { transform: translateY(1px); }
   .sector-hud .head .role {
     display: block; font-size: 11px; color: var(--fg-dim); font-weight: 500;
     letter-spacing: 1px; margin-top: 2px;
@@ -657,7 +847,7 @@
     .map-hot .hot-stat { font-size: 13px; }
     /* Mobile overworld: shrink player + buildings to fit 9:16 viewport */
     .player-avatar { width: 7%; }
-    .map-building { width: 22%; height: 18%; padding: 6px; }
+    .map-building { width: 12%; height: 14%; padding: 4px; }
     .map-building .b-label { font-size: 8px; }
     .map-building .b-stat { font-size: 12px; }
     .npc-sprite { width: 18%; }
@@ -717,6 +907,8 @@
       <div class="sector-hud" id="sectorHud">
         <div class="eyebrow">SECTOR · <span id="hudSecId">--</span></div>
         <div class="head"><span id="hudSecNpc">--</span><span class="role" id="hudSecRole">--</span></div>
+        <div class="ticker" id="hudSecTicker">--</div>
+        <button type="button" class="hud-exit-btn" id="hudExitBtn" title="Back to ship (B)">◄ BACK TO SHIP</button>
       </div>
       <!-- NPC sprite, terminal zone, door zone, player avatar injected here -->
     </div>
@@ -770,37 +962,62 @@ const CC_REFRESH_MS = 30 * 1000;
 const SAVE_KEY = 'ryujin_game_save_v1';
 
 // Each sector has a fixed position on the overworld in % coordinates
-// (origin top-left, x→right, y→down). The 8 buildings are laid out around
-// a central ADMIN tower so the player can walk freely between any pair
-// without crossing through another building's hit-box.
+// (origin top-left, x→right, y→down). `bg` is the interior scene WebP
+// shown when player enters; `sprite` is the small pixel-art building
+// shown on the overworld map.
+// x/y in % of the overworld viewport. Each entry is positioned over the
+// matching painted door on /assets/rpg/scenes/overworld/shipdeck.webp:
+//   row 1 (HQ throne)         y~22, x=50
+//   row 2 (6 mid-deck rooms)  y~50, x=9/22/36 (left half) and 64/76/90 (right half)
+//   row 3 (2 bottom rooms)    y~82, x=13/33
+// Building footprint shrunk via .map-building width:8% so the 6-wide
+// middle row doesn't visually collide.
+// talk.x/y is the approximate mouth position of the painted character
+// inside the room background (in % of the room canvas). Drives where
+// the speech bubble pops while a dialogue is open. Field sectors omit
+// talk and fall back to the comms-terminal position.
 const SECTORS = [
-  { id:'HQ',        npc:'ZEUS',       role:'Governance',  href:'/command-center.html',         bg:'/assets/rpg/scenes/sectors/hq-throne.webp',         x:50, y:14 },
-  { id:'SALES',     npc:'HERMES',     role:'Messenger',   href:'/sales-cockpit.html',          bg:'/assets/rpg/scenes/sectors/sales-floor.webp',       x:18, y:32 },
-  { id:'FINANCE',   npc:'ATHENA',     role:'Sage',        href:'/admin.html?page=finance',     bg:'/assets/rpg/scenes/sectors/finance-vault.webp',     x:82, y:32 },
-  { id:'ADMIN',     npc:'HECATE',     role:'Witch',       href:'/administration.html',         bg:'/assets/rpg/scenes/sectors/admin-server.webp',      x:50, y:50 },
-  { id:'PRODUCTION',npc:'HEPHAESTUS', role:'Forge',       href:'/production.html',             bg:'/assets/rpg/scenes/sectors/production-forge.webp',  x:18, y:68 },
-  { id:'SERVICE',   npc:'ARTEMIS',    role:'Hunter',      href:'/service-tickets.html',        bg:'/assets/rpg/scenes/sectors/service-dispatch.webp',  x:82, y:68 },
-  { id:'CUSTOMER',  npc:'HESTIA',     role:'Hearth',      href:'/customers.html',              bg:'/assets/rpg/scenes/sectors/customer-hearth.webp',   x:32, y:86 },
-  { id:'MARKETING', npc:'APOLLO',     role:'Muse',        href:'/admin.html?page=marketing',   bg:'/assets/rpg/scenes/sectors/marketing-plaza.webp',   x:68, y:86 }
+  // Per Mac's vision: Mel and Cat sit IN the hub alongside Ryujin. They get
+  // visible CT-style crew sprites at the front of the room (the bg art shows
+  // only Ryujin on the throne, so the guests are sprite overlays). Clicking
+  // them opens an Email + Leave dialog - their station-specific dialogue
+  // trees still live in their own sectors.
+  { id:'HQ',        npc:'RYUJIN',   role:'Electro Dragon God', href:'/command-center.html', bg:'/assets/rpg/scenes/sectors/hq.webp',         sprite:'/assets/rpg/sprites/buildings/hq.webp',         x:50, y:22, talk:{x:38,y:35},
+    guests:[{ npc:'MEL', x:22, y:72 }, { npc:'CAT', x:78, y:72 }] },
+  { id:'SALES',     npc:'MACK',     role:'Sales',        href:'/sales-cockpit.html',        bg:'/assets/rpg/scenes/sectors/sales.webp',      sprite:'/assets/rpg/sprites/buildings/sales.webp',      x: 9, y:50, talk:{x:30,y:42} },
+  { id:'MARKETING', npc:'CAT',      role:'Marketing',    href:'/admin.html?page=marketing', bg:'/assets/rpg/scenes/sectors/marketing.webp',  sprite:'/assets/rpg/sprites/buildings/marketing.webp',  x:22, y:50, talk:{x:30,y:42} },
+  { id:'FINANCE',   npc:'MEL',      role:'Books',        href:'/admin.html?page=finance',   bg:'/assets/rpg/scenes/sectors/finance.webp',    sprite:'/assets/rpg/sprites/buildings/finance.webp',    x:36, y:50, talk:{x:48,y:42} },
+  { id:'ADMIN',     npc:'CAT',      role:'EA',           href:'/administration.html',       bg:'/assets/rpg/scenes/sectors/admin.webp',      sprite:'/assets/rpg/sprites/buildings/admin.webp',      x:64, y:50, talk:{x:42,y:48} },
+  { id:'MATERIALS', npc:'PAVANJOT', role:'Quartermaster',href:'/production-materials.html', bg:'/assets/rpg/scenes/sectors/materials.webp',  sprite:'/assets/rpg/sprites/buildings/production.webp', x:76, y:50 },
+  { id:'PRODUCTION',npc:'DIEGO',    role:'Foreman',      href:'/production.html',           bg:'/assets/rpg/scenes/sectors/production.webp', sprite:'/assets/rpg/sprites/buildings/production.webp', x:90, y:50 },
+  { id:'SERVICE',   npc:'AJ',       role:'Repairs',      href:'/service-tickets.html',      bg:'/assets/rpg/scenes/sectors/service.webp',    sprite:'/assets/rpg/sprites/buildings/service.webp',    x:13, y:82 },
+  { id:'CUSTOMER',  npc:'MEL',      role:'Customer Care',href:'/customers.html',            bg:'/assets/rpg/scenes/sectors/customer.webp',   sprite:'/assets/rpg/sprites/buildings/customer.webp',   x:33, y:82, talk:{x:48,y:42} }
 ];
 
-// Overworld + interior physics: speed is %-of-map per ms. 0.045 = ~45%/s
-// = roughly a 2s crossing of the full overworld at normal monitor refresh.
-// Interior speed is slightly lower for the "tighter indoor" walk feel.
-const OVERWORLD_SPEED_PCT_PER_MS = 0.045;
-const INTERIOR_SPEED_PCT_PER_MS  = 0.038;
-const PLAYER_AVATAR_IMG = '/assets/rpg/portraits/crew/mackenzie.webp';
-// Building footprint for collision. CSS defines .map-building as 16x22%
-// on desktop (=> half 8x11) and 22x18% on mobile (=> half 11x9). The
-// collision/near checks must mirror whichever the viewport renders or
-// the player visually walks through the wall on mobile / gets blocked
-// by empty space. Recompute on every check so resize re-aligns.
-function getBuildingHalf() {
-  return window.matchMedia('(max-width: 720px)').matches
-    ? { w: 11, h: 9 }
-    : { w: 8,  h: 11 };
+// Overworld movement: classic-FF tile-snap. Each held key queues one step;
+// player tweens to the next tile over STEP_MS, then if the key is still
+// held queues the next step. CSS transition on .player-avatar left/top
+// handles the visual tween (140ms linear matches STEP_MS).
+const TILE_W_PCT = 4;    // horizontal step in %
+const TILE_H_PCT = 5;    // vertical step in %
+const STEP_MS    = 140;  // ms per tile-step animation
+// Interior is still continuous % motion since the room is small and rotates
+// the player relative to the NPC/terminal/door positions.
+const INTERIOR_SPEED_PCT_PER_MS = 0.038;
+// Building footprint for AABB collision. Buildings are bottom-anchored
+// so the rectangle extends UP from sec.y (the door tile at the base) to
+// sec.y - h. Half-width is symmetric around sec.x. Tall ADMIN building
+// gets a larger footprint matching its sprite.
+function getBuildingFoot(sec) {
+  // Footprint shrunk to match the tighter 8%-wide hotspot grid that lines
+  // up with painted ship-deck doors. Six rooms across the middle deck row
+  // mean each hotspot can only afford ~6% half-width before adjacent ones
+  // overlap their collision boxes; previous 6.5% caused overlaps.
+  const mobile = window.matchMedia('(max-width: 720px)').matches;
+  if (sec && sec.tall) return mobile ? { hw: 5, h: 14 } : { hw: 4.5, h: 14 };
+  return                       mobile ? { hw: 6, h: 11 } : { hw: 4,   h: 10 };
 }
-const INTERACT_PAD = { w: 2.5, h: 3 };  // extra % to register interact-range glow before collision
+const INTERACT_PAD = { w: 3, h: 3 };  // extra % beyond footprint where "near" prompt shows
 // NPC interaction radius inside a room (% from NPC center)
 const NPC_INTERACT_R = 13;
 // Terminal interaction radius
@@ -808,11 +1025,26 @@ const TERM_INTERACT_R = 10;
 // Door zone hit radius (% from bottom-center of room)
 const DOOR_ZONE_TOP = 88;
 
+// Crew accent palette — each crew member gets a distinct color used for
+// HUD chrome, dialogue border, and the room glow when they're the lead
+// NPC. Multiple sectors can share a crew member (Mack runs HQ + Sales,
+// Mel runs Finance + Customer, Cat runs Admin + Marketing) and the
+// accent follows the person, not the room.
 const NPC_ACCENT = {
-  ZEUS:'#fde047', HERMES:'#ec4899', HEPHAESTUS:'#fbbf24', ARTEMIS:'#34d399',
-  HESTIA:'#fdba74', ATHENA:'#22d3ee', HECATE:'#a78bfa', APOLLO:'#f9a8d4'
+  MACK:'#fde047', CAT:'#f9a8d4', MEL:'#22d3ee', AJ:'#34d399',
+  DIEGO:'#fbbf24', PAVANJOT:'#fdba74',
+  RYUJIN:'#22d3ee'  // Electro dragon: cyan crackle
 };
-const NPC_PORTRAIT = (npc) => `/assets/rpg/portraits/${npc.toLowerCase()}.webp`;
+// Crew NPCs use the /crew/ portrait directory; lookups not found there
+// fall back to the legacy top-level path so older identifiers (gods,
+// claude-wizard) still resolve.
+const _CREW_PORTRAIT_IDS = new Set(['mack','mackenzie','cat','mel','melodie','aj','diego','pavanjot','ryujin']);
+const NPC_PORTRAIT = (npc) => {
+  const lc = npc.toLowerCase();
+  const fileId = lc === 'mack' ? 'mackenzie' : (lc === 'mel' ? 'melodie' : lc);
+  if (_CREW_PORTRAIT_IDS.has(lc)) return `/assets/rpg/portraits/crew/${fileId}.webp`;
+  return `/assets/rpg/portraits/${lc}.webp`;
+};
 const FALLBACK_PORTRAIT = '/assets/rpg/ui/dragon-sigil.webp';
 // Attach a graceful 404 fallback to any portrait image element. Called
 // after setting src, so a broken WebP path swaps to the dragon sigil
@@ -822,15 +1054,64 @@ function attachPortraitFallback(imgEl) {
   imgEl.onerror = () => { imgEl.onerror = null; imgEl.src = FALLBACK_PORTRAIT; };
 }
 
+// Crew rendered as CT-style pixel-art sprites (transparent PNGs, no
+// portrait circles). The `img` here drives the wandering NPC inside
+// each sector room. Lead-NPC portraits used in dialogue still resolve
+// via NPC_PORTRAIT() which uses /portraits/crew/ for portrait fidelity
+// in the dialogue box; sprites here are for in-world rendering.
 const CREW = [
-  { id:'mackenzie', name:'CEO MACK',  img:'/assets/rpg/portraits/crew/mackenzie.webp' },
-  { id:'cat',       name:'CAT',       img:'/assets/rpg/portraits/crew/cat.webp' },
-  { id:'darcy',     name:'DARCY',     img:'/assets/rpg/portraits/crew/darcy.webp' },
-  { id:'diego',     name:'DIEGO',     img:'/assets/rpg/portraits/crew/diego.webp' },
-  { id:'aj',        name:'AJ',        img:'/assets/rpg/portraits/crew/aj.webp' },
-  { id:'pavanjot',  name:'PAVANJOT',  img:'/assets/rpg/portraits/crew/pavanjot.webp' },
-  { id:'melodie',   name:'MELODIE',   img:'/assets/rpg/portraits/crew/melodie.webp' }
+  { id:'mackenzie', name:'CEO MACK', img:'/assets/rpg/sprites/crew/mack.webp' },
+  { id:'cat',       name:'CAT',      img:'/assets/rpg/sprites/crew/cat.webp' },
+  { id:'diego',     name:'DIEGO',    img:'/assets/rpg/sprites/crew/diego.webp' },
+  { id:'aj',        name:'AJ',       img:'/assets/rpg/sprites/crew/aj.webp' },
+  { id:'pavanjot',  name:'PAVANJOT', img:'/assets/rpg/sprites/crew/pavanjot.webp' },
+  { id:'melodie',   name:'MELODIE',  img:'/assets/rpg/sprites/crew/mel.webp' }
 ];
+const CREW_BY_ID = Object.fromEntries(CREW.map(c => [c.id, c]));
+
+// The player IS Mac, so any sector where Mac is the lead NPC (currently
+// SALES, since Mac took over inbound after the May 23 routing change) shows
+// "YOUR DESK · <sector>" instead of "TALK · MACK" - you're not talking to
+// yourself, you're sitting down at your station. Field sectors keep the
+// MESSAGE label since the lead is out on a job.
+const PLAYER_NPC = 'MACK';
+function nameplateLabel(sec, isField) {
+  if (isField) return 'MESSAGE ' + sec.npc;
+  if (sec.npc === PLAYER_NPC) return 'YOUR DESK · ' + sec.id;
+  return 'TALK · ' + sec.npc;
+}
+function interactPromptLabel(sec, isField) {
+  if (isField) return 'PRESS [SPACE] TO MESSAGE ' + sec.npc;
+  if (sec.npc === PLAYER_NPC) return 'PRESS [SPACE] TO REVIEW DESK';
+  return 'PRESS [SPACE] TO TALK · ' + sec.npc;
+}
+
+// Which crew wander each sector interior — drives the always-on motion
+// that gives the room its "office full of agents" feel (per Pixel Agents).
+// Only the office trio (Mack, Cat, Mel) wander rooms physically. Field
+// Per Mac: wandering crew NPCs removed. The painted crew in each
+// room background ARE the cast - no more sprites pacing on top.
+
+// Sectors where the lead NPC is in the field, not at a desk. These get
+// a glowing comms-terminal in the NPC slot instead of a character sprite.
+// Approaching the terminal lets the player text or email the field crew.
+const FIELD_SECTORS = new Set(['PRODUCTION', 'SERVICE', 'MATERIALS']);
+
+// Crew contact directory - email-only for v1 per Mac. Comms terminals
+// and office NPC dialogs both surface an "Email X" choice when a crew
+// member has an entry here. Pavanjot has no email by design (his
+// MATERIALS terminal will show only the Leave option until he gets
+// workspace email). Twilio SMS wiring deferred to a later iteration.
+// TODO: move to tenant_settings per [[prefer-customizable-config]] so
+// new hires don't require a redeploy.
+const CREW_CONTACTS = {
+  // Mac (the player) is not in this map - you don't email yourself.
+  CAT:  { name: 'Cat',   email: 'cat@plusultraroofing.com' },
+  MEL:  { name: 'Mel',   email: 'melodie@plusultraroofing.com' },
+  AJ:   { name: 'AJ',    email: 'arielle@plusultraroofing.com' },
+  DIEGO:{ name: 'Diego', email: 'diego.r@plusultraroofing.com' }
+  // PAVANJOT intentionally absent - no workspace email yet.
+};
 
 // ═════ State ═════
 const state = {
@@ -849,11 +1130,12 @@ const state = {
   // Initial spawn is read from save.player_x/y so the player returns to wherever
   // they were on last visit. Default (50, 32) sits in the open band between HQ
   // (top) and ADMIN (center) so no building is "near" on first frame.
-  player: { x: 50, y: 32, facing: 0 },         // overworld position (%); facing in radians (rehydrated from save in boot)
+  player: { x: 50, y: 32, facingDir: 'down', targetX: 50, targetY: 32, stepEndsAt: 0, stepParity: false },
   interior: null,                              // { sec, playerX, playerY, facing, lastEnter }
   worldReturn: { x: 50, y: 50 },               // remember player overworld pos when entering a sector
   nearBuilding: null,                          // overworld: building player is currently touching
-  nearTarget: null,                            // interior: 'npc' | 'terminal' | 'door' | null
+  nearTarget: null,                            // interior: 'guest' | 'npc' | 'terminal' | 'door' | null
+  nearGuest: null,                             // interior: the guest object when nearTarget === 'guest'
 
   // Input. Tracks held movement keys + touch dpad presses + last action edge.
   input: { up: false, down: false, left: false, right: false, action: false },
@@ -958,9 +1240,38 @@ function normalizeSnapshot(raw) {
   return s;
 }
 
+// ═════ Event bus (snapshot deltas → sprite reactions) ═════
+// Lightweight pub/sub so any handler can subscribe to "X just happened"
+// without coupling to fetchSnapshot. Patterned after Tokburn/Pixel Agents
+// where live state diffs drive on-screen sprite animations.
+const _bus = {};
+function on(evt, fn)  { (_bus[evt] = _bus[evt] || []).push(fn); }
+function emit(evt, data) { (_bus[evt] || []).forEach(fn => { try { fn(data); } catch {} }); }
+
+// Compute event list from prev→curr snapshot diff. Pure function — no DOM.
+// Add new diff rules here as more sprite reactions get wired up.
+function diffSnapshot(prev, curr) {
+  const out = [];
+  if (!prev || !curr) return out;
+  const pRev = prev.revenue || {}, cRev = curr.revenue || {};
+  const pT   = prev.tickets || {}, cT   = curr.tickets || {};
+  const pP   = prev.pipeline || {}, cP   = curr.pipeline || {};
+  if ((cRev.signedRevenue || 0) > (pRev.signedRevenue || 0)) {
+    out.push({ type: 'revenue.signed.up', sector: 'FINANCE', from: pRev.signedRevenue || 0, to: cRev.signedRevenue, delta: cRev.signedRevenue - (pRev.signedRevenue || 0) });
+  }
+  if ((cT.overdueCount || 0) > (pT.overdueCount || 0)) {
+    out.push({ type: 'tickets.overdue.up', sector: 'PRODUCTION', from: pT.overdueCount || 0, to: cT.overdueCount, delta: cT.overdueCount - (pT.overdueCount || 0) });
+  }
+  if ((cP.openDeals || 0) > (pP.openDeals || 0)) {
+    out.push({ type: 'pipeline.deal.new', sector: 'SALES', from: pP.openDeals || 0, to: cP.openDeals, delta: cP.openDeals - (pP.openDeals || 0) });
+  }
+  return out;
+}
+
 // ═════ Data fetches ═════
 async function fetchSnapshot() {
   const isFirstLoad = !state.snapshot;
+  const prev = state.snapshot;
   try {
     const r = await fetch(`${API_BASE}/api/snapshot?tenant=${TENANT}`, { credentials: 'omit' });
     if (!r.ok) throw new Error('snapshot ' + r.status);
@@ -977,6 +1288,10 @@ async function fetchSnapshot() {
     if (isFirstLoad) {
       const wd = (state.snapshot.alerts || []).find(a => /watchdog|cron/i.test(String(a)));
       if (wd) { toast(wd, 'amber'); sfxBoss(); }
+    } else {
+      // Subsequent polls: diff against the prior snapshot and broadcast
+      // any positive deltas so subscribed sprite reactions can fire.
+      diffSnapshot(prev, state.snapshot).forEach(ev => emit(ev.type, ev));
     }
   } catch (e) {
     state.snapshotErr = String(e.message || e);
@@ -1004,10 +1319,16 @@ async function fetchCcSessions() {
   renderWizardPop();
 }
 
-// ═════ Per-god daily line (from snapshot) ═════
-function godLine(npc) {
+// ═════ Per-sector daily line (from snapshot) ═════
+// Switches on sec.id so multiple sectors can share the same crew member
+// (Mack runs HQ + Sales, Mel runs Finance + Customer, Cat runs Admin +
+// Marketing) with sector-specific dialogue. Voice is the crew member
+// speaking in plain shop-talk - no more Greek metaphors.
+function godLine(sec) {
+  const npcOrSec = (typeof sec === 'string') ? null : sec;
+  const sectorId = npcOrSec ? npcOrSec.id : null;
   const s = state.snapshot;
-  if (!s) return 'Awaiting today\'s briefing…';
+  if (!s) return 'Awaiting today\'s briefing...';
   const rev = s.revenue || {};
   const t = s.tickets || {};
   const pipe = s.pipeline || {};
@@ -1019,55 +1340,59 @@ function godLine(npc) {
   const byStat = t.byStatus || {};
   const recent = (rev.recentActivity || []).slice(0, 3);
 
-  switch (npc) {
-    case 'ZEUS': {
+  switch (sectorId) {
+    case 'HQ': {
       const stat = (brief.status || 'unknown').toUpperCase();
       const top = brief.top3 && brief.top3[0];
-      const topLine = top ? (top.action || top.title || '') : 'No flagged priorities.';
-      return `Briefing status: ${stat}.\nTop priority: ${topLine}`;
+      const topLine = top ? (top.action || top.title || '') : 'No threats on the horizon.';
+      return `The bridge is yours, captain. Status: ${stat}.\nFront of mind: ${topLine}`;
     }
-    case 'HERMES': {
+    case 'SALES': {
       const signed = Math.round((rev.signedRevenue || 0) / 1000);
       const pipeVal = Math.round((pipe.totalValue || 0) / 1000);
       const accepted = recent.filter(r => /accepted|signed/i.test(r.action || '')).length;
-      return `Signed $${signed}K MTD. Pipeline $${pipeVal}K across ${pipe.openDeals || 0} open deals. ${accepted ? accepted + ' proposal' + (accepted > 1 ? 's' : '') + ' accepted today.' : 'No new acceptances today.'}`;
+      return `Closed $${signed}K MTD. Pipeline holds $${pipeVal}K across ${pipe.openDeals || 0} deals. ${accepted ? accepted + ' proposal' + (accepted > 1 ? 's' : '') + ' accepted today.' : 'No new acceptances today.'}`;
     }
-    case 'HEPHAESTUS': {
+    case 'PRODUCTION': {
       const open = byStat.open || 0;
       const active = byStat.active || 0;
       const overdue = t.overdueCount || 0;
-      return `${active} jobs active. ${open} open. ${overdue} overdue. ${overdue > 20 ? 'The forge is hot.' : 'Workload steady.'}`;
+      return `${active} jobs running. ${open} queued. ${overdue} overdue. ${overdue > 20 ? "We're swamped, boss." : 'Crew is keeping pace.'}`;
     }
-    case 'ARTEMIS': {
+    case 'SERVICE': {
       const active = byStat.active || 0;
       const today = (t.activeToday || []).length;
-      return `${active} active service calls. ${today} on dispatch today. ${active > 5 ? 'Arrows ready.' : 'The hunt is calm.'}`;
+      return `${active} active calls. ${today} on the dispatch board today. ${active > 5 ? 'Truck is loaded up.' : 'Quiet day so far.'}`;
     }
-    case 'HESTIA': {
+    case 'CUSTOMER': {
       const conv = (state.snapshot.ghl_conversations_24h_count) || (alerts.find(a => /conversation/i.test(a)) ? '?' : 0);
       const totalTix = t.total || 0;
-      return `${conv || 'a handful of'} conversations updated today. ${totalTix} tickets warm.`;
+      return `${conv || 'a handful of'} conversations moved today. ${totalTix} tickets open with customers.`;
     }
-    case 'ATHENA': {
+    case 'FINANCE': {
       const signed = Math.round((rev.signedRevenue || 0) / 1000);
       const pend = rev.pendingRevenue || 0;
-      const adRoi = brief.kpiScouter && brief.kpiScouter.adROI;
-      const adLine = adRoi ? ` Ad ROI ${adRoi}.` : '';
-      const pendNote = pend === 0 && signed > 0 ? ' Pending revenue accumulator stale, recommend audit.' : '';
-      return `Signed $${signed}K month-to-date. Pending $${Math.round(pend/1000)}K.${adLine}${pendNote}`;
+      const pendNote = pend === 0 && signed > 0 ? ' Pending revenue counter looks stuck, want me to audit?' : '';
+      return `Signed $${signed}K month-to-date. Pending $${Math.round(pend/1000)}K.${pendNote}`;
     }
-    case 'HECATE': {
+    case 'ADMIN': {
       const watchdog = alerts.find(a => /watchdog|cron/i.test(String(a)));
       const stale = alerts.find(a => /stale/i.test(String(a)));
-      if (watchdog) return `⚠ ${watchdog} Cross the threshold carefully.`;
-      if (stale) return `${stale} Worth a sweep.`;
-      return 'Systems nominal. The keys are quiet.';
+      if (watchdog) return `Heads up: ${watchdog}. I'll keep tabs.`;
+      if (stale) return `${stale}. Want me to sweep it?`;
+      return 'All systems quiet. Inbox under control.';
     }
-    case 'APOLLO': {
+    case 'MATERIALS': {
+      const mat = s.materialOrders;
+      if (!mat || typeof mat !== 'object') return 'Inventory feed not wired up yet. Walk in and I will show you what we have.';
+      const ords = mat.openCount || 0;
+      return ords ? `${ords} material order${ords > 1 ? 's' : ''} open with suppliers.` : 'Pallets stacked, shelves stocked. We are good.';
+    }
+    case 'MARKETING': {
       const cpl = ads.avgCPL;
       const lw = leads.thisWeek || 0;
       const total = leads.total || 0;
-      return `Lead flow ${lw} this week (${total} all-time). CPL ${cpl != null ? '$' + cpl.toFixed(2) : '?'}. ${lw < 3 ? 'Time to amplify.' : 'Channels singing.'}`;
+      return `${lw} leads this week (${total} all-time). CPL ${cpl != null ? '$' + cpl.toFixed(2) : '?'}. ${lw < 3 ? 'Want me to push more spend?' : 'Funnel is humming.'}`;
     }
   }
   return 'Quiet today.';
@@ -1089,7 +1414,7 @@ function sectorStatBlocks(sectorId) {
       { k:'BRIEFING', v:(brief.status || '--').toUpperCase() },
       { k:'TOP 3', v: (brief.top3 || []).length },
       { k:'ALERTS', v: alerts.length },
-      { k:'SECTORS', v: '8' }
+      { k:'SECTORS', v: String(SECTORS.length) }
     ];
     case 'SALES': return [
       { k:'SIGNED MTD', v: fmt$(rev.signedRevenue) },
@@ -1136,6 +1461,20 @@ function sectorStatBlocks(sectorId) {
       { k:'ALL LEADS', v: leads.total || 0 },
       { k:'CAMPAIGNS', v: ads.activeCampaigns || 0 }
     ];
+    case 'MATERIALS': {
+      // materialOrders is not yet produced by the snapshot pipeline; show
+      // explicit "--" rather than defaulting to 0/OK so we don't lie about
+      // a healthy state when we just have no data. Wire snapshot section
+      // in a follow-up before relying on these counters.
+      const mat = s.materialOrders;
+      const have = mat && typeof mat === 'object';
+      return [
+        { k:'OPEN ORDERS', v: have ? (mat.openCount || 0) : '--' },
+        { k:'LOW STOCK',   v: have ? (mat.lowStockCount || 0) : '--' },
+        { k:'SUPPLIERS',   v: have ? (mat.suppliersCount || '--') : '--' },
+        { k:'STATUS',      v: have ? ((mat.openCount || 0) > 5 ? 'BUSY' : 'OK') : 'NO DATA' }
+      ];
+    }
   }
   return [];
 }
@@ -1188,6 +1527,10 @@ function sectorHeadline(sectorId) {
       return watchdog ? 'WATCHDOG DOWN' : 'systems nominal';
     }
     case 'MARKETING': return `CPL $${ads.avgCPL != null ? ads.avgCPL.toFixed(2) : '?'} · ${leads.thisWeek || 0}/wk`;
+    case 'MATERIALS': {
+      const mat = s.materialOrders;
+      return (mat && typeof mat === 'object') ? ((mat.openCount || 0) + ' orders open') : 'no data yet';
+    }
   }
 }
 
@@ -1223,6 +1566,18 @@ const sfxConfirm = () => { beep(660, 50, 'square', 0.05); setTimeout(() => beep(
 const sfxOpen    = () => { beep(440, 40, 'triangle', 0.05); beep(660, 80, 'triangle', 0.04); };
 const sfxClose   = () => beep(330, 60, 'triangle', 0.04);
 const sfxAdvance = () => beep(990, 20, 'square', 0.025);
+// 8-bit dialogue chatter. Per-NPC pitch band so different speakers
+// sound distinctly: Ryujin rumbles low, Cat chirps high, etc. Called
+// per N characters revealed by the typewriter to simulate speech.
+const CHATTER_BAND = {
+  RYUJIN:[180,330], MACK:[700,920], CAT:[900,1180], MEL:[520,720],
+  AJ:[800,1000], DIEGO:[380,560], PAVANJOT:[440,620]
+};
+function sfxChatter(speaker) {
+  const band = CHATTER_BAND[speaker] || [700, 900];
+  const f = band[0] + Math.random() * (band[1] - band[0]);
+  beep(f, 18, 'square', 0.02);
+}
 const sfxBoss    = () => { beep(110, 250, 'sawtooth', 0.06); setTimeout(() => beep(82, 350, 'sawtooth', 0.06), 200); };
 ['click','keydown','touchstart'].forEach(ev => window.addEventListener(ev, function once() { ensureAudio(); window.removeEventListener(ev, once); }, { once: true }));
 
@@ -1364,9 +1719,9 @@ function renderWizardWalker() {
   if (!sess) { if (existing) existing.remove(); return; }
   const sec = SECTORS.find(s => s.id === (sess.current_sector || '').toUpperCase());
   if (!sec) { if (existing) existing.remove(); return; }
-  // Park the wizard just outside the building's south face
-  const bh = getBuildingHalf();
-  const wx = clamp(sec.x + bh.w + 2.5, 5, 95);
+  // Park the wizard just outside the building's south-east corner
+  const f = getBuildingFoot(sec);
+  const wx = clamp(sec.x + f.hw + 2.5, 5, 95);
   const wy = clamp(sec.y, 5, 95);
   const label = sess.user_label || 'Claude';
   const count = state.ccSessions.length;
@@ -1381,7 +1736,7 @@ function renderWizardWalker() {
       class: 'wizard-walker',
       id: 'wizardWalker',
       title: `Talk to Claude · ${count} active`,
-      style: { left: wx + '%', top: wy + '%', backgroundImage: `url('/assets/rpg/portraits/claude-wizard.webp')` },
+      style: { left: wx + '%', top: wy + '%', backgroundImage: `url('/assets/rpg/sprites/crew/claude-wizard.webp')` },
       onclick: () => { sfxConfirm(); openWizardDialogue(); }
     }, [
       el('div', { class: 'badge', text: String(count) })
@@ -1406,9 +1761,8 @@ function viewFlash(swapFn) {
 
 function refreshInteriorHud() {
   const intr = state.interior; if (!intr) return;
-  // HUD already reflects the static sector; nothing dynamic to update here
-  // unless we want a live KPI line. Reserved for a future "ambient ticker"
-  // showing this sector's headline KPI as snapshot refreshes.
+  const t = document.getElementById('hudSecTicker');
+  if (t) t.textContent = sectorHeadline(intr.sec.id) || '--';
 }
 
 function renderWorld() {
@@ -1419,13 +1773,12 @@ function renderWorld() {
     const lvl = sectorAlertLevel(sec.id);
     const overdueCount = (state.snapshot && sec.id === 'PRODUCTION') ? (state.snapshot.tickets && state.snapshot.tickets.overdueCount) : 0;
     const tile = el('div', {
-      class: 'map-building' + (lvl === 'alert' ? ' alert' : lvl === 'warn' ? ' warn' : ''),
+      class: 'map-building' + (sec.tall ? ' tall' : '') + (lvl === 'alert' ? ' alert' : lvl === 'warn' ? ' warn' : ''),
       'data-sector': sec.id,
-      style: { left: sec.x + '%', top: sec.y + '%', backgroundImage: `url('${sec.bg}')` },
+      style: { left: sec.x + '%', top: sec.y + '%', backgroundImage: `url('${sec.sprite}')` },
       onclick: () => { state.focusedSector = i; sfxStep(); enterSector(); }
     }, [
-      el('div', { class: 'b-label', text: sec.id }),
-      el('div', { class: 'b-stat' + (lvl === 'alert' ? ' alert' : lvl === 'warn' ? ' warn' : ''), text: sectorHeadline(sec.id) })
+      el('div', { class: 'b-label', text: sec.id })
     ]);
 
     // Alert/warn pip (overdue count, etc.)
@@ -1444,98 +1797,111 @@ function renderWorld() {
     world.appendChild(tile);
   });
 
-  // Player avatar (one per view; rebuilt fresh so transitions don't compound)
+  // Player sprite — pixel-art div with backgroundImage flipped by facing class
   const av = el('div', {
-    class: 'player-avatar' + (anyMoveKeyHeld() ? ' moving' : ''),
+    class: 'player-avatar face-' + (state.player.facingDir || 'down'),
     id: 'playerAvatar',
-    style: { left: state.player.x + '%', top: state.player.y + '%', backgroundImage: `url('${PLAYER_AVATAR_IMG}')` }
-  }, [
-    el('div', { class: 'facing-arrow', id: 'facingArrow' })
-  ]);
+    style: { left: state.player.x + '%', top: state.player.y + '%' }
+  });
   world.appendChild(av);
 
   // Re-render the wandering wizard now that the world container is fresh
   renderWizardWalker();
 }
 
+// Tile-snap overworld movement. Runs from the game loop; if no step is
+// in flight and a direction key is held, queue one. Once the step's
+// CSS transition completes (STEP_MS), snap and let the next tick queue
+// the follow-up step. Buildings are AABB-rejected at queue time.
 function updateOverworld(dtMs) {
   const p = state.player;
-  let vx = 0, vy = 0;
-  if (state.input.left)  vx -= 1;
-  if (state.input.right) vx += 1;
-  if (state.input.up)    vy -= 1;
-  if (state.input.down)  vy += 1;
-  if (vx === 0 && vy === 0) {
-    const av = $('playerAvatar'); if (av) av.classList.remove('moving');
-    // Still re-check near-building since camera moved or building list re-rendered
+  // Step in progress? Wait for it to finish before queuing another.
+  if (p.stepEndsAt && performance.now() < p.stepEndsAt) return;
+  if (p.stepEndsAt) {
+    // Tween just finished — snap to target and clear step state.
+    p.x = p.targetX; p.y = p.targetY;
+    p.stepEndsAt = 0;
+    schedulePlayerSave();
+    refreshNearBuilding();
+  }
+  // Direction priority: vertical > horizontal so diagonal hold prefers
+  // up/down. Classic FF feel — also avoids querying diagonal-collision.
+  let dir = null;
+  if (state.input.up)         dir = 'up';
+  else if (state.input.down)  dir = 'down';
+  else if (state.input.left)  dir = 'left';
+  else if (state.input.right) dir = 'right';
+  if (!dir) {
+    const av = $('playerAvatar'); if (av) { av.classList.remove('moving'); av.classList.remove('step-b'); }
     refreshNearBuilding();
     return;
   }
-  // Normalize diagonal speed
-  const len = Math.hypot(vx, vy);
-  vx /= len; vy /= len;
-  p.facing = Math.atan2(vy, vx);
-  const step = OVERWORLD_SPEED_PCT_PER_MS * dtMs;
-  const nx = clamp(p.x + vx * step, 3, 97);
-  const ny = clamp(p.y + vy * step, 5, 95);
-
-  // Building collision — don't allow the player center to enter the
-  // building's solid rect (we'll use a slightly smaller inset so the
-  // player visually overlaps the door edge before being stopped).
-  const bh = getBuildingHalf();
-  let blocked = false;
-  for (const sec of SECTORS) {
-    const dx = Math.abs(nx - sec.x);
-    const dy = Math.abs(ny - sec.y);
-    if (dx < bh.w - 1 && dy < bh.h - 1.5) { blocked = true; break; }
+  // Compute target tile
+  let dx = 0, dy = 0;
+  if (dir === 'up')    dy = -TILE_H_PCT;
+  if (dir === 'down')  dy =  TILE_H_PCT;
+  if (dir === 'left')  dx = -TILE_W_PCT;
+  if (dir === 'right') dx =  TILE_W_PCT;
+  const tx = clamp(p.x + dx, 3, 97);
+  const ty = clamp(p.y + dy, 5, 95);
+  // Reject if target is inside a building footprint (face the dir anyway
+  // so the player visually turns to look at the wall even when blocked).
+  p.facingDir = dir;
+  applyFacing();
+  if (collidesOverworld(tx, ty)) {
+    refreshNearBuilding();
+    return;
   }
-  if (!blocked) { p.x = nx; p.y = ny; }
-  else {
-    // Try axis-separated step so player can slide along walls
-    if (!collidesOverworld(nx, p.y)) p.x = nx;
-    if (!collidesOverworld(p.x, ny)) p.y = ny;
-  }
-
-  // Apply transform to avatar (don't rebuild the entire DOM each tick)
+  // Queue the step
+  p.targetX = tx;
+  p.targetY = ty;
+  p.stepEndsAt = performance.now() + STEP_MS;
+  p.stepParity = !p.stepParity;
   const av = $('playerAvatar');
   if (av) {
-    av.style.left = p.x + '%';
-    av.style.top  = p.y + '%';
+    av.style.left = tx + '%';
+    av.style.top  = ty + '%';
     av.classList.add('moving');
+    av.classList.toggle('step-b', p.stepParity);
   }
-  refreshNearBuilding();
-  schedulePlayerSave();
-  maybeFootstep(dtMs);
+  sfxFootstep();
 }
 
+function applyFacing() {
+  const av = $('playerAvatar'); if (!av) return;
+  av.classList.remove('face-up', 'face-down', 'face-left', 'face-right');
+  av.classList.add('face-' + (state.player.facingDir || 'down'));
+}
+
+// Building-foot collision: target tile inside the bottom-anchored AABB
+// of any building? Each sector has its own footprint (tall ADMIN bigger).
 function collidesOverworld(x, y) {
-  const bh = getBuildingHalf();
   for (const sec of SECTORS) {
-    if (Math.abs(x - sec.x) < bh.w - 1 && Math.abs(y - sec.y) < bh.h - 1.5) return true;
+    const f = getBuildingFoot(sec);
+    if (x > sec.x - f.hw && x < sec.x + f.hw && y > sec.y - f.h && y < sec.y) return true;
   }
   return false;
 }
 
 function refreshNearBuilding() {
   const p = state.player;
-  const bh = getBuildingHalf();
   let near = null;
   for (let i = 0; i < SECTORS.length; i++) {
     const sec = SECTORS[i];
-    const dx = Math.abs(p.x - sec.x);
-    const dy = Math.abs(p.y - sec.y);
-    if (dx < bh.w + INTERACT_PAD.w && dy < bh.h + INTERACT_PAD.h) {
-      near = { sec, index: i };
-      break;
-    }
+    const f = getBuildingFoot(sec);
+    // "Near" is the band just outside the footprint, biased toward the
+    // bottom (the door tile) so player approaches the building from the
+    // front rather than around the sides.
+    const insideX = p.x > sec.x - f.hw - INTERACT_PAD.w && p.x < sec.x + f.hw + INTERACT_PAD.w;
+    const nearDoor = p.y >= sec.y && p.y < sec.y + INTERACT_PAD.h + 2;
+    if (insideX && nearDoor) { near = { sec, index: i }; break; }
   }
   const prev = state.nearBuilding;
   state.nearBuilding = near;
   if (near && (!prev || prev.sec.id !== near.sec.id)) {
-    // Highlight the new building
     document.querySelectorAll('.map-building').forEach(el => el.classList.toggle('near', el.getAttribute('data-sector') === near.sec.id));
     state.focusedSector = near.index;
-    showInteractPrompt('PRESS [SPACE] TO ENTER', near.sec.x, near.sec.y - bh.h);
+    showInteractPrompt('PRESS [SPACE] TO ENTER', near.sec.x, near.sec.y - 2);
   } else if (!near && prev) {
     document.querySelectorAll('.map-building').forEach(el => el.classList.remove('near'));
     hideInteractPrompt();
@@ -1574,6 +1940,11 @@ function enterSector() {
   const sec = SECTORS[state.focusedSector];
   if (!sec) return;
   sfxOpen();
+  // Any in-flight overworld step is abandoned; snap to current position
+  // so exit doesn't teleport the player to a stale tile target.
+  state.player.stepEndsAt = 0;
+  state.player.targetX = state.player.x;
+  state.player.targetY = state.player.y;
   // Remember overworld position so we can spawn there on exit
   state.worldReturn = { x: state.player.x, y: state.player.y };
   state.interior = {
@@ -1612,34 +1983,77 @@ function renderInterior() {
   $('hudSecRole').textContent = sec.role;
   $('sectorHud').style.borderColor = NPC_ACCENT[sec.npc] || 'var(--cyan)';
   $('hudSecNpc').style.color = NPC_ACCENT[sec.npc] || 'var(--gold)';
+  refreshInteriorHud();
 
   // Tear down old interior interactables (re-rendered each enter)
-  room.querySelectorAll('.npc-sprite, .terminal-zone, .door-zone, .player-avatar, .interact-prompt').forEach(n => n.remove());
+  room.querySelectorAll('.npc-sprite, .terminal-zone, .door-zone, .player-avatar, .interact-prompt, .sprite-pop').forEach(n => n.remove());
 
-  // NPC sprite (positioned absolutely via %)
+  // NPC / comms-terminal at the back of the room. Field-ops sectors
+  // (Production, Service, Materials) render a glowing comms terminal
+  // instead of a character sprite - those crew members are out on
+  // jobs, you reach them via SMS or email through the terminal.
+  // For office rooms the painted character at the desk IS the lead NPC
+  // visual - npc-sprite is rendered as an invisible click hotspot with
+  // just a floating "TALK" nameplate hovering above the painted figure.
+  // Field rooms keep the visible glowing comms terminal since their
+  // crew is OUT in the field (the painted desk-worker is just scenery).
   const accent = NPC_ACCENT[sec.npc] || '#fde047';
+  const isField = FIELD_SECTORS.has(sec.id);
   const npc = el('div', {
-    class: 'npc-sprite',
+    class: 'npc-sprite' + (isField ? ' comms-terminal' : ' office-hotspot'),
     id: 'npcSprite',
-    style: {
-      left: intr.npcX + '%',
-      top:  intr.npcY + '%',
-      backgroundImage: `url('${NPC_PORTRAIT(sec.npc)}')`,
-      borderColor: accent,
-      boxShadow: `0 0 24px ${accent}55`
-    },
-    onclick: () => { if (state.dialogue) return; sfxConfirm(); openNpcDialogueTree(sec); }
+    'data-target-name': sec.npc,
+    style: Object.assign(
+      { left: intr.npcX + '%', top: intr.npcY + '%', borderColor: accent, boxShadow: `0 0 24px ${accent}55` },
+      isField ? {} : {}  // office: no background image, no border (CSS overrides)
+    ),
+    onclick: () => {
+      if (state.dialogue) return;
+      sfxConfirm();
+      if (isField) openCommsDialog(sec); else openNpcDialogueTree(sec);
+    }
   }, [
-    el('div', { class: 'npc-nameplate', text: sec.npc, style: { color: accent, borderColor: accent } })
+    el('div', { class: 'npc-nameplate', text: nameplateLabel(sec, isField), style: { color: accent, borderColor: accent } })
   ]);
   room.appendChild(npc);
+
+  // Guest crew (e.g. Mel + Cat posted in HQ alongside Ryujin). Sprite
+  // overlay on the room bg, clickable for a generic Email + Leave dialog.
+  // Domain dialogue still lives in each crew member's own sector.
+  if (Array.isArray(sec.guests)) {
+    sec.guests.forEach(g => {
+      const gAccent = NPC_ACCENT[g.npc] || '#fde047';
+      const gSpriteId = g.npc.toLowerCase() === 'mel' ? 'mel' : g.npc.toLowerCase();
+      const guest = el('div', {
+        class: 'npc-sprite crew-guest',
+        'data-target-name': g.npc,
+        style: {
+          left: g.x + '%', top: g.y + '%',
+          backgroundImage: `url('/assets/rpg/sprites/crew/${gSpriteId}.webp')`
+        },
+        onclick: () => {
+          if (state.dialogue) return;
+          sfxConfirm();
+          openGuestDialog(g.npc);
+        }
+      }, [
+        el('div', { class: 'npc-nameplate', text: 'TALK · ' + g.npc, style: { color: gAccent, borderColor: gAccent } })
+      ]);
+      room.appendChild(guest);
+    });
+  }
 
   // Terminal (computer / desk) — opens the stats modal
   const term = el('div', {
     class: 'terminal-zone',
     id: 'termZone',
     style: { left: intr.termX + '%', top: intr.termY + '%' },
-    onclick: () => { sfxOpen(); openSectorTerminalModal(sec); }
+    // Per Mac: terminal opens the SECTOR-specific panel directly,
+    // not a stats modal that then needs another click. Each sector's
+    // href already points to the right cockpit page (sales-cockpit
+    // for SALES, admin.html?page=finance for FINANCE, etc.) - HQ is
+    // the only one whose panel IS the whole command center, by design.
+    onclick: () => { sfxOpen(); window.location.href = sec.href; }
   });
   room.appendChild(term);
 
@@ -1647,20 +2061,23 @@ function renderInterior() {
   const door = el('div', { class: 'door-zone', id: 'doorZone' });
   room.appendChild(door);
 
-  // Player avatar at spawn
+  // Player avatar at spawn — same pixel sprite as overworld, facing up
+  // toward the NPC since spawn is at the bottom door.
   const av = el('div', {
-    class: 'player-avatar',
+    class: 'player-avatar face-up',
     id: 'playerAvatar',
-    style: { left: intr.playerX + '%', top: intr.playerY + '%', backgroundImage: `url('${PLAYER_AVATAR_IMG}')` }
+    style: { left: intr.playerX + '%', top: intr.playerY + '%' }
   });
   room.appendChild(av);
 
-  // Auto-talk on first entry per sector (preserved from prior version)
+  // Auto-talk on first entry disabled. The dialogue blocks player
+  // movement (game loop pauses on state.dialogue) which made the room
+  // feel "stuck on entry". Player walks in free, sees the painted
+  // character + floating TALK label, hits SPACE when near to talk.
   if (state._autoTalkTimer) { clearTimeout(state._autoTalkTimer); state._autoTalkTimer = null; }
   if (!state.save.spoken_to.includes(sec.id)) {
     state.save.spoken_to.push(sec.id);
     persistSave();
-    state._autoTalkTimer = setTimeout(() => { state._autoTalkTimer = null; openNpcDialogueTree(sec); }, 450);
   }
 }
 
@@ -1676,11 +2093,19 @@ function updateInterior(dtMs) {
     const len = Math.hypot(vx, vy);
     vx /= len; vy /= len;
     intr.facing = Math.atan2(vy, vx);
+    // Pick a cardinal facing for the sprite (the one closest to motion angle)
+    const absx = Math.abs(vx), absy = Math.abs(vy);
+    intr.facingDir = (absy >= absx) ? (vy < 0 ? 'up' : 'down') : (vx < 0 ? 'left' : 'right');
     const step = INTERIOR_SPEED_PCT_PER_MS * dtMs;
     intr.playerX = clamp(intr.playerX + vx * step, 4, 96);
     intr.playerY = clamp(intr.playerY + vy * step, 4, 98);
     const av = $('playerAvatar');
-    if (av) { av.style.left = intr.playerX + '%'; av.style.top = intr.playerY + '%'; av.classList.add('moving'); }
+    if (av) {
+      av.style.left = intr.playerX + '%';
+      av.style.top  = intr.playerY + '%';
+      av.classList.remove('face-up', 'face-down', 'face-left', 'face-right');
+      av.classList.add('face-' + intr.facingDir, 'moving');
+    }
     maybeFootstep(dtMs);
     // Walking into the door zone exits to overworld
     if (intr.playerY > DOOR_ZONE_TOP + 3) {
@@ -1696,15 +2121,52 @@ function updateInterior(dtMs) {
   const dt = Math.hypot(intr.playerX - intr.termX, intr.playerY - intr.termY);
   const dd = intr.playerY - DOOR_ZONE_TOP;
 
+  // Guests get their own near-check so keyboard SPACE and the on-screen
+  // action button can reach them. Without this, guest sprites would be
+  // mouse-click only and SPACE near Mel/Cat in HQ would either no-op or
+  // open Ryujin's tree if he was in range. (codex P2)
+  let nearGuest = null;
+  let nearGuestDist = Infinity;
+  if (Array.isArray(intr.sec.guests)) {
+    intr.sec.guests.forEach(g => {
+      const dg = Math.hypot(intr.playerX - g.x, intr.playerY - g.y);
+      if (dg < NPC_INTERACT_R && dg < nearGuestDist) {
+        nearGuest = g;
+        nearGuestDist = dg;
+      }
+    });
+  }
+
   let target = null, label = '', tx = 0, ty = 0;
-  if (dn < NPC_INTERACT_R) { target = 'npc';   label = `PRESS [SPACE] TO TALK · ${intr.sec.npc}`; tx = intr.npcX; ty = intr.npcY - 11; }
-  else if (dt < TERM_INTERACT_R) { target = 'terminal'; label = 'PRESS [SPACE] TO READ TERMINAL'; tx = intr.termX; ty = intr.termY - 8; }
-  else if (dd > -2) { target = 'door'; label = 'PRESS [SPACE] OR WALK DOWN TO EXIT'; tx = 50; ty = DOOR_ZONE_TOP - 4; }
+  // Guest beats main NPC when strictly closer; ties go to the main NPC
+  // so Ryujin remains the default interaction at the back of the room.
+  if (nearGuest && nearGuestDist < dn) {
+    target = 'guest';
+    label = 'PRESS [SPACE] TO TALK · ' + nearGuest.npc;
+    tx = nearGuest.x; ty = nearGuest.y - 11;
+    state.nearGuest = nearGuest;
+  }
+  else if (dn < NPC_INTERACT_R) {
+    target = 'npc';
+    label = interactPromptLabel(intr.sec, FIELD_SECTORS.has(intr.sec.id));
+    tx = intr.npcX; ty = intr.npcY - 11;
+    state.nearGuest = null;
+  }
+  else if (dt < TERM_INTERACT_R) { target = 'terminal'; label = 'PRESS [SPACE] TO READ TERMINAL'; tx = intr.termX; ty = intr.termY - 8; state.nearGuest = null; }
+  else if (dd > -2) { target = 'door'; label = 'PRESS [SPACE] OR WALK DOWN TO EXIT'; tx = 50; ty = DOOR_ZONE_TOP - 4; state.nearGuest = null; }
+  else { state.nearGuest = null; }
 
   if (target !== state.nearTarget) {
     state.nearTarget = target;
     if (target) showInteractPrompt(label, tx, ty); else hideInteractPrompt();
-    document.querySelectorAll('.npc-sprite').forEach(n => n.classList.toggle('near', target === 'npc'));
+    // Glow only the specific sprite the player is near. data-target-name
+    // is set on the main NPC and each guest at render time.
+    const nearName = target === 'npc' ? intr.sec.npc
+                   : target === 'guest' ? nearGuest.npc
+                   : null;
+    document.querySelectorAll('.npc-sprite').forEach(n => {
+      n.classList.toggle('near', !!nearName && n.dataset.targetName === nearName);
+    });
   }
   // NPC mirrors to face the player when they pass on the left/right side.
   // Small but recognizable touch — the god turns to greet you.
@@ -1721,6 +2183,12 @@ function updateInterior(dtMs) {
 }
 
 function exitToOverworld() {
+  // Cancel any pending first-entry auto-talk timer; otherwise the dialogue
+  // would pop on the overworld a moment after a quick exit (B key / button).
+  if (state._autoTalkTimer) { clearTimeout(state._autoTalkTimer); state._autoTalkTimer = null; }
+  // Also close any open dialogue (comms terminal etc) so the player lands
+  // cleanly on the map without a stale dialog stuck open over it.
+  if (state.dialogue) { try { closeDialogue(); } catch {} }
   state.interior = null;
   state.nearTarget = null;
   setView('MAP');
@@ -1730,18 +2198,18 @@ function exitToOverworld() {
   // happen because worldReturn was a walkable cell, but resize between
   // enter and exit could shift the collision footprint).
   const sec = SECTORS[state.focusedSector];
-  const bh = getBuildingHalf();
+  const f = sec ? getBuildingFoot(sec) : { hw: 6.5, h: 13 };
   const ret = state.worldReturn || {};
   let nx = (typeof ret.x === 'number') ? ret.x : (sec ? sec.x : 50);
-  let ny = (typeof ret.y === 'number') ? ret.y : (sec ? sec.y : 60);
+  let ny = (typeof ret.y === 'number') ? ret.y : (sec ? sec.y + 3 : 60);
   if (collidesOverworld(nx, ny) && sec) {
-    // Pick the first cardinal direction outside the building that's clear,
-    // preferring the side that keeps the player on-map.
+    // Pick the first cardinal direction outside the building that's clear.
+    // Buildings are bottom-anchored so the natural exit is just below sec.y.
     const offsets = [
-      { dx: 0,           dy:  bh.h + 4 }, // below
-      { dx: 0,           dy: -bh.h - 4 }, // above
-      { dx:  bh.w + 4,   dy: 0          }, // right
-      { dx: -bh.w - 4,   dy: 0          }, // left
+      { dx: 0,           dy:  4 },          // just below door
+      { dx: 0,           dy: -f.h - 4 },    // above (clear of building top)
+      { dx:  f.hw + 4,   dy: 0 },           // right
+      { dx: -f.hw - 4,   dy: 0 },           // left
     ];
     for (const o of offsets) {
       const cx = clamp(sec.x + o.dx, 5, 95);
@@ -1751,6 +2219,11 @@ function exitToOverworld() {
   }
   state.player.x = clamp(nx, 3, 97);
   state.player.y = clamp(ny, 5, 95);
+  // Re-sync the tile-step target to the new spawn so the next tick
+  // doesn't lerp from a stale target into the spawn cell.
+  state.player.targetX = state.player.x;
+  state.player.targetY = state.player.y;
+  state.player.stepEndsAt = 0;
   hideInteractPrompt();
   state.nearBuilding = null;
   sfxClose();
@@ -1821,7 +2294,22 @@ function stopGameLoop() {
 // Build the choice tree for a given NPC. Choices return their own
 // follow-up body when selected, then re-enter the same tree so the
 // player can ask a second question without re-opening dialogue.
+// Wrapper that augments the per-sector dialogue tree with a generic
+// "Email <crew>" option whenever the lead NPC has an entry in
+// CREW_CONTACTS. Injected immediately before Leave so it sits at the
+// bottom of the choices but above the dismiss.
 function buildDialogueChoices(sec) {
+  const base = _buildSectorChoices(sec);
+  const c = CREW_CONTACTS[sec.npc];
+  if (c && c.email) {
+    const leaveIdx = base.findIndex(ch => ch.kind === 'leave');
+    const emailChoice = { label: `Email ${c.name} (${c.email})`, kind: 'href', href: 'mailto:' + c.email };
+    base.splice(leaveIdx >= 0 ? leaveIdx : base.length, 0, emailChoice);
+  }
+  return base;
+}
+
+function _buildSectorChoices(sec) {
   const s = state.snapshot || {};
   const rev = s.revenue || {};
   const t = s.tickets || {};
@@ -1834,101 +2322,115 @@ function buildDialogueChoices(sec) {
   const enterPanel = { label: `Open ${sec.id} live panel`, kind: 'href', href: sec.href };
   const leave      = { label: 'Leave',                    kind: 'leave', danger: true };
 
-  switch (sec.npc) {
-    case 'ZEUS': {
+  switch (sec.id) {
+    case 'HQ': {
       const top3 = brief.top3 || [];
       return [
         { label: 'Today\'s briefing', kind: 'reply',
-          body: `Status: ${(brief.status || 'unknown').toUpperCase()}. ${top3.length ? top3.length + ' priority items flagged.' : 'No flagged priorities.'}` },
+          body: `Status: ${(brief.status || 'unknown').toUpperCase()}. ${top3.length ? top3.length + ' priority items flagged.' : 'Nothing flagged.'}` },
         { label: 'Top 3 priorities', kind: 'reply',
-          body: top3.length ? top3.slice(0,3).map((q,i) => `${i+1}. ${q.action || q.title || 'priority ' + (i+1)}`).join('\n') : 'No flagged priorities right now.' },
+          body: top3.length ? top3.slice(0,3).map((q,i) => `${i+1}. ${q.action || q.title || 'priority ' + (i+1)}`).join('\n') : 'Nothing flagged right now.' },
         { label: 'Open the quest log', kind: 'modal', modal: 'quests' },
         enterPanel,
         leave
       ];
     }
-    case 'HERMES': {
+    case 'SALES': {
       const signed = Math.round((rev.signedRevenue || 0) / 1000);
       const pipeVal = Math.round((pipe.totalValue || 0) / 1000);
       const top = (pipe.top5_deals || [])[0];
       return [
         { label: 'How is the pipeline?', kind: 'reply',
-          body: `Pipeline $${pipeVal}K across ${pipe.openDeals || 0} open deals. Signed $${signed}K month-to-date.` },
+          body: `Pipeline holds $${pipeVal}K across ${pipe.openDeals || 0} open deals. Closed $${signed}K month-to-date.` },
         { label: 'Top deal right now', kind: 'reply',
           body: top ? `${top.customer || top.name || 'top deal'} · ${fmt$(top.value)}` : 'No open deals in pipeline.' },
         { label: 'New leads this week', kind: 'reply',
-          body: `${leads.thisWeek || 0} new leads this week · ${leads.total || 0} all-time.` },
+          body: `${leads.thisWeek || 0} new leads this week, ${leads.total || 0} all-time.` },
         enterPanel,
         leave
       ];
     }
-    case 'HEPHAESTUS': {
+    case 'PRODUCTION': {
       const byStat = t.byStatus || {};
       const active = byStat.active || 0;
       const open = byStat.open || 0;
       const overdue = t.overdueCount || 0;
       return [
         { label: 'Active jobs right now', kind: 'reply',
-          body: `${active} active · ${open} open · ${overdue} overdue. ${overdue > 20 ? 'The forge is roaring.' : overdue > 5 ? 'Some catching up to do.' : 'Workload steady.'}` },
+          body: `${active} active · ${open} open · ${overdue} overdue. ${overdue > 20 ? "We're swamped, boss." : overdue > 5 ? 'Need to catch up a bit.' : 'Workload steady.'}` },
         { label: 'Who has the most overdue?', kind: 'reply',
           body: bottleneckAssignee() },
         { label: 'Open production cockpit', kind: 'href', href: sec.href },
         leave
       ];
     }
-    case 'ARTEMIS': {
+    case 'SERVICE': {
       const byStat = t.byStatus || {};
       const active = byStat.active || 0;
       const today = (t.activeToday || []).length;
       return [
         { label: 'Dispatch board status', kind: 'reply',
-          body: `${active} active service calls · ${today} on dispatch today.` },
+          body: `${active} active calls, ${today} on dispatch today.` },
         { label: 'Unassigned tickets', kind: 'reply',
           body: `${(t.byAssignee && t.byAssignee.Unassigned) || 0} unassigned tickets in queue.` },
         enterPanel,
         leave
       ];
     }
-    case 'HESTIA': {
+    case 'CUSTOMER': {
       const totalTix = t.total || 0;
       const recent = (rev.recentActivity || []).slice(0,3);
       return [
         { label: 'Customer pulse', kind: 'reply',
-          body: `${totalTix} tickets warm across all customers right now.` },
+          body: `${totalTix} tickets open across all customers right now.` },
         { label: 'Recent activity (top 3)', kind: 'reply',
-          body: recent.length ? recent.map(r => `· ${(r.customer || 'customer')} — ${(r.action || 'event')}`).join('\n') : 'No recent customer activity in current snapshot.' },
+          body: recent.length ? recent.map(r => `· ${(r.customer || 'customer')}, ${(r.action || 'event')}`).join('\n') : 'No recent customer activity in current snapshot.' },
         enterPanel,
         leave
       ];
     }
-    case 'ATHENA': {
+    case 'FINANCE': {
       const signed = Math.round((rev.signedRevenue || 0) / 1000);
       const pend = Math.round((rev.pendingRevenue || 0) / 1000);
       const adRoi = brief.kpiScouter && brief.kpiScouter.adROI;
       return [
         { label: 'Show me the money (MTD)', kind: 'reply',
-          body: `Signed $${signed}K · Pending $${pend}K month-to-date.` },
+          body: `Signed $${signed}K, pending $${pend}K month-to-date.` },
         { label: 'Ad ROI right now', kind: 'reply',
           body: adRoi != null ? `Ad ROI ${adRoi}.` : 'Ad ROI signal not present in this snapshot.' },
         { label: 'Open finance dashboard', kind: 'href', href: sec.href },
         leave
       ];
     }
-    case 'HECATE': {
+    case 'ADMIN': {
       const watchdog = alerts.find(a => /watchdog|cron/i.test(String(a)));
       const stale = alerts.find(a => /stale/i.test(String(a)));
       return [
         { label: 'Watchdog status', kind: 'reply',
-          body: watchdog ? `⚠ ${watchdog}` : 'Watchdog clean. Cron firing as scheduled.' },
+          body: watchdog ? watchdog : 'Watchdog clean. Cron firing as scheduled.' },
         { label: 'Any stale data?', kind: 'reply',
-          body: stale ? `${stale}` : 'No stale data flagged. Snapshot is current.' },
+          body: stale ? stale : 'No stale data flagged. Snapshot is current.' },
         { label: 'Active Claude sessions', kind: 'reply',
-          body: state.ccSessions.length ? state.ccSessions.map(c => `· ${c.user_label || 'Claude'} — ${c.last_tool || 'idle'}`).join('\n') : 'No active Claude Code sessions right now.' },
+          body: state.ccSessions.length ? state.ccSessions.map(c => `· ${c.user_label || 'Claude'} ${c.last_tool || 'idle'}`).join('\n') : 'No active Claude Code sessions right now.' },
         { label: 'Open admin console', kind: 'href', href: sec.href },
         leave
       ];
     }
-    case 'APOLLO': {
+    case 'MATERIALS': {
+      const mat = s.materialOrders;
+      const have = mat && typeof mat === 'object';
+      const ords = have ? (mat.openCount || 0) : null;
+      let inv;
+      if (!have) inv = 'Inventory feed not wired into the snapshot pipeline yet, but you can open the board.';
+      else if (ords) inv = `${ords} material order${ords > 1 ? 's' : ''} open with suppliers right now.`;
+      else inv = 'Pallets stacked, shelves stocked. We are good.';
+      return [
+        { label: 'Inventory check', kind: 'reply', body: inv },
+        { label: 'Open materials board', kind: 'href', href: sec.href },
+        leave
+      ];
+    }
+    case 'MARKETING': {
       const cpl = ads.avgCPL;
       const lw = leads.thisWeek || 0;
       const total = leads.total || 0;
@@ -1955,9 +2457,60 @@ function bottleneckAssignee() {
   return who ? `${who} has the heaviest load (${max} tickets).` : 'No assignee breakdown in current snapshot.';
 }
 
+// Guest crew dialog. Used when the player talks to a crew member who is
+// posted in a sector that isn't their own station (e.g. Mel + Cat in HQ
+// alongside Ryujin). Their station-specific dialogue tree lives in their
+// own sector; this is a lightweight "hi, email me" interaction so the
+// player can reach out without leaving the room they're in.
+function openGuestDialog(npc) {
+  const c = CREW_CONTACTS[npc];
+  if (!c) return;
+  const accent = NPC_ACCENT[npc] || '#22d3ee';
+  const choices = [];
+  if (c.email) choices.push({ label: `Email ${c.name} (${c.email})`, kind: 'href', href: 'mailto:' + c.email });
+  choices.push({ label: 'Leave', kind: 'leave', danger: true });
+  openDialogue({
+    speaker: npc,
+    accent,
+    portrait: NPC_PORTRAIT(npc),
+    body: `${c.name} is on station here in the hub. Need their domain panel? Walk over to their station. Otherwise drop them an email.`,
+    choices,
+    choiceIdx: 0,
+    kind: 'guest'
+  });
+}
+
+// Field-ops comms terminal dialog. Renders a dialogue with SMS / Email
+// choices that defer to the device's tel: and mailto: handlers - no
+// server-side messaging API required. Greys out a channel when the
+// crew member's contact field is empty so Mac can see what to fill in.
+function openCommsDialog(sec) {
+  const c = CREW_CONTACTS[sec.npc] || { name: sec.npc, sms: '', email: '' };
+  const accent = NPC_ACCENT[sec.npc] || '#22d3ee';
+  // Email-only for v1. Choice opens the device's default mail client.
+  // When email is missing (e.g. Pavanjot today), the dialog still
+  // surfaces a clean Leave option rather than a disabled-row fallback
+  // that could eject the player into the sector NPC tree.
+  const footer = c.email ? '' : `\n\n(${c.name} has no workspace email configured yet - add to CREW_CONTACTS when their account lands.)`;
+  const body = `${c.name} is in the field. Reach them by email - the message opens in your device's default mail app.` + footer;
+  const choices = [];
+  if (c.email) choices.push({ label: `Email ${c.name} (${c.email})`, kind: 'href', href: 'mailto:' + c.email });
+  choices.push({ label: 'Leave', kind: 'leave', danger: true });
+  openDialogue({
+    speaker: 'COMMS · ' + sec.id,
+    accent,
+    portrait: NPC_PORTRAIT(sec.npc),
+    body,
+    choices,
+    choiceIdx: 0,
+    kind: 'comms',
+    sec
+  });
+}
+
 function openNpcDialogueTree(sec, options) {
   const speaker = sec.npc;
-  const body = (options && options.body) || godLine(speaker);
+  const body = (options && options.body) || godLine(sec);
   const choices = buildDialogueChoices(sec);
   openDialogue({
     speaker,
@@ -1972,11 +2525,17 @@ function openNpcDialogueTree(sec, options) {
 }
 
 // Legacy single-line talk (kept so existing code paths still work)
-function talkToNpc(sec) { openNpcDialogueTree(sec); }
+function talkToNpc(sec) {
+  if (FIELD_SECTORS.has(sec.id)) openCommsDialog(sec);
+  else openNpcDialogueTree(sec);
+}
 function openDialogue(d) {
   state.dialogue = Object.assign({ revealed: 0, choiceIdx: 0 }, d);
   $('dialogue').classList.add('open');
   document.body.classList.add('dialogue-open');
+  // Speech bubble above the painted speaker (sector interior only).
+  // Position is sec.talk if set, else slightly above intr.npcX/Y.
+  spawnSpeechBubble();
   $('dialogueSpeaker').textContent = d.speaker;
   $('dialogueSpeaker').style.color = d.accent || '#fde047';
   $('dialogueSpeaker').style.borderColor = d.accent || 'var(--cyan)';
@@ -1998,7 +2557,7 @@ function openDialogue(d) {
     state.dialogue.revealed += 2;
     const visible = state.dialogue.body.slice(0, state.dialogue.revealed);
     $('dialogueBody').textContent = visible;
-    if (state.dialogue.revealed % 8 === 0) sfxAdvance();
+    if (state.dialogue.revealed % 4 === 0) sfxChatter(state.dialogue.speaker);
     if (state.dialogue.revealed >= state.dialogue.body.length) {
       clearInterval(state._typewriterTimer);
       onDialogueBodyComplete();
@@ -2008,6 +2567,7 @@ function openDialogue(d) {
 
 function onDialogueBodyComplete() {
   if (!state.dialogue) return;
+  setSpeechBubbleDone();   // stop the bouncing once the speaker finishes
   if (state.dialogue.choices && state.dialogue.choices.length) {
     renderDialogueChoices();
   } else {
@@ -2071,14 +2631,16 @@ function selectChoice(idx) {
     $('dialogueBody').textContent = '';
     $('dialogueAdvance').style.display = 'none';
     if (state._typewriterTimer) clearInterval(state._typewriterTimer);
+    spawnSpeechBubble();   // restart bouncing dots for the reply
     // Speed up reply typewriter so chained Q&A feels snappy
     state._typewriterTimer = setInterval(() => {
       if (!state.dialogue) { clearInterval(state._typewriterTimer); return; }
       state.dialogue.revealed += 3;
       $('dialogueBody').textContent = state.dialogue.body.slice(0, state.dialogue.revealed);
-      if (state.dialogue.revealed % 10 === 0) sfxAdvance();
+      if (state.dialogue.revealed % 5 === 0) sfxChatter(state.dialogue.speaker);
       if (state.dialogue.revealed >= state.dialogue.body.length) {
         clearInterval(state._typewriterTimer);
+        setSpeechBubbleDone();   // stop bubble bouncing after reply finishes
         // Refresh the choice list so it stays available
         state.dialogue.choices = buildDialogueChoices(sec);
         renderDialogueChoices();
@@ -2094,6 +2656,31 @@ function closeDialogue() {
   $('dialogueChoices').classList.remove('show');
   $('dialogueChoices').textContent = '';
   if (state._typewriterTimer) clearInterval(state._typewriterTimer);
+  removeSpeechBubble();
+}
+
+// Speech bubble helpers. Bubble is animated while text is revealing
+// (bouncing dots), then fades / stops bouncing once typewriter
+// finishes so the player knows it's their turn to advance/choose.
+function spawnSpeechBubble() {
+  if (state.view !== 'SECTOR' || !state.interior) return;
+  removeSpeechBubble();
+  const room = $('sectorRoom'); if (!room) return;
+  const intr = state.interior;
+  const talk = (intr.sec && intr.sec.talk) || {};
+  const tx = (typeof talk.x === 'number') ? talk.x : intr.npcX;
+  const ty = (typeof talk.y === 'number') ? talk.y : (intr.npcY - 10);
+  const bubble = el('div', { class: 'speech-bubble', id: 'speechBubble', style: { left: tx + '%', top: ty + '%' } });
+  bubble.textContent = '...';
+  room.appendChild(bubble);
+}
+function setSpeechBubbleDone() {
+  const b = document.getElementById('speechBubble');
+  if (b) b.classList.add('done');
+}
+function removeSpeechBubble() {
+  const b = document.getElementById('speechBubble');
+  if (b) b.remove();
 }
 function advanceDialogue() {
   if (!state.dialogue) return;
@@ -2287,7 +2874,7 @@ function renderWizardPop() {
     title: 'Talk to Claude · ' + state.ccSessions.length + ' active',
     onclick: openWizardDialogue
   }, [
-    el('img', { src: '/assets/rpg/portraits/claude-wizard.webp', alt: 'Claude' }),
+    el('img', { src: '/assets/rpg/sprites/crew/claude-wizard.webp', alt: 'Claude' }),
     el('div', { class: 'badge', text: String(state.ccSessions.length) })
   ]);
   $('app').appendChild(wiz);
@@ -2305,7 +2892,7 @@ function openWizardDialogue() {
   openDialogue({
     speaker: 'CLAUDE',
     accent: '#a78bfa',
-    portrait: '/assets/rpg/portraits/claude-wizard.webp',
+    portrait: '/assets/rpg/sprites/crew/claude-wizard.webp',
     body
   });
 }
@@ -2383,6 +2970,13 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
+  // Quick back-to-ship from any room. B is intuitive ("back") and gives
+  // an explicit one-key exit even from a 'terminal portal' or any sector
+  // interior - the player never feels trapped.
+  if ((k === 'b' || k === 'B') && state.view === 'SECTOR') {
+    e.preventDefault(); sfxClose(); exitToOverworld(); return;
+  }
+
   // Global hotkeys (work in MAP + SECTOR)
   if (k === 'Escape') { e.preventDefault(); openMainMenu(); return; }
   if (k === 'm' || k === 'M') {
@@ -2455,8 +3049,9 @@ function handleAction() {
   } else if (state.view === 'SECTOR') {
     const intr = state.interior;
     if (!intr) return;
-    if (state.nearTarget === 'npc') { sfxConfirm(); openNpcDialogueTree(intr.sec); }
-    else if (state.nearTarget === 'terminal') { sfxOpen(); openSectorTerminalModal(intr.sec); }
+    if (state.nearTarget === 'guest') { sfxConfirm(); if (state.nearGuest) openGuestDialog(state.nearGuest.npc); }
+    else if (state.nearTarget === 'npc') { sfxConfirm(); talkToNpc(intr.sec); }
+    else if (state.nearTarget === 'terminal') { sfxOpen(); window.location.href = intr.sec.href; }
     else if (state.nearTarget === 'door') { sfxClose(); exitToOverworld(); }
   }
 }
@@ -2519,6 +3114,17 @@ document.addEventListener('DOMContentLoaded', () => {
   const fireAction = (e) => { e.preventDefault(); actBtn.classList.add('held'); handleAction(); setTimeout(() => actBtn.classList.remove('held'), 120); };
   actBtn.addEventListener('touchstart', fireAction, { passive: false });
   actBtn.addEventListener('mousedown',  fireAction);
+
+  // Sector HUD's persistent "Back to ship" button. Guards against double
+  // exit if the player is already on the overworld (no-op if no interior).
+  const exitBtn = $('hudExitBtn');
+  if (exitBtn) {
+    exitBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (state.view !== 'SECTOR' || !state.interior) return;
+      sfxClose(); exitToOverworld();
+    });
+  }
 });
 
 // ═════ Boot ═════
@@ -2562,6 +3168,58 @@ window.addEventListener('pageshow', (e) => {
     if (state.view !== 'TITLE') startGameLoop();
   }
 });
+// ═════ Sprite reactions (subscribed to snapshot-delta events) ═════
+// One handler per event type. Each picks the right surface to react on
+// based on current view: floating pop above the NPC if you're inside the
+// sector, a pulse on the building tile if you're on the overworld, plus
+// a topbar toast either way so the moment is never silent.
+function spawnFloatingPop(text, color, sectorId) {
+  // Only render the pop above the NPC when the player is actually inside
+  // the matching sector. Otherwise a FINANCE event would spawn over the
+  // SALES or ADMIN NPC the player happens to be standing in front of.
+  if (state.view !== 'SECTOR') return;
+  const intr = state.interior;
+  if (!intr || (sectorId && intr.sec.id !== sectorId)) return;
+  const room = document.getElementById('sectorRoom');
+  if (!room) return;
+  // Anchor at the NPC's % position (not a child of #npcSprite) so face-left
+  // scaleX(-1) on the sprite doesn't mirror our pop text.
+  const pop = document.createElement('div');
+  pop.className = 'sprite-pop';
+  pop.textContent = text;
+  pop.style.color = color || '#fde047';
+  pop.style.left = intr.npcX + '%';
+  pop.style.top  = (intr.npcY - 8) + '%';
+  room.appendChild(pop);
+  setTimeout(() => pop.remove(), 1800);
+}
+function pulseBuilding(sectorId, color) {
+  if (state.view !== 'MAP') return;
+  const tile = document.querySelector('.map-building[data-sector="' + sectorId + '"]');
+  if (!tile) return;
+  tile.style.setProperty('--pulse-color', color || '#fde047');
+  tile.classList.add('react-pulse');
+  setTimeout(() => tile.classList.remove('react-pulse'), 1600);
+}
+on('revenue.signed.up', (ev) => {
+  spawnFloatingPop('+' + fmt$(ev.delta), '#fde047', ev.sector);
+  pulseBuilding('FINANCE', '#fde047');
+  toast('Revenue signed: +' + fmt$(ev.delta), 'gold');
+  sfxConfirm();
+});
+on('pipeline.deal.new', (ev) => {
+  spawnFloatingPop('+' + ev.delta + ' DEAL', '#ec4899', ev.sector);
+  pulseBuilding('SALES', '#ec4899');
+  toast('New deal in pipeline (' + ev.to + ' open)', 'pink');
+  sfxConfirm();
+});
+on('tickets.overdue.up', (ev) => {
+  spawnFloatingPop('+' + ev.delta + ' OVERDUE', '#ef4444', ev.sector);
+  pulseBuilding('PRODUCTION', '#ef4444');
+  toast('Overdue tickets rising: ' + ev.to, 'red');
+  sfxBoss();
+});
+
 boot();
 </script>
 </body>
