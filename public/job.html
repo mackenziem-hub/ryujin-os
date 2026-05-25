@@ -828,16 +828,31 @@ async function deletePhoto(p) {
   return r.json();
 }
 
-// Bulk upload to /api/estimate-photos. Server caps each request at 5 files,
-// so we chunk. Errors are collected across batches and surfaced via alert()
-// at the end so they cannot be hidden by the running progress counter.
+// Inline error banner -- guaranteed visible (alert() can be suppressed
+// inside iframes by Chrome).
+function showUploadErrorBanner(errors, totalFiles, failed) {
+  const mount = document.getElementById('photoMount');
+  if (!mount) return;
+  const existing = document.getElementById('uploadErrorBanner');
+  if (existing) existing.remove();
+  const banner = document.createElement('div');
+  banner.id = 'uploadErrorBanner';
+  banner.style.cssText = 'background:rgba(239,68,68,0.15);border:2px solid #ef4444;color:#fecaca;padding:14px 16px;border-radius:10px;margin-bottom:12px;font-family:monospace;font-size:0.78em;line-height:1.5;white-space:pre-wrap;word-break:break-word;max-height:400px;overflow:auto';
+  banner.innerHTML = `<div style="font-weight:700;color:#fff;margin-bottom:8px;font-family:sans-serif">UPLOAD FAILED: ${failed} of ${totalFiles} files</div>${errors.map(e => e.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))).join('\n\n')}`;
+  mount.insertBefore(banner, mount.firstChild);
+}
+
+console.log('[job.html] version 2026-05-25-uploadfix-v3 loaded');
+
 async function uploadJobPhotos(fileList) {
   const input = document.getElementById('jobUploadInput');
   const status = document.getElementById('uploadStatus');
   const estId = input?.dataset.estId;
   const files = Array.from(fileList || []);
-  console.log('[upload] start', { estId, count: files.length, hasAuth: !!(window.RyujinAuth && window.RyujinAuth.token) });
-  if (!estId) { alert('Upload blocked: no estimate id on this job. Reload the page.'); return; }
+  const hasAuth = !!(window.RyujinAuth && window.RyujinAuth.token);
+  console.log('[upload] start', { estId, count: files.length, hasAuth, ahHeaders: Object.keys(ah()) });
+  if (!estId) { showUploadErrorBanner(['No estimate id on this job. Reload the page.'], files.length || 1, files.length || 1); return; }
+  if (!hasAuth) { showUploadErrorBanner(['No auth token in window.RyujinAuth. Sign out + sign in.'], files.length, files.length); return; }
   if (!files.length) return;
 
   const setStatus = (txt) => { if (status) { status.style.display = ''; status.textContent = txt; } };
@@ -856,7 +871,7 @@ async function uploadJobPhotos(fileList) {
       const r = await fetch('/api/estimate-photos', { method: 'POST', headers: ah(), body: fd });
       if (!r.ok) {
         const errText = await r.text().catch(() => '');
-        throw new Error('HTTP ' + r.status + (errText ? ' ' + errText.slice(0, 300) : ''));
+        throw new Error('HTTP ' + r.status + (errText ? ' ' + errText.slice(0, 400) : ''));
       }
       done += batch.length;
     } catch (e) {
@@ -880,10 +895,7 @@ async function uploadJobPhotos(fileList) {
     console.error('[upload] gallery refresh failed', e);
   }
 
-  // Surface errors so they cannot be missed.
-  if (errors.length) {
-    alert(`Upload failed for ${failed} of ${files.length} files.\n\n` + errors.join('\n\n') + '\n\n(Also logged in browser console)');
-  }
+  if (errors.length) showUploadErrorBanner(errors, files.length, failed);
   setTimeout(() => { if (status && status.textContent.startsWith('uploaded') && !failed) status.style.display = 'none'; }, 4000);
 }
 
