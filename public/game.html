@@ -337,36 +337,11 @@
      a live data event (revenue signed, deal added, ticket overdue) spawns
      a floating value above the relevant NPC sprite and pulses the building
      tile on the overworld. */
-  /* Wandering crew NPCs — give each sector interior the always-on motion
-     of Pixel Agents. 32x32 circular portrait, name label, smooth motion
-     via left/top % transitions, and a hue-rotate to differentiate. */
-  .crew-wanderer {
-    position: absolute; width: 64px; aspect-ratio: 1 / 1;
-    transform: translate(-50%, -100%);
-    background-size: contain; background-position: center bottom; background-repeat: no-repeat;
-    transition: left 0.18s linear, top 0.18s linear;
-    z-index: 8;
-    animation: crewBob 1.8s ease-in-out infinite;
-    image-rendering: pixelated;
-    filter: drop-shadow(0 2px 0 rgba(0,0,0,0.55));
-  }
-  /* Each wanderer's side.webp natively faces LEFT, so face-left renders
-     it as-is (no flip) and face-right flips horizontally via scaleX(-1).
-     The face-right keyframe preserves the mirror so the bob doesn't snap. */
-  .crew-wanderer.face-right { transform: translate(-50%, -100%) scaleX(-1); }
-  .crew-wanderer.face-right .wander-nameplate { transform: translateX(-50%) scaleX(-1); }
-  .wander-nameplate {
-    position: absolute; bottom: -16px; left: 50%;
-    transform: translateX(-50%);
-    font-family: 'Press Start 2P', monospace; font-size: 6px;
-    letter-spacing: 1px; white-space: nowrap;
-    color: var(--fg); background: rgba(6,10,20,0.85);
-    padding: 2px 6px; border: 1px solid rgba(34,211,238,0.35);
-    text-shadow: 1px 1px 0 #000;
-  }
-  @keyframes crewBob { 50% { transform: translate(-50%, -103%); } }
-  .crew-wanderer.face-right { animation: crewBobFlip 1.8s ease-in-out infinite; }
-  @keyframes crewBobFlip { 50% { transform: translate(-50%, -103%) scaleX(-1); } }
+  /* Wandering crew NPC system was removed per Mac - the painted crew
+     in each room background art are the canonical "static pixel
+     characters". Office NPC dialog still works via an invisible
+     .npc-sprite hotspot anchored at the painted character's position;
+     field rooms use the visible comms-terminal overlay. */
 
   /* Idle "breathing" on the central god so the room never feels frozen.
      Animates filter brightness only, which composes with the inline
@@ -465,6 +440,17 @@
     z-index: 8;
     cursor: pointer;
     image-rendering: pixelated;
+  }
+  /* Office NPC hotspot: invisible click target overlaid on the painted
+     character in the room background. Only the floating "TALK · X"
+     nameplate above is rendered. Idle breathe animation removed since
+     there's no sprite to breathe; the painted character is the visual. */
+  .npc-sprite.office-hotspot {
+    background-image: none !important;
+    background-color: transparent;
+    border: none !important;
+    box-shadow: none !important;
+    animation: none !important;
   }
   /* Field-ops comms terminal: glowing console instead of a portrait.
      Pixel-blue scanline pattern with a centered amber "TX" glyph and a
@@ -926,7 +912,7 @@ const SAVE_KEY = 'ryujin_game_save_v1';
 // Building footprint shrunk via .map-building width:8% so the 6-wide
 // middle row doesn't visually collide.
 const SECTORS = [
-  { id:'HQ',        npc:'MACK',     role:'Owner',        href:'/command-center.html',       bg:'/assets/rpg/scenes/sectors/hq.webp',         sprite:'/assets/rpg/sprites/buildings/hq.webp',         x:50, y:22 },
+  { id:'HQ',        npc:'RYUJIN',   role:'Electro Dragon God', href:'/command-center.html', bg:'/assets/rpg/scenes/sectors/hq.webp',         sprite:'/assets/rpg/sprites/buildings/hq.webp',         x:50, y:22 },
   { id:'SALES',     npc:'MACK',     role:'Sales',        href:'/sales-cockpit.html',        bg:'/assets/rpg/scenes/sectors/sales.webp',      sprite:'/assets/rpg/sprites/buildings/sales.webp',      x: 9, y:50 },
   { id:'MARKETING', npc:'CAT',      role:'Marketing',    href:'/admin.html?page=marketing', bg:'/assets/rpg/scenes/sectors/marketing.webp',  sprite:'/assets/rpg/sprites/buildings/marketing.webp',  x:22, y:50 },
   { id:'FINANCE',   npc:'MEL',      role:'Books',        href:'/admin.html?page=finance',   bg:'/assets/rpg/scenes/sectors/finance.webp',    sprite:'/assets/rpg/sprites/buildings/finance.webp',    x:36, y:50 },
@@ -975,7 +961,8 @@ const DOOR_ZONE_TOP = 88;
 // accent follows the person, not the room.
 const NPC_ACCENT = {
   MACK:'#fde047', CAT:'#f9a8d4', MEL:'#22d3ee', AJ:'#34d399',
-  DIEGO:'#fbbf24', PAVANJOT:'#fdba74'
+  DIEGO:'#fbbf24', PAVANJOT:'#fdba74',
+  RYUJIN:'#22d3ee'  // Electro dragon: cyan crackle
 };
 // Crew NPCs use the /crew/ portrait directory; lookups not found there
 // fall back to the legacy top-level path so older identifiers (gods,
@@ -983,6 +970,9 @@ const NPC_ACCENT = {
 const _CREW_PORTRAIT_IDS = new Set(['mack','mackenzie','cat','mel','melodie','aj','diego','pavanjot']);
 const NPC_PORTRAIT = (npc) => {
   const lc = npc.toLowerCase();
+  // Ryujin (the electro dragon god) uses the company dragon sigil
+  // already shipped under /ui/ - no per-character portrait needed.
+  if (lc === 'ryujin') return '/assets/rpg/ui/dragon-sigil.webp';
   const fileId = lc === 'mack' ? 'mackenzie' : (lc === 'mel' ? 'melodie' : lc);
   if (_CREW_PORTRAIT_IDS.has(lc)) return `/assets/rpg/portraits/crew/${fileId}.webp`;
   return `/assets/rpg/portraits/${lc}.webp`;
@@ -1014,20 +1004,8 @@ const CREW_BY_ID = Object.fromEntries(CREW.map(c => [c.id, c]));
 // Which crew wander each sector interior — drives the always-on motion
 // that gives the room its "office full of agents" feel (per Pixel Agents).
 // Only the office trio (Mack, Cat, Mel) wander rooms physically. Field
-// ops (Diego, AJ, Pavanjot) are out on jobs - they show up as comms
-// TERMINALS instead of standing sprites. Darcy isn't in the cast
-// cast either.
-const CREW_PER_SECTOR = {
-  HQ:         ['cat'],
-  SALES:      ['cat'],
-  MARKETING:  ['mackenzie'],
-  FINANCE:    ['mackenzie'],
-  CUSTOMER:   ['cat'],
-  ADMIN:      ['melodie'],
-  PRODUCTION: [],    // field ops - rendered as a comms terminal
-  SERVICE:    [],
-  MATERIALS:  []
-};
+// Per Mac: wandering crew NPCs removed. The painted crew in each
+// room background ARE the cast - no more sprites pacing on top.
 
 // Sectors where the lead NPC is in the field, not at a desk. These get
 // a glowing comms-terminal in the NPC slot instead of a character sprite.
@@ -1280,8 +1258,8 @@ function godLine(sec) {
     case 'HQ': {
       const stat = (brief.status || 'unknown').toUpperCase();
       const top = brief.top3 && brief.top3[0];
-      const topLine = top ? (top.action || top.title || '') : 'Nothing flagged.';
-      return `Briefing: ${stat}.\nTop priority: ${topLine}`;
+      const topLine = top ? (top.action || top.title || '') : 'No threats on the horizon.';
+      return `The bridge is yours, captain. Status: ${stat}.\nFront of mind: ${topLine}`;
     }
     case 'SALES': {
       const signed = Math.round((rev.signedRevenue || 0) / 1000);
@@ -1689,97 +1667,6 @@ function refreshInteriorHud() {
   if (t) t.textContent = sectorHeadline(intr.sec.id) || '--';
 }
 
-// ═════ Wandering crew NPCs (constant motion = Pixel Agents feel) ═════
-// Each sector gets 1-3 crew members who pace random targets inside the
-// room. Slow speed + occasional pause keeps it ambient, not hectic.
-const WANDERER_SPEED_PCT_PER_MS = 0.012;
-function pickWanderTarget() {
-  // Keep wanderers in the open band between NPC (top) and door (bottom),
-  // avoiding the terminal corner so they don't visually overlap the desk.
-  const tx = 18 + Math.random() * 64;   // 18..82
-  const ty = 50 + Math.random() * 28;   // 50..78
-  return { tx, ty };
-}
-function initWanderers(sec) {
-  const roster = CREW_PER_SECTOR[sec.id] || [];
-  return roster.map((id, i) => {
-    const c = CREW_BY_ID[id]; if (!c) return null;
-    const spawn = pickWanderTarget();
-    return {
-      id, name: c.name, img: c.img,
-      x: spawn.tx, y: spawn.ty,
-      tx: spawn.tx, ty: spawn.ty,
-      pauseUntil: performance.now() + 300 + i * 200,
-      facingDir: 'down',
-      hue: (i * 137) % 360   // hue-rotate spread, Pixel Agents palette trick
-    };
-  }).filter(Boolean);
-}
-// Resolve the directional sprite URL for a wanderer based on facing.
-// `w.img` is like '/assets/rpg/sprites/crew/cat.webp' (front). Up uses
-// '-back.webp' and left/right share '-side.webp' (right is CSS-flipped).
-function wandererSpriteUrl(w, dir) {
-  const base = w.img.replace(/\.webp$/, '');
-  if (dir === 'up')   return base + '-back.webp';
-  if (dir === 'left' || dir === 'right') return base + '-side.webp';
-  return w.img; // down / default
-}
-function tickWanderers(dtMs) {
-  const intr = state.interior; if (!intr || !intr.wanderers) return;
-  const now = performance.now();
-  intr.wanderers.forEach(w => {
-    if (now < w.pauseUntil) return;
-    const dx = w.tx - w.x, dy = w.ty - w.y;
-    const dist = Math.hypot(dx, dy);
-    if (dist < 0.5) {
-      // Arrived — pause briefly, then pick a new target
-      const next = pickWanderTarget();
-      w.tx = next.tx; w.ty = next.ty;
-      w.pauseUntil = now + 600 + Math.random() * 1200;
-      return;
-    }
-    const step = WANDERER_SPEED_PCT_PER_MS * dtMs;
-    const nx = w.x + (dx / dist) * step;
-    const ny = w.y + (dy / dist) * step;
-    w.x = nx; w.y = ny;
-    const absx = Math.abs(dx), absy = Math.abs(dy);
-    const newDir = (absy >= absx) ? (dy < 0 ? 'up' : 'down') : (dx < 0 ? 'left' : 'right');
-    const dirChanged = newDir !== w.facingDir;
-    w.facingDir = newDir;
-    const node = document.getElementById('wander-' + w.id);
-    if (node) {
-      node.style.left = w.x + '%';
-      node.style.top  = w.y + '%';
-      node.classList.toggle('face-left',  newDir === 'left');
-      node.classList.toggle('face-right', newDir === 'right');
-      // Only repaint background-image on facing change (avoids hitting the
-      // browser image cache 60 times per second).
-      if (dirChanged) node.style.backgroundImage = `url('${wandererSpriteUrl(w, newDir)}')`;
-    }
-  });
-}
-function renderWanderers(room) {
-  const intr = state.interior; if (!intr) return;
-  intr.wanderers = initWanderers(intr.sec);
-  intr.wanderers.forEach(w => {
-    const node = el('div', {
-      class: 'crew-wanderer',
-      id: 'wander-' + w.id,
-      title: w.name,
-      style: {
-        left: w.x + '%',
-        top:  w.y + '%',
-        // Start with the front-facing sprite. tickWanderers swaps it
-        // when the wanderer changes facing direction.
-        backgroundImage: `url('${wandererSpriteUrl(w, 'down')}')`
-      }
-    }, [
-      el('div', { class: 'wander-nameplate', text: w.name })
-    ]);
-    room.appendChild(node);
-  });
-}
-
 function renderWorld() {
   const world = $('mapWorld');
   world.textContent = '';
@@ -2001,26 +1888,25 @@ function renderInterior() {
   refreshInteriorHud();
 
   // Tear down old interior interactables (re-rendered each enter)
-  room.querySelectorAll('.npc-sprite, .terminal-zone, .door-zone, .player-avatar, .interact-prompt, .crew-wanderer, .sprite-pop').forEach(n => n.remove());
-
-  // Spawn the wandering crew so they fill the room ambiently. z-index in
-  // CSS keeps them below the player avatar even on overlap.
-  renderWanderers(room);
+  room.querySelectorAll('.npc-sprite, .terminal-zone, .door-zone, .player-avatar, .interact-prompt, .sprite-pop').forEach(n => n.remove());
 
   // NPC / comms-terminal at the back of the room. Field-ops sectors
   // (Production, Service, Materials) render a glowing comms terminal
   // instead of a character sprite - those crew members are out on
   // jobs, you reach them via SMS or email through the terminal.
+  // For office rooms the painted character at the desk IS the lead NPC
+  // visual - npc-sprite is rendered as an invisible click hotspot with
+  // just a floating "TALK" nameplate hovering above the painted figure.
+  // Field rooms keep the visible glowing comms terminal since their
+  // crew is OUT in the field (the painted desk-worker is just scenery).
   const accent = NPC_ACCENT[sec.npc] || '#fde047';
   const isField = FIELD_SECTORS.has(sec.id);
   const npc = el('div', {
-    class: 'npc-sprite' + (isField ? ' comms-terminal' : ''),
+    class: 'npc-sprite' + (isField ? ' comms-terminal' : ' office-hotspot'),
     id: 'npcSprite',
-    // Skip inline backgroundImage when isField so the .comms-terminal CSS
-    // gradient/scanline isn't overridden by higher-specificity inline style.
     style: Object.assign(
       { left: intr.npcX + '%', top: intr.npcY + '%', borderColor: accent, boxShadow: `0 0 24px ${accent}55` },
-      isField ? {} : { backgroundImage: `url('${NPC_PORTRAIT(sec.npc)}')` }
+      isField ? {} : {}  // office: no background image, no border (CSS overrides)
     ),
     onclick: () => {
       if (state.dialogue) return;
@@ -2028,7 +1914,7 @@ function renderInterior() {
       if (isField) openCommsDialog(sec); else openNpcDialogueTree(sec);
     }
   }, [
-    el('div', { class: 'npc-nameplate', text: isField ? ('MESSAGE ' + sec.npc) : sec.npc, style: { color: accent, borderColor: accent } })
+    el('div', { class: 'npc-nameplate', text: isField ? ('MESSAGE ' + sec.npc) : ('TALK · ' + sec.npc), style: { color: accent, borderColor: accent } })
   ]);
   room.appendChild(npc);
 
@@ -2069,7 +1955,6 @@ function renderInterior() {
 
 function updateInterior(dtMs) {
   const intr = state.interior; if (!intr) return;
-  tickWanderers(dtMs);
   let vx = 0, vy = 0;
   if (state.input.left)  vx -= 1;
   if (state.input.right) vx += 1;
