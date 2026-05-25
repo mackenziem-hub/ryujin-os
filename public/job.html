@@ -850,11 +850,15 @@ async function uploadJobPhotos(fileList) {
     for (const f of batch) fd.append('file', f, f.name || `photo-${Date.now()}.jpg`);
     try {
       const r = await fetch('/api/estimate-photos', { method: 'POST', headers: ah(), body: fd });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
+      if (!r.ok) {
+        const errText = await r.text().catch(() => '');
+        throw new Error('HTTP ' + r.status + (errText ? ' ' + errText.slice(0, 200) : ''));
+      }
       done += batch.length;
     } catch (e) {
       failed += batch.length;
       console.error('upload batch failed', e);
+      setStatus(`upload error: ${e.message}`);
     }
     setStatus(`uploading ${done + failed} / ${files.length}${failed ? ` (${failed} failed)` : ''}...`);
   }
