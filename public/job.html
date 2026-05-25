@@ -662,10 +662,16 @@ function render({ customer, estimates, workorders, paysheets, photos, roster, pu
             <div style="margin-top:14px;padding:8px 10px;background:rgba(6,10,20,0.4);border-radius:8px;font-size:0.74em;color:rgba(200,220,255,0.55);text-align:center">
               No purchase order created yet · canonical list at <code style="color:#22d3ee">Production/Material Orders/${esc(customer.address || '')} - Material List.md</code>
             </div>`}
+          <div class="actions-bar" style="margin-top:12px">
+            <button class="act ghost" type="button" onclick="copyMaterialsText()" title="Copy plain-text material list to clipboard (Coastal order paste)">COPY TEXT SUMMARY</button>
+            <button class="act ghost" type="button" onclick="printMaterialsText()" title="Open print-friendly material list">PRINT</button>
+          </div>
         `}
       </div>
     </details>
   `);
+  // Stash the materials data so the COPY/PRINT buttons can grab it post-render.
+  window._jobMaterials = mats ? { mats, address: customer.address || '' } : null;
 
   // 6. PHOTOS & VIDEO (interactive grid: delete, cover, mark before/after, inline caption)
   // The grid is mounted as live DOM after innerHTML render so el() builds tiles XSS-safe.
@@ -970,6 +976,29 @@ async function deletePhoto(p) {
   });
   if (!r.ok) throw new Error('DELETE failed: HTTP ' + r.status);
   return r.json();
+}
+
+// Materials COPY / PRINT — read from window._jobMaterials (set by render()).
+// Uses RyMaterials.buildMaterialsTextSummary so output matches
+// production-materials.html copyList() byte-for-byte.
+function copyMaterialsText() {
+  const ctx = window._jobMaterials;
+  if (!ctx || !window.RyMaterials) { alert('Materials not loaded'); return; }
+  const text = window.RyMaterials.buildMaterialsTextSummary(ctx.mats, ctx.address);
+  navigator.clipboard.writeText(text).then(
+    () => { const s = document.createElement('div'); s.textContent = 'Copied'; s.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#22d3ee;color:#020615;padding:8px 18px;border-radius:8px;font-weight:700;font-family:monospace;z-index:99999'; document.body.appendChild(s); setTimeout(() => s.remove(), 1500); },
+    (e) => alert('Copy failed: ' + (e && e.message || e))
+  );
+}
+function printMaterialsText() {
+  const ctx = window._jobMaterials;
+  if (!ctx || !window.RyMaterials) { alert('Materials not loaded'); return; }
+  const text = window.RyMaterials.buildMaterialsTextSummary(ctx.mats, ctx.address);
+  const w = window.open('', '', 'width=800,height=900');
+  if (!w) { alert('Pop-up blocked. Allow pop-ups for ryujin-os.vercel.app to use Print.'); return; }
+  w.document.write('<pre style="font-family:monospace;padding:40px;font-size:14px;line-height:1.6">' + text.replace(/</g, '&lt;') + '</pre>');
+  w.document.close();
+  w.print();
 }
 
 // Inline error banner -- guaranteed visible (alert() can be suppressed

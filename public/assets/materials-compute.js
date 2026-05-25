@@ -122,5 +122,27 @@
     };
   }
 
-  window.RyMaterials = { computeMaterials, resolveWaste };
+  function pluralUnit(qty, unit){
+    if (qty === 1 || unit === 'each') return unit;
+    if (unit.endsWith('s')) return unit;
+    if (unit === 'box') return 'boxes';
+    if (unit === 'piece') return 'pieces';
+    return unit + 's';
+  }
+
+  // Plain-text summary suitable for Coastal order placement (SMS / email / paste).
+  // Header is address; one line per material with qty + label.
+  function buildMaterialsTextSummary(mats, address){
+    const lines = [address || '', ''];
+    const all = [mats.shingles, mats.ridgeCap, mats.starter, mats.iws, mats.underlay,
+                 mats.dripEdge, mats.valleyMetal, mats.ridgeVent, mats.stepFlashing,
+                 mats.chimney, mats.osb, mats.nails, mats.pipeBoots, mats.cement].filter(Boolean);
+    all.forEach(x => {
+      if (!x.qty) return;
+      lines.push(x.qty + ' ' + pluralUnit(x.qty, x.unit) + ' — ' + x.label);
+    });
+    return lines.join('\n').trim();
+  }
+
+  window.RyMaterials = { computeMaterials, resolveWaste, pluralUnit, buildMaterialsTextSummary };
 })();
