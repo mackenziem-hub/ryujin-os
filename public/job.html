@@ -525,6 +525,7 @@ function render({ customer, estimates, workorders, paysheets, photos, roster }){
 
   // 6. PHOTOS & VIDEO (interactive grid: delete, cover, mark before/after, inline caption)
   // The grid is mounted as live DOM after innerHTML render so el() builds tiles XSS-safe.
+  const _uploadEstId = primaryEst?.id || '';
   sections.push(`
     <details class="acc" open data-section="photos">
       <summary>
@@ -534,8 +535,14 @@ function render({ customer, estimates, workorders, paysheets, photos, roster }){
       <div class="acc-body">
         <div id="photoMount"></div>
         <div class="gallery-actions">
+          ${_uploadEstId ? `
+          <label class="act cyan" style="cursor:pointer" title="Upload photos or videos to this estimate">
+            UPLOAD PHOTOS
+            <input type="file" id="jobUploadInput" accept="image/*,video/*" multiple data-est-id="${esc(_uploadEstId)}" style="display:none" onchange="uploadJobPhotos(this.files)">
+          </label>` : ''}
           <a class="act ghost" id="genBeforeAfterBtn" href="#" title="Pick a before + an after to generate a side-by-side social post">GENERATE BEFORE/AFTER</a>
           <span class="count" id="photoMix">-</span>
+          <span class="count" id="uploadStatus" style="display:none"></span>
         </div>
       </div>
     </details>
@@ -819,6 +826,53 @@ async function deletePhoto(p) {
   });
   if (!r.ok) throw new Error('DELETE failed: HTTP ' + r.status);
   return r.json();
+}
+
+// Bulk upload to /api/estimate-photos. Server caps each request at 5 files,
+// so we chunk. On success, refetch and re-render gallery in place.
+async function uploadJobPhotos(fileList) {
+  const input = document.getElementById('jobUploadInput');
+  const status = document.getElementById('uploadStatus');
+  const estId = input?.dataset.estId;
+  const files = Array.from(fileList || []);
+  if (!estId || !files.length) return;
+
+  const setStatus = (txt) => { if (status) { status.style.display = ''; status.textContent = txt; } };
+  setStatus(`uploading 0 / ${files.length}...`);
+
+  const BATCH = 5;
+  let done = 0, failed = 0;
+  for (let i = 0; i < files.length; i += BATCH) {
+    const batch = files.slice(i, i + BATCH);
+    const fd = new FormData();
+    fd.append('estimate_id', estId);
+    fd.append('category', 'site');
+    for (const f of batch) fd.append('file', f, f.name || `photo-${Date.now()}.jpg`);
+    try {
+      const r = await fetch('/api/estimate-photos', { method: 'POST', headers: ah(), body: fd });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      done += batch.length;
+    } catch (e) {
+      failed += batch.length;
+      console.error('upload batch failed', e);
+    }
+    setStatus(`uploading ${done + failed} / ${files.length}${failed ? ` (${failed} failed)` : ''}...`);
+  }
+
+  setStatus(`uploaded ${done}${failed ? ` · ${failed} failed` : ''}`);
+  if (input) input.value = '';
+
+  // Refresh gallery via estimate_id (uploads always have an estimate context)
+  try {
+    const mount = document.getElementById('photoMount');
+    const eR = await fetch('/api/estimate-photos?estimate_id=' + encodeURIComponent(estId), { headers: ah() });
+    const union = eR.ok ? ((await eR.json()).photos || []) : [];
+    if (mount) renderPhotoGallery(mount, union, null);
+  } catch (e) {
+    console.error('refresh after upload failed', e);
+  }
+
+  setTimeout(() => { if (status && status.textContent.startsWith('uploaded')) status.style.display = 'none'; }, 4000);
 }
 
 function renderPhotoGallery(mount, photos, refWo) {
