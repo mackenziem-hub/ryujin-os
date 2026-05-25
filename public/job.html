@@ -506,8 +506,29 @@ function render({ customer, estimates, workorders, paysheets, photos, roster, pu
           <div class="info-row"><div class="label">Start Date</div><div class="value">${activeWo.start_date || 'TBD'}</div></div>
           <div class="info-row"><div class="label">Duration</div><div class="value">${activeWo.estimated_duration_days ? activeWo.estimated_duration_days + ' days' : 'TBD'}</div></div>
           <div class="info-row"><div class="label">Product</div><div class="value">${esc(activeWo.shingle_product || DASH)}${activeWo.shingle_color ? ' / ' + esc(activeWo.shingle_color) : ''}</div></div>
-          <div class="info-row"><div class="label">Pitch</div><div class="value">${esc(activeWo.roof_pitch || DASH)}</div></div>
+          <div class="info-row"><div class="label">SQ / Pitch</div><div class="value">${activeWo.total_sq ? activeWo.total_sq + ' SQ' : DASH} · ${esc(activeWo.roof_pitch || DASH)}</div></div>
+          ${(Number(activeWo.eaves_lf) || Number(activeWo.rakes_lf) || Number(activeWo.ridges_lf) || Number(activeWo.valleys_lf) || Number(activeWo.hips_lf) || Number(activeWo.walls_lf) || Number(activeWo.pipes) || Number(activeWo.chimneys) || Number(activeWo.osb_sheets)) ? `
+            <div style="margin-top:14px;font-family:'Share Tech Mono',monospace;font-size:0.7em;color:rgba(200,220,255,0.5);letter-spacing:1.2px;text-transform:uppercase">Measurements</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:6px;margin-top:6px">
+              ${[
+                ['Eaves', activeWo.eaves_lf, 'LF'],
+                ['Rakes', activeWo.rakes_lf, 'LF'],
+                ['Ridges', activeWo.ridges_lf, 'LF'],
+                ['Valleys', activeWo.valleys_lf, 'LF'],
+                ['Hips', activeWo.hips_lf, 'LF'],
+                ['Walls', activeWo.walls_lf, 'LF'],
+                ['Pipes', activeWo.pipes, ''],
+                ['Chimneys', activeWo.chimneys, ''],
+                ['OSB', activeWo.osb_sheets, 'sheets'],
+              ].filter(([,v]) => Number(v) > 0).map(([l,v,u]) => `
+                <div style="padding:6px 8px;background:rgba(6,10,20,0.4);border:1px solid rgba(251,146,60,0.12);border-radius:6px">
+                  <div style="font-size:0.66em;color:rgba(200,220,255,0.55);text-transform:uppercase;letter-spacing:0.8px">${esc(l)}</div>
+                  <div style="font-family:'Orbitron',monospace;font-weight:700;color:#22d3ee;margin-top:2px;font-size:0.96em">${Number(v)}${u ? ' ' + u : ''}</div>
+                </div>
+              `).join('')}
+            </div>` : ''}
           ${activeWo.scope_items?.length ? `<div style="margin-top:14px;font-family:'Share Tech Mono',monospace;font-size:0.7em;color:rgba(200,220,255,0.5);letter-spacing:1.2px;text-transform:uppercase">Scope</div><ul class="scope-list">${activeWo.scope_items.map(s => `<li class="${s.included ? '' : 'off'}"><span class="chk"><svg viewBox="0 0 24 24">${s.included ? '<polyline points="20 6 9 17 4 12"/>' : '<line x1="5" y1="12" x2="19" y2="12"/>'}</svg></span>${esc(s.item)}${s.qty ? ' (' + s.qty + ')' : ''}</li>`).join('')}</ul>` : ''}
+          ${activeWo.special_notes ? `<div style="margin-top:14px;font-family:'Share Tech Mono',monospace;font-size:0.7em;color:rgba(200,220,255,0.5);letter-spacing:1.2px;text-transform:uppercase">Special Notes</div><div style="font-size:0.82em;color:rgba(200,220,255,0.78);line-height:1.5;margin-top:4px;white-space:pre-wrap">${esc(activeWo.special_notes)}</div>` : ''}
           <div class="actions-bar">
             <a class="act primary" href="production-workorders.html?wo=${activeWo.wo_number}">OPEN FULL EDITOR</a>
           </div>
@@ -516,7 +537,21 @@ function render({ customer, estimates, workorders, paysheets, photos, roster, pu
     </details>
   `);
 
-  // 5. PAYSHEET
+  // 5. PAYSHEET — sub payout breakdown (labour + add-ons + surcharges + totals + notes)
+  const _psTable = (rows) => rows.length ? `
+    <table style="width:100%;border-collapse:collapse;font-size:0.78em;margin-top:6px">
+      <tbody>${rows.map(r => `
+        <tr style="border-top:1px solid rgba(251,146,60,0.06)">
+          <td style="padding:6px 4px;color:rgba(230,240,255,0.92)">
+            ${esc(r.label || r.description || '—')}
+            ${r.note ? `<div style="font-size:0.86em;color:rgba(200,220,255,0.5);margin-top:2px">${esc(r.note)}</div>` : ''}
+          </td>
+          <td style="padding:6px 4px;text-align:right;color:rgba(200,220,255,0.7);white-space:nowrap;font-family:'Share Tech Mono',monospace;font-size:0.92em">${r.qty != null ? r.qty + (r.unit ? ' ' + esc(r.unit) : '') : ''}</td>
+          <td style="padding:6px 4px;text-align:right;font-family:'Orbitron',monospace;color:#22d3ee;font-weight:600;white-space:nowrap">${money(r.total)}</td>
+        </tr>
+      `).join('')}</tbody>
+    </table>
+  ` : '';
   sections.push(`
     <details class="acc" open data-section="paysheet">
       <summary>
@@ -524,15 +559,29 @@ function render({ customer, estimates, workorders, paysheets, photos, roster, pu
         <div class="meta">${activePs ? `<span>${esc(activePs.job_id || '')}</span> <select class="status-pick" id="psStatusPick" title="Change pay sheet status">${['scheduled','in_progress','completed','invoice_final','cancelled'].map(s => `<option value="${s}" ${activePs.status === s ? 'selected' : ''}>${s.replace('_',' ').toUpperCase()}</option>`).join('')}</select> <span class="saved-flash" id="psSaved">SAVED</span>` : '<span>NONE</span>'}<svg class="chev" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
       </summary>
       <div class="acc-body">
-        ${activePs ? `
-          <div class="info-row"><div class="label">Subtotal</div><div class="value">${money(activePs.subtotal)}</div></div>
-          <div class="info-row"><div class="label">HST</div><div class="value">${money(activePs.hst)}</div></div>
-          <div class="info-row"><div class="label">Total Due</div><div class="value" style="color:#fb923c;font-weight:700">${money(activePs.total)}</div></div>
-          ${activePs.balance_due ? `<div class="info-row"><div class="label">Balance</div><div class="value" style="color:${Number(activePs.balance_due)>0?'#facc15':'#4ade80'};font-weight:700">${money(activePs.balance_due)}</div></div>` : ''}
-          <div class="actions-bar">
-            <a class="act primary" href="production-paysheet.html?job=${esc(activePs.job_id || '')}">OPEN FULL EDITOR</a>
-          </div>
-        ` : '<div class="empty-sec">NO PAY SHEET YET</div>'}
+        ${activePs ? (() => {
+          const lb = Array.isArray(activePs.labour_breakdown) ? activePs.labour_breakdown : [];
+          const ao = Array.isArray(activePs.add_ons) ? activePs.add_ons : [];
+          const sc = Array.isArray(activePs.surcharges) ? activePs.surcharges : [];
+          const notes = Array.isArray(activePs.scope_notes) ? activePs.scope_notes : [];
+          return `
+            ${activePs.subcontractor ? `<div class="info-row"><div class="label">Paid To</div><div class="value">${esc(activePs.subcontractor)}</div></div>` : ''}
+            ${activePs.shingle_product ? `<div class="info-row"><div class="label">Product</div><div class="value">${esc(activePs.shingle_product)}</div></div>` : ''}
+            ${lb.length ? `<div style="margin-top:12px;font-family:'Share Tech Mono',monospace;font-size:0.7em;color:rgba(200,220,255,0.55);letter-spacing:1.2px;text-transform:uppercase">Labour</div>${_psTable(lb)}` : ''}
+            ${ao.length ? `<div style="margin-top:12px;font-family:'Share Tech Mono',monospace;font-size:0.7em;color:rgba(200,220,255,0.55);letter-spacing:1.2px;text-transform:uppercase">Add-Ons</div>${_psTable(ao)}` : ''}
+            ${sc.length ? `<div style="margin-top:12px;font-family:'Share Tech Mono',monospace;font-size:0.7em;color:rgba(200,220,255,0.55);letter-spacing:1.2px;text-transform:uppercase">Surcharges</div>${_psTable(sc)}` : ''}
+            <div style="margin-top:14px;padding-top:10px;border-top:1px solid rgba(251,146,60,0.18)">
+              <div class="info-row"><div class="label">Subtotal</div><div class="value">${money(activePs.subtotal)}</div></div>
+              <div class="info-row"><div class="label">HST</div><div class="value">${money(activePs.hst)}</div></div>
+              <div class="info-row"><div class="label">Total</div><div class="value" style="color:#fb923c;font-weight:700">${money(activePs.total)}</div></div>
+              ${Number(activePs.balance_due) ? `<div class="info-row"><div class="label">Balance</div><div class="value" style="color:${Number(activePs.balance_due)>0?'#facc15':'#4ade80'};font-weight:700">${money(activePs.balance_due)}</div></div>` : ''}
+            </div>
+            ${notes.length ? `<div style="margin-top:14px;font-family:'Share Tech Mono',monospace;font-size:0.7em;color:rgba(200,220,255,0.55);letter-spacing:1.2px;text-transform:uppercase">Notes</div><ul style="margin:6px 0 0;padding-left:18px;font-size:0.8em;color:rgba(200,220,255,0.72);line-height:1.55">${notes.map(n => `<li style="margin-bottom:3px">${esc(n)}</li>`).join('')}</ul>` : ''}
+            <div class="actions-bar">
+              <a class="act primary" href="production-paysheet.html?job=${esc(activePs.job_id || '')}">OPEN FULL EDITOR</a>
+            </div>
+          `;
+        })() : '<div class="empty-sec">NO PAY SHEET YET</div>'}
       </div>
     </details>
   `);
