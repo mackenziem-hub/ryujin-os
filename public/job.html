@@ -569,14 +569,24 @@ function render({ customer, estimates, workorders, paysheets, photos, roster }){
   `);
 
   // 9. NOTES
+  // Defensive: notes column has been legacy-corrupted to strings (and
+  // "[object Object]" toString'd arrays) on some estimates. Normalize.
+  const rawNotes = primaryEst?.notes;
+  const notesArr = Array.isArray(rawNotes)
+    ? rawNotes
+    : (rawNotes && typeof rawNotes === 'object'
+        ? [rawNotes]
+        : (typeof rawNotes === 'string' && rawNotes.trim()
+            ? [{ date: '', author: '', body: rawNotes }]
+            : []));
   sections.push(`
     <details class="acc" data-section="notes">
       <summary>
         <div class="title"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> NOTES</div>
-        <div class="meta"><span>${(primaryEst?.notes || []).length} entr${(primaryEst?.notes || []).length === 1 ? 'y' : 'ies'}</span><svg class="chev" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
+        <div class="meta"><span>${notesArr.length} entr${notesArr.length === 1 ? 'y' : 'ies'}</span><svg class="chev" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
       </summary>
       <div class="acc-body">
-        ${(primaryEst?.notes || []).length ? (primaryEst.notes || []).map(n => `
+        ${notesArr.length ? notesArr.map(n => `
           <div style="padding:8px 0;border-bottom:1px solid rgba(251,146,60,0.06);font-size:0.88em;color:rgba(200,220,255,0.8);line-height:1.55">
             <div style="font-family:'Share Tech Mono',monospace;font-size:0.64em;color:rgba(200,220,255,0.45);letter-spacing:1.2px;margin-bottom:4px">${esc(n.date || '')} / ${esc(n.author || '').toUpperCase()}</div>
             <div>${esc(n.body || '')}</div>
