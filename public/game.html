@@ -1134,7 +1134,8 @@ const state = {
   interior: null,                              // { sec, playerX, playerY, facing, lastEnter }
   worldReturn: { x: 50, y: 50 },               // remember player overworld pos when entering a sector
   nearBuilding: null,                          // overworld: building player is currently touching
-  nearTarget: null,                            // interior: 'npc' | 'terminal' | 'door' | null
+  nearTarget: null,                            // interior: 'guest' | 'npc' | 'terminal' | 'door' | null
+  nearGuest: null,                             // interior: the guest object when nearTarget === 'guest'
 
   // Input. Tracks held movement keys + touch dpad presses + last action edge.
   input: { up: false, down: false, left: false, right: false, action: false },
@@ -2001,6 +2002,7 @@ function renderInterior() {
   const npc = el('div', {
     class: 'npc-sprite' + (isField ? ' comms-terminal' : ' office-hotspot'),
     id: 'npcSprite',
+    'data-target-name': sec.npc,
     style: Object.assign(
       { left: intr.npcX + '%', top: intr.npcY + '%', borderColor: accent, boxShadow: `0 0 24px ${accent}55` },
       isField ? {} : {}  // office: no background image, no border (CSS overrides)
@@ -2024,6 +2026,7 @@ function renderInterior() {
       const gSpriteId = g.npc.toLowerCase() === 'mel' ? 'mel' : g.npc.toLowerCase();
       const guest = el('div', {
         class: 'npc-sprite crew-guest',
+        'data-target-name': g.npc,
         style: {
           left: g.x + '%', top: g.y + '%',
           backgroundImage: `url('/assets/rpg/sprites/crew/${gSpriteId}.webp')`
@@ -2118,19 +2121,52 @@ function updateInterior(dtMs) {
   const dt = Math.hypot(intr.playerX - intr.termX, intr.playerY - intr.termY);
   const dd = intr.playerY - DOOR_ZONE_TOP;
 
+  // Guests get their own near-check so keyboard SPACE and the on-screen
+  // action button can reach them. Without this, guest sprites would be
+  // mouse-click only and SPACE near Mel/Cat in HQ would either no-op or
+  // open Ryujin's tree if he was in range. (codex P2)
+  let nearGuest = null;
+  let nearGuestDist = Infinity;
+  if (Array.isArray(intr.sec.guests)) {
+    intr.sec.guests.forEach(g => {
+      const dg = Math.hypot(intr.playerX - g.x, intr.playerY - g.y);
+      if (dg < NPC_INTERACT_R && dg < nearGuestDist) {
+        nearGuest = g;
+        nearGuestDist = dg;
+      }
+    });
+  }
+
   let target = null, label = '', tx = 0, ty = 0;
-  if (dn < NPC_INTERACT_R) {
+  // Guest beats main NPC when strictly closer; ties go to the main NPC
+  // so Ryujin remains the default interaction at the back of the room.
+  if (nearGuest && nearGuestDist < dn) {
+    target = 'guest';
+    label = 'PRESS [SPACE] TO TALK · ' + nearGuest.npc;
+    tx = nearGuest.x; ty = nearGuest.y - 11;
+    state.nearGuest = nearGuest;
+  }
+  else if (dn < NPC_INTERACT_R) {
     target = 'npc';
     label = interactPromptLabel(intr.sec, FIELD_SECTORS.has(intr.sec.id));
     tx = intr.npcX; ty = intr.npcY - 11;
+    state.nearGuest = null;
   }
-  else if (dt < TERM_INTERACT_R) { target = 'terminal'; label = 'PRESS [SPACE] TO READ TERMINAL'; tx = intr.termX; ty = intr.termY - 8; }
-  else if (dd > -2) { target = 'door'; label = 'PRESS [SPACE] OR WALK DOWN TO EXIT'; tx = 50; ty = DOOR_ZONE_TOP - 4; }
+  else if (dt < TERM_INTERACT_R) { target = 'terminal'; label = 'PRESS [SPACE] TO READ TERMINAL'; tx = intr.termX; ty = intr.termY - 8; state.nearGuest = null; }
+  else if (dd > -2) { target = 'door'; label = 'PRESS [SPACE] OR WALK DOWN TO EXIT'; tx = 50; ty = DOOR_ZONE_TOP - 4; state.nearGuest = null; }
+  else { state.nearGuest = null; }
 
   if (target !== state.nearTarget) {
     state.nearTarget = target;
     if (target) showInteractPrompt(label, tx, ty); else hideInteractPrompt();
-    document.querySelectorAll('.npc-sprite').forEach(n => n.classList.toggle('near', target === 'npc'));
+    // Glow only the specific sprite the player is near. data-target-name
+    // is set on the main NPC and each guest at render time.
+    const nearName = target === 'npc' ? intr.sec.npc
+                   : target === 'guest' ? nearGuest.npc
+                   : null;
+    document.querySelectorAll('.npc-sprite').forEach(n => {
+      n.classList.toggle('near', !!nearName && n.dataset.targetName === nearName);
+    });
   }
   // NPC mirrors to face the player when they pass on the left/right side.
   // Small but recognizable touch — the god turns to greet you.
@@ -3013,7 +3049,8 @@ function handleAction() {
   } else if (state.view === 'SECTOR') {
     const intr = state.interior;
     if (!intr) return;
-    if (state.nearTarget === 'npc') { sfxConfirm(); talkToNpc(intr.sec); }
+    if (state.nearTarget === 'guest') { sfxConfirm(); if (state.nearGuest) openGuestDialog(state.nearGuest.npc); }
+    else if (state.nearTarget === 'npc') { sfxConfirm(); talkToNpc(intr.sec); }
     else if (state.nearTarget === 'terminal') { sfxOpen(); window.location.href = intr.sec.href; }
     else if (state.nearTarget === 'door') { sfxClose(); exitToOverworld(); }
   }
