@@ -1034,15 +1034,20 @@ const CREW_PER_SECTOR = {
 // Approaching the terminal lets the player text or email the field crew.
 const FIELD_SECTORS = new Set(['PRODUCTION', 'SERVICE', 'MATERIALS']);
 
-// Crew contact directory. Configure here; the comms terminal renders
-// SMS + email buttons that defer to tel:/mailto: handlers on the
-// player's device. Leave a field empty to grey out that channel.
-// TODO: move to tenant_settings so Mac doesn't have to redeploy to
-// update a phone number (per [[prefer-customizable-config]]).
+// Crew contact directory - email-only for v1 per Mac. Comms terminals
+// and office NPC dialogs both surface an "Email X" choice when a crew
+// member has an entry here. Pavanjot has no email by design (his
+// MATERIALS terminal will show only the Leave option until he gets
+// workspace email). Twilio SMS wiring deferred to a later iteration.
+// TODO: move to tenant_settings per [[prefer-customizable-config]] so
+// new hires don't require a redeploy.
 const CREW_CONTACTS = {
-  DIEGO:    { name: 'Diego',    sms: '', email: 'diego@plusultraroofing.com' },
-  AJ:       { name: 'AJ',       sms: '', email: 'arielle@plusultraroofing.com' },
-  PAVANJOT: { name: 'Pavanjot', sms: '', email: 'pavanjot@plusultraroofing.com' }
+  // Mac (the player) is not in this map - you don't email yourself.
+  CAT:  { name: 'Cat',   email: 'catherine@plusultraroofing.com' },
+  MEL:  { name: 'Mel',   email: 'melodie@plusultraroofing.com' },
+  AJ:   { name: 'AJ',    email: 'arielle@plusultraroofing.com' },
+  DIEGO:{ name: 'Diego', email: 'diego@plusultraroofing.com' }
+  // PAVANJOT intentionally absent - no workspace email yet.
 };
 
 // ═════ State ═════
@@ -2245,7 +2250,22 @@ function stopGameLoop() {
 // Build the choice tree for a given NPC. Choices return their own
 // follow-up body when selected, then re-enter the same tree so the
 // player can ask a second question without re-opening dialogue.
+// Wrapper that augments the per-sector dialogue tree with a generic
+// "Email <crew>" option whenever the lead NPC has an entry in
+// CREW_CONTACTS. Injected immediately before Leave so it sits at the
+// bottom of the choices but above the dismiss.
 function buildDialogueChoices(sec) {
+  const base = _buildSectorChoices(sec);
+  const c = CREW_CONTACTS[sec.npc];
+  if (c && c.email) {
+    const leaveIdx = base.findIndex(ch => ch.kind === 'leave');
+    const emailChoice = { label: `Email ${c.name} (${c.email})`, kind: 'href', href: 'mailto:' + c.email };
+    base.splice(leaveIdx >= 0 ? leaveIdx : base.length, 0, emailChoice);
+  }
+  return base;
+}
+
+function _buildSectorChoices(sec) {
   const s = state.snapshot || {};
   const rev = s.revenue || {};
   const t = s.tickets || {};
@@ -2400,18 +2420,13 @@ function bottleneckAssignee() {
 function openCommsDialog(sec) {
   const c = CREW_CONTACTS[sec.npc] || { name: sec.npc, sms: '', email: '' };
   const accent = NPC_ACCENT[sec.npc] || '#22d3ee';
-  // Only render the channels that are configured. A footer note flags any
-  // missing channel so Mac knows to fill CREW_CONTACTS - the disabled rows
-  // can't be presented as 'reply' choices because the generic reply path
-  // would rebuild choices from buildDialogueChoices() and kick the player
-  // out of the comms dialog into the unrelated sector NPC tree.
-  const missing = [];
-  if (!c.sms) missing.push('SMS number');
-  if (!c.email) missing.push('email');
-  const footer = missing.length ? `\n\n(${missing.join(' and ')} not configured for ${c.name} - update CREW_CONTACTS in game.html.)` : '';
-  const body = `${c.name} is in the field. Reach them by SMS or email - the message opens in your device's default app.` + footer;
+  // Email-only for v1. Choice opens the device's default mail client.
+  // When email is missing (e.g. Pavanjot today), the dialog still
+  // surfaces a clean Leave option rather than a disabled-row fallback
+  // that could eject the player into the sector NPC tree.
+  const footer = c.email ? '' : `\n\n(${c.name} has no workspace email configured yet - add to CREW_CONTACTS when their account lands.)`;
+  const body = `${c.name} is in the field. Reach them by email - the message opens in your device's default mail app.` + footer;
   const choices = [];
-  if (c.sms)   choices.push({ label: `Text ${c.name} (${c.sms})`,    kind: 'href', href: 'sms:' + c.sms });
   if (c.email) choices.push({ label: `Email ${c.name} (${c.email})`, kind: 'href', href: 'mailto:' + c.email });
   choices.push({ label: 'Leave', kind: 'leave', danger: true });
   openDialogue({
