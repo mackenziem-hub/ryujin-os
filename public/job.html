@@ -374,13 +374,26 @@ async function loadJob(){
       });
     }
 
-    render({ customer, estimates, workorders, paysheets, photos, roster });
+    // Purchase orders for this job's estimates
+    let purchaseOrders = [];
+    if (estimates.length) {
+      try {
+        const poR = await Promise.all(estimates.map(e =>
+          fetch('/api/purchase-orders?estimate_id=' + encodeURIComponent(e.id), { headers })
+            .then(r => r.ok ? r.json() : { purchase_orders: [] })
+            .catch(() => ({ purchase_orders: [] }))
+        ));
+        purchaseOrders = poR.flatMap(r => r.purchase_orders || []);
+      } catch { /* fall through */ }
+    }
+
+    render({ customer, estimates, workorders, paysheets, photos, roster, purchaseOrders });
   } catch(e) {
     $('stage').innerHTML = '<div class="loading">Error: ' + esc(e.message) + '</div>';
   }
 }
 
-function render({ customer, estimates, workorders, paysheets, photos, roster }){
+function render({ customer, estimates, workorders, paysheets, photos, roster, purchaseOrders = [] }){
   const primaryEst = estimates.sort((a,b) => (b.estimate_number||0) - (a.estimate_number||0))[0];
   const activeWo = workorders.find(w => ['in_progress','issued'].includes(w.status)) || workorders[0];
   const activePs = paysheets[0];
@@ -519,6 +532,73 @@ function render({ customer, estimates, workorders, paysheets, photos, roster }){
             <a class="act primary" href="production-paysheet.html?job=${esc(activePs.job_id || '')}">OPEN FULL EDITOR</a>
           </div>
         ` : '<div class="empty-sec">NO PAY SHEET YET</div>'}
+      </div>
+    </details>
+  `);
+
+  // 5.5 MATERIALS — purchase orders linked to this job's estimates. When no
+  // PO exists yet, fall back to engine-derived summary (SQ + tier + product)
+  // so Mac at least sees what's signed for, plus a pointer to the local
+  // canonical material list file.
+  const poCount = purchaseOrders.length;
+  const totalSq = primaryEst?.roof_area_sqft ? (primaryEst.roof_area_sqft / 100).toFixed(1) : null;
+  const tierLabel = (primaryEst?.selected_package || activeWo?.package_tier || '').toString();
+  const productHint = tierLabel.toLowerCase() === 'platinum' ? 'CertainTeed Landmark Pro'
+    : tierLabel.toLowerCase() === 'diamond' ? 'CertainTeed Presidential Shake'
+    : tierLabel.toLowerCase() === 'gold' ? 'CertainTeed Landmark'
+    : '';
+  const matFileHint = customer.address
+    ? `Plus Ultra/Production/Material Orders/${customer.address} - Material List.md`
+    : 'Plus Ultra/Production/Material Orders/';
+  sections.push(`
+    <details class="acc" open data-section="materials">
+      <summary>
+        <div class="title"><svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg> MATERIALS</div>
+        <div class="meta"><span>${poCount} PO${poCount===1?'':'s'}</span><svg class="chev" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
+      </summary>
+      <div class="acc-body">
+        ${poCount ? purchaseOrders.map(po => {
+          const items = Array.isArray(po.line_items) ? po.line_items : [];
+          const delivery = po.expected_delivery_date
+            ? new Date(po.expected_delivery_date + 'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})
+            : 'TBD';
+          return `
+            <div style="border:1px solid rgba(251,146,60,0.16);border-radius:10px;padding:12px 14px;margin-bottom:10px;background:rgba(6,10,20,0.4)">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+                <div>
+                  <div style="font-family:'Share Tech Mono',monospace;font-size:0.82em;color:#fb923c;letter-spacing:1.2px">PO-${esc(po.po_number || '?')}</div>
+                  <div style="font-size:0.72em;color:rgba(200,220,255,0.55);margin-top:2px">Delivery: ${esc(delivery)}</div>
+                </div>
+                <div style="text-align:right">
+                  <span class="badge ${po.status==='received'?'b-done':po.status==='ordered'?'b-active':'b-draft'}">${esc((po.status||'draft').toUpperCase())}</span>
+                  <div style="font-family:'Orbitron',monospace;font-size:1.1em;font-weight:700;color:#22d3ee;margin-top:4px">${money(po.total_amount)}</div>
+                </div>
+              </div>
+              ${items.length ? `
+                <table style="width:100%;border-collapse:collapse;font-size:0.78em;margin-top:6px">
+                  <thead><tr style="color:rgba(200,220,255,0.55);text-align:left;font-size:0.82em">
+                    <th style="padding:4px 6px;font-weight:500">ITEM</th>
+                    <th style="padding:4px 6px;font-weight:500;text-align:right">QTY</th>
+                    <th style="padding:4px 6px;font-weight:500;text-align:right">TOTAL</th>
+                  </tr></thead>
+                  <tbody>${items.map(li => `
+                    <tr style="border-top:1px solid rgba(251,146,60,0.08)">
+                      <td style="padding:6px">${esc(li.name || li.description || li.item || '—')}</td>
+                      <td style="padding:6px;text-align:right;font-family:'Share Tech Mono',monospace">${esc(li.qty || li.quantity || '')}</td>
+                      <td style="padding:6px;text-align:right;font-family:'Share Tech Mono',monospace">${money(li.total || (li.qty * li.unit_cost) || 0)}</td>
+                    </tr>
+                  `).join('')}</tbody>
+                </table>
+              ` : '<div style="font-size:0.78em;color:rgba(200,220,255,0.55);padding:4px">No line items recorded on this PO</div>'}
+            </div>
+          `;
+        }).join('') : `
+          <div class="empty-sec" style="padding:14px;text-align:left;line-height:1.6">
+            <div style="color:rgba(251,146,60,0.85);font-weight:600;margin-bottom:6px">NO PURCHASE ORDER YET</div>
+            ${totalSq && productHint ? `<div style="font-size:0.85em;margin-bottom:6px">Signed scope: <strong>${esc(totalSq)} SQ ${esc(tierLabel.toUpperCase())} ${esc(productHint)}</strong></div>` : ''}
+            <div style="font-size:0.78em;color:rgba(200,220,255,0.65)">Detailed material list lives in OneDrive:<br><code style="font-size:0.92em;color:#22d3ee">${esc(matFileHint)}</code></div>
+          </div>
+        `}
       </div>
     </details>
   `);
