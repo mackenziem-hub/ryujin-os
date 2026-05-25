@@ -20,15 +20,15 @@ import { gmailSend } from '../lib/google.js';
 import crypto from 'node:crypto';
 
 // Topic → recipient routing for sub-portal questions.
-// Goal: subs never message the owner directly for things AJ handles day-to-day.
-// AJ is GM and owns Ryan comms (formalized May 11 2026). Pay/rate questions
-// still escalate to the owner since AJ can't unilaterally change the rate sheet.
+// 2026-05-25: AJ removed from all topics. Mac handles every category himself
+// after the AJ trust gap (see feedback_aj_not_billable_supervisor). All
+// non-emergency / low-priority requests route to Mac's email.
 const QUESTION_ROUTING = {
-  schedule:  { match_names: ['aj'],          match_roles: [],                  label: 'AJ' },
-  scope:     { match_names: ['aj'],          match_roles: [],                  label: 'AJ' },
-  materials: { match_names: ['aj'],          match_roles: [],                  label: 'AJ' },
-  pay:       { match_names: [],              match_roles: ['owner'],           label: 'Mac' },
-  other:     { match_names: ['aj'],          match_roles: ['owner'],           label: 'AJ + Mac' }
+  schedule:  { match_names: [], match_roles: ['owner'], label: 'Mac' },
+  scope:     { match_names: [], match_roles: ['owner'], label: 'Mac' },
+  materials: { match_names: [], match_roles: ['owner'], label: 'Mac' },
+  pay:       { match_names: [], match_roles: ['owner'], label: 'Mac' },
+  other:     { match_names: [], match_roles: ['owner'], label: 'Mac' }
 };
 
 // ── Token verification ──────────────────────────────────────────
@@ -260,9 +260,9 @@ async function getSchedule(tenantId, woId, subId) {
   }
 
   // Supervisor contact: prefer tenant_settings.default_supervisor_user_id
-  // (configurable per tenant via migration 068). Falls back to AJ ilike for
-  // tenants that have not set the default yet. Either path returns a tap-to-
-  // call ready phone when the resolved user has one.
+  // (configurable per tenant via migration 068). Falls back to tenant's
+  // owner-role user when default is not set. 2026-05-25: AJ ilike fallback
+  // removed — AJ is no longer supervisor on PU jobs.
   let supervisor_contact = { name: 'Site Supervisor', phone: null, role: 'Site Supervisor' };
   try {
     let supRow = null;
@@ -285,7 +285,7 @@ async function getSchedule(tenantId, woId, subId) {
         .from('users')
         .select('name, phone, email, role')
         .eq('tenant_id', tenantId)
-        .ilike('name', '%aj%')
+        .eq('role', 'owner')
         .limit(1)
         .maybeSingle();
       supRow = data || null;
