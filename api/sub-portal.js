@@ -96,23 +96,27 @@ async function getPhotos(tenantId, woId, subId) {
     return { wo, photos: [], note: 'No linked estimate yet — ask the owner.' };
   }
 
-  // Pull photos with relevant captions: cover, before, drone, eagleview, street*, plus any uncaptioned
+  // Pull photos with relevant captions: cover, before, drone, eagleview,
+  // street*, site*, plus any uncaptioned. Also includes the 'site' category
+  // (recheck photos uploaded via job.html UPLOAD PHOTOS button).
+  // Column is `uploaded_at` on estimate_photos -- NOT `created_at`. Selecting
+  // a missing column silently 500s -> empty photo grid in Ryan's portal.
   const { data: photos } = await supabaseAdmin
     .from('estimate_photos')
-    .select('id, url, caption, is_cover, created_at')
+    .select('id, url, caption, category, is_cover, uploaded_at')
     .eq('estimate_id', wo.linked_estimate_id)
     .order('is_cover', { ascending: false })
-    .order('created_at', { ascending: true });
+    .order('uploaded_at', { ascending: true });
 
   const filtered = (photos || []).filter(p => {
-    if (!p.caption) return true; // uncaptioned: include
-    const c = String(p.caption).toLowerCase();
-    return p.is_cover ||
-           c === 'cover' ||
-           c === 'before' ||
-           c === 'drone' ||
-           c === 'eagleview' ||
-           c.includes('street');
+    if (p.is_cover) return true;
+    const cap = (p.caption || '').toLowerCase();
+    const cat = (p.category || '').toLowerCase();
+    if (!cap && !cat) return true; // fully uncaptioned: include
+    if (['cover', 'before', 'drone', 'eagleview', 'site', 'damage', 'inspection'].includes(cap)) return true;
+    if (['cover', 'before', 'drone', 'eagleview', 'site', 'damage', 'inspection'].includes(cat)) return true;
+    if (cap.includes('street') || cat.includes('street')) return true;
+    return false;
   });
 
   return {
@@ -120,8 +124,9 @@ async function getPhotos(tenantId, woId, subId) {
     photos: filtered.map(p => ({
       url: p.url,
       caption: p.caption || null,
+      category: p.category || null,
       is_cover: !!p.is_cover,
-      uploaded_at: p.created_at
+      uploaded_at: p.uploaded_at
     }))
   };
 }
