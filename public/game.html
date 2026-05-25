@@ -271,16 +271,20 @@
      as the character lifting weight, not bouncing whole. */
   .player-avatar {
     position: absolute;
-    width: 5.5%; aspect-ratio: 1 / 1;
+    width: 7%; aspect-ratio: 1 / 1;       /* overworld size */
     transform: translate(-50%, -100%);
     background-image: url('/assets/rpg/sprites/crew/mack.webp');  /* default = front */
     background-size: contain; background-position: center bottom; background-repeat: no-repeat;
     image-rendering: pixelated;
     z-index: 10;
     pointer-events: none;
-    filter: drop-shadow(0 3px 0 rgba(0,0,0,0.55));
+    filter: drop-shadow(0 4px 0 rgba(0,0,0,0.55));
     transition: left .14s linear, top .14s linear;
   }
+  /* In a sector interior, the player is the prominent character in the
+     room (not a tiny dot on a map). Scaled up so blonde Mac reads as a
+     proper FF-style protagonist in the middle of the space. */
+  .sector-room .player-avatar { width: 14%; }
   .player-avatar.face-up    { background-image: url('/assets/rpg/sprites/crew/mack-back.webp'); }
   .player-avatar.face-down  { background-image: url('/assets/rpg/sprites/crew/mack.webp'); }
   .player-avatar.face-left  { background-image: url('/assets/rpg/sprites/crew/mack-side.webp'); }
@@ -1477,6 +1481,18 @@ const sfxConfirm = () => { beep(660, 50, 'square', 0.05); setTimeout(() => beep(
 const sfxOpen    = () => { beep(440, 40, 'triangle', 0.05); beep(660, 80, 'triangle', 0.04); };
 const sfxClose   = () => beep(330, 60, 'triangle', 0.04);
 const sfxAdvance = () => beep(990, 20, 'square', 0.025);
+// 8-bit dialogue chatter. Per-NPC pitch band so different speakers
+// sound distinctly: Ryujin rumbles low, Cat chirps high, etc. Called
+// per N characters revealed by the typewriter to simulate speech.
+const CHATTER_BAND = {
+  RYUJIN:[180,330], MACK:[700,920], CAT:[900,1180], MEL:[520,720],
+  AJ:[800,1000], DIEGO:[380,560], PAVANJOT:[440,620]
+};
+function sfxChatter(speaker) {
+  const band = CHATTER_BAND[speaker] || [700, 900];
+  const f = band[0] + Math.random() * (band[1] - band[0]);
+  beep(f, 18, 'square', 0.02);
+}
 const sfxBoss    = () => { beep(110, 250, 'sawtooth', 0.06); setTimeout(() => beep(82, 350, 'sawtooth', 0.06), 200); };
 ['click','keydown','touchstart'].forEach(ev => window.addEventListener(ev, function once() { ensureAudio(); window.removeEventListener(ev, once); }, { once: true }));
 
@@ -1920,7 +1936,12 @@ function renderInterior() {
     class: 'terminal-zone',
     id: 'termZone',
     style: { left: intr.termX + '%', top: intr.termY + '%' },
-    onclick: () => { sfxOpen(); openSectorTerminalModal(sec); }
+    // Per Mac: terminal opens the SECTOR-specific panel directly,
+    // not a stats modal that then needs another click. Each sector's
+    // href already points to the right cockpit page (sales-cockpit
+    // for SALES, admin.html?page=finance for FINANCE, etc.) - HQ is
+    // the only one whose panel IS the whole command center, by design.
+    onclick: () => { sfxOpen(); window.location.href = sec.href; }
   });
   room.appendChild(term);
 
@@ -1937,16 +1958,14 @@ function renderInterior() {
   });
   room.appendChild(av);
 
-  // Auto-talk on first entry per sector. Field sectors skip the auto-talk
-  // since there's no one in the room - the player can walk up to the comms
-  // terminal and message the field crew when they want to, not on entry.
+  // Auto-talk on first entry disabled. The dialogue blocks player
+  // movement (game loop pauses on state.dialogue) which made the room
+  // feel "stuck on entry". Player walks in free, sees the painted
+  // character + floating TALK label, hits SPACE when near to talk.
   if (state._autoTalkTimer) { clearTimeout(state._autoTalkTimer); state._autoTalkTimer = null; }
   if (!state.save.spoken_to.includes(sec.id)) {
     state.save.spoken_to.push(sec.id);
     persistSave();
-    if (!FIELD_SECTORS.has(sec.id)) {
-      state._autoTalkTimer = setTimeout(() => { state._autoTalkTimer = null; openNpcDialogueTree(sec); }, 450);
-    }
   }
 }
 
@@ -2369,7 +2388,7 @@ function openDialogue(d) {
     state.dialogue.revealed += 2;
     const visible = state.dialogue.body.slice(0, state.dialogue.revealed);
     $('dialogueBody').textContent = visible;
-    if (state.dialogue.revealed % 8 === 0) sfxAdvance();
+    if (state.dialogue.revealed % 4 === 0) sfxChatter(state.dialogue.speaker);
     if (state.dialogue.revealed >= state.dialogue.body.length) {
       clearInterval(state._typewriterTimer);
       onDialogueBodyComplete();
@@ -2447,7 +2466,7 @@ function selectChoice(idx) {
       if (!state.dialogue) { clearInterval(state._typewriterTimer); return; }
       state.dialogue.revealed += 3;
       $('dialogueBody').textContent = state.dialogue.body.slice(0, state.dialogue.revealed);
-      if (state.dialogue.revealed % 10 === 0) sfxAdvance();
+      if (state.dialogue.revealed % 5 === 0) sfxChatter(state.dialogue.speaker);
       if (state.dialogue.revealed >= state.dialogue.body.length) {
         clearInterval(state._typewriterTimer);
         // Refresh the choice list so it stays available
@@ -2834,7 +2853,7 @@ function handleAction() {
     const intr = state.interior;
     if (!intr) return;
     if (state.nearTarget === 'npc') { sfxConfirm(); talkToNpc(intr.sec); }
-    else if (state.nearTarget === 'terminal') { sfxOpen(); openSectorTerminalModal(intr.sec); }
+    else if (state.nearTarget === 'terminal') { sfxOpen(); window.location.href = intr.sec.href; }
     else if (state.nearTarget === 'door') { sfxClose(); exitToOverworld(); }
   }
 }
