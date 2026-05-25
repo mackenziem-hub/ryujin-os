@@ -64,6 +64,27 @@ const MAX_FILE_SIZE = 60 * 1024 * 1024; // bumped to 60MB to cover short cover-v
 const ALLOWED_IMAGE = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif']);
 const ALLOWED_VIDEO = new Set(['video/mp4', 'video/webm', 'video/quicktime']);
 
+// bodyParser is disabled at the handler level (multipart POST needs raw
+// stream), so JSON bodies on POST-url-ingest / PATCH / PUT arrive unparsed.
+// Read the stream once and JSON.parse it.
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on('data', c => {
+      size += c.length;
+      if (size > 256 * 1024) { reject(new Error('Body too large')); req.destroy(); return; }
+      chunks.push(c);
+    });
+    req.on('end', () => {
+      if (!chunks.length) return resolve({});
+      try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
+      catch (e) { reject(e); }
+    });
+    req.on('error', reject);
+  });
+}
+
 function parseMultipart(req) {
   return new Promise((resolve, reject) => {
     const files = [];
@@ -182,7 +203,9 @@ async function handler(req, res) {
     // like a direct upload would.
     const contentType = req.headers['content-type'] || '';
     if (contentType.includes('application/json')) {
-      const body = req.body || {};
+      let body;
+      try { body = await readJsonBody(req); }
+      catch (e) { return res.status(400).json({ error: 'Invalid JSON body' }); }
       const estimateId = body.estimate_id;
       const sourceUrl = body.source_url;
       if (!estimateId) return res.status(400).json({ error: 'estimate_id required' });
@@ -378,7 +401,9 @@ async function handler(req, res) {
   if (req.method === 'PATCH' || req.method === 'PUT') {
     const id = req.query?.id;
     if (!id) return res.status(400).json({ error: 'Missing ?id=' });
-    const body = req.body || {};
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return res.status(400).json({ error: 'Invalid JSON body' }); }
     const { data: existing } = await supabaseAdmin
       .from('estimate_photos')
       .select('id, estimate_id, estimate:estimates!inner(tenant_id)')
@@ -420,3 +445,9 @@ async function handler(req, res) {
 }
 
 export default requirePortalSessionAndTenant(handler);
+
+// Disable Vercel's default body parser so the multipart POST branch can
+// pipe req into busboy. JSON branch above reads req.body, which on Vercel
+// is populated on-demand by the framework even with bodyParser:false for
+// Node.js serverless functions when content-type is application/json.
+export const config = { api: { bodyParser: false } };
