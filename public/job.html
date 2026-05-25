@@ -829,19 +829,23 @@ async function deletePhoto(p) {
 }
 
 // Bulk upload to /api/estimate-photos. Server caps each request at 5 files,
-// so we chunk. On success, refetch and re-render gallery in place.
+// so we chunk. Errors are collected across batches and surfaced via alert()
+// at the end so they cannot be hidden by the running progress counter.
 async function uploadJobPhotos(fileList) {
   const input = document.getElementById('jobUploadInput');
   const status = document.getElementById('uploadStatus');
   const estId = input?.dataset.estId;
   const files = Array.from(fileList || []);
-  if (!estId || !files.length) return;
+  console.log('[upload] start', { estId, count: files.length, hasAuth: !!(window.RyujinAuth && window.RyujinAuth.token) });
+  if (!estId) { alert('Upload blocked: no estimate id on this job. Reload the page.'); return; }
+  if (!files.length) return;
 
   const setStatus = (txt) => { if (status) { status.style.display = ''; status.textContent = txt; } };
   setStatus(`uploading 0 / ${files.length}...`);
 
   const BATCH = 5;
   let done = 0, failed = 0;
+  const errors = [];
   for (let i = 0; i < files.length; i += BATCH) {
     const batch = files.slice(i, i + BATCH);
     const fd = new FormData();
@@ -852,18 +856,18 @@ async function uploadJobPhotos(fileList) {
       const r = await fetch('/api/estimate-photos', { method: 'POST', headers: ah(), body: fd });
       if (!r.ok) {
         const errText = await r.text().catch(() => '');
-        throw new Error('HTTP ' + r.status + (errText ? ' ' + errText.slice(0, 200) : ''));
+        throw new Error('HTTP ' + r.status + (errText ? ' ' + errText.slice(0, 300) : ''));
       }
       done += batch.length;
     } catch (e) {
       failed += batch.length;
-      console.error('upload batch failed', e);
-      setStatus(`upload error: ${e.message}`);
+      const msg = `batch ${Math.floor(i/BATCH)+1} (${batch.map(f => f.name).join(', ')}): ${e.message}`;
+      console.error('[upload]', msg);
+      errors.push(msg);
     }
-    setStatus(`uploading ${done + failed} / ${files.length}${failed ? ` (${failed} failed)` : ''}...`);
+    setStatus(`uploaded ${done} / ${files.length}${failed ? ` · ${failed} failed` : ''}`);
   }
 
-  setStatus(`uploaded ${done}${failed ? ` · ${failed} failed` : ''}`);
   if (input) input.value = '';
 
   // Refresh gallery via estimate_id (uploads always have an estimate context)
@@ -873,10 +877,14 @@ async function uploadJobPhotos(fileList) {
     const union = eR.ok ? ((await eR.json()).photos || []) : [];
     if (mount) renderPhotoGallery(mount, union, null);
   } catch (e) {
-    console.error('refresh after upload failed', e);
+    console.error('[upload] gallery refresh failed', e);
   }
 
-  setTimeout(() => { if (status && status.textContent.startsWith('uploaded')) status.style.display = 'none'; }, 4000);
+  // Surface errors so they cannot be missed.
+  if (errors.length) {
+    alert(`Upload failed for ${failed} of ${files.length} files.\n\n` + errors.join('\n\n') + '\n\n(Also logged in browser console)');
+  }
+  setTimeout(() => { if (status && status.textContent.startsWith('uploaded') && !failed) status.style.display = 'none'; }, 4000);
 }
 
 function renderPhotoGallery(mount, photos, refWo) {
