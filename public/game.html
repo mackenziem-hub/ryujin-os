@@ -497,6 +497,22 @@
     box-shadow: none !important;
     animation: none !important;
   }
+  /* Crew guest: visible CT-style pixel sprite overlay for crew who are
+     posted in someone else's sector (e.g. Mel + Cat in HQ alongside
+     Ryujin). Background-image is set inline from the crew sprite WebP.
+     No border or glow box - the sprite IS the visual, like the painted
+     office characters. Inherits the breathe animation from .npc-sprite. */
+  .npc-sprite.crew-guest {
+    width: 11%;
+    aspect-ratio: 3/4;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: bottom center;
+    background-color: transparent;
+    border: none !important;
+    box-shadow: none !important;
+    image-rendering: pixelated;
+  }
   /* Field-ops comms terminal: glowing console instead of a portrait.
      Pixel-blue scanline pattern with a centered amber "TX" glyph and a
      blinking cyan cursor so it reads as an interactive comms station. */
@@ -961,7 +977,13 @@ const SAVE_KEY = 'ryujin_game_save_v1';
 // the speech bubble pops while a dialogue is open. Field sectors omit
 // talk and fall back to the comms-terminal position.
 const SECTORS = [
-  { id:'HQ',        npc:'RYUJIN',   role:'Electro Dragon God', href:'/command-center.html', bg:'/assets/rpg/scenes/sectors/hq.webp',         sprite:'/assets/rpg/sprites/buildings/hq.webp',         x:50, y:22, talk:{x:38,y:35} },
+  // Per Mac's vision: Mel and Cat sit IN the hub alongside Ryujin. They get
+  // visible CT-style crew sprites at the front of the room (the bg art shows
+  // only Ryujin on the throne, so the guests are sprite overlays). Clicking
+  // them opens an Email + Leave dialog - their station-specific dialogue
+  // trees still live in their own sectors.
+  { id:'HQ',        npc:'RYUJIN',   role:'Electro Dragon God', href:'/command-center.html', bg:'/assets/rpg/scenes/sectors/hq.webp',         sprite:'/assets/rpg/sprites/buildings/hq.webp',         x:50, y:22, talk:{x:38,y:35},
+    guests:[{ npc:'MEL', x:22, y:72 }, { npc:'CAT', x:78, y:72 }] },
   { id:'SALES',     npc:'MACK',     role:'Sales',        href:'/sales-cockpit.html',        bg:'/assets/rpg/scenes/sectors/sales.webp',      sprite:'/assets/rpg/sprites/buildings/sales.webp',      x: 9, y:50, talk:{x:30,y:42} },
   { id:'MARKETING', npc:'CAT',      role:'Marketing',    href:'/admin.html?page=marketing', bg:'/assets/rpg/scenes/sectors/marketing.webp',  sprite:'/assets/rpg/sprites/buildings/marketing.webp',  x:22, y:50, talk:{x:30,y:42} },
   { id:'FINANCE',   npc:'MEL',      role:'Books',        href:'/admin.html?page=finance',   bg:'/assets/rpg/scenes/sectors/finance.webp',    sprite:'/assets/rpg/sprites/buildings/finance.webp',    x:36, y:50, talk:{x:48,y:42} },
@@ -1046,6 +1068,23 @@ const CREW = [
   { id:'melodie',   name:'MELODIE',  img:'/assets/rpg/sprites/crew/mel.webp' }
 ];
 const CREW_BY_ID = Object.fromEntries(CREW.map(c => [c.id, c]));
+
+// The player IS Mac, so any sector where Mac is the lead NPC (currently
+// SALES, since Mac took over inbound after the May 23 routing change) shows
+// "YOUR DESK · <sector>" instead of "TALK · MACK" - you're not talking to
+// yourself, you're sitting down at your station. Field sectors keep the
+// MESSAGE label since the lead is out on a job.
+const PLAYER_NPC = 'MACK';
+function nameplateLabel(sec, isField) {
+  if (isField) return 'MESSAGE ' + sec.npc;
+  if (sec.npc === PLAYER_NPC) return 'YOUR DESK · ' + sec.id;
+  return 'TALK · ' + sec.npc;
+}
+function interactPromptLabel(sec, isField) {
+  if (isField) return 'PRESS [SPACE] TO MESSAGE ' + sec.npc;
+  if (sec.npc === PLAYER_NPC) return 'PRESS [SPACE] TO REVIEW DESK';
+  return 'PRESS [SPACE] TO TALK · ' + sec.npc;
+}
 
 // Which crew wander each sector interior — drives the always-on motion
 // that gives the room its "office full of agents" feel (per Pixel Agents).
@@ -1972,9 +2011,34 @@ function renderInterior() {
       if (isField) openCommsDialog(sec); else openNpcDialogueTree(sec);
     }
   }, [
-    el('div', { class: 'npc-nameplate', text: isField ? ('MESSAGE ' + sec.npc) : ('TALK · ' + sec.npc), style: { color: accent, borderColor: accent } })
+    el('div', { class: 'npc-nameplate', text: nameplateLabel(sec, isField), style: { color: accent, borderColor: accent } })
   ]);
   room.appendChild(npc);
+
+  // Guest crew (e.g. Mel + Cat posted in HQ alongside Ryujin). Sprite
+  // overlay on the room bg, clickable for a generic Email + Leave dialog.
+  // Domain dialogue still lives in each crew member's own sector.
+  if (Array.isArray(sec.guests)) {
+    sec.guests.forEach(g => {
+      const gAccent = NPC_ACCENT[g.npc] || '#fde047';
+      const gSpriteId = g.npc.toLowerCase() === 'mel' ? 'mel' : g.npc.toLowerCase();
+      const guest = el('div', {
+        class: 'npc-sprite crew-guest',
+        style: {
+          left: g.x + '%', top: g.y + '%',
+          backgroundImage: `url('/assets/rpg/sprites/crew/${gSpriteId}.webp')`
+        },
+        onclick: () => {
+          if (state.dialogue) return;
+          sfxConfirm();
+          openGuestDialog(g.npc);
+        }
+      }, [
+        el('div', { class: 'npc-nameplate', text: 'TALK · ' + g.npc, style: { color: gAccent, borderColor: gAccent } })
+      ]);
+      room.appendChild(guest);
+    });
+  }
 
   // Terminal (computer / desk) — opens the stats modal
   const term = el('div', {
@@ -2057,9 +2121,7 @@ function updateInterior(dtMs) {
   let target = null, label = '', tx = 0, ty = 0;
   if (dn < NPC_INTERACT_R) {
     target = 'npc';
-    label = FIELD_SECTORS.has(intr.sec.id)
-      ? `PRESS [SPACE] TO MESSAGE ${intr.sec.npc}`
-      : `PRESS [SPACE] TO TALK · ${intr.sec.npc}`;
+    label = interactPromptLabel(intr.sec, FIELD_SECTORS.has(intr.sec.id));
     tx = intr.npcX; ty = intr.npcY - 11;
   }
   else if (dt < TERM_INTERACT_R) { target = 'terminal'; label = 'PRESS [SPACE] TO READ TERMINAL'; tx = intr.termX; ty = intr.termY - 8; }
@@ -2357,6 +2419,29 @@ function bottleneckAssignee() {
   let max = 0, who = null;
   Object.keys(byA).forEach(name => { if ((byA[name] || 0) > max) { max = byA[name]; who = name; } });
   return who ? `${who} has the heaviest load (${max} tickets).` : 'No assignee breakdown in current snapshot.';
+}
+
+// Guest crew dialog. Used when the player talks to a crew member who is
+// posted in a sector that isn't their own station (e.g. Mel + Cat in HQ
+// alongside Ryujin). Their station-specific dialogue tree lives in their
+// own sector; this is a lightweight "hi, email me" interaction so the
+// player can reach out without leaving the room they're in.
+function openGuestDialog(npc) {
+  const c = CREW_CONTACTS[npc];
+  if (!c) return;
+  const accent = NPC_ACCENT[npc] || '#22d3ee';
+  const choices = [];
+  if (c.email) choices.push({ label: `Email ${c.name} (${c.email})`, kind: 'href', href: 'mailto:' + c.email });
+  choices.push({ label: 'Leave', kind: 'leave', danger: true });
+  openDialogue({
+    speaker: npc,
+    accent,
+    portrait: NPC_PORTRAIT(npc),
+    body: `${c.name} is on station here in the hub. Need their domain panel? Walk over to their station. Otherwise drop them an email.`,
+    choices,
+    choiceIdx: 0,
+    kind: 'guest'
+  });
 }
 
 // Field-ops comms terminal dialog. Renders a dialogue with SMS / Email
