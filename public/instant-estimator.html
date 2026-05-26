@@ -622,6 +622,7 @@ body{
     diamond:  '8c7eaea0-f7b2-4f46-9002-af1fa8f2ec1d'
   };
   let resolvedOfferIds = null;
+  let offerResolvePromise = null;
 
   // PITCH_MULTIPLIERS mirrors quoteEngineV3.js. Used to back-convert the user's
   // roof-area input to house-footprint, since the engine applies the multiplier
@@ -698,19 +699,24 @@ body{
     return 30;
   }
   // Resolve gold/platinum/diamond offer IDs by slug at page load. Cached for
-  // the lifetime of the page; submit handler uses the resolved IDs (or the
-  // hardcoded fallback if the resolve failed).
-  async function resolveOfferIds(){
-    try {
-      const r = await fetch('/api/quote?offers=1', { headers:{ 'x-tenant-id': TENANT }});
-      if (!r.ok) return;
-      const d = await r.json();
-      const ids = {};
-      (d.offers || []).forEach(o => {
-        if (TIER_SLUGS.includes(o.slug)) ids[o.slug] = o.id;
-      });
-      if (ids.gold && ids.platinum && ids.diamond) resolvedOfferIds = ids;
-    } catch(_) { /* swallow; falls back to FALLBACK_OFFER_IDS */ }
+  // the lifetime of the page; submit handler awaits this promise before
+  // building the quote payload so a fast-filling user can't race past the
+  // resolve and hit the stale fallback in a reseeded DB.
+  function resolveOfferIds(){
+    if (offerResolvePromise) return offerResolvePromise;
+    offerResolvePromise = (async () => {
+      try {
+        const r = await fetch('/api/quote?offers=1', { headers:{ 'x-tenant-id': TENANT }});
+        if (!r.ok) return;
+        const d = await r.json();
+        const ids = {};
+        (d.offers || []).forEach(o => {
+          if (TIER_SLUGS.includes(o.slug)) ids[o.slug] = o.id;
+        });
+        if (ids.gold && ids.platinum && ids.diamond) resolvedOfferIds = ids;
+      } catch(_) { /* swallow; falls back to FALLBACK_OFFER_IDS */ }
+    })();
+    return offerResolvePromise;
   }
   resolveOfferIds();
 
@@ -902,8 +908,9 @@ body{
       });
     } catch(_) { /* non-blocking */ }
 
-    // Quote
+    // Quote (wait for slug resolution so reseeded DBs don't hit stale fallback)
     try {
+      await resolveOfferIds();
       const resp = await fetch('/api/quote?mode=compare', {
         method:'POST',
         headers:{ 'Content-Type':'application/json', 'x-tenant-id': TENANT },
