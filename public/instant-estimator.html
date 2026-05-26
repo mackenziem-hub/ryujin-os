@@ -908,9 +908,14 @@ body{
       });
     } catch(_) { /* non-blocking */ }
 
-    // Quote (wait for slug resolution so reseeded DBs don't hit stale fallback)
+    // Quote (wait for slug resolution so reseeded DBs don't hit stale fallback).
+    // 4s timeout so a hung offers-fetch doesn't trap the submit forever; if the
+    // race times out we proceed with the hardcoded fallback IDs.
     try {
-      await resolveOfferIds();
+      await Promise.race([
+        resolveOfferIds(),
+        new Promise(r => setTimeout(r, 4000))
+      ]);
       const resp = await fetch('/api/quote?mode=compare', {
         method:'POST',
         headers:{ 'Content-Type':'application/json', 'x-tenant-id': TENANT },
