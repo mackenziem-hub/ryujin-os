@@ -383,7 +383,7 @@ body{
     <div class="form-step active" data-step="1">
       <div class="step-head">
         <h2>How big is your roof?</h2>
-        <p class="help">Pick a quick estimate or type the square footage. We measure precisely on site, this just gets us in the ballpark.</p>
+        <p class="help">Pick the closest quick estimate, or enter roof area (not house footprint). We measure precisely on site, this just gets us in the ballpark.</p>
       </div>
       <div class="field">
         <label>Quick estimate</label>
@@ -610,11 +610,26 @@ body{
   const TENANT = (typeof window !== 'undefined' && window.RYUJIN_TENANT_SLUG) || 'plus-ultra';
   const HST = 0.15;
   const FINANCE_MONTHS = 84;
+  const TIER_SLUGS = ['gold', 'platinum', 'diamond'];
 
-  const OFFER_IDS = {
+  // Fallback offer IDs for plus-ultra prod. If /api/quote?offers=1 fails OR returns
+  // a different set (other tenant, reseeded DB), these still work. They are
+  // refreshed on page load via resolveOfferIds() to avoid the silent-empty-result
+  // failure mode where the offers table is reseeded with new UUIDs.
+  const FALLBACK_OFFER_IDS = {
     gold:     '5e37041e-012d-48cd-a05b-5566468b4994',
     platinum: '99a6042f-20df-407c-b7d8-f38a2dc21a0a',
     diamond:  '8c7eaea0-f7b2-4f46-9002-af1fa8f2ec1d'
+  };
+  let resolvedOfferIds = null;
+
+  // PITCH_MULTIPLIERS mirrors quoteEngineV3.js. Used to back-convert the user's
+  // roof-area input to house-footprint, since the engine applies the multiplier
+  // itself. Without this, a 22.5-SQ roof at 8/12 gets priced as 28 SQ.
+  const PITCH_MULTIPLIERS = {
+    '4/12':1.054,'5/12':1.083,'6/12':1.118,'7/12':1.158,
+    '8/12':1.202,'9/12':1.250,'10/12':1.302,'11/12':1.357,
+    '12/12':1.414,'13/12':1.474,'14/12':1.537
   };
 
   const TIER_META = {
@@ -682,6 +697,36 @@ body{
     if (DISTANCE_BY_CITY[c] != null) return DISTANCE_BY_CITY[c];
     return 30;
   }
+  // Resolve gold/platinum/diamond offer IDs by slug at page load. Cached for
+  // the lifetime of the page; submit handler uses the resolved IDs (or the
+  // hardcoded fallback if the resolve failed).
+  async function resolveOfferIds(){
+    try {
+      const r = await fetch('/api/quote?offers=1', { headers:{ 'x-tenant-id': TENANT }});
+      if (!r.ok) return;
+      const d = await r.json();
+      const ids = {};
+      (d.offers || []).forEach(o => {
+        if (TIER_SLUGS.includes(o.slug)) ids[o.slug] = o.id;
+      });
+      if (ids.gold && ids.platinum && ids.diamond) resolvedOfferIds = ids;
+    } catch(_) { /* swallow; falls back to FALLBACK_OFFER_IDS */ }
+  }
+  resolveOfferIds();
+
+  function activeOfferIds(){
+    const src = resolvedOfferIds || FALLBACK_OFFER_IDS;
+    return [src.gold, src.platinum, src.diamond];
+  }
+
+  // Back-convert roof area (what the user enters / the chips display) to house
+  // footprint (what calculateQuoteV3 expects). Engine then re-applies the same
+  // pitch multiplier internally, getting back the roof area we started with.
+  function toFootprint(roofAreaSqft, pitchStr){
+    const mult = PITCH_MULTIPLIERS[pitchStr] || 1.202;
+    return Math.max(1, Math.round(roofAreaSqft / mult));
+  }
+
   function tierTotal(offer){
     const sum = offer.summary || {};
     const sp = Number(sum.sellingPrice || 0);
@@ -823,9 +868,10 @@ body{
     const originalHTML = btn.innerHTML;
     btn.innerHTML = '<span class="spinner"></span>Calculating…';
 
+    const pitchStr = PITCH_MAP[state.pitch] || '8/12';
     const measurements = {
-      squareFeet: state.sqft,
-      pitch: PITCH_MAP[state.pitch] || '8/12',
+      squareFeet: toFootprint(state.sqft, pitchStr),
+      pitch: pitchStr,
       complexity: state.complexity,
       distanceKM: inferDistance(state.city),
       pipes: 1,
@@ -862,7 +908,7 @@ body{
         method:'POST',
         headers:{ 'Content-Type':'application/json', 'x-tenant-id': TENANT },
         body: JSON.stringify({
-          offer_ids: [OFFER_IDS.gold, OFFER_IDS.platinum, OFFER_IDS.diamond],
+          offer_ids: activeOfferIds(),
           measurements, choices:{}, extras:[]
         })
       });
