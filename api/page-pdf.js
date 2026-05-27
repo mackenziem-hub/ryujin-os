@@ -16,7 +16,14 @@ const RYUJIN_BASE = (process.env.RYUJIN_PUBLIC_URL || 'https://ryujin-os.vercel.
 // Whitelist of allowed page slugs (basename of file under /public/).
 // Add entries here as new static rejuvenation / custom proposal pages are created.
 const ALLOWED_SLUGS = new Set([
-  'ranch-road-rejuvenation'
+  'ranch-road-rejuvenation',
+  'rejuvenation-template',
+  'tara-court-proposal',
+  'tara-court-aphl',
+  'proposal-715-rt-11',
+  'lefurgey-gutter-proposal',
+  'nanoseal-partnership',
+  'handbook-outside-sales'
 ]);
 
 export default async function handler(req, res) {
