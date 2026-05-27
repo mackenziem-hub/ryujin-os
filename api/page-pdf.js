@@ -22,7 +22,6 @@ const ALLOWED_SLUGS = new Set([
   'tara-court-aphl',
   'proposal-715-rt-11',
   'lefurgey-gutter-proposal',
-  'commercial-proposal',
   'nanoseal-partnership',
   'handbook-outside-sales'
 ]);
