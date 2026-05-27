@@ -544,8 +544,13 @@ async function sendQuestion(tenantId, sub, body) {
   const { error: insErr } = await supabaseAdmin.from('messages').insert(inserts);
   if (insErr) return { error: insErr.message, status: 500 };
 
-  // Best-effort Gmail alert in parallel — don't block the response if any fail.
-  Promise.allSettled(recipients.map(r => {
+  // Gmail alert in parallel. MUST be awaited — on Vercel serverless the
+  // runtime terminates the process when the response is sent, so an
+  // un-awaited fire-and-forget Promise.allSettled gets killed mid-flight
+  // and the email never goes out (silent failure observed 2026-05-27 with
+  // Ryan's "We need more valleys" materials question — DB row landed,
+  // Mac's Gmail never received the alert).
+  await Promise.allSettled(recipients.map(r => {
     if (!r.email) return Promise.resolve();
     const body = [
       message,
@@ -558,7 +563,7 @@ async function sendQuestion(tenantId, sub, body) {
       `Reply in /messages.html to keep the thread.`
     ].filter(Boolean).join('\n');
     return gmailSend(r.email, subject, body);
-  })).catch(() => {});
+  }));
 
   return {
     sent_to: recipients.map(r => ({ name: r.name, role: r.role })),
