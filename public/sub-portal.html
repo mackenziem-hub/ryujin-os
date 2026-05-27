@@ -49,6 +49,13 @@ body{padding-bottom:90px}
 .who{text-align:right;min-width:0}
 .who .name{font-weight:600;font-size:14px;line-height:1.2}
 .who .meta{font-size:12px;color:var(--ink-2);line-height:1.2;margin-top:1px}
+.top-right{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.install-btn{display:none;padding:7px 11px;border-radius:8px;background:var(--accent);color:#fff;border:none;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0;min-height:32px;align-items:center;gap:5px;letter-spacing:0.2px}
+.install-btn:active{opacity:0.85}
+.install-btn.on{display:inline-flex}
+.install-btn svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.install-btn .label-full{display:none}
+@media (min-width:420px){.install-btn .label-full{display:inline}.install-btn .label-short{display:none}}
 
 /* Headings */
 h1{font-size:20px;font-weight:700;letter-spacing:-0.2px;margin:14px 4px 10px}
@@ -284,7 +291,33 @@ textarea{min-height:90px;resize:vertical}
         <div class="sub" id="brandSub">Crew Portal</div>
       </div>
     </div>
-    <div class="who" id="who"><div class="name"><span class="spin"></span></div></div>
+    <div class="top-right">
+      <button class="install-btn" id="installBtn" title="Save to home screen">
+        <svg viewBox="0 0 24 24"><path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><path d="M5 21h14"/></svg>
+        <span class="label-full">Save to phone</span>
+        <span class="label-short">Install</span>
+      </button>
+      <div class="who" id="who"><div class="name"><span class="spin"></span></div></div>
+    </div>
+  </div>
+
+  <!-- iOS install instructions modal -->
+  <div class="modal-bg" id="iosInstallModal">
+    <div class="modal">
+      <div class="modal-head">
+        <h3>Save to your phone</h3>
+        <button class="modal-close" onclick="document.getElementById('iosInstallModal').classList.remove('open')">Done</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:14px;color:var(--ink-2);margin-bottom:10px">To add this app to your home screen:</p>
+        <ol style="padding-left:22px;font-size:14px;color:var(--ink-2);line-height:1.7;margin-bottom:10px">
+          <li>Tap the <strong>Share</strong> button at the bottom of Safari</li>
+          <li>Scroll and tap <strong>Add to Home Screen</strong></li>
+          <li>Tap <strong>Add</strong> in the top corner</li>
+        </ol>
+        <p style="font-size:13px;color:var(--ink-3)">It will open from your home screen like an app.</p>
+      </div>
+    </div>
   </div>
 
   <div id="errBox" class="alert red hide"><div class="ico">⚠</div><div id="errMsg"></div></div>
@@ -1534,6 +1567,39 @@ document.addEventListener('click', (e) => {
     closeModal(e.target.id);
   }
 });
+
+// PWA install button (Save to home screen)
+(function(){
+  let deferred = null;
+  const btn = document.getElementById('installBtn');
+  if (!btn) return;
+  const isIos = () => /iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+  const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches
+    || window.navigator.standalone === true;
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferred = e;
+    if (!isStandalone()) btn.classList.add('on');
+  });
+  window.addEventListener('appinstalled', () => {
+    btn.classList.remove('on');
+    deferred = null;
+  });
+  btn.addEventListener('click', async () => {
+    if (deferred) {
+      deferred.prompt();
+      await deferred.userChoice;
+      deferred = null;
+      btn.classList.remove('on');
+      return;
+    }
+    if (isIos()) {
+      document.getElementById('iosInstallModal').classList.add('open');
+    }
+  });
+  if (isIos() && !isStandalone()) btn.classList.add('on');
+})();
 
 boot();
 </script>

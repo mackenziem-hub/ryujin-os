@@ -5,6 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#0b1d3a">
 <title>Plus Ultra · Pay Sheet</title>
+<link rel="manifest" href="/paysheet-manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="PU Pay Sheet">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='38' fill='%230b1d3a'/%3E%3Ctext x='90' y='120' text-anchor='middle' font-family='Inter,Arial' font-weight='900' font-size='80' fill='%23ffffff'%3EPU%3C/text%3E%3C/svg%3E">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -34,9 +39,14 @@ body { padding-bottom: 100px }
 
 /* Top bar */
 .top { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 14px; box-shadow: var(--shadow) }
+.top-id { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1 }
 .logo { width: 40px; height: 40px; border-radius: 10px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 16px; flex-shrink: 0 }
 .title { font-weight: 700; font-size: 16px; line-height: 1.2 }
 .subtitle { font-size: 12px; color: var(--ink-2); line-height: 1.2; margin-top: 2px }
+.install-btn { display: none; padding: 8px 12px; border-radius: 8px; background: var(--accent); color: #fff; border: none; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; flex-shrink: 0; min-height: 36px; align-items: center; gap: 6px }
+.install-btn:active { opacity: 0.85 }
+.install-btn.on { display: inline-flex }
+.install-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round }
 
 /* Hero */
 .hero { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow); margin-bottom: 14px }
@@ -115,10 +125,33 @@ body { padding-bottom: 100px }
 <div class="wrap">
 
 <div class="top">
-  <div class="logo">PU</div>
-  <div>
-    <div class="title">Plus Ultra Roofing</div>
-    <div class="subtitle">Sub Pay Sheet — Acceptance</div>
+  <div class="top-id">
+    <div class="logo">PU</div>
+    <div>
+      <div class="title">Plus Ultra Roofing</div>
+      <div class="subtitle">Sub Pay Sheet</div>
+    </div>
+  </div>
+  <button class="install-btn" id="installBtn" title="Save to home screen">
+    <svg viewBox="0 0 24 24"><path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><path d="M5 21h14"/></svg>
+    <span>Save to phone</span>
+  </button>
+</div>
+
+<!-- iOS install instructions modal -->
+<div class="modal-bg" id="iosInstallModal">
+  <div class="modal">
+    <h3>Save to your phone</h3>
+    <p>To add this pay sheet to your home screen:</p>
+    <ol style="padding-left: 22px; margin-bottom: 14px; font-size: 14px; color: var(--ink-2); line-height: 1.7">
+      <li>Tap the <strong>Share</strong> button at the bottom of your browser</li>
+      <li>Scroll and tap <strong>Add to Home Screen</strong></li>
+      <li>Tap <strong>Add</strong> in the top corner</li>
+    </ol>
+    <p style="font-size: 13px; color: var(--ink-3)">Once added, you can open this pay sheet from your home screen like an app.</p>
+    <div class="modal-actions">
+      <button class="btn btn-accept" id="iosInstallClose" style="flex:1">Got it</button>
+    </div>
   </div>
 </div>
 
@@ -161,9 +194,62 @@ body { padding-bottom: 100px }
 
 <script>
 const params = new URLSearchParams(location.search);
-const TOKEN = params.get('token');
+const urlToken = params.get('token');
+const TOKEN_KEY = 'pu.paysheet.token';
+// Persist token to localStorage on first visit so PWA launches (which have no
+// query string) can load the same paysheet. URL token always wins if present.
+if (urlToken) {
+  try { localStorage.setItem(TOKEN_KEY, urlToken); } catch (_) {}
+}
+let storedToken = null;
+try { storedToken = localStorage.getItem(TOKEN_KEY); } catch (_) {}
+const TOKEN = urlToken || storedToken;
 const app = document.getElementById('app');
 const decisionBar = document.getElementById('decisionBar');
+
+// PWA install handling
+let deferredInstallPrompt = null;
+const installBtn = document.getElementById('installBtn');
+const iosInstallModal = document.getElementById('iosInstallModal');
+const iosInstallClose = document.getElementById('iosInstallClose');
+
+function isIos() {
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+}
+function isStandalone() {
+  return window.matchMedia('(display-mode: standalone)').matches
+    || window.navigator.standalone === true;
+}
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  if (!isStandalone()) installBtn.classList.add('on');
+});
+
+window.addEventListener('appinstalled', () => {
+  installBtn.classList.remove('on');
+  deferredInstallPrompt = null;
+});
+
+installBtn.addEventListener('click', async () => {
+  if (deferredInstallPrompt) {
+    deferredInstallPrompt.prompt();
+    await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt = null;
+    installBtn.classList.remove('on');
+    return;
+  }
+  if (isIos()) {
+    iosInstallModal.classList.add('open');
+  }
+});
+iosInstallClose.addEventListener('click', () => iosInstallModal.classList.remove('open'));
+
+// iOS does not fire beforeinstallprompt — surface the button manually if not already installed.
+if (isIos() && !isStandalone()) {
+  installBtn.classList.add('on');
+}
 
 function fmtMoney(n) {
   const v = Number(n);

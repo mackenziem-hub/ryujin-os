@@ -4,8 +4,56 @@
 //
 // No auth header required. The sub_acceptance_token is the authentication.
 // Reads paysheet directly from DB (requires migration 035 applied first).
+//
+// Sanitization: scope_notes and labour_breakdown[].note are admin-authored
+// internal commentary that has historically leaked customer retail subtotals,
+// sales rep commission percentages, deposit amounts, and internal section
+// references. These are stripped here before the payload reaches the sub.
 
 import { supabaseAdmin } from '../lib/supabase.js';
+
+const INTERNAL_NOTE_PATTERNS = [
+  /commission/i,
+  /\bdarcy\b/i,
+  /signed\s+subtotal/i,
+  /customer\s+retail/i,
+  /customer\s+deposit/i,
+  /\bdeposit\s+\$/i,
+  /NOT\s+APPLIED/i,
+  /tracked\s+on\s+estimate/i,
+  /reinstated|terminated/i,
+  /Mac\s+judgment/i,
+  /SUBCONTRACTOR_RATE_SHEET/i,
+  /GHL\s+inv/i,
+  /Sub\s+payout/i,
+];
+
+function isInternalLine(line) {
+  if (line == null) return false;
+  const s = String(line);
+  return INTERNAL_NOTE_PATTERNS.some((re) => re.test(s));
+}
+
+function stripInternalNote(arr) {
+  if (!Array.isArray(arr)) return arr;
+  return arr.map((row) => {
+    if (!row || typeof row !== 'object') return row;
+    const { note, ...rest } = row;
+    return rest;
+  });
+}
+
+function sanitizeForSub(paysheet) {
+  return {
+    ...paysheet,
+    scope_notes: Array.isArray(paysheet.scope_notes)
+      ? paysheet.scope_notes.filter((n) => !isInternalLine(n))
+      : paysheet.scope_notes,
+    labour_breakdown: stripInternalNote(paysheet.labour_breakdown),
+    add_ons: stripInternalNote(paysheet.add_ons),
+    surcharges: stripInternalNote(paysheet.surcharges),
+  };
+}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -47,5 +95,5 @@ export default async function handler(req, res) {
   }
 
   res.setHeader('Cache-Control', 'no-store');
-  return res.status(200).json(data);
+  return res.status(200).json(sanitizeForSub(data));
 }
