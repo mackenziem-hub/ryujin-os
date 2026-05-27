@@ -112,7 +112,9 @@ async function getPhotos(tenantId, woId, subId) {
     if (p.is_cover) return true;
     const cap = (p.caption || '').toLowerCase();
     const cat = (p.category || '').toLowerCase();
-    if (!cap && !cat) return true; // fully uncaptioned: include
+    // Captionless photos always pass -- includes the default `general`
+    // category from the migration and field uploads that skip caption.
+    if (!cap) return true;
     if (['cover', 'before', 'drone', 'eagleview', 'site', 'damage', 'inspection'].includes(cap)) return true;
     if (['cover', 'before', 'drone', 'eagleview', 'site', 'damage', 'inspection'].includes(cat)) return true;
     if (cap.includes('street') || cat.includes('street')) return true;
