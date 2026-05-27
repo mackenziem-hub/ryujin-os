@@ -1932,7 +1932,9 @@ function renderWorld() {
       class: 'map-building' + (sec.tall ? ' tall' : '') + (lvl === 'alert' ? ' alert' : lvl === 'warn' ? ' warn' : ''),
       'data-sector': sec.id,
       style: { left: sec.x + '%', top: sec.y + '%', backgroundImage: `url('${sec.sprite}')` },
-      onclick: () => { state.focusedSector = i; sfxStep(); /* No more click-to-enter — walk near + SPACE/Enter is the only entry path. */ }
+      /* No click handler — walk near + SPACE/Enter is the only entry path.
+         Click previously also mutated state.focusedSector which let a stray
+         click on a distant building hijack the next SPACE press (codex P2). */
     }, [
       el('div', { class: 'b-label', text: sec.id })
     ]);
@@ -2366,12 +2368,14 @@ function updateInterior(dtMs) {
       n.classList.toggle('near', !!nearName && n.dataset.targetName === nearName);
     });
     // Toggle .near on the active tool hotspot so it visually confirms the
-    // player is in range. Cheaper than a per-tick toggle across all tools.
+    // player is in range. Update _activeToolIdx FIRST so the toggle reads the
+    // fresh value on the same transition that flipped target -> tool (codex
+    // P3 — otherwise the highlight stays off until the next state change).
+    state._activeToolIdx = (target === 'tool') ? (intr.sec.tools || []).indexOf(state.nearTool) : -1;
     document.querySelectorAll('.tool-zone').forEach(n => {
       const idx = parseInt(n.dataset.idx || '-1', 10);
       n.classList.toggle('near', target === 'tool' && idx === state._activeToolIdx);
     });
-    state._activeToolIdx = (target === 'tool') ? (intr.sec.tools || []).indexOf(state.nearTool) : -1;
   }
   // NPC mirrors to face the player when they pass on the left/right side.
   // Small but recognizable touch — the god turns to greet you.
