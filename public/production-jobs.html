@@ -70,6 +70,9 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
 .row.complete .date{color:#4ade80}
 .row.complete .total{color:#4ade80}
 
+.row .dq{display:flex;gap:4px;flex-wrap:wrap;margin-top:5px}
+.dq-chip{font-family:'Share Tech Mono',monospace;font-size:0.62em;padding:2px 7px;border-radius:4px;background:rgba(248,113,113,0.14);color:#f87171;border:1px solid rgba(248,113,113,0.32);letter-spacing:1px;font-weight:700;text-transform:uppercase;line-height:1.4}
+
 @media (max-width:720px){
   .row{flex-wrap:wrap;gap:10px}
   .row .date{flex:0 0 100%;font-size:0.68em}
@@ -164,6 +167,17 @@ function dateLabel(w, bucket){
   return prefix + ' · ' + dateStr;
 }
 
+// Surface data gaps that block install — color, SQ, scope. Only flag for
+// jobs not yet complete; completed jobs in the archive shouldn't nag.
+function dqIssues(w){
+  if (w.status === 'complete' || w.completed_at) return [];
+  const out = [];
+  if (!w.shingle_color) out.push('NO COLOR');
+  if (w.total_sq == null || Number(w.total_sq) === 0) out.push('NO SQ');
+  if (!Array.isArray(w.scope_items) || w.scope_items.length === 0) out.push('NO SCOPE');
+  return out;
+}
+
 function rowHtml(w, bucket){
   const href = w.estimate?.share_token
     ? 'job.html?share=' + encodeURIComponent(w.estimate.share_token)
@@ -180,12 +194,17 @@ function rowHtml(w, bucket){
   // sub-pay (labor), not the customer contract amount, so we leave the cell
   // blank for issued jobs that have not been locked yet.
   const total = w.estimate?.final_accepted_total ?? null;
+  const issues = dqIssues(w);
+  const dqHtml = issues.length
+    ? `<div class="dq">${issues.map(i => `<span class="dq-chip">${esc(i)}</span>`).join('')}</div>`
+    : '';
   return `
     <a href="${href}" class="row ${cls}" data-search="${esc((w.customer_name || '') + ' ' + (w.address || '') + ' ' + woLabel).toLowerCase()}">
       <div class="date">${esc(dateLabel(w, bucket))}<br><span style="opacity:0.6">${esc(woLabel)}</span></div>
       <div class="main">
         <div class="cust">${esc(w.customer_name || '(no name)')}</div>
         <div class="addr">${esc(w.address || '')}</div>
+        ${dqHtml}
       </div>
       <div class="meta">
         <div class="tier">${tierLabel}${esc((w.status || 'draft').replace('_',' ').toUpperCase())}</div>
@@ -204,7 +223,9 @@ function bucketize(workorders){
   const pending = [];
   const completed = [];
   (workorders || []).forEach(w => {
-    if (w.status === 'complete') {
+    // completed_at presence is authoritative — the closeout flow stamps it
+    // without always flipping status to 'complete' (see WO-18 / WO-15 history).
+    if (w.status === 'complete' || w.completed_at) {
       completed.push(w);
     } else if (w.status === 'in_progress') {
       active.push(w);
