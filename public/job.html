@@ -592,16 +592,22 @@ function render({ customer, estimates, workorders, paysheets, photos, roster, pu
   // estimate's values when the WO doesn't carry them. Warns when edge LF
   // measurements are missing -- silent fallback to sqrt(sqft) shipped wrong orders.
   // POs (if present) render below the engine list as the authoritative ordered qty.
-  const matsRef = activeWo || (primaryEst ? {
-    total_sq: primaryEst.roof_area_sqft ? primaryEst.roof_area_sqft / 100 : 0,
-    package_tier: primaryEst.selected_package,
-    eaves_lf: primaryEst.eaves_lf, rakes_lf: primaryEst.rakes_lf,
-    ridges_lf: primaryEst.ridges_lf, hips_lf: primaryEst.hips_lf,
-    valleys_lf: primaryEst.valleys_lf, walls_lf: primaryEst.walls_lf,
-    pipes: primaryEst.pipes, chimneys: primaryEst.chimneys,
-    osb_sheets: primaryEst.osb_sheets, complexity: primaryEst.complexity,
-    estimate: primaryEst,
-  } : null);
+  // RyMaterials.computeMaterials reads measurements off the WO first, then
+  // falls back to wo.estimate.* fields. Always attach primaryEst when we have
+  // it so a WO with blank edges still pulls eaves/rakes/valleys from the
+  // signed estimate instead of triggering the measurements-missing warning.
+  const matsRef = activeWo
+    ? { ...activeWo, estimate: primaryEst || activeWo.estimate || null }
+    : (primaryEst ? {
+        total_sq: primaryEst.roof_area_sqft ? primaryEst.roof_area_sqft / 100 : 0,
+        package_tier: primaryEst.selected_package,
+        eaves_lf: primaryEst.eaves_lf, rakes_lf: primaryEst.rakes_lf,
+        ridges_lf: primaryEst.ridges_lf, hips_lf: primaryEst.hips_lf,
+        valleys_lf: primaryEst.valleys_lf, walls_lf: primaryEst.walls_lf,
+        pipes: primaryEst.pipes, chimneys: primaryEst.chimneys,
+        osb_sheets: primaryEst.osb_sheets, complexity: primaryEst.complexity,
+        estimate: primaryEst,
+      } : null);
   const mats = (matsRef && window.RyMaterials) ? window.RyMaterials.computeMaterials(matsRef) : null;
   const matCategories = mats ? {
     'Shingles & Cap':           [mats.shingles, mats.ridgeCap, mats.starter].filter(Boolean),
