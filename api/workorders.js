@@ -161,7 +161,7 @@ async function handler(req, res) {
 
     let query = supabaseAdmin
       .from('workorders')
-      .select('*, estimate:estimates(estimate_number,share_token,complexity,final_accepted_total), paysheet:paysheets(job_id,status,total)', { count: 'exact' })
+      .select('*, estimate:estimates(estimate_number,share_token,complexity,final_accepted_total), paysheet:paysheets(job_id,status)', { count: 'exact' })
       .eq('tenant_id', tenantId)
       .order('start_date', { ascending: true, nullsFirst: false })
       .order('created_at', { ascending: false })
