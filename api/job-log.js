@@ -185,10 +185,28 @@ async function handler(req, res) {
   if (req.method === 'DELETE') {
     const { id } = req.query;
     if (!id) return res.status(400).json({ error: 'id required' });
+
+    // Fetch the entry's photos so we can also clean up any estimate_photos
+    // rows the sub-portal upload bridge inserted. The bridge writes the
+    // same blob URL into both tables (no FK), so URL match is the link.
+    // Best-effort: a delete failure on the gallery side shouldn't block
+    // the primary job_log_entries delete.
+    const { data: entry } = await supabaseAdmin
+      .from('job_log_entries').select('photos')
+      .eq('tenant_id', tenantId).eq('id', id).maybeSingle();
+    const photoUrls = Array.isArray(entry?.photos) ? entry.photos.filter(u => typeof u === 'string' && u) : [];
+
     const { error } = await supabaseAdmin
       .from('job_log_entries').delete()
       .eq('tenant_id', tenantId).eq('id', id);
     if (error) return res.status(500).json({ error: error.message });
+
+    if (photoUrls.length) {
+      const { error: gErr } = await supabaseAdmin
+        .from('estimate_photos').delete().in('url', photoUrls);
+      if (gErr) console.warn('[job-log] gallery cleanup failed', gErr.message);
+    }
+
     return res.status(204).end();
   }
 
