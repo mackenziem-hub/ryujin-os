@@ -24,10 +24,16 @@ import crypto from 'node:crypto';
 // 2026-05-25: AJ removed from all topics. Mac handles every category himself
 // after the AJ trust gap (see feedback_aj_not_billable_supervisor). All
 // non-emergency / low-priority requests route to Mac's email.
+// Materials topic also notifies AJ (Arielle) so she sees supply/delivery
+// asks alongside Mac. Added 2026-05-27 after Ryan's "need more valleys"
+// request highlighted that office staff should see these without waiting
+// for Mac to relay. Match by name (ilike substring) so the user record's
+// display name "AJ" matches; if it's later renamed to "Arielle", the
+// 'arielle' pattern picks it up.
 const QUESTION_ROUTING = {
   schedule:  { match_names: [], match_roles: ['owner'], label: 'Mac' },
   scope:     { match_names: [], match_roles: ['owner'], label: 'Mac' },
-  materials: { match_names: [], match_roles: ['owner'], label: 'Mac' },
+  materials: { match_names: ['aj', 'arielle'], match_roles: ['owner'], label: 'Mac' },
   pay:       { match_names: [], match_roles: ['owner'], label: 'Mac' },
   other:     { match_names: [], match_roles: ['owner'], label: 'Mac' }
 };
