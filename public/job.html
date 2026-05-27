@@ -1030,13 +1030,13 @@ function showUploadErrorBanner(errors, totalFiles, failed) {
 console.log('[job.html] version 2026-05-25-uploadfix-v4-downscale loaded');
 
 // Vercel serverless caps request body at 4.5MB. Modern phone JPEGs often
-// exceed that. Downscale to maxDim 2400px @ JPEG 0.85 client-side before
-// upload — keeps detail for site photos, brings 5MB files under 1MB.
+// exceed that. Downscale photo formats (JPEG) to maxDim 2400px @ JPEG 0.85
+// client-side — keeps detail for site photos, brings 5MB files under 1MB.
 // createImageBitmap honors EXIF orientation. HEIC/HEIF can't decode in
-// canvas, sent as-is (rare for site photos).
+// canvas, sent as-is. PNG/GIF/WebP/SVG pass through unchanged so we don't
+// flatten transparency or strip animation by recompressing to JPEG.
 async function downscaleImage(file, maxDim = 2400, quality = 0.85) {
-  if (!file.type.startsWith('image/')) return file;
-  if (/heic|heif/i.test(file.type)) return file;
+  if (file.type !== 'image/jpeg' && file.type !== 'image/jpg') return file;
   try {
     const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
     const ratio = Math.min(1, maxDim / Math.max(bmp.width, bmp.height));
