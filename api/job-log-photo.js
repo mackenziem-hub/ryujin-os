@@ -37,16 +37,38 @@ async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
-  const { files, fields } = await parse(req);
+  let parsed;
+  try {
+    parsed = await parse(req);
+  } catch (e) {
+    console.error('[job-log-photo] busboy parse failed', e?.message || e);
+    return res.status(400).json({ error: 'Could not read upload. Try again.', detail: String(e?.message || e).slice(0, 200) });
+  }
+  const { files, fields } = parsed;
   if (!files.length) return res.status(400).json({ error: 'No file' });
   const f = files[0];
   if (!OK.has(f.mimeType)) return res.status(400).json({ error: 'Unsupported type: ' + f.mimeType });
+  if (!f.buffer || f.buffer.length === 0) return res.status(400).json({ error: 'Empty file' });
 
-  const wo = fields.workorder_id || 'misc';
-  const safe = (f.fileName || 'photo').replace(/[^a-zA-Z0-9._-]/g, '_');
+  // Sanitize the workorder_id segment so an unexpected value can't produce a
+  // blob key with chars Vercel Blob's URL constructor rejects (Safari then
+  // surfaces the underlying TypeError as "The string did not match the
+  // expected pattern" with no actionable detail).
+  const woRaw = fields.workorder_id || 'misc';
+  const wo = String(woRaw).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 64) || 'misc';
+  const safe = (f.fileName || 'photo').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80) || 'photo';
   const key = `job-log/${req.tenant.slug}/${wo}/${Date.now()}-${safe}`;
 
-  const blob = await put(key, f.buffer, { access: 'public', contentType: f.mimeType });
+  let blob;
+  try {
+    blob = await put(key, f.buffer, { access: 'public', contentType: f.mimeType });
+  } catch (e) {
+    console.error('[job-log-photo] blob put failed', { key, mime: f.mimeType, size: f.buffer.length, err: e?.message || e });
+    return res.status(502).json({
+      error: 'Storage upload failed. Try again or text Mac.',
+      detail: String(e?.message || e).slice(0, 200)
+    });
+  }
 
   // Bridge to estimate_photos so the upload shows in job.html PHOTOS section.
   // Auth: caller must present a valid sub-portal magic-link token AND the

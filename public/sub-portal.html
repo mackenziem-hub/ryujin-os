@@ -444,6 +444,35 @@ async function api(path, opts){
   return body;
 }
 
+// Resize + re-encode large iPhone/Android photos as JPEG before upload.
+// iPhone HEIC and Pro-model photos routinely hit the 15MB server limit and
+// fail with opaque Safari errors. Browser-native canvas pipeline downsizes
+// to MAX_DIM and re-encodes as JPEG. If anything goes sideways (rare codec
+// failure, decoder error), fall back to the original file.
+const PHOTO_MAX_DIM = 2048;
+const PHOTO_JPEG_Q = 0.85;
+async function compressImage(file){
+  if (!file || !file.type || !file.type.startsWith('image/')) return file;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const w0 = bitmap.width, h0 = bitmap.height;
+    const scale = Math.min(1, PHOTO_MAX_DIM / Math.max(w0, h0));
+    const w = Math.round(w0 * scale);
+    const h = Math.round(h0 * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+    bitmap.close && bitmap.close();
+    const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', PHOTO_JPEG_Q));
+    if (!blob) return file;
+    const baseName = (file.name || 'photo').replace(/\.[^.]+$/, '') || 'photo';
+    return new File([blob], baseName + '.jpg', { type: 'image/jpeg' });
+  } catch (e) {
+    console.warn('compressImage fell back to original', e);
+    return file;
+  }
+}
+
 function applyBranding(branding){
   if (!branding) return;
   STATE.branding = branding;
@@ -1205,20 +1234,21 @@ async function uploadAndLogOne(file, stageLabel, caption, feed){
   feed.prepend(slot);
 
   try {
-    // 2. Upload the blob. token + stage_label + caption travel to the server
+    // 2. Compress + upload. token + stage_label + caption travel to the server
     // so the estimate_photos gallery bridge can verify the sub and label the
     // gallery row (e.g. "[Tear-off]"). Token gates the bridge — without it
     // the upload still succeeds but skips the gallery insert.
+    const compressed = await compressImage(file);
     const fd = new FormData();
-    fd.append('file', file);
+    fd.append('file', compressed, compressed.name || 'photo.jpg');
     fd.append('workorder_id', STATE.currentWoId);
     fd.append('stage_label', stageLabel);
     if (caption) fd.append('caption', caption);
     const portalToken = localStorage.getItem('ry_sub_token');
     if (portalToken) fd.append('token', portalToken);
     const r = await fetch(`/api/job-log-photo?tenant=${TENANT}`, { method:'POST', headers:{'x-tenant-id':TENANT}, body: fd });
-    const body = await r.json();
-    if (!r.ok) throw new Error(body.error || 'Upload failed');
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
 
     // 3. Create the job_log entry (one per photo → deletable individually).
     // Audit: credit the actual person — parent sub OR a specific crew member.
@@ -1390,15 +1420,16 @@ async function handleLogPhotos(ev){
   const portalToken = localStorage.getItem('ry_sub_token');
   for (const file of files){
     try {
+      const compressed = await compressImage(file);
       const fd = new FormData();
-      fd.append('file', file);
+      fd.append('file', compressed, compressed.name || 'photo.jpg');
       fd.append('workorder_id', STATE.currentWoId);
       if (portalToken) fd.append('token', portalToken);
       const r = await fetch(`/api/job-log-photo?tenant=${TENANT}`, { method:'POST', headers:{'x-tenant-id':TENANT}, body: fd });
-      const body = await r.json();
-      if (!r.ok) throw new Error(body.error);
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
       STATE.pendingPhotos.push(body.url);
-    } catch (e) { toast('Upload failed: ' + e.message, 'err') }
+    } catch (e) { toast('Upload failed: ' + (e?.message || 'unknown'), 'err') }
   }
   prev.innerHTML = STATE.pendingPhotos.length
     ? `<div style="display:flex;gap:6px;flex-wrap:wrap">${STATE.pendingPhotos.map(u => `<img src="${esc(u)}" style="width:60px;height:60px;object-fit:cover;border-radius:6px;border:1px solid var(--line)">`).join('')}</div>`
