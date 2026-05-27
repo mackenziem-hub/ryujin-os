@@ -98,10 +98,58 @@ async function handler(req, res) {
     tix.data = [];
   }
 
+  // Workorders with start_date in the window. In practice this is the source
+  // of truth for upcoming installs — estimates.scheduled_at is sparsely
+  // populated (most jobs get scheduled by issuing the WO, not by stamping
+  // the estimate). Without this query, /api/schedule misses every active
+  // install and shows only whichever stale estimate happens to have an
+  // un-cleared scheduled_at in range.
+  const wos = await supabaseAdmin
+    .from('workorders')
+    .select(`
+      id, wo_number, start_date, estimated_duration_days, status, customer_name, address, phone,
+      sub_crew_lead, total_sq, linked_estimate_id,
+      estimate:estimates!workorders_linked_estimate_id_fkey(
+        id, estimate_number, final_accepted_total, deposit_amount,
+        customer:customers(full_name, phone, address),
+        projects(id, share_token, status, progress_pct, started_at, scheduled_end, crew_members,
+                 crew_lead:users!projects_crew_lead_id_fkey(id, name, avatar_url))
+      )
+    `)
+    .eq('tenant_id', req.tenant.id)
+    .not('start_date', 'is', null)
+    .not('status', 'in', '("complete","cancelled")')
+    .gte('start_date', todayDay)
+    .lte('start_date', horizonDay)
+    .order('start_date', { ascending: true })
+    .limit(120);
+
+  if (wos.error) {
+    console.error('[schedule] workorders query failed (non-fatal):', wos.error.message);
+    wos.data = [];
+  }
+
+  // Merge workorder-linked project crew_member ids into the lookup set so
+  // crew avatars resolve for WO-driven installs the same way they do for
+  // estimate-driven ones.
+  for (const w of wos.data || []) {
+    for (const p of (w.estimate?.projects || [])) {
+      for (const uid of (p.crew_members || [])) allCrewIds.add(uid);
+    }
+  }
+  if (allCrewIds.size > 0) {
+    const cr2 = await supabaseAdmin
+      .from('users')
+      .select('id, name, avatar_url')
+      .in('id', [...allCrewIds]);
+    for (const u of (cr2.data || [])) crewById[u.id] = u;
+  }
+
   // Photo count per project, single round-trip for the whole window.
-  const projectIds = (ests.data || [])
-    .flatMap(e => (e.projects || []).map(p => p.id))
-    .filter(Boolean);
+  const projectIds = [
+    ...(ests.data || []).flatMap(e => (e.projects || []).map(p => p.id)),
+    ...(wos.data || []).flatMap(w => (w.estimate?.projects || []).map(p => p.id)),
+  ].filter(Boolean);
   const photoCountByProject = {};
   if (projectIds.length > 0) {
     const pc = await supabaseAdmin
@@ -163,6 +211,48 @@ async function handler(req, res) {
     jobs.push(install);
   }
 
+  // Dedupe: if an estimate with scheduled_at already covered a project, skip
+  // the workorder row for the same project so the install only renders once.
+  const seenProjectIds = new Set(jobs.map(j => j.project_id).filter(Boolean));
+
+  for (const w of wos.data || []) {
+    const key = (w.start_date || '').slice(0, 10);
+    if (!byDay.has(key)) continue;
+    const linkedProject = (w.estimate?.projects && w.estimate.projects[0]) || null;
+    if (linkedProject?.id && seenProjectIds.has(linkedProject.id)) continue;
+    const crewIds = linkedProject?.crew_members || [];
+    let crew = crewIds.map(id => crewById[id]).filter(Boolean);
+    if (crew.length === 0 && linkedProject?.crew_lead) crew = [linkedProject.crew_lead];
+    const wInstall = {
+      id: w.estimate?.id || w.id,
+      label: w.estimate?.customer?.full_name || w.customer_name || 'Unnamed customer',
+      ref: w.wo_number ? `WO-${w.wo_number}` : (w.estimate?.estimate_number || `wo-${w.id.slice(0, 6)}`),
+      state: w.status || null,
+      address: w.estimate?.customer?.address || w.address || null,
+      phone: w.estimate?.customer?.phone || w.phone || null,
+      value: w.estimate?.final_accepted_total || w.estimate?.deposit_amount || null,
+      time: '',  // workorders are date-only, not timestamped
+      scheduled_at: w.start_date,
+      project_id: linkedProject?.id || null,
+      share_token: linkedProject?.share_token || null,
+      project_status: linkedProject?.status || null,
+      live: (linkedProject?.status || '').toLowerCase() === 'active',
+      progress_pct: linkedProject?.progress_pct ?? null,
+      started_at: linkedProject?.started_at || null,
+      scheduled_end: linkedProject?.scheduled_end || null,
+      crew_lead: linkedProject?.crew_lead || null,
+      crew,
+      photo_count: linkedProject ? (photoCountByProject[linkedProject.id] || 0) : 0,
+      wo_number: w.wo_number || null,
+      sub_crew_lead: w.sub_crew_lead || null,
+      total_sq: w.total_sq || null,
+      duration_days: w.estimated_duration_days || null,
+    };
+    byDay.get(key).installs.push(wInstall);
+    jobs.push(wInstall);
+    if (linkedProject?.id) seenProjectIds.add(linkedProject.id);
+  }
+
   for (const t of tix.data || []) {
     const key = (t.scheduled_at || '').slice(0, 10);
     if (!byDay.has(key)) continue;
@@ -181,7 +271,7 @@ async function handler(req, res) {
     generated_at: new Date().toISOString(),
     days: [...byDay.values()],
     jobs,                                          // flat list for the mobile dispatch surface
-    total_installs: (ests.data || []).length,
+    total_installs: jobs.length,
     total_service: (tix.data || []).length,
   });
 }
