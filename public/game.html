@@ -287,12 +287,12 @@
      as the character lifting weight, not bouncing whole. */
   .player-avatar {
     position: absolute;
-    width: 7%; aspect-ratio: 1 / 1;       /* overworld size */
+    width: 7%; aspect-ratio: 1 / 1;       /* overworld size — chibi sprite reads cleanly at 7% */
     transform: translate(-50%, -100%);
     background-image: url('/assets/rpg/sprites/crew/mack.webp');  /* default = front */
     background-size: contain; background-position: center bottom; background-repeat: no-repeat;
     image-rendering: pixelated;
-    z-index: 10;
+    z-index: 12;                          /* above the wizard (z-index: 9) so the player is never visually buried */
     pointer-events: none;
     filter: drop-shadow(0 4px 0 rgba(0,0,0,0.55));
     transition: left .14s linear, top .14s linear;
@@ -300,7 +300,7 @@
   /* In a sector interior, the player is the prominent character in the
      room (not a tiny dot on a map). Scaled up so blonde Mac reads as a
      proper FF-style protagonist in the middle of the space. */
-  .sector-room .player-avatar { width: 14%; }
+  .sector-room .player-avatar { width: 8%; }
   .player-avatar.face-up    { background-image: url('/assets/rpg/sprites/crew/mack-back.webp'); }
   .player-avatar.face-down  { background-image: url('/assets/rpg/sprites/crew/mack.webp'); }
   .player-avatar.face-left  { background-image: url('/assets/rpg/sprites/crew/mack-side.webp'); }
@@ -580,6 +580,72 @@
     font-family: 'Press Start 2P', monospace; font-size: 8px;
     color: var(--gold); white-space: nowrap;
     text-shadow: 1px 1px 0 rgba(0,0,0,0.55);
+  }
+  /* Tool hotspot — sector panel that deep-links into the matching
+     command-center surface. Smaller than the terminal so two-to-three
+     can sit on the same wall without crowding. Label is per-tool and
+     pulled from a data-label attribute set at render time. */
+  .tool-zone {
+    position: absolute;
+    width: 6%; height: 7%;
+    transform: translate(-50%, -50%);
+    background: linear-gradient(180deg, rgba(168,216,255,0.30), rgba(168,216,255,0.10));
+    border: 2px solid var(--gold);
+    z-index: 6;
+    cursor: pointer;
+    box-shadow: inset 0 0 0 1px var(--outline);
+  }
+  .tool-zone.near {
+    background: linear-gradient(180deg, rgba(244,201,93,0.45), rgba(244,201,93,0.15));
+    box-shadow: inset 0 0 0 1px var(--outline), 0 0 0 2px #ffffff;
+  }
+  .tool-zone::after {
+    content: attr(data-label); position: absolute; bottom: -18px; left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Press Start 2P', monospace; font-size: 7px;
+    color: var(--gold); white-space: nowrap;
+    text-shadow: 1px 1px 0 rgba(0,0,0,0.55);
+  }
+  /* Tool overlay — fullscreen modal iframe that hosts the actual
+     command-center surface inside the game. Closing it returns the
+     player to the room exactly where they stood. */
+  .tool-overlay {
+    position: fixed; inset: 0;
+    z-index: 999;
+    background: rgba(6,10,20,0.85);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .tool-overlay .frame-chrome {
+    width: 100%; height: 100%; max-width: 1400px;
+    display: flex; flex-direction: column;
+    background: linear-gradient(180deg, #4a8edb 0%, #2a5fa0 100%);
+    border: 2px solid #ffffff;
+    box-shadow: inset 0 0 0 2px var(--outline), 0 12px 40px rgba(0,0,0,0.6);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .tool-overlay .frame-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 14px;
+    background: linear-gradient(180deg, #2a5fa0 0%, #1a3a6e 100%);
+    border-bottom: 2px solid var(--outline);
+    color: #ffffff;
+    font-family: 'Press Start 2P', monospace; font-size: 10px;
+    letter-spacing: 2px;
+  }
+  .tool-overlay .frame-title { color: var(--gold); text-shadow: 1px 1px 0 rgba(0,0,0,0.5); }
+  .tool-overlay .frame-hint { font-size: 8px; color: var(--fg-dim); }
+  .tool-overlay .frame-close {
+    background: var(--gold); color: var(--outline);
+    border: 2px solid var(--outline);
+    padding: 4px 12px;
+    font-family: 'Press Start 2P', monospace; font-size: 9px;
+    cursor: pointer;
+  }
+  .tool-overlay .frame-close:hover { background: #ffd97a; }
+  .tool-overlay iframe {
+    flex: 1; width: 100%; border: 0; background: #ffffff;
   }
   /* Sector mini-HUD — CT-style blue window. */
   .sector-hud {
@@ -1025,15 +1091,59 @@ const SECTORS = [
   // them opens an Email + Leave dialog - their station-specific dialogue
   // trees still live in their own sectors.
   { id:'HQ',        npc:'RYUJIN',   role:'Electro Dragon God', href:'/command-center.html', bg:'/assets/rpg/scenes/sectors/hq.webp',         sprite:'/assets/rpg/sprites/buildings/hq.webp',         x:50, y:22, talk:{x:38,y:35},
-    guests:[{ npc:'MEL', x:22, y:72 }, { npc:'CAT', x:78, y:72 }] },
-  { id:'SALES',     npc:'MACK',     role:'Sales',        href:'/sales-cockpit.html',        bg:'/assets/rpg/scenes/sectors/sales.webp',      sprite:'/assets/rpg/sprites/buildings/sales.webp',      x: 9, y:50, talk:{x:30,y:42} },
-  { id:'MARKETING', npc:'CAT',      role:'Marketing',    href:'/admin.html?page=marketing', bg:'/assets/rpg/scenes/sectors/marketing.webp',  sprite:'/assets/rpg/sprites/buildings/marketing.webp',  x:22, y:50, talk:{x:30,y:42} },
-  { id:'FINANCE',   npc:'MEL',      role:'Books',        href:'/admin.html?page=finance',   bg:'/assets/rpg/scenes/sectors/finance.webp',    sprite:'/assets/rpg/sprites/buildings/finance.webp',    x:36, y:50, talk:{x:48,y:42} },
-  { id:'ADMIN',     npc:'CAT',      role:'EA',           href:'/administration.html',       bg:'/assets/rpg/scenes/sectors/admin.webp',      sprite:'/assets/rpg/sprites/buildings/admin.webp',      x:64, y:50, talk:{x:42,y:48} },
-  { id:'MATERIALS', npc:'PAVANJOT', role:'Quartermaster',href:'/production-materials.html', bg:'/assets/rpg/scenes/sectors/materials.webp',  sprite:'/assets/rpg/sprites/buildings/production.webp', x:76, y:50 },
-  { id:'PRODUCTION',npc:'DIEGO',    role:'Foreman',      href:'/production.html',           bg:'/assets/rpg/scenes/sectors/production.webp', sprite:'/assets/rpg/sprites/buildings/production.webp', x:90, y:50 },
-  { id:'SERVICE',   npc:'AJ',       role:'Repairs',      href:'/service-tickets.html',      bg:'/assets/rpg/scenes/sectors/service.webp',    sprite:'/assets/rpg/sprites/buildings/service.webp',    x:13, y:82 },
-  { id:'CUSTOMER',  npc:'MEL',      role:'Customer Care',href:'/customers.html',            bg:'/assets/rpg/scenes/sectors/customer.webp',   sprite:'/assets/rpg/sprites/buildings/customer.webp',   x:33, y:82, talk:{x:48,y:42} }
+    guests:[{ npc:'MEL', x:22, y:72 }, { npc:'CAT', x:78, y:72 }],
+    tools:[
+      { x:82, y:28, label:'OVERVIEW',  href:'/admin-overview.html' },
+      { x:82, y:55, label:'PORTAL',    href:'/portal-mobile.html' },
+      { x:82, y:80, label:'QUESTS',    href:'/admin-quests.html' }
+    ] },
+  { id:'SALES',     npc:'MACK',     role:'Sales',        href:'/sales-cockpit.html',        bg:'/assets/rpg/scenes/sectors/sales.webp',      sprite:'/assets/rpg/sprites/buildings/sales.webp',      x: 9, y:50, talk:{x:30,y:42},
+    tools:[
+      { x:82, y:28, label:'PIPELINE',  href:'/sales-pipeline.html' },
+      { x:82, y:55, label:'PROPOSALS', href:'/sales-proposals.html' },
+      { x:82, y:80, label:'FOLLOWUPS', href:'/sales-followups.html' }
+    ] },
+  { id:'MARKETING', npc:'CAT',      role:'Marketing',    href:'/admin.html?page=marketing', bg:'/assets/rpg/scenes/sectors/marketing.webp',  sprite:'/assets/rpg/sprites/buildings/marketing.webp',  x:22, y:50, talk:{x:30,y:42},
+    tools:[
+      { x:82, y:28, label:'CREATIVES', href:'/marketing-creatives.html' },
+      { x:82, y:55, label:'SCHEDULE',  href:'/marketing-schedule.html' },
+      { x:82, y:80, label:'LEADS',     href:'/marketing-leads.html' }
+    ] },
+  { id:'FINANCE',   npc:'MEL',      role:'Books',        href:'/admin.html?page=finance',   bg:'/assets/rpg/scenes/sectors/finance.webp',    sprite:'/assets/rpg/sprites/buildings/finance.webp',    x:36, y:50, talk:{x:48,y:42},
+    tools:[
+      { x:82, y:28, label:'P&L',         href:'/finance-pl.html' },
+      { x:82, y:55, label:'PAYABLES',    href:'/finance-payables.html' },
+      { x:82, y:80, label:'RECEIVABLES', href:'/finance-receivables.html' }
+    ] },
+  { id:'ADMIN',     npc:'CAT',      role:'EA',           href:'/administration.html',       bg:'/assets/rpg/scenes/sectors/admin.webp',      sprite:'/assets/rpg/sprites/buildings/admin.webp',      x:64, y:50, talk:{x:42,y:48},
+    tools:[
+      { x:82, y:28, label:'TEAM',     href:'/admin-team.html' },
+      { x:82, y:55, label:'PIPELINE', href:'/admin-pipeline.html' },
+      { x:82, y:80, label:'SYSTEM',   href:'/admin-system.html' }
+    ] },
+  { id:'MATERIALS', npc:'PAVANJOT', role:'Quartermaster',href:'/production-materials.html', bg:'/assets/rpg/scenes/sectors/materials.webp',  sprite:'/assets/rpg/sprites/buildings/production.webp', x:76, y:50,
+    tools:[
+      { x:82, y:28, label:'JOBS',      href:'/production-jobs.html' },
+      { x:82, y:55, label:'SCHEDULE',  href:'/production-schedule.html' },
+      { x:82, y:80, label:'WORKORDERS',href:'/production-workorders.html' }
+    ] },
+  { id:'PRODUCTION',npc:'DIEGO',    role:'Foreman',      href:'/production.html',           bg:'/assets/rpg/scenes/sectors/production.webp', sprite:'/assets/rpg/sprites/buildings/production.webp', x:90, y:50,
+    tools:[
+      { x:82, y:28, label:'SCHEDULE', href:'/production-schedule.html' },
+      { x:82, y:55, label:'PAYSHEET', href:'/production-paysheet.html' },
+      { x:82, y:80, label:'TICKETS',  href:'/production-tickets.html' }
+    ] },
+  { id:'SERVICE',   npc:'AJ',       role:'Repairs',      href:'/service-tickets.html',      bg:'/assets/rpg/scenes/sectors/service.webp',    sprite:'/assets/rpg/sprites/buildings/service.webp',    x:13, y:72,
+    tools:[
+      { x:82, y:32, label:'WARRANTIES', href:'/service-warranties.html' },
+      { x:82, y:65, label:'TICKETS',    href:'/service-tickets.html' }
+    ] },
+  { id:'CUSTOMER',  npc:'MEL',      role:'Customer Care',href:'/customers.html',            bg:'/assets/rpg/scenes/sectors/customer.webp',   sprite:'/assets/rpg/sprites/buildings/customer.webp',   x:33, y:72, talk:{x:48,y:42},
+    tools:[
+      { x:82, y:28, label:'LIST',     href:'/customer-list.html' },
+      { x:82, y:55, label:'REVIEWS',  href:'/customer-reviews.html' },
+      { x:82, y:80, label:'SHOWCASE', href:'/customer-showcase.html' }
+    ] }
 ];
 
 // Overworld movement: classic-FF tile-snap. Each held key queues one step;
@@ -1064,6 +1174,9 @@ const INTERACT_PAD = { w: 3, h: 3 };  // extra % beyond footprint where "near" p
 const NPC_INTERACT_R = 13;
 // Terminal interaction radius
 const TERM_INTERACT_R = 10;
+// Tool hotspot interaction radius — smaller so adjacent tools on the same
+// wall don't bleed into one another. Player must stand right at the tool.
+const TOOL_INTERACT_R = 7;
 // Door zone hit radius (% from bottom-center of room)
 const DOOR_ZONE_TOP = 88;
 
@@ -1173,7 +1286,7 @@ const state = {
   // Initial spawn is read from save.player_x/y so the player returns to wherever
   // they were on last visit. Default (50, 32) sits in the open band between HQ
   // (top) and ADMIN (center) so no building is "near" on first frame.
-  player: { x: 50, y: 32, facingDir: 'down', targetX: 50, targetY: 32, stepEndsAt: 0, stepParity: false },
+  player: { x: 50, y: 60, facingDir: 'down', targetX: 50, targetY: 60, stepEndsAt: 0, stepParity: false },
   interior: null,                              // { sec, playerX, playerY, facing, lastEnter }
   worldReturn: { x: 50, y: 50 },               // remember player overworld pos when entering a sector
   nearBuilding: null,                          // overworld: building player is currently touching
@@ -1195,7 +1308,7 @@ function defaultSave() {
   return {
     dismissed_quests: [], visited_sectors: [], spoken_to: [],
     muted: false, last_visit_at: null,
-    player_x: 50, player_y: 32
+    player_x: 50, player_y: 60
   };
 }
 function loadSave() {
@@ -1819,7 +1932,7 @@ function renderWorld() {
       class: 'map-building' + (sec.tall ? ' tall' : '') + (lvl === 'alert' ? ' alert' : lvl === 'warn' ? ' warn' : ''),
       'data-sector': sec.id,
       style: { left: sec.x + '%', top: sec.y + '%', backgroundImage: `url('${sec.sprite}')` },
-      onclick: () => { state.focusedSector = i; sfxStep(); enterSector(); }
+      onclick: () => { state.focusedSector = i; sfxStep(); /* No more click-to-enter — walk near + SPACE/Enter is the only entry path. */ }
     }, [
       el('div', { class: 'b-label', text: sec.id })
     ]);
@@ -2035,7 +2148,7 @@ function renderInterior() {
   refreshInteriorHud();
 
   // Tear down old interior interactables (re-rendered each enter)
-  room.querySelectorAll('.npc-sprite, .terminal-zone, .door-zone, .player-avatar, .interact-prompt, .sprite-pop').forEach(n => n.remove());
+  room.querySelectorAll('.npc-sprite, .terminal-zone, .tool-zone, .door-zone, .player-avatar, .interact-prompt, .sprite-pop').forEach(n => n.remove());
   // Drop any stale #playerAvatar elsewhere in the document (overworld leaves
   // one inside #mapWorld). Duplicate ids made $('playerAvatar') resolve to
   // the hidden overworld sprite, so updateInterior's left/top writes landed
@@ -2111,7 +2224,22 @@ function renderInterior() {
   });
   room.appendChild(term);
 
-  // Door zone (bottom-center) — walking into it returns to overworld
+  // Tool hotspots — per-sector deep links into the matching command-center
+  // surfaces. Walk near + SPACE/Enter opens the tool in the same tab. Each
+  // gets a labeled gold-bordered panel; updateInterior toggles .near for
+  // visual confirmation when the player is in range.
+  (sec.tools || []).forEach((t, i) => {
+    const tn = el('div', {
+      class: 'tool-zone',
+      id: 'toolZone_' + i,
+      style: { left: t.x + '%', top: t.y + '%' },
+      'data-label': t.label,
+      'data-idx': String(i)
+    });
+    room.appendChild(tn);
+  });
+
+  // Door zone (bottom-center) — walk near + SPACE/Enter exits to overworld
   const door = el('div', { class: 'door-zone', id: 'doorZone' });
   room.appendChild(door);
 
@@ -2161,11 +2289,9 @@ function updateInterior(dtMs) {
       av.classList.add('face-' + intr.facingDir, 'moving');
     }
     maybeFootstep(dtMs);
-    // Walking into the door zone exits to overworld
-    if (intr.playerY > DOOR_ZONE_TOP + 3) {
-      exitToOverworld();
-      return;
-    }
+    // Exiting a sector requires explicit A/Enter at the door prompt — no
+    // walk-into-zone auto-exit (per Mac, the player should always confirm
+    // a view change, never get teleported out by drift).
   } else {
     const av = $('playerAvatar'); if (av) av.classList.remove('moving');
   }
@@ -2207,8 +2333,26 @@ function updateInterior(dtMs) {
     state.nearGuest = null;
   }
   else if (dt < TERM_INTERACT_R) { target = 'terminal'; label = 'PRESS [SPACE] TO READ TERMINAL'; tx = intr.termX; ty = intr.termY - 8; state.nearGuest = null; }
-  else if (dd > -2) { target = 'door'; label = 'PRESS [SPACE] OR WALK DOWN TO EXIT'; tx = 50; ty = DOOR_ZONE_TOP - 4; state.nearGuest = null; }
-  else { state.nearGuest = null; }
+  else {
+    // Find the nearest tool hotspot within TOOL_INTERACT_R. Multiple tools
+    // may overlap the player's reach if they sit on the same wall — pick
+    // the closest so the prompt + interact target is unambiguous.
+    let nearTool = null, nearToolDist = Infinity, nearToolIdx = -1;
+    (intr.sec.tools || []).forEach((t, i) => {
+      const dToTool = Math.hypot(intr.playerX - t.x, intr.playerY - t.y);
+      if (dToTool < TOOL_INTERACT_R && dToTool < nearToolDist) {
+        nearTool = t; nearToolDist = dToTool; nearToolIdx = i;
+      }
+    });
+    if (nearTool) {
+      target = 'tool'; label = 'PRESS [SPACE] TO OPEN ' + nearTool.label;
+      tx = nearTool.x; ty = nearTool.y - 8;
+      state.nearTool = nearTool;
+      state.nearGuest = null;
+    }
+    else if (dd > -2) { target = 'door'; label = 'PRESS [SPACE] TO EXIT'; tx = 50; ty = DOOR_ZONE_TOP - 4; state.nearGuest = null; state.nearTool = null; }
+    else { state.nearGuest = null; state.nearTool = null; }
+  }
 
   if (target !== state.nearTarget) {
     state.nearTarget = target;
@@ -2221,6 +2365,13 @@ function updateInterior(dtMs) {
     document.querySelectorAll('.npc-sprite').forEach(n => {
       n.classList.toggle('near', !!nearName && n.dataset.targetName === nearName);
     });
+    // Toggle .near on the active tool hotspot so it visually confirms the
+    // player is in range. Cheaper than a per-tick toggle across all tools.
+    document.querySelectorAll('.tool-zone').forEach(n => {
+      const idx = parseInt(n.dataset.idx || '-1', 10);
+      n.classList.toggle('near', target === 'tool' && idx === state._activeToolIdx);
+    });
+    state._activeToolIdx = (target === 'tool') ? (intr.sec.tools || []).indexOf(state.nearTool) : -1;
   }
   // NPC mirrors to face the player when they pass on the left/right side.
   // Small but recognizable touch — the god turns to greet you.
@@ -2323,8 +2474,8 @@ function startGameLoop() {
   const loop = (now) => {
     const dt = Math.min(48, now - state._lastTick); // clamp huge gaps (tab return)
     state._lastTick = now;
-    // Movement only happens when not in a dialogue/modal
-    if (!state.dialogue && !state.modal) {
+    // Movement only happens when not in a dialogue/modal/tool overlay
+    if (!state.dialogue && !state.modal && !state.toolOverlay) {
       if (state.view === 'MAP') updateOverworld(dt);
       else if (state.view === 'SECTOR') updateInterior(dt);
     } else {
@@ -2976,6 +3127,15 @@ document.addEventListener('keydown', (e) => {
   if (tag === 'INPUT' || tag === 'TEXTAREA') return;
   const k = e.key;
 
+  // Tool overlay open: B/ESC closes, everything else is left to the iframe.
+  // Note: keystrokes that happen with the iframe focused don't reach this
+  // handler at all (cross-frame isolation), so the CLOSE button + click-on-
+  // overlay-edge are the dependable exits when the user is reading the tool.
+  if (state.toolOverlay) {
+    if (k === 'Escape' || k === 'b' || k === 'B') { e.preventDefault(); closeToolOverlay(); return; }
+    return;
+  }
+
   // Modal open: navigate menu items
   if (state.modal) {
     if (k === 'Escape' || k === 'x' || k === 'X' || k === 'b' || k === 'B') { e.preventDefault(); closeModal(); return; }
@@ -3082,6 +3242,39 @@ window.addEventListener('resize', () => {
   }, 200);
 });
 
+// Tool overlay — opens a sector tool's command-center surface inside the
+// game as an iframe modal. Closes back to the room with the player intact.
+// Lets Mac keep "I'm in the FINANCE room" context while reading the P&L.
+function openToolOverlay(tool) {
+  closeToolOverlay(); // single overlay at a time
+  const wrap = el('div', { class: 'tool-overlay', id: 'toolOverlay', tabindex: '-1',
+    onclick: (e) => { if (e.target === wrap) closeToolOverlay(); } });
+  const chrome = el('div', { class: 'frame-chrome' });
+  const bar = el('div', { class: 'frame-bar' });
+  const title = el('div', { class: 'frame-title', text: tool.label });
+  const hint = el('div', { class: 'frame-hint', text: '[B] OR [ESC] OR CLOSE TO RETURN' });
+  const closeBtn = el('button', { type: 'button', class: 'frame-close', text: 'CLOSE', onclick: closeToolOverlay });
+  bar.appendChild(title); bar.appendChild(hint); bar.appendChild(closeBtn);
+  // When running off localhost, the local static server doesn't serve
+  // /api/* so the iframed page would render empty. Point the iframe at
+  // prod so real data lands inside the overlay either way.
+  const iframeSrc = (API_BASE ? API_BASE : '') + tool.href;
+  const frame = el('iframe', { src: iframeSrc, allow: 'fullscreen', loading: 'eager' });
+  chrome.appendChild(bar);
+  chrome.appendChild(frame);
+  wrap.appendChild(chrome);
+  document.body.appendChild(wrap);
+  state.toolOverlay = { tool };
+  // Defer focus to next tick so the iframe's content can claim it naturally;
+  // overlay div keeps focus when iframe is empty so ESC works immediately.
+  setTimeout(() => { try { wrap.focus(); } catch {} }, 0);
+}
+function closeToolOverlay() {
+  const w = document.getElementById('toolOverlay');
+  if (w) w.remove();
+  state.toolOverlay = null;
+}
+
 // "Action" button — interact with the closest target in the current view
 function handleAction() {
   if (state.view === 'MAP') {
@@ -3106,6 +3299,7 @@ function handleAction() {
     if (state.nearTarget === 'guest') { sfxConfirm(); if (state.nearGuest) openGuestDialog(state.nearGuest.npc); }
     else if (state.nearTarget === 'npc') { sfxConfirm(); talkToNpc(intr.sec); }
     else if (state.nearTarget === 'terminal') { sfxOpen(); window.location.href = intr.sec.href; }
+    else if (state.nearTarget === 'tool') { sfxOpen(); if (state.nearTool && state.nearTool.href) openToolOverlay(state.nearTool); }
     else if (state.nearTarget === 'door') { sfxClose(); exitToOverworld(); }
   }
 }
@@ -3187,12 +3381,15 @@ async function boot() {
   // value from a future save migration or URL hash, snap it to a real index.
   state.focusedSector = Math.max(0, Math.min(SECTORS.length - 1, state.focusedSector | 0));
 
-  // Rehydrate player position from save (default = (50, 32) open band). If
-  // the saved cell collides with a building (e.g. a save written before
-  // BUILDING_HALF turned dynamic), nudge to default.
+  // Rehydrate player position from save (default = (50, 60) — middle of the
+  // open band, the visual center of the hub). Migrate legacy saves that
+  // froze the old (50, 32) default so existing users land centered too.
+  if (state.save.player_x === 50 && state.save.player_y === 32) {
+    state.save.player_x = 50; state.save.player_y = 60; persistSave();
+  }
   state.player.x = clamp(state.save.player_x, 3, 97);
   state.player.y = clamp(state.save.player_y, 5, 95);
-  if (collidesOverworld(state.player.x, state.player.y)) { state.player.x = 50; state.player.y = 32; }
+  if (collidesOverworld(state.player.x, state.player.y)) { state.player.x = 50; state.player.y = 60; }
 
   // Preload sector backdrops so the first SECTOR view doesn't flash blank
   // while the WebP loads over the network. Cheap parallel image warmup.
