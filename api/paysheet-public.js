@@ -5,34 +5,18 @@
 // No auth header required. The sub_acceptance_token is the authentication.
 // Reads paysheet directly from DB (requires migration 035 applied first).
 //
-// Sanitization: scope_notes and labour_breakdown[].note are admin-authored
-// internal commentary that has historically leaked customer retail subtotals,
-// sales rep commission percentages, deposit amounts, and internal section
-// references. These are stripped here before the payload reaches the sub.
+// Field policy for sub-facing responses:
+//   - scope_notes is admin-authored free text. It has historically leaked
+//     customer retail subtotals, sales rep commission, deposit amounts, and
+//     internal section refs. A denylist filter is fragile (any new wording
+//     escapes it), so scope_notes is NOT selected at all for this endpoint.
+//     If subs need scope guidance later, add a separate sub_scope_notes
+//     column and project that instead.
+//   - labour_breakdown / add_ons / surcharges line items: keep the
+//     description / qty / rate / total fields the sub needs, but strip the
+//     per-row .note field which carries internal section refs (§1.1 [A]).
 
 import { supabaseAdmin } from '../lib/supabase.js';
-
-const INTERNAL_NOTE_PATTERNS = [
-  /commission/i,
-  /\bdarcy\b/i,
-  /signed\s+subtotal/i,
-  /customer\s+retail/i,
-  /customer\s+deposit/i,
-  /\bdeposit\s+\$/i,
-  /NOT\s+APPLIED/i,
-  /tracked\s+on\s+estimate/i,
-  /reinstated|terminated/i,
-  /Mac\s+judgment/i,
-  /SUBCONTRACTOR_RATE_SHEET/i,
-  /GHL\s+inv/i,
-  /Sub\s+payout/i,
-];
-
-function isInternalLine(line) {
-  if (line == null) return false;
-  const s = String(line);
-  return INTERNAL_NOTE_PATTERNS.some((re) => re.test(s));
-}
 
 function stripInternalNote(arr) {
   if (!Array.isArray(arr)) return arr;
@@ -46,9 +30,6 @@ function stripInternalNote(arr) {
 function sanitizeForSub(paysheet) {
   return {
     ...paysheet,
-    scope_notes: Array.isArray(paysheet.scope_notes)
-      ? paysheet.scope_notes.filter((n) => !isInternalLine(n))
-      : paysheet.scope_notes,
     labour_breakdown: stripInternalNote(paysheet.labour_breakdown),
     add_ons: stripInternalNote(paysheet.add_ons),
     surcharges: stripInternalNote(paysheet.surcharges),
@@ -80,7 +61,6 @@ export default async function handler(req, res) {
       subtotal,
       hst,
       total,
-      scope_notes,
       scheduled_date,
       sub_acceptance_status,
       sub_decision_at,
