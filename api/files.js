@@ -96,7 +96,52 @@ async function handler(req, res) {
 
     const { data, error } = await query;
     if (error) return res.status(500).json({ error: error.message });
-    return res.json({ files: data });
+
+    // Union in estimate_photos for the project's linked estimate so legacy
+    // CompanyCam archive photos + the sub-portal → estimate_photos bridge (PR
+    // #63) surface here too. Mobile gallery + job page both consume this
+    // endpoint and silently miss photos when keyed only by project_id.
+    let estimatePhotos = [];
+    if (category !== 'document') {
+      const { data: proj } = await supabaseAdmin
+        .from('projects')
+        .select('estimate_id')
+        .eq('id', project_id)
+        .eq('tenant_id', tenantId)
+        .maybeSingle();
+      if (proj?.estimate_id) {
+        let epQuery = supabaseAdmin
+          .from('estimate_photos')
+          .select('id, url, filename, mime_type, caption, category, is_cover, uploaded_at, estimate_id')
+          .eq('estimate_id', proj.estimate_id)
+          .order('uploaded_at', { ascending: false });
+        if (category) epQuery = epQuery.eq('category', category);
+        const { data: ep } = await epQuery;
+        // Normalize to project_files shape so consumers don't have to branch.
+        // Mark with source='estimate_photos' + read_only=true so any mutation
+        // UI can disable patch/delete on these rows (they live in a different
+        // table and aren't writable through /api/files).
+        estimatePhotos = (ep || []).map(r => ({
+          id: r.id,
+          project_id,
+          tenant_id: tenantId,
+          url: r.url,
+          filename: r.filename,
+          mime_type: r.mime_type,
+          caption: r.caption,
+          category: r.category,
+          is_cover: r.is_cover,
+          uploaded_at: r.uploaded_at,
+          client_visible: true,
+          sort_order: 999999,
+          source: 'estimate_photos',
+          read_only: true,
+        }));
+      }
+    }
+
+    const merged = [...(data || []), ...estimatePhotos];
+    return res.json({ files: merged });
   }
 
   // ── POST (Upload) ──
