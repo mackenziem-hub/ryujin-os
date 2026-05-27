@@ -134,6 +134,7 @@ textarea.field-edit{font-family:'Inter',system-ui,sans-serif;font-size:0.88em;te
   <script src="/assets/auth-guard.js"></script>
   <script src="/assets/nav-buttons.js" defer></script>
   <script src="/assets/ryujin-slug.js"></script>
+  <script src="/assets/materials-compute.js"></script>
 </head>
 <body>
 
@@ -374,13 +375,26 @@ async function loadJob(){
       });
     }
 
-    render({ customer, estimates, workorders, paysheets, photos, roster });
+    // Purchase orders for this job's estimates
+    let purchaseOrders = [];
+    if (estimates.length) {
+      try {
+        const poR = await Promise.all(estimates.map(e =>
+          fetch('/api/purchase-orders?estimate_id=' + encodeURIComponent(e.id), { headers })
+            .then(r => r.ok ? r.json() : { purchase_orders: [] })
+            .catch(() => ({ purchase_orders: [] }))
+        ));
+        purchaseOrders = poR.flatMap(r => r.purchase_orders || []);
+      } catch { /* fall through */ }
+    }
+
+    render({ customer, estimates, workorders, paysheets, photos, roster, purchaseOrders });
   } catch(e) {
     $('stage').innerHTML = '<div class="loading">Error: ' + esc(e.message) + '</div>';
   }
 }
 
-function render({ customer, estimates, workorders, paysheets, photos, roster }){
+function render({ customer, estimates, workorders, paysheets, photos, roster, purchaseOrders = [] }){
   const primaryEst = estimates.sort((a,b) => (b.estimate_number||0) - (a.estimate_number||0))[0];
   const activeWo = workorders.find(w => ['in_progress','issued'].includes(w.status)) || workorders[0];
   const activePs = paysheets[0];
@@ -492,8 +506,29 @@ function render({ customer, estimates, workorders, paysheets, photos, roster }){
           <div class="info-row"><div class="label">Start Date</div><div class="value">${activeWo.start_date || 'TBD'}</div></div>
           <div class="info-row"><div class="label">Duration</div><div class="value">${activeWo.estimated_duration_days ? activeWo.estimated_duration_days + ' days' : 'TBD'}</div></div>
           <div class="info-row"><div class="label">Product</div><div class="value">${esc(activeWo.shingle_product || DASH)}${activeWo.shingle_color ? ' / ' + esc(activeWo.shingle_color) : ''}</div></div>
-          <div class="info-row"><div class="label">Pitch</div><div class="value">${esc(activeWo.roof_pitch || DASH)}</div></div>
+          <div class="info-row"><div class="label">SQ / Pitch</div><div class="value">${activeWo.total_sq ? activeWo.total_sq + ' SQ' : DASH} · ${esc(activeWo.roof_pitch || DASH)}</div></div>
+          ${(Number(activeWo.eaves_lf) || Number(activeWo.rakes_lf) || Number(activeWo.ridges_lf) || Number(activeWo.valleys_lf) || Number(activeWo.hips_lf) || Number(activeWo.walls_lf) || Number(activeWo.pipes) || Number(activeWo.chimneys) || Number(activeWo.osb_sheets)) ? `
+            <div style="margin-top:14px;font-family:'Share Tech Mono',monospace;font-size:0.7em;color:rgba(200,220,255,0.5);letter-spacing:1.2px;text-transform:uppercase">Measurements</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:6px;margin-top:6px">
+              ${[
+                ['Eaves', activeWo.eaves_lf, 'LF'],
+                ['Rakes', activeWo.rakes_lf, 'LF'],
+                ['Ridges', activeWo.ridges_lf, 'LF'],
+                ['Valleys', activeWo.valleys_lf, 'LF'],
+                ['Hips', activeWo.hips_lf, 'LF'],
+                ['Walls', activeWo.walls_lf, 'LF'],
+                ['Pipes', activeWo.pipes, ''],
+                ['Chimneys', activeWo.chimneys, ''],
+                ['OSB', activeWo.osb_sheets, 'sheets'],
+              ].filter(([,v]) => Number(v) > 0).map(([l,v,u]) => `
+                <div style="padding:6px 8px;background:rgba(6,10,20,0.4);border:1px solid rgba(251,146,60,0.12);border-radius:6px">
+                  <div style="font-size:0.66em;color:rgba(200,220,255,0.55);text-transform:uppercase;letter-spacing:0.8px">${esc(l)}</div>
+                  <div style="font-family:'Orbitron',monospace;font-weight:700;color:#22d3ee;margin-top:2px;font-size:0.96em">${Number(v)}${u ? ' ' + u : ''}</div>
+                </div>
+              `).join('')}
+            </div>` : ''}
           ${activeWo.scope_items?.length ? `<div style="margin-top:14px;font-family:'Share Tech Mono',monospace;font-size:0.7em;color:rgba(200,220,255,0.5);letter-spacing:1.2px;text-transform:uppercase">Scope</div><ul class="scope-list">${activeWo.scope_items.map(s => `<li class="${s.included ? '' : 'off'}"><span class="chk"><svg viewBox="0 0 24 24">${s.included ? '<polyline points="20 6 9 17 4 12"/>' : '<line x1="5" y1="12" x2="19" y2="12"/>'}</svg></span>${esc(s.item)}${s.qty ? ' (' + s.qty + ')' : ''}</li>`).join('')}</ul>` : ''}
+          ${activeWo.special_notes ? `<div style="margin-top:14px;font-family:'Share Tech Mono',monospace;font-size:0.7em;color:rgba(200,220,255,0.5);letter-spacing:1.2px;text-transform:uppercase">Special Notes</div><div style="font-size:0.82em;color:rgba(200,220,255,0.78);line-height:1.5;margin-top:4px;white-space:pre-wrap">${esc(activeWo.special_notes)}</div>` : ''}
           <div class="actions-bar">
             <a class="act primary" href="production-workorders.html?wo=${activeWo.wo_number}">OPEN FULL EDITOR</a>
           </div>
@@ -502,7 +537,21 @@ function render({ customer, estimates, workorders, paysheets, photos, roster }){
     </details>
   `);
 
-  // 5. PAYSHEET
+  // 5. PAYSHEET — sub payout breakdown (labour + add-ons + surcharges + totals + notes)
+  const _psTable = (rows) => rows.length ? `
+    <table style="width:100%;border-collapse:collapse;font-size:0.78em;margin-top:6px">
+      <tbody>${rows.map(r => `
+        <tr style="border-top:1px solid rgba(251,146,60,0.06)">
+          <td style="padding:6px 4px;color:rgba(230,240,255,0.92)">
+            ${esc(r.label || r.description || '—')}
+            ${r.note ? `<div style="font-size:0.86em;color:rgba(200,220,255,0.5);margin-top:2px">${esc(r.note)}</div>` : ''}
+          </td>
+          <td style="padding:6px 4px;text-align:right;color:rgba(200,220,255,0.7);white-space:nowrap;font-family:'Share Tech Mono',monospace;font-size:0.92em">${r.qty != null ? r.qty + (r.unit ? ' ' + esc(r.unit) : '') : ''}</td>
+          <td style="padding:6px 4px;text-align:right;font-family:'Orbitron',monospace;color:#22d3ee;font-weight:600;white-space:nowrap">${money(r.total)}</td>
+        </tr>
+      `).join('')}</tbody>
+    </table>
+  ` : '';
   sections.push(`
     <details class="acc" open data-section="paysheet">
       <summary>
@@ -510,21 +559,129 @@ function render({ customer, estimates, workorders, paysheets, photos, roster }){
         <div class="meta">${activePs ? `<span>${esc(activePs.job_id || '')}</span> <select class="status-pick" id="psStatusPick" title="Change pay sheet status">${['scheduled','in_progress','completed','invoice_final','cancelled'].map(s => `<option value="${s}" ${activePs.status === s ? 'selected' : ''}>${s.replace('_',' ').toUpperCase()}</option>`).join('')}</select> <span class="saved-flash" id="psSaved">SAVED</span>` : '<span>NONE</span>'}<svg class="chev" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
       </summary>
       <div class="acc-body">
-        ${activePs ? `
-          <div class="info-row"><div class="label">Subtotal</div><div class="value">${money(activePs.subtotal)}</div></div>
-          <div class="info-row"><div class="label">HST</div><div class="value">${money(activePs.hst)}</div></div>
-          <div class="info-row"><div class="label">Total Due</div><div class="value" style="color:#fb923c;font-weight:700">${money(activePs.total)}</div></div>
-          ${activePs.balance_due ? `<div class="info-row"><div class="label">Balance</div><div class="value" style="color:${Number(activePs.balance_due)>0?'#facc15':'#4ade80'};font-weight:700">${money(activePs.balance_due)}</div></div>` : ''}
-          <div class="actions-bar">
-            <a class="act primary" href="production-paysheet.html?job=${esc(activePs.job_id || '')}">OPEN FULL EDITOR</a>
-          </div>
-        ` : '<div class="empty-sec">NO PAY SHEET YET</div>'}
+        ${activePs ? (() => {
+          const lb = Array.isArray(activePs.labour_breakdown) ? activePs.labour_breakdown : [];
+          const ao = Array.isArray(activePs.add_ons) ? activePs.add_ons : [];
+          const sc = Array.isArray(activePs.surcharges) ? activePs.surcharges : [];
+          const notes = Array.isArray(activePs.scope_notes) ? activePs.scope_notes : [];
+          return `
+            ${activePs.subcontractor ? `<div class="info-row"><div class="label">Paid To</div><div class="value">${esc(activePs.subcontractor)}</div></div>` : ''}
+            ${activePs.shingle_product ? `<div class="info-row"><div class="label">Product</div><div class="value">${esc(activePs.shingle_product)}</div></div>` : ''}
+            ${lb.length ? `<div style="margin-top:12px;font-family:'Share Tech Mono',monospace;font-size:0.7em;color:rgba(200,220,255,0.55);letter-spacing:1.2px;text-transform:uppercase">Labour</div>${_psTable(lb)}` : ''}
+            ${ao.length ? `<div style="margin-top:12px;font-family:'Share Tech Mono',monospace;font-size:0.7em;color:rgba(200,220,255,0.55);letter-spacing:1.2px;text-transform:uppercase">Add-Ons</div>${_psTable(ao)}` : ''}
+            ${sc.length ? `<div style="margin-top:12px;font-family:'Share Tech Mono',monospace;font-size:0.7em;color:rgba(200,220,255,0.55);letter-spacing:1.2px;text-transform:uppercase">Surcharges</div>${_psTable(sc)}` : ''}
+            <div style="margin-top:14px;padding-top:10px;border-top:1px solid rgba(251,146,60,0.18)">
+              <div class="info-row"><div class="label">Subtotal</div><div class="value">${money(activePs.subtotal)}</div></div>
+              <div class="info-row"><div class="label">HST</div><div class="value">${money(activePs.hst)}</div></div>
+              <div class="info-row"><div class="label">Total</div><div class="value" style="color:#fb923c;font-weight:700">${money(activePs.total)}</div></div>
+              ${Number(activePs.balance_due) ? `<div class="info-row"><div class="label">Balance</div><div class="value" style="color:${Number(activePs.balance_due)>0?'#facc15':'#4ade80'};font-weight:700">${money(activePs.balance_due)}</div></div>` : ''}
+            </div>
+            ${notes.length ? `<div style="margin-top:14px;font-family:'Share Tech Mono',monospace;font-size:0.7em;color:rgba(200,220,255,0.55);letter-spacing:1.2px;text-transform:uppercase">Notes</div><ul style="margin:6px 0 0;padding-left:18px;font-size:0.8em;color:rgba(200,220,255,0.72);line-height:1.55">${notes.map(n => `<li style="margin-bottom:3px">${esc(n)}</li>`).join('')}</ul>` : ''}
+            <div class="actions-bar">
+              <a class="act primary" href="production-paysheet.html?job=${esc(activePs.job_id || '')}">OPEN FULL EDITOR</a>
+            </div>
+          `;
+        })() : '<div class="empty-sec">NO PAY SHEET YET</div>'}
       </div>
     </details>
   `);
 
+  // 5.5 MATERIALS — categorized engine-derived list (mirrors production-materials.html).
+  // Computes shingles/cap/starter/I&W/underlay/drip/valley/ridge-vent/flashing/OSB/nails
+  // from the active workorder's SQ + tier + edge measurements. Falls back to the
+  // estimate's values when the WO doesn't carry them. Warns when edge LF
+  // measurements are missing -- silent fallback to sqrt(sqft) shipped wrong orders.
+  // POs (if present) render below the engine list as the authoritative ordered qty.
+  // RyMaterials.computeMaterials reads measurements off the WO first, then
+  // falls back to wo.estimate.* fields. Always attach primaryEst when we have
+  // it so a WO with blank edges still pulls eaves/rakes/valleys from the
+  // signed estimate instead of triggering the measurements-missing warning.
+  const matsRef = activeWo
+    ? { ...activeWo, estimate: primaryEst || activeWo.estimate || null }
+    : (primaryEst ? {
+        total_sq: primaryEst.roof_area_sqft ? primaryEst.roof_area_sqft / 100 : 0,
+        package_tier: primaryEst.selected_package,
+        eaves_lf: primaryEst.eaves_lf, rakes_lf: primaryEst.rakes_lf,
+        ridges_lf: primaryEst.ridges_lf, hips_lf: primaryEst.hips_lf,
+        valleys_lf: primaryEst.valleys_lf, walls_lf: primaryEst.walls_lf,
+        pipes: primaryEst.pipes, chimneys: primaryEst.chimneys,
+        osb_sheets: primaryEst.osb_sheets, complexity: primaryEst.complexity,
+        estimate: primaryEst,
+      } : null);
+  const mats = (matsRef && window.RyMaterials) ? window.RyMaterials.computeMaterials(matsRef) : null;
+  const matCategories = mats ? {
+    'Shingles & Cap':           [mats.shingles, mats.ridgeCap, mats.starter].filter(Boolean),
+    'Underlayment & Moisture':  [mats.iws, mats.underlay].filter(Boolean),
+    'Metal & Flashing':         [mats.dripEdge, mats.valleyMetal, mats.ridgeVent, mats.stepFlashing, mats.chimney].filter(Boolean),
+    'Penetrations & Deck':      [mats.pipeBoots, mats.osb].filter(Boolean),
+    'Fasteners & Sealant':      [mats.nails, mats.cement].filter(Boolean),
+  } : {};
+  const matBundleTotal = mats ? (mats.shingles.qty + (mats.ridgeCap?.qty||0) + (mats.starter?.qty||0)) : 0;
+  const matRollTotal = mats ? ((mats.iws?.qty||0) + (mats.underlay?.qty||0) + (mats.ridgeVent?.qty||0)) : 0;
+  const poCount = purchaseOrders.length;
+  sections.push(`
+    <details class="acc" open data-section="materials">
+      <summary>
+        <div class="title"><svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg> MATERIALS</div>
+        <div class="meta">${mats ? `<span>${matBundleTotal} bundles · ${matRollTotal} rolls${poCount ? ' · ' + poCount + ' PO' + (poCount===1?'':'s') : ''}</span>` : '<span>NO DATA</span>'}<svg class="chev" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
+      </summary>
+      <div class="acc-body">
+        ${!mats ? `<div class="empty-sec">NO WORK ORDER OR ESTIMATE TO DERIVE FROM</div>` : `
+          ${mats._measurementsMissing ? `
+            <div style="margin-bottom:12px;padding:10px 12px;background:rgba(251,146,60,0.10);border:1px solid rgba(251,146,60,0.35);border-radius:10px;font-size:0.78em;line-height:1.45;color:#fb923c">
+              <strong>Measurements missing.</strong>
+              <span style="color:rgba(200,220,255,0.78)">Eaves, rakes, valleys aren't on this work order — drip edge / starter / I&amp;W can't be calculated. Open production-workorders, enter measured edge lengths, regenerate.</span>
+            </div>` : ''}
+          ${Object.entries(matCategories).map(([name, items]) => items.length ? `
+            <div style="margin-bottom:10px">
+              <div style="font-family:'Share Tech Mono',monospace;font-size:0.68em;color:#fb923c;letter-spacing:1.5px;padding:6px 0;border-bottom:1px solid rgba(251,146,60,0.16);margin-bottom:6px">${esc(name).toUpperCase()}</div>
+              ${items.map(mat => `
+                <div style="display:grid;grid-template-columns:1fr auto;gap:8px;padding:8px 4px;border-bottom:1px solid rgba(251,146,60,0.06);font-size:0.82em;align-items:start">
+                  <div>
+                    <div style="color:rgba(230,240,255,0.92);font-weight:500">${esc(mat.label)}</div>
+                    <div style="font-size:0.85em;color:rgba(200,220,255,0.5);margin-top:2px">${esc(mat.note || '')}</div>
+                  </div>
+                  <div style="font-family:'Orbitron',monospace;font-weight:700;color:#22d3ee;text-align:right;white-space:nowrap">${mat.qty} ${esc(mat.unit)}</div>
+                </div>
+              `).join('')}
+            </div>
+          ` : '').join('')}
+          ${poCount ? `
+            <div style="margin-top:14px;padding-top:10px;border-top:1px solid rgba(251,146,60,0.22)">
+              <div style="font-family:'Share Tech Mono',monospace;font-size:0.68em;color:#22d3ee;letter-spacing:1.5px;margin-bottom:8px">PURCHASE ORDERS (ORDERED)</div>
+              ${purchaseOrders.map(po => {
+                const delivery = po.expected_delivery_date
+                  ? new Date(po.expected_delivery_date + 'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})
+                  : 'TBD';
+                return `
+                  <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 4px;border-bottom:1px solid rgba(251,146,60,0.06);font-size:0.82em">
+                    <div>
+                      <span style="font-family:'Share Tech Mono',monospace;color:#fb923c">PO-${esc(po.po_number || '?')}</span>
+                      <span style="color:rgba(200,220,255,0.55);margin-left:8px">${esc(delivery)}</span>
+                      <span class="badge ${po.status==='received'?'b-done':po.status==='ordered'?'b-active':'b-draft'}" style="margin-left:8px">${esc((po.status||'draft').toUpperCase())}</span>
+                    </div>
+                    <div style="font-family:'Orbitron',monospace;font-weight:700;color:#22d3ee">${money(po.total_amount)}</div>
+                  </div>
+                `;
+              }).join('')}
+            </div>` : `
+            <div style="margin-top:14px;padding:8px 10px;background:rgba(6,10,20,0.4);border-radius:8px;font-size:0.74em;color:rgba(200,220,255,0.55);text-align:center">
+              No purchase order created yet · canonical list at <code style="color:#22d3ee">Production/Material Orders/${esc(customer.address || '')} - Material List.md</code>
+            </div>`}
+          <div class="actions-bar" style="margin-top:12px">
+            <button class="act ghost" type="button" onclick="copyMaterialsText()" title="Copy plain-text material list to clipboard (Coastal order paste)">COPY TEXT SUMMARY</button>
+            <button class="act ghost" type="button" onclick="printMaterialsText()" title="Open print-friendly material list">PRINT</button>
+          </div>
+        `}
+      </div>
+    </details>
+  `);
+  // Stash the materials data so the COPY/PRINT buttons can grab it post-render.
+  window._jobMaterials = mats ? { mats, address: customer.address || '' } : null;
+
   // 6. PHOTOS & VIDEO (interactive grid: delete, cover, mark before/after, inline caption)
   // The grid is mounted as live DOM after innerHTML render so el() builds tiles XSS-safe.
+  const _uploadEstId = primaryEst?.id || '';
   sections.push(`
     <details class="acc" open data-section="photos">
       <summary>
@@ -534,8 +691,14 @@ function render({ customer, estimates, workorders, paysheets, photos, roster }){
       <div class="acc-body">
         <div id="photoMount"></div>
         <div class="gallery-actions">
+          ${_uploadEstId ? `
+          <label class="act cyan" style="cursor:pointer" title="Upload photos or videos to this estimate">
+            UPLOAD PHOTOS
+            <input type="file" id="jobUploadInput" accept="image/*,video/*" multiple data-est-id="${esc(_uploadEstId)}" style="display:none" onchange="uploadJobPhotos(this.files)">
+          </label>` : ''}
           <a class="act ghost" id="genBeforeAfterBtn" href="#" title="Pick a before + an after to generate a side-by-side social post">GENERATE BEFORE/AFTER</a>
           <span class="count" id="photoMix">-</span>
+          <span class="count" id="uploadStatus" style="display:none"></span>
         </div>
       </div>
     </details>
@@ -569,14 +732,36 @@ function render({ customer, estimates, workorders, paysheets, photos, roster }){
   `);
 
   // 9. NOTES
+  // Defensive: notes column has been legacy-corrupted to strings (and
+  // "[object Object]" toString'd arrays) on some estimates. Normalize.
+  // String branch tries JSON.parse first so [{date,author,body}] payloads
+  // serialized as strings render as real entries, not raw JSON in a single note.
+  const rawNotes = primaryEst?.notes;
+  const coerceNotes = (val) => {
+    if (Array.isArray(val)) return val;
+    if (val && typeof val === 'object') return [val];
+    if (typeof val === 'string' && val.trim()) {
+      const t = val.trim();
+      if (t[0] === '[' || t[0] === '{') {
+        try {
+          const parsed = JSON.parse(t);
+          if (Array.isArray(parsed)) return parsed;
+          if (parsed && typeof parsed === 'object') return [parsed];
+        } catch { /* fall through to literal-body wrap */ }
+      }
+      return [{ date: '', author: '', body: val }];
+    }
+    return [];
+  };
+  const notesArr = coerceNotes(rawNotes);
   sections.push(`
     <details class="acc" data-section="notes">
       <summary>
         <div class="title"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> NOTES</div>
-        <div class="meta"><span>${(primaryEst?.notes || []).length} entr${(primaryEst?.notes || []).length === 1 ? 'y' : 'ies'}</span><svg class="chev" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
+        <div class="meta"><span>${notesArr.length} entr${notesArr.length === 1 ? 'y' : 'ies'}</span><svg class="chev" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
       </summary>
       <div class="acc-body">
-        ${(primaryEst?.notes || []).length ? (primaryEst.notes || []).map(n => `
+        ${notesArr.length ? notesArr.map(n => `
           <div style="padding:8px 0;border-bottom:1px solid rgba(251,146,60,0.06);font-size:0.88em;color:rgba(200,220,255,0.8);line-height:1.55">
             <div style="font-family:'Share Tech Mono',monospace;font-size:0.64em;color:rgba(200,220,255,0.45);letter-spacing:1.2px;margin-bottom:4px">${esc(n.date || '')} / ${esc(n.author || '').toUpperCase()}</div>
             <div>${esc(n.body || '')}</div>
@@ -809,6 +994,133 @@ async function deletePhoto(p) {
   });
   if (!r.ok) throw new Error('DELETE failed: HTTP ' + r.status);
   return r.json();
+}
+
+// Materials COPY / PRINT — read from window._jobMaterials (set by render()).
+// Uses RyMaterials.buildMaterialsTextSummary so output matches
+// production-materials.html copyList() byte-for-byte.
+function copyMaterialsText() {
+  const ctx = window._jobMaterials;
+  if (!ctx || !window.RyMaterials) { alert('Materials not loaded'); return; }
+  const text = window.RyMaterials.buildMaterialsTextSummary(ctx.mats, ctx.address);
+  navigator.clipboard.writeText(text).then(
+    () => { const s = document.createElement('div'); s.textContent = 'Copied'; s.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#22d3ee;color:#020615;padding:8px 18px;border-radius:8px;font-weight:700;font-family:monospace;z-index:99999'; document.body.appendChild(s); setTimeout(() => s.remove(), 1500); },
+    (e) => alert('Copy failed: ' + (e && e.message || e))
+  );
+}
+function printMaterialsText() {
+  const ctx = window._jobMaterials;
+  if (!ctx || !window.RyMaterials) { alert('Materials not loaded'); return; }
+  const text = window.RyMaterials.buildMaterialsTextSummary(ctx.mats, ctx.address);
+  const w = window.open('', '', 'width=800,height=900');
+  if (!w) { alert('Pop-up blocked. Allow pop-ups for ryujin-os.vercel.app to use Print.'); return; }
+  w.document.write('<pre style="font-family:monospace;padding:40px;font-size:14px;line-height:1.6">' + text.replace(/</g, '&lt;') + '</pre>');
+  w.document.close();
+  w.print();
+}
+
+// Inline error banner -- guaranteed visible (alert() can be suppressed
+// inside iframes by Chrome).
+function showUploadErrorBanner(errors, totalFiles, failed) {
+  const mount = document.getElementById('photoMount');
+  if (!mount) return;
+  const existing = document.getElementById('uploadErrorBanner');
+  if (existing) existing.remove();
+  const banner = document.createElement('div');
+  banner.id = 'uploadErrorBanner';
+  banner.style.cssText = 'background:rgba(239,68,68,0.15);border:2px solid #ef4444;color:#fecaca;padding:14px 16px;border-radius:10px;margin-bottom:12px;font-family:monospace;font-size:0.78em;line-height:1.5;white-space:pre-wrap;word-break:break-word;max-height:400px;overflow:auto';
+  banner.innerHTML = `<div style="font-weight:700;color:#fff;margin-bottom:8px;font-family:sans-serif">UPLOAD FAILED: ${failed} of ${totalFiles} files</div>${errors.map(e => e.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))).join('\n\n')}`;
+  mount.insertBefore(banner, mount.firstChild);
+}
+
+console.log('[job.html] version 2026-05-25-uploadfix-v4-downscale loaded');
+
+// Vercel serverless caps request body at 4.5MB. Modern phone JPEGs often
+// exceed that. Downscale photo formats (JPEG) to maxDim 2400px @ JPEG 0.85
+// client-side — keeps detail for site photos, brings 5MB files under 1MB.
+// createImageBitmap honors EXIF orientation. HEIC/HEIF can't decode in
+// canvas, sent as-is. PNG/GIF/WebP/SVG pass through unchanged so we don't
+// flatten transparency or strip animation by recompressing to JPEG.
+async function downscaleImage(file, maxDim = 2400, quality = 0.85) {
+  if (file.type !== 'image/jpeg' && file.type !== 'image/jpg') return file;
+  try {
+    const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    const ratio = Math.min(1, maxDim / Math.max(bmp.width, bmp.height));
+    const w = Math.round(bmp.width * ratio);
+    const h = Math.round(bmp.height * ratio);
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bmp, 0, 0, w, h);
+    if (bmp.close) bmp.close();
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
+    if (!blob || blob.size >= file.size) return file;
+    const newName = file.name.replace(/\.[^.]+$/, '') + '.jpg';
+    return new File([blob], newName, { type: 'image/jpeg', lastModified: file.lastModified });
+  } catch (e) {
+    console.warn('[upload] downscale failed, sending original', file.name, e);
+    return file;
+  }
+}
+
+async function uploadJobPhotos(fileList) {
+  const input = document.getElementById('jobUploadInput');
+  const status = document.getElementById('uploadStatus');
+  const estId = input?.dataset.estId;
+  const files = Array.from(fileList || []);
+  const hasAuth = !!(window.RyujinAuth && window.RyujinAuth.token);
+  console.log('[upload] start', { estId, count: files.length, hasAuth, ahHeaders: Object.keys(ah()) });
+  if (!estId) { showUploadErrorBanner(['No estimate id on this job. Reload the page.'], files.length || 1, files.length || 1); return; }
+  if (!hasAuth) { showUploadErrorBanner(['No auth token in window.RyujinAuth. Sign out + sign in.'], files.length, files.length); return; }
+  if (!files.length) return;
+
+  const setStatus = (txt) => { if (status) { status.style.display = ''; status.textContent = txt; } };
+  setStatus(`preparing ${files.length} file${files.length === 1 ? '' : 's'}...`);
+
+  // One-per-request to stay safely under Vercel's 4.5MB serverless body cap.
+  let done = 0, failed = 0;
+  const errors = [];
+  for (let i = 0; i < files.length; i++) {
+    const original = files[i];
+    setStatus(`compressing ${i + 1} / ${files.length}: ${original.name}...`);
+    const f = await downscaleImage(original);
+    console.log(`[upload] ${original.name}: ${(original.size/1024/1024).toFixed(2)}MB -> ${(f.size/1024/1024).toFixed(2)}MB`);
+    setStatus(`uploading ${i + 1} / ${files.length} (${done} done${failed ? ` · ${failed} failed` : ''})...`);
+    const fd = new FormData();
+    fd.append('estimate_id', estId);
+    fd.append('category', 'site');
+    fd.append('file', f, f.name);
+    try {
+      const r = await fetch('/api/estimate-photos', { method: 'POST', headers: ah(), body: fd });
+      if (!r.ok) {
+        const errText = await r.text().catch(() => '');
+        throw new Error('HTTP ' + r.status + (errText ? ' ' + errText.slice(0, 400) : ''));
+      }
+      done++;
+    } catch (e) {
+      failed++;
+      const sizeMB = (f.size/1024/1024).toFixed(2);
+      const msg = `${original.name} (${sizeMB}MB after compress): ${e.message}`;
+      console.error('[upload]', msg);
+      errors.push(msg);
+    }
+    setStatus(`uploaded ${done} / ${files.length}${failed ? ` · ${failed} failed` : ''}`);
+  }
+
+  if (input) input.value = '';
+
+  // Refresh gallery via estimate_id (uploads always have an estimate context)
+  try {
+    const mount = document.getElementById('photoMount');
+    const eR = await fetch('/api/estimate-photos?estimate_id=' + encodeURIComponent(estId), { headers: ah() });
+    const union = eR.ok ? ((await eR.json()).photos || []) : [];
+    if (mount) renderPhotoGallery(mount, union, null);
+  } catch (e) {
+    console.error('[upload] gallery refresh failed', e);
+  }
+
+  if (errors.length) showUploadErrorBanner(errors, files.length, failed);
+  setTimeout(() => { if (status && status.textContent.startsWith('uploaded') && !failed) status.style.display = 'none'; }, 4000);
 }
 
 function renderPhotoGallery(mount, photos, refWo) {
