@@ -728,14 +728,26 @@ function render({ customer, estimates, workorders, paysheets, photos, roster, pu
   // 9. NOTES
   // Defensive: notes column has been legacy-corrupted to strings (and
   // "[object Object]" toString'd arrays) on some estimates. Normalize.
+  // String branch tries JSON.parse first so [{date,author,body}] payloads
+  // serialized as strings render as real entries, not raw JSON in a single note.
   const rawNotes = primaryEst?.notes;
-  const notesArr = Array.isArray(rawNotes)
-    ? rawNotes
-    : (rawNotes && typeof rawNotes === 'object'
-        ? [rawNotes]
-        : (typeof rawNotes === 'string' && rawNotes.trim()
-            ? [{ date: '', author: '', body: rawNotes }]
-            : []));
+  const coerceNotes = (val) => {
+    if (Array.isArray(val)) return val;
+    if (val && typeof val === 'object') return [val];
+    if (typeof val === 'string' && val.trim()) {
+      const t = val.trim();
+      if (t[0] === '[' || t[0] === '{') {
+        try {
+          const parsed = JSON.parse(t);
+          if (Array.isArray(parsed)) return parsed;
+          if (parsed && typeof parsed === 'object') return [parsed];
+        } catch { /* fall through to literal-body wrap */ }
+      }
+      return [{ date: '', author: '', body: val }];
+    }
+    return [];
+  };
+  const notesArr = coerceNotes(rawNotes);
   sections.push(`
     <details class="acc" data-section="notes">
       <summary>
