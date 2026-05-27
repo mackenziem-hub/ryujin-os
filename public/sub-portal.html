@@ -1170,10 +1170,17 @@ async function uploadAndLogOne(file, stageLabel, caption, feed){
   feed.prepend(slot);
 
   try {
-    // 2. Upload the blob
+    // 2. Upload the blob. token + stage_label + caption travel to the server
+    // so the estimate_photos gallery bridge can verify the sub and label the
+    // gallery row (e.g. "[Tear-off]"). Token gates the bridge — without it
+    // the upload still succeeds but skips the gallery insert.
     const fd = new FormData();
     fd.append('file', file);
     fd.append('workorder_id', STATE.currentWoId);
+    fd.append('stage_label', stageLabel);
+    if (caption) fd.append('caption', caption);
+    const portalToken = localStorage.getItem('ry_sub_token');
+    if (portalToken) fd.append('token', portalToken);
     const r = await fetch(`/api/job-log-photo?tenant=${TENANT}`, { method:'POST', headers:{'x-tenant-id':TENANT}, body: fd });
     const body = await r.json();
     if (!r.ok) throw new Error(body.error || 'Upload failed');
@@ -1345,11 +1352,13 @@ async function handleLogPhotos(ev){
   if (!files.length) return;
   const prev = document.getElementById('lPhotoPreview');
   prev.innerHTML = '<span class="spin"></span> Uploading…';
+  const portalToken = localStorage.getItem('ry_sub_token');
   for (const file of files){
     try {
       const fd = new FormData();
       fd.append('file', file);
       fd.append('workorder_id', STATE.currentWoId);
+      if (portalToken) fd.append('token', portalToken);
       const r = await fetch(`/api/job-log-photo?tenant=${TENANT}`, { method:'POST', headers:{'x-tenant-id':TENANT}, body: fd });
       const body = await r.json();
       if (!r.ok) throw new Error(body.error);
