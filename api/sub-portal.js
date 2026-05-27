@@ -268,9 +268,14 @@ async function getSchedule(tenantId, woId, subId) {
     gps_source,
     map_url,
     supervisor_contact,
-    onsite_contact: wo.onsite_contact || null,
+    onsite_contact: wo.onsite_contact || null
     // phone deliberately omitted — sub routes customer comms through AJ/Mac
-    special_notes: wo.special_notes || null
+    // special_notes deliberately omitted — admin-authored free text that
+    // has leaked customer retail / opp IDs / sales rep commission / package
+    // tier. GPS coords are still extracted from special_notes above and
+    // returned via gps_coords, so navigation context survives. If sub-facing
+    // notes are needed, add a separate sub_special_notes column instead of
+    // surfacing the admin field.
   };
 }
 
@@ -281,7 +286,7 @@ async function getSchedule(tenantId, woId, subId) {
 async function getScope(tenantId, woId, subId) {
   const { data: wo } = await supabaseAdmin
     .from('workorders')
-    .select('id, address, customer_name, total_sq, roof_pitch, package_tier, shingle_product, shingle_color, scope_items, additional_scope, special_notes, checklist, eaves_lf, rakes_lf, ridges_lf, hips_lf, valleys_lf, walls_lf, pipes, vents, chimneys, layers_to_remove, status, start_date')
+    .select('id, address, customer_name, total_sq, roof_pitch, shingle_product, shingle_color, scope_items, additional_scope, checklist, eaves_lf, rakes_lf, ridges_lf, hips_lf, valleys_lf, walls_lf, pipes, vents, chimneys, layers_to_remove, status, start_date')
     .eq('tenant_id', tenantId).eq('subcontractor_id', subId).eq('id', woId)
     .single();
   if (!wo) return { error: 'Work order not found', status: 404 };
@@ -331,7 +336,7 @@ async function getScope(tenantId, woId, subId) {
     },
     scope_items: Array.isArray(wo.scope_items) ? wo.scope_items : [],
     additional_scope: cleanedAdditional,
-    special_notes: wo.special_notes || null,
+    // special_notes deliberately omitted — see getSchedule for rationale.
     checklist,
     progress: {
       completed: completedCount,
