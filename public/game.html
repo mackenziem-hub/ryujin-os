@@ -7,26 +7,33 @@
 <title>RYUJIN OS · Plus Ultra Operations</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=Orbitron:wght@500;700;900&family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=Inter:wght@400;600&display=swap" rel="stylesheet" />
 <style>
   :root {
-    --bg-deep: #060a14;
-    --bg-mid: #0a1024;
-    --bg-panel: rgba(10,16,36,0.78);
-    --bg-panel-solid: #0a1024;
-    --fg: #e0e8f5;
-    --fg-dim: #9aa8c4;
-    --cyan: #22d3ee;
-    --cyan-glow: rgba(34,211,238,0.6);
-    --gold: #fde047;
-    --gold-soft: #fbbf24;
-    --magenta: #ec4899;
-    --green: #34d399;
-    --orange: #fdba74;
-    --violet: #a78bfa;
-    --pink: #f9a8d4;
-    --red: #ef4444;
-    --amber: #fbbf24;
+    /* Chrono Trigger palette — sky-blue windows + parchment + gold accents.
+       Existing variable names kept so all 3,000+ existing selectors keep
+       resolving; values are remapped to CT-friendly hues. --cyan becomes a
+       soft sky-highlight so legacy "cyan border" + "cyan text" usages both
+       still read cleanly without per-site rewrites. */
+    --bg-deep: #1a2440;          /* CT dialogue/window deep navy */
+    --bg-mid: #2a3f6f;
+    --bg-panel: linear-gradient(180deg, #4a8edb 0%, #2a5fa0 100%);
+    --bg-panel-solid: #2a5fa0;
+    --fg: #ffffff;
+    --fg-dim: #cfd9ea;
+    --cyan: #a8d8ff;             /* soft sky highlight, not neon */
+    --cyan-glow: rgba(168,216,255,0.20);
+    --gold: #f4c95d;             /* CT gold-metallic */
+    --gold-soft: #d99a2e;
+    --magenta: #e070a0;
+    --green: #7fd99a;
+    --orange: #e8a575;
+    --violet: #b39ddb;
+    --pink: #f4b7d4;
+    --red: #d94545;
+    --amber: #e8b04a;
+    --cream: #f4e8c8;            /* parchment body bg accent */
+    --outline: #1a2440;          /* CT window dark outline */
 
     --sec-HQ: var(--gold);
     --sec-SALES: var(--magenta);
@@ -36,6 +43,12 @@
     --sec-FINANCE: var(--cyan);
     --sec-ADMIN: var(--violet);
     --sec-MARKETING: var(--pink);
+  }
+  /* Crisp pixel rendering on all sprite/bg layers (SNES feel). */
+  .pixel, .player-avatar, .npc-sprite, .map-building, .map-bg, .sector-bg,
+  .wizard-walker, .wiz-pop img, .party-card img, .dialogue-portrait img {
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
   }
   * { box-sizing: border-box; }
   html, body {
@@ -49,45 +62,48 @@
   }
   img { display: block; max-width: 100%; user-drag: none; -webkit-user-drag: none; }
 
-  /* CRT scanlines + vignette */
-  body::before {
-    content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 5000;
-    background: repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0, rgba(0,0,0,0) 2px, rgba(0,0,0,0.10) 3px, rgba(0,0,0,0) 4px);
-  }
-  body::after {
-    content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 5001;
-    background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.55) 100%);
-  }
+  /* CRT scanlines + vignette removed — SNES didn't simulate CRT in-game. */
+  body::before, body::after { content: none; }
 
   #app { position: fixed; inset: 0; overflow: hidden; }
 
-  /* Global title bar */
+  /* Global title bar — CT-style blue window with white double-border. */
   .topbar {
     position: fixed; top: 12px; left: 12px; right: 12px;
     display: flex; align-items: center; justify-content: space-between;
     gap: 12px; padding: 8px 16px; z-index: 200;
-    background: linear-gradient(180deg, rgba(10,16,36,0.92), rgba(10,16,36,0.78));
-    border: 1px solid rgba(34,211,238,0.35);
-    box-shadow: 0 0 24px rgba(34,211,238,0.15), inset 0 0 0 1px rgba(10,16,36,0.8);
-    font-family: 'Orbitron', monospace;
+    background: linear-gradient(180deg, #4a8edb 0%, #2a5fa0 100%);
+    border: 2px solid #ffffff;
+    box-shadow: inset 0 0 0 2px var(--outline);
+    border-radius: 4px;
+    font-family: 'Press Start 2P', monospace;
   }
   .topbar.hidden { display: none; }
   .topbar-left { display: flex; align-items: center; gap: 14px; }
-  .topbar-brand { font-weight: 900; font-size: 14px; color: var(--gold); letter-spacing: 3px; }
-  .topbar-brand .sub { font-weight: 500; font-size: 9px; color: var(--cyan); letter-spacing: 2px; display: block; margin-top: -2px; }
-  .topbar-stats { display: flex; align-items: center; gap: 16px; font-size: 11px; }
-  .stat-chip { display: flex; align-items: center; gap: 6px; padding: 4px 10px; background: rgba(34,211,238,0.08); border: 1px solid rgba(34,211,238,0.25); }
-  .stat-chip .label { color: var(--fg-dim); font-size: 9px; letter-spacing: 1px; }
-  .stat-chip .value { color: var(--gold); font-weight: 700; }
+  .topbar-brand { font-weight: 900; font-size: 12px; color: var(--gold); letter-spacing: 3px; text-shadow: 1px 1px 0 #000; }
+  .topbar-brand .sub { font-weight: 500; font-size: 8px; color: #ffffff; letter-spacing: 2px; display: block; margin-top: 2px; text-shadow: 1px 1px 0 rgba(0,0,0,0.5); }
+  .topbar-stats { display: flex; align-items: center; gap: 10px; font-size: 11px; }
+  .stat-chip {
+    display: flex; align-items: center; gap: 6px; padding: 3px 8px;
+    background: rgba(26,36,64,0.45); border: 1px solid #ffffff;
+    box-shadow: inset 0 0 0 1px var(--outline);
+    border-radius: 3px;
+  }
+  .stat-chip .label { color: #cfd9ea; font-size: 8px; letter-spacing: 1px; text-shadow: 1px 1px 0 rgba(0,0,0,0.5); }
+  .stat-chip .value { color: var(--gold); font-weight: 700; text-shadow: 1px 1px 0 #000; }
   .stat-chip.alert .value { color: var(--red); }
   .stat-chip.warn .value { color: var(--amber); }
-  .topbar-right { display: flex; align-items: center; gap: 8px; }
+  .topbar-right { display: flex; align-items: center; gap: 6px; }
   .ico-btn {
-    width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center;
-    background: rgba(10,16,36,0.7); border: 1px solid rgba(34,211,238,0.4); color: var(--cyan);
-    cursor: pointer; font-family: 'Press Start 2P', monospace; font-size: 12px; padding: 0;
+    width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center;
+    background: linear-gradient(180deg, #4a8edb 0%, #2a5fa0 100%);
+    border: 2px solid #ffffff;
+    box-shadow: inset 0 0 0 1px var(--outline);
+    border-radius: 3px;
+    color: var(--gold); text-shadow: 1px 1px 0 #000;
+    cursor: pointer; font-family: 'Press Start 2P', monospace; font-size: 11px; padding: 0;
   }
-  .ico-btn:hover { background: rgba(34,211,238,0.15); border-color: var(--cyan); }
+  .ico-btn:hover { background: linear-gradient(180deg, #5badf5 0%, #3a82d3 100%); }
   .freshness-dot {
     width: 8px; height: 8px; border-radius: 50%;
     background: var(--green); box-shadow: 0 0 8px var(--green); margin-right: 4px;
@@ -139,10 +155,12 @@
     display: flex; align-items: center; justify-content: center;
     padding: 70px 12px 12px;
   }
+  /* CT-style frame around the overworld — white outer + navy inset. */
   .map-frame {
     position: relative; width: 100%; height: 100%; max-width: 1600px;
-    border: 1px solid rgba(34,211,238,0.3);
-    box-shadow: 0 0 32px rgba(34,211,238,0.15);
+    border: 2px solid #ffffff;
+    box-shadow: inset 0 0 0 2px var(--outline), inset 0 0 0 4px #ffffff;
+    border-radius: 4px;
   }
   .map-bg {
     position: absolute; inset: 0;
@@ -159,57 +177,55 @@
      tile-art world. Buildings render as bare PNG sprites with a drop shadow;
      no modern panel chrome. */
   .map-world { position: absolute; inset: 0; }
+  /* CT-style building hotspot — soft white-outlined panel over the painted
+     door, gentle pulse to mark it as interactable. Corner brackets retained
+     as a subtle CT FF-window touch in white instead of neon-cyan reticle. */
   .map-building {
     position: absolute;
     width: 8%; aspect-ratio: 1/1.2;
     transform: translate(-50%, -100%);   /* anchor on the door's bottom edge */
     cursor: pointer;
     image-rendering: pixelated;
-    /* Cyan reticle/door-marker frame on top of the painted shipdeck door.
-       Pure CSS pixel-art: four corner brackets via clip-path layered with
-       a subtle cyan glow pulse so each door reads as an interactive
-       targeting reticle without obscuring the painted door behind it. */
     background-image: none !important;
-    background-color: rgba(34,211,238,0.08);
-    border: 2px solid rgba(34,211,238,0.55);
-    box-shadow: 0 0 14px rgba(34,211,238,0.25), inset 0 0 8px rgba(34,211,238,0.15);
-    transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease, transform .15s ease;
-    animation: doorIdle 3s ease-in-out infinite;
+    background-color: rgba(255,255,255,0.08);
+    border: 2px solid rgba(255,255,255,0.7);
+    box-shadow: inset 0 0 0 1px var(--outline);
+    border-radius: 2px;
+    transition: background-color .15s ease, border-color .15s ease, transform .15s ease;
+    animation: doorIdle 2.4s ease-in-out infinite;
   }
-  /* Sci-fi corner brackets so the hotspot reads as a reticle, not a box.
-     Top corners via ::before, bottom corners via ::after. */
+  /* Corner brackets in white — softer CT chrome, not sci-fi targeting frame. */
   .map-building::before,
   .map-building::after {
     content: ''; position: absolute; left: -3px; right: -3px;
     height: 8px; pointer-events: none;
-    border-left: 3px solid var(--cyan); border-right: 3px solid var(--cyan);
+    border-left: 3px solid #ffffff; border-right: 3px solid #ffffff;
   }
-  .map-building::before { top: -3px; border-top: 3px solid var(--cyan); }
-  .map-building::after  { bottom: -3px; border-bottom: 3px solid var(--cyan); }
+  .map-building::before { top: -3px; border-top: 3px solid #ffffff; }
+  .map-building::after  { bottom: -3px; border-bottom: 3px solid #ffffff; }
   @keyframes doorIdle {
-    0%, 100% { box-shadow: 0 0 14px rgba(34,211,238,0.20), inset 0 0 8px rgba(34,211,238,0.12); }
-    50%      { box-shadow: 0 0 22px rgba(34,211,238,0.40), inset 0 0 14px rgba(34,211,238,0.20); }
+    0%, 100% { background-color: rgba(255,255,255,0.08); }
+    50%      { background-color: rgba(255,255,255,0.18); }
   }
   .map-building.tall { aspect-ratio: 1/1.4; width: 9%; }
   .map-building:hover, .map-building.near {
-    background-color: rgba(253,224,71,0.22);
+    background-color: rgba(244,201,93,0.30);
     border-color: var(--gold);
-    box-shadow: 0 0 22px rgba(253,224,71,0.5), inset 0 0 14px rgba(253,224,71,0.25);
-    transform: translate(-50%, -103%) scale(1.03);
+    transform: translate(-50%, -103%) scale(1.04);
     z-index: 5;
     animation: none;
   }
   .map-building:hover::before, .map-building.near::before,
   .map-building:hover::after,  .map-building.near::after { border-color: var(--gold); }
   .map-building.alert {
-    background-color: rgba(239,68,68,0.18);
+    background-color: rgba(217,69,69,0.25);
     border-color: var(--red);
     animation: pulseAlert 1.2s ease-in-out infinite;
   }
   .map-building.alert::before, .map-building.alert::after { border-color: var(--red); }
-  .map-building.warn { background-color: rgba(251,191,36,0.18); border-color: var(--amber); }
+  .map-building.warn { background-color: rgba(232,176,74,0.25); border-color: var(--amber); }
   .map-building.warn::before, .map-building.warn::after { border-color: var(--amber); }
-  @keyframes pulseAlert { 50% { box-shadow: 0 0 22px var(--red), inset 0 0 12px rgba(239,68,68,0.45); } }
+  @keyframes pulseAlert { 50% { background-color: rgba(217,69,69,0.45); } }
   /* Per-building nameplate sits below the sprite — classic FF town label */
   .map-building .b-label {
     position: absolute; bottom: -22px; left: 50%; transform: translateX(-50%);
@@ -271,12 +287,12 @@
      as the character lifting weight, not bouncing whole. */
   .player-avatar {
     position: absolute;
-    width: 7%; aspect-ratio: 1 / 1;       /* overworld size */
+    width: 7%; aspect-ratio: 1 / 1;       /* overworld size — chibi sprite reads cleanly at 7% */
     transform: translate(-50%, -100%);
     background-image: url('/assets/rpg/sprites/crew/mack.webp');  /* default = front */
     background-size: contain; background-position: center bottom; background-repeat: no-repeat;
     image-rendering: pixelated;
-    z-index: 10;
+    z-index: 12;                          /* above the wizard (z-index: 9) so the player is never visually buried */
     pointer-events: none;
     filter: drop-shadow(0 4px 0 rgba(0,0,0,0.55));
     transition: left .14s linear, top .14s linear;
@@ -284,7 +300,7 @@
   /* In a sector interior, the player is the prominent character in the
      room (not a tiny dot on a map). Scaled up so blonde Mac reads as a
      proper FF-style protagonist in the middle of the space. */
-  .sector-room .player-avatar { width: 14%; }
+  .sector-room .player-avatar { width: 8%; }
   .player-avatar.face-up    { background-image: url('/assets/rpg/sprites/crew/mack-back.webp'); }
   .player-avatar.face-down  { background-image: url('/assets/rpg/sprites/crew/mack.webp'); }
   .player-avatar.face-left  { background-image: url('/assets/rpg/sprites/crew/mack-side.webp'); }
@@ -395,12 +411,15 @@
   .vp-btn {
     position: absolute;
     width: 44px; height: 44px;
-    background: rgba(10,16,36,0.78); border: 2px solid var(--cyan);
-    color: var(--cyan); font-family: 'Press Start 2P', monospace; font-size: 14px;
+    background: linear-gradient(180deg, #4a8edb 0%, #2a5fa0 100%);
+    border: 2px solid #ffffff; box-shadow: inset 0 0 0 1px var(--outline);
+    border-radius: 4px;
+    color: var(--gold); text-shadow: 1px 1px 0 #000;
+    font-family: 'Press Start 2P', monospace; font-size: 14px;
     display: flex; align-items: center; justify-content: center;
     cursor: pointer; touch-action: none;
   }
-  .vp-btn.held { background: rgba(34,211,238,0.35); color: var(--gold); }
+  .vp-btn.held { background: linear-gradient(180deg, #f4c95d 0%, #d99a2e 100%); color: var(--outline); text-shadow: none; }
   .vp-up    { top: 0;    left: 44px; }
   .vp-down  { bottom: 0; left: 44px; }
   .vp-left  { left: 0;   top: 44px; }
@@ -408,21 +427,23 @@
   .vp-action {
     position: fixed; right: 18px; bottom: 18px;
     width: 64px; height: 64px; border-radius: 50%;
-    background: rgba(253,224,71,0.18); border: 2px solid var(--gold);
-    color: var(--gold); font-family: 'Press Start 2P', monospace; font-size: 10px;
+    background: linear-gradient(180deg, #f4c95d 0%, #d99a2e 100%);
+    border: 3px solid #ffffff; box-shadow: inset 0 0 0 2px var(--outline);
+    color: var(--outline); font-family: 'Press Start 2P', monospace; font-size: 14px;
     display: none; align-items: center; justify-content: center;
     z-index: 150; cursor: pointer; touch-action: none;
-    box-shadow: 0 0 16px rgba(253,224,71,0.4);
   }
   .vp-action.show { display: flex; }
-  .vp-action.held { background: rgba(253,224,71,0.4); }
+  .vp-action.held { background: linear-gradient(180deg, #ffe17a 0%, #f4c95d 100%); }
 
   /* ───── SECTOR (walkable interior) ───── */
   .view-sector { padding-top: 70px; }
+  /* CT-style frame around the sector interior — same double-border pattern. */
   .sector-room {
     position: absolute; inset: 70px 12px 12px;
-    border: 2px solid var(--cyan);
-    box-shadow: 0 0 30px rgba(34,211,238,0.18), inset 0 0 0 1px rgba(6,10,20,0.9);
+    border: 2px solid #ffffff;
+    box-shadow: inset 0 0 0 2px var(--outline), inset 0 0 0 4px #ffffff;
+    border-radius: 4px;
     overflow: hidden;
   }
   .sector-bg {
@@ -445,46 +466,10 @@
     cursor: pointer;
     image-rendering: pixelated;
   }
-  /* Floating speech bubble that pops above the painted character (or
-     comms terminal) while a dialogue is open. Pixel-art classic-JRPG
-     style: white box with rounded corners, three bouncing dots, dark
-     tail pointing down toward the speaker. */
-  .speech-bubble {
-    position: absolute;
-    transform: translate(-50%, -100%);
-    width: 48px; height: 32px;
-    background: #fff;
-    border: 3px solid #060a14;
-    border-radius: 4px;
-    display: flex; align-items: center; justify-content: center;
-    font-family: 'Press Start 2P', monospace; font-size: 14px;
-    color: #060a14; letter-spacing: 3px;
-    box-shadow: 0 3px 0 rgba(0,0,0,0.55), 0 0 12px rgba(34,211,238,0.35);
-    z-index: 50;
-    pointer-events: none;
-    animation: speechBob 0.55s ease-in-out infinite;
-    image-rendering: pixelated;
-  }
-  .speech-bubble::after {
-    content: ''; position: absolute; bottom: -11px; left: 50%;
-    transform: translateX(-50%);
-    width: 0; height: 0;
-    border: 7px solid transparent;
-    border-top: 9px solid #060a14;
-  }
-  .speech-bubble::before {
-    content: ''; position: absolute; bottom: -6px; left: 50%;
-    transform: translateX(-50%);
-    width: 0; height: 0;
-    border: 5px solid transparent;
-    border-top: 7px solid #fff;
-    z-index: 1;
-  }
-  @keyframes speechBob {
-    0%, 100% { transform: translate(-50%, -100%); }
-    50%      { transform: translate(-50%, -112%); }
-  }
-  .speech-bubble.done { animation: none; opacity: 0.55; }
+  /* Above-NPC speech bubble suppressed for CT idiom — SNES JRPGs render
+     all speaker indication inside the dialogue window itself, not floating
+     above the speaker. Class retained for JS that toggles it, but hidden. */
+  .speech-bubble { display: none !important; }
 
   /* Office NPC hotspot: invisible click target overlaid on the painted
      character in the room background. Only the floating "TALK · X"
@@ -513,15 +498,15 @@
     box-shadow: none !important;
     image-rendering: pixelated;
   }
-  /* Field-ops comms terminal: glowing console instead of a portrait.
-     Pixel-blue scanline pattern with a centered amber "TX" glyph and a
-     blinking cyan cursor so it reads as an interactive comms station. */
+  /* Field-ops comms terminal: CT-style notice board placeholder until
+     Phase 4 swaps in painted wood art. Sky-blue scanline pattern over
+     navy with a centered gold "TX" glyph and a blinking sky cursor. */
   .npc-sprite.comms-terminal {
     background:
-      repeating-linear-gradient(to bottom, rgba(34,211,238,0.18) 0, rgba(34,211,238,0.18) 2px, transparent 3px, transparent 4px),
-      linear-gradient(180deg, #0c1a3e 0%, #060a14 100%);
-    border-color: var(--cyan);
-    box-shadow: 0 0 28px rgba(34,211,238,0.55), inset 0 0 18px rgba(34,211,238,0.25);
+      repeating-linear-gradient(to bottom, rgba(168,216,255,0.18) 0, rgba(168,216,255,0.18) 2px, transparent 3px, transparent 4px),
+      linear-gradient(180deg, #2a3f6f 0%, #1a2440 100%);
+    border-color: var(--gold);
+    box-shadow: inset 0 0 0 2px var(--outline), inset 0 0 0 4px #ffffff;
     aspect-ratio: 1/1.1;
     width: 11%;
     animation: commsPulse 2.4s ease-in-out infinite;
@@ -530,18 +515,17 @@
     content: 'TX'; position: absolute; inset: 0;
     display: flex; align-items: center; justify-content: center;
     font-family: 'Press Start 2P', monospace; font-size: 22px;
-    color: var(--gold); text-shadow: 0 0 8px var(--gold);
+    color: var(--gold);
   }
   .npc-sprite.comms-terminal::after {
     content: ''; position: absolute; bottom: 14%; left: 50%;
     transform: translateX(-50%);
     width: 8px; height: 12px; background: var(--cyan);
-    box-shadow: 0 0 10px var(--cyan);
     animation: commsBlink 0.9s steps(1, end) infinite;
   }
   @keyframes commsPulse {
-    0%, 100% { box-shadow: 0 0 24px rgba(34,211,238,0.45), inset 0 0 14px rgba(34,211,238,0.20); }
-    50%      { box-shadow: 0 0 36px rgba(34,211,238,0.70), inset 0 0 22px rgba(34,211,238,0.30); }
+    0%, 100% { filter: brightness(1); }
+    50%      { filter: brightness(1.08); }
   }
   @keyframes commsBlink { 50% { opacity: 0; } }
   .npc-sprite.near {
@@ -561,14 +545,14 @@
     white-space: nowrap;
     border: 1px solid;
   }
-  /* Door zone — visible glow at bottom-center, walk-into exits */
+  /* Door zone — sky tint at bottom-center, walk-into exits */
   .door-zone {
     position: absolute;
     left: 50%; bottom: 0;
     transform: translateX(-50%);
     width: 14%; height: 7%;
-    background: linear-gradient(0deg, rgba(34,211,238,0.45), rgba(34,211,238,0.0));
-    border-top: 2px dashed var(--cyan);
+    background: linear-gradient(0deg, rgba(168,216,255,0.40), rgba(168,216,255,0.0));
+    border-top: 2px dashed var(--gold);
     z-index: 5;
     pointer-events: none;
   }
@@ -576,93 +560,180 @@
     content: 'EXIT'; position: absolute; top: 8px; left: 50%;
     transform: translateX(-50%);
     font-family: 'Press Start 2P', monospace; font-size: 8px;
-    color: var(--cyan); letter-spacing: 2px;
-    text-shadow: 0 0 6px var(--cyan);
+    color: var(--gold); letter-spacing: 2px;
+    text-shadow: 1px 1px 0 rgba(0,0,0,0.55);
   }
   /* Terminal zone (computer desk) — interactable for stats panel */
   .terminal-zone {
     position: absolute;
     width: 8%; height: 10%;
     transform: translate(-50%, -50%);
-    background: linear-gradient(180deg, rgba(34,211,238,0.25), rgba(34,211,238,0.08));
-    border: 2px solid var(--cyan);
+    background: linear-gradient(180deg, rgba(168,216,255,0.25), rgba(168,216,255,0.08));
+    border: 2px solid var(--gold);
     z-index: 6;
     cursor: pointer;
-    box-shadow: 0 0 14px rgba(34,211,238,0.4), inset 0 0 12px rgba(6,10,20,0.5);
+    box-shadow: inset 0 0 0 1px var(--outline);
   }
   .terminal-zone::after {
     content: 'TERM'; position: absolute; bottom: -22px; left: 50%;
     transform: translateX(-50%);
     font-family: 'Press Start 2P', monospace; font-size: 8px;
-    color: var(--cyan); white-space: nowrap;
+    color: var(--gold); white-space: nowrap;
+    text-shadow: 1px 1px 0 rgba(0,0,0,0.55);
   }
-  /* Sector mini-HUD (sector name + alert level, top-left of room) */
+  /* Tool hotspot — sector panel that deep-links into the matching
+     command-center surface. Smaller than the terminal so two-to-three
+     can sit on the same wall without crowding. Label is per-tool and
+     pulled from a data-label attribute set at render time. */
+  .tool-zone {
+    position: absolute;
+    width: 6%; height: 7%;
+    transform: translate(-50%, -50%);
+    background: linear-gradient(180deg, rgba(168,216,255,0.30), rgba(168,216,255,0.10));
+    border: 2px solid var(--gold);
+    z-index: 6;
+    cursor: pointer;
+    box-shadow: inset 0 0 0 1px var(--outline);
+  }
+  .tool-zone.near {
+    background: linear-gradient(180deg, rgba(244,201,93,0.45), rgba(244,201,93,0.15));
+    box-shadow: inset 0 0 0 1px var(--outline), 0 0 0 2px #ffffff;
+  }
+  .tool-zone::after {
+    content: attr(data-label); position: absolute; bottom: -18px; left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Press Start 2P', monospace; font-size: 7px;
+    color: var(--gold); white-space: nowrap;
+    text-shadow: 1px 1px 0 rgba(0,0,0,0.55);
+  }
+  /* Tool overlay — fullscreen modal iframe that hosts the actual
+     command-center surface inside the game. Closing it returns the
+     player to the room exactly where they stood. */
+  .tool-overlay {
+    position: fixed; inset: 0;
+    z-index: 999;
+    background: rgba(6,10,20,0.85);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .tool-overlay .frame-chrome {
+    width: 100%; height: 100%; max-width: 1400px;
+    display: flex; flex-direction: column;
+    background: linear-gradient(180deg, #4a8edb 0%, #2a5fa0 100%);
+    border: 2px solid #ffffff;
+    box-shadow: inset 0 0 0 2px var(--outline), 0 12px 40px rgba(0,0,0,0.6);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .tool-overlay .frame-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 14px;
+    background: linear-gradient(180deg, #2a5fa0 0%, #1a3a6e 100%);
+    border-bottom: 2px solid var(--outline);
+    color: #ffffff;
+    font-family: 'Press Start 2P', monospace; font-size: 10px;
+    letter-spacing: 2px;
+  }
+  .tool-overlay .frame-title { color: var(--gold); text-shadow: 1px 1px 0 rgba(0,0,0,0.5); }
+  .tool-overlay .frame-hint { font-size: 8px; color: var(--fg-dim); }
+  .tool-overlay .frame-close {
+    background: var(--gold); color: var(--outline);
+    border: 2px solid var(--outline);
+    padding: 4px 12px;
+    font-family: 'Press Start 2P', monospace; font-size: 9px;
+    cursor: pointer;
+  }
+  .tool-overlay .frame-close:hover { background: #ffd97a; }
+  .tool-overlay iframe {
+    flex: 1; width: 100%; border: 0; background: #ffffff;
+  }
+  /* Sector mini-HUD — CT-style blue window. */
   .sector-hud {
     position: absolute; top: 12px; left: 12px;
     z-index: 11;
-    background: rgba(6,10,20,0.85);
-    border: 1px solid var(--cyan);
+    background: linear-gradient(180deg, #4a8edb 0%, #2a5fa0 100%);
+    border: 2px solid #ffffff;
+    box-shadow: inset 0 0 0 2px var(--outline);
+    border-radius: 4px;
     padding: 8px 14px;
     pointer-events: none;
   }
   .sector-hud .eyebrow {
     font-family: 'Press Start 2P', monospace; font-size: 8px; letter-spacing: 2px;
-    color: var(--cyan); margin-bottom: 4px;
+    color: #ffffff; margin-bottom: 4px; text-shadow: 1px 1px 0 rgba(0,0,0,0.5);
   }
   .sector-hud .head {
-    font-family: 'Orbitron', monospace; font-size: 18px; font-weight: 700;
-    color: var(--gold); letter-spacing: 2px;
+    font-family: 'Press Start 2P', monospace; font-size: 14px; font-weight: 700;
+    color: var(--gold); letter-spacing: 2px; text-shadow: 1px 1px 0 #000;
   }
   .sector-hud .ticker {
-    font-family: 'VT323', monospace; font-size: 14px; color: var(--cyan);
+    font-family: 'VT323', monospace; font-size: 14px; color: #ffffff;
+    text-shadow: 1px 1px 0 rgba(0,0,0,0.5);
     letter-spacing: 1px; margin-top: 6px; padding-top: 6px;
-    border-top: 1px dashed rgba(34,211,238,0.25);
+    border-top: 1px solid rgba(255,255,255,0.4);
   }
-  /* Always-visible "back to ship" button so the player never has to hunt
-     for the door. Pairs with the [B] keyboard shortcut. */
+  /* Always-visible "back to ship" exit button — CT-style chip. */
   .hud-exit-btn {
     display: block; margin-top: 8px; padding: 6px 10px;
-    background: rgba(34,211,238,0.10); color: var(--cyan);
-    border: 1px solid rgba(34,211,238,0.55); cursor: pointer;
+    background: linear-gradient(180deg, #4a8edb 0%, #2a5fa0 100%);
+    color: var(--gold);
+    border: 2px solid #ffffff; box-shadow: inset 0 0 0 1px var(--outline);
+    border-radius: 3px;
+    cursor: pointer;
     font-family: 'Press Start 2P', monospace; font-size: 8px;
     letter-spacing: 1px; pointer-events: auto;
-    transition: background .15s, color .15s;
+    text-shadow: 1px 1px 0 #000;
+    transition: background .15s;
   }
-  .hud-exit-btn:hover { background: rgba(34,211,238,0.25); color: var(--fg); }
+  .hud-exit-btn:hover { background: linear-gradient(180deg, #5badf5 0%, #3a82d3 100%); }
   .hud-exit-btn:active { transform: translateY(1px); }
   .sector-hud .head .role {
     display: block; font-size: 11px; color: var(--fg-dim); font-weight: 500;
     letter-spacing: 1px; margin-top: 2px;
   }
 
-  /* Dialogue choices (below body once typewriter completes) */
+  /* Dialogue choices — CT-style list with gold ▶ cursor on selected row. */
   .dialogue-choices {
     display: none;
-    margin-top: 12px;
-    flex-direction: column; gap: 6px;
+    margin-top: 14px;
+    flex-direction: column; gap: 2px;
   }
   .dialogue-choices.show { display: flex; }
   .dialogue-choice {
-    background: rgba(6,10,20,0.7);
-    border: 1px solid rgba(34,211,238,0.4);
-    color: var(--fg);
-    font-family: 'VT323', monospace; font-size: 18px;
-    padding: 8px 14px; cursor: pointer;
+    background: transparent;
+    border: none;
+    color: #ffffff;
+    font-family: 'VT323', monospace; font-size: 20px;
+    text-shadow: 1px 1px 0 rgba(0,0,0,0.45);
+    padding: 4px 14px 4px 28px; cursor: pointer;
     display: flex; align-items: center; gap: 10px;
     text-align: left;
+    position: relative;
   }
   .dialogue-choice .num {
-    color: var(--cyan); font-family: 'Press Start 2P', monospace; font-size: 10px;
+    color: var(--gold); font-family: 'Press Start 2P', monospace; font-size: 10px;
+    text-shadow: 1px 1px 0 #000;
     min-width: 18px;
   }
+  /* Gold ▶ cursor appears only on hover/focused row, like CT's menu pointer. */
+  .dialogue-choice::before {
+    content: '▶';
+    position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
+    color: var(--gold); font-family: 'Press Start 2P', monospace; font-size: 10px;
+    text-shadow: 1px 1px 0 #000;
+    opacity: 0;
+  }
   .dialogue-choice:hover, .dialogue-choice.focused {
-    background: rgba(34,211,238,0.18);
-    border-color: var(--cyan);
     color: var(--gold);
-    box-shadow: inset 3px 0 0 var(--gold);
+  }
+  .dialogue-choice:hover::before, .dialogue-choice.focused::before {
+    opacity: 1;
   }
   .dialogue-choice.danger:hover, .dialogue-choice.danger.focused {
-    border-color: var(--red); color: var(--red); box-shadow: inset 3px 0 0 var(--red);
+    color: var(--red);
+  }
+  .dialogue-choice.danger:hover::before, .dialogue-choice.danger.focused::before {
+    color: var(--red);
   }
   /* Stats grid is still used inside modals (terminal opens the stats view) */
   .sector-stats-grid {
@@ -671,124 +742,156 @@
   }
   .sector-stats-grid .k { color: var(--fg-dim); font-size: 11px; letter-spacing: 1px; text-transform: uppercase; }
   .sector-stats-grid .v { color: var(--fg); font-weight: 600; font-family: 'VT323', monospace; font-size: 18px; }
+  /* CT-style action button — blue window + gold text. */
   .btn-ry {
-    background: linear-gradient(180deg, rgba(34,211,238,0.18), rgba(34,211,238,0.06));
-    border: 1px solid var(--cyan); color: var(--cyan);
+    background: linear-gradient(180deg, #4a8edb 0%, #2a5fa0 100%);
+    border: 2px solid #ffffff;
+    box-shadow: inset 0 0 0 1px var(--outline);
+    border-radius: 3px;
+    color: var(--gold); text-shadow: 1px 1px 0 #000;
     padding: 10px 18px; font-family: 'Press Start 2P', monospace; font-size: 10px;
     letter-spacing: 2px; cursor: pointer;
-    box-shadow: inset 0 0 0 1px rgba(10,16,36,0.6);
   }
-  .btn-ry:hover { background: rgba(34,211,238,0.25); color: var(--gold); }
-  .btn-ry.primary { color: var(--gold); border-color: var(--gold); background: linear-gradient(180deg, rgba(253,224,71,0.18), rgba(253,224,71,0.06)); }
-  .btn-ry.primary:hover { background: rgba(253,224,71,0.25); }
-  .btn-ry.danger { color: var(--red); border-color: var(--red); }
+  .btn-ry:hover { background: linear-gradient(180deg, #5badf5 0%, #3a82d3 100%); }
+  .btn-ry.primary { color: #fff; }
+  .btn-ry.primary:hover { color: var(--gold); }
+  .btn-ry.danger { color: var(--red); }
 
-  /* ───── DIALOGUE overlay ───── */
+  /* ───── DIALOGUE overlay (CT-style window) ───── */
   .dialogue {
     position: fixed; left: 12px; right: 12px; bottom: 12px;
     display: none; z-index: 400;
   }
   .dialogue.open { display: block; }
+  /* CT signature: blue gradient window with white double-border
+     (white outer 2px, dark middle 2px, white inner 2px via insets). */
   .dialogue-box {
     position: relative;
-    background: linear-gradient(180deg, rgba(10,16,36,0.96), rgba(10,16,36,0.92));
-    border: 2px solid var(--cyan);
-    box-shadow: 0 0 30px rgba(34,211,238,0.3), inset 0 0 0 1px rgba(6,10,20,0.9);
-    padding: 20px 24px 18px;
+    background: linear-gradient(180deg, #4a8edb 0%, #2a5fa0 100%);
+    border: 2px solid #ffffff;
+    box-shadow: inset 0 0 0 2px var(--outline), inset 0 0 0 4px #ffffff;
+    border-radius: 6px;
+    padding: 22px 26px 22px;
     min-height: 130px;
   }
+  /* Speaker nameplate tab — same window treatment, smaller, gold text. */
   .dialogue-speaker {
-    position: absolute; top: -14px; left: 18px;
+    position: absolute; top: -16px; left: 18px;
     padding: 5px 14px;
-    background: var(--bg-panel-solid); border: 2px solid var(--cyan);
+    background: linear-gradient(180deg, #4a8edb 0%, #2a5fa0 100%);
+    border: 2px solid #ffffff;
+    box-shadow: inset 0 0 0 2px var(--outline);
+    border-radius: 4px;
     font-family: 'Press Start 2P', monospace; font-size: 10px; letter-spacing: 2px;
     color: var(--gold);
+    text-shadow: 1px 1px 0 #000;
   }
   .dialogue-body {
     font-family: 'VT323', monospace; font-size: 22px;
-    color: var(--fg); line-height: 1.35;
+    color: #ffffff; line-height: 1.35;
+    text-shadow: 1px 1px 0 rgba(0,0,0,0.45);
     white-space: pre-wrap;
     min-height: 90px;
   }
+  /* CT idiom: blinking gold ▼ in bottom-right of box when awaiting input. */
   .dialogue-advance {
-    position: absolute; bottom: 8px; right: 14px;
-    font-family: 'Press Start 2P', monospace; font-size: 12px; color: var(--cyan);
+    position: absolute; bottom: 6px; right: 12px;
+    font-family: 'Press Start 2P', monospace; font-size: 12px; color: var(--gold);
+    text-shadow: 1px 1px 0 #000;
     animation: blink 0.9s steps(2,end) infinite;
   }
+  /* Portrait box — same CT window treatment so it reads as part of the chrome. */
   .dialogue-portrait {
     position: absolute; bottom: 100%; right: 12px;
     width: 90px; height: 120px;
-    border: 2px solid var(--cyan); background: var(--bg-panel-solid);
-    overflow: hidden; margin-bottom: 4px;
-    box-shadow: 0 0 16px rgba(34,211,238,0.3);
+    border: 2px solid #ffffff;
+    background: linear-gradient(180deg, #4a8edb 0%, #2a5fa0 100%);
+    box-shadow: inset 0 0 0 2px var(--outline);
+    border-radius: 4px;
+    overflow: hidden; margin-bottom: 6px;
   }
   .dialogue-portrait img { width: 100%; height: 100%; object-fit: cover; }
 
-  /* ───── PAUSE / MODAL ───── */
+  /* ───── PAUSE / MODAL (CT-style window) ───── */
   .modal-back {
     position: fixed; inset: 0; z-index: 600;
     display: none; align-items: center; justify-content: center;
-    background: rgba(0,0,0,0.78);
+    background: rgba(0,0,0,0.65);
     padding: 20px;
   }
   .modal-back.open { display: flex; }
   .modal {
-    background: linear-gradient(180deg, var(--bg-panel-solid), #0e1530);
-    border: 2px solid var(--cyan);
-    box-shadow: 0 0 30px rgba(34,211,238,0.3), inset 0 0 0 2px rgba(10,16,36,0.7);
-    padding: 24px 28px;
+    background: linear-gradient(180deg, #4a8edb 0%, #2a5fa0 100%);
+    border: 2px solid #ffffff;
+    box-shadow: inset 0 0 0 2px var(--outline), inset 0 0 0 4px #ffffff;
+    border-radius: 6px;
+    padding: 26px 30px;
     min-width: 360px; max-width: 92vw; max-height: 90vh; overflow: auto;
-    color: var(--fg);
+    color: #ffffff;
   }
   .modal h2 {
     font-family: 'Press Start 2P', monospace;
     font-size: 14px; color: var(--gold);
     letter-spacing: 3px; margin: 0 0 18px 0;
+    text-shadow: 1px 1px 0 #000;
   }
+  /* CT pause-menu row: no fill, just gold ▶ cursor on selected row. */
   .menu-item {
-    padding: 10px 14px; display: flex; align-items: center; gap: 12px;
-    cursor: pointer; border-left: 3px solid transparent;
+    padding: 6px 14px 6px 28px; display: flex; align-items: center; gap: 12px;
+    cursor: pointer;
     font-family: 'VT323', monospace; font-size: 20px;
+    color: #ffffff; text-shadow: 1px 1px 0 rgba(0,0,0,0.45);
+    position: relative;
   }
   .menu-item:hover, .menu-item.focused {
-    background: rgba(34,211,238,0.15); border-left-color: var(--cyan);
-    color: var(--cyan);
+    color: var(--gold);
   }
-  .menu-item .arrow { opacity: 0; }
+  .menu-item .arrow {
+    position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
+    color: var(--gold); font-family: 'Press Start 2P', monospace; font-size: 10px;
+    text-shadow: 1px 1px 0 #000;
+    opacity: 0;
+  }
   .menu-item.focused .arrow, .menu-item:hover .arrow { opacity: 1; }
   .modal-hint {
-    margin-top: 14px; color: var(--fg-dim); font-size: 12px; font-family: 'Inter', sans-serif;
+    margin-top: 14px; color: #cfd9ea; font-size: 12px; font-family: 'VT323', monospace;
+    text-shadow: 1px 1px 0 rgba(0,0,0,0.45);
   }
 
-  /* Quest log */
-  .quest-list { display: flex; flex-direction: column; gap: 10px; }
+  /* Quest log — CT-style parchment rows. */
+  .quest-list { display: flex; flex-direction: column; gap: 8px; }
   .quest-card {
-    border: 1px solid rgba(34,211,238,0.3); padding: 10px 14px;
-    background: rgba(34,211,238,0.04);
-    display: grid; grid-template-columns: 8px 1fr auto; gap: 12px; align-items: center;
+    border: 2px solid #ffffff; box-shadow: inset 0 0 0 1px var(--outline);
+    border-radius: 3px;
+    padding: 10px 14px;
+    background: rgba(26,36,64,0.55);
+    display: grid; grid-template-columns: 6px 1fr auto; gap: 12px; align-items: center;
   }
-  .quest-card .pri { width: 8px; height: 100%; min-height: 36px; }
+  .quest-card .pri { width: 6px; height: 100%; min-height: 36px; }
   .quest-card.urgent .pri { background: var(--red); }
   .quest-card.high .pri { background: var(--amber); }
-  .quest-card.normal .pri { background: var(--cyan); }
-  .quest-card .body .title { font-weight: 600; font-size: 14px; color: var(--fg); }
-  .quest-card .body .ctx { font-size: 11px; color: var(--fg-dim); margin-top: 2px; }
+  .quest-card.normal .pri { background: var(--gold); }
+  .quest-card .body .title { font-weight: 600; font-size: 16px; color: #fff; font-family: 'VT323', monospace; text-shadow: 1px 1px 0 rgba(0,0,0,0.45); }
+  .quest-card .body .ctx { font-size: 13px; color: #cfd9ea; font-family: 'VT323', monospace; margin-top: 2px; text-shadow: 1px 1px 0 rgba(0,0,0,0.45); }
   .quest-card .dismiss {
-    background: transparent; border: 1px solid var(--fg-dim); color: var(--fg-dim);
+    background: transparent; border: 2px solid #cfd9ea; color: #cfd9ea;
     width: 26px; height: 26px; cursor: pointer; font-family: monospace; font-size: 14px;
+    border-radius: 2px;
   }
   .quest-card .dismiss:hover { color: var(--red); border-color: var(--red); }
 
-  /* Crew party panel */
+  /* Crew party panel — CT-style portrait grid. */
   .party-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
   .party-card {
-    border: 1px solid rgba(34,211,238,0.3); background: var(--bg-panel-solid);
+    border: 2px solid #ffffff; box-shadow: inset 0 0 0 1px var(--outline);
+    border-radius: 3px;
+    background: linear-gradient(180deg, #4a8edb 0%, #2a5fa0 100%);
     text-align: center; overflow: hidden;
   }
   .party-card img { width: 100%; aspect-ratio: 3/4; object-fit: cover; }
   .party-card .name {
     font-family: 'Press Start 2P', monospace; font-size: 8px; padding: 6px 0;
-    color: var(--gold); letter-spacing: 1px;
+    color: var(--gold); letter-spacing: 1px; text-shadow: 1px 1px 0 #000;
   }
 
   /* CC wizard popup in sector */
@@ -816,13 +919,18 @@
     max-width: 320px;
   }
   .toast {
-    border: 1px solid var(--cyan); background: var(--bg-panel-solid);
-    padding: 10px 14px; font-size: 13px;
-    box-shadow: 0 0 14px rgba(34,211,238,0.25);
+    border: 2px solid #ffffff;
+    box-shadow: inset 0 0 0 1px var(--outline);
+    border-radius: 3px;
+    background: linear-gradient(180deg, #4a8edb 0%, #2a5fa0 100%);
+    color: #fff; text-shadow: 1px 1px 0 rgba(0,0,0,0.45);
+    padding: 8px 12px; font-family: 'VT323', monospace; font-size: 16px;
     animation: toastIn .2s ease;
   }
   .toast.amber { border-color: var(--amber); }
   .toast.red { border-color: var(--red); }
+  .toast.gold { border-color: var(--gold); }
+  .toast.pink { border-color: var(--pink); }
   @keyframes toastIn { from { transform: translateX(20px); opacity: 0; } }
 
   /* Tap textarea */
@@ -887,7 +995,7 @@
     <div class="scrim"></div>
     <div class="title-loading" id="titleLoading">connecting to plus ultra…</div>
     <div class="title-press" id="titlePress">PRESS START</div>
-    <div class="title-version">v1.0 · cyberpunk overworld</div>
+    <div class="title-version">v1.1 · ages of plus ultra</div>
   </div>
 
   <!-- MAP view (walkable overworld) -->
@@ -983,15 +1091,59 @@ const SECTORS = [
   // them opens an Email + Leave dialog - their station-specific dialogue
   // trees still live in their own sectors.
   { id:'HQ',        npc:'RYUJIN',   role:'Electro Dragon God', href:'/command-center.html', bg:'/assets/rpg/scenes/sectors/hq.webp',         sprite:'/assets/rpg/sprites/buildings/hq.webp',         x:50, y:22, talk:{x:38,y:35},
-    guests:[{ npc:'MEL', x:22, y:72 }, { npc:'CAT', x:78, y:72 }] },
-  { id:'SALES',     npc:'MACK',     role:'Sales',        href:'/sales-cockpit.html',        bg:'/assets/rpg/scenes/sectors/sales.webp',      sprite:'/assets/rpg/sprites/buildings/sales.webp',      x: 9, y:50, talk:{x:30,y:42} },
-  { id:'MARKETING', npc:'CAT',      role:'Marketing',    href:'/admin.html?page=marketing', bg:'/assets/rpg/scenes/sectors/marketing.webp',  sprite:'/assets/rpg/sprites/buildings/marketing.webp',  x:22, y:50, talk:{x:30,y:42} },
-  { id:'FINANCE',   npc:'MEL',      role:'Books',        href:'/admin.html?page=finance',   bg:'/assets/rpg/scenes/sectors/finance.webp',    sprite:'/assets/rpg/sprites/buildings/finance.webp',    x:36, y:50, talk:{x:48,y:42} },
-  { id:'ADMIN',     npc:'CAT',      role:'EA',           href:'/administration.html',       bg:'/assets/rpg/scenes/sectors/admin.webp',      sprite:'/assets/rpg/sprites/buildings/admin.webp',      x:64, y:50, talk:{x:42,y:48} },
-  { id:'MATERIALS', npc:'PAVANJOT', role:'Quartermaster',href:'/production-materials.html', bg:'/assets/rpg/scenes/sectors/materials.webp',  sprite:'/assets/rpg/sprites/buildings/production.webp', x:76, y:50 },
-  { id:'PRODUCTION',npc:'DIEGO',    role:'Foreman',      href:'/production.html',           bg:'/assets/rpg/scenes/sectors/production.webp', sprite:'/assets/rpg/sprites/buildings/production.webp', x:90, y:50 },
-  { id:'SERVICE',   npc:'AJ',       role:'Repairs',      href:'/service-tickets.html',      bg:'/assets/rpg/scenes/sectors/service.webp',    sprite:'/assets/rpg/sprites/buildings/service.webp',    x:13, y:82 },
-  { id:'CUSTOMER',  npc:'MEL',      role:'Customer Care',href:'/customers.html',            bg:'/assets/rpg/scenes/sectors/customer.webp',   sprite:'/assets/rpg/sprites/buildings/customer.webp',   x:33, y:82, talk:{x:48,y:42} }
+    guests:[{ npc:'MEL', x:22, y:72 }, { npc:'CAT', x:78, y:72 }],
+    tools:[
+      { x:82, y:28, label:'OVERVIEW',  href:'/admin-overview.html' },
+      { x:82, y:55, label:'PORTAL',    href:'/portal-mobile.html' },
+      { x:82, y:80, label:'QUESTS',    href:'/admin-quests.html' }
+    ] },
+  { id:'SALES',     npc:'MACK',     role:'Sales',        href:'/sales-cockpit.html',        bg:'/assets/rpg/scenes/sectors/sales.webp',      sprite:'/assets/rpg/sprites/buildings/sales.webp',      x: 9, y:50, talk:{x:30,y:42},
+    tools:[
+      { x:82, y:28, label:'PIPELINE',  href:'/sales-pipeline.html' },
+      { x:82, y:55, label:'PROPOSALS', href:'/sales-proposals.html' },
+      { x:82, y:80, label:'FOLLOWUPS', href:'/sales-followups.html' }
+    ] },
+  { id:'MARKETING', npc:'CAT',      role:'Marketing',    href:'/admin.html?page=marketing', bg:'/assets/rpg/scenes/sectors/marketing.webp',  sprite:'/assets/rpg/sprites/buildings/marketing.webp',  x:22, y:50, talk:{x:30,y:42},
+    tools:[
+      { x:82, y:28, label:'CREATIVES', href:'/marketing-creatives.html' },
+      { x:82, y:55, label:'SCHEDULE',  href:'/marketing-schedule.html' },
+      { x:82, y:80, label:'LEADS',     href:'/marketing-leads.html' }
+    ] },
+  { id:'FINANCE',   npc:'MEL',      role:'Books',        href:'/admin.html?page=finance',   bg:'/assets/rpg/scenes/sectors/finance.webp',    sprite:'/assets/rpg/sprites/buildings/finance.webp',    x:36, y:50, talk:{x:48,y:42},
+    tools:[
+      { x:82, y:28, label:'P&L',         href:'/finance-pl.html' },
+      { x:82, y:55, label:'PAYABLES',    href:'/finance-payables.html' },
+      { x:82, y:80, label:'RECEIVABLES', href:'/finance-receivables.html' }
+    ] },
+  { id:'ADMIN',     npc:'CAT',      role:'EA',           href:'/administration.html',       bg:'/assets/rpg/scenes/sectors/admin.webp',      sprite:'/assets/rpg/sprites/buildings/admin.webp',      x:64, y:50, talk:{x:42,y:48},
+    tools:[
+      { x:82, y:28, label:'TEAM',     href:'/admin-team.html' },
+      { x:82, y:55, label:'PIPELINE', href:'/admin-pipeline.html' },
+      { x:82, y:80, label:'SYSTEM',   href:'/admin-system.html' }
+    ] },
+  { id:'MATERIALS', npc:'PAVANJOT', role:'Quartermaster',href:'/production-materials.html', bg:'/assets/rpg/scenes/sectors/materials.webp',  sprite:'/assets/rpg/sprites/buildings/production.webp', x:76, y:50,
+    tools:[
+      { x:82, y:28, label:'JOBS',      href:'/production-jobs.html' },
+      { x:82, y:55, label:'SCHEDULE',  href:'/production-schedule.html' },
+      { x:82, y:80, label:'WORKORDERS',href:'/production-workorders.html' }
+    ] },
+  { id:'PRODUCTION',npc:'DIEGO',    role:'Foreman',      href:'/production.html',           bg:'/assets/rpg/scenes/sectors/production.webp', sprite:'/assets/rpg/sprites/buildings/production.webp', x:90, y:50,
+    tools:[
+      { x:82, y:28, label:'SCHEDULE', href:'/production-schedule.html' },
+      { x:82, y:55, label:'PAYSHEET', href:'/production-paysheet.html' },
+      { x:82, y:80, label:'TICKETS',  href:'/production-tickets.html' }
+    ] },
+  { id:'SERVICE',   npc:'AJ',       role:'Repairs',      href:'/service-tickets.html',      bg:'/assets/rpg/scenes/sectors/service.webp',    sprite:'/assets/rpg/sprites/buildings/service.webp',    x:13, y:72,
+    tools:[
+      { x:82, y:32, label:'WARRANTIES', href:'/service-warranties.html' },
+      { x:82, y:65, label:'TICKETS',    href:'/service-tickets.html' }
+    ] },
+  { id:'CUSTOMER',  npc:'MEL',      role:'Customer Care',href:'/customers.html',            bg:'/assets/rpg/scenes/sectors/customer.webp',   sprite:'/assets/rpg/sprites/buildings/customer.webp',   x:33, y:72, talk:{x:48,y:42},
+    tools:[
+      { x:82, y:28, label:'LIST',     href:'/customer-list.html' },
+      { x:82, y:55, label:'REVIEWS',  href:'/customer-reviews.html' },
+      { x:82, y:80, label:'SHOWCASE', href:'/customer-showcase.html' }
+    ] }
 ];
 
 // Overworld movement: classic-FF tile-snap. Each held key queues one step;
@@ -1022,6 +1174,9 @@ const INTERACT_PAD = { w: 3, h: 3 };  // extra % beyond footprint where "near" p
 const NPC_INTERACT_R = 13;
 // Terminal interaction radius
 const TERM_INTERACT_R = 10;
+// Tool hotspot interaction radius — smaller so adjacent tools on the same
+// wall don't bleed into one another. Player must stand right at the tool.
+const TOOL_INTERACT_R = 7;
 // Door zone hit radius (% from bottom-center of room)
 const DOOR_ZONE_TOP = 88;
 
@@ -1030,10 +1185,11 @@ const DOOR_ZONE_TOP = 88;
 // NPC. Multiple sectors can share a crew member (Mack runs HQ + Sales,
 // Mel runs Finance + Customer, Cat runs Admin + Marketing) and the
 // accent follows the person, not the room.
+// CT-friendly accent palette — same crew, sky/parchment hues instead of neon.
 const NPC_ACCENT = {
-  MACK:'#fde047', CAT:'#f9a8d4', MEL:'#22d3ee', AJ:'#34d399',
-  DIEGO:'#fbbf24', PAVANJOT:'#fdba74',
-  RYUJIN:'#22d3ee'  // Electro dragon: cyan crackle
+  MACK:'#f4c95d', CAT:'#f4b7d4', MEL:'#a8d8ff', AJ:'#7fd99a',
+  DIEGO:'#e8b04a', PAVANJOT:'#e8a575',
+  RYUJIN:'#a8d8ff'  // Dragon king: bright sky-blue
 };
 // Crew NPCs use the /crew/ portrait directory; lookups not found there
 // fall back to the legacy top-level path so older identifiers (gods,
@@ -1130,7 +1286,7 @@ const state = {
   // Initial spawn is read from save.player_x/y so the player returns to wherever
   // they were on last visit. Default (50, 32) sits in the open band between HQ
   // (top) and ADMIN (center) so no building is "near" on first frame.
-  player: { x: 50, y: 32, facingDir: 'down', targetX: 50, targetY: 32, stepEndsAt: 0, stepParity: false },
+  player: { x: 50, y: 60, facingDir: 'down', targetX: 50, targetY: 60, stepEndsAt: 0, stepParity: false },
   interior: null,                              // { sec, playerX, playerY, facing, lastEnter }
   worldReturn: { x: 50, y: 50 },               // remember player overworld pos when entering a sector
   nearBuilding: null,                          // overworld: building player is currently touching
@@ -1152,7 +1308,7 @@ function defaultSave() {
   return {
     dismissed_quests: [], visited_sectors: [], spoken_to: [],
     muted: false, last_visit_at: null,
-    player_x: 50, player_y: 32
+    player_x: 50, player_y: 60
   };
 }
 function loadSave() {
@@ -1776,7 +1932,9 @@ function renderWorld() {
       class: 'map-building' + (sec.tall ? ' tall' : '') + (lvl === 'alert' ? ' alert' : lvl === 'warn' ? ' warn' : ''),
       'data-sector': sec.id,
       style: { left: sec.x + '%', top: sec.y + '%', backgroundImage: `url('${sec.sprite}')` },
-      onclick: () => { state.focusedSector = i; sfxStep(); enterSector(); }
+      /* No click handler — walk near + SPACE/Enter is the only entry path.
+         Click previously also mutated state.focusedSector which let a stray
+         click on a distant building hijack the next SPACE press (codex P2). */
     }, [
       el('div', { class: 'b-label', text: sec.id })
     ]);
@@ -1797,7 +1955,10 @@ function renderWorld() {
     world.appendChild(tile);
   });
 
-  // Player sprite — pixel-art div with backgroundImage flipped by facing class
+  // Player sprite — pixel-art div with backgroundImage flipped by facing class.
+  // Drop any stale #playerAvatar from the interior side first so the id stays
+  // unique document-wide (see matching cleanup in renderInterior).
+  document.querySelectorAll('#playerAvatar').forEach(n => n.remove());
   const av = el('div', {
     class: 'player-avatar face-' + (state.player.facingDir || 'down'),
     id: 'playerAvatar',
@@ -1947,10 +2108,13 @@ function enterSector() {
   state.player.targetY = state.player.y;
   // Remember overworld position so we can spawn there on exit
   state.worldReturn = { x: state.player.x, y: state.player.y };
+  // Spawn mid-room (CT framing — player IS the focal point on entry) but
+  // safely outside NPC_INTERACT_R=13 around the NPC at (50,38) so the
+  // talk prompt doesn't auto-fire. y=60 puts player 22% below NPC.
   state.interior = {
     sec,
-    playerX: 50,                  // spawn at door
-    playerY: 82,
+    playerX: 50,
+    playerY: 60,
     facing: -Math.PI / 2,         // facing up toward NPC
     npcX: 50, npcY: 38,
     termX: 14, termY: 28,
@@ -1986,7 +2150,12 @@ function renderInterior() {
   refreshInteriorHud();
 
   // Tear down old interior interactables (re-rendered each enter)
-  room.querySelectorAll('.npc-sprite, .terminal-zone, .door-zone, .player-avatar, .interact-prompt, .sprite-pop').forEach(n => n.remove());
+  room.querySelectorAll('.npc-sprite, .terminal-zone, .tool-zone, .door-zone, .player-avatar, .interact-prompt, .sprite-pop').forEach(n => n.remove());
+  // Drop any stale #playerAvatar elsewhere in the document (overworld leaves
+  // one inside #mapWorld). Duplicate ids made $('playerAvatar') resolve to
+  // the hidden overworld sprite, so updateInterior's left/top writes landed
+  // off-screen and the visible interior sprite never moved.
+  document.querySelectorAll('#playerAvatar').forEach(n => n.remove());
 
   // NPC / comms-terminal at the back of the room. Field-ops sectors
   // (Production, Service, Materials) render a glowing comms terminal
@@ -2057,7 +2226,22 @@ function renderInterior() {
   });
   room.appendChild(term);
 
-  // Door zone (bottom-center) — walking into it returns to overworld
+  // Tool hotspots — per-sector deep links into the matching command-center
+  // surfaces. Walk near + SPACE/Enter opens the tool in the same tab. Each
+  // gets a labeled gold-bordered panel; updateInterior toggles .near for
+  // visual confirmation when the player is in range.
+  (sec.tools || []).forEach((t, i) => {
+    const tn = el('div', {
+      class: 'tool-zone',
+      id: 'toolZone_' + i,
+      style: { left: t.x + '%', top: t.y + '%' },
+      'data-label': t.label,
+      'data-idx': String(i)
+    });
+    room.appendChild(tn);
+  });
+
+  // Door zone (bottom-center) — walk near + SPACE/Enter exits to overworld
   const door = el('div', { class: 'door-zone', id: 'doorZone' });
   room.appendChild(door);
 
@@ -2107,11 +2291,9 @@ function updateInterior(dtMs) {
       av.classList.add('face-' + intr.facingDir, 'moving');
     }
     maybeFootstep(dtMs);
-    // Walking into the door zone exits to overworld
-    if (intr.playerY > DOOR_ZONE_TOP + 3) {
-      exitToOverworld();
-      return;
-    }
+    // Exiting a sector requires explicit A/Enter at the door prompt — no
+    // walk-into-zone auto-exit (per Mac, the player should always confirm
+    // a view change, never get teleported out by drift).
   } else {
     const av = $('playerAvatar'); if (av) av.classList.remove('moving');
   }
@@ -2153,8 +2335,26 @@ function updateInterior(dtMs) {
     state.nearGuest = null;
   }
   else if (dt < TERM_INTERACT_R) { target = 'terminal'; label = 'PRESS [SPACE] TO READ TERMINAL'; tx = intr.termX; ty = intr.termY - 8; state.nearGuest = null; }
-  else if (dd > -2) { target = 'door'; label = 'PRESS [SPACE] OR WALK DOWN TO EXIT'; tx = 50; ty = DOOR_ZONE_TOP - 4; state.nearGuest = null; }
-  else { state.nearGuest = null; }
+  else {
+    // Find the nearest tool hotspot within TOOL_INTERACT_R. Multiple tools
+    // may overlap the player's reach if they sit on the same wall — pick
+    // the closest so the prompt + interact target is unambiguous.
+    let nearTool = null, nearToolDist = Infinity, nearToolIdx = -1;
+    (intr.sec.tools || []).forEach((t, i) => {
+      const dToTool = Math.hypot(intr.playerX - t.x, intr.playerY - t.y);
+      if (dToTool < TOOL_INTERACT_R && dToTool < nearToolDist) {
+        nearTool = t; nearToolDist = dToTool; nearToolIdx = i;
+      }
+    });
+    if (nearTool) {
+      target = 'tool'; label = 'PRESS [SPACE] TO OPEN ' + nearTool.label;
+      tx = nearTool.x; ty = nearTool.y - 8;
+      state.nearTool = nearTool;
+      state.nearGuest = null;
+    }
+    else if (dd > -2) { target = 'door'; label = 'PRESS [SPACE] TO EXIT'; tx = 50; ty = DOOR_ZONE_TOP - 4; state.nearGuest = null; state.nearTool = null; }
+    else { state.nearGuest = null; state.nearTool = null; }
+  }
 
   if (target !== state.nearTarget) {
     state.nearTarget = target;
@@ -2166,6 +2366,15 @@ function updateInterior(dtMs) {
                    : null;
     document.querySelectorAll('.npc-sprite').forEach(n => {
       n.classList.toggle('near', !!nearName && n.dataset.targetName === nearName);
+    });
+    // Toggle .near on the active tool hotspot so it visually confirms the
+    // player is in range. Update _activeToolIdx FIRST so the toggle reads the
+    // fresh value on the same transition that flipped target -> tool (codex
+    // P3 — otherwise the highlight stays off until the next state change).
+    state._activeToolIdx = (target === 'tool') ? (intr.sec.tools || []).indexOf(state.nearTool) : -1;
+    document.querySelectorAll('.tool-zone').forEach(n => {
+      const idx = parseInt(n.dataset.idx || '-1', 10);
+      n.classList.toggle('near', target === 'tool' && idx === state._activeToolIdx);
     });
   }
   // NPC mirrors to face the player when they pass on the left/right side.
@@ -2269,8 +2478,8 @@ function startGameLoop() {
   const loop = (now) => {
     const dt = Math.min(48, now - state._lastTick); // clamp huge gaps (tab return)
     state._lastTick = now;
-    // Movement only happens when not in a dialogue/modal
-    if (!state.dialogue && !state.modal) {
+    // Movement only happens when not in a dialogue/modal/tool overlay
+    if (!state.dialogue && !state.modal && !state.toolOverlay) {
       if (state.view === 'MAP') updateOverworld(dt);
       else if (state.view === 'SECTOR') updateInterior(dt);
     } else {
@@ -2465,7 +2674,7 @@ function bottleneckAssignee() {
 function openGuestDialog(npc) {
   const c = CREW_CONTACTS[npc];
   if (!c) return;
-  const accent = NPC_ACCENT[npc] || '#22d3ee';
+  const accent = NPC_ACCENT[npc] || '#f4c95d';
   const choices = [];
   if (c.email) choices.push({ label: `Email ${c.name} (${c.email})`, kind: 'href', href: 'mailto:' + c.email });
   choices.push({ label: 'Leave', kind: 'leave', danger: true });
@@ -2486,7 +2695,7 @@ function openGuestDialog(npc) {
 // crew member's contact field is empty so Mac can see what to fill in.
 function openCommsDialog(sec) {
   const c = CREW_CONTACTS[sec.npc] || { name: sec.npc, sms: '', email: '' };
-  const accent = NPC_ACCENT[sec.npc] || '#22d3ee';
+  const accent = NPC_ACCENT[sec.npc] || '#f4c95d';
   // Email-only for v1. Choice opens the device's default mail client.
   // When email is missing (e.g. Pavanjot today), the dialog still
   // surfaces a clean Leave option rather than a disabled-row fallback
@@ -2538,7 +2747,7 @@ function openDialogue(d) {
   spawnSpeechBubble();
   $('dialogueSpeaker').textContent = d.speaker;
   $('dialogueSpeaker').style.color = d.accent || '#fde047';
-  $('dialogueSpeaker').style.borderColor = d.accent || 'var(--cyan)';
+  $('dialogueSpeaker').style.borderColor = d.accent || 'var(--gold)';
   $('dialogueBody').textContent = '';
   $('dialogueAdvance').style.display = 'none';
   $('dialogueChoices').classList.remove('show');
@@ -2922,6 +3131,15 @@ document.addEventListener('keydown', (e) => {
   if (tag === 'INPUT' || tag === 'TEXTAREA') return;
   const k = e.key;
 
+  // Tool overlay open: B/ESC closes, everything else is left to the iframe.
+  // Note: keystrokes that happen with the iframe focused don't reach this
+  // handler at all (cross-frame isolation), so the CLOSE button + click-on-
+  // overlay-edge are the dependable exits when the user is reading the tool.
+  if (state.toolOverlay) {
+    if (k === 'Escape' || k === 'b' || k === 'B') { e.preventDefault(); closeToolOverlay(); return; }
+    return;
+  }
+
   // Modal open: navigate menu items
   if (state.modal) {
     if (k === 'Escape' || k === 'x' || k === 'X' || k === 'b' || k === 'B') { e.preventDefault(); closeModal(); return; }
@@ -3028,6 +3246,39 @@ window.addEventListener('resize', () => {
   }, 200);
 });
 
+// Tool overlay — opens a sector tool's command-center surface inside the
+// game as an iframe modal. Closes back to the room with the player intact.
+// Lets Mac keep "I'm in the FINANCE room" context while reading the P&L.
+function openToolOverlay(tool) {
+  closeToolOverlay(); // single overlay at a time
+  const wrap = el('div', { class: 'tool-overlay', id: 'toolOverlay', tabindex: '-1',
+    onclick: (e) => { if (e.target === wrap) closeToolOverlay(); } });
+  const chrome = el('div', { class: 'frame-chrome' });
+  const bar = el('div', { class: 'frame-bar' });
+  const title = el('div', { class: 'frame-title', text: tool.label });
+  const hint = el('div', { class: 'frame-hint', text: '[B] OR [ESC] OR CLOSE TO RETURN' });
+  const closeBtn = el('button', { type: 'button', class: 'frame-close', text: 'CLOSE', onclick: closeToolOverlay });
+  bar.appendChild(title); bar.appendChild(hint); bar.appendChild(closeBtn);
+  // When running off localhost, the local static server doesn't serve
+  // /api/* so the iframed page would render empty. Point the iframe at
+  // prod so real data lands inside the overlay either way.
+  const iframeSrc = (API_BASE ? API_BASE : '') + tool.href;
+  const frame = el('iframe', { src: iframeSrc, allow: 'fullscreen', loading: 'eager' });
+  chrome.appendChild(bar);
+  chrome.appendChild(frame);
+  wrap.appendChild(chrome);
+  document.body.appendChild(wrap);
+  state.toolOverlay = { tool };
+  // Defer focus to next tick so the iframe's content can claim it naturally;
+  // overlay div keeps focus when iframe is empty so ESC works immediately.
+  setTimeout(() => { try { wrap.focus(); } catch {} }, 0);
+}
+function closeToolOverlay() {
+  const w = document.getElementById('toolOverlay');
+  if (w) w.remove();
+  state.toolOverlay = null;
+}
+
 // "Action" button — interact with the closest target in the current view
 function handleAction() {
   if (state.view === 'MAP') {
@@ -3052,6 +3303,7 @@ function handleAction() {
     if (state.nearTarget === 'guest') { sfxConfirm(); if (state.nearGuest) openGuestDialog(state.nearGuest.npc); }
     else if (state.nearTarget === 'npc') { sfxConfirm(); talkToNpc(intr.sec); }
     else if (state.nearTarget === 'terminal') { sfxOpen(); window.location.href = intr.sec.href; }
+    else if (state.nearTarget === 'tool') { sfxOpen(); if (state.nearTool && state.nearTool.href) openToolOverlay(state.nearTool); }
     else if (state.nearTarget === 'door') { sfxClose(); exitToOverworld(); }
   }
 }
@@ -3133,12 +3385,15 @@ async function boot() {
   // value from a future save migration or URL hash, snap it to a real index.
   state.focusedSector = Math.max(0, Math.min(SECTORS.length - 1, state.focusedSector | 0));
 
-  // Rehydrate player position from save (default = (50, 32) open band). If
-  // the saved cell collides with a building (e.g. a save written before
-  // BUILDING_HALF turned dynamic), nudge to default.
+  // Rehydrate player position from save (default = (50, 60) — middle of the
+  // open band, the visual center of the hub). Migrate legacy saves that
+  // froze the old (50, 32) default so existing users land centered too.
+  if (state.save.player_x === 50 && state.save.player_y === 32) {
+    state.save.player_x = 50; state.save.player_y = 60; persistSave();
+  }
   state.player.x = clamp(state.save.player_x, 3, 97);
   state.player.y = clamp(state.save.player_y, 5, 95);
-  if (collidesOverworld(state.player.x, state.player.y)) { state.player.x = 50; state.player.y = 32; }
+  if (collidesOverworld(state.player.x, state.player.y)) { state.player.x = 50; state.player.y = 60; }
 
   // Preload sector backdrops so the first SECTOR view doesn't flash blank
   // while the WebP loads over the network. Cheap parallel image warmup.
