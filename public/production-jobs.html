@@ -167,6 +167,17 @@ function dateLabel(w, bucket){
   return prefix + ' · ' + dateStr;
 }
 
+// scope_items accepts two shapes ({item, included} objects, or plain strings
+// in legacy rows). A blank row added in the editor saves as {item: ''} and
+// would otherwise sneak past a naked length check.
+function hasUsableScope(items){
+  if (!Array.isArray(items)) return false;
+  return items.some(s => {
+    if (typeof s === 'string') return s.trim().length > 0;
+    return !!(s && typeof s.item === 'string' && s.item.trim().length > 0);
+  });
+}
+
 // Surface data gaps that block install — color, SQ, scope. Only flag for
 // jobs not yet complete; completed jobs in the archive shouldn't nag.
 function dqIssues(w){
@@ -174,7 +185,7 @@ function dqIssues(w){
   const out = [];
   if (!w.shingle_color) out.push('NO COLOR');
   if (w.total_sq == null || Number(w.total_sq) === 0) out.push('NO SQ');
-  if (!Array.isArray(w.scope_items) || w.scope_items.length === 0) out.push('NO SCOPE');
+  if (!hasUsableScope(w.scope_items)) out.push('NO SCOPE');
   return out;
 }
 
@@ -198,6 +209,11 @@ function rowHtml(w, bucket){
   const dqHtml = issues.length
     ? `<div class="dq">${issues.map(i => `<span class="dq-chip">${esc(i)}</span>`).join('')}</div>`
     : '';
+  // In the Completed tab a stale 'issued'/'in_progress' status would otherwise
+  // render as "GOLD · ISSUED" next to a green COMPLETED date — confusing for
+  // closeout-stamped rows. Force the display label when the row landed in the
+  // completed bucket.
+  const displayStatus = bucket === 'completed' ? 'COMPLETE' : (w.status || 'draft').replace('_',' ').toUpperCase();
   return `
     <a href="${href}" class="row ${cls}" data-search="${esc((w.customer_name || '') + ' ' + (w.address || '') + ' ' + woLabel).toLowerCase()}">
       <div class="date">${esc(dateLabel(w, bucket))}<br><span style="opacity:0.6">${esc(woLabel)}</span></div>
@@ -207,7 +223,7 @@ function rowHtml(w, bucket){
         ${dqHtml}
       </div>
       <div class="meta">
-        <div class="tier">${tierLabel}${esc((w.status || 'draft').replace('_',' ').toUpperCase())}</div>
+        <div class="tier">${tierLabel}${esc(displayStatus)}</div>
         <div class="total">${fmtMoney(total)}</div>
       </div>
       <div class="chev">&rsaquo;</div>
