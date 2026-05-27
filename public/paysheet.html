@@ -196,11 +196,10 @@ body { padding-bottom: 100px }
 const params = new URLSearchParams(location.search);
 const urlToken = params.get('token');
 const TOKEN_KEY = 'pu.paysheet.token';
-// Persist token to localStorage on first visit so PWA launches (which have no
-// query string) can load the same paysheet. URL token always wins if present.
-if (urlToken) {
-  try { localStorage.setItem(TOKEN_KEY, urlToken); } catch (_) {}
-}
+// localStorage token is the *installed* pay sheet only. We write it once at
+// PWA install time (appinstalled event below), never on each URL visit, so
+// that subs who receive multiple ?token= links over time keep their original
+// installed pay sheet on the home screen instead of having it silently swap.
 let storedToken = null;
 try { storedToken = localStorage.getItem(TOKEN_KEY); } catch (_) {}
 const TOKEN = urlToken || storedToken;
@@ -230,6 +229,11 @@ window.addEventListener('beforeinstallprompt', (e) => {
 window.addEventListener('appinstalled', () => {
   installBtn.classList.remove('on');
   deferredInstallPrompt = null;
+  // Lock the current URL token into the installed PWA so future home-screen
+  // launches (which arrive with no query string) load this pay sheet.
+  if (urlToken) {
+    try { localStorage.setItem(TOKEN_KEY, urlToken); } catch (_) {}
+  }
 });
 
 installBtn.addEventListener('click', async () => {
@@ -241,6 +245,11 @@ installBtn.addEventListener('click', async () => {
     return;
   }
   if (isIos()) {
+    // iOS does not fire appinstalled, so capture install intent here when the
+    // user opens the Add-to-Home-Screen instructions.
+    if (urlToken) {
+      try { localStorage.setItem(TOKEN_KEY, urlToken); } catch (_) {}
+    }
     iosInstallModal.classList.add('open');
   }
 });
