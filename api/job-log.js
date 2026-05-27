@@ -186,24 +186,35 @@ async function handler(req, res) {
     const { id } = req.query;
     if (!id) return res.status(400).json({ error: 'id required' });
 
-    // Fetch the entry's photos so we can also clean up any estimate_photos
-    // rows the sub-portal upload bridge inserted. The bridge writes the
-    // same blob URL into both tables (no FK), so URL match is the link.
-    // Best-effort: a delete failure on the gallery side shouldn't block
-    // the primary job_log_entries delete.
+    // Fetch the entry's photos + workorder so we can also clean up any
+    // estimate_photos rows the sub-portal upload bridge inserted. The bridge
+    // writes the same blob URL into both tables (no FK), so we constrain
+    // by (estimate_id, url IN photos) -- never a global URL delete, which
+    // could remove unrelated rows if the same URL was ever pasted into
+    // another entry (codex P1, 2026-05-26). Best-effort: a gallery
+    // cleanup failure doesn't block the primary delete.
     const { data: entry } = await supabaseAdmin
-      .from('job_log_entries').select('photos')
+      .from('job_log_entries').select('photos, workorder_id')
       .eq('tenant_id', tenantId).eq('id', id).maybeSingle();
     const photoUrls = Array.isArray(entry?.photos) ? entry.photos.filter(u => typeof u === 'string' && u) : [];
+    let linkedEstimateId = null;
+    if (entry?.workorder_id) {
+      const { data: wo } = await supabaseAdmin
+        .from('workorders').select('linked_estimate_id')
+        .eq('tenant_id', tenantId).eq('id', entry.workorder_id).maybeSingle();
+      linkedEstimateId = wo?.linked_estimate_id || null;
+    }
 
     const { error } = await supabaseAdmin
       .from('job_log_entries').delete()
       .eq('tenant_id', tenantId).eq('id', id);
     if (error) return res.status(500).json({ error: error.message });
 
-    if (photoUrls.length) {
+    if (photoUrls.length && linkedEstimateId) {
       const { error: gErr } = await supabaseAdmin
-        .from('estimate_photos').delete().in('url', photoUrls);
+        .from('estimate_photos').delete()
+        .eq('estimate_id', linkedEstimateId)
+        .in('url', photoUrls);
       if (gErr) console.warn('[job-log] gallery cleanup failed', gErr.message);
     }
 
