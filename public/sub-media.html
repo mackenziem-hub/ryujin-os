@@ -75,12 +75,14 @@ h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.3px; margin: 14px 4px
 .grid img:active { transform: scale(0.97) }
 .grid-empty { padding: 18px; text-align: center; color: var(--ink-3); font-size: 13px; background: var(--accent-soft); border-radius: 8px; margin-bottom: 12px }
 
-.upload-row { display: flex; gap: 8px }
-.upload-btn { flex: 1; padding: 16px 14px; border-radius: 10px; background: var(--accent); color: #fff; border: none; font-family: inherit; font-size: 16px; font-weight: 700; cursor: pointer; min-height: 56px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; line-height: 1; transition: transform 0.06s }
+.upload-row { display: flex; gap: 8px; margin-bottom: 14px }
+.upload-btn { padding: 16px 14px; border-radius: 10px; border: none; font-family: inherit; font-size: 16px; font-weight: 700; cursor: pointer; min-height: 60px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; line-height: 1; transition: transform 0.06s }
 .upload-btn:active { transform: scale(0.98) }
 .upload-btn:disabled { opacity: 0.6; cursor: not-allowed }
-.upload-btn svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round }
-.upload-status { font-size: 13px; color: var(--ink-2); margin-top: 8px; min-height: 18px }
+.upload-btn svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round }
+.upload-btn.camera { flex: 2; background: var(--accent); color: #fff; font-size: 17px }
+.upload-btn.gallery { flex: 1; background: var(--surface); color: var(--ink); border: 1px solid var(--line) }
+.upload-status { font-size: 13px; color: var(--ink-2); margin-bottom: 12px; min-height: 18px }
 .upload-status.err { color: var(--red) }
 .upload-status.ok { color: var(--green) }
 
@@ -283,36 +285,48 @@ async function toggleJob(idx) {
   }
 }
 
-function uploadHtml(idx, w) {
+// Two inputs: camera (capture=environment) launches the device camera directly
+// on Android, and iOS Safari treats it as preferred camera in the chooser.
+// Gallery input has no capture attribute so it always opens the photo library.
+// Both feed the same onPick handler.
+function uploadHtml(idx) {
   return `
     <div class="upload-row">
-      <input type="file" accept="image/*" capture="environment" multiple id="file-${idx}" style="display:none" onchange="onPick(${idx})">
-      <button class="upload-btn" id="upload-${idx}" onclick="document.getElementById('file-${idx}').click()">
+      <input type="file" accept="image/*" capture="environment" id="cam-${idx}" style="display:none" onchange="onPick(${idx}, this)">
+      <input type="file" accept="image/*" multiple id="lib-${idx}" style="display:none" onchange="onPick(${idx}, this)">
+      <button class="upload-btn camera" id="camBtn-${idx}" onclick="document.getElementById('cam-${idx}').click()">
         <svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="4"/><path d="M9 6l1.5-2h3L15 6"/></svg>
-        <span>Add photos</span>
+        <span>Take Photo</span>
+      </button>
+      <button class="upload-btn gallery" id="libBtn-${idx}" onclick="document.getElementById('lib-${idx}').click()">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>
+        <span>Gallery</span>
       </button>
     </div>
     <div class="upload-status" id="status-${idx}"></div>
   `;
 }
 
+// Upload-row goes ABOVE the grid so the camera button is the first thing
+// visible when a job opens, not buried below 30 thumbnails.
 function renderJobBody(idx, w, photos) {
   const body = document.getElementById(`body-${idx}`);
   const grid = photos.length
     ? `<div class="grid">${photos.map(p => `<img src="${esc(p.url)}" alt="${esc(p.caption || '')}" onclick="openLightbox('${esc(p.url)}')">`).join('')}</div>`
-    : '<div class="grid-empty">No photos yet. Add some below.</div>';
-  body.innerHTML = grid + uploadHtml(idx, w);
+    : '<div class="grid-empty">No photos yet — tap Take Photo to start.</div>';
+  body.innerHTML = uploadHtml(idx) + grid;
 }
 
-async function onPick(idx) {
-  const input = document.getElementById(`file-${idx}`);
+async function onPick(idx, input) {
   const files = Array.from(input.files || []);
   if (!files.length) return;
   const w = window.__jobs[idx];
   if (!w) return;
-  const btn = document.getElementById(`upload-${idx}`);
+  const camBtn = document.getElementById(`camBtn-${idx}`);
+  const libBtn = document.getElementById(`libBtn-${idx}`);
   const status = document.getElementById(`status-${idx}`);
-  btn.disabled = true;
+  if (camBtn) camBtn.disabled = true;
+  if (libBtn) libBtn.disabled = true;
   status.className = 'upload-status';
 
   let done = 0, failed = 0;
@@ -341,7 +355,8 @@ async function onPick(idx) {
   }
 
   input.value = '';
-  btn.disabled = false;
+  if (camBtn) camBtn.disabled = false;
+  if (libBtn) libBtn.disabled = false;
   if (failed === 0) {
     status.className = 'upload-status ok';
     status.textContent = `Uploaded ${done} photo${done === 1 ? '' : 's'}.`;
