@@ -499,7 +499,7 @@ body{
     <div class="form-step" data-step="4">
       <div class="step-head">
         <h2>Where should we send your numbers?</h2>
-        <p class="help">We send your packages to your phone and email. We do not call you unless you ask us to.</p>
+        <p class="help">Your packages appear on the next screen. We follow up by phone or text within one business day. We do not call you unless you ask us to.</p>
       </div>
       <div class="field">
         <label>Your name</label>
@@ -900,13 +900,21 @@ body{
         postal: state.postal
       }
     };
+    // Non-blocking on the customer-facing quote render, but logged so silent
+    // failures (network drop, /api/leads 4xx/5xx) don't make leads vanish.
     try {
-      await fetch('/api/leads', {
+      const leadResp = await fetch('/api/leads', {
         method:'POST',
         headers:{ 'Content-Type':'application/json', 'x-tenant-id': TENANT },
         body: JSON.stringify(leadPayload)
       });
-    } catch(_) { /* non-blocking */ }
+      if (!leadResp.ok) {
+        const txt = await leadResp.text().catch(() => '');
+        console.warn('[ie-v3] lead capture failed', leadResp.status, txt.slice(0, 200));
+      }
+    } catch (leadErr) {
+      console.warn('[ie-v3] lead capture threw', leadErr && leadErr.message);
+    }
 
     // Quote (wait for slug resolution so reseeded DBs don't hit stale fallback).
     // 4s timeout so a hung offers-fetch doesn't trap the submit forever; if the

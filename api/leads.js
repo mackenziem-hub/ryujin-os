@@ -20,9 +20,11 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { requireTenant } from '../lib/tenant.js';
+import { gmailSend } from '../lib/google.js';
 
 const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
 const LOCATION_ID = (process.env.GHL_LOCATION_ID || 'aHotOUdq9D8m3JPrRz9n').trim();
+const NOTIFY_EMAIL = (process.env.NOTIFY_EMAIL || 'mackenzie.m@plusultraroofing.com').trim();
 
 function splitName(full) {
   const t = (full || '').trim();
@@ -51,6 +53,40 @@ async function ghlFetch(path, query = {}, opts = {}) {
     throw new Error(`GHL ${res.status}: ${txt.slice(0, 240)}`);
   }
   return res.json();
+}
+
+async function notifyOwner({ contactId, source, name, email, phone, address, city, metadata }) {
+  if (!NOTIFY_EMAIL) return;
+  const md = metadata || {};
+  const subjectName = name && name.trim() ? name.trim() : (email || phone || 'New lead');
+  const subject = `New lead · ${source || 'unknown'} · ${subjectName}`;
+
+  const ghlUrl = `https://app.gohighlevel.com/v2/location/${LOCATION_ID}/contacts/detail/${contactId}`;
+  const lines = [
+    `New lead from ${source || 'unknown'}.`,
+    '',
+    `Name:    ${name || '(not provided)'}`,
+    `Phone:   ${phone || '(not provided)'}`,
+    `Email:   ${email || '(not provided)'}`,
+    `Address: ${[address, city].filter(Boolean).join(', ') || '(not provided)'}`,
+    ''
+  ];
+
+  if (Object.keys(md).length > 0) {
+    lines.push('Estimator inputs:');
+    if (md.sizePreset || md.sqft) lines.push(`  Size:        ${md.sqft || '?'} sq ft (${md.sizePreset || 'custom'})`);
+    if (md.pitch)                  lines.push(`  Pitch:       ${md.pitch}`);
+    if (md.complexity)             lines.push(`  Complexity:  ${md.complexity}`);
+    if (md.chimneyType)            lines.push(`  Chimney:     ${md.chimneyType}`);
+    if (md.postal)                 lines.push(`  Postal:      ${md.postal}`);
+    lines.push('');
+  }
+
+  lines.push(`GHL contact: ${ghlUrl}`);
+  lines.push('');
+  lines.push('Ryujin OS');
+
+  await gmailSend(NOTIFY_EMAIL, subject, lines.join('\n'));
 }
 
 async function handler(req, res) {
@@ -102,6 +138,12 @@ async function handler(req, res) {
     if (!contactId) {
       return res.status(502).json({ ok: false, error: ghlError || 'GHL contact create failed' });
     }
+
+    // Fire-and-forget owner notification. Don't await — Gmail OAuth + send
+    // is ~1s and the form is already showing a spinner waiting on the quote.
+    notifyOwner({ contactId, source, name, email, phone, address, city, metadata })
+      .catch(e => console.warn(`[leads] notifyOwner failed: ${e.message}`));
+
     return res.status(201).json({ ok: true, contact_id: contactId, source, ghlError });
   }
 
