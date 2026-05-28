@@ -1,8 +1,8 @@
 /*
  * jules-suggestions.js
- * Pre-populates Jules's coaching feedback as sticky notes on the three
+ * Pre-populates Jewels's coaching feedback as sticky notes on the three
  * follow-up review decks. Loads AFTER presentation.js and calls the
- * RyujinDeckSeedJules hook it exposes.
+ * RyujinDeckSeedJewels hook it exposes.
  *
  * Synthesized from 7 Fathom calls with Jewels Grace, 2026-01-21 to
  * 2026-05-13. Highest-value sources: Apr 16 SMS critique (verbatim "kill
@@ -11,7 +11,7 @@
  *
  * Note ids are stable. Editing the text in this file does NOT update
  * existing notes; the user must delete and re-seed (refresh the page).
- * Deleting a Jules note on one device does not block re-seed on another
+ * Deleting a Jewels note on one device does not block re-seed on another
  * device — that's by design for now.
  */
 (function () {
@@ -25,7 +25,7 @@
       },
       {
         id: 'jules-ie-t1-just',
-        text: '"Just wanted to say hey" — drop "just." Jules Apr 16 verbatim: "You said just a lot in your text...that\'s a very passive way to talk to someone." (Rule 1: kill "just")'
+        text: '"Just wanted to say hey" — drop "just." Jewels Apr 16 verbatim: "You said just a lot in your text...that\'s a very passive way to talk to someone." (Rule 1: kill "just")'
       }
     ],
     't2': [
@@ -37,25 +37,25 @@
     't3': [
       {
         id: 'jules-ie-t3-day2-story',
-        text: 'Day 2 is the "why story" slot in Jules\'s 10-day map, not a value tip. Move ventilation to Day 3 and run a story-based Day 2: "I built this estimator after seeing one too many bad install calls." (Mar 11 — Rule 3)'
+        text: 'Day 2 is the "why story" slot in Jewels\'s 10-day map, not a value tip. Move ventilation to Day 3 and run a story-based Day 2: "I built this estimator after seeing one too many bad install calls." (Mar 11 — Rule 3)'
       }
     ],
     't4': [
       {
         id: 'jules-ie-t4-three-sins',
-        text: 'Three Jules sins in one SMS: "just checking in" (passive AI tell), no direct question, double-CTA (questions OR in-person — pick one). Rewrite: "What stopped you from booking the in-person look — the price range, timing, or you\'re still sizing it up?" (Apr 16 — Rules 1+2)'
+        text: 'Three Jewels sins in one SMS: "just checking in" (passive AI tell), no direct question, double-CTA (questions OR in-person — pick one). Rewrite: "What stopped you from booking the in-person look — the price range, timing, or you\'re still sizing it up?" (Apr 16 — Rules 1+2)'
       }
     ],
     't5': [
       {
         id: 'jules-ie-t5-keep',
-        text: 'KEEP. Subject is the right shape (Day 6-10 "are you still interested" pattern from Mar 11). Three-bucket body framing is Jules-aligned. (Rule 3)'
+        text: 'KEEP. Subject is the right shape (Day 6-10 "are you still interested" pattern from Mar 11). Three-bucket body framing is Jewels-aligned. (Rule 3)'
       }
     ],
     't6': [
       {
         id: 'jules-ie-t6-reframe',
-        text: '"Free Platinum upgrade" reads transactional. Jules Apr 21 frame: lead with the outcome, not the discount. Try: "A bigger guarantee for you, {first_name}" — reveal the upgrade as the reward. (Rule 14: no negative/transactional framing)'
+        text: '"Free Platinum upgrade" reads transactional. Jewels Apr 21 frame: lead with the outcome, not the discount. Try: "A bigger guarantee for you, {first_name}" — reveal the upgrade as the reward. (Rule 14: no negative/transactional framing)'
       }
     ],
     't7': [
@@ -67,7 +67,7 @@
     'signoff': [
       {
         id: 'jules-ie-gap-tail',
-        text: 'GAP: sequence cliff-falls at Day 14. Jules Apr 23 rule is 40-45 days of flow. Add a Day 21 / Day 30 / Day 45 reactivation tail. Segment by stage so irrelevant messages stop. (Rule 4)'
+        text: 'GAP: sequence cliff-falls at Day 14. Jewels Apr 23 rule is 40-45 days of flow. Add a Day 21 / Day 30 / Day 45 reactivation tail. Segment by stage so irrelevant messages stop. (Rule 4)'
       },
       {
         id: 'jules-ie-gap-motivation',
@@ -118,19 +118,19 @@
     't9': [
       {
         id: 'jules-10cm-t9-keep',
-        text: 'KEEP VERBATIM. 9-word framework, exact Jules pattern. The single highest-converting line in any of the three sequences. (Rule 3)'
+        text: 'KEEP VERBATIM. 9-word framework, exact Jewels pattern. The single highest-converting line in any of the three sequences. (Rule 3)'
       }
     ],
     't10': [
       {
         id: 'jules-10cm-t10-bridge',
-        text: 'KEEP. Names the actual obstacle (timing / price / financing / spouse). Jules\'s Apr 23 bridge-of-trust frame. (Rule 12)'
+        text: 'KEEP. Names the actual obstacle (timing / price / financing / spouse). Jewels\'s Apr 23 bridge-of-trust frame. (Rule 12)'
       }
     ],
     't11': [
       {
         id: 'jules-10cm-t11-no-pressure',
-        text: '"No pressure at all" is the same passive AI tell Jules killed Apr 16. Replace with a hard timing frame: "Heading into [storm season]. If you want me to look before then, this week or next works — otherwise I\'ll step back." (Rule 1)'
+        text: '"No pressure at all" is the same passive AI tell Jewels killed Apr 16. Replace with a hard timing frame: "Heading into [storm season]. If you want me to look before then, this week or next works — otherwise I\'ll step back." (Rule 1)'
       }
     ],
     't12': [
@@ -177,13 +177,13 @@
     't4': [
       {
         id: 'jules-rejuv-t4-educate',
-        text: 'KEEP. Hits Rule 5 (Educate→Empower→Engage) hard. The 3-factor decision-criteria frame is exactly Jules\'s Mar 11 "what your product is NOT" pattern. (Rule 5)'
+        text: 'KEEP. Hits Rule 5 (Educate→Empower→Engage) hard. The 3-factor decision-criteria frame is exactly Jewels\'s Mar 11 "what your product is NOT" pattern. (Rule 5)'
       }
     ],
     't5': [
       {
         id: 'jules-rejuv-t5-three-sins',
-        text: 'THREE Rule-1 sins in one SMS: "no rush," "just dropping by," "happy to answer anything." Jules Apr 16 verdict on identical phrasing: "very passive way to talk to someone." Rewrite: "What\'s the biggest thing holding you back from booking the spray feasibility look — cost, timing, or you\'re not sure your roof\'s a fit?" (Rule 1+2)'
+        text: 'THREE Rule-1 sins in one SMS: "no rush," "just dropping by," "happy to answer anything." Jewels Apr 16 verdict on identical phrasing: "very passive way to talk to someone." Rewrite: "What\'s the biggest thing holding you back from booking the spray feasibility look — cost, timing, or you\'re not sure your roof\'s a fit?" (Rule 1+2)'
       }
     ],
     't6': [
@@ -201,7 +201,7 @@
     't8': [
       {
         id: 'jules-rejuv-t8-what-its-not',
-        text: 'KEEP. "5 signs you\'re a candidate / 2 signs you\'re not" is Jules\'s Apr 21 "what your product is NOT" frame from the Eileen healthcare scope call. (Rule 5)'
+        text: 'KEEP. "5 signs you\'re a candidate / 2 signs you\'re not" is Jewels\'s Apr 21 "what your product is NOT" frame from the Eileen healthcare scope call. (Rule 5)'
       }
     ],
     't9': [
@@ -213,13 +213,13 @@
     't10': [
       {
         id: 'jules-rejuv-t10-best-sms',
-        text: 'BEST SMS IN ANY DECK. Jules-grade cost-of-inaction + neighborhood urgency. KEEP VERBATIM. Template for the IE + 10CM additions. (Rules 6+15)'
+        text: 'BEST SMS IN ANY DECK. Jewels-grade cost-of-inaction + neighborhood urgency. KEEP VERBATIM. Template for the IE + 10CM additions. (Rules 6+15)'
       }
     ],
     't11': [
       {
         id: 'jules-rejuv-t11-just',
-        text: 'Drop "just" from "just text this number." Otherwise the evergreen-reactivation framing is exactly Jules\'s Rule 4 spirit (40-45 day flow + segmented re-engagement). (Apr 16 — Rule 1)'
+        text: 'Drop "just" from "just text this number." Otherwise the evergreen-reactivation framing is exactly Jewels\'s Rule 4 spirit (40-45 day flow + segmented re-engagement). (Apr 16 — Rule 1)'
       }
     ],
     'signoff': [
@@ -233,19 +233,19 @@
       },
       {
         id: 'jules-rejuv-strength',
-        text: 'STRENGTH: 90-day flow exceeds the 40-45 day floor (Rule 4). This deck is closest to Jules\'s full ideal — preserve as the model when extending IE + 10CM. (Apr 23)'
+        text: 'STRENGTH: 90-day flow exceeds the 40-45 day floor (Rule 4). This deck is closest to Jewels\'s full ideal — preserve as the model when extending IE + 10CM. (Apr 23)'
       }
     ]
   };
 
   function applyAll() {
-    if (typeof window.RyujinDeckSeedJules !== 'function') {
+    if (typeof window.RyujinDeckSeedJewels !== 'function') {
       setTimeout(applyAll, 50);
       return;
     }
-    window.RyujinDeckSeedJules('follow-up-instant-estimator', IE);
-    window.RyujinDeckSeedJules('follow-up-inspections', INSPECTIONS);
-    window.RyujinDeckSeedJules('follow-up-revive-rejuvenation', REJUVENATION);
+    window.RyujinDeckSeedJewels('follow-up-instant-estimator', IE);
+    window.RyujinDeckSeedJewels('follow-up-inspections', INSPECTIONS);
+    window.RyujinDeckSeedJewels('follow-up-revive-rejuvenation', REJUVENATION);
   }
 
   applyAll();
