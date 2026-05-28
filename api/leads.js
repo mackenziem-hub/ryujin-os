@@ -153,16 +153,20 @@ async function handler(req, res) {
       return res.status(502).json({ ok: false, error: ghlError || 'GHL contact create failed' });
     }
 
-    // Await before responding. On Vercel serverless, work started after
-    // res.send() is not guaranteed to complete (the runtime may freeze
-    // the invocation). Ad-driven leads are too important to lose to that
-    // race, and the form already blocks on the quote calc anyway.
+    // Bounded await: notifyOwner needs to fire while the serverless
+    // invocation is still warm (post-response work may be dropped on
+    // Vercel), but Gmail OAuth latency must not stall the form. Race
+    // against a 4s timeout; if Gmail is slow we still return success
+    // and the contact is safe in GHL.
     let notifyError = null;
     try {
-      await notifyOwner({ contactId, source, name, email, phone, address, city, metadata });
+      await Promise.race([
+        notifyOwner({ contactId, source, name, email, phone, address, city, metadata }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('notify timeout (4s)')), 4000))
+      ]);
     } catch (e) {
       notifyError = e.message;
-      console.warn(`[leads] notifyOwner failed: ${e.message}`);
+      console.warn(`[leads] notifyOwner failed: ${e.message} (contact ${contactId})`);
     }
 
     return res.status(201).json({ ok: true, contact_id: contactId, source, ghlError, notifyError });
