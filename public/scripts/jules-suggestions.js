@@ -144,12 +144,22 @@
       {
         id: 'jules-10cm-t1-third-gen',
         text: 'Add the 3rd-generation roofer line. First long-form email is the right place for the authority signal. (Jan 21 + Mar 11 — Rule 13)'
+      },
+      {
+        id: 'revised-10cm-t1',
+        author: 'revised',
+        text: 'REVISED Touch 1 Email — add 3rd-gen line. Paste:\n\nSubject: Your 10 Costly Mistakes guide, and a quick hello\n\nHey {first_name}, thanks for grabbing the guide.\n\nQuick context: I\'m Mackenzie, third generation roofing in Moncton. My grandfather started on rooftops in the 60s, my dad ran the trucks, now it\'s me. I wrote that guide because 80% of the roofs I see have one of the same 10 install errors. Most homeowners find out the hard way.\n\nQuick welcome video below. The chapters that surprise most homeowners are 4 (10 Questions to Ask Any Contractor) and 10 (Why Workmanship Matters More Than Warranty).\n\n[VIDEO: Thank you for downloading.mp4]\n\nIf anything jumps out at you, hit reply.\n\nMackenzie'
       }
     ],
     't2': [
       {
         id: 'jules-10cm-t2-textbook',
-        text: 'TEXTBOOK JULES. Direct binary, forces tag. Best opener in any of the three decks. Keep verbatim. (Apr 16 — Rule 2)'
+        text: 'TEXTBOOK JEWELS. Direct binary, forces tag. Best opener in any of the three decks. Keep verbatim. (Apr 16 — Rule 2)'
+      },
+      {
+        id: 'revised-10cm-t2',
+        author: 'revised',
+        text: 'KEEP VERBATIM. Only change: 506-540-1052 → 506-616-4607 (business line, not Mac\'s cell). Body unchanged.'
       }
     ],
     't3': [
@@ -168,6 +178,11 @@
       {
         id: 'jules-10cm-t8-ama-invite',
         text: 'Day-5 AMA slot inverted as preset FAQ — good, but add an explicit "reply with whatever else is on your mind" invite alongside the answered questions. (Mar 11 — Rule 3)'
+      },
+      {
+        id: 'revised-10cm-t8',
+        author: 'revised',
+        text: 'REVISED Touch 8 Email E4 — add AMA invite. Paste:\n\nSubject: Three questions homeowners ask me most often\n\nHey {first_name}, three things I get asked on most inspections:\n\n1. "Can my roof be repaired or does it need full replacement?" Depends on age, material, and what\'s underneath. We always check decking before recommending.\n\n2. "How long should it actually last?" 20 to 25 years for asphalt in Atlantic Canada if installed right. The "right" part is the catch.\n\n3. "What\'s the difference between your warranty and the manufacturer warranty?" Manufacturer covers the shingles. Workmanship warranty covers the install. The install is what fails 80% of the time.\n\nIf you\'ve got a different question I haven\'t answered, hit reply — I\'ll answer it directly. Or happy to walk through any of these in person. Free, 20 minutes.\n\n[BOOKING LINK]\n\nMackenzie'
       }
     ],
     't9': [
@@ -186,12 +201,22 @@
       {
         id: 'jules-10cm-t11-no-pressure',
         text: '"No pressure at all" is the same passive AI tell Jewels killed Apr 16. Replace with a hard timing frame: "Heading into [storm season]. If you want me to look before then, this week or next works — otherwise I\'ll step back." (Rule 1)'
+      },
+      {
+        id: 'revised-10cm-t11',
+        author: 'revised',
+        text: 'REVISED Touch 11 SMS T6 — hard timing replacement. Paste:\n\nHey {first_name}, Mackenzie one more time. Heading into storm season here in NB. If you want me to take a look before then, this week or next works. Otherwise I\'ll step back. Book anytime at plusultraroofing.com.'
       }
     ],
     't12': [
       {
         id: 'jules-10cm-t12-ama',
         text: 'Add the AMA before the close: "Before I step back, anything I can answer in one reply?" (Mar 11 — Rule 3)'
+      },
+      {
+        id: 'revised-10cm-t12',
+        author: 'revised',
+        text: 'REVISED Touch 12 Email E6 — add AMA before close. Paste:\n\nSubject: Last note from me\n\nHey {first_name}, last note from this thread.\n\nBefore I step back: anything I could answer in one reply? Pricing, scope, contractor questions, any of it. Even a "the timing isn\'t right" tells me what to do next.\n\nIf not, whenever you\'re ready to look at your roof, we\'re here. Save my number, no rush, no follow-ups after this one.\n\nMackenzie'
       }
     ],
     'signoff': [
@@ -202,6 +227,16 @@
       {
         id: 'jules-10cm-gap-owner-video',
         text: 'GAP: no personalized owner-video after inspection is booked. Tony Robbins / Dean Graciosi pattern. (Apr 23 — Rule 10)'
+      },
+      {
+        id: 'revised-10cm-new-touch-cost',
+        author: 'revised',
+        text: 'NEW Touch (Day 12-13) — Cost-of-inaction email. Insert between current Touch 8 and Touch 9.\n\nSubject: One thing about roofs in NB nobody mentions\n\nHey {first_name},\n\nOne thing worth mentioning if you\'re on the fence:\n\nAtlantic Canada chews through roofs at almost double the national rate. The reason isn\'t shingle quality. It\'s the freeze-thaw cycle. Every time the temp crosses 0°C — which around here happens 80+ times a winter — moisture under the shingles expands and contracts. Each cycle is a tiny crack. A few winters of that and an aging roof tips from "good for another decade" to "leaking by April."\n\nThe cost of waiting isn\'t a higher quote next year. It\'s the deck rebuild that gets added when the leak finds the OSB underneath. We see it every spring. $4K to $8K of avoidable damage.\n\nIf your roof is over 15 years old, the inspection is worth doing this season, even if you\'re not ready to commit on the spot.\n\n[BOOKING LINK]\n\nMackenzie'
+      },
+      {
+        id: 'revised-10cm-new-touch-owner-video',
+        author: 'revised',
+        text: 'NEW Touch (post-inspection-booked) — Personalized owner-video Email\n\nFires automatically when the lead books the inspection on the GHL calendar widget.\n\nSubject: Quick video before {first_name}\'s inspection\n\nHey {first_name},\n\nRecorded this for you ahead of {appointment_date}. Quick walk-through of what we\'ll look at, what to have ready, and what you\'ll have in writing when we leave.\n\n[VIDEO: Mac records 60-90s · per-booking · reusable shell + personalized intro]\n\nLooking forward to it.\n\nMackenzie\n506-616-4607'
       }
     ]
   };
@@ -210,7 +245,12 @@
     't1': [
       {
         id: 'jules-rejuv-t1-two-sins',
-        text: 'TWO JULES SINS: "just reply here" (passive AI tell) and "no pressure, no rush" (negative framing). Rewrite as a direct binary: "Was this for a roof you own now, or one you\'re sizing up? Either way I can point you in the right direction." (Apr 16 — Rules 1+2+14)'
+        text: 'TWO JEWELS SINS: "just reply here" (passive AI tell) and "no pressure, no rush" (negative framing). Rewrite as a direct binary: "Was this for a roof you own now, or one you\'re sizing up? Either way I can point you in the right direction." (Apr 16 — Rules 1+2+14)'
+      },
+      {
+        id: 'revised-rejuv-t1',
+        author: 'revised',
+        text: 'REVISED Touch 1 SMS — paste:\n\nHey {first_name}, this is Mackenzie with Plus Ultra Roofing. Saw you grabbed the Roof Rejuvenation PDF. Was that for a roof you own now, or one you\'re sizing up? Either way I can point you toward what makes sense.'
       }
     ],
     't2': [
@@ -221,6 +261,11 @@
       {
         id: 'jules-rejuv-t2-three-es',
         text: 'STRONG. "If you reply with those, I can tell you in a day or two whether rejuvenation makes sense" — this IS the Educate→Empower→Engage path. (Apr 23 — Rule 5)'
+      },
+      {
+        id: 'revised-rejuv-t2',
+        author: 'revised',
+        text: 'REVISED Touch 2 Email — add 3rd-gen line + business line swap:\n\nSubject: Your Roof Rejuvenation PDF + a quick question\n\nHi {first_name},\n\nThanks for downloading the Plus Ultra Roof Rejuvenation guide. Quick context: I\'m Mackenzie, third generation roofing in Moncton. My grandfather started on rooftops in the 60s — so when I look at a roof, I\'m pulling 40+ years of Atlantic Canada experience into the read.\n\nIf your roof still has good shingles but is starting to look tired (faded color, light granule loss, edges curling), rejuvenation can buy you another 5 to 15 years for a fraction of what a replacement costs. The product we apply is a silica-based treatment called GoNano — developed in Atlantic Canada, featured on Dragon\'s Den, engineered for our climate.\n\nA few quick things that help me figure out if your roof is a candidate:\n\n  1. Roughly how old is it?\n  2. Any active leaks or large patches of missing shingles?\n  3. Are you planning on staying in the home another 5+ years?\n\nIf you reply with those, I can tell you in a day or two whether rejuvenation makes sense, or if a different option fits better. Either way, no obligation.\n\nOr book a free spray feasibility inspection directly:\n\n{calendar_link}\n\nTalk soon,\nMac\nPlus Ultra Roofing\n(506) 616-4607\n\n[Post-booking video placeholder]'
       }
     ],
     't3': [
@@ -239,6 +284,11 @@
       {
         id: 'jules-rejuv-t5-three-sins',
         text: 'THREE Rule-1 sins in one SMS: "no rush," "just dropping by," "happy to answer anything." Jewels Apr 16 verdict on identical phrasing: "very passive way to talk to someone." Rewrite: "What\'s the biggest thing holding you back from booking the spray feasibility look — cost, timing, or you\'re not sure your roof\'s a fit?" (Rule 1+2)'
+      },
+      {
+        id: 'revised-rejuv-t5',
+        author: 'revised',
+        text: 'REVISED Touch 5 SMS — paste:\n\nHey {first_name}, quick one. What\'s the biggest thing holding you back from booking the spray feasibility look — cost, timing, or you\'re not sure your roof\'s a fit? Mackenzie\n\nTag reply by obstacle (cost / timing / fit) for downstream segmentation.'
       }
     ],
     't6': [
@@ -263,6 +313,11 @@
       {
         id: 'jules-rejuv-t9-just',
         text: 'Drop the "Just" opener. Rewrite: "Sent you a checklist by email — free 45-min inspection is still on the table if you want a definitive yes/no on rejuvenation." (Apr 16 — Rule 1)'
+      },
+      {
+        id: 'revised-rejuv-t9',
+        author: 'revised',
+        text: 'REVISED Touch 9 SMS — paste:\n\nSent you a checklist by email — free 45-min inspection is still on the table if you want a definitive yes/no on rejuvenation.'
       }
     ],
     't10': [
@@ -275,6 +330,11 @@
       {
         id: 'jules-rejuv-t11-just',
         text: 'Drop "just" from "just text this number." Otherwise the evergreen-reactivation framing is exactly Jewels\'s Rule 4 spirit (40-45 day flow + segmented re-engagement). (Apr 16 — Rule 1)'
+      },
+      {
+        id: 'revised-rejuv-t11',
+        author: 'revised',
+        text: 'REVISED Touch 11 SMS — paste:\n\nLast note from me, {first_name}. If you ever want to revisit roof rejuvenation, text this number. No expiry, no pressure. Thanks for the look.\n\n(Drops "just" before "text this number" per Jewels Apr 16.)'
       }
     ],
     'signoff': [
@@ -289,6 +349,16 @@
       {
         id: 'jules-rejuv-strength',
         text: 'STRENGTH: 90-day flow exceeds the 40-45 day floor (Rule 4). This deck is closest to Jewels\'s full ideal — preserve as the model when extending IE + 10CM. (Apr 23)'
+      },
+      {
+        id: 'revised-rejuv-new-touch-motivation',
+        author: 'revised',
+        text: 'NEW Touch (booking confirmation) — Eight-figure motivation\n\nFires when the lead books the Spray Feasibility Inspection on Diego\'s calendar widget. Insert into the existing booking-confirm SMS or as a separate touch.\n\nHey {first_name}, looking forward to {appointment_date}. Quick question before we come out: what made you reach out to us originally? Whatever it was, helps me know how to make the visit most useful. Mackenzie'
+      },
+      {
+        id: 'revised-rejuv-new-touch-owner-video',
+        author: 'revised',
+        text: 'NEW Touch (post-booking confirmation) — Personalized owner-video Email\n\nFires automatically after the lead books. Mac records a short personalized video acknowledging them by name.\n\nSubject: Quick video before {first_name}\'s rejuvenation look\n\nHey {first_name},\n\nRecorded this for you ahead of {appointment_date}. Quick walk-through of what we\'ll spray-test, what to look for in the next 48 hours after we leave, and what your yes/no on rejuvenation will look like in writing.\n\n[VIDEO: Mac records 60-90s · per-booking · reusable shell + named intro]\n\nLooking forward to it.\n\nMac\n506-616-4607'
       }
     ]
   };

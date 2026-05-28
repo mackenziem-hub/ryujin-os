@@ -181,13 +181,38 @@
     '}',
 
     /* ── STICKY NOTES ── */
+    '.note-toggle {',
+    '  position: absolute; top: 18px; left: 18px; z-index: 35;',
+    '  background: rgba(14, 26, 53, 0.85); backdrop-filter: blur(8px);',
+    '  border: 1px solid rgba(250, 204, 21, 0.42);',
+    '  color: #fde047;',
+    '  padding: 9px 14px; border-radius: 999px;',
+    '  font-size: 0.78em; font-weight: 700; letter-spacing: 0.4px;',
+    '  cursor: pointer; font-family: "Inter", system-ui, sans-serif;',
+    '  display: inline-flex; align-items: center; gap: 8px;',
+    '  transition: background 0.15s, transform 0.15s, border-color 0.15s;',
+    '  text-transform: uppercase;',
+    '}',
+    '.note-toggle:hover { background: rgba(14, 26, 53, 0.96); border-color: rgba(250, 204, 21, 0.7); transform: scale(1.04); }',
+    '.note-toggle.open { background: rgba(14, 26, 53, 1); border-color: #facc15; box-shadow: 0 6px 20px rgba(250, 204, 21, 0.25); }',
+    '.note-toggle .count-pill {',
+    '  background: #facc15; color: #0e1a35;',
+    '  padding: 1px 7px; border-radius: 999px;',
+    '  font-size: 0.92em; font-weight: 800;',
+    '  min-width: 20px; text-align: center; line-height: 1.3;',
+    '}',
+    '.note-toggle .count-pill.revised { background: #93c5fd; color: #0c1e3a; }',
+    '.note-toggle .count-pill.user { background: #fef9c3; color: #1a1f2e; }',
     '.note-stack {',
-    '  position: absolute; top: 18px; left: 18px;',
-    '  display: flex; flex-direction: column; gap: 10px;',
-    '  max-width: 320px; width: 320px;',
+    '  position: absolute; top: 62px; left: 18px;',
+    '  display: none; flex-direction: column; gap: 10px;',
+    '  max-width: 360px; width: 360px;',
     '  z-index: 30;',
     '  font-family: "Inter", system-ui, sans-serif;',
+    '  max-height: calc(100vh - 100px); overflow-y: auto;',
+    '  padding-right: 4px;',
     '}',
+    '.note-stack.open { display: flex; }',
     '.note-add-btn {',
     '  background: rgba(250, 204, 21, 0.12);',
     '  border: 1px dashed rgba(250, 204, 21, 0.45);',
@@ -464,9 +489,35 @@
 
   function renderNotesForSlide(slide, index) {
     var slideId = slideIdFor(slide, index);
-    var existing = slide.querySelector('.note-stack');
-    if (existing) existing.remove();
 
+    // Remove previous toggle + stack so re-rendering is clean
+    var oldToggle = slide.querySelector('.note-toggle');
+    if (oldToggle) oldToggle.remove();
+    var oldStack = slide.querySelector('.note-stack');
+    if (oldStack) oldStack.remove();
+
+    var data = loadNotes();
+    var notes = data[slideId] || [];
+    var jewelsCount = 0;
+    var revisedCount = 0;
+    var userCount = 0;
+    notes.forEach(function (n) {
+      if (n.author === 'jules') jewelsCount++;
+      else if (n.author === 'revised') revisedCount++;
+      else userCount++;
+    });
+
+    // Toggle button — always visible, shows counts per author type
+    var toggle = document.createElement('button');
+    toggle.className = 'note-toggle';
+    var pills = '';
+    if (jewelsCount) pills += ' <span class="count-pill" title="Jewels suggestions">' + jewelsCount + '</span>';
+    if (revisedCount) pills += ' <span class="count-pill revised" title="Revised copy">' + revisedCount + '</span>';
+    if (userCount) pills += ' <span class="count-pill user" title="Your notes">' + userCount + '</span>';
+    toggle.innerHTML = '💬 Suggestions &amp; revised' + (pills || ' <span class="count-pill" style="opacity:0.5">0</span>');
+    slide.appendChild(toggle);
+
+    // Stack — hidden by default, opens on toggle click
     var stack = document.createElement('div');
     stack.className = 'note-stack';
 
@@ -479,12 +530,17 @@
     });
     stack.appendChild(addBtn);
 
-    var data = loadNotes();
-    (data[slideId] || []).forEach(function (note) {
+    notes.forEach(function (note) {
       stack.appendChild(noteCardEl(slideId, note));
     });
 
     slide.appendChild(stack);
+
+    toggle.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var isOpen = stack.classList.toggle('open');
+      toggle.classList.toggle('open', isOpen);
+    });
   }
 
   function refreshAllSlideNotes() {
@@ -765,11 +821,23 @@
     if (openShroud) return;
     var t = e.target;
     if (!t) return;
-    if (t.closest && t.closest('.present-ui, .nav-dots, .note-stack, .note, .note-editor-shroud, a, button, input, textarea, code')) return;
+    if (t.closest && t.closest('.present-ui, .nav-dots, .note-toggle, .note-stack, .note, .note-editor-shroud, a, button, input, textarea, code')) return;
     var x = e.clientX;
     var w = window.innerWidth;
     if (x > w * 0.78) next();
     else if (x < w * 0.22) prev();
+  });
+
+  // Click-outside closes any open note panels
+  document.addEventListener('click', function (e) {
+    var t = e.target;
+    if (t && t.closest && t.closest('.note-toggle, .note-stack, .note-editor-shroud')) return;
+    document.querySelectorAll('.note-stack.open').forEach(function (s) {
+      s.classList.remove('open');
+    });
+    document.querySelectorAll('.note-toggle.open').forEach(function (b) {
+      b.classList.remove('open');
+    });
   });
 
   var touchStartX = 0;
