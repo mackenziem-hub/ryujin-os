@@ -37,6 +37,18 @@ const OPP_ROUTING = {
   }
 };
 
+// Automator.ai follow-up workflows fire on a CONTACT TAG, not on pipeline
+// stage. The old Replit -> Zapier chain stamped this exact tag so its
+// follow-up automation (immediate SMS + email, reply branch) fired. We stamp
+// the same canonical tag here so a Ryujin-API lead triggers that same
+// workflow with no other changes. Canonical source: Plus Ultra/40-CONTENT/
+// Instant Estimator.md frontmatter (ghl_tag: "Instant Estimator Submission").
+// NOTE: GHL stores tags lowercased; the Automator trigger must match the same
+// tag (case-insensitive in the GHL UI).
+const AUTOMATOR_TAGS = {
+  'instant-estimator-v3': 'Instant Estimator Submission'
+};
+
 function splitName(full) {
   const t = (full || '').trim();
   if (!t) return { firstName: '', lastName: '' };
@@ -156,6 +168,18 @@ async function handler(req, res) {
     }
     const { firstName, lastName } = splitName(name);
 
+    // Base tags drive the marketing-leads view (source: filter + stats).
+    // The Automator trigger tag (when the source has one) is what fires the
+    // existing follow-up workflow. Added on top, not in place of, the others.
+    const tags = ['lead', source ? `source:${source}` : 'source:unknown'];
+    // Own-property lookup only: a public `source` like "constructor" or
+    // "__proto__" must not resolve to an inherited prototype value and get
+    // pushed as a non-string tag (would make GHL reject the contact).
+    const automatorTag = Object.prototype.hasOwnProperty.call(AUTOMATOR_TAGS, source)
+      ? AUTOMATOR_TAGS[source]
+      : null;
+    if (automatorTag) tags.push(automatorTag);
+
     const contactPayload = {
       locationId: LOCATION_ID,
       firstName: firstName || (email ? email.split('@')[0] : 'Unknown'),
@@ -164,7 +188,7 @@ async function handler(req, res) {
       phone: phone || undefined,
       address1: address || undefined,
       city: city || undefined,
-      tags: ['lead', source ? `source:${source}` : 'source:unknown'],
+      tags,
       source: source || 'ryujin-leads-api'
     };
 
