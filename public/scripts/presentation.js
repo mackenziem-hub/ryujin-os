@@ -640,22 +640,58 @@
 
   function toggleFullscreen() {
     var doc = document;
-    var el = doc.documentElement;
-    try {
-      if (isFullscreen()) {
-        var exitFn = doc.exitFullscreen || doc.webkitExitFullscreen || doc.msExitFullscreen || doc.mozCancelFullScreen;
-        if (exitFn) {
-          var r = exitFn.call(doc);
-          if (r && r.catch) r.catch(function () {});
-        }
-      } else {
-        var reqFn = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen || el.mozRequestFullScreen;
-        if (reqFn) {
-          var r2 = reqFn.call(el, { navigationUI: 'hide' });
-          if (r2 && r2.catch) r2.catch(function () {});
-        }
+    if (isFullscreen()) {
+      var exitFn = doc.exitFullscreen || doc.webkitExitFullscreen || doc.msExitFullscreen || doc.mozCancelFullScreen;
+      if (!exitFn) {
+        console.warn('[presentation] no exitFullscreen API available');
+        return;
       }
-    } catch (e) { /* swallow — fullscreen can be blocked */ }
+      try {
+        var rOut = exitFn.call(doc);
+        if (rOut && rOut.then) rOut.then(
+          function () { console.log('[presentation] exited fullscreen'); },
+          function (err) { console.warn('[presentation] exit fullscreen rejected:', err); }
+        );
+      } catch (err) {
+        console.warn('[presentation] exitFullscreen threw:', err);
+      }
+      return;
+    }
+    /* Enter fullscreen — try a few targets in order until one resolves. */
+    var targets = [doc.documentElement, doc.body];
+    var tried = 0;
+    function tryNext() {
+      if (tried >= targets.length) {
+        console.warn('[presentation] requestFullscreen failed on all targets (iframe sandbox? user-activation expired? browser blocked?)');
+        return;
+      }
+      var el = targets[tried++];
+      var reqFn = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen || el.mozRequestFullScreen;
+      if (!reqFn) {
+        console.warn('[presentation] no requestFullscreen on target', el.tagName);
+        tryNext();
+        return;
+      }
+      try {
+        /* Call without options first — some browsers reject the options arg. */
+        var r = reqFn.call(el);
+        if (r && r.then) {
+          r.then(
+            function () { console.log('[presentation] entered fullscreen via', el.tagName); },
+            function (err) {
+              console.warn('[presentation] requestFullscreen rejected on', el.tagName, '—', err && err.message);
+              tryNext();
+            }
+          );
+        } else {
+          console.log('[presentation] requestFullscreen returned non-promise on', el.tagName, '— assumed OK');
+        }
+      } catch (err) {
+        console.warn('[presentation] requestFullscreen threw on', el.tagName, '—', err && err.message);
+        tryNext();
+      }
+    }
+    tryNext();
   }
 
   function syncFullscreenClass() {
