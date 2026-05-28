@@ -56,11 +56,22 @@ END $$;
 -- ─────────────────────────────────────────────────────────────────────
 -- Guards against a setval rollback or a manual insert that bypassed the
 -- default. setval(.., n, true) means nextval() will return n+1.
-SELECT setval(
-  pg_get_serial_sequence('tickets', 'ticket_number'),
-  GREATEST((SELECT COALESCE(MAX(ticket_number), 0) FROM tickets), 1),
-  true
-);
+--
+-- Empty-table case: skip the setval so a fresh tenant's first ticket
+-- still gets ticket_number = 1 (the sequence's natural start value).
+DO $$
+DECLARE
+  max_num INT;
+BEGIN
+  SELECT COALESCE(MAX(ticket_number), 0) INTO max_num FROM tickets;
+  IF max_num > 0 THEN
+    PERFORM setval(
+      pg_get_serial_sequence('tickets', 'ticket_number'),
+      max_num,
+      true
+    );
+  END IF;
+END $$;
 
 -- ─────────────────────────────────────────────────────────────────────
 -- 3. Enforce per-tenant uniqueness going forward
