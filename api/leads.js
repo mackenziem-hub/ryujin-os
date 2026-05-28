@@ -100,7 +100,7 @@ async function createOpportunity({ contactId, source, name, metadata }) {
   return { ok: true, opportunity_id: data?.opportunity?.id || data?.id || null };
 }
 
-async function notifyOwner({ contactId, source, name, email, phone, address, city, metadata, opportunityId }) {
+async function notifyOwner({ contactId, source, name, email, phone, address, city, metadata }) {
   if (!NOTIFY_EMAIL) return;
   const md = metadata || {};
   const safeName    = safeHeader(name);
@@ -135,9 +135,6 @@ async function notifyOwner({ contactId, source, name, email, phone, address, cit
   }
 
   lines.push(`GHL contact: ${ghlUrl}`);
-  if (opportunityId) {
-    lines.push(`GHL opp:     https://app.gohighlevel.com/v2/location/${LOCATION_ID}/opportunities/list?opportunityId=${opportunityId}`);
-  }
   lines.push('');
   lines.push('Ryujin OS');
 
@@ -194,40 +191,39 @@ async function handler(req, res) {
       return res.status(502).json({ ok: false, error: ghlError || 'GHL contact create failed' });
     }
 
-    // Opportunity routing — for sources with a configured pipeline + stage,
-    // create the opp now so the lead shows up on the kanban immediately
-    // (not just in contacts). Bounded so a slow GHL doesn't stall the form.
+    // Run opp creation + owner notification in parallel so a slow GHL or
+    // Gmail doesn't double the customer-facing wait. Combined bound 3.5s.
+    // Both are best-effort — the contact is already saved above, so even
+    // if both fail the lead is recoverable from GHL contacts. The email
+    // intentionally does not link to the opportunity (it links to the
+    // contact, which surfaces opps anyway) so the two tasks have no
+    // ordering dependency.
     let opportunityId = null;
     let opportunityError = null;
-    if (OPP_ROUTING[source]) {
-      try {
-        const result = await Promise.race([
-          createOpportunity({ contactId, source, name, metadata }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('opp timeout (4s)')), 4000))
-        ]);
-        if (result?.ok) opportunityId = result.opportunity_id;
-        else opportunityError = result?.error || 'unknown';
-      } catch (e) {
-        opportunityError = e.message;
-        console.warn(`[leads] createOpportunity failed: ${e.message} (contact ${contactId})`);
-      }
-    }
-
-    // Bounded await: notifyOwner needs to fire while the serverless
-    // invocation is still warm (post-response work may be dropped on
-    // Vercel), but Gmail OAuth latency must not stall the form. Race
-    // against a 4s timeout; if Gmail is slow we still return success
-    // and the contact is safe in GHL.
     let notifyError = null;
-    try {
-      await Promise.race([
-        notifyOwner({ contactId, source, name, email, phone, address, city, metadata, opportunityId }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('notify timeout (4s)')), 4000))
-      ]);
-    } catch (e) {
-      notifyError = e.message;
-      console.warn(`[leads] notifyOwner failed: ${e.message} (contact ${contactId})`);
-    }
+
+    const oppPromise = OPP_ROUTING[source]
+      ? createOpportunity({ contactId, source, name, metadata })
+          .then(r => {
+            if (r && r.ok) opportunityId = r.opportunity_id;
+            else opportunityError = (r && r.error) || 'unknown';
+          })
+          .catch(e => {
+            opportunityError = e.message;
+            console.warn(`[leads] createOpportunity failed: ${e.message} (contact ${contactId})`);
+          })
+      : Promise.resolve();
+
+    const notifyPromise = notifyOwner({ contactId, source, name, email, phone, address, city, metadata })
+      .catch(e => {
+        notifyError = e.message;
+        console.warn(`[leads] notifyOwner failed: ${e.message} (contact ${contactId})`);
+      });
+
+    await Promise.race([
+      Promise.allSettled([oppPromise, notifyPromise]),
+      new Promise(r => setTimeout(r, 3500))
+    ]);
 
     return res.status(201).json({
       ok: true,
