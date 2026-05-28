@@ -18,68 +18,14 @@
   'use strict';
 
   var IE = {
-    't1': [
+    /* IE deck v2 (May 28 2026): all 30+ Jules sticky-note suggestions were applied
+       directly to the touch copy. Sticky notes left empty so the deck shows the
+       final spec without overlap. Reference reasoning lives in slide 09 (Overview)
+       and slide 25 (Open Items). */
+    'cover': [
       {
-        id: 'jules-ie-t1-direct-question',
-        text: 'Trails off, no question, no tag-generator. Open with a direct binary: "Was that estimate for now, this spring, or just sizing it up?" Forces a reply and tags the lead. (Apr 16 — Rule 2: lead with a binary)'
-      },
-      {
-        id: 'jules-ie-t1-just',
-        text: '"Just wanted to say hey" — drop "just." Jules Apr 16 verbatim: "You said just a lot in your text...that\'s a very passive way to talk to someone." (Rule 1: kill "just")'
-      }
-    ],
-    't2': [
-      {
-        id: 'jules-ie-t2-third-gen',
-        text: 'Add the 3rd-generation roofer line here — first long-form touch is the load-bearing authority signal slot. (Jan 21 + Mar 11 — Rule 13)'
-      }
-    ],
-    't3': [
-      {
-        id: 'jules-ie-t3-day2-story',
-        text: 'Day 2 is the "why story" slot in Jules\'s 10-day map, not a value tip. Move ventilation to Day 3 and run a story-based Day 2: "I built this estimator after seeing one too many bad install calls." (Mar 11 — Rule 3)'
-      }
-    ],
-    't4': [
-      {
-        id: 'jules-ie-t4-three-sins',
-        text: 'Three Jules sins in one SMS: "just checking in" (passive AI tell), no direct question, double-CTA (questions OR in-person — pick one). Rewrite: "What stopped you from booking the in-person look — the price range, timing, or you\'re still sizing it up?" (Apr 16 — Rules 1+2)'
-      }
-    ],
-    't5': [
-      {
-        id: 'jules-ie-t5-keep',
-        text: 'KEEP. Subject is the right shape (Day 6-10 "are you still interested" pattern from Mar 11). Three-bucket body framing is Jules-aligned. (Rule 3)'
-      }
-    ],
-    't6': [
-      {
-        id: 'jules-ie-t6-reframe',
-        text: '"Free Platinum upgrade" reads transactional. Jules Apr 21 frame: lead with the outcome, not the discount. Try: "A bigger guarantee for you, {first_name}" — reveal the upgrade as the reward. (Rule 14: no negative/transactional framing)'
-      }
-    ],
-    't7': [
-      {
-        id: 'jules-ie-t7-ama',
-        text: 'Good guide-tone exit. Add the Day-5 AMA ask before the goodbye: "Before I step back, anything I can answer in one reply?" (Mar 11 — Rule 3)'
-      }
-    ],
-    'signoff': [
-      {
-        id: 'jules-ie-gap-tail',
-        text: 'GAP: sequence cliff-falls at Day 14. Jules Apr 23 rule is 40-45 days of flow. Add a Day 21 / Day 30 / Day 45 reactivation tail. Segment by stage so irrelevant messages stop. (Rule 4)'
-      },
-      {
-        id: 'jules-ie-gap-motivation',
-        text: 'GAP: missing the eight-figure question. Insert "What motivated you to call us?" at the inspection-confirmation step. (Apr 23 — Rule 11: shifts the dynamic to remind the customer they chose to reach out)'
-      },
-      {
-        id: 'jules-ie-gap-cost-of-inaction',
-        text: 'GAP: no cost-of-inaction anywhere. No touch educates on damage escalation, mold, or NB freeze-thaw risk. Borrow from Rejuvenation Touch 6. (Apr 23 — Rule 6)'
-      },
-      {
-        id: 'jules-ie-gap-owner-video',
-        text: 'GAP: no personalized owner-video. Tony Robbins / Dean Graciosi pattern. After automation sends, owner sends a short personalized video naming the recipient. (Apr 23 — Rule 10)'
+        id: 'jules-ie-v2-applied',
+        text: 'IE deck v2 — all Jules suggestions from the May 28 meeting are now baked into the touch copy. 11 touches, 45 days, post-Jules. The other two decks (10CM, Rejuvenation) still carry their Jules sticky notes for Cat to manually apply in GHL.'
       }
     ]
   };
