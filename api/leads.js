@@ -281,23 +281,23 @@ async function handler(req, res) {
       notifyError = e.message;
     }
 
-    // CAPI is fire-and-log. The browser pixel is the primary Meta signal;
-    // server CAPI is the backup for ad-blocked users. A slow Meta endpoint
-    // should not extend the customer-visible wait, and notify+opp+GHL all
-    // keep the serverless invocation warm long enough for CAPI to settle.
-    // Capture the eventual result on a sentinel so the response can still
-    // expose any error without awaiting in the critical path.
-    let capiSettled = null;
-    capiPromise.then(r => { capiSettled = r; });
-    // Re-read shortly after so the JSON response can surface obvious
-    // synchronous failures. Bounded so we never block more than 200ms here.
+    // CAPI bounded await. Browser pixel is the primary Meta signal but
+    // CAPI is the necessary backup for ad-blocked clients. Give it a 2s
+    // cap (or whatever remains of the overall budget, whichever is less)
+    // so a slow Meta endpoint doesn't drag the submit, while still
+    // giving it enough time to land in normal conditions (Meta typically
+    // responds in 200-800ms).
+    const CAPI_CAP_MS = 2000;
+    const capiBudget = Math.min(remaining(), CAPI_CAP_MS);
     try {
-      await Promise.race([
-        capiPromise.catch(() => null),
-        new Promise(r => setTimeout(r, 200))
+      const capiRes = await Promise.race([
+        capiPromise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('capi timeout')), capiBudget))
       ]);
-      if (capiSettled && !capiSettled.ok) capiError = capiSettled.error;
-    } catch (_) { /* swallow */ }
+      if (capiRes && !capiRes.ok) capiError = capiRes.error;
+    } catch (e) {
+      capiError = e.message;
+    }
 
     return res.status(201).json({
       ok: true,
