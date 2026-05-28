@@ -191,22 +191,23 @@ async function handler(req, res) {
       return res.status(502).json({ ok: false, error: ghlError || 'GHL contact create failed' });
     }
 
-    // Owner notification: fire-and-forget. Vercel post-response work isn't
-    // guaranteed but typically drains warm-invocation microtasks. Matches
-    // the notifyMackenzie pattern in api/proposal-accept.js — owner email
-    // is best-effort, the GHL contact + opp are the durable source of
-    // truth Mac sees anyway.
-    notifyOwner({ contactId, source, name, email, phone, address, city, metadata })
-      .catch(e => console.warn(`[leads] notifyOwner failed: ${e.message} (contact ${contactId})`));
+    // Start owner notification immediately so it can run in parallel
+    // with opp creation when both are needed.
+    const notifyPromise = notifyOwner({ contactId, source, name, email, phone, address, city, metadata })
+      .catch(e => {
+        console.warn(`[leads] notifyOwner failed: ${e.message} (contact ${contactId})`);
+        return { _notifyError: e.message };
+      });
 
-    // Opportunity creation: awaited. This is the whole point of routing —
-    // letting it be dropped on Vercel post-response would leave the lead
-    // as a contact-only with no kanban presence. Bound at 5s so a stuck
-    // GHL never holds the form indefinitely; if it times out the contact
-    // is still safe and Mac can promote it manually.
     let opportunityId = null;
     let opportunityError = null;
+    let notifyError = null;
+
     if (OPP_ROUTING[source]) {
+      // Routed source: await the opp (must land on the kanban — the whole
+      // point of this branch). The notifyOwner promise runs in parallel
+      // and is allowed to settle in the background while opp is awaited;
+      // the awaited opp keeps the invocation warm for it.
       try {
         const oppRes = await Promise.race([
           createOpportunity({ contactId, source, name, metadata }),
@@ -218,6 +219,20 @@ async function handler(req, res) {
         opportunityError = e.message;
         console.warn(`[leads] createOpportunity failed: ${e.message} (contact ${contactId})`);
       }
+    } else {
+      // No-route source: nothing else gates the response, so we await
+      // notify with its own bound. Without this the email could be dropped
+      // as post-response work on Vercel and a lead from a non-routed
+      // source would have no timely alert.
+      try {
+        const res2 = await Promise.race([
+          notifyPromise,
+          new Promise((_, reject) => setTimeout(() => reject(new Error('notify timeout (4s)')), 4000))
+        ]);
+        if (res2 && res2._notifyError) notifyError = res2._notifyError;
+      } catch (e) {
+        notifyError = e.message;
+      }
     }
 
     return res.status(201).json({
@@ -226,7 +241,8 @@ async function handler(req, res) {
       opportunity_id: opportunityId,
       source,
       ghlError,
-      opportunityError
+      opportunityError,
+      notifyError
     });
   }
 
