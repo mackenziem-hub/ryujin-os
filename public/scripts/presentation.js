@@ -14,7 +14,7 @@
  *
  * Sticky notes
  *   Click "+ Add suggestion" on any slide to write a note. Notes persist
- *   in localStorage keyed per deck per slide. Pre-populated Jules notes
+ *   in localStorage keyed per deck per slide. Pre-populated Jewels notes
  *   render in gold with a star prefix.
  */
 (function () {
@@ -379,11 +379,11 @@
       .replace(/'/g, '&#39;');
   }
 
-  /* Public: seed Jules suggestions. Called by external script (or inline at
+  /* Public: seed Jewels suggestions. Called by external script (or inline at
      bottom of this file) after subagent returns. Does not overwrite existing
-     user-added notes; only adds Jules entries that aren't already present
+     user-added notes; only adds Jewels entries that aren't already present
      (matched by stable id). */
-  window.RyujinDeckSeedJules = function (deckId, jules) {
+  window.RyujinDeckSeedJewels = function (deckId, jules) {
     if (deckId !== DECK_ID) return;
     var data = loadNotes();
     Object.keys(jules || {}).forEach(function (slideId) {
@@ -414,7 +414,7 @@
     el.setAttribute('data-note-id', note.id);
     el.innerHTML =
       '<div class="note-head">' +
-        '<span class="note-author">' + (note.author === 'jules' ? '★ Jules' : 'Note') + '</span>' +
+        '<span class="note-author">' + (note.author === 'jules' ? '★ Jewels' : 'Note') + '</span>' +
         '<button class="note-del" aria-label="Delete suggestion" title="Delete">×</button>' +
       '</div>' +
       '<div class="note-body">' + escapeHTML(note.text) + '</div>' +
@@ -498,7 +498,7 @@
     shroud.className = 'note-editor-shroud';
     var heading = existingNote ? 'Edit suggestion' : 'Add a suggestion';
     var initial = existingNote ? existingNote.text : '';
-    var authorLabel = (existingNote && existingNote.author === 'jules') ? 'Jules' : 'Note';
+    var authorLabel = (existingNote && existingNote.author === 'jules') ? 'Jewels' : 'Note';
     shroud.innerHTML =
       '<div class="note-editor">' +
         '<h4>' + escapeHTML(authorLabel) + ' · ' + escapeHTML(heading) + '</h4>' +
