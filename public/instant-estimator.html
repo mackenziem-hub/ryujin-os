@@ -10,6 +10,20 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@500;600;700;800&display=swap" rel="stylesheet">
+
+<!-- Meta Pixel — Plus Ultra Roofing Event Data (1166833781416817) -->
+<script>
+!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
+document,'script','https://connect.facebook.net/en_US/fbevents.js');
+fbq('init', '1166833781416817');
+fbq('track', 'PageView');
+</script>
+<noscript><img height="1" width="1" style="display:none" alt=""
+src="https://www.facebook.com/tr?id=1166833781416817&ev=PageView&noscript=1"/></noscript>
+<!-- End Meta Pixel -->
 <style>
 :root{
   --cream:#f8f4ea;
@@ -872,6 +886,11 @@ body{
       vents: 0
     };
 
+    // Shared Meta event_id — same value passed to server CAPI so the
+    // browser fbq event and the server CAPI event deduplicate on Meta's
+    // side instead of double-counting the Lead.
+    const metaEventId = 'ie3_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
+
     // Capture lead FIRST (phone-first gate). Don't block on failure.
     const leadPayload = {
       source: 'instant-estimator-v3',
@@ -880,6 +899,7 @@ body{
       phone: state.phone,
       address: state.address || null,
       city: state.city || null,
+      meta_event_id: metaEventId,
       metadata: {
         sqft: state.sqft, sizePreset: state.sizePreset,
         pitch: state.pitch, complexity: state.complexity,
@@ -901,6 +921,22 @@ body{
       }
     } catch (leadErr) {
       console.warn('[ie-v3] lead capture threw', leadErr && leadErr.message);
+    }
+
+    // Browser-side Meta Lead event. eventID matches the one sent to server
+    // CAPI so Meta dedupes the two signals into a single conversion.
+    // Wrapped in try/catch so blocked/missing fbq (ad-blockers, no JS)
+    // never breaks the form. If the customer browser has Meta blocked,
+    // the server CAPI side will still report the Lead.
+    try {
+      if (typeof fbq === 'function') {
+        fbq('track', 'Lead', {
+          content_name: 'Instant Estimator v3',
+          content_category: 'roofing'
+        }, { eventID: metaEventId });
+      }
+    } catch (fbqErr) {
+      console.warn('[ie-v3] fbq Lead failed', fbqErr && fbqErr.message);
     }
 
     // Quote (wait for slug resolution so reseeded DBs don't hit stale fallback).
