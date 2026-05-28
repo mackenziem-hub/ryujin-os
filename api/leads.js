@@ -26,6 +26,16 @@ const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim(
 const LOCATION_ID = (process.env.GHL_LOCATION_ID || 'aHotOUdq9D8m3JPrRz9n').trim();
 const NOTIFY_EMAIL = (process.env.NOTIFY_EMAIL || 'mackenzie.m@plusultraroofing.com').trim();
 
+// Per-source pipeline routing. Pipeline + stage IDs verified against live GHL
+// 2026-05-09 (see api/ghl.js PIPELINE_NAMES / PIPELINE_STAGES). Map a lead
+// source to the right pipeline so the opp lands on the right kanban.
+const OPP_ROUTING = {
+  'instant-estimator-v3': {
+    pipelineId: 'eJm8vgBePJStA1QdZqmA',           // Instant Estimator
+    pipelineStageId: '1e82765c-2ef2-4810-bcbf-9d6a926dba7b' // New IE Submission
+  }
+};
+
 function splitName(full) {
   const t = (full || '').trim();
   if (!t) return { firstName: '', lastName: '' };
@@ -62,7 +72,35 @@ function safeHeader(v) {
   return String(v == null ? '' : v).replace(/[\r\n]+/g, ' ').trim();
 }
 
-async function notifyOwner({ contactId, source, name, email, phone, address, city, metadata }) {
+async function createOpportunity({ contactId, source, name, metadata }) {
+  const route = OPP_ROUTING[source];
+  if (!route) return { ok: false, error: `no routing for source: ${source}` };
+
+  const md = metadata || {};
+  const cleanName = (name || '').trim();
+  const descBits = [];
+  if (md.sqft) descBits.push(`${md.sqft} sqft`);
+  if (md.complexity) descBits.push(md.complexity);
+  const oppName = cleanName
+    ? `${cleanName} - Instant Estimator${descBits.length ? ' (' + descBits.join(', ') + ')' : ''}`
+    : `Instant Estimator${descBits.length ? ' (' + descBits.join(', ') + ')' : ''}`;
+
+  const body = {
+    locationId: LOCATION_ID,
+    pipelineId: route.pipelineId,
+    pipelineStageId: route.pipelineStageId,
+    contactId,
+    name: oppName,
+    monetaryValue: 0,
+    status: 'open',
+    source: source || 'ryujin-leads-api'
+  };
+
+  const data = await ghlFetch('/opportunities/', {}, { method: 'POST', body });
+  return { ok: true, opportunity_id: data?.opportunity?.id || data?.id || null };
+}
+
+async function notifyOwner({ contactId, source, name, email, phone, address, city, metadata, opportunityId }) {
   if (!NOTIFY_EMAIL) return;
   const md = metadata || {};
   const safeName    = safeHeader(name);
@@ -97,6 +135,9 @@ async function notifyOwner({ contactId, source, name, email, phone, address, cit
   }
 
   lines.push(`GHL contact: ${ghlUrl}`);
+  if (opportunityId) {
+    lines.push(`GHL opp:     https://app.gohighlevel.com/v2/location/${LOCATION_ID}/opportunities/list?opportunityId=${opportunityId}`);
+  }
   lines.push('');
   lines.push('Ryujin OS');
 
@@ -153,6 +194,25 @@ async function handler(req, res) {
       return res.status(502).json({ ok: false, error: ghlError || 'GHL contact create failed' });
     }
 
+    // Opportunity routing — for sources with a configured pipeline + stage,
+    // create the opp now so the lead shows up on the kanban immediately
+    // (not just in contacts). Bounded so a slow GHL doesn't stall the form.
+    let opportunityId = null;
+    let opportunityError = null;
+    if (OPP_ROUTING[source]) {
+      try {
+        const result = await Promise.race([
+          createOpportunity({ contactId, source, name, metadata }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('opp timeout (4s)')), 4000))
+        ]);
+        if (result?.ok) opportunityId = result.opportunity_id;
+        else opportunityError = result?.error || 'unknown';
+      } catch (e) {
+        opportunityError = e.message;
+        console.warn(`[leads] createOpportunity failed: ${e.message} (contact ${contactId})`);
+      }
+    }
+
     // Bounded await: notifyOwner needs to fire while the serverless
     // invocation is still warm (post-response work may be dropped on
     // Vercel), but Gmail OAuth latency must not stall the form. Race
@@ -161,7 +221,7 @@ async function handler(req, res) {
     let notifyError = null;
     try {
       await Promise.race([
-        notifyOwner({ contactId, source, name, email, phone, address, city, metadata }),
+        notifyOwner({ contactId, source, name, email, phone, address, city, metadata, opportunityId }),
         new Promise((_, reject) => setTimeout(() => reject(new Error('notify timeout (4s)')), 4000))
       ]);
     } catch (e) {
@@ -169,7 +229,15 @@ async function handler(req, res) {
       console.warn(`[leads] notifyOwner failed: ${e.message} (contact ${contactId})`);
     }
 
-    return res.status(201).json({ ok: true, contact_id: contactId, source, ghlError, notifyError });
+    return res.status(201).json({
+      ok: true,
+      contact_id: contactId,
+      opportunity_id: opportunityId,
+      source,
+      ghlError,
+      opportunityError,
+      notifyError
+    });
   }
 
   // ── GET: list contacts (lead view) ──
