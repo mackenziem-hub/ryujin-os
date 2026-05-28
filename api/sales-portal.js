@@ -76,7 +76,9 @@ async function handler(req, res) {
   function sellingPrice(e) {
     const tier = (e.selected_package || 'gold').toLowerCase();
     const pkg = e.calculated_packages?.[tier] || {};
-    return pkg.sellingPrice || pkg.total || 0;
+    // Precedence mirrors proposal.js: pkg.total is the canonical pre-tax rendered price
+    // (carries negotiated/override values); summary.sellingPrice is the raw-engine-shape fallback.
+    return pkg.total ?? pkg.summary?.sellingPrice ?? pkg.sellingPrice ?? 0;
   }
   let commissionPending = 0, commissionSignedThisMonth = 0, commissionLifetime = 0;
   const commissionByEstimate = list.map(e => {
