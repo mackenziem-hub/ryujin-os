@@ -312,12 +312,12 @@
     '.slide .slide-inner { padding-left: 0; }',
     'body.present-mode .slide .slide-inner { padding-left: 0; }',
 
-    /* Fullscreen — hide all UI chrome, let the deck breathe. Esc exits via browser default. */
-    ':fullscreen .present-ui, :fullscreen .present-progress, :fullscreen .present-hint, :fullscreen .note-stack { display: none !important; }',
-    ':-webkit-full-screen .present-ui, :-webkit-full-screen .present-progress, :-webkit-full-screen .present-hint, :-webkit-full-screen .note-stack { display: none !important; }',
-    ':-moz-full-screen .present-ui, :-moz-full-screen .present-progress, :-moz-full-screen .present-hint, :-moz-full-screen .note-stack { display: none !important; }',
-    ':-ms-fullscreen .present-ui, :-ms-fullscreen .present-progress, :-ms-fullscreen .present-hint, :-ms-fullscreen .note-stack { display: none !important; }',
-    'body.is-fullscreen .present-ui, body.is-fullscreen .present-progress, body.is-fullscreen .present-hint, body.is-fullscreen .note-stack { display: none !important; }',
+    /* Fullscreen — hide nav chrome but KEEP sticky notes (they are the point of review mode). Esc exits via browser default. */
+    ':fullscreen .present-ui, :fullscreen .present-progress, :fullscreen .present-hint { display: none !important; }',
+    ':-webkit-full-screen .present-ui, :-webkit-full-screen .present-progress, :-webkit-full-screen .present-hint { display: none !important; }',
+    ':-moz-full-screen .present-ui, :-moz-full-screen .present-progress, :-moz-full-screen .present-hint { display: none !important; }',
+    ':-ms-fullscreen .present-ui, :-ms-fullscreen .present-progress, :-ms-fullscreen .present-hint { display: none !important; }',
+    'body.is-fullscreen .present-ui, body.is-fullscreen .present-progress, body.is-fullscreen .present-hint { display: none !important; }',
     'body.is-fullscreen .topbar { display: none !important; }',
 
     /* Mobile */
