@@ -21,6 +21,7 @@
 
 import { requireTenant } from '../lib/tenant.js';
 import { gmailSend } from '../lib/google.js';
+import { sendCAPIEvent } from '../lib/meta.js';
 
 const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
 const LOCATION_ID = (process.env.GHL_LOCATION_ID || 'aHotOUdq9D8m3JPrRz9n').trim();
@@ -148,7 +149,7 @@ async function handler(req, res) {
   // ── POST: inbound lead ──
   if (req.method === 'POST') {
     const body = req.body || {};
-    const { source, name, email, phone, address, city, metadata } = body;
+    const { source, name, email, phone, address, city, metadata, meta_event_id } = body;
 
     if (!email && !phone) {
       return res.status(400).json({ error: 'email or phone required' });
@@ -214,9 +215,45 @@ async function handler(req, res) {
           })
       : Promise.resolve(null);
 
+    // Server-side Meta CAPI Lead. Shares meta_event_id with the browser
+    // pixel so Meta dedupes the two signals. Fires for any source — Meta
+    // can use the tag to attribute back to the right campaign. Best-effort:
+    // failures don't block the lead, just logged + surfaced in the response.
+    const capiClientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || null;
+    const capiClientUa = req.headers['user-agent'] || null;
+    const capiPromise = sendCAPIEvent({
+      eventName: 'Lead',
+      eventTime: Math.floor(Date.now() / 1000),
+      eventId: meta_event_id || `ryujin_lead_${contactId}_${Date.now()}`,
+      sourceUrl: req.headers.referer || 'https://ryujin-os.vercel.app/instant-estimator.html',
+      userData: {
+        ...(email ? { em: email } : {}),
+        ...(phone ? { ph: phone } : {}),
+        ...(name ? (() => {
+          const { firstName, lastName } = splitName(name);
+          return { ...(firstName ? { fn: firstName } : {}), ...(lastName ? { ln: lastName } : {}) };
+        })() : {}),
+        ...(city ? { ct: city } : {}),
+        ...(metadata?.postal ? { zp: metadata.postal } : {}),
+        ...(capiClientIp ? { ip: capiClientIp } : {}),
+        ...(capiClientUa ? { userAgent: capiClientUa } : {}),
+        external_id: contactId
+      },
+      customData: {
+        content_name: source || 'unknown',
+        content_category: 'roofing'
+      }
+    })
+      .then(() => ({ ok: true }))
+      .catch(e => {
+        console.warn(`[leads] CAPI Lead failed: ${e.message} (contact ${contactId})`);
+        return { ok: false, error: e.message };
+      });
+
     let opportunityId = null;
     let opportunityError = null;
     let notifyError = null;
+    let capiError = null;
 
     // Await opp first (it's higher value — kanban presence is the point).
     // Bound to whatever remains of the deadline.
@@ -233,8 +270,7 @@ async function handler(req, res) {
       }
     }
 
-    // Now wait the rest of the budget for notify (often already settled
-    // since it started at the same time).
+    // Wait the rest of the budget for notify (often already settled).
     try {
       const notifyRes = await Promise.race([
         notifyPromise,
@@ -245,6 +281,24 @@ async function handler(req, res) {
       notifyError = e.message;
     }
 
+    // CAPI bounded await. Browser pixel is the primary Meta signal but
+    // CAPI is the necessary backup for ad-blocked clients. Give it a 2s
+    // cap (or whatever remains of the overall budget, whichever is less)
+    // so a slow Meta endpoint doesn't drag the submit, while still
+    // giving it enough time to land in normal conditions (Meta typically
+    // responds in 200-800ms).
+    const CAPI_CAP_MS = 2000;
+    const capiBudget = Math.min(remaining(), CAPI_CAP_MS);
+    try {
+      const capiRes = await Promise.race([
+        capiPromise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('capi timeout')), capiBudget))
+      ]);
+      if (capiRes && !capiRes.ok) capiError = capiRes.error;
+    } catch (e) {
+      capiError = e.message;
+    }
+
     return res.status(201).json({
       ok: true,
       contact_id: contactId,
@@ -252,7 +306,8 @@ async function handler(req, res) {
       source,
       ghlError,
       opportunityError,
-      notifyError
+      notifyError,
+      capiError
     });
   }
 
