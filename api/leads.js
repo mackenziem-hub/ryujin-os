@@ -191,12 +191,14 @@ async function handler(req, res) {
       return res.status(502).json({ ok: false, error: ghlError || 'GHL contact create failed' });
     }
 
-    // Start owner notification immediately so it runs in parallel with
-    // any opp creation below. Both must be guaranteed timely under
-    // Vercel's serverless model (post-response work can be dropped), so
-    // each is awaited with its own bound before the response. Because
-    // notify is kicked off first, when opp takes ~1-2s the subsequent
-    // notify await is typically near-instant.
+    // Single 5s deadline across opp creation + owner notification combined.
+    // Both run in parallel starting now; whichever finishes within the
+    // remaining budget gets recorded, slow ones time out with an error
+    // tag. Total form-blocking wait capped at 5s no matter what.
+    const POST_LEAD_BUDGET_MS = 5000;
+    const startedAt = Date.now();
+    const remaining = () => Math.max(0, POST_LEAD_BUDGET_MS - (Date.now() - startedAt));
+
     const notifyPromise = notifyOwner({ contactId, source, name, email, phone, address, city, metadata })
       .then(() => ({ ok: true }))
       .catch(e => {
@@ -204,31 +206,39 @@ async function handler(req, res) {
         return { ok: false, error: e.message };
       });
 
+    const oppPromise = OPP_ROUTING[source]
+      ? createOpportunity({ contactId, source, name, metadata })
+          .catch(e => {
+            console.warn(`[leads] createOpportunity failed: ${e.message} (contact ${contactId})`);
+            return { ok: false, error: e.message };
+          })
+      : Promise.resolve(null);
+
     let opportunityId = null;
     let opportunityError = null;
     let notifyError = null;
 
+    // Await opp first (it's higher value — kanban presence is the point).
+    // Bound to whatever remains of the deadline.
     if (OPP_ROUTING[source]) {
       try {
         const oppRes = await Promise.race([
-          createOpportunity({ contactId, source, name, metadata }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('opp timeout (5s)')), 5000))
+          oppPromise,
+          new Promise((_, reject) => setTimeout(() => reject(new Error('opp timeout')), remaining()))
         ]);
         if (oppRes && oppRes.ok) opportunityId = oppRes.opportunity_id;
         else opportunityError = (oppRes && oppRes.error) || 'unknown';
       } catch (e) {
         opportunityError = e.message;
-        console.warn(`[leads] createOpportunity failed: ${e.message} (contact ${contactId})`);
       }
     }
 
-    // Always await notify with bound — regardless of route — so Vercel
-    // never drops the alert as post-response work. If notify already
-    // settled (likely after a 1-5s opp await), this is near-instant.
+    // Now wait the rest of the budget for notify (often already settled
+    // since it started at the same time).
     try {
       const notifyRes = await Promise.race([
         notifyPromise,
-        new Promise((_, reject) => setTimeout(() => reject(new Error('notify timeout (4s)')), 4000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('notify timeout')), remaining()))
       ]);
       if (notifyRes && !notifyRes.ok) notifyError = notifyRes.error;
     } catch (e) {
