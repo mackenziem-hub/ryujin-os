@@ -270,21 +270,34 @@ async function handler(req, res) {
       }
     }
 
-    // Wait the rest of the budget for notify + CAPI in parallel. Both
-    // started at the same time as opp, so when opp took ~1-3s they're
-    // typically already settled and these awaits are near-instant.
-    const [notifyRes, capiRes] = await Promise.all([
-      Promise.race([
+    // Wait the rest of the budget for notify (often already settled).
+    try {
+      const notifyRes = await Promise.race([
         notifyPromise,
         new Promise((_, reject) => setTimeout(() => reject(new Error('notify timeout')), remaining()))
-      ]).catch(e => ({ ok: false, error: e.message })),
-      Promise.race([
-        capiPromise,
-        new Promise((_, reject) => setTimeout(() => reject(new Error('capi timeout')), remaining()))
-      ]).catch(e => ({ ok: false, error: e.message }))
-    ]);
-    if (notifyRes && !notifyRes.ok) notifyError = notifyRes.error;
-    if (capiRes && !capiRes.ok) capiError = capiRes.error;
+      ]);
+      if (notifyRes && !notifyRes.ok) notifyError = notifyRes.error;
+    } catch (e) {
+      notifyError = e.message;
+    }
+
+    // CAPI is fire-and-log. The browser pixel is the primary Meta signal;
+    // server CAPI is the backup for ad-blocked users. A slow Meta endpoint
+    // should not extend the customer-visible wait, and notify+opp+GHL all
+    // keep the serverless invocation warm long enough for CAPI to settle.
+    // Capture the eventual result on a sentinel so the response can still
+    // expose any error without awaiting in the critical path.
+    let capiSettled = null;
+    capiPromise.then(r => { capiSettled = r; });
+    // Re-read shortly after so the JSON response can surface obvious
+    // synchronous failures. Bounded so we never block more than 200ms here.
+    try {
+      await Promise.race([
+        capiPromise.catch(() => null),
+        new Promise(r => setTimeout(r, 200))
+      ]);
+      if (capiSettled && !capiSettled.ok) capiError = capiSettled.error;
+    } catch (_) { /* swallow */ }
 
     return res.status(201).json({
       ok: true,
