@@ -191,12 +191,17 @@ async function handler(req, res) {
       return res.status(502).json({ ok: false, error: ghlError || 'GHL contact create failed' });
     }
 
-    // Start owner notification immediately so it can run in parallel
-    // with opp creation when both are needed.
+    // Start owner notification immediately so it runs in parallel with
+    // any opp creation below. Both must be guaranteed timely under
+    // Vercel's serverless model (post-response work can be dropped), so
+    // each is awaited with its own bound before the response. Because
+    // notify is kicked off first, when opp takes ~1-2s the subsequent
+    // notify await is typically near-instant.
     const notifyPromise = notifyOwner({ contactId, source, name, email, phone, address, city, metadata })
+      .then(() => ({ ok: true }))
       .catch(e => {
         console.warn(`[leads] notifyOwner failed: ${e.message} (contact ${contactId})`);
-        return { _notifyError: e.message };
+        return { ok: false, error: e.message };
       });
 
     let opportunityId = null;
@@ -204,10 +209,6 @@ async function handler(req, res) {
     let notifyError = null;
 
     if (OPP_ROUTING[source]) {
-      // Routed source: await the opp (must land on the kanban — the whole
-      // point of this branch). The notifyOwner promise runs in parallel
-      // and is allowed to settle in the background while opp is awaited;
-      // the awaited opp keeps the invocation warm for it.
       try {
         const oppRes = await Promise.race([
           createOpportunity({ contactId, source, name, metadata }),
@@ -219,20 +220,19 @@ async function handler(req, res) {
         opportunityError = e.message;
         console.warn(`[leads] createOpportunity failed: ${e.message} (contact ${contactId})`);
       }
-    } else {
-      // No-route source: nothing else gates the response, so we await
-      // notify with its own bound. Without this the email could be dropped
-      // as post-response work on Vercel and a lead from a non-routed
-      // source would have no timely alert.
-      try {
-        const res2 = await Promise.race([
-          notifyPromise,
-          new Promise((_, reject) => setTimeout(() => reject(new Error('notify timeout (4s)')), 4000))
-        ]);
-        if (res2 && res2._notifyError) notifyError = res2._notifyError;
-      } catch (e) {
-        notifyError = e.message;
-      }
+    }
+
+    // Always await notify with bound — regardless of route — so Vercel
+    // never drops the alert as post-response work. If notify already
+    // settled (likely after a 1-5s opp await), this is near-instant.
+    try {
+      const notifyRes = await Promise.race([
+        notifyPromise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('notify timeout (4s)')), 4000))
+      ]);
+      if (notifyRes && !notifyRes.ok) notifyError = notifyRes.error;
+    } catch (e) {
+      notifyError = e.message;
     }
 
     return res.status(201).json({
