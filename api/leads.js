@@ -26,6 +26,16 @@ const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim(
 const LOCATION_ID = (process.env.GHL_LOCATION_ID || 'aHotOUdq9D8m3JPrRz9n').trim();
 const NOTIFY_EMAIL = (process.env.NOTIFY_EMAIL || 'mackenzie.m@plusultraroofing.com').trim();
 
+// Per-source pipeline routing. Pipeline + stage IDs verified against live GHL
+// 2026-05-09 (see api/ghl.js PIPELINE_NAMES / PIPELINE_STAGES). Map a lead
+// source to the right pipeline so the opp lands on the right kanban.
+const OPP_ROUTING = {
+  'instant-estimator-v3': {
+    pipelineId: 'eJm8vgBePJStA1QdZqmA',           // Instant Estimator
+    pipelineStageId: '1e82765c-2ef2-4810-bcbf-9d6a926dba7b' // New IE Submission
+  }
+};
+
 function splitName(full) {
   const t = (full || '').trim();
   if (!t) return { firstName: '', lastName: '' };
@@ -60,6 +70,34 @@ async function ghlFetch(path, query = {}, opts = {}) {
 // could inject MIME headers (Bcc, Reply-To) through the Subject line.
 function safeHeader(v) {
   return String(v == null ? '' : v).replace(/[\r\n]+/g, ' ').trim();
+}
+
+async function createOpportunity({ contactId, source, name, metadata }) {
+  const route = OPP_ROUTING[source];
+  if (!route) return { ok: false, error: `no routing for source: ${source}` };
+
+  const md = metadata || {};
+  const cleanName = (name || '').trim();
+  const descBits = [];
+  if (md.sqft) descBits.push(`${md.sqft} sqft`);
+  if (md.complexity) descBits.push(md.complexity);
+  const oppName = cleanName
+    ? `${cleanName} - Instant Estimator${descBits.length ? ' (' + descBits.join(', ') + ')' : ''}`
+    : `Instant Estimator${descBits.length ? ' (' + descBits.join(', ') + ')' : ''}`;
+
+  const body = {
+    locationId: LOCATION_ID,
+    pipelineId: route.pipelineId,
+    pipelineStageId: route.pipelineStageId,
+    contactId,
+    name: oppName,
+    monetaryValue: 0,
+    status: 'open',
+    source: source || 'ryujin-leads-api'
+  };
+
+  const data = await ghlFetch('/opportunities/', {}, { method: 'POST', body });
+  return { ok: true, opportunity_id: data?.opportunity?.id || data?.id || null };
 }
 
 async function notifyOwner({ contactId, source, name, email, phone, address, city, metadata }) {
@@ -153,23 +191,69 @@ async function handler(req, res) {
       return res.status(502).json({ ok: false, error: ghlError || 'GHL contact create failed' });
     }
 
-    // Bounded await: notifyOwner needs to fire while the serverless
-    // invocation is still warm (post-response work may be dropped on
-    // Vercel), but Gmail OAuth latency must not stall the form. Race
-    // against a 4s timeout; if Gmail is slow we still return success
-    // and the contact is safe in GHL.
+    // Single 5s deadline across opp creation + owner notification combined.
+    // Both run in parallel starting now; whichever finishes within the
+    // remaining budget gets recorded, slow ones time out with an error
+    // tag. Total form-blocking wait capped at 5s no matter what.
+    const POST_LEAD_BUDGET_MS = 5000;
+    const startedAt = Date.now();
+    const remaining = () => Math.max(0, POST_LEAD_BUDGET_MS - (Date.now() - startedAt));
+
+    const notifyPromise = notifyOwner({ contactId, source, name, email, phone, address, city, metadata })
+      .then(() => ({ ok: true }))
+      .catch(e => {
+        console.warn(`[leads] notifyOwner failed: ${e.message} (contact ${contactId})`);
+        return { ok: false, error: e.message };
+      });
+
+    const oppPromise = OPP_ROUTING[source]
+      ? createOpportunity({ contactId, source, name, metadata })
+          .catch(e => {
+            console.warn(`[leads] createOpportunity failed: ${e.message} (contact ${contactId})`);
+            return { ok: false, error: e.message };
+          })
+      : Promise.resolve(null);
+
+    let opportunityId = null;
+    let opportunityError = null;
     let notifyError = null;
-    try {
-      await Promise.race([
-        notifyOwner({ contactId, source, name, email, phone, address, city, metadata }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('notify timeout (4s)')), 4000))
-      ]);
-    } catch (e) {
-      notifyError = e.message;
-      console.warn(`[leads] notifyOwner failed: ${e.message} (contact ${contactId})`);
+
+    // Await opp first (it's higher value — kanban presence is the point).
+    // Bound to whatever remains of the deadline.
+    if (OPP_ROUTING[source]) {
+      try {
+        const oppRes = await Promise.race([
+          oppPromise,
+          new Promise((_, reject) => setTimeout(() => reject(new Error('opp timeout')), remaining()))
+        ]);
+        if (oppRes && oppRes.ok) opportunityId = oppRes.opportunity_id;
+        else opportunityError = (oppRes && oppRes.error) || 'unknown';
+      } catch (e) {
+        opportunityError = e.message;
+      }
     }
 
-    return res.status(201).json({ ok: true, contact_id: contactId, source, ghlError, notifyError });
+    // Now wait the rest of the budget for notify (often already settled
+    // since it started at the same time).
+    try {
+      const notifyRes = await Promise.race([
+        notifyPromise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('notify timeout')), remaining()))
+      ]);
+      if (notifyRes && !notifyRes.ok) notifyError = notifyRes.error;
+    } catch (e) {
+      notifyError = e.message;
+    }
+
+    return res.status(201).json({
+      ok: true,
+      contact_id: contactId,
+      opportunity_id: opportunityId,
+      source,
+      ghlError,
+      opportunityError,
+      notifyError
+    });
   }
 
   // ── GET: list contacts (lead view) ──
