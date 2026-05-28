@@ -20,9 +20,11 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { requireTenant } from '../lib/tenant.js';
+import { gmailSend } from '../lib/google.js';
 
 const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
 const LOCATION_ID = (process.env.GHL_LOCATION_ID || 'aHotOUdq9D8m3JPrRz9n').trim();
+const NOTIFY_EMAIL = (process.env.NOTIFY_EMAIL || 'mackenzie.m@plusultraroofing.com').trim();
 
 function splitName(full) {
   const t = (full || '').trim();
@@ -51,6 +53,54 @@ async function ghlFetch(path, query = {}, opts = {}) {
     throw new Error(`GHL ${res.status}: ${txt.slice(0, 240)}`);
   }
   return res.json();
+}
+
+// Strip CR/LF from any value interpolated into the email subject or body.
+// Public lead form is the untrusted boundary — without this an attacker
+// could inject MIME headers (Bcc, Reply-To) through the Subject line.
+function safeHeader(v) {
+  return String(v == null ? '' : v).replace(/[\r\n]+/g, ' ').trim();
+}
+
+async function notifyOwner({ contactId, source, name, email, phone, address, city, metadata }) {
+  if (!NOTIFY_EMAIL) return;
+  const md = metadata || {};
+  const safeName    = safeHeader(name);
+  const safeEmail   = safeHeader(email);
+  const safePhone   = safeHeader(phone);
+  const safeAddress = safeHeader(address);
+  const safeCity    = safeHeader(city);
+  const safeSource  = safeHeader(source) || 'unknown';
+
+  const subjectName = safeName || safeEmail || safePhone || 'New lead';
+  const subject = safeHeader(`New lead · ${safeSource} · ${subjectName}`);
+
+  const ghlUrl = `https://app.gohighlevel.com/v2/location/${LOCATION_ID}/contacts/detail/${contactId}`;
+  const lines = [
+    `New lead from ${safeSource}.`,
+    '',
+    `Name:    ${safeName    || '(not provided)'}`,
+    `Phone:   ${safePhone   || '(not provided)'}`,
+    `Email:   ${safeEmail   || '(not provided)'}`,
+    `Address: ${[safeAddress, safeCity].filter(Boolean).join(', ') || '(not provided)'}`,
+    ''
+  ];
+
+  if (Object.keys(md).length > 0) {
+    lines.push('Estimator inputs:');
+    if (md.sizePreset || md.sqft) lines.push(`  Size:        ${safeHeader(md.sqft) || '?'} sq ft (${safeHeader(md.sizePreset) || 'custom'})`);
+    if (md.pitch)                  lines.push(`  Pitch:       ${safeHeader(md.pitch)}`);
+    if (md.complexity)             lines.push(`  Complexity:  ${safeHeader(md.complexity)}`);
+    if (md.chimneyType)            lines.push(`  Chimney:     ${safeHeader(md.chimneyType)}`);
+    if (md.postal)                 lines.push(`  Postal:      ${safeHeader(md.postal)}`);
+    lines.push('');
+  }
+
+  lines.push(`GHL contact: ${ghlUrl}`);
+  lines.push('');
+  lines.push('Ryujin OS');
+
+  await gmailSend(NOTIFY_EMAIL, subject, lines.join('\n'));
 }
 
 async function handler(req, res) {
@@ -102,7 +152,24 @@ async function handler(req, res) {
     if (!contactId) {
       return res.status(502).json({ ok: false, error: ghlError || 'GHL contact create failed' });
     }
-    return res.status(201).json({ ok: true, contact_id: contactId, source, ghlError });
+
+    // Bounded await: notifyOwner needs to fire while the serverless
+    // invocation is still warm (post-response work may be dropped on
+    // Vercel), but Gmail OAuth latency must not stall the form. Race
+    // against a 4s timeout; if Gmail is slow we still return success
+    // and the contact is safe in GHL.
+    let notifyError = null;
+    try {
+      await Promise.race([
+        notifyOwner({ contactId, source, name, email, phone, address, city, metadata }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('notify timeout (4s)')), 4000))
+      ]);
+    } catch (e) {
+      notifyError = e.message;
+      console.warn(`[leads] notifyOwner failed: ${e.message} (contact ${contactId})`);
+    }
+
+    return res.status(201).json({ ok: true, contact_id: contactId, source, ghlError, notifyError });
   }
 
   // ── GET: list contacts (lead view) ──
