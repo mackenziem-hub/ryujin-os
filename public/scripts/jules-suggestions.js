@@ -26,42 +26,77 @@
       {
         id: 'jules-ie-t1-just',
         text: '"Just wanted to say hey" — drop "just." Jewels Apr 16 verbatim: "You said just a lot in your text...that\'s a very passive way to talk to someone." (Rule 1: kill "just")'
+      },
+      {
+        id: 'revised-ie-t1',
+        author: 'revised',
+        text: 'REVISED Touch 1 SMS — paste this in GHL:\n\nHey {first_name}, Mackenzie from Plus Ultra Roofing here. Saw you ran a quote on our estimator. Was that for a roof you\'re replacing this season, planning for next spring, or sizing it up for later? Helps me know how to follow up. No wrong answer.\n\nTag reply by bucket (now / spring / future) for downstream segmentation.'
       }
     ],
     't2': [
       {
         id: 'jules-ie-t2-third-gen',
         text: 'Add the 3rd-generation roofer line here — first long-form touch is the load-bearing authority signal slot. (Jan 21 + Mar 11 — Rule 13)'
+      },
+      {
+        id: 'revised-ie-t2',
+        author: 'revised',
+        text: 'REVISED Touch 2 Email — paste this in GHL:\n\nSubject: Your roof estimate, {first_name}\n\nHey {first_name},\n\nThanks for using our Instant Estimator. Quick context before we get to the number: I\'m Mackenzie, third generation roofing in Moncton. My grandfather started on rooftops in the 60s, my dad ran the trucks, and now it\'s me. So when I look at an estimate, I\'m pulling 40+ years of Atlantic Canada roofs into the read.\n\nBased on what you put in, you\'re looking at somewhere between ${ie_estimate_low} and ${ie_estimate_high} for a {ie_selected_package} package on a {ie_roof_size} roof.\n\nThat\'s a ballpark, not a quote. The real number depends on what we find when we get up there: deck condition, ventilation, flashing, ice and water shield coverage, all the stuff a tape measure on a satellite photo can\'t see.\n\nWhenever you\'re ready, we\'ll come out, walk the roof, take photos, and put a real number in front of you. Inspection is free, takes about 45 minutes, and you walk away with everything in writing.\n\nReply to this email or text me at 506-616-4607 and we\'ll set it up.\n\nMackenzie\nPlus Ultra Roofing'
       }
     ],
     't3': [
       {
         id: 'jules-ie-t3-day2-story',
         text: 'Day 2 is the "why story" slot in Jewels\'s 10-day map, not a value tip. Move ventilation to Day 3 and run a story-based Day 2: "I built this estimator after seeing one too many bad install calls." (Mar 11 — Rule 3)'
+      },
+      {
+        id: 'revised-ie-t3',
+        author: 'revised',
+        text: 'REVISED — Replace this slide with a NEW Day-2 story email, move the ventilation tip to a NEW Day-3 slot.\n\nNEW Touch 3 Email (Day 2) — Subject: Why I built this estimator\n\nHey {first_name},\n\nQuick story. Reason this estimator exists: I got tired of homeowners telling me they\'d been quoted $14K, $22K, and $9K on the same roof by three contractors in the same week. Half of that spread is honest variation. The other half is contractors using the lack of price transparency as their margin.\n\nSo I built the calculator to put a real range out front. Not perfect, but it gets you to the right zip code on price before anyone walks the roof. That way when the inspection happens, the conversation is "here\'s why the number moved" instead of "here\'s the number, take it or leave it."\n\nIf anything in the range surprised you, hit reply and I\'ll walk through what drives it. Or if you want to schedule the inspection, text me at 506-616-4607.\n\nMackenzie\n\n(The existing ventilation tip becomes the NEW Touch 4 at Day 3.)'
       }
     ],
     't4': [
       {
         id: 'jules-ie-t4-three-sins',
         text: 'Three Jewels sins in one SMS: "just checking in" (passive AI tell), no direct question, double-CTA (questions OR in-person — pick one). Rewrite: "What stopped you from booking the in-person look — the price range, timing, or you\'re still sizing it up?" (Apr 16 — Rules 1+2)'
+      },
+      {
+        id: 'revised-ie-t4',
+        author: 'revised',
+        text: 'REVISED Touch 4 SMS (originally Touch 5 after the Day-2 story addition above) — paste this in GHL:\n\nHey {first_name}, quick one. What stopped you from booking the in-person look — the price range, the timing, or you\'re still sizing it up? Helps me know how to be useful.\n\nTag reply by obstacle (price / timing / sizing) for downstream segmentation.'
       }
     ],
     't5': [
       {
         id: 'jules-ie-t5-keep',
         text: 'KEEP. Subject is the right shape (Day 6-10 "are you still interested" pattern from Mar 11). Three-bucket body framing is Jewels-aligned. (Rule 3)'
+      },
+      {
+        id: 'revised-ie-t5',
+        author: 'revised',
+        text: 'REVISED Touch 5 Email — minor cleanup. Two "just"s purged + business line swap:\n\nSubject: Still thinking about your new roof?\n(Was "Still thinking about the roof?" — add "your new" per Jewels @45:07)\n\nBody: change "or just sizing up the future" → "or sizing up the future"\nChange "Just hit reply" → "Hit reply"\nChange 506-540-1052 → 506-616-4607 (business line, not Mac\'s cell)\n\nOtherwise keep as-is.'
       }
     ],
     't6': [
       {
         id: 'jules-ie-t6-reframe',
         text: '"Free Platinum upgrade" reads transactional. Jewels Apr 21 frame: lead with the outcome, not the discount. Try: "A bigger guarantee for you, {first_name}" — reveal the upgrade as the reward. (Rule 14: no negative/transactional framing)'
+      },
+      {
+        id: 'revised-ie-t6',
+        author: 'revised',
+        text: 'REVISED Touch 6 Email — paste this in GHL:\n\nSubject: A bigger guarantee for you, {first_name}\n(Was "Free Platinum upgrade for {first_name}")\n\nHey {first_name},\n\nIf you\'re still in the market: I\'ve got a slot in the spring schedule, and if you book the inspection in the next 7 days and end up signing for the {ie_selected_package} package, you\'ll walk away with a roof that\'s better built and longer warrantied than what you priced.\n\nFor Standard customers, that means CertainTeed Landmark Pro shingles instead of standard 3-tab, our 25-year workmanship warranty instead of 10, and the upgraded synthetic underlayment. Real upgrades, not cosmetic — the kind that matter when a Nor\'easter hits in February.\n\nIf that\'s the kind of roof you want over your family, reply with a couple of times that work this week and I\'ll send you a confirmation. If you\'re not there yet, no worries either way.\n\nMackenzie\n506-616-4607\n\nGuard logic stays the same (Standard / Platinum / Diamond branches).'
       }
     ],
     't7': [
       {
         id: 'jules-ie-t7-ama',
         text: 'Good guide-tone exit. Add the Day-5 AMA ask before the goodbye: "Before I step back, anything I can answer in one reply?" (Mar 11 — Rule 3)'
+      },
+      {
+        id: 'revised-ie-t7',
+        author: 'revised',
+        text: 'REVISED Touch 7 Email — move from Day 14 to Day 45 (per Jewels 40-45d floor) + add AMA before close + "just" purge + business line:\n\nSubject: Last note from me, {first_name}\n\nHey {first_name},\n\nThis\'ll be my last note for now. I don\'t want to be the contractor who clutters your inbox.\n\nBefore I step back: anything I could answer in one reply? Pricing, financing, scope, warranty, any of it. If something stopped you from moving forward, even a one-line "the timing isn\'t right" tells me what to do next.\n\nIf not, the door\'s open. Text me at 506-616-4607 or reply to any of these emails and I\'ll pick it back up. We do quality work, we don\'t disappear after the deposit, and we treat your home like it\'s our own.\n\nWhenever you\'re ready.\n\nMackenzie\nPlus Ultra Roofing'
       }
     ],
     'signoff': [
@@ -80,6 +115,26 @@
       {
         id: 'jules-ie-gap-owner-video',
         text: 'GAP: no personalized owner-video. Tony Robbins / Dean Graciosi pattern. After automation sends, owner sends a short personalized video naming the recipient. (Apr 23 — Rule 10)'
+      },
+      {
+        id: 'revised-ie-new-touch-cost',
+        author: 'revised',
+        text: 'NEW Touch 8 (Day 14) — Cost-of-inaction Email\n\nSubject: One thing about roofs in NB nobody mentions\n\nHey {first_name},\n\nOne thing worth mentioning if you\'re on the fence:\n\nAtlantic Canada chews through roofs at almost double the national rate. The reason isn\'t shingle quality. It\'s the freeze-thaw cycle. Every time the temp crosses 0°C — which around here happens 80+ times a winter — moisture under the shingles expands and contracts. Each cycle is a tiny crack. A few winters of that and an aging roof tips from "good for another decade" to "leaking by April."\n\nThe cost of waiting isn\'t a higher quote next year. It\'s the deck rebuild that gets added when the leak finds the OSB underneath. We see it every spring. $4K to $8K of avoidable damage stacked on top of the roof you were going to replace anyway.\n\nIf your roof is over 15 years old, the inspection is worth doing this season, even if you\'re not ready to commit on the spot.\n\n{calendar_link}\n\nMackenzie'
+      },
+      {
+        id: 'revised-ie-new-touch-motivation',
+        author: 'revised',
+        text: 'NEW Touch 9 (Day 21) — Eight-figure motivation SMS\n\nHey {first_name}, can I ask one question — what made you reach out to us originally? Whatever it was, helps me know how to be more useful as we go. Mackenzie'
+      },
+      {
+        id: 'revised-ie-new-touch-video',
+        author: 'revised',
+        text: 'NEW Touch 10 (Day 30) — Personalized owner-video Email\n\nSubject: Quick video for you, {first_name}\n\nHey {first_name},\n\nRecorded this for you. Quick walk-through of what your estimate range covers, what it doesn\'t, and what I\'d want you to think about before this roof gets another winter.\n\n[VIDEO: Mac records 60-90s · reusable 30s shell + per-lead 30s middle clip · concat via existing in-system pipeline]\n\nNo agenda — figured a real face was worth more than another email.\n\nIf you\'re ready to schedule the look, reply or text 506-616-4607.\n\nMackenzie\n\nBuild note: Cat creates a "ready-for-Mac-video" tag at Day 28, Mac batches video recording on Day 29, automation sends Day 30.'
+      },
+      {
+        id: 'revised-ie-downsell-rejuvenation',
+        author: 'revised',
+        text: 'NEW WORKFLOW BRANCH — 14+ Day Non-Converter Downsell (per Jewels May 28 IE call @39:09)\n\nAt the end of Touch 7 (Day 14, soft exit currently — moves to Day 45 in revised flow), add a parallel workflow:\n\nIF contact does NOT have tag `ie-booked` by Day 14:\n  1. Apply tag `ie-cold-rejuvenation-downsell-candidate`\n  2. Enroll into existing Revive Rejuvenation 90-day workflow (live at booking.plusultraroofing.com/optin2026 funnel)\n  3. Tag carry-over: contact stays in IE 14-day nurture; downsell sequence runs in parallel for ~14 days then IE exits naturally at Day 45\n\nCat builds this as a separate workflow in GHL.'
       }
     ]
   };
