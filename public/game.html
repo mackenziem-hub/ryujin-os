@@ -1635,6 +1635,14 @@ function sectorStatBlocks(sectorId) {
   return [];
 }
 
+// Overworld alert thresholds. Conservative defaults mirroring the original
+// inline Production rule (warn above 5 overdue, alert above 20). These are
+// business-tunable values that should eventually read from tenant_settings
+// (see prefer-customizable-config); kept in one object so they are trivial to
+// adjust meanwhile, and shared by every count-driven sector.
+const OVERWORLD_ALERT_RULES = { overdueWarn: 5, overdueAlert: 20, unassignedWarn: 1 };
+const overdueLevel = (n) => (n > OVERWORLD_ALERT_RULES.overdueAlert ? 'alert' : (n > OVERWORLD_ALERT_RULES.overdueWarn ? 'warn' : 'ok'));
+
 function sectorAlertLevel(sectorId) {
   const s = state.snapshot;
   if (!s) return 'ok';
@@ -1646,8 +1654,14 @@ function sectorAlertLevel(sectorId) {
     return (brief.status === 'red') ? 'alert' : (brief.status === 'yellow' ? 'warn' : 'ok');
   }
   if (sectorId === 'PRODUCTION') {
-    const ov = t.overdueCount || 0;
-    return ov > 20 ? 'alert' : ov > 5 ? 'warn' : 'ok';
+    return overdueLevel(t.overdueCount || 0);
+  }
+  if (sectorId === 'SERVICE') {
+    // Unassigned calls are an objective ownership gap (work nobody holds), so
+    // Service earns a warn instead of staying flat. Distinct from Production's
+    // overdue signal, so the two buildings do not just mirror each other.
+    const unassigned = (t.byAssignee && t.byAssignee.Unassigned) || 0;
+    return unassigned >= OVERWORLD_ALERT_RULES.unassignedWarn ? 'warn' : 'ok';
   }
   if (sectorId === 'ADMIN') {
     return alerts.find(a => /watchdog|cron|down/i.test(String(a))) ? 'alert' : 'ok';
@@ -1656,7 +1670,29 @@ function sectorAlertLevel(sectorId) {
     const rev = s.revenue || {};
     return (rev.pendingRevenue === 0 && (rev.signedRevenue || 0) > 0) ? 'warn' : 'ok';
   }
+  // SALES, CUSTOMER, MARKETING, MATERIALS stay flat on purpose: their natural
+  // signals (pipeline staleness, conversion rate, CPL, low stock) need
+  // business thresholds, which belong in tenant_settings, not a guessed
+  // constant here. Wire them once those rules exist.
   return 'ok';
+}
+
+// The number (or marker) shown in a building's status pip when it is warn/
+// alert. Each sector surfaces the metric that drives its alert so the
+// overworld reads as a glanceable dashboard rather than just a colour. Falls
+// back to '!' when the driving signal is a binary state, not a count.
+function sectorPipValue(sectorId) {
+  const s = state.snapshot;
+  if (!s) return '!';
+  const t = s.tickets || {};
+  const alerts = s.alerts || [];
+  switch (sectorId) {
+    case 'PRODUCTION': return t.overdueCount || '!';
+    case 'SERVICE':    return ((t.byAssignee && t.byAssignee.Unassigned) || 0) || '!';
+    case 'HQ':
+    case 'ADMIN':      return alerts.length || '!';
+    default:           return '!';
+  }
 }
 
 function sectorHeadline(sectorId) {
@@ -1837,13 +1873,12 @@ function refreshBuildingStats() {
       stat.classList.toggle('alert', lvl === 'alert');
       stat.classList.toggle('warn',  lvl === 'warn');
     }
-    // Pip refresh
+    // Pip refresh: every alerting sector surfaces its driving number (not
+    // just Production), data-driven via sectorPipValue so the overworld reads
+    // as a glanceable live dashboard rather than a single lit building.
     node.querySelectorAll('.b-pip').forEach(n => n.remove());
-    const overdueCount = (state.snapshot && id === 'PRODUCTION') ? (state.snapshot.tickets && state.snapshot.tickets.overdueCount) : 0;
-    if (lvl === 'alert' && overdueCount > 0) {
-      node.appendChild(el('div', { class: 'b-pip alert', text: String(overdueCount) }));
-    } else if (lvl === 'warn') {
-      node.appendChild(el('div', { class: 'b-pip warn', text: '!' }));
+    if (lvl === 'alert' || lvl === 'warn') {
+      node.appendChild(el('div', { class: 'b-pip ' + lvl, text: String(sectorPipValue(id)) }));
     }
   });
 }
@@ -1927,7 +1962,6 @@ function renderWorld() {
 
   SECTORS.forEach((sec, i) => {
     const lvl = sectorAlertLevel(sec.id);
-    const overdueCount = (state.snapshot && sec.id === 'PRODUCTION') ? (state.snapshot.tickets && state.snapshot.tickets.overdueCount) : 0;
     const tile = el('div', {
       class: 'map-building' + (sec.tall ? ' tall' : '') + (lvl === 'alert' ? ' alert' : lvl === 'warn' ? ' warn' : ''),
       'data-sector': sec.id,
@@ -1939,11 +1973,10 @@ function renderWorld() {
       el('div', { class: 'b-label', text: sec.id })
     ]);
 
-    // Alert/warn pip (overdue count, etc.)
-    if (lvl === 'alert' && overdueCount > 0) {
-      tile.appendChild(el('div', { class: 'b-pip alert', text: String(overdueCount) }));
-    } else if (lvl === 'warn') {
-      tile.appendChild(el('div', { class: 'b-pip warn', text: '!' }));
+    // Alert/warn pip: same data-driven value as the live refresh path
+    // (sectorPipValue) so the initial render and every refresh stay in sync.
+    if (lvl === 'alert' || lvl === 'warn') {
+      tile.appendChild(el('div', { class: 'b-pip ' + lvl, text: String(sectorPipValue(sec.id)) }));
     }
 
     // CC wizards stationed here
