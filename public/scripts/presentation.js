@@ -225,6 +225,16 @@
     '  border: 1px solid rgba(146, 64, 14, 0.4);',
     '  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35), 0 0 0 2px rgba(250, 204, 21, 0.25);',
     '}',
+    '.note.note-revised {',
+    '  background: linear-gradient(180deg, #dbeafe 0%, #93c5fd 100%);',
+    '  border: 1px solid rgba(30, 64, 175, 0.45);',
+    '  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35), 0 0 0 2px rgba(59, 130, 246, 0.3);',
+    '  color: #0c1e3a;',
+    '}',
+    '.note.note-revised .note-author { color: #1e3a8a; }',
+    '.note.note-revised .note-ts { color: rgba(12, 30, 58, 0.6); }',
+    '.note.note-revised .note-del { color: rgba(12, 30, 58, 0.4); }',
+    '.note.note-front { z-index: 60 !important; transform: rotate(0) scale(1.04) !important; box-shadow: 0 14px 38px rgba(0, 0, 0, 0.55), 0 0 0 2px rgba(250, 204, 21, 0.4) !important; }',
     '.note-head {',
     '  display: flex; justify-content: space-between; align-items: center;',
     '  margin-bottom: 6px;',
@@ -393,7 +403,7 @@
         if (!exists) {
           data[slideId].push({
             id: entry.id,
-            author: 'jules',
+            author: entry.author || 'jules',
             text: entry.text,
             ts: entry.ts || Date.now()
           });
@@ -408,13 +418,25 @@
     return slide.id || ('slide-' + (index + 1));
   }
 
+  function authorClass(author) {
+    if (author === 'jules') return ' note-jules';
+    if (author === 'revised') return ' note-revised';
+    return '';
+  }
+
+  function authorLabel(author) {
+    if (author === 'jules') return '★ Jewels';
+    if (author === 'revised') return '✎ Revised copy';
+    return 'Note';
+  }
+
   function noteCardEl(slideId, note) {
     var el = document.createElement('div');
-    el.className = 'note' + (note.author === 'jules' ? ' note-jules' : '');
+    el.className = 'note' + authorClass(note.author);
     el.setAttribute('data-note-id', note.id);
     el.innerHTML =
       '<div class="note-head">' +
-        '<span class="note-author">' + (note.author === 'jules' ? '★ Jewels' : 'Note') + '</span>' +
+        '<span class="note-author">' + authorLabel(note.author) + '</span>' +
         '<button class="note-del" aria-label="Delete suggestion" title="Delete">×</button>' +
       '</div>' +
       '<div class="note-body">' + escapeHTML(note.text) + '</div>' +
@@ -429,6 +451,11 @@
 
     el.addEventListener('click', function (e) {
       if (e.target.closest('.note-del')) return;
+      // Bring this note to the front of its stack so it sits above siblings
+      // and above slide content.
+      var siblings = el.parentNode ? el.parentNode.querySelectorAll('.note') : [];
+      for (var i = 0; i < siblings.length; i++) siblings[i].classList.remove('note-front');
+      el.classList.add('note-front');
       openEditor(slideId, note);
     });
 
