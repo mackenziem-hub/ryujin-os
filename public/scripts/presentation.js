@@ -312,6 +312,14 @@
     '.slide .slide-inner { padding-left: 0; }',
     'body.present-mode .slide .slide-inner { padding-left: 0; }',
 
+    /* Fullscreen — hide all UI chrome, let the deck breathe. Esc exits via browser default. */
+    ':fullscreen .present-ui, :fullscreen .present-progress, :fullscreen .present-hint, :fullscreen .note-stack { display: none !important; }',
+    ':-webkit-full-screen .present-ui, :-webkit-full-screen .present-progress, :-webkit-full-screen .present-hint, :-webkit-full-screen .note-stack { display: none !important; }',
+    ':-moz-full-screen .present-ui, :-moz-full-screen .present-progress, :-moz-full-screen .present-hint, :-moz-full-screen .note-stack { display: none !important; }',
+    ':-ms-fullscreen .present-ui, :-ms-fullscreen .present-progress, :-ms-fullscreen .present-hint, :-ms-fullscreen .note-stack { display: none !important; }',
+    'body.is-fullscreen .present-ui, body.is-fullscreen .present-progress, body.is-fullscreen .present-hint, body.is-fullscreen .note-stack { display: none !important; }',
+    'body.is-fullscreen .topbar { display: none !important; }',
+
     /* Mobile */
     '@media (max-width: 880px) {',
     '  .note-stack { position: static; max-width: 100%; width: 100%; margin: 14px 0 18px; }',
@@ -626,16 +634,37 @@
 
   function toggleMode() { setMode(!isPresent); }
 
+  function isFullscreen() {
+    return !!(document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement || document.mozFullScreenElement);
+  }
+
   function toggleFullscreen() {
     var doc = document;
     var el = doc.documentElement;
-    var isFs = doc.fullscreenElement || doc.webkitFullscreenElement || doc.msFullscreenElement;
-    if (isFs) {
-      (doc.exitFullscreen || doc.webkitExitFullscreen || doc.msExitFullscreen).call(doc);
-    } else {
-      (el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen).call(el);
-    }
+    try {
+      if (isFullscreen()) {
+        var exitFn = doc.exitFullscreen || doc.webkitExitFullscreen || doc.msExitFullscreen || doc.mozCancelFullScreen;
+        if (exitFn) {
+          var r = exitFn.call(doc);
+          if (r && r.catch) r.catch(function () {});
+        }
+      } else {
+        var reqFn = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen || el.mozRequestFullScreen;
+        if (reqFn) {
+          var r2 = reqFn.call(el, { navigationUI: 'hide' });
+          if (r2 && r2.catch) r2.catch(function () {});
+        }
+      }
+    } catch (e) { /* swallow — fullscreen can be blocked */ }
   }
+
+  function syncFullscreenClass() {
+    document.body.classList.toggle('is-fullscreen', isFullscreen());
+  }
+  document.addEventListener('fullscreenchange', syncFullscreenClass);
+  document.addEventListener('webkitfullscreenchange', syncFullscreenClass);
+  document.addEventListener('mozfullscreenchange', syncFullscreenClass);
+  document.addEventListener('MSFullscreenChange', syncFullscreenClass);
 
   ui.querySelector('.prev').addEventListener('click', prev);
   ui.querySelector('.next').addEventListener('click', next);
@@ -650,7 +679,14 @@
     if (k === 'ArrowLeft' || k === 'PageUp') { e.preventDefault(); prev(); return; }
     if (k === 'Home') { e.preventDefault(); go(0); return; }
     if (k === 'End') { e.preventDefault(); go(slides.length - 1); return; }
-    if (k === 'Escape') { e.preventDefault(); toggleMode(); return; }
+    if (k === 'Escape') {
+      // If fullscreen is active, let the browser handle Esc natively (exits fullscreen).
+      // Otherwise toggle scroll mode.
+      if (isFullscreen()) return;
+      e.preventDefault();
+      toggleMode();
+      return;
+    }
     if (k === 's' || k === 'S') { e.preventDefault(); toggleMode(); return; }
     if (k === 'f' || k === 'F') { e.preventDefault(); toggleFullscreen(); return; }
     if (k === 'n' || k === 'N') {
