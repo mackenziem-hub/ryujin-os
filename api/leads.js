@@ -191,39 +191,34 @@ async function handler(req, res) {
       return res.status(502).json({ ok: false, error: ghlError || 'GHL contact create failed' });
     }
 
-    // Run opp creation + owner notification in parallel so a slow GHL or
-    // Gmail doesn't double the customer-facing wait. Combined bound 3.5s.
-    // Both are best-effort — the contact is already saved above, so even
-    // if both fail the lead is recoverable from GHL contacts. The email
-    // intentionally does not link to the opportunity (it links to the
-    // contact, which surfaces opps anyway) so the two tasks have no
-    // ordering dependency.
+    // Owner notification: fire-and-forget. Vercel post-response work isn't
+    // guaranteed but typically drains warm-invocation microtasks. Matches
+    // the notifyMackenzie pattern in api/proposal-accept.js — owner email
+    // is best-effort, the GHL contact + opp are the durable source of
+    // truth Mac sees anyway.
+    notifyOwner({ contactId, source, name, email, phone, address, city, metadata })
+      .catch(e => console.warn(`[leads] notifyOwner failed: ${e.message} (contact ${contactId})`));
+
+    // Opportunity creation: awaited. This is the whole point of routing —
+    // letting it be dropped on Vercel post-response would leave the lead
+    // as a contact-only with no kanban presence. Bound at 5s so a stuck
+    // GHL never holds the form indefinitely; if it times out the contact
+    // is still safe and Mac can promote it manually.
     let opportunityId = null;
     let opportunityError = null;
-    let notifyError = null;
-
-    const oppPromise = OPP_ROUTING[source]
-      ? createOpportunity({ contactId, source, name, metadata })
-          .then(r => {
-            if (r && r.ok) opportunityId = r.opportunity_id;
-            else opportunityError = (r && r.error) || 'unknown';
-          })
-          .catch(e => {
-            opportunityError = e.message;
-            console.warn(`[leads] createOpportunity failed: ${e.message} (contact ${contactId})`);
-          })
-      : Promise.resolve();
-
-    const notifyPromise = notifyOwner({ contactId, source, name, email, phone, address, city, metadata })
-      .catch(e => {
-        notifyError = e.message;
-        console.warn(`[leads] notifyOwner failed: ${e.message} (contact ${contactId})`);
-      });
-
-    await Promise.race([
-      Promise.allSettled([oppPromise, notifyPromise]),
-      new Promise(r => setTimeout(r, 3500))
-    ]);
+    if (OPP_ROUTING[source]) {
+      try {
+        const oppRes = await Promise.race([
+          createOpportunity({ contactId, source, name, metadata }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('opp timeout (5s)')), 5000))
+        ]);
+        if (oppRes && oppRes.ok) opportunityId = oppRes.opportunity_id;
+        else opportunityError = (oppRes && oppRes.error) || 'unknown';
+      } catch (e) {
+        opportunityError = e.message;
+        console.warn(`[leads] createOpportunity failed: ${e.message} (contact ${contactId})`);
+      }
+    }
 
     return res.status(201).json({
       ok: true,
@@ -231,8 +226,7 @@ async function handler(req, res) {
       opportunity_id: opportunityId,
       source,
       ghlError,
-      opportunityError,
-      notifyError
+      opportunityError
     });
   }
 
