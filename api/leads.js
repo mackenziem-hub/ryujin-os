@@ -55,30 +55,44 @@ async function ghlFetch(path, query = {}, opts = {}) {
   return res.json();
 }
 
+// Strip CR/LF from any value interpolated into the email subject or body.
+// Public lead form is the untrusted boundary — without this an attacker
+// could inject MIME headers (Bcc, Reply-To) through the Subject line.
+function safeHeader(v) {
+  return String(v == null ? '' : v).replace(/[\r\n]+/g, ' ').trim();
+}
+
 async function notifyOwner({ contactId, source, name, email, phone, address, city, metadata }) {
   if (!NOTIFY_EMAIL) return;
   const md = metadata || {};
-  const subjectName = name && name.trim() ? name.trim() : (email || phone || 'New lead');
-  const subject = `New lead · ${source || 'unknown'} · ${subjectName}`;
+  const safeName    = safeHeader(name);
+  const safeEmail   = safeHeader(email);
+  const safePhone   = safeHeader(phone);
+  const safeAddress = safeHeader(address);
+  const safeCity    = safeHeader(city);
+  const safeSource  = safeHeader(source) || 'unknown';
+
+  const subjectName = safeName || safeEmail || safePhone || 'New lead';
+  const subject = safeHeader(`New lead · ${safeSource} · ${subjectName}`);
 
   const ghlUrl = `https://app.gohighlevel.com/v2/location/${LOCATION_ID}/contacts/detail/${contactId}`;
   const lines = [
-    `New lead from ${source || 'unknown'}.`,
+    `New lead from ${safeSource}.`,
     '',
-    `Name:    ${name || '(not provided)'}`,
-    `Phone:   ${phone || '(not provided)'}`,
-    `Email:   ${email || '(not provided)'}`,
-    `Address: ${[address, city].filter(Boolean).join(', ') || '(not provided)'}`,
+    `Name:    ${safeName    || '(not provided)'}`,
+    `Phone:   ${safePhone   || '(not provided)'}`,
+    `Email:   ${safeEmail   || '(not provided)'}`,
+    `Address: ${[safeAddress, safeCity].filter(Boolean).join(', ') || '(not provided)'}`,
     ''
   ];
 
   if (Object.keys(md).length > 0) {
     lines.push('Estimator inputs:');
-    if (md.sizePreset || md.sqft) lines.push(`  Size:        ${md.sqft || '?'} sq ft (${md.sizePreset || 'custom'})`);
-    if (md.pitch)                  lines.push(`  Pitch:       ${md.pitch}`);
-    if (md.complexity)             lines.push(`  Complexity:  ${md.complexity}`);
-    if (md.chimneyType)            lines.push(`  Chimney:     ${md.chimneyType}`);
-    if (md.postal)                 lines.push(`  Postal:      ${md.postal}`);
+    if (md.sizePreset || md.sqft) lines.push(`  Size:        ${safeHeader(md.sqft) || '?'} sq ft (${safeHeader(md.sizePreset) || 'custom'})`);
+    if (md.pitch)                  lines.push(`  Pitch:       ${safeHeader(md.pitch)}`);
+    if (md.complexity)             lines.push(`  Complexity:  ${safeHeader(md.complexity)}`);
+    if (md.chimneyType)            lines.push(`  Chimney:     ${safeHeader(md.chimneyType)}`);
+    if (md.postal)                 lines.push(`  Postal:      ${safeHeader(md.postal)}`);
     lines.push('');
   }
 
@@ -139,12 +153,19 @@ async function handler(req, res) {
       return res.status(502).json({ ok: false, error: ghlError || 'GHL contact create failed' });
     }
 
-    // Fire-and-forget owner notification. Don't await — Gmail OAuth + send
-    // is ~1s and the form is already showing a spinner waiting on the quote.
-    notifyOwner({ contactId, source, name, email, phone, address, city, metadata })
-      .catch(e => console.warn(`[leads] notifyOwner failed: ${e.message}`));
+    // Await before responding. On Vercel serverless, work started after
+    // res.send() is not guaranteed to complete (the runtime may freeze
+    // the invocation). Ad-driven leads are too important to lose to that
+    // race, and the form already blocks on the quote calc anyway.
+    let notifyError = null;
+    try {
+      await notifyOwner({ contactId, source, name, email, phone, address, city, metadata });
+    } catch (e) {
+      notifyError = e.message;
+      console.warn(`[leads] notifyOwner failed: ${e.message}`);
+    }
 
-    return res.status(201).json({ ok: true, contact_id: contactId, source, ghlError });
+    return res.status(201).json({ ok: true, contact_id: contactId, source, ghlError, notifyError });
   }
 
   // ── GET: list contacts (lead view) ──
