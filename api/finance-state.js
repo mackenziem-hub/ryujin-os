@@ -140,7 +140,9 @@ async function handler(req, res) {
     }
   } catch { /* soft-fail */ }
 
-  stats.receivables_total = Math.round(stats.deposits_pending + stats.payables_total);
+  // Receivables = uncollected customer deposits (money owed TO us). Payables (what we owe subs)
+  // are tracked separately in payables_total and surfaced as "Paysheets Pending". Do NOT fold
+  // them in here (a prior dead line did `deposits_pending + payables_total`, which conflated the two).
   stats.receivables_total = Math.round(stats.deposits_pending);
 
   // Round all monetary fields
