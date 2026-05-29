@@ -158,12 +158,25 @@ async function scanProjectFiles(tenantId) {
 
 async function scanCompanyCamArchive(tenantId) {
   console.log('\n[2/4] companycam_archive_photos');
-  const { data, error } = await supabase
-    .from('companycam_archive_photos')
-    .select('id, archive_project_id, url_source, url_archived, filename, bytes, captured_at, caption, tags, lat, lng')
-    .eq('tenant_id', tenantId)
-    .limit(15000);
-  if (error) { console.error('  query failed:', error.message); return { inserted: 0, skipped: 0 }; }
+  // PostgREST caps a single SELECT at 1000 rows regardless of .limit(), which
+  // silently truncated this scan to the first 1000 (the archive has ~13k).
+  // Page through with .range() ordered by id for a stable window.
+  let data = [];
+  {
+    const PAGE = 1000;
+    for (let from = 0; ; from += PAGE) {
+      const { data: pageRows, error } = await supabase
+        .from('companycam_archive_photos')
+        .select('id, archive_project_id, url_source, url_archived, filename, bytes, captured_at, caption, tags, lat, lng')
+        .eq('tenant_id', tenantId)
+        .order('id', { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error) { console.error('  query failed:', error.message); return { inserted: 0, skipped: 0 }; }
+      if (!pageRows || !pageRows.length) break;
+      data = data.concat(pageRows);
+      if (pageRows.length < PAGE) break;
+    }
+  }
 
   const archiveProjectIds = [...new Set((data || []).map(r => r.archive_project_id).filter(Boolean))];
   const archiveProjectsById = new Map();
