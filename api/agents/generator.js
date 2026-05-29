@@ -175,7 +175,10 @@ async function pickCandidates(tenantId, count) {
     const { data: before } = await supabaseAdmin
       .from('media_pool')
       .select('id, url, thumbnail_url, mime_type, project_id, customer_name, address_city, package_tier, quality_score, tags, captured_at, source_bucket, used_in_clip_id')
-      .eq('id', after.pair_partner_id).maybeSingle();
+      .eq('id', after.pair_partner_id)
+      .eq('tenant_id', tenantId)
+      .eq('excluded', false)        // an excluded before must not resurface as a pair half
+      .maybeSingle();
     if (!before || before.used_in_clip_id) continue;
     pairRaw.push({ after, before });
   }
