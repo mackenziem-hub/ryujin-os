@@ -322,6 +322,13 @@
     filter: drop-shadow(0 4px 0 rgba(0,0,0,0.55));
     transition: left .14s linear, top .14s linear;
   }
+  /* Slower transitions for the "walk into the building" + "walk up from
+     the door" sequences played when entering a sector. ~350ms each so
+     the move reads as a deliberate walk, not a teleport. */
+  .player-avatar.walking-in,
+  .player-avatar.spawn-walk-up {
+    transition: left .35s ease-in-out, top .35s ease-in-out;
+  }
   /* In a sector interior, the player is the prominent character in the
      room (not a tiny dot on a map). Scaled up so blonde Mac reads as a
      proper FF-style protagonist in the middle of the space. */
@@ -1157,17 +1164,25 @@ const SECTORS = [
       { x:82, y:55, label:'PIPELINE', href:'/admin-pipeline.html' },
       { x:82, y:80, label:'SYSTEM',   href:'/admin-system.html' }
     ] },
-  { id:'MATERIALS', npc:'PAVANJOT', role:'Quartermaster',href:'/production-materials.html', bg:'/assets/rpg/scenes/sectors/materials.webp',  sprite:'/assets/rpg/sprites/buildings/production.webp', x:74, y:62,
+  // MIT - Decisions Hall (Claude). Replaced MATERIALS room because that
+  // workflow consolidated under Production (Diego's room owns jobs +
+  // schedule + workorders + paysheet + tickets + materials). The freed
+  // pagoda is now Mac's decision-making hub - walking in surfaces the
+  // morning brief's top 3, his overdue ticket count, pipeline
+  // suggestions awaiting resolve, and surface-level alerts as
+  // multi-choice cards instead of a passive panel. Materials gets a
+  // tool slot inside Production.
+  { id:'MIT', npc:'CLAUDE', role:'Decisions Hall', href:'/admin-pipeline.html', bg:'/assets/rpg/scenes/sectors/materials.webp', sprite:'/assets/rpg/sprites/buildings/production.webp', x:74, y:62, talk:{x:50,y:32},
     tools:[
-      { x:82, y:28, label:'JOBS',      href:'/production-jobs.html' },
-      { x:82, y:55, label:'SCHEDULE',  href:'/production-schedule.html' },
-      { x:82, y:80, label:'WORKORDERS',href:'/production-workorders.html' }
+      { x:82, y:28, label:'BRIEF',     href:'/admin-overview.html' },
+      { x:82, y:55, label:'TICKETS',   href:'/admin.html?page=tickets' },
+      { x:82, y:80, label:'PIPELINE',  href:'/admin-pipeline.html' }
     ] },
   { id:'PRODUCTION',npc:'DIEGO',    role:'Foreman',      href:'/production.html',           bg:'/assets/rpg/scenes/sectors/production.webp', sprite:'/assets/rpg/sprites/buildings/production.webp', x:87, y:62,
     tools:[
-      { x:82, y:28, label:'SCHEDULE', href:'/production-schedule.html' },
-      { x:82, y:55, label:'PAYSHEET', href:'/production-paysheet.html' },
-      { x:82, y:80, label:'TICKETS',  href:'/production-tickets.html' }
+      { x:82, y:28, label:'MATERIALS', href:'/production-materials.html' },
+      { x:82, y:55, label:'PAYSHEET',  href:'/production-paysheet.html' },
+      { x:82, y:80, label:'TICKETS',   href:'/production-tickets.html' }
     ] },
   { id:'SERVICE',   npc:'AJ',       role:'Repairs',      href:'/service-tickets.html',      bg:'/assets/rpg/scenes/sectors/service.webp',    sprite:'/assets/rpg/sprites/buildings/service.webp',    x:39, y:85,
     tools:[
@@ -1225,7 +1240,8 @@ const DOOR_ZONE_TOP = 88;
 const NPC_ACCENT = {
   MACK:'#f4c95d', CAT:'#f4b7d4', MEL:'#a8d8ff', AJ:'#7fd99a',
   DIEGO:'#e8b04a', PAVANJOT:'#e8a575',
-  RYUJIN:'#a8d8ff'  // Dragon king: bright sky-blue
+  RYUJIN:'#a8d8ff', // Dragon king: bright sky-blue
+  CLAUDE:'#c084fc'  // Wizard: amethyst (matches the dragon-temple decision hall vibe)
 };
 // Crew NPCs use the /crew/ portrait directory; lookups not found there
 // fall back to the legacy top-level path so older identifiers (gods,
@@ -1233,6 +1249,10 @@ const NPC_ACCENT = {
 const _CREW_PORTRAIT_IDS = new Set(['mack','mackenzie','cat','mel','melodie','aj','diego','pavanjot','ryujin']);
 const NPC_PORTRAIT = (npc) => {
   const lc = npc.toLowerCase();
+  // Claude has no /portraits/ slot - reuse the wizard sprite as the
+  // dialogue portrait so the MIT Decisions Hall NPC reads consistently
+  // with the wandering wizard on the overworld.
+  if (lc === 'claude') return '/assets/rpg/sprites/crew/claude-wizard.webp';
   const fileId = lc === 'mack' ? 'mackenzie' : (lc === 'mel' ? 'melodie' : lc);
   if (_CREW_PORTRAIT_IDS.has(lc)) return `/assets/rpg/portraits/crew/${fileId}.webp`;
   return `/assets/rpg/portraits/${lc}.webp`;
@@ -1287,7 +1307,7 @@ function interactPromptLabel(sec, isField) {
 // Sectors where the lead NPC is in the field, not at a desk. These get
 // a glowing comms-terminal in the NPC slot instead of a character sprite.
 // Approaching the terminal lets the player text or email the field crew.
-const FIELD_SECTORS = new Set(['PRODUCTION', 'SERVICE', 'MATERIALS']);
+const FIELD_SECTORS = new Set(['PRODUCTION', 'SERVICE']);
 
 // Crew contact directory - email-only for v1 per Mac. Comms terminals
 // and office NPC dialogs both surface an "Email X" choice when a crew
@@ -1304,6 +1324,18 @@ const CREW_CONTACTS = {
   DIEGO:{ name: 'Diego', email: 'diego.r@plusultraroofing.com' }
   // PAVANJOT intentionally absent - no workspace email yet.
 };
+
+// Build a Gmail web-compose URL so clicking Email <crew> opens Mac's
+// authenticated Gmail tab with To/Subject/Body pre-filled, instead of
+// firing the OS mailto handler (which surfaces a chooser modal on
+// Windows when no default mail app is set). Opens in a new tab so the
+// game stays running. Subject/body optional - omit on cold contact.
+function gmailComposeUrl(email, subject, body) {
+  const params = new URLSearchParams({ view: 'cm', fs: '1', to: email });
+  if (subject) params.set('su', subject);
+  if (body)    params.set('body', body);
+  return 'https://mail.google.com/mail/u/0/?' + params.toString();
+}
 
 // ═════ State ═════
 const state = {
@@ -1574,11 +1606,13 @@ function godLine(sec) {
       if (stale) return `${stale}. Want me to sweep it?`;
       return 'All systems quiet. Inbox under control.';
     }
-    case 'MATERIALS': {
-      const mat = s.materialOrders;
-      if (!mat || typeof mat !== 'object') return 'Inventory feed not wired up yet. Walk in and I will show you what we have.';
-      const ords = mat.openCount || 0;
-      return ords ? `${ords} material order${ords > 1 ? 's' : ''} open with suppliers.` : 'Pallets stacked, shelves stocked. We are good.';
+    case 'MIT': {
+      const top3 = brief.top3 || [];
+      const overdue = t.overdueCount || 0;
+      const head = top3[0] && (top3[0].action || top3[0].title);
+      if (head) return `Decision hall is hot. Front of mind: ${head}. ${overdue ? overdue + ' overdue ticket' + (overdue > 1 ? 's' : '') + ' to triage.' : 'No overdue weight.'}`;
+      if (overdue) return `Brief is quiet, but you have ${overdue} overdue ticket${overdue > 1 ? 's' : ''}. Want me to surface the worst?`;
+      return 'Decisions hall is calm. Brief is clear, nothing overdue. Use this room to clear the agent suggestion queue.';
     }
     case 'MARKETING': {
       const cpl = ads.avgCPL;
@@ -1653,18 +1687,16 @@ function sectorStatBlocks(sectorId) {
       { k:'ALL LEADS', v: leads.total || 0 },
       { k:'CAMPAIGNS', v: ads.activeCampaigns || 0 }
     ];
-    case 'MATERIALS': {
-      // materialOrders is not yet produced by the snapshot pipeline; show
-      // explicit "--" rather than defaulting to 0/OK so we don't lie about
-      // a healthy state when we just have no data. Wire snapshot section
-      // in a follow-up before relying on these counters.
-      const mat = s.materialOrders;
-      const have = mat && typeof mat === 'object';
+    case 'MIT': {
+      const top3 = brief.top3 || [];
+      const overdue = t.overdueCount || 0;
+      const myToday = (t.activeToday || []).filter(x => /macken/i.test(String(x.assignee || ''))).length;
+      const pipeSugg = (s.pipelineSuggestions && s.pipelineSuggestions.openCount) || 0;
       return [
-        { k:'OPEN ORDERS', v: have ? (mat.openCount || 0) : '--' },
-        { k:'LOW STOCK',   v: have ? (mat.lowStockCount || 0) : '--' },
-        { k:'SUPPLIERS',   v: have ? (mat.suppliersCount || '--') : '--' },
-        { k:'STATUS',      v: have ? ((mat.openCount || 0) > 5 ? 'BUSY' : 'OK') : 'NO DATA' }
+        { k:'TOP-3 TODAY',  v: top3.length || '--' },
+        { k:'YOUR OVERDUE', v: overdue },
+        { k:'ON PLATE',     v: myToday },
+        { k:'PIPE ASKS',    v: pipeSugg || '--' }
       ];
     }
   }
@@ -1749,9 +1781,12 @@ function sectorHeadline(sectorId) {
       return watchdog ? 'WATCHDOG DOWN' : 'systems nominal';
     }
     case 'MARKETING': return `CPL $${ads.avgCPL != null ? ads.avgCPL.toFixed(2) : '?'} · ${leads.thisWeek || 0}/wk`;
-    case 'MATERIALS': {
-      const mat = s.materialOrders;
-      return (mat && typeof mat === 'object') ? ((mat.openCount || 0) + ' orders open') : 'no data yet';
+    case 'MIT': {
+      const top3 = brief.top3 || [];
+      const overdue = t.overdueCount || 0;
+      if (overdue > 5) return `${overdue} overdue · brief has ${top3.length}`;
+      if (top3.length) return `${top3.length} act-now · ${overdue} overdue`;
+      return 'decisions hall · clear';
     }
   }
 }
@@ -2179,30 +2214,62 @@ function enterSector() {
   state.player.targetY = state.player.y;
   // Remember overworld position so we can spawn there on exit
   state.worldReturn = { x: state.player.x, y: state.player.y };
-  // Spawn mid-room (CT framing — player IS the focal point on entry) but
-  // safely outside NPC_INTERACT_R=13 around the NPC at (50,38) so the
-  // talk prompt doesn't auto-fire. y=60 puts player 22% below NPC.
-  state.interior = {
-    sec,
-    playerX: 50,
-    playerY: 60,
-    facing: -Math.PI / 2,         // facing up toward NPC
-    npcX: 50, npcY: 38,
-    termX: 14, termY: 28,
-    lastEnter: Date.now()
-  };
-  if (!state.save.visited_sectors.includes(sec.id)) {
-    state.save.visited_sectors.push(sec.id);
-    persistSave();
+  // Walk-in phase 1 (overworld): slide the player onto the building's
+  // painted door at sec.x/sec.y over ~350ms so the entry reads as the
+  // character walking up to the doorway. Skip if reduced motion is
+  // preferred OR if the player is already standing on the door (e.g.
+  // re-entering immediately after exit).
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const overworldAv = $('playerAvatar');
+  const overworldStepMs = reducedMotion ? 0 : 350;
+  if (overworldAv && overworldStepMs > 0) {
+    overworldAv.classList.remove('moving', 'step-b', 'face-down', 'face-left', 'face-right');
+    overworldAv.classList.add('walking-in', 'face-up');
+    overworldAv.style.left = sec.x + '%';
+    overworldAv.style.top  = (sec.y - 1) + '%';
   }
-  state.save.last_visit_at = new Date().toISOString();
-  persistSave();
   hideInteractPrompt();
-  // Flash → swap to SECTOR view → render interior — feels like walking through a door
-  viewFlash(() => {
-    setView('SECTOR');
-    renderInterior();
-  });
+  setTimeout(() => {
+    // Spawn at the bottom door of the interior so walk-in phase 2 can
+    // animate the player up to the talk position at y=60. Without
+    // reduced motion: y=92 (door). With reduced motion: y=60 (instant).
+    const spawnY = reducedMotion ? 60 : 92;
+    state.interior = {
+      sec,
+      playerX: 50,
+      playerY: spawnY,
+      facing: -Math.PI / 2,         // facing up toward NPC
+      npcX: 50, npcY: 38,
+      termX: 14, termY: 28,
+      lastEnter: Date.now()
+    };
+    if (!state.save.visited_sectors.includes(sec.id)) {
+      state.save.visited_sectors.push(sec.id);
+      persistSave();
+    }
+    state.save.last_visit_at = new Date().toISOString();
+    persistSave();
+    // Flash → swap to SECTOR view → render interior — walking through the door
+    viewFlash(() => {
+      setView('SECTOR');
+      renderInterior();
+      if (reducedMotion) return;
+      // Walk-in phase 2 (interior): animate from door (y=92) up to talk
+      // position (y=60) so the character walks into the room.
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          const interiorAv = $('playerAvatar');
+          if (!interiorAv || !state.interior) return;
+          interiorAv.classList.add('spawn-walk-up', 'face-up');
+          state.interior.playerY = 60;
+          interiorAv.style.top = '60%';
+          setTimeout(() => {
+            if (interiorAv && interiorAv.parentNode) interiorAv.classList.remove('spawn-walk-up');
+          }, 400);
+        }, 40);
+      });
+    });
+  }, overworldStepMs);
 }
 
 function renderInterior() {
@@ -2241,8 +2308,15 @@ function renderInterior() {
   const npcStyle = { left: intr.npcX + '%', top: intr.npcY + '%' };
   if (isField) {
     Object.assign(npcStyle, { borderColor: accent, boxShadow: `0 0 24px ${accent}55` });
-  } else if (npcSpriteSlug && npcSpriteSlug !== 'ryujin') {
+  } else if (npcSpriteSlug && npcSpriteSlug !== 'ryujin' && npcSpriteSlug !== 'claude') {
+    // RYUJIN + CLAUDE are painted into the bg art (throne, decision
+    // hall) so they don't get a free-floating crew sprite overlay.
     npcStyle.backgroundImage = `url('/assets/rpg/sprites/crew/${npcSpriteSlug}.webp')`;
+  } else if (npcSpriteSlug === 'claude') {
+    // Render the wizard sprite at the NPC slot so the Decisions Hall
+    // has a visible Claude figure (the materials.webp bg is a generic
+    // jade temple interior with no painted character).
+    npcStyle.backgroundImage = `url('/assets/rpg/sprites/crew/claude-wizard.webp')`;
   }
   const npc = el('div', {
     class: 'npc-sprite' + (isField ? ' comms-terminal' : ' crew-guest'),
@@ -2585,7 +2659,7 @@ function buildDialogueChoices(sec) {
   const c = CREW_CONTACTS[sec.npc];
   if (c && c.email) {
     const leaveIdx = base.findIndex(ch => ch.kind === 'leave');
-    const emailChoice = { label: `Email ${c.name} (${c.email})`, kind: 'href', href: 'mailto:' + c.email };
+    const emailChoice = { label: `Email ${c.name} (${c.email})`, kind: 'extern', href: gmailComposeUrl(c.email) };
     base.splice(leaveIdx >= 0 ? leaveIdx : base.length, 0, emailChoice);
   }
   return base;
@@ -2698,17 +2772,29 @@ function _buildSectorChoices(sec) {
         leave
       ];
     }
-    case 'MATERIALS': {
-      const mat = s.materialOrders;
-      const have = mat && typeof mat === 'object';
-      const ords = have ? (mat.openCount || 0) : null;
-      let inv;
-      if (!have) inv = 'Inventory feed not wired into the snapshot pipeline yet, but you can open the board.';
-      else if (ords) inv = `${ords} material order${ords > 1 ? 's' : ''} open with suppliers right now.`;
-      else inv = 'Pallets stacked, shelves stocked. We are good.';
+    case 'MIT': {
+      const top3 = brief.top3 || [];
+      const overdue = t.overdueCount || 0;
+      const myToday = (t.activeToday || []).filter(x => /macken/i.test(String(x.assignee || ''))).length;
+      const pipeSugg = (s.pipelineSuggestions && s.pipelineSuggestions.openCount) || 0;
+      const watchdog = alerts.find(a => /watchdog|stale|overdue|alert/i.test(String(a)));
+      const top3Body = top3.length
+        ? top3.slice(0, 3).map((q, i) => `${i + 1}. ${q.action || q.title || ('priority ' + (i + 1))}`).join('\n')
+        : 'The morning brief is clear. Nothing flagged in top-3.';
       return [
-        { label: 'Inventory check', kind: 'reply', body: inv },
-        { label: 'Open materials board', kind: 'href', href: sec.href },
+        { label: `Today's act-now (${top3.length})`, kind: 'reply', body: top3Body },
+        { label: `Your overdue (${overdue})`,
+          kind: overdue > 0 ? 'href' : 'reply',
+          href: '/admin.html?page=tickets',
+          body: overdue > 0 ? null : 'Zero overdue. Plate clear.' },
+        { label: `On your plate today (${myToday})`,
+          kind: myToday > 0 ? 'href' : 'reply',
+          href: '/admin.html?page=tickets',
+          body: myToday > 0 ? null : 'Nothing scheduled on your plate today.' },
+        { label: `Pipeline suggestions awaiting${pipeSugg ? ' (' + pipeSugg + ')' : ''}`,
+          kind: 'href', href: '/admin-pipeline.html' },
+        { label: 'Surface alerts', kind: 'reply',
+          body: watchdog ? String(watchdog) : 'Watchdog clean. Nothing flagged.' },
         leave
       ];
     }
@@ -2749,7 +2835,7 @@ function openGuestDialog(npc) {
   if (!c) return;
   const accent = NPC_ACCENT[npc] || '#f4c95d';
   const choices = [];
-  if (c.email) choices.push({ label: `Email ${c.name} (${c.email})`, kind: 'href', href: 'mailto:' + c.email });
+  if (c.email) choices.push({ label: `Email ${c.name} (${c.email})`, kind: 'extern', href: gmailComposeUrl(c.email) });
   choices.push({ label: 'Leave', kind: 'leave', danger: true });
   openDialogue({
     speaker: npc,
@@ -2774,9 +2860,9 @@ function openCommsDialog(sec) {
   // surfaces a clean Leave option rather than a disabled-row fallback
   // that could eject the player into the sector NPC tree.
   const footer = c.email ? '' : `\n\n(${c.name} has no workspace email configured yet - add to CREW_CONTACTS when their account lands.)`;
-  const body = `${c.name} is in the field. Reach them by email - the message opens in your device's default mail app.` + footer;
+  const body = `${c.name} is in the field. Reach them by email - the message opens a Gmail compose tab so the game stays running.` + footer;
   const choices = [];
-  if (c.email) choices.push({ label: `Email ${c.name} (${c.email})`, kind: 'href', href: 'mailto:' + c.email });
+  if (c.email) choices.push({ label: `Email ${c.name} (${c.email})`, kind: 'extern', href: gmailComposeUrl(c.email) });
   choices.push({ label: 'Leave', kind: 'leave', danger: true });
   openDialogue({
     speaker: 'COMMS · ' + sec.id,
@@ -2894,6 +2980,11 @@ function selectChoice(idx) {
   } else if (c.kind === 'href') {
     closeDialogue();
     window.location.href = c.href;
+  } else if (c.kind === 'extern') {
+    // External tab (Gmail compose, etc.) - keep dialogue open so the
+    // player can flip back to the game after sending. noopener for the
+    // standard target=_blank security hygiene.
+    window.open(c.href, '_blank', 'noopener,noreferrer');
   } else if (c.kind === 'modal') {
     closeDialogue();
     if (c.modal === 'quests') openQuestModal();
