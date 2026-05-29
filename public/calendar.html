@@ -221,6 +221,13 @@ body[data-view="crew"] .crewboard{display:grid}
 .empty-illus{display:block;width:150px;max-width:55%;margin:6px auto 10px;opacity:0.82}
 .modal .rr-illus{display:block;width:100%;max-height:84px;object-fit:cover;border-radius:10px;margin:0 0 8px;opacity:0.85}
 .modal select{width:100%;padding:10px 12px;background:rgba(6,10,20,0.7);border:1px solid rgba(34,211,238,0.25);border-radius:9px;color:#e0e6f0;font-family:inherit;font-size:0.95em;margin-bottom:6px}
+@media (prefers-reduced-motion: reduce){
+  *{transition-duration:0.01ms !important;animation-duration:0.01ms !important;animation-iteration-count:1 !important}
+  .evt:hover,.fab:hover{transform:none !important}
+}
+@media (max-width:720px){
+  .modal input,.modal select,.modal textarea{font-size:16px}
+}
 </style>
 <script src="/assets/portal-auth-client.js"></script>
 <script src="/assets/ryujin-slug.js"></script>
@@ -398,8 +405,13 @@ function currentDays(){ return RANGE_DAYS[currentRange]; }
 
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function fmt$(n){if (n == null || n === '') return ''; const x = Number(n); if (!Number.isFinite(x)) return ''; return '$' + Math.round(x).toLocaleString()}
-function isoDay(d){return new Date(d).toISOString().slice(0,10)}
-function clockHM(iso){if(!iso)return '';const d=new Date(iso);if(isNaN(d))return '';const h=d.getHours();const m=d.getMinutes();const ampm=h>=12?'p':'a';const hh=((h+11)%12)+1;return hh+(m?':'+String(m).padStart(2,'0'):'')+ampm}
+// Bucket by the business timezone (America/Halifax), NOT UTC, so evening
+// events don't land on the wrong day and counts match the board.
+const BIZ_TZ = 'America/Halifax';
+function isoDay(d){const dt=new Date(d);if(isNaN(dt))return '';const p=new Intl.DateTimeFormat('en-CA',{timeZone:BIZ_TZ,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(dt);const g=t=>(p.find(x=>x.type===t)||{}).value;return g('year')+'-'+g('month')+'-'+g('day')}
+function clockHM(iso){if(!iso)return '';const d=new Date(iso);if(isNaN(d))return '';const p=new Intl.DateTimeFormat('en-US',{timeZone:BIZ_TZ,hour:'numeric',minute:'2-digit',hour12:false}).formatToParts(d);const h=+(p.find(x=>x.type==='hour')||{}).value;const m=+(p.find(x=>x.type==='minute')||{}).value;const ampm=h>=12?'p':'a';const hh=((h+11)%12)+1;return hh+(m?':'+String(m).padStart(2,'0'):'')+ampm}
+// A GHL appointment that's cancelled/no-show shouldn't render as a live booking.
+function apptIsActive(a){const st=String(a&&a.status||'').toLowerCase().replace(/[^a-z]/g,'');return !(st==='cancelled'||st==='canceled'||st==='noshow'||st==='invalid');}
 function nameMatchesCrew(name, matchKeys){
   const lc = String(name||'').toLowerCase();
   if (!lc) return false;
@@ -481,7 +493,7 @@ function updateToolbar(){
     ? ((sched.data.jobs && sched.data.jobs.length) || (sched.data.days || []).reduce((a, d) => a + (d.installs?.length || 0), 0))
     : null;
   const serviceCount = sched.data ? (sched.data.total_service ?? 0) : null;
-  const inspectionCount = ghl.data ? (ghl.data.appointments || []).length : null;
+  const inspectionCount = ghl.data ? (ghl.data.appointments || []).filter(apptIsActive).length : null;
   const gcalCount = gcal.data ? (gcal.data.events || []).length : null;
   const gcalSuffix = gcal.data && gcal.data.configured === false ? ' (off)' : '';
 
@@ -626,6 +638,7 @@ function normalize(sched, ghl, gcal, blocksData){
   // and ISO-8601 strings in others. Accept both: try Number first, fall
   // back to Date parse, drop only when neither produces a finite ms value.
   for (const a of (ghl.appointments || [])){
+    if (!apptIsActive(a)) continue;
     let startMs = Number(a.startTime);
     if (!Number.isFinite(startMs)) startMs = new Date(a.startTime).getTime();
     if (!Number.isFinite(startMs)) continue;
@@ -680,10 +693,11 @@ function normalize(sched, ghl, gcal, blocksData){
   const TYPE_ORDER = { inspection: 0, service: 1, install: 2, block: 3, gcal: 4 };
   for (const k of Object.keys(days)){
     days[k].events.sort((a, b) => {
-      const ta = a.startTime || (a.time ? a.time : '');
-      const tb = b.startTime || (b.time ? b.time : '');
-      if (ta && tb) return String(ta).localeCompare(String(tb));
-      if (ta) return -1; if (tb) return 1;
+      const ta = a.startTime ? new Date(a.startTime).getTime() : NaN;
+      const tb = b.startTime ? new Date(b.startTime).getTime() : NaN;
+      const va = Number.isFinite(ta), vb = Number.isFinite(tb);
+      if (va && vb) return ta - tb;
+      if (va) return -1; if (vb) return 1;
       return (TYPE_ORDER[a.kind] || 9) - (TYPE_ORDER[b.kind] || 9);
     });
   }
@@ -761,7 +775,7 @@ function evtCard(ev){
       <div class="evt-title">${esc(ev.title)}</div>
       <div class="evt-meta">${ev.time ? `<span class="chip">${esc(ev.time)}</span>` : ''}${crewChip}${assignChip}</div>`;
   }
-  return `<div class="${cls}" tabindex="0" data-evt='${esc(JSON.stringify(ev))}'>
+  return `<div class="${cls}" tabindex="0" role="button" aria-label="${esc((ev.kind || 'event') + ': ' + (ev.title || '') + (ev.time ? ' at ' + ev.time : ''))}" data-evt='${esc(JSON.stringify(ev))}'>
     <div class="evt-type">${typeLine}</div>
     ${body}
   </div>`;
@@ -1050,11 +1064,22 @@ function wireKitChrome(){
 
 (async function init(){
   await loadMe();
+  // Hide the create FAB for non-privileged roles (was a dead-end alert on click).
+  if (!(MY_ROLE === 'owner' || MY_ROLE === 'admin')){
+    const fab = document.getElementById('fab');
+    if (fab) fab.style.display = 'none';
+  }
   // Icon kit is decorative + has a no-op fallback: wire chrome and repaint when
   // it settles, but never gate the operational data load on it.
   iconsReady.then(() => { wireKitChrome(); rerender(); });
   await loadAll();
-  setInterval(loadAll, 3 * 60 * 1000);
+  // Background refresh: skip when the tab is hidden or a dialog is open so we
+  // don't hammer GHL unseen or yank the view out from under an open card.
+  setInterval(() => {
+    if (document.hidden) return;
+    if (document.querySelector('.modal-mask.on, .drawer-mask.on')) return;
+    loadAll();
+  }, 3 * 60 * 1000);
 })();
 </script>
 
