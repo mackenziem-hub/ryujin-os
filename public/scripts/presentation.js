@@ -386,6 +386,76 @@
     .replace(/\.html$/i, '') || 'index';
   var STORAGE_KEY = 'ryujin-deck-notes:' + DECK_ID;
 
+  /* ── SERVER SYNC (optional) ──
+     Notes are localStorage-first. When a portal session token is present
+     (an admin viewing the deck from inside Ryujin), notes also sync to
+     /api/deck-notes so they persist across devices and can be read back by
+     the working session. Without a token every function below no-ops, so the
+     deck stays localStorage-only and still opens standalone for review.
+     Jewels-seeded notes are not synced (they are re-seeded from code each load). */
+  var AUTH_TOKEN = (function () {
+    try { return localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token') || null; }
+    catch (e) { return null; }
+  })();
+
+  function syncHeaders(extra) {
+    var h = extra || {};
+    if (AUTH_TOKEN) h['Authorization'] = 'Bearer ' + AUTH_TOKEN;
+    return h;
+  }
+
+  function serverUpsertNote(slideId, note) {
+    if (!AUTH_TOKEN || !note || note.author === 'jules') return;
+    fetch('/api/deck-notes', {
+      method: 'POST',
+      headers: syncHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        deck_id: DECK_ID, slide_id: slideId,
+        client_note_id: note.id, author: note.author || 'mac', text: note.text
+      })
+    }).catch(function () {});
+  }
+
+  function serverDeleteNote(noteId) {
+    if (!AUTH_TOKEN || !noteId) return;
+    fetch('/api/deck-notes?deck=' + encodeURIComponent(DECK_ID) + '&note=' + encodeURIComponent(noteId), {
+      method: 'DELETE',
+      headers: syncHeaders()
+    }).catch(function () {});
+  }
+
+  /* Pull server notes into localStorage, then push any local-only notes up
+     (this is what migrates notes added before sync existed). */
+  function serverSyncInit() {
+    if (!AUTH_TOKEN) return;
+    fetch('/api/deck-notes?deck=' + encodeURIComponent(DECK_ID), { headers: syncHeaders() })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (payload) {
+        var local = loadNotes();
+        var serverKeys = {};
+        if (payload && Array.isArray(payload.notes)) {
+          payload.notes.forEach(function (n) {
+            serverKeys[n.client_note_id] = true;
+            if (!local[n.slide_id]) local[n.slide_id] = [];
+            var found = null;
+            for (var i = 0; i < local[n.slide_id].length; i++) {
+              if (local[n.slide_id][i].id === n.client_note_id) { found = local[n.slide_id][i]; break; }
+            }
+            if (found) { found.text = n.text; found.author = n.author; }
+            else local[n.slide_id].push({ id: n.client_note_id, author: n.author, text: n.text, ts: Date.parse(n.updated_at) || Date.now() });
+          });
+        }
+        Object.keys(local).forEach(function (slideId) {
+          (local[slideId] || []).forEach(function (note) {
+            if (note.author !== 'jules' && !serverKeys[note.id]) serverUpsertNote(slideId, note);
+          });
+        });
+        saveAllNotes(local);
+        refreshAllSlideNotes();
+      })
+      .catch(function () {});
+  }
+
   function loadNotes() {
     try {
       var raw = localStorage.getItem(STORAGE_KEY);
@@ -558,6 +628,7 @@
     else data[slideId].push(note);
     saveAllNotes(data);
     refreshAllSlideNotes();
+    serverUpsertNote(slideId, note);
   }
 
   function deleteNote(slideId, noteId) {
@@ -566,6 +637,7 @@
     data[slideId] = data[slideId].filter(function (n) { return n.id !== noteId; });
     saveAllNotes(data);
     refreshAllSlideNotes();
+    serverDeleteNote(noteId);
   }
 
   /* Modal editor */
@@ -636,6 +708,7 @@
   }
 
   refreshAllSlideNotes();
+  serverSyncInit();
 
   /* ────────────────────────────────────────────────────────────────
    *  PRESENTATION UI + NAV
