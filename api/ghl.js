@@ -1,3 +1,5 @@
+import { resolveSession } from '../lib/portalAuth.js';
+
 const GHL_BASE = 'https://services.leadconnectorhq.com';
 const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
 const LOCATION_ID = 'aHotOUdq9D8m3JPrRz9n';
@@ -838,6 +840,15 @@ export default async function handler(req, res) {
     // then normalize into a single sorted list. Window defaults to the next
     // 7 days; clamp to 1..30 to keep response time bounded.
     if (resolvedMode === 'appointments') {
+      // Codex P1 (PR #108): this mode returns contact PII (name, phone,
+      // email, address) for each upcoming inspection. Other ghl.js modes
+      // expose aggregate pipeline + opportunity data that internal chat
+      // tools rely on without a session, but appointment-level contact
+      // detail is the same surface as /api/inspections and must require
+      // a valid portal session.
+      const session = await resolveSession(req);
+      if (!session) return res.status(401).json({ error: 'sign_in_required' });
+
       const days = Math.max(1, Math.min(30, parseInt(req.query.days, 10) || 7));
       const now = new Date();
       const startTime = now.getTime();

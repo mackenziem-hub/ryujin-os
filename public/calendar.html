@@ -323,8 +323,12 @@ function normalize(sched, ghl, gcal){
   }
 
   // 2) Inspections from GHL. Bucket by startTime day.
+  // Codex P2 (PR #108): GHL emits startTime as epoch ms in some cases
+  // and ISO-8601 strings in others. Accept both: try Number first, fall
+  // back to Date parse, drop only when neither produces a finite ms value.
   for (const a of (ghl.appointments || [])){
-    const startMs = Number(a.startTime);
+    let startMs = Number(a.startTime);
+    if (!Number.isFinite(startMs)) startMs = new Date(a.startTime).getTime();
     if (!Number.isFinite(startMs)) continue;
     const dayKey = isoDay(new Date(startMs));
     if (!days[dayKey]) continue;
