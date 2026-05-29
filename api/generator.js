@@ -403,7 +403,14 @@ async function handler(req, res) {
   if (req.method === 'DELETE') {
     const { id, exclude } = req.query;
     if (!id) return res.status(400).json({ error: 'Missing ?id=' });
-    const out = await rejectClip({ tenantId, clipId: id, exclude: exclude === '1' });
+    const wantExclude = exclude === '1';
+    // Permanent exclusion removes inventory from all future runs, so it is
+    // owner/admin-only like approve/run. A plain reject (frees the photo for a
+    // later run) stays open to any authenticated portal user.
+    if (wantExclude && !isPrivileged(session)) {
+      return res.status(403).json({ error: 'Owner or admin required to exclude media' });
+    }
+    const out = await rejectClip({ tenantId, clipId: id, exclude: wantExclude });
     if (out.error) return res.status(out.status || 500).json({ error: out.error });
     return res.json({ rejected: true, ...out });
   }
