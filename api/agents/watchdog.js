@@ -277,40 +277,13 @@ export default async function handler(req, res) {
       newAlertedIds.splice(0, newAlertedIds.length - 200);
     }
 
-    // GHL conversations check — catches Facebook/Instagram/SMS DMs that don't show up in Gmail.
-    // Reason this exists: a FB DM came in for services on May 3 2026 and nobody flagged it because
-    // FB notification emails were getting filtered out and there was no direct conversation poll.
-    try {
-      const convoResp = await Promise.race([
-        fetch('https://ryujin-os.vercel.app/api/ghl?mode=conversations&limit=20'),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('GHL convo timeout')), 15000))
-      ]);
-      if (convoResp && convoResp.ok) {
-        const convoData = await convoResp.json();
-        const sixHoursAgo = Date.now() - 6 * 60 * 60 * 1000;
-        for (const c of (convoData.conversations || [])) {
-          if (!c.unread || c.unread < 1) continue;
-          const lastMsgTime = c.lastMessageAt ? new Date(c.lastMessageAt).getTime() : 0;
-          if (lastMsgTime < sixHoursAgo) continue;
-          const convoAlertId = `convo:${c.id}:${lastMsgTime}`;
-          if (newAlertedIds.includes(convoAlertId)) continue;
-          const channel = (c.type || '').replace(/^TYPE_/, '').toLowerCase() || 'message';
-          alerts.push({
-            id: convoAlertId,
-            tier: 1,
-            shouldAlert: true,
-            from: c.contactName || 'Unknown contact',
-            subject: `[${channel}] ${c.lastMessage ? c.lastMessage.slice(0, 80) : 'New message'}`,
-            date: c.lastMessageAt,
-            snippet: c.lastMessage || '',
-            source: 'ghl_conversation'
-          });
-          newAlertedIds.push(convoAlertId);
-        }
-      }
-    } catch (e) {
-      console.warn('[Watchdog] GHL conversation check failed:', e.message);
-    }
+    // GHL conversation triage moved to the dedicated inbox agent
+    // (api/agents/inbox.js, migration 078). The watchdog used to poll
+    // /api/ghl?mode=conversations and SMS-alert on ANY unread DM, which
+    // over-notified. The inbox agent now reads each conversation, triages
+    // it, and only fires an SMS for a genuine active leak or active lead;
+    // everything else is queued on /inbox.html. Keeping the block here too
+    // would double-ping the owner, so the watchdog is now Gmail-only.
 
     // Tier 1 = SMS now, Tier 2 = daily docket only
     const tier1 = alerts.filter(a => a.tier === 1);
