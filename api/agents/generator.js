@@ -38,9 +38,12 @@ const CLAUDE_MODEL = 'claude-haiku-4-5-20251001';
 // capped so the cron stays inside its 60s budget. (No media_pool persistence
 // yet — caching the grade is a follow-up once the vision_* columns ship; see
 // migration 076 + the FAST-FOLLOW task.)
-const GRADE_BUDGET = 40;       // max vision calls per run (cost + time ceiling)
-const GRADE_CONCURRENCY = 5;   // parallel vision calls
-const PAIR_FETCH_LIMIT = 16;   // metadata candidates pulled before vision filter
+const GRADE_BUDGET = 30;          // max vision calls per run (cost ceiling)
+const GRADE_DEADLINE_MS = 45_000; // stop grading after this much elapsed, so a
+                                  // slow Anthropic run cannot blow the function's
+                                  // 120s budget before captions + inserts run
+const GRADE_CONCURRENCY = 5;      // parallel vision calls
+const PAIR_FETCH_LIMIT = 12;      // metadata candidates pulled before vision filter
 const SINGLE_FETCH_LIMIT = 48;
 
 // Bounded-concurrency map: runs fn over items, at most `limit` in flight.
@@ -121,16 +124,36 @@ async function getBrand(tenantId) {
 //      finished, attractive 'showcase' roof. Pairs may fill every slot.
 //   2. Remaining slots: solo singles that clear isSoloShowcase (state=showcase
 //      AND score >= floor). Worn/before/in-progress/detail shots are dropped.
-// Nothing is padded in to hit `count` — fewer good posts beats junk. Grading
-// is live and budget-capped (GRADE_BUDGET / GRADE_CONCURRENCY).
+// One kept post per project (diversify across jobs); a project is claimed only
+// AFTER a photo passes vision, so a project's bad lead photo never blocks its
+// good one. Nothing is padded to hit `count` — fewer good posts beats junk.
+// Grading is bounded by BOTH a call budget and an elapsed deadline, so a slow
+// Anthropic run cannot blow the function's time budget.
 async function pickCandidates(tenantId, count) {
   const cutoff = new Date(Date.now() - DEDUP_WINDOW_DAYS * 86_400_000).toISOString();
   const stats = { graded: 0, pairs_kept: 0, singles_kept: 0, rejected: 0, ungraded: 0 };
+  const candidates = [];
+  const seenProjects = new Set();        // projects already claimed by a KEPT post
   let budget = GRADE_BUDGET;
+  const deadline = Date.now() + GRADE_DEADLINE_MS;
+  const canGrade = () => budget > 0 && Date.now() < deadline;
 
   const tallyReject = (grade) => {
     if (!grade || grade.state === 'ungraded') stats.ungraded++;
     stats.rejected++;
+  };
+
+  // Grade `items` in concurrency batches, calling keep(item, grade) for each
+  // result. Stops when full / out of call budget / past the elapsed deadline.
+  const gradeAndCollect = async (items, urlOf, keep) => {
+    for (let i = 0; i < items.length && candidates.length < count && canGrade(); i += GRADE_CONCURRENCY) {
+      const batch = items.slice(i, i + Math.min(GRADE_CONCURRENCY, budget));
+      if (!batch.length) break;
+      const grades = await mapLimit(batch, GRADE_CONCURRENCY, x => gradeShowcase(urlOf(x)));
+      stats.graded += batch.length;
+      budget -= batch.length;
+      for (let j = 0; j < batch.length && candidates.length < count; j++) keep(batch[j], grades[j]);
+    }
   };
 
   // ── PAIRS (preferred) ───────────────────────────────────────────────
@@ -157,16 +180,10 @@ async function pickCandidates(tenantId, count) {
     pairRaw.push({ after, before });
   }
 
-  const candidates = [];
-  // Grade the AFTER (the hero) of each pair concurrently, within budget.
-  const pairToGrade = pairRaw.slice(0, Math.min(pairRaw.length, budget));
-  const pairGrades = await mapLimit(pairToGrade, GRADE_CONCURRENCY, p => gradeShowcase(p.after.url));
-  stats.graded += pairToGrade.length;
-  budget -= pairToGrade.length;
-  for (let i = 0; i < pairToGrade.length && candidates.length < count; i++) {
-    const { after, before } = pairToGrade[i];
-    const grade = pairGrades[i];
-    if (grade?.state !== 'showcase') { tallyReject(grade); continue; }
+  await gradeAndCollect(pairRaw, p => p.after.url, ({ after, before }, grade) => {
+    if (grade?.state !== 'showcase') { tallyReject(grade); return; }
+    if (after.project_id && seenProjects.has(after.project_id)) return; // job already covered
+    if (after.project_id) seenProjects.add(after.project_id);
     stats.pairs_kept++;
     candidates.push({
       kind: 'pair', before, after, grade,
@@ -175,12 +192,14 @@ async function pickCandidates(tenantId, count) {
       address_city: after.address_city || before.address_city,
       package_tier: after.package_tier || before.package_tier,
     });
-  }
+  });
 
-  // ── SINGLES (fill remaining; showcase-only) ─────────────────────────
-  if (candidates.length < count && budget > 0) {
+  // ── SINGLES (fill remaining; showcase-only, one per job) ────────────
+  if (candidates.length < count && canGrade()) {
     const usedIds = new Set();
-    for (const c of candidates) { usedIds.add(c.before.id); usedIds.add(c.after.id); }
+    for (const c of candidates) {
+      if (c.kind === 'pair') { usedIds.add(c.before.id); usedIds.add(c.after.id); }
+    }
 
     const { data: singleRows } = await supabaseAdmin
       .from('media_pool')
@@ -192,41 +211,23 @@ async function pickCandidates(tenantId, count) {
       .order('quality_score', { ascending: false })
       .limit(SINGLE_FETCH_LIMIT);
 
-    // Diversify across jobs: at most one single per project (its best-quality
-    // photo, since the rows are already quality-ordered), and never a single
-    // from a project a pair already covers. Stops the "two shots of the same
-    // house" repetition. Photos with no project_id are not deduped.
-    const seenProjects = new Set(candidates.map(c => c.project_id).filter(Boolean));
-    const pool = [];
-    for (const m of (singleRows || [])) {
-      if (usedIds.has(m.id)) continue;
-      if (m.project_id) {
-        if (seenProjects.has(m.project_id)) continue;
-        seenProjects.add(m.project_id);
-      }
-      pool.push(m);
-    }
-    // Grade in quality order, one concurrency-batch at a time, until we fill
-    // the remaining slots or run out of grade budget.
-    for (let i = 0; i < pool.length && candidates.length < count && budget > 0; i += GRADE_CONCURRENCY) {
-      const batch = pool.slice(i, i + Math.min(GRADE_CONCURRENCY, budget));
-      const grades = await mapLimit(batch, GRADE_CONCURRENCY, m => gradeShowcase(m.url));
-      stats.graded += batch.length;
-      budget -= batch.length;
-      for (let j = 0; j < batch.length && candidates.length < count; j++) {
-        const m = batch[j];
-        const grade = grades[j];
-        if (!isSoloShowcase(grade)) { tallyReject(grade); continue; }
-        stats.singles_kept++;
-        candidates.push({
-          kind: 'single', media: m, grade,
-          project_id: m.project_id,
-          customer_name: m.customer_name,
-          address_city: m.address_city,
-          package_tier: m.package_tier,
-        });
-      }
-    }
+    const pool = (singleRows || []).filter(m => !usedIds.has(m.id));
+    await gradeAndCollect(pool, m => m.url, (m, grade) => {
+      if (!isSoloShowcase(grade)) { tallyReject(grade); return; }
+      // Claim the project only on a PASS: a project's lower-ranked showcase
+      // photo still gets a chance if its top-metadata photo was a detail /
+      // before / in-progress shot (which would have been rejected above).
+      if (m.project_id && seenProjects.has(m.project_id)) return;
+      if (m.project_id) seenProjects.add(m.project_id);
+      stats.singles_kept++;
+      candidates.push({
+        kind: 'single', media: m, grade,
+        project_id: m.project_id,
+        customer_name: m.customer_name,
+        address_city: m.address_city,
+        package_tier: m.package_tier,
+      });
+    });
   }
 
   return { candidates, stats };
@@ -314,7 +315,7 @@ Return ONLY the caption text. No quotes, no preamble, no markdown.`;
 
   try {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 25000);
+    const timer = setTimeout(() => ctrl.abort(), 15000);
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       signal: ctrl.signal,
