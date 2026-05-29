@@ -162,18 +162,22 @@ async function pickCandidates(tenantId, count) {
 // uploads the result to Blob. Returns the public URL or null on failure.
 async function renderPair(tenantSlug, candidate) {
   try {
-    const buffer = await renderBeforeAfterPair({
+    // renderBeforeAfterPair returns { buffer, width, height, mime } not a raw
+    // Buffer. Passing the wrapper object to put() silently fails with a type
+    // error caught as 'pair render failed' (May 29 incident on media_pool
+    // b5ebab68). Always destructure the buffer field.
+    const result = await renderBeforeAfterPair({
       beforeUrl: candidate.before.url,
       afterUrl: candidate.after.url,
       format: 'landscape',
     });
-    if (!buffer) return null;
+    if (!result?.buffer) return null;
     const hash = crypto.createHash('sha256')
       .update(`${candidate.before.id}|${candidate.after.id}`).digest('hex').slice(0, 12);
     const blob = await put(
       `${tenantSlug}/generator/pairs/${hash}-landscape.jpg`,
-      buffer,
-      { access: 'public', contentType: 'image/jpeg' },
+      result.buffer,
+      { access: 'public', contentType: result.mime || 'image/jpeg' },
     );
     return blob.url;
   } catch (e) {
