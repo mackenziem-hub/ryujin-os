@@ -105,8 +105,11 @@ tr:hover .mx-cell{background:rgba(74,158,255,0.03)}
 
 /* simulator */
 .sim-grid{display:grid;grid-template-columns:1.3fr 1fr;gap:14px}
-.sim-roster{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;align-content:start}
-.sim-card{background:rgba(14,22,40,0.9);border:1px solid var(--border);border-radius:11px;padding:11px}
+.sim-arrows-wrap{position:relative}
+.sim-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1;overflow:visible}
+.sim-roster{position:relative;z-index:2;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-content:start}
+.sim-card{background:rgba(14,22,40,0.92);border:1px solid var(--border);border-radius:11px;padding:11px;transition:all .18s}
+.sim-card.absorb{border-color:rgba(34,211,238,0.6);box-shadow:0 0 14px rgba(34,211,238,0.28)}
 .sim-card.out{opacity:0.55;border-color:rgba(248,113,113,0.45);background:rgba(248,113,113,0.06)}
 .sim-card-top{display:flex;align-items:center;gap:8px}
 .sim-roles{margin-top:8px;display:flex;flex-wrap:wrap;gap:4px}
@@ -135,6 +138,12 @@ tr:hover .mx-cell{background:rgba(74,158,255,0.03)}
 .frow.covered{background:rgba(34,211,238,0.06);border-color:rgba(34,211,238,0.22)}
 .frow.covered .fn{color:var(--cyan)}
 .frow.fine .fn{color:var(--green)}
+.fstat{font-family:'Orbitron',sans-serif;font-size:0.5em;font-weight:800;letter-spacing:1px;padding:3px 7px;border-radius:5px;flex-shrink:0}
+.fstat.ok{color:var(--green);background:rgba(74,222,128,0.12);border:1px solid rgba(74,222,128,0.3)}
+.fstat.info{color:var(--cyan);background:rgba(34,211,238,0.1);border:1px solid rgba(34,211,238,0.3)}
+.fstat.bad{color:var(--red);background:rgba(248,113,113,0.12);border:1px solid rgba(248,113,113,0.35)}
+.istat.bad{box-shadow:0 0 16px rgba(248,113,113,0.18)}.istat.warn{box-shadow:0 0 16px rgba(250,204,21,0.15)}.istat.ok{box-shadow:0 0 14px rgba(74,222,128,0.12)}
+.istat .n{transition:color .18s}
 .sim-hint{font-size:0.74em;color:var(--text-muted);margin-top:10px;line-height:1.5}
 
 /* edit modal */
@@ -153,7 +162,7 @@ tr:hover .mx-cell{background:rgba(74,158,255,0.03)}
 .legend span{display:inline-flex;align-items:center;gap:5px}
 .lg-sw{width:14px;height:14px;border-radius:4px;border:1px solid}
 .edit-hint{font-size:0.68em;color:var(--cyan);font-family:'Share Tech Mono',monospace;margin-left:6px}
-@media (max-width:820px){.sim-grid{grid-template-columns:1fr}.map-cols{flex-wrap:wrap}.brand-name .dim{display:none}}
+@media (max-width:820px){.sim-grid{grid-template-columns:1fr}.sim-roster{grid-template-columns:1fr}.map-cols{flex-wrap:wrap}.brand-name .dim{display:none}}
 </style>
 <script src="/assets/nav-buttons.js" defer></script>
 </head>
@@ -202,10 +211,13 @@ tr:hover .mx-cell{background:rgba(74,158,255,0.03)}
       <div class="sim-grid">
         <div>
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-            <div class="health-lbl" style="font-size:0.62em">SIMULATE TIME OFF / OVERLOAD - toggle anyone OUT</div>
+            <div class="health-lbl" style="font-size:0.62em">TEAM MEMBER AVAILABILITY - toggle anyone OUT</div>
             <button class="btn ghost" onclick="clearOut()">RESET</button>
           </div>
-          <div class="sim-roster" id="simRoster"></div>
+          <div class="sim-arrows-wrap">
+            <svg class="sim-svg" id="simSvg"></svg>
+            <div class="sim-roster" id="simRoster"></div>
+          </div>
         </div>
         <div class="sim-panel">
           <h3>IMPACT SUMMARY</h3>
@@ -227,7 +239,7 @@ tr:hover .mx-cell{background:rgba(74,158,255,0.03)}
       <div class="field"><label>Nickname</label><input id="f_nick" placeholder="optional"></div>
       <div class="field"><label>Pillar</label>
         <select id="f_pillar">
-          <option>Owner</option><option>Sales</option><option>Production</option><option>Service</option><option>Materials</option><option>Finance</option><option>Admin</option>
+          <option>Owner</option><option>Sales</option><option>Marketing</option><option>Production</option><option>Service</option><option>Materials</option><option>Finance</option><option>Payroll</option><option>Admin</option>
         </select>
       </div>
     </div>
@@ -269,51 +281,63 @@ let dirty = false;
 
 // ---- seeded default roster (real Plus Ultra team; editable + persisted) ----
 const SEED = {
-  functions: ['Sales','Production','Service','Materials','Finance','Admin'],
+  functions: ['Sales','Marketing','Production','Service','Materials','Finance','Payroll','Admin'],
   people: [
-    { id:'mac', name:'Mackenzie Mazerolle', nick:'Mac', title:'Owner / Operator', pillar:'Owner',
-      primaryObjective:'Pricing, sales closes, customer escalations, final sign-off',
-      secondaryObjective:'Universal field and ops backstop (covers any seat in a pinch)',
-      roles:{ Sales:'backup', Service:'backup' } },
-    { id:'darcy', name:'Darcy Mazerolle', nick:'Darcy', title:'Outside Sales Rep', pillar:'Sales',
-      primaryObjective:'Self-sourced canvassing and closing active proposals',
-      secondaryObjective:'Pipeline follow-up and canvassing support',
-      roles:{ Sales:'primary' } },
-    { id:'diego', name:'Diego', nick:'', title:'Operations Specialist', pillar:'Service',
-      primaryObjective:'Service calls and sales support / ops coordination',
-      secondaryObjective:'On-tools production when the crew is short',
-      roles:{ Service:'primary', Sales:'backup', Production:'backup' } },
-    { id:'rj', name:'RJ', nick:'', title:'Lead Installer (in-house)', pillar:'Production',
+    { id:'mac', name:'Mackenzie Mazerolle', nick:'Mac', title:'CEO', pillar:'Owner',
+      primaryObjective:'Vision, pricing sign-off, sales closes, final approvals',
+      secondaryObjective:'Universal backstop across every seat',
+      roles:{ Sales:'primary', Marketing:'backup', Service:'backup' } },
+    { id:'marketing', name:'Head of Marketing', nick:'', title:'Head of Marketing', pillar:'Marketing',
+      primaryObjective:'Brand, lead generation, ad campaigns, content',
+      secondaryObjective:'Sales pipeline support',
+      roles:{ Marketing:'primary', Sales:'backup' } },
+    { id:'opsmgmt', name:'Head of Operations Management', nick:'', title:'Head of Operations Management', pillar:'Service',
+      primaryObjective:'Run day-to-day operations, scheduling, crew coordination',
+      secondaryObjective:'Step into production or admin when overloaded',
+      roles:{ Service:'primary', Production:'backup', Materials:'backup', Admin:'backup' } },
+    { id:'cat', name:'Catherine Zeta', nick:'Cat', title:'Executive Assistant', pillar:'Admin',
+      primaryObjective:'Lead nurture, scheduling, comms, hiring funnel',
+      secondaryObjective:'Finance-draft and customer-comms backup',
+      roles:{ Admin:'primary', Finance:'backup' } },
+    { id:'melodie', name:'Melodie', nick:'', title:'Administrative Assistant', pillar:'Admin',
+      primaryObjective:'Office admin, data entry, document and booking logging',
+      secondaryObjective:'Payroll, finance and admin backup',
+      roles:{ Payroll:'backup', Finance:'backup', Admin:'backup' } },
+    { id:'payroll', name:'Head of Payroll', nick:'', title:'Head of Payroll', pillar:'Payroll',
+      primaryObjective:'Payroll runs, paysheets, sub and crew pay, books',
+      secondaryObjective:'Finance reporting backup',
+      roles:{ Payroll:'primary', Finance:'primary' } },
+    { id:'diego', name:'Diego', nick:'', title:'Operations Specialist + Installer', pillar:'Service',
+      primaryObjective:'Service calls, site checks, hands-on install',
+      secondaryObjective:'Production and service coverage',
+      roles:{ Service:'backup', Production:'backup' } },
+    { id:'aj', name:'Arielle', nick:'AJ', title:'Production Assistant + Installer', pillar:'Production',
+      primaryObjective:'On-site production support, dumps, errands, QC',
+      secondaryObjective:'Warehouse / materials runner backup',
+      roles:{ Production:'backup', Materials:'backup' } },
+    { id:'pavanjot', name:'Pavanjot', nick:'', title:'Warehouse Assistant + Laborer', pillar:'Materials',
+      primaryObjective:'Warehouse, materials staging, equipment, yard, deliveries',
+      secondaryObjective:'On-call production labour',
+      roles:{ Materials:'primary', Production:'backup' } },
+    { id:'sukhsahib', name:'Sukhsahib', nick:'', title:'New Hire', pillar:'Production',
+      primaryObjective:'Install crew (in training)',
+      secondaryObjective:'Materials and labour support',
+      roles:{ Production:'backup', Materials:'backup' } },
+    { id:'rj', name:'RJ', nick:'', title:'Lead Installer (in-house crew)', pillar:'Production',
       primaryObjective:'Lead the in-house install crew',
       secondaryObjective:'Materials staging backup',
       roles:{ Production:'primary', Materials:'backup' } },
-    { id:'aj', name:'Arielle', nick:'AJ', title:'Production Assistant', pillar:'Production',
-      primaryObjective:'Dumps, errands, canvassing, on-site QC',
-      secondaryObjective:'Warehouse / logistics runner backup',
-      roles:{ Production:'backup', Materials:'backup' } },
-    { id:'pavanjot', name:'Pavanjot', nick:'', title:'Warehouse Manager', pillar:'Materials',
-      primaryObjective:'Materials, equipment and yard; on-call logistics (Mon to Fri)',
-      secondaryObjective:'On-call production labour flex',
-      roles:{ Materials:'primary', Production:'backup' } },
-    { id:'atlantic', name:'Atlantic Roofing (Ryan)', nick:'Atlantic', title:'Subcontract Crew', pillar:'Production', external:true,
+    { id:'atlantic', name:'Atlantic Roofing', nick:'Atlantic', title:'Subcontractor', pillar:'Production', external:true,
       primaryObjective:'Overflow install capacity (external)',
       secondaryObjective:'Backstop only',
-      roles:{ Production:'backup' } },
-    { id:'cat', name:'Catherine Zeta', nick:'Cat', title:'Executive Assistant', pillar:'Admin',
-      primaryObjective:'Lead nurture, scheduling, comms, hiring funnel',
-      secondaryObjective:'Customer comms and finance-draft backup',
-      roles:{ Admin:'primary', Service:'backup', Finance:'backup' } },
-    { id:'melodie', name:'Melodie', nick:'', title:'Office Manager', pillar:'Finance',
-      primaryObjective:'Books / finance plus AM phone (8 to 12:30)',
-      secondaryObjective:'Admin and customer-service backup',
-      roles:{ Finance:'primary', Admin:'backup' } }
+      roles:{ Production:'backup' } }
   ],
   updatedAt: null
 };
 
-const PILLAR_COLORS = { Owner:'#fb923c', Sales:'#22d3ee', Production:'#4ade80', Service:'#4a9eff', Materials:'#facc15', Finance:'#7c3aed', Admin:'#a78bfa' };
+const PILLAR_COLORS = { Owner:'#fb923c', Sales:'#22d3ee', Marketing:'#f472b6', Production:'#4ade80', Service:'#4a9eff', Materials:'#facc15', Finance:'#7c3aed', Payroll:'#2dd4bf', Admin:'#a78bfa' };
 
-function initials(p){ const s=(p.nick||p.name||'?').trim(); const parts=s.split(/\s+/); return ((parts[0]||'?')[0]+(parts[1]?parts[1][0]:'')).toUpperCase(); }
+function initials(p){ const s=(p.nick||p.name||'?').trim(); const parts=s.split(/\s+/).filter(w=>!/^(of|the|and|&|\+|-)$/i.test(w)); return ((parts[0]||'?')[0]+(parts[1]?parts[1][0]:'')).toUpperCase(); }
 function pcolor(p){ return PILLAR_COLORS[p.pillar] || '#4a9eff'; }
 function fnsOf(){ return CONFIG.functions || []; }
 function byId(id){ return CONFIG.people.find(p=>p.id===id); }
@@ -339,6 +363,9 @@ async function loadConfig(){
   setSave(loaded?'saved':'', loaded?'synced':'default');
   renderAll();
 }
+// Shape-only. A persisted config is the tenant's source of truth and is loaded as-is
+// (SEED is the first-install template, not a live-migrating schema). Roster changes to an
+// already-seeded tenant are made in-UI or via a one-time data write, never auto-mutated on load.
 function normalize(c){ c.functions=Array.isArray(c.functions)&&c.functions.length?c.functions:SEED.functions.slice(); c.people=(c.people||[]).map(p=>({roles:{},...p})); return c; }
 
 async function saveConfig(){
@@ -414,7 +441,7 @@ function backedByList(p){ // functions where p is primary -> the backups
   return res;
 }
 function renderMap(){
-  const pillars=['Owner','Sales','Production','Service','Materials','Finance','Admin'];
+  const pillars=['Owner','Sales','Marketing','Production','Service','Materials','Finance','Payroll','Admin'];
   const used=pillars.filter(pl=>CONFIG.people.some(p=>p.pillar===pl));
   let h='';
   used.forEach(pl=>{
@@ -484,7 +511,7 @@ function renderSim(){
 function toggleOut(pid){ if(outSet.has(pid)) outSet.delete(pid); else outSet.add(pid); renderSim(); }
 function clearOut(){ outSet.clear(); renderSim(); }
 function computeImpact(){
-  const fns=fnsOf(); let gaps=0, covered=0, atRisk=0; let rows='';
+  const fns=fnsOf(); let gaps=0, covered=0, atRisk=0; let rows=''; const absorbers=new Set();
   fns.forEach(fn=>{
     const prims=primaryOf(fn); const primOut=prims.filter(p=>outSet.has(p.id)); const primIn=prims.filter(p=>!outSet.has(p.id));
     if(prims.length===0){ rows+=frow(fn,'gap','<b>No owner assigned.</b>'); gaps++; return; }
@@ -492,7 +519,7 @@ function computeImpact(){
     if(primIn.length>0){ rows+=frow(fn,'fine','Covered (another primary in).'); return; }
     atRisk++;
     const bk=backupsOf(fn,outSet);
-    if(bk.length>0){ covered++; rows+=frow(fn,'covered',`<b>${primOut.map(p=>esc(dispName(p))).join(', ')}</b> out &rarr; absorbed by <b>${bk.map(p=>esc(dispName(p))).join(', ')}</b>`); }
+    if(bk.length>0){ covered++; bk.forEach(b=>absorbers.add(b.id)); rows+=frow(fn,'covered',`<b>${primOut.map(p=>esc(dispName(p))).join(', ')}</b> out &rarr; absorbed by <b>${bk.map(p=>esc(dispName(p))).join(', ')}</b>`); }
     else { gaps++; rows+=frow(fn,'gap',`<b>${primOut.map(p=>esc(dispName(p))).join(', ')}</b> out, no available backup`); }
   });
   $('simImpact').innerHTML=
@@ -502,8 +529,28 @@ function computeImpact(){
   $('simRows').innerHTML=rows;
   $('simHint').textContent = outSet.size===0 ? 'Everyone available. Toggle people OUT to see who covers their primary and where a gap opens.'
     : (gaps? 'Red rows are uncovered. Add a backup on the matrix for those functions to close the gap.' : 'All primaries that are out have an available backup. No hard gaps.');
+  document.querySelectorAll('#simRoster .sim-card').forEach(c=>c.classList.toggle('absorb', absorbers.has(c.dataset.pid)));
+  drawSimArrows();
 }
-function frow(fn,cls,det){ return `<div class="frow ${cls}"><span class="fn">${esc(fn)}</span><span class="det">${det}</span></div>`; }
+function frow(fn,cls,det){ const m={fine:['OPTIMAL','ok'],covered:['COVERED','info'],gap:['GAP','bad']}[cls]||['','ok'];
+  return `<div class="frow ${cls}"><span class="fn">${esc(fn)}</span><span class="det">${det}</span><span class="fstat ${m[1]}">${m[0]}</span></div>`; }
+function drawSimArrows(){
+  const svg=$('simSvg'); if(!svg) return; const wrap=svg.parentElement; const wr=wrap.getBoundingClientRect(); let paths='';
+  if(outSet.size){
+    fnsOf().forEach(fn=>{
+      const prims=primaryOf(fn); const primOut=prims.filter(p=>outSet.has(p.id)); const primIn=prims.filter(p=>!outSet.has(p.id));
+      if(!primOut.length || primIn.length) return;
+      const bks=backupsOf(fn,outSet); if(!bks.length) return;
+      primOut.forEach(po=>{ const a=document.querySelector(`#simRoster .sim-card[data-pid="${po.id}"]`); if(!a) return; const ra=a.getBoundingClientRect();
+        bks.forEach(bk=>{ const b=document.querySelector(`#simRoster .sim-card[data-pid="${bk.id}"]`); if(!b) return; const rb=b.getBoundingClientRect();
+          const x1=ra.left-wr.left+ra.width/2, y1=ra.top-wr.top+ra.height/2, x2=rb.left-wr.left+rb.width/2, y2=rb.top-wr.top+rb.height/2; const my=(y1+y2)/2;
+          paths+=`<path d="M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}" fill="none" stroke="#22d3ee" stroke-width="1.6" opacity="0.65" marker-end="url(#simArr)"/>`;
+        });
+      });
+    });
+  }
+  svg.innerHTML=`<defs><marker id="simArr" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#22d3ee"/></marker></defs>`+paths;
+}
 
 // ---------- edit person ----------
 function openEdit(pid){ editingId=pid; const p=byId(pid)||{}; $('modalTitle').textContent= pid?'EDIT PERSON':'ADD PERSON';
@@ -526,7 +573,8 @@ function deletePerson(){ if(!editingId) return; if(!confirm('Remove this person 
 // ---------- view + edit toggles ----------
 function setView(v){ currentView=v; document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.view===v));
   document.querySelectorAll('.view').forEach(el=>el.classList.remove('active')); $('view-'+v).classList.add('active');
-  if(v==='map') requestAnimationFrame(drawMapLines); }
+  if(v==='map') requestAnimationFrame(drawMapLines);
+  if(v==='sim') requestAnimationFrame(drawSimArrows); }
 function toggleEdit(){ editMode=!editMode; $('editBtn').classList.toggle('on',editMode);
   $('mxEditHint').style.display= editMode?'inline':'none';
   // add "+ add person" affordance into health strip when editing
@@ -538,7 +586,7 @@ function renderAll(){ renderHealth(); renderMatrix(); renderMap(); renderSim();
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 window.addEventListener('beforeunload',e=>{ if(dirty){ e.preventDefault(); e.returnValue=''; } });
-window.addEventListener('resize',()=>{ if(currentView==='map') drawMapLines(); });
+window.addEventListener('resize',()=>{ if(currentView==='map') drawMapLines(); else if(currentView==='sim') drawSimArrows(); });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ if($('modalBg').classList.contains('open')) closeModal(); else window.location.href='administration.html'; } });
 
 loadConfig();
