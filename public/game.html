@@ -2081,6 +2081,11 @@ function renderWorld() {
 // CSS transition completes (STEP_MS), snap and let the next tick queue
 // the follow-up step. Buildings are AABB-rejected at queue time.
 function updateOverworld(dtMs) {
+  // Suppress map movement during the sector-entry walk-to-door window
+  // (state._entering is set for ~350ms by enterSector). Without this
+  // guard the loop keeps advancing state.player and rewriting
+  // #playerAvatar's left/top, fighting the walking-in CSS transition.
+  if (state._entering) return;
   const p = state.player;
   // Step in progress? Wait for it to finish before queuing another.
   if (p.stepEndsAt && performance.now() < p.stepEndsAt) return;
@@ -2228,8 +2233,13 @@ function enterSector() {
     overworldAv.style.left = sec.x + '%';
     overworldAv.style.top  = (sec.y - 1) + '%';
   }
+  // Pause the overworld game loop so it doesn't overwrite #playerAvatar
+  // styles or advance state.player during the walking-in transition.
+  // Cleared inside the setTimeout right before viewFlash swaps to SECTOR.
+  state._entering = true;
   hideInteractPrompt();
   setTimeout(() => {
+    state._entering = false;
     // Spawn at the bottom door of the interior so walk-in phase 2 can
     // animate the player up to the talk position at y=60. Without
     // reduced motion: y=92 (door). With reduced motion: y=60 (instant).
@@ -2774,6 +2784,11 @@ function _buildSectorChoices(sec) {
     }
     case 'MIT': {
       const top3 = brief.top3 || [];
+      // t.overdueCount is the tenant-wide overdue total (used by the
+      // overworld Production alert pip too). Snapshot does not expose a
+      // per-assignee overdue rollup, so label this as the team total
+      // rather than "Your overdue" to avoid overstating Mac's queue.
+      // Per-assignee filter wires up when t.overdueByAssignee lands.
       const overdue = t.overdueCount || 0;
       const myToday = (t.activeToday || []).filter(x => /macken/i.test(String(x.assignee || ''))).length;
       const pipeSugg = (s.pipelineSuggestions && s.pipelineSuggestions.openCount) || 0;
@@ -2783,10 +2798,10 @@ function _buildSectorChoices(sec) {
         : 'The morning brief is clear. Nothing flagged in top-3.';
       return [
         { label: `Today's act-now (${top3.length})`, kind: 'reply', body: top3Body },
-        { label: `Your overdue (${overdue})`,
+        { label: `Team overdue (${overdue})`,
           kind: overdue > 0 ? 'href' : 'reply',
           href: '/admin.html?page=tickets',
-          body: overdue > 0 ? null : 'Zero overdue. Plate clear.' },
+          body: overdue > 0 ? null : 'Zero overdue across the team. Plate clear.' },
         { label: `On your plate today (${myToday})`,
           kind: myToday > 0 ? 'href' : 'reply',
           href: '/admin.html?page=tickets',
