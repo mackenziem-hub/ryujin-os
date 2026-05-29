@@ -153,7 +153,7 @@ async function handler(req, res) {
     if (id) {
       const { data, error } = await supabaseAdmin
         .from('workorders')
-        .select('*, estimate:estimates(estimate_number,share_token,complexity), paysheet:paysheets(job_id,status,total)')
+        .select('*, estimate:estimates(estimate_number,share_token,complexity,final_accepted_total), paysheet:paysheets(job_id,status,total)')
         .eq('tenant_id', tenantId).eq('id', id).single();
       if (error) return res.status(404).json({ error: 'Work order not found' });
       return res.json(data);
