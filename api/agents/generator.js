@@ -197,11 +197,15 @@ async function draftCaption({ brand, candidate, kind }) {
     };
   }
 
+  // PRIVACY: never pass customer_name or project name to Claude. project_files
+  // and projects.name in this codebase are commonly "265 Irving Blvd" or
+  // similar street addresses, so leaking them into the prompt let Claude
+  // faithfully write street addresses into public social posts. Only city
+  // and package tier are safe to pass.
   const ctx = [
     `Source: ${kind === 'pair' ? 'before/after photo pair' : 'single roofing photo'}`,
     candidate.address_city ? `Location: ${candidate.address_city}, NB` : 'Location: greater Moncton area',
     candidate.package_tier ? `System: ${candidate.package_tier}` : null,
-    candidate.customer_name ? `Project: ${candidate.customer_name}` : null,
   ].filter(Boolean).join('\n');
 
   const prompt = `Write ONE Facebook social media caption for Plus Ultra Roofing.
@@ -217,10 +221,12 @@ ${ctx}
 
 ## Rules
 - 2 to 4 sentences. Sweet spot 200-400 chars.
-- Open with a clear, specific hook tied to the project.
+- Open with a clear, specific hook tied to the work.
 - ${kind === 'pair' ? 'Frame the transformation honestly. Reference the work that happened.' : 'Show pride in the craft without exaggeration.'}
 - End with the brand CTA or a soft invitation to book a free inspection.
 - 0 to 3 hashtags at the very end if they help. Skip if they feel forced.
+- NEVER mention street addresses, house numbers, or specific street names. City and province only.
+- NEVER mention customer names. Generic references only ("a Riverview homeowner", "this home").
 - NO em dashes. NO "just". NO "no surprises" / "no rush" style negations. NO "in this market". NO sci-fi or techy tone.
 - Plain English. Family-roofing voice. 3rd-gen pride without bragging.
 - Mention New Brunswick or Moncton if location was provided.

@@ -244,11 +244,12 @@ async function regenerateCaption({ tenantId, clipId, brand }) {
     return { error: 'ANTHROPIC_API_KEY missing — cannot regenerate', status: 503 };
   }
 
+  // PRIVACY: same constraint as the agent. customer_name + project name are
+  // often street addresses in this codebase; never expose to the caption LLM.
   const ctx = [
     `Source: ${kind === 'pair' ? 'before/after photo pair' : 'single roofing photo'}`,
     after.address_city ? `Location: ${after.address_city}, NB` : 'Location: greater Moncton area',
     after.package_tier ? `System: ${after.package_tier}` : null,
-    after.customer_name ? `Project: ${after.customer_name}` : null,
   ].filter(Boolean).join('\n');
 
   const prompt = `Write ONE Facebook social media caption for Plus Ultra Roofing.
@@ -267,10 +268,12 @@ ${clip.caption_suggestion || '(none)'}
 
 ## Rules
 - 2 to 4 sentences. Sweet spot 200-400 chars.
-- Open with a clear, specific hook tied to the project.
+- Open with a clear, specific hook tied to the work.
 - ${kind === 'pair' ? 'Frame the transformation honestly.' : 'Show pride in the craft without exaggeration.'}
 - End with the brand CTA or a soft invitation to book a free inspection.
 - 0 to 3 hashtags at the end if they help.
+- NEVER mention street addresses, house numbers, or specific street names. City and province only.
+- NEVER mention customer names. Generic references only ("a Riverview homeowner", "this home").
 - NO em dashes. NO "just". NO negations. NO sci-fi tone.
 - Plain English. Family-roofing voice.
 

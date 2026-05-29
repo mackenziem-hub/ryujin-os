@@ -211,12 +211,15 @@ async function scanCompanyCamArchive(tenantId) {
 
 async function scanEstimatePhotos(tenantId) {
   console.log('\n[3/4] estimate_photos');
+  // estimates has no address/city columns; those live on customers. Pull
+  // the customer join so we can denormalize city for caption context.
   const { data: estimateRows, error: estErr } = await supabase
-    .from('estimates').select('id, customer_id, address, city')
+    .from('estimates')
+    .select('id, customer_id, customer:customers(city)')
     .eq('tenant_id', tenantId)
     .limit(2000);
   if (estErr) { console.error('  estimate index failed:', estErr.message); return { inserted: 0, skipped: 0 }; }
-  const estById = new Map((estimateRows || []).map(e => [e.id, e]));
+  const estById = new Map((estimateRows || []).map(e => [e.id, { ...e, city: e.customer?.city || null }]));
   const estIds = (estimateRows || []).map(e => e.id);
   if (!estIds.length) {
     console.log('  no estimates to scan');

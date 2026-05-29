@@ -187,21 +187,24 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
 
 <script>
 (function(){
-  const TENANT_SLUG = (window.RYUJIN_TENANT_SLUG && window.RYUJIN_TENANT_SLUG()) || 'plus-ultra';
+  // ryujin-slug.js exposes RYUJIN_TENANT_SLUG as a string (cached) + a fresh
+  // getter function. auth-guard.js exposes window.RyujinAuth.headers().
+  // Initial v1 of this page mis-typed both as function calls which crashed
+  // the IIFE before loadQueue could fire.
+  const TENANT_SLUG =
+    (typeof window.getRyujinTenantSlug === 'function' && window.getRyujinTenantSlug())
+    || window.RYUJIN_TENANT_SLUG
+    || 'plus-ultra';
   const POLL_MS = 30000;
   let state = { drafts: [], approved_pending: [], scheduled: [], posted: [], counts: {} };
   let pollTimer = null;
   let inflight = false;
 
-  function authToken(){
-    try { return (window.RYUJIN_TOKEN && window.RYUJIN_TOKEN()) || localStorage.getItem('ryujin_token') || ''; }
-    catch(e){ return ''; }
-  }
-
   function authHeaders(extra){
     const h = Object.assign({ 'x-tenant-id': TENANT_SLUG }, extra || {});
-    const t = authToken();
-    if (t) h['Authorization'] = 'Bearer ' + t;
+    if (window.RyujinAuth && typeof window.RyujinAuth.headers === 'function') {
+      Object.assign(h, window.RyujinAuth.headers());
+    }
     return h;
   }
 
