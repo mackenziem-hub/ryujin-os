@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0e1a35">
+<title>Services Calendar Workflow · Internal Ops Review</title>
+<link rel="icon" href="/apple-touch-icon.png">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --navy:#0e1a35; --navy-2:#1a2950; --navy-3:#243463;
+  --gold:#facc15; --gold-2:#fde047; --gold-soft:#fde68a;
+  --paper:#fafaf7; --paper-2:#f3f1ea;
+  --ink:#1a1f2e; --ink-dim:#4a5468; --ink-muted:#6b7385;
+  --border:#e5e2d8;
+  --green:#16a34a; --green-bg:#dcfce7;
+  --amber:#d97706; --amber-bg:#fef3c7;
+  --red:#dc2626; --red-bg:#fee2e2;
+  --teal:#0d9488;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{scroll-behavior:smooth;scroll-padding-top:80px}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0a0e1a;color:var(--ink);line-height:1.6;-webkit-font-smoothing:antialiased}
+
+.topbar{position:sticky;top:0;z-index:50;background:var(--navy);color:#fff;padding:12px 24px;display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid var(--gold)}
+.brand{font-weight:900;letter-spacing:2px;font-size:0.92em}
+.brand .accent{color:var(--gold)}
+.brand .x{color:rgba(255,255,255,0.4);margin:0 8px;font-weight:400}
+.topbar .label{font-size:0.74em;color:rgba(255,255,255,0.7);font-weight:600;letter-spacing:1px;text-transform:uppercase}
+
+.slide{min-height:96vh;padding:56px 32px;display:flex;align-items:center;justify-content:center;position:relative;border-bottom:1px solid rgba(255,255,255,0.05)}
+.slide-inner{max-width:1080px;width:100%}
+.slide-num{position:absolute;top:24px;right:32px;font-size:0.72em;letter-spacing:3px;color:rgba(255,255,255,0.4);font-weight:700}
+.slide-kicker{font-size:0.74em;letter-spacing:3px;color:var(--gold);font-weight:800;text-transform:uppercase;margin-bottom:18px}
+.slide h1{font-size:3em;font-weight:900;letter-spacing:-0.02em;line-height:1.05;color:#fff;margin-bottom:18px}
+.slide h2{font-size:2em;font-weight:900;letter-spacing:-0.015em;line-height:1.1;color:#fff;margin-bottom:18px}
+.slide h3{font-size:1.2em;font-weight:800;color:var(--gold-2);margin:24px 0 10px;letter-spacing:-0.005em}
+.slide p{color:rgba(255,255,255,0.82);margin-bottom:14px;font-size:1.02em;line-height:1.6}
+.slide ul,.slide ol{margin:8px 0 18px 22px;color:rgba(255,255,255,0.82)}
+.slide li{margin-bottom:8px}
+.slide strong{color:#fff;font-weight:700}
+
+.slide.light{background:var(--paper)}
+.slide.light h1,.slide.light h2{color:var(--navy)}
+.slide.light h3{color:var(--navy)}
+.slide.light p{color:var(--ink-dim)}
+.slide.light ul,.slide.light ol{color:var(--ink-dim)}
+.slide.light strong{color:var(--ink)}
+.slide.light .slide-num{color:rgba(14,26,53,0.4)}
+.slide.light .slide-kicker{color:var(--navy);background:var(--gold);display:inline-block;padding:6px 14px;border-radius:4px;margin-bottom:18px}
+
+.slide.gold{background:linear-gradient(135deg,#facc15 0%,#eab308 100%)}
+.slide.gold h1,.slide.gold h2,.slide.gold h3{color:var(--navy)}
+.slide.gold p,.slide.gold li{color:rgba(14,26,53,0.85)}
+.slide.gold strong{color:var(--navy)}
+.slide.gold .slide-num{color:rgba(14,26,53,0.5)}
+.slide.gold .slide-kicker{color:var(--gold);background:var(--navy);display:inline-block;padding:6px 14px;border-radius:4px;margin-bottom:18px}
+
+.cover{background:linear-gradient(180deg,rgba(14,26,53,0.2) 0%,rgba(14,26,53,0.95) 100%),linear-gradient(135deg,#0e1a35 0%,#1a2950 60%,#243463 100%);min-height:100vh}
+.cover .slide-inner{max-width:980px}
+.cover .kicker{font-size:0.78em;letter-spacing:4px;color:var(--gold);font-weight:800;text-transform:uppercase;margin-bottom:18px}
+.cover h1{font-size:3.6em;text-shadow:0 2px 16px rgba(0,0,0,0.3)}
+.cover .sub{font-size:1.2em;color:rgba(255,255,255,0.92);max-width:760px;margin-bottom:36px}
+.cover-meta{display:flex;flex-wrap:wrap;gap:32px;padding:24px 28px;background:rgba(14,26,53,0.65);backdrop-filter:blur(10px);border:1px solid rgba(250,204,21,0.3);border-radius:10px}
+.cover-meta > div b{display:block;font-size:0.7em;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px;color:var(--gold-2);font-weight:700}
+.cover-meta > div .v{font-size:0.95em;color:rgba(255,255,255,0.95);font-weight:500}
+
+.stat-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin:18px 0 28px}
+.stat{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:20px 18px;text-align:center}
+.stat .v{font-size:2em;font-weight:900;color:#fff;letter-spacing:-0.02em;line-height:1}
+.stat .v.gold{color:var(--gold)}
+.stat .l{font-size:0.72em;color:rgba(255,255,255,0.7);font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-top:6px}
+.slide.light .stat{background:#fff;border-color:var(--border)}
+.slide.light .stat .v{color:var(--navy)}
+.slide.light .stat .l{color:var(--ink-muted)}
+
+.touch{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-left:4px solid var(--gold);border-radius:10px;padding:24px 28px;margin:16px 0}
+.touch-head{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-bottom:14px;flex-wrap:wrap}
+.touch-head .when{font-size:0.74em;letter-spacing:2px;text-transform:uppercase;color:var(--gold);font-weight:800;margin-bottom:4px}
+.touch-head h3{margin:0;color:#fff;font-size:1.35em;font-family:'Inter';font-weight:800}
+.touch-body{background:#0a0e1a;border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:18px 22px;font-family:'JetBrains Mono',monospace;font-size:0.88em;line-height:1.65;color:rgba(255,255,255,0.92);white-space:pre-wrap;word-wrap:break-word}
+
+.guard{background:rgba(217,119,6,0.1);border:1px solid rgba(217,119,6,0.4);border-left:4px solid var(--amber);border-radius:10px;padding:22px 26px;margin:18px 0}
+.guard h4{font-size:0.74em;letter-spacing:2px;text-transform:uppercase;color:#fcd34d;font-weight:800;margin-bottom:10px}
+.guard p{margin-bottom:0}
+
+.branch{background:rgba(13,148,136,0.1);border:1px solid rgba(13,148,136,0.4);border-left:4px solid var(--teal);border-radius:10px;padding:22px 26px;margin:18px 0}
+.branch h4{font-size:0.74em;letter-spacing:2px;text-transform:uppercase;color:#5eead4;font-weight:800;margin-bottom:10px}
+.branch p{margin-bottom:0}
+
+.branch-green{background:rgba(22,163,74,0.1);border:1px solid rgba(22,163,74,0.4);border-left:4px solid var(--green);border-radius:10px;padding:22px 26px;margin:18px 0}
+.branch-green h4{font-size:0.74em;letter-spacing:2px;text-transform:uppercase;color:#86efac;font-weight:800;margin-bottom:10px}
+.branch-green p{margin-bottom:0}
+
+.bx-table{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:12px;overflow:hidden;margin:18px 0 24px}
+.bx-table table{width:100%;border-collapse:collapse;font-size:0.92em}
+.bx-table th{text-align:left;background:rgba(14,26,53,0.6);color:var(--gold-2);padding:14px 18px;font-size:0.72em;letter-spacing:1.2px;text-transform:uppercase;font-weight:800}
+.bx-table td{padding:14px 18px;border-top:1px solid rgba(255,255,255,0.06);color:rgba(255,255,255,0.85);vertical-align:top}
+.bx-table td code{font-family:'JetBrains Mono',monospace;background:rgba(255,255,255,0.06);padding:2px 6px;border-radius:4px;font-size:0.92em;color:#fde047}
+.bx-table td b{color:#fff}
+.bx-table tr:hover td{background:rgba(255,255,255,0.03)}
+
+.signoff{list-style:none;margin:0;padding:0}
+.signoff li{background:rgba(14,26,53,0.06);border:1px solid rgba(14,26,53,0.12);border-left:4px solid var(--navy);padding:18px 22px;border-radius:8px;margin-bottom:12px;color:var(--ink);font-size:1em}
+.signoff li strong{color:var(--navy)}
+.signoff li::before{content:"\2610";color:var(--navy);font-weight:700;margin-right:10px}
+
+.nav-dots{position:fixed;right:24px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:8px;z-index:40}
+.nav-dots a{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,0.25);display:block;transition:transform 0.15s, background 0.15s}
+.nav-dots a:hover{background:var(--gold);transform:scale(1.4)}
+@media (max-width:880px){.nav-dots{display:none}}
+
+@media (max-width:720px){
+  .slide{padding:40px 22px}
+  .slide h1{font-size:2.2em}
+  .slide h2{font-size:1.5em}
+  .cover h1{font-size:2.4em}
+  .touch{padding:18px 20px}
+}
+
+footer{background:var(--navy);color:#fff;padding:36px 32px;text-align:center;border-top:3px solid var(--gold)}
+footer .brand{font-size:1.1em;margin-bottom:10px}
+footer .tag{font-size:0.85em;color:rgba(255,255,255,0.7);margin-bottom:20px;font-style:italic}
+footer .contact{font-size:0.85em;color:rgba(255,255,255,0.82);display:flex;gap:24px;justify-content:center;flex-wrap:wrap}
+footer .contact span{color:var(--gold-2);font-weight:700}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">PLUS <span class="accent">ULTRA</span> ROOFING <span class="x">·</span> OPS REVIEW</div>
+  <div class="label">Services Calendar Workflow · v1 · 2026-05-29</div>
+</div>
+
+<nav class="nav-dots">
+  <a href="#cover" title="Cover"></a>
+  <a href="#situation" title="The situation"></a>
+  <a href="#scope" title="What we are fixing"></a>
+  <a href="#monday" title="Monday immediate"></a>
+  <a href="#roundrobin" title="Round-robin"></a>
+  <a href="#types" title="Service types"></a>
+  <a href="#notify" title="Duplicate notifications"></a>
+  <a href="#rollout" title="Who does what"></a>
+  <a href="#signoff" title="Sign-off"></a>
+</nav>
+
+<section class="slide cover" id="cover">
+  <span class="slide-num">01 / 09</span>
+  <div class="slide-inner">
+    <div class="kicker">Internal Ops · Scheduling System</div>
+    <h1>Services Calendar<br>Workflow</h1>
+    <div class="sub">Moving from one shared services calendar to a round-robin that plugs in AJ and Diego, with buffers that survive cross-town travel and a single clean booking notification. Drafted Friday, ready to set up before Monday.</div>
+    <div class="cover-meta">
+      <div><b>Prepared for</b><span class="v">Mackenzie · Plus Ultra Roofing</span></div>
+      <div><b>Trigger</b><span class="v">Back to two crews Monday · Sackville plus cross-town inspections too tight</span></div>
+      <div><b>Status</b><span class="v">Draft for review · Cat implements in GHL</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide light" id="situation">
+  <span class="slide-num">02 / 09</span>
+  <div class="slide-inner">
+    <div class="slide-kicker">Why now</div>
+    <h2>One calendar got us through a tight week. We have outgrown it.</h2>
+    <p>When we were down to one crew, every booking funneled through a single general Services calendar. That was the right call for a brief moment.</p>
+    <p>By Monday we are back to two full crews, Diego and AJ, plus a production backfill (an old colleague on trial) that frees AJ and Diego to take inspections. The single shared calendar now creates two problems and a bug.</p>
+    <div class="stat-row">
+      <div class="stat"><div class="v gold">1 to 2</div><div class="l">Crews by Monday</div></div>
+      <div class="stat"><div class="v">1</div><div class="l">Shared calendar today</div></div>
+      <div class="stat"><div class="v">2 hrs</div><div class="l">Gap that proved too tight</div></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" id="scope">
+  <span class="slide-num">03 / 09</span>
+  <div class="slide-inner">
+    <div class="slide-kicker">Scope</div>
+    <h2>One quick fix, one redesign, one bug</h2>
+    <div class="bx-table">
+      <table>
+        <thead><tr><th>Layer</th><th>What it solves</th><th>Speed</th></tr></thead>
+        <tbody>
+          <tr><td><b>1 · Buffer</b></td><td>Inspections cannot stack so close that a cross-town drive runs us late</td><td>Immediate (Monday)</td></tr>
+          <tr><td><b>2 · Round-robin</b></td><td>Both AJ and Diego take inspections, distributed automatically, no double-booking</td><td>This week</td></tr>
+          <tr><td><b>3 · Service types</b></td><td>Each appointment type gets its own length and follow-up</td><td>This week, light build</td></tr>
+          <tr><td><b>Bug · Notifications</b></td><td>Two emails per booking, deduped to one clean notice</td><td>This week</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>The buffer is the only thing that needs to be true by Monday. The rest is this week.</p>
+  </div>
+</section>
+
+<section class="slide" id="monday">
+  <span class="slide-num">04 / 09</span>
+  <div class="slide-inner">
+    <div class="slide-kicker">Layer 1 · Immediate</div>
+    <h2>Make Monday safe first</h2>
+    <p>A buffer setting alone will not solve geography. GHL does not know that Sackville to the next town is forty minutes. For Monday specifically, fix it by hand.</p>
+    <div class="guard">
+      <h4>Monday, by hand</h4>
+      <p>Split the two Monday inspections into AM and PM by area, or assign one to AJ and one to Diego so they run in parallel instead of one person driving between them.</p>
+    </div>
+    <h3>Then the systemic setting</h3>
+    <div class="stat-row">
+      <div class="stat"><div class="v gold">60 min</div><div class="l">Inspection slot</div></div>
+      <div class="stat"><div class="v gold">60 min</div><div class="l">Buffer after</div></div>
+      <div class="stat"><div class="v gold">3 / day</div><div class="l">Cap per inspector</div></div>
+    </div>
+    <p>That spacing keeps any two bookings at least two hours apart, which absorbs a normal cross-town drive. This is the answer to Cat's question about a preferred buffer time.</p>
+  </div>
+</section>
+
+<section class="slide" id="roundrobin">
+  <span class="slide-num">05 / 09</span>
+  <div class="slide-inner">
+    <div class="slide-kicker">Layer 2 · Structure</div>
+    <h2>A round-robin that plugs in both crews</h2>
+    <p>Convert the inspection calendar to a GHL Round Robin team calendar with two members, AJ and Diego. GHL then distributes bookings between them and only offers slots that are actually open.</p>
+    <div class="branch">
+      <h4>Prerequisite, and it is Cat's task</h4>
+      <p>Connect each of AJ and Diego's Automator or Google calendars to GHL. That link is what lets round-robin check their real day and avoid double-booking. This is the "make AJ and Diego's calendars ready" item. Without it, round-robin will book over them.</p>
+    </div>
+    <div class="branch-green">
+      <h4>The backfill crew stays out of it</h4>
+      <p>The Monday trial hire is production, not inspections. His whole purpose is to free AJ and Diego up to take inspections, so the round-robin stays just the two of them.</p>
+    </div>
+  </div>
+</section>
+
+<section class="slide" id="types">
+  <span class="slide-num">06 / 09</span>
+  <div class="slide-inner">
+    <div class="slide-kicker">Layer 3 · Routing</div>
+    <h2>One smart calendar beats four calendars, for now</h2>
+    <p>Rather than build four separate calendars on day one, add a service-type field to the booking form and drive the slot length and follow-up off that field. This covers Cat's options 1 through 4 without the upfront build.</p>
+    <div class="bx-table">
+      <table>
+        <thead><tr><th>Service type</th><th>Slot length</th></tr></thead>
+        <tbody>
+          <tr><td>Roof inspection</td><td><b>60 min</b></td></tr>
+          <tr><td>Skylight or repair check</td><td><b>45 min</b></td></tr>
+          <tr><td>Warranty or follow-up visit</td><td><b>30 min</b></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Split into separate calendars only if one type starts crowding the others out. Revisit in a month once we can see the real mix.</p>
+  </div>
+</section>
+
+<section class="slide" id="notify">
+  <span class="slide-num">07 / 09</span>
+  <div class="slide-inner">
+    <div class="slide-kicker">Bug · Notifications</div>
+    <h2>Two emails per booking has one root cause</h2>
+    <p>Cat is seeing a general services-call notice and a separate inspection-booked notice for the same appointment. That is two notification sources firing on one event.</p>
+    <div class="guard">
+      <h4>Almost always</h4>
+      <p>The calendar's own built-in booking notification, plus a separate Automator workflow with a "Customer Booked Appointment" trigger. Both fire, so you get two emails.</p>
+    </div>
+    <h3>What Cat checks</h3>
+    <ol>
+      <li>In Automator, find every workflow with a Customer Booked Appointment or Appointment Status trigger pointed at the services calendar.</li>
+      <li>Check the calendar's own Notifications tab.</li>
+      <li>Keep one internal-notification source (a single workflow is best, so it is controllable and brandable) and switch the others off.</li>
+    </ol>
+    <p>Same single-trigger discipline as the Instant Estimator fix. One trigger, nothing double-fires.</p>
+  </div>
+</section>
+
+<section class="slide" id="rollout">
+  <span class="slide-num">08 / 09</span>
+  <div class="slide-inner">
+    <div class="slide-kicker">Rollout</div>
+    <h2>Who does what</h2>
+    <div class="bx-table">
+      <table>
+        <thead><tr><th>Owner</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><b>Mac</b></td><td>Confirm the buffer (default 60 min slot, 60 min after, cap 3 per inspector per day)</td></tr>
+          <tr><td><b>Mac</b></td><td>Confirm one smart calendar with a service-type field, versus separate calendars now</td></tr>
+          <tr><td><b>Cat</b></td><td>Connect AJ and Diego's calendars to GHL</td></tr>
+          <tr><td><b>Cat</b></td><td>Convert the inspection calendar to round-robin (AJ and Diego)</td></tr>
+          <tr><td><b>Cat</b></td><td>Add the service-type field plus per-type durations</td></tr>
+          <tr><td><b>Cat</b></td><td>Dedupe notifications to a single source and lock the workflow to one trigger</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="slide gold" id="signoff">
+  <span class="slide-num">09 / 09</span>
+  <div class="slide-inner">
+    <div class="slide-kicker">Open items</div>
+    <h2>What Mac signs off on</h2>
+    <ul class="signoff">
+      <li><strong>Buffer</strong> · confirm 60 min slot plus 60 min after, cap 3 per inspector per day</li>
+      <li><strong>Calendar shape</strong> · one smart calendar with a service-type field, or separate calendars now</li>
+      <li><strong>Notification owner</strong> · which single workflow stays on as the booking notice</li>
+      <li><strong>Monday</strong> · split the two inspections AM and PM, or one each to AJ and Diego</li>
+      <li><strong>Round-robin go-live</strong> · confirm AJ and Diego both connect their calendars first</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  <div class="brand">PLUS <span style="color:var(--gold)">ULTRA</span> ROOFING</div>
+  <div class="tag">Smart systems designed for you, by you.</div>
+  <div class="contact">
+    <span>506-616-4607</span>
+    <span>mackenzie.m@plusultraroofing.com</span>
+    <span>ryujin-os.vercel.app</span>
+  </div>
+</footer>
+
+<script src="/scripts/presentation.js?v=8" defer></script>
+</body>
+</html>
