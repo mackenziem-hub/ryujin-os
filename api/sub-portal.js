@@ -340,7 +340,7 @@ async function getScope(tenantId, woId, subId) {
       hips_lf: wo.hips_lf, valleys_lf: wo.valleys_lf, walls_lf: wo.walls_lf,
       pipes: wo.pipes, vents: wo.vents, chimneys: wo.chimneys
     },
-    scope_items: Array.isArray(wo.scope_items) ? wo.scope_items : [],
+    scope_items: (Array.isArray(wo.scope_items) ? wo.scope_items : []).map(s => typeof s === 'string' ? { item: s, included: true } : s),
     additional_scope: cleanedAdditional,
     // special_notes deliberately omitted — see getSchedule for rationale.
     checklist,
