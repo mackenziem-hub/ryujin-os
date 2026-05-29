@@ -141,7 +141,7 @@ async function handler(req, res) {
     });
   }
 
-  const days = Math.max(1, Math.min(30, parseInt(req.query.days, 10) || 7));
+  const days = Math.max(1, Math.min(90, parseInt(req.query.days, 10) || 7));
   const now = new Date();
   const startMs = now.getTime();
   const endMs = startMs + days * 86400000;

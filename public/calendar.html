@@ -62,6 +62,16 @@ h1{
 .viewToggle button.active{background:var(--cyan);color:#001218;font-weight:700}
 .viewToggle button:not(.active):hover{color:var(--text)}
 
+/* Range selector: day / week / month / quarter. Sits next to viewToggle. */
+.rangeSelector{display:inline-flex;background:rgba(8,12,24,0.7);border:1px solid var(--border);border-radius:18px;padding:3px}
+.rangeSelector button{
+  font-family:'Orbitron',monospace;font-size:0.7em;letter-spacing:1.3px;text-transform:uppercase;
+  background:transparent;border:none;color:var(--text-dim);padding:7px 14px;border-radius:15px;
+  cursor:pointer;transition:all 0.15s;
+}
+.rangeSelector button.active{background:var(--violet);color:#1a0e30;font-weight:700}
+.rangeSelector button:not(.active):hover{color:var(--text)}
+
 .legend{display:flex;flex-wrap:wrap;gap:8px;font-size:0.7em;color:var(--text-dim);margin-bottom:14px}
 .legend .lg{display:inline-flex;align-items:center;gap:5px;background:rgba(8,12,24,0.5);border:1px solid var(--border);padding:4px 9px;border-radius:10px}
 .legend .dot{width:8px;height:8px;border-radius:50%}
@@ -70,11 +80,13 @@ h1{
 .legend .dot.inspection{background:var(--violet);box-shadow:0 0 6px var(--violet)}
 .legend .dot.gcal{background:var(--green);box-shadow:0 0 6px var(--green)}
 
-/* Per-day grid: vertical stack on mobile, horizontal 7-col on desktop.
-   Default body[data-view="day"]; CSS at the bottom toggles to crew view. */
+/* Per-day grid layout adapts to range:
+   day = 1 col (mobile + desktop)
+   week = 7 cols on desktop, vertical stack on mobile
+   month/quarter = vertical stack always (too wide for grid) */
 .board{display:flex;flex-direction:column;gap:10px}
 @media(min-width:1024px){
-  body[data-view="day"] .board.day-view{display:grid;grid-template-columns:repeat(7,minmax(180px,1fr));gap:10px}
+  body[data-view="day"][data-range="week"] .board.day-view{display:grid;grid-template-columns:repeat(7,minmax(180px,1fr));gap:10px}
 }
 
 .col{
@@ -118,6 +130,9 @@ h1{
 .crew-dot{width:14px;height:14px;border-radius:50%;border:1px solid rgba(0,0,0,0.4);font-size:8px;display:inline-flex;align-items:center;justify-content:center;color:#001;font-weight:800;font-family:'Inter',sans-serif;letter-spacing:0}
 
 .empty-day{font-size:0.78em;color:var(--text-muted);text-align:center;padding:14px 4px;font-style:italic}
+.notify-pill{display:inline-flex;align-items:center;gap:4px;background:rgba(250,204,21,0.18);border:1px solid rgba(250,204,21,0.45);color:var(--gold);padding:2px 8px;border-radius:8px;font-family:'Share Tech Mono',monospace;font-size:0.62em;letter-spacing:0.8px;text-transform:uppercase;margin-top:5px;font-weight:600}
+.drawer .notes{background:rgba(250,204,21,0.08);border:1px solid rgba(250,204,21,0.25);color:var(--text);padding:11px 14px;border-radius:10px;margin-top:6px;font-size:0.86em;line-height:1.5;white-space:pre-wrap}
+.drawer .notes.notify{background:rgba(250,204,21,0.18);border-color:rgba(250,204,21,0.55)}
 .refresh-meta{font-family:'Share Tech Mono',monospace;font-size:0.72em;color:var(--text-muted);text-align:right;margin-top:18px;letter-spacing:1px}
 .error-banner{background:rgba(248,113,113,0.12);border:1px solid rgba(248,113,113,0.35);color:#fecaca;padding:10px 14px;border-radius:10px;margin-bottom:14px;font-size:0.85em}
 
@@ -172,7 +187,7 @@ body[data-view="crew"] .crewboard{display:grid}
 <script src="/assets/portal-auth-client.js"></script>
 <script src="/assets/ryujin-slug.js"></script>
 </head>
-<body data-view="day">
+<body data-view="day" data-range="week">
 
 <div class="wrap">
 
@@ -189,7 +204,13 @@ body[data-view="crew"] .crewboard{display:grid}
     <span class="stat"><b id="totInspections">&mdash;</b> inspections</span>
     <span class="stat"><b id="totService">&mdash;</b> service</span>
     <span class="stat"><b id="totGcal">&mdash;</b> gcal</span>
-    <div class="viewToggle" role="tablist">
+    <div class="rangeSelector" role="tablist" aria-label="Date range">
+      <button id="btnRangeDay" role="tab" aria-selected="false" data-days="1">Today</button>
+      <button id="btnRangeWeek" class="active" role="tab" aria-selected="true" data-days="7">Week</button>
+      <button id="btnRangeMonth" role="tab" aria-selected="false" data-days="30">Month</button>
+      <button id="btnRangeQuarter" role="tab" aria-selected="false" data-days="90">Quarter</button>
+    </div>
+    <div class="viewToggle" role="tablist" aria-label="Grouping">
       <button id="btnDay" class="active" role="tab" aria-selected="true">By day</button>
       <button id="btnCrew" role="tab" aria-selected="false">By crew</button>
     </div>
@@ -230,6 +251,12 @@ const CREW_ROSTER = [
 ];
 
 let MY_ROLE = null;
+
+// Range selector state. Mac wanted day/week/month/quarter — server clamps to
+// 90 days max so quarter caps there. Default week matches the original layout.
+const RANGE_DAYS = { day: 1, week: 7, month: 30, quarter: 90 };
+let currentRange = 'week';
+function currentDays(){ return RANGE_DAYS[currentRange]; }
 
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function fmt$(n){if (n == null || n === '') return ''; const x = Number(n); if (!Number.isFinite(x)) return ''; return '$' + Math.round(x).toLocaleString()}
@@ -280,13 +307,15 @@ function fetchWithTimeout(url, opts, ms){
 }
 
 function renderSkeleton(){
-  // Paint the empty 7-day grid immediately so the user sees the calendar
+  // Paint the empty day grid immediately so the user sees the calendar
   // chrome before any fetch settles. Each column shows "loading…" until
-  // its source flips to ok/error.
+  // its source flips to ok/error. Number of columns derives from
+  // currentDays() so day=1, week=7, month=30, quarter=90.
   const todayIso = isoDay(new Date());
   const today = new Date(); today.setHours(0,0,0,0);
+  const n = currentDays();
   const cols = [];
-  for (let i = 0; i < 7; i++){
+  for (let i = 0; i < n; i++){
     const d = new Date(today.getTime() + i * 86400000);
     const dayKey = isoDay(d);
     const dayName = DAY_NAMES[d.getDay()];
@@ -377,8 +406,10 @@ async function loadAll(){
   renderSkeleton();
   updateToolbar();
 
+  const days = currentDays();
+
   // Schedule: ~1s normally. Bump to 8s on bad days.
-  fetchWithTimeout('/api/schedule?days=7', { headers: hdr }, 8000)
+  fetchWithTimeout('/api/schedule?days=' + days, { headers: hdr }, 8000)
     .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
     .then(d => { STATE.sched = { status: 'ok', data: d }; })
     .catch(e => {
@@ -389,7 +420,7 @@ async function loadAll(){
 
   // GHL appointments: 1+N GHL API calls. Allow up to 12s before giving
   // up so the calendar still renders installs even when GHL is slow.
-  fetchWithTimeout('/api/ghl?mode=appointments&days=7', { headers: hdr }, 12000)
+  fetchWithTimeout('/api/ghl?mode=appointments&days=' + days, { headers: hdr }, 12000)
     .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
     .then(d => { STATE.ghl = { status: 'ok', data: d }; })
     .catch(e => {
@@ -399,7 +430,7 @@ async function loadAll(){
     .finally(rerender);
 
   // Google Cal: fast (single ICS fetch) or off (no env var). 6s plenty.
-  fetchWithTimeout('/api/google-cal?days=7', { headers: hdr }, 6000)
+  fetchWithTimeout('/api/google-cal?days=' + days, { headers: hdr }, 6000)
     .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
     .then(d => { STATE.gcal = { status: 'ok', data: d }; })
     .catch(e => {
@@ -410,10 +441,11 @@ async function loadAll(){
 }
 
 function normalize(sched, ghl, gcal){
-  // Bucket: { 'YYYY-MM-DD': { date, events: [...] } } for next 7 days starting today.
+  // Bucket: { 'YYYY-MM-DD': { date, events: [...] } } for the current range.
   const today = new Date(); today.setHours(0,0,0,0);
+  const n = currentDays();
   const days = {};
-  for (let i = 0; i < 7; i++){
+  for (let i = 0; i < n; i++){
     const d = new Date(today.getTime() + i * 86400000);
     days[isoDay(d)] = { date: isoDay(d), events: [] };
   }
@@ -431,7 +463,8 @@ function normalize(sched, ghl, gcal){
         sub_crew_lead: j.sub_crew_lead || null,
         wo_number: j.wo_number || null, project_id: j.project_id || null,
         duration_days: j.duration_days || null, live: !!j.live,
-        progress_pct: j.progress_pct || null
+        progress_pct: j.progress_pct || null,
+        special_notes: j.special_notes || null
       });
     }
     for (const t of (day.service || [])){
@@ -512,10 +545,14 @@ function evtCard(ev){
   let body = '';
   if (ev.kind === 'install'){
     typeLine = 'Install &middot; ' + esc(ev.ref || '');
+    const notifyPill = ev.special_notes && /NOTIFY CUSTOMER/i.test(ev.special_notes)
+      ? '<div class="notify-pill">&#9888; notify customer</div>'
+      : '';
     body = `
       ${ev.time ? `<div class="evt-meta"><span class="chip">${esc(ev.time)}</span></div>` : ''}
       <div class="evt-title">${esc(ev.title)}${ev.live ? ' <span style="color:var(--green);font-size:0.7em">&#9679; LIVE</span>' : ''}</div>
       ${ev.address ? `<div class="evt-detail">${esc(ev.address)}</div>` : ''}
+      ${notifyPill}
       <div class="evt-meta">
         ${ev.state ? `<span class="chip">${esc(ev.state)}</span>` : ''}
         ${ev.value ? `<span class="chip">${fmt$(ev.value)}</span>` : ''}
@@ -633,9 +670,13 @@ function openDrawer(ev){
       ${ev.value ? `<dt>Value</dt><dd>${esc(fmt$(ev.value))}</dd>` : ''}
       ${ev.state ? `<dt>Stage</dt><dd>${esc(ev.state)}</dd>` : ''}
       ${ev.duration_days ? `<dt>Duration</dt><dd>${esc(ev.duration_days)} day${ev.duration_days==1?'':'s'}</dd>` : ''}
-      ${ev.sub_crew_lead ? `<dt>Sub lead</dt><dd>${esc(ev.sub_crew_lead)}</dd>` : ''}
-      ${(ev.crew && ev.crew.length) ? `<dt>Crew</dt><dd>${ev.crew.map(c => esc(c.name)).join(', ')}</dd>` : ''}
+      ${ev.sub_crew_lead ? `<dt>Crew</dt><dd>${esc(ev.sub_crew_lead)}</dd>` : ''}
+      ${(ev.crew && ev.crew.length) ? `<dt>Members</dt><dd>${ev.crew.map(c => esc(c.name)).join(', ')}</dd>` : ''}
     `;
+    if (ev.special_notes){
+      const isNotify = /NOTIFY CUSTOMER/i.test(ev.special_notes);
+      dl += `<dt>Notes</dt><dd><div class="notes ${isNotify ? 'notify' : ''}">${esc(ev.special_notes)}</div></dd>`;
+    }
     actions = (ev.project_id
         ? `<a href="/job.html?project_id=${encodeURIComponent(ev.project_id)}">Open job</a>`
         : `<a href="/admin.html#estimates">Open in admin</a>`)
@@ -704,6 +745,22 @@ document.getElementById('btnCrew').addEventListener('click', () => {
   document.getElementById('btnDay').classList.remove('active');
   document.getElementById('btnCrew').setAttribute('aria-selected','true');
   document.getElementById('btnDay').setAttribute('aria-selected','false');
+});
+
+// Range selector wires. Switching ranges re-fires the fetches with new
+// days param and re-paints the skeleton at the new column count.
+document.querySelectorAll('.rangeSelector button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const newRange = ({1:'day',7:'week',30:'month',90:'quarter'})[Number(btn.dataset.days)];
+    if (newRange === currentRange) return;
+    currentRange = newRange;
+    document.body.dataset.range = newRange;
+    document.querySelectorAll('.rangeSelector button').forEach(b => {
+      b.classList.toggle('active', b === btn);
+      b.setAttribute('aria-selected', b === btn ? 'true' : 'false');
+    });
+    loadAll();
+  });
 });
 
 (async function init(){

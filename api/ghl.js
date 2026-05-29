@@ -849,7 +849,7 @@ export default async function handler(req, res) {
       const session = await resolveSession(req);
       if (!session) return res.status(401).json({ error: 'sign_in_required' });
 
-      const days = Math.max(1, Math.min(30, parseInt(req.query.days, 10) || 7));
+      const days = Math.max(1, Math.min(90, parseInt(req.query.days, 10) || 7));
       const now = new Date();
       const startTime = now.getTime();
       const endTime = startTime + days * 86400000;
