@@ -31,7 +31,7 @@ async function handler(req, res) {
   // tenant via requireTenant + req.tenant.id.
   void isPrivileged; // kept imported for parity with other handlers
 
-  const days = Math.max(1, Math.min(30, parseInt(req.query.days, 10) || 14));
+  const days = Math.max(1, Math.min(90, parseInt(req.query.days, 10) || 14));
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const horizon = new Date(today.getTime() + days * 86400000);
@@ -108,7 +108,7 @@ async function handler(req, res) {
     .from('workorders')
     .select(`
       id, wo_number, start_date, estimated_duration_days, status, customer_name, address, phone,
-      sub_crew_lead, total_sq, linked_estimate_id,
+      sub_crew_lead, total_sq, linked_estimate_id, special_notes,
       estimate:estimates!workorders_linked_estimate_id_fkey(
         id, estimate_number, final_accepted_total, deposit_amount,
         customer:customers(full_name, phone, address),
@@ -247,6 +247,7 @@ async function handler(req, res) {
       sub_crew_lead: w.sub_crew_lead || null,
       total_sq: w.total_sq || null,
       duration_days: w.estimated_duration_days || null,
+      special_notes: w.special_notes || null,
     };
     byDay.get(key).installs.push(wInstall);
     jobs.push(wInstall);
