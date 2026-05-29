@@ -49,6 +49,38 @@ const AUTOMATOR_TAGS = {
   'instant-estimator-v3': 'Instant Estimator Submission'
 };
 
+// GHL custom field IDs for the Instant Estimator values (pre-existing fields,
+// originally populated by the old Zapier chain). The estimator now sends a
+// flat `estimator` object {low, high, material, address, size}; we map those
+// keys to these field IDs and write them on the contact AT CREATION so the
+// values are present when the Automator follow-up email fires (no second-call
+// race). low/high are MONETORY fields (numeric); the rest are TEXT.
+// IDs verified live against location aHotOUdq9D8m3JPrRz9n on 2026-05-28.
+const ESTIMATOR_FIELD_IDS = {
+  low:      'PyzDSpA08Gwqtu9wU5tW',
+  high:     'dOjnqLvXnPfCat2k6etr',
+  material: '15ZVvX8Z3Q5CbcCyOIBy',
+  address:  '8dYsptjZpaGXeEUBFlF8',
+  size:     'czp6Qb4UkZBpvWqcMcXu'
+};
+
+// Build the GHL customFields array from an untrusted `estimator` object.
+// Iterates OUR field map (controlled keys), reading values off the payload, so
+// a hostile payload can't inject arbitrary field writes. Empty/missing values
+// are skipped (leaves the GHL field untouched rather than blanking it).
+function buildEstimatorCustomFields(estimator) {
+  if (!estimator || typeof estimator !== 'object') return [];
+  const out = [];
+  for (const key of Object.keys(ESTIMATOR_FIELD_IDS)) {
+    const v = estimator[key];
+    if (v === undefined || v === null || v === '') continue;
+    // GHL v2 contacts create accepts either `value` or `field_value` (both
+    // verified live 2026-05-28); use `field_value`, the documented property.
+    out.push({ id: ESTIMATOR_FIELD_IDS[key], field_value: v });
+  }
+  return out;
+}
+
 function splitName(full) {
   const t = (full || '').trim();
   if (!t) return { firstName: '', lastName: '' };
@@ -180,6 +212,9 @@ async function handler(req, res) {
       : null;
     if (automatorTag) tags.push(automatorTag);
 
+    // Estimator values -> GHL custom fields, written at creation (see map above).
+    const estimatorCustomFields = buildEstimatorCustomFields(body.estimator);
+
     const contactPayload = {
       locationId: LOCATION_ID,
       firstName: firstName || (email ? email.split('@')[0] : 'Unknown'),
@@ -189,7 +224,8 @@ async function handler(req, res) {
       address1: address || undefined,
       city: city || undefined,
       tags,
-      source: source || 'ryujin-leads-api'
+      source: source || 'ryujin-leads-api',
+      ...(estimatorCustomFields.length ? { customFields: estimatorCustomFields } : {})
     };
 
     let contactId = null;
