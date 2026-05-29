@@ -404,6 +404,15 @@
     return h;
   }
 
+  /* Clear the unsynced flag once the server confirms a write. */
+  function markNoteClean(slideId, noteId) {
+    var data = loadNotes();
+    var arr = data[slideId] || [];
+    for (var i = 0; i < arr.length; i++) {
+      if (arr[i].id === noteId && arr[i].dirty) { delete arr[i].dirty; saveAllNotes(data); return; }
+    }
+  }
+
   function serverUpsertNote(slideId, note) {
     if (!AUTH_TOKEN || !note || note.author === 'jules') return;
     fetch('/api/deck-notes', {
@@ -413,7 +422,7 @@
         deck_id: DECK_ID, slide_id: slideId,
         client_note_id: note.id, author: note.author || 'mac', text: note.text
       })
-    }).catch(function () {});
+    }).then(function (r) { if (r && r.ok) markNoteClean(slideId, note.id); }).catch(function () {});
   }
 
   function serverDeleteNote(noteId) {
@@ -442,13 +451,13 @@
               if (local[n.slide_id][i].id === n.client_note_id) { found = local[n.slide_id][i]; break; }
             }
             if (found) {
-              // Newer side wins. If the local copy is newer (e.g. an edit whose
-              // POST failed while offline), keep it and re-push instead of
-              // clobbering it with stale server text.
-              var serverTs = Date.parse(n.updated_at) || 0;
-              var localTs = found.ts || 0;
-              if (serverTs >= localTs) { found.text = n.text; found.author = n.author; found.ts = serverTs || localTs; }
-              else serverUpsertNote(n.slide_id, found);
+              // A note flagged dirty has a local edit whose POST has not been
+              // confirmed yet (offline / transient failure). Keep it and re-push
+              // rather than clobbering with stale server text. Clean notes defer
+              // to the server (authoritative). No wall-clock comparison, so client
+              // clock skew can't decide the winner.
+              if (found.dirty) serverUpsertNote(n.slide_id, found);
+              else { found.text = n.text; found.author = n.author; found.ts = Date.parse(n.updated_at) || found.ts; }
             }
             else local[n.slide_id].push({ id: n.client_note_id, author: n.author, text: n.text, ts: Date.parse(n.updated_at) || Date.now() });
           });
@@ -626,6 +635,8 @@
   }
 
   function saveNote(slideId, note) {
+    // Flag as unsynced; serverUpsertNote clears it once the server confirms.
+    if (AUTH_TOKEN) note.dirty = true;
     var data = loadNotes();
     if (!data[slideId]) data[slideId] = [];
     var idx = -1;
