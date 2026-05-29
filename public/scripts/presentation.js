@@ -441,7 +441,15 @@
             for (var i = 0; i < local[n.slide_id].length; i++) {
               if (local[n.slide_id][i].id === n.client_note_id) { found = local[n.slide_id][i]; break; }
             }
-            if (found) { found.text = n.text; found.author = n.author; }
+            if (found) {
+              // Newer side wins. If the local copy is newer (e.g. an edit whose
+              // POST failed while offline), keep it and re-push instead of
+              // clobbering it with stale server text.
+              var serverTs = Date.parse(n.updated_at) || 0;
+              var localTs = found.ts || 0;
+              if (serverTs >= localTs) { found.text = n.text; found.author = n.author; found.ts = serverTs || localTs; }
+              else serverUpsertNote(n.slide_id, found);
+            }
             else local[n.slide_id].push({ id: n.client_note_id, author: n.author, text: n.text, ts: Date.parse(n.updated_at) || Date.now() });
           });
         }
