@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════
-// Ryujin OS — shared gamepad layer (window.RyujinPad)
+// Ryujin OS - shared gamepad layer (window.RyujinPad)
 //
 // One normalized controller singleton for the whole OS. game.html
 // drives the 8-bit overworld + console with it; the same file drops
@@ -20,7 +20,7 @@
 //   .on(name, fn)   → edge-press handler. Names:
 //                     A B X Y LB RB LT RT BACK START LS RS  (raw buttons)
 //                     NAV_UP NAV_DOWN NAV_LEFT NAV_RIGHT     (dpad OR stick
-//                     flick, re-armed near centre — for menu focus)
+//                     flick, re-armed near centre, for menu focus)
 //                     '*' → fires for every edge with the name as arg.
 //   .off(name, fn)
 //   .onConnect(fn) / .onDisconnect(fn)
@@ -36,7 +36,7 @@
 // ═══════════════════════════════════════════════════════════════
 (function () {
   'use strict';
-  if (window.RyujinPad) return;            // singleton — survive double-include
+  if (window.RyujinPad) return;            // singleton, survive double-include
 
   // Deadzone for treating a stick push as "held"; REARM is the smaller
   // magnitude the stick must fall back under before a NAV flick can
@@ -80,16 +80,24 @@
   // Acquire/release the active pad index and fire connect/disconnect.
   function refreshIndex(list) {
     const stillGood = index != null && list[index] && list[index].connected;
-    if (!stillGood) {
-      const wasConnected = meta.connected;
-      index = null;
-      for (let i = 0; i < list.length; i++) { if (list[i] && list[i].connected) { index = i; break; } }
-      const nowConnected = index != null;
-      if (nowConnected !== wasConnected) {
-        meta.connected = nowConnected; meta.index = index;
-        if (nowConnected) { meta.id = list[index].id || ''; connectFns.forEach(f => { try { f(list[index]); } catch (e) {} }); }
-        else { dir.up = dir.down = dir.left = dir.right = false; disconnectFns.forEach(f => { try { f(); } catch (e) {} }); }
-      }
+    if (stillGood) return;
+    const wasConnected = meta.connected;
+    const prevIndex = index;
+    index = null;
+    for (let i = 0; i < list.length; i++) { if (list[i] && list[i].connected) { index = i; break; } }
+    const nowConnected = index != null;
+    // Active pad changed (disconnect, or swap when one of two drops): start
+    // edge detection clean so a button already held on the new pad still
+    // gets its rising edge and a stale held direction does not persist.
+    if (index !== prevIndex) {
+      prevPressed = [];
+      dir.up = dir.down = dir.left = dir.right = false;
+      armed.up = armed.down = armed.left = armed.right = true;
+    }
+    if (nowConnected !== wasConnected) {
+      meta.connected = nowConnected; meta.index = index;
+      if (nowConnected) { meta.id = list[index].id || ''; connectFns.forEach(f => { try { f(list[index]); } catch (e) {} }); }
+      else { disconnectFns.forEach(f => { try { f(); } catch (e) {} }); }
     }
   }
 
@@ -124,11 +132,13 @@
       if (dD && !prevPressed[13]) emit('NAV_DOWN');
       if (dL && !prevPressed[14]) emit('NAV_LEFT');
       if (dR && !prevPressed[15]) emit('NAV_RIGHT');
-      // Stick flicks → NAV (re-armed near centre).
-      navEdge('up', ly < -DEADZONE, ly > -REARM, 'NAV_UP');
-      navEdge('down', ly > DEADZONE, ly < REARM, 'NAV_DOWN');
-      navEdge('left', lx < -DEADZONE, lx > -REARM, 'NAV_LEFT');
-      navEdge('right', lx > DEADZONE, lx < REARM, 'NAV_RIGHT');
+      // Stick flicks → NAV (re-armed near centre). Only the dominant axis
+      // fires so a diagonal flick steps menu focus once, not twice.
+      const vDom = Math.abs(ly) >= Math.abs(lx);
+      navEdge('up', vDom && ly < -DEADZONE, ly > -REARM, 'NAV_UP');
+      navEdge('down', vDom && ly > DEADZONE, ly < REARM, 'NAV_DOWN');
+      navEdge('left', !vDom && lx < -DEADZONE, lx > -REARM, 'NAV_LEFT');
+      navEdge('right', !vDom && lx > DEADZONE, lx < REARM, 'NAV_RIGHT');
 
       prevPressed = pressed;
     }

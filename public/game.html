@@ -1093,6 +1093,15 @@
     font-family: 'Press Start 2P', monospace; font-size: 8px;
     color: var(--archetype-color, #a8d8ff); text-shadow: 1px 1px 0 rgba(0,0,0,0.6); letter-spacing: 1px;
   }
+  .gc-close {
+    margin-left: auto; width: 26px; height: 26px; flex: 0 0 auto;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: linear-gradient(180deg, #4a8edb 0%, #2a5fa0 100%);
+    border: 2px solid #ffffff; box-shadow: inset 0 0 0 1px var(--outline);
+    border-radius: 3px; color: var(--gold); text-shadow: 1px 1px 0 #000;
+    cursor: pointer; font-family: 'Press Start 2P', monospace; font-size: 10px; padding: 0;
+  }
+  .gc-close:hover { background: linear-gradient(180deg, #5badf5 0%, #3a82d3 100%); }
   .gc-context {
     font-family: 'VT323', monospace; font-size: 17px; line-height: 1.35;
     color: #fff;
@@ -1101,7 +1110,10 @@
     border-radius: 3px; padding: 10px 12px;
     max-height: 22vh; overflow-y: auto;
   }
-  .gc-options { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+  /* flex:1 + min-height:0 lets this become the shrinkable scroll region on
+     short (landscape phone / TV) viewports so option 4 + the controls row
+     never clip below the window. */
+  .gc-options { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
   .gc-opt {
     display: flex; align-items: flex-start; gap: 10px;
     padding: 11px 12px; cursor: pointer;
@@ -2032,6 +2044,10 @@ const Music = (function () {
     if (!leadGain) {
       leadGain = a.createGain(); leadGain.gain.value = 0; leadGain.connect(a.destination);
       bassGain = a.createGain(); bassGain.gain.value = 0; bassGain.connect(a.destination);
+      // Re-evaluate scheduling when the context flips suspended<->running
+      // (autoplay unlock on first gesture, tab resume) so the timer only
+      // spins while audio can actually sound.
+      a.onstatechange = () => update();
     }
     return a;
   }
@@ -2050,6 +2066,9 @@ const Music = (function () {
     const duck = (state.dialogue || state.console || state.modal || state.toolOverlay) ? 0.5 : 1;
     const th = THEMES[key] || THEMES.overworld;
     const now = a.currentTime;
+    // If a timer throttle (backgrounded tab) let the clock run far past our
+    // next note, jump forward instead of replaying a burst of stale steps.
+    if (nextTime < now - 0.25) nextTime = now + 0.06;
     leadGain.gain.setTargetAtTime(th.gain * duck, now, 0.05);
     bassGain.gain.setTargetAtTime(th.gain * 0.8 * duck, now, 0.05);
     while (nextTime < now + 0.12) {
@@ -2064,7 +2083,10 @@ const Music = (function () {
   }
   function update() {
     const a = ensureBus();
-    const on = !!a && !state.save.muted && state.save.musicOn;
+    // Only run while audio can actually sound: a running (gesture-unlocked)
+    // context, a visible tab, sound on, music on. Prevents the 40Hz timer
+    // spinning on a suspended context at boot or in a backgrounded tab.
+    const on = !!a && a.state === 'running' && !document.hidden && !state.save.muted && state.save.musicOn;
     if (on && !timer) { nextTime = a.currentTime + 0.06; timer = setInterval(scheduler, 25); }
     if (!on && timer) {
       clearInterval(timer); timer = null;
@@ -2086,6 +2108,13 @@ const Music = (function () {
   Music.update();
   window.removeEventListener(ev, once);
 }, { once: true }));
+
+// Hidden tab: Music.update() stops the scheduler (the gate includes
+// !document.hidden); on return, resume the context and restart fresh.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && audioCtx && audioCtx.state === 'suspended') { try { audioCtx.resume(); } catch (e) {} }
+  Music.update();
+});
 
 // ═════ Topbar render ═════
 function renderTopbar() {
@@ -2378,6 +2407,9 @@ function updateOverworld(dtMs) {
   p.facingDir = dir;
   applyFacing();
   if (collidesOverworld(tx, ty)) {
+    // Blocked by a building: settle to the rest frame instead of freezing
+    // mid-step while the player keeps pushing into the wall.
+    const av = $('playerAvatar'); if (av) av.classList.remove('moving', 'step-b');
     refreshNearBuilding();
     return;
   }
@@ -2719,6 +2751,9 @@ function updateInterior(dtMs) {
     // a view change, never get teleported out by drift).
   } else {
     const av = $('playerAvatar'); if (av) av.classList.remove('moving', 'step-b');
+    // Prime the accumulator so the next walk flips to the step frame on its
+    // first footstep instead of showing the rest frame for up to ~240ms.
+    _footstepAcc = 240;
   }
 
   // Recompute near-target each tick
@@ -3603,8 +3638,8 @@ document.addEventListener('keydown', (e) => {
       if (idx < state.console.options.length) { e.preventDefault(); state.console.focusIdx = idx; refreshConsoleFocus(); confirmConsoleOption(); }
       return;
     }
-    if (k === 'ArrowDown' || k === 'ArrowRight' || k === 's' || k === 'S' || k === 'd' || k === 'D') { e.preventDefault(); moveConsoleFocus(1); return; }
-    if (k === 'ArrowUp' || k === 'ArrowLeft' || k === 'w' || k === 'W' || k === 'a' || k === 'A') { e.preventDefault(); moveConsoleFocus(-1); return; }
+    if (k === 'ArrowDown' || k === 'ArrowRight' || k === 's' || k === 'S') { e.preventDefault(); moveConsoleFocus(1); return; }
+    if (k === 'ArrowUp' || k === 'ArrowLeft' || k === 'w' || k === 'W') { e.preventDefault(); moveConsoleFocus(-1); return; }
     if (k === 'Enter' || k === 'z' || k === 'Z' || k === ' ' || k === 'e' || k === 'E') { e.preventDefault(); confirmConsoleOption(); return; }
     if (k === 'r' || k === 'R') { e.preventDefault(); loadConsoleOptions(state.console.trail[state.console.trail.length - 1]); return; }
     return;
@@ -3815,14 +3850,16 @@ function buildConsoleDom() {
   const old = $('gameConsole'); if (old) old.remove();
   const c = state.console; if (!c) return;
   const w = el('div', { class: 'game-console', id: 'gameConsole',
+    role: 'dialog', 'aria-modal': 'true', 'aria-label': (c.sec.npc || c.sec.id) + ' console',
     onclick: (e) => { if (e.target === w) closeConsole(); } });
   const win = el('div', { class: 'gc-window' }, [
     el('div', { class: 'gc-head' }, [
       el('div', { class: 'gc-title', id: 'gcTitle', text: (c.sec.npc || c.sec.id) + ' CONSOLE' }),
-      el('div', { class: 'gc-sub', id: 'gcSub', text: (c.pillar || '').toUpperCase() })
+      el('div', { class: 'gc-sub', id: 'gcSub', text: (c.pillar || '').toUpperCase() }),
+      el('button', { type: 'button', class: 'gc-close', title: 'Back / Close (B)', 'aria-label': 'Close console', text: '✕', onclick: consoleBack })
     ]),
     el('div', { class: 'gc-context', id: 'gcContext', text: 'Loading...' }),
-    el('div', { class: 'gc-options', id: 'gcOptions' }),
+    el('div', { class: 'gc-options', id: 'gcOptions', role: 'listbox', 'aria-label': 'Actions' }),
     el('div', { class: 'gc-status', id: 'gcStatus' }),
     el('div', { class: 'gc-controls' }, [
       el('span', { text: '[1-4]/A DO' }),
@@ -3908,6 +3945,7 @@ function renderConsole() {
     c.options.forEach((o, i) => {
       optsEl.appendChild(el('div', {
         class: 'gc-opt' + (i === c.focusIdx ? ' focused' : ''),
+        role: 'option', 'aria-selected': i === c.focusIdx ? 'true' : 'false',
         'data-kind': o.kind || '', 'data-idx': String(i),
         onclick: () => { c.focusIdx = i; refreshConsoleFocus(); confirmConsoleOption(); }
       }, [
@@ -3925,7 +3963,11 @@ function renderConsole() {
 
 function refreshConsoleFocus() {
   const c = state.console; if (!c) return;
-  document.querySelectorAll('#gcOptions .gc-opt').forEach((n, i) => n.classList.toggle('focused', i === c.focusIdx));
+  document.querySelectorAll('#gcOptions .gc-opt').forEach((n, i) => {
+    const f = i === c.focusIdx;
+    n.classList.toggle('focused', f);
+    n.setAttribute('aria-selected', f ? 'true' : 'false');
+  });
 }
 
 function moveConsoleFocus(delta) {
@@ -3954,12 +3996,14 @@ function setConsoleStatus(msg, kind) {
 }
 
 async function confirmConsoleOption() {
-  const c = state.console; if (!c || c.loading) return;
+  const c = state.console; if (!c || c.loading || c.busy) return;
   const o = c.options[c.focusIdx];
   if (!o) return;
+  c.busy = true;   // lock so a double A-press can't double-submit a mutation
   sfxConfirm();
   if (window.RyujinPad) RyujinPad.rumble(0.45, 110);
-  await executeConsoleOption(o);
+  try { await executeConsoleOption(o); }
+  finally { if (state.console === c) c.busy = false; }
 }
 
 async function executeConsoleOption(o) {
@@ -3973,10 +4017,12 @@ async function executeConsoleOption(o) {
     else setConsoleStatus('No destination on that action.', 'err');
     return;
   }
-  if (k === 'open_estimate') { openToolOverlay({ label: 'ESTIMATE', href: '/admin.html#estimates' }); return; }
+  if (k === 'open_estimate') { openToolOverlay({ label: 'ESTIMATE', href: '/admin.html#estimates' + (p.estimate_id ? '/' + encodeURIComponent(p.estimate_id) : '') }); return; }
   if (k === 'open_customer') { openToolOverlay({ label: 'CUSTOMER', href: '/customer-profile.html?id=' + encodeURIComponent(p.customer_id || '') }); return; }
-  if (k === 'send_email' && p.to) { window.location.href = 'mailto:' + encodeURIComponent(p.to) + '?subject=' + encodeURIComponent(p.subject || '') + '&body=' + encodeURIComponent(p.body || ''); return; }
-  if (k === 'send_sms' && p.to) { window.location.href = 'sms:' + encodeURIComponent(p.to) + '?body=' + encodeURIComponent(p.body || ''); return; }
+  // Compose surfaces open in a NEW tab so the game stays alive; a
+  // window.location.href to mailto:/sms: would unload game.html entirely.
+  if (k === 'send_email' && p.to) { window.open(gmailComposeUrl(p.to, p.subject || '', p.body || ''), '_blank', 'noopener,noreferrer'); setConsoleStatus('Opened a compose tab for ' + p.to + '.', 'ok'); return; }
+  if (k === 'send_sms' && p.to) { window.open('sms:' + encodeURIComponent(p.to) + (p.body ? '?&body=' + encodeURIComponent(p.body) : ''), '_blank', 'noopener,noreferrer'); setConsoleStatus('Opened SMS to ' + p.to + '.', 'ok'); return; }
   if (k === 'create_quest') {
     setConsoleStatus('Adding quest...', '');
     try {
@@ -3986,7 +4032,8 @@ async function executeConsoleOption(o) {
         body: JSON.stringify({ title: p.title, description: p.description || '', priority: p.priority || 'normal' })
       });
       if (state.console !== c) return;
-      setConsoleStatus(r.ok ? 'Quest added: ' + (p.title || '') : 'Quest failed (' + r.status + ')', r.ok ? 'ok' : 'err');
+      const msg = r.ok ? 'Quest added' + (p.title ? ': ' + p.title : '') : 'Quest failed (' + r.status + ')';
+      setConsoleStatus(msg, r.ok ? 'ok' : 'err'); toast(msg);   // toast survives the re-fetch that clears the status line
     } catch (e) { if (state.console === c) setConsoleStatus('Network error: ' + e.message, 'err'); }
     pushConsoleState('after_quest_added');
     return;
@@ -3996,7 +4043,8 @@ async function executeConsoleOption(o) {
     try {
       const r = await fetch(API_BASE + '/api/agents/' + encodeURIComponent(p.agent_slug), { headers: { 'x-tenant-id': TENANT } });
       if (state.console !== c) return;
-      setConsoleStatus(r.ok ? 'Agent ' + p.agent_slug + ' ran.' : 'Agent failed (' + r.status + ')', r.ok ? 'ok' : 'err');
+      const msg = r.ok ? 'Agent ' + p.agent_slug + ' ran.' : 'Agent failed (' + r.status + ')';
+      setConsoleStatus(msg, r.ok ? 'ok' : 'err'); toast(msg);
     } catch (e) { if (state.console === c) setConsoleStatus('Network error: ' + e.message, 'err'); }
     pushConsoleState('after_agent_run');
     return;
@@ -4022,7 +4070,11 @@ async function executeConsoleOption(o) {
 function pushConsoleState(stateId) {
   const c = state.console; if (!c) return;
   c.trail.push(stateId);
-  _optionsCache.delete(c.pillar + '|' + stateId);
+  // A state-changing action can stale BOTH the new state and the parent
+  // (root) options that surfaced it, so drop every cached state for this
+  // pillar; backing out then forces a fresh read instead of re-showing
+  // the just-completed action as still live.
+  Array.from(_optionsCache.keys()).forEach(key => { if (key.indexOf(c.pillar + '|') === 0) _optionsCache.delete(key); });
   loadConsoleOptions(stateId);
 }
 
@@ -4034,7 +4086,9 @@ function pushConsoleState(stateId) {
 // ═══════════════════════════════════════════════════════════════
 
 function padAction() {
-  // A button: context-confirm.
+  // A button: context-confirm. toolOverlay (iframe tool) is the outermost
+  // layer; A does nothing there (mouse/CLOSE/B handle it), matching keydown.
+  if (state.toolOverlay) return;
   if (state.console) { confirmConsoleOption(); return; }
   if (state.modal) {
     const node = state.modal.focusable[state.modal.focusIdx];
@@ -4051,7 +4105,10 @@ function padAction() {
 }
 
 function padBack() {
-  // B button: context-back.
+  // B button: context-back. toolOverlay first so B closes the iframe tool
+  // (the console stays mounted underneath and is returned to), instead of
+  // falling through to exitToOverworld and teleporting behind the overlay.
+  if (state.toolOverlay) { closeToolOverlay(); return; }
   if (state.console) { consoleBack(); return; }
   if (state.modal) { closeModal(); return; }
   if (state.dialogue) { closeDialogue(); sfxClose(); return; }
@@ -4078,12 +4135,13 @@ function padNav(delta) {
 
 function padX() {
   // X button: open the current department console from inside a room.
-  if (state.console || state.modal || state.dialogue) return;
+  if (state.toolOverlay || state.console || state.modal || state.dialogue) return;
   if (state.view === 'SECTOR' && state.interior) openConsole(state.interior.sec);
 }
 
 function padY() {
   // Y button: refresh console options, else open the quest log.
+  if (state.toolOverlay) return;
   if (state.console) { if (!state.console.loading) loadConsoleOptions(state.console.trail[state.console.trail.length - 1]); return; }
   if (state.modal || state.dialogue || state.view === 'TITLE') return;
   openQuestModal();
@@ -4091,12 +4149,14 @@ function padY() {
 
 function padStart() {
   // Start: toggle the pause menu.
+  if (state.toolOverlay) return;
   if (state.modal) { closeModal(); return; }
   if (state.console || state.dialogue || state.view === 'TITLE') return;
   openMainMenu();
 }
 
 let _gamepadWired = false;
+let _padAudioHinted = false;
 function wireGamepad() {
   if (_gamepadWired || !window.RyujinPad) return;
   _gamepadWired = true;
@@ -4117,6 +4177,9 @@ function wireGamepad() {
     // already unlocked by an earlier click this lets the pad-only
     // operator hear music/sfx; harmless no-op otherwise.
     try { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); } catch (e) {}
+    // Pad-only operators get no sound until a real gesture unlocks WebAudio;
+    // cue them once that one tap/key is needed.
+    if ((!audioCtx || audioCtx.state !== 'running') && !_padAudioHinted) { _padAudioHinted = true; toast('Controller ready. Tap the screen or press any key once to enable sound.'); }
     Music.update();
     updatePadHints();
   });
@@ -4149,6 +4212,12 @@ function updatePadHints() {
 
 // "Action" button — interact with the closest target in the current view
 function handleAction() {
+  // The on-screen touch A button calls handleAction directly, so honor the
+  // overlay/console layers here too (keyboard already routes around them):
+  // tool overlay swallows it; console A confirms the focused option instead
+  // of re-entering the room and re-launching the console.
+  if (state.toolOverlay) return;
+  if (state.console) { confirmConsoleOption(); return; }
   if (state.view === 'MAP') {
     // Building takes priority over the wizard if both are reachable — the
     // wizard parks next to a building so its radius can overlap. Buildings
