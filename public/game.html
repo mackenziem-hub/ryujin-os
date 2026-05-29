@@ -2235,11 +2235,13 @@ function enterSector() {
   }
   // Pause the overworld game loop so it doesn't overwrite #playerAvatar
   // styles or advance state.player during the walking-in transition.
-  // Cleared inside the setTimeout right before viewFlash swaps to SECTOR.
+  // Cleared INSIDE the viewFlash swap callback (post setView('SECTOR'))
+  // so the 140ms flash window also stays paused — clearing it before
+  // viewFlash would leave the map view live during the fade and let a
+  // held movement key queue another step on top of the walk-to-door.
   state._entering = true;
   hideInteractPrompt();
   setTimeout(() => {
-    state._entering = false;
     // Spawn at the bottom door of the interior so walk-in phase 2 can
     // animate the player up to the talk position at y=60. Without
     // reduced motion: y=92 (door). With reduced motion: y=60 (instant).
@@ -2263,6 +2265,10 @@ function enterSector() {
     viewFlash(() => {
       setView('SECTOR');
       renderInterior();
+      // Now safe to resume the overworld loop (view is SECTOR so the
+      // updateOverworld() early-exit on state.view check would already
+      // skip it, but clearing the flag keeps the state field clean).
+      state._entering = false;
       if (reducedMotion) return;
       // Walk-in phase 2 (interior): animate from door (y=92) up to talk
       // position (y=60) so the character walks into the room.
