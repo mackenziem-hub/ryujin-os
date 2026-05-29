@@ -44,13 +44,16 @@ async function rest(path) {
   return res.json();
 }
 
-// Resolve tenant (optional scoping; if not found, fall back to deck_id only).
-let tenantId = null;
+// Resolve tenant and REQUIRE it. deck_notes is tenant-scoped; never drop the
+// tenant filter, or a mistyped slug would return every tenant's notes.
 const tenants = await rest(`tenants?slug=eq.${encodeURIComponent(tenantSlug)}&select=id&limit=1`);
-if (Array.isArray(tenants) && tenants[0]) tenantId = tenants[0].id;
+const tenantId = Array.isArray(tenants) && tenants[0] ? tenants[0].id : null;
+if (!tenantId) {
+  console.error(`Tenant "${tenantSlug}" not found. Pass a valid tenant slug as the 2nd argument.`);
+  process.exit(1);
+}
 
-let q = `deck_notes?deck_id=eq.${encodeURIComponent(deckId)}&select=slide_id,author,text,updated_at&order=slide_id.asc,updated_at.asc`;
-if (tenantId) q += `&tenant_id=eq.${tenantId}`;
+const q = `deck_notes?deck_id=eq.${encodeURIComponent(deckId)}&tenant_id=eq.${tenantId}&select=slide_id,author,text,updated_at&order=slide_id.asc,updated_at.asc`;
 const notes = await rest(q);
 
 if (!Array.isArray(notes) || notes.length === 0) {
