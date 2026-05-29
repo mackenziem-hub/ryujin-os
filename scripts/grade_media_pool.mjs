@@ -50,6 +50,7 @@ async function fetchUngraded() {
       .in('source_bucket', OUR_WORK_SOURCES)
       .eq('excluded', false)
       .order('captured_at', { ascending: false, nullsFirst: false })
+      .order('id', { ascending: true }) // unique tiebreaker so range pagination can't skip rows
       .range(from, from + PAGE - 1);
     if (error) { console.error('fetch error:', error.message); break; }
     if (!data || !data.length) break;

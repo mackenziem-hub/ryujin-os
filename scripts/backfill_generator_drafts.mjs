@@ -76,6 +76,7 @@ async function pickShowcase(tenantId, count) {
       .is('used_in_clip_id', null)
       .or(`last_used_at.is.null,last_used_at.lt.${cutoff}`)
       .contains('tags', ['vstate:showcase'])
+      .order('id', { ascending: true }) // stable order so range pagination can't skip rows
       .range(from, from + PAGE - 1);
     if (error) { console.error('pool fetch error:', error.message); break; }
     if (!data || !data.length) break;

@@ -36,7 +36,8 @@ const DEDUP_WINDOW_DAYS = 180;
 // work" sources are eligible for a showcase post. estimate_photos are pre-sale
 // customer roofs and are never posted as our work.
 const OUR_WORK_SOURCES = ['companycam_archive', 'project_files', 'media_folder'];
-const SHOWCASE_PAGE = 1000; // pagination page size for the showcase pool
+const SHOWCASE_PAGE = 1000;       // pagination page size for the showcase pool
+const QUEUE_HORIZON_DAYS = 21;    // weekly run skips while the queue already covers this far ahead
 
 function checkAuth(req) {
   const cronSecret = (process.env.CRON_SECRET || '').trim();
@@ -164,6 +165,7 @@ async function pickCandidates(tenantId, count) {
         .is('used_in_clip_id', null)
         .or(freshOrUnused)
         .contains('tags', ['vstate:showcase'])
+        .order('id', { ascending: true }) // stable order so range pagination can't skip rows
         .range(from, from + SHOWCASE_PAGE - 1);
       if (error || !data || !data.length) break;
       pool.push(...data);
@@ -290,10 +292,28 @@ async function runGenerator({ targetCount = TARGET_COUNT, dryRun = false } = {})
   const tenant = await getTenant();
   const brand = await getBrand(tenant.id);
 
+  // Schedule AFTER the last already-scheduled generator draft so the weekly run
+  // extends the backlog instead of double-booking slots it already owns; and
+  // skip entirely while the queue already covers QUEUE_HORIZON_DAYS (the backfill
+  // can stage weeks of content — the weekly top-up only runs when it's low).
+  const now = new Date();
+  const { data: lastSched } = await supabaseAdmin
+    .from('marketing_clips')
+    .select('scheduled_at')
+    .eq('tenant_id', tenant.id)
+    .eq('source_kind', 'generator')
+    .in('status', ['awaiting_approval', 'ready', 'scheduled'])
+    .order('scheduled_at', { ascending: false })
+    .limit(1).maybeSingle();
+  const lastMs = lastSched?.scheduled_at ? new Date(lastSched.scheduled_at).getTime() : 0;
+  const queueDeep = lastMs > now.getTime() + QUEUE_HORIZON_DAYS * 86_400_000;
+  const seed = lastMs > now.getTime() ? new Date(lastMs) : now;
+
   const { candidates, stats } = await pickCandidates(tenant.id, targetCount);
-  const slots = nextWeeklySlots(new Date(), targetCount);
+  const slots = nextWeeklySlots(seed, targetCount);
 
   const warnings = [];
+  if (queueDeep) warnings.push('queue_deep');
   if (candidates.length < targetCount) warnings.push('low_inventory');
   warnings.push(
     `pool:${stats.showcase_pool}`,
@@ -307,6 +327,8 @@ async function runGenerator({ targetCount = TARGET_COUNT, dryRun = false } = {})
   if (dryRun) {
     return {
       dry_run: true,
+      queue_deep: queueDeep,
+      queue_until: lastMs ? new Date(lastMs).toISOString() : null,
       candidates_considered: candidates.length,
       stats,
       warnings,
@@ -321,6 +343,17 @@ async function runGenerator({ targetCount = TARGET_COUNT, dryRun = false } = {})
         };
       }),
     };
+  }
+
+  // Queue already covers the horizon — skip to avoid double-booking slots the
+  // backlog owns and unbounded queue growth. The staged drafts keep posting.
+  if (queueDeep) {
+    await supabaseAdmin.from('agent_runs').insert({
+      tenant_id: tenant.id, agent_slug: 'generator',
+      payload: { skipped: 'queue_deep', queue_until: new Date(lastMs).toISOString() },
+      status: 'success',
+    }).select('id').single().then(() => null, () => null);
+    return { skipped: 'queue_deep', queue_until: new Date(lastMs).toISOString(), warnings };
   }
 
   const { data: runRow, error: runErr } = await supabaseAdmin
