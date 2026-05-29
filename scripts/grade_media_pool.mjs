@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Ryujin OS — Media Pool Vision Indexer
+// Ryujin OS - Media Pool Vision Indexer
 //
 // Grades every "our work" photo in media_pool for showcase-worthiness via
 // Claude vision (lib/visionGrader.js) and persists the grade into the existing
@@ -29,9 +29,28 @@ const supabase = createClient(
 );
 
 const CONCURRENCY = 12;
-const OUR_WORK_SOURCES = ['companycam_archive', 'project_files'];
+// media_folder is hand-dropped curated hero shots; it must go through the same
+// vision gate so those drops can earn vstate:showcase, the generator + backfill
+// already list it as eligible (review 2026-05-29).
+const OUR_WORK_SOURCES = ['companycam_archive', 'project_files', 'media_folder'];
 const VTAG = /^(vgraded|vstate:|vscore:|vmat:)/;
 const limitArg = (() => { const i = process.argv.indexOf('--limit'); return i >= 0 ? parseInt(process.argv[i + 1], 10) : 0; })();
+
+// Key isolation + cost guard (review 2026-05-29). A full bulk grade must NOT run
+// on the shared ANTHROPIC_API_KEY: a prior full run drained it to $0 and took
+// down live app chat + captions. Default to a dedicated ANTHROPIC_BATCH_KEY;
+// only fall back to the live app key with an explicit --use-prod-key. gradeShowcase
+// reads process.env.ANTHROPIC_API_KEY at call time, so swapping it here is enough.
+const useProdKey = process.argv.includes('--use-prod-key');
+const autoYes = process.argv.includes('--yes');
+if (!useProdKey) {
+  const batchKey = (process.env.ANTHROPIC_BATCH_KEY || '').trim();
+  if (!batchKey) {
+    console.error('Refusing to grade on the shared ANTHROPIC_API_KEY. Set ANTHROPIC_BATCH_KEY in .env.local, or pass --use-prod-key to override (this drains the live app key).');
+    process.exit(1);
+  }
+  process.env.ANTHROPIC_API_KEY = batchKey;
+}
 
 const wait = (ms) => new Promise(r => setTimeout(r, ms));
 
@@ -72,6 +91,11 @@ async function gradeWithRetry(url, tries = 3) {
 const all = await fetchUngraded();
 const todo = limitArg > 0 ? all.slice(0, limitArg) : all;
 console.log(`Ungraded our-work photos: ${all.length}. Grading ${todo.length} (concurrency ${CONCURRENCY}).`);
+console.log(`Estimated API cost: ~$${(todo.length * 0.0018).toFixed(2)} (~$0.0018/photo, Haiku vision).`);
+if (!limitArg && !autoYes) {
+  console.error(`This is a FULL run of ${todo.length} photos. Re-run with --yes to confirm, or --limit N for a smoke test.`);
+  process.exit(1);
+}
 
 let done = 0, failed = 0, showcase = 0;
 const states = {};

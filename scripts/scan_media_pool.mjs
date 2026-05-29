@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// Ryujin OS — Media Pool Scanner
+// Ryujin OS - Media Pool Scanner
 //
 // Walks the 4 photo sources and upserts catalog rows into media_pool so the
 // weekly Generator agent has something to pick from. Runs LOCALLY against
-// the Plus Ultra tenant — the server-side cron cannot reach Mac's local
+// the Plus Ultra tenant, the server-side cron cannot reach Mac's local
 // Media folder, so this is the periodic refresh tool Mac fires when he
 // wants the pool topped up.
 //
@@ -14,18 +14,18 @@
 //
 // Env required (pulled from .env.local via vercel env pull):
 //   SUPABASE_URL
-//   SUPABASE_SERVICE_KEY        (NOT the anon key — service writes bypass RLS)
+//   SUPABASE_SERVICE_KEY        (NOT the anon key, service writes bypass RLS)
 //   BLOB_READ_WRITE_TOKEN       (only when --media-folder is on)
 //
 // Sources:
 //   1. project_files          (already in Blob, just catalog the rows)
 //   2. companycam_archive_photos (url_source CDN-hosted, archive as-is)
 //   3. estimate_photos        (already in Blob)
-//   4. Media folder           (local FS at Desktop/Plus Ultra/Media/) — needs
+//   4. Media folder           (local FS at Desktop/Plus Ultra/Media/) - needs
 //                              --media-folder flag, uploads to Blob first
 //
 // Dedup: composite hash sha256("{source_bucket}:{source_id}"). Phase 1
-// shortcut — cross-source dupes (e.g. same photo in project_files AND
+// shortcut: cross-source dupes (e.g. same photo in project_files AND
 // CompanyCam) slip through. Generator's last_used_at gate prevents
 // double-posting in the 180-day window even if the catalog is double-counted.
 import { createClient } from '@supabase/supabase-js';
@@ -107,13 +107,26 @@ async function upsertBatch(tenantId, rows) {
 
 async function scanProjectFiles(tenantId) {
   console.log('\n[1/4] project_files');
-  const { data, error } = await supabase
-    .from('project_files')
-    .select('id, project_id, url, thumbnail_url, filename, mime_type, file_size, category, caption, tags, captured_at, latitude, longitude')
-    .eq('tenant_id', tenantId)
-    .like('mime_type', 'image/%')
-    .limit(5000);
-  if (error) { console.error('  query failed:', error.message); return { inserted: 0, skipped: 0 }; }
+  // PostgREST caps a single SELECT at 1000 rows regardless of .limit(), which
+  // silently truncated this showcase source. Page through with .range() ordered
+  // by id for a stable window.
+  let data = [];
+  {
+    const PAGE = 1000;
+    for (let from = 0; ; from += PAGE) {
+      const { data: pageRows, error } = await supabase
+        .from('project_files')
+        .select('id, project_id, url, thumbnail_url, filename, mime_type, file_size, category, caption, tags, captured_at, latitude, longitude')
+        .eq('tenant_id', tenantId)
+        .like('mime_type', 'image/%')
+        .order('id', { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error) { console.error('  query failed:', error.message); return { inserted: 0, skipped: 0 }; }
+      if (!pageRows || !pageRows.length) break;
+      data = data.concat(pageRows);
+      if (pageRows.length < PAGE) break;
+    }
+  }
 
   const projectIds = [...new Set((data || []).map(r => r.project_id).filter(Boolean))];
   const projectsById = new Map();
@@ -226,12 +239,24 @@ async function scanEstimatePhotos(tenantId) {
   console.log('\n[3/4] estimate_photos');
   // estimates has no address/city columns; those live on customers. Pull
   // the customer join so we can denormalize city for caption context.
-  const { data: estimateRows, error: estErr } = await supabase
-    .from('estimates')
-    .select('id, customer_id, customer:customers(city)')
-    .eq('tenant_id', tenantId)
-    .limit(2000);
-  if (estErr) { console.error('  estimate index failed:', estErr.message); return { inserted: 0, skipped: 0 }; }
+  // PostgREST caps a single SELECT at 1000 rows regardless of .limit(), so
+  // page through with .range() ordered by id for a stable window.
+  let estimateRows = [];
+  {
+    const PAGE = 1000;
+    for (let from = 0; ; from += PAGE) {
+      const { data: pageRows, error: estErr } = await supabase
+        .from('estimates')
+        .select('id, customer_id, customer:customers(city)')
+        .eq('tenant_id', tenantId)
+        .order('id', { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (estErr) { console.error('  estimate index failed:', estErr.message); return { inserted: 0, skipped: 0 }; }
+      if (!pageRows || !pageRows.length) break;
+      estimateRows = estimateRows.concat(pageRows);
+      if (pageRows.length < PAGE) break;
+    }
+  }
   const estById = new Map((estimateRows || []).map(e => [e.id, { ...e, city: e.customer?.city || null }]));
   const estIds = (estimateRows || []).map(e => e.id);
   if (!estIds.length) {
@@ -260,7 +285,7 @@ async function scanEstimatePhotos(tenantId) {
         source_id: p.id,
         // Repurpose project_id as the logical parent grouping ID across
         // sources. For estimate_photos, the estimate IS the grouping
-        // container — putting estimate_id here lets the pair-linking pass
+        // container, putting estimate_id here lets the pair-linking pass
         // group all photos from the same estimate together (codex P2).
         project_id: p.estimate_id,
         customer_name: null,
@@ -394,7 +419,7 @@ async function linkPairs(tenantId) {
   // Both buckets now carry the parent ID in project_id (project for
   // project_files, estimate for estimate_photos). Group on that uniformly
   // so before/after pairs at the same parent get linked across both
-  // buckets (codex P2 — previously grouped estimate_photos per-photo).
+  // buckets (codex P2, previously grouped estimate_photos per-photo).
   const groups = new Map();
   for (const row of candidates) {
     if (!row.project_id) continue;
@@ -430,7 +455,7 @@ async function linkPairs(tenantId) {
 }
 
 async function main() {
-  console.log(`Ryujin OS — Media Pool Scanner${DRY_RUN ? ' (dry-run)' : ''}`);
+  console.log(`Ryujin OS - Media Pool Scanner${DRY_RUN ? ' (dry-run)' : ''}`);
   console.log(`Tenant: ${TENANT_SLUG}`);
   const tenantId = await getTenantId();
   console.log(`Tenant id: ${tenantId}`);

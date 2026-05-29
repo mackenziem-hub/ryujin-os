@@ -410,6 +410,16 @@ function fmt$(n){if (n == null || n === '') return ''; const x = Number(n); if (
 const BIZ_TZ = 'America/Halifax';
 function isoDay(d){const dt=new Date(d);if(isNaN(dt))return '';const p=new Intl.DateTimeFormat('en-CA',{timeZone:BIZ_TZ,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(dt);const g=t=>(p.find(x=>x.type===t)||{}).value;return g('year')+'-'+g('month')+'-'+g('day')}
 function clockHM(iso){if(!iso)return '';const d=new Date(iso);if(isNaN(d))return '';const p=new Intl.DateTimeFormat('en-US',{timeZone:BIZ_TZ,hour:'numeric',minute:'2-digit',hour12:false}).formatToParts(d);const h=+(p.find(x=>x.type==='hour')||{}).value;const m=+(p.find(x=>x.type==='minute')||{}).value;const ampm=h>=12?'p':'a';const hh=((h+11)%12)+1;return hh+(m?':'+String(m).padStart(2,'0'):'')+ampm}
+// Halifax UTC offset (ms) at a given instant, DST-correct via Intl.
+function halifaxOffsetMs(utcMs){const dtf=new Intl.DateTimeFormat('en-US',{timeZone:BIZ_TZ,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});const p=dtf.formatToParts(new Date(utcMs));const g=t=>+(p.find(x=>x.type===t)||{}).value;let hh=g('hour');if(hh===24)hh=0;const asUTC=Date.UTC(g('year'),g('month')-1,g('day'),hh,g('minute'),g('second'));return asUTC-utcMs;}
+// Build a UTC ISO instant from a Halifax wall-clock date (YYYY-MM-DD) + time
+// (HH:MM), DST-correct, REGARDLESS of the browser's own timezone. Without this
+// a block created on a non-Atlantic device stores the wrong instant and
+// re-buckets to the wrong Halifax day on reload. (Review fix 2026-05-29.)
+function halifaxWallClockToISO(dateStr,timeStr){const a=String(dateStr).split('-').map(Number);const b=String(timeStr||'08:00').split(':').map(Number);const guess=Date.UTC(a[0],(a[1]||1)-1,a[2]||1,b[0]||0,b[1]||0,0);let inst=guess-halifaxOffsetMs(guess);const off2=halifaxOffsetMs(inst);if(off2!==halifaxOffsetMs(guess))inst=guess-off2;return new Date(inst).toISOString();}
+// Add i calendar days to a date (DST-safe: a calendar add, not a raw 86.4M-ms
+// step, so a spring-forward / fall-back day can't dup or skip a column key).
+function addDays(base,i){const d=new Date(base);d.setDate(d.getDate()+i);return d;}
 // A GHL appointment that's cancelled/no-show shouldn't render as a live booking.
 function apptIsActive(a){const st=String(a&&a.status||'').toLowerCase().replace(/[^a-z]/g,'');return !(st==='cancelled'||st==='canceled'||st==='noshow'||st==='invalid');}
 function nameMatchesCrew(name, matchKeys){
@@ -467,7 +477,7 @@ function renderSkeleton(){
   const n = currentDays();
   const cols = [];
   for (let i = 0; i < n; i++){
-    const d = new Date(today.getTime() + i * 86400000);
+    const d = addDays(today, i);
     const dayKey = isoDay(d);
     const dayName = DAY_NAMES[d.getDay()];
     const dayDate = (d.getMonth() + 1) + '/' + d.getDate();
@@ -603,7 +613,7 @@ function normalize(sched, ghl, gcal, blocksData){
   const n = currentDays();
   const days = {};
   for (let i = 0; i < n; i++){
-    const d = new Date(today.getTime() + i * 86400000);
+    const d = addDays(today, i);
     days[isoDay(d)] = { date: isoDay(d), events: [] };
   }
 
@@ -642,13 +652,18 @@ function normalize(sched, ghl, gcal, blocksData){
     let startMs = Number(a.startTime);
     if (!Number.isFinite(startMs)) startMs = new Date(a.startTime).getTime();
     if (!Number.isFinite(startMs)) continue;
+    // endTime is the same dual-format hazard as startTime (GHL sends epoch ms
+    // OR ISO-8601). Parse defensively: a bad value must resolve to null, never
+    // throw, or one bad row blanks the whole board.
+    let endMs = a.endTime != null ? Number(a.endTime) : NaN;
+    if (a.endTime != null && !Number.isFinite(endMs)) endMs = new Date(a.endTime).getTime();
     const dayKey = isoDay(new Date(startMs));
     if (!days[dayKey]) continue;
     days[dayKey].events.push({
       kind: 'inspection', id: a.id, title: a.title || 'Inspection',
       time: clockHM(new Date(startMs)),
       startTime: new Date(startMs).toISOString(),
-      endTime: a.endTime ? new Date(Number(a.endTime)).toISOString() : null,
+      endTime: Number.isFinite(endMs) ? new Date(endMs).toISOString() : null,
       address: a.address || '', phone: a.contactPhone || '',
       contactName: a.contactName || '', contactId: a.contactId || '',
       assignedUserId: a.assignedUserId || '', status: a.status || '',
@@ -1022,7 +1037,7 @@ document.getElementById('evtSave').addEventListener('click', async () => {
   const err = document.getElementById('evtErr');
   if (!title){ err.textContent = 'Title is required.'; return; }
   if (!date){ err.textContent = 'Date is required.'; return; }
-  const startsAt = new Date(date + 'T' + (time || '08:00') + ':00').toISOString();
+  const startsAt = halifaxWallClockToISO(date, time);
   const btn = document.getElementById('evtSave');
   btn.disabled = true; btn.textContent = 'Saving...';
   err.textContent = '';

@@ -133,6 +133,15 @@ async function loadSingle(tenantId, id) {
 // review-only (the draft is still useful to copy into Gmail).
 const EMAIL_REVIEW_ONLY = 'Email replies do not send from here yet. The draft is ready to copy into Gmail. SMS, Facebook, Instagram and WhatsApp replies do send from here.';
 
+// Channels GHL can actually deliver outbound via POST /conversations/messages.
+// webchat (Live_Chat) and gmb (Google) are NOT sendable there, so an approve
+// would flip the claim to sending, fail at GHL, and bounce the item back with
+// an error. Block them up front (review only) instead of attempting a doomed
+// send. (Review fix 2026-05-29.)
+const SENDABLE_CHANNELS = new Set(['sms', 'facebook', 'instagram', 'whatsapp']);
+const channelReviewOnly = (ch) =>
+  `${CHANNEL_LABELS[ch] || ch} replies do not send from here yet. The draft is ready to copy.`;
+
 // Approve + send. The ONLY path that pushes a message to a customer.
 async function sendReply({ tenantId, id, body }) {
   const { data: item, error } = await supabaseAdmin
@@ -146,7 +155,9 @@ async function sendReply({ tenantId, id, body }) {
   if (item.status === 'sent') return { error: 'Already sent', status: 409 };
   if (item.status !== 'needs_review') return { error: 'Item is not awaiting review', status: 409 };
   if (!item.ghl_contact_id) return { error: 'No contact id on this item, cannot send', status: 422 };
-  if (item.channel === 'email') return { error: EMAIL_REVIEW_ONLY, status: 422 };
+  if (!SENDABLE_CHANNELS.has(item.channel)) {
+    return { error: item.channel === 'email' ? EMAIL_REVIEW_ONLY : channelReviewOnly(item.channel), status: 422 };
+  }
 
   const finalBody = stripDashes((body && String(body).trim()) || item.draft_reply || '');
   if (!finalBody) return { error: 'Nothing to send (empty reply)', status: 400 };

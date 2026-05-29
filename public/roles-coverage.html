@@ -7,6 +7,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=optional" rel="stylesheet">
 <link rel="stylesheet" href="/assets/ryujin-perf.css">
 <script src="/assets/ryujin-perf.js"></script>
+<script src="/assets/auth-guard.js"></script>
 <style>
 :root{--accent:#4a9eff;--accent-deep:#2563eb;--border:rgba(74,158,255,0.24);--border-hi:rgba(74,158,255,0.5);
   --text:#e0e6f0;--text-dim:rgba(160,190,230,0.62);--text-muted:rgba(140,170,220,0.32);
@@ -60,7 +61,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:var(--tex
 .view{display:none}
 .view.active{display:block}
 
-/* matrix — sleek war-room console (matches simulator) */
+/* matrix - sleek war-room console (matches simulator) */
 #view-matrix{--c:#64fffb;--rd:#dc545e;--rdcore:#a1252f;--am:#daab5f;--dimc:#9aabc2}
 #matrixWrap{position:relative;padding:26px 30px 22px;border-radius:14px;border:1px solid rgba(100,255,251,0.14)}
 #matrixWrap::before{content:'';position:absolute;inset:0;background:url('/assets/roles-coverage/console-frame-cyan.webp') center/100% 100% no-repeat;mix-blend-mode:screen;z-index:0;pointer-events:none}
@@ -92,7 +93,7 @@ tr:hover .mx-cell{background:rgba(100,255,251,0.04)}
 .ext-tag{font-family:'Share Tech Mono',monospace;font-size:0.66em;color:var(--dimc);border:1px solid rgba(100,255,251,0.3);border-radius:4px;padding:0 4px;letter-spacing:0.5px}
 .stretch-tag{font-family:'Share Tech Mono',monospace;font-size:0.66em;color:var(--am)}
 
-/* map — sleek war-room (matches simulator + matrix) */
+/* map - sleek war-room (matches simulator + matrix) */
 #view-map{--c:#64fffb;--rd:#dc545e;--am:#daab5f;--dimc:#9aabc2}
 .map-wrap{position:relative}
 .map-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1;overflow:visible}
@@ -115,7 +116,7 @@ tr:hover .mx-cell{background:rgba(100,255,251,0.04)}
 .node-cov .cov{color:var(--c)}
 .node-cov .bk{color:var(--am)}
 
-/* simulator — mockup-faithful war room (sleek thin-line neon HUD) */
+/* simulator - mockup-faithful war room (sleek thin-line neon HUD) */
 #view-sim{--c:#64fffb;--rd:#dc545e;--rdcore:#a1252f;--am:#daab5f;--dimc:#9aabc2}
 #view-sim.active{display:flex;flex-direction:column;height:100%;color:#fff}
 .sim-stage{display:flex;flex-direction:column;gap:12px;height:100%;min-height:0}
@@ -350,6 +351,11 @@ let currentView = 'matrix';
 let outSet = new Set();
 let editingId = null;
 let dirty = false;
+// updatedAt of the team_coverage we loaded from the server (null if never loaded from server).
+// Used as an optimistic-concurrency token so a stale tab can't clobber a newer server save.
+let loadedUpdatedAt = null;
+// Element that had focus before an overlay (drawer/modal) opened, so we can restore it on close.
+let lastFocus = null;
 
 // ---- seeded default roster (real Plus Ultra team; editable + persisted) ----
 const SEED = {
@@ -424,15 +430,24 @@ function setSave(state,msg){ const el=$('saveState'); el.className='save-state '
 function markDirty(){ dirty=true; setSave('dirty','unsaved'); }
 
 async function loadConfig(){
-  let loaded=null;
+  let loaded=null, fromServer=false;
   try{
     const r=await fetch('/api/settings',{headers:headers()});
-    if(r.ok){ const d=await r.json(); if(d && d.team_coverage && Array.isArray(d.team_coverage.people) && d.team_coverage.people.length) loaded=d.team_coverage; }
+    if(r.ok){ const d=await r.json(); if(d && d.team_coverage && Array.isArray(d.team_coverage.people) && d.team_coverage.people.length){ loaded=d.team_coverage; fromServer=true; } }
   }catch(e){}
   if(!loaded){ try{ const ls=localStorage.getItem(LS_KEY); if(ls){ const p=JSON.parse(ls); if(p&&Array.isArray(p.people)&&p.people.length) loaded=p; } }catch(e){} }
   CONFIG = loaded ? normalize(loaded) : JSON.parse(JSON.stringify(SEED));
-  dirty=false;
-  setSave(loaded?'saved':'', loaded?'synced':'default');
+  // Remember the server-loaded updatedAt as the optimistic-concurrency token. Only a
+  // confirmed server load establishes a baseline; a localStorage-only / default config
+  // has no server baseline (null) so the first save just pushes without a conflict check.
+  loadedUpdatedAt = (loaded && fromServer && CONFIG.updatedAt) ? CONFIG.updatedAt : null;
+  // Only badge green 'synced' when the data actually came from a 2xx server
+  // load. A localStorage-only config (server returned nothing or the fetch
+  // failed) is NOT confirmed cross-device: show it unsynced and keep dirty so
+  // the next save re-pushes it. (Review fix 2026-05-29.)
+  if(loaded && fromServer){ dirty=false; setSave('saved','synced'); }
+  else if(loaded){ dirty=true; setSave('err','LOCAL ONLY - NOT SYNCED'); }
+  else { dirty=false; setSave('','default'); }
   renderAll();
 }
 // Shape-only. A persisted config is the tenant's source of truth and is loaded as-is
@@ -441,13 +456,26 @@ async function loadConfig(){
 function normalize(c){ c.functions=Array.isArray(c.functions)&&c.functions.length?c.functions:SEED.functions.slice(); c.people=(c.people||[]).map(p=>({roles:{},...p})); return c; }
 
 async function saveConfig(){
+  setSave('','saving...');
+  // Optimistic-concurrency guard: if we have a server baseline, re-GET and bail if
+  // someone saved a newer team_coverage since we loaded - last-write-wins would clobber it.
+  if(loadedUpdatedAt){
+    try{
+      const c=await fetch('/api/settings',{headers:headers()});
+      if(c.ok){ const cur=await c.json();
+        const serverAt=cur && cur.team_coverage && cur.team_coverage.updatedAt;
+        if(serverAt && Date.parse(serverAt) > Date.parse(loadedUpdatedAt)){
+          dirty=true; setSave('err','COVERAGE CHANGED ON SERVER - RELOAD BEFORE SAVING'); return;
+        }
+      }
+    }catch(e){ /* network hiccup on the pre-check: fall through to the PUT and let it report */ }
+  }
   CONFIG.updatedAt=new Date().toISOString();
   try{ localStorage.setItem(LS_KEY,JSON.stringify(CONFIG)); }catch(e){}
-  setSave('','saving...');
   try{
     const r=await fetch('/api/settings',{method:'PUT',headers:headers(),body:JSON.stringify({team_coverage:CONFIG})});
     if(!r.ok){ const t=await r.text(); throw new Error(r.status+' '+t.slice(0,120)); }
-    dirty=false; setSave('saved','saved');
+    dirty=false; loadedUpdatedAt=CONFIG.updatedAt; setSave('saved','saved');
   }catch(e){ dirty=true; setSave('err','NOT SYNCED - RETRY'); console.warn('save failed',e); }
 }
 
@@ -484,10 +512,10 @@ function renderMatrix(){
     const av=`<span class="mxav">${esc(initials(p))}</span>`;
     const stretch = roleCount(p)>=3?'<span class="stretch-tag" title="primary or backup on 3+ functions"> &#9888;</span>':'';
     const ext = p.external?' <span class="ext-tag">EXT</span>':'';
-    h+=`<tr><td class="mx-person" data-pid="${p.id}"><div class="pn">${av}${esc(dispName(p))}${ext}${stretch}</div><div class="pt">${esc(p.title||'')}</div></td>`;
+    h+=`<tr><td class="mx-person" data-pid="${esc(p.id)}"><div class="pn">${av}${esc(dispName(p))}${ext}${stretch}</div><div class="pt">${esc(p.title||'')}</div></td>`;
     fns.forEach(fn=>{ const role=p.roles?p.roles[fn]:null; const gap=hmap[fn].status==='bad'?'owner':(hmap[fn].status==='warn'?'backup':'');
       const mark= role==='primary'?'<span class="cellmark primary"><b>PRIMARY</b></span>': role==='backup'?'<span class="cellmark backup"><b>BACKUP</b></span>':'';
-      h+=`<td class="mx-cell ${editMode?'editing':''}" data-pid="${p.id}" data-fn="${esc(fn)}" data-gap="${gap}">${mark}</td>`; });
+      h+=`<td class="mx-cell ${editMode?'editing':''}" data-pid="${esc(p.id)}" data-fn="${esc(fn)}" data-gap="${gap}">${mark}</td>`; });
     h+='</tr>';
   });
   h+='</tbody></table>';
@@ -525,7 +553,7 @@ function renderMap(){
       const covers=coversList(p), backed=backedByList(p);
       const covTxt= covers.length?`<div class="node-cov"><span class="lab">covers:</span> <span class="cov">${covers.map(c=>esc(dispName(c.who))+' ('+esc(c.fn)+')').join(', ')}</span></div>`:'';
       const bkTxt= backed.length?`<div class="node-cov"><span class="lab">backed by:</span> <span class="bk">${backed.map(c=>esc(dispName(c.who))).join(', ')}</span></div>`:'';
-      h+=`<div class="node" data-pid="${p.id}" style="cursor:pointer" onmouseenter="hlNode('${p.id}')" onmouseleave="hlClear()" onclick="nodeClick('${p.id}')">
+      h+=`<div class="node" data-pid="${esc(p.id)}" style="cursor:pointer" onmouseenter="hlNode('${esc(p.id)}')" onmouseleave="hlClear()" onclick="nodeClick('${esc(p.id)}')">
         <div class="node-top"><span class="avatar" style="color:${pcolor(p)};border-color:${pcolor(p)}66;background:${pcolor(p)}1a">${esc(initials(p))}</span>
           <div><div class="node-name">${esc(dispName(p))}${p.external?' <span class="ext-tag">EXT</span>':''}</div><div class="node-title">${esc(p.title||'')}</div></div></div>
         <div class="node-obj"><b>P:</b> ${esc(p.primaryObjective||'')}</div>
@@ -572,11 +600,11 @@ function renderSim(){
   let h='';
   CONFIG.people.forEach(p=>{
     const out=outSet.has(p.id);
-    h+=`<div class="rrow ${out?'out':''}" data-pid="${p.id}" title="Click for detail" onclick="openProfile('${p.id}')">
+    h+=`<div class="rrow ${out?'out':''}" data-pid="${esc(p.id)}" title="Click for detail" onclick="openProfile('${esc(p.id)}')">
       <div class="ravatar" style="color:${pcolor(p)};border-color:${pcolor(p)}66;background:${pcolor(p)}1a">${esc(initials(p))}</div>
       <div class="rtext"><div class="rname">${esc(dispName(p))}</div><div class="rrole">${esc(p.title||'')}</div></div>
       ${out?'<span class="out-pill">OUT</span>':''}
-      <div class="rtoggle" title="Toggle out" onclick="event.stopPropagation();toggleOut('${p.id}')"></div>
+      <div class="rtoggle" title="Toggle out" onclick="event.stopPropagation();toggleOut('${esc(p.id)}')"></div>
     </div>`;
   });
   $('simRoster').innerHTML=h;
@@ -584,7 +612,7 @@ function renderSim(){
 }
 function toggleOut(pid){ if(outSet.has(pid)) outSet.delete(pid); else outSet.add(pid); renderSim(); }
 function clearOut(){ outSet.clear(); renderSim(); }
-// pure coverage classifier — shared by the simulator and the member deep-dive so they can't diverge
+// pure coverage classifier - shared by the simulator and the member deep-dive so they can't diverge
 function classifyImpact(outset){
   const fns=fnsOf(); let gaps=0, backed=0, atRisk=0; const absorbers=new Set(); const rows=[];
   const nm=b=>dispName(b)+(b.external?' (ext)':'');
@@ -593,8 +621,9 @@ function classifyImpact(outset){
     let sev,label,desc;
     if(prims.length===0){ sev='red'; label='NO OWNER'; desc='No primary assigned'; gaps++; }
     else if(primOut.length===0 || primIn.length>0){ sev='cyan'; label='OPTIMAL'; desc='Fully covered'; }
-    else { atRisk++; const bk=backupsOf(fn,outset);
-      if(bk.length){ sev='amber'; label='STRETCHED'; desc=bk.map(nm).join(', ')+' covering'; backed++; bk.forEach(b=>absorbers.add(b.id)); }
+    else { atRisk++; const bk=backupsOf(fn,outset); const bkIn=bk.filter(b=>!b.external); const bkExt=bk.filter(b=>b.external);
+      if(bkIn.length){ sev='amber'; label='STRETCHED'; desc=bk.map(nm).join(', ')+' covering'; backed++; bk.forEach(b=>absorbers.add(b.id)); }
+      else if(bkExt.length){ sev='amber'; label='EXTERNAL ONLY'; desc='only external backup ('+bkExt.map(dispName).join(', ')+'), no in-house coverage'; backed++; bkExt.forEach(b=>absorbers.add(b.id)); }
       else { sev='red'; label='CRITICAL GAP'; desc=primOut.map(dispName).join(', ')+' out, no coverage'; gaps++; } }
     rows.push({ fn, sev, label, desc });
   });
@@ -632,19 +661,20 @@ function drawSimArrows(){
 }
 
 // ---------- edit person ----------
-function openEdit(pid){ editingId=pid; const p=byId(pid)||{}; $('modalTitle').textContent= pid?'EDIT PERSON':'ADD PERSON';
+function openEdit(pid){ if(!overlayOpen()) lastFocus=document.activeElement; editingId=pid; const p=byId(pid)||{}; $('modalTitle').textContent= pid?'EDIT PERSON':'ADD PERSON';
   $('f_name').value=p.name||''; $('f_nick').value=p.nick||''; $('f_title').value=p.title||''; $('f_pillar').value=p.pillar||'Production';
   $('f_primary').value=p.primaryObjective||''; $('f_secondary').value=p.secondaryObjective||''; $('f_external').checked=!!p.external;
-  $('delBtn').style.display= pid?'inline-flex':'none'; $('modalBg').classList.add('open'); }
+  $('delBtn').style.display= pid?'inline-flex':'none'; $('modalBg').classList.add('open'); $('f_name').focus(); }
 function openAdd(){ editingId=null; openEdit(null); }
-function closeModal(){ $('modalBg').classList.remove('open'); }
+function closeModal(){ $('modalBg').classList.remove('open'); restoreFocus(); }
 
 // ---------- member deep-dive (read-only profile drawer) ----------
 function nodeClick(pid){ editMode?openEdit(pid):openProfile(pid); }
-function closeProfile(){ $('profileBg').classList.remove('open'); }
+function closeProfile(){ $('profileBg').classList.remove('open'); restoreFocus(); }
 function simulateOut(pid){ outSet.clear(); outSet.add(pid); closeProfile(); setView('sim'); renderSim(); }
 function openProfile(pid){
   const p=byId(pid); if(!p) return;
+  if(!overlayOpen()) lastFocus=document.activeElement;
   const roles=p.roles||{};
   const primFns=Object.keys(roles).filter(f=>roles[f]==='primary');
   const bkFns=Object.keys(roles).filter(f=>roles[f]==='backup');
@@ -663,7 +693,7 @@ function openProfile(pid){
   if(!crit.length && !str.length) h+=`<div class="pr-obj">Nothing breaks. Not a sole owner of any function.</div>`;
   else {
     if(crit.length) h+=`<div class="pr-fn"><span class="fnm" style="color:#dc545e">CRITICAL</span><span class="dep"><span class="warn">${crit.map(r=>esc(r.fn)).join(', ')} - no coverage</span></span></div>`;
-    str.forEach(r=>{ h+=`<div class="pr-fn"><span class="fnm" style="color:#daab5f">STRETCHED</span><span class="dep">${esc(r.fn)} - ${esc(r.desc)}</span></div>`; });
+    str.forEach(r=>{ const extOnly=r.label==='EXTERNAL ONLY'; h+=`<div class="pr-fn"><span class="fnm" style="color:${extOnly?'#e0805a':'#daab5f'}">${esc(r.label)}</span><span class="dep">${esc(r.fn)} - ${esc(r.desc)}</span></div>`; });
   }
   h+=`<div class="pr-sec">Roles &amp; coverage</div>`;
   if(!total) h+=`<div class="pr-obj">No functions assigned.</div>`;
@@ -676,8 +706,8 @@ function openProfile(pid){
   h+=`<div class="pr-obj"><b>PRIMARY</b><br>${esc(p.primaryObjective||'-')}</div>`;
   h+=`<div class="pr-obj"><b>SECONDARY</b><br>${esc(p.secondaryObjective||'-')}</div>`;
   h+=`<div class="pr-foot">`;
-  if(editMode) h+=`<button class="pr-btn ghost" onclick="closeProfile();openEdit('${pid}')">EDIT</button>`;
-  h+=`<button class="pr-btn primary" onclick="simulateOut('${pid}')">SIMULATE OUT</button>`;
+  if(editMode) h+=`<button class="pr-btn ghost" onclick="closeProfile();openEdit('${esc(pid)}')">EDIT</button>`;
+  h+=`<button class="pr-btn primary" onclick="simulateOut('${esc(pid)}')">SIMULATE OUT</button>`;
   h+=`<button class="pr-btn ghost" onclick="closeProfile()">CLOSE</button></div>`;
   const dr=$('profileDrawer'); dr.innerHTML=h; $('profileBg').classList.add('open'); dr.focus();
 }
@@ -705,14 +735,45 @@ function renderAll(){ renderHealth(); renderMatrix(); renderMap(); renderSim();
   // inject add-person button in edit mode
   if(editMode && !document.getElementById('addPersonBtn')){ const b=document.createElement('button'); b.id='addPersonBtn'; b.className='chip info'; b.style.cursor='pointer'; b.innerHTML='+ ADD PERSON'; b.onclick=openAdd; $('health').appendChild(b); }
 }
-function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+// ---------- overlay focus management (accessibility) ----------
+// True when a profile drawer or edit modal is on screen.
+function overlayOpen(){ return $('profileBg').classList.contains('open') || $('modalBg').classList.contains('open'); }
+// Return the focusable elements inside an open overlay, in DOM order.
+function focusablesIn(container){
+  if(!container) return [];
+  return Array.from(container.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'))
+    .filter(el=>el.offsetParent!==null || el===container);
+}
+// Wrap Tab/Shift+Tab inside the topmost open overlay so focus can't escape behind it.
+function trapTab(e){
+  if(e.key!=='Tab') return;
+  const container = $('modalBg').classList.contains('open') ? $('modalBg').querySelector('.modal')
+    : $('profileBg').classList.contains('open') ? $('profileDrawer') : null;
+  if(!container) return;
+  const f=focusablesIn(container); if(!f.length) return;
+  const first=f[0], last=f[f.length-1], active=document.activeElement;
+  if(e.shiftKey){ if(active===first || !container.contains(active)){ e.preventDefault(); last.focus(); } }
+  else { if(active===last || !container.contains(active)){ e.preventDefault(); first.focus(); } }
+}
+// Restore focus to whatever opened the overlay once nothing is open.
+function restoreFocus(){ if(!overlayOpen() && lastFocus && typeof lastFocus.focus==='function'){ try{ lastFocus.focus(); }catch(e){} lastFocus=null; } }
 
 window.addEventListener('beforeunload',e=>{ if(dirty){ e.preventDefault(); e.returnValue=''; } });
 window.addEventListener('resize',()=>{ if(currentView==='map') drawMapLines(); else if(currentView==='sim') drawSimArrows(); });
 // keep the simulator flow anchored to rows when the roster / status panes scroll
 ['simRoster','simRows'].forEach(id=>{ const el=document.getElementById(id); if(el) el.addEventListener('scroll',()=>{ if(currentView==='sim') requestAnimationFrame(drawSimArrows); }); });
 $('saveState').addEventListener('click',()=>{ if(dirty) saveConfig(); });   // retry a failed sync
-document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ if($('profileBg').classList.contains('open')){ e.stopPropagation(); closeProfile(); } else if($('modalBg').classList.contains('open')) closeModal(); else window.location.href='administration.html'; } });
+document.addEventListener('keydown',e=>{
+  if(e.key==='Tab'){ trapTab(e); return; }
+  if(e.key==='Escape'){
+    // Esc ONLY dismisses an open overlay; when nothing is open it does nothing
+    // (no surprise hard-navigation back to administration.html).
+    if($('profileBg').classList.contains('open')){ e.stopPropagation(); closeProfile(); }
+    else if($('modalBg').classList.contains('open')){ e.stopPropagation(); closeModal(); }
+  }
+});
 
 loadConfig();
 </script>

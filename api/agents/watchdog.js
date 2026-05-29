@@ -248,10 +248,13 @@ export default async function handler(req, res) {
   const newAlertedIds = [...(state.alertedIds || [])];
 
   try {
-    // Search for unread emails from the last 6 hours (with 30s timeout)
+    // Search for unread emails from the last 6 hours (with 20s timeout).
+    // Internal timeout MUST stay below the function maxDuration (30s in vercel.json)
+    // so the catch-block recovery path (WATCHDOG CRASHED SMS + saveState) has
+    // headroom to run before Vercel kills the invocation. 20s leaves ~10s.
     const unread = await Promise.race([
       gmailSearch('is:unread newer_than:6h', 20),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Gmail search timed out after 30s')), 30000))
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Gmail search timed out after 20s')), 20000))
     ]);
 
     for (const email of unread) {

@@ -251,6 +251,33 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
     return '';
   }
 
+  // For an email item we cannot send from here yet, surface a one-tap Gmail
+  // search-and-jump for the contact so Mac can reply in Gmail in one tap.
+  function gmailLink(it){
+    if (it.channel !== 'email' || !it.contact_name) return '';
+    const q = encodeURIComponent('from:(' + it.contact_name + ') OR ' + it.contact_name);
+    const url = 'https://mail.google.com/mail/u/0/#search/' + q;
+    return `<a class="btn btn-send" style="text-decoration:none;display:flex;align-items:center;justify-content:center" href="${url}" target="_blank" rel="noopener">Open in Gmail</a>`;
+  }
+
+  // The third (primary) action. When the agent flagged no reply needed, offer a
+  // one-tap "Mark handled" wired to the existing dismiss action instead of an
+  // Approve and Send button. Email always routes out via Gmail for now.
+  function primaryAction(it){
+    if (it.needs_reply === false) {
+      const extra = it.channel === 'email' ? gmailLink(it) : '';
+      return `<button class="btn btn-dismiss" onclick="dismiss('${it.id}', this)">Mark handled (no reply)</button>` + extra;
+    }
+    if (['sms','facebook','instagram','whatsapp'].includes(it.channel)) {
+      return `<button class="btn btn-send" onclick="send('${it.id}', this)">Approve &amp; Send</button>`;
+    }
+    if (it.channel === 'email') {
+      return gmailLink(it)
+        || `<button class="btn btn-send" disabled title="Email replies go out from Gmail for now. Copy the draft above.">Reply in Gmail</button>`;
+    }
+    return `<button class="btn btn-send" disabled title="This channel is review only. Copy the draft to reply.">Review only</button>`;
+  }
+
   function renderCard(it){
     const notifyPill = it.notify
       ? '<span class="pill pill-notify">' + escapeHtml(it.notify_reason || 'needs you now') + '</span>'
@@ -273,10 +300,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
           <textarea id="draft-${it.id}" placeholder="${it.needs_reply ? 'Draft a reply...' : 'Agent flagged no reply needed. Write one here if you want to respond.'}">${escapeHtml(it.draft_reply || '')}</textarea>
           <div class="actions">
             <button class="btn btn-save" onclick="saveDraft('${it.id}', this)">Save draft</button>
-            <button class="btn btn-dismiss" onclick="dismiss('${it.id}', this)">Dismiss</button>
-            ${it.channel === 'email'
-              ? '<button class="btn btn-send" disabled title="Email replies go out from Gmail for now. Copy the draft above.">Reply in Gmail</button>'
-              : `<button class="btn btn-send" onclick="send('${it.id}', this)">Approve &amp; Send</button>`}
+            ${it.needs_reply === false ? '' : `<button class="btn btn-dismiss" onclick="dismiss('${it.id}', this)">Dismiss</button>`}
+            ${primaryAction(it)}
           </div>
         </div>
       </div>`;
@@ -297,9 +322,22 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
       return new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0);
     });
     const qb = document.getElementById('queueBody');
+    // Preserve any in-progress draft text (plus focus + caret) across this
+    // re-render so the background poll cannot wipe what the operator is typing.
+    // (Review fix 2026-05-29.)
+    const liveDrafts = {}; let focusedDraft = null, caretA = 0, caretB = 0;
+    qb.querySelectorAll('textarea[id^="draft-"]').forEach(t => {
+      liveDrafts[t.id] = t.value;
+      if (document.activeElement === t) { focusedDraft = t.id; caretA = t.selectionStart; caretB = t.selectionEnd; }
+    });
     qb.innerHTML = items.length
       ? items.map(renderCard).join('')
       : '<div class="empty">Inbox is clear. Nothing waiting on you.</div>';
+    Object.keys(liveDrafts).forEach(id => {
+      const t = document.getElementById(id);
+      if (t && liveDrafts[id] != null && liveDrafts[id] !== t.value) t.value = liveDrafts[id];
+    });
+    if (focusedDraft) { const t = document.getElementById(focusedDraft); if (t) { t.focus(); try { t.setSelectionRange(caretA, caretB); } catch (e) {} } }
 
     const hb = document.getElementById('handledBody');
     const handled = state.recent_handled || [];
