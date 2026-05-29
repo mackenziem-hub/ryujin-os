@@ -217,6 +217,8 @@ h1{
 body[data-view="crew"] .board{display:none}
 body[data-view="crew"] .crewboard{display:grid}
 @media(min-width:1024px){body[data-view="crew"] .crewboard{display:grid}}
+.cal-ic{width:1em;height:1em;vertical-align:-0.15em;display:inline-block;flex:0 0 auto}
+.empty-illus{display:block;width:150px;max-width:55%;margin:6px auto 10px;opacity:0.82}
 </style>
 <script src="/assets/portal-auth-client.js"></script>
 <script src="/assets/ryujin-slug.js"></script>
@@ -250,7 +252,7 @@ body[data-view="crew"] .crewboard{display:grid}
     </div>
   </div>
 
-  <div class="legend">
+  <div class="legend" id="legend">
     <span class="lg"><span class="dot install"></span>Install</span>
     <span class="lg"><span class="dot inspection"></span>Inspection (GHL)</span>
     <span class="lg"><span class="dot service"></span>Service</span>
@@ -304,6 +306,16 @@ body[data-view="crew"] .crewboard{display:grid}
 const TENANT = window.RYUJIN_TENANT_SLUG;
 const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
+// Calendar icon kit (additive). Fetch the icon map once; ic(id) emits the
+// inline SVG (stroke currentColor, themeable by the parent's color). Safe
+// no-op if the kit fails to load.
+let ICONS = {};
+const iconsReady = fetch('/assets/icons/calendar-icons.json')
+  .then(r => r.ok ? r.json() : {})
+  .then(m => { ICONS = m || {}; })
+  .catch(() => {});
+function ic(id, cls){ const s = ICONS[id]; return s ? s.replace('<svg ', '<svg class="cal-ic ' + (cls || '') + '" ') : ''; }
+
 // Crew model: two buckets per Mac's 2026-05-29 direction. Plus Ultra
 // in-house collapses Mac + Diego + AJ + Pavanjot + Sukhsahib. Atlantic
 // is the subs bucket (currently just Ryan's sub row, kept active).
@@ -323,6 +335,15 @@ const CREW_ROSTER = [
     match: ['atlantic roofing','atlantic','ryan']
   }
 ];
+
+// Booking-side inspectors for the round-robin "assigned to" display. Keys are
+// GHL user IDs (assignedUserId from /api/ghl?mode=appointments). Fill from the
+// GHL handoff; until then the inspector chip/row no-ops safely.
+const INSPECTORS = {
+  // '<AJ_GHL_USER_ID>':    { name: 'AJ',    color: '#2dd4bf' },
+  // '<DIEGO_GHL_USER_ID>': { name: 'Diego', color: '#22d3ee' }
+};
+function inspectorFor(id){ return id && INSPECTORS[id] ? INSPECTORS[id] : null; }
 
 function bucketCrew(install){
   const s = String(install.sub_crew_lead || '').toLowerCase();
@@ -661,14 +682,15 @@ function evtCard(ev){
   let typeLine = '';
   let body = '';
   if (ev.kind === 'install'){
-    typeLine = 'Install &middot; ' + esc(ev.ref || '');
+    typeLine = ic('booked') + ' Install &middot; ' + esc(ev.ref || '');
     const notifyPill = ev.special_notes && /NOTIFY CUSTOMER/i.test(ev.special_notes)
-      ? '<div class="notify-pill">&#9888; notify customer</div>'
+      ? '<div class="notify-pill">' + ic('conflict') + ' notify customer</div>'
       : '';
     const bucket = bucketCrew(ev);
     const crew = bucket ? crewByKey(bucket) : null;
+    const crewIc = bucket === 'atlantic' ? ic('crew-atlantic') : ic('crew-inhouse');
     const crewChip = crew
-      ? `<span class="crew-chip" style="background:${crew.color}22;border-color:${crew.color}66;color:${crew.color}">${esc(crew.shortName)}</span>`
+      ? `<span class="crew-chip" style="background:${crew.color}22;border-color:${crew.color}66;color:${crew.color}">${crewIc} ${esc(crew.shortName)}</span>`
       : '<span class="crew-chip muted">unassigned</span>';
     body = `
       ${ev.time ? `<div class="evt-meta"><span class="chip">${esc(ev.time)}</span></div>` : ''}
@@ -679,16 +701,18 @@ function evtCard(ev){
         ${crewChip}
         ${ev.state ? `<span class="chip">${esc(ev.state)}</span>` : ''}
         ${ev.value ? `<span class="chip">${fmt$(ev.value)}</span>` : ''}
-        ${ev.duration_days ? `<span class="chip">${esc(ev.duration_days)}d</span>` : ''}
+        ${ev.duration_days ? `<span class="chip">${ic('buffer')} ${esc(ev.duration_days)}d</span>` : ''}
         ${crewBadges(ev.crew)}
       </div>`;
   } else if (ev.kind === 'inspection'){
-    typeLine = 'Inspection &middot; ' + esc(ev.calendarName || 'GHL');
+    typeLine = ic('site-inspection') + ' ' + esc(ev.calendarName || 'Inspection');
+    const insp = inspectorFor(ev.assignedUserId);
+    const inspChip = insp ? `<span class="crew-chip" style="background:${insp.color}22;border-color:${insp.color}66;color:${insp.color}">${ic('inspector')} ${esc(insp.name)}</span>` : '';
     body = `
       <div class="evt-title">${esc(ev.contactName || ev.title || 'Inspection')}</div>
-      <div class="evt-meta"><span class="chip">${esc(ev.time || '')}</span>${ev.address ? `<span class="chip">${esc(ev.address)}</span>` : ''}</div>`;
+      <div class="evt-meta"><span class="chip">${esc(ev.time || '')}</span>${ev.address ? `<span class="chip">${esc(ev.address)}</span>` : ''}${inspChip}</div>`;
   } else if (ev.kind === 'service'){
-    typeLine = 'Service &middot; ' + (ev.priority === 'urgent' ? '&#9888; URGENT' : ev.priority === 'high' ? '&#9888; HIGH' : esc(ev.status || 'open'));
+    typeLine = ic('service-call') + ' Service Call &middot; ' + (ev.priority === 'urgent' ? ic('conflict') + ' URGENT' : ev.priority === 'high' ? ic('conflict') + ' HIGH' : esc(ev.status || 'open'));
     body = `
       <div class="evt-title">${esc(ev.title)}</div>
       ${ev.subtitle ? `<div class="evt-detail">${esc(ev.subtitle)}</div>` : ''}
@@ -725,7 +749,7 @@ function renderDayView(days){
     const count = d.events.length;
     const cards = count
       ? d.events.map(evtCard).join('')
-      : '<div class="empty-day">no events</div>';
+      : '<div class="empty-day"><img class="empty-illus" src="/assets/calendar/empty-booking.webp" alt="" loading="lazy">no events</div>';
     return `
       <div class="col ${isToday ? 'today' : ''}">
         <div class="col-head">
@@ -767,11 +791,11 @@ function renderCrewView(days){
           ${matched.map(evtCard).join('')}
         </div>`;
     }).join('');
-    const body = dayGroups || `<div class="crew-empty">No assignments in this range</div>`;
+    const body = dayGroups || `<div class="crew-empty"><img class="empty-illus" src="/assets/calendar/empty-booking.webp" alt="" loading="lazy">No assignments in this range</div>`;
     return `
       <div class="crew-col" data-crew="${esc(crew.key)}">
         <div class="crew-col-head">
-          <span class="crew-dot" style="background:${crew.color}">${esc(crew.name.charAt(0))}</span>
+          <span class="crew-dot" style="background:${crew.color};color:#041018">${(crew.key === 'atlantic' ? ic('crew-atlantic') : ic('crew-inhouse')) || esc(crew.name.charAt(0))}</span>
           <span class="crew-name">${esc(crew.shortName)}</span>
         </div>
         ${body}
@@ -820,6 +844,7 @@ function openDrawer(ev){
       ${ev.address ? `<dt>Address</dt><dd>${esc(ev.address)}</dd>` : ''}
       ${ev.phone ? `<dt>Phone</dt><dd><a href="tel:${esc(ev.phone)}">${esc(ev.phone)}</a></dd>` : ''}
       ${ev.status ? `<dt>Status</dt><dd>${esc(ev.status)}</dd>` : ''}
+      ${inspectorFor(ev.assignedUserId) ? `<dt>Assigned to</dt><dd>${ic('inspector')} ${esc(inspectorFor(ev.assignedUserId).name)}</dd>` : ''}
     `;
     const ghlLink = ev.contactId
       ? `https://app.gohighlevel.com/v2/location/aHotOUdq9D8m3JPrRz9n/contacts/detail/${encodeURIComponent(ev.contactId)}`
@@ -977,8 +1002,25 @@ document.getElementById('evtSave').addEventListener('click', async () => {
   }
 });
 
+function wireKitChrome(){
+  // Wire static chrome to the icon kit once the icon map has loaded.
+  const fab = document.getElementById('fab');
+  if (fab) fab.innerHTML = ic('new-booking') || '+';
+  const legend = document.getElementById('legend');
+  if (legend && ICONS && Object.keys(ICONS).length){
+    legend.innerHTML =
+      `<span class="lg" style="color:var(--cyan)">${ic('booked')} Install</span>` +
+      `<span class="lg" style="color:var(--violet)">${ic('site-inspection')} Inspection</span>` +
+      `<span class="lg" style="color:var(--orange)">${ic('service-call')} Service Call</span>` +
+      `<span class="lg" style="color:var(--green)">${ic('today')} Google Cal</span>`;
+  }
+}
+
 (async function init(){
   await loadMe();
+  // Icon kit is decorative + has a no-op fallback: wire chrome and repaint when
+  // it settles, but never gate the operational data load on it.
+  iconsReady.then(() => { wireKitChrome(); rerender(); });
   await loadAll();
   setInterval(loadAll, 3 * 60 * 1000);
 })();
