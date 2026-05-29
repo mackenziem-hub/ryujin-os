@@ -4,14 +4,14 @@
 // POST   /api/invites              — Create invite (admin only)
 // POST   /api/invites (with token) — Accept invite (sign up)
 // DELETE /api/invites?id=X         — Revoke invite
+import crypto from 'crypto';
 import { supabaseAdmin } from '../lib/supabase.js';
-import { resolveTenant } from '../lib/tenant.js';
+import { requireOwnerOrAdmin } from '../lib/auth-server.js';
 
 function generateToken() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
-  let token = '';
-  for (let i = 0; i < 24; i++) token += chars[Math.floor(Math.random() * chars.length)];
-  return token;
+  // Cryptographically secure + URL-safe. Was Math.random() (a predictable PRNG;
+  // invite tokens are bearer credentials, so they must not be guessable).
+  return crypto.randomBytes(24).toString('base64url');
 }
 
 export default async function handler(req, res) {
@@ -95,10 +95,14 @@ export default async function handler(req, res) {
     return res.status(201).json({ user, message: 'Account created. You can now sign in.' });
   }
 
-  // ── Authenticated routes ──
-  const tenant = await resolveTenant(req);
-  if (!tenant) return res.status(400).json({ error: 'Tenant required' });
-  const tenantId = tenant.id;
+  // ── Authenticated admin routes (list / create / revoke) ──
+  // Owner/admin session required; the tenant is derived from the session, never
+  // from a client-supplied slug. Previously these ran on resolveTenant() alone,
+  // so any caller who could name the tenant could enumerate pending invite tokens
+  // (the list GET returns the token) or mint invites to arbitrary emails/roles.
+  const auth = await requireOwnerOrAdmin(req, res);
+  if (!auth) return; // requireOwnerOrAdmin already sent 401/403
+  const tenantId = auth.tenant_id;
 
   // List invites
   if (req.method === 'GET') {
