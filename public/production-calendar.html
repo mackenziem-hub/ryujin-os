@@ -52,6 +52,13 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
 .event.ps{background:rgba(34,211,238,0.12);color:#22d3ee;border-color:rgba(34,211,238,0.28)}
 .event.accepted{background:rgba(74,222,128,0.14);color:#4ade80;border-color:rgba(74,222,128,0.3)}
 .more-indicator{font-family:'Share Tech Mono',monospace;font-size:0.68em;color:rgba(200,220,255,0.4);letter-spacing:0.5px;padding:2px 7px;margin-top:2px}
+.cal-ic{width:1em;height:1em;vertical-align:-0.12em;display:inline-block}
+.event .cal-ic{margin-right:2px}
+.wx .cal-ic{width:13px;height:13px;vertical-align:-0.2em}
+.crew-badge{display:inline-flex;width:13px;height:13px;margin-right:3px;vertical-align:-0.15em}
+.dur-chip{font-family:'Share Tech Mono',monospace;font-size:0.85em;opacity:0.8}
+.empty-illus-wrap{grid-column:1/-1;text-align:center;padding:44px 20px;color:rgba(200,220,255,0.6);font-family:'Share Tech Mono',monospace;letter-spacing:1px;font-size:0.8em}
+.empty-illus-wrap img{display:block;width:200px;max-width:60%;margin:0 auto 14px;opacity:0.82}
 
 .legend{display:flex;gap:16px;margin-top:14px;font-family:'Share Tech Mono',monospace;font-size:0.72em;color:rgba(200,220,255,0.6);letter-spacing:1px;flex-wrap:wrap}
 .legend-item{display:flex;align-items:center;gap:6px}
@@ -133,18 +140,31 @@ let WEATHER = {}; // {'YYYY-MM-DD': {code, tmax, tmin, precip}}
 let viewYear = (new Date()).getFullYear();
 let viewMonth = (new Date()).getMonth();
 
+// Calendar icon kit (additive, non-blocking). ic(id) emits inline themeable SVG.
+let ICONS = {};
+const iconsReady = fetch('/assets/icons/calendar-icons.json').then(r=>r.ok?r.json():{}).then(m=>{ICONS=m||{};}).catch(()=>{});
+function ic(id, cls){ const s = ICONS[id]; return s ? s.replace('<svg ', '<svg class="cal-ic ' + (cls||'') + '" ') : ''; }
+
+// Crew-to-job bucket (round-robin VIEW): Atlantic Roofing (subs) vs In-House.
+function crewBucket(name){
+  const s = String(name||'').toLowerCase();
+  if (!s) return null;
+  if (/atlantic|ryan/.test(s)) return { key: 'atlantic', color: '#22d3ee', icon: 'crew-atlantic', label: 'Atlantic' };
+  return { key: 'inhouse', color: '#facc15', icon: 'crew-inhouse', label: 'In-House' };
+}
+
 function weatherTag(code, precip){
   if (code == null) return null;
   // Open-Meteo WMO weather codes: https://open-meteo.com/en/docs
-  if (code === 0) return { cls: 'clear', icon: '☀', desc: 'Clear' };
-  if ([1,2,3].includes(code)) return { cls: 'cloudy', icon: '⛅', desc: 'Partly cloudy' };
-  if ([45,48].includes(code)) return { cls: 'cloudy', icon: '🌫', desc: 'Fog' };
-  if ([51,53,55,56,57].includes(code)) return { cls: 'rain', icon: '🌦', desc: 'Drizzle' };
-  if ([61,63,65,80,81,82].includes(code)) return { cls: precip >= 70 ? 'heavy' : 'rain', icon: '🌧', desc: 'Rain' };
-  if ([66,67].includes(code)) return { cls: 'heavy', icon: '🌧', desc: 'Freezing rain' };
-  if ([71,73,75,77,85,86].includes(code)) return { cls: 'snow', icon: '❄', desc: 'Snow' };
-  if ([95,96,99].includes(code)) return { cls: 'heavy', icon: '⛈', desc: 'Thunderstorm' };
-  return { cls: 'cloudy', icon: '', desc: '' };
+  if (code === 0) return { cls: 'clear', icon: ic('wx-clear'), desc: 'Clear' };
+  if ([1,2,3].includes(code)) return { cls: 'cloudy', icon: ic('wx-cloudy'), desc: 'Partly cloudy' };
+  if ([45,48].includes(code)) return { cls: 'cloudy', icon: ic('wx-cloudy'), desc: 'Fog' };
+  if ([51,53,55,56,57].includes(code)) return { cls: 'rain', icon: ic('wx-rain'), desc: 'Drizzle' };
+  if ([61,63,65,80,81,82].includes(code)) return { cls: precip >= 70 ? 'heavy' : 'rain', icon: precip >= 70 ? ic('wx-heavy') : ic('wx-rain'), desc: 'Rain' };
+  if ([66,67].includes(code)) return { cls: 'heavy', icon: ic('wx-heavy'), desc: 'Freezing rain' };
+  if ([71,73,75,77,85,86].includes(code)) return { cls: 'snow', icon: ic('wx-snow'), desc: 'Snow' };
+  if ([95,96,99].includes(code)) return { cls: 'heavy', icon: ic('wx-heavy'), desc: 'Thunderstorm' };
+  return { cls: 'cloudy', icon: ic('wx-cloudy'), desc: '' };
 }
 
 async function loadWeather(){
@@ -206,7 +226,9 @@ async function loadEvents(){
         title: (w.customer_name || '?') + ' · ' + (w.total_sq || '?') + ' SQ',
         sub: w.address,
         url: 'production-workorders.html',
-        tier: (w.package_tier || '').toUpperCase()
+        tier: (w.package_tier || '').toUpperCase(),
+        crew: w.sub_crew_lead || (Array.isArray(w.support_crew) && w.support_crew[0]) || null,
+        days: Number(w.estimated_duration_days) || 1
       });
     });
 
@@ -231,7 +253,7 @@ async function loadEvents(){
       if (woEstIds.has(e.id)) return;
       (EVENTS[today] = EVENTS[today] || []).push({
         type: 'accepted',
-        title: '⚠ ' + ((e.customer || {}).full_name || '?') + ' — schedule',
+        title: ((e.customer || {}).full_name || '?') + ' — schedule',
         sub: 'Accepted, no WO yet',
         url: 'sales-proposals.html'
       });
@@ -283,10 +305,20 @@ function render(){
     return `<div class="cal-cell ${c.otherMonth ? 'other-month' : ''} ${iso === todayKey ? 'today' : ''}">
       ${wxHtml}
       <div class="day-num">${c.day}</div>
-      ${shown.map(e => `<a class="event ${e.type}" href="${e.url}" title="${(e.sub || e.title).replace(/"/g,'&quot;')}">${e.title}</a>`).join('')}
+      ${shown.map(e => {
+        const b = e.crew ? crewBucket(e.crew) : null;
+        const badge = b ? `<span class="crew-badge" style="color:${b.color}" title="${b.label}">${ic(b.icon)}</span>` : '';
+        const acc = e.type === 'accepted' ? ic('conflict') : '';
+        const dur = (e.type === 'wo' && e.days > 1) ? ` <span class="dur-chip">${ic('buffer')}${e.days}d</span>` : '';
+        return `<a class="event ${e.type}" href="${e.url}" title="${(e.sub || e.title).replace(/"/g,'&quot;')}">${badge}${acc}${e.title}${dur}</a>`;
+      }).join('')}
       ${extra ? `<div class="more-indicator">+${extra} more</div>` : ''}
     </div>`;
   }).join('');
+
+  if (totalEvents === 0){
+    $('calGrid').innerHTML = '<div class="empty-illus-wrap"><img src="/assets/calendar/empty-production.webp" alt="" loading="lazy">Nothing scheduled in ' + MONTH_NAMES[viewMonth] + '</div>';
+  }
 
   $('countBadge').textContent = totalEvents + ' ITEM' + (totalEvents === 1 ? '' : 'S') + ' THIS MONTH';
 }
@@ -315,6 +347,7 @@ document.addEventListener('keydown', e => {
 });
 
 loadEvents();
+iconsReady.then(render); // repaint with weather/crew icons once the kit loads (non-blocking)
 </script>
 
 <script src="assets/ryujin-mode.js"></script>
