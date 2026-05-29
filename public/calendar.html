@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#060a14">
+<title>Calendar · Ryujin OS</title>
+<link rel="icon" href="/apple-touch-icon.png">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Orbitron:wght@400;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#060a14;--card:rgba(20,30,50,0.85);
+  --border:rgba(34,211,238,0.16);--border-hi:rgba(34,211,238,0.35);
+  --text:#d0daf0;--text-dim:rgba(160,190,230,0.55);--text-muted:rgba(140,170,220,0.30);
+  --cyan:#22d3ee;--orange:#fb923c;--violet:#a78bfa;--green:#4ade80;--gold:#facc15;--red:#f87171;--gray:#6b7280;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{
+  font-family:'Inter',system-ui,sans-serif;
+  background:var(--bg) url('/assets/textures/app-bg.png') center/cover fixed no-repeat;
+  color:var(--text);min-height:100vh;padding:18px 14px 60px;
+}
+.wrap{max-width:1500px;margin:0 auto}
+
+/* Big white back button per Mac's UI rule */
+.back{
+  display:inline-flex;align-items:center;gap:8px;margin-bottom:16px;
+  font-family:'Orbitron',monospace;font-size:0.85em;letter-spacing:1.4px;
+  text-transform:uppercase;font-weight:700;color:#fff;text-decoration:none;
+  background:rgba(255,255,255,0.08);border:1.5px solid rgba(255,255,255,0.45);
+  padding:11px 22px;border-radius:22px;
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  transition:all 0.15s;
+}
+.back:hover{background:rgba(255,255,255,0.16);border-color:#fff}
+.back:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+
+.crumb{font-family:'Share Tech Mono',monospace;font-size:0.72em;color:var(--text-dim);letter-spacing:2px;text-transform:uppercase;margin-bottom:4px}
+h1{
+  font-family:'Orbitron',monospace;font-size:1.7em;font-weight:700;letter-spacing:1px;
+  background:linear-gradient(135deg,#e0e6f0 20%,var(--cyan) 65%,var(--violet));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  margin-bottom:6px;
+}
+.sub{font-size:0.9em;color:var(--text-dim);margin-bottom:18px;line-height:1.5}
+.sub b{color:var(--text)}
+
+.toolbar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.toolbar .stat{font-family:'Share Tech Mono',monospace;font-size:0.74em;letter-spacing:1px;color:var(--text-dim);background:rgba(8,12,24,0.6);border:1px solid var(--border);padding:6px 11px;border-radius:14px}
+.toolbar .stat b{color:var(--cyan)}
+
+.viewToggle{
+  display:inline-flex;background:rgba(8,12,24,0.7);border:1px solid var(--border);
+  border-radius:18px;padding:3px;margin-left:auto;
+}
+.viewToggle button{
+  font-family:'Orbitron',monospace;font-size:0.7em;letter-spacing:1.3px;text-transform:uppercase;
+  background:transparent;border:none;color:var(--text-dim);padding:7px 14px;border-radius:15px;
+  cursor:pointer;transition:all 0.15s;
+}
+.viewToggle button.active{background:var(--cyan);color:#001218;font-weight:700}
+.viewToggle button:not(.active):hover{color:var(--text)}
+
+.legend{display:flex;flex-wrap:wrap;gap:8px;font-size:0.7em;color:var(--text-dim);margin-bottom:14px}
+.legend .lg{display:inline-flex;align-items:center;gap:5px;background:rgba(8,12,24,0.5);border:1px solid var(--border);padding:4px 9px;border-radius:10px}
+.legend .dot{width:8px;height:8px;border-radius:50%}
+.legend .dot.install{background:var(--cyan);box-shadow:0 0 6px var(--cyan)}
+.legend .dot.service{background:var(--orange);box-shadow:0 0 6px var(--orange)}
+.legend .dot.inspection{background:var(--violet);box-shadow:0 0 6px var(--violet)}
+.legend .dot.gcal{background:var(--green);box-shadow:0 0 6px var(--green)}
+
+/* Per-day grid: vertical stack on mobile, horizontal 7-col on desktop.
+   Default body[data-view="day"]; CSS at the bottom toggles to crew view. */
+.board{display:flex;flex-direction:column;gap:10px}
+@media(min-width:1024px){
+  body[data-view="day"] .board.day-view{display:grid;grid-template-columns:repeat(7,minmax(180px,1fr));gap:10px}
+}
+
+.col{
+  background:rgba(11,17,32,0.72);border:1px solid var(--border);border-radius:14px;
+  padding:11px 11px 13px;
+  display:flex;flex-direction:column;gap:7px;
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+}
+.col.today{border-color:var(--border-hi);box-shadow:0 0 18px rgba(34,211,238,0.13)}
+.col.past{opacity:0.6}
+.col-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.col-day{font-family:'Orbitron',monospace;font-size:0.72em;letter-spacing:1.5px;color:var(--text);text-transform:uppercase}
+.col-day.is-today{color:var(--cyan)}
+.col-date{font-family:'Share Tech Mono',monospace;font-size:0.78em;color:var(--cyan)}
+.col-count{font-family:'Share Tech Mono',monospace;font-size:0.65em;color:var(--text-muted);letter-spacing:1px}
+
+.evt{
+  background:rgba(20,30,50,0.7);border:1px solid var(--border);border-radius:10px;
+  padding:8px 11px;cursor:pointer;transition:all 0.15s;position:relative;overflow:hidden;
+}
+.evt:hover{border-color:var(--border-hi);transform:translateY(-1px)}
+.evt:focus-visible{outline:2px solid var(--cyan);outline-offset:1px}
+.evt::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px}
+.evt.install::before{background:var(--cyan);box-shadow:0 0 6px var(--cyan)}
+.evt.service::before{background:var(--orange);box-shadow:0 0 6px var(--orange)}
+.evt.service.urgent::before{background:var(--red);box-shadow:0 0 8px var(--red)}
+.evt.service.high::before{background:var(--gold);box-shadow:0 0 8px var(--gold)}
+.evt.inspection::before{background:var(--violet);box-shadow:0 0 6px var(--violet)}
+.evt.gcal::before{background:var(--green);box-shadow:0 0 6px var(--green)}
+
+.evt-type{font-family:'Share Tech Mono',monospace;font-size:0.6em;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-muted);margin-bottom:2px}
+.evt.install .evt-type{color:var(--cyan)}
+.evt.service .evt-type{color:var(--orange)}
+.evt.inspection .evt-type{color:var(--violet)}
+.evt.gcal .evt-type{color:var(--green)}
+.evt-title{font-size:0.9em;font-weight:600;color:var(--text);line-height:1.3;margin-bottom:2px;word-wrap:break-word}
+.evt-detail{font-size:0.76em;color:var(--text-dim);line-height:1.35;word-wrap:break-word}
+.evt-meta{display:flex;gap:5px;margin-top:5px;flex-wrap:wrap;font-family:'Share Tech Mono',monospace;font-size:0.62em;letter-spacing:0.6px;color:var(--text-muted);align-items:center}
+.evt-meta .chip{background:rgba(8,12,24,0.55);border:1px solid var(--border);padding:2px 6px;border-radius:7px}
+.evt-meta .crew{display:inline-flex;gap:3px;align-items:center;margin-left:2px}
+.crew-dot{width:14px;height:14px;border-radius:50%;border:1px solid rgba(0,0,0,0.4);font-size:8px;display:inline-flex;align-items:center;justify-content:center;color:#001;font-weight:800;font-family:'Inter',sans-serif;letter-spacing:0}
+
+.empty-day{font-size:0.78em;color:var(--text-muted);text-align:center;padding:14px 4px;font-style:italic}
+.refresh-meta{font-family:'Share Tech Mono',monospace;font-size:0.72em;color:var(--text-muted);text-align:right;margin-top:18px;letter-spacing:1px}
+.error-banner{background:rgba(248,113,113,0.12);border:1px solid rgba(248,113,113,0.35);color:#fecaca;padding:10px 14px;border-radius:10px;margin-bottom:14px;font-size:0.85em}
+
+/* Detail drawer */
+.drawer-mask{position:fixed;inset:0;background:rgba(2,5,12,0.75);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:none;align-items:flex-end;justify-content:center;z-index:50}
+.drawer-mask.on{display:flex}
+@media(min-width:768px){.drawer-mask{align-items:center}}
+.drawer{
+  background:rgba(11,17,32,0.96);border:1px solid var(--border-hi);
+  border-radius:18px 18px 0 0;max-width:560px;width:100%;
+  max-height:85vh;overflow-y:auto;padding:22px 22px 30px;
+}
+@media(min-width:768px){.drawer{border-radius:18px}}
+.drawer h2{font-family:'Orbitron',monospace;font-size:1.15em;margin-bottom:6px;color:var(--text)}
+.drawer .src{font-family:'Share Tech Mono',monospace;font-size:0.7em;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-dim);margin-bottom:14px}
+.drawer dl{display:grid;grid-template-columns:90px 1fr;gap:8px 14px;margin-bottom:18px;font-size:0.88em}
+.drawer dt{color:var(--text-dim);font-family:'Share Tech Mono',monospace;font-size:0.78em;letter-spacing:0.5px}
+.drawer dd{color:var(--text)}
+.drawer dd a{color:var(--cyan);text-decoration:none}
+.drawer dd a:hover{text-decoration:underline}
+.drawer .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)}
+.drawer .actions button,.drawer .actions a{
+  font-family:'Orbitron',monospace;font-size:0.74em;letter-spacing:1.3px;text-transform:uppercase;
+  background:rgba(34,211,238,0.1);border:1px solid var(--border-hi);color:var(--cyan);
+  padding:8px 14px;border-radius:12px;cursor:pointer;text-decoration:none;transition:all 0.15s;
+}
+.drawer .actions button:hover,.drawer .actions a:hover{background:rgba(34,211,238,0.2)}
+.drawer .actions .danger{background:rgba(248,113,113,0.1);border-color:rgba(248,113,113,0.45);color:#fecaca}
+.drawer .actions .danger:hover{background:rgba(248,113,113,0.2)}
+.drawer .actions .close{background:transparent;border-color:var(--border);color:var(--text-dim);margin-left:auto}
+
+/* Per-crew view */
+.crewboard{display:grid;grid-template-columns:repeat(5,minmax(160px,1fr));gap:10px;overflow-x:auto;padding-bottom:8px}
+@media(max-width:767px){.crewboard{grid-template-columns:repeat(5,200px)}}
+.crew-col{background:rgba(11,17,32,0.72);border:1px solid var(--border);border-radius:14px;padding:11px;display:flex;flex-direction:column;gap:8px;min-width:160px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.crew-col-head{display:flex;align-items:center;gap:8px;padding-bottom:7px;border-bottom:1px solid var(--border)}
+.crew-col-head .crew-dot{width:22px;height:22px;font-size:11px}
+.crew-col-head .crew-name{font-family:'Orbitron',monospace;font-size:0.82em;font-weight:700;color:var(--text);letter-spacing:1px}
+.crew-col-head .crew-status{font-family:'Share Tech Mono',monospace;font-size:0.6em;color:var(--text-muted);margin-left:auto;letter-spacing:1px}
+.crew-day-group{padding-top:8px;border-top:1px dashed rgba(34,211,238,0.08);margin-top:4px}
+.crew-day-group:first-of-type{border-top:none;padding-top:0;margin-top:0}
+.crew-day-label{font-family:'Share Tech Mono',monospace;font-size:0.68em;color:var(--cyan);letter-spacing:1.2px;margin-bottom:5px}
+.crew-empty{font-size:0.76em;color:var(--text-muted);font-style:italic;padding:6px 0}
+
+/* Hide opposite view */
+.board.crew-view,.crewboard.day-view-active{display:none}
+.crewboard{display:none}
+body[data-view="crew"] .board{display:none}
+body[data-view="crew"] .crewboard{display:grid}
+@media(min-width:1024px){body[data-view="crew"] .crewboard{display:grid}}
+</style>
+<script src="/assets/portal-auth-client.js"></script>
+<script src="/assets/ryujin-slug.js"></script>
+</head>
+<body data-view="day">
+
+<div class="wrap">
+
+  <a class="back" href="/command-center.html">&larr; Back</a>
+
+  <div class="crumb">Operations &middot; Calendar</div>
+  <h1>Calendar</h1>
+  <p class="sub">Next <b>7 days</b>. Installs, inspections, service visits, and your Google Calendar in one view. Tap any card for details.</p>
+
+  <div id="errBanner"></div>
+
+  <div class="toolbar">
+    <span class="stat"><b id="totInstalls">&mdash;</b> installs</span>
+    <span class="stat"><b id="totInspections">&mdash;</b> inspections</span>
+    <span class="stat"><b id="totService">&mdash;</b> service</span>
+    <span class="stat"><b id="totGcal">&mdash;</b> gcal</span>
+    <div class="viewToggle" role="tablist">
+      <button id="btnDay" class="active" role="tab" aria-selected="true">By day</button>
+      <button id="btnCrew" role="tab" aria-selected="false">By crew</button>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span class="lg"><span class="dot install"></span>Install</span>
+    <span class="lg"><span class="dot inspection"></span>Inspection (GHL)</span>
+    <span class="lg"><span class="dot service"></span>Service</span>
+    <span class="lg"><span class="dot gcal"></span>Google Cal</span>
+  </div>
+
+  <div class="board day-view" id="board"><div class="col"><div class="empty-day">Loading...</div></div></div>
+  <div class="crewboard" id="crewboard"></div>
+
+  <div class="refresh-meta" id="refreshMeta">&mdash;</div>
+
+</div>
+
+<div class="drawer-mask" id="drawerMask" role="dialog" aria-modal="true" aria-label="Event detail">
+  <div class="drawer" id="drawer"></div>
+</div>
+
+<script>
+const TENANT = window.RYUJIN_TENANT_SLUG;
+const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+// Per-crew view roster. Names match against /api/schedule crew[].name and
+// workorder.sub_crew_lead text. Sukhsahib has no users row yet (May 28 hire,
+// onboarding pending) so his column displays as "Pending onboarding" and
+// never holds events until his UUID is provisioned.
+const CREW_ROSTER = [
+  { key: 'mac',       name: 'Mac',       match: ['mackenzie','mac'],         color: '#facc15' },
+  { key: 'diego',     name: 'Diego',     match: ['diego'],                   color: '#22d3ee' },
+  { key: 'aj',        name: 'AJ',        match: ['aj','ajith','arjun'],      color: '#fb923c' },
+  { key: 'pavanjot',  name: 'Pavanjot',  match: ['pavanjot','pavan'],        color: '#a78bfa' },
+  { key: 'sukhsahib', name: 'Sukhsahib', match: ['sukhsahib','singh','sukh'], color: '#6b7280', pending: true }
+];
+
+let MY_ROLE = null;
+
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function fmt$(n){if (n == null || n === '') return ''; const x = Number(n); if (!Number.isFinite(x)) return ''; return '$' + Math.round(x).toLocaleString()}
+function isoDay(d){return new Date(d).toISOString().slice(0,10)}
+function clockHM(iso){if(!iso)return '';const d=new Date(iso);if(isNaN(d))return '';const h=d.getHours();const m=d.getMinutes();const ampm=h>=12?'p':'a';const hh=((h+11)%12)+1;return hh+(m?':'+String(m).padStart(2,'0'):'')+ampm}
+function nameMatchesCrew(name, matchKeys){
+  const lc = String(name||'').toLowerCase();
+  if (!lc) return false;
+  return matchKeys.some(k => lc.includes(k));
+}
+function crewForName(name){
+  for (const c of CREW_ROSTER) if (nameMatchesCrew(name, c.match)) return c;
+  return null;
+}
+
+async function getToken(){return localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token')}
+
+async function loadMe(){
+  try{
+    const tok = await getToken();
+    const r = await fetch('/api/me', { headers: tok ? { 'Authorization': 'Bearer ' + tok } : {} });
+    if (!r.ok) return;
+    const me = await r.json();
+    MY_ROLE = me.role || 'crew';
+  }catch(_){}
+}
+
+function showErr(msg){
+  const eb = document.getElementById('errBanner');
+  eb.innerHTML = msg ? `<div class="error-banner">${esc(msg)}</div>` : '';
+}
+
+async function loadAll(){
+  const tok = await getToken();
+  if (!tok) { document.getElementById('board').innerHTML = '<div class="col"><div class="empty-day">Sign in required.</div></div>'; return; }
+  const hdr = { 'Authorization': 'Bearer ' + tok, 'x-tenant-id': TENANT };
+
+  const [sched, ghl, gcal] = await Promise.all([
+    fetch('/api/schedule?days=7', { headers: hdr }).then(r => r.ok ? r.json() : ({ days:[], jobs:[], _err: 'schedule '+r.status })).catch(e => ({ days:[], jobs:[], _err: 'schedule '+e.message })),
+    fetch('/api/ghl?mode=appointments&days=7', { headers: hdr }).then(r => r.ok ? r.json() : ({ appointments:[], _err: 'ghl '+r.status })).catch(e => ({ appointments:[], _err: 'ghl '+e.message })),
+    fetch('/api/google-cal?days=7', { headers: hdr }).then(r => r.ok ? r.json() : ({ events:[], _err: 'gcal '+r.status })).catch(e => ({ events:[], _err: 'gcal '+e.message }))
+  ]);
+
+  const errs = [sched._err, ghl._err, gcal._err].filter(Boolean);
+  if (errs.length) showErr('Partial load: ' + errs.join(', ')); else showErr('');
+
+  const merged = normalize(sched, ghl, gcal);
+  renderDayView(merged);
+  renderCrewView(merged);
+
+  document.getElementById('totInstalls').textContent = (sched.jobs || sched.days?.flatMap(d => d.installs || []) || []).length;
+  document.getElementById('totInspections').textContent = (ghl.appointments || []).length;
+  document.getElementById('totService').textContent = sched.total_service ?? 0;
+  document.getElementById('totGcal').textContent = (gcal.events || []).length + (gcal.configured === false ? ' (off)' : '');
+
+  document.getElementById('refreshMeta').textContent = 'Last refreshed ' + new Date().toLocaleTimeString() + ' · auto-refresh every 3 min';
+}
+
+function normalize(sched, ghl, gcal){
+  // Bucket: { 'YYYY-MM-DD': { date, events: [...] } } for next 7 days starting today.
+  const today = new Date(); today.setHours(0,0,0,0);
+  const days = {};
+  for (let i = 0; i < 7; i++){
+    const d = new Date(today.getTime() + i * 86400000);
+    days[isoDay(d)] = { date: isoDay(d), events: [] };
+  }
+
+  // 1) Installs from /api/schedule (estimates + workorders), already day-bucketed.
+  for (const day of (sched.days || [])){
+    if (!days[day.date]) continue;
+    for (const j of (day.installs || [])){
+      days[day.date].events.push({
+        kind: 'install', id: j.id, ref: j.ref, title: j.label,
+        time: j.time || '', startTime: j.scheduled_at || null,
+        address: j.address || '', phone: j.phone || '',
+        value: j.value || null, state: j.state || '',
+        crew: j.crew || [], crew_lead: j.crew_lead || null,
+        sub_crew_lead: j.sub_crew_lead || null,
+        wo_number: j.wo_number || null, project_id: j.project_id || null,
+        duration_days: j.duration_days || null, live: !!j.live,
+        progress_pct: j.progress_pct || null
+      });
+    }
+    for (const t of (day.service || [])){
+      days[day.date].events.push({
+        kind: 'service', id: t.id, title: t.label, subtitle: t.title || '',
+        time: t.time || '', priority: t.priority || 'normal',
+        status: t.status || 'open', phone: t.phone || ''
+      });
+    }
+  }
+
+  // 2) Inspections from GHL. Bucket by startTime day.
+  // Codex P2 (PR #108): GHL emits startTime as epoch ms in some cases
+  // and ISO-8601 strings in others. Accept both: try Number first, fall
+  // back to Date parse, drop only when neither produces a finite ms value.
+  for (const a of (ghl.appointments || [])){
+    let startMs = Number(a.startTime);
+    if (!Number.isFinite(startMs)) startMs = new Date(a.startTime).getTime();
+    if (!Number.isFinite(startMs)) continue;
+    const dayKey = isoDay(new Date(startMs));
+    if (!days[dayKey]) continue;
+    days[dayKey].events.push({
+      kind: 'inspection', id: a.id, title: a.title || 'Inspection',
+      time: clockHM(new Date(startMs)),
+      startTime: new Date(startMs).toISOString(),
+      endTime: a.endTime ? new Date(Number(a.endTime)).toISOString() : null,
+      address: a.address || '', phone: a.contactPhone || '',
+      contactName: a.contactName || '', contactId: a.contactId || '',
+      assignedUserId: a.assignedUserId || '', status: a.status || '',
+      calendarName: a.calendarName || ''
+    });
+  }
+
+  // 3) Google Cal events.
+  for (const e of (gcal.events || [])){
+    const startT = new Date(e.startTime);
+    if (isNaN(startT)) continue;
+    const dayKey = isoDay(startT);
+    if (!days[dayKey]) continue;
+    days[dayKey].events.push({
+      kind: 'gcal', id: e.uid || (e.summary + '-' + e.startTime),
+      title: e.summary || '(untitled)',
+      time: e.allDay ? 'all day' : clockHM(e.startTime),
+      startTime: e.startTime, endTime: e.endTime,
+      address: e.location || '', notes: e.description || '',
+      allDay: !!e.allDay
+    });
+  }
+
+  // Sort each day by time, untimed events sort last.
+  const TYPE_ORDER = { inspection: 0, service: 1, install: 2, gcal: 3 };
+  for (const k of Object.keys(days)){
+    days[k].events.sort((a, b) => {
+      const ta = a.startTime || (a.time ? a.time : '');
+      const tb = b.startTime || (b.time ? b.time : '');
+      if (ta && tb) return String(ta).localeCompare(String(tb));
+      if (ta) return -1; if (tb) return 1;
+      return (TYPE_ORDER[a.kind] || 9) - (TYPE_ORDER[b.kind] || 9);
+    });
+  }
+
+  return Object.values(days).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function crewBadges(crew){
+  if (!Array.isArray(crew) || crew.length === 0) return '';
+  return '<span class="crew">' + crew.map(c => {
+    const m = crewForName(c.name);
+    const color = m ? m.color : '#6b7280';
+    const initial = String(c.name||'?').trim().charAt(0).toUpperCase();
+    return `<span class="crew-dot" style="background:${color}" title="${esc(c.name||'')}">${esc(initial)}</span>`;
+  }).join('') + '</span>';
+}
+
+function evtCard(ev){
+  const cls = ['evt', ev.kind, ev.priority === 'urgent' || ev.priority === 'high' ? ev.priority : ''].filter(Boolean).join(' ');
+  let typeLine = '';
+  let body = '';
+  if (ev.kind === 'install'){
+    typeLine = 'Install &middot; ' + esc(ev.ref || '');
+    body = `
+      ${ev.time ? `<div class="evt-meta"><span class="chip">${esc(ev.time)}</span></div>` : ''}
+      <div class="evt-title">${esc(ev.title)}${ev.live ? ' <span style="color:var(--green);font-size:0.7em">&#9679; LIVE</span>' : ''}</div>
+      ${ev.address ? `<div class="evt-detail">${esc(ev.address)}</div>` : ''}
+      <div class="evt-meta">
+        ${ev.state ? `<span class="chip">${esc(ev.state)}</span>` : ''}
+        ${ev.value ? `<span class="chip">${fmt$(ev.value)}</span>` : ''}
+        ${ev.duration_days ? `<span class="chip">${esc(ev.duration_days)}d</span>` : ''}
+        ${crewBadges(ev.crew)}
+      </div>`;
+  } else if (ev.kind === 'inspection'){
+    typeLine = 'Inspection &middot; ' + esc(ev.calendarName || 'GHL');
+    body = `
+      <div class="evt-title">${esc(ev.contactName || ev.title || 'Inspection')}</div>
+      <div class="evt-meta"><span class="chip">${esc(ev.time || '')}</span>${ev.address ? `<span class="chip">${esc(ev.address)}</span>` : ''}</div>`;
+  } else if (ev.kind === 'service'){
+    typeLine = 'Service &middot; ' + (ev.priority === 'urgent' ? '&#9888; URGENT' : ev.priority === 'high' ? '&#9888; HIGH' : esc(ev.status || 'open'));
+    body = `
+      <div class="evt-title">${esc(ev.title)}</div>
+      ${ev.subtitle ? `<div class="evt-detail">${esc(ev.subtitle)}</div>` : ''}
+      <div class="evt-meta">${ev.time ? `<span class="chip">${esc(ev.time)}</span>` : ''}${ev.phone ? `<span class="chip">${esc(ev.phone)}</span>` : ''}</div>`;
+  } else if (ev.kind === 'gcal'){
+    typeLine = 'Google Cal';
+    body = `
+      <div class="evt-title">${esc(ev.title)}</div>
+      ${ev.address ? `<div class="evt-detail">${esc(ev.address)}</div>` : ''}
+      <div class="evt-meta"><span class="chip">${esc(ev.time || '')}</span></div>`;
+  }
+  return `<div class="${cls}" tabindex="0" data-evt='${esc(JSON.stringify(ev))}'>
+    <div class="evt-type">${typeLine}</div>
+    ${body}
+  </div>`;
+}
+
+function renderDayView(days){
+  const todayIso = isoDay(new Date());
+  const html = days.map(d => {
+    const date = new Date(d.date + 'T00:00:00');
+    const dayName = DAY_NAMES[date.getDay()];
+    const dayDate = (date.getMonth() + 1) + '/' + date.getDate();
+    const isToday = d.date === todayIso;
+    const count = d.events.length;
+    const cards = count
+      ? d.events.map(evtCard).join('')
+      : '<div class="empty-day">no events</div>';
+    return `
+      <div class="col ${isToday ? 'today' : ''}">
+        <div class="col-head">
+          <div>
+            <div class="col-day ${isToday ? 'is-today' : ''}">${esc(dayName)}${isToday ? ' (today)' : ''}</div>
+            <div class="col-date">${esc(dayDate)}</div>
+          </div>
+          <div class="col-count">${count}</div>
+        </div>
+        ${cards}
+      </div>`;
+  }).join('');
+  document.getElementById('board').innerHTML = html;
+  document.querySelectorAll('.evt').forEach(el => {
+    el.addEventListener('click', () => openDrawer(JSON.parse(el.dataset.evt)));
+    el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); openDrawer(JSON.parse(el.dataset.evt)); } });
+  });
+}
+
+function renderCrewView(days){
+  // For each crew member, group events by day where that crew member appears in the assignment.
+  const html = CREW_ROSTER.map(crew => {
+    const dayGroups = days.map(d => {
+      const matched = d.events.filter(ev => {
+        if (ev.kind === 'install'){
+          if (Array.isArray(ev.crew)) for (const c of ev.crew) if (nameMatchesCrew(c.name, crew.match)) return true;
+          if (ev.crew_lead && nameMatchesCrew(ev.crew_lead.name, crew.match)) return true;
+          if (ev.sub_crew_lead && nameMatchesCrew(ev.sub_crew_lead, crew.match)) return true;
+        }
+        if (ev.kind === 'gcal' && crew.key === 'mac') return true;
+        return false;
+      });
+      if (matched.length === 0) return '';
+      const date = new Date(d.date + 'T00:00:00');
+      const dayName = DAY_NAMES[date.getDay()];
+      return `
+        <div class="crew-day-group">
+          <div class="crew-day-label">${esc(dayName)} ${date.getMonth()+1}/${date.getDate()}</div>
+          ${matched.map(evtCard).join('')}
+        </div>`;
+    }).join('');
+    const status = crew.pending ? 'pending onboarding' : '';
+    const body = dayGroups || `<div class="crew-empty">${crew.pending ? 'Not yet onboarded (no UUID)' : 'No assignments this week'}</div>`;
+    return `
+      <div class="crew-col" data-crew="${esc(crew.key)}">
+        <div class="crew-col-head">
+          <span class="crew-dot" style="background:${crew.color}">${esc(crew.name.charAt(0))}</span>
+          <span class="crew-name">${esc(crew.name)}</span>
+          ${status ? `<span class="crew-status">${esc(status)}</span>` : ''}
+        </div>
+        ${body}
+      </div>`;
+  }).join('');
+  document.getElementById('crewboard').innerHTML = html;
+  document.querySelectorAll('.crewboard .evt').forEach(el => {
+    el.addEventListener('click', () => openDrawer(JSON.parse(el.dataset.evt)));
+  });
+}
+
+function openDrawer(ev){
+  const isPrivileged = MY_ROLE === 'owner' || MY_ROLE === 'admin';
+  let title = ev.title;
+  let src = '';
+  let dl = '';
+  let actions = '<button class="close" id="drawerClose">Close</button>';
+
+  if (ev.kind === 'install'){
+    title = ev.title;
+    src = 'Workorder &middot; ' + (ev.ref || '');
+    dl = `
+      ${ev.time ? `<dt>Time</dt><dd>${esc(ev.time)}</dd>` : ''}
+      ${ev.address ? `<dt>Address</dt><dd>${esc(ev.address)}</dd>` : ''}
+      ${ev.phone ? `<dt>Phone</dt><dd><a href="tel:${esc(ev.phone)}">${esc(ev.phone)}</a></dd>` : ''}
+      ${ev.value ? `<dt>Value</dt><dd>${esc(fmt$(ev.value))}</dd>` : ''}
+      ${ev.state ? `<dt>Stage</dt><dd>${esc(ev.state)}</dd>` : ''}
+      ${ev.duration_days ? `<dt>Duration</dt><dd>${esc(ev.duration_days)} day${ev.duration_days==1?'':'s'}</dd>` : ''}
+      ${ev.sub_crew_lead ? `<dt>Sub lead</dt><dd>${esc(ev.sub_crew_lead)}</dd>` : ''}
+      ${(ev.crew && ev.crew.length) ? `<dt>Crew</dt><dd>${ev.crew.map(c => esc(c.name)).join(', ')}</dd>` : ''}
+    `;
+    actions = (ev.project_id
+        ? `<a href="/job.html?project_id=${encodeURIComponent(ev.project_id)}">Open job</a>`
+        : `<a href="/admin.html#estimates">Open in admin</a>`)
+      + (isPrivileged && ev.wo_number ? ` <a href="/production-jobs.html#wo-${encodeURIComponent(ev.wo_number)}">Reassign crew</a>` : '')
+      + ' <button class="close" id="drawerClose">Close</button>';
+  } else if (ev.kind === 'inspection'){
+    title = ev.contactName || ev.title || 'Inspection';
+    src = 'Inspection (GHL) &middot; ' + (ev.calendarName || '');
+    dl = `
+      ${ev.time ? `<dt>Time</dt><dd>${esc(ev.time)}</dd>` : ''}
+      ${ev.address ? `<dt>Address</dt><dd>${esc(ev.address)}</dd>` : ''}
+      ${ev.phone ? `<dt>Phone</dt><dd><a href="tel:${esc(ev.phone)}">${esc(ev.phone)}</a></dd>` : ''}
+      ${ev.status ? `<dt>Status</dt><dd>${esc(ev.status)}</dd>` : ''}
+    `;
+    const ghlLink = ev.contactId
+      ? `https://app.gohighlevel.com/v2/location/aHotOUdq9D8m3JPrRz9n/contacts/detail/${encodeURIComponent(ev.contactId)}`
+      : 'https://app.gohighlevel.com/v2/location/aHotOUdq9D8m3JPrRz9n/calendars';
+    actions = `<a href="${ghlLink}" target="_blank" rel="noopener">Open in GHL</a> <button class="close" id="drawerClose">Close</button>`;
+  } else if (ev.kind === 'service'){
+    title = ev.title;
+    src = 'Service ticket';
+    dl = `
+      ${ev.subtitle ? `<dt>Issue</dt><dd>${esc(ev.subtitle)}</dd>` : ''}
+      ${ev.time ? `<dt>Time</dt><dd>${esc(ev.time)}</dd>` : ''}
+      ${ev.phone ? `<dt>Phone</dt><dd><a href="tel:${esc(ev.phone)}">${esc(ev.phone)}</a></dd>` : ''}
+      ${ev.priority ? `<dt>Priority</dt><dd>${esc(ev.priority)}</dd>` : ''}
+      ${ev.status ? `<dt>Status</dt><dd>${esc(ev.status)}</dd>` : ''}
+    `;
+    actions = `<a href="/service-tickets.html?id=${encodeURIComponent(ev.id)}">Open ticket</a> <button class="close" id="drawerClose">Close</button>`;
+  } else if (ev.kind === 'gcal'){
+    title = ev.title;
+    src = 'Google Calendar (read only)';
+    dl = `
+      ${ev.time ? `<dt>Time</dt><dd>${esc(ev.time)}</dd>` : ''}
+      ${ev.address ? `<dt>Location</dt><dd>${esc(ev.address)}</dd>` : ''}
+      ${ev.notes ? `<dt>Notes</dt><dd>${esc(ev.notes).replace(/\n/g,'<br>')}</dd>` : ''}
+    `;
+    actions = `<a href="https://calendar.google.com/" target="_blank" rel="noopener">Open Google Cal</a> <button class="close" id="drawerClose">Close</button>`;
+  }
+
+  const d = document.getElementById('drawer');
+  d.innerHTML = `
+    <h2>${esc(title)}</h2>
+    <div class="src">${src}</div>
+    <dl>${dl}</dl>
+    <div class="actions">${actions}</div>
+  `;
+  document.getElementById('drawerMask').classList.add('on');
+  document.getElementById('drawerClose').addEventListener('click', closeDrawer);
+}
+
+function closeDrawer(){ document.getElementById('drawerMask').classList.remove('on'); }
+document.getElementById('drawerMask').addEventListener('click', e => { if (e.target.id === 'drawerMask') closeDrawer(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+
+document.getElementById('btnDay').addEventListener('click', () => {
+  document.body.dataset.view = 'day';
+  document.getElementById('btnDay').classList.add('active');
+  document.getElementById('btnCrew').classList.remove('active');
+  document.getElementById('btnDay').setAttribute('aria-selected','true');
+  document.getElementById('btnCrew').setAttribute('aria-selected','false');
+});
+document.getElementById('btnCrew').addEventListener('click', () => {
+  document.body.dataset.view = 'crew';
+  document.getElementById('btnCrew').classList.add('active');
+  document.getElementById('btnDay').classList.remove('active');
+  document.getElementById('btnCrew').setAttribute('aria-selected','true');
+  document.getElementById('btnDay').setAttribute('aria-selected','false');
+});
+
+(async function init(){
+  await loadMe();
+  await loadAll();
+  setInterval(loadAll, 3 * 60 * 1000);
+})();
+</script>
+
+</body>
+</html>

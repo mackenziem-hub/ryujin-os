@@ -1,3 +1,5 @@
+import { resolveSession } from '../lib/portalAuth.js';
+
 const GHL_BASE = 'https://services.leadconnectorhq.com';
 const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
 const LOCATION_ID = 'aHotOUdq9D8m3JPrRz9n';
@@ -109,6 +111,30 @@ async function ghlFetch(path, params = {}, options = {}) {
     throw new Error(`GHL ${resp.status}: ${body}`);
   }
   return resp.json();
+}
+
+// Cached list of GHL calendars at LOCATION_ID. The appointments mode needs
+// to enumerate calendars to pass calendarId to /calendars/events. Stale data
+// here just means a newly created calendar won't show up for up to 5 min.
+let CALENDAR_CACHE = { ts: 0, data: null };
+const CALENDAR_CACHE_TTL_MS = 5 * 60 * 1000;
+async function listCalendarsCached() {
+  if (CALENDAR_CACHE.data && Date.now() - CALENDAR_CACHE.ts < CALENDAR_CACHE_TTL_MS) {
+    return CALENDAR_CACHE.data;
+  }
+  try {
+    const data = await ghlFetch('/calendars/', { locationId: LOCATION_ID });
+    const calendars = (data.calendars || []).map(c => ({
+      id: c.id,
+      name: c.name || 'Untitled calendar',
+      isActive: c.isActive !== false
+    })).filter(c => c.isActive);
+    CALENDAR_CACHE = { ts: Date.now(), data: calendars };
+    return calendars;
+  } catch (err) {
+    console.error('listCalendarsCached failed:', err.message);
+    return [];
+  }
 }
 
 // Fetch notes for a contact via the dedicated GHL notes endpoint.
@@ -802,6 +828,95 @@ export default async function handler(req, res) {
         overdue: enriched.filter(t => t.overdue).length,
         dueSoon: enriched.filter(t => t.dueSoon && !t.overdue).length,
         tasks: enriched,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // === APPOINTMENTS (calendar events at the location, e.g. inspection bookings) ===
+    // GHL's /calendars/events/appointments endpoint requires one of
+    // calendarId / userId / groupId plus a (startTime, endTime) window in
+    // millisecond epochs. We enumerate the location's calendars once (cached
+    // for 5 min in module scope), fan out one fetch per calendar in parallel,
+    // then normalize into a single sorted list. Window defaults to the next
+    // 7 days; clamp to 1..30 to keep response time bounded.
+    if (resolvedMode === 'appointments') {
+      // Codex P1 (PR #108): this mode returns contact PII (name, phone,
+      // email, address) for each upcoming inspection. Other ghl.js modes
+      // expose aggregate pipeline + opportunity data that internal chat
+      // tools rely on without a session, but appointment-level contact
+      // detail is the same surface as /api/inspections and must require
+      // a valid portal session.
+      const session = await resolveSession(req);
+      if (!session) return res.status(401).json({ error: 'sign_in_required' });
+
+      const days = Math.max(1, Math.min(30, parseInt(req.query.days, 10) || 7));
+      const now = new Date();
+      const startTime = now.getTime();
+      const endTime = startTime + days * 86400000;
+
+      const calendars = await listCalendarsCached();
+      if (!calendars.length) {
+        return res.json({
+          mode: 'appointments',
+          locationId: LOCATION_ID,
+          window: { startTime, endTime, days },
+          calendars: [],
+          appointments: [],
+          total: 0,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      const fetches = calendars.map(c =>
+        ghlFetch('/calendars/events', {
+          locationId: LOCATION_ID,
+          calendarId: c.id,
+          startTime: String(startTime),
+          endTime: String(endTime)
+        }).then(d => ({ calendar: c, events: d.events || [] }))
+          .catch(err => ({ calendar: c, events: [], error: err.message }))
+      );
+      const results = await Promise.all(fetches);
+
+      const appointments = [];
+      for (const { calendar, events } of results) {
+        for (const ev of events) {
+          const apptStatus = ev.appointmentStatus || ev.status || 'confirmed';
+          if (apptStatus === 'cancelled' || apptStatus === 'invalid') continue;
+          // Appointment payload contact info shows up in three shapes depending
+          // on calendar config. Try embedded contact object, then top-level
+          // first/last, then null. UI shows contactId as a deep-link fallback.
+          const contactName = (ev.contact?.name
+            || [ev.contact?.firstName, ev.contact?.lastName].filter(Boolean).join(' ').trim()
+            || [ev.firstName, ev.lastName].filter(Boolean).join(' ').trim()
+            || null) || null;
+          appointments.push({
+            id: ev.id,
+            title: ev.title || calendar.name || 'Appointment',
+            startTime: ev.startTime,
+            endTime: ev.endTime,
+            address: ev.address || null,
+            contactId: ev.contactId || null,
+            contactName,
+            contactPhone: ev.contact?.phone || ev.phone || null,
+            contactEmail: ev.contact?.email || ev.email || null,
+            assignedUserId: ev.assignedUserId || null,
+            status: apptStatus,
+            calendarId: calendar.id,
+            calendarName: calendar.name,
+            notes: ev.notes || null
+          });
+        }
+      }
+      appointments.sort((a, b) => String(a.startTime).localeCompare(String(b.startTime)));
+
+      return res.json({
+        mode: 'appointments',
+        locationId: LOCATION_ID,
+        window: { startTime, endTime, days },
+        calendars: calendars.map(c => ({ id: c.id, name: c.name })),
+        appointments,
+        total: appointments.length,
         timestamp: new Date().toISOString()
       });
     }
