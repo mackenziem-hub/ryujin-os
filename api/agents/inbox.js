@@ -35,7 +35,13 @@ const CLAUDE_MODEL = 'claude-sonnet-4-6';
 // Bounds cost on first run and avoids resurfacing stale threads. The agent
 // runs every 20 min so anything genuinely new is well inside this.
 const LOOKBACK_MS = 3 * 24 * 60 * 60 * 1000;
-const CONVO_LIMIT = 25;          // most-recent conversations to scan per run
+// GHL /conversations/search max page is 100. Since this agent is now the ONLY
+// path watching the conversation tab (the watchdog poll was removed), scan the
+// full page so a recent inbound at position 26+ is not missed. Conversations
+// come back most-recent-first, so 100 covers far more than this business sees
+// in a 3-day lookback. If a run ever fills the page (result.atCap), that is
+// surfaced in agent_runs + logs so we add real pagination before it bites.
+const CONVO_LIMIT = 100;
 const DIGEST_MAX_ITEMS = 5;      // lines in the SMS before "+N more"
 
 // ── The hardened triage prompt (inbox-triage-harden workflow, 2026-05-29) ──
@@ -203,6 +209,12 @@ async function runInbox({ tenantId, runId, startTime }) {
     return result;
   }
   result.scanned = convos.length;
+  if (convos.length >= CONVO_LIMIT) {
+    // Page is full: there may be recent inbound beyond it. Surface loudly
+    // rather than silently miss a leak/lead at position 100+.
+    result.atCap = true;
+    console.warn(`[Inbox] conversation scan hit the ${CONVO_LIMIT} cap — add pagination`);
+  }
 
   const cutoff = Date.now() - LOOKBACK_MS;
 
