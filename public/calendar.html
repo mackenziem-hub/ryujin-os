@@ -219,6 +219,8 @@ body[data-view="crew"] .crewboard{display:grid}
 @media(min-width:1024px){body[data-view="crew"] .crewboard{display:grid}}
 .cal-ic{width:1em;height:1em;vertical-align:-0.15em;display:inline-block;flex:0 0 auto}
 .empty-illus{display:block;width:150px;max-width:55%;margin:6px auto 10px;opacity:0.82}
+.modal .rr-illus{display:block;width:100%;max-height:84px;object-fit:cover;border-radius:10px;margin:0 0 8px;opacity:0.85}
+.modal select{width:100%;padding:10px 12px;background:rgba(6,10,20,0.7);border:1px solid rgba(34,211,238,0.25);border-radius:9px;color:#e0e6f0;font-family:inherit;font-size:0.95em;margin-bottom:6px}
 </style>
 <script src="/assets/portal-auth-client.js"></script>
 <script src="/assets/ryujin-slug.js"></script>
@@ -275,6 +277,14 @@ body[data-view="crew"] .crewboard{display:grid}
 <div class="modal-mask" id="createMask" role="dialog" aria-modal="true" aria-label="Create event">
   <div class="modal">
     <h2>New event</h2>
+    <img class="rr-illus" src="/assets/calendar/round-robin.webp" alt="">
+    <label for="evtServiceType">Service type</label>
+    <select id="evtServiceType">
+      <option value="">General / block</option>
+      <option value="roof-inspection">Roof Inspection</option>
+      <option value="service-call">Service Call</option>
+      <option value="site-inspection">Site Inspection</option>
+    </select>
     <label for="evtTitle">Title</label>
     <input id="evtTitle" type="text" placeholder="e.g. Supply yard run, crew lunch, training" maxlength="200" required>
     <div class="row">
@@ -292,6 +302,12 @@ body[data-view="crew"] .crewboard{display:grid}
       <label class="sel-plus-ultra"><input type="radio" name="evtCrew" value="plus-ultra" checked> Plus Ultra in-house</label>
       <label class="sel-atlantic"><input type="radio" name="evtCrew" value="atlantic"> Atlantic Roofing</label>
     </div>
+    <label for="evtAssigned">Assigned to (round robin)</label>
+    <select id="evtAssigned">
+      <option value="">Unassigned</option>
+      <option value="AJ">AJ</option>
+      <option value="Diego">Diego</option>
+    </select>
     <label for="evtNotes">Notes (optional)</label>
     <textarea id="evtNotes" placeholder="Anything the field crew needs to know"></textarea>
     <div class="err" id="evtErr"></div>
@@ -344,6 +360,12 @@ const INSPECTORS = {
   // '<DIEGO_GHL_USER_ID>': { name: 'Diego', color: '#22d3ee' }
 };
 function inspectorFor(id){ return id && INSPECTORS[id] ? INSPECTORS[id] : null; }
+
+const SERVICE_TYPES = {
+  'roof-inspection': { label: 'Roof Inspection', icon: 'roof-inspection' },
+  'service-call':    { label: 'Service Call',    icon: 'service-call' },
+  'site-inspection': { label: 'Site Inspection', icon: 'site-inspection' }
+};
 
 function bucketCrew(install){
   const s = String(install.sub_crew_lead || '').toLowerCase();
@@ -648,7 +670,9 @@ function normalize(sched, ghl, gcal, blocksData){
       time: clockHM(b.starts_at),
       startTime: b.starts_at, endTime: b.ends_at,
       notes: b.notes || '',
-      crew_label: b.crew_label || null
+      crew_label: b.crew_label || null,
+      service_type: b.service_type || null,
+      assigned_to: b.assigned_to || null
     });
   }
 
@@ -725,13 +749,17 @@ function evtCard(ev){
       <div class="evt-meta"><span class="chip">${esc(ev.time || '')}</span></div>`;
   } else if (ev.kind === 'block'){
     const crew = ev.crew_label ? crewByKey(ev.crew_label) : null;
-    typeLine = crew ? esc(crew.shortName) : 'Event';
+    const st = ev.service_type ? SERVICE_TYPES[ev.service_type] : null;
+    typeLine = st ? (ic(st.icon) + ' ' + st.label) : (crew ? esc(crew.shortName) : 'Event');
     const crewChip = crew
       ? `<span class="crew-chip" style="background:${crew.color}22;border-color:${crew.color}66;color:${crew.color}">${esc(crew.shortName)}</span>`
       : '';
+    const assignChip = ev.assigned_to
+      ? `<span class="crew-chip" style="background:#2dd4bf22;border-color:#2dd4bf66;color:#2dd4bf">${ic('inspector')} ${esc(ev.assigned_to)}</span>`
+      : '';
     body = `
       <div class="evt-title">${esc(ev.title)}</div>
-      <div class="evt-meta">${ev.time ? `<span class="chip">${esc(ev.time)}</span>` : ''}${crewChip}</div>`;
+      <div class="evt-meta">${ev.time ? `<span class="chip">${esc(ev.time)}</span>` : ''}${crewChip}${assignChip}</div>`;
   }
   return `<div class="${cls}" tabindex="0" data-evt='${esc(JSON.stringify(ev))}'>
     <div class="evt-type">${typeLine}</div>
@@ -876,6 +904,8 @@ function openDrawer(ev){
     src = 'Calendar block' + (crew ? ' &middot; ' + crew.name : '');
     dl = `
       ${ev.time ? `<dt>Time</dt><dd>${esc(ev.time)}</dd>` : ''}
+      ${ev.service_type && SERVICE_TYPES[ev.service_type] ? `<dt>Service type</dt><dd>${ic(SERVICE_TYPES[ev.service_type].icon)} ${esc(SERVICE_TYPES[ev.service_type].label)}</dd>` : ''}
+      ${ev.assigned_to ? `<dt>Assigned to</dt><dd>${ic('inspector')} ${esc(ev.assigned_to)}</dd>` : ''}
       ${crew ? `<dt>Crew</dt><dd><span class="crew-chip" style="background:${crew.color}22;border-color:${crew.color}66;color:${crew.color}">${esc(crew.shortName)}</span></dd>` : ''}
       ${ev.notes ? `<dt>Notes</dt><dd>${esc(ev.notes).replace(/\n/g,'<br>')}</dd>` : ''}
     `;
@@ -946,6 +976,8 @@ document.querySelectorAll('.rangeSelector button').forEach(btn => {
 // Create-event modal
 function openCreateModal(prefillDate){
   document.getElementById('evtTitle').value = '';
+  document.getElementById('evtServiceType').value = '';
+  document.getElementById('evtAssigned').value = '';
   document.getElementById('evtDate').value = prefillDate || isoDay(new Date());
   document.getElementById('evtTime').value = '';
   document.getElementById('evtNotes').value = '';
@@ -985,7 +1017,7 @@ document.getElementById('evtSave').addEventListener('click', async () => {
     const r = await fetch('/api/calendar-blocks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok, 'x-tenant-id': TENANT },
-      body: JSON.stringify({ title, starts_at: startsAt, crew_label: crew, notes: notes || null })
+      body: JSON.stringify({ title, starts_at: startsAt, crew_label: crew, notes: notes || null, service_type: document.getElementById('evtServiceType').value || null, assigned_to: document.getElementById('evtAssigned').value || null })
     });
     if (!r.ok){
       const body = await r.json().catch(() => ({}));

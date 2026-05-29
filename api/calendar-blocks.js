@@ -15,7 +15,8 @@ import { supabaseAdmin } from '../lib/supabase.js';
 import { resolveSession, isPrivileged } from '../lib/portalAuth.js';
 
 const ALLOWED_CREW = new Set(['plus-ultra', 'atlantic', 'other']);
-const SAFE_UPDATE_FIELDS = new Set(['title', 'starts_at', 'ends_at', 'crew_label', 'notes']);
+const ALLOWED_SERVICE_TYPE = new Set(['roof-inspection', 'service-call', 'site-inspection']);
+const SAFE_UPDATE_FIELDS = new Set(['title', 'starts_at', 'ends_at', 'crew_label', 'notes', 'service_type', 'assigned_to']);
 
 async function handler(req, res){
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -32,7 +33,7 @@ async function handler(req, res){
 
     const { data, error } = await supabaseAdmin
       .from('calendar_blocks')
-      .select('id, title, starts_at, ends_at, crew_label, notes, created_by, created_at')
+      .select('id, title, starts_at, ends_at, crew_label, notes, service_type, assigned_to, created_by, created_at')
       .eq('tenant_id', tenantId)
       .gte('starts_at', startIso)
       .lte('starts_at', endIso)
@@ -60,6 +61,9 @@ async function handler(req, res){
     if (body.crew_label && !ALLOWED_CREW.has(body.crew_label)){
       return res.status(400).json({ error: 'invalid crew_label', allowed: [...ALLOWED_CREW] });
     }
+    if (body.service_type && !ALLOWED_SERVICE_TYPE.has(body.service_type)){
+      return res.status(400).json({ error: 'invalid service_type', allowed: [...ALLOWED_SERVICE_TYPE] });
+    }
 
     const insert = {
       tenant_id: tenantId,
@@ -67,6 +71,8 @@ async function handler(req, res){
       starts_at: body.starts_at,
       ends_at: body.ends_at || null,
       crew_label: body.crew_label || null,
+      service_type: body.service_type || null,
+      assigned_to: body.assigned_to ? String(body.assigned_to).slice(0, 120) : null,
       notes: body.notes ? String(body.notes).slice(0, 2000) : null,
       created_by: session.user_id !== 'service-internal' ? session.user_id : null,
     };
