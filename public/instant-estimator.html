@@ -716,6 +716,8 @@ body{
   };
 
   let lastQuote = null;
+  let lastQuoteKey = null;   // measurements signature lastQuote was computed for
+  let quoteSeq = 0;          // increments per quote request; rejects stale responses
 
   // ── Helpers ──────────────────────────────────────────────────
   function fmtMoney(n){
@@ -775,6 +777,114 @@ body{
   }
   function financeMonthly(total){
     return Math.round(total / FINANCE_MONTHS);
+  }
+
+  // Material (shingle line) per tier, mirroring the TIER_META descriptions.
+  const TIER_MATERIAL = {
+    gold:     'CertainTeed Landmark',
+    platinum: 'CertainTeed Landmark PRO',
+    diamond:  'CertainTeed Presidential'
+  };
+  // Build the estimator custom-field values from the quote the customer is about
+  // to see, so they land on the GHL contact and into the follow-up email merge
+  // fields. low/high span every package shown (cheapest low to premium high);
+  // material is the recommended (Platinum) package. Uses the SAME tierTotal +
+  // priceRange the cards render with, so the email matches the screen exactly.
+  // Returns null if no tiers came back.
+  function buildEstimatorFields(){
+    const offers = (lastQuote && lastQuote.offers) || {};
+    const ranges = [];
+    ['gold','platinum','diamond'].forEach(k => {
+      if (offers[k]) ranges.push(priceRange(tierTotal(offers[k]).total));
+    });
+    if (!ranges.length) return null;
+    const low  = Math.min(...ranges.map(r => r.lo));
+    const high = Math.max(...ranges.map(r => r.hi));
+    const material = offers.platinum ? TIER_MATERIAL.platinum
+      : offers.gold ? TIER_MATERIAL.gold
+      : offers.diamond ? TIER_MATERIAL.diamond
+      : '';
+    return {
+      low,
+      high,
+      material,
+      size: state.sqft ? (state.sqft.toLocaleString() + ' sq ft') : '',
+      address: state.address || ''
+    };
+  }
+
+  // Build the engine measurements object from current state (footprint-adjusted
+  // sqft + pitch/complexity/distance). Shared by the prefetch and the submit
+  // fallback so both compute the identical quote.
+  function buildMeasurements(){
+    const pitchStr = PITCH_MAP[state.pitch] || '8/12';
+    return {
+      squareFeet: toFootprint(state.sqft, pitchStr),
+      pitch: pitchStr,
+      complexity: state.complexity,
+      distanceKM: inferDistance(state.city),
+      pipes: 1,
+      chimneys: state.chimneyType === 'none' ? 0 : 1,
+      vents: 0
+    };
+  }
+
+  // Stable signature of the pricing inputs.
+  function measurementsKey(m){
+    return [m.squareFeet, m.pitch, m.complexity, m.distanceKM, m.chimneys].join('|');
+  }
+  // Cache key = pricing inputs + the offer IDs the quote was built from. Folding
+  // the offer IDs in means a quote warmed with FALLBACK_OFFER_IDS (slug
+  // resolution not finished yet) is treated as stale once the resolved IDs are
+  // available, forcing a requote. Preserves resolveOfferIds()'s reseeded-UUID
+  // protection.
+  function quoteKey(m, offerIds){
+    return measurementsKey(m) + '::' + offerIds.join(',');
+  }
+
+  // Fetch the 3-tier compare quote into lastQuote. Bounded by an AbortController
+  // (8s) so a hung /api/quote can never hang the caller. Tagged with a sequence
+  // id + cache key so a superseded (out-of-order) response can't clobber a newer
+  // quote, and so callers can tell whether lastQuote matches the current inputs
+  // AND offer IDs. Returns true only if this response committed (still latest).
+  async function runCompareQuote(measurements){
+    const seq = ++quoteSeq;
+    await Promise.race([resolveOfferIds(), new Promise(r => setTimeout(r, 4000))]);
+    const offerIds = activeOfferIds();          // resolved if ready, else fallback
+    const key = quoteKey(measurements, offerIds);
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 8000);
+    try {
+      const resp = await fetch('/api/quote?mode=compare', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json', 'x-tenant-id': TENANT },
+        body: JSON.stringify({ offer_ids: offerIds, measurements, choices:{}, extras:[] }),
+        signal: ctrl.signal
+      });
+      if (!resp.ok) throw new Error('Quote returned ' + resp.status);
+      const data = await resp.json();
+      if (seq !== quoteSeq) return false;   // a newer request superseded this one
+      lastQuote = data;
+      lastQuoteKey = key;
+      return true;
+    } finally {
+      clearTimeout(t);
+    }
+  }
+
+  // Warm the quote in the background once the user reaches the contact step (all
+  // pricing inputs are collected by then). This lets submit capture the lead
+  // FIRST and immediately (phone-first) while still including the estimator
+  // values, since lastQuote is populated by the time they finish typing. Re-run
+  // on each entry so Back-edits are reflected. Never blocks; on failure
+  // lastQuote is left as-is and submit falls back to a fetch after capture.
+  let prefetchPromise = null;
+  function prefetchQuote(){
+    prefetchPromise = runCompareQuote(buildMeasurements()).catch(ex => {
+      console.warn('[ie-v3] prefetch quote failed', ex && ex.message);
+      return false;
+    });
+    return prefetchPromise;
   }
 
   // ── Step navigation ──────────────────────────────────────────
@@ -877,6 +987,9 @@ body{
       if (dir === 'next') {
         if (!validate(state.step)) return;
         showStep(state.step + 1);
+        // Reached the contact step: all pricing inputs are in, warm the quote
+        // so submit can include the estimator values without a pre-capture wait.
+        if (state.step === 4) prefetchQuote();
       } else if (dir === 'prev') {
         showStep(state.step - 1);
       }
@@ -903,23 +1016,23 @@ body{
     const originalHTML = btn.innerHTML;
     btn.innerHTML = '<span class="spinner"></span>Calculating…';
 
-    const pitchStr = PITCH_MAP[state.pitch] || '8/12';
-    const measurements = {
-      squareFeet: toFootprint(state.sqft, pitchStr),
-      pitch: pitchStr,
-      complexity: state.complexity,
-      distanceKM: inferDistance(state.city),
-      pipes: 1,
-      chimneys: state.chimneyType === 'none' ? 0 : 1,
-      vents: 0
-    };
+    const measurements = buildMeasurements();
+    const curKey = quoteKey(measurements, activeOfferIds());
 
     // Shared Meta event_id — same value passed to server CAPI so the
     // browser fbq event and the server CAPI event deduplicate on Meta's
     // side instead of double-counting the Lead.
     const metaEventId = 'ie3_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
 
-    // Capture lead FIRST (phone-first gate). Don't block on failure.
+    // Capture lead FIRST (phone-first), immediately, with no quote await ahead
+    // of it. The estimator values come from the quote we warmed when the user
+    // reached this step (prefetchQuote on step-4 entry); by the time they finish
+    // typing their contact info lastQuote is populated, so the values ride along
+    // on the single contact-create (the Automator follow-up fires on the tag at
+    // creation, so the fields must be present then). If the warm has not landed
+    // yet (rare: instant autofill + submit), the lead is still captured now,
+    // just without the estimator values. Logged, never thrown, so a lead is
+    // never lost on a network/API hiccup.
     const leadPayload = {
       source: 'instant-estimator-v3',
       name: state.name,
@@ -933,10 +1046,12 @@ body{
         pitch: state.pitch, complexity: state.complexity,
         chimneyType: state.chimneyType,
         postal: state.postal
-      }
+      },
+      // Only attach estimator values from a quote that matches the CURRENT
+      // inputs. A stale warmed quote (user edited via Back) is treated as absent
+      // so we never send numbers that don't match what they will see.
+      estimator: (lastQuote && lastQuoteKey === curKey) ? buildEstimatorFields() : null
     };
-    // Non-blocking on the customer-facing quote render, but logged so silent
-    // failures (network drop, /api/leads 4xx/5xx) don't make leads vanish.
     try {
       const leadResp = await fetch('/api/leads', {
         method:'POST',
@@ -967,28 +1082,19 @@ body{
       console.warn('[ie-v3] fbq Lead failed', fbqErr && fbqErr.message);
     }
 
-    // Quote (wait for slug resolution so reseeded DBs don't hit stale fallback).
-    // 4s timeout so a hung offers-fetch doesn't trap the submit forever; if the
-    // race times out we proceed with the hardcoded fallback IDs.
+    // Render. Prefer the warmed quote; if it is still in flight, await it; if it
+    // never ran or failed, fetch once now. All of this is AFTER lead capture, so
+    // it can never cost a lead.
     try {
-      await Promise.race([
-        resolveOfferIds(),
-        new Promise(r => setTimeout(r, 4000))
-      ]);
-      const resp = await fetch('/api/quote?mode=compare', {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json', 'x-tenant-id': TENANT },
-        body: JSON.stringify({
-          offer_ids: activeOfferIds(),
-          measurements, choices:{}, extras:[]
-        })
-      });
-      if (!resp.ok) throw new Error('Quote returned ' + resp.status);
-      lastQuote = await resp.json();
+      if (lastQuoteKey !== curKey && prefetchPromise) await prefetchPromise;
+      if (lastQuoteKey !== curKey) await runCompareQuote(measurements);
+      // runCompareQuote commits a fresh quote for the current offer IDs, so a
+      // populated lastQuote here is current; no need to re-compare the key.
+      if (!lastQuote) throw new Error('quote unavailable');
       renderResult();
       showStep('result');
     } catch (ex) {
-      err.textContent = 'We could not pull a quote right now. Try again, or call us at (506) 616-4607. (' + ex.message + ')';
+      err.textContent = 'We could not pull a quote right now. Try again, or call us at (506) 616-4607.';
       err.classList.add('show');
     } finally {
       btn.disabled = false;
