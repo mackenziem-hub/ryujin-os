@@ -87,6 +87,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
 .btn-reject:hover{background:rgba(239,68,68,0.26);color:#fff;border-color:rgba(239,68,68,0.7)}
 .btn-save{background:rgba(251,191,36,0.14);color:#fbbf24;border-color:rgba(251,191,36,0.4)}
 .btn-save:hover{background:rgba(251,191,36,0.28);color:#fff;border-color:rgba(251,191,36,0.7)}
+.btn-exclude{background:rgba(167,139,250,0.14);color:#a78bfa;border-color:rgba(167,139,250,0.4)}
+.btn-exclude:hover{background:rgba(167,139,250,0.28);color:#fff;border-color:rgba(167,139,250,0.7)}
 .btn[disabled]{opacity:0.45;cursor:wait}
 
 .list{display:flex;flex-direction:column;gap:10px}
@@ -294,6 +296,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
             <button class="btn btn-save" onclick="saveDraft('${d.id}', this)">Save</button>
             <button class="btn btn-regen" onclick="regen('${d.id}', this)">Regenerate</button>
             <button class="btn btn-reject" onclick="reject('${d.id}', this)">Reject</button>
+            <button class="btn btn-exclude" onclick="reject('${d.id}', this, true)" title="Already posted elsewhere — remove and never resurface">Posted ✓</button>
             <button class="btn btn-approve" onclick="approve('${d.id}', this)">Approve</button>
           </div>
         </div>
@@ -423,12 +426,15 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
     finally { if (done) done(); }
   }
 
-  async function reject(id, btn){
-    if (!confirm('Reject this draft? The photo goes back into the media pool.')) return;
-    const done = busy(btn, 'Rejecting...');
+  async function reject(id, btn, exclude){
+    const msg = exclude
+      ? 'Already posted? This removes the draft AND stops this photo from ever resurfacing in the generator.'
+      : 'Reject this draft? The photo goes back into the media pool for a future run.';
+    if (!confirm(msg)) return;
+    const done = busy(btn, exclude ? 'Excluding...' : 'Rejecting...');
     try {
-      await api('/api/generator?id=' + encodeURIComponent(id), { method: 'DELETE' });
-      toast('Draft rejected.');
+      await api('/api/generator?id=' + encodeURIComponent(id) + (exclude ? '&exclude=1' : ''), { method: 'DELETE' });
+      toast(exclude ? 'Excluded. It will not resurface.' : 'Draft rejected.');
       loadQueue();
     } catch(e){ toast(e.message, true); }
     finally { if (done) done(); }

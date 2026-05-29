@@ -191,7 +191,11 @@ async function editClip({ tenantId, clipId, captionSuggestion, scheduledAt }) {
   return { clip: data };
 }
 
-async function rejectClip({ tenantId, clipId }) {
+// reject deletes the draft. By default its source photos are freed back to the
+// pool (used_in_clip_id cleared) so they can be re-picked. With exclude=true
+// the photos are instead marked excluded — use this when the photo was already
+// posted (e.g. manually to Facebook) so the generator never resurfaces it.
+async function rejectClip({ tenantId, clipId, exclude = false }) {
   // Confirm the target is a generator-sourced clip BEFORE deleting so
   // /api/generator?id=X can't be used to wipe out an upload-sourced clip
   // owned by the same tenant (codex P2).
@@ -218,11 +222,12 @@ async function rejectClip({ tenantId, clipId }) {
   if (error) return { error: error.message, status: 500 };
 
   if (mediaIds.length) {
-    await supabaseAdmin
-      .from('media_pool').update({ used_in_clip_id: null, last_used_at: null })
-      .in('id', mediaIds);
+    const update = exclude
+      ? { used_in_clip_id: null, last_used_at: null, excluded: true, excluded_reason: 'posted_elsewhere' }
+      : { used_in_clip_id: null, last_used_at: null };
+    await supabaseAdmin.from('media_pool').update(update).in('id', mediaIds);
   }
-  return { deleted: clipId, freed_media: mediaIds.length };
+  return { deleted: clipId, freed_media: exclude ? 0 : mediaIds.length, excluded_media: exclude ? mediaIds.length : 0 };
 }
 
 async function regenerateCaption({ tenantId, clipId, brand }) {
@@ -396,9 +401,16 @@ async function handler(req, res) {
   }
 
   if (req.method === 'DELETE') {
-    const { id } = req.query;
+    const { id, exclude } = req.query;
     if (!id) return res.status(400).json({ error: 'Missing ?id=' });
-    const out = await rejectClip({ tenantId, clipId: id });
+    const wantExclude = exclude === '1';
+    // Permanent exclusion removes inventory from all future runs, so it is
+    // owner/admin-only like approve/run. A plain reject (frees the photo for a
+    // later run) stays open to any authenticated portal user.
+    if (wantExclude && !isPrivileged(session)) {
+      return res.status(403).json({ error: 'Owner or admin required to exclude media' });
+    }
+    const out = await rejectClip({ tenantId, clipId: id, exclude: wantExclude });
     if (out.error) return res.status(out.status || 500).json({ error: out.error });
     return res.json({ rejected: true, ...out });
   }

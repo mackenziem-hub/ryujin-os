@@ -21,6 +21,7 @@
 //   POST /api/agents/generator?manual=1   (still requires auth)
 import { supabaseAdmin } from '../../lib/supabase.js';
 import { renderBeforeAfterPair } from '../../lib/beforeAfterRenderer.js';
+import { gradeShowcase, isSoloShowcase } from '../../lib/visionGrader.js';
 import { put } from '@vercel/blob';
 import crypto from 'node:crypto';
 
@@ -29,6 +30,35 @@ const BRAND_SLUG = 'plus_ultra';
 const TARGET_COUNT = 4;
 const DEDUP_WINDOW_DAYS = 180;
 const CLAUDE_MODEL = 'claude-haiku-4-5-20251001';
+
+// ── Vision showcase gating ──────────────────────────────────────────────
+// Selection is vision-gated: a photo can only be drafted if a Claude vision
+// pass says it's a finished, attractive roof (lib/visionGrader.js). Pairs are
+// preferred; a solo single must clear isSoloShowcase. Graded LIVE per run and
+// capped so the cron stays inside its 60s budget. (No media_pool persistence
+// yet — caching the grade is a follow-up once the vision_* columns ship; see
+// migration 076 + the FAST-FOLLOW task.)
+const GRADE_BUDGET = 30;          // max vision calls per run (cost ceiling)
+const GRADE_DEADLINE_MS = 45_000; // stop grading after this much elapsed, so a
+                                  // slow Anthropic run cannot blow the function's
+                                  // 120s budget before captions + inserts run
+const GRADE_CONCURRENCY = 5;      // parallel vision calls
+const PAIR_FETCH_LIMIT = 12;      // metadata candidates pulled before vision filter
+const SINGLE_FETCH_LIMIT = 48;
+
+// Bounded-concurrency map: runs fn over items, at most `limit` in flight.
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i], i);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
 
 function checkAuth(req) {
   const cronSecret = (process.env.CRON_SECRET || '').trim();
@@ -89,13 +119,45 @@ async function getBrand(tenantId) {
   return data;
 }
 
-// Picks candidates from media_pool. Strategy:
-//   1. Up to 2 before/after pairs (ordered by combined quality, both unused)
-//   2. Remaining slots filled with high-quality singles (excluded=false, unused)
+// Picks candidates from media_pool, VISION-GATED. Strategy:
+//   1. Pairs first: before/after couples whose AFTER photo vision-grades as a
+//      finished, attractive 'showcase' roof. Pairs may fill every slot.
+//   2. Remaining slots: solo singles that clear isSoloShowcase (state=showcase
+//      AND score >= floor). Worn/before/in-progress/detail shots are dropped.
+// One kept post per project (diversify across jobs); a project is claimed only
+// AFTER a photo passes vision, so a project's bad lead photo never blocks its
+// good one. Nothing is padded to hit `count` — fewer good posts beats junk.
+// Grading is bounded by BOTH a call budget and an elapsed deadline, so a slow
+// Anthropic run cannot blow the function's time budget.
 async function pickCandidates(tenantId, count) {
   const cutoff = new Date(Date.now() - DEDUP_WINDOW_DAYS * 86_400_000).toISOString();
+  const stats = { graded: 0, pairs_kept: 0, singles_kept: 0, rejected: 0, ungraded: 0 };
+  const candidates = [];
+  const seenProjects = new Set();        // projects already claimed by a KEPT post
+  let budget = GRADE_BUDGET;
+  const deadline = Date.now() + GRADE_DEADLINE_MS;
+  const canGrade = () => budget > 0 && Date.now() < deadline;
 
-  const { data: pairCandidates } = await supabaseAdmin
+  const tallyReject = (grade) => {
+    if (!grade || grade.state === 'ungraded') stats.ungraded++;
+    stats.rejected++;
+  };
+
+  // Grade `items` in concurrency batches, calling keep(item, grade) for each
+  // result. Stops when full / out of call budget / past the elapsed deadline.
+  const gradeAndCollect = async (items, urlOf, keep) => {
+    for (let i = 0; i < items.length && candidates.length < count && canGrade(); i += GRADE_CONCURRENCY) {
+      const batch = items.slice(i, i + Math.min(GRADE_CONCURRENCY, budget));
+      if (!batch.length) break;
+      const grades = await mapLimit(batch, GRADE_CONCURRENCY, x => gradeShowcase(urlOf(x)));
+      stats.graded += batch.length;
+      budget -= batch.length;
+      for (let j = 0; j < batch.length && candidates.length < count; j++) keep(batch[j], grades[j]);
+    }
+  };
+
+  // ── PAIRS (preferred) ───────────────────────────────────────────────
+  const { data: pairAfters } = await supabaseAdmin
     .from('media_pool')
     .select('id, url, thumbnail_url, mime_type, project_id, customer_name, address_city, package_tier, pair_role, pair_partner_id, quality_score, tags, captured_at, source_bucket, used_in_clip_id, last_used_at')
     .eq('tenant_id', tenantId)
@@ -105,33 +167,44 @@ async function pickCandidates(tenantId, count) {
     .is('used_in_clip_id', null)
     .or(`last_used_at.is.null,last_used_at.lt.${cutoff}`)
     .order('quality_score', { ascending: false })
-    .limit(20);
+    .limit(PAIR_FETCH_LIMIT);
 
-  const candidates = [];
-  for (const after of (pairCandidates || [])) {
-    if (candidates.filter(c => c.kind === 'pair').length >= 2) break;
+  // Resolve each after's unused 'before' partner.
+  const pairRaw = [];
+  for (const after of (pairAfters || [])) {
     const { data: before } = await supabaseAdmin
       .from('media_pool')
       .select('id, url, thumbnail_url, mime_type, project_id, customer_name, address_city, package_tier, quality_score, tags, captured_at, source_bucket, used_in_clip_id')
-      .eq('id', after.pair_partner_id).maybeSingle();
+      .eq('id', after.pair_partner_id)
+      .eq('tenant_id', tenantId)
+      .eq('excluded', false)        // an excluded before must not resurface as a pair half
+      .maybeSingle();
     if (!before || before.used_in_clip_id) continue;
+    pairRaw.push({ after, before });
+  }
+
+  await gradeAndCollect(pairRaw, p => p.after.url, ({ after, before }, grade) => {
+    if (grade?.state !== 'showcase') { tallyReject(grade); return; }
+    if (after.project_id && seenProjects.has(after.project_id)) return; // job already covered
+    if (after.project_id) seenProjects.add(after.project_id);
+    stats.pairs_kept++;
     candidates.push({
-      kind: 'pair',
-      before, after,
+      kind: 'pair', before, after, grade,
       project_id: after.project_id,
       customer_name: after.customer_name || before.customer_name,
       address_city: after.address_city || before.address_city,
       package_tier: after.package_tier || before.package_tier,
     });
-  }
+  });
 
-  const remaining = count - candidates.length;
-  if (remaining > 0) {
+  // ── SINGLES (fill remaining; showcase-only, one per job) ────────────
+  if (candidates.length < count && canGrade()) {
     const usedIds = new Set();
     for (const c of candidates) {
       if (c.kind === 'pair') { usedIds.add(c.before.id); usedIds.add(c.after.id); }
     }
-    let q = supabaseAdmin
+
+    const { data: singleRows } = await supabaseAdmin
       .from('media_pool')
       .select('id, url, thumbnail_url, mime_type, project_id, customer_name, address_city, package_tier, quality_score, tags, captured_at, source_bucket, used_in_clip_id, last_used_at')
       .eq('tenant_id', tenantId)
@@ -139,23 +212,28 @@ async function pickCandidates(tenantId, count) {
       .is('used_in_clip_id', null)
       .or(`last_used_at.is.null,last_used_at.lt.${cutoff}`)
       .order('quality_score', { ascending: false })
-      .limit(remaining * 3);
-    const { data: singles } = await q;
-    for (const m of (singles || [])) {
-      if (candidates.length >= count) break;
-      if (usedIds.has(m.id)) continue;
+      .limit(SINGLE_FETCH_LIMIT);
+
+    const pool = (singleRows || []).filter(m => !usedIds.has(m.id));
+    await gradeAndCollect(pool, m => m.url, (m, grade) => {
+      if (!isSoloShowcase(grade)) { tallyReject(grade); return; }
+      // Claim the project only on a PASS: a project's lower-ranked showcase
+      // photo still gets a chance if its top-metadata photo was a detail /
+      // before / in-progress shot (which would have been rejected above).
+      if (m.project_id && seenProjects.has(m.project_id)) return;
+      if (m.project_id) seenProjects.add(m.project_id);
+      stats.singles_kept++;
       candidates.push({
-        kind: 'single',
-        media: m,
+        kind: 'single', media: m, grade,
         project_id: m.project_id,
         customer_name: m.customer_name,
         address_city: m.address_city,
         package_tier: m.package_tier,
       });
-    }
+    });
   }
 
-  return candidates;
+  return { candidates, stats };
 }
 
 // Composes a before/after pair using the existing sharp renderer and
@@ -240,7 +318,7 @@ Return ONLY the caption text. No quotes, no preamble, no markdown.`;
 
   try {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 25000);
+    const timer = setTimeout(() => ctrl.abort(), 15000);
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       signal: ctrl.signal,
@@ -343,9 +421,41 @@ async function insertDraft({ tenant, brand, candidate, mediaUrl, captionText, ca
   return { clip };
 }
 
-async function runGenerator({ targetCount = TARGET_COUNT } = {}) {
+async function runGenerator({ targetCount = TARGET_COUNT, dryRun = false } = {}) {
   const tenant = await getTenant();
   const brand = await getBrand(tenant.id);
+
+  const { candidates, stats } = await pickCandidates(tenant.id, targetCount);
+  const slots = nextWeeklySlots(new Date(), targetCount);
+
+  const warnings = [];
+  if (candidates.length < targetCount) warnings.push('low_inventory');
+  warnings.push(
+    `graded:${stats.graded}`,
+    `pairs:${stats.pairs_kept}`,
+    `singles:${stats.singles_kept}`,
+    `rejected:${stats.rejected}`,
+  );
+  if (stats.ungraded) warnings.push(`ungraded:${stats.ungraded}`);
+
+  // Dry run: report exactly what WOULD be drafted (with vision grades), touch
+  // nothing — no run row, no clips, no media_pool used-flags. Powers a
+  // "preview next run" check from /generator.html or curl.
+  if (dryRun) {
+    return {
+      dry_run: true,
+      candidates_considered: candidates.length,
+      stats,
+      warnings,
+      preview: candidates.map((c, i) => ({
+        kind: c.kind,
+        address_city: c.address_city || null,
+        grade: c.grade ? { state: c.grade.state, score: c.grade.score, reason: c.grade.reason } : null,
+        scheduled_at: slots[i]?.toISOString() || null,
+        url: c.kind === 'pair' ? c.after.url : c.media.url,
+      })),
+    };
+  }
 
   const { data: runRow, error: runErr } = await supabaseAdmin
     .from('generator_runs')
@@ -358,11 +468,6 @@ async function runGenerator({ targetCount = TARGET_COUNT } = {}) {
     .select('id').single();
   if (runErr) throw new Error(`run row insert: ${runErr.message}`);
   const runId = runRow.id;
-
-  const candidates = await pickCandidates(tenant.id, targetCount);
-  const slots = nextWeeklySlots(new Date(), targetCount);
-  const warnings = [];
-  if (candidates.length < targetCount) warnings.push('low_inventory');
 
   const drafts = [];
   let captionModelUsed = null;
@@ -413,11 +518,11 @@ async function runGenerator({ targetCount = TARGET_COUNT } = {}) {
   await supabaseAdmin.from('agent_runs').insert({
     tenant_id: tenant.id,
     agent_slug: 'generator',
-    payload: { drafts, warnings, run_id: runId, target_count: targetCount },
+    payload: { drafts, warnings, stats, run_id: runId, target_count: targetCount },
     status: drafts.length ? 'success' : 'partial',
   }).select('id').single().then(() => null, e => console.error('[generator] agent_runs insert:', e?.message));
 
-  return { run_id: runId, drafts, warnings, candidates_considered: candidates.length };
+  return { run_id: runId, drafts, warnings, stats, candidates_considered: candidates.length };
 }
 
 export default async function handler(req, res) {
@@ -430,7 +535,8 @@ export default async function handler(req, res) {
 
   try {
     const targetCount = Math.max(1, Math.min(8, parseInt(req.query.count, 10) || TARGET_COUNT));
-    const result = await runGenerator({ targetCount });
+    const dryRun = req.query.dryRun === '1' || req.query.dry === '1';
+    const result = await runGenerator({ targetCount, dryRun });
     return res.json({ via: auth.via, ...result });
   } catch (e) {
     console.error('[generator] run failed:', e);
