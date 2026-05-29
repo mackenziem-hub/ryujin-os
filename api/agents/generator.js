@@ -21,7 +21,7 @@
 //   POST /api/agents/generator?manual=1   (still requires auth)
 import { supabaseAdmin } from '../../lib/supabase.js';
 import { renderBeforeAfterPair } from '../../lib/beforeAfterRenderer.js';
-import { gradeShowcase, isSoloShowcase } from '../../lib/visionGrader.js';
+import { shortCaption, vscoreFromTags } from '../../lib/generatorCaption.js';
 import { put } from '@vercel/blob';
 import crypto from 'node:crypto';
 
@@ -29,36 +29,14 @@ const TENANT_SLUG = 'plus-ultra';
 const BRAND_SLUG = 'plus_ultra';
 const TARGET_COUNT = 4;
 const DEDUP_WINDOW_DAYS = 180;
-const CLAUDE_MODEL = 'claude-haiku-4-5-20251001';
 
-// ── Vision showcase gating ──────────────────────────────────────────────
-// Selection is vision-gated: a photo can only be drafted if a Claude vision
-// pass says it's a finished, attractive roof (lib/visionGrader.js). Pairs are
-// preferred; a solo single must clear isSoloShowcase. Graded LIVE per run and
-// capped so the cron stays inside its 60s budget. (No media_pool persistence
-// yet — caching the grade is a follow-up once the vision_* columns ship; see
-// migration 076 + the FAST-FOLLOW task.)
-const GRADE_BUDGET = 30;          // max vision calls per run (cost ceiling)
-const GRADE_DEADLINE_MS = 45_000; // stop grading after this much elapsed, so a
-                                  // slow Anthropic run cannot blow the function's
-                                  // 120s budget before captions + inserts run
-const GRADE_CONCURRENCY = 5;      // parallel vision calls
-const PAIR_FETCH_LIMIT = 12;      // metadata candidates pulled before vision filter
-const SINGLE_FETCH_LIMIT = 48;
-
-// Bounded-concurrency map: runs fn over items, at most `limit` in flight.
-async function mapLimit(items, limit, fn) {
-  const out = new Array(items.length);
-  let next = 0;
-  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
-    while (next < items.length) {
-      const i = next++;
-      out[i] = await fn(items[i], i);
-    }
-  });
-  await Promise.all(workers);
-  return out;
-}
+// Selection reads the persisted vision INDEX (media_pool.tags written by
+// scripts/grade_media_pool.mjs: vstate:showcase / vscore:N / vmat:X) rather
+// than grading live — instant, no API cost, and provenance-safe: only "our
+// work" sources are eligible for a showcase post. estimate_photos are pre-sale
+// customer roofs and are never posted as our work.
+const OUR_WORK_SOURCES = ['companycam_archive', 'project_files', 'media_folder'];
+const SHOWCASE_PAGE = 1000; // pagination page size for the showcase pool
 
 function checkAuth(req) {
   const cronSecret = (process.env.CRON_SECRET || '').trim();
@@ -119,118 +97,94 @@ async function getBrand(tenantId) {
   return data;
 }
 
-// Picks candidates from media_pool, VISION-GATED. Strategy:
-//   1. Pairs first: before/after couples whose AFTER photo vision-grades as a
-//      finished, attractive 'showcase' roof. Pairs may fill every slot.
-//   2. Remaining slots: solo singles that clear isSoloShowcase (state=showcase
-//      AND score >= floor). Worn/before/in-progress/detail shots are dropped.
-// One kept post per project (diversify across jobs); a project is claimed only
-// AFTER a photo passes vision, so a project's bad lead photo never blocks its
-// good one. Nothing is padded to hit `count` — fewer good posts beats junk.
-// Grading is bounded by BOTH a call budget and an elapsed deadline, so a slow
-// Anthropic run cannot blow the function's time budget.
+// Picks candidates from the persisted vision INDEX (no live grading):
+//   1. Pairs first: a before/after couple whose AFTER is tagged showcase, with
+//      an unused, non-excluded before. (Rare until before/after tagging grows.)
+//   2. Remaining slots: solo showcase singles, best vscore first, one per job.
+// Provenance is enforced by SOURCE (OUR_WORK_SOURCES only) — estimate photos
+// (pre-sale customer roofs) are never eligible. Nothing is padded to hit
+// `count`; thin inventory just means fewer posts (surfaced as low_inventory).
 async function pickCandidates(tenantId, count) {
   const cutoff = new Date(Date.now() - DEDUP_WINDOW_DAYS * 86_400_000).toISOString();
-  const stats = { graded: 0, pairs_kept: 0, singles_kept: 0, rejected: 0, ungraded: 0 };
+  const stats = { pairs_kept: 0, singles_kept: 0, showcase_pool: 0 };
   const candidates = [];
-  const seenProjects = new Set();        // projects already claimed by a KEPT post
-  let budget = GRADE_BUDGET;
-  const deadline = Date.now() + GRADE_DEADLINE_MS;
-  const canGrade = () => budget > 0 && Date.now() < deadline;
-
-  const tallyReject = (grade) => {
-    if (!grade || grade.state === 'ungraded') stats.ungraded++;
-    stats.rejected++;
-  };
-
-  // Grade `items` in concurrency batches, calling keep(item, grade) for each
-  // result. Stops when full / out of call budget / past the elapsed deadline.
-  const gradeAndCollect = async (items, urlOf, keep) => {
-    for (let i = 0; i < items.length && candidates.length < count && canGrade(); i += GRADE_CONCURRENCY) {
-      const batch = items.slice(i, i + Math.min(GRADE_CONCURRENCY, budget));
-      if (!batch.length) break;
-      const grades = await mapLimit(batch, GRADE_CONCURRENCY, x => gradeShowcase(urlOf(x)));
-      stats.graded += batch.length;
-      budget -= batch.length;
-      for (let j = 0; j < batch.length && candidates.length < count; j++) keep(batch[j], grades[j]);
-    }
-  };
+  const seenProjects = new Set();
+  const freshOrUnused = `last_used_at.is.null,last_used_at.lt.${cutoff}`;
 
   // ── PAIRS (preferred) ───────────────────────────────────────────────
   const { data: pairAfters } = await supabaseAdmin
     .from('media_pool')
-    .select('id, url, thumbnail_url, mime_type, project_id, customer_name, address_city, package_tier, pair_role, pair_partner_id, quality_score, tags, captured_at, source_bucket, used_in_clip_id, last_used_at')
+    .select('id, url, mime_type, project_id, customer_name, address_city, package_tier, pair_partner_id, tags, source_bucket')
     .eq('tenant_id', tenantId)
+    .in('source_bucket', OUR_WORK_SOURCES)
     .eq('excluded', false)
     .eq('pair_role', 'after')
     .not('pair_partner_id', 'is', null)
     .is('used_in_clip_id', null)
-    .or(`last_used_at.is.null,last_used_at.lt.${cutoff}`)
-    .order('quality_score', { ascending: false })
-    .limit(PAIR_FETCH_LIMIT);
-
-  // Resolve each after's unused 'before' partner.
-  const pairRaw = [];
+    .or(freshOrUnused)
+    .contains('tags', ['vstate:showcase'])
+    .limit(20);
   for (const after of (pairAfters || [])) {
+    if (candidates.length >= count) break;
+    if (after.project_id && seenProjects.has(after.project_id)) continue;
     const { data: before } = await supabaseAdmin
       .from('media_pool')
-      .select('id, url, thumbnail_url, mime_type, project_id, customer_name, address_city, package_tier, quality_score, tags, captured_at, source_bucket, used_in_clip_id')
+      .select('id, url, mime_type, project_id, used_in_clip_id')
       .eq('id', after.pair_partner_id)
       .eq('tenant_id', tenantId)
       .eq('excluded', false)        // an excluded before must not resurface as a pair half
       .maybeSingle();
     if (!before || before.used_in_clip_id) continue;
-    pairRaw.push({ after, before });
+    if (after.project_id) seenProjects.add(after.project_id);
+    candidates.push({
+      kind: 'pair', before, after,
+      project_id: after.project_id,
+      customer_name: after.customer_name,
+      address_city: after.address_city,
+      package_tier: after.package_tier,
+    });
+    stats.pairs_kept++;
   }
 
-  await gradeAndCollect(pairRaw, p => p.after.url, ({ after, before }, grade) => {
-    if (grade?.state !== 'showcase') { tallyReject(grade); return; }
-    if (after.project_id && seenProjects.has(after.project_id)) return; // job already covered
-    if (after.project_id) seenProjects.add(after.project_id);
-    stats.pairs_kept++;
-    candidates.push({
-      kind: 'pair', before, after, grade,
-      project_id: after.project_id,
-      customer_name: after.customer_name || before.customer_name,
-      address_city: after.address_city || before.address_city,
-      package_tier: after.package_tier || before.package_tier,
-    });
-  });
-
-  // ── SINGLES (fill remaining; showcase-only, one per job) ────────────
-  if (candidates.length < count && canGrade()) {
+  // ── SINGLES (fill remaining; indexed showcase, best-first, one per job) ──
+  if (candidates.length < count) {
     const usedIds = new Set();
-    for (const c of candidates) {
-      if (c.kind === 'pair') { usedIds.add(c.before.id); usedIds.add(c.after.id); }
+    for (const c of candidates) { if (c.kind === 'pair') { usedIds.add(c.before.id); usedIds.add(c.after.id); } }
+
+    // Pull the full unused showcase pool for our-work sources, then rank by
+    // vscore in JS (the score lives in a tag, so it can't be ORDER BY'd in SQL).
+    const pool = [];
+    for (let from = 0; ; from += SHOWCASE_PAGE) {
+      const { data, error } = await supabaseAdmin
+        .from('media_pool')
+        .select('id, url, mime_type, project_id, customer_name, address_city, package_tier, tags, source_bucket')
+        .eq('tenant_id', tenantId)
+        .in('source_bucket', OUR_WORK_SOURCES)
+        .eq('excluded', false)
+        .is('used_in_clip_id', null)
+        .or(freshOrUnused)
+        .contains('tags', ['vstate:showcase'])
+        .range(from, from + SHOWCASE_PAGE - 1);
+      if (error || !data || !data.length) break;
+      pool.push(...data);
+      if (data.length < SHOWCASE_PAGE) break;
     }
-
-    const { data: singleRows } = await supabaseAdmin
-      .from('media_pool')
-      .select('id, url, thumbnail_url, mime_type, project_id, customer_name, address_city, package_tier, quality_score, tags, captured_at, source_bucket, used_in_clip_id, last_used_at')
-      .eq('tenant_id', tenantId)
-      .eq('excluded', false)
-      .is('used_in_clip_id', null)
-      .or(`last_used_at.is.null,last_used_at.lt.${cutoff}`)
-      .order('quality_score', { ascending: false })
-      .limit(SINGLE_FETCH_LIMIT);
-
-    const pool = (singleRows || []).filter(m => !usedIds.has(m.id));
-    await gradeAndCollect(pool, m => m.url, (m, grade) => {
-      if (!isSoloShowcase(grade)) { tallyReject(grade); return; }
-      // Claim the project only on a PASS: a project's lower-ranked showcase
-      // photo still gets a chance if its top-metadata photo was a detail /
-      // before / in-progress shot (which would have been rejected above).
-      if (m.project_id && seenProjects.has(m.project_id)) return;
+    stats.showcase_pool = pool.length;
+    pool.sort((a, b) => vscoreFromTags(b.tags) - vscoreFromTags(a.tags));
+    for (const m of pool) {
+      if (candidates.length >= count) break;
+      if (usedIds.has(m.id)) continue;
+      if (m.project_id && seenProjects.has(m.project_id)) continue; // one post per job
       if (m.project_id) seenProjects.add(m.project_id);
-      stats.singles_kept++;
       candidates.push({
-        kind: 'single', media: m, grade,
+        kind: 'single', media: m,
         project_id: m.project_id,
         customer_name: m.customer_name,
         address_city: m.address_city,
         package_tier: m.package_tier,
       });
-    });
+      stats.singles_kept++;
+    }
   }
 
   return { candidates, stats };
@@ -270,97 +224,8 @@ function resolveSingleUrl(candidate) {
   return candidate.media.url;
 }
 
-async function draftCaption({ brand, candidate, kind }) {
-  const ANTHROPIC_KEY = (process.env.ANTHROPIC_API_KEY || '').trim();
-  if (!ANTHROPIC_KEY) {
-    return {
-      text: buildFallbackCaption({ brand, candidate, kind }),
-      model: 'fallback-template',
-    };
-  }
-
-  // PRIVACY: never pass customer_name or project name to Claude. project_files
-  // and projects.name in this codebase are commonly "265 Irving Blvd" or
-  // similar street addresses, so leaking them into the prompt let Claude
-  // faithfully write street addresses into public social posts. Only city
-  // and package tier are safe to pass.
-  const ctx = [
-    `Source: ${kind === 'pair' ? 'before/after photo pair' : 'single roofing photo'}`,
-    candidate.address_city ? `Location: ${candidate.address_city}, NB` : 'Location: greater Moncton area',
-    candidate.package_tier ? `System: ${candidate.package_tier}` : null,
-  ].filter(Boolean).join('\n');
-
-  const prompt = `Write ONE Facebook social media caption for Plus Ultra Roofing.
-
-## Brand
-${brand.name}
-Voice: ${brand.voice}
-Default CTA: ${brand.cta || 'Get your free roof inspection'}
-Website: ${brand.website || 'plusultraroofing.com'}
-
-## Post context
-${ctx}
-
-## Rules
-- 2 to 4 sentences. Sweet spot 200-400 chars.
-- Open with a clear, specific hook tied to the work.
-- ${kind === 'pair' ? 'Frame the transformation honestly. Reference the work that happened.' : 'Show pride in the craft without exaggeration.'}
-- End with the brand CTA or a soft invitation to book a free inspection.
-- 0 to 3 hashtags at the very end if they help. Skip if they feel forced.
-- NEVER mention street addresses, house numbers, or specific street names. City and province only.
-- NEVER mention customer names. Generic references only ("a Riverview homeowner", "this home").
-- NO em dashes. NO "just". NO "no surprises" / "no rush" style negations. NO "in this market". NO sci-fi or techy tone.
-- Plain English. Family-roofing voice. 3rd-gen pride without bragging.
-- Mention New Brunswick or Moncton if location was provided.
-
-## Output
-Return ONLY the caption text. No quotes, no preamble, no markdown.`;
-
-  try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 15000);
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      signal: ctrl.signal,
-      headers: {
-        'x-api-key': ANTHROPIC_KEY,
-        'anthropic-version': '2023-06-01',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: CLAUDE_MODEL,
-        max_tokens: 600,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    });
-    clearTimeout(timer);
-    if (!r.ok) {
-      const errText = await r.text();
-      console.error('[generator] Claude error:', r.status, errText.slice(0, 200));
-      return { text: buildFallbackCaption({ brand, candidate, kind }), model: 'fallback-template' };
-    }
-    const data = await r.json();
-    const text = (data?.content?.[0]?.text || '').trim().replace(/^["']|["']$/g, '');
-    if (!text) return { text: buildFallbackCaption({ brand, candidate, kind }), model: 'fallback-template' };
-    if (text.includes('—') || text.includes('–')) {
-      const cleaned = text.replace(/\s*[—–]\s*/g, ', ');
-      return { text: cleaned, model: CLAUDE_MODEL };
-    }
-    return { text, model: CLAUDE_MODEL };
-  } catch (e) {
-    console.error('[generator] Claude call failed:', e.message);
-    return { text: buildFallbackCaption({ brand, candidate, kind }), model: 'fallback-template' };
-  }
-}
-
-function buildFallbackCaption({ brand, candidate, kind }) {
-  const city = candidate.address_city || 'greater Moncton';
-  const head = kind === 'pair'
-    ? `Another roof complete in ${city}. Before and after of work we just finished, on a system built to last.`
-    : `Recent work from a ${city} project. Roofing done right the first time.`;
-  const cta = brand.cta || 'Get your free roof inspection';
-  return `${head}\n\n${cta} at ${brand.website || 'plusultraroofing.com'}.`;
-}
+// Captions come from the shared shortCaption() in lib/generatorCaption.js —
+// short, plain, rotating phrasings, no LLM (matches the backfill voice).
 
 async function insertDraft({ tenant, brand, candidate, mediaUrl, captionText, captionModel, scheduledAt, runId, kind }) {
   const titleCity = candidate.address_city || 'Plus Ultra Roofing';
@@ -431,14 +296,12 @@ async function runGenerator({ targetCount = TARGET_COUNT, dryRun = false } = {})
   const warnings = [];
   if (candidates.length < targetCount) warnings.push('low_inventory');
   warnings.push(
-    `graded:${stats.graded}`,
+    `pool:${stats.showcase_pool}`,
     `pairs:${stats.pairs_kept}`,
     `singles:${stats.singles_kept}`,
-    `rejected:${stats.rejected}`,
   );
-  if (stats.ungraded) warnings.push(`ungraded:${stats.ungraded}`);
 
-  // Dry run: report exactly what WOULD be drafted (with vision grades), touch
+  // Dry run: report exactly what WOULD be drafted (with vision scores), touch
   // nothing — no run row, no clips, no media_pool used-flags. Powers a
   // "preview next run" check from /generator.html or curl.
   if (dryRun) {
@@ -447,13 +310,16 @@ async function runGenerator({ targetCount = TARGET_COUNT, dryRun = false } = {})
       candidates_considered: candidates.length,
       stats,
       warnings,
-      preview: candidates.map((c, i) => ({
-        kind: c.kind,
-        address_city: c.address_city || null,
-        grade: c.grade ? { state: c.grade.state, score: c.grade.score, reason: c.grade.reason } : null,
-        scheduled_at: slots[i]?.toISOString() || null,
-        url: c.kind === 'pair' ? c.after.url : c.media.url,
-      })),
+      preview: candidates.map((c, i) => {
+        const m = c.kind === 'pair' ? c.after : c.media;
+        return {
+          kind: c.kind,
+          address_city: c.address_city || null,
+          score: vscoreFromTags(m.tags),
+          scheduled_at: slots[i]?.toISOString() || null,
+          url: m.url,
+        };
+      }),
     };
   }
 
@@ -470,7 +336,7 @@ async function runGenerator({ targetCount = TARGET_COUNT, dryRun = false } = {})
   const runId = runRow.id;
 
   const drafts = [];
-  let captionModelUsed = null;
+  const captionModel = 'template';
   for (let i = 0; i < candidates.length && i < slots.length; i++) {
     const candidate = candidates[i];
     const slot = slots[i];
@@ -486,13 +352,17 @@ async function runGenerator({ targetCount = TARGET_COUNT, dryRun = false } = {})
       mediaUrl = resolveSingleUrl(candidate);
     }
 
-    const captionResult = await draftCaption({ brand, candidate, kind: candidate.kind });
-    captionModelUsed = captionResult.model;
+    const captionText = shortCaption({
+      city: candidate.address_city,
+      tags: candidate.kind === 'pair' ? candidate.after.tags : candidate.media.tags,
+      i,
+      website: brand.website,
+    });
 
     const inserted = await insertDraft({
       tenant, brand, candidate, mediaUrl,
-      captionText: captionResult.text,
-      captionModel: captionResult.model,
+      captionText,
+      captionModel,
       scheduledAt: slot, runId, kind: candidate.kind,
     });
     if (inserted.error) {
@@ -504,7 +374,7 @@ async function runGenerator({ targetCount = TARGET_COUNT, dryRun = false } = {})
       kind: candidate.kind,
       scheduled_at: slot.toISOString(),
       address_city: candidate.address_city,
-      caption_preview: captionResult.text.slice(0, 120),
+      caption_preview: captionText.slice(0, 120),
     });
   }
 
@@ -512,7 +382,7 @@ async function runGenerator({ targetCount = TARGET_COUNT, dryRun = false } = {})
     inserted_count: drafts.length,
     candidates_considered: candidates.length,
     warnings,
-    caption_model: captionModelUsed,
+    caption_model: captionModel,
   }).eq('id', runId);
 
   await supabaseAdmin.from('agent_runs').insert({
