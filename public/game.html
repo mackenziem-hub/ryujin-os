@@ -50,6 +50,19 @@
     image-rendering: pixelated;
     image-rendering: -moz-crisp-edges;
   }
+  /* Reduced-motion: the SNES chrome runs ~14 always-on infinite loops
+     (door idle, NPC breathe, glows, pulses) that composite continuously
+     even when idle. Honor the OS preference, and give weak GPUs an escape
+     hatch, by collapsing all animation/transition to instant. State stays
+     legible via colour, not motion. Standard a11y reset, applied globally. */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
   * { box-sizing: border-box; }
   html, body {
     margin: 0; padding: 0;
@@ -115,6 +128,16 @@
   /* View container */
   .view { position: fixed; inset: 0; opacity: 0; pointer-events: none; transition: opacity .25s ease; }
   .view.active { opacity: 1; pointer-events: auto; }
+  /* Pause animations inside hidden views. The two off-screen views otherwise
+     keep compositing their always-on infinite loops (door idle, NPC breathe,
+     glows) behind opacity:0, burning GPU during play. Touches only
+     animation-play-state, so element geometry is unchanged and the rect math
+     that positions sprites/pops is unaffected. Toasts and the view flash live
+     outside .view, so they keep animating. Resumes when a view goes .active.
+     Universal relief, unlike the prefers-reduced-motion gate above. */
+  .view:not(.active) *,
+  .view:not(.active) *::before,
+  .view:not(.active) *::after { animation-play-state: paused !important; }
 
   /* ───── TITLE ───── */
   .view-title {
@@ -3397,9 +3420,17 @@ async function boot() {
   state.player.y = clamp(state.save.player_y, 5, 95);
   if (collidesOverworld(state.player.x, state.player.y)) { state.player.x = 50; state.player.y = 60; }
 
-  // Preload sector backdrops so the first SECTOR view doesn't flash blank
-  // while the WebP loads over the network. Cheap parallel image warmup.
-  SECTORS.forEach(s => { const img = new Image(); img.src = s.bg; });
+  // Warm sector backdrops AFTER boot settles, not during it. The old
+  // synchronous version kicked off all 8 WebP fetch+decodes up front and
+  // stalled cold-start on integrated GPUs. Rooms already apply their own bg
+  // lazily on entry (see renderInterior), so this is a pure prefetch that is
+  // safe to defer to idle time and decode off the main thread. Worst case if a
+  // room is entered before warmup runs is the same single-image load it does
+  // today. requestIdleCallback falls back to a timeout where unsupported.
+  const warmSectorBgs = () => {
+    SECTORS.forEach(s => { const img = new Image(); img.decoding = 'async'; img.src = s.bg; });
+  };
+  (window.requestIdleCallback || ((fn) => setTimeout(fn, 1200)))(warmSectorBgs);
 
   // Begin parallel data fetch
   Promise.allSettled([fetchSnapshot(), fetchMe(), fetchCcSessions()]);
