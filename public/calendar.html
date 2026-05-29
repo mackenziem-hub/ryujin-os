@@ -262,30 +262,151 @@ function showErr(msg){
   eb.innerHTML = msg ? `<div class="error-banner">${esc(msg)}</div>` : '';
 }
 
+// Per-source state. Each source updates independently so a slow GHL
+// API doesn't block installs from rendering. Schedule is the fastest
+// (single Supabase round trip) and inspections are the slowest (1+N
+// GHL API calls), so this matters in the field.
+const STATE = {
+  sched: { status: 'loading', data: null },
+  ghl:   { status: 'loading', data: null },
+  gcal:  { status: 'loading', data: null }
+};
+
+function fetchWithTimeout(url, opts, ms){
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  return fetch(url, { ...opts, signal: ctrl.signal })
+    .finally(() => clearTimeout(timer));
+}
+
+function renderSkeleton(){
+  // Paint the empty 7-day grid immediately so the user sees the calendar
+  // chrome before any fetch settles. Each column shows "loading…" until
+  // its source flips to ok/error.
+  const todayIso = isoDay(new Date());
+  const today = new Date(); today.setHours(0,0,0,0);
+  const cols = [];
+  for (let i = 0; i < 7; i++){
+    const d = new Date(today.getTime() + i * 86400000);
+    const dayKey = isoDay(d);
+    const dayName = DAY_NAMES[d.getDay()];
+    const dayDate = (d.getMonth() + 1) + '/' + d.getDate();
+    const isToday = dayKey === todayIso;
+    cols.push(`
+      <div class="col ${isToday ? 'today' : ''}">
+        <div class="col-head">
+          <div>
+            <div class="col-day ${isToday ? 'is-today' : ''}">${esc(dayName)}${isToday ? ' (today)' : ''}</div>
+            <div class="col-date">${esc(dayDate)}</div>
+          </div>
+          <div class="col-count">&middot;</div>
+        </div>
+        <div class="empty-day">loading…</div>
+      </div>`);
+  }
+  document.getElementById('board').innerHTML = cols.join('');
+}
+
+function updateToolbar(){
+  const sched = STATE.sched, ghl = STATE.ghl, gcal = STATE.gcal;
+  const installCount = sched.data
+    ? ((sched.data.jobs && sched.data.jobs.length) || (sched.data.days || []).reduce((a, d) => a + (d.installs?.length || 0), 0))
+    : null;
+  const serviceCount = sched.data ? (sched.data.total_service ?? 0) : null;
+  const inspectionCount = ghl.data ? (ghl.data.appointments || []).length : null;
+  const gcalCount = gcal.data ? (gcal.data.events || []).length : null;
+  const gcalSuffix = gcal.data && gcal.data.configured === false ? ' (off)' : '';
+
+  document.getElementById('totInstalls').textContent =
+    sched.status === 'loading' ? '…' : sched.status === 'ok' ? installCount : '!';
+  document.getElementById('totService').textContent =
+    sched.status === 'loading' ? '…' : sched.status === 'ok' ? serviceCount : '!';
+  document.getElementById('totInspections').textContent =
+    ghl.status === 'loading' ? '…' : ghl.status === 'ok' ? inspectionCount : '!';
+  document.getElementById('totGcal').textContent =
+    gcal.status === 'loading' ? '…' : gcal.status === 'ok' ? (gcalCount + gcalSuffix) : '!';
+
+  // Error banner aggregates whichever sources failed/timed out.
+  const errs = [];
+  if (STATE.sched.status === 'error') errs.push('schedule ' + (STATE.sched.errMsg || 'failed'));
+  if (STATE.sched.status === 'timeout') errs.push('schedule timed out');
+  if (STATE.ghl.status === 'error') errs.push('inspections ' + (STATE.ghl.errMsg || 'failed'));
+  if (STATE.ghl.status === 'timeout') errs.push('inspections timed out (GHL slow)');
+  if (STATE.gcal.status === 'error') errs.push('google cal ' + (STATE.gcal.errMsg || 'failed'));
+  if (STATE.gcal.status === 'timeout') errs.push('google cal timed out');
+  showErr(errs.length ? 'Partial load: ' + errs.join(', ') : '');
+
+  const allSettled = STATE.sched.status !== 'loading' && STATE.ghl.status !== 'loading' && STATE.gcal.status !== 'loading';
+  if (allSettled) {
+    document.getElementById('refreshMeta').textContent =
+      'Last refreshed ' + new Date().toLocaleTimeString() + ' · auto-refresh every 3 min';
+  } else {
+    document.getElementById('refreshMeta').textContent = 'Loading…';
+  }
+}
+
+function rerender(){
+  // Normalize whatever data has arrived (empty defaults for still-loading
+  // sources) and re-render both views. The skeleton already paints; once
+  // any source returns, we replace it with real data.
+  const sched = STATE.sched.data || { days: [], jobs: [], total_service: 0 };
+  const ghl = STATE.ghl.data || { appointments: [] };
+  const gcal = STATE.gcal.data || { events: [] };
+  const merged = normalize(sched, ghl, gcal);
+  const hasAny = merged.some(d => d.events.length > 0);
+  // Only flip away from the skeleton once at least one source has data,
+  // OR all three have settled (so we don't blank the day columns while
+  // the slow ones are still loading).
+  const allSettled = STATE.sched.status !== 'loading' && STATE.ghl.status !== 'loading' && STATE.gcal.status !== 'loading';
+  if (hasAny || allSettled) {
+    renderDayView(merged);
+    renderCrewView(merged);
+  }
+  updateToolbar();
+}
+
 async function loadAll(){
   const tok = await getToken();
   if (!tok) { document.getElementById('board').innerHTML = '<div class="col"><div class="empty-day">Sign in required.</div></div>'; return; }
   const hdr = { 'Authorization': 'Bearer ' + tok, 'x-tenant-id': TENANT };
 
-  const [sched, ghl, gcal] = await Promise.all([
-    fetch('/api/schedule?days=7', { headers: hdr }).then(r => r.ok ? r.json() : ({ days:[], jobs:[], _err: 'schedule '+r.status })).catch(e => ({ days:[], jobs:[], _err: 'schedule '+e.message })),
-    fetch('/api/ghl?mode=appointments&days=7', { headers: hdr }).then(r => r.ok ? r.json() : ({ appointments:[], _err: 'ghl '+r.status })).catch(e => ({ appointments:[], _err: 'ghl '+e.message })),
-    fetch('/api/google-cal?days=7', { headers: hdr }).then(r => r.ok ? r.json() : ({ events:[], _err: 'gcal '+r.status })).catch(e => ({ events:[], _err: 'gcal '+e.message }))
-  ]);
+  // Reset state to loading for this refresh cycle.
+  STATE.sched = { status: 'loading', data: null };
+  STATE.ghl   = { status: 'loading', data: null };
+  STATE.gcal  = { status: 'loading', data: null };
+  renderSkeleton();
+  updateToolbar();
 
-  const errs = [sched._err, ghl._err, gcal._err].filter(Boolean);
-  if (errs.length) showErr('Partial load: ' + errs.join(', ')); else showErr('');
+  // Schedule: ~1s normally. Bump to 8s on bad days.
+  fetchWithTimeout('/api/schedule?days=7', { headers: hdr }, 8000)
+    .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+    .then(d => { STATE.sched = { status: 'ok', data: d }; })
+    .catch(e => {
+      const isTimeout = e.name === 'AbortError';
+      STATE.sched = { status: isTimeout ? 'timeout' : 'error', data: null, errMsg: e.message };
+    })
+    .finally(rerender);
 
-  const merged = normalize(sched, ghl, gcal);
-  renderDayView(merged);
-  renderCrewView(merged);
+  // GHL appointments: 1+N GHL API calls. Allow up to 12s before giving
+  // up so the calendar still renders installs even when GHL is slow.
+  fetchWithTimeout('/api/ghl?mode=appointments&days=7', { headers: hdr }, 12000)
+    .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+    .then(d => { STATE.ghl = { status: 'ok', data: d }; })
+    .catch(e => {
+      const isTimeout = e.name === 'AbortError';
+      STATE.ghl = { status: isTimeout ? 'timeout' : 'error', data: null, errMsg: e.message };
+    })
+    .finally(rerender);
 
-  document.getElementById('totInstalls').textContent = (sched.jobs || sched.days?.flatMap(d => d.installs || []) || []).length;
-  document.getElementById('totInspections').textContent = (ghl.appointments || []).length;
-  document.getElementById('totService').textContent = sched.total_service ?? 0;
-  document.getElementById('totGcal').textContent = (gcal.events || []).length + (gcal.configured === false ? ' (off)' : '');
-
-  document.getElementById('refreshMeta').textContent = 'Last refreshed ' + new Date().toLocaleTimeString() + ' · auto-refresh every 3 min';
+  // Google Cal: fast (single ICS fetch) or off (no env var). 6s plenty.
+  fetchWithTimeout('/api/google-cal?days=7', { headers: hdr }, 6000)
+    .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+    .then(d => { STATE.gcal = { status: 'ok', data: d }; })
+    .catch(e => {
+      const isTimeout = e.name === 'AbortError';
+      STATE.gcal = { status: isTimeout ? 'timeout' : 'error', data: null, errMsg: e.message };
+    })
+    .finally(rerender);
 }
 
 function normalize(sched, ghl, gcal){
