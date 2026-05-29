@@ -18,6 +18,9 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
 
 .topbar{position:fixed;top:10px;left:12px;right:12px;height:52px;display:flex;align-items:center;gap:12px;background:rgba(14,22,40,0.78);border:1px solid rgba(34,211,238,0.24);border-radius:14px;padding:0 14px;backdrop-filter:blur(20px);z-index:20;overflow:hidden}
 .topbar::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,#22d3ee,#fb923c,transparent);opacity:0.5}
+.topbar,.topbar *{font-family:'Inter',system-ui,sans-serif}
+.topbar .brand-name,.topbar .tb-btn{font-family:'Orbitron',sans-serif}
+.topbar .tb-stat,.topbar .tb-stat *,.topbar .tb-sync,.topbar .tb-sync *{font-family:'Share Tech Mono',monospace}
 .back-btn{width:40px;height:40px;border-radius:10px;background:#fff;color:#030611;border:0;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(255,255,255,0.18);transition:transform 0.18s,box-shadow 0.18s}
 .back-btn:hover{transform:translateX(-2px);box-shadow:0 6px 18px rgba(255,255,255,0.28)}
 .back-btn svg{width:20px;height:20px;stroke:#030611;fill:none;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
@@ -288,10 +291,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
           </div>
           <textarea id="${captionId}" placeholder="Caption draft (edit before approving)">${escapeHtml(d.caption_suggestion || '')}</textarea>
           <div class="actions">
-            <button class="btn btn-save" onclick="saveDraft('${d.id}')">Save</button>
-            <button class="btn btn-regen" onclick="regen('${d.id}')">Regenerate</button>
-            <button class="btn btn-reject" onclick="reject('${d.id}')">Reject</button>
-            <button class="btn btn-approve" onclick="approve('${d.id}')">Approve</button>
+            <button class="btn btn-save" onclick="saveDraft('${d.id}', this)">Save</button>
+            <button class="btn btn-regen" onclick="regen('${d.id}', this)">Regenerate</button>
+            <button class="btn btn-reject" onclick="reject('${d.id}', this)">Reject</button>
+            <button class="btn btn-approve" onclick="approve('${d.id}', this)">Approve</button>
           </div>
         </div>
       </div>`;
@@ -371,27 +374,43 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
     }
   }
 
-  async function approve(id){
+  // Each button mutates its own label + disabled state while the async
+  // request is in-flight. Co-Work's QA walk on May 29 caught that Regenerate
+  // stayed enabled during the 5-10s LLM call, so users clicked it repeatedly.
+  function busy(btn, label){
+    if (!btn) return null;
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = label;
+    return () => { btn.disabled = false; btn.textContent = original; };
+  }
+
+  async function approve(id, btn){
     const ta = document.getElementById('cap-' + id);
     const caption = ta ? ta.value.trim() : null;
     if (!caption) { toast('Caption is empty', true); return; }
+    const done = busy(btn, 'Approving...');
     try {
       await api('/api/generator', { method: 'PUT', body: { id, action: 'approve', caption } });
       toast('Approved. Publish sweep within 10 min.');
       loadQueue();
     } catch(e){ toast(e.message, true); }
+    finally { if (done) done(); }
   }
 
-  async function saveDraft(id){
+  async function saveDraft(id, btn){
     const ta = document.getElementById('cap-' + id);
     if (!ta) return;
+    const done = busy(btn, 'Saving...');
     try {
       await api('/api/generator', { method: 'PUT', body: { id, action: 'edit', caption: ta.value } });
       toast('Saved.');
     } catch(e){ toast(e.message, true); }
+    finally { if (done) done(); }
   }
 
-  async function regen(id){
+  async function regen(id, btn){
+    const done = busy(btn, 'Regenerating...');
     try {
       toast('Regenerating caption...');
       const out = await api('/api/generator?action=regenerate', { method: 'POST', body: { id } });
@@ -401,15 +420,18 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
       }
       toast('New caption ready.');
     } catch(e){ toast(e.message, true); }
+    finally { if (done) done(); }
   }
 
-  async function reject(id){
+  async function reject(id, btn){
     if (!confirm('Reject this draft? The photo goes back into the media pool.')) return;
+    const done = busy(btn, 'Rejecting...');
     try {
       await api('/api/generator?id=' + encodeURIComponent(id), { method: 'DELETE' });
       toast('Draft rejected.');
       loadQueue();
     } catch(e){ toast(e.message, true); }
+    finally { if (done) done(); }
   }
 
   async function fireGenerator(){
