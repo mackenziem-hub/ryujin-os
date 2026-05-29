@@ -506,7 +506,11 @@ async function buildFreshSnapshot() {
     // Generator scheduler — weekly cron writes sections.generator with
     // draft/scheduled/posted counts so command-center can surface a tile
     // without re-querying marketing_clips. Preserve across hourly rebuild.
-    'generator'
+    'generator',
+    // Inbox agent (migration 078) — every-20-min cron writes sections.inbox
+    // with needsReview/notified/scanned counts + lastRun. Same wipe risk as
+    // the others if omitted here.
+    'inbox'
   ];
   if (existing?.sections) {
     for (const key of preserveKeys) {

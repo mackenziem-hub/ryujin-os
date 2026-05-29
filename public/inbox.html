@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ryujin OS · Inbox</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=optional" rel="stylesheet">
+<link rel="stylesheet" href="/assets/ryujin-perf.css">
+<script src="/assets/ryujin-perf.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;width:100%}
+body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;overflow:auto;position:relative;min-height:100vh}
+
+.bg-ambient{position:fixed;inset:0;z-index:0;background:radial-gradient(ellipse at 30% 20%,rgba(34,211,238,0.10) 0%,transparent 55%),radial-gradient(ellipse at 70% 85%,rgba(251,146,60,0.08) 0%,transparent 55%),linear-gradient(180deg,#060a14 0%,#030611 100%)}
+.bg-grid{position:fixed;inset:0;z-index:1;pointer-events:none;background-image:linear-gradient(rgba(34,211,238,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(34,211,238,0.03) 1px,transparent 1px);background-size:60px 60px;mask-image:radial-gradient(ellipse at center,black 35%,transparent 85%);-webkit-mask-image:radial-gradient(ellipse at center,black 35%,transparent 85%)}
+
+.topbar{position:fixed;top:10px;left:12px;right:12px;height:52px;display:flex;align-items:center;gap:12px;background:rgba(14,22,40,0.78);border:1px solid rgba(34,211,238,0.24);border-radius:14px;padding:0 14px;backdrop-filter:blur(20px);z-index:20;overflow:hidden}
+.topbar::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,#22d3ee,#fb923c,transparent);opacity:0.5}
+.topbar,.topbar *{font-family:'Inter',system-ui,sans-serif}
+.topbar .brand-name,.topbar .tb-btn{font-family:'Orbitron',sans-serif}
+.topbar .tb-stat,.topbar .tb-stat *,.topbar .tb-sync,.topbar .tb-sync *{font-family:'Share Tech Mono',monospace}
+.back-btn{width:40px;height:40px;border-radius:10px;background:#fff;color:#030611;border:0;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(255,255,255,0.18);transition:transform 0.18s,box-shadow 0.18s}
+.back-btn:hover{transform:translateX(-2px);box-shadow:0 6px 18px rgba(255,255,255,0.28)}
+.back-btn svg{width:20px;height:20px;stroke:#030611;fill:none;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
+.brand{display:flex;align-items:center;gap:10px}
+.brand-mark{width:30px;height:30px;border-radius:7px;background:radial-gradient(circle at 35% 30%,rgba(220,240,255,0.35),rgba(34,211,238,0.28) 40%,rgba(5,15,25,0.85));box-shadow:0 0 14px rgba(34,211,238,0.4)}
+.brand-name{font-family:'Orbitron',sans-serif;font-size:0.78em;font-weight:800;letter-spacing:2.5px}
+.brand-name .dim{color:rgba(160,190,230,0.62);font-weight:500;letter-spacing:2px;margin-left:8px}
+.tb-spacer{flex:1}
+.tb-stat{display:flex;align-items:center;gap:6px;font-family:'Share Tech Mono',monospace;font-size:0.68em;color:rgba(160,190,230,0.62);letter-spacing:1px}
+.tb-stat .dot{width:6px;height:6px;border-radius:50%;background:#4ade80;box-shadow:0 0 6px #4ade80;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+.tb-btn{padding:7px 12px;border-radius:9px;background:rgba(34,211,238,0.12);border:1px solid rgba(34,211,238,0.36);color:#22d3ee;font-family:'Orbitron',sans-serif;font-size:0.62em;letter-spacing:2px;text-transform:uppercase;cursor:pointer;transition:all 0.18s}
+.tb-btn:hover{background:rgba(34,211,238,0.22);border-color:rgba(34,211,238,0.6);color:#fff}
+.tb-btn[disabled]{opacity:0.4;cursor:wait}
+.tb-sync{font-family:'Share Tech Mono',monospace;font-size:0.7em;color:rgba(160,190,230,0.5);letter-spacing:1.5px;margin-right:8px}
+
+.stage{position:relative;z-index:5;padding:82px 18px 22px 18px;max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+
+.glass{position:relative;background:linear-gradient(180deg,rgba(14,22,40,0.92),rgba(8,14,28,0.92));border:1px solid rgba(34,211,238,0.22);border-radius:14px;backdrop-filter:blur(18px);overflow:hidden}
+.glass::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(34,211,238,0.55),rgba(251,146,60,0.4),transparent);opacity:0.6}
+
+.kpi-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.kpi{padding:14px 16px 16px}
+.kpi .lbl{font-family:'Orbitron',sans-serif;font-size:0.62em;letter-spacing:2px;color:rgba(160,190,230,0.72);text-transform:uppercase}
+.kpi .val{font-family:'Share Tech Mono',monospace;font-size:2.1em;font-weight:700;color:#fff;margin-top:6px;line-height:1.05}
+.kpi .sub{font-size:0.72em;color:rgba(160,190,230,0.62);margin-top:4px}
+.kpi.accent-red{border-color:rgba(239,68,68,0.4)} .kpi.accent-red .val{color:#f87171}
+.kpi.accent-cyan{border-color:rgba(34,211,238,0.32)} .kpi.accent-cyan .val{color:#22d3ee}
+.kpi.accent-green{border-color:rgba(16,185,129,0.32)} .kpi.accent-green .val{color:#10b981}
+
+.panel{padding:18px 20px 16px}
+.panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.panel h2{font-family:'Orbitron',sans-serif;font-size:0.82em;font-weight:700;letter-spacing:2.5px;color:rgba(160,190,230,0.92);text-transform:uppercase}
+.panel-action{font-family:'Share Tech Mono',monospace;font-size:0.75em;letter-spacing:1px;color:rgba(160,190,230,0.5);cursor:pointer;user-select:none;transition:color 0.18s}
+.panel-action:hover{color:#22d3ee}
+
+.card{background:rgba(6,10,20,0.55);border:1px solid rgba(34,211,238,0.18);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;margin-bottom:14px;transition:border-color 0.18s,box-shadow 0.18s}
+.card:hover{border-color:rgba(34,211,238,0.42)}
+.card.notify{border-color:rgba(239,68,68,0.5);box-shadow:0 0 0 1px rgba(239,68,68,0.18)}
+.card .body{padding:14px 16px 13px;display:flex;flex-direction:column;gap:11px}
+.card .head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.card .who{font-weight:800;font-size:1em;color:#fff}
+.card .summary{font-size:0.9em;color:rgba(208,218,240,0.92);line-height:1.4}
+.card .inbound{background:rgba(3,8,18,0.55);border:1px solid rgba(34,211,238,0.14);border-left:3px solid rgba(34,211,238,0.5);border-radius:8px;padding:9px 11px;font-size:0.86em;color:rgba(208,218,240,0.82);line-height:1.4;max-height:140px;overflow:auto;white-space:pre-wrap}
+.card .lbl-draft{font-family:'Orbitron',sans-serif;font-size:0.56em;letter-spacing:2px;color:rgba(160,190,230,0.6);text-transform:uppercase}
+.card textarea{width:100%;min-height:84px;background:rgba(3,8,18,0.65);border:1px solid rgba(34,211,238,0.22);border-radius:8px;padding:9px 10px;color:#e6ecf6;font-family:'Inter',system-ui,sans-serif;font-size:0.9em;line-height:1.45;resize:vertical}
+.card textarea:focus{outline:none;border-color:rgba(34,211,238,0.6);background:rgba(3,8,18,0.85)}
+.card .actions{display:flex;flex-wrap:wrap;gap:7px}
+
+.pill{font-family:'Share Tech Mono',monospace;font-size:0.6em;padding:3px 8px;border-radius:6px;letter-spacing:0.6px;text-transform:uppercase;white-space:nowrap}
+.pill-channel{background:rgba(34,211,238,0.14);color:#5fd5e8;border:1px solid rgba(34,211,238,0.34)}
+.pill-cat{background:rgba(160,190,230,0.12);color:rgba(190,210,240,0.85);border:1px solid rgba(160,190,230,0.28)}
+.pill-notify{background:rgba(239,68,68,0.2);color:#f87171;border:1px solid rgba(239,68,68,0.5)}
+.pill-emergency{background:rgba(239,68,68,0.2);color:#f87171;border:1px solid rgba(239,68,68,0.5)}
+.pill-high{background:rgba(251,191,36,0.18);color:#fbbf24;border:1px solid rgba(251,191,36,0.46)}
+.pill-window-warn{background:rgba(251,146,60,0.16);color:#fb923c;border:1px solid rgba(251,146,60,0.44)}
+.pill-window-closed{background:rgba(239,68,68,0.18);color:#f87171;border:1px solid rgba(239,68,68,0.46)}
+.tb-meta{flex:1;text-align:right;font-family:'Share Tech Mono',monospace;font-size:0.7em;color:rgba(160,190,230,0.6)}
+
+.btn{font-family:'Orbitron',sans-serif;font-size:0.62em;letter-spacing:2px;padding:8px 12px;border-radius:8px;cursor:pointer;border:1px solid transparent;text-transform:uppercase;font-weight:700;transition:all 0.18s;flex:1;min-width:90px}
+.btn-send{background:rgba(16,185,129,0.18);color:#10b981;border-color:rgba(16,185,129,0.42)}
+.btn-send:hover{background:rgba(16,185,129,0.32);color:#fff;border-color:rgba(16,185,129,0.7)}
+.btn-save{background:rgba(251,191,36,0.14);color:#fbbf24;border-color:rgba(251,191,36,0.4)}
+.btn-save:hover{background:rgba(251,191,36,0.28);color:#fff;border-color:rgba(251,191,36,0.7)}
+.btn-dismiss{background:rgba(160,190,230,0.1);color:rgba(190,210,240,0.85);border-color:rgba(160,190,230,0.3)}
+.btn-dismiss:hover{background:rgba(160,190,230,0.2);color:#fff}
+.btn[disabled]{opacity:0.45;cursor:wait}
+
+.list{display:flex;flex-direction:column;gap:8px}
+.hrow{display:grid;grid-template-columns:1fr auto;gap:12px;padding:10px 12px;background:rgba(6,10,20,0.45);border:1px solid rgba(34,211,238,0.12);border-radius:9px;align-items:center}
+.hrow .ht{font-size:0.86em;color:rgba(208,218,240,0.82);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hrow .hm{font-family:'Share Tech Mono',monospace;font-size:0.66em;color:rgba(160,190,230,0.55);white-space:nowrap}
+.hstatus-sent{color:#10b981}
+.hstatus-dismissed{color:rgba(160,190,230,0.55)}
+
+.empty{padding:30px 14px;text-align:center;font-family:'Share Tech Mono',monospace;font-size:0.85em;letter-spacing:1px;color:rgba(160,190,230,0.5)}
+.loading{padding:18px 14px;text-align:center;font-family:'Share Tech Mono',monospace;font-size:0.78em;color:rgba(160,190,230,0.55);letter-spacing:1.5px}
+
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);padding:12px 20px;background:rgba(14,22,40,0.95);border:1px solid rgba(34,211,238,0.4);border-radius:10px;font-family:'Share Tech Mono',monospace;font-size:0.82em;color:#22d3ee;letter-spacing:0.5px;z-index:50;opacity:0;pointer-events:none;transition:opacity 0.2s,transform 0.2s;backdrop-filter:blur(10px)}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(-6px)}
+#toast.err{border-color:rgba(239,68,68,0.5);color:#ef4444}
+
+@media (max-width:720px){
+  .kpi-row{grid-template-columns:1fr 1fr 1fr;gap:8px}
+  .kpi .val{font-size:1.6em}
+  .stage{padding:74px 10px 18px 10px}
+}
+</style>
+<script src="/assets/auth-guard.js"></script>
+<script src="/assets/ryujin-slug.js"></script>
+</head>
+<body>
+
+<div class="bg-ambient"></div>
+<div class="bg-grid"></div>
+
+<div class="topbar">
+  <button class="back-btn" onclick="goBackToMainHub()" aria-label="Back" title="Back"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
+  <div class="brand"><div class="brand-mark"></div><div class="brand-name">RYUJIN <span class="dim">× INBOX</span></div></div>
+  <div class="tb-stat"><div class="dot"></div><span>TRIAGE · DRAFT · APPROVE</span></div>
+  <div class="tb-spacer"></div>
+  <div class="tb-sync" id="lastSync">SYNC · idle</div>
+  <button class="tb-btn" id="runBtn" onclick="fireScan()">Scan Now</button>
+</div>
+
+<div class="stage">
+
+  <div class="kpi-row">
+    <div class="kpi glass accent-red">
+      <div class="lbl">Needs you now</div>
+      <div class="val" id="kpiNotify">—</div>
+      <div class="sub">active leak / active lead</div>
+    </div>
+    <div class="kpi glass accent-cyan">
+      <div class="lbl">In queue</div>
+      <div class="val" id="kpiQueue">—</div>
+      <div class="sub">awaiting review</div>
+    </div>
+    <div class="kpi glass accent-green">
+      <div class="lbl">Handled · 7d</div>
+      <div class="val" id="kpiHandled">—</div>
+      <div class="sub" id="kpiLastRun">last scan: —</div>
+    </div>
+  </div>
+
+  <div class="glass panel">
+    <div class="panel-head">
+      <h2>Review queue</h2>
+      <div class="panel-action" onclick="loadQueue(true)">Refresh</div>
+    </div>
+    <div id="queueBody"><div class="loading">Loading inbox...</div></div>
+  </div>
+
+  <div class="glass panel">
+    <div class="panel-head"><h2>Recently handled</h2></div>
+    <div id="handledBody"><div class="loading">Loading...</div></div>
+  </div>
+
+</div>
+
+<div id="toast"></div>
+
+<script>
+(function(){
+  const TENANT_SLUG =
+    (typeof window.getRyujinTenantSlug === 'function' && window.getRyujinTenantSlug())
+    || window.RYUJIN_TENANT_SLUG
+    || 'plus-ultra';
+  const POLL_MS = 45000;
+  let state = { needs_review: [], recent_handled: [], counts: {}, last_run: null };
+  let inflight = false;
+
+  function authHeaders(extra){
+    const h = Object.assign({ 'x-tenant-id': TENANT_SLUG }, extra || {});
+    if (window.RyujinAuth && typeof window.RyujinAuth.headers === 'function') {
+      Object.assign(h, window.RyujinAuth.headers());
+    }
+    return h;
+  }
+
+  function fmtDate(iso){
+    if (!iso) return '';
+    const d = new Date(iso);
+    const day = d.toLocaleDateString('en-CA', { weekday: 'short', month: 'short', day: 'numeric' });
+    const time = d.toLocaleTimeString('en-CA', { hour: 'numeric', minute: '2-digit', hour12: true });
+    return day + ' · ' + time;
+  }
+  function fmtSyncTime(){
+    return 'SYNC · ' + new Date().toLocaleTimeString('en-CA', { hour: 'numeric', minute: '2-digit', hour12: false });
+  }
+  function escapeHtml(s){
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function toast(msg, isErr){
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.toggle('err', !!isErr);
+    el.classList.add('show');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => el.classList.remove('show'), 3400);
+  }
+
+  async function api(path, opts){
+    const init = Object.assign({ headers: authHeaders((opts && opts.headers) || {}) }, opts || {});
+    if (init.body && typeof init.body !== 'string') {
+      init.headers['Content-Type'] = 'application/json';
+      init.body = JSON.stringify(init.body);
+    }
+    const r = await fetch(path, init);
+    const text = await r.text();
+    let body;
+    try { body = text ? JSON.parse(text) : {}; } catch(e){ body = { error: text }; }
+    if (!r.ok) throw new Error(body.error || ('HTTP ' + r.status));
+    return body;
+  }
+
+  async function loadQueue(showSpinner){
+    if (inflight) return;
+    inflight = true;
+    try {
+      const q = await api('/api/inbox');
+      state = q;
+      render();
+      document.getElementById('lastSync').textContent = fmtSyncTime();
+    } catch(e){
+      console.error('inbox load failed:', e);
+      if (showSpinner) {
+        document.getElementById('queueBody').innerHTML =
+          '<div class="empty">Could not load inbox: ' + escapeHtml(e.message) + '</div>';
+        toast('Failed to load: ' + e.message, true);
+      }
+    } finally {
+      inflight = false;
+    }
+  }
+
+  function windowPill(w){
+    if (!w || !w.applies) return '';
+    if (w.closed) return '<span class="pill pill-window-closed">reply window closed</span>';
+    if (w.hours_left != null && w.hours_left <= 6) return '<span class="pill pill-window-warn">' + w.hours_left + 'h to reply</span>';
+    return '';
+  }
+
+  function urgencyPill(u){
+    if (u === 'emergency') return '<span class="pill pill-emergency">emergency</span>';
+    if (u === 'high') return '<span class="pill pill-high">high</span>';
+    return '';
+  }
+
+  function renderCard(it){
+    const notifyPill = it.notify
+      ? '<span class="pill pill-notify">' + escapeHtml(it.notify_reason || 'needs you now') + '</span>'
+      : '';
+    return `
+      <div class="card ${it.notify ? 'notify' : ''}" data-id="${it.id}">
+        <div class="body">
+          <div class="head">
+            <span class="who">${escapeHtml(it.contact_name)}</span>
+            <span class="pill pill-channel">${escapeHtml(it.channel_label || it.channel)}</span>
+            <span class="pill pill-cat">${escapeHtml(it.category || 'other')}</span>
+            ${urgencyPill(it.urgency)}
+            ${notifyPill}
+            ${windowPill(it.window)}
+            <span class="tb-meta">${fmtDate(it.last_message_at)}</span>
+          </div>
+          <div class="summary">${escapeHtml(it.summary || '')}</div>
+          <div class="inbound">${escapeHtml(it.last_message_body || '(no message body)')}</div>
+          <div class="lbl-draft">Suggested reply (edit before sending)</div>
+          <textarea id="draft-${it.id}" placeholder="${it.needs_reply ? 'Draft a reply...' : 'Agent flagged no reply needed. Write one here if you want to respond.'}">${escapeHtml(it.draft_reply || '')}</textarea>
+          <div class="actions">
+            <button class="btn btn-save" onclick="saveDraft('${it.id}', this)">Save draft</button>
+            <button class="btn btn-dismiss" onclick="dismiss('${it.id}', this)">Dismiss</button>
+            ${it.channel === 'email'
+              ? '<button class="btn btn-send" disabled title="Email replies go out from Gmail for now. Copy the draft above.">Reply in Gmail</button>'
+              : `<button class="btn btn-send" onclick="send('${it.id}', this)">Approve &amp; Send</button>`}
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function render(){
+    const c = state.counts || {};
+    document.getElementById('kpiNotify').textContent = c.notify || 0;
+    document.getElementById('kpiQueue').textContent = c.needs_review || 0;
+    document.getElementById('kpiHandled').textContent = c.handled_last_7d || 0;
+    const lr = state.last_run;
+    document.getElementById('kpiLastRun').textContent =
+      'last scan: ' + (lr && lr.started_at ? fmtDate(lr.started_at) : 'never');
+
+    // Notify items first, then most-recent message.
+    const items = (state.needs_review || []).slice().sort((a, b) => {
+      if (!!b.notify !== !!a.notify) return (b.notify ? 1 : 0) - (a.notify ? 1 : 0);
+      return new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0);
+    });
+    const qb = document.getElementById('queueBody');
+    qb.innerHTML = items.length
+      ? items.map(renderCard).join('')
+      : '<div class="empty">Inbox is clear. Nothing waiting on you.</div>';
+
+    const hb = document.getElementById('handledBody');
+    const handled = state.recent_handled || [];
+    hb.innerHTML = handled.length
+      ? '<div class="list">' + handled.map(h => `
+          <div class="hrow">
+            <div class="ht">${escapeHtml(h.contact_name)} · ${escapeHtml(h.summary || h.last_message_body || '')}</div>
+            <div class="hm hstatus-${h.status}">${h.status === 'sent' ? 'sent' : 'dismissed'} · ${fmtDate(h.sent_at || h.last_message_at)}</div>
+          </div>`).join('') + '</div>'
+      : '<div class="empty">Nothing handled in the last 7 days.</div>';
+  }
+
+  function busy(btn, label){
+    if (!btn) return null;
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = label;
+    return () => { btn.disabled = false; btn.textContent = original; };
+  }
+
+  async function send(id, btn){
+    const ta = document.getElementById('draft-' + id);
+    const body = ta ? ta.value.trim() : '';
+    if (!body) { toast('Nothing to send. Write a reply first.', true); return; }
+    if (!confirm('Send this reply to the customer now?')) return;
+    const done = busy(btn, 'Sending...');
+    try {
+      await api('/api/inbox', { method: 'PUT', body: { id, action: 'send', body } });
+      toast('Sent.');
+      loadQueue();
+    } catch(e){ toast(e.message, true); }
+    finally { if (done) done(); }
+  }
+
+  async function saveDraft(id, btn){
+    const ta = document.getElementById('draft-' + id);
+    if (!ta) return;
+    const done = busy(btn, 'Saving...');
+    try {
+      await api('/api/inbox', { method: 'PUT', body: { id, action: 'save-draft', body: ta.value } });
+      toast('Draft saved.');
+    } catch(e){ toast(e.message, true); }
+    finally { if (done) done(); }
+  }
+
+  async function dismiss(id, btn){
+    if (!confirm('Dismiss this message? It leaves the queue.')) return;
+    const done = busy(btn, 'Dismissing...');
+    try {
+      await api('/api/inbox', { method: 'PUT', body: { id, action: 'dismiss' } });
+      toast('Dismissed.');
+      loadQueue();
+    } catch(e){ toast(e.message, true); }
+    finally { if (done) done(); }
+  }
+
+  async function fireScan(){
+    const btn = document.getElementById('runBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Scanning...'; }
+    try {
+      const out = await api('/api/inbox?action=run', { method: 'POST', body: {} });
+      const n = out?.result?.inserted || 0;
+      toast('Scan complete. ' + n + ' new item' + (n === 1 ? '' : 's') + '.');
+      loadQueue();
+    } catch(e){ toast(e.message, true); }
+    finally { if (btn) { btn.disabled = false; btn.textContent = 'Scan Now'; } }
+  }
+
+  window.loadQueue = loadQueue;
+  window.send = send;
+  window.saveDraft = saveDraft;
+  window.dismiss = dismiss;
+  window.fireScan = fireScan;
+
+  loadQueue(true);
+  setInterval(() => loadQueue(false), POLL_MS);
+})();
+
+if (typeof window.goBackToMainHub !== 'function') {
+  window.goBackToMainHub = function(){ window.location.href = '/command-center.html'; };
+}
+</script>
+
+</body>
+</html>
