@@ -979,8 +979,17 @@
     /* Mobile overworld: shrink player + buildings to fit 9:16 viewport */
     .player-avatar { width: 7%; }
     .map-building { width: 12%; height: 14%; padding: 4px; }
-    .map-building .b-label { font-size: 8px; }
+    /* Nameplates collide on phone widths (buildings sit close and the labels
+       do not wrap), smearing into "SA MARKE FINANCE..." in the middle band.
+       Show only the building the player is next to; colour-coding still tells
+       the rest apart and walking up reveals the name. Desktop is unchanged. */
+    .map-building .b-label { display: none; font-size: 8px; }
+    .map-building.near .b-label { display: block; }
     .map-building .b-stat { font-size: 12px; }
+    /* Title art is landscape; cover crops the logo on a tall phone viewport
+       (RYUJIN OS rendered as "UJIN"). Fit the whole image instead, letterboxed
+       against the title screen's black background. */
+    .view-title .bg { background-size: contain; }
     .npc-sprite { width: 18%; }
     .party-grid { grid-template-columns: repeat(3, 1fr); }
     .title-press { font-size: 14px; }
@@ -1843,6 +1852,14 @@ function setView(v) {
   $('viewMap').classList.toggle('active', v === 'MAP');
   $('viewSector').classList.toggle('active', v === 'SECTOR');
   state.view = v;
+  // Touch controls belong to the play views only. On the title screen (no
+  // movement) they previously overlapped the logo. Driving visibility from
+  // setView makes the current view the single source of truth, so the pad is
+  // never stranded on the title.
+  const touch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+  const showPad = touch && (v === 'MAP' || v === 'SECTOR');
+  $('virtualPad').classList.toggle('show', showPad);
+  $('vpAction').classList.toggle('show', showPad);
   renderTopbar();
   renderWizardPop();
 }
@@ -3386,14 +3403,9 @@ document.addEventListener('DOMContentLoaded', () => {
   $('modalBack').addEventListener('click', (e) => { if (e.target.id === 'modalBack') closeModal(); });
   $('btnMute').style.opacity = state.save.muted ? '0.4' : '1';
 
-  // Touch device detection — show virtual D-pad + action button if any
-  // touch input is supported. Hidden by default on mouse/keyboard so it
-  // doesn't crowd the desktop view.
-  const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-  if (isTouch) {
-    $('virtualPad').classList.add('show');
-    $('vpAction').classList.add('show');
-  }
+  // Virtual D-pad + action button visibility is owned by setView (shown on
+  // the MAP/SECTOR play views for touch devices, hidden elsewhere), so it is
+  // never stranded on the title screen. Nothing to toggle here at setup.
 
   // D-pad: held while pressed; works on both mouse + touch
   document.querySelectorAll('.vp-btn').forEach(btn => {
