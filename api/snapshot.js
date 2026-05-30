@@ -506,7 +506,10 @@ async function buildFreshSnapshot() {
     // Inbox agent (migration 078) - every-20-min cron writes sections.inbox
     // with needsReview/notified/scanned counts + lastRun. Same wipe risk as
     // the others if omitted here.
-    'inbox'
+    'inbox',
+    // Quest scanner (migration 080) - daily cron writes sections.questscan
+    // with created/expired/byRule counts. Preserve so the hourly rebuild keeps it.
+    'questscan'
   ];
   if (existing?.sections) {
     for (const key of preserveKeys) {

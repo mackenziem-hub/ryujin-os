@@ -374,9 +374,6 @@ body{
         <label>Assign To</label>
         <select id="f_assigned">
           <option value="">Anyone</option>
-          <option value="mac">Mackenzie</option>
-          <option value="catherine">Catherine</option>
-          <option value="darcy">Darcy</option>
         </select>
       </div>
     </div>
@@ -393,12 +390,11 @@ body{
 
 <script>
 const TENANT = window.RYUJIN_TENANT_SLUG;
-const USERS = [
-  { id: null, label: 'All', short: 'All' },
-  { id: 'mac', label: 'Mackenzie', short: 'Mac' },
-  { id: 'catherine', label: 'Catherine', short: 'Cat' },
-  { id: 'darcy', label: 'Darcy', short: 'Darcy' }
-];
+// Real users (uuid ids) load from /api/users at init so the pill filter, the
+// assign-to select, and the quest.assigned_to uuid FK all line up. Starts with
+// just All; loadUsers() fills the rest. (The old hardcoded string ids never
+// matched the uuid assigned_to, so per-person filtering was dead before this.)
+let USERS = [{ id: null, label: 'All', short: 'All' }];
 let activeUserId = localStorage.getItem('overview_active_user') || null;
 if (activeUserId === 'null') activeUserId = null;
 
@@ -656,6 +652,20 @@ async function saveQuest() {
   }
 }
 
+async function loadUsers() {
+  try {
+    const r = await fetch('/api/users', { headers: { 'x-tenant-id': TENANT } });
+    if (!r.ok) return;
+    const data = await r.json();
+    const list = (data.users || []).map(u => ({ id: u.id, label: u.name || u.email || 'User', short: String(u.name || u.email || 'User').split(/\s+/)[0] }));
+    USERS = [{ id: null, label: 'All', short: 'All' }].concat(list);
+    // Drop a stale persisted filter (e.g. an old string id) that no longer maps to a real user.
+    if (activeUserId && !USERS.some(u => u.id === activeUserId)) { activeUserId = null; localStorage.setItem('overview_active_user', 'null'); }
+    const sel = document.getElementById('f_assigned');
+    if (sel) sel.innerHTML = '<option value="">Anyone</option>' + list.map(u => `<option value="${escapeHtml(u.id)}">${escapeHtml(u.label)}</option>`).join('');
+  } catch (e) { /* keep the All-only fallback */ }
+}
+
 // Wire static handlers
 document.querySelectorAll('.fchip').forEach(c => {
   c.addEventListener('click', () => {
@@ -678,9 +688,8 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && document.getElementById('modalBackdrop').classList.contains('show')) closeModal();
 });
 
-renderUserPills();
 renderFilters();
-load();
+loadUsers().finally(() => { renderUserPills(); load(); });
 setInterval(load, 5 * 60 * 1000);
 </script>
 </body>
