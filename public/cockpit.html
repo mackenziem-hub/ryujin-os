@@ -278,11 +278,15 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg)
     transcript.push(aMsg); // keep the assistant turn in the transcript so it persists + reloads
     var aEl=bubbleEl(aMsg); historyEl.appendChild(aEl); scrollDown();
     var contentEl=aEl.querySelector('.content');
-    var toolsWrap=null, toolNodes={};
+    var toolsWrap=null, toolNodes={}, toolEnded={};
     setState('thinking');
 
     var body={ message:text, history:conversation.slice(-12).map(function(m){return {role:m.role,content:m.content};}), mode:'quick', effort:'medium', conversation_id:streamConvId||undefined };
     var answer='', gotText=false, finished=false;
+    // any tool chip that never received a tool_end (stream cut / timeout) must not
+    // hang on "wait" — flip it to error. pending_approval chips DID get a tool_end
+    // (tracked in toolEnded), so they are left alone.
+    function flipStuck(){ for(var k in toolNodes){ if(!toolEnded[k]&&toolNodes[k]) toolNodes[k].className='tool err'; } }
 
     fetch('/api/chat',{ method:'POST', headers:authHeaders(), body:JSON.stringify(body) }).then(function(res){
       if(res.status===401){ if(window.RyujinAuth&&window.RyujinAuth.clearAndRedirect) window.RyujinAuth.clearAndRedirect(); else window.location.href='/login.html?next='+encodeURIComponent(location.pathname); return null; }
@@ -299,10 +303,10 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg)
             var d; try{ d=JSON.parse(raw); }catch(e){ continue; }
             if(d.text){ if(!gotText){gotText=true;setState('speaking');} answer+=d.text; contentEl.textContent=answer; spawnTrail(d.text); scrollDown(); }
             else if(d.tool_start && d.tool_start.id){ setState('thinking'); if(!toolsWrap){toolsWrap=document.createElement('div');toolsWrap.className='tools';aEl.appendChild(toolsWrap);} var tn=document.createElement('div'); tn.className='tool wait'; tn.innerHTML='<span class="dot"></span><span>'+esc(d.tool_start.label||'Working')+'</span>'; toolsWrap.appendChild(tn); toolNodes[d.tool_start.id]=tn; aMsg.tools.push({label:d.tool_start.label,status:'wait'}); scrollDown(); }
-            else if(d.tool_end && d.tool_end.id){ var node=toolNodes[d.tool_end.id]; if(node) node.className='tool '+(d.tool_end.status==='error'?'err':d.tool_end.status==='pending_approval'?'wait':'ok'); if(d.tool_end.status==='pending_approval'&&d.tool_end.code) addApproval(aEl,d.tool_end.code); }
+            else if(d.tool_end && d.tool_end.id){ toolEnded[d.tool_end.id]=true; var node=toolNodes[d.tool_end.id]; if(node) node.className='tool '+(d.tool_end.status==='error'?'err':d.tool_end.status==='pending_approval'?'wait':'ok'); if(d.tool_end.status==='pending_approval'&&d.tool_end.code) addApproval(aEl,d.tool_end.code); }
             else if(d.matched_archetype){ aMsg.lens=d.matched_archetype; }
             else if(d.done){ if(d.conversation_id) streamConvId=d.conversation_id; finished=true; break; }
-            else if(d.error){ aMsg.error=d.error; var ee=document.createElement('div'); ee.style.cssText='color:var(--red);font-size:0.85em;margin-top:6px'; ee.textContent='Error: '+d.error; aEl.appendChild(ee); finished=true; break; }
+            else if(d.error){ aMsg.error=d.error; flipStuck(); var ee=document.createElement('div'); ee.style.cssText='color:var(--red);font-size:0.85em;margin-top:6px'; ee.textContent='Error: '+d.error; aEl.appendChild(ee); finished=true; break; }
           }
           if(finished){ try{reader.cancel();}catch(e){} return; }
           return pump();
@@ -310,6 +314,7 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg)
       }
       return pump();
     }).catch(function(err){ aMsg.error=(err&&err.message)||'network error'; }).then(function(){
+      flipStuck();
       aMsg.content=answer;
       if(answer){ conversation.push({role:'assistant',content:answer}); }
       else { conversation.pop(); } // drop the user turn from lean history if no answer
