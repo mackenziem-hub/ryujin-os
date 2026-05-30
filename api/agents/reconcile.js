@@ -52,7 +52,7 @@ async function fetchData(tenantId) {
 async function persistFindings(tenantId, findings) {
   const now = new Date().toISOString();
   const seen = new Set();
-  let created = 0, updated = 0;
+  let persisted = 0;
 
   for (const f of findings) {
     const key = dedupKey(f);
@@ -66,12 +66,11 @@ async function persistFindings(tenantId, findings) {
       metadata: { sub_cost_floor: f.sub_cost_floor ?? null },
     };
     // upsert on (tenant_id, dedup_key); re-open a previously resolved one if it recurs
-    const { data, error } = await supabaseAdmin
+    const { error } = await supabaseAdmin
       .from('reconciliation_findings')
-      .upsert(row, { onConflict: 'tenant_id,dedup_key' })
-      .select('created_at,updated_at');
+      .upsert(row, { onConflict: 'tenant_id,dedup_key' });
     if (error) throw new Error(`persist ${key}: ${error.message}`);
-    if (data && data[0] && data[0].created_at === data[0].updated_at) created++; else updated++;
+    persisted++;
   }
 
   // Self-clean: auto-resolve open findings not present in this (successful) run.
@@ -85,7 +84,7 @@ async function persistFindings(tenantId, findings) {
       .update({ status: 'resolved', resolved_at: now, updated_at: now }).in('id', stale);
     if (!error) resolved = stale.length;
   }
-  return { created, updated, resolved };
+  return { persisted, resolved };
 }
 
 export default async function handler(req, res) {
@@ -95,7 +94,7 @@ export default async function handler(req, res) {
 
   const slug = (req.query.tenant || 'plus-ultra').toString().trim();
   const dry = req.query.dry === '1' || req.query.dry === 'true';
-  const trigger = req.query.manual === '1' ? 'manual' : 'cron';
+  const trigger = req.query.manual === '1' ? 'manual' : 'cron_daily'; // must match agent_runs.trigger CHECK (migration_041)
   const startTime = Date.now();
 
   const { data: tenant } = await supabaseAdmin
@@ -111,17 +110,18 @@ export default async function handler(req, res) {
   let runId = null, runClosed = false;
   try {
     if (!dry) {
-      const { data: run } = await supabaseAdmin
+      const { data: run, error: runErr } = await supabaseAdmin
         .from('agent_runs')
         .insert({ tenant_id: tenant.id, agent_slug: 'reconcile', trigger, status: 'running' })
         .select('id').single();
+      if (runErr) console.error('reconcile: agent_runs insert failed:', runErr.message);
       runId = run?.id || null;
     }
 
     const data = await fetchData(tenant.id);
     const result = reconcile(data);
 
-    let persistence = { created: 0, updated: 0, resolved: 0 };
+    let persistence = { persisted: 0, resolved: 0 };
     if (!dry) persistence = await persistFindings(tenant.id, result.findings);
 
     const F = result.figures;
