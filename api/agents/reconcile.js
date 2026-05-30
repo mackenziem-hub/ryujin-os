@@ -52,11 +52,21 @@ async function fetchData(tenantId) {
 async function persistFindings(tenantId, findings) {
   const now = new Date().toISOString();
   const seen = new Set();
-  let persisted = 0;
+  let persisted = 0, skippedDismissed = 0;
+
+  // Findings the user has DISMISSED stay dismissed — e.g. a VALUE_LOOKS_LIKE_COST
+  // on a deliberate price-match (Egbuwoku) is a confirmed false positive, not a
+  // gap. Never re-open them, and keep them in `seen` so the self-clean below
+  // doesn't touch them either.
+  const { data: dismissedRows } = await supabaseAdmin
+    .from('reconciliation_findings')
+    .select('dedup_key').eq('tenant_id', tenantId).eq('status', 'dismissed');
+  const dismissed = new Set((dismissedRows || []).map((r) => r.dedup_key));
 
   for (const f of findings) {
     const key = dedupKey(f);
     seen.add(key);
+    if (dismissed.has(key)) { skippedDismissed++; continue; } // honor the user's dismissal
     const row = {
       tenant_id: tenantId, dedup_key: key, kind: f.kind, job: f.job,
       detail: f.detail, proposed_fix: f.proposed_fix,
@@ -84,7 +94,7 @@ async function persistFindings(tenantId, findings) {
       .update({ status: 'resolved', resolved_at: now, updated_at: now }).in('id', stale);
     if (!error) resolved = stale.length;
   }
-  return { persisted, resolved };
+  return { persisted, resolved, skippedDismissed };
 }
 
 export default async function handler(req, res) {
@@ -121,7 +131,7 @@ export default async function handler(req, res) {
     const data = await fetchData(tenant.id);
     const result = reconcile(data);
 
-    let persistence = { persisted: 0, resolved: 0 };
+    let persistence = { persisted: 0, resolved: 0, skippedDismissed: 0 };
     if (!dry) persistence = await persistFindings(tenant.id, result.findings);
 
     const F = result.figures;
