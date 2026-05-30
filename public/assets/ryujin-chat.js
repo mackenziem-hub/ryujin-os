@@ -1559,6 +1559,15 @@
       });
       typing.remove();
 
+      if (resp.status === 401) {
+        const err = document.createElement('div');
+        err.className = 'ry-bubble dragon';
+        err.textContent = 'Session expired. Redirecting to sign in...';
+        msgsEl.appendChild(err);
+        if (window.RyujinAuth && window.RyujinAuth.clearAndRedirect) window.RyujinAuth.clearAndRedirect();
+        else window.location.href = '/login.html?next=' + encodeURIComponent(location.pathname + location.search);
+        return;
+      }
       if (!resp.ok || !resp.body) {
         const err = document.createElement('div');
         err.className = 'ry-bubble dragon';

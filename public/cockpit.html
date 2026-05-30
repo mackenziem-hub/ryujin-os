@@ -94,6 +94,8 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg)
   .modes .mode{padding:7px 11px}
 }
 </style>
+<!-- Auth gate: tokenless users bounce to /login before any cockpit logic runs -->
+<script src="/assets/auth-guard.js"></script>
 </head>
 <body>
 
@@ -280,6 +282,11 @@ window.RYUJIN_TENANT_SLUG = window.RYUJIN_TENANT_SLUG || 'plus-ultra';
 
     try {
       var res = await fetch('/api/chat', { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) });
+      if (res.status === 401) {
+        if (window.RyujinAuth && window.RyujinAuth.clearAndRedirect) window.RyujinAuth.clearAndRedirect();
+        else window.location.href = '/login.html?next=' + encodeURIComponent(location.pathname);
+        return;
+      }
       if (!res.ok || !res.body) {
         var txt = '';
         try { txt = (await res.json()).error; } catch (e) {}
