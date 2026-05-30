@@ -3423,7 +3423,11 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       const approveUrl = 'https://ryujin-os.vercel.app/api/approve';
       const resp = await fetch(approveUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-tenant-id': 'plus-ultra',
+          ...(process.env.RYUJIN_SERVICE_TOKEN ? { Authorization: `Bearer ${process.env.RYUJIN_SERVICE_TOKEN.trim()}` } : {})
+        },
         body: JSON.stringify({
           code: input.code,
           response: input.action || 'approve',
@@ -3451,7 +3455,11 @@ async function executeTool(name, input, attachments = [], conversationId = null)
         try {
           const resp = await fetch('https://ryujin-os.vercel.app/api/approve', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'x-tenant-id': 'plus-ultra',
+              ...(process.env.RYUJIN_SERVICE_TOKEN ? { Authorization: `Bearer ${process.env.RYUJIN_SERVICE_TOKEN.trim()}` } : {})
+            },
             body: JSON.stringify({ code, response: 'approve', source: 'ryujin-chat-batch' })
           });
           const result = await resp.json();
