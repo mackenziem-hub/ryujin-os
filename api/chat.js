@@ -266,9 +266,9 @@ When Mackenzie or Cat asks "what's our policy on X" or "how should I handle Y" o
 
 CRITICAL: Write operations are routed through the approval system. Approvals happen RIGHT HERE in chat — NOT via SMS.
 
-When you submit a write action, you'll get back an approval code (e.g., KRI-726). Tell Mackenzie the code and what it does. When he confirms (e.g., "KRI-726 confirmed"), use the approve_action tool to execute it immediately.
+When you call a write tool, its RESULT contains an approval code (e.g., KRI-726). That code only exists AFTER the tool runs and returns it. NEVER type a code in your reply, NEVER guess or invent one, and NEVER ask Mackenzie to type a code — he should not see codes at all (see CONFIRMATION BATCHING below). The cockpit automatically shows him a one-tap Approve button wired to the real code. Keep codes internal.
 
-When Mackenzie asks you to do something, USE THE TOOL immediately. For lookups, you'll get instant results. For write actions, present the approval code in chat and wait for Mackenzie to confirm.
+When Mackenzie asks you to do something, USE THE TOOL immediately. For lookups, you'll get instant results. For a write action: call the tool, then in ONE short line say what you'll do and ask "Go?". On his affirmative (or when he taps Approve), call batch_approve with the code(s) the tool results returned. If you did NOT receive a real code from a tool result, do NOT claim one exists and do NOT re-call the write tool — the action may already be pending; tell him to tap Approve.
 
 ## How to Respond
 - For business questions → reference Plus Ultra Roofing context
@@ -2265,7 +2265,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       return {
         status: 'pending_approval',
         code: result.code,
-        message: `Awaiting confirmation. Reply "${result.code} confirmed" to execute.`,
+        message: `Pending approval created (internal code ${result.code}). Do NOT show or recite this code; say what you'll do in one line, ask "Go?", then batch_approve on his yes.`,
         action: `Update ticket #${input.ticket_id}`,
         details: input.updates
       };
@@ -2409,7 +2409,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       return {
         status: 'pending_approval',
         code: result.code,
-        message: `Awaiting confirmation. Reply "${result.code} confirmed" to execute.`,
+        message: `Pending approval created (internal code ${result.code}). Do NOT show or recite this code; say what you'll do in one line, ask "Go?", then batch_approve on his yes.`,
         action: `Create estimate: ${input.customer_name} — ${input.proposal_mode || 'Roof Only'}`,
         details: {
           customer: input.customer_name,
@@ -2431,7 +2431,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       return {
         status: 'pending_approval',
         code: result.code,
-        message: `Awaiting confirmation. Reply "${result.code} confirmed" to execute.`,
+        message: `Pending approval created (internal code ${result.code}). Do NOT show or recite this code; say what you'll do in one line, ask "Go?", then batch_approve on his yes.`,
         action: `Update estimate #${input.estimate_id}`,
         details: input.updates
       };
@@ -2483,7 +2483,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       return {
         status: 'pending_approval',
         code: result.code,
-        message: `Awaiting confirmation. Reply "${result.code} confirmed" to execute.`,
+        message: `Pending approval created (internal code ${result.code}). Do NOT show or recite this code; say what you'll do in one line, ask "Go?", then batch_approve on his yes.`,
         action: 'Add contact note',
         details: { contactId: input.contactId, notePreview: (input.note || '').substring(0, 100) }
       };
@@ -2499,7 +2499,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       return {
         status: 'pending_approval',
         code: result.code,
-        message: `Awaiting confirmation. Reply "${result.code} confirmed" to execute.`,
+        message: `Pending approval created (internal code ${result.code}). Do NOT show or recite this code; say what you'll do in one line, ask "Go?", then batch_approve on his yes.`,
         action: 'Delete contact note',
         details: { contactId: input.contactId, noteId: input.noteId }
       };
@@ -2515,7 +2515,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       return {
         status: 'pending_approval',
         code: result.code,
-        message: `Awaiting confirmation. Reply "${result.code} confirmed" to execute.`,
+        message: `Pending approval created (internal code ${result.code}). Do NOT show or recite this code; say what you'll do in one line, ask "Go?", then batch_approve on his yes.`,
         action: `Create contact: ${input.firstName} ${input.lastName || ''}`,
         details: input
       };
@@ -2531,7 +2531,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       return {
         status: 'pending_approval',
         code: result.code,
-        message: `Awaiting confirmation. Reply "${result.code} confirmed" to execute.`,
+        message: `Pending approval created (internal code ${result.code}). Do NOT show or recite this code; say what you'll do in one line, ask "Go?", then batch_approve on his yes.`,
         action: `Update contact ${input.contactId}`,
         details: input.updates
       };
@@ -2547,7 +2547,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       return {
         status: 'pending_approval',
         code: result.code,
-        message: `Awaiting confirmation. Reply "${result.code} confirmed" to execute.`,
+        message: `Pending approval created (internal code ${result.code}). Do NOT show or recite this code; say what you'll do in one line, ask "Go?", then batch_approve on his yes.`,
         action: `Create opportunity: ${input.name}`,
         details: input
       };
@@ -2563,7 +2563,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       return {
         status: 'pending_approval',
         code: result.code,
-        message: `Awaiting confirmation. Reply "${result.code} confirmed" to execute.`,
+        message: `Pending approval created (internal code ${result.code}). Do NOT show or recite this code; say what you'll do in one line, ask "Go?", then batch_approve on his yes.`,
         action: `Move opportunity to new stage`,
         details: { opportunityId: input.opportunityId, targetStage: input.pipelineStageId }
       };
@@ -2579,7 +2579,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       return {
         status: 'pending_approval',
         code: result.code,
-        message: `Awaiting confirmation. Reply "${result.code} confirmed" to execute.`,
+        message: `Pending approval created (internal code ${result.code}). Do NOT show or recite this code; say what you'll do in one line, ask "Go?", then batch_approve on his yes.`,
         action: `Delete opportunity ${input.opportunityId}`,
         details: { reason: input.reason }
       };
@@ -3371,7 +3371,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       return {
         status: 'pending_approval',
         code: result.code,
-        message: `Awaiting confirmation. Reply "${result.code} confirmed" to execute.`,
+        message: `Pending approval created (internal code ${result.code}). Do NOT show or recite this code; say what you'll do in one line, ask "Go?", then batch_approve on his yes.`,
         action: `Create internal task: "${input.title}"`,
         details: { category: input.category, priority: mappedPriority, visibleIn: 'https://ryujin-os.vercel.app/admin.html#crew' }
       };
@@ -3412,7 +3412,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       return {
         status: 'pending_approval',
         code: result.code,
-        message: `Awaiting confirmation. Reply "${result.code} confirmed" to execute.`,
+        message: `Pending approval created (internal code ${result.code}). Do NOT show or recite this code; say what you'll do in one line, ask "Go?", then batch_approve on his yes.`,
         action: `Create task: "${input.title}" on ${contactName || 'contact'}`,
         details: { contact_id: contactId, assigned_to: input.assigned_to }
       };
@@ -3436,7 +3436,13 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       });
       const result = await resp.json();
       if (!resp.ok) {
-        return { error: result.error || `Approval failed (HTTP ${resp.status})`, code: input.code };
+        const notFound = resp.status === 404;
+        return {
+          error: notFound
+            ? `No pending approval with code ${input.code}. Do NOT re-create the action or invent another code — it may have already executed, or the code was never real. Ask Mackenzie to tap the Approve button.`
+            : (result.error || `Approval failed (HTTP ${resp.status})`),
+          code: input.code,
+        };
       }
       return {
         status: result.status,
@@ -3639,7 +3645,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       return {
         status: 'pending_approval',
         code: result.code,
-        message: `Awaiting confirmation. Reply "${result.code} confirmed" to execute.`,
+        message: `Pending approval created (internal code ${result.code}). Do NOT show or recite this code; say what you'll do in one line, ask "Go?", then batch_approve on his yes.`,
         action: `Send email: "${input.subject}" to ${input.to}`,
         details: { to: input.to, subject: input.subject, preview: input.body.substring(0, 200) }
       };
@@ -4768,7 +4774,15 @@ You are now Mackenzie's game development and product specialist.
             continue;
           }
           const inputWithRole = { ...block.input, _userRole: userRole, _userId: userContext?.userId || null };
-          const result = await executeTool(block.name, inputWithRole, attachments, conversation_id);
+          let result;
+          try {
+            result = await executeTool(block.name, inputWithRole, attachments, conversation_id);
+          } catch (toolErr) {
+            // A throwing tool must NOT kill the stream — that would leave the chip
+            // stuck on "wait" forever and the model with no result, so it invents
+            // a code. Convert to an error result; the loop continues to `done`.
+            result = { error: `Tool failed: ${String(toolErr?.message || toolErr).slice(0, 300)}` };
+          }
           toolActions.push({ tool: block.name, input: block.input, result });
           let status = 'ok';
           if (result?.error) status = 'error';
