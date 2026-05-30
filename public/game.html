@@ -3773,7 +3773,11 @@ function openToolOverlay(tool) {
   // When running off localhost, the local static server doesn't serve
   // /api/* so the iframed page would render empty. Point the iframe at
   // prod so real data lands inside the overlay either way.
-  const iframeSrc = (API_BASE ? API_BASE : '') + tool.href;
+  // Append ?arcade=1 so the loaded tool page activates its 8-bit skin +
+  // controller focus-nav (arcade-mode.js); opened outside the game it
+  // stays its normal Grok palette.
+  const sep = tool.href.indexOf('?') >= 0 ? '&' : '?';
+  const iframeSrc = (API_BASE ? API_BASE : '') + tool.href + sep + 'arcade=1';
   const frame = el('iframe', { src: iframeSrc, allow: 'fullscreen', loading: 'eager' });
   chrome.appendChild(bar);
   chrome.appendChild(frame);
@@ -3789,6 +3793,13 @@ function closeToolOverlay() {
   if (w) w.remove();
   state.toolOverlay = null;
 }
+
+// An arcade-mode tool page (in the iframe) posts this when the operator
+// presses B inside it, so the controller can close the overlay even when
+// the iframe (not the game) had focus.
+window.addEventListener('message', (e) => {
+  if (e && e.data && e.data.type === 'ryujin:arcade-back' && state.toolOverlay) closeToolOverlay();
+});
 
 // ═══════════════════════════════════════════════════════════════
 // 8-BIT CONSOLE
