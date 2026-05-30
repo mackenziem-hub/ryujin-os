@@ -26,6 +26,7 @@
 import { supabaseAdmin } from '../../lib/supabase.js';
 import { requireCronOrOwner } from '../../lib/cronAuth.js';
 import { reconcile } from '../../lib/reconcile.js';
+import { fetchWonOpportunities, crossCheckGhl } from '../../lib/ghlReconcile.js';
 
 export const config = { maxDuration: 60 };
 
@@ -130,6 +131,11 @@ export default async function handler(req, res) {
 
     const data = await fetchData(tenant.id);
     const result = reconcile(data);
+
+    // Slice 3: widen senses — cross-check GHL won deals (graceful; null if GHL unavailable).
+    const ghlWon = await fetchWonOpportunities();
+    if (ghlWon) result.findings.push(...crossCheckGhl(ghlWon, data.estimates, data.customers));
+    result.figures.ghl_won_checked = ghlWon ? ghlWon.length : 0;
 
     let persistence = { persisted: 0, resolved: 0, skippedDismissed: 0 };
     if (!dry) persistence = await persistFindings(tenant.id, result.findings);
