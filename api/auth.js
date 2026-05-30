@@ -30,8 +30,9 @@ export default async function handler(req, res) {
 
   // ── LOGIN ──
   if (action === 'login' && req.method === 'POST') {
-    const { email, password, tenant_slug } = req.body || {};
-    if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
+    const { email, username, password, tenant_slug } = req.body || {};
+    const ident = String(username || email || '').toLowerCase().trim();
+    if (!ident || !password) return res.status(400).json({ error: 'Username or email and password required' });
 
     // Find tenant
     const slug = tenant_slug || req.query.tenant || 'plus-ultra';
@@ -39,12 +40,14 @@ export default async function handler(req, res) {
       .from('tenants').select('id, name, slug').eq('slug', slug).single();
     if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
 
-    // Find user
+    // Find user by username (workforce/crew, no email) or email. When a username is
+    // supplied it takes precedence so it never collides with the email lookup.
+    const lookupCol = username ? 'username' : 'email';
     const { data: user } = await supabaseAdmin
       .from('users')
-      .select('id, name, email, role, role_id, password_hash')
+      .select('id, name, email, username, role, role_id, password_hash')
       .eq('tenant_id', tenant.id)
-      .eq('email', email.toLowerCase().trim())
+      .eq(lookupCol, ident)
       .single();
 
     if (!user || !user.password_hash) return res.status(401).json({ error: 'Invalid credentials' });
@@ -75,6 +78,7 @@ export default async function handler(req, res) {
         id: user.id,
         name: user.name,
         email: user.email,
+        username: user.username,
         role: roleInfo?.slug || user.role || 'crew',
         roleName: roleInfo?.name || user.role || 'Crew',
         permissions: roleInfo?.permissions || []
