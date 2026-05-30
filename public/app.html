@@ -1916,21 +1916,26 @@ let allUsers = [];
 
 // ═══ INIT ═══
 async function init() {
-  const data = await api('/users');
-  allUsers = data.users || [];
+  // Real per-user auth (replaces the old roster-tap, which had no password).
+  // Everyone signs in via login.html; identity comes from the session, not a list pick.
+  let token = null;
+  try { token = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token'); } catch(e) {}
+  if (!token) { window.location.href = '/login.html?next=/app.html'; return; }
 
-  // Check if user was previously selected
-  const savedId = localStorage.getItem('ryujin_crew_user');
-  if (savedId) {
-    const saved = allUsers.find(u => u.id === savedId);
-    if (saved) {
-      selectUser(saved);
-      return;
-    }
+  let me = null;
+  try {
+    const r = await fetch('/api/auth?action=me', { headers: { Authorization: 'Bearer ' + token } });
+    if (r.ok) { const d = await r.json(); me = d.user || d; }
+  } catch(e) {}
+  if (!me || !me.id) {
+    try { localStorage.removeItem('ryujin_token'); } catch(e) {}
+    window.location.href = '/login.html?next=/app.html';
+    return;
   }
 
-  // Show user selector
-  showUserSelector();
+  // Roster still loaded (assignment dropdowns, etc.), but identity is the session user.
+  try { const data = await api('/users'); allUsers = data.users || []; } catch(e) { allUsers = []; }
+  selectUser(me);
 
   // Lazy load background video
   setTimeout(() => {
@@ -1990,9 +1995,10 @@ function selectUser(user) {
 }
 
 function switchUser() {
-  localStorage.removeItem('ryujin_crew_user');
+  // Real sign-out: clear the session + return to login.
+  try { ['ryujin_token','ryujin_user','ryujin_tenant','ryujin_crew_user'].forEach(k => localStorage.removeItem(k)); } catch(e) {}
   currentUser = null;
-  showUserSelector();
+  window.location.href = '/login.html?force=1';
 }
 
 init();

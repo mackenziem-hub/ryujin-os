@@ -68,22 +68,31 @@ export default async function handler(req, res) {
       return res.status(410).json({ error: 'invite_expired' });
     }
 
+    // Normalize email to match login's lowercased lookup (api/auth.js). Storing it
+    // verbatim (e.g. "Melodie@...") made the account un-loginable as "melodie@...".
+    const normEmail = email.toLowerCase().trim();
+
     // Check if the new email is already in use by a different user.
     const { data: emailClash } = await supabaseAdmin
-      .from('users').select('id').eq('email', email).neq('id', user.id).maybeSingle();
-    if (emailClash) return res.status(409).json({ error: 'email already in use by another account' });
+      .from('users').select('id').eq('email', normEmail).neq('id', user.id).maybeSingle();
+    if (emailClash) return res.status(409).json({ error: 'That email is already in use by another account.' });
 
     const { error: uErr } = await supabaseAdmin
       .from('users')
       .update({
-        email,
+        email: normEmail,
         password_hash: hashPassword(password),
         ...(name ? { name } : {}),
         reset_token: null,
         reset_token_expires_at: null,
       })
       .eq('id', user.id);
-    if (uErr) return res.status(500).json({ error: uErr.message });
+    if (uErr) {
+      // Translate the (tenant_id, email) unique-constraint hit into a friendly 409
+      // instead of leaking a raw 500.
+      if (uErr.code === '23505') return res.status(409).json({ error: 'That email is already in use on another account.' });
+      return res.status(500).json({ error: uErr.message });
+    }
 
     // Issue a session.
     const sessionToken = crypto.randomBytes(32).toString('hex');

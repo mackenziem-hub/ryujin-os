@@ -261,7 +261,11 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
     try {
       const q = await api('/api/generator?view=queue');
       state = q;
-      render();
+      // Don't repaint the drafts grid out from under an in-progress caption edit:
+      // the 30s poll was wiping unsaved text (and racing saves) -> looked like "can't edit".
+      var active = document.activeElement;
+      var editingDraft = active && active.tagName === 'TEXTAREA' && active.id && active.id.indexOf('cap-') === 0;
+      render({ skipDrafts: editingDraft });
       document.getElementById('lastSync').textContent = fmtSyncTime();
     } catch(e){
       console.error('queue load failed:', e);
@@ -346,14 +350,16 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
       </div>`;
   }
 
-  function render(){
+  function render(opts){
     renderCounts(state.counts || {});
 
-    const draftsBody = document.getElementById('draftsBody');
-    if (!state.drafts.length) {
-      draftsBody.innerHTML = '<div class="empty">No drafts queued. Tap Generate Now to seed the week.</div>';
-    } else {
-      draftsBody.innerHTML = '<div class="draft-grid">' + state.drafts.map(renderDraftCard).join('') + '</div>';
+    if (!(opts && opts.skipDrafts)) {
+      const draftsBody = document.getElementById('draftsBody');
+      if (!state.drafts.length) {
+        draftsBody.innerHTML = '<div class="empty">No drafts queued. Tap Generate Now to seed the week.</div>';
+      } else {
+        draftsBody.innerHTML = '<div class="draft-grid">' + state.drafts.map(renderDraftCard).join('') + '</div>';
+      }
     }
 
     const schedBody = document.getElementById('scheduleBody');
@@ -406,9 +412,14 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
     if (!ta) return;
     const done = busy(btn, 'Saving...');
     try {
-      await api('/api/generator', { method: 'PUT', body: { id, action: 'edit', caption: ta.value } });
+      const out = await api('/api/generator', { method: 'PUT', body: { id, action: 'edit', caption: ta.value } });
+      // Reflect the persisted value + keep local state in sync so the next poll doesn't revert it.
+      const saved = out && out.clip && out.clip.caption_suggestion;
+      if (typeof saved === 'string' && document.getElementById('cap-' + id) === ta) ta.value = saved;
+      const row = (state.drafts || []).find(d => String(d.id) === String(id));
+      if (row && typeof saved === 'string') row.caption_suggestion = saved;
       toast('Saved.');
-    } catch(e){ toast(e.message, true); }
+    } catch(e){ toast('Save failed: ' + e.message, true); }
     finally { if (done) done(); }
   }
 
