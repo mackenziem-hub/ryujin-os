@@ -134,7 +134,7 @@ export default async function handler(req, res) {
 
     // Slice 3: widen senses — cross-check GHL won deals (graceful; null if GHL unavailable).
     const ghlWon = await fetchWonOpportunities();
-    if (ghlWon) result.findings.push(...crossCheckGhl(ghlWon, data.estimates, data.customers));
+    if (ghlWon) result.findings.push(...crossCheckGhl(ghlWon, result.jobs));
     result.figures.ghl_won_checked = ghlWon ? ghlWon.length : 0;
 
     let persistence = { persisted: 0, resolved: 0, skippedDismissed: 0 };
