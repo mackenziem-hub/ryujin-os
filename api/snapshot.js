@@ -509,7 +509,10 @@ async function buildFreshSnapshot() {
     'inbox',
     // Quest scanner (migration 080) - daily cron writes sections.questscan
     // with created/expired/byRule counts. Preserve so the hourly rebuild keeps it.
-    'questscan'
+    'questscan',
+    // Reconciliation agent (migration 082) - daily cron writes sections.reconcile
+    // with the committed-revenue figures + open finding count. Same wipe risk.
+    'reconcile'
   ];
   if (existing?.sections) {
     for (const key of preserveKeys) {
