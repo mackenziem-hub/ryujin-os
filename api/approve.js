@@ -14,7 +14,7 @@
 // x-tenant-id (the service-token branch needs the tenant header to resolve).
 
 import { supabaseAdmin } from '../lib/supabase.js';
-import { resolveSession } from '../lib/portalAuth.js';
+import { resolveSession, isPrivileged } from '../lib/portalAuth.js';
 import { gmailSend } from '../lib/google.js';
 
 // Dispatch an approved action by its execute_payload.tool. Returns
@@ -45,6 +45,9 @@ export default async function handler(req, res) {
 
   const session = await resolveSession(req);
   if (!session) return res.status(401).json({ error: 'sign_in_required', code: 'NO_SESSION' });
+  // Executing an approval performs a real write (send email, etc.) -> owner/admin only.
+  // chat.js calls with RYUJIN_SERVICE_TOKEN, which resolves to an admin session.
+  if (!isPrivileged(session)) return res.status(403).json({ error: 'admin_only', code: 'FORBIDDEN' });
 
   const { code, response } = req.body || {};
   if (!code) return res.status(400).json({ error: 'code required' });
@@ -83,7 +86,22 @@ export default async function handler(req, res) {
     return res.json({ status: 'rejected', code: upper, execution: { executed: false, details: 'Rejected' } });
   }
 
-  // Approve + execute.
+  // Atomically CLAIM the row before executing, so a concurrent/retried confirmation
+  // can't double-send. The conditional .eq('status','pending') means only one caller
+  // wins the flip to 'approved'; the loser gets 0 rows back and bails without executing.
+  const { data: claimed, error: claimErr } = await supabaseAdmin
+    .from('pending_approvals')
+    .update({ status: 'approved', decided_at, decided_by_user_id: decidedBy })
+    .eq('id', row.id)
+    .eq('status', 'pending')
+    .select('id');
+  if (claimErr) return res.status(500).json({ error: claimErr.message });
+  if (!claimed || claimed.length === 0) {
+    // Another request claimed it first (race) — do not execute again.
+    return res.json({ status: 'approved', code: upper, execution: { executed: false, details: 'Already being processed' } });
+  }
+
+  // We own the row now. Execute the underlying action.
   let exec;
   try {
     exec = await executePayload(row.execute_payload || {});
@@ -93,14 +111,15 @@ export default async function handler(req, res) {
 
   if (exec.executed) {
     await supabaseAdmin.from('pending_approvals')
-      .update({ status: 'approved', decided_at, decided_by_user_id: decidedBy, execution_result: exec })
+      .update({ execution_result: exec })
       .eq('id', row.id);
     return res.json({ status: 'approved', code: upper, execution: { executed: true, details: exec.details } });
   }
 
-  // Execution failed (or no executor) -> leave pending so it can be retried; surface the error.
+  // Execution failed (or no executor wired) -> revert to pending so it can be retried,
+  // and surface the error. (Reverting re-opens the claim only for a future sequential retry.)
   await supabaseAdmin.from('pending_approvals')
-    .update({ execution_result: exec })
+    .update({ status: 'pending', decided_at: null, decided_by_user_id: null, execution_result: exec })
     .eq('id', row.id);
   return res.status(200).json({
     status: 'pending',
