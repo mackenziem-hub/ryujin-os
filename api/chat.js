@@ -2265,7 +2265,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       return {
         status: 'pending_approval',
         code: result.code,
-        message: `Awaiting confirmation. Reply "${result.code} confirmed" to execute.`,
+        message: `Pending approval created (internal code ${result.code}). Do NOT show or recite this code; say what you'll do in one line, ask "Go?", then batch_approve on his yes.`,
         action: `Update ticket #${input.ticket_id}`,
         details: input.updates
       };
@@ -2409,7 +2409,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       return {
         status: 'pending_approval',
         code: result.code,
-        message: `Awaiting confirmation. Reply "${result.code} confirmed" to execute.`,
+        message: `Pending approval created (internal code ${result.code}). Do NOT show or recite this code; say what you'll do in one line, ask "Go?", then batch_approve on his yes.`,
         action: `Create estimate: ${input.customer_name} — ${input.proposal_mode || 'Roof Only'}`,
         details: {
           customer: input.customer_name,
@@ -2431,7 +2431,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       return {
         status: 'pending_approval',
         code: result.code,
-        message: `Awaiting confirmation. Reply "${result.code} confirmed" to execute.`,
+        message: `Pending approval created (internal code ${result.code}). Do NOT show or recite this code; say what you'll do in one line, ask "Go?", then batch_approve on his yes.`,
         action: `Update estimate #${input.estimate_id}`,
         details: input.updates
       };
@@ -2483,7 +2483,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       return {
         status: 'pending_approval',
         code: result.code,
-        message: `Awaiting confirmation. Reply "${result.code} confirmed" to execute.`,
+        message: `Pending approval created (internal code ${result.code}). Do NOT show or recite this code; say what you'll do in one line, ask "Go?", then batch_approve on his yes.`,
         action: 'Add contact note',
         details: { contactId: input.contactId, notePreview: (input.note || '').substring(0, 100) }
       };
@@ -2499,7 +2499,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       return {
         status: 'pending_approval',
         code: result.code,
-        message: `Awaiting confirmation. Reply "${result.code} confirmed" to execute.`,
+        message: `Pending approval created (internal code ${result.code}). Do NOT show or recite this code; say what you'll do in one line, ask "Go?", then batch_approve on his yes.`,
         action: 'Delete contact note',
         details: { contactId: input.contactId, noteId: input.noteId }
       };
@@ -2515,7 +2515,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       return {
         status: 'pending_approval',
         code: result.code,
-        message: `Awaiting confirmation. Reply "${result.code} confirmed" to execute.`,
+        message: `Pending approval created (internal code ${result.code}). Do NOT show or recite this code; say what you'll do in one line, ask "Go?", then batch_approve on his yes.`,
         action: `Create contact: ${input.firstName} ${input.lastName || ''}`,
         details: input
       };
@@ -2531,7 +2531,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       return {
         status: 'pending_approval',
         code: result.code,
-        message: `Awaiting confirmation. Reply "${result.code} confirmed" to execute.`,
+        message: `Pending approval created (internal code ${result.code}). Do NOT show or recite this code; say what you'll do in one line, ask "Go?", then batch_approve on his yes.`,
         action: `Update contact ${input.contactId}`,
         details: input.updates
       };
@@ -2547,7 +2547,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       return {
         status: 'pending_approval',
         code: result.code,
-        message: `Awaiting confirmation. Reply "${result.code} confirmed" to execute.`,
+        message: `Pending approval created (internal code ${result.code}). Do NOT show or recite this code; say what you'll do in one line, ask "Go?", then batch_approve on his yes.`,
         action: `Create opportunity: ${input.name}`,
         details: input
       };
@@ -2563,7 +2563,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       return {
         status: 'pending_approval',
         code: result.code,
-        message: `Awaiting confirmation. Reply "${result.code} confirmed" to execute.`,
+        message: `Pending approval created (internal code ${result.code}). Do NOT show or recite this code; say what you'll do in one line, ask "Go?", then batch_approve on his yes.`,
         action: `Move opportunity to new stage`,
         details: { opportunityId: input.opportunityId, targetStage: input.pipelineStageId }
       };
@@ -2579,7 +2579,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       return {
         status: 'pending_approval',
         code: result.code,
-        message: `Awaiting confirmation. Reply "${result.code} confirmed" to execute.`,
+        message: `Pending approval created (internal code ${result.code}). Do NOT show or recite this code; say what you'll do in one line, ask "Go?", then batch_approve on his yes.`,
         action: `Delete opportunity ${input.opportunityId}`,
         details: { reason: input.reason }
       };
@@ -3371,7 +3371,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       return {
         status: 'pending_approval',
         code: result.code,
-        message: `Awaiting confirmation. Reply "${result.code} confirmed" to execute.`,
+        message: `Pending approval created (internal code ${result.code}). Do NOT show or recite this code; say what you'll do in one line, ask "Go?", then batch_approve on his yes.`,
         action: `Create internal task: "${input.title}"`,
         details: { category: input.category, priority: mappedPriority, visibleIn: 'https://ryujin-os.vercel.app/admin.html#crew' }
       };
@@ -3412,7 +3412,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       return {
         status: 'pending_approval',
         code: result.code,
-        message: `Awaiting confirmation. Reply "${result.code} confirmed" to execute.`,
+        message: `Pending approval created (internal code ${result.code}). Do NOT show or recite this code; say what you'll do in one line, ask "Go?", then batch_approve on his yes.`,
         action: `Create task: "${input.title}" on ${contactName || 'contact'}`,
         details: { contact_id: contactId, assigned_to: input.assigned_to }
       };
@@ -3645,7 +3645,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       return {
         status: 'pending_approval',
         code: result.code,
-        message: `Awaiting confirmation. Reply "${result.code} confirmed" to execute.`,
+        message: `Pending approval created (internal code ${result.code}). Do NOT show or recite this code; say what you'll do in one line, ask "Go?", then batch_approve on his yes.`,
         action: `Send email: "${input.subject}" to ${input.to}`,
         details: { to: input.to, subject: input.subject, preview: input.body.substring(0, 200) }
       };
