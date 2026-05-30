@@ -30,6 +30,10 @@
     var t = token(); if (t) h.Authorization = 'Bearer ' + t;
     return h;
   }
+  function userId() {
+    try { var u = JSON.parse(localStorage.getItem('ryujin_user') || '{}'); return u.id || u.user_id || u.uuid || null; }
+    catch (e) { return null; }
+  }
   async function getJSON(url) {
     try {
       var r = await fetch(url, { headers: reqHeaders(), cache: 'no-store' });
@@ -74,15 +78,31 @@
     if (!token()) return;              // not signed in: render nothing
     injectStyles();
     var el = getMount();
-    var res = await Promise.all([getJSON('/api/inbox'), getJSON('/api/generator?view=queue')]);
-    var inbox = res[0], gen = res[1];
+    var uid = userId();
+    var res = await Promise.all([
+      getJSON('/api/inbox'),
+      getJSON('/api/generator?view=queue'),
+      getJSON('/api/messages?box=unread&limit=1'),
+      getJSON('/api/quests?status=open&limit=100')
+    ]);
+    var inbox = res[0], gen = res[1], msg = res[2], qs = res[3];
     var notify = (inbox && inbox.counts && inbox.counts.notify) || 0;
     var queue = (inbox && inbox.counts && inbox.counts.needs_review) || 0;
     var drafts = (gen && gen.counts && gen.counts.drafts) || 0;
+    var unread = (msg && msg.stats && typeof msg.stats.unread === 'number') ? msg.stats.unread : 0;
+    // Open tasks in my view: assigned to me, or unassigned (mirrors the quest
+    // board filter). If we cannot resolve a user id, count only the unassigned
+    // ones rather than overclaiming someone else's tasks as yours.
+    var tasks = 0;
+    if (qs && Array.isArray(qs.quests)) {
+      tasks = qs.quests.filter(function (q) { return !q.assigned_to || (uid && q.assigned_to === uid); }).length;
+    }
 
     var html = '';
     if (notify) html += chip('/inbox.html', notify, 'reply needs you', 'replies need you', 'nyn-red');
     else if (queue) html += chip('/inbox.html', queue, 'reply waiting', 'replies waiting', '');
+    html += chip('/messages.html', unread, 'unread message', 'unread messages', '');
+    html += chip('/admin-quests.html', tasks, 'open task', 'open tasks', '');
     html += chip('/generator.html', drafts, 'post to approve', 'posts to approve', '');
 
     if (!html) { el.classList.remove('nyn-show'); el.innerHTML = ''; return; }
