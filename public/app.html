@@ -427,6 +427,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
     <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
     <span>Clock</span>
   </div>
+  <div class="nav-item" data-tab="messages" onclick="switchTab('messages')">
+    <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    <span>Chat</span>
+  </div>
 </div>
 
 <script>
@@ -475,6 +479,7 @@ function render() {
     case 'projects': return renderProjects(c);
     case 'media': return renderMedia(c);
     case 'clock': return renderClock(c);
+    case 'messages': return renderMessages(c);
   }
 }
 
@@ -1913,6 +1918,58 @@ function getDisplayRole(role, name) {
 }
 
 let allUsers = [];
+
+// ═══ MESSAGES — team chat (person-to-person, /api/messages) ═══
+async function renderMessages(c) {
+  c.innerHTML = '<div style="text-align:center;color:var(--text-dim);padding:24px">Loading messages...</div>';
+  const data = await api('/messages?box=all&limit=60');
+  const msgs = (data && data.messages) || [];
+  const meId = currentUser && currentUser.id;
+  const mates = (allUsers || []).filter(u => u.id !== meId);
+
+  let html = '';
+  html += `<div class="section-head"><div class="section-label">Send a message</div></div>`;
+  html += `<div style="background:rgba(6,10,20,0.5);border:1px solid rgba(74,158,255,0.2);border-radius:12px;padding:12px;margin-bottom:14px">
+    <select id="msgTo" style="width:100%;padding:9px 12px;background:rgba(6,10,20,0.7);border:1px solid rgba(74,158,255,0.24);border-radius:8px;color:var(--text);font-family:inherit;font-size:0.86em;margin-bottom:8px">
+      <option value="">Choose a teammate...</option>
+      ${mates.map(u => `<option value="${u.id}">${esc(u.name)}</option>`).join('')}
+    </select>
+    <textarea id="msgBody" placeholder="Type a message..." rows="2" style="width:100%;padding:10px 12px;background:rgba(6,10,20,0.7);border:1px solid rgba(74,158,255,0.24);border-radius:8px;color:var(--text);font-family:inherit;font-size:0.9em;resize:vertical;box-sizing:border-box"></textarea>
+    <button class="new-assign-btn" style="margin-top:8px" onclick="sendMessage()">SEND</button>
+  </div>`;
+
+  html += `<div class="section-head"><div class="section-label">Recent</div></div>`;
+  if (!msgs.length) {
+    html += `<div style="text-align:center;color:var(--text-dim);padding:24px;font-size:0.85em">No messages yet. Say hi to the team.</div>`;
+  } else {
+    for (const m of msgs) {
+      const mine = m.from_user_id === meId;
+      const who = mine ? ('To ' + esc((m.to_user && m.to_user.name) || 'team')) : esc((m.from_user && m.from_user.name) || m.from_label || 'Ryujin');
+      const when = m.created_at ? new Date(m.created_at).toLocaleString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }) : '';
+      html += `<div class="task-card" style="${mine ? 'border-left:3px solid var(--cyan)' : ''}">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
+          <div style="font-weight:600;font-size:0.82em;color:${mine ? 'var(--cyan)' : 'var(--green)'}">${who}</div>
+          <div style="font-size:0.64em;color:rgba(140,170,220,0.45)">${when}</div>
+        </div>
+        <div style="font-size:0.9em;margin-top:4px;white-space:pre-wrap">${esc(m.body || '')}</div>
+      </div>`;
+    }
+  }
+  c.innerHTML = html;
+}
+
+async function sendMessage() {
+  const toEl = document.getElementById('msgTo');
+  const bodyEl = document.getElementById('msgBody');
+  const to = toEl && toEl.value;
+  const body = bodyEl && bodyEl.value.trim();
+  if (!to) { toast('Pick a teammate', 'error'); return; }
+  if (!body) { toast('Type a message', 'error'); return; }
+  const r = await api('/messages', { method: 'POST', body: JSON.stringify({ to_user_id: to, body }) });
+  if (r && r.error) { toast(r.error, 'error'); return; }
+  toast('Sent', 'success');
+  renderMessages(document.getElementById('content'));
+}
 
 // ═══ INIT ═══
 async function init() {
