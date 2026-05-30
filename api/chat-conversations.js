@@ -8,12 +8,16 @@
 // Tenant-scoped via requireTenant middleware. Until migration_021 is applied
 // the queries 500 — that's expected; the sidebar UI gates on response.ok.
 import { supabaseAdmin } from '../lib/supabase.js';
-import { requireTenant } from '../lib/tenant.js';
+import { resolveSession } from '../lib/portalAuth.js';
 
 async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const tenantId = req.tenant.id;
+  // Session-gated: conversation transcripts are tenant-private (and DELETE-able).
+  // Scope to the session's tenant, not a client-supplied x-tenant-id header.
+  const session = await resolveSession(req);
+  if (!session) return res.status(401).json({ error: 'sign_in_required', code: 'NO_SESSION' });
+  const tenantId = session.tenant_id;
 
   if (req.method === 'GET') {
     const { id } = req.query || {};
@@ -96,4 +100,4 @@ async function handler(req, res) {
   return res.status(405).json({ error: 'Method not allowed' });
 }
 
-export default requireTenant(handler);
+export default handler;

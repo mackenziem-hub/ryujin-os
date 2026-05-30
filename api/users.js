@@ -87,14 +87,21 @@ async function handler(req, res) {
   }
 
   if (req.method === 'PUT') {
+    // Owner/admin-only (was an open blind update that could rewrite any user's role).
+    const auth = await requireOwnerOrAdmin(req, res);
+    if (!auth) return;
     const { id, ...updates } = req.body || {};
     if (!id) return res.status(400).json({ error: 'Missing id' });
+    // Never let raw sensitive columns be written through this endpoint.
+    delete updates.password_hash; delete updates.reset_token; delete updates.reset_token_expires_at; delete updates.magic_token;
+    if (updates.email) updates.email = String(updates.email).toLowerCase().trim();
+    if (updates.username) updates.username = String(updates.username).toLowerCase().trim();
 
     const { data, error } = await supabaseAdmin
       .from('users')
       .update(updates)
       .eq('id', id)
-      .eq('tenant_id', tenantId)
+      .eq('tenant_id', auth.tenant_id)
       .select(SAFE_USER_FIELDS)
       .single();
 

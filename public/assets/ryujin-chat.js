@@ -805,6 +805,11 @@
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   }
 
+  // Auth headers for the now session-gated /api/chat-conversations.
+  function convHeaders(json){
+    var t = (typeof localStorage !== 'undefined' && localStorage.getItem('ryujin_token')) || '';
+    var h = {}; if (json) h['Content-Type'] = 'application/json'; if (t) h.Authorization = 'Bearer ' + t; return h;
+  }
   async function persistConversationTurn(){
     // chatHistory holds the full turn list (user + assistant alternating)
     // Skip persistence if we don't have at least 1 user + 1 assistant turn
@@ -817,7 +822,7 @@
       };
       const r = await fetch('/api/chat-conversations', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: convHeaders(true),
         body: JSON.stringify(body),
       });
       if (!r.ok) return; // Silent — migration may not be applied yet
@@ -831,7 +836,7 @@
     if (!list) return;
     list.innerHTML = '<div class="empty">Loading...</div>';
     try {
-      const r = await fetch('/api/chat-conversations');
+      const r = await fetch('/api/chat-conversations', { headers: convHeaders() });
       if (!r.ok) {
         // Migration not applied or auth failure — show graceful fallback
         list.innerHTML = '<div class="empty">History will appear here once enabled.</div>';
@@ -877,7 +882,7 @@
 
   async function loadConversationById(id){
     try {
-      const r = await fetch('/api/chat-conversations?id=' + encodeURIComponent(id));
+      const r = await fetch('/api/chat-conversations?id=' + encodeURIComponent(id), { headers: convHeaders() });
       if (!r.ok) return;
       const conv = await r.json();
       if (!conv || !Array.isArray(conv.messages)) return;
@@ -906,7 +911,7 @@
 
   async function deleteConversation(id){
     try {
-      const r = await fetch('/api/chat-conversations?id=' + encodeURIComponent(id), { method: 'DELETE' });
+      const r = await fetch('/api/chat-conversations?id=' + encodeURIComponent(id), { method: 'DELETE', headers: convHeaders() });
       if (!r.ok) return;
       if (id === currentConversationId) startNewConversation();
       loadConversationsList();
