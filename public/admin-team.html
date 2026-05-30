@@ -176,6 +176,19 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:var(--tex
           <button class="btn primary" style="width:100%" onclick="invite()"><svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>SEND INVITE</button>
         </div>
 
+        <div class="invite-card" style="background:rgba(74,222,128,0.05);border-color:rgba(74,222,128,0.25)">
+          <div class="invite-title" style="color:var(--green)">Add crew member (username login)</div>
+          <div style="font-size:0.74em;color:var(--text-dim);margin-bottom:10px;line-height:1.45">For field crew with no email. They sign in at the crew app with this username + password.</div>
+          <div class="field"><label>Full Name</label><input type="text" id="c_name" placeholder="e.g. Diego Ramirez"/></div>
+          <div class="field-row">
+            <div class="field"><label>Username</label><input type="text" id="c_username" placeholder="diego" autocomplete="off"/></div>
+            <div class="field"><label>Role</label><select id="c_role"><option value="crew">CREW</option><option value="estimator">ESTIMATOR</option><option value="admin">ADMIN</option></select></div>
+          </div>
+          <div class="field"><label>Temporary Password</label><input type="text" id="c_password" placeholder="min 6 chars" autocomplete="off"/></div>
+          <button class="btn primary" style="width:100%;background:linear-gradient(135deg,rgba(74,222,128,0.28),rgba(74,222,128,0.1));color:var(--green);border-color:rgba(74,222,128,0.45)" onclick="addCrewUser()">+ CREATE LOGIN</button>
+          <div id="c_result" style="font-size:0.78em;margin-top:8px"></div>
+        </div>
+
         <div style="font-family:'Orbitron',sans-serif;font-size:0.58em;font-weight:700;letter-spacing:2px;color:var(--text-muted);text-transform:uppercase;margin:10px 4px 6px">Role Definitions</div>
 
         <div class="role-section">
@@ -209,6 +222,32 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:var(--tex
   </div>
 </div>
 
+<script>
+// Create a username+password crew login (no email). Calls the owner/admin-gated POST /api/users.
+async function addCrewUser(){
+  var res = document.getElementById('c_result');
+  var name = document.getElementById('c_name').value.trim();
+  var username = document.getElementById('c_username').value.trim();
+  var password = document.getElementById('c_password').value;
+  var role_slug = document.getElementById('c_role').value;
+  if (!name || !username || !password) { res.style.color = 'var(--red)'; res.textContent = 'Name, username, and password are required.'; return; }
+  if (password.length < 6) { res.style.color = 'var(--red)'; res.textContent = 'Password must be at least 6 characters.'; return; }
+  res.style.color = 'var(--text-dim)'; res.textContent = 'Creating...';
+  var token = ''; try { token = localStorage.getItem('ryujin_token') || ''; } catch(e) {}
+  try {
+    var r = await fetch('/api/users', {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json', 'x-tenant-id': 'plus-ultra' }, token ? { Authorization: 'Bearer ' + token } : {}),
+      body: JSON.stringify({ name: name, username: username, password: password, role_slug: role_slug })
+    });
+    var d = await r.json();
+    if (!r.ok) { res.style.color = 'var(--red)'; res.textContent = d.error || ('Failed (HTTP ' + r.status + ')'); return; }
+    res.style.color = 'var(--green)';
+    res.textContent = 'Created ' + d.name + ' (@' + d.username + '). They can sign in now.';
+    document.getElementById('c_name').value = ''; document.getElementById('c_username').value = ''; document.getElementById('c_password').value = '';
+  } catch(e) { res.style.color = 'var(--red)'; res.textContent = 'Connection error.'; }
+}
+</script>
 <script src="assets/ryujin-mode.js"></script>
 <script src="assets/ryujin-tenant.js"></script>
 <script src="assets/ryujin-persist.js"></script>
