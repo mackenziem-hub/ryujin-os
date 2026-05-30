@@ -3,6 +3,7 @@ import { gmailSearch, gmailReadMessage, gmailReadThread, gmailDraft, gmailSend, 
 import { supabaseAdmin } from '../lib/supabase.js';
 import { peerReview, LENSES as PEER_REVIEW_LENSES } from '../lib/peer_review.js';
 import crypto from 'node:crypto';
+import { resolveSession } from '../lib/portalAuth.js';
 
 // ── ROLE-BASED ACCESS (Phase 5) ──
 // Role slugs: owner (Mac, full Ryujin), admin (Cat, ops EA), sales (Darcy, outside sales), crew (Diego/AJ/Pavanjot, production)
@@ -4362,10 +4363,21 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'No message provided' });
   }
 
-  // Phase 5.1: resolve user context. Default to owner if no auth (preserves Mac's existing chat).
+  // Auth gate: 401 before any SSE headers/writes. resolveSession covers both real
+  // DB-backed sessions AND RYUJIN_SERVICE_TOKEN (synthetic admin) for server/cron
+  // callers. No more anonymous 'owner' default — unauthenticated requests are rejected
+  // (previously any anonymous POST ran as owner/Mac with full tool authority).
+  const session = await resolveSession(req);
+  if (!session) {
+    return res.status(401).json({ error: 'sign_in_required', code: 'NO_SESSION' });
+  }
+
+  // Phase 5.1: resolve rich user context (persona/archetype/style). May be null for the
+  // service token (resolveSession handles it, resolveUserContext doesn't), so fall back
+  // to the session's role/name rather than the old public 'owner' default.
   const userContext = await resolveUserContext(req);
-  let userRole = userContext?.role || 'owner';
-  let userName = userContext?.userName || 'Mackenzie';
+  let userRole = userContext?.role || session.role;
+  let userName = userContext?.userName || session.name || 'Mackenzie';
   let userPersona = userContext?.persona || null;
 
   // Phase 15: View-as impersonation. Owner-only — owner can preview any role to verify gating + archetype.
