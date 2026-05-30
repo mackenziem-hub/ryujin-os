@@ -1,7 +1,7 @@
 /*
  * Ryujin OS · v2 tenant branding
  *
- * Fetches the tenant's settings from /api/settings and applies them
+ * Fetches the tenant's branding from /api/tenant-branding and applies it
  * across the v2 portal surfaces:
  *   - Replaces all [data-tenant-name] with company_name
  *   - Replaces all [data-tenant-tagline] with tagline

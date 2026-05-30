@@ -92,11 +92,13 @@ async function handler(req, res) {
   }
 
   // PATCH - deep-merge into a single jsonb field (currently label_overrides).
-  // A write, so it requires a session and is scoped to the session's tenant
-  // (not the client x-tenant-id). (Review fix 2026-05-29.)
+  // A tenant-wide config write, so it requires a privileged (owner/admin)
+  // session (same gate as PUT) and is scoped to the session's tenant, not the
+  // client x-tenant-id. (Review fix 2026-05-29; PATCH admin-gated 2026-05-29.)
   if (req.method === 'PATCH') {
     const session = await resolveSession(req);
     if (!session) return res.status(401).json({ error: 'sign_in_required', code: 'NO_SESSION' });
+    if (!isPrivileged(session)) return res.status(403).json({ error: 'admin_only', code: 'FORBIDDEN' });
     const patchTenantId = session.tenant_id;
 
     const field = req.query.field;
