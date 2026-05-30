@@ -35,6 +35,12 @@
     try { return window.top !== window.self; } catch (e) { return true; }
   }
 
+  // Global chat opt-out, same flag the legacy bot honored: command-center's
+  // "Chat: ON/OFF" toggle stores ry_chat_off=1 to suppress the floating button.
+  function chatOff() {
+    try { return localStorage.getItem('ry_chat_off') === '1'; } catch (e) { return false; }
+  }
+
   // ── Shared styles (injected once) ──────────────────────────────────
   function ensureStyles() {
     if (document.getElementById('ry-cl-styles')) return;
@@ -108,16 +114,30 @@
   }
 
   // ── 1. Compatibility shim ──────────────────────────────────────────
+  // getAnalytics* read the SAME localStorage keys the legacy bot wrote, so the
+  // admin-system.html dogfood-analytics panel keeps showing real data.
+  // enable/disable mirror the legacy bot: toggle ry_chat_off and the orb.
   if (!window.Ryujin || typeof window.Ryujin.init !== 'function') {
     window.Ryujin = {
       init: function (opts) {
         try { if (opts && opts.embedTarget) resolveEmbed(opts.embedTarget); } catch (e) {}
       },
-      enable: noop,
-      disable: noop,
+      enable: function () {
+        try { localStorage.removeItem('ry_chat_off'); } catch (e) {}
+        mount();
+      },
+      disable: function () {
+        try { localStorage.setItem('ry_chat_off', '1'); } catch (e) {}
+        var el = document.getElementById('ry-cockpit-launcher');
+        if (el) el.remove();
+      },
       open: openCockpit,
-      getAnalyticsCounts: function () { return {}; },
-      getAnalyticsLog: function () { return []; }
+      getAnalyticsCounts: function () {
+        try { return JSON.parse(localStorage.getItem('ry_analytics_counts') || '{}'); } catch (e) { return {}; }
+      },
+      getAnalyticsLog: function () {
+        try { return JSON.parse(localStorage.getItem('ry_analytics_log') || '[]'); } catch (e) { return []; }
+      }
     };
   }
 
@@ -126,7 +146,7 @@
   // completion gate isn't bypassed), and inside iframes (the parent page owns
   // the orb — e.g. dashboard-v2 embedded in command-center).
   function orbSuppressed() {
-    return /\/(cockpit|onboarding)\.html$/.test(window.location.pathname) || framed();
+    return /\/(cockpit|onboarding)\.html$/.test(window.location.pathname) || framed() || chatOff();
   }
 
   function mount() {
