@@ -1,12 +1,13 @@
-// Ryujin OS — Tenant Settings API
-// GET   /api/settings         — Get tenant settings
-// PUT   /api/settings         — Update tenant settings (column-level overwrite)
+// Ryujin OS - Tenant Settings API
+// GET   /api/settings         - Get tenant settings
+// PUT   /api/settings         - Update tenant settings (column-level overwrite)
 // PATCH /api/settings?field=label_overrides
-//                              — Deep-merge into a jsonb field. Body is the
+//                              - Deep-merge into a jsonb field. Body is the
 //                                delta map; null values delete keys. Used by
 //                                advanced-mode label rename UI.
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireTenant } from '../lib/tenant.js';
+import { resolveSession, isPrivileged } from '../lib/portalAuth.js';
 import { validateOverridesPatch } from '../lib/labels.js';
 
 // Whitelist of jsonb columns that PATCH may merge into.
@@ -20,20 +21,40 @@ async function handler(req, res) {
 
   const tenantId = req.tenant.id;
 
-  // GET — load settings
+  // GET - load settings. The full row (pricing multipliers, margins, labor
+  // rates, overhead, team roster) is returned ONLY to an authenticated session,
+  // scoped to that session's tenant. An unauthenticated caller gets a safe
+  // public projection (label_overrides only) so the app-wide label resolver
+  // (labels-client.js) keeps working without leaking internal config to anyone
+  // who knows a tenant slug. Public branding lives at /api/tenant-branding.
+  // (Review fix 2026-05-29.)
   if (req.method === 'GET') {
+    const session = await resolveSession(req).catch(() => null);
+    const readTenantId = session ? session.tenant_id : tenantId;
+    const columns = session ? '*' : 'tenant_id, label_overrides';
     const { data, error } = await supabaseAdmin
       .from('tenant_settings')
-      .select('*')
-      .eq('tenant_id', tenantId)
+      .select(columns)
+      .eq('tenant_id', readTenantId)
       .single();
 
     if (error && error.code !== 'PGRST116') return res.status(500).json({ error: error.message });
-    return res.json(data || { tenant_id: tenantId, _empty: true });
+    return res.json(data || { tenant_id: readTenantId, _empty: true });
   }
 
-  // PUT — update (partial merge)
+  // PUT - full-row write of tenant_settings (pricing multipliers, margins,
+  // labor rates, branding, team_coverage roster). This is destructive, so it
+  // requires a privileged (owner/admin) session and is scoped to the SESSION's
+  // tenant, NOT the client-supplied x-tenant-id. Without this gate anyone who
+  // knew a tenant slug could rewrite/wipe the whole settings blob unauthenticated.
+  // (Review 2026-05-29 critical fix. Service-token callers resolve to a synthetic
+  // admin session via resolveSession, so cron/chat.js writes still work.)
   if (req.method === 'PUT') {
+    const session = await resolveSession(req);
+    if (!session) return res.status(401).json({ error: 'sign_in_required', code: 'NO_SESSION' });
+    if (!isPrivileged(session)) return res.status(403).json({ error: 'admin_only', code: 'FORBIDDEN' });
+    const writeTenantId = session.tenant_id;
+
     const updates = req.body || {};
     delete updates.id;
     delete updates.tenant_id;
@@ -44,14 +65,14 @@ async function handler(req, res) {
     const { data: existing } = await supabaseAdmin
       .from('tenant_settings')
       .select('id')
-      .eq('tenant_id', tenantId)
+      .eq('tenant_id', writeTenantId)
       .single();
 
     if (existing) {
       const { data, error } = await supabaseAdmin
         .from('tenant_settings')
         .update(updates)
-        .eq('tenant_id', tenantId)
+        .eq('tenant_id', writeTenantId)
         .select()
         .single();
 
@@ -61,7 +82,7 @@ async function handler(req, res) {
       // Create new
       const { data, error } = await supabaseAdmin
         .from('tenant_settings')
-        .insert({ tenant_id: tenantId, ...updates })
+        .insert({ tenant_id: writeTenantId, ...updates })
         .select()
         .single();
 
@@ -70,8 +91,16 @@ async function handler(req, res) {
     }
   }
 
-  // PATCH — deep-merge into a single jsonb field (currently label_overrides).
+  // PATCH - deep-merge into a single jsonb field (currently label_overrides).
+  // A tenant-wide config write, so it requires a privileged (owner/admin)
+  // session (same gate as PUT) and is scoped to the session's tenant, not the
+  // client x-tenant-id. (Review fix 2026-05-29; PATCH admin-gated 2026-05-29.)
   if (req.method === 'PATCH') {
+    const session = await resolveSession(req);
+    if (!session) return res.status(401).json({ error: 'sign_in_required', code: 'NO_SESSION' });
+    if (!isPrivileged(session)) return res.status(403).json({ error: 'admin_only', code: 'FORBIDDEN' });
+    const patchTenantId = session.tenant_id;
+
     const field = req.query.field;
     if (!field || !PATCH_FIELDS.has(field)) {
       return res.status(400).json({ error: `field must be one of: ${[...PATCH_FIELDS].join(', ')}` });
@@ -88,7 +117,7 @@ async function handler(req, res) {
     const { data: existing, error: readErr } = await supabaseAdmin
       .from('tenant_settings')
       .select(`id, ${field}`)
-      .eq('tenant_id', tenantId)
+      .eq('tenant_id', patchTenantId)
       .maybeSingle();
     if (readErr) return res.status(500).json({ error: readErr.message });
 
@@ -102,11 +131,11 @@ async function handler(req, res) {
     if (existing?.id) {
       const update = { [field]: merged, updated_at: new Date().toISOString() };
       const { data, error } = await supabaseAdmin
-        .from('tenant_settings').update(update).eq('tenant_id', tenantId).select().single();
+        .from('tenant_settings').update(update).eq('tenant_id', patchTenantId).select().single();
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ [field]: data[field] });
     } else {
-      const insert = { tenant_id: tenantId, [field]: merged };
+      const insert = { tenant_id: patchTenantId, [field]: merged };
       const { data, error } = await supabaseAdmin
         .from('tenant_settings').insert(insert).select().single();
       if (error) return res.status(500).json({ error: error.message });

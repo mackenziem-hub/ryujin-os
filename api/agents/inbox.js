@@ -120,25 +120,36 @@ export async function triageMessage({ contactName, channel, messages }) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 30000);
   let data;
+  const reqBody = JSON.stringify({
+    model: CLAUDE_MODEL,
+    max_tokens: 800,
+    system: SYSTEM_PROMPT,
+    messages: [{ role: 'user', content: `${rendered}\n\nTriage this conversation. Output only the JSON object.` }],
+  });
   try {
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      signal: ctrl.signal,
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: CLAUDE_MODEL,
-        max_tokens: 800,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: `${rendered}\n\nTriage this conversation. Output only the JSON object.` }],
-      }),
-    });
-    if (!r.ok) {
-      const errText = await r.text();
-      throw new Error(`Claude ${r.status}: ${errText.slice(0, 200)}`);
+    // One synchronous retry on a transient 429 / 5xx (await a short backoff,
+    // NOT a fire-and-forget setTimeout) before throwing. Stays inside the 30s
+    // AbortController budget shared by both attempts.
+    let r;
+    let lastErrText = '';
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 1200));
+      r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        signal: ctrl.signal,
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'Content-Type': 'application/json',
+        },
+        body: reqBody,
+      });
+      if (r.ok) break;
+      lastErrText = await r.text();
+      const retryable = r.status === 429 || r.status >= 500;
+      if (!retryable || attempt === 1) {
+        throw new Error(`Claude ${r.status}: ${lastErrText.slice(0, 200)}`);
+      }
     }
     data = await r.json();
   } finally {
@@ -305,13 +316,17 @@ async function runInbox({ tenantId, runId, startTime }) {
       result.inserted++;
 
       // Supersede any older still-pending rows for this conversation so the
-      // queue only shows the latest unanswered state.
+      // queue only shows the latest unanswered state. NEVER supersede an
+      // un-pinged notify=true row (its SMS digest may not have fired yet) or it
+      // would be silently dropped from the digest query. Only collapse the
+      // non-alert pending rows. (Review fix 2026-05-29.)
       await supabaseAdmin
         .from('inbox_items')
         .update({ status: 'superseded', updated_at: new Date().toISOString() })
         .eq('tenant_id', tenantId)
         .eq('ghl_conversation_id', c.id)
         .eq('status', 'needs_review')
+        .eq('notify', false)
         .neq('id', inserted.id);
 
       if (triage.notify) result.notify++;
@@ -332,7 +347,8 @@ async function runInbox({ tenantId, runId, startTime }) {
       .eq('notify', true)
       .is('notified_at', null)
       .eq('status', 'needs_review')
-      .order('last_message_at', { ascending: false })
+      // Oldest-first so the longest-waiting leak/lead alerts first under a backlog.
+      .order('last_message_at', { ascending: true })
       .limit(20);
 
     if (toNotify && toNotify.length) {
@@ -388,6 +404,10 @@ export default async function handler(req, res) {
     console.warn('[Inbox] agent_runs open failed (continuing):', e.message);
   }
 
+  // Track whether the run row was already stamped closed on the happy/caught
+  // paths so the finally only stamps a STILL-OPEN row. A hard timeout that
+  // unwinds past both try and catch cannot then strand a zombie running row.
+  let runClosed = false;
   try {
     const result = await runInbox({ tenantId: tenant.id, runId, startTime });
     const durationMs = Date.now() - startTime;
@@ -404,6 +424,34 @@ export default async function handler(req, res) {
         duration_ms: durationMs,
         error_message: result.errors.length ? result.errors.slice(0, 5).join(' | ').slice(0, 500) : null,
       }).eq('id', runId);
+      runClosed = true;
+    }
+
+    // Real backlog for the cockpit: this-tick inserts (insertedThisRun) measure
+    // only what THIS run added, but the cockpit needs the full open queue. Count
+    // the live needs_review rows (and notify rows still unpinged) so the snapshot
+    // reflects the true backlog even when a run inserted nothing. Filters match
+    // the queue in api/inbox.js (status=needs_review) and the digest gate.
+    let needsReviewCount = result.inserted;
+    let notifyPendingCount = result.notify;
+    try {
+      const [{ count: nrCount }, { count: npCount }] = await Promise.all([
+        supabaseAdmin
+          .from('inbox_items')
+          .select('id', { count: 'exact', head: true })
+          .eq('tenant_id', tenant.id)
+          .eq('status', 'needs_review'),
+        supabaseAdmin
+          .from('inbox_items')
+          .select('id', { count: 'exact', head: true })
+          .eq('tenant_id', tenant.id)
+          .eq('notify', true)
+          .is('notified_at', null),
+      ]);
+      if (typeof nrCount === 'number') needsReviewCount = nrCount;
+      if (typeof npCount === 'number') notifyPendingCount = npCount;
+    } catch (e) {
+      console.warn('[Inbox] backlog count failed (using this-run counters):', e.message);
     }
 
     // Surface counts on the snapshot for the cockpit (preserveKeys includes 'inbox').
@@ -414,8 +462,10 @@ export default async function handler(req, res) {
         body: JSON.stringify({
           inbox: {
             lastRun: new Date().toISOString(),
-            needsReview: result.inserted,
-            notified: result.notify,
+            needsReview: needsReviewCount,
+            notifyPending: notifyPendingCount,
+            insertedThisRun: result.inserted,
+            notifiedThisRun: result.notify,
             scanned: result.scanned,
           },
         }),
@@ -435,7 +485,24 @@ export default async function handler(req, res) {
         error_message: e.message.slice(0, 500),
         duration_ms: Date.now() - startTime,
       }).eq('id', runId);
+      runClosed = true;
     }
     return res.status(500).json({ agent: 'inbox', error: e.message });
+  } finally {
+    // Backstop: if neither the success nor the catch path closed the row (a
+    // throw inside the catch, or an unwind we did not anticipate), stamp it
+    // partial with completed_at so no run is ever left stuck status=running.
+    if (runId && !runClosed) {
+      try {
+        await supabaseAdmin.from('agent_runs').update({
+          status: 'partial',
+          completed_at: new Date().toISOString(),
+          error_message: 'run did not close cleanly (forced finally close)',
+          duration_ms: Date.now() - startTime,
+        }).eq('id', runId).eq('status', 'running');
+      } catch (e) {
+        console.warn('[Inbox] forced run close failed:', e.message);
+      }
+    }
   }
 }

@@ -109,16 +109,20 @@
         applyToDom(el.parentElement || el);
         return;
       }
-      // Persist via PATCH /api/settings?field=label_overrides
+      // Persist via PATCH /api/settings?field=label_overrides. This is now
+      // session-gated (a label rename is an authenticated operator action), so
+      // attach the portal token if one is present; fail-open if not.
       el.textContent = next;
       try {
+        const h = { 'Content-Type': 'application/json', 'x-tenant-id': TENANT };
+        try { const tok = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token'); if (tok) h.Authorization = 'Bearer ' + tok; } catch (e2) { /* ignore */ }
         await fetch('/api/settings?field=label_overrides', {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', 'x-tenant-id': TENANT },
+          headers: h,
           body: JSON.stringify({ [key]: next })
         });
         overrides[key] = next;
-      } catch { /* keep local change but warn nobody — best-effort */ }
+      } catch { /* keep local change but warn nobody, best effort */ }
     };
     input.addEventListener('blur', () => commit(false));
     input.addEventListener('keydown', (k) => {

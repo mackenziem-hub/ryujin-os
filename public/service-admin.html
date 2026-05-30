@@ -58,6 +58,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
 @media(max-width:768px){.main{padding:12px}.hq-title h1{font-size:1.3em}.field-row{grid-template-columns:1fr}}
 </style>
   <script src="/assets/ryujin-slug.js"></script>
+  <script src="/assets/auth-guard.js"></script>
 </head>
 <body>
 
@@ -154,12 +155,12 @@ function fillForm(c) {
   if (c.behaviors) { document.getElementById('t_aj_sms').classList.toggle('on', c.behaviors.aj_sms_on_assign ?? true); document.getElementById('t_mac_warranty').classList.toggle('on', c.behaviors.mac_sms_on_warranty ?? true); document.getElementById('t_auto_callback').classList.toggle('on', c.behaviors.auto_callback_on_report ?? false); }
 }
 
-async function load() { try { const r = await fetch('/api/settings', { headers: { 'x-tenant-id': TENANT } }); if (!r.ok) return; const data = await r.json(); fillForm(data.service_config || {}); } catch {} }
+async function load() { try { const r = await fetch('/api/settings', { headers: { 'x-tenant-id': TENANT, ...(window.RyujinAuth ? window.RyujinAuth.headers() : {}) } }); if (!r.ok) return; const data = await r.json(); fillForm(data.service_config || {}); } catch {} }
 
 document.getElementById('btnSave').addEventListener('click', async () => {
   const btn = document.getElementById('btnSave'); btn.disabled = true; btn.textContent = 'Saving…';
   try {
-    const r = await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-tenant-id': TENANT }, body: JSON.stringify({ service_config: readForm() }) });
+    const r = await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-tenant-id': TENANT, ...(window.RyujinAuth ? window.RyujinAuth.headers() : {}) }, body: JSON.stringify({ service_config: readForm() }) });
     if (!r.ok) {
       const t = await r.text();
       if (/column .* does not exist|service_config/i.test(t)) showBanner('<code>tenant_settings.service_config</code> column missing — apply migration 047.');

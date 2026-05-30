@@ -45,6 +45,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
 @media(max-width:768px){.main{padding:12px}.hq-title h1{font-size:1.3em}.field-row{grid-template-columns:1fr}}
 </style>
   <script src="/assets/ryujin-slug.js"></script>
+  <script src="/assets/auth-guard.js"></script>
 </head>
 <body>
 <aside class="sidebar"><a href="/admin.html" class="sidebar-logo" title="Admin Home"></a><div class="sidebar-divider"></div><nav class="sidebar-nav">
@@ -89,7 +90,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
 const TENANT = window.RYUJIN_TENANT_SLUG;
 function showBanner(msg, kind='warn') { document.getElementById('banner-slot').innerHTML = `<div class="banner ${kind}">${msg}</div>`; }
 async function load() {
-  try { const r = await fetch('/api/settings', { headers: { 'x-tenant-id': TENANT } }); if (!r.ok) return;
+  try { const r = await fetch('/api/settings', { headers: { 'x-tenant-id': TENANT, ...(window.RyujinAuth ? window.RyujinAuth.headers() : {}) } }); if (!r.ok) return;
     const d = await r.json(); const c = d.customer_config || {};
     if (c.review_days != null) document.getElementById('f_days').value = c.review_days;
     if (c.review_reask_days != null) document.getElementById('f_reask').value = c.review_reask_days;
@@ -107,7 +108,7 @@ document.getElementById('btnSave').addEventListener('click', async () => {
     sync_direction: document.getElementById('f_sync').value,
     default_tag: document.getElementById('f_tag').value
   }};
-  try { const r = await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-tenant-id': TENANT }, body: JSON.stringify(payload) });
+  try { const r = await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-tenant-id': TENANT, ...(window.RyujinAuth ? window.RyujinAuth.headers() : {}) }, body: JSON.stringify(payload) });
     if (!r.ok) { const t = await r.text(); if (/customer_config/.test(t)) showBanner('<code>tenant_settings.customer_config</code> column missing — apply migration 048.'); else showBanner(`Save failed: HTTP ${r.status}`); }
     else showBanner('Settings saved.', 'ok');
   } catch (e) { showBanner(`Network: ${e.message}`); }

@@ -498,19 +498,18 @@ async function buildFreshSnapshot() {
     'briefing_morning', 'briefing_evening',
     'watchdog', 'heartbeat', 'tokenRefresh',
     'cashflow',
-    // Same bug pattern as 2026-04-11 (watchdog wipe) — daily.js writes
+    // Same bug pattern as 2026-04-11 (watchdog wipe) - daily.js writes
     // sections.agentReports.{daily,weekly}; without preservation the
     // hourly rebuild silently drops them and the morning briefing has
     // no anime-agent context to pull from.
     'agentReports', 'metaConfigAudit', 'tokenWarning',
-    // Generator scheduler — weekly cron writes sections.generator with
-    // draft/scheduled/posted counts so command-center can surface a tile
-    // without re-querying marketing_clips. Preserve across hourly rebuild.
-    'generator',
-    // Inbox agent (migration 078) — every-20-min cron writes sections.inbox
+    // Inbox agent (migration 078) - every-20-min cron writes sections.inbox
     // with needsReview/notified/scanned counts + lastRun. Same wipe risk as
     // the others if omitted here.
-    'inbox'
+    'inbox',
+    // Quest scanner (migration 080) - daily cron writes sections.questscan
+    // with created/expired/byRule counts. Preserve so the hourly rebuild keeps it.
+    'questscan'
   ];
   if (existing?.sections) {
     for (const key of preserveKeys) {
@@ -543,7 +542,17 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    // Agents POST partial updates to merge into the snapshot
+    // Agents POST partial updates to merge into the snapshot.
+    //
+    // CONCURRENCY: this is a lockless read-modify-write of a single blob
+    // (getSnapshot then saveSnapshot). It is only safe because every section
+    // writer owns a DISJOINT top-level sections.* key (watchdog, heartbeat,
+    // tokenRefresh, inbox, agentReports, etc.) and overwrites only its own key.
+    // Two writers firing concurrently each clobber the other's blob version,
+    // but because their keys do not overlap the lost write is the OTHER agent's
+    // last value, not its own. Any FUTURE writer MUST claim a new disjoint key,
+    // never share/co-mutate an existing one, or it will silently drop the peer's
+    // data on an interleaved save.
     try {
       const updates = req.body;
       let snapshot = await getSnapshot() || { updated_at: new Date().toISOString(), sections: {} };

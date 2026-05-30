@@ -1,4 +1,4 @@
-// Ryujin OS — Generator Agent
+// Ryujin OS - Generator Agent
 //
 // Weekly cron (Sunday 23:00 UTC = Sun 8 PM AT). Picks 4 unused media_pool
 // items for Plus Ultra Roofing, composites before/after pairs via the
@@ -22,17 +22,23 @@
 import { supabaseAdmin } from '../../lib/supabase.js';
 import { renderBeforeAfterPair } from '../../lib/beforeAfterRenderer.js';
 import { shortCaption, vscoreFromTags } from '../../lib/generatorCaption.js';
+import { SHOWCASE_SCORE_FLOOR } from '../../lib/visionGrader.js';
 import { put } from '@vercel/blob';
 import crypto from 'node:crypto';
 
 const TENANT_SLUG = 'plus-ultra';
 const BRAND_SLUG = 'plus_ultra';
 const TARGET_COUNT = 4;
+// Selection is use-once in practice: a posted photo keeps used_in_clip_id set
+// forever and selection requires used_in_clip_id IS NULL, so it never recycles.
+// DEDUP_WINDOW_DAYS only relaxes the secondary last_used_at gate; it does NOT
+// re-open already-posted photos. Recycling would require clearing used_in_clip_id
+// (the reject path does this), which is intentionally a manual action.
 const DEDUP_WINDOW_DAYS = 180;
 
 // Selection reads the persisted vision INDEX (media_pool.tags written by
 // scripts/grade_media_pool.mjs: vstate:showcase / vscore:N / vmat:X) rather
-// than grading live — instant, no API cost, and provenance-safe: only "our
+// than grading live, instant, no API cost, and provenance-safe: only "our
 // work" sources are eligible for a showcase post. estimate_photos are pre-sale
 // customer roofs and are never posted as our work.
 const OUR_WORK_SOURCES = ['companycam_archive', 'project_files', 'media_folder'];
@@ -102,7 +108,7 @@ async function getBrand(tenantId) {
 //   1. Pairs first: a before/after couple whose AFTER is tagged showcase, with
 //      an unused, non-excluded before. (Rare until before/after tagging grows.)
 //   2. Remaining slots: solo showcase singles, best vscore first, one per job.
-// Provenance is enforced by SOURCE (OUR_WORK_SOURCES only) — estimate photos
+// Provenance is enforced by SOURCE (OUR_WORK_SOURCES only): estimate photos
 // (pre-sale customer roofs) are never eligible. Nothing is padded to hit
 // `count`; thin inventory just means fewer posts (surfaced as low_inventory).
 async function pickCandidates(tenantId, count) {
@@ -134,6 +140,7 @@ async function pickCandidates(tenantId, count) {
       .eq('id', after.pair_partner_id)
       .eq('tenant_id', tenantId)
       .eq('excluded', false)        // an excluded before must not resurface as a pair half
+      .in('source_bucket', OUR_WORK_SOURCES) // defense-in-depth: a non-our-work BEFORE can never ride a pair into a public post
       .maybeSingle();
     if (!before || before.used_in_clip_id) continue;
     if (after.project_id) seenProjects.add(after.project_id);
@@ -176,6 +183,9 @@ async function pickCandidates(tenantId, count) {
     for (const m of pool) {
       if (candidates.length >= count) break;
       if (usedIds.has(m.id)) continue;
+      // Solo singles must clear the showcase score floor. Pairs keep no floor
+      // (the before/after framing carries a lower-scoring after).
+      if (vscoreFromTags(m.tags) < SHOWCASE_SCORE_FLOOR) continue;
       if (m.project_id && seenProjects.has(m.project_id)) continue; // one post per job
       if (m.project_id) seenProjects.add(m.project_id);
       candidates.push({
@@ -226,7 +236,7 @@ function resolveSingleUrl(candidate) {
   return candidate.media.url;
 }
 
-// Captions come from the shared shortCaption() in lib/generatorCaption.js —
+// Captions come from the shared shortCaption() in lib/generatorCaption.js,
 // short, plain, rotating phrasings, no LLM (matches the backfill voice).
 
 async function insertDraft({ tenant, brand, candidate, mediaUrl, captionText, captionModel, scheduledAt, runId, kind }) {
@@ -256,7 +266,7 @@ async function insertDraft({ tenant, brand, candidate, mediaUrl, captionText, ca
     scheduled_at: scheduledAt.toISOString(),
     is_photo: true,
     // 'awaiting_approval' instead of 'ready' so the publish sweep
-    // skips drafts until Mac/Cat approves (codex P1 — sweep would
+    // skips drafts until Mac/Cat approves (codex P1, sweep would
     // auto-fail unapproved drafts within the 24h lookahead window).
     status: 'awaiting_approval',
     source_kind: 'generator',
@@ -295,7 +305,7 @@ async function runGenerator({ targetCount = TARGET_COUNT, dryRun = false } = {})
   // Schedule AFTER the last already-scheduled generator draft so the weekly run
   // extends the backlog instead of double-booking slots it already owns; and
   // skip entirely while the queue already covers QUEUE_HORIZON_DAYS (the backfill
-  // can stage weeks of content — the weekly top-up only runs when it's low).
+  // can stage weeks of content, the weekly top-up only runs when it's low).
   const now = new Date();
   const { data: lastSched } = await supabaseAdmin
     .from('marketing_clips')
@@ -322,7 +332,7 @@ async function runGenerator({ targetCount = TARGET_COUNT, dryRun = false } = {})
   );
 
   // Dry run: report exactly what WOULD be drafted (with vision scores), touch
-  // nothing — no run row, no clips, no media_pool used-flags. Powers a
+  // nothing, no run row, no clips, no media_pool used-flags. Powers a
   // "preview next run" check from /generator.html or curl.
   if (dryRun) {
     return {
@@ -345,7 +355,7 @@ async function runGenerator({ targetCount = TARGET_COUNT, dryRun = false } = {})
     };
   }
 
-  // Queue already covers the horizon — skip to avoid double-booking slots the
+  // Queue already covers the horizon, skip to avoid double-booking slots the
   // backlog owns and unbounded queue growth. The staged drafts keep posting.
   if (queueDeep) {
     await supabaseAdmin.from('agent_runs').insert({

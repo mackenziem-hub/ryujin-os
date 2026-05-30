@@ -1,4 +1,4 @@
-// Ryujin OS — Generator Scheduler API
+// Ryujin OS - Generator Scheduler API
 //
 // Operator surface for the weekly Generator drafts. Backed by the same
 // marketing_clips lifecycle that powers manual video uploads, filtered to
@@ -7,12 +7,12 @@
 // within 10 minutes and fans out to GHL Social Planner → FB + GBP.
 //
 // Endpoints:
-//   GET  /api/generator?view=queue          — drafts + scheduled + posted (7d)
-//   GET  /api/generator?id=X                — single draft detail
-//   PUT  /api/generator                     — { id, action: 'approve'|'edit'|'reschedule', caption?, scheduled_at? }
-//   DELETE /api/generator?id=X              — reject draft, free media_pool items
-//   POST /api/generator?action=regenerate   — { id } — re-draft caption via Claude
-//   POST /api/generator?action=run          — manual fire of the weekly generator
+//   GET  /api/generator?view=queue          - drafts + scheduled + posted (7d)
+//   GET  /api/generator?id=X                - single draft detail
+//   PUT  /api/generator                     - { id, action: 'approve'|'edit'|'reschedule', caption?, scheduled_at? }
+//   DELETE /api/generator?id=X              - reject draft, free media_pool items
+//   POST /api/generator?action=regenerate   - { id }, re-draft caption via Claude
+//   POST /api/generator?action=run          - manual fire of the weekly generator
 //
 // Auth: requirePortalSessionAndTenant. Approve and run require isPrivileged
 // (owner/admin) so both Mac and Cat can use them.
@@ -193,7 +193,7 @@ async function editClip({ tenantId, clipId, captionSuggestion, scheduledAt }) {
 
 // reject deletes the draft. By default its source photos are freed back to the
 // pool (used_in_clip_id cleared) so they can be re-picked. With exclude=true
-// the photos are instead marked excluded — use this when the photo was already
+// the photos are instead marked excluded, use this when the photo was already
 // posted (e.g. manually to Facebook) so the generator never resurfaces it.
 async function rejectClip({ tenantId, clipId, exclude = false }) {
   // Confirm the target is a generator-sourced clip BEFORE deleting so
@@ -246,7 +246,7 @@ async function regenerateCaption({ tenantId, clipId, brand }) {
 
   const ANTHROPIC_KEY = (process.env.ANTHROPIC_API_KEY || '').trim();
   if (!ANTHROPIC_KEY) {
-    return { error: 'ANTHROPIC_API_KEY missing — cannot regenerate', status: 503 };
+    return { error: 'ANTHROPIC_API_KEY missing, cannot regenerate', status: 503 };
   }
 
   // PRIVACY: same constraint as the agent. customer_name + project name are

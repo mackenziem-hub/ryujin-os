@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Ryujin OS — Generator Backlog Backfill
+// Ryujin OS - Generator Backlog Backfill
 //
 // Pre-stages a batch of social drafts from the vision INDEX (no live grading):
 // picks the highest-scoring showcase photos from our-work sources (CompanyCam +
@@ -15,6 +15,7 @@
 //   node --env-file=.env.local scripts/backfill_generator_drafts.mjs --count 40     # stage 40 drafts
 import { createClient } from '@supabase/supabase-js';
 import { shortCaption, vscoreFromTags, vmatFromTags } from '../lib/generatorCaption.js';
+import { SHOWCASE_SCORE_FLOOR } from '../lib/visionGrader.js';
 
 const supabaseAdmin = createClient(
   (process.env.SUPABASE_URL || '').trim(),
@@ -87,6 +88,8 @@ async function pickShowcase(tenantId, count) {
   const picked = []; const seenProjects = new Set();
   for (const m of pool) {
     if (picked.length >= count) break;
+    // Solo singles must clear the showcase score floor (pairs keep no floor).
+    if (vscoreFromTags(m.tags) < SHOWCASE_SCORE_FLOOR) continue;
     if (m.project_id && seenProjects.has(m.project_id)) continue;
     if (m.project_id) seenProjects.add(m.project_id);
     picked.push(m);

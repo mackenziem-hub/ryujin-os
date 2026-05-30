@@ -347,7 +347,7 @@
     '.slide .slide-inner { padding-left: 0; }',
     'body.present-mode .slide .slide-inner { padding-left: 0; }',
 
-    /* Fullscreen — hide nav chrome but KEEP sticky notes (they are the point of review mode). Esc exits via browser default. */
+    /* Fullscreen - hide nav chrome but KEEP sticky notes (they are the point of review mode). Esc exits via browser default. */
     ':fullscreen .present-ui, :fullscreen .present-progress, :fullscreen .present-hint { display: none !important; }',
     ':-webkit-full-screen .present-ui, :-webkit-full-screen .present-progress, :-webkit-full-screen .present-hint { display: none !important; }',
     ':-moz-full-screen .present-ui, :-moz-full-screen .present-progress, :-moz-full-screen .present-hint { display: none !important; }',
@@ -392,7 +392,8 @@
      /api/deck-notes so they persist across devices and can be read back by
      the working session. Without a token every function below no-ops, so the
      deck stays localStorage-only and still opens standalone for review.
-     Jewels-seeded notes are not synced (they are re-seeded from code each load). */
+     Code-seeded notes (jules + revised) are not synced (they are re-seeded from
+     code each load); only user-authored notes sync. */
   var AUTH_TOKEN = (function () {
     try { return localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token') || null; }
     catch (e) { return null; }
@@ -404,6 +405,12 @@
     return h;
   }
 
+  /* Code-seeded note authors. These are re-seeded from source on every load
+     (jules-suggestions.js), so they must never be pushed to the server: a
+     server copy would be a duplicate that resurrects itself. Only user-authored
+     (mac) notes sync. */
+  var SEEDED = { jules: 1, revised: 1 };
+
   /* Clear the unsynced flag once the server confirms a write, but only if the
      local note still matches the text we synced. If a newer save changed the
      text meanwhile, leave it dirty so that save's own POST clears it (prevents
@@ -413,13 +420,16 @@
     var arr = data[slideId] || [];
     for (var i = 0; i < arr.length; i++) {
       if (arr[i].id === noteId && arr[i].dirty && arr[i].text === syncedText) {
-        delete arr[i].dirty; saveAllNotes(data); return;
+        // Confirmed write: clear the dirty flag and stamp synced provenance so
+        // the push-up loop knows this note exists on the server. A later absence
+        // from serverKeys then means "deleted elsewhere", not "never uploaded".
+        delete arr[i].dirty; arr[i].synced = true; saveAllNotes(data); return;
       }
     }
   }
 
   function serverUpsertNote(slideId, note) {
-    if (!AUTH_TOKEN || !note || note.author === 'jules') return;
+    if (!AUTH_TOKEN || !note || SEEDED[note.author]) return;
     var sentText = note.text;
     fetch('/api/deck-notes', {
       method: 'POST',
@@ -463,15 +473,28 @@
               // to the server (authoritative). No wall-clock comparison, so client
               // clock skew can't decide the winner.
               if (found.dirty) serverUpsertNote(n.slide_id, found);
-              else { found.text = n.text; found.author = n.author; found.ts = Date.parse(n.updated_at) || found.ts; }
+              else { found.text = n.text; found.author = n.author; found.ts = Date.parse(n.updated_at) || found.ts; found.synced = true; }
             }
-            else local[n.slide_id].push({ id: n.client_note_id, author: n.author, text: n.text, ts: Date.parse(n.updated_at) || Date.now() });
+            else local[n.slide_id].push({ id: n.client_note_id, author: n.author, text: n.text, ts: Date.parse(n.updated_at) || Date.now(), synced: true });
           });
         }
         Object.keys(local).forEach(function (slideId) {
+          var kept = [];
           (local[slideId] || []).forEach(function (note) {
-            if (note.author !== 'jules' && !serverKeys[note.id]) serverUpsertNote(slideId, note);
+            // Seeded notes (jules / revised) never sync, so leave them untouched.
+            if (SEEDED[note.author]) { kept.push(note); return; }
+            if (serverKeys[note.id]) { kept.push(note); return; }
+            // Local note absent from the server. If it was previously synced and
+            // is not currently dirty, it was deleted on another device, so drop
+            // it locally instead of resurrecting it. Otherwise (never synced, or
+            // an unconfirmed local edit) push it up: this preserves the first-run
+            // migrate-up path for notes created before sync existed.
+            if (note.synced && !note.dirty) return;
+            serverUpsertNote(slideId, note);
+            kept.push(note);
           });
+          if (kept.length) local[slideId] = kept;
+          else delete local[slideId];
         });
         saveAllNotes(local);
         refreshAllSlideNotes();
@@ -600,7 +623,7 @@
       else userCount++;
     });
 
-    // Toggle button — always visible, shows counts per author type
+    // Toggle button - always visible, shows counts per author type
     var toggle = document.createElement('button');
     toggle.className = 'note-toggle';
     var pills = '';
@@ -610,7 +633,7 @@
     toggle.innerHTML = '💬 Suggestions &amp; revised' + (pills || ' <span class="count-pill" style="opacity:0.5">0</span>');
     slide.appendChild(toggle);
 
-    // Stack — hidden by default, opens on toggle click
+    // Stack - hidden by default, opens on toggle click
     var stack = document.createElement('div');
     stack.className = 'note-stack';
 
@@ -838,7 +861,7 @@
       }
       return;
     }
-    /* Enter fullscreen — try a few targets in order until one resolves. */
+    /* Enter fullscreen - try a few targets in order until one resolves. */
     var targets = [doc.documentElement, doc.body];
     var tried = 0;
     function tryNext() {
@@ -854,21 +877,21 @@
         return;
       }
       try {
-        /* Call without options first — some browsers reject the options arg. */
+        /* Call without options first - some browsers reject the options arg. */
         var r = reqFn.call(el);
         if (r && r.then) {
           r.then(
             function () { console.log('[presentation] entered fullscreen via', el.tagName); },
             function (err) {
-              console.warn('[presentation] requestFullscreen rejected on', el.tagName, '—', err && err.message);
+              console.warn('[presentation] requestFullscreen rejected on', el.tagName, '-', err && err.message);
               tryNext();
             }
           );
         } else {
-          console.log('[presentation] requestFullscreen returned non-promise on', el.tagName, '— assumed OK');
+          console.log('[presentation] requestFullscreen returned non-promise on', el.tagName, '- assumed OK');
         }
       } catch (err) {
-        console.warn('[presentation] requestFullscreen threw on', el.tagName, '—', err && err.message);
+        console.warn('[presentation] requestFullscreen threw on', el.tagName, '-', err && err.message);
         tryNext();
       }
     }
