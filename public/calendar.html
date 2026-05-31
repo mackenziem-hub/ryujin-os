@@ -121,6 +121,20 @@ h1{
 .evt.inspection::before{background:var(--violet);box-shadow:0 0 6px var(--violet)}
 .evt.gcal::before{background:var(--green);box-shadow:0 0 6px var(--green)}
 
+/* Phase 2 drag: only workorder-bucketed installs are moveable / resizable. */
+.evt[data-draggable="install"]{cursor:grab}
+.evt[data-draggable="install"].dragging{opacity:0.4;outline:2px dashed var(--cyan);outline-offset:1px;cursor:grabbing}
+.evt.install.ghost{opacity:0.5;border-style:dashed;cursor:default;background:rgba(20,30,50,0.4)}
+.evt.install.ghost:hover{transform:none;border-color:var(--border)}
+.ghost-cont{font-size:0.72em;color:var(--text-muted)}
+.evt-resize{position:absolute;left:0;right:0;bottom:0;height:10px;cursor:ns-resize;touch-action:none}
+.evt-resize::after{content:'';position:absolute;left:50%;bottom:2px;transform:translateX(-50%);width:26px;height:3px;border-radius:2px;background:var(--cyan);opacity:0.4}
+.evt[data-draggable="install"]:hover .evt-resize::after{opacity:0.85}
+.col.drop-target{outline:2px dashed var(--cyan);outline-offset:-3px;background:rgba(34,211,238,0.07)}
+.drag-ghost{position:fixed;z-index:9000;pointer-events:none;opacity:0.85;width:210px;box-shadow:0 10px 30px rgba(0,0,0,0.6);transform:translate(-50%,-50%);border-radius:10px}
+.cal-toast{position:fixed;left:50%;bottom:78px;transform:translateX(-50%);z-index:9100;background:rgba(8,12,24,0.95);border:1px solid var(--border-hi);color:var(--text);padding:10px 16px;border-radius:12px;font-size:0.85em;box-shadow:0 8px 24px rgba(0,0,0,0.5);max-width:90vw}
+.cal-toast.err{border-color:var(--red);color:#fca5a5}
+
 .evt-type{font-family:'Share Tech Mono',monospace;font-size:0.6em;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-muted);margin-bottom:2px}
 .evt.install .evt-type{color:var(--cyan)}
 .evt.service .evt-type{color:var(--orange)}
@@ -416,6 +430,10 @@ function crewByKey(key){ return CREW_ROSTER.find(c => c.key === key) || null; }
 
 let MY_ROLE = null;
 
+// Phase 2 drag state (installs only). `inflight` blocks overlapping writes;
+// `suppressClick` stops the post-drag synthetic click from opening the drawer.
+const DRAG = { active: false, resizing: false, inflight: false, suppressClick: false };
+
 // Range selector state. Mac wanted day/week/month/quarter — server clamps to
 // 90 days max so quarter caps there. Default week matches the original layout.
 const RANGE_DAYS = { day: 1, week: 7, month: 30, quarter: 90 };
@@ -505,7 +523,7 @@ function renderSkeleton(){
     const dayDate = (d.getMonth() + 1) + '/' + d.getDate();
     const isToday = dayKey === todayIso;
     cols.push(`
-      <div class="col ${isToday ? 'today' : ''}">
+      <div class="col ${isToday ? 'today' : ''}" data-date="${esc(dayKey)}">
         <div class="col-head">
           <div>
             <div class="col-day ${isToday ? 'is-today' : ''}">${esc(dayName)}${isToday ? ' (today)' : ''}</div>
@@ -584,6 +602,8 @@ function renderLegend(){
 }
 
 function rerender(){
+  // Never repaint mid drag/resize: it would yank the card out from under the pointer.
+  if (DRAG.active || DRAG.resizing) return;
   const sched = STATE.sched.data || { days: [], jobs: [], total_service: 0 };
   const ghl = STATE.ghl.data || { appointments: [] };
   const gcal = STATE.gcal.data || { events: [] };
@@ -681,10 +701,24 @@ function normalize(sched, ghl, gcal, blocksData){
         crew: j.crew || [], crew_lead: j.crew_lead || null,
         sub_crew_lead: j.sub_crew_lead || null,
         wo_number: j.wo_number || null, wo_id: j.wo_id || null, wo_start_date: j.wo_start_date || null, project_id: j.project_id || null,
+        source: j.source || null,
         duration_days: j.duration_days || null, live: !!j.live,
         progress_pct: j.progress_pct || null,
         special_notes: j.special_notes || null
       });
+      // Multi-day workorder install: drop faint continuation ghosts on the
+      // covered days so the span reads in every layout. Ghosts are display-only
+      // (no data-evt, not counted, not draggable); only workorder-bucketed
+      // installs span (they are the ones the calendar can resize/move).
+      const dur = Number(j.duration_days) || 1;
+      if (j.source === 'workorder' && j.wo_id && dur > 1){
+        const startD = new Date(day.date + 'T00:00:00');
+        for (let k = 1; k < dur; k++){
+          const gKey = isoDay(addDays(startD, k));
+          if (!days[gKey]) continue;
+          days[gKey].events.push({ kind: 'install-ghost', id: String(j.id) + '-g' + k, ref: j.ref, title: j.label, dayNum: k + 1, duration_days: dur });
+        }
+      }
     }
     for (const t of (day.service || [])){
       days[day.date].events.push({
@@ -783,6 +817,11 @@ function crewBadges(crew){
 }
 
 function evtCard(ev){
+  // Multi-day continuation ghost: display-only chip on a covered day. No
+  // data-evt (so it is skipped by the click + drag wiring), not counted.
+  if (ev.kind === 'install-ghost'){
+    return `<div class="evt install ghost" aria-hidden="true"><div class="evt-type">${ic('booked')} Install</div><div class="ghost-cont">&#8627; ${esc(ev.title || '')} &middot; day ${ev.dayNum}/${ev.duration_days}</div></div>`;
+  }
   const cls = ['evt', ev.kind, ev.priority === 'urgent' || ev.priority === 'high' ? ev.priority : '', ev.kind === 'block' && ev.crew_label ? ev.crew_label : ''].filter(Boolean).join(' ');
   let typeLine = '';
   let body = '';
@@ -842,9 +881,16 @@ function evtCard(ev){
       <div class="evt-title">${esc(ev.title)}</div>
       <div class="evt-meta">${ev.time ? `<span class="chip">${esc(ev.time)}</span>` : ''}${crewChip}${assignChip}</div>`;
   }
-  return `<div class="${cls}" tabindex="0" role="button" aria-label="${esc((ev.kind || 'event') + ': ' + (ev.title || '') + (ev.time ? ' at ' + ev.time : ''))}" data-evt='${esc(JSON.stringify(ev))}'>
+  // Only pure workorder-bucketed installs are draggable/resizable: they bucket
+  // by the WO's own start_date, so a move (PUT start_date) re-buckets cleanly.
+  // Estimate-scheduled installs + all other kinds stay locked (view only).
+  const isDraggable = ev.kind === 'install' && ev.source === 'workorder' && !!ev.wo_id && (MY_ROLE === 'owner' || MY_ROLE === 'admin');
+  const dragAttr = isDraggable ? ' data-draggable="install"' : '';
+  const resizeHandle = isDraggable ? '<div class="evt-resize" aria-hidden="true" title="Drag to set how many days"></div>' : '';
+  return `<div class="${cls}" tabindex="0" role="button" aria-label="${esc((ev.kind || 'event') + ': ' + (ev.title || '') + (ev.time ? ' at ' + ev.time : ''))}" data-evt='${esc(JSON.stringify(ev))}'${dragAttr}>
     <div class="evt-type">${typeLine}</div>
     ${body}
+    ${resizeHandle}
   </div>`;
 }
 
@@ -855,12 +901,12 @@ function renderDayView(days){
     const dayName = DAY_NAMES[date.getDay()];
     const dayDate = (date.getMonth() + 1) + '/' + date.getDate();
     const isToday = d.date === todayIso;
-    const count = d.events.length;
-    const cards = count
+    const count = d.events.filter(e => e.kind !== 'install-ghost').length;  // badge = real bookings, not continuation ghosts
+    const cards = d.events.length
       ? d.events.map(evtCard).join('')
       : '<div class="empty-day"><img class="empty-illus" src="/assets/calendar/empty-booking.webp" alt="" loading="lazy">no events</div>';
     return `
-      <div class="col ${isToday ? 'today' : ''}">
+      <div class="col ${isToday ? 'today' : ''}" data-date="${esc(d.date)}">
         <div class="col-head">
           <div>
             <div class="col-day ${isToday ? 'is-today' : ''}">${esc(dayName)}${isToday ? ' (today)' : ''}</div>
@@ -873,7 +919,8 @@ function renderDayView(days){
   }).join('');
   document.getElementById('board').innerHTML = html;
   document.querySelectorAll('.evt').forEach(el => {
-    el.addEventListener('click', () => openDrawer(JSON.parse(el.dataset.evt)));
+    if (!el.dataset.evt) return;  // continuation ghosts: display only, no click/drag
+    el.addEventListener('click', () => { if (DRAG.suppressClick){ DRAG.suppressClick = false; return; } openDrawer(JSON.parse(el.dataset.evt)); });
     el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); openDrawer(JSON.parse(el.dataset.evt)); } });
   });
 }
@@ -983,6 +1030,7 @@ function openDrawer(ev){
       ${ev.phone ? `<dt>Phone</dt><dd><a href="tel:${esc(ev.phone)}">${esc(ev.phone)}</a></dd>` : ''}
       ${ev.status ? `<dt>Status</dt><dd>${esc(ev.status)}</dd>` : ''}
       ${inspectorFor(ev.assignedUserId) ? `<dt>Assigned to</dt><dd>${ic('inspector')} ${esc(inspectorFor(ev.assignedUserId).name)}</dd>` : ''}
+      <dt>Reschedule</dt><dd>Client booking. To move it, open in GHL (below).</dd>
     `;
     const ghlLink = ev.contactId
       ? `https://app.gohighlevel.com/v2/location/aHotOUdq9D8m3JPrRz9n/contacts/detail/${encodeURIComponent(ev.contactId)}`
@@ -1263,6 +1311,177 @@ function wireKitChrome(){
   renderLegend();
 }
 
+// ── Phase 2: drag an install to reschedule + drag its bottom edge to set duration ──
+// Pointer Events unify mouse / touch / pen. A move starts on long-press so a
+// vertical scroll on mobile is not hijacked. Only workorder-bucketed installs
+// are draggable (set in evtCard); writes go to PUT /api/workorders then loadAll.
+let _toastTimer = null;
+function calToast(msg, isErr){
+  let t = document.getElementById('calToast');
+  if (!t){ t = document.createElement('div'); t.id = 'calToast'; document.body.appendChild(t); }
+  t.className = 'cal-toast' + (isErr ? ' err' : '');
+  t.textContent = msg;
+  t.style.display = 'block';
+  if (_toastTimer) clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => { t.style.display = 'none'; }, isErr ? 5000 : 2400);
+}
+
+async function putWorkorder(body){
+  const tok = await getToken();
+  const r = await fetch('/api/workorders', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok, 'x-tenant-id': TENANT },
+    body: JSON.stringify(body)
+  });
+  if (!r.ok){ const b = await r.json().catch(() => ({})); throw new Error(b.error || ('HTTP ' + r.status)); }
+  return r;
+}
+
+async function rescheduleInstall(ev, newDate, card){
+  const srcCol = card.closest('.col[data-date]');
+  const beforeNext = card.nextSibling;
+  const sel = (window.CSS && CSS.escape) ? CSS.escape(newDate) : newDate;
+  const targetCol = document.querySelector('.col[data-date="' + sel + '"]');
+  if (targetCol) targetCol.appendChild(card);          // optimistic move
+  DRAG.inflight = true;
+  try {
+    await putWorkorder({ id: ev.wo_id, start_date: newDate });
+    DRAG.inflight = false;
+    calToast('Moved to ' + newDate);
+    loadAll();
+  } catch (e){
+    if (srcCol){ beforeNext ? srcCol.insertBefore(card, beforeNext) : srcCol.appendChild(card); }  // revert
+    DRAG.inflight = false;
+    calToast('Move failed: ' + e.message, true);
+  }
+}
+
+async function resizeInstall(ev, newDur){
+  DRAG.inflight = true;
+  try {
+    await putWorkorder({ id: ev.wo_id, estimated_duration_days: newDur });
+    DRAG.inflight = false;
+    calToast('Set to ' + newDur + ' day' + (newDur > 1 ? 's' : ''));
+    loadAll();
+  } catch (e){
+    DRAG.inflight = false;
+    calToast('Resize failed: ' + e.message, true);
+  }
+}
+
+function initDragEngine(){
+  const board = document.getElementById('board');
+  if (!board) return;
+  const STEP = 26;                 // px of vertical drag per duration day
+  let mode = null;                 // 'arm' | 'move' | 'resize'
+  let armTimer = null;
+  let card = null, ev = null, ghost = null, dropCol = null, pid = null;
+  let startX = 0, startY = 0, baseDur = 1;
+
+  const privileged = () => MY_ROLE === 'owner' || MY_ROLE === 'admin';
+  const dayView = () => document.body.dataset.view === 'day';
+
+  function teardown(){
+    window.removeEventListener('pointermove', onMove, true);
+    window.removeEventListener('pointerup', onUp, true);
+    window.removeEventListener('pointercancel', onUp, true);
+  }
+  function cleanup(){
+    if (armTimer){ clearTimeout(armTimer); armTimer = null; }
+    if (ghost){ ghost.remove(); ghost = null; }
+    if (card){ card.classList.remove('dragging'); delete card.dataset.previewDur; }
+    document.querySelectorAll('.col.drop-target').forEach(c => c.classList.remove('drop-target'));
+    dropCol = null; mode = null; card = null; ev = null;
+    DRAG.active = false; DRAG.resizing = false;
+    teardown();
+  }
+  function markSuppressClick(){ DRAG.suppressClick = true; setTimeout(() => { DRAG.suppressClick = false; }, 400); }
+
+  function onDown(e){
+    if ((e.button != null && e.button !== 0) || DRAG.inflight || !privileged() || !dayView()) return;
+    const c = e.target.closest('.evt[data-draggable="install"]');
+    if (!c) return;
+    let parsed; try { parsed = JSON.parse(c.dataset.evt || 'null'); } catch (_){ return; }
+    if (!parsed || !parsed.wo_id) return;
+    card = c; ev = parsed; pid = e.pointerId; startX = e.clientX; startY = e.clientY;
+    window.addEventListener('pointermove', onMove, true);
+    window.addEventListener('pointerup', onUp, true);
+    window.addEventListener('pointercancel', onUp, true);
+    if (e.target.closest('.evt-resize')){
+      mode = 'resize'; baseDur = Number(ev.duration_days) || 1; DRAG.resizing = true;
+      try { card.setPointerCapture(pid); } catch (_){}
+      e.preventDefault();
+    } else {
+      mode = 'arm';                                    // long-press to start a move
+      armTimer = setTimeout(beginMove, 230);
+    }
+  }
+
+  function beginMove(){
+    if (mode !== 'arm' || !card) return;
+    mode = 'move'; DRAG.active = true;
+    try { card.setPointerCapture(pid); } catch (_){}
+    card.classList.add('dragging');
+    ghost = card.cloneNode(true);
+    ghost.className = 'evt ' + (ev.kind || '') + ' drag-ghost';
+    ghost.removeAttribute('data-draggable');
+    document.body.appendChild(ghost);
+    moveGhost(startX, startY);
+  }
+  function moveGhost(x, y){ if (ghost){ ghost.style.left = x + 'px'; ghost.style.top = y + 'px'; } }
+  function colAt(x, y){ const el = document.elementFromPoint(x, y); return el ? el.closest('.col[data-date]') : null; }
+
+  function onMove(e){
+    if (mode === 'arm'){
+      if (Math.hypot(e.clientX - startX, e.clientY - startY) > 9) cleanup();   // scroll / tap intent
+      return;
+    }
+    if (mode === 'move'){
+      e.preventDefault();
+      moveGhost(e.clientX, e.clientY);
+      const col = colAt(e.clientX, e.clientY);
+      if (col !== dropCol){
+        if (dropCol) dropCol.classList.remove('drop-target');
+        dropCol = col;
+        if (dropCol) dropCol.classList.add('drop-target');
+      }
+      return;
+    }
+    if (mode === 'resize'){
+      e.preventDefault();
+      const delta = Math.round((e.clientY - startY) / STEP);
+      card.dataset.previewDur = String(Math.max(1, Math.min(30, baseDur + delta)));
+      return;
+    }
+  }
+
+  function onUp(){
+    if (mode === 'arm'){ cleanup(); return; }            // tap (no long-press) -> drawer opens via click
+    if (mode === 'move'){
+      const newDate = dropCol ? dropCol.dataset.date : null;
+      const srcCol = card ? card.closest('.col[data-date]') : null;
+      const curDate = srcCol ? srcCol.dataset.date : null;
+      const evRef = ev, cardRef = card;
+      cleanup();
+      if (!newDate || newDate === curDate) return;       // off-board or same day = no-op
+      markSuppressClick();
+      rescheduleInstall(evRef, newDate, cardRef);
+      return;
+    }
+    if (mode === 'resize'){
+      const newDur = Number(card.dataset.previewDur) || baseDur;
+      const evRef = ev;
+      cleanup();
+      if (newDur === baseDur) return;
+      markSuppressClick();
+      resizeInstall(evRef, newDur);
+      return;
+    }
+  }
+
+  board.addEventListener('pointerdown', onDown);
+}
+
 (async function init(){
   await loadMe();
   // Hide the create FAB for non-privileged roles (was a dead-end alert on click).
@@ -1277,10 +1496,12 @@ function wireKitChrome(){
   // it settles, but never gate the operational data load on it.
   iconsReady.then(() => { wireKitChrome(); rerender(); });
   await loadAll();
-  // Background refresh: skip when the tab is hidden or a dialog is open so we
-  // don't hammer GHL unseen or yank the view out from under an open card.
+  initDragEngine();
+  // Background refresh: skip when the tab is hidden, a dialog is open, or a
+  // drag / write is in flight (would yank the dragged card or clobber a save).
   setInterval(() => {
     if (document.hidden) return;
+    if (DRAG.active || DRAG.resizing || DRAG.inflight) return;
     if (document.querySelector('.modal-mask.on, .drawer-mask.on')) return;
     loadAll();
   }, 3 * 60 * 1000);
