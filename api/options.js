@@ -19,6 +19,7 @@ import { supabaseAdmin } from '../lib/supabase.js';
 import { requireTenant } from '../lib/tenant.js';
 import { requirePillar } from '../lib/entitlements.js';
 import { resolvePillar, archetypeOf } from '../lib/archetypeRegistry.js';
+import { catalogForPrompt, sanitizeNavAction } from '../lib/pageCatalog.js';
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const MODEL = 'claude-sonnet-4-6';
@@ -148,7 +149,8 @@ You are picking the top 4 actions for the operator's interactive-mode card stack
 ${observationsText}
 
 ## Action vocabulary (kind values for record_options)
-- navigate_to: payload { url } - open a Ryujin page. Use ONLY these exact paths (never invent a URL or #hash): /calendar.html (the service + booking calendar: installs, inspections, service calls, GHL bookings - this IS "the calendar" / "service calendar"); /production-calendar.html (install/production schedule); /production-jobs.html (jobs + work orders); /sales-proposals.html (proposals); /customer-list.html (customers); /command-center.html (HQ dashboard); /admin.html (settings). If the right page is unclear, use /cockpit.html.
+- navigate_to: payload { url } - open a Ryujin page. Use ONLY one of these exact paths (never invent a URL or #hash). If the right page is unclear, use /cockpit.html:
+${catalogForPrompt()}
 - send_email: payload { to, subject?, body } — operator confirms before send
 - send_sms: payload { to, subject?, body } — ONLY between 07:00 and 19:00 local time. The current hour is ${new Date().getHours()}. Outside that window, use compose_message instead.
 - create_quest: payload { title, description, priority }
@@ -200,7 +202,8 @@ ${observationsText}
   const options = (toolUse.input.options || [])
     .map((o, i) => ({ id: `opt_${i}`, ...o }))
     .sort((a, b) => (a.recommended_rank || 99) - (b.recommended_rank || 99))
-    .slice(0, 4);
+    .slice(0, 4)
+    .map(sanitizeNavAction); // fail-closed: never ship a hallucinated nav URL to the browser
 
   const archetype = archetypeOf(pillarSlug);
   return res.status(200).json({

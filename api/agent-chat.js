@@ -25,6 +25,7 @@ import { resolveCustomer, resolveEstimate } from '../lib/entityResolver.js';
 import { routeIntent } from '../lib/router.js';
 import { attachNoteToEntity } from '../lib/agentNote.js';
 import { INTENT_SLUGS } from '../lib/routingMap.js';
+import { catalogForPrompt, sanitizeNavAction } from '../lib/pageCatalog.js';
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const MODEL = 'claude-sonnet-4-6';
@@ -351,7 +352,8 @@ You are responding to ${me?.name || 'an operator'} (role: ${me?.role || 'unknown
 ${observationsText}
 
 ## Action vocabulary (record_response.proposed_actions[].kind)
-- navigate_to: { url } - open a Ryujin page. Use ONLY these exact paths (never invent a URL or #hash): /calendar.html (the service + booking calendar - installs, inspections, service, GHL bookings - this IS "the calendar" / "service calendar"); /production-calendar.html (install schedule); /production-jobs.html (jobs + work orders); /sales-proposals.html (proposals); /customer-list.html (customers); /command-center.html (HQ dashboard); /admin.html (settings). If unclear, use /cockpit.html.
+- navigate_to: { url } - open a Ryujin page. Use ONLY one of these exact paths (never invent a URL or #hash). If unclear, use /cockpit.html:
+${catalogForPrompt()}
 - send_email: { to, subject?, body }
 - send_sms: { to, subject?, body } — ONLY between 07:00 and 19:00 local time. The current hour is ${new Date().getHours()}. Outside that window, ALWAYS use compose_message instead.
 - create_quest: { title, description, priority }
@@ -408,7 +410,7 @@ Use 'unknown' if no clear canonical intent. Confidence weighs both entity certai
   if (!responseBlock?.input) return res.status(502).json({ error: 'Claude did not call record_response', raw: j });
 
   const reply = responseBlock.input.reply;
-  const proposed_actions = responseBlock.input.proposed_actions || [];
+  const proposed_actions = (responseBlock.input.proposed_actions || []).map(sanitizeNavAction); // fail-closed nav URLs
   const extracted = extractBlock?.input || { intent: 'unknown', urgency: 'normal', confidence: 0 };
 
   // Resolve entities + attach notes + auto-route.
