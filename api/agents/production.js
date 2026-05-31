@@ -166,6 +166,7 @@ export async function runProduction({ tenantSlug = PLUS_ULTRA_SLUG } = {}) {
     return report;
   }
   const tid = tenant.id;
+  report.tenant_id = tid; // surfaced so the handler can write an agent_runs row
 
   const { data: settings } = await supabaseAdmin
     .from('tenant_settings').select('production_agent_enabled').eq('tenant_id', tid).maybeSingle();
@@ -276,18 +277,61 @@ export default async function handler(req, res) {
   if (!auth.ok) return res.status(401).json({ error: auth.error });
 
   const tenantSlug = (req.query?.tenant || req.headers['x-tenant-id'] || PLUS_ULTRA_SLUG).toString();
+  // GET = the 30-min cron; POST (or ?manual=1) = an owner-triggered run.
+  // trigger must match the agent_runs.trigger CHECK ('cron_daily' | 'manual').
+  const trigger = (req.method === 'POST' || req.query?.manual === '1') ? 'manual' : 'cron_daily';
+  const startTime = Date.now();
+
   try {
     const report = await runProduction({ tenantSlug });
+
+    // Observability: production used to write NO agent_runs row, so the 30-min
+    // cron was invisible to admin-cron-health + any monitoring (the only blind
+    // agent). Record one terminal-status row per invocation. A single terminal
+    // row (vs running -> success) is deliberate: runProduction completes
+    // synchronously, so there is no in-flight state to watch, and it avoids
+    // orphaned 'running' rows if the function ever times out mid-scan.
+    // Skip only when the tenant is disabled, mirroring reconcile's skip.
+    let runId = null;
+    if (report.tenant_id && !report.disabled) {
+      const hadErrors = report.errors && report.errors.length;
+      const { data: run, error: runErr } = await supabaseAdmin
+        .from('agent_runs')
+        .insert({
+          tenant_id: report.tenant_id, agent_slug: 'production', trigger,
+          status: hadErrors ? 'error' : 'success',
+          completed_at: new Date().toISOString(),
+          summary: `${report.jobs_scanned} jobs scanned, ${report.suggestions_emitted} new suggestions`,
+          output: report,
+          error_message: hadErrors ? String(report.errors.join('; ')).slice(0, 500) : null,
+          duration_ms: Date.now() - startTime,
+        }).select('id').single();
+      if (runErr) console.error('production: agent_runs insert failed:', runErr.message);
+      runId = run?.id || null;
+    }
+
     return res.json({
       agent: 'production',
       role: 'Pipeline Stage Propagation',
       invocation: req.method === 'GET' ? 'on-demand' : 'cron',
       timestamp: new Date().toISOString(),
+      run_id: runId,
       data: report,
       errors: report.errors,
     });
   } catch (err) {
     console.error('[Production] FAILED:', err.message);
+    // Best-effort error row so a hard failure is still visible in the run trail.
+    try {
+      const { data: tn } = await supabaseAdmin.from('tenants').select('id').eq('slug', tenantSlug).maybeSingle();
+      if (tn?.id) {
+        await supabaseAdmin.from('agent_runs').insert({
+          tenant_id: tn.id, agent_slug: 'production', trigger,
+          status: 'error', completed_at: new Date().toISOString(),
+          error_message: String(err.message).slice(0, 500), duration_ms: Date.now() - startTime,
+        });
+      }
+    } catch { /* ignore */ }
     return res.status(500).json({ agent: 'production', error: err.message });
   }
 }
