@@ -225,12 +225,21 @@ body{
 .qc-tile .lbl{font-family:'Orbitron',monospace;font-size:0.6em;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim)}
 
 .quest-list{display:flex;flex-direction:column;gap:8px}
+/* Time-bucket group label (matches admin-quests Direction C) */
+.grp-label{font-family:'Orbitron',monospace;font-size:0.62em;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);margin:16px 0 8px;display:flex;align-items:center;gap:10px}
+.grp-label:first-child{margin-top:2px}
+.grp-label::after{content:'';flex:1;height:1px;background:var(--glass-border)}
+.grp-label .gc{font-family:'Share Tech Mono',monospace;color:var(--accent)}
 .quest-card{
   display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;
   background:var(--glass);border:1px solid var(--glass-border);
-  border-radius:var(--radius);padding:12px 14px;
+  border-radius:6px 6px 6px 12px;padding:12px 14px 12px 18px;
   cursor:pointer;transition:all 0.2s;position:relative;overflow:hidden;
 }
+.quest-card::after{content:'';position:absolute;top:0;left:0;bottom:0;width:4px;background:rgba(148,170,220,0.5)}
+.quest-card.prio-high::after{background:var(--red)}
+.quest-card.prio-medium::after{background:var(--yellow)}
+.quest-card.prio-low::after{background:rgba(148,170,220,0.5)}
 .quest-card:hover{border-color:var(--glass-border-hi);background:var(--glass2)}
 .quest-card.completed{opacity:0.55}
 .quest-card.completed .quest-title{text-decoration:line-through}
@@ -271,6 +280,14 @@ body{
   font-family:'Orbitron',monospace;font-size:0.75em;font-weight:700;
   color:var(--accent);white-space:nowrap;
 }
+/* folded sticky corner + due chip (matches admin-quests Direction C) */
+.quest-card .fold{position:absolute;top:0;right:0;border-width:0 16px 16px 0;border-style:solid;border-color:transparent rgba(6,10,20,0.85) transparent transparent;pointer-events:none;z-index:1}
+.due-chip{font-family:'Share Tech Mono',monospace;font-size:0.64em;font-weight:700;padding:3px 9px;border-radius:8px;white-space:nowrap;letter-spacing:0.5px;align-self:center}
+.due-chip.soon{color:#fecaca;background:rgba(248,113,113,0.14);border:1px solid rgba(248,113,113,0.3)}
+.due-chip.wk{color:#fde68a;background:rgba(250,204,21,0.12);border:1px solid rgba(250,204,21,0.28)}
+.due-chip.later{color:#bfdbfe;background:rgba(74,158,255,0.10);border:1px solid rgba(74,158,255,0.25)}
+.due-chip.none{color:var(--text-dim);background:rgba(148,170,220,0.08);border:1px solid rgba(148,170,220,0.16)}
+.due-chip.overdue{color:#fff;background:rgba(248,113,113,0.32);border:1px solid rgba(248,113,113,0.55)}
 
 /* ─── KPI tiles ─── */
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
@@ -340,7 +357,7 @@ body{
 }
 @media(max-width:540px){
   .kpi-grid{grid-template-columns:1fr}
-  .quest-card{grid-template-columns:auto 1fr;row-gap:6px}
+  .quest-card{grid-template-columns:auto 1fr auto;row-gap:6px}
 }
 </style>
 <script src="/assets/portal-auth-client.js"></script>
@@ -475,8 +492,13 @@ const USERS = [
   { id: 'catherine', label: 'Catherine', short: 'Cat' },
   { id: 'darcy',     label: 'Darcy',     short: 'Darcy' }
 ];
-let activeUserId = localStorage.getItem('overview_active_user') || null;
+// A ?user_id= in the URL wins, so a link like
+// admin-overview.html?user_id=<uuid> is a self-contained per-user view
+// (Catherine's portal relies on this). Falls back to the last-used pill.
+const urlUserId = new URLSearchParams(location.search).get('user_id');
+let activeUserId = urlUserId || localStorage.getItem('overview_active_user') || null;
 if (activeUserId === 'null') activeUserId = null;
+if (urlUserId) localStorage.setItem('overview_active_user', urlUserId);
 
 function fmtDate(d) {
   return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
@@ -563,6 +585,30 @@ function renderQuestCounts(c) {
   document.getElementById('questCount').textContent  = c.open ?? 0;
 }
 
+// Direction C bucketing + chip (kept in sync with admin-quests.html).
+const PRIORITY_RANK = { high: 0, medium: 1, low: 2 };
+function bucketForDue(dueAt) {
+  if (!dueAt) return 'none';
+  const t = new Date(dueAt).getTime();
+  const sd = new Date(); sd.setHours(0, 0, 0, 0);
+  const endToday = sd.getTime() + 86400000;
+  const wd = new Date(); const day = wd.getDay() || 7;
+  wd.setDate(wd.getDate() - (day - 1)); wd.setHours(0, 0, 0, 0);
+  const endWeek = wd.getTime() + 7 * 86400000;
+  if (t < endToday) return 'today';
+  if (t < endWeek) return 'week';
+  return 'later';
+}
+function dueChip(dueAt) {
+  if (!dueAt) return { label: 'No date', cls: 'none' };
+  const d = new Date(dueAt);
+  const overdue = d.getTime() < Date.now() - 60000;
+  const md = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  if (overdue) return { label: `Overdue · ${md}`, cls: 'overdue' };
+  const b = bucketForDue(dueAt);
+  return { label: md, cls: b === 'today' ? 'soon' : b === 'week' ? 'wk' : 'later' };
+}
+
 function renderQuests(quests) {
   const list = document.getElementById('questList');
   if (quests.length === 0) {
@@ -573,21 +619,41 @@ function renderQuests(quests) {
       </div>`;
     return;
   }
-  list.innerHTML = quests.map(q => `
-    <div class="quest-card ${q.status === 'completed' ? 'completed' : ''}" data-id="${q.id}">
+  const card = q => {
+    const chip = dueChip(q.due_at);
+    const prio = ['high', 'medium', 'low'].includes(q.priority) ? q.priority : 'medium';
+    return `
+    <div class="quest-card prio-${prio} ${q.status === 'completed' ? 'completed' : ''}" data-id="${q.id}">
       <div class="quest-check" data-id="${q.id}" data-status="${q.status}">
         <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
       </div>
       <div class="quest-body">
         <div class="quest-meta-row">
           <span class="quest-cat ${q.category}">${escapeHtml(q.category)}</span>
-          <span class="quest-type">${escapeHtml(q.type)}</span>
           ${q.source_agent ? `<span class="quest-source">via ${escapeHtml(q.source_agent)}</span>` : ''}
         </div>
         <div class="quest-title">${escapeHtml(q.title)}</div>
         ${q.description ? `<div class="quest-desc">${escapeHtml(q.description)}</div>` : ''}
       </div>
-    </div>`).join('');
+      <span class="fold"></span>
+      <span class="due-chip ${chip.cls}">${chip.label}</span>
+    </div>`;
+  };
+  const groups = { today: [], week: [], later: [], none: [] };
+  for (const q of quests) groups[bucketForDue(q.due_at)].push(q);
+  for (const k in groups) groups[k].sort((a, b) => {
+      const pr = (PRIORITY_RANK[a.priority] ?? 1) - (PRIORITY_RANK[b.priority] ?? 1);
+      if (pr !== 0) return pr;
+      const ad = a.due_at ? Date.parse(a.due_at) : Infinity;
+      const bd = b.due_at ? Date.parse(b.due_at) : Infinity;
+      if (ad !== bd) return ad - bd;
+      return Date.parse(b.created_at || 0) - Date.parse(a.created_at || 0);
+    });
+  const order = [['today', 'Today'], ['week', 'This Week'], ['later', 'Later'], ['none', 'No Date']];
+  list.innerHTML = order
+    .filter(([k]) => groups[k].length)
+    .map(([k, label]) => `<div class="grp-label">${label} <span class="gc">${groups[k].length}</span></div>` + groups[k].map(card).join(''))
+    .join('');
 
   list.querySelectorAll('.quest-check').forEach(el => {
     el.addEventListener('click', async (e) => {

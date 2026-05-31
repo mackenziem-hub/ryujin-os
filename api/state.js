@@ -59,6 +59,7 @@ async function handler(req, res) {
     const u = await supabaseAdmin
       .from('users')
       .select('id, name, email, role')
+      .eq('tenant_id', tenantId)
       .eq('id', userId)
       .maybeSingle();
     if (u.data) user = { id: u.data.id, name: u.data.name || u.data.email, role: u.data.role };
@@ -92,6 +93,20 @@ async function handler(req, res) {
     .order('created_at', { ascending: false });
   if (userId) openQ = openQ.or(`assigned_to.eq.${userId},assigned_to.is.null`);
   const openQuests = await openQ;
+  // priority is a text column, so DB order is alphabetical (high<low<medium) and
+  // wrong. Re-rank in JS: high > medium > low, keeping the DB due/created order
+  // within a priority band. This is the board's primary ranking.
+  const PRIORITY_RANK = { high: 0, medium: 1, low: 2 };
+  if (openQuests.data) {
+    openQuests.data.sort((a, b) => {
+      const pr = (PRIORITY_RANK[a.priority] ?? 1) - (PRIORITY_RANK[b.priority] ?? 1);
+      if (pr !== 0) return pr;
+      const ad = a.due_at ? Date.parse(a.due_at) : Infinity;
+      const bd = b.due_at ? Date.parse(b.due_at) : Infinity;
+      if (ad !== bd) return ad - bd;
+      return Date.parse(b.created_at || 0) - Date.parse(a.created_at || 0);
+    });
+  }
 
   let completedQ = supabaseAdmin
     .from('quests')

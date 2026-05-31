@@ -51,6 +51,7 @@ async function handler(req, res) {
         description: body.description || null,
         category: body.category,
         type: body.type,
+        priority: ['high','medium','low'].includes(body.priority) ? body.priority : 'medium',
         xp_reward: body.xp_reward ?? 10,
         assigned_to: body.assigned_to || null,
         due_at: body.due_at || null,
@@ -78,9 +79,11 @@ async function handler(req, res) {
     if (cur.error || !cur.data) return res.status(404).json({ error: 'quest not found' });
 
     const update = {};
-    for (const k of ['status','completed_at','completed_by','title','description','xp_reward','assigned_to','due_at','metadata']) {
+    for (const k of ['status','completed_at','completed_by','title','description','priority','xp_reward','assigned_to','due_at','metadata']) {
       if (body[k] !== undefined) update[k] = body[k];
     }
+    // Guard the priority enum so a bad value can't break the row.
+    if (update.priority !== undefined && !['high','medium','low'].includes(update.priority)) update.priority = 'medium';
     if (update.status === 'completed' && !update.completed_at) update.completed_at = new Date().toISOString();
 
     const { data, error } = await supabaseAdmin
