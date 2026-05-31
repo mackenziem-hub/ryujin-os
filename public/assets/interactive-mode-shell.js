@@ -214,6 +214,15 @@
     return location.pathname + (location.search || '') + (location.hash || '');
   }
 
+  // Only follow a same-origin, real catalog page (defense-in-depth on top of the
+  // server's fail-closed nav). window.RyujinPages comes from /assets/page-catalog.js,
+  // which every host page loads with `defer` BEFORE this shell (no async race).
+  // FAILS CLOSED if it is somehow absent — a host page embedding this shell MUST
+  // include <script src="/assets/page-catalog.js" defer> ahead of it.
+  function ryNavSafe(u) {
+    return !!(window.RyujinPages && window.RyujinPages.validateUrl && window.RyujinPages.validateUrl(u));
+  }
+
   // ─── Actions ───────────────────────────────────────────────────
   async function loadOptions(stateId) {
     loading = true;
@@ -255,7 +264,7 @@
     const k = o.kind;
     const p = o.payload || {};
     if (k === 'navigate_to' || k === 'escalate_to_advanced') {
-      if (p.url) window.location.href = p.url;
+      if (p.url && ryNavSafe(p.url)) window.location.href = p.url;
       return;
     }
     if (k === 'open_estimate') { window.location.href = '/admin.html#estimates'; return; }

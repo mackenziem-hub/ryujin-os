@@ -36,6 +36,15 @@
     return location.pathname + (location.search || '') + (location.hash || '');
   }
 
+  // Only follow a same-origin, real catalog page (defense-in-depth on top of the
+  // server's fail-closed nav). window.RyujinPages comes from /assets/page-catalog.js,
+  // which every host page loads with `defer` BEFORE this shell (no async race).
+  // FAILS CLOSED if it is somehow absent — a host page embedding this shell MUST
+  // include <script src="/assets/page-catalog.js" defer> ahead of it.
+  function ryNavSafe(u) {
+    return !!(window.RyujinPages && window.RyujinPages.validateUrl && window.RyujinPages.validateUrl(u));
+  }
+
   // Pillar resolution order:
   //   1. window.__RYUJIN_PILLAR__   (set by page-level inline script)
   //   2. <html data-pillar="…">     (set declaratively in markup)
@@ -793,7 +802,7 @@
     const k = action.kind;
     const p = action.payload || {};
     if (k === 'navigate_to') {
-      if (p.url) window.location.href = p.url;
+      if (p.url && ryNavSafe(p.url)) window.location.href = p.url;
       return `Opening ${p.url}`;
     }
     if (k === 'open_estimate') {

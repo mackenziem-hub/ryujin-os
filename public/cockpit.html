@@ -9,6 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <!-- Auth gate: tokenless users bounce to /login before any cockpit logic runs -->
 <script src="/assets/auth-guard.js"></script>
+<script src="/assets/page-catalog.js"></script>
 <style>
 :root{
   --bg:#030611; --bg-2:#06101f;
@@ -226,6 +227,15 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg)
     return location.pathname+(location.search||'')+(location.hash||'');
   }
 
+  // Client-side nav guard (defense-in-depth on top of the server's fail-closed
+  // pageCatalog). Only follow a same-origin, real catalog page.
+  function ryNavSafe(u){
+    // page-catalog.js loads synchronously in <head> before this runs. If it is
+    // somehow absent, FAIL CLOSED (an allow-list that admits uncatalogued pages
+    // when unavailable is not an allow-list).
+    return !!(window.RyujinPages && window.RyujinPages.validateUrl && window.RyujinPages.validateUrl(u));
+  }
+
   // ── 4 contextual choices (/api/options) ──
   function renderSkeletonChoices(){ choicesEl.innerHTML=''; for(var i=0;i<4;i++){ var s=document.createElement('div'); s.className='choice skeleton'; s.textContent='...'; choicesEl.appendChild(s); } }
   function loadOptions(){
@@ -247,7 +257,7 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg)
   }
   function executeOption(o){
     var k=o.kind, p=o.payload||{};
-    if(k==='navigate_to' && p.url){ window.location.href=p.url; return; }
+    if(k==='navigate_to' && p.url){ if(ryNavSafe(p.url)) window.location.href=p.url; return; }
     if(k==='open_estimate'){ window.location.href='/admin.html#estimates'; return; }
     if(k==='open_customer' && p.customer_id){ window.location.href='/customer-profile.html?id='+encodeURIComponent(p.customer_id); return; }
     if(k==='run_agent' && p.agent_slug){ summon('Run the '+p.agent_slug+' agent and summarize what it found.'); return; }
@@ -314,7 +324,7 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg)
             else if(d.tool_start && d.tool_start.id){ setState('thinking'); if(!toolsWrap){toolsWrap=document.createElement('div');toolsWrap.className='tools';aEl.appendChild(toolsWrap);} var tn=document.createElement('div'); tn.className='tool wait'; tn.innerHTML='<span class="dot"></span><span>'+esc(d.tool_start.label||'Working')+'</span>'; toolsWrap.appendChild(tn); toolNodes[d.tool_start.id]=tn; aMsg.tools.push({label:d.tool_start.label,status:'wait'}); scrollDown(); }
             else if(d.tool_end && d.tool_end.id){ toolEnded[d.tool_end.id]=true; var node=toolNodes[d.tool_end.id]; if(node) node.className='tool '+(d.tool_end.status==='error'?'err':d.tool_end.status==='pending_approval'?'wait':'ok'); if(d.tool_end.status==='pending_approval'&&d.tool_end.code) addApproval(aEl,d.tool_end.code); }
             else if(d.matched_archetype){ aMsg.lens=d.matched_archetype; }
-            else if(d.navigate && d.navigate.url){ if(String(d.navigate.url).charAt(0)==='/') pendingNav=d.navigate.url; }
+            else if(d.navigate && d.navigate.url){ if(ryNavSafe(d.navigate.url)) pendingNav=d.navigate.url; }
             else if(d.done){ if(d.conversation_id) streamConvId=d.conversation_id; finished=true; break; }
             else if(d.error){ aMsg.error=d.error; flipStuck(); var ee=document.createElement('div'); ee.style.cssText='color:var(--red);font-size:0.85em;margin-top:6px'; ee.textContent='Error: '+d.error; aEl.appendChild(ee); finished=true; break; }
           }
