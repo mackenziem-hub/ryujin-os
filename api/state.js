@@ -58,10 +58,10 @@ async function handler(req, res) {
   if (userId) {
     const u = await supabaseAdmin
       .from('users')
-      .select('id, full_name, email, role')
+      .select('id, name, email, role')
       .eq('id', userId)
       .maybeSingle();
-    if (u.data) user = { id: u.data.id, name: u.data.full_name || u.data.email, role: u.data.role };
+    if (u.data) user = { id: u.data.id, name: u.data.name || u.data.email, role: u.data.role };
   }
 
   // Briefing: today's items, optionally user-filtered (null for_user_id = all-hands)
