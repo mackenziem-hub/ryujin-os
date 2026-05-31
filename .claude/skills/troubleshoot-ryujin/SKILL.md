@@ -1,6 +1,6 @@
 ---
 name: troubleshoot-ryujin
-description: Guided, safe troubleshooting of the Ryujin OS codebase for a non-technical operator (e.g. Cat) working in Claude Code on the web. Invoke when someone reports that something in Ryujin is broken, behaving wrong, or needs a fix (a page, button, form, calendar, quote, proposal, email, number, or crew/admin tool), or asks how a part of Ryujin works. Walks the loop: understand the symptom, find the real cause, propose a minimal fix in plain English, package it as a branch for Mac to approve, and tell the reporter how to verify. Enforces the repo's deploy rules and keeps risky changes gated behind Mac.
+description: Guided, safe troubleshooting of the Ryujin OS codebase for a non-technical operator (e.g. Cat) working in Claude Code on the web. Invoke when someone reports that something in Ryujin is broken, behaving wrong, or needs a fix (a page, button, form, calendar, quote, proposal, email, number, or crew/admin tool), or asks how a part of Ryujin works. Walks the loop from understanding the symptom to finding the real cause, proposing a minimal fix in plain English, packaging it as a branch for Mac to approve, and telling the reporter how to verify. Enforces the repo's deploy rules and keeps risky changes gated behind Mac.
 ---
 
 # Troubleshoot Ryujin
