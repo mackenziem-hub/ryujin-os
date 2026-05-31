@@ -173,10 +173,18 @@ async function handler(req, res) {
   // day-then-time, the admin grid keeps the per-day buckets.
   const jobs = [];
 
+  // Map estimate id -> its backing workorder (if any). When an estimate keeps a
+  // scheduled_at AND has a linked WO, the dedup below renders the estimate
+  // install and skips the WO row; attaching the WO here keeps that install
+  // editable from the calendar and writing to the right workorder.
+  const woByEstimateId = {};
+  for (const w of (wos.data || [])) if (w.linked_estimate_id) woByEstimateId[w.linked_estimate_id] = w;
+
   for (const e of ests.data || []) {
     const key = (e.scheduled_at || '').slice(0, 10);
     if (!byDay.has(key)) continue;
     const linkedProject = (e.projects && e.projects[0]) || null;
+    const linkedWo = woByEstimateId[e.id] || null;
     const crewIds = linkedProject?.crew_members || [];
     let crew = crewIds.map(id => crewById[id]).filter(Boolean);
     // Fallback: if crew_members[] is empty but crew_lead exists, show the
@@ -206,6 +214,13 @@ async function handler(req, res) {
       crew_lead: linkedProject?.crew_lead || null,
       crew,
       photo_count: linkedProject ? (photoCountByProject[linkedProject.id] || 0) : 0,
+      // WO backing (see woByEstimateId): lets the calendar edit this install in
+      // place and write to the real workorder row, with accurate prefills.
+      wo_id: linkedWo?.id || null,
+      wo_number: linkedWo?.wo_number || null,
+      sub_crew_lead: linkedWo?.sub_crew_lead || null,
+      duration_days: linkedWo?.estimated_duration_days || null,
+      special_notes: linkedWo?.special_notes || null,
     };
     byDay.get(key).installs.push(install);
     jobs.push(install);
