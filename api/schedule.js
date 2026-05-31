@@ -244,6 +244,10 @@ async function handler(req, res) {
       crew,
       photo_count: linkedProject ? (photoCountByProject[linkedProject.id] || 0) : 0,
       wo_number: w.wo_number || null,
+      // The event `id` above is the estimate id for estimate-linked WOs, so it
+      // is NOT safe to PUT against /api/workorders. Carry the real workorder id
+      // separately for the calendar's inline crew/schedule edit.
+      wo_id: w.id,
       sub_crew_lead: w.sub_crew_lead || null,
       total_sq: w.total_sq || null,
       duration_days: w.estimated_duration_days || null,
