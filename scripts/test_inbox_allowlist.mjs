@@ -21,6 +21,11 @@ check('bare-string entry', matchAllowlist('Ben Carter', ['ben']), true);
 check('apostrophe is a word boundary', matchAllowlist("Ben's Plumbing", ['ben']), true);
 check('exact single-word name', matchAllowlist('Jessica', [{ match: 'jessica' }]), true);
 
+// Unicode / accented names (bilingual NB) — \b would miss these
+check('accented name matches (bare string)', matchAllowlist('Éric Leblanc', ['éric']), true);
+check('accented name matches (object entry)', matchAllowlist('José', [{ match: 'josé' }]), true);
+check('accented whole-word guard holds', matchAllowlist('Érica Mendès', ['éric']), false);
+
 // Non-matches (the whole-word guard is the point)
 check('substring inside a longer word does NOT match', matchAllowlist('Bensen Roofing Supply', ['ben']), false);
 check('different person', matchAllowlist('Sarah Lee', list), false);

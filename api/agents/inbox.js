@@ -117,8 +117,12 @@ export function matchAllowlist(contactName, allowlist) {
     const token = String(entry.match == null ? '' : entry.match).trim();
     if (!token) continue;
     const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Unicode-aware whole-word match. JS \b is ASCII-only, so it would miss
+    // accented names (Eric->Éric, Jose->José) that are common in bilingual NB.
+    // Lookarounds on \p{L}/\p{N} (with the u flag) give a real word boundary
+    // across Unicode letters/digits, so "ben" still won't hit "Bensen".
     let re;
-    try { re = new RegExp(`\\b${escaped}\\b`, 'i'); } catch { continue; }
+    try { re = new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'iu'); } catch { continue; }
     if (re.test(name)) return { match: token, note: entry.note ? String(entry.note) : '' };
   }
   return null;
