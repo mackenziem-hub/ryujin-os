@@ -29,7 +29,9 @@ function portalForRole(role, name) {
   if (named.includes(slug)) return `/portal-${slug === 'mackenzie' ? 'mac' : slug}.html`;
   if (role === 'owner' || role === 'admin') return '/admin-overview.html';
   if (role === 'sales' || role === 'estimator') return '/portal.html?role=sales';
-  return '/portal.html?role=crew';
+  // Crew land on the unified field app (Tasks / Projects / Media / Clock / Messages),
+  // not the thin launcher — it's the only crew surface with timesheet + photo upload.
+  return '/app.html';
 }
 
 export default async function handler(req, res) {

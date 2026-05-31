@@ -7,6 +7,7 @@ import { supabaseAdmin } from '../lib/supabase.js';
 import { requireTenant } from '../lib/tenant.js';
 import { requireOwnerOrAdmin } from '../lib/auth-server.js';
 import { hashPassword } from '../lib/passwords.js';
+import crypto from 'node:crypto';
 
 // SECURITY: never expose password_hash, reset_token, or reset_token_expires_at via this API.
 // Any new sensitive column added to the users table must be EXCLUDED here.
@@ -83,6 +84,37 @@ async function handler(req, res) {
       if (error.code === '23505') return res.status(409).json({ error: 'That username or email is already in use.' });
       return res.status(500).json({ error: error.message });
     }
+
+    // Invite mode: mint a single-use reset_token so the new hire can set their own
+    // password via /accept-invite.html (reached through the SMS-safe /i/<firstname>
+    // short link). Without this, the user row exists but has no way to sign in.
+    // The token is a bearer credential, so we build the URLs for the authenticated
+    // admin who just created the account but never echo the raw token via SAFE_USER_FIELDS.
+    if (body.invite) {
+      // 40-char hex matches the system's reset_token convention and accept-invite.html's
+      // token slicing (it trims to the first 40 hex chars), so the token survives intact.
+      const token = crypto.randomBytes(20).toString('hex');
+      const ttlDays = Math.max(1, Math.min(30, Number(body.invite_ttl_days) || 7));
+      const expiresAt = new Date(Date.now() + ttlDays * 86400000).toISOString();
+      const { error: tErr } = await supabaseAdmin
+        .from('users')
+        .update({ reset_token: token, reset_token_expires_at: expiresAt })
+        .eq('id', data.id);
+      if (tErr) return res.status(500).json({ error: 'User created but invite link failed: ' + tErr.message });
+      // Only emit the /i/<firstname> short link when the first name is purely letters.
+      // api/i.js strips non-letters from the slug but compares it against the RAW first
+      // token, so a punctuated name (e.g. "Jean-Luc") never resolves. Returning null for
+      // those forces callers to the token-specific invite_url, which always works.
+      const firstToken = name.toLowerCase().split(/\s+/)[0];
+      const shortSlug = /^[a-z]+$/.test(firstToken) ? firstToken : null;
+      return res.status(201).json({
+        ...data,
+        invite_url: `/accept-invite.html?token=${token}`,
+        short_url: shortSlug ? `/i/${shortSlug}` : null,
+        invite_expires_at: expiresAt,
+      });
+    }
+
     return res.status(201).json(data);
   }
 
