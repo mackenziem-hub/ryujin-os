@@ -73,12 +73,16 @@ h1{
 .rangeSelector button:not(.active):hover{color:var(--text)}
 
 .legend{display:flex;flex-wrap:wrap;gap:8px;font-size:0.7em;color:var(--text-dim);margin-bottom:14px}
-.legend .lg{display:inline-flex;align-items:center;gap:5px;background:rgba(8,12,24,0.5);border:1px solid var(--border);padding:4px 9px;border-radius:10px}
+.legend .lg{display:inline-flex;align-items:center;gap:5px;background:rgba(8,12,24,0.5);border:1px solid var(--border);padding:4px 9px;border-radius:10px;font:inherit;color:var(--text-dim);cursor:pointer;transition:opacity .12s,border-color .12s}
+.legend .lg:hover{border-color:var(--cyan)}
+.legend .lg.off{opacity:0.4}
+.legend .lg.off .dot{box-shadow:none !important;opacity:0.5}
 .legend .dot{width:8px;height:8px;border-radius:50%}
 .legend .dot.install{background:var(--cyan);box-shadow:0 0 6px var(--cyan)}
 .legend .dot.service{background:var(--orange);box-shadow:0 0 6px var(--orange)}
 .legend .dot.inspection{background:var(--violet);box-shadow:0 0 6px var(--violet)}
 .legend .dot.gcal{background:var(--green);box-shadow:0 0 6px var(--green)}
+.legend .dot.block{background:#94a3b8;box-shadow:0 0 6px #94a3b8}
 
 /* Per-day grid layout adapts to range:
    day = 1 col (mobile + desktop)
@@ -554,6 +558,31 @@ function updateToolbar(){
   }
 }
 
+// Source filters: click a legend chip to hide/show that event kind. Filter
+// state is in-memory (resets per load); toolbar counts stay totals.
+const LEGEND_ITEMS = [
+  { kind: 'install', label: 'Install' },
+  { kind: 'inspection', label: 'Inspection' },
+  { kind: 'service', label: 'Service' },
+  { kind: 'block', label: 'Blocks' },
+  { kind: 'gcal', label: 'Google Cal' }
+];
+const HIDDEN = new Set();
+function renderLegend(){
+  const el = document.getElementById('legend');
+  if (!el) return;
+  el.innerHTML = LEGEND_ITEMS.map(it => {
+    const off = HIDDEN.has(it.kind);
+    return `<button type="button" class="lg${off ? ' off' : ''}" data-kind="${it.kind}" aria-pressed="${off ? 'false' : 'true'}" title="${off ? 'Show' : 'Hide'} ${esc(it.label)}"><span class="dot ${it.kind}"></span>${esc(it.label)}</button>`;
+  }).join('');
+  el.querySelectorAll('.lg[data-kind]').forEach(b => b.addEventListener('click', () => {
+    const k = b.dataset.kind;
+    if (HIDDEN.has(k)) HIDDEN.delete(k); else HIDDEN.add(k);
+    renderLegend();
+    rerender();
+  }));
+}
+
 function rerender(){
   const sched = STATE.sched.data || { days: [], jobs: [], total_service: 0 };
   const ghl = STATE.ghl.data || { appointments: [] };
@@ -561,10 +590,15 @@ function rerender(){
   const blocks = STATE.blocks.data || { blocks: [] };
   const merged = normalize(sched, ghl, gcal, blocks);
   const hasAny = merged.some(d => d.events.length > 0);
+  // Apply legend source filters before rendering (hides cards on board + crew
+  // lanes only; toolbar counts remain totals).
+  const view = HIDDEN.size
+    ? merged.map(d => ({ date: d.date, events: d.events.filter(e => !HIDDEN.has(e.kind)) }))
+    : merged;
   const allSettled = STATE.sched.status !== 'loading' && STATE.ghl.status !== 'loading' && STATE.gcal.status !== 'loading' && STATE.blocks.status !== 'loading';
   if (hasAny || allSettled) {
-    renderDayView(merged);
-    renderCrewView(merged);
+    renderDayView(view);
+    renderCrewView(view);
   }
   updateToolbar();
 }
@@ -1224,14 +1258,9 @@ function wireKitChrome(){
   // Wire static chrome to the icon kit once the icon map has loaded.
   const fab = document.getElementById('fab');
   if (fab) fab.innerHTML = ic('new-booking') || '+';
-  const legend = document.getElementById('legend');
-  if (legend && ICONS && Object.keys(ICONS).length){
-    legend.innerHTML =
-      `<span class="lg" style="color:var(--cyan)">${ic('booked')} Install</span>` +
-      `<span class="lg" style="color:var(--violet)">${ic('site-inspection')} Inspection</span>` +
-      `<span class="lg" style="color:var(--orange)">${ic('service-call')} Service Call</span>` +
-      `<span class="lg" style="color:var(--green)">${ic('today')} Google Cal</span>`;
-  }
+  // The legend is now interactive source-filter chips (renderLegend owns it),
+  // so keep it dot-based + clickable instead of overwriting with static icons.
+  renderLegend();
 }
 
 (async function init(){
@@ -1241,6 +1270,9 @@ function wireKitChrome(){
     const fab = document.getElementById('fab');
     if (fab) fab.style.display = 'none';
   }
+  // Interactive source-filter legend, available immediately (independent of the
+  // icon kit / data load).
+  renderLegend();
   // Icon kit is decorative + has a no-op fallback: wire chrome and repaint when
   // it settles, but never gate the operational data load on it.
   iconsReady.then(() => { wireKitChrome(); rerender(); });

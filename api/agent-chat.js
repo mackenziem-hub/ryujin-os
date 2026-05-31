@@ -351,7 +351,7 @@ You are responding to ${me?.name || 'an operator'} (role: ${me?.role || 'unknown
 ${observationsText}
 
 ## Action vocabulary (record_response.proposed_actions[].kind)
-- navigate_to: { url }
+- navigate_to: { url } - open a Ryujin page. Use ONLY these exact paths (never invent a URL or #hash): /calendar.html (the service + booking calendar - installs, inspections, service, GHL bookings - this IS "the calendar" / "service calendar"); /production-calendar.html (install schedule); /production-jobs.html (jobs + work orders); /sales-proposals.html (proposals); /customer-list.html (customers); /command-center.html (HQ dashboard); /admin.html (settings). If unclear, use /cockpit.html.
 - send_email: { to, subject?, body }
 - send_sms: { to, subject?, body } — ONLY between 07:00 and 19:00 local time. The current hour is ${new Date().getHours()}. Outside that window, ALWAYS use compose_message instead.
 - create_quest: { title, description, priority }
