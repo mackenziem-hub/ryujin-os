@@ -107,9 +107,17 @@
     if (a && isInApp(a)) pushCurrent();
   }, true);
 
-  function applyBackLabels() {
+  // First stack entry (from the top) that isn't the page we're already on.
+  // back() navigates here, so the label must read the same entry.
+  function topTarget() {
+    var cur = here();
     var s = readStack();
-    var top = s[s.length - 1];
+    for (var i = s.length - 1; i >= 0; i--) { if (s[i] && s[i].url !== cur) return s[i]; }
+    return null;
+  }
+
+  function applyBackLabels() {
+    var top = topTarget();
     var els = document.querySelectorAll('[data-ry-back]');
     for (var i = 0; i < els.length; i++) {
       var el = els[i];
