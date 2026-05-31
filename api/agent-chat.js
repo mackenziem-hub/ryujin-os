@@ -26,6 +26,7 @@ import { routeIntent } from '../lib/router.js';
 import { attachNoteToEntity } from '../lib/agentNote.js';
 import { INTENT_SLUGS } from '../lib/routingMap.js';
 import { catalogForPrompt, sanitizeNavAction } from '../lib/pageCatalog.js';
+import { loadSnapshotObservations } from '../lib/observations.js';
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const MODEL = 'claude-sonnet-4-6';
@@ -340,7 +341,13 @@ async function handler(req, res) {
     userId: me?.id || null,
     isAdmin,
   });
-  const observationsText = formatObservations(obs);
+  // Shared cross-pillar awareness: the active-jobs roster + revenue totals
+  // the master brain sees (Plus Ultra only; '' for other tenants). Appended so
+  // a pillar agent can answer "what's on today?" with the real roster.
+  const snapshotText = await loadSnapshotObservations(req.tenant.slug);
+  const observationsText = snapshotText
+    ? `${formatObservations(obs)}\n\n${snapshotText}`
+    : formatObservations(obs);
 
   const system = `${pillarConfig.persona_prompt}
 

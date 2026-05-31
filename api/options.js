@@ -20,6 +20,7 @@ import { requireTenant } from '../lib/tenant.js';
 import { requirePillar } from '../lib/entitlements.js';
 import { resolvePillar, archetypeOf } from '../lib/archetypeRegistry.js';
 import { catalogForPrompt, sanitizeNavAction } from '../lib/pageCatalog.js';
+import { loadSnapshotObservations } from '../lib/observations.js';
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const MODEL = 'claude-sonnet-4-6';
@@ -139,7 +140,12 @@ async function handler(req, res) {
   if (!pillarConfig) return res.status(400).json({ error: `unknown pillar: ${pillarSlug}` });
 
   const obs = await loadObservations(req.tenant.id, pillarSlug);
-  const observationsText = formatObservations(obs);
+  // Shared cross-pillar awareness: active-jobs roster + revenue totals from
+  // /api/snapshot (Plus Ultra only; '' for other tenants).
+  const snapshotText = await loadSnapshotObservations(req.tenant.slug);
+  const observationsText = snapshotText
+    ? `${formatObservations(obs)}\n\n${snapshotText}`
+    : formatObservations(obs);
 
   const system = `${pillarConfig.persona_prompt}
 
