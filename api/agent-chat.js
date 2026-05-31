@@ -25,7 +25,7 @@ import { resolveCustomer, resolveEstimate } from '../lib/entityResolver.js';
 import { routeIntent } from '../lib/router.js';
 import { attachNoteToEntity } from '../lib/agentNote.js';
 import { INTENT_SLUGS } from '../lib/routingMap.js';
-import { catalogForPrompt, sanitizeNavAction } from '../lib/pageCatalog.js';
+import { catalogForPrompt, sanitizeNavAction, describeCurrentPage } from '../lib/pageCatalog.js';
 import { loadSnapshotObservations } from '../lib/observations.js';
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -349,12 +349,18 @@ async function handler(req, res) {
     ? `${formatObservations(obs)}\n\n${snapshotText}`
     : formatObservations(obs);
 
+  // Where the operator is right now (fail-closed: '' unless a real catalog page).
+  const pageSentence = describeCurrentPage(body.current_page);
+  const pageContext = pageSentence
+    ? `\n## Where the operator is\n${pageSentence} When they say "this", "here", or "this job/page", resolve it to this page/record.\n`
+    : '';
+
   const system = `${pillarConfig.persona_prompt}
 
 You are responding to ${me?.name || 'an operator'} (role: ${me?.role || 'unknown'}) on Ryujin OS. Use BOTH tools each turn:
 1. record_response — your reply + up to 4 proposed actions
 2. extract_entities — pull customer / intent / urgency / confidence
-
+${pageContext}
 ## Observations
 ${observationsText}
 
