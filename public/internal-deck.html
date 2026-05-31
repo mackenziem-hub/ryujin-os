@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0e1a35">
+<meta name="robots" content="noindex, nofollow">
+<title>Ryujin · Internal Document</title>
+<link rel="icon" href="/apple-touch-icon.png">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;height:100%;background:#0a0e1a;color:#fff;font-family:'Inter',system-ui,-apple-system,sans-serif}
+  #msg{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;text-align:center;padding:28px}
+  #msg .lock{font-size:2.4em}
+  #msg h1{font-size:1.4em;font-weight:800;color:#facc15;margin:0}
+  #msg p{color:rgba(255,255,255,0.72);max-width:480px;line-height:1.55;margin:0}
+  #msg a{color:#fde047;font-weight:700;text-decoration:none;border-bottom:1px solid rgba(250,204,21,0.5)}
+  iframe{position:fixed;inset:0;width:100%;height:100%;border:0;background:#0a0e1a}
+</style>
+</head>
+<body>
+<div id="msg"><div class="lock">🔒</div><h1>Loading internal document</h1><p>Verifying your Ryujin session.</p></div>
+<script>
+(function () {
+  var params = new URLSearchParams(location.search);
+  var slug = (params.get('slug') || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
+  var msg = document.getElementById('msg');
+  function show(title, body) {
+    msg.innerHTML = '<div class="lock">🔒</div><h1>' + title + '</h1><p>' + body + '</p>';
+  }
+  if (!slug) { show('No document specified', 'This link is missing a document id.'); return; }
+
+  var loginUrl = '/login.html?next=' + encodeURIComponent(location.pathname + location.search);
+  var token = null;
+  try { token = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token'); } catch (e) {}
+  if (!token) {
+    show('Sign in required', 'This is a confidential internal document. <a href="' + loginUrl + '">Sign in</a> with an owner or admin account to view it.');
+    return;
+  }
+
+  fetch('/api/internal-deck?slug=' + encodeURIComponent(slug), { headers: { Authorization: 'Bearer ' + token } })
+    .then(function (r) {
+      if (r.status === 401) { show('Session expired', 'Please <a href="' + loginUrl + '&force=1">sign in</a> again to view this document.'); return null; }
+      if (r.status === 403) { show('Not authorized', 'This document is restricted to owner and admin accounts.'); return null; }
+      if (r.status === 404) { show('Not found', 'No internal document matches this link.'); return null; }
+      if (!r.ok) { show('Could not load', 'Something went wrong loading this document.'); return null; }
+      return r.text();
+    })
+    .then(function (html) {
+      if (html == null) return;
+      // Inject the real deck id so presentation.js keys notes correctly inside
+      // the srcdoc iframe (where location.pathname is about:srcdoc).
+      var idTag = '<script>window.RYUJIN_DECK_ID=' + JSON.stringify('deck-' + slug) + ';<\/script>';
+      var injected = html.indexOf('</head>') !== -1
+        ? html.replace('</head>', idTag + '</head>')
+        : idTag + html;
+      var f = document.createElement('iframe');
+      f.setAttribute('allow', 'fullscreen');
+      f.srcdoc = injected;
+      document.body.appendChild(f);
+      if (msg && msg.parentNode) msg.parentNode.removeChild(msg);
+    })
+    .catch(function () { show('Could not load', 'Network error loading this document.'); });
+})();
+</script>
+</body>
+</html>
