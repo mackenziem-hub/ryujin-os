@@ -483,6 +483,8 @@ const DRAG = { active: false, resizing: false, inflight: false, suppressClick: f
 // 90 days max so quarter caps there. Default week matches the original layout.
 const RANGE_DAYS = { day: 1, week: 7, month: 30, quarter: 90 };
 let currentRange = 'week';
+let PENDING_EVT = null; // event id to reopen in the drawer after a back-restore
+let RESTORE_GEN = 0;    // bumped per restore so an older backstop timer cannot clear a newer one
 function currentDays(){ return RANGE_DAYS[currentRange]; }
 
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
@@ -667,6 +669,7 @@ function rerender(){
     if (currentRange === 'week' || currentRange === 'day') renderTimeGrid(view);
     else renderDayView(view);
     renderCrewView(view);
+    maybeReopenDrawer();
   }
   updateToolbar();
 }
@@ -1257,6 +1260,7 @@ function openDrawer(ev){
     <div class="actions">${actions}</div>
   `;
   document.getElementById('drawerMask').classList.add('on');
+  saveCalState({ evtId: ev.wo_id || ev.id }); // remember this event for back-restore
   document.getElementById('drawerClose').addEventListener('click', closeDrawer);
   const delBtn = document.getElementById('blockDelete');
   if (delBtn) delBtn.addEventListener('click', () => deleteBlock(delBtn.dataset.id));
@@ -1344,8 +1348,61 @@ async function deleteBlock(id){
   loadAll();
 }
 
-function closeDrawer(){ document.getElementById('drawerMask').classList.remove('on'); }
+function closeDrawer(){ document.getElementById('drawerMask').classList.remove('on'); if (window.RyujinNav) RyujinNav.saveState({ evtId: null }); }
 document.getElementById('drawerMask').addEventListener('click', e => { if (e.target.id === 'drawerMask') closeDrawer(); });
+
+// --- Restore calendar context (range / view / open event) on back-navigation ---
+// Save the current range+view (plus the open event, if any) so RyujinNav's back
+// control returns here in the same layout with the same event drawer reopened.
+function saveCalState(extra){
+  if (!window.RyujinNav) return;
+  RyujinNav.saveState(Object.assign({ range: currentRange, view: document.body.dataset.view }, extra || {}));
+}
+function maybeReopenDrawer(){
+  if (!PENDING_EVT) return;
+  const els = document.querySelectorAll('#board .evt[data-evt]');
+  for (let i = 0; i < els.length; i++){
+    let ev; try { ev = JSON.parse(els[i].dataset.evt); } catch(_){ continue; }
+    if (ev && (ev.wo_id === PENDING_EVT || ev.id === PENDING_EVT)){
+      PENDING_EVT = null;
+      openDrawer(ev);
+      return;
+    }
+  }
+  // Not found in this paint -> wait for the next one (a slow source may still be
+  // loading). The restore handler's guarded timeout stops waiting if it never comes.
+}
+window.addEventListener('ry-nav-restore', (e) => {
+  const d = e.detail || {};
+  if (d.range && RANGE_DAYS[d.range]){
+    currentRange = d.range;
+    document.body.dataset.range = d.range;
+    const days = RANGE_DAYS[d.range];
+    document.querySelectorAll('.rangeSelector button').forEach(b => {
+      const on = Number(b.dataset.days) === days;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+  }
+  if (d.view === 'day' || d.view === 'crew'){
+    document.body.dataset.view = d.view;
+    const day = document.getElementById('btnDay'), crew = document.getElementById('btnCrew');
+    if (day && crew){
+      day.classList.toggle('active', d.view === 'day');
+      crew.classList.toggle('active', d.view === 'crew');
+      day.setAttribute('aria-selected', d.view === 'day' ? 'true' : 'false');
+      crew.setAttribute('aria-selected', d.view === 'crew' ? 'true' : 'false');
+    }
+  }
+  const want = d.evtId || null;
+  PENDING_EVT = want;
+  const gen = ++RESTORE_GEN;
+  loadAll(); // maybeReopenDrawer (hooked in paint) reopens once the event renders.
+  // Give up only after longer than the slowest fetch (GHL ~12s timeout), and only
+  // if no newer restore has happened since (gen guard) -- so overlapping loads or a
+  // repeat restore of the same event are never cancelled early.
+  if (want) setTimeout(() => { if (RESTORE_GEN === gen) PENDING_EVT = null; }, 15000);
+});
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
 
 // Smart Back: if we arrived here from another Ryujin page, go back to it.
@@ -1368,6 +1425,7 @@ document.getElementById('btnDay').addEventListener('click', () => {
   document.getElementById('btnCrew').classList.remove('active');
   document.getElementById('btnDay').setAttribute('aria-selected','true');
   document.getElementById('btnCrew').setAttribute('aria-selected','false');
+  saveCalState();
 });
 document.getElementById('btnCrew').addEventListener('click', () => {
   document.body.dataset.view = 'crew';
@@ -1375,6 +1433,7 @@ document.getElementById('btnCrew').addEventListener('click', () => {
   document.getElementById('btnDay').classList.remove('active');
   document.getElementById('btnCrew').setAttribute('aria-selected','true');
   document.getElementById('btnDay').setAttribute('aria-selected','false');
+  saveCalState();
 });
 
 // Range selector wires. Switching ranges re-fires the fetches with new
@@ -1389,6 +1448,7 @@ document.querySelectorAll('.rangeSelector button').forEach(btn => {
       b.classList.toggle('active', b === btn);
       b.setAttribute('aria-selected', b === btn ? 'true' : 'false');
     });
+    saveCalState();
     loadAll();
   });
 });
