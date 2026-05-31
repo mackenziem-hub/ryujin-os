@@ -277,9 +277,12 @@ export default async function handler(req, res) {
   if (!auth.ok) return res.status(401).json({ error: auth.error });
 
   const tenantSlug = (req.query?.tenant || req.headers['x-tenant-id'] || PLUS_ULTRA_SLUG).toString();
-  // GET = the 30-min cron; POST (or ?manual=1) = an owner-triggered run.
-  // trigger must match the agent_runs.trigger CHECK ('cron_daily' | 'manual').
-  const trigger = (req.method === 'POST' || req.query?.manual === '1') ? 'manual' : 'cron_daily';
+  // Only the Vercel cron authenticates via the injected Bearer CRON_SECRET;
+  // every owner trigger (the admin "re-run now" sends a GET with x-owner-call,
+  // or a POST) is manual. Distinguish by the auth result, not the HTTP method,
+  // so operator reruns are not mislabeled as the scheduled cron. Value must
+  // match the agent_runs.trigger CHECK ('cron_daily' | 'manual').
+  const trigger = auth.via === 'cron-secret' ? 'cron_daily' : 'manual';
   const startTime = Date.now();
 
   try {
