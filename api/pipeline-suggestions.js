@@ -158,10 +158,19 @@ async function bulkConfirmSafe(req, res, session) {
     //    (no-regress, race-safe). If it already advanced (a duplicate safe
     //    suggestion or another process), the claimed suggestion is still validly
     //    confirmed and the folder is already past 'unknown', so nothing is stuck.
-    await supabaseAdmin
+    const { error: fErr } = await supabaseAdmin
       .from('job_folders')
       .update({ current_stage: s.suggested_stage, stage_confirmed_at: now, stage_confirmed_by: session.user_id })
       .eq('id', s.job_folder_id).eq('current_stage', 'unknown');
+    if (fErr) {
+      // Hard folder-write failure after we claimed: roll the claim back to pending
+      // so it is retried, rather than leaving a confirmed-but-unapplied suggestion.
+      await supabaseAdmin.from('pipeline_suggestions')
+        .update({ status: 'pending', confirmed_stage: null, resolved_at: null, resolved_by: null })
+        .eq('id', s.id);
+      skipped++;
+      continue;
+    }
     confirmed++;
     byStage[s.suggested_stage] = (byStage[s.suggested_stage] || 0) + 1;
   }
