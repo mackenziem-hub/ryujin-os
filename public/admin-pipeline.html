@@ -87,6 +87,7 @@
   <button data-filter="dismissed">Dismissed</button>
   <div class="spacer"></div>
   <button id="btnRun">Re-run agent now</button>
+  <button id="btnAutoAccept" title="Confirm every pending completed/paid suggestion on a still-unknown folder. Inferred stages stay for review.">Auto-accept completed/paid</button>
   <span class="meta" id="counter">loading…</span>
 </div>
 
@@ -276,6 +277,26 @@ document.getElementById('btnRun').addEventListener('click', async () => {
     const j = await r.json();
     btn.textContent = `${j.data?.suggestions_emitted ?? '?'} new`;
     setTimeout(() => { btn.textContent = 'Re-run agent now'; btn.disabled = false; load(); }, 1500);
+  } catch (e) {
+    btn.textContent = 'failed'; btn.disabled = false;
+  }
+});
+
+document.getElementById('btnAutoAccept').addEventListener('click', async () => {
+  const btn = document.getElementById('btnAutoAccept');
+  const orig = btn.textContent;
+  if (!confirm("Confirm every pending completed/paid suggestion on a still-unknown folder? These are backed by hard artifacts (completed_at, warranty PDF, paid invoice). Inferred stages are left for review.")) return;
+  btn.disabled = true; btn.textContent = 'accepting...';
+  try {
+    const r = await fetch('/api/pipeline-suggestions', {
+      method: 'PATCH', credentials: 'include',
+      headers: authHeaders({ 'content-type': 'application/json' }),
+      body: JSON.stringify({ action: 'confirm_safe' }),
+    });
+    const j = await r.json();
+    if (!r.ok) { btn.textContent = 'failed'; btn.disabled = false; alert('auto-accept failed: ' + (j.error || (r.status + ' ' + r.statusText))); return; }
+    btn.textContent = `${j.confirmed ?? 0} confirmed`;
+    setTimeout(() => { btn.textContent = orig; btn.disabled = false; load(); }, 1800);
   } catch (e) {
     btn.textContent = 'failed'; btn.disabled = false;
   }
