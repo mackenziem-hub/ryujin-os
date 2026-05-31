@@ -165,9 +165,14 @@ async function bulkConfirmSafe(req, res, session) {
     if (fErr) {
       // Hard folder-write failure after we claimed: roll the claim back to pending
       // so it is retried, rather than leaving a confirmed-but-unapplied suggestion.
-      await supabaseAdmin.from('pipeline_suggestions')
+      // If the rollback itself fails (e.g. a duplicate pending row appeared in the
+      // claim window), log it: the production agent re-derives the terminal stage
+      // from the unchanged artifact (completed_at / paid invoice) on its next run
+      // and re-suggests, so the folder self-heals rather than staying stuck.
+      const { error: rbErr } = await supabaseAdmin.from('pipeline_suggestions')
         .update({ status: 'pending', confirmed_stage: null, resolved_at: null, resolved_by: null })
         .eq('id', s.id);
+      if (rbErr) console.error('bulkConfirmSafe rollback failed for', s.id, '-', rbErr.message, '(self-heals on next agent run)');
       skipped++;
       continue;
     }
