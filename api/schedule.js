@@ -193,6 +193,11 @@ async function handler(req, res) {
     if (crew.length === 0 && linkedProject?.crew_lead) crew = [linkedProject.crew_lead];
     const install = {
       id: e.id,
+      // Estimate-scheduled install: the calendar buckets this by the estimate's
+      // scheduled_at, so it is NOT safe to drag-reschedule by writing the WO's
+      // start_date alone (it would snap back). Mark the source so the calendar
+      // only enables drag on pure workorder-bucketed installs.
+      source: 'estimate',
       label: e.customer?.full_name || 'Unnamed customer',
       ref: e.estimate_number || `est-${e.id.slice(0, 6)}`,
       state: e.state || null,
@@ -241,6 +246,9 @@ async function handler(req, res) {
     if (crew.length === 0 && linkedProject?.crew_lead) crew = [linkedProject.crew_lead];
     const wInstall = {
       id: w.estimate?.id || w.id,
+      // Workorder-bucketed install: the calendar buckets this by the WO's own
+      // start_date, so dragging it (PUT workorders.start_date) re-buckets cleanly.
+      source: 'workorder',
       label: w.estimate?.customer?.full_name || w.customer_name || 'Unnamed customer',
       ref: w.wo_number ? `WO-${w.wo_number}` : (w.estimate?.estimate_number || `wo-${w.id.slice(0, 6)}`),
       state: w.status || null,
