@@ -51,7 +51,7 @@ const OPTIONS_TOOL = {
             why: { type: 'string', description: 'One short line of evidence.' },
             kind: {
               type: 'string',
-              enum: ['navigate_to', 'send_email', 'send_sms', 'create_quest', 'run_agent', 'open_estimate', 'open_customer', 'compose_message', 'escalate_to_advanced'],
+              enum: ['navigate_to', 'send_email', 'send_sms', 'create_quest', 'run_agent', 'open_estimate', 'open_customer', 'open_job', 'open_workorder', 'compose_message', 'escalate_to_advanced'],
             },
             payload: { type: 'object', description: 'Action-specific data.' },
             recommended_rank: {
@@ -167,6 +167,8 @@ ${catalogForPrompt()}
 - run_agent: payload { agent_slug }
 - open_estimate: payload { estimate_id }
 - open_customer: payload { customer_id }
+- open_job: payload { wo } — open a job folder by its work order number (use a WO # from the Active jobs list)
+- open_workorder: payload { wo } — open the work order editor for a WO number
 - compose_message: payload { to_user, body } — internal Ryujin operator-to-operator message; the default for quiet hours
 - escalate_to_advanced: payload { url } — open the equivalent advanced-mode page when the action is too rich for a single click
 
@@ -209,11 +211,15 @@ ${catalogForPrompt()}
   }
 
   // Sort options by recommended_rank ascending for deterministic UI ordering.
+  // sanitizeNavAction fail-closes nav URLs and turns an unresolvable deep-link
+  // into a noop; the interactive shell has no noop handler, so drop noops here
+  // (options has no legitimate noop kind) rather than render a dead card.
   const options = (toolUse.input.options || [])
     .map((o, i) => ({ id: `opt_${i}`, ...o }))
     .sort((a, b) => (a.recommended_rank || 99) - (b.recommended_rank || 99))
-    .slice(0, 4)
-    .map(sanitizeNavAction); // fail-closed: never ship a hallucinated nav URL to the browser
+    .map(sanitizeNavAction)
+    .filter(o => o && o.kind !== 'noop')
+    .slice(0, 4);
 
   const archetype = archetypeOf(pillarSlug);
   return res.status(200).json({
