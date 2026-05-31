@@ -122,9 +122,9 @@ const REPS = {
     phone: '(506) 540-1052',
     email: 'mackenzie.m@plusultraroofing.com',
     photo: `${BRAND_BASE}/rep-mackenzie.png`,
-    introVideo: 'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/69e9ed12a48992f689d9d242.mp4',
+    introVideo: 'https://d2ol7oe51mr4n9.cloudfront.net/user_3DD6hYE3a5mN88Q6BxNtqBGzInz/fadc0f07-4a08-4d99-971d-a72946a79b0a.mp4',
     introVideos: {
-      shingle: 'https://assets.cdn.filesafe.space/aHotOUdq9D8m3JPrRz9n/media/69e9ed12a48992f689d9d242.mp4'
+      shingle: 'https://d2ol7oe51mr4n9.cloudfront.net/user_3DD6hYE3a5mN88Q6BxNtqBGzInz/fadc0f07-4a08-4d99-971d-a72946a79b0a.mp4'
     },
     bio: "Mackenzie is the owner of Plus Ultra Roofing — a third-generation roofing company serving Greater Moncton and beyond. He grew up on job sites, runs the crews hands-on, and signs his own name to every proposal he writes. Tech-forward, certification-backed, and committed to doing every job the way he'd want it done on his own home."
   },
