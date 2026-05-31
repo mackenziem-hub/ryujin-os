@@ -53,7 +53,7 @@ const ACTION_TOOL = {
           required: ['label', 'kind'],
           properties: {
             label: { type: 'string' },
-            kind: { type: 'string', enum: ['navigate_to', 'send_email', 'send_sms', 'create_quest', 'run_agent', 'open_estimate', 'open_customer', 'compose_message', 'noop'] },
+            kind: { type: 'string', enum: ['navigate_to', 'send_email', 'send_sms', 'create_quest', 'run_agent', 'open_estimate', 'open_customer', 'open_job', 'open_workorder', 'compose_message', 'noop'] },
             payload: { type: 'object' },
             why: { type: 'string' },
             recommended: { type: 'boolean' },
@@ -373,6 +373,8 @@ ${catalogForPrompt()}
 - run_agent: { agent_slug }
 - open_estimate: { estimate_id }
 - open_customer: { customer_id }
+- open_job: { wo } — open a job folder by its work order number (use a WO # from the Active jobs list in observations)
+- open_workorder: { wo } — open the work order editor for a WO number
 - compose_message: { to_user, body, subject? } — internal Ryujin DM, the default for quiet hours
 - noop: when no action fits
 

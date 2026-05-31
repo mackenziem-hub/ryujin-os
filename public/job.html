@@ -310,7 +310,9 @@ async function loadJob(){
     if (!customer && woParam) {
       const wR0 = await fetch('/api/workorders?limit=200', { headers });
       const allWos0 = wR0.ok ? (await wR0.json()).workorders || [] : [];
-      const matchWo = allWos0.find(w => w.id === woParam);
+      // ?wo accepts either the workorder UUID (internal links) or the visible
+      // WO number (AI open_job deep-links + how a human reads a WO).
+      const matchWo = allWos0.find(w => w.id === woParam || String(w.wo_number) === String(woParam));
       let resolvedCustomerId = matchWo?.customer_id || null;
       if (!resolvedCustomerId && matchWo?.linked_estimate_id) {
         const eR = await fetch('/api/estimates?id=' + encodeURIComponent(matchWo.linked_estimate_id), { headers });
@@ -359,7 +361,7 @@ async function loadJob(){
     );
 
     let photos = [];
-    const refWo = (woParam && workorders.find(w => w.id === woParam)) || workorders[0];
+    const refWo = (woParam && workorders.find(w => w.id === woParam || String(w.wo_number) === String(woParam))) || workorders[0];
     if (refWo) {
       try {
         const mR = await fetch('/api/estimate-photos?wo_id=' + encodeURIComponent(refWo.id), { headers });
@@ -388,15 +390,19 @@ async function loadJob(){
       } catch { /* fall through */ }
     }
 
-    render({ customer, estimates, workorders, paysheets, photos, roster, purchaseOrders });
+    // When opened via ?wo (e.g. an AI open_job deep-link), the requested WO — not
+    // just the first active one — drives the hero/status for multi-WO customers.
+    const requestedWo = woParam ? workorders.find(w => w.id === woParam || String(w.wo_number) === String(woParam)) : null;
+    render({ customer, estimates, workorders, paysheets, photos, roster, purchaseOrders, requestedWo });
   } catch(e) {
     $('stage').innerHTML = '<div class="loading">Error: ' + esc(e.message) + '</div>';
   }
 }
 
-function render({ customer, estimates, workorders, paysheets, photos, roster, purchaseOrders = [] }){
+function render({ customer, estimates, workorders, paysheets, photos, roster, purchaseOrders = [], requestedWo = null }){
   const primaryEst = estimates.sort((a,b) => (b.estimate_number||0) - (a.estimate_number||0))[0];
-  const activeWo = workorders.find(w => ['in_progress','issued'].includes(w.status)) || workorders[0];
+  // Prefer the WO the deep-link asked for; otherwise the first active/issued one.
+  const activeWo = requestedWo || workorders.find(w => ['in_progress','issued'].includes(w.status)) || workorders[0];
   const activePs = paysheets[0];
   const addr = [customer.address, customer.city, customer.province].filter(Boolean).join(', ');
   const pkg = primaryEst?.calculated_packages?.[primaryEst?.selected_package || 'gold'] || null;
