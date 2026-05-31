@@ -381,7 +381,11 @@
    *  STICKY-NOTE STATE
    * ──────────────────────────────────────────────────────────────── */
 
-  var DECK_ID = location.pathname
+  // DECK_ID is normally the filename, but a host page can set window.RYUJIN_DECK_ID
+  // to override it. The gated internal-deck viewer renders decks in an iframe srcdoc
+  // (location.pathname is about:srcdoc there), so it injects the real id this way,
+  // keeping deck_notes keyed correctly for /ultraslide refresh.
+  var DECK_ID = (window.RYUJIN_DECK_ID && String(window.RYUJIN_DECK_ID)) || location.pathname
     .replace(/^.*\//, '')
     .replace(/\.html$/i, '') || 'index';
   var STORAGE_KEY = 'ryujin-deck-notes:' + DECK_ID;

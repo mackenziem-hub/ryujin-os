@@ -178,9 +178,14 @@ async function doLogin(e) {
       localStorage.removeItem('ryujin_remember');
     }
 
-    // Route by role
+    // Route by role. Honor ?next= first (same safe-path rule as the auto-redirect
+    // below) so deep-links like /internal-deck.html?slug=... return here after a
+    // fresh credential login, not just when already signed in.
     const role = data.user.role || 'crew';
-    if (role === 'owner' || role === 'admin' || role === 'manager') {
+    const nextParam = new URLSearchParams(location.search).get('next');
+    if (nextParam && /^\/(?!\/)[A-Za-z0-9_\-./?=&%]*$/.test(nextParam)) {
+      window.location.href = nextParam;
+    } else if (role === 'owner' || role === 'admin' || role === 'manager') {
       // First-time owner goes to onboarding, otherwise straight to the cockpit
       // (the one agent home / front door). Crew keep their dedicated app.
       const done = localStorage.getItem('ry_onboarding_done');
@@ -213,7 +218,7 @@ if (token && user) {
     const u = JSON.parse(user);
     const role = u.role || 'crew';
     const nextParam = new URLSearchParams(location.search).get('next');
-    if (nextParam && /^\/[A-Za-z0-9_\-./?=&%]*$/.test(nextParam)) {
+    if (nextParam && /^\/(?!\/)[A-Za-z0-9_\-./?=&%]*$/.test(nextParam)) {
       window.location.href = nextParam;
     } else if (role === 'owner' || role === 'admin' || role === 'manager') {
       const done = localStorage.getItem('ry_onboarding_done');
