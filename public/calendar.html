@@ -228,6 +228,21 @@ body[data-view="crew"] .crewboard{display:grid}
 @media (max-width:720px){
   .modal input,.modal select,.modal textarea{font-size:16px}
 }
+/* Inline edit form inside the detail drawer (Phase 1: edit without leaving). */
+.drawer .edit{margin-top:14px;border-top:1px solid var(--border);padding-top:12px}
+.drawer .edit label{display:block;font-size:0.7em;text-transform:uppercase;letter-spacing:1px;color:var(--text-dim);margin:10px 0 5px;font-weight:700}
+.drawer .edit input[type=text],.drawer .edit input[type=date],.drawer .edit input[type=number],.drawer .edit input[type=time],.drawer .edit textarea,.drawer .edit select{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:9px;background:rgba(8,12,24,0.6);color:var(--text);font-family:inherit;font-size:0.92em;outline:none}
+.drawer .edit input:focus,.drawer .edit textarea:focus,.drawer .edit select:focus{border-color:var(--cyan)}
+.drawer .edit textarea{min-height:58px;resize:vertical}
+.drawer .edit .quick{display:flex;gap:7px;margin-top:6px}
+.drawer .edit .quick button{flex:1;font:inherit;font-size:0.76em;font-weight:700;padding:7px 10px;border-radius:9px;border:1.5px solid var(--border);background:rgba(8,12,24,0.55);color:var(--text-dim);cursor:pointer}
+.drawer .edit .quick button.pu{border-color:var(--gold);color:var(--gold)}
+.drawer .edit .quick button.at{border-color:var(--cyan);color:var(--cyan)}
+.drawer .edit .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.drawer .save-msg{font-size:0.82em;margin-top:8px;min-height:15px}
+.drawer .save-msg.ok{color:var(--green)}.drawer .save-msg.err{color:#f87171}
+.drawer .actions button.primary{background:var(--cyan);color:#001218;border:none;font-weight:700;padding:9px 16px;border-radius:10px;cursor:pointer}
+.drawer .actions button.primary:disabled{opacity:0.6;cursor:default}
 </style>
 <script src="/assets/portal-auth-client.js"></script>
 <script src="/assets/ryujin-slug.js"></script>
@@ -236,7 +251,7 @@ body[data-view="crew"] .crewboard{display:grid}
 
 <div class="wrap">
 
-  <a class="back" href="/command-center.html">&larr; Back</a>
+  <a class="back" id="backLink" href="/cockpit.html">&larr; Back</a>
 
   <div class="crumb">Operations &middot; Calendar</div>
   <h1>Calendar</h1>
@@ -410,6 +425,9 @@ function fmt$(n){if (n == null || n === '') return ''; const x = Number(n); if (
 const BIZ_TZ = 'America/Halifax';
 function isoDay(d){const dt=new Date(d);if(isNaN(dt))return '';const p=new Intl.DateTimeFormat('en-CA',{timeZone:BIZ_TZ,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(dt);const g=t=>(p.find(x=>x.type===t)||{}).value;return g('year')+'-'+g('month')+'-'+g('day')}
 function clockHM(iso){if(!iso)return '';const d=new Date(iso);if(isNaN(d))return '';const p=new Intl.DateTimeFormat('en-US',{timeZone:BIZ_TZ,hour:'numeric',minute:'2-digit',hour12:false}).formatToParts(d);const h=+(p.find(x=>x.type==='hour')||{}).value;const m=+(p.find(x=>x.type==='minute')||{}).value;const ampm=h>=12?'p':'a';const hh=((h+11)%12)+1;return hh+(m?':'+String(m).padStart(2,'0'):'')+ampm}
+// 24h HH:MM in the business timezone, for prefilling <input type=time> when
+// editing a timestamped calendar block.
+function hhmm(iso){if(!iso)return '';const d=new Date(iso);if(isNaN(d))return '';const p=new Intl.DateTimeFormat('en-GB',{timeZone:BIZ_TZ,hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(d);const g=t=>(p.find(x=>x.type===t)||{}).value;return g('hour')+':'+g('minute');}
 // Halifax UTC offset (ms) at a given instant, DST-correct via Intl.
 function halifaxOffsetMs(utcMs){const dtf=new Intl.DateTimeFormat('en-US',{timeZone:BIZ_TZ,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});const p=dtf.formatToParts(new Date(utcMs));const g=t=>+(p.find(x=>x.type===t)||{}).value;let hh=g('hour');if(hh===24)hh=0;const asUTC=Date.UTC(g('year'),g('month')-1,g('day'),hh,g('minute'),g('second'));return asUTC-utcMs;}
 // Build a UTC ISO instant from a Halifax wall-clock date (YYYY-MM-DD) + time
@@ -628,7 +646,7 @@ function normalize(sched, ghl, gcal, blocksData){
         value: j.value || null, state: j.state || '',
         crew: j.crew || [], crew_lead: j.crew_lead || null,
         sub_crew_lead: j.sub_crew_lead || null,
-        wo_number: j.wo_number || null, project_id: j.project_id || null,
+        wo_number: j.wo_number || null, wo_id: j.wo_id || null, wo_start_date: j.wo_start_date || null, project_id: j.project_id || null,
         duration_days: j.duration_days || null, live: !!j.live,
         progress_pct: j.progress_pct || null,
         special_notes: j.special_notes || null
@@ -869,6 +887,7 @@ function openDrawer(ev){
   let title = ev.title;
   let src = '';
   let dl = '';
+  let editForm = '';
   let actions = '<button class="close" id="drawerClose">Close</button>';
 
   if (ev.kind === 'install'){
@@ -888,11 +907,39 @@ function openDrawer(ev){
       const isNotify = /NOTIFY CUSTOMER/i.test(ev.special_notes);
       dl += `<dt>Notes</dt><dd><div class="notes ${isNotify ? 'notify' : ''}">${esc(ev.special_notes)}</div></dd>`;
     }
-    actions = (ev.project_id
+    const openJob = ev.project_id
         ? `<a href="/job.html?project_id=${encodeURIComponent(ev.project_id)}">Open job</a>`
-        : `<a href="/admin.html#estimates">Open in admin</a>`)
-      + (isPrivileged && ev.wo_number ? ` <a href="/production-jobs.html#wo-${encodeURIComponent(ev.wo_number)}">Reassign crew</a>` : '')
-      + ' <button class="close" id="drawerClose">Close</button>';
+        : `<a href="/admin.html#estimates">Open in admin</a>`;
+    // Edit-in-place: workorder-sourced installs only (estimate installs carry
+    // no workorder row to write). Mirrors production-workorders.html's PUT, so
+    // the crew/notes/schedule write semantics (and paysheet attribution) match.
+    // NOTE: ev.id is the ESTIMATE id for estimate-linked WOs, so the write must
+    // target ev.wo_id (the real workorder id), never ev.id.
+    if (isPrivileged && ev.wo_id){
+      // Prefill from the WORKORDER's own start_date (the row Save writes to),
+      // NOT the estimate's scheduled_at, so saving unrelated fields can never
+      // move the WO back to a stale estimate date.
+      const startDate = String(ev.wo_start_date || ev.startTime || '').slice(0, 10);
+      editForm = `
+        <div class="edit">
+          <label>Sub / Crew lead</label>
+          <input type="text" id="edCrew" value="${esc(ev.sub_crew_lead || '')}" placeholder="e.g. Plus Ultra Crew, Atlantic Roofing, Ryan">
+          <div class="quick">
+            <button type="button" class="pu" data-fill="Plus Ultra Crew">Plus Ultra</button>
+            <button type="button" class="at" data-fill="Atlantic Roofing">Atlantic</button>
+          </div>
+          <div class="row2">
+            <div><label>Start date</label><input type="date" id="edDate" value="${esc(startDate)}"></div>
+            <div><label>Duration (days)</label><input type="number" id="edDur" min="1" max="60" value="${esc(ev.duration_days || '')}"></div>
+          </div>
+          <label>Crew notes</label>
+          <textarea id="edNotes" placeholder="Anything the field crew needs to know">${esc(ev.special_notes || '')}</textarea>
+          <div class="save-msg" id="edMsg"></div>
+        </div>`;
+      actions = `<button class="primary" id="installSave" data-id="${esc(ev.wo_id)}">Save</button> ${openJob} <button class="close" id="drawerClose">Close</button>`;
+    } else {
+      actions = openJob + ' <button class="close" id="drawerClose">Close</button>';
+    }
   } else if (ev.kind === 'inspection'){
     title = ev.contactName || ev.title || 'Inspection';
     src = 'Inspection (GHL) &middot; ' + (ev.calendarName || '');
@@ -938,8 +985,34 @@ function openDrawer(ev){
       ${crew ? `<dt>Crew</dt><dd><span class="crew-chip" style="background:${crew.color}22;border-color:${crew.color}66;color:${crew.color}">${esc(crew.shortName)}</span></dd>` : ''}
       ${ev.notes ? `<dt>Notes</dt><dd>${esc(ev.notes).replace(/\n/g,'<br>')}</dd>` : ''}
     `;
-    actions = (isPrivileged ? `<button class="danger" id="blockDelete" data-id="${esc(ev.id)}">Delete</button> ` : '')
-      + '<button class="close" id="drawerClose">Close</button>';
+    if (isPrivileged){
+      const bd = isoDay(ev.startTime);
+      const bt = hhmm(ev.startTime);
+      const crewOpt = (v, l) => `<option value="${v}"${ev.crew_label === v ? ' selected' : ''}>${l}</option>`;
+      const stOpt   = (v, l) => `<option value="${v}"${ev.service_type === v ? ' selected' : ''}>${l}</option>`;
+      const asOpt   = (v, l) => `<option value="${v}"${(ev.assigned_to || '') === v ? ' selected' : ''}>${l}</option>`;
+      editForm = `
+        <div class="edit">
+          <label>Title</label>
+          <input type="text" id="edTitle" value="${esc(ev.title || '')}" maxlength="200">
+          <div class="row2">
+            <div><label>Date</label><input type="date" id="edDate" value="${esc(bd)}"></div>
+            <div><label>Time</label><input type="time" id="edTime" value="${esc(bt)}"></div>
+          </div>
+          <label>Crew</label>
+          <select id="edCrew">${crewOpt('', 'Unassigned')}${crewOpt('plus-ultra', 'Plus Ultra in-house')}${crewOpt('atlantic', 'Atlantic Roofing')}${crewOpt('other', 'Other')}</select>
+          <div class="row2">
+            <div><label>Service type</label><select id="edSvc">${stOpt('', 'General / block')}${stOpt('roof-inspection', 'Roof Inspection')}${stOpt('service-call', 'Service Call')}${stOpt('site-inspection', 'Site Inspection')}</select></div>
+            <div><label>Assigned to</label><select id="edAssign">${asOpt('', 'Unassigned')}${asOpt('AJ', 'AJ')}${asOpt('Diego', 'Diego')}${(ev.assigned_to && !['AJ', 'Diego'].includes(ev.assigned_to)) ? `<option value="${esc(ev.assigned_to)}" selected>${esc(ev.assigned_to)}</option>` : ''}</select></div>
+          </div>
+          <label>Notes</label>
+          <textarea id="edNotes">${esc(ev.notes || '')}</textarea>
+          <div class="save-msg" id="edMsg"></div>
+        </div>`;
+      actions = `<button class="primary" id="blockSave" data-id="${esc(ev.id)}">Save</button> <button class="danger" id="blockDelete" data-id="${esc(ev.id)}">Delete</button> <button class="close" id="drawerClose">Close</button>`;
+    } else {
+      actions = '<button class="close" id="drawerClose">Close</button>';
+    }
   }
 
   const d = document.getElementById('drawer');
@@ -947,12 +1020,83 @@ function openDrawer(ev){
     <h2>${esc(title)}</h2>
     <div class="src">${src}</div>
     <dl>${dl}</dl>
+    ${editForm}
     <div class="actions">${actions}</div>
   `;
   document.getElementById('drawerMask').classList.add('on');
   document.getElementById('drawerClose').addEventListener('click', closeDrawer);
   const delBtn = document.getElementById('blockDelete');
   if (delBtn) delBtn.addEventListener('click', () => deleteBlock(delBtn.dataset.id));
+  // Quick-fill crew pills (install editor).
+  d.querySelectorAll('.edit .quick button[data-fill]').forEach(b => {
+    b.addEventListener('click', () => { const inp = document.getElementById('edCrew'); if (inp){ inp.value = b.dataset.fill; inp.focus(); } });
+  });
+  const instSave = document.getElementById('installSave');
+  if (instSave) instSave.addEventListener('click', () => saveInstall(instSave.dataset.id, instSave));
+  const blkSave = document.getElementById('blockSave');
+  if (blkSave) blkSave.addEventListener('click', () => saveBlock(blkSave.dataset.id, blkSave));
+}
+
+// Save an install edit (crew lead / schedule / notes) to its workorder. Mirrors
+// production-workorders.html: PUT /api/workorders with the safe-field allowlist.
+// Stays on the calendar; refreshes data on success.
+async function saveInstall(id, btn){
+  const msg = document.getElementById('edMsg');
+  const setMsg = (cls, t) => { if (msg){ msg.className = 'save-msg ' + cls; msg.textContent = t; } };
+  const durRaw = document.getElementById('edDur').value;
+  // Always send these fields, null when cleared, so the inline editor can
+  // unschedule an install / remove a duration (matches production-workorders.html).
+  const body = {
+    id,
+    sub_crew_lead: (document.getElementById('edCrew').value || '').trim() || null,
+    start_date: document.getElementById('edDate').value || null,
+    estimated_duration_days: durRaw === '' ? null : Number(durRaw),
+    special_notes: (document.getElementById('edNotes').value || '').trim() || null
+  };
+  btn.disabled = true; btn.textContent = 'Saving...'; setMsg('', '');
+  try {
+    const tok = await getToken();
+    const r = await fetch('/api/workorders', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok, 'x-tenant-id': TENANT },
+      body: JSON.stringify(body)
+    });
+    if (!r.ok){ const b = await r.json().catch(() => ({})); setMsg('err', 'Save failed: ' + (b.error || ('HTTP ' + r.status))); btn.disabled = false; btn.textContent = 'Save'; return; }
+    setMsg('ok', 'Saved.'); btn.textContent = 'Saved';
+    setTimeout(() => { closeDrawer(); loadAll(); }, 500);
+  } catch (e){ setMsg('err', 'Network error: ' + e.message); btn.disabled = false; btn.textContent = 'Save'; }
+}
+
+// Save a calendar-block edit. PATCH /api/calendar-blocks?id=... (id is a query
+// param, not a body field). Date+time -> Halifax wall-clock ISO, DST-correct.
+async function saveBlock(id, btn){
+  const msg = document.getElementById('edMsg');
+  const setMsg = (cls, t) => { if (msg){ msg.className = 'save-msg ' + cls; msg.textContent = t; } };
+  const title = (document.getElementById('edTitle').value || '').trim();
+  const date = document.getElementById('edDate').value;
+  const time = document.getElementById('edTime').value;
+  if (!title){ setMsg('err', 'Title is required.'); return; }
+  if (!date){ setMsg('err', 'Date is required.'); return; }
+  const body = {
+    title,
+    starts_at: halifaxWallClockToISO(date, time),
+    crew_label: document.getElementById('edCrew').value || null,
+    service_type: document.getElementById('edSvc').value || null,
+    assigned_to: document.getElementById('edAssign').value || null,
+    notes: (document.getElementById('edNotes').value || '').trim() || null
+  };
+  btn.disabled = true; btn.textContent = 'Saving...'; setMsg('', '');
+  try {
+    const tok = await getToken();
+    const r = await fetch('/api/calendar-blocks?id=' + encodeURIComponent(id), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok, 'x-tenant-id': TENANT },
+      body: JSON.stringify(body)
+    });
+    if (!r.ok){ const b = await r.json().catch(() => ({})); setMsg('err', 'Save failed: ' + (b.error || ('HTTP ' + r.status))); btn.disabled = false; btn.textContent = 'Save'; return; }
+    setMsg('ok', 'Saved.'); btn.textContent = 'Saved';
+    setTimeout(() => { closeDrawer(); loadAll(); }, 500);
+  } catch (e){ setMsg('err', 'Network error: ' + e.message); btn.disabled = false; btn.textContent = 'Save'; }
 }
 
 async function deleteBlock(id){
@@ -970,6 +1114,19 @@ async function deleteBlock(id){
 function closeDrawer(){ document.getElementById('drawerMask').classList.remove('on'); }
 document.getElementById('drawerMask').addEventListener('click', e => { if (e.target.id === 'drawerMask') closeDrawer(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+
+// Smart Back: if we arrived here from another Ryujin page, go back to it.
+// Otherwise fall through to the href (the cockpit). Never strands the user on
+// command-center when they came from somewhere else.
+(function(){
+  const back = document.getElementById('backLink');
+  if (!back) return;
+  back.addEventListener('click', e => {
+    let sameOrigin = false;
+    try { sameOrigin = !!document.referrer && new URL(document.referrer).origin === location.origin; } catch(_){}
+    if (sameOrigin && history.length > 1){ e.preventDefault(); history.back(); }
+  });
+})();
 
 document.getElementById('btnDay').addEventListener('click', () => {
   document.body.dataset.view = 'day';

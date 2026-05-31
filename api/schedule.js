@@ -173,10 +173,18 @@ async function handler(req, res) {
   // day-then-time, the admin grid keeps the per-day buckets.
   const jobs = [];
 
+  // Map estimate id -> its backing workorder (if any). When an estimate keeps a
+  // scheduled_at AND has a linked WO, the dedup below renders the estimate
+  // install and skips the WO row; attaching the WO here keeps that install
+  // editable from the calendar and writing to the right workorder.
+  const woByEstimateId = {};
+  for (const w of (wos.data || [])) if (w.linked_estimate_id) woByEstimateId[w.linked_estimate_id] = w;
+
   for (const e of ests.data || []) {
     const key = (e.scheduled_at || '').slice(0, 10);
     if (!byDay.has(key)) continue;
     const linkedProject = (e.projects && e.projects[0]) || null;
+    const linkedWo = woByEstimateId[e.id] || null;
     const crewIds = linkedProject?.crew_members || [];
     let crew = crewIds.map(id => crewById[id]).filter(Boolean);
     // Fallback: if crew_members[] is empty but crew_lead exists, show the
@@ -206,6 +214,14 @@ async function handler(req, res) {
       crew_lead: linkedProject?.crew_lead || null,
       crew,
       photo_count: linkedProject ? (photoCountByProject[linkedProject.id] || 0) : 0,
+      // WO backing (see woByEstimateId): lets the calendar edit this install in
+      // place and write to the real workorder row, with accurate prefills.
+      wo_id: linkedWo?.id || null,
+      wo_start_date: linkedWo?.start_date || null,
+      wo_number: linkedWo?.wo_number || null,
+      sub_crew_lead: linkedWo?.sub_crew_lead || null,
+      duration_days: linkedWo?.estimated_duration_days || null,
+      special_notes: linkedWo?.special_notes || null,
     };
     byDay.get(key).installs.push(install);
     jobs.push(install);
@@ -244,6 +260,12 @@ async function handler(req, res) {
       crew,
       photo_count: linkedProject ? (photoCountByProject[linkedProject.id] || 0) : 0,
       wo_number: w.wo_number || null,
+      // The event `id` above is the estimate id for estimate-linked WOs, so it
+      // is NOT safe to PUT against /api/workorders. Carry the real workorder id
+      // + its own start_date separately for the calendar's inline edit, so the
+      // editor prefills (and writes back) the WO's schedule, not the estimate's.
+      wo_id: w.id,
+      wo_start_date: w.start_date || null,
       sub_crew_lead: w.sub_crew_lead || null,
       total_sq: w.total_sq || null,
       duration_days: w.estimated_duration_days || null,
