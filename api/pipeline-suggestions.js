@@ -143,23 +143,25 @@ async function bulkConfirmSafe(req, res, session) {
   for (const s of (pend || [])) {
     // No-regress guard: only unfreeze folders still at 'unknown'.
     if (!s.job_folder || s.job_folder.current_stage !== 'unknown') { skipped++; continue; }
-    // Update the FOLDER first (race/duplicate-safe: only flips a still-'unknown'
-    // folder) and require it to have actually changed a row. Then confirm the
-    // suggestion. Doing it in this order means a suggestion is never marked
-    // confirmed without a matching folder advance (e.g. when a folder has two
-    // safe suggestions, or another admin advanced it after our read).
-    const { data: fRows, error: fErr } = await supabaseAdmin
-      .from('job_folders')
-      .update({ current_stage: s.suggested_stage, stage_confirmed_at: now, stage_confirmed_by: session.user_id })
-      .eq('id', s.job_folder_id).eq('current_stage', 'unknown')
-      .select('id');
-    if (fErr) { skipped++; continue; }
-    if (!fRows || !fRows.length) { skipped++; continue; } // already advanced / lost the race
-    const { error: upErr } = await supabaseAdmin
+    // 1) CLAIM the suggestion atomically: flip pending -> confirmed and require a
+    //    returned row. If another admin/process resolved it (dismiss/confirm/correct)
+    //    in the meantime, we match 0 rows and skip BEFORE touching the folder -- so a
+    //    no-longer-pending suggestion can never advance a folder here.
+    const { data: claimed, error: upErr } = await supabaseAdmin
       .from('pipeline_suggestions')
       .update({ status: 'confirmed', confirmed_stage: s.suggested_stage, resolved_at: now, resolved_by: session.user_id })
-      .eq('id', s.id).eq('status', 'pending');
+      .eq('id', s.id).eq('status', 'pending')
+      .select('id');
     if (upErr) { skipped++; continue; }
+    if (!claimed || !claimed.length) { skipped++; continue; } // lost the claim race
+    // 2) We own the resolution: advance the folder if it is still 'unknown'
+    //    (no-regress, race-safe). If it already advanced (a duplicate safe
+    //    suggestion or another process), the claimed suggestion is still validly
+    //    confirmed and the folder is already past 'unknown', so nothing is stuck.
+    await supabaseAdmin
+      .from('job_folders')
+      .update({ current_stage: s.suggested_stage, stage_confirmed_at: now, stage_confirmed_by: session.user_id })
+      .eq('id', s.job_folder_id).eq('current_stage', 'unknown');
     confirmed++;
     byStage[s.suggested_stage] = (byStage[s.suggested_stage] || 0) + 1;
   }
