@@ -143,16 +143,23 @@ async function bulkConfirmSafe(req, res, session) {
   for (const s of (pend || [])) {
     // No-regress guard: only unfreeze folders still at 'unknown'.
     if (!s.job_folder || s.job_folder.current_stage !== 'unknown') { skipped++; continue; }
+    // Update the FOLDER first (race/duplicate-safe: only flips a still-'unknown'
+    // folder) and require it to have actually changed a row. Then confirm the
+    // suggestion. Doing it in this order means a suggestion is never marked
+    // confirmed without a matching folder advance (e.g. when a folder has two
+    // safe suggestions, or another admin advanced it after our read).
+    const { data: fRows, error: fErr } = await supabaseAdmin
+      .from('job_folders')
+      .update({ current_stage: s.suggested_stage, stage_confirmed_at: now, stage_confirmed_by: session.user_id })
+      .eq('id', s.job_folder_id).eq('current_stage', 'unknown')
+      .select('id');
+    if (fErr) { skipped++; continue; }
+    if (!fRows || !fRows.length) { skipped++; continue; } // already advanced / lost the race
     const { error: upErr } = await supabaseAdmin
       .from('pipeline_suggestions')
       .update({ status: 'confirmed', confirmed_stage: s.suggested_stage, resolved_at: now, resolved_by: session.user_id })
       .eq('id', s.id).eq('status', 'pending');
     if (upErr) { skipped++; continue; }
-    const { error: fErr } = await supabaseAdmin
-      .from('job_folders')
-      .update({ current_stage: s.suggested_stage, stage_confirmed_at: now, stage_confirmed_by: session.user_id })
-      .eq('id', s.job_folder_id).eq('current_stage', 'unknown'); // race-safe
-    if (fErr) { skipped++; continue; }
     confirmed++;
     byStage[s.suggested_stage] = (byStage[s.suggested_stage] || 0) + 1;
   }
