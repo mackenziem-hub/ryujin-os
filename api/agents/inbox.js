@@ -99,6 +99,31 @@ function clampStr(s, n) {
   return s.length > n ? s.slice(0, n) : s;
 }
 
+// ── Owner NOTIFY allow-list (tenant_settings.inbox_config.notify_allowlist) ──
+// A list of watched contacts whose inbound ALWAYS pings the owner, layered ON
+// TOP of the leak/lead triage gate (it only ever turns notify ON, never off).
+// Built for "I'm waiting on a vendor for pricing, text me when they reply"
+// without re-tuning the triage prompt. Each entry is either a bare string or
+// { match, note }. `match` is tested as a case-insensitive WHOLE WORD against
+// the GHL contact name, so "ben" hits "Ben Carter" but not "Bensen Roofing".
+// Returns the matched entry (normalized to an object) or null. Exported so a
+// unit test can pin the matching behaviour.
+export function matchAllowlist(contactName, allowlist) {
+  if (!Array.isArray(allowlist) || !allowlist.length) return null;
+  const name = String(contactName == null ? '' : contactName).trim();
+  if (!name) return null;
+  for (const raw of allowlist) {
+    const entry = (raw && typeof raw === 'object') ? raw : { match: raw };
+    const token = String(entry.match == null ? '' : entry.match).trim();
+    if (!token) continue;
+    const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    let re;
+    try { re = new RegExp(`\\b${escaped}\\b`, 'i'); } catch { continue; }
+    if (re.test(name)) return { match: token, note: entry.note ? String(entry.note) : '' };
+  }
+  return null;
+}
+
 // Render a conversation thread (oldest first) for the triage prompt.
 function renderThread({ contactName, channel, messages }) {
   const head = `Contact: ${contactName || 'Unknown'}\nChannel: ${channel || 'sms'}\nConversation (most recent last):`;
@@ -209,8 +234,8 @@ async function sendOwnerDigest(items) {
 }
 
 // ── Main scan for one tenant ──
-async function runInbox({ tenantId, runId, startTime }) {
-  const result = { scanned: 0, triaged: 0, inserted: 0, notify: 0, skipped: 0, errors: [] };
+async function runInbox({ tenantId, runId, startTime, allowlist = [] }) {
+  const result = { scanned: 0, triaged: 0, inserted: 0, notify: 0, allowlisted: 0, skipped: 0, errors: [] };
 
   let convos = [];
   try {
@@ -281,6 +306,20 @@ async function runInbox({ tenantId, runId, startTime }) {
       // Triage with Claude.
       const triage = await triageMessage({ contactName: c.contactName, channel: c.channel, messages });
       result.triaged++;
+
+      // Owner allow-list override: a watched contact (e.g. a vendor we are
+      // waiting on for pricing) ALWAYS pings, even when the leak/lead gate would
+      // stay silent. Layered ON TOP of triage; it only ever turns notify ON, so
+      // a real leak/lead notify is never lost. A draft reply is still optional.
+      const allowHit = matchAllowlist(c.contactName, allowlist);
+      if (allowHit && !triage.notify) {
+        triage.notify = true;
+        triage.notify_reason = clampStr(
+          triage.notify_reason || `watching ${c.contactName}${allowHit.note ? ` (${allowHit.note})` : ''}`,
+          160
+        );
+        result.allowlisted++;
+      }
 
       // Insert the new state row first (so a later supersede can't orphan it).
       const insertRow = {
@@ -386,10 +425,15 @@ export default async function handler(req, res) {
   if (!tenant) return res.status(404).json({ error: `tenant '${slug}' not found` });
 
   const { data: settings } = await supabaseAdmin
-    .from('tenant_settings').select('inbox_agent_enabled').eq('tenant_id', tenant.id).maybeSingle();
+    .from('tenant_settings').select('inbox_agent_enabled, inbox_config').eq('tenant_id', tenant.id).maybeSingle();
   if (!settings?.inbox_agent_enabled) {
     return res.json({ agent: 'inbox', skipped: 'inbox_agent_enabled is false for this tenant', tenant: slug });
   }
+
+  // Owner-tunable NOTIFY allow-list (watched contacts that always ping).
+  const allowlist = Array.isArray(settings?.inbox_config?.notify_allowlist)
+    ? settings.inbox_config.notify_allowlist
+    : [];
 
   // Open an agent_runs row so inbox_items can FK to it; close it at the end.
   const trigger = req.query.manual ? 'manual' : (auth.via === 'cron-secret' ? 'cron_daily' : 'manual');
@@ -409,10 +453,10 @@ export default async function handler(req, res) {
   // unwinds past both try and catch cannot then strand a zombie running row.
   let runClosed = false;
   try {
-    const result = await runInbox({ tenantId: tenant.id, runId, startTime });
+    const result = await runInbox({ tenantId: tenant.id, runId, startTime, allowlist });
     const durationMs = Date.now() - startTime;
     const status = result.errors.length ? 'partial' : 'success';
-    const summary = `Scanned ${result.scanned}, triaged ${result.triaged}, queued ${result.inserted}, notified ${result.notify}`;
+    const summary = `Scanned ${result.scanned}, triaged ${result.triaged}, queued ${result.inserted}, notified ${result.notify}${result.allowlisted ? ` (${result.allowlisted} allow-listed)` : ''}`;
 
     if (runId) {
       await supabaseAdmin.from('agent_runs').update({
