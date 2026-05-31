@@ -257,23 +257,44 @@ async function addCrewUser(){
 <script src="assets/ryujin-mode-badge.js"></script>
 <script src="assets/cockpit-launcher.js"></script>
 <script>
-function invite(){
+// Create the real user seat AND mint a working invite link, then draft the email.
+// Previously this only wrote localStorage + a dead /login.html draft, so nobody was
+// ever actually provisioned. Now it calls the owner/admin-gated POST /api/users with
+// invite:true (mirrors addCrewUser auth), which returns the /i/<firstname> set-password link.
+async function invite(){
   const n = document.getElementById('i_name').value.trim();
   const e = document.getElementById('i_email').value.trim();
   const r = document.getElementById('i_role').value;
   if (!n || !e) { alert('Name and email required'); return; }
-  // Save the pending invite locally
-  const invites = RyujinStore.load('pending_invites', []);
-  invites.push({ name: n, email: e, role: r, sentAt: new Date().toISOString() });
-  RyujinStore.save('pending_invites', invites);
-  // Draft a real invite email via Gmail compose
+  // VA seats can't be provisioned through quick-invite yet: the users role CHECK is
+  // owner/admin/estimator/crew, so a VA would be silently downgraded to crew (wrong
+  // workspace + permissions). Block it until the VA role is wired with a migration.
+  if (r === 'VA') { alert('VA seats aren\'t set up for quick-invite yet. The VA role needs to be wired first.'); return; }
+  // Map the friendly role label to a valid role_slug (users CHECK = owner/admin/estimator/crew).
+  const roleSlug = ({ 'CREW':'crew', 'SALES REP':'estimator', 'ADMIN':'admin' })[r] || 'crew';
   const firstName = n.split(' ')[0];
-  const subject = 'You\'re invited to Ryujin OS \u00B7 Plus Ultra Roofing';
-  const body = 'Hi ' + firstName + ',\n\nI\'ve set up a Ryujin OS seat for you as ' + r + '.\n\nGet started: https://ryujin-os.vercel.app/login.html\n\nUsername: ' + e + '\nRole: ' + r + '\n\nIf you have any questions, just text me.\n\nMackenzie\nPlus Ultra Roofing\n(506) 540-1052';
-  RyujinActions.gmail(e, subject, body);
-  toast('Invite saved + Gmail draft opened for ' + firstName);
-  document.getElementById('i_name').value = '';
-  document.getElementById('i_email').value = '';
+  let token = ''; try { token = localStorage.getItem('ryujin_token') || ''; } catch(_) {}
+  toast('Creating seat for ' + firstName + '...');
+  try {
+    const resp = await fetch('/api/users', {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type':'application/json', 'x-tenant-id':'plus-ultra' }, token ? { Authorization:'Bearer ' + token } : {}),
+      body: JSON.stringify({ name: n, email: e, role_slug: roleSlug, invite: true })
+    });
+    const d = await resp.json();
+    if (!resp.ok) { alert(d.error || ('Invite failed (HTTP ' + resp.status + ')')); return; }
+    // Use the token-specific accept-invite URL: it is unique per hire. The /i/<firstname>
+    // short link is ambiguous when two teammates share a first name (api/i.js takes the
+    // first match), so it could mis-route a new hire to someone else's page.
+    const base = 'https://ryujin-os.vercel.app';
+    const link = base + (d.invite_url || d.short_url);
+    const subject = 'You\'re invited to Ryujin OS \u00B7 Plus Ultra Roofing';
+    const body = 'Hi ' + firstName + ',\n\nI\'ve set up your Ryujin OS seat. Tap below to set your password and you\'re in:\n\n' + link + '\n\nThat link is good for 7 days. After you\'re set up you can sign in any time at ' + base + '/login.html with this email.\n\nIf you have any questions, just text me.\n\nMackenzie\nPlus Ultra Roofing\n(506) 540-1052';
+    RyujinActions.gmail(e, subject, body);
+    toast('Seat created + invite drafted for ' + firstName);
+    document.getElementById('i_name').value = '';
+    document.getElementById('i_email').value = '';
+  } catch(err) { alert('Connection error creating the invite.'); }
 }
 function toast(msg){
   const t = document.createElement('div');
