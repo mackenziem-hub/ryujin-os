@@ -61,8 +61,14 @@
   function go(url) { if (!url) return; pushCurrent(); location.href = url; }
 
   function back(def) {
+    // Discard any leading entries that point at the page we're already on
+    // (e.g. the user followed a recorded link then used the browser Back
+    // button to land here). Otherwise the first in-page BACK would just
+    // reload the current page instead of going to the real previous one.
+    var cur = here();
     var s = readStack();
     var entry = s.pop();
+    while (entry && entry.url === cur) entry = s.pop();
     writeStack(s);
     if (entry && entry.url) {
       try { sessionStorage.setItem(RESTORE, JSON.stringify({ url: entry.url, scroll: entry.scroll || 0, state: entry.state || {} })); } catch (e) {}
