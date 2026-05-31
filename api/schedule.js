@@ -217,6 +217,7 @@ async function handler(req, res) {
       // WO backing (see woByEstimateId): lets the calendar edit this install in
       // place and write to the real workorder row, with accurate prefills.
       wo_id: linkedWo?.id || null,
+      wo_start_date: linkedWo?.start_date || null,
       wo_number: linkedWo?.wo_number || null,
       sub_crew_lead: linkedWo?.sub_crew_lead || null,
       duration_days: linkedWo?.estimated_duration_days || null,
@@ -261,8 +262,10 @@ async function handler(req, res) {
       wo_number: w.wo_number || null,
       // The event `id` above is the estimate id for estimate-linked WOs, so it
       // is NOT safe to PUT against /api/workorders. Carry the real workorder id
-      // separately for the calendar's inline crew/schedule edit.
+      // + its own start_date separately for the calendar's inline edit, so the
+      // editor prefills (and writes back) the WO's schedule, not the estimate's.
       wo_id: w.id,
+      wo_start_date: w.start_date || null,
       sub_crew_lead: w.sub_crew_lead || null,
       total_sq: w.total_sq || null,
       duration_days: w.estimated_duration_days || null,
