@@ -4,7 +4,7 @@ import { supabaseAdmin } from '../lib/supabase.js';
 import { peerReview, LENSES as PEER_REVIEW_LENSES } from '../lib/peer_review.js';
 import crypto from 'node:crypto';
 import { resolveSession } from '../lib/portalAuth.js';
-import { describeCurrentPage } from '../lib/pageCatalog.js';
+import { describeCurrentPage, catalogForPrompt, resolveNavUrl } from '../lib/pageCatalog.js';
 
 // ── ROLE-BASED ACCESS (Phase 5) ──
 // Role slugs: owner (Mac, full Ryujin), admin (Cat, ops EA), sales (Darcy, outside sales), crew (Diego/AJ/Pavanjot, production)
@@ -1037,6 +1037,18 @@ if (!ACTION_BOARD_KEY) console.error('Missing env var: ACTION_BOARD_KEY');
 if (!ESTIMATOR_KEY) console.error('Missing env var: ESTIMATOR_KEY');
 
 const TOOLS = [
+  {
+    name: 'navigate',
+    description: `Open a Ryujin page for the operator — this changes what is on their screen. Use when they say "open", "go to", "show me", "take me to", "pull up" a page, or when opening a page is clearly the next step. Provide the EXACT path from this list (never invent a url or #hash); if none fits, do not call this tool:\n${catalogForPrompt()}`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'Exact path from the list above, e.g. /calendar.html or /production-jobs.html.' },
+        reason: { type: 'string', description: 'One short phrase on why (also used to repair a mislabeled url).' },
+      },
+      required: ['url'],
+    }
+  },
   {
     name: 'update_ticket',
     description: 'Update a ticket on the Action Board. Can change status, priority, assignedTo, dueDate, description, category, or completionNotes.',
@@ -2255,6 +2267,15 @@ function pickPhotoByDescription(photos, description) {
 
 async function executeTool(name, input, attachments = [], conversationId = null) {
   try {
+    // ── NAVIGATION — UI-only, no approval. Fail-closed via pageCatalog so a
+    // guessed/hallucinated url never reaches the browser. The streaming handler
+    // turns result.navigate into an SSE 'navigate' event the client acts on.
+    if (name === 'navigate') {
+      const target = resolveNavUrl(input.url, `${input.reason || ''} ${input.url || ''}`);
+      if (!target) return { error: 'That is not a known Ryujin page. Choose an exact path from the navigate list, or do not navigate.' };
+      return { ok: true, navigate: target, note: `The operator is being taken to ${target}.` };
+    }
+
     // ── WRITE OPERATIONS — route through approval system ──
     if (name === 'update_ticket') {
       const result = await routeForApproval(
@@ -4703,6 +4724,7 @@ You are now Mackenzie's game development and product specialist.
   // Helper to label tool calls human-readably
   function describeTool(name, input) {
     switch (name) {
+      case 'navigate': return `🧭 Opening ${input.url || 'a page'}`;
       case 'lookup_data': return `🔍 Searching ${input.source}${input.query ? ` for "${input.query}"` : ''}`;
       case 'get_contact_detail': return `🔍 Looking up contact: ${input.query || input.id}`;
       case 'search_gmail': return `📧 Searching Gmail: "${input.query}"`;
@@ -4794,6 +4816,9 @@ You are now Mackenzie's game development and product specialist.
           if (result?.error) status = 'error';
           else if (result?.status === 'pending_approval') status = 'pending_approval';
           sse({ tool_end: { id: block.id, status, error: result?.error || null, code: result?.code || null } });
+          // Navigation is a client action: tell the browser to open the (already
+          // catalog-validated) page. The model still gets the tool_result below.
+          if (result?.navigate) sse({ navigate: { url: result.navigate } });
           toolResults.push({
             type: 'tool_result',
             tool_use_id: block.id,

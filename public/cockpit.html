@@ -291,7 +291,7 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg)
     setState('thinking');
 
     var body={ message:text, history:conversation.slice(-12).map(function(m){return {role:m.role,content:m.content};}), mode:'quick', effort:'medium', conversation_id:streamConvId||undefined, current_page:{ path: cockpitHostPage() } };
-    var answer='', gotText=false, finished=false;
+    var answer='', gotText=false, finished=false, pendingNav=null;
     // any tool chip that never received a tool_end (stream cut / timeout) must not
     // hang on "wait" — flip it to error. pending_approval chips DID get a tool_end
     // (tracked in toolEnded), so they are left alone.
@@ -314,6 +314,7 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg)
             else if(d.tool_start && d.tool_start.id){ setState('thinking'); if(!toolsWrap){toolsWrap=document.createElement('div');toolsWrap.className='tools';aEl.appendChild(toolsWrap);} var tn=document.createElement('div'); tn.className='tool wait'; tn.innerHTML='<span class="dot"></span><span>'+esc(d.tool_start.label||'Working')+'</span>'; toolsWrap.appendChild(tn); toolNodes[d.tool_start.id]=tn; aMsg.tools.push({label:d.tool_start.label,status:'wait'}); scrollDown(); }
             else if(d.tool_end && d.tool_end.id){ toolEnded[d.tool_end.id]=true; var node=toolNodes[d.tool_end.id]; if(node) node.className='tool '+(d.tool_end.status==='error'?'err':d.tool_end.status==='pending_approval'?'wait':'ok'); if(d.tool_end.status==='pending_approval'&&d.tool_end.code) addApproval(aEl,d.tool_end.code); }
             else if(d.matched_archetype){ aMsg.lens=d.matched_archetype; }
+            else if(d.navigate && d.navigate.url){ if(String(d.navigate.url).charAt(0)==='/') pendingNav=d.navigate.url; }
             else if(d.done){ if(d.conversation_id) streamConvId=d.conversation_id; finished=true; break; }
             else if(d.error){ aMsg.error=d.error; flipStuck(); var ee=document.createElement('div'); ee.style.cssText='color:var(--red);font-size:0.85em;margin-top:6px'; ee.textContent='Error: '+d.error; aEl.appendChild(ee); finished=true; break; }
           }
@@ -328,6 +329,16 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg)
       if(answer){ conversation.push({role:'assistant',content:answer}); }
       else { conversation.pop(); } // drop the user turn from lean history if no answer
       setState('idle'); busy=false; sendBtn.disabled=false; cmd.focus();
+      if(pendingNav){
+        // Brain asked to open a page. Persist the turn, then navigate the top
+        // window after a beat so the confirmation line is visible first. Skip the
+        // topics/options reload (we're leaving the cockpit anyway).
+        var nav=pendingNav;
+        if(answer||aMsg.error) persist();
+        clearTrail();
+        setTimeout(function(){ try{ (window.top||window).location.href=nav; }catch(e){ location.href=nav; } }, 450);
+        return;
+      }
       if(answer||aMsg.error){ persist(); loadTopics(); loadOptions(); }
       clearTrail();
     });
