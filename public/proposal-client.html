@@ -870,8 +870,9 @@ body:not(.app-ready) .topbar{visibility:hidden}
 .env-confetti-burst span{position:absolute;width:8px;height:8px;border-radius:2px;animation:confettiFall 1.2s cubic-bezier(0.2,0.6,0.4,1) forwards}
 @keyframes confettiFall{0%{opacity:1;transform:translateY(0) rotate(0deg)}100%{opacity:0;transform:translateY(140px) rotate(540deg)}}
 
-/* Hidden by default; rj-asphalt-body is collapsed when envelope active */
-body.envelope-active #rj-asphalt-body,
+/* Metal body collapses when envelope active. The asphalt body stays (Protective
+   Shell 2.0): JS shows it, hides only the tier-grid/scope/accept the builder
+   replaces, and slots the configurator in where the tier grid sat. */
 body.envelope-active #rj-metal-body{display:none !important}
 body:not(.envelope-active) #envelopeSection{display:none !important}
 
@@ -3739,11 +3740,80 @@ function envelopeAcceptSubmit(result, signatureDataUrl) {
   // Envelope configurator takes over when active — collapse legacy bodies,
   // surface the new section, init state.
   if (envelopeMode) {
-    const ab = document.getElementById('rj-asphalt-body');
     const mb = document.getElementById('rj-metal-body');
-    if (ab) ab.hidden = true;
     if (mb) mb.hidden = true;
+
+    // ── Protective Shell 2.0 ──────────────────────────────────────────
+    // Keep Jewels' favorite sections (hero, intro, why, video, before/after
+    // slider, vs-typical comparison, transparency, reviews) wrapped around the
+    // configurator. Hide only the static tier-grid / scope / accept the builder
+    // replaces, and slot the configurator in where the tier grid sat.
+    const ab = document.getElementById('rj-asphalt-body');
+    if (ab) ab.hidden = false;
+
+    // Drive hero + before/after from the envelope's own media set.
+    const _env = DATA.envelope || {};
+    const em = _env.media || {};
+    const _sys = _env.default_system || 'asphalt';
+    // Seed the before/after AFTER image from the quoted system's render.
+    const _afterImg = (_sys === 'metal' ? (em.after_metal || em.after_shingle) : (em.after_shingle || em.after_metal)) || em.complete_system;
+    if (!DATA.media) DATA.media = {};
+    DATA.media = Object.assign({}, DEMO.media, DATA.media, {
+      cover:       em.cover || DATA.media.cover || DEMO.media.cover,
+      beforeImage: em.cover || DATA.media.beforeImage,
+      afterImage:  _afterImg || DATA.media.afterImage
+    });
+    if (!DATA.customer) DATA.customer = {};
+    if (em.cover) { // envelope cover (a still photo) is authoritative — clear any stale standard cover video
+      DATA.customer.coverImage = em.cover;
+      DATA.customer.coverVideo = null;
+      DATA.customer.coverSource = 'photo';
+    }
+    if (!DATA.scope) DATA.scope = DEMO.scope;
+    if (!DATA.rep)   DATA.rep   = DEMO.rep;
+
+    renderHero(); renderIntro(); renderWhy(); renderVideo();
+    renderBeforeAfter(); renderGallery();
+    renderReviewsHead(); renderReviews();
+    initBeforeAfter();
+
+    // Hide the sections the configurator owns.
+    const hideSec = el => { const s = el && el.closest('section'); if (s) s.hidden = true; };
+    hideSec(document.getElementById('tiersGrid'));
+    hideSec(document.getElementById('scopeList'));
+    const acceptWrap = document.querySelector('.accept-wrap');
+    if (acceptWrap) hideSec(acceptWrap);
+
+    // The static CertainTeed asphalt "Integrity Roof System" materials section is
+    // accurate only for an asphalt-only envelope. Hide it for metal/mixed envelopes
+    // so the proposal never describes the wrong roofing system before the builder.
+    const _asphaltOnly = _sys === 'asphalt' && !(_env.components && _env.components.roof_metal);
+    if (!_asphaltOnly) { const sg = document.querySelector('.sys-grid'); if (sg) hideSec(sg); }
+
+    // The legacy hero PDF/contract buttons export the standard tier package, not
+    // the configured envelope selections — hide them. The configurator's own
+    // Export PDF / Lock Your Price is the export + accept path in envelope mode.
+    ['downloadPdfBtn','downloadContractBtn','gammaDeckBtn'].forEach(id => {
+      const b = document.getElementById(id); if (b) b.style.display = 'none';
+    });
+
+    // Slot the configurator in where the tier grid sat.
+    const envSection = document.getElementById('envelopeSection');
+    const tiersSec = document.getElementById('tiersGrid') ? document.getElementById('tiersGrid').closest('section') : null;
+    if (envSection && tiersSec && tiersSec.parentNode) tiersSec.parentNode.insertBefore(envSection, tiersSec);
+    if (envSection) envSection.hidden = false;
+
     envInit();
+
+    // Re-seed the before/after AFTER image from the system the customer actually
+    // configured — envInit() applies any saved/exported ?envelope= selection to
+    // envelopeState, which can differ from the envelope's default_system.
+    try {
+      const _selSys = (typeof envelopeState !== 'undefined' && envelopeState.system) || _sys;
+      const _af = (_selSys === 'metal' ? (em.after_metal || em.after_shingle) : (em.after_shingle || em.after_metal)) || em.complete_system;
+      if (_af) { DATA.media.afterImage = _af; renderBeforeAfter(); }
+    } catch (e) {}
+
     document.body.classList.add('app-ready');
     setTimeout(() => { const ls = document.getElementById('appLoadingScreen'); if (ls) ls.remove(); }, 400);
     logEvent('proposal_opened', { mode: 'envelope', system: envelopeState.system });
