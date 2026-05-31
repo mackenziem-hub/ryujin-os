@@ -484,6 +484,7 @@ const DRAG = { active: false, resizing: false, inflight: false, suppressClick: f
 const RANGE_DAYS = { day: 1, week: 7, month: 30, quarter: 90 };
 let currentRange = 'week';
 let PENDING_EVT = null; // event id to reopen in the drawer after a back-restore
+let RESTORE_GEN = 0;    // bumped per restore so an older backstop timer cannot clear a newer one
 function currentDays(){ return RANGE_DAYS[currentRange]; }
 
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
@@ -1395,11 +1396,12 @@ window.addEventListener('ry-nav-restore', (e) => {
   }
   const want = d.evtId || null;
   PENDING_EVT = want;
+  const gen = ++RESTORE_GEN;
   loadAll(); // maybeReopenDrawer (hooked in paint) reopens once the event renders.
   // Give up only after longer than the slowest fetch (GHL ~12s timeout), and only
-  // if THIS restore is still pending, so a newer restore is never cancelled and
-  // overlapping load cycles cannot drop the id early.
-  if (want) setTimeout(() => { if (PENDING_EVT === want) PENDING_EVT = null; }, 15000);
+  // if no newer restore has happened since (gen guard) -- so overlapping loads or a
+  // repeat restore of the same event are never cancelled early.
+  if (want) setTimeout(() => { if (RESTORE_GEN === gen) PENDING_EVT = null; }, 15000);
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
 
