@@ -1368,6 +1368,12 @@ function maybeReopenDrawer(){
       return;
     }
   }
+  // Not found in this paint. Only give up once EVERY source has settled (a slow
+  // GHL fetch can still be in flight up to its own timeout) so a slow event
+  // still reopens; if it is truly gone, stop waiting so it cannot reopen later.
+  const settled = STATE.sched.status !== 'loading' && STATE.ghl.status !== 'loading'
+    && STATE.gcal.status !== 'loading' && STATE.blocks.status !== 'loading';
+  if (settled) PENDING_EVT = null;
 }
 window.addEventListener('ry-nav-restore', (e) => {
   const d = e.detail || {};
@@ -1392,10 +1398,8 @@ window.addEventListener('ry-nav-restore', (e) => {
     }
   }
   PENDING_EVT = d.evtId || null;
-  loadAll();
-  // Backstop: if the event never renders (deleted / out of range), drop the
-  // pending reopen after the load settles so it cannot fire unexpectedly later.
-  if (PENDING_EVT) setTimeout(() => { PENDING_EVT = null; }, 8000);
+  loadAll(); // maybeReopenDrawer (hooked in paint) reopens once the event renders,
+             // and clears PENDING_EVT only after all sources settle if not found.
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
 
