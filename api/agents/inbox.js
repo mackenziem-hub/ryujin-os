@@ -23,7 +23,7 @@
 import { createHash } from 'crypto';
 import { supabaseAdmin } from '../../lib/supabase.js';
 import { requireCronOrOwner } from '../../lib/cronAuth.js';
-import { listConversations, getConversationMessages, ghlSendMessage } from '../../lib/ghl.js';
+import { listConversations, getConversationMessages, ghlSendMessage, getContactByPhone } from '../../lib/ghl.js';
 
 const PLUS_ULTRA_SLUG = 'plus-ultra';
 const RYUJIN_BASE = 'https://ryujin-os.vercel.app';
@@ -211,12 +211,16 @@ export async function triageMessage({ contactName, channel, messages }) {
 }
 
 // ── SMS digest to the owner (high-signal: notify=true items only) ──
-async function sendOwnerDigest(items) {
+// ownerContactId is resolved by the handler (config id, or phone->contact, or
+// the legacy constant as a last resort). Passed in so the send target is not
+// a hardcoded id that can go stale.
+async function sendOwnerDigest(items, ownerContactId) {
   if (process.env.OWNER_SMS_MUTED === '1') {
     console.log('[Inbox] SMS muted via OWNER_SMS_MUTED');
     return { muted: true };
   }
   if (!items.length) return { sent: false };
+  const contactId = ownerContactId || MACKENZIE_CONTACT_ID;
 
   const lines = ['RYUJIN INBOX'];
   lines.push(`${items.length} need${items.length > 1 ? '' : 's'} you now:`);
@@ -229,8 +233,8 @@ async function sendOwnerDigest(items) {
   lines.push(`Review: ${INBOX_URL}`);
 
   try {
-    await ghlSendMessage({ contactId: MACKENZIE_CONTACT_ID, type: 'SMS', message: lines.join('\n') });
-    return { sent: true };
+    await ghlSendMessage({ contactId, type: 'SMS', message: lines.join('\n') });
+    return { sent: true, contactId };
   } catch (e) {
     console.error('[Inbox] digest SMS failed:', e.message);
     return { sent: false, error: e.message };
@@ -238,8 +242,8 @@ async function sendOwnerDigest(items) {
 }
 
 // ── Main scan for one tenant ──
-async function runInbox({ tenantId, runId, startTime, allowlist = [] }) {
-  const result = { scanned: 0, triaged: 0, inserted: 0, notify: 0, allowlisted: 0, skipped: 0, errors: [] };
+async function runInbox({ tenantId, runId, startTime, allowlist = [], notifyCustomers = false, ownerContactId = null }) {
+  const result = { scanned: 0, triaged: 0, inserted: 0, notify: 0, allowlisted: 0, customerNotify: 0, skipped: 0, errors: [] };
 
   let convos = [];
   try {
@@ -311,18 +315,22 @@ async function runInbox({ tenantId, runId, startTime, allowlist = [] }) {
       const triage = await triageMessage({ contactName: c.contactName, channel: c.channel, messages });
       result.triaged++;
 
-      // Owner allow-list override: a watched contact (e.g. a vendor we are
-      // waiting on for pricing) ALWAYS pings, even when the leak/lead gate would
-      // stay silent. Layered ON TOP of triage; it only ever turns notify ON, so
-      // a real leak/lead notify is never lost. A draft reply is still optional.
+      // Owner notify overrides, layered ON TOP of the leak/lead triage gate.
+      // They only ever turn notify ON, so a real leak/lead notify is never lost.
+      //  (1) allow-list: a watched contact (e.g. a vendor we are waiting on for
+      //      pricing) ALWAYS pings.
+      //  (2) existing/booked customers: when notify_customers is on, any inbound
+      //      the model classified category='customer' (a roof we have done OR
+      //      booked, per the triage prompt) ALWAYS pings.
       const allowHit = matchAllowlist(c.contactName, allowlist);
-      if (allowHit && !triage.notify) {
+      const customerHit = notifyCustomers && triage.category === 'customer';
+      if (!triage.notify && (allowHit || customerHit)) {
         triage.notify = true;
-        triage.notify_reason = clampStr(
-          triage.notify_reason || `watching ${c.contactName}${allowHit.note ? ` (${allowHit.note})` : ''}`,
-          160
-        );
-        result.allowlisted++;
+        const reason = allowHit
+          ? `watching ${c.contactName}${allowHit.note ? ` (${allowHit.note})` : ''}`
+          : `existing/booked customer: ${c.contactName}`;
+        triage.notify_reason = clampStr(triage.notify_reason || reason, 160);
+        if (allowHit) result.allowlisted++; else result.customerNotify++;
       }
 
       // Insert the new state row first (so a later supersede can't orphan it).
@@ -395,7 +403,7 @@ async function runInbox({ tenantId, runId, startTime, allowlist = [] }) {
       .limit(20);
 
     if (toNotify && toNotify.length) {
-      const digest = await sendOwnerDigest(toNotify);
+      const digest = await sendOwnerDigest(toNotify, ownerContactId);
       if (digest.sent) {
         await supabaseAdmin
           .from('inbox_items')
@@ -434,10 +442,24 @@ export default async function handler(req, res) {
     return res.json({ agent: 'inbox', skipped: 'inbox_agent_enabled is false for this tenant', tenant: slug });
   }
 
-  // Owner-tunable NOTIFY allow-list (watched contacts that always ping).
-  const allowlist = Array.isArray(settings?.inbox_config?.notify_allowlist)
-    ? settings.inbox_config.notify_allowlist
-    : [];
+  // Owner-tunable NOTIFY config (tenant_settings.inbox_config).
+  const cfg = settings?.inbox_config || {};
+  //  - notify_allowlist: watched contacts that always ping.
+  const allowlist = Array.isArray(cfg.notify_allowlist) ? cfg.notify_allowlist : [];
+  //  - notify_customers: any existing/booked customer (triage category) pings.
+  const notifyCustomers = cfg.notify_customers === true;
+  //  - owner SMS target: explicit contact id, else resolve the owner cell to a
+  //    GHL contact id at runtime, else the legacy constant. (The hardcoded id
+  //    went stale once -> GHL 400 "Contact not found".)
+  let ownerContactId = cfg.owner_sms_contact_id || null;
+  if (!ownerContactId && cfg.owner_sms_phone) {
+    try {
+      const oc = await getContactByPhone(cfg.owner_sms_phone);
+      if (oc?.id) ownerContactId = oc.id;
+    } catch (e) {
+      console.warn('[Inbox] owner contact resolve by phone failed:', e.message);
+    }
+  }
 
   // Open an agent_runs row so inbox_items can FK to it; close it at the end.
   const trigger = req.query.manual ? 'manual' : (auth.via === 'cron-secret' ? 'cron_daily' : 'manual');
@@ -457,10 +479,14 @@ export default async function handler(req, res) {
   // unwinds past both try and catch cannot then strand a zombie running row.
   let runClosed = false;
   try {
-    const result = await runInbox({ tenantId: tenant.id, runId, startTime, allowlist });
+    const result = await runInbox({ tenantId: tenant.id, runId, startTime, allowlist, notifyCustomers, ownerContactId });
     const durationMs = Date.now() - startTime;
     const status = result.errors.length ? 'partial' : 'success';
-    const summary = `Scanned ${result.scanned}, triaged ${result.triaged}, queued ${result.inserted}, notified ${result.notify}${result.allowlisted ? ` (${result.allowlisted} allow-listed)` : ''}`;
+    const overrideBits = [
+      result.allowlisted ? `${result.allowlisted} allow-listed` : null,
+      result.customerNotify ? `${result.customerNotify} customer` : null,
+    ].filter(Boolean).join(', ');
+    const summary = `Scanned ${result.scanned}, triaged ${result.triaged}, queued ${result.inserted}, notified ${result.notify}${overrideBits ? ` (${overrideBits})` : ''}`;
 
     if (runId) {
       await supabaseAdmin.from('agent_runs').update({
