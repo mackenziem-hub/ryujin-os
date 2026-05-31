@@ -207,6 +207,13 @@
     });
   }
 
+  // Page the operator is on — prefer the embedding top page if same-origin,
+  // else this page. Sent as ?cp= so the options brain knows the context.
+  function ryCurrentPage() {
+    try { const t = window.top; if (t && t !== window && t.location && /\.html$/.test(t.location.pathname)) return t.location.pathname + (t.location.search || '') + (t.location.hash || ''); } catch (e) {}
+    return location.pathname + (location.search || '') + (location.hash || '');
+  }
+
   // ─── Actions ───────────────────────────────────────────────────
   async function loadOptions(stateId) {
     loading = true;
@@ -214,7 +221,7 @@
     focusIdx = 0;
     renderOptions();
     try {
-      const url = `/api/options?pillar=${encodeURIComponent(PILLAR)}` + (stateId && stateId !== 'root' ? `&state=${encodeURIComponent(stateId)}` : '');
+      const url = `/api/options?pillar=${encodeURIComponent(PILLAR)}` + (stateId && stateId !== 'root' ? `&state=${encodeURIComponent(stateId)}` : '') + `&cp=${encodeURIComponent(ryCurrentPage())}`;
       const r = await fetch(url, { headers: { 'x-tenant-id': TENANT } });
       if (!r.ok) {
         elContext.textContent = `Could not load options: HTTP ${r.status}`;

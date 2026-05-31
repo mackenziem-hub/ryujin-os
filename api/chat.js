@@ -4,6 +4,7 @@ import { supabaseAdmin } from '../lib/supabase.js';
 import { peerReview, LENSES as PEER_REVIEW_LENSES } from '../lib/peer_review.js';
 import crypto from 'node:crypto';
 import { resolveSession } from '../lib/portalAuth.js';
+import { describeCurrentPage } from '../lib/pageCatalog.js';
 
 // ── ROLE-BASED ACCESS (Phase 5) ──
 // Role slugs: owner (Mac, full Ryujin), admin (Cat, ops EA), sales (Darcy, outside sales), crew (Diego/AJ/Pavanjot, production)
@@ -4369,7 +4370,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
   }
 
-  let { message, history = [], liveData, agent, attachments = [], conversation_id, quest_id, archetype: requestedArchetype, voiceMode: requestedVoiceMode, viewAs: requestedViewAs, effort: requestedEffort, mode: requestedMode } = req.body;
+  let { message, history = [], liveData, agent, attachments = [], conversation_id, quest_id, archetype: requestedArchetype, voiceMode: requestedVoiceMode, viewAs: requestedViewAs, effort: requestedEffort, mode: requestedMode, current_page } = req.body;
   // Phase 17: validate effort + mode. Default medium / quick.
   const effort = ['low', 'medium', 'high'].includes(requestedEffort) ? requestedEffort : 'medium';
   const interactionMode = ['quick', 'speech', 'agent'].includes(requestedMode) ? requestedMode : 'quick';
@@ -4637,7 +4638,12 @@ You are now Mackenzie's game development and product specialist.
   // Phase 5.2 + 13 caught BASE_PROMPT + memory + docs; this catches snapshot too.
   const stableCached  = userBasePrompt + preferencesContext + memoryContext + docsContext;
   const snapshotBlock = snapshotContext || '';
-  const perRequest    = agentPersona + fileContext + liveDataBlock;
+  // Where the operator is right now — per-request (changes on every navigation),
+  // so it MUST stay in the uncached block or it poisons the snapshot cache.
+  // Fail-closed: '' unless current_page.path is a real catalog page.
+  const pageSentence  = describeCurrentPage(current_page);
+  const pageBlock     = pageSentence ? `\n\n---\n\n# OPERATOR LOCATION\n${pageSentence}\nWhen the operator says "this", "here", "this job/page", or asks to act on what they are looking at, resolve it to this page/record.` : '';
+  const perRequest    = agentPersona + fileContext + liveDataBlock + pageBlock;
   const systemPrompt = [
     { type: 'text', text: stableCached, cache_control: { type: 'ephemeral' } },
     ...(snapshotBlock ? [{ type: 'text', text: snapshotBlock, cache_control: { type: 'ephemeral' } }] : []),

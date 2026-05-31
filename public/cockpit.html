@@ -217,11 +217,20 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg)
       .catch(function(){ renderHistory(); });
   }
 
+  // Cockpit opens over a host page (overlay) or via navigation. Resolve the
+  // page the operator is actually working on so the brain knows "where I am".
+  // Same-origin only; falls back to the referrer, then to self.
+  function cockpitHostPage(){
+    try { if(window.top && window.top!==window && window.top.location){ var L=window.top.location; if(L.pathname && L.pathname!=='/cockpit.html') return L.pathname+(L.search||'')+(L.hash||''); } }catch(e){}
+    try { if(document.referrer){ var u=new URL(document.referrer); if(u.origin===location.origin && u.pathname!=='/cockpit.html') return u.pathname+u.search+u.hash; } }catch(e){}
+    return location.pathname+(location.search||'')+(location.hash||'');
+  }
+
   // ── 4 contextual choices (/api/options) ──
   function renderSkeletonChoices(){ choicesEl.innerHTML=''; for(var i=0;i<4;i++){ var s=document.createElement('div'); s.className='choice skeleton'; s.textContent='...'; choicesEl.appendChild(s); } }
   function loadOptions(){
     renderSkeletonChoices();
-    fetch('/api/options?pillar=hq',{ headers:tHeaders() })
+    fetch('/api/options?pillar=hq&cp='+encodeURIComponent(cockpitHostPage()),{ headers:tHeaders() })
       .then(function(r){ return r.ok?r.json():null; })
       .then(function(d){
         choicesEl.innerHTML='';
@@ -281,7 +290,7 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg)
     var toolsWrap=null, toolNodes={}, toolEnded={};
     setState('thinking');
 
-    var body={ message:text, history:conversation.slice(-12).map(function(m){return {role:m.role,content:m.content};}), mode:'quick', effort:'medium', conversation_id:streamConvId||undefined };
+    var body={ message:text, history:conversation.slice(-12).map(function(m){return {role:m.role,content:m.content};}), mode:'quick', effort:'medium', conversation_id:streamConvId||undefined, current_page:{ path: cockpitHostPage() } };
     var answer='', gotText=false, finished=false;
     // any tool chip that never received a tool_end (stream cut / timeout) must not
     // hang on "wait" — flip it to error. pending_approval chips DID get a tool_end

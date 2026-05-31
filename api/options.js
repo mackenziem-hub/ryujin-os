@@ -19,7 +19,7 @@ import { supabaseAdmin } from '../lib/supabase.js';
 import { requireTenant } from '../lib/tenant.js';
 import { requirePillar } from '../lib/entitlements.js';
 import { resolvePillar, archetypeOf } from '../lib/archetypeRegistry.js';
-import { catalogForPrompt, sanitizeNavAction } from '../lib/pageCatalog.js';
+import { catalogForPrompt, sanitizeNavAction, describeCurrentPage } from '../lib/pageCatalog.js';
 import { loadSnapshotObservations } from '../lib/observations.js';
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -139,6 +139,10 @@ async function handler(req, res) {
   const pillarConfig = resolvePillar(pillarSlug);
   if (!pillarConfig) return res.status(400).json({ error: `unknown pillar: ${pillarSlug}` });
 
+  // Where the operator is (?cp=<pathname+query>). Fail-closed: '' unless a real page.
+  const pageSentence = describeCurrentPage({ path: req.query.cp });
+  const pageContext = pageSentence ? `\n## Where the operator is\n${pageSentence}\n` : '';
+
   const obs = await loadObservations(req.tenant.id, pillarSlug);
   // Shared cross-pillar awareness: active-jobs roster + revenue totals from
   // /api/snapshot (Plus Ultra only; '' for other tenants).
@@ -150,7 +154,7 @@ async function handler(req, res) {
   const system = `${pillarConfig.persona_prompt}
 
 You are picking the top 4 actions for the operator's interactive-mode card stack. State id: "${stateId}".
-
+${pageContext}
 ## Observations available right now
 ${observationsText}
 

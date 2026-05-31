@@ -29,6 +29,13 @@
     return null;
   })();
 
+  // Page the operator is on — prefer the embedding top page if same-origin,
+  // else this page. Sent as current_page so the agent knows the context.
+  function ryCurrentPage() {
+    try { const t = window.top; if (t && t !== window && t.location && /\.html$/.test(t.location.pathname)) return t.location.pathname + (t.location.search || '') + (t.location.hash || ''); } catch (e) {}
+    return location.pathname + (location.search || '') + (location.hash || '');
+  }
+
   // Pillar resolution order:
   //   1. window.__RYUJIN_PILLAR__   (set by page-level inline script)
   //   2. <html data-pillar="…">     (set declaratively in markup)
@@ -703,7 +710,7 @@
       const r = await fetch('/api/agent-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-tenant-id': TENANT },
-        body: JSON.stringify({ pillar: PILLAR, message: text, conversation }),
+        body: JSON.stringify({ pillar: PILLAR, message: text, conversation, current_page: { path: ryCurrentPage() } }),
       });
       thinking.remove();
       if (!r.ok) {
