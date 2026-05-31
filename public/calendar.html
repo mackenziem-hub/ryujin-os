@@ -1368,12 +1368,8 @@ function maybeReopenDrawer(){
       return;
     }
   }
-  // Not found in this paint. Only give up once EVERY source has settled (a slow
-  // GHL fetch can still be in flight up to its own timeout) so a slow event
-  // still reopens; if it is truly gone, stop waiting so it cannot reopen later.
-  const settled = STATE.sched.status !== 'loading' && STATE.ghl.status !== 'loading'
-    && STATE.gcal.status !== 'loading' && STATE.blocks.status !== 'loading';
-  if (settled) PENDING_EVT = null;
+  // Not found in this paint -> wait for the next one (a slow source may still be
+  // loading). The restore handler's guarded timeout stops waiting if it never comes.
 }
 window.addEventListener('ry-nav-restore', (e) => {
   const d = e.detail || {};
@@ -1397,9 +1393,13 @@ window.addEventListener('ry-nav-restore', (e) => {
       crew.setAttribute('aria-selected', d.view === 'crew' ? 'true' : 'false');
     }
   }
-  PENDING_EVT = d.evtId || null;
-  loadAll(); // maybeReopenDrawer (hooked in paint) reopens once the event renders,
-             // and clears PENDING_EVT only after all sources settle if not found.
+  const want = d.evtId || null;
+  PENDING_EVT = want;
+  loadAll(); // maybeReopenDrawer (hooked in paint) reopens once the event renders.
+  // Give up only after longer than the slowest fetch (GHL ~12s timeout), and only
+  // if THIS restore is still pending, so a newer restore is never cancelled and
+  // overlapping load cycles cannot drop the id early.
+  if (want) setTimeout(() => { if (PENDING_EVT === want) PENDING_EVT = null; }, 15000);
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
 
