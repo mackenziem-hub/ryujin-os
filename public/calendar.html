@@ -613,7 +613,7 @@ function rerender(){
   // Apply legend source filters before rendering (hides cards on board + crew
   // lanes only; toolbar counts remain totals).
   const view = HIDDEN.size
-    ? merged.map(d => ({ date: d.date, events: d.events.filter(e => !HIDDEN.has(e.kind)) }))
+    ? merged.map(d => ({ date: d.date, events: d.events.filter(e => !HIDDEN.has(e.kind === 'install-ghost' ? 'install' : e.kind)) }))
     : merged;
   const allSettled = STATE.sched.status !== 'loading' && STATE.ghl.status !== 'loading' && STATE.gcal.status !== 'loading' && STATE.blocks.status !== 'loading';
   if (hasAny || allSettled) {
@@ -816,7 +816,7 @@ function crewBadges(crew){
   }).join('') + '</span>';
 }
 
-function evtCard(ev){
+function evtCard(ev, allowDrag){
   // Multi-day continuation ghost: display-only chip on a covered day. No
   // data-evt (so it is skipped by the click + drag wiring), not counted.
   if (ev.kind === 'install-ghost'){
@@ -884,7 +884,9 @@ function evtCard(ev){
   // Only pure workorder-bucketed installs are draggable/resizable: they bucket
   // by the WO's own start_date, so a move (PUT start_date) re-buckets cleanly.
   // Estimate-scheduled installs + all other kinds stay locked (view only).
-  const isDraggable = ev.kind === 'install' && ev.source === 'workorder' && !!ev.wo_id && (MY_ROLE === 'owner' || MY_ROLE === 'admin');
+  // allowDrag is true only from renderDayView (the drag engine runs on #board in
+  // day view only); crew view passes false so it shows no dead grab/resize UI.
+  const isDraggable = allowDrag && ev.kind === 'install' && ev.source === 'workorder' && !!ev.wo_id && (MY_ROLE === 'owner' || MY_ROLE === 'admin');
   const dragAttr = isDraggable ? ' data-draggable="install"' : '';
   const resizeHandle = isDraggable ? '<div class="evt-resize" aria-hidden="true" title="Drag to set how many days"></div>' : '';
   return `<div class="${cls}" tabindex="0" role="button" aria-label="${esc((ev.kind || 'event') + ': ' + (ev.title || '') + (ev.time ? ' at ' + ev.time : ''))}" data-evt='${esc(JSON.stringify(ev))}'${dragAttr}>
@@ -903,7 +905,7 @@ function renderDayView(days){
     const isToday = d.date === todayIso;
     const count = d.events.filter(e => e.kind !== 'install-ghost').length;  // badge = real bookings, not continuation ghosts
     const cards = d.events.length
-      ? d.events.map(evtCard).join('')
+      ? d.events.map(e => evtCard(e, true)).join('')
       : '<div class="empty-day"><img class="empty-illus" src="/assets/calendar/empty-booking.webp" alt="" loading="lazy">no events</div>';
     return `
       <div class="col ${isToday ? 'today' : ''}" data-date="${esc(d.date)}">
@@ -944,7 +946,7 @@ function renderCrewView(days){
       return `
         <div class="crew-day-group">
           <div class="crew-day-label">${esc(dayName)} ${date.getMonth()+1}/${date.getDate()}</div>
-          ${matched.map(evtCard).join('')}
+          ${matched.map(e => evtCard(e, false)).join('')}
         </div>`;
     }).join('');
     const body = dayGroups || `<div class="crew-empty"><img class="empty-illus" src="/assets/calendar/empty-booking.webp" alt="" loading="lazy">No assignments in this range</div>`;
