@@ -103,19 +103,29 @@ console.log('  bundle.sellingPre:', r5.bundle.sellingPre);
 console.log('  cashDiscount:', JSON.stringify(r5.cashDiscount));
 console.log('  cashOff:', r5.cashOff, '(should be > 0 if bundle > $50K)');
 
-console.log('\n=== Test 6: Remediation allowance charged at FACE VALUE (not marked up) ===');
+console.log('\n=== Test 6: Remediation = FACE VALUE, added after markup (bundle.sellingPre is work-only) ===');
 const ENV_REM = JSON.parse(JSON.stringify(ENV));
 ENV_REM.components.remediation = { hard: 2500, label: 'Remediation Allowance' };
-// Bundle = same work as Test 4 (gold+std vinyl: 18900 × 1.47 = 27783) + 2500 face = 30283
+// Bundle work = Test 4 (gold+std vinyl): 18900 × 1.47 = 27783 (no cash discount). final = 27783 + 2500 face
 const r6 = computeEnvelope(ENV_REM, { system: 'asphalt', roof: 'gold', siding: 'vinyl-standard', trim: {} });
-console.log('  bundle.sellingPre:', r6.bundle.sellingPre, 'totalHard:', r6.bundle.totalHard);
-assertNum(r6.bundle.sellingPre, 30283, 'bundle + face-value remediation');
-// Standalone = gold alone (5400+1200)×1.52 = 10032 + 2500 face = 12532
+console.log('  work sellingPre:', r6.bundle.sellingPre, '| remediation:', r6.remediation, '| final:', r6.finalSelling);
+assertNum(r6.bundle.sellingPre, 27783, 'bundle work sellingPre (no allowance)');
+assertNum(r6.finalSelling, 30283, 'bundle final = work + face allowance');
+// Standalone work = gold alone (5400+1200)×1.52 = 10032; final = 10032 + 2500 face
 const r7 = computeEnvelope(ENV_REM, { system: 'asphalt', roof: 'gold', siding: 'none', trim: {} });
-console.log('  standalone.sellingPre:', r7.bundle.sellingPre);
-assertNum(r7.bundle.sellingPre, 12532, 'standalone + face-value remediation');
-// No roof selected → remediation not applied (no project yet)
+console.log('  work sellingPre:', r7.bundle.sellingPre, '| final:', r7.finalSelling);
+assertNum(r7.finalSelling, 12532, 'standalone final = work + face allowance');
+// No roof selected → no project, no allowance
 const r8 = computeEnvelope(ENV_REM, { system: 'asphalt', roof: null, siding: 'none', trim: {} });
-assertNum(r8.bundle.sellingPre, 0, 'no roof → no remediation');
+assertNum(r8.finalSelling, 0, 'no roof → no allowance, final 0');
+
+console.log('\n=== Test 7: Cash discount applies to WORK only, never the refundable allowance ===');
+// metal-premium 18300 + wall 8500 + sequoia 8800 = 35600 work; score 5 → shell_ultra 1.58 = 56248
+// cashOff = 3% of 56248 (work) = 1687, NOT 3% of (56248+2500). final = 56248 - 1687 + 2500
+const r9 = computeEnvelope(ENV_REM, { system: 'metal', roof: 'metal-premium', siding: 'vinyl-sequoia', trim: {} });
+console.log('  work sellingPre:', r9.bundle.sellingPre, '| cashOff:', r9.cashOff, '| remediation:', r9.remediation, '| final:', r9.finalSelling);
+assertNum(r9.bundle.sellingPre, 56248, 'work sellingPre (discount base)');
+assertNum(r9.cashOff, 1687, 'cash discount on work only (not allowance)');
+assertNum(r9.finalSelling, 57061, 'final = work - discount + face allowance');
 
 console.log('\n=== Done ===\n');
