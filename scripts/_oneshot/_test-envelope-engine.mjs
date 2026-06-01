@@ -60,10 +60,10 @@ console.log('  savings:', r2.savings);
 // hard = 12600 + 8500 + 8800 = 29900; × 1.52 = 45448
 assertNum(r2.bundle.totalHard, 29900, 'shell-plus hard total');
 assertNum(r2.bundle.sellingPre, 45448, 'shell-plus selling');
-// Alone: roof (12600+1200)*1.52 = 21072; siding+wall (8800+8500+1200)*1.52 = 28956; sum = 50028
-assertNum(r2.alonePreTax, 50028, 'shell-plus alone total', 100);
-// savings = 50028 - 45448 = 4580
-assertNum(r2.savings, 4580, 'shell-plus savings', 100);
+// Alone: roof (12600+1200)*1.52 = 20976; siding+wall (8800+8500+1200)*1.52 = 28120; sum = 49096
+assertNum(r2.alonePreTax, 49096, 'shell-plus alone total', 100);
+// savings = 49096 - 45448 = 3648
+assertNum(r2.savings, 3648, 'shell-plus savings', 100);
 
 console.log('\n=== Test 3: Metal Prem + Cedar Shake + all 3 trim (Plus Ultra + Ultra Eve) ===');
 let r3 = computeEnvelope(ENV, {
@@ -102,5 +102,20 @@ let r5 = computeEnvelope(ENV, {
 console.log('  bundle.sellingPre:', r5.bundle.sellingPre);
 console.log('  cashDiscount:', JSON.stringify(r5.cashDiscount));
 console.log('  cashOff:', r5.cashOff, '(should be > 0 if bundle > $50K)');
+
+console.log('\n=== Test 6: Remediation allowance charged at FACE VALUE (not marked up) ===');
+const ENV_REM = JSON.parse(JSON.stringify(ENV));
+ENV_REM.components.remediation = { hard: 2500, label: 'Remediation Allowance' };
+// Bundle = same work as Test 4 (gold+std vinyl: 18900 × 1.47 = 27783) + 2500 face = 30283
+const r6 = computeEnvelope(ENV_REM, { system: 'asphalt', roof: 'gold', siding: 'vinyl-standard', trim: {} });
+console.log('  bundle.sellingPre:', r6.bundle.sellingPre, 'totalHard:', r6.bundle.totalHard);
+assertNum(r6.bundle.sellingPre, 30283, 'bundle + face-value remediation');
+// Standalone = gold alone (5400+1200)×1.52 = 10032 + 2500 face = 12532
+const r7 = computeEnvelope(ENV_REM, { system: 'asphalt', roof: 'gold', siding: 'none', trim: {} });
+console.log('  standalone.sellingPre:', r7.bundle.sellingPre);
+assertNum(r7.bundle.sellingPre, 12532, 'standalone + face-value remediation');
+// No roof selected → remediation not applied (no project yet)
+const r8 = computeEnvelope(ENV_REM, { system: 'asphalt', roof: null, siding: 'none', trim: {} });
+assertNum(r8.bundle.sellingPre, 0, 'no roof → no remediation');
 
 console.log('\n=== Done ===\n');
