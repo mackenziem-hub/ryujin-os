@@ -353,6 +353,45 @@ async function getScope(tenantId, woId, subId) {
   };
 }
 
+// ── Pay (sub-facing paysheet — labour + surcharges + totals ONLY) ──
+// The crew portal previously fetched pay via /api/paysheets?id=, which returns
+// the FULL paysheet row PLUS the joined estimate share_token. That let a sub
+// reach the customer-facing retail proposal (via the token) and read scope_notes
+// that carry customer retail $$$. This token-scoped action returns ONLY the
+// fields Ryan needs to verify his own pay. WO ownership is enforced (404 on a
+// WO the authed sub does not own) so a sub can't read another sub's paysheet.
+async function getPay(tenantId, woId, subId) {
+  const { data: wo } = await supabaseAdmin
+    .from('workorders')
+    .select('id, linked_paysheet_id')
+    .eq('tenant_id', tenantId).eq('subcontractor_id', subId).eq('id', woId)
+    .single();
+  if (!wo) return { error: 'Work order not found', status: 404 };
+  if (!wo.linked_paysheet_id) return { paysheet: null };
+
+  const { data: ps } = await supabaseAdmin
+    .from('paysheets')
+    .select('id, status, labour_breakdown, surcharges, subtotal, hst, total')
+    .eq('tenant_id', tenantId).eq('id', wo.linked_paysheet_id)
+    .single();
+  if (!ps) return { paysheet: null };
+
+  // Curated, sub-safe shape. No estimate join, no scope_notes / notes /
+  // pricing_sources / payment_tracker / acceptance tokens — none of Mac's
+  // customer-side data crosses to the sub.
+  return {
+    paysheet: {
+      id: ps.id,
+      status: ps.status,
+      labour_breakdown: Array.isArray(ps.labour_breakdown) ? ps.labour_breakdown : [],
+      surcharges: Array.isArray(ps.surcharges) ? ps.surcharges : [],
+      subtotal: ps.subtotal,
+      hst: ps.hst,
+      total: ps.total
+    }
+  };
+}
+
 // ── Update checklist step (sub marks a step done) ───────────────
 // Atomic: refetch checklist, mutate the target step, write back. Step matched
 // by step_number first, falling back to array index. Sets completed_at stamp
@@ -722,13 +761,20 @@ async function handler(req, res) {
     return res.json(result);
   }
 
+  if (action === 'pay') {
+    if (!woId) return res.status(400).json({ error: 'wo_id required' });
+    const result = await getPay(tenantId, woId, sub.id);
+    if (result.error) return res.status(result.status || 500).json({ error: result.error });
+    return res.json(result);
+  }
+
   if (action === 'rates') {
     const result = getRatesForSub(sub);
     if (result.error) return res.status(result.status || 500).json({ error: result.error });
     return res.json(result);
   }
 
-  return res.status(400).json({ error: 'Unknown action. Valid: photos, materials, schedule, scope, rates, update_checklist, send_question, admin-settings' });
+  return res.status(400).json({ error: 'Unknown action. Valid: photos, materials, schedule, scope, pay, rates, update_checklist, send_question, admin-settings' });
 }
 
 export default requireTenant(handler);
