@@ -128,4 +128,9 @@ assertNum(r9.bundle.sellingPre, 56248, 'work sellingPre (discount base)');
 assertNum(r9.cashOff, 1687, 'cash discount on work only (not allowance)');
 assertNum(r9.finalSelling, 57061, 'final = work - discount + face allowance');
 
+console.log('\n=== Test 8: Displayed totals reconcile (Separate - Savings - Discount = Investment) ===');
+// No-discount case (r6) and discount case (r9) must both reconcile with remediation present.
+assertNum(r6.alonePreTax - r6.savings - r6.cashOff, r6.finalSelling, 'r6 reconcile (no discount)');
+assertNum(r9.alonePreTax - r9.savings - r9.cashOff, r9.finalSelling, 'r9 reconcile (with discount)');
+
 console.log('\n=== Done ===\n');
