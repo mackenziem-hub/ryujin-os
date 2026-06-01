@@ -378,13 +378,21 @@ async function getPay(tenantId, woId, subId) {
 
   // Curated, sub-safe shape. No estimate join, no scope_notes / notes /
   // pricing_sources / payment_tracker / acceptance tokens — none of Mac's
-  // customer-side data crosses to the sub.
+  // customer-side data crosses to the sub. Per-row `.note` is also stripped
+  // from each line item: it carries internal section refs (§1.1 [A]) and has
+  // historically leaked customer-side context. Mirrors the sanitizer in
+  // api/paysheet-public.js so both sub-facing pay reads strip the same fields.
+  const stripNote = (arr) => (Array.isArray(arr) ? arr : []).map((row) => {
+    if (!row || typeof row !== 'object') return row;
+    const { note, ...rest } = row;
+    return rest;
+  });
   return {
     paysheet: {
       id: ps.id,
       status: ps.status,
-      labour_breakdown: Array.isArray(ps.labour_breakdown) ? ps.labour_breakdown : [],
-      surcharges: Array.isArray(ps.surcharges) ? ps.surcharges : [],
+      labour_breakdown: stripNote(ps.labour_breakdown),
+      surcharges: stripNote(ps.surcharges),
       subtotal: ps.subtotal,
       hst: ps.hst,
       total: ps.total
