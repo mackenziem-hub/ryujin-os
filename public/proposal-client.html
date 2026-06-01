@@ -2903,6 +2903,13 @@ function envCompute(env, sel) {
     .map(k => ({ key: k, ...(envGetPrep(env, k) || {}) }))
     .filter(p => p.hard != null);
 
+  // Remediation allowance (SOP Section 13): a mandatory, always-included
+  // project line on every Performance Shell proposal, framed to the client as
+  // transparency (unused portion credited back). Only carried once a roof is
+  // chosen (it's a project allowance, meaningless with no project selected).
+  const remediation = env?.components?.remediation || null;
+  const remHard = (roof && remediation?.hard) ? remediation.hard : 0;
+
   let bundle;
   if (bundleTier) {
     const wallHard = env?.components?.wall_assembly?.hard || 0;
@@ -2910,17 +2917,25 @@ function envCompute(env, sel) {
     const sidHard = sid?.hard || 0;
     const trimHard = trimItems.reduce((s,t)=>s+(t.hard||0),0);
     const prepHard = prepItems.reduce((s,p)=>s+(p.hard||0),0);
-    const totalHard = roofHard + wallHard + sidHard + trimHard + prepHard;
+    const totalHard = roofHard + wallHard + sidHard + trimHard + prepHard + remHard;
     const sellingPre = Math.round(totalHard * bundleTier.mult);
     bundle = { mode: 'bundle', tier: bundleTier, totalHard, sellingPre,
-               breakdown: { roof, wall: { hard: wallHard }, siding: sid, trim: trimItems, prep: prepItems } };
+               breakdown: { roof, wall: { hard: wallHard }, siding: sid, trim: trimItems, prep: prepItems, remediation: remHard ? remediation : null } };
   } else {
-    const roofAlone = roof ? envStandalone(env, roof.hard||0) : 0;
-    const trimAlone = trimItems.reduce((s,t) => s + envStandalone(env, t.hard||0), 0);
-    const prepAlone = prepItems.reduce((s,p) => s + envStandalone(env, p.hard||0), 0);
-    const sellingPre = roofAlone + trimAlone + prepAlone;
-    bundle = { mode: 'standalone_roof', tier: null, totalHard: (roof?.hard||0) + trimItems.reduce((s,t)=>s+(t.hard||0),0) + prepItems.reduce((s,p)=>s+(p.hard||0),0), sellingPre,
-               breakdown: { roof, wall: null, siding: null, trim: trimItems, prep: prepItems } };
+    // Day-trip mobilization is a single project cost. Charge it ONCE on the
+    // combined hard cost, not once per line item (the previous per-item version
+    // stacked the premium every time a trim/prep was added). The "if bought
+    // separately" anchor below still applies it per line, because separate
+    // jobs really would each incur their own trip.
+    const mob = env?.standalone_mob_premium ?? ENV_DEFAULTS.standalone_mob_premium;
+    const mult = env?.standalone_multiplier ?? ENV_DEFAULTS.standalone_multiplier;
+    const standaloneHard = (roof?.hard||0)
+      + trimItems.reduce((s,t)=>s+(t.hard||0),0)
+      + prepItems.reduce((s,p)=>s+(p.hard||0),0)
+      + remHard;
+    const sellingPre = roof ? Math.round((standaloneHard + mob) * mult) : 0;
+    bundle = { mode: 'standalone_roof', tier: null, totalHard: standaloneHard, sellingPre,
+               breakdown: { roof, wall: null, siding: null, trim: trimItems, prep: prepItems, remediation: remHard ? remediation : null } };
   }
 
   // Alone total (for "if bought separately" comparison)
@@ -2932,6 +2947,7 @@ function envCompute(env, sel) {
   }
   for (const t of trimItems) alonePre += envStandalone(env, t.hard||0);
   for (const p of prepItems) alonePre += envStandalone(env, p.hard||0);
+  if (remHard) alonePre += envStandalone(env, remHard);
 
   const savings = Math.max(0, alonePre - bundle.sellingPre);
 
@@ -3154,6 +3170,8 @@ function envRenderSelections(result) {
       if (def) rows.push({ lbl: 'Trim', val: def.label });
     }
   });
+  const rem = env?.components?.remediation;
+  if (rem && roof) rows.push({ lbl: 'Included', val: (rem.label || 'Remediation Allowance') + ' (credited back if unused)' });
   if (rows.length === 0) {
     wrap.innerHTML = `<div class="sel-row" style="color:rgba(232,237,245,0.4);font-style:italic;justify-content:center">— start by picking a roof —</div>`;
     return;
