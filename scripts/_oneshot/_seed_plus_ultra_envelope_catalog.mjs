@@ -131,6 +131,11 @@ const catalog = {
       label: '12-Month No-Interest Financing',
       subtitle: 'Customer pays nothing upfront, 12 months no interest no payments through Plus Ultra financing partner. Toggle ON to show the financing badge + monthly equivalent.',
       hard: 0
+    },
+    inspection_photos: {
+      label: 'Inspection Photo Gallery',
+      subtitle: 'Embeds the project photo gallery on the customer-facing proposal. Photos pulled from the linked project folder, marked-up versions (from the annotator) display when available.',
+      hard: 0
     }
   }
 };
