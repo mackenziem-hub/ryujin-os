@@ -1,4 +1,5 @@
 import { resolveSession } from '../lib/portalAuth.js';
+import { supabaseAdmin } from '../lib/supabase.js';
 
 const GHL_BASE = 'https://services.leadconnectorhq.com';
 const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
@@ -157,6 +158,102 @@ async function fetchContactNotes(contactId) {
     console.error(`fetchContactNotes(${contactId}) failed:`, err.message);
     return [];
   }
+}
+
+// GHL /conversations/{id}/messages returns three shapes depending on token
+// scope and conversation type. Normalize to a flat array of raw messages.
+// Mirrors the inline triage in the contact-detail mode (around line 573).
+function normalizeMessagesPayload(msgData) {
+  if (!msgData) return [];
+  if (Array.isArray(msgData)) return msgData;
+  if (Array.isArray(msgData.messages)) return msgData.messages;
+  if (msgData.messages && Array.isArray(msgData.messages.messages)) return msgData.messages.messages;
+  return [];
+}
+
+// Map a raw GHL message to the trimmed shape the UI consumes. Also resolves
+// GHL's numeric `type` enum into a human channel label so the UI can render
+// SMS / EMAIL / CALL badges without keeping its own enum map.
+const GHL_MESSAGE_TYPE_LABELS = {
+  1: 'SMS', 2: 'EMAIL', 3: 'VOICEMAIL', 4: 'CALL',
+  5: 'SMS_REVIEW_REQUEST', 6: 'WEBCHAT', 7: 'LIVE_CHAT', 8: 'FB_MESSENGER',
+  9: 'IG_DM', 25: 'ACTIVITY_CONVERSATION', 26: 'ACTIVITY_OPPORTUNITY',
+  27: 'ACTIVITY_APPOINTMENT', 28: 'ACTIVITY_CONTACT', 29: 'ACTIVITY',
+};
+function mapMessage(m) {
+  // Prefer the string messageType (TYPE_SMS, TYPE_EMAIL, ...) when present;
+  // fall back to the numeric type via the label map; default to UNKNOWN so
+  // the UI badge never renders blank.
+  const stringType = m.messageType;
+  const labelFromInt = typeof m.type === 'number' ? GHL_MESSAGE_TYPE_LABELS[m.type] : null;
+  const channel = stringType
+    ? String(stringType).replace(/^TYPE_/, '')
+    : (labelFromInt || 'UNKNOWN');
+  return {
+    id: m.id,
+    body: m.body || '',
+    direction: m.direction || null,
+    type: stringType || labelFromInt || null,
+    channel,
+    status: m.status || null,
+    dateAdded: m.dateAdded || null
+  };
+}
+
+// In-memory cache: subcontractor_id -> { ghl_contact_id|null, lookedUpAt }
+// Reset on cold start. Avoids re-running the contact search on every panel
+// open for the same sub while the function instance is warm.
+const SUB_GHL_CACHE = new Map();
+const SUB_GHL_CACHE_TTL_MS = 10 * 60 * 1000;
+
+// Resolve a Ryujin subcontractor row to its GHL contact id by searching
+// the location's contacts on email first, then phone. Returns null when
+// neither lookup matches (e.g. Ryan's southcentralroof@gmail.com if it
+// were ever removed from GHL). The sub row itself is the source of truth
+// for tenant scoping; the caller already validated the session, but the
+// per-tenant filter on subcontractors.id ensures one tenant's session
+// can't probe another tenant's subs through this endpoint.
+async function resolveSubGhlContactId(tenantId, subId) {
+  const cacheKey = `${tenantId}:${subId}`;
+  const cached = SUB_GHL_CACHE.get(cacheKey);
+  if (cached && Date.now() - cached.lookedUpAt < SUB_GHL_CACHE_TTL_MS) {
+    return cached;
+  }
+
+  const { data: sub } = await supabaseAdmin
+    .from('subcontractors')
+    .select('id, name, email, phone, company, active, archived_at')
+    .eq('id', subId)
+    .eq('tenant_id', tenantId)
+    .maybeSingle();
+  if (!sub) {
+    const miss = { sub: null, ghlContactId: null, lookedUpAt: Date.now() };
+    SUB_GHL_CACHE.set(cacheKey, miss);
+    return miss;
+  }
+
+  let ghlContactId = null;
+  const tryQuery = async (query) => {
+    if (!query) return null;
+    try {
+      const data = await ghlFetch('/contacts/', { locationId: LOCATION_ID, query, limit: '5' });
+      const matches = data.contacts || [];
+      // Prefer an email-exact match when searching by email, otherwise take
+      // the first result (GHL search ranks closest match first).
+      const lowerQ = query.toLowerCase();
+      const emailExact = matches.find(c => (c.email || '').toLowerCase() === lowerQ);
+      return (emailExact || matches[0])?.id || null;
+    } catch (err) {
+      console.error(`resolveSubGhlContactId search "${query}" failed:`, err.message);
+      return null;
+    }
+  };
+  if (sub.email) ghlContactId = await tryQuery(sub.email);
+  if (!ghlContactId && sub.phone) ghlContactId = await tryQuery(sub.phone);
+
+  const entry = { sub, ghlContactId, lookedUpAt: Date.now() };
+  SUB_GHL_CACHE.set(cacheKey, entry);
+  return entry;
 }
 
 function enrichOpportunity(opp) {
@@ -627,21 +724,99 @@ export default async function handler(req, res) {
           timestamp: new Date().toISOString()
         });
       }
-      // Fetch messages from the conversation
+      // Fetch messages from the conversation. GHL returns
+      // { messages: { messages: [], nextPage, lastMessageId } } for the
+      // dedicated messages endpoint. Use the shared normalizer so this
+      // and sub-thread mode stay in sync. Older shape `{messages: []}`
+      // is preserved by the normalizer for forward compat.
       const msgData = await ghlFetch(`/conversations/${convo.id}/messages`, { limit });
-      const messages = (msgData.messages || []).map(m => ({
-        id: m.id,
-        body: m.body,
-        direction: m.direction,
-        type: m.messageType || m.type,
-        status: m.status,
-        dateAdded: m.dateAdded
-      }));
+      const messages = normalizeMessagesPayload(msgData).map(mapMessage);
       return res.json({
         mode: 'conversation',
         contactId,
         conversationId: convo.id,
         contactName: convo.fullName || convo.contactName,
+        total: msgData.total || messages.length,
+        messages,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // === SUB THREAD: subcontractor conversation lookup by Ryujin sub id ===
+    // Job folder Section 8 (COMMS) calls this when rendering the Sub tab.
+    // Subs are stored in the local subcontractors table (no ghl_contact_id
+    // column); we look the contact up by email then phone, cache the
+    // resolution for 10 min, and return the same {messages, conversationId}
+    // shape as `conversations` mode. When the sub has no GHL contact match
+    // (Ryan emails direct via Gmail without ever having a GHL conversation,
+    // for example), we return resolved=false plus the sub's email/phone so
+    // the UI can render a Gmail/SMS deep-link fallback instead of an empty
+    // inbox that looks broken.
+    if (resolvedMode === 'sub-thread' && req.query.subId) {
+      const session = await resolveSession(req);
+      if (!session) return res.status(401).json({ error: 'sign_in_required' });
+
+      const subId = String(req.query.subId);
+      const { sub, ghlContactId } = await resolveSubGhlContactId(session.tenant_id, subId);
+      if (!sub) return res.status(404).json({ error: 'subcontractor_not_found', subId });
+
+      const subSummary = {
+        id: sub.id,
+        name: sub.name,
+        company: sub.company,
+        email: sub.email,
+        phone: sub.phone,
+        archived: !!sub.archived_at,
+      };
+
+      if (!ghlContactId) {
+        return res.json({
+          mode: 'sub-thread',
+          subId,
+          resolved: false,
+          sub: subSummary,
+          ghl_contact_id: null,
+          conversationId: null,
+          messages: [],
+          total: 0,
+          fallback: {
+            reason: sub.email || sub.phone
+              ? 'no_ghl_conversation'
+              : 'no_email_or_phone',
+            gmail_search_url: sub.email
+              ? `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(sub.email)}`
+              : null,
+            tel_url: sub.phone ? `tel:${sub.phone}` : null,
+          },
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      const searchData = await ghlFetch('/conversations/search', { locationId: LOCATION_ID, contactId: ghlContactId });
+      const convo = (searchData.conversations || [])[0];
+      if (!convo) {
+        return res.json({
+          mode: 'sub-thread',
+          subId,
+          resolved: true,
+          sub: subSummary,
+          ghl_contact_id: ghlContactId,
+          conversationId: null,
+          messages: [],
+          total: 0,
+          timestamp: new Date().toISOString()
+        });
+      }
+      const msgData = await ghlFetch(`/conversations/${convo.id}/messages`, { limit });
+      const messages = normalizeMessagesPayload(msgData).map(mapMessage);
+      return res.json({
+        mode: 'sub-thread',
+        subId,
+        resolved: true,
+        sub: subSummary,
+        ghl_contact_id: ghlContactId,
+        conversationId: convo.id,
+        contactName: convo.fullName || convo.contactName || sub.name,
         total: msgData.total || messages.length,
         messages,
         timestamp: new Date().toISOString()
