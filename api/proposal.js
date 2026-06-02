@@ -540,6 +540,9 @@ export default async function handler(req, res) {
     // roof/siding selection, trim toggles, package-name morph, savings
     // ticker, cash-discount meter) instead of (or alongside) flat tier cards.
     envelope: est.custom_prices?._envelope || null,
+    // Inspection photos for the linked project. Filled below before the
+    // response is sent so the await stays out of the object literal.
+    inspectionPhotos: [],
     gammaDeckUrl: est.custom_prices?._gamma_deck_url || null,
     gammaDeckLabel: est.custom_prices?._gamma_deck_label || 'View Visual Walkthrough',
     media: {
@@ -593,6 +596,45 @@ export default async function handler(req, res) {
       }))
     } : null
   };
+
+  // Inspection photos resolution. Surfaced only when the envelope toggles
+  // inspection_photos visible. Renderer prefers annotated_url (PR #189
+  // annotator output) over the raw url so marked-up versions display.
+  // Pulled from project_files for the customer's most-recent project.
+  try {
+    const inspComp = data.envelope?.components?.inspection_photos;
+    if (inspComp && !inspComp.hidden && est.customer_id) {
+      const { data: project } = await supabaseAdmin
+        .from('projects')
+        .select('id')
+        .eq('tenant_id', est.tenant_id)
+        .eq('customer_id', est.customer_id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (project) {
+        const { data: files } = await supabaseAdmin
+          .from('project_files')
+          .select('id, url, annotated_url, caption, category, sort_order, uploaded_at, mime_type')
+          .eq('tenant_id', est.tenant_id)
+          .eq('project_id', project.id)
+          .order('sort_order', { ascending: true })
+          .order('uploaded_at', { ascending: false });
+        data.inspectionPhotos = (files || [])
+          .filter(f => f.mime_type?.startsWith('image/'))
+          .map(f => ({
+            id: f.id,
+            url: f.annotated_url || f.url,
+            original_url: f.url,
+            has_annotations: !!f.annotated_url,
+            caption: f.caption || '',
+            category: f.category || 'inspection',
+          }));
+      }
+    }
+  } catch (e) {
+    console.warn('[proposal] inspectionPhotos fetch failed:', e?.message);
+  }
 
   supabaseAdmin
     .from('proposals')

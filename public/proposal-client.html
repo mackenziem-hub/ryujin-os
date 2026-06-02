@@ -795,6 +795,11 @@ body:not(.app-ready) .topbar{visibility:hidden}
 /* Trim toggles use same option style but binary on/off */
 .env-trim-toggles{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 @media (max-width:580px){.env-trim-toggles{grid-template-columns:1fr}}
+.env-inspection-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
+.env-insp-card{position:relative;border-radius:14px;overflow:hidden;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);margin:0;display:flex;flex-direction:column}
+.env-insp-card img{width:100%;height:200px;object-fit:cover;display:block}
+.env-insp-card figcaption{padding:10px 12px;font-size:0.82rem;color:rgba(232,237,245,0.78);line-height:1.4;background:rgba(0,0,0,0.18)}
+.env-insp-badge{position:absolute;top:8px;right:8px;background:rgba(253,204,2,0.92);color:#0b1220;padding:3px 9px;border-radius:999px;font-size:0.68rem;font-weight:800;letter-spacing:0.5px;text-transform:uppercase}
 .env-trim-tile{display:flex;flex-direction:column;gap:8px;padding:18px 16px;background:rgba(255,255,255,0.03);border:1.5px solid rgba(255,255,255,0.08);border-radius:12px;cursor:pointer;transition:all 0.16s;user-select:none;position:relative;text-align:left}
 .env-trim-tile:hover{border-color:rgba(253,204,2,0.4);background:rgba(255,255,255,0.06)}
 .env-trim-tile.on{border-color:#fdcc02;background:linear-gradient(135deg,rgba(253,204,2,0.10) 0%,rgba(253,204,2,0.02) 100%);box-shadow:0 0 0 1.5px #fdcc02 inset}
@@ -1610,6 +1615,12 @@ body:not(.envelope-active) #envelopeSection{display:none !important}
           <h3>Add-ons</h3>
           <div class="env-block-sub">Optional upgrades that pair well with a new roof.</div>
           <div class="env-trim-toggles" id="envAddonsToggles"></div>
+        </div>
+
+        <div class="env-block" id="envInspectionBlock" hidden>
+          <h3>Inspection Findings</h3>
+          <div class="env-block-sub">Photos from our on-site inspection of your roof. Annotated where we flagged specific findings.</div>
+          <div class="env-inspection-grid" id="envInspectionGrid"></div>
         </div>
 
         <div class="env-diagram-card" id="envSystemCard" hidden>
@@ -3388,6 +3399,35 @@ function envToggleAddon(key) {
 }
 window.envToggleAddon = envToggleAddon;
 
+// Inspection findings gallery. Renders when inspection_photos component is
+// visible on the envelope. Photos come from DATA.inspectionPhotos (filled
+// by api/proposal.js from project_files for the customer's project, with
+// annotated_url preference). If the component is in the envelope but no
+// photos exist yet, an empty-state hint shows so the section doesn't
+// silently disappear after the toggle.
+function envRenderInspection() {
+  const env = DATA.envelope;
+  if (!env) return;
+  const block = document.getElementById('envInspectionBlock');
+  const grid = document.getElementById('envInspectionGrid');
+  if (!block || !grid) return;
+  const comp = env?.components?.inspection_photos;
+  if (!comp || comp.hidden) { block.hidden = true; return; }
+  const photos = Array.isArray(DATA.inspectionPhotos) ? DATA.inspectionPhotos : [];
+  block.hidden = false;
+  if (!photos.length) {
+    grid.innerHTML = `<div style="padding:18px;text-align:center;color:rgba(232,237,245,0.55);font-size:0.9rem;border:1px dashed rgba(232,237,245,0.18);border-radius:10px">No inspection photos uploaded yet for this project. Upload photos in the job folder, then they will appear here automatically.</div>`;
+    return;
+  }
+  grid.innerHTML = photos.map(p => `
+    <figure class="env-insp-card">
+      <img src="${escapeHtml(p.url)}" alt="${escapeHtml(p.caption || 'Inspection photo')}" loading="lazy" decoding="async">
+      ${p.has_annotations ? '<span class="env-insp-badge">Marked</span>' : ''}
+      ${p.caption ? `<figcaption>${escapeHtml(p.caption)}</figcaption>` : ''}
+    </figure>
+  `).join('');
+}
+
 function envRenderSelections(result) {
   const wrap = document.getElementById('envSelections');
   if (!wrap || !result) return;
@@ -3561,6 +3601,7 @@ function envRenderAll() {
   envRenderTrimToggles();
   envRenderServices();
   envRenderAddons();
+  envRenderInspection();
   envRenderSelections(result);
   envRenderSummary(result);
   envRenderPreview(result);
