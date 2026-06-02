@@ -351,11 +351,44 @@ body::before{
     originalSnapshot = JSON.stringify(envelope);
 
     if (!envelope){
-      fatal('No envelope on this estimate', 'This estimate has no <code>custom_prices._envelope</code> configurator structure. The proposal-builder only edits envelope-mode estimates today.');
+      // No envelope configurator on this estimate (e.g. a plain "Roof Only"
+      // proposal). The pricing sections need an envelope, but inspection-photo
+      // upload does not — it keys off estimate_id alone. Render a stripped-down
+      // view with just the photo uploader so Mac can still add cover / before /
+      // after / inspection shots without an envelope. (See the no-envelope fix:
+      // photos surface on the proposal via api/proposal's estimate_photos map.)
+      renderPhotoOnly();
       return;
     }
 
     render();
+  }
+
+  // ── Photo-only render (no envelope on this estimate) ──
+  function renderPhotoOnly(){
+    const cust = estimate.customer || {};
+    const statusPill = estimate.status ? `<span class="pill">${escapeHtml(estimate.status)}</span>` : '';
+    const header = `
+      <div class="header-card">
+        <div class="label">ESTIMATE PU-${escapeHtml(estimate.estimate_number || '?')}</div>
+        <div class="customer">${escapeHtml(cust.full_name || 'Unknown customer')}</div>
+        <div class="meta">${escapeHtml(cust.address || estimate.address || '(no address)')} ${cust.city ? '· ' + escapeHtml(cust.city) : ''}</div>
+        <div class="pills">${statusPill}<span class="pill warn">No configurator</span></div>
+      </div>
+    `;
+    const notice = `
+      <div class="section">
+        <div class="section-head">
+          <h2>Pricing configurator unavailable</h2>
+          <div class="sub">This estimate has no envelope structure, so the pricing/tier sections aren't editable here. You can still upload and manage inspection photos below. Cover and before/after shots will appear on the proposal automatically.</div>
+        </div>
+      </div>
+    `;
+    const inspectionPanel = renderInspectionPanel();
+    document.getElementById('app').innerHTML = header + notice + inspectionPanel;
+    // actionBar stays hidden: there's no envelope to save.
+    bindInspectionPanel();
+    loadInspectionPhotos();
   }
 
   // ── Render ──
