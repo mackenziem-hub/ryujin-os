@@ -80,8 +80,23 @@ async function handler(req, res) {
 
   // ── GET ──
   if (req.method === 'GET') {
-    const { project_id, category, client_visible } = req.query;
-    if (!project_id) return res.status(400).json({ error: 'project_id required' });
+    const { project_id, category, client_visible, id } = req.query;
+
+    // Single-file fetch by id, used by the annotator page which only
+    // knows the file id, not the parent project. Tenant-scoped.
+    if (id) {
+      const { data, error } = await supabaseAdmin
+        .from('project_files')
+        .select('*, uploaded_by_user:users!project_files_uploaded_by_fkey(name)')
+        .eq('id', id)
+        .eq('tenant_id', tenantId)
+        .maybeSingle();
+      if (error) return res.status(500).json({ error: error.message });
+      if (!data) return res.status(404).json({ error: 'File not found' });
+      return res.json(data);
+    }
+
+    if (!project_id) return res.status(400).json({ error: 'project_id or id required' });
 
     let query = supabaseAdmin
       .from('project_files')

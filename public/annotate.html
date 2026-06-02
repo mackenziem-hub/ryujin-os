@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#0a0e1a">
+<title>Annotate · Ryujin</title>
+<link rel="icon" href="/apple-touch-icon.png">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0a0e1a;
+  --bg-2:#0d1322;
+  --card:#11172c;
+  --border:rgba(255,255,255,0.08);
+  --border-hi:rgba(45,212,191,0.30);
+  --text:#eaf0fa;
+  --text-dim:#9aa8c4;
+  --text-muted:#5e6b86;
+  --accent:#2dd4bf;
+  --accent-hi:#5eead4;
+  --danger:#ff6b6b;
+  --success:#7ed99e;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}
+html,body{height:100%;overflow:hidden;overscroll-behavior:none}
+body{
+  font-family:'Inter',system-ui,-apple-system,sans-serif;
+  background:var(--bg);
+  color:var(--text);
+  -webkit-font-smoothing:antialiased;
+  position:fixed;inset:0;
+}
+
+/* ── Header ───────────────────────────────────────────── */
+.topbar{
+  position:fixed;top:0;left:0;right:0;height:56px;z-index:20;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 14px;
+  background:linear-gradient(180deg,rgba(10,14,26,0.92),rgba(10,14,26,0.65));
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--border);
+  padding-top:max(env(safe-area-inset-top),0px);
+  height:calc(56px + max(env(safe-area-inset-top),0px));
+}
+.topbar .brand{font-size:0.95em;font-weight:700;letter-spacing:3px;color:var(--text)}
+.topbar .filename{
+  flex:1;text-align:center;font-size:0.85em;color:var(--text-dim);font-weight:500;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 12px;
+}
+.topbar .filename .saved{
+  display:inline-block;margin-left:8px;font-size:0.75em;color:var(--success);
+  opacity:0;transition:opacity 0.25s;
+}
+.topbar .filename .saved.show{opacity:1}
+.icon-btn{
+  width:40px;height:40px;border-radius:10px;
+  background:rgba(255,255,255,0.04);border:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+  color:var(--text);
+}
+.icon-btn:active{background:rgba(255,255,255,0.10)}
+.icon-btn svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2}
+
+/* ── Canvas stage ────────────────────────────────────── */
+.stage-wrap{
+  position:absolute;
+  top:calc(56px + max(env(safe-area-inset-top),0px));
+  bottom:calc(124px + max(env(safe-area-inset-bottom),0px));
+  left:0;right:0;
+  display:flex;align-items:center;justify-content:center;
+  background:#000;
+  touch-action:none;
+}
+#stage{cursor:crosshair}
+#stage canvas{display:block;touch-action:none}
+.loading{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  color:var(--text-dim);font-size:0.9em;letter-spacing:0.5px;
+}
+
+/* ── Toolbar ──────────────────────────────────────────── */
+.toolbar{
+  position:fixed;bottom:0;left:0;right:0;z-index:20;
+  background:linear-gradient(180deg,rgba(10,14,26,0.65),rgba(10,14,26,0.95));
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  border-top:1px solid var(--border);
+  padding:10px 12px;
+  padding-bottom:calc(10px + max(env(safe-area-inset-bottom),0px));
+  display:flex;flex-direction:column;gap:8px;
+}
+.tool-row{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.tool-row.left{justify-content:flex-start;gap:8px}
+.tools{display:flex;gap:5px;flex-wrap:nowrap}
+.tool{
+  width:46px;height:46px;border-radius:11px;
+  background:rgba(255,255,255,0.04);border:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+  color:var(--text);position:relative;
+}
+.tool svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2}
+.tool.active{
+  background:rgba(45,212,191,0.16);
+  border-color:var(--border-hi);
+  color:var(--accent);
+}
+.tool:active{background:rgba(45,212,191,0.22)}
+.tool.danger.active{background:rgba(255,107,107,0.18);border-color:rgba(255,107,107,0.40);color:var(--danger)}
+
+.divider{width:1px;height:30px;background:var(--border);margin:0 4px}
+
+.colors{display:flex;gap:6px}
+.swatch{
+  width:32px;height:32px;border-radius:50%;
+  border:2px solid rgba(255,255,255,0.15);cursor:pointer;
+  position:relative;
+}
+.swatch.active{border-color:var(--accent-hi);box-shadow:0 0 0 2px rgba(45,212,191,0.30)}
+
+.widths{display:flex;gap:6px;align-items:center}
+.width-pip{
+  width:32px;height:32px;border-radius:8px;
+  background:rgba(255,255,255,0.04);border:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+}
+.width-pip.active{background:rgba(45,212,191,0.16);border-color:var(--border-hi)}
+.width-pip .dot{background:var(--text);border-radius:50%}
+
+.actions{display:flex;gap:8px;align-items:center}
+.btn-save{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:11px 22px;border-radius:999px;
+  background:var(--accent);color:#0a0e1a;font-weight:700;font-size:0.95em;
+  border:none;cursor:pointer;letter-spacing:0.2px;
+  box-shadow:0 6px 18px rgba(45,212,191,0.22);
+}
+.btn-save:disabled{opacity:0.5;cursor:not-allowed;box-shadow:none}
+.btn-save:active{transform:scale(0.97)}
+.btn-save svg{width:16px;height:16px;stroke:#0a0e1a;fill:none;stroke-width:2.4}
+
+/* ── Toast ────────────────────────────────────────────── */
+#toast{
+  position:fixed;bottom:140px;left:50%;transform:translateX(-50%);
+  background:rgba(20,30,55,0.96);color:var(--text);
+  padding:10px 18px;border-radius:999px;font-size:0.85em;font-weight:500;
+  border:1px solid var(--border);
+  opacity:0;pointer-events:none;transition:opacity 0.25s,transform 0.25s;
+  z-index:30;max-width:88vw;text-align:center;
+}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(-6px)}
+#toast.err{border-color:rgba(255,107,107,0.40);color:var(--danger)}
+
+/* ── Empty/error state ───────────────────────────────── */
+.fatal{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  flex-direction:column;gap:10px;padding:30px;text-align:center;color:var(--text-dim);
+}
+.fatal h2{color:var(--text);font-size:1.1em;font-weight:600}
+.fatal code{
+  display:inline-block;background:rgba(255,255,255,0.05);padding:3px 8px;border-radius:6px;
+  font-family:'JetBrains Mono',ui-monospace,monospace;font-size:0.85em;color:var(--accent);
+}
+
+@media (max-width:380px){
+  .tool{width:42px;height:42px}
+  .swatch{width:28px;height:28px}
+  .width-pip{width:28px;height:28px}
+  .btn-save{padding:10px 16px;font-size:0.88em}
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">RYUJIN</div>
+  <div class="filename" id="filename">Loading...<span class="saved" id="savedFlag">Saved</span></div>
+  <button class="icon-btn" id="closeBtn" title="Close" aria-label="Close">
+    <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke-linecap="round"/></svg>
+  </button>
+</header>
+
+<div class="stage-wrap" id="stageWrap">
+  <div id="stage"></div>
+  <div class="loading" id="loading">Loading photo...</div>
+</div>
+
+<nav class="toolbar" id="toolbar" hidden>
+  <div class="tool-row">
+    <div class="tools" id="toolButtons">
+      <button class="tool active" data-tool="pen" title="Pen">
+        <svg viewBox="0 0 24 24"><path d="M3 21l4-1 13-13a2 2 0 0 0-3-3L4 17l-1 4z" stroke-linejoin="round"/></svg>
+      </button>
+      <button class="tool" data-tool="arrow" title="Arrow">
+        <svg viewBox="0 0 24 24"><path d="M5 19L19 5M19 5h-7M19 5v7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <button class="tool" data-tool="rect" title="Rectangle">
+        <svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="1"/></svg>
+      </button>
+      <button class="tool" data-tool="ellipse" title="Circle">
+        <svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8" ry="6"/></svg>
+      </button>
+      <button class="tool" data-tool="text" title="Text">
+        <svg viewBox="0 0 24 24"><path d="M5 6h14M12 6v13M9 19h6" stroke-linecap="round"/></svg>
+      </button>
+      <button class="tool danger" data-tool="eraser" title="Eraser (tap shape to remove)">
+        <svg viewBox="0 0 24 24"><path d="M14 4l6 6-9 9H5v-6l9-9z" stroke-linejoin="round"/><path d="M9 9l6 6" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div class="actions">
+      <button class="icon-btn" id="undoBtn" title="Undo" disabled>
+        <svg viewBox="0 0 24 24"><path d="M9 14l-5-5 5-5M4 9h11a5 5 0 0 1 0 10h-4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <button class="icon-btn" id="redoBtn" title="Redo" disabled>
+        <svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5M20 9H9a5 5 0 0 0 0 10h4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="tool-row left">
+    <div class="colors" id="colorButtons">
+      <div class="swatch active" data-color="#ff5050" style="background:#ff5050"></div>
+      <div class="swatch" data-color="#ffd84d" style="background:#ffd84d"></div>
+      <div class="swatch" data-color="#7ed99e" style="background:#7ed99e"></div>
+      <div class="swatch" data-color="#ffffff" style="background:#ffffff"></div>
+    </div>
+    <div class="divider"></div>
+    <div class="widths" id="widthButtons">
+      <div class="width-pip" data-width="4"><div class="dot" style="width:6px;height:6px"></div></div>
+      <div class="width-pip active" data-width="8"><div class="dot" style="width:10px;height:10px"></div></div>
+      <div class="width-pip" data-width="14"><div class="dot" style="width:14px;height:14px"></div></div>
+    </div>
+    <div style="flex:1"></div>
+    <button class="btn-save" id="saveBtn">
+      <svg viewBox="0 0 24 24"><path d="M5 13l5 5L20 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span id="saveLabel">Save</span>
+    </button>
+  </div>
+</nav>
+
+<div id="toast"></div>
+
+<div class="fatal" id="fatal" hidden>
+  <h2 id="fatalTitle">Missing file id</h2>
+  <p id="fatalMsg">Open this page with <code>?file_id=&lt;uuid&gt;</code>.</p>
+</div>
+
+<script src="/assets/ryujin-slug.js"></script>
+<script src="/assets/auth-guard.js"></script>
+<script src="https://unpkg.com/konva@9.3.16/konva.min.js"></script>
+<script>
+(function(){
+  const TENANT_SLUG =
+    (typeof window.getRyujinTenantSlug === 'function' && window.getRyujinTenantSlug())
+    || window.RYUJIN_TENANT_SLUG
+    || 'plus-ultra';
+
+  function authHeaders(extra){
+    const h = Object.assign({ 'x-tenant-id': TENANT_SLUG }, extra || {});
+    if (window.RyujinAuth && typeof window.RyujinAuth.headers === 'function') {
+      Object.assign(h, window.RyujinAuth.headers());
+    }
+    return h;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const fileId = params.get('file_id');
+
+  function showFatal(title, msg){
+    document.getElementById('fatalTitle').textContent = title;
+    if (msg) document.getElementById('fatalMsg').innerHTML = msg;
+    document.getElementById('fatal').hidden = false;
+    document.getElementById('loading').remove();
+  }
+
+  if (!fileId){
+    showFatal('Missing file id', 'Open this page with <code>?file_id=&lt;uuid&gt;</code>.');
+    return;
+  }
+
+  function toast(msg, isErr){
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.toggle('err', !!isErr);
+    el.classList.add('show');
+    clearTimeout(el._t);
+    el._t = setTimeout(() => el.classList.remove('show'), 2600);
+  }
+
+  // ── State ──
+  let stage, bgLayer, annLayer, transformer;
+  let bgImage, naturalW, naturalH, fitScale;
+  let tool = 'pen';
+  let color = '#ff5050';
+  let strokeWidth = 8;
+  let drawing = null;
+  let history = [];
+  let historyIndex = -1;
+  let fileMeta = null;
+  let saving = false;
+  let dirty = false;
+
+  // ── Tool setup ──
+  document.getElementById('toolButtons').addEventListener('click', e => {
+    const btn = e.target.closest('[data-tool]');
+    if (!btn) return;
+    setTool(btn.dataset.tool);
+  });
+  document.getElementById('colorButtons').addEventListener('click', e => {
+    const sw = e.target.closest('[data-color]');
+    if (!sw) return;
+    color = sw.dataset.color;
+    document.querySelectorAll('#colorButtons .swatch').forEach(s => s.classList.toggle('active', s === sw));
+  });
+  document.getElementById('widthButtons').addEventListener('click', e => {
+    const pip = e.target.closest('[data-width]');
+    if (!pip) return;
+    strokeWidth = Number(pip.dataset.width);
+    document.querySelectorAll('#widthButtons .width-pip').forEach(p => p.classList.toggle('active', p === pip));
+  });
+
+  function setTool(t){
+    tool = t;
+    document.querySelectorAll('#toolButtons .tool').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
+    if (stage){
+      const cursor = t === 'text' ? 'text' : t === 'eraser' ? 'not-allowed' : 'crosshair';
+      stage.container().style.cursor = cursor;
+    }
+  }
+
+  // ── Load file metadata + image ──
+  async function loadFile(){
+    let meta;
+    try {
+      const r = await fetch('/api/files?id=' + encodeURIComponent(fileId), { headers: authHeaders() });
+      if (r.status === 404){ showFatal('File not found', 'No file with that id in this tenant.'); return; }
+      if (!r.ok){ showFatal('Load failed', 'API returned ' + r.status); return; }
+      meta = await r.json();
+    } catch (e){
+      showFatal('Network error', String(e?.message || e));
+      return;
+    }
+
+    fileMeta = meta;
+    if (!meta.mime_type || !meta.mime_type.startsWith('image/')){
+      showFatal('Not an image', 'Only image files can be annotated. This is <code>' + (meta.mime_type || 'unknown') + '</code>.');
+      return;
+    }
+
+    document.getElementById('filename').firstChild.textContent =
+      (meta.caption || meta.filename || 'photo') + ' ';
+
+    // Load the original (un-annotated) source. Never the annotated_url,
+    // because then re-saves would re-bake the previous flatten layer.
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => initStage(img, meta);
+    img.onerror = () => showFatal('Image load failed', 'Could not fetch ' + meta.url);
+    img.src = meta.url;
+  }
+
+  // ── Stage init ──
+  function initStage(img, meta){
+    naturalW = img.naturalWidth;
+    naturalH = img.naturalHeight;
+
+    const wrap = document.getElementById('stageWrap');
+    const wrapW = wrap.clientWidth;
+    const wrapH = wrap.clientHeight;
+    fitScale = Math.min(wrapW / naturalW, wrapH / naturalH);
+    const stageW = Math.floor(naturalW * fitScale);
+    const stageH = Math.floor(naturalH * fitScale);
+
+    document.getElementById('loading').remove();
+    document.getElementById('toolbar').hidden = false;
+
+    stage = new Konva.Stage({ container: 'stage', width: stageW, height: stageH });
+    bgLayer = new Konva.Layer({ listening: false });
+    annLayer = new Konva.Layer();
+    stage.add(bgLayer);
+    stage.add(annLayer);
+
+    bgImage = new Konva.Image({ image: img, x: 0, y: 0, width: stageW, height: stageH });
+    bgLayer.add(bgImage);
+    bgLayer.draw();
+
+    // Restore prior annotations (stored in canvas-pixel coords matching the
+    // current stage size; they were saved at the same fitScale → we scale
+    // them against the saved baseline to stay consistent across viewports)
+    if (meta.annotations && Array.isArray(meta.annotations.shapes)){
+      const savedW = meta.annotations.canvas_w || stageW;
+      const restoreScale = stageW / savedW;
+      for (const obj of meta.annotations.shapes){
+        try {
+          const node = Konva.Node.create(obj);
+          if (restoreScale !== 1){
+            node.x(node.x() * restoreScale);
+            node.y(node.y() * restoreScale);
+            node.scaleX((node.scaleX() || 1) * restoreScale);
+            node.scaleY((node.scaleY() || 1) * restoreScale);
+          }
+          annLayer.add(node);
+        } catch (e){ /* skip broken shape */ }
+      }
+      annLayer.draw();
+    }
+
+    transformer = new Konva.Transformer({ rotateEnabled: false, anchorSize: 10, borderStroke: '#2dd4bf' });
+    annLayer.add(transformer);
+
+    bindStageEvents();
+    snapshot();
+    setTool('pen');
+    window.addEventListener('resize', onResize);
+  }
+
+  function onResize(){
+    // Reflow on rotation. Re-compute fitScale and rescale everything.
+    if (!stage) return;
+    const wrap = document.getElementById('stageWrap');
+    const newScale = Math.min(wrap.clientWidth / naturalW, wrap.clientHeight / naturalH);
+    const ratio = newScale / fitScale;
+    if (Math.abs(ratio - 1) < 0.001) return;
+    const newW = Math.floor(naturalW * newScale);
+    const newH = Math.floor(naturalH * newScale);
+    stage.size({ width: newW, height: newH });
+    bgImage.size({ width: newW, height: newH });
+    annLayer.getChildren().forEach(n => {
+      if (n === transformer) return;
+      n.x(n.x() * ratio);
+      n.y(n.y() * ratio);
+      n.scaleX((n.scaleX() || 1) * ratio);
+      n.scaleY((n.scaleY() || 1) * ratio);
+    });
+    fitScale = newScale;
+    bgLayer.draw();
+    annLayer.draw();
+  }
+
+  // ── Drawing events ──
+  function bindStageEvents(){
+    stage.on('mousedown touchstart', e => {
+      // Eraser: tap a shape to delete it
+      if (tool === 'eraser'){
+        const t = e.target;
+        if (t && t !== stage && t !== bgImage && t.getLayer() === annLayer){
+          t.destroy();
+          annLayer.draw();
+          snapshot();
+        }
+        return;
+      }
+      // Text: prompt then place
+      if (tool === 'text'){
+        const pos = stage.getPointerPosition();
+        if (!pos) return;
+        const value = window.prompt('Text:');
+        if (!value) return;
+        const node = new Konva.Text({
+          x: pos.x, y: pos.y, text: value,
+          fontSize: Math.max(18, strokeWidth * 3),
+          fontFamily: 'Inter, sans-serif',
+          fill: color,
+          stroke: '#000', strokeWidth: 1, fillAfterStrokeEnabled: true,
+          draggable: true,
+        });
+        annLayer.add(node);
+        annLayer.draw();
+        snapshot();
+        return;
+      }
+      // Other shapes: begin draw
+      const pos = stage.getPointerPosition();
+      if (!pos) return;
+      drawing = { tool, startX: pos.x, startY: pos.y, node: null };
+
+      if (tool === 'pen'){
+        drawing.node = new Konva.Line({
+          points: [pos.x, pos.y],
+          stroke: color, strokeWidth, lineCap: 'round', lineJoin: 'round', tension: 0.4,
+          draggable: false,
+        });
+      } else if (tool === 'arrow'){
+        drawing.node = new Konva.Arrow({
+          points: [pos.x, pos.y, pos.x, pos.y],
+          stroke: color, fill: color, strokeWidth,
+          pointerLength: Math.max(10, strokeWidth * 1.6),
+          pointerWidth: Math.max(10, strokeWidth * 1.6),
+          draggable: false,
+        });
+      } else if (tool === 'rect'){
+        drawing.node = new Konva.Rect({
+          x: pos.x, y: pos.y, width: 0, height: 0,
+          stroke: color, strokeWidth, draggable: false,
+        });
+      } else if (tool === 'ellipse'){
+        drawing.node = new Konva.Ellipse({
+          x: pos.x, y: pos.y, radiusX: 0, radiusY: 0,
+          stroke: color, strokeWidth, draggable: false,
+        });
+      }
+      if (drawing.node){
+        annLayer.add(drawing.node);
+        annLayer.draw();
+      }
+    });
+
+    stage.on('mousemove touchmove', e => {
+      if (!drawing || !drawing.node) return;
+      e.evt && e.evt.preventDefault && e.evt.preventDefault();
+      const pos = stage.getPointerPosition();
+      if (!pos) return;
+      if (drawing.tool === 'pen'){
+        const pts = drawing.node.points().concat([pos.x, pos.y]);
+        drawing.node.points(pts);
+      } else if (drawing.tool === 'arrow'){
+        drawing.node.points([drawing.startX, drawing.startY, pos.x, pos.y]);
+      } else if (drawing.tool === 'rect'){
+        drawing.node.width(pos.x - drawing.startX);
+        drawing.node.height(pos.y - drawing.startY);
+      } else if (drawing.tool === 'ellipse'){
+        drawing.node.radiusX(Math.abs(pos.x - drawing.startX));
+        drawing.node.radiusY(Math.abs(pos.y - drawing.startY));
+      }
+      annLayer.batchDraw();
+    });
+
+    stage.on('mouseup touchend', () => {
+      if (!drawing) return;
+      // Drop degenerate zero-size shapes so a stray tap doesn't litter the canvas
+      const n = drawing.node;
+      if (n){
+        let degenerate = false;
+        if (drawing.tool === 'rect') degenerate = Math.abs(n.width()) < 4 && Math.abs(n.height()) < 4;
+        else if (drawing.tool === 'ellipse') degenerate = n.radiusX() < 3 && n.radiusY() < 3;
+        else if (drawing.tool === 'arrow'){
+          const p = n.points();
+          degenerate = Math.hypot(p[2]-p[0], p[3]-p[1]) < 6;
+        } else if (drawing.tool === 'pen'){
+          degenerate = n.points().length < 4;
+        }
+        if (degenerate){ n.destroy(); annLayer.draw(); }
+        else { n.draggable(false); snapshot(); }
+      }
+      drawing = null;
+    });
+  }
+
+  // ── History (undo/redo) ──
+  function snapshot(){
+    transformer.nodes([]);
+    const shapes = annLayer.getChildren()
+      .filter(n => n !== transformer)
+      .map(n => n.toObject());
+    history = history.slice(0, historyIndex + 1);
+    history.push(shapes);
+    if (history.length > 50) history.shift();
+    historyIndex = history.length - 1;
+    refreshUndoRedo();
+    dirty = true;
+    document.getElementById('savedFlag').classList.remove('show');
+  }
+  function restoreFromHistory(){
+    annLayer.getChildren().filter(n => n !== transformer).forEach(n => n.destroy());
+    transformer.nodes([]);
+    const shapes = history[historyIndex] || [];
+    for (const obj of shapes){
+      try { annLayer.add(Konva.Node.create(obj)); } catch (e){}
+    }
+    annLayer.add(transformer);
+    annLayer.draw();
+    refreshUndoRedo();
+    dirty = true;
+  }
+  function refreshUndoRedo(){
+    document.getElementById('undoBtn').disabled = historyIndex <= 0;
+    document.getElementById('redoBtn').disabled = historyIndex >= history.length - 1;
+  }
+  document.getElementById('undoBtn').addEventListener('click', () => {
+    if (historyIndex <= 0) return;
+    historyIndex--; restoreFromHistory();
+  });
+  document.getElementById('redoBtn').addEventListener('click', () => {
+    if (historyIndex >= history.length - 1) return;
+    historyIndex++; restoreFromHistory();
+  });
+
+  // ── Save ──
+  document.getElementById('saveBtn').addEventListener('click', save);
+  document.getElementById('closeBtn').addEventListener('click', () => {
+    if (dirty && !window.confirm('Discard unsaved annotations?')) return;
+    if (window.history.length > 1) window.history.back();
+    else window.location.href = '/';
+  });
+
+  async function save(){
+    if (saving) return;
+    saving = true;
+    const btn = document.getElementById('saveBtn');
+    const label = document.getElementById('saveLabel');
+    btn.disabled = true;
+    label.textContent = 'Saving...';
+
+    transformer.nodes([]);
+    annLayer.draw();
+
+    // Flatten at original image resolution. pixelRatio scales the rendered
+    // output back up (the stage was scaled DOWN for the viewport).
+    const pixelRatio = naturalW / stage.width();
+    let dataURL;
+    try {
+      dataURL = stage.toDataURL({ mimeType: 'image/png', pixelRatio });
+    } catch (e){
+      saving = false; btn.disabled = false; label.textContent = 'Save';
+      toast('Flatten failed: ' + (e?.message || 'unknown'), true);
+      return;
+    }
+    const pngBlob = dataURLtoBlob(dataURL);
+
+    const shapes = annLayer.getChildren()
+      .filter(n => n !== transformer)
+      .map(n => n.toObject());
+    const annotationState = { version: 1, canvas_w: stage.width(), canvas_h: stage.height(), shapes };
+
+    const fd = new FormData();
+    fd.append('file_id', fileId);
+    fd.append('annotation_state', JSON.stringify(annotationState));
+    fd.append('image', pngBlob, 'annotated.png');
+
+    try {
+      const r = await fetch('/api/file-annotate', { method: 'POST', headers: authHeaders(), body: fd });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error || 'Save failed');
+      dirty = false;
+      document.getElementById('savedFlag').classList.add('show');
+      toast('Saved');
+    } catch (e){
+      toast('Save failed: ' + (e?.message || 'unknown'), true);
+    } finally {
+      saving = false; btn.disabled = false; label.textContent = 'Save';
+    }
+  }
+
+  function dataURLtoBlob(dataURL){
+    const parts = dataURL.split(',');
+    const mime = parts[0].match(/:(.*?);/)[1];
+    const bin = atob(parts[1]);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return new Blob([arr], { type: mime });
+  }
+
+  // ── Boot ──
+  loadFile();
+})();
+</script>
+</body>
+</html>
