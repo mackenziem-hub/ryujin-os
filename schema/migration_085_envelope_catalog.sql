@@ -1,0 +1,32 @@
+-- Ryujin OS - Migration 085: Envelope Catalog column
+-- Adds tenant_settings.envelope_catalog (jsonb) for the tenant-level master
+-- catalog of every product + service the proposal builder can present.
+--
+-- Why: estimates today carry a per-estimate _envelope.components blob that
+-- enumerates only the components that were seeded at creation time. New
+-- estimates without an envelope have no toggleable items, and new product
+-- categories (rejuvenation, ventilation add-ons, etc.) have to be back-
+-- filled into every estimate manually. This column is the single source of
+-- truth that the proposal builder reads to populate the toggle menu.
+--
+-- Shape:
+--   {
+--     "version": 1,
+--     "components": {
+--       "roof_asphalt": { "label": "...", "tiers": [...], ... },
+--       "service_rejuvenation": { "label": "...", "hard": 6800, "systems": ["asphalt"], ... },
+--       ...
+--     },
+--     "default_show_systems": ["asphalt", "metal"],
+--     "section_map": { ... optional override of builder section grouping ... }
+--   }
+--
+-- Estimates still carry their own _envelope which can override or hide any
+-- catalog item per-customer. The catalog provides the menu; the estimate
+-- provides the per-job state (hidden/visible, custom pricing overrides).
+--
+-- Mirrors the *_config column convention (migrations 044/045/046/048/049/084).
+-- Additive only. Re-runnable without error.
+
+alter table tenant_settings
+  add column if not exists envelope_catalog jsonb not null default '{}'::jsonb;

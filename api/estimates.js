@@ -119,6 +119,31 @@ async function handler(req, res) {
       }
     }
 
+    // Auto-scaffold _envelope from the tenant catalog when the POST didn't
+    // provide one. The catalog is the single source of truth for available
+    // products; per-estimate hide/show is then driven by the proposal-
+    // builder UI flipping `hidden:true` on individual components.
+    let customPrices = body.custom_prices || {};
+    if (!customPrices._envelope) {
+      const { data: ts } = await supabaseAdmin
+        .from('tenant_settings')
+        .select('envelope_catalog')
+        .eq('tenant_id', tenantId)
+        .maybeSingle();
+      const cat = ts?.envelope_catalog;
+      if (cat?.components && Object.keys(cat.components).length > 0) {
+        customPrices = {
+          ...customPrices,
+          _envelope: {
+            version: cat.version || 1,
+            show_systems: cat.default_show_systems || ['asphalt', 'metal'],
+            default_system: cat.default_system || 'asphalt',
+            components: JSON.parse(JSON.stringify(cat.components)),
+          }
+        };
+      }
+    }
+
     const estimate = {
       tenant_id: tenantId,
       customer_id: customerId,
@@ -157,7 +182,7 @@ async function handler(req, res) {
       distance_km: body.distance_km || 0,
       calculated_packages: body.calculated_packages || {},
       selected_package: body.selected_package,
-      custom_prices: body.custom_prices || {},
+      custom_prices: customPrices,
       status: body.status || 'draft',
       notes: body.notes || [],
       tags: body.tags || [],

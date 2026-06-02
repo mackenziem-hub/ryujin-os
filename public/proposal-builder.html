@@ -268,61 +268,69 @@ body::before{
   let estimate = null;
   let envelope = null;
   let backupEnvelope = null;
+  let catalog = null;
   let originalSnapshot = null;
   let dirty = false;
   let saving = false;
 
-  // ── Component catalog descriptors ──────────────────────────────
-  // Drives the section grouping + display order. Components present in
-  // env.components but NOT in this map render under "Other components"
-  // so a new component type added to the envelope is never invisible.
+  // ── Section grouping ───────────────────────────────────────────
+  // Routes a component key to a section by exact match or prefix. Anything
+  // not matched here falls through to the "Other" section so new component
+  // types stay visible until they're added to a known group.
   const SECTIONS = [
-    {
-      id: 'roof',
-      title: 'Roof Systems',
-      sub: 'Customer picks one tier per system shown',
-      keys: ['roof_asphalt', 'roof_metal']
-    },
-    {
-      id: 'prep',
-      title: 'Roof Preparation',
-      sub: 'Customer can toggle on or off',
-      keys: ['prep_redeck', 'prep_strap']
-    },
-    {
-      id: 'trim',
-      title: 'Eve Protection',
-      sub: 'Gutters / soffit / fascia individual toggles',
-      keys: ['trim_gutters', 'trim_soffit', 'trim_fascia']
-    },
-    {
-      id: 'wall',
-      title: 'Wall System (Performance Shell)',
-      sub: 'Siding tiers + wall assembly bundle',
-      keys: ['siding', 'wall_assembly']
-    },
-    {
-      id: 'allowances',
-      title: 'Allowances',
-      sub: 'Set-asides credited back at close',
-      keys: ['remediation']
-    }
+    { id: 'roof', title: 'Roof Systems', sub: 'Customer picks one tier per system shown',
+      keys: ['roof_asphalt', 'roof_metal'] },
+    { id: 'services', title: 'Roof Preservation', sub: 'Spray-on rejuvenation, parallel to a reshingle',
+      prefix: 'service_' },
+    { id: 'prep', title: 'Roof Preparation', sub: 'Customer can toggle on or off',
+      prefix: 'prep_' },
+    { id: 'trim', title: 'Eve Protection', sub: 'Gutters / soffit / fascia / leafguard individual toggles',
+      prefix: 'trim_' },
+    { id: 'addons', title: 'Add-ons', sub: 'Ventilation, chimney flash, anything addon_*',
+      prefix: 'addon_' },
+    { id: 'wall', title: 'Wall System (Performance Shell)', sub: 'Siding tiers + wall assembly bundle',
+      keys: ['siding', 'wall_assembly'] },
+    { id: 'allowances', title: 'Allowances', sub: 'Set-asides credited back at close',
+      keys: ['remediation'] },
+    { id: 'financing', title: 'Financing', sub: 'Pure UI flag, no math',
+      prefix: 'financing_' }
   ];
+
+  function keysForSection(section, allKeys) {
+    if (section.keys) return section.keys.filter(k => allKeys.has(k));
+    if (section.prefix) return [...allKeys].filter(k => k.startsWith(section.prefix));
+    return [];
+  }
 
   // ── Load ──
   async function load(){
+    // Fetch estimate + tenant catalog in parallel. Catalog failure is
+    // non-fatal: builder still works, just can't add catalog items not
+    // already on the estimate.
+    let estResp, catResp;
     try {
-      const r = await fetch('/api/estimates?id=' + encodeURIComponent(estimateId), { headers: authHeaders() });
-      if (r.status === 401){
-        if (window.RyujinAuth?.clearAndRedirect) window.RyujinAuth.clearAndRedirect();
-        return;
-      }
-      if (r.status === 404){ fatal('Estimate not found', 'No estimate with that id in this tenant.'); return; }
-      if (!r.ok){ fatal('Load failed', 'API returned ' + r.status); return; }
-      estimate = await r.json();
+      [estResp, catResp] = await Promise.all([
+        fetch('/api/estimates?id=' + encodeURIComponent(estimateId), { headers: authHeaders() }),
+        fetch('/api/envelope-catalog', { headers: authHeaders() })
+      ]);
     } catch (e){
       fatal('Network error', escapeHtml(String(e?.message || e)));
       return;
+    }
+
+    if (estResp.status === 401){
+      if (window.RyujinAuth?.clearAndRedirect) window.RyujinAuth.clearAndRedirect();
+      return;
+    }
+    if (estResp.status === 404){ fatal('Estimate not found', 'No estimate with that id in this tenant.'); return; }
+    if (!estResp.ok){ fatal('Load failed', 'API returned ' + estResp.status); return; }
+    estimate = await estResp.json();
+
+    if (catResp && catResp.ok) {
+      try {
+        const j = await catResp.json();
+        catalog = j.catalog || null;
+      } catch(e){ catalog = null; }
     }
 
     const cp = estimate.custom_prices || {};
@@ -356,39 +364,60 @@ body::before{
       </div>
     `;
 
-    const sectionsHtml = SECTIONS.map(s => renderSection(s)).join('');
+    // Union of estimate keys + catalog keys. Catalog items not on the
+    // estimate render as faded "Add from catalog" rows that pull a fresh
+    // copy from the catalog when toggled on. This is how Mac gets the full
+    // menu visible even on an estimate that was seeded with a subset.
+    const estKeys = new Set(Object.keys(envelope.components || {}));
+    const catKeys = new Set(Object.keys(catalog?.components || {}));
+    const allKeys = new Set([...estKeys, ...catKeys]);
 
-    // Catch any component not covered by SECTIONS so new types are always visible
-    const knownKeys = new Set(SECTIONS.flatMap(s => s.keys));
-    const otherKeys = Object.keys(envelope.components || {}).filter(k => !knownKeys.has(k));
-    const otherHtml = otherKeys.length
-      ? renderSection({ id: 'other', title: 'Other components', sub: 'Not in the standard catalog map', keys: otherKeys })
+    const sectionsHtml = SECTIONS.map(s => renderSection(s, allKeys)).join('');
+
+    // Catch anything not covered by SECTIONS (orphan / forgotten component types)
+    const claimedKeys = new Set(SECTIONS.flatMap(s => keysForSection(s, allKeys)));
+    const orphanKeys = [...allKeys].filter(k => !claimedKeys.has(k));
+    const orphanSection = orphanKeys.length
+      ? renderSection({ id: 'other', title: 'Other components', sub: 'Not in the standard catalog map', keys: orphanKeys }, allKeys)
       : '';
 
-    document.getElementById('app').innerHTML = header + sectionsHtml + otherHtml;
+    const catalogNote = catalog?.components
+      ? `<div style="font-size:0.78em;color:var(--text-muted);margin-bottom:8px;padding:0 4px">Catalog has ${catKeys.size} components. Estimate has ${estKeys.size}.</div>`
+      : `<div style="font-size:0.78em;color:var(--warn);margin-bottom:8px;padding:0 4px">Tenant catalog empty or unreachable. Add new components manually via DB.</div>`;
+
+    document.getElementById('app').innerHTML = header + catalogNote + sectionsHtml + orphanSection;
     document.getElementById('actionBar').hidden = false;
     if (backupEnvelope) document.getElementById('restoreBtn').hidden = false;
     bind();
     refreshDirty();
   }
 
-  function renderSection(section){
-    const items = section.keys
-      .map(k => ({ key: k, comp: envelope.components?.[k] }))
-      .filter(x => x.comp); // only render keys that actually exist
+  function renderSection(section, allKeys){
+    const sectionKeys = keysForSection(section, allKeys);
+    const items = sectionKeys.map(k => {
+      const onEst = envelope.components?.[k] || null;
+      const inCat = catalog?.components?.[k] || null;
+      // Estimate copy wins if present (it carries the hidden flag + any per-job
+      // override). Catalog provides the fallback definition for "add from
+      // catalog" rows. notInEstimate=true triggers the faded styling.
+      return { key: k, comp: onEst || inCat, notInEstimate: !onEst };
+    }).filter(x => x.comp);
     if (!items.length) return '';
     return `
       <div class="section">
         <div class="section-head"><h2>${escapeHtml(section.title)}</h2><div class="sub">${escapeHtml(section.sub)}</div></div>
         <div class="comp-list">
-          ${items.map(({key, comp}) => renderComponent(key, comp)).join('')}
+          ${items.map(({key, comp, notInEstimate}) => renderComponent(key, comp, notInEstimate)).join('')}
         </div>
       </div>
     `;
   }
 
-  function renderComponent(key, comp){
-    const on = !comp.hidden;
+  function renderComponent(key, comp, notInEstimate){
+    // notInEstimate: true means component comes from the catalog but isn't on
+    // this estimate yet. We render it as a faded row; toggling on copies the
+    // catalog definition into envelope.components and removes hidden.
+    const on = !notInEstimate && !comp.hidden;
     const label = comp.label || key;
     const price = comp.hard != null ? '$' + Number(comp.hard).toLocaleString() : '';
     const tiers = Array.isArray(comp.tiers) ? comp.tiers : null;
@@ -405,12 +434,13 @@ body::before{
         ${tiers.map(t => `<div class="comp-tier"><b>${escapeHtml(t.label || t.slug)}</b><span class="${t.popular?'tier-popular':''}">${t.hard != null ? '$'+Number(t.hard).toLocaleString() : ''}${t.popular?' · popular':''}</span></div>`).join('')}
       </div>
     ` : '';
+    const fromCatalogBadge = notInEstimate ? '<span class="pill" style="background:rgba(251,191,36,0.14);color:var(--warn);font-size:0.68em;margin-left:6px;padding:2px 6px">from catalog</span>' : '';
     return `
       <div>
-        <div class="comp-row ${on?'on':'off'}" data-key="${escapeHtml(key)}">
+        <div class="comp-row ${on?'on':'off'}" data-key="${escapeHtml(key)}" data-from-catalog="${notInEstimate?'1':''}">
           <div class="comp-toggle"></div>
           <div class="comp-body">
-            <div class="comp-name">${escapeHtml(label)}</div>
+            <div class="comp-name">${escapeHtml(label)}${fromCatalogBadge}</div>
             <div class="comp-meta">${escapeHtml(key)}${tiers ? ' · ' + tiers.length + ' tier' + (tiers.length===1?'':'s') : ''}</div>
             ${sub}
           </div>
@@ -432,6 +462,19 @@ body::before{
     document.querySelectorAll('.comp-row').forEach(row => {
       row.addEventListener('click', () => {
         const key = row.dataset.key;
+        const fromCatalog = row.dataset.fromCatalog === '1';
+        if (fromCatalog) {
+          // Adding from catalog: clone the catalog definition into the
+          // estimate's envelope and mark this row as "on". Re-render is
+          // needed because the badge + state shift.
+          const catComp = catalog?.components?.[key];
+          if (!catComp) return;
+          if (!envelope.components) envelope.components = {};
+          envelope.components[key] = JSON.parse(JSON.stringify(catComp));
+          delete envelope.components[key].hidden;
+          render();
+          return;
+        }
         const comp = envelope.components?.[key];
         if (!comp) return;
         if (comp.hidden) delete comp.hidden;
