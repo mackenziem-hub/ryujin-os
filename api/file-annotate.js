@@ -60,9 +60,19 @@ async function handler(req, res) {
   if (!png.mimeType || !png.mimeType.toLowerCase().startsWith('image/png')) {
     return res.status(400).json({ error: 'Expected image/png, got ' + png.mimeType });
   }
+  // Magic-byte sniff. PNG signature: 89 50 4E 47 0D 0A 1A 0A
+  const sig = png.buffer.slice(0, 8);
+  if (sig.length !== 8 ||
+      sig[0] !== 0x89 || sig[1] !== 0x50 || sig[2] !== 0x4E || sig[3] !== 0x47 ||
+      sig[4] !== 0x0D || sig[5] !== 0x0A || sig[6] !== 0x1A || sig[7] !== 0x0A) {
+    return res.status(400).json({ error: 'File is not a valid PNG (header mismatch)' });
+  }
 
   const fileId = fields.file_id;
   if (!fileId) return res.status(400).json({ error: 'file_id required' });
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(fileId)) {
+    return res.status(400).json({ error: 'Invalid file_id format' });
+  }
 
   let annotationState = null;
   if (fields.annotation_state) {
@@ -85,29 +95,50 @@ async function handler(req, res) {
   const ts = Date.now();
   const blobPath = `${req.tenant.slug}/projects/${fileRow.project_id}/annotated/${ts}-${fileId}.png`;
 
+  // Order: put new blob first, then update DB with optimistic concurrency
+  // check (annotated_url matches what we read), then delete old blob only
+  // if the update affected our row. If two tabs save concurrently, only the
+  // first update wins and the second's blob is cleaned up. If the DB update
+  // fails after the put, we delete the new blob to avoid orphaning.
   let blob;
   try {
     blob = await put(blobPath, png.buffer, { access: 'public', contentType: 'image/png' });
   } catch (e) {
-    return res.status(500).json({ error: 'Blob upload failed: ' + (e?.message || 'unknown') });
+    console.error('[file-annotate] blob put failed:', e);
+    return res.status(500).json({ error: 'Blob upload failed' });
   }
 
-  if (fileRow.annotated_url) {
-    try { await del(fileRow.annotated_url); } catch (e) { /* orphan tolerated */ }
-  }
-
-  const { data, error } = await supabaseAdmin
+  const updateQuery = supabaseAdmin
     .from('project_files')
     .update({
       annotated_url: blob.url,
       annotations: annotationState
     })
     .eq('id', fileId)
-    .eq('tenant_id', tenantId)
-    .select('*')
-    .single();
+    .eq('tenant_id', tenantId);
+  // Optimistic concurrency: only update if annotated_url hasn't changed
+  // since we read it. eq with null requires .is() for true null semantics.
+  if (fileRow.annotated_url === null) updateQuery.is('annotated_url', null);
+  else updateQuery.eq('annotated_url', fileRow.annotated_url);
 
-  if (error) return res.status(500).json({ error: error.message });
+  const { data, error } = await updateQuery.select('*').single();
+
+  if (error || !data) {
+    // Either Postgres error or zero rows (concurrent save beat us).
+    // Clean up the blob we just uploaded so it doesn't orphan.
+    try { await del(blob.url); } catch (e) { /* best effort */ }
+    if (error) {
+      console.error('[file-annotate] DB update failed:', error);
+      return res.status(500).json({ error: 'Database update failed' });
+    }
+    return res.status(409).json({ error: 'Concurrent save detected, please reload and retry' });
+  }
+
+  // Update succeeded. Now safe to delete the previous annotated blob.
+  if (fileRow.annotated_url) {
+    try { await del(fileRow.annotated_url); } catch (e) { /* orphan tolerated */ }
+  }
+
   return res.json(data);
 }
 

@@ -264,15 +264,30 @@ body{
   const params = new URLSearchParams(window.location.search);
   const fileId = params.get('file_id');
 
+  // Konva class names we accept from stored annotation_state. Anything else
+  // (Image, Group with arbitrary attrs, custom class) is dropped on restore
+  // to keep DB JSON from re-instantiating attacker-controlled nodes.
+  const ALLOWED_KONVA_CLASSES = new Set(['Line', 'Arrow', 'Rect', 'Ellipse', 'Text']);
+
+  function safeKonvaCreate(obj){
+    if (!obj || typeof obj !== 'object') return null;
+    if (!ALLOWED_KONVA_CLASSES.has(obj.className)) return null;
+    try { return Konva.Node.create(obj); }
+    catch (e) { return null; }
+  }
+
+  // Render text-only fatal screens. Never use innerHTML with values that
+  // round-trip through the DB or come from a remote response.
   function showFatal(title, msg){
     document.getElementById('fatalTitle').textContent = title;
-    if (msg) document.getElementById('fatalMsg').innerHTML = msg;
+    if (msg) document.getElementById('fatalMsg').textContent = msg;
     document.getElementById('fatal').hidden = false;
-    document.getElementById('loading').remove();
+    const loadingEl = document.getElementById('loading');
+    if (loadingEl) loadingEl.remove();
   }
 
   if (!fileId){
-    showFatal('Missing file id', 'Open this page with <code>?file_id=&lt;uuid&gt;</code>.');
+    showFatal('Missing file id', 'Open this page with ?file_id=<uuid>.');
     return;
   }
 
@@ -341,7 +356,7 @@ body{
 
     fileMeta = meta;
     if (!meta.mime_type || !meta.mime_type.startsWith('image/')){
-      showFatal('Not an image', 'Only image files can be annotated. This is <code>' + (meta.mime_type || 'unknown') + '</code>.');
+      showFatal('Not an image', 'Only image files can be annotated. This is ' + (meta.mime_type || 'unknown'));
       return;
     }
 
@@ -353,7 +368,7 @@ body{
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => initStage(img, meta);
-    img.onerror = () => showFatal('Image load failed', 'Could not fetch ' + meta.url);
+    img.onerror = () => showFatal('Image load failed', 'Could not fetch the source image');
     img.src = meta.url;
   }
 
@@ -382,23 +397,22 @@ body{
     bgLayer.add(bgImage);
     bgLayer.draw();
 
-    // Restore prior annotations (stored in canvas-pixel coords matching the
-    // current stage size; they were saved at the same fitScale → we scale
-    // them against the saved baseline to stay consistent across viewports)
+    // Restore prior annotations. Whitelist className before instantiating;
+    // they were saved at the same fitScale so we rescale them against the
+    // saved baseline canvas width to stay consistent across viewports.
     if (meta.annotations && Array.isArray(meta.annotations.shapes)){
       const savedW = meta.annotations.canvas_w || stageW;
       const restoreScale = stageW / savedW;
       for (const obj of meta.annotations.shapes){
-        try {
-          const node = Konva.Node.create(obj);
-          if (restoreScale !== 1){
-            node.x(node.x() * restoreScale);
-            node.y(node.y() * restoreScale);
-            node.scaleX((node.scaleX() || 1) * restoreScale);
-            node.scaleY((node.scaleY() || 1) * restoreScale);
-          }
-          annLayer.add(node);
-        } catch (e){ /* skip broken shape */ }
+        const node = safeKonvaCreate(obj);
+        if (!node) continue;
+        if (restoreScale !== 1){
+          node.x(node.x() * restoreScale);
+          node.y(node.y() * restoreScale);
+          node.scaleX((node.scaleX() || 1) * restoreScale);
+          node.scaleY((node.scaleY() || 1) * restoreScale);
+        }
+        annLayer.add(node);
       }
       annLayer.draw();
     }
@@ -407,7 +421,8 @@ body{
     annLayer.add(transformer);
 
     bindStageEvents();
-    snapshot();
+    snapshot(false);
+    dirty = false;
     setTool('pen');
     window.addEventListener('resize', onResize);
   }
@@ -535,7 +550,10 @@ body{
           const p = n.points();
           degenerate = Math.hypot(p[2]-p[0], p[3]-p[1]) < 6;
         } else if (drawing.tool === 'pen'){
-          degenerate = n.points().length < 4;
+          // points array is [x0,y0,x1,y1,...]. Length < 6 means fewer than
+          // 3 points captured (one segment), which is a stray tap with
+          // jitter rather than an intentional stroke.
+          degenerate = n.points().length < 6;
         }
         if (degenerate){ n.destroy(); annLayer.draw(); }
         else { n.draggable(false); snapshot(); }
@@ -545,7 +563,10 @@ body{
   }
 
   // ── History (undo/redo) ──
-  function snapshot(){
+  // `markDirty` defaults true. The initial post-load snapshot passes false
+  // so the close button doesn't prompt "discard unsaved annotations?" on a
+  // page where the user hasn't drawn anything.
+  function snapshot(markDirty){
     transformer.nodes([]);
     const shapes = annLayer.getChildren()
       .filter(n => n !== transformer)
@@ -555,15 +576,18 @@ body{
     if (history.length > 50) history.shift();
     historyIndex = history.length - 1;
     refreshUndoRedo();
-    dirty = true;
-    document.getElementById('savedFlag').classList.remove('show');
+    if (markDirty !== false){
+      dirty = true;
+      document.getElementById('savedFlag').classList.remove('show');
+    }
   }
   function restoreFromHistory(){
     annLayer.getChildren().filter(n => n !== transformer).forEach(n => n.destroy());
     transformer.nodes([]);
     const shapes = history[historyIndex] || [];
     for (const obj of shapes){
-      try { annLayer.add(Konva.Node.create(obj)); } catch (e){}
+      const node = safeKonvaCreate(obj);
+      if (node) annLayer.add(node);
     }
     annLayer.add(transformer);
     annLayer.draw();
@@ -603,8 +627,10 @@ body{
     annLayer.draw();
 
     // Flatten at original image resolution. pixelRatio scales the rendered
-    // output back up (the stage was scaled DOWN for the viewport).
-    const pixelRatio = naturalW / stage.width();
+    // output back up (the stage was scaled DOWN for the viewport). Cap at
+    // 4x to prevent mobile Safari OOM on huge phone photos rendered onto
+    // small viewports (4K photo on 360px display would request 11x = ~50MB).
+    const pixelRatio = Math.min(4, naturalW / stage.width());
     let dataURL;
     try {
       dataURL = stage.toDataURL({ mimeType: 'image/png', pixelRatio });

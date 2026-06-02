@@ -85,13 +85,19 @@ async function handler(req, res) {
     // Single-file fetch by id, used by the annotator page which only
     // knows the file id, not the parent project. Tenant-scoped.
     if (id) {
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+        return res.status(400).json({ error: 'Invalid file id format' });
+      }
       const { data, error } = await supabaseAdmin
         .from('project_files')
         .select('*, uploaded_by_user:users!project_files_uploaded_by_fkey(name)')
         .eq('id', id)
         .eq('tenant_id', tenantId)
         .maybeSingle();
-      if (error) return res.status(500).json({ error: error.message });
+      if (error) {
+        console.error('[files] GET by id error:', error);
+        return res.status(500).json({ error: 'Database error' });
+      }
       if (!data) return res.status(404).json({ error: 'File not found' });
       return res.json(data);
     }
