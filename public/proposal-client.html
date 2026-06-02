@@ -1584,7 +1584,7 @@ body:not(.envelope-active) #envelopeSection{display:none !important}
 
         <div class="env-block" id="envRoofPrepBlock">
           <h3>Roof Preparation</h3>
-          <div class="env-block-sub">Optional prep work, priced based on existing roof condition. Strap deck is required for ribbed metal panels (Vic West Americana). Redeck is only needed if the existing OSB is rotting, soft, or compromised — Mac will confirm during tear-off.</div>
+          <div class="env-block-sub" id="envRoofPrepSub">Recommended prep work, priced on existing roof condition. A full redeck gives you a sound, code-current deck under the new shingles. Any unused remediation is credited back at close.</div>
           <div class="env-trim-toggles" id="envRoofPrepToggles"></div>
         </div>
 
@@ -2854,6 +2854,19 @@ function envStandalone(env, hardCost) {
   return Math.round((hardCost + mob) * mult);
 }
 
+// Roof selling price. Asphalt tiers price the standard way (hard cost + mob,
+// times the multiplier). Metal tiers carry an explicit `price` already built
+// from the SOP additive cost-stack divisor (Metal Roofing Pricing Logic SOP) —
+// metal labor is too high for the asphalt multiplier to hold margin, so the
+// divisor result is computed offline and stored on the tier. When `price` is
+// present it IS the selling price (mob/travel already inside the direct cost),
+// bypassing the multiplier entirely.
+function envRoofSelling(env, tier) {
+  if (!tier) return 0;
+  if (tier.price != null) return Math.round(tier.price);
+  return envStandalone(env, tier.hard || 0);
+}
+
 function envResolveBundleTier(env, roofTier, sidingTier) {
   if (!roofTier || !sidingTier || sidingTier.tier === 0) return null;
   const score = (roofTier.tier || 0) + (sidingTier.tier || 0);
@@ -2898,17 +2911,24 @@ function envCompute(env, sel) {
   // the bundle hard cost on top of whichever roof tier the customer picked,
   // but do not affect the Performance Shell tier score (they're prep work,
   // not envelope choices).
+  // Prep items (strap / redeck) are asphalt-only by default. A prep component
+  // can carry `systems: ['asphalt']` to scope it; metal goes straight over the
+  // existing roof, so redeck/strap never apply on the metal road.
   const prepItems = ['strap','redeck']
     .filter(k => !!sel.roofPrep?.[k])
     .map(k => ({ key: k, ...(envGetPrep(env, k) || {}) }))
-    .filter(p => p.hard != null);
+    .filter(p => p.hard != null && (!p.systems || p.systems.includes(sys)));
 
   // Remediation allowance (SOP Section 13): a mandatory, always-included
   // project line on every Performance Shell proposal, framed to the client as
   // transparency (unused portion credited back). Only carried once a roof is
   // chosen (it's a project allowance, meaningless with no project selected).
+  // Remediation allowance covers surprises uncovered at tear-off. A component
+  // can carry `systems: ['asphalt']` to scope it — Mary's clay road installs
+  // over the existing roof (no tear-off), so it carries no remediation line,
+  // keeping the metal number equal to the divisor price.
   const remediation = env?.components?.remediation || null;
-  const remHard = (roof && remediation?.hard) ? remediation.hard : 0;
+  const remHard = (roof && remediation?.hard && (!remediation.systems || remediation.systems.includes(sys))) ? remediation.hard : 0;
 
   let bundle;
   if (bundleTier) {
@@ -2933,20 +2953,28 @@ function envCompute(env, sel) {
     // jobs really would each incur their own trip.
     const mob = env?.standalone_mob_premium ?? ENV_DEFAULTS.standalone_mob_premium;
     const mult = env?.standalone_multiplier ?? ENV_DEFAULTS.standalone_multiplier;
-    const workHard = (roof?.hard||0)
+    // A metal roof tier carries an explicit divisor `price` (travel already
+    // inside the direct cost) and bypasses the multiplier. An asphalt roof's
+    // hard cost runs through the multiplier with the trim/prep work and a
+    // single mobilization, exactly as before.
+    const roofFixed = (roof && roof.price != null) ? Math.round(roof.price) : null;
+    const workHard = (roofFixed != null ? 0 : (roof?.hard||0))
       + trimItems.reduce((s,t)=>s+(t.hard||0),0)
       + prepItems.reduce((s,p)=>s+(p.hard||0),0);
-    // Only the work and the single mobilization run through the multiplier and
-    // are the discount base; the refundable remediation allowance is added at
-    // face value after any discount (see finalSelling).
-    const sellingPre = roof ? Math.round((workHard + mob) * mult) : 0;
+    // Mobilization is charged once on whatever runs through the multiplier.
+    // A fixed-price roof with no add-ons has no multiplier work, so no extra
+    // mob is layered on (travel is already inside the divisor price). The
+    // refundable remediation allowance is added at face value after any
+    // discount (see finalSelling).
+    const multPart = (workHard > 0) ? Math.round((workHard + mob) * mult) : 0;
+    const sellingPre = roof ? ((roofFixed != null ? roofFixed : 0) + multPart) : 0;
     bundle = { mode: 'standalone_roof', tier: null, totalHard: workHard, sellingPre, remediation: remHard,
                breakdown: { roof, wall: null, siding: null, trim: trimItems, prep: prepItems, remediation: remHard ? remediation : null } };
   }
 
   // Alone total (for "if bought separately" comparison)
   let alonePre = 0;
-  if (roof) alonePre += envStandalone(env, roof.hard||0);
+  if (roof) alonePre += envRoofSelling(env, roof);
   if (sid && sid.tier > 0) {
     const wallHard = env?.components?.wall_assembly?.hard || 0;
     alonePre += envStandalone(env, (sid.hard||0) + wallHard);
@@ -3012,6 +3040,15 @@ function envRenderSystemToggle() {
   });
 }
 
+// Default roof-prep selections for a system. Driven by env.default_selections
+// (e.g. asphalt defaults redeck ON as the recommended standard); metal clears
+// prep since it installs over the existing roof.
+function envDefaultPrep(env, sys) {
+  const base = { strap: false, redeck: false };
+  const d = env?.default_selections?.[sys]?.roofPrep;
+  return d ? { ...base, ...d } : base;
+}
+
 function envSwitchSystem(sys) {
   if (envelopeState.system === sys) return;
   const env = DATA.envelope;
@@ -3021,6 +3058,11 @@ function envSwitchSystem(sys) {
   const tiers = env?.components?.[key]?.tiers || [];
   const popular = tiers.find(t => t.popular) || tiers[1] || tiers[0];
   envelopeState.roof = popular?.slug || null;
+  // Reset roof prep to this system's defaults (metal clears redeck/strap;
+  // asphalt re-applies its default redeck).
+  envelopeState.roofPrep = envDefaultPrep(env, sys);
+  // Metal is a roof-only road — no siding/wall bundle.
+  if (sys === 'metal') envelopeState.siding = 'none';
   envRenderAll();
   try { logEvent('envelope_system_toggled', { sys }); } catch(e){}
 }
@@ -3037,7 +3079,7 @@ function envRenderRoofOptions() {
     const on = t.slug === envelopeState.roof;
     const sid = envGetSidingTier(env, envelopeState.siding);
     const inBundle = sid && sid.tier > 0;
-    const aloneSelling = envStandalone(env, t.hard||0);
+    const aloneSelling = envRoofSelling(env, t);
     const bundleSelling = inBundle ? Math.round(((t.hard||0) + (env?.components?.wall_assembly?.hard||0) + (sid.hard||0)) * (envResolveBundleTier(env, t, sid)?.mult || 1.47)) : null;
     const priceMain = inBundle && bundleSelling
       ? `<div class="env-price-bundle">$${bundleSelling.toLocaleString()}</div><div class="env-price-alone">$${aloneSelling.toLocaleString()}</div><div class="env-price-save">in bundle</div>`
@@ -3132,13 +3174,18 @@ function envRenderRoofPrep() {
   if (!env) return;
   const wrap = document.getElementById('envRoofPrepToggles');
   if (!wrap) return;
+  const sys = envelopeState.system;
   const items = [
     { key: 'strap',  icon: '═' },
     { key: 'redeck', icon: '▦' }
   ];
-  wrap.innerHTML = items.map(({key, icon}) => {
+  // Prep tiles only show for the systems they apply to (redeck/strap are
+  // asphalt-only). On the metal road there's no tear-off or redeck, so show a
+  // reassurance note instead of an empty block.
+  const tiles = items.map(({key, icon}) => {
     const def = envGetPrep(env, key);
     if (!def) return '';
+    if (def.systems && !def.systems.includes(sys)) return '';
     const on = !!envelopeState.roofPrep[key];
     const aloneSelling = envStandalone(env, def.hard||0);
     return `
@@ -3155,6 +3202,11 @@ function envRenderRoofPrep() {
       </div>
     `;
   }).join('');
+  if (!tiles.trim()) {
+    wrap.innerHTML = `<div class="env-prep-note" style="padding:14px 16px;border:1px dashed rgba(232,237,245,0.22);border-radius:10px;color:rgba(232,237,245,0.78);font-size:0.9rem;line-height:1.5">Installed straight over your existing roof on a strapped batten system. No tear-off, no redeck, no landfill bin — included in your price.</div>`;
+  } else {
+    wrap.innerHTML = tiles;
+  }
 }
 
 function envRenderSelections(result) {
@@ -3305,6 +3357,7 @@ function envRenderAll() {
     trim: { ...envelopeState.trim }
   });
   envRenderSystemToggle();
+  envApplySystemChrome();
   envRenderRoofOptions();
   envRenderRoofPrep();
   envRenderSidingOptions();
@@ -3314,6 +3367,26 @@ function envRenderAll() {
   envRenderPreview(result);
   // Stash for accept flow
   envelopeState.lastResult = result;
+}
+
+// Per-system UI chrome: the metal road is roof-only (no siding/wall bundle)
+// and goes over the existing roof, so swap copy and hide the siding block.
+function envApplySystemChrome() {
+  const metal = envelopeState.system === 'metal';
+  const sidingBlock = document.getElementById('envSidingBlock');
+  if (sidingBlock) sidingBlock.hidden = metal;
+  const prepSub = document.getElementById('envRoofPrepSub');
+  if (prepSub) {
+    prepSub.textContent = metal
+      ? 'Your metal system installs over the existing roof — no tear-off, no redeck.'
+      : 'Recommended prep work, priced on existing roof condition. A full redeck gives you a sound, code-current deck under the new shingles. Any unused remediation is credited back at close.';
+  }
+  const roofSub = document.getElementById('envRoofSub');
+  if (roofSub) {
+    roofSub.textContent = metal
+      ? 'A true metal roof built to outlive the home — snow retention and full flashings included.'
+      : 'Choose your roofing material and warranty tier.';
+  }
 }
 
 function envPickRoof(slug) {
@@ -3382,6 +3455,8 @@ function envInit() {
   envelopeState.roof = popular?.slug || null;
   envelopeState.siding = 'none';
   envelopeState.trim = { gutters: false, soffit: false, fascia: false };
+  // Seed roof prep from this system's defaults (asphalt recommends redeck ON).
+  envelopeState.roofPrep = envDefaultPrep(env, envelopeState.system);
 
   // PDF mode: if ?envelope=<base64> is on the URL, decode the customer's
   // selections so the PDF renders frozen at exactly what they configured.
@@ -3469,12 +3544,14 @@ function envPickPreviewImage(env, sel) {
   if (hasSiding && m.complete_system) {
     return { url: m.complete_system, caption: 'Your home with the full Performance Shell — siding, foam, VentiGrid, gutters, fascia, soffit' };
   }
-  // Metal roof, no siding → metal roof render
-  if (sel.system === 'metal' && (sel.trim?.gutters && m.after_gutters)) {
-    return { url: m.after_gutters, caption: 'Metal roof + new gutters on your home' };
+  // Metal roof, no siding → metal-specific render only (never the asphalt
+  // after-images; those would misrepresent the metal road). Falls back to the
+  // original cover if no metal render has been generated yet.
+  if (sel.system === 'metal' && (sel.trim?.gutters && m.after_metal_gutters)) {
+    return { url: m.after_metal_gutters, caption: 'Your home with the European clay-imitation metal roof + new gutters' };
   }
   if (sel.system === 'metal' && m.after_metal) {
-    return { url: m.after_metal, caption: 'Metal roof on your home' };
+    return { url: m.after_metal, caption: 'Your home with the European clay-imitation metal roof' };
   }
   // Asphalt shingle render
   if (sel.system === 'asphalt' && m.after_shingle) {
