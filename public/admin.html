@@ -2832,23 +2832,44 @@ async function loadEstimatePhotos(estId) {
 // Module-level cache so the photo editor modal can look up a photo by id
 // without a refetch (loadEstimatePhotos populates this on every refresh).
 let _estPhotosCache = [];
+// Ids currently checked for bulk actions (delete). Survives across re-renders;
+// pruned to live ids every render so a deleted photo never lingers selected.
+let _selectedPhotoIds = new Set();
 
 function renderEstPhotos(photos) {
   _estPhotosCache = photos;
   const list = document.getElementById('estPhotoList');
   if (!list) return;
+  // Drop selections for photos that no longer exist (post-delete, refetch).
+  const liveIds = new Set(photos.map(p => p.id));
+  _selectedPhotoIds.forEach(id => { if (!liveIds.has(id)) _selectedPhotoIds.delete(id); });
   if (!photos.length) {
+    _selectedPhotoIds.clear();
     list.innerHTML = `<div style="color:var(--text-dim);font-size:0.78em;padding:8px">No photos yet. Drag files in, or paste an image URL below.</div>`;
     return;
   }
   const cats = ['general','cover','before','after','damage','material','inspection','site','other'];
   const optsFor = (current) => cats.map(c => `<option value="${c}" ${c===current?'selected':''}>${c}</option>`).join('');
-  list.innerHTML = photos.map(p => {
+  const selCount = _selectedPhotoIds.size;
+  // Full-width toolbar (flex-basis:100% forces its own row inside the wrapping
+  // flex container) with select-all / clear / bulk-delete.
+  const toolbar = `<div style="flex-basis:100%;width:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 10px;border:1px solid var(--glass-border);border-radius:8px;background:rgba(6,12,24,0.4);margin-bottom:2px">
+      <span style="font-size:0.72em;color:var(--text-dim)">${photos.length} photo${photos.length===1?'':'s'}${selCount?` &bull; ${selCount} selected`:''}</span>
+      <button onclick="selectAllPhotos()" style="font-size:0.68em;padding:3px 9px;background:transparent;color:var(--text);border:1px solid var(--glass-border);border-radius:5px;cursor:pointer">Select all</button>
+      <button onclick="clearPhotoSelection()" style="font-size:0.68em;padding:3px 9px;background:transparent;color:var(--text-dim);border:1px solid var(--glass-border);border-radius:5px;cursor:pointer">Clear</button>
+      <div style="flex:1"></div>
+      <button onclick="bulkDeleteSelectedPhotos()" ${selCount?'':'disabled'} style="font-size:0.68em;padding:3px 11px;background:${selCount?'rgba(239,68,68,0.15)':'transparent'};color:var(--red);border:1px solid var(--red);border-radius:5px;cursor:${selCount?'pointer':'not-allowed'};opacity:${selCount?'1':'0.45'}">Delete selected${selCount?` (${selCount})`:''}</button>
+    </div>`;
+  const cards = photos.map(p => {
     const isVideo = (p.mime_type || '').startsWith('video/');
     const thumb = isVideo
       ? `<video src="${esc(p.url)}" style="width:100%;height:80px;object-fit:cover;background:#0a1628;pointer-events:none" muted></video>`
       : `<img src="${esc(p.url)}" style="width:100%;height:80px;object-fit:cover" loading="lazy">`;
-    return `<div style="width:140px;border:1px solid var(--glass-border);border-radius:8px;overflow:hidden;background:var(--panel);position:relative">
+    const checked = _selectedPhotoIds.has(p.id);
+    return `<div style="width:140px;border:1px solid ${checked?'var(--cyan)':'var(--glass-border)'};border-radius:8px;overflow:hidden;background:var(--panel);position:relative">
+      <label style="position:absolute;top:4px;right:4px;z-index:3;display:flex;align-items:center;justify-content:center;width:22px;height:22px;background:rgba(0,0,0,0.55);border-radius:5px;cursor:pointer" title="Select for bulk delete">
+        <input type="checkbox" ${checked?'checked':''} onchange="toggleSelectPhoto('${esc(p.id)}')" style="width:15px;height:15px;accent-color:var(--cyan);cursor:pointer;margin:0">
+      </label>
       <div onclick="openPhotoEditor('${esc(p.id)}')" style="cursor:pointer;position:relative" title="Click to edit, view full size, or delete">${thumb}
       <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0) 60%,rgba(0,0,0,0.55));display:flex;align-items:flex-end;justify-content:flex-end;padding:4px;pointer-events:none">
         <span style="font-size:0.6em;letter-spacing:1px;color:#fff;background:rgba(0,0,0,0.5);padding:2px 6px;border-radius:4px">EDIT</span>
@@ -2856,6 +2877,7 @@ function renderEstPhotos(photos) {
       ${p.is_cover ? `<div style="position:absolute;top:4px;left:4px;background:var(--cyan);color:#001a1a;font-size:0.62em;font-weight:700;padding:2px 6px;border-radius:4px;letter-spacing:1px;pointer-events:none">COVER</div>` : ''}
       <div style="padding:6px 8px;display:flex;flex-direction:column;gap:4px">
         <select onchange="patchEstPhoto('${esc(p.id)}', this.value === 'cover' ? {category: 'cover', is_cover: true} : (${p.is_cover} ? {category: this.value, is_cover: false} : {category: this.value}))" style="font-size:0.7em;padding:3px;background:var(--bg);color:var(--text);border:1px solid var(--glass-border);border-radius:4px">${optsFor(p.category || 'general')}</select>
+        <input type="text" value="${esc(p.caption || '').replace(/"/g,'&quot;')}" placeholder="Label / description" onchange="patchEstPhoto('${esc(p.id)}', {caption: this.value})" style="font-size:0.7em;padding:3px 5px;background:var(--bg);color:var(--text);border:1px solid var(--glass-border);border-radius:4px;width:100%">
         <div style="display:flex;gap:4px">
           <button onclick="patchEstPhoto('${esc(p.id)}', {is_cover: true})" style="flex:1;font-size:0.65em;padding:3px;background:transparent;color:var(--text-dim);border:1px solid var(--glass-border);border-radius:4px;cursor:pointer">Set Cover</button>
           <button onclick="deleteEstPhoto('${esc(p.id)}')" style="font-size:0.65em;padding:3px 6px;background:transparent;color:var(--red);border:1px solid var(--glass-border);border-radius:4px;cursor:pointer">x</button>
@@ -2863,6 +2885,42 @@ function renderEstPhotos(photos) {
       </div>
     </div>`;
   }).join('');
+  list.innerHTML = toolbar + cards;
+}
+
+// Bulk-selection helpers. Toggling re-renders the gallery (fine for the few
+// dozen photos a single estimate ever holds) so borders + the toolbar count
+// reflect state immediately.
+function toggleSelectPhoto(id) {
+  if (_selectedPhotoIds.has(id)) _selectedPhotoIds.delete(id);
+  else _selectedPhotoIds.add(id);
+  renderEstPhotos(_estPhotosCache);
+}
+function selectAllPhotos() {
+  _estPhotosCache.forEach(p => _selectedPhotoIds.add(p.id));
+  renderEstPhotos(_estPhotosCache);
+}
+function clearPhotoSelection() {
+  _selectedPhotoIds.clear();
+  renderEstPhotos(_estPhotosCache);
+}
+async function bulkDeleteSelectedPhotos() {
+  const ids = Array.from(_selectedPhotoIds);
+  if (!ids.length) return;
+  if (!confirm(`Delete ${ids.length} selected photo${ids.length===1?'':'s'}? This cannot be undone.`)) return;
+  const estId = quoteState.answers._estimate_id;
+  let ok = 0, fail = 0;
+  for (const id of ids) {
+    try {
+      const r = await fetch(`/api/estimate-photos?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: { 'x-tenant-id': TENANT, ...window.RyujinAuth.headers() }
+      });
+      if (r.ok) { ok++; _selectedPhotoIds.delete(id); } else { fail++; }
+    } catch { fail++; }
+  }
+  toast(`Deleted ${ok} photo${ok===1?'':'s'}${fail?`, ${fail} failed`:''}`, fail ? 'error' : 'success');
+  await loadEstimatePhotos(estId);
 }
 
 // Click-to-edit media modal. Full-size view + caption + category + cover
