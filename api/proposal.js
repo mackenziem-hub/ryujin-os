@@ -339,20 +339,48 @@ export default async function handler(req, res) {
 
   const photos = Array.isArray(est.photos) ? est.photos : [];
   const cap = p => String(p.caption || '').toLowerCase().replace(/[\s_-]+/g, '_');
-  const cover = photos.find(p => p.is_cover) || photos[0];
-  const beforePhoto = photos.find(p => cap(p) === 'before');
-  const afterPhoto = photos.find(p => cap(p) === 'after');
+  // A photo's proposal "slot" is set in the builder via the structured
+  // `category` field. Prefer it; fall back to the legacy caption convention
+  // (older proposals tagged before/after/metal_cover via caption) so nothing
+  // regresses. 'general'/'other' are not slots.
+  const norm = s => String(s || '').toLowerCase().replace(/[\s-]+/g, '_');
+  const slot = p => {
+    const c = norm(p.category);
+    if (c && c !== 'general' && c !== 'other') return c;
+    return cap(p);
+  };
+  const cover = photos.find(p => p.is_cover) || photos.find(p => slot(p) === 'cover') || photos[0];
+  const beforePhoto = photos.find(p => slot(p) === 'before');
+  const afterPhoto = photos.find(p => slot(p) === 'after');
+  const afterBottomPhoto = photos.find(p => slot(p) === 'after_bottom');
+  // Curated section gallery (up to three hand-picked shots, in fixed order).
+  const sectionPhotos = ['section1', 'section2', 'section3']
+    .map(s => photos.find(p => slot(p) === s))
+    .filter(Boolean);
   // Metal proposal gets its own hero photo when the customer's home is shown
   // with metal installed. Falls back to the asphalt cover otherwise.
   const metalCoverPhoto = photos.find(p => cap(p) === 'metal_cover' || cap(p) === 'metal_after');
-  const ROLE_CAPTIONS = new Set(['before', 'after', 'metal_after', 'metal_cover', 'cover']);
+  // Every photo that occupies a named slot is excluded from the loose gallery
+  // so it never double-shows.
+  const SLOT_ROLES = new Set(['before', 'after', 'after_bottom', 'metal_after', 'metal_cover', 'cover', 'section1', 'section2', 'section3', 'inspection']);
   const customGallery = photos
-    .filter(p => !p.is_cover && !ROLE_CAPTIONS.has(cap(p)))
+    .filter(p => !p.is_cover && !SLOT_ROLES.has(slot(p)))
     .map(p => ({
       loc: (branding.companyName || 'Plus Ultra Roofing').toUpperCase(),
       desc: p.caption || 'Project photo',
       img: p.url
     }));
+  // Null-safe curated slot map consumed by the envelope proposal to render a
+  // hand-picked photo layout (cover hero + before/after + section gallery +
+  // closing after shot) instead of the auto-swapping config preview. Each
+  // value is null/empty when the slot isn't assigned, so nothing renders unless
+  // it was assigned in the builder.
+  const curatedMedia = {
+    before: beforePhoto?.url || null,
+    after: afterPhoto?.url || null,
+    afterBottom: afterBottomPhoto?.url || null,
+    sections: sectionPhotos.map(p => ({ img: p.url, desc: p.caption || '' }))
+  };
 
   // ?internal=1 surfaces SOP profit + real-cash-net diagnostics for Mac. Public
   // share URLs only see clean retail prices. The SOP says "multiplier IS the
@@ -554,7 +582,8 @@ export default async function handler(req, res) {
       // For commercial, also skip the stock-gallery fallback (only show real on-site photos).
       gallery: (Array.isArray(est.tags) && est.tags.includes('commercial'))
         ? (customGallery.length ? customGallery : [])
-        : (customGallery.length ? [...customGallery, ...GALLERY].slice(0, 8) : GALLERY)
+        : (customGallery.length ? [...customGallery, ...GALLERY].slice(0, 8) : GALLERY),
+      curated: curatedMedia
     },
     // Per pricing_formula_v2.md Section 3: multiplier IS the price. No bumping,
     // no filtering. Public and internal both show calculated_packages exactly as
