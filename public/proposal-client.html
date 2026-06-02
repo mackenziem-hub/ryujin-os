@@ -2844,8 +2844,17 @@ function envGetSidingTier(env, slug) {
   const tiers = env?.components?.siding?.tiers || [];
   return tiers.find(t => t.slug === slug) || null;
 }
-function envGetTrim(env, key) { return env?.components?.[`trim_${key}`] || null; }
-function envGetPrep(env, key) { return env?.components?.[`prep_${key}`] || null; }
+// Treat hidden:true as "this component does not exist for render purposes."
+// The data stays on the row so the proposal-builder can toggle it back on
+// without losing pricing or copy.
+function envGetTrim(env, key) {
+  const c = env?.components?.[`trim_${key}`];
+  return (!c || c.hidden) ? null : c;
+}
+function envGetPrep(env, key) {
+  const c = env?.components?.[`prep_${key}`];
+  return (!c || c.hidden) ? null : c;
+}
 
 function envStandalone(env, hardCost) {
   const e = envOpt(env);
@@ -3101,7 +3110,17 @@ function envRenderRoofOptions() {
 function envRenderSidingOptions() {
   const env = DATA.envelope;
   if (!env) return;
-  const tiers = env?.components?.siding?.tiers || [];
+  const sidingComp = env?.components?.siding;
+  const block = document.getElementById('envSidingBlock');
+  // Hide the whole Siding section when the component is missing or toggled
+  // off in the proposal-builder. Otherwise the static "Siding · Wall System"
+  // header renders with an empty body.
+  if (!sidingComp || sidingComp.hidden) {
+    if (block) block.hidden = true;
+    return;
+  }
+  if (block) block.hidden = false;
+  const tiers = sidingComp.tiers || [];
   const wrap = document.getElementById('envSidingOptions');
   if (!wrap) return;
   const roof = envGetRoofTier(env, envelopeState.system, envelopeState.roof);
@@ -3136,12 +3155,17 @@ function envRenderTrimToggles() {
   const env = DATA.envelope;
   if (!env) return;
   const wrap = document.getElementById('envTrimToggles');
+  const block = document.getElementById('envTrimBlock');
   if (!wrap) return;
   const items = [
     { key: 'gutters', icon: '⛓' },
     { key: 'soffit', icon: '⊓' },
     { key: 'fascia', icon: '─' }
   ];
+  // Hide the Eve Protection block when every trim item is missing or hidden
+  // so we don't leave the section header floating above an empty grid.
+  const visibleItems = items.filter(({key}) => envGetTrim(env, key));
+  if (block) block.hidden = visibleItems.length === 0;
   wrap.innerHTML = items.map(({key, icon}) => {
     const def = envGetTrim(env, key);
     if (!def) return '';
