@@ -601,10 +601,10 @@ export default async function handler(req, res) {
   // inspection_photos visible. Renderer prefers annotated_url (PR #189
   // annotator output) over the raw url so marked-up versions display.
   // Sources merged in this order:
-  //   1. project_files for the customer's most-recent project (current work)
-  //   2. companycam_archive_photos matched by address to surface historical
-  //      CompanyCam work at the same property
-  // Both are normalized to the same shape so the renderer doesn't branch.
+  //   1. project_files for the customer's most-recent project (annotator output)
+  //   2. estimate_photos for THIS estimate (where /job.html uploads land)
+  //   3. companycam_archive_photos matched by address (historical work)
+  // All normalized to the same shape so the renderer doesn't branch.
   try {
     const inspComp = data.envelope?.components?.inspection_photos;
     if (inspComp && !inspComp.hidden && est.customer_id) {
@@ -646,7 +646,31 @@ export default async function handler(req, res) {
         }
       }
 
-      // Source 2: companycam_archive matched by property address. Falls back
+      // Source 2: estimate_photos for THIS estimate. This is where uploads
+      // from /job.html (the Photos & Video gallery) land, so without this
+      // union the inspection gallery never shows what Mac just uploaded.
+      const { data: epRows } = await supabaseAdmin
+        .from('estimate_photos')
+        .select('id, url, caption, category, is_cover, uploaded_at, mime_type')
+        .eq('estimate_id', est.id)
+        .order('uploaded_at', { ascending: false });
+      for (const ep of (epRows || [])) {
+        if (ep.mime_type && !ep.mime_type.startsWith('image/')) continue;
+        const id = 'ep_' + ep.id;
+        if (seenIds.has(id)) continue;
+        seenIds.add(id);
+        merged.push({
+          id,
+          url: ep.url,
+          original_url: ep.url,
+          has_annotations: false, // estimate_photos doesn't carry annotated_url
+          caption: ep.caption || '',
+          category: ep.category || 'inspection',
+          source: 'estimate_photos'
+        });
+      }
+
+      // Source 3: companycam_archive matched by property address. Falls back
       // to the customer's address if the project doesn't have one set.
       // Address match is fuzzy (first token + city) to tolerate punctuation
       // and number/street formatting drift. Capped at 24 photos so a property
