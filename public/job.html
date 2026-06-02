@@ -93,6 +93,8 @@ details.acc[open]>summary .chev{transform:rotate(90deg)}
 .ptile .pmenu button{display:block;width:100%;text-align:left;padding:7px 10px;background:transparent;border:none;color:#e0e6f0;font-family:'Share Tech Mono',monospace;font-size:0.68em;letter-spacing:1px;cursor:pointer;border-radius:5px}
 .ptile .pmenu button:hover{background:rgba(251,146,60,0.14);color:#fb923c}
 .ptile .pmenu button.danger{color:#f87171}
+.ptile .pmenu button.disabled{opacity:0.4;cursor:not-allowed}
+.ptile .pmenu button.disabled:hover{background:transparent;color:rgba(200,220,255,0.5)}
 .ptile .pmenu button.danger:hover{background:rgba(248,113,113,0.14);color:#fca5a5}
 .ptile .pcap{position:absolute;bottom:0;left:0;right:0;padding:5px 8px;font-family:'Share Tech Mono',monospace;font-size:0.62em;color:#fff;background:rgba(0,0,0,0.78);letter-spacing:0.5px;outline:none;cursor:text}
 .ptile .pcap:focus{background:rgba(251,146,60,0.22);color:#fff}
@@ -1196,20 +1198,33 @@ function buildTile(p, refWo, state) {
   const menuBtn = el('button', { class: 'menu-btn', type: 'button', title: 'Photo actions' }, '⋮');
   tile.appendChild(menuBtn);
   const menu = el('div', { class: 'pmenu' });
+  // estimate_photos rows can't be annotated by /annotate.html since the
+  // annotator endpoint targets project_files only. Gray out the option for
+  // those rows so Mac doesn't tap an inert link.
+  const annotatable = !p.read_only && p.source !== 'estimate_photos';
+  const annotateLabel = p.annotated_url ? 'Edit annotations' : 'Annotate';
   const actions = [
     { label: 'View original', action: 'view' },
+    { label: annotateLabel, action: 'annotate', disabled: !annotatable, hint: annotatable ? null : 'Only project files can be annotated' },
+    { label: 'Generate mockup (AI)', action: 'mockup', hint: 'Coming soon: Higgsfield render of this photo with the proposed roof installed' },
     { label: p.is_cover ? 'Unset cover' : 'Set as cover', action: 'cover' },
     { label: role === 'before' ? 'Unmark before' : 'Mark as before', action: 'before' },
     { label: role === 'after' ? 'Unmark after' : 'Mark as after', action: 'after' },
     { label: 'Delete photo', action: 'delete', danger: true },
   ];
   actions.forEach(a => {
-    const b = el('button', { type: 'button', class: a.danger ? 'danger' : '' }, a.label);
-    b.addEventListener('click', async ev => {
-      ev.stopPropagation();
-      menu.classList.remove('on');
-      await handleAction(a.action, p, tile, state);
-    });
+    const attrs = { type: 'button' };
+    if (a.danger) attrs.class = 'danger';
+    if (a.disabled) { attrs.class = (attrs.class || '') + ' disabled'; attrs.disabled = 'true'; }
+    if (a.hint) attrs.title = a.hint;
+    const b = el('button', attrs, a.label);
+    if (!a.disabled) {
+      b.addEventListener('click', async ev => {
+        ev.stopPropagation();
+        menu.classList.remove('on');
+        await handleAction(a.action, p, tile, state);
+      });
+    }
     menu.appendChild(b);
   });
   tile.appendChild(menu);
@@ -1262,6 +1277,19 @@ async function handleAction(action, p, tile, state) {
   try {
     if (action === 'view') {
       window.open(p.url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    if (action === 'annotate') {
+      // /annotate.html opens the Konva editor. On save, annotated_url is
+      // written to project_files and the proposal renderer picks it up
+      // automatically (already prefers annotated_url over url).
+      window.open('/annotate.html?file_id=' + encodeURIComponent(p.id), '_blank', 'noopener,noreferrer');
+      return;
+    }
+    if (action === 'mockup') {
+      // Stub: real Higgsfield integration coming next session. For now show
+      // the intent so Mac knows the button is wired and where it'll land.
+      alert('AI Mockup Generator\n\nNext-session build: Higgsfield render of this drone shot with the proposed roof system installed. You toggle a tier in the proposal-builder, click this, and the mockup renders showing the customer what the new roof will look like on THEIR house.\n\nNot wired tonight. Photo URL captured: ' + p.url.slice(0, 60) + '...');
       return;
     }
     if (action === 'cover') {
