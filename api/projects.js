@@ -69,7 +69,7 @@ async function handleShareAccess(req, res) {
   const { data: project, error } = await supabaseAdmin
     .from('projects')
     .select(`
-      id, tenant_id, customer_id, name, address, city, province, status, created_at,
+      id, tenant_id, customer_id, estimate_id, name, address, city, province, status, created_at,
       share_token, share_expires_at, tags,
       customer:customers(full_name),
       tenant:tenants(name, branding)
@@ -88,7 +88,7 @@ async function handleShareAccess(req, res) {
   maybeNotifyFirstGalleryOpen(project).catch(() => {});
 
   // Get client-visible files only
-  const { data: files } = await supabaseAdmin
+  const { data: pfRows } = await supabaseAdmin
     .from('project_files')
     .select('id, url, thumbnail_url, filename, mime_type, category, caption, tags, annotations, annotated_url, uploaded_at, captured_at, latitude, longitude, sort_order, is_cover')
     .eq('project_id', project.id)
@@ -96,6 +96,48 @@ async function handleShareAccess(req, res) {
     .order('is_cover', { ascending: false })
     .order('sort_order', { ascending: true })
     .order('captured_at', { ascending: false });
+
+  // Union with estimate_photos for the linked estimate. job.html uploads
+  // crew photos via /api/estimate-photos (legacy gallery), so without this
+  // union the customer share link 404s on photos that visibly exist on the
+  // job page. estimate_photos rows don't carry client_visible -- they are
+  // implicitly customer-facing once a share link is minted. Mirror the
+  // shape of project_files so photos-share.html consumes one list.
+  let epRows = [];
+  if (project.estimate_id) {
+    const { data: ep } = await supabaseAdmin
+      .from('estimate_photos')
+      .select('id, url, filename, mime_type, caption, category, is_cover, uploaded_at, captured_at')
+      .eq('estimate_id', project.estimate_id)
+      .order('is_cover', { ascending: false })
+      .order('uploaded_at', { ascending: false });
+    epRows = (ep || []).map(r => ({
+      id: r.id,
+      url: r.url,
+      thumbnail_url: null,
+      filename: r.filename,
+      mime_type: r.mime_type,
+      category: r.category,
+      caption: r.caption,
+      tags: [],
+      annotations: [],
+      annotated_url: null,
+      uploaded_at: r.uploaded_at,
+      captured_at: r.captured_at || r.uploaded_at,
+      latitude: null,
+      longitude: null,
+      sort_order: 0,
+      is_cover: r.is_cover,
+    }));
+  }
+
+  // Hide non-image/video files (PDFs, docs) from the customer gallery.
+  // photos-share.html renders <img>/<video> tiles only; surfacing PDFs here
+  // would break the layout.
+  const files = [...(pfRows || []), ...epRows].filter(f => {
+    const mt = String(f.mime_type || '').toLowerCase();
+    return mt.startsWith('image/') || mt.startsWith('video/');
+  });
 
   // Get non-internal comments
   const { data: comments } = await supabaseAdmin
