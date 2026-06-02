@@ -896,27 +896,29 @@ function render({ customer, estimates, workorders, paysheets, photos, roster, pu
   // Resolve project for this job (migration 064 auto-creates one per accepted
   // estimate). Drives the FILES section + COPY SHARE LINK button. Cached on
   // window so the upload + copy handlers can read it without re-fetching.
-  // Prefer the active/requested workorder's linked_estimate_id over
-  // primaryEst.id -- on multi-WO customers, the highest-numbered estimate
-  // is often the unaccepted next-job quote, while the accepted estimate that
-  // created the project is older. Fall back to the primaryEst id (and to any
-  // estimate in the list) so single-WO jobs and pre-WO accepted estimates
-  // still resolve.
+  //
+  // Resolution rule (multi-WO customers): when the active workorder has a
+  // linked_estimate_id, that estimate is the ONLY candidate. Falling back
+  // to other estimates on the same customer would attach files / share
+  // links to a different job's gallery, which is worse than showing the
+  // soft "no project linked yet" state. Only when there's no active WO or
+  // no linked_estimate_id do we try primaryEst -- the no-WO case (estimate
+  // accepted, WO not yet created) still needs the FILES + share UI.
   window._jobProjectId = null;
-  const estCandidates = [];
-  if (activeWo?.linked_estimate_id) estCandidates.push(activeWo.linked_estimate_id);
-  if (primaryEst?.id) estCandidates.push(primaryEst.id);
-  for (const e of estimates) if (e?.id) estCandidates.push(e.id);
-  const uniqueEstCandidates = [...new Set(estCandidates)];
+  let estCandidate = null;
+  if (activeWo?.linked_estimate_id) {
+    estCandidate = activeWo.linked_estimate_id;
+  } else if (!activeWo && primaryEst?.id) {
+    estCandidate = primaryEst.id;
+  }
 
   (async () => {
     let project = null;
-    for (const eid of uniqueEstCandidates) {
+    if (estCandidate) {
       try {
-        const p = await resolveJobProject(eid);
-        if (p && p.id) { project = p; break; }
+        project = await resolveJobProject(estCandidate);
       } catch (err) {
-        console.warn('[job] project lookup failed for est', eid, err);
+        console.warn('[job] project lookup failed for est', estCandidate, err);
       }
     }
     window._jobProjectId = project?.id || null;
