@@ -896,22 +896,34 @@ function render({ customer, estimates, workorders, paysheets, photos, roster, pu
   // Resolve project for this job (migration 064 auto-creates one per accepted
   // estimate). Drives the FILES section + COPY SHARE LINK button. Cached on
   // window so the upload + copy handlers can read it without re-fetching.
+  // Prefer the active/requested workorder's linked_estimate_id over
+  // primaryEst.id -- on multi-WO customers, the highest-numbered estimate
+  // is often the unaccepted next-job quote, while the accepted estimate that
+  // created the project is older. Fall back to the primaryEst id (and to any
+  // estimate in the list) so single-WO jobs and pre-WO accepted estimates
+  // still resolve.
   window._jobProjectId = null;
-  if (primaryEst?.id) {
-    resolveJobProject(primaryEst.id).then(project => {
-      window._jobProjectId = project?.id || null;
-      window._jobProject = project || null;
-      wireFilesSection(project);
-      wireCopyShareLink(project);
-    }).catch(err => {
-      console.warn('[job] project lookup failed', err);
-      wireFilesSection(null);
-      wireCopyShareLink(null);
-    });
-  } else {
-    wireFilesSection(null);
-    wireCopyShareLink(null);
-  }
+  const estCandidates = [];
+  if (activeWo?.linked_estimate_id) estCandidates.push(activeWo.linked_estimate_id);
+  if (primaryEst?.id) estCandidates.push(primaryEst.id);
+  for (const e of estimates) if (e?.id) estCandidates.push(e.id);
+  const uniqueEstCandidates = [...new Set(estCandidates)];
+
+  (async () => {
+    let project = null;
+    for (const eid of uniqueEstCandidates) {
+      try {
+        const p = await resolveJobProject(eid);
+        if (p && p.id) { project = p; break; }
+      } catch (err) {
+        console.warn('[job] project lookup failed for est', eid, err);
+      }
+    }
+    window._jobProjectId = project?.id || null;
+    window._jobProject = project || null;
+    wireFilesSection(project);
+    wireCopyShareLink(project);
+  })();
 
   // Topbar expand / collapse
   document.querySelectorAll('details.acc').forEach(d => d._initial = d.open);

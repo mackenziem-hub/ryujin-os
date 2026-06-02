@@ -105,9 +105,13 @@ async function handleShareAccess(req, res) {
   // shape of project_files so photos-share.html consumes one list.
   let epRows = [];
   if (project.estimate_id) {
+    // NOTE: estimate_photos has no captured_at / latitude / longitude / tags
+    // columns. Selecting any of those returns a 400 from PostgREST and the
+    // entire estimate_photos union silently drops to zero rows. Pull only
+    // columns that actually exist on the table (see migration 068).
     const { data: ep } = await supabaseAdmin
       .from('estimate_photos')
-      .select('id, url, filename, mime_type, caption, category, is_cover, uploaded_at, captured_at')
+      .select('id, url, filename, mime_type, caption, category, is_cover, uploaded_at, sort_order')
       .eq('estimate_id', project.estimate_id)
       .order('is_cover', { ascending: false })
       .order('uploaded_at', { ascending: false });
@@ -123,10 +127,10 @@ async function handleShareAccess(req, res) {
       annotations: [],
       annotated_url: null,
       uploaded_at: r.uploaded_at,
-      captured_at: r.captured_at || r.uploaded_at,
+      captured_at: r.uploaded_at,
       latitude: null,
       longitude: null,
-      sort_order: 0,
+      sort_order: r.sort_order ?? 0,
       is_cover: r.is_cover,
     }));
   }
