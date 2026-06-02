@@ -134,7 +134,7 @@ const catalog = {
     },
     inspection_photos: {
       label: 'Inspection Photo Gallery',
-      subtitle: 'Embeds the project photo gallery on the customer-facing proposal. Photos pulled from the linked project folder, marked-up versions (from the annotator) display when available.',
+      subtitle: 'Embeds project photos + historical CompanyCam shots from the same property on the customer-facing proposal. Marked-up versions (from the annotator) display when available.',
       hard: 0
     }
   }

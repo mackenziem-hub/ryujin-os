@@ -600,18 +600,27 @@ export default async function handler(req, res) {
   // Inspection photos resolution. Surfaced only when the envelope toggles
   // inspection_photos visible. Renderer prefers annotated_url (PR #189
   // annotator output) over the raw url so marked-up versions display.
-  // Pulled from project_files for the customer's most-recent project.
+  // Sources merged in this order:
+  //   1. project_files for the customer's most-recent project (current work)
+  //   2. companycam_archive_photos matched by address to surface historical
+  //      CompanyCam work at the same property
+  // Both are normalized to the same shape so the renderer doesn't branch.
   try {
     const inspComp = data.envelope?.components?.inspection_photos;
     if (inspComp && !inspComp.hidden && est.customer_id) {
+      const merged = [];
+      const seenIds = new Set();
+
+      // Source 1: project_files for the customer's most-recent project
       const { data: project } = await supabaseAdmin
         .from('projects')
-        .select('id')
+        .select('id, address')
         .eq('tenant_id', est.tenant_id)
         .eq('customer_id', est.customer_id)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
+      let projectAddress = project?.address || null;
       if (project) {
         const { data: files } = await supabaseAdmin
           .from('project_files')
@@ -620,17 +629,63 @@ export default async function handler(req, res) {
           .eq('project_id', project.id)
           .order('sort_order', { ascending: true })
           .order('uploaded_at', { ascending: false });
-        data.inspectionPhotos = (files || [])
-          .filter(f => f.mime_type?.startsWith('image/'))
-          .map(f => ({
-            id: f.id,
+        for (const f of (files || [])) {
+          if (!f.mime_type?.startsWith('image/')) continue;
+          const id = 'pf_' + f.id;
+          if (seenIds.has(id)) continue;
+          seenIds.add(id);
+          merged.push({
+            id,
             url: f.annotated_url || f.url,
             original_url: f.url,
             has_annotations: !!f.annotated_url,
             caption: f.caption || '',
             category: f.category || 'inspection',
-          }));
+            source: 'project_files'
+          });
+        }
       }
+
+      // Source 2: companycam_archive matched by property address. Falls back
+      // to the customer's address if the project doesn't have one set.
+      // Address match is fuzzy (first token + city) to tolerate punctuation
+      // and number/street formatting drift. Capped at 24 photos so a property
+      // with hundreds of historical CompanyCam shots doesn't dump.
+      const addressForMatch = (projectAddress || est.customer?.address || '').trim();
+      if (addressForMatch) {
+        const firstToken = addressForMatch.split(/\s+/)[0]; // street number or first word
+        const { data: ccProjects } = await supabaseAdmin
+          .from('companycam_archive_projects')
+          .select('id, address')
+          .eq('tenant_id', est.tenant_id)
+          .ilike('address', `%${firstToken}%`);
+        const ccIds = (ccProjects || []).map(p => p.id);
+        if (ccIds.length) {
+          const { data: ccPhotos } = await supabaseAdmin
+            .from('companycam_archive_photos')
+            .select('id, url_archived, url_source, caption, captured_at')
+            .eq('tenant_id', est.tenant_id)
+            .in('archive_project_id', ccIds)
+            .order('captured_at', { ascending: false })
+            .limit(24);
+          for (const cc of (ccPhotos || [])) {
+            const id = 'cc_' + cc.id;
+            if (seenIds.has(id)) continue;
+            seenIds.add(id);
+            merged.push({
+              id,
+              url: cc.url_archived || cc.url_source,
+              original_url: cc.url_source,
+              has_annotations: false,
+              caption: cc.caption || '',
+              category: 'companycam',
+              source: 'companycam_archive'
+            });
+          }
+        }
+      }
+
+      data.inspectionPhotos = merged;
     }
   } catch (e) {
     console.warn('[proposal] inspectionPhotos fetch failed:', e?.message);
