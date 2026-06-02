@@ -139,6 +139,18 @@ body::before{
 .insp-menu-btn:hover{background:rgba(0,0,0,0.85)}
 .insp-cap{width:100%;background:transparent;border:none;border-top:1px solid var(--border);color:var(--text);font-size:0.78em;padding:7px 9px;font-family:inherit;outline:none}
 .insp-cap:focus{background:rgba(45,212,191,0.06)}
+/* Slot dropdown: native option lists default to a white panel, which made the
+   light option text invisible until highlighted. Force a readable dark panel. */
+.insp-slot option{background:#141a2b;color:#e8edf5}
+/* Photo annotator modal (pen / arrow / text) */
+.anno-backdrop{position:fixed;inset:0;z-index:200;background:rgba(5,8,16,0.93);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px;gap:10px}
+.anno-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center;background:var(--card,#141a2b);border:1px solid var(--border);border-radius:12px;padding:8px 12px;max-width:100%}
+.anno-toolbar button{font-size:0.8em;padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:rgba(255,255,255,0.04);color:var(--text);cursor:pointer;font-family:inherit}
+.anno-toolbar button.on{background:var(--accent);color:#0a0e1a;border-color:var(--accent);font-weight:700}
+.anno-swatch{width:24px;height:24px;border-radius:50%;border:2px solid rgba(255,255,255,0.25);cursor:pointer;padding:0}
+.anno-swatch.on{border-color:#fff;box-shadow:0 0 0 2px var(--accent)}
+.anno-canvas-wrap{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;width:100%;overflow:auto}
+.anno-canvas-wrap canvas{max-width:100%;max-height:72vh;background:#000;border-radius:8px;touch-action:none;cursor:crosshair}
 .comp-tier{font-size:0.78em;color:var(--text-muted);display:flex;justify-content:space-between;gap:8px}
 .comp-tier b{color:var(--text-dim);font-weight:500}
 .comp-tier .tier-popular{color:var(--accent)}
@@ -658,9 +670,7 @@ body::before{
 
   async function handleInspectionAction(action, photoId){
     if (action === 'annotate') {
-      // estimate_photos isn't supported by /annotate.html yet (annotator is
-      // project_files only). Tell Mac instead of failing silently.
-      toast('Annotator supports project_files only right now. Coming for estimate photos next session.', 'err');
+      openAnnotator(photoId);
       return;
     }
     if (action === 'mockup') {
@@ -736,6 +746,151 @@ body::before{
     document.getElementById('inspFileInput').value = '';
     loadInspectionPhotos();
     setTimeout(() => { if (status) status.textContent = ''; }, 4000);
+  }
+
+  // Lightweight photo annotator: pen (colour swatches), arrow, and text box.
+  // Composites the markup onto the image at load resolution and uploads the
+  // result as a NEW estimate photo (carrying the original's slot/category), so
+  // the original is never destroyed. Replay-based op list gives a clean undo.
+  function openAnnotator(photoId){
+    const photo = (_inspPhotosCache || []).find(p => p.id === photoId);
+    if (!photo) { toast('Photo not found', 'err'); return; }
+    document.querySelectorAll('.anno-backdrop').forEach(n => n.remove());
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'anno-backdrop';
+    backdrop.innerHTML = `
+      <div class="anno-toolbar">
+        <button data-tool="pen" class="on">Pen</button>
+        <button data-tool="arrow">Arrow</button>
+        <button data-tool="text">Text</button>
+        <span style="width:1px;height:22px;background:var(--border)"></span>
+        <button class="anno-swatch on" data-color="#ffd400" style="background:#ffd400" title="Yellow"></button>
+        <button class="anno-swatch" data-color="#ff3b30" style="background:#ff3b30" title="Red"></button>
+        <button class="anno-swatch" data-color="#ffffff" style="background:#ffffff" title="White"></button>
+        <button class="anno-swatch" data-color="#111111" style="background:#111111" title="Black"></button>
+        <button class="anno-swatch" data-color="#22d3ee" style="background:#22d3ee" title="Cyan"></button>
+        <span style="width:1px;height:22px;background:var(--border)"></span>
+        <button data-act="undo">Undo</button>
+        <button data-act="cancel">Cancel</button>
+        <button data-act="save" style="background:var(--accent);color:#0a0e1a;font-weight:700;border-color:var(--accent)">Save markup</button>
+      </div>
+      <div class="anno-canvas-wrap"><canvas></canvas></div>
+      <div style="font-size:0.75em;color:var(--text-dim)">Pen + arrow: click and drag. Text: tap where you want it.</div>
+    `;
+    document.body.appendChild(backdrop);
+
+    const canvas = backdrop.querySelector('canvas');
+    const ctx = canvas.getContext('2d');
+    const ops = [];
+    let tool = 'pen', color = '#ffd400', drawing = false, cur = null;
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const maxDim = 2000;
+      const ratio = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
+      canvas.width = Math.max(1, Math.round(img.naturalWidth * ratio));
+      canvas.height = Math.max(1, Math.round(img.naturalHeight * ratio));
+      redraw();
+    };
+    img.onerror = () => toast('Could not load image for markup', 'err');
+    img.src = photo.url;
+
+    const lineW = () => Math.max(2, Math.round(canvas.width / 320));
+    function redraw(){
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (img.complete && img.naturalWidth) ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      ops.forEach(drawOp);
+      if (cur) drawOp(cur);
+    }
+    function drawOp(op){
+      ctx.strokeStyle = op.color; ctx.fillStyle = op.color;
+      ctx.lineWidth = op.w || lineW(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      if (op.type === 'pen'){
+        ctx.beginPath();
+        op.pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+        ctx.stroke();
+      } else if (op.type === 'arrow'){
+        ctx.beginPath(); ctx.moveTo(op.x1, op.y1); ctx.lineTo(op.x2, op.y2); ctx.stroke();
+        const a = Math.atan2(op.y2 - op.y1, op.x2 - op.x1), h = (op.w || lineW()) * 4;
+        ctx.beginPath(); ctx.moveTo(op.x2, op.y2);
+        ctx.lineTo(op.x2 - h * Math.cos(a - Math.PI / 6), op.y2 - h * Math.sin(a - Math.PI / 6));
+        ctx.lineTo(op.x2 - h * Math.cos(a + Math.PI / 6), op.y2 - h * Math.sin(a + Math.PI / 6));
+        ctx.closePath(); ctx.fill();
+      } else if (op.type === 'text'){
+        const fs = op.size || Math.max(16, Math.round(canvas.width / 26));
+        ctx.font = `700 ${fs}px Inter, system-ui, sans-serif`;
+        ctx.textBaseline = 'top';
+        ctx.lineWidth = Math.max(2, fs / 8); ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+        ctx.strokeText(op.text, op.x, op.y); ctx.fillStyle = op.color; ctx.fillText(op.text, op.x, op.y);
+      }
+    }
+    function pos(e){
+      const r = canvas.getBoundingClientRect();
+      return { x: (e.clientX - r.left) * (canvas.width / r.width), y: (e.clientY - r.top) * (canvas.height / r.height) };
+    }
+    canvas.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      const p = pos(e);
+      if (tool === 'text'){
+        const t = window.prompt('Text to add:');
+        if (t && t.trim()){ ops.push({ type: 'text', color, x: p.x, y: p.y, text: t.trim() }); redraw(); }
+        return;
+      }
+      drawing = true;
+      cur = tool === 'pen'
+        ? { type: 'pen', color, w: lineW(), pts: [p] }
+        : { type: 'arrow', color, w: lineW(), x1: p.x, y1: p.y, x2: p.x, y2: p.y };
+      try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+    });
+    canvas.addEventListener('pointermove', e => {
+      if (!drawing || !cur) return;
+      const p = pos(e);
+      if (cur.type === 'pen') cur.pts.push(p); else { cur.x2 = p.x; cur.y2 = p.y; }
+      redraw();
+    });
+    const endStroke = () => { if (drawing && cur) ops.push(cur); drawing = false; cur = null; redraw(); };
+    canvas.addEventListener('pointerup', endStroke);
+    canvas.addEventListener('pointercancel', endStroke);
+
+    backdrop.querySelectorAll('[data-tool]').forEach(b => b.addEventListener('click', () => {
+      tool = b.dataset.tool;
+      backdrop.querySelectorAll('[data-tool]').forEach(x => x.classList.toggle('on', x === b));
+    }));
+    backdrop.querySelectorAll('[data-color]').forEach(b => b.addEventListener('click', () => {
+      color = b.dataset.color;
+      backdrop.querySelectorAll('[data-color]').forEach(x => x.classList.toggle('on', x === b));
+    }));
+    backdrop.querySelector('[data-act="undo"]').addEventListener('click', () => { ops.pop(); redraw(); });
+    backdrop.querySelector('[data-act="cancel"]').addEventListener('click', () => backdrop.remove());
+    backdrop.querySelector('[data-act="save"]').addEventListener('click', async () => {
+      const btn = backdrop.querySelector('[data-act="save"]');
+      btn.disabled = true; btn.textContent = 'Saving...';
+      let blob;
+      try {
+        blob = await new Promise((res, rej) => canvas.toBlob(b => b ? res(b) : rej(new Error('toBlob returned null')), 'image/jpeg', 0.9));
+      } catch (err) {
+        toast('Markup blocked (image CORS) - could not save', 'err');
+        btn.disabled = false; btn.textContent = 'Save markup'; return;
+      }
+      const fd = new FormData();
+      fd.append('estimate_id', estimateId);
+      fd.append('category', photo.category || 'inspection');
+      const baseCap = (photo.caption || '').trim();
+      fd.append('caption', baseCap ? baseCap + ' (marked up)' : 'Marked up');
+      fd.append('file', new File([blob], 'markup-' + String(photoId).slice(0, 8) + '.jpg', { type: 'image/jpeg' }), 'markup.jpg');
+      try {
+        const r = await fetch('/api/estimate-photos', { method: 'POST', headers: authHeaders(), body: fd });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        toast('Markup saved', 'ok');
+        backdrop.remove();
+        loadInspectionPhotos();
+      } catch (err) {
+        toast('Save failed: ' + err.message, 'err');
+        btn.disabled = false; btn.textContent = 'Save markup';
+      }
+    });
   }
 
   function renderSection(section, allKeys){
