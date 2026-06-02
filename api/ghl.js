@@ -210,7 +210,7 @@ const SUB_GHL_CACHE_TTL_MS = 10 * 60 * 1000;
 // the location's contacts on email first, then phone. Returns null when
 // neither lookup matches (e.g. Ryan's southcentralroof@gmail.com if it
 // were ever removed from GHL). The sub row itself is the source of truth
-// for tenant scoping — the caller already validated the session, but the
+// for tenant scoping; the caller already validated the session, but the
 // per-tenant filter on subcontractors.id ensures one tenant's session
 // can't probe another tenant's subs through this endpoint.
 async function resolveSubGhlContactId(tenantId, subId) {
@@ -726,7 +726,7 @@ export default async function handler(req, res) {
       }
       // Fetch messages from the conversation. GHL returns
       // { messages: { messages: [], nextPage, lastMessageId } } for the
-      // dedicated messages endpoint — use the shared normalizer so this
+      // dedicated messages endpoint. Use the shared normalizer so this
       // and sub-thread mode stay in sync. Older shape `{messages: []}`
       // is preserved by the normalizer for forward compat.
       const msgData = await ghlFetch(`/conversations/${convo.id}/messages`, { limit });
@@ -742,7 +742,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // === SUB THREAD — subcontractor conversation lookup by Ryujin sub id ===
+    // === SUB THREAD: subcontractor conversation lookup by Ryujin sub id ===
     // Job folder Section 8 (COMMS) calls this when rendering the Sub tab.
     // Subs are stored in the local subcontractors table (no ghl_contact_id
     // column); we look the contact up by email then phone, cache the
