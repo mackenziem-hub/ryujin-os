@@ -375,7 +375,12 @@ export default async function handler(req, res) {
   // closing after shot) instead of the auto-swapping config preview. Each
   // value is null/empty when the slot isn't assigned, so nothing renders unless
   // it was assigned in the builder.
+  // Strict cover: only an explicitly-assigned cover (is_cover or category=cover),
+  // NOT the photos[0] fallback. Drives the envelope hero + signals "curated" so
+  // the seeded mockup cover/preview/diagrams are cut once Mac picks a cover.
+  const curatedCover = photos.find(p => p.is_cover) || photos.find(p => slot(p) === 'cover') || null;
   const curatedMedia = {
+    cover: curatedCover?.url || null,
     before: beforePhoto?.url || null,
     after: afterPhoto?.url || null,
     afterBottom: afterBottomPhoto?.url || null,

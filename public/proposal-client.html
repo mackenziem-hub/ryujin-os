@@ -1738,6 +1738,7 @@ body:not(.envelope-active) #envelopeSection{display:none !important}
       <details class="env-toggle">
         <summary>Your investment, explained <span class="ti">+</span></summary>
         <div class="env-toggle-body">
+          <div id="envPricingBreakdown" style="margin-bottom:14px"></div>
           <p>Your price reflects the full scope done as one coordinated project: a single mobilization, one supervisor, and one material order. That is why the bundle total comes in below the same work quoted as separate jobs.</p>
           <ul>
             <li>All materials, labour, disposal, and cleanup are included.</li>
@@ -3603,6 +3604,23 @@ function envRenderSummary(result) {
     const monthly = financeItMonthly ? financeItMonthly(result.finalSelling || 0, 120) : 0;
     finEl.textContent = result.finalSelling > 0 ? `Or $${Math.round(monthly).toLocaleString()}/mo · FinanceIt 10-yr` : '— select a roof to see your monthly';
   }
+  // Mirror the headline numbers into the expandable price breakdown toggle.
+  const breakdownEl = document.getElementById('envPricingBreakdown');
+  if (breakdownEl) {
+    const alone = result.alonePre || 0, sav = result.savings || 0, inv = result.finalSelling || 0;
+    if (inv > 0) {
+      const moBreak = financeItMonthly ? Math.round(financeItMonthly(inv, 120)) : 0;
+      breakdownEl.innerHTML =
+        '<table class="env-insp-table">' +
+        `<tr><td>Separate project price</td><td>$${alone.toLocaleString()}</td></tr>` +
+        (sav > 0 ? `<tr><td>Bundle savings</td><td>-$${sav.toLocaleString()}</td></tr>` : '') +
+        `<tr><td><b>Your investment</b></td><td><b>$${inv.toLocaleString()}</b></td></tr>` +
+        (moBreak > 0 ? `<tr><td>Financed (10-yr)</td><td>$${moBreak.toLocaleString()}/mo</td></tr>` : '') +
+        '</table>';
+    } else {
+      breakdownEl.innerHTML = '<p style="color:var(--ink-muted)">Select your scope above to see the full price breakdown.</p>';
+    }
+  }
   // Cash discount meter
   const meterEl = document.getElementById('envCashMeter');
   const fillEl = document.getElementById('envCashFill');
@@ -3808,11 +3826,14 @@ function envInit() {
   const heroTitle = document.getElementById('envHeroTitle');
   const heroAddr = document.getElementById('envHeroAddress');
   const heroEyebrow = document.getElementById('envHeroEyebrow');
-  if (env.media?.cover && heroImg && heroEl) {
+  // Prefer the curated/real cover photo (is_cover) over the seeded mockup cover,
+  // so the protective-shell hero shows the actual home, not an auto render.
+  const heroCover = (DATA.media && DATA.media.curated && DATA.media.curated.cover) || env.media?.cover;
+  if (heroCover && heroImg && heroEl) {
     heroImg.classList.remove('loaded');
     heroImg.onload = () => heroImg.classList.add('loaded');
     heroImg.onerror = () => { heroImg.classList.add('loaded'); /* fail-open so block doesn't stay black */ };
-    heroImg.src = env.media.cover;
+    heroImg.src = heroCover;
     if (heroImg.complete) heroImg.classList.add('loaded'); // already cached
     if (heroTitle) heroTitle.textContent = DATA.customer?.name || 'Your Proposal';
     if (heroAddr) heroAddr.textContent = DATA.customer?.address || '';
@@ -3839,11 +3860,15 @@ function envInit() {
       if (!revealed && img.complete && img.naturalWidth > 0) reveal();
     }, 8000);
   };
-  // Primary: cleaner envelope visual
-  wireDiagram('envSystemCard', 'envSystemImg', env.media?.complete_system || env.media?.envelope_diagram);
-  // Secondary: detailed callout diagram (larger so writing is readable)
-  if (env.media?.envelope_diagram && env.media?.complete_system) {
-    wireDiagram('envDiagramCard', 'envDiagramImg', env.media.envelope_diagram);
+  // Skip the auto-generated system/diagram mockups when Mac curated his own
+  // photos. Those renders are the "siding mockups" he asked to cut.
+  if (!envCuratedActive()) {
+    // Primary: cleaner envelope visual
+    wireDiagram('envSystemCard', 'envSystemImg', env.media?.complete_system || env.media?.envelope_diagram);
+    // Secondary: detailed callout diagram (larger so writing is readable)
+    if (env.media?.envelope_diagram && env.media?.complete_system) {
+      wireDiagram('envDiagramCard', 'envDiagramImg', env.media.envelope_diagram);
+    }
   }
 
   try { envRenderCurated(); } catch (e) { console.warn('curated photos render failed', e); }
@@ -3858,7 +3883,7 @@ function envInit() {
 // stays hidden unless its slot is filled, so an un-curated estimate is unchanged.
 function envCuratedActive() {
   const c = (DATA.media && DATA.media.curated) || {};
-  return !!(c.before || c.after || c.afterBottom || (Array.isArray(c.sections) && c.sections.length));
+  return !!(c.cover || c.before || c.after || c.afterBottom || (Array.isArray(c.sections) && c.sections.length));
 }
 function envRenderCurated() {
   const c = (DATA.media && DATA.media.curated) || {};
