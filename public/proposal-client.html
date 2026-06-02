@@ -801,6 +801,9 @@ body:not(.app-ready) .topbar{visibility:hidden}
 .env-insp-card figcaption{padding:10px 12px;font-size:0.82rem;color:rgba(232,237,245,0.78);line-height:1.4;background:rgba(0,0,0,0.18)}
 .env-insp-badge{position:absolute;top:8px;right:8px;background:rgba(253,204,2,0.92);color:#0b1220;padding:3px 9px;border-radius:999px;font-size:0.68rem;font-weight:800;letter-spacing:0.5px;text-transform:uppercase}
 .env-insp-source{position:absolute;top:8px;left:8px;background:rgba(0,0,0,0.72);color:rgba(255,255,255,0.92);padding:3px 9px;border-radius:999px;font-size:0.66rem;font-weight:700;letter-spacing:0.4px;text-transform:uppercase}
+.env-insp-owner-bar{grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:rgba(253,204,2,0.08);border:1px dashed rgba(253,204,2,0.35);border-radius:10px;font-size:0.78rem;color:rgba(232,237,245,0.78);margin-bottom:6px}
+.env-insp-owner-bar a{color:#fdcc02;font-weight:700;text-decoration:none;background:rgba(253,204,2,0.15);padding:6px 12px;border-radius:999px;font-size:0.85em}
+.env-insp-owner-bar a:hover{background:rgba(253,204,2,0.25)}
 .env-trim-tile{display:flex;flex-direction:column;gap:8px;padding:18px 16px;background:rgba(255,255,255,0.03);border:1.5px solid rgba(255,255,255,0.08);border-radius:12px;cursor:pointer;transition:all 0.16s;user-select:none;position:relative;text-align:left}
 .env-trim-tile:hover{border-color:rgba(253,204,2,0.4);background:rgba(255,255,255,0.06)}
 .env-trim-tile.on{border-color:#fdcc02;background:linear-gradient(135deg,rgba(253,204,2,0.10) 0%,rgba(253,204,2,0.02) 100%);box-shadow:0 0 0 1.5px #fdcc02 inset}
@@ -3416,11 +3419,26 @@ function envRenderInspection() {
   if (!comp || comp.hidden) { block.hidden = true; return; }
   const photos = Array.isArray(DATA.inspectionPhotos) ? DATA.inspectionPhotos : [];
   block.hidden = false;
+
+  // Owner-only edit shortcut. Probe localStorage for a portal token; if
+  // present, this view is being driven by Mac (presenting). Show a small
+  // edit link back to the builder anchored to the inspection panel.
+  // Customers never have this token so they see nothing.
+  const isOwner = !!(window.localStorage && window.localStorage.getItem('ryujin_token'));
+  const estId = DATA.estimateId || (new URLSearchParams(location.search)).get('estimate_id') || '';
+  let ownerBar = '';
+  if (isOwner) {
+    const builderUrl = estId
+      ? `/proposal-builder.html?estimate_id=${encodeURIComponent(estId)}`
+      : '/sales-proposals.html';
+    ownerBar = `<div class="env-insp-owner-bar"><span>Owner view detected</span><a href="${builderUrl}" target="_blank" rel="noopener noreferrer">Edit inspection in builder &rarr;</a></div>`;
+  }
+
   if (!photos.length) {
-    grid.innerHTML = `<div style="padding:18px;text-align:center;color:rgba(232,237,245,0.55);font-size:0.9rem;border:1px dashed rgba(232,237,245,0.18);border-radius:10px">No inspection photos uploaded yet for this project. Upload photos in the job folder, then they will appear here automatically.</div>`;
+    grid.innerHTML = ownerBar + `<div style="padding:18px;text-align:center;color:rgba(232,237,245,0.55);font-size:0.9rem;border:1px dashed rgba(232,237,245,0.18);border-radius:10px">No inspection photos uploaded yet for this project. Upload photos in the builder, then they will appear here automatically.</div>`;
     return;
   }
-  grid.innerHTML = photos.map(p => `
+  grid.innerHTML = ownerBar + photos.map(p => `
     <figure class="env-insp-card">
       <img src="${escapeHtml(p.url)}" alt="${escapeHtml(p.caption || 'Inspection photo')}" loading="lazy" decoding="async">
       ${p.has_annotations ? '<span class="env-insp-badge">Marked</span>' : ''}
