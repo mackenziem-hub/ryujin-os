@@ -1600,6 +1600,18 @@ body:not(.envelope-active) #envelopeSection{display:none !important}
           <div class="env-trim-toggles" id="envTrimToggles"></div>
         </div>
 
+        <div class="env-block" id="envServicesBlock" hidden>
+          <h3>Roof Preservation</h3>
+          <div class="env-block-sub">Spray-on rejuvenation that extends your existing roof's life by 5+ years for roughly a third the cost of replacement. Pick this <em>instead</em> of a reshingle when the roof is sound but aged.</div>
+          <div class="env-trim-toggles" id="envServicesToggles"></div>
+        </div>
+
+        <div class="env-block" id="envAddonsBlock" hidden>
+          <h3>Add-ons</h3>
+          <div class="env-block-sub">Optional upgrades that pair well with a new roof.</div>
+          <div class="env-trim-toggles" id="envAddonsToggles"></div>
+        </div>
+
         <div class="env-diagram-card" id="envSystemCard" hidden>
           <img id="envSystemImg" src="" alt="Complete building envelope system" loading="eager" decoding="async" width="1800" height="1013">
           <div class="dc-cap">Your home with the complete building envelope system — roof system, wall assembly, and gutter system in one coordinated install.</div>
@@ -2809,13 +2821,35 @@ window.switchSystem = switchSystem;
 const envelopeState = {
   system: null,    // 'asphalt' | 'metal'
   roof: null,      // slug
-  roofPrep: { strap: false, redeck: false }, // optional roof additions
+  roofPrep: {},    // dynamic, keyed by suffix of prep_* component (e.g. strap, redeck)
   siding: 'none',  // slug or 'none'
-  trim: { gutters: false, soffit: false, fascia: false },
+  trim: {},        // dynamic, keyed by suffix of trim_* component (gutters/soffit/fascia/leafguard)
+  services: {},    // dynamic, keyed by suffix of service_* component (rejuvenation, etc)
+  addons: {},      // dynamic, keyed by suffix of addon_* component (ventilation, chimney_flash)
   prevSavings: 0,
   prevPackageName: null,
   unlockedThresholds: new Set()
 };
+
+// Walk env.components for any key matching `${prefix}_*` and return the
+// suffix list, skipping hidden components. The proposal-builder.html
+// flips a `hidden:true` flag to control visibility per estimate, so this
+// helper is the single seam where hidden filtering happens.
+function envListKeys(env, prefix) {
+  if (!env?.components) return [];
+  const pre = prefix + '_';
+  return Object.entries(env.components)
+    .filter(([k, c]) => k.startsWith(pre) && c && !c.hidden)
+    .map(([k]) => k.slice(pre.length));
+}
+function envGetService(env, key) {
+  const c = env?.components?.[`service_${key}`];
+  return (!c || c.hidden) ? null : c;
+}
+function envGetAddon(env, key) {
+  const c = env?.components?.[`addon_${key}`];
+  return (!c || c.hidden) ? null : c;
+}
 
 const ENV_DEFAULTS = {
   bundle_multipliers: {
@@ -2911,7 +2945,10 @@ function envCompute(env, sel) {
   const roof = envGetRoofTier(env, sys, sel.roof);
   const sid = envGetSidingTier(env, sel.siding);
   const bundleTier = envResolveBundleTier(env, roof, sid);
-  const trimItems = ['gutters','soffit','fascia']
+  // Data-driven: walk env.components for trim_* keys (gutters, soffit,
+  // fascia, leafguard, anything else added through the catalog). Hidden
+  // components already drop out via envGetTrim returning null.
+  const trimItems = envListKeys(env, 'trim')
     .filter(k => !!sel.trim?.[k])
     .map(k => ({ key: k, ...(envGetTrim(env, k) || {}) }))
     .filter(t => t.hard != null);
@@ -2919,14 +2956,32 @@ function envCompute(env, sel) {
   // Optional roof preparation items (strap deck, full redeck). These add to
   // the bundle hard cost on top of whichever roof tier the customer picked,
   // but do not affect the Performance Shell tier score (they're prep work,
-  // not envelope choices).
-  // Prep items (strap / redeck) are asphalt-only by default. A prep component
-  // can carry `systems: ['asphalt']` to scope it; metal goes straight over the
-  // existing roof, so redeck/strap never apply on the metal road.
-  const prepItems = ['strap','redeck']
+  // not envelope choices). Prep items are scoped per-system via
+  // `systems: ['asphalt']`. Metal goes over the existing roof so prep
+  // never applies on the metal road.
+  const prepItems = envListKeys(env, 'prep')
     .filter(k => !!sel.roofPrep?.[k])
     .map(k => ({ key: k, ...(envGetPrep(env, k) || {}) }))
     .filter(p => p.hard != null && (!p.systems || p.systems.includes(sys)));
+
+  // Add-on items (ventilation, chimney_flash, anything addon_*). Charged at
+  // face value plus the standalone multiplier when standalone, or rolled
+  // into the bundle multiplier when bundled with shell. Scoped per-system
+  // the same way as prep items.
+  const addonItems = envListKeys(env, 'addon')
+    .filter(k => !!sel.addons?.[k])
+    .map(k => ({ key: k, ...(envGetAddon(env, k) || {}) }))
+    .filter(a => a.hard != null && (!a.systems || a.systems.includes(sys)));
+
+  // Service items (rejuvenation, etc.). These are PARALLEL to the roof
+  // tier choice. A customer picking rejuvenation is choosing it INSTEAD
+  // of a reshingle. So they're priced standalone with no bundle math,
+  // never roll into the Performance Shell, and never apply a roof tier
+  // multiplier. Scoped per-system: rejuvenation only applies to asphalt.
+  const serviceItems = envListKeys(env, 'service')
+    .filter(k => !!sel.services?.[k])
+    .map(k => ({ key: k, ...(envGetService(env, k) || {}) }))
+    .filter(s => s.hard != null && (!s.systems || s.systems.includes(sys)));
 
   // Remediation allowance (SOP Section 13): a mandatory, always-included
   // project line on every Performance Shell proposal, framed to the client as
@@ -2946,14 +3001,15 @@ function envCompute(env, sel) {
     const sidHard = sid?.hard || 0;
     const trimHard = trimItems.reduce((s,t)=>s+(t.hard||0),0);
     const prepHard = prepItems.reduce((s,p)=>s+(p.hard||0),0);
-    const workHard = roofHard + wallHard + sidHard + trimHard + prepHard;
+    const addonHard = addonItems.reduce((s,a)=>s+(a.hard||0),0);
+    const workHard = roofHard + wallHard + sidHard + trimHard + prepHard + addonHard;
     // Only the WORK carries the package multiplier and is the base for the
     // pay-in-full discount. The refundable remediation allowance is added at
     // face value after the discount (see finalSelling), so the credited-back
     // money is never marked up nor discounted.
     const sellingPre = Math.round(workHard * bundleTier.mult);
     bundle = { mode: 'bundle', tier: bundleTier, totalHard: workHard, sellingPre, remediation: remHard,
-               breakdown: { roof, wall: { hard: wallHard }, siding: sid, trim: trimItems, prep: prepItems, remediation: remHard ? remediation : null } };
+               breakdown: { roof, wall: { hard: wallHard }, siding: sid, trim: trimItems, prep: prepItems, addons: addonItems, remediation: remHard ? remediation : null } };
   } else {
     // Day-trip mobilization is a single project cost. Charge it ONCE on the
     // combined hard cost, not once per line item (the previous per-item version
@@ -2969,7 +3025,8 @@ function envCompute(env, sel) {
     const roofFixed = (roof && roof.price != null) ? Math.round(roof.price) : null;
     const workHard = (roofFixed != null ? 0 : (roof?.hard||0))
       + trimItems.reduce((s,t)=>s+(t.hard||0),0)
-      + prepItems.reduce((s,p)=>s+(p.hard||0),0);
+      + prepItems.reduce((s,p)=>s+(p.hard||0),0)
+      + addonItems.reduce((s,a)=>s+(a.hard||0),0);
     // Mobilization is charged once on whatever runs through the multiplier.
     // A fixed-price roof with no add-ons has no multiplier work, so no extra
     // mob is layered on (travel is already inside the divisor price). The
@@ -2978,8 +3035,16 @@ function envCompute(env, sel) {
     const multPart = (workHard > 0) ? Math.round((workHard + mob) * mult) : 0;
     const sellingPre = roof ? ((roofFixed != null ? roofFixed : 0) + multPart) : 0;
     bundle = { mode: 'standalone_roof', tier: null, totalHard: workHard, sellingPre, remediation: remHard,
-               breakdown: { roof, wall: null, siding: null, trim: trimItems, prep: prepItems, remediation: remHard ? remediation : null } };
+               breakdown: { roof, wall: null, siding: null, trim: trimItems, prep: prepItems, addons: addonItems, remediation: remHard ? remediation : null } };
   }
+
+  // Services (rejuvenation, etc.) are PARALLEL to the bundle/standalone math.
+  // They appear as their own block in the proposal and add to the final
+  // selling number at standalone price (no bundle multiplier; services
+  // aren't part of the envelope). If the customer picks ONLY a service and
+  // no roof tier, the bundle.sellingPre stays 0 and finalSelling becomes
+  // just the service price plus tax.
+  const servicesSellingPre = serviceItems.reduce((s,sv) => s + envStandalone(env, sv.hard||0), 0);
 
   // Alone total (for "if bought separately" comparison)
   let alonePre = 0;
@@ -2990,6 +3055,11 @@ function envCompute(env, sel) {
   }
   for (const t of trimItems) alonePre += envStandalone(env, t.hard||0);
   for (const p of prepItems) alonePre += envStandalone(env, p.hard||0);
+  for (const a of addonItems) alonePre += envStandalone(env, a.hard||0);
+  // Services are billed at standalone price both in bundle and alone modes
+  // (they aren't part of the shell, so the bundle multiplier doesn't apply).
+  // Including them in alonePre keeps the savings number reconciled.
+  for (const sv of serviceItems) alonePre += envStandalone(env, sv.hard||0);
   // Remediation is a flat pass-through: include it in BOTH the "separate price"
   // anchor and the savings base so the two displayed totals reconcile
   // (Separate price - Savings - Discount = Investment). It cancels out of the
@@ -3017,11 +3087,14 @@ function envCompute(env, sel) {
   const cashOff = (cash && cash.applies) ? cash.dollars : 0;
   // Refundable remediation allowance is added at face value AFTER the discount,
   // so a pay-in-full discount never reduces the credited-back amount.
-  const finalSelling = bundle.sellingPre - cashOff + remHard;
+  // Services (rejuvenation) layer on top at standalone price; no shell discount.
+  const finalSelling = bundle.sellingPre - cashOff + remHard + servicesSellingPre;
   return {
     packageName: envGetPackageName(env, sel),
     selections: sel,
     bundle, alonePre, remediation: remHard,
+    services: serviceItems, servicesSellingPre,
+    addons: addonItems,
     aloneWithTax: Math.round(alonePre * 1.15),
     savings,
     savingsWithTax: Math.round(savings * 1.15),
@@ -3157,18 +3230,16 @@ function envRenderTrimToggles() {
   const wrap = document.getElementById('envTrimToggles');
   const block = document.getElementById('envTrimBlock');
   if (!wrap) return;
-  const items = [
-    { key: 'gutters', icon: '⛓' },
-    { key: 'soffit', icon: '⊓' },
-    { key: 'fascia', icon: '─' }
-  ];
-  // Hide the Eve Protection block when every trim item is missing or hidden
-  // so we don't leave the section header floating above an empty grid.
-  const visibleItems = items.filter(({key}) => envGetTrim(env, key));
-  if (block) block.hidden = visibleItems.length === 0;
-  wrap.innerHTML = items.map(({key, icon}) => {
+  // Data-driven: every trim_* component in env.components shows up as a
+  // toggle. Hidden components are dropped by envGetTrim. The icon map gives
+  // known items their nicer glyph; anything else gets a generic dot.
+  const ICONS = { gutters: '⛓', soffit: '⊓', fascia: '─', leafguard: '⌒' };
+  const keys = envListKeys(env, 'trim');
+  if (block) block.hidden = keys.length === 0;
+  wrap.innerHTML = keys.map(key => {
     const def = envGetTrim(env, key);
     if (!def) return '';
+    const icon = ICONS[key] || '•';
     const on = !!envelopeState.trim[key];
     const aloneSelling = envStandalone(env, def.hard||0);
     // Manus Round 2: trim price was rendering "+$1,000$3,344" with no
@@ -3199,14 +3270,11 @@ function envRenderRoofPrep() {
   const wrap = document.getElementById('envRoofPrepToggles');
   if (!wrap) return;
   const sys = envelopeState.system;
-  const items = [
-    { key: 'strap',  icon: '═' },
-    { key: 'redeck', icon: '▦' }
-  ];
-  // Prep tiles only show for the systems they apply to (redeck/strap are
-  // asphalt-only). On the metal road there's no tear-off or redeck, so show a
-  // reassurance note instead of an empty block.
-  const tiles = items.map(({key, icon}) => {
+  // Data-driven: walk env.components for prep_* (strap, redeck, anything new
+  // added via the catalog). Per-system scoping respected.
+  const ICONS = { strap: '═', redeck: '▦' };
+  const keys = envListKeys(env, 'prep');
+  const tiles = keys.map(key => {
     const def = envGetPrep(env, key);
     if (!def) return '';
     if (def.systems && !def.systems.includes(sys)) return '';
@@ -3233,6 +3301,93 @@ function envRenderRoofPrep() {
   }
 }
 
+// Roof Preservation Services (parallel to a reshingle). Rejuvenation is the
+// canonical example: customer picks it INSTEAD of a roof tier and the price
+// renders as its own line on the proposal. Toggle ON adds servicesSellingPre
+// to the finalSelling number; bundle math is unchanged.
+function envRenderServices() {
+  const env = DATA.envelope;
+  if (!env) return;
+  const wrap = document.getElementById('envServicesToggles');
+  const block = document.getElementById('envServicesBlock');
+  if (!wrap) return;
+  const sys = envelopeState.system;
+  const keys = envListKeys(env, 'service')
+    .filter(k => {
+      const c = envGetService(env, k);
+      return c && (!c.systems || c.systems.includes(sys));
+    });
+  if (block) block.hidden = keys.length === 0;
+  wrap.innerHTML = keys.map(key => {
+    const def = envGetService(env, key);
+    if (!def) return '';
+    const on = !!envelopeState.services[key];
+    const selling = envStandalone(env, def.hard||0);
+    return `
+      <div class="env-trim-tile${on?' on':''}" onclick="envToggleService('${key}')">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+          <div class="env-trim-check">${on?'✓':''}</div>
+          <div class="env-trim-price-stack">
+            <div class="env-trim-price">+$${selling.toLocaleString()}<span class="ttp-sub">all-in</span></div>
+          </div>
+        </div>
+        <div class="env-trim-label">${escapeHtml(def.label||key)}</div>
+        ${def.subtitle?`<div class="env-trim-sub">${escapeHtml(def.subtitle)}</div>`:''}
+      </div>
+    `;
+  }).join('');
+}
+
+// Add-ons (ventilation, chimney_flash, anything addon_*). Generic toggle
+// tile pattern; adds at face value to the bundle hard cost.
+function envRenderAddons() {
+  const env = DATA.envelope;
+  if (!env) return;
+  const wrap = document.getElementById('envAddonsToggles');
+  const block = document.getElementById('envAddonsBlock');
+  if (!wrap) return;
+  const sys = envelopeState.system;
+  const keys = envListKeys(env, 'addon')
+    .filter(k => {
+      const c = envGetAddon(env, k);
+      return c && (!c.systems || c.systems.includes(sys));
+    });
+  if (block) block.hidden = keys.length === 0;
+  wrap.innerHTML = keys.map(key => {
+    const def = envGetAddon(env, key);
+    if (!def) return '';
+    const on = !!envelopeState.addons[key];
+    const aloneSelling = envStandalone(env, def.hard||0);
+    return `
+      <div class="env-trim-tile${on?' on':''}" onclick="envToggleAddon('${key}')">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+          <div class="env-trim-check">${on?'✓':''}</div>
+          <div class="env-trim-price-stack">
+            <div class="env-trim-price">+$${(def.hard||0).toLocaleString()}<span class="ttp-sub">in bundle</span></div>
+            <div class="env-trim-price-alone">$${aloneSelling.toLocaleString()}<span class="ttp-sub">alone</span></div>
+          </div>
+        </div>
+        <div class="env-trim-label">${escapeHtml(def.label||key)}</div>
+        ${def.subtitle?`<div class="env-trim-sub">${escapeHtml(def.subtitle)}</div>`:''}
+      </div>
+    `;
+  }).join('');
+}
+
+function envToggleService(key) {
+  envelopeState.services[key] = !envelopeState.services[key];
+  envRenderAll();
+  try { logEvent('envelope_service_toggled', { key, on: envelopeState.services[key] }); } catch(e){}
+}
+window.envToggleService = envToggleService;
+
+function envToggleAddon(key) {
+  envelopeState.addons[key] = !envelopeState.addons[key];
+  envRenderAll();
+  try { logEvent('envelope_addon_toggled', { key, on: envelopeState.addons[key] }); } catch(e){}
+}
+window.envToggleAddon = envToggleAddon;
+
 function envRenderSelections(result) {
   const wrap = document.getElementById('envSelections');
   if (!wrap || !result) return;
@@ -3241,7 +3396,7 @@ function envRenderSelections(result) {
   const rows = [];
   const roof = envGetRoofTier(env, sel.system, sel.roof);
   if (roof) rows.push({ lbl: 'Roof', val: roof.label });
-  ['strap','redeck'].forEach(k => {
+  envListKeys(env, 'prep').forEach(k => {
     if (sel.roofPrep?.[k]) {
       const def = envGetPrep(env, k);
       if (def) rows.push({ lbl: 'Roof Prep', val: def.label });
@@ -3252,10 +3407,22 @@ function envRenderSelections(result) {
     rows.push({ lbl: 'Wall System', val: 'OSB + Foam + VentiGrid' });
     rows.push({ lbl: 'Siding', val: sid.label });
   }
-  ['gutters','soffit','fascia'].forEach(k => {
+  envListKeys(env, 'trim').forEach(k => {
     if (sel.trim?.[k]) {
       const def = envGetTrim(env, k);
       if (def) rows.push({ lbl: 'Trim', val: def.label });
+    }
+  });
+  envListKeys(env, 'addon').forEach(k => {
+    if (sel.addons?.[k]) {
+      const def = envGetAddon(env, k);
+      if (def) rows.push({ lbl: 'Add-on', val: def.label });
+    }
+  });
+  envListKeys(env, 'service').forEach(k => {
+    if (sel.services?.[k]) {
+      const def = envGetService(env, k);
+      if (def) rows.push({ lbl: 'Service', val: def.label });
     }
   });
   // Only show the remediation row when it's actually in the totals. The metal
@@ -3382,7 +3549,9 @@ function envRenderAll() {
     roof: envelopeState.roof,
     roofPrep: { ...envelopeState.roofPrep },
     siding: envelopeState.siding,
-    trim: { ...envelopeState.trim }
+    trim: { ...envelopeState.trim },
+    services: { ...envelopeState.services },
+    addons: { ...envelopeState.addons }
   });
   envRenderSystemToggle();
   envApplySystemChrome();
@@ -3390,6 +3559,8 @@ function envRenderAll() {
   envRenderRoofPrep();
   envRenderSidingOptions();
   envRenderTrimToggles();
+  envRenderServices();
+  envRenderAddons();
   envRenderSelections(result);
   envRenderSummary(result);
   envRenderPreview(result);
