@@ -487,25 +487,71 @@ body::before{
     }
   }
 
+  // Where a photo lands on the proposal. 'general' = unassigned (shows in the
+  // loose gallery only). cover/before/after/section1-3/after_bottom drive the
+  // curated envelope layout; the rest are tags. Persisted to estimate_photos.category.
+  const PHOTO_SLOTS = [
+    { v: 'general',      l: 'Unassigned' },
+    { v: 'cover',        l: 'Cover' },
+    { v: 'before',       l: 'Before (top)' },
+    { v: 'after',        l: 'After (top)' },
+    { v: 'section1',     l: 'Section 1' },
+    { v: 'section2',     l: 'Section 2' },
+    { v: 'section3',     l: 'Section 3' },
+    { v: 'after_bottom', l: 'After (bottom)' },
+    { v: 'inspection',   l: 'Inspection' },
+    { v: 'damage',       l: 'Damage' },
+    { v: 'material',     l: 'Material' },
+    { v: 'site',         l: 'Site' },
+    { v: 'other',        l: 'Other' },
+  ];
+  let _inspPhotosCache = [];
+  const _inspSelected = new Set();
+
   function renderInspectionGrid(photos){
     const grid = document.getElementById('inspGrid');
     if (!grid) return;
+    _inspPhotosCache = photos;
+    // Drop selections for photos that no longer exist (post-delete, refetch).
+    const live = new Set(photos.map(p => p.id));
+    _inspSelected.forEach(id => { if (!live.has(id)) _inspSelected.delete(id); });
     if (!photos.length) {
+      _inspSelected.clear();
       grid.innerHTML = `<div style="color:var(--text-muted);font-size:0.85em;padding:14px 0">No photos uploaded yet. Drop drone shots + inspection photos in the uploader above.</div>`;
       return;
     }
-    grid.innerHTML = photos.map(p => `
-      <div class="insp-tile" data-id="${escapeHtml(p.id)}">
+    const sel = _inspSelected.size;
+    const slotOpts = cur => PHOTO_SLOTS.map(o => `<option value="${o.v}"${o.v === (cur || 'general') ? ' selected' : ''}>${o.l}</option>`).join('');
+    const toolbar = `
+      <div class="insp-toolbar" style="grid-column:1/-1;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;border:1px solid var(--border);border-radius:10px;background:rgba(255,255,255,0.02)">
+        <span style="font-size:0.8em;color:var(--text-dim)">${photos.length} photo${photos.length === 1 ? '' : 's'}${sel ? ` &bull; ${sel} selected` : ''}</span>
+        <button type="button" class="insp-selall" style="font-size:0.78em;padding:4px 10px;border-radius:7px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer">Select all</button>
+        <button type="button" class="insp-clearsel" style="font-size:0.78em;padding:4px 10px;border-radius:7px;border:1px solid var(--border);background:transparent;color:var(--text-dim);cursor:pointer">Clear</button>
+        <span style="flex:1"></span>
+        <button type="button" class="insp-delsel" ${sel ? '' : 'disabled'} style="font-size:0.78em;padding:4px 12px;border-radius:7px;border:1px solid var(--danger);background:${sel ? 'rgba(220,38,38,0.14)' : 'transparent'};color:var(--danger);cursor:${sel ? 'pointer' : 'not-allowed'};opacity:${sel ? '1' : '0.5'}">Delete selected${sel ? ` (${sel})` : ''}</button>
+      </div>`;
+    const tiles = photos.map(p => {
+      const checked = _inspSelected.has(p.id);
+      return `
+      <div class="insp-tile" data-id="${escapeHtml(p.id)}"${checked ? ' style="border-color:var(--accent)"' : ''}>
+        <label class="insp-check" style="position:absolute;top:4px;left:4px;z-index:4;width:24px;height:24px;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);border-radius:6px;cursor:pointer" title="Select for bulk delete">
+          <input type="checkbox" class="insp-sel" data-id="${escapeHtml(p.id)}" ${checked ? 'checked' : ''} style="width:15px;height:15px;accent-color:var(--accent);margin:0;cursor:pointer">
+        </label>
         <div class="insp-thumb"><img src="${escapeHtml(p.url)}" alt="${escapeHtml(p.caption || '')}" loading="lazy"></div>
         <button class="insp-menu-btn" type="button" data-id="${escapeHtml(p.id)}" title="Photo actions">&#8942;</button>
+        <select class="insp-slot" data-id="${escapeHtml(p.id)}" title="Where this photo appears on the proposal" style="width:100%;background:rgba(255,255,255,0.03);border:none;border-top:1px solid var(--border);color:var(--text);font-size:0.74em;padding:6px 8px;font-family:inherit;outline:none;cursor:pointer">${slotOpts(p.category)}</select>
         <input class="insp-cap" data-id="${escapeHtml(p.id)}" value="${escapeHtml(p.caption || '')}" placeholder="Caption (optional)">
-      </div>
-    `).join('');
+      </div>`;
+    }).join('');
+    grid.innerHTML = toolbar + tiles;
+    bindInspectionGrid();
+  }
+
+  function bindInspectionGrid(){
+    const grid = document.getElementById('inspGrid');
+    if (!grid) return;
     grid.querySelectorAll('.insp-menu-btn').forEach(b => {
-      b.addEventListener('click', e => {
-        e.stopPropagation();
-        showInspMenu(b.dataset.id, b);
-      });
+      b.addEventListener('click', e => { e.stopPropagation(); showInspMenu(b.dataset.id, b); });
     });
     grid.querySelectorAll('.insp-cap').forEach(inp => {
       let orig = inp.value;
@@ -527,6 +573,54 @@ body::before{
         }
       });
     });
+    // Slot assignment drives the curated proposal layout. 'cover' also flips
+    // is_cover (server unsets any prior cover); switching away clears is_cover.
+    grid.querySelectorAll('.insp-slot').forEach(s => {
+      s.addEventListener('change', async () => {
+        const v = s.value;
+        const body = (v === 'cover') ? { category: 'cover', is_cover: true } : { category: v, is_cover: false };
+        try {
+          const r = await fetch('/api/estimate-photos?id=' + encodeURIComponent(s.dataset.id), {
+            method: 'PATCH',
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify(body),
+          });
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          toast('Slot updated', 'ok');
+          if (v === 'cover') loadInspectionPhotos(); // refresh so the old cover badge clears
+        } catch (e) {
+          toast('Update failed', 'err');
+          loadInspectionPhotos();
+        }
+      });
+    });
+    grid.querySelectorAll('.insp-sel').forEach(cb => {
+      cb.addEventListener('change', () => {
+        if (cb.checked) _inspSelected.add(cb.dataset.id); else _inspSelected.delete(cb.dataset.id);
+        renderInspectionGrid(_inspPhotosCache);
+      });
+    });
+    const selAll = grid.querySelector('.insp-selall');
+    const clearSel = grid.querySelector('.insp-clearsel');
+    const delSel = grid.querySelector('.insp-delsel');
+    if (selAll) selAll.addEventListener('click', () => { _inspPhotosCache.forEach(p => _inspSelected.add(p.id)); renderInspectionGrid(_inspPhotosCache); });
+    if (clearSel) clearSel.addEventListener('click', () => { _inspSelected.clear(); renderInspectionGrid(_inspPhotosCache); });
+    if (delSel) delSel.addEventListener('click', bulkDeleteInspection);
+  }
+
+  async function bulkDeleteInspection(){
+    const ids = Array.from(_inspSelected);
+    if (!ids.length) return;
+    if (!window.confirm(`Delete ${ids.length} selected photo${ids.length === 1 ? '' : 's'} permanently?`)) return;
+    let ok = 0, fail = 0;
+    for (const id of ids) {
+      try {
+        const r = await fetch('/api/estimate-photos?id=' + encodeURIComponent(id), { method: 'DELETE', headers: authHeaders() });
+        if (r.ok) { ok++; _inspSelected.delete(id); } else { fail++; }
+      } catch { fail++; }
+    }
+    toast(`Deleted ${ok} photo${ok === 1 ? '' : 's'}${fail ? `, ${fail} failed` : ''}`, fail ? 'err' : 'ok');
+    loadInspectionPhotos();
   }
 
   function showInspMenu(photoId, anchor){

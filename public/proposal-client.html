@@ -1568,6 +1568,21 @@ body:not(.envelope-active) #envelopeSection{display:none !important}
       </div>
     </div>
 
+    <!-- Curated before/after (shown only when both slots are assigned in the builder) -->
+    <div id="envCuratedBA" hidden style="margin-bottom:34px">
+      <div class="section-head" style="margin-bottom:16px"><div class="kicker">The Transformation</div><h2>Before &amp; after.</h2></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px">
+        <figure style="margin:0;position:relative;border-radius:14px;overflow:hidden;box-shadow:var(--shadow)">
+          <img id="envBABefore" src="" alt="Before" loading="lazy" style="width:100%;aspect-ratio:4/3;object-fit:cover;display:block">
+          <figcaption style="position:absolute;top:12px;left:12px;background:rgba(26,31,46,0.82);color:#fff;font-family:'Montserrat',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.14em;padding:5px 13px;border-radius:999px">BEFORE</figcaption>
+        </figure>
+        <figure style="margin:0;position:relative;border-radius:14px;overflow:hidden;box-shadow:var(--shadow)">
+          <img id="envBAAfter" src="" alt="After" loading="lazy" style="width:100%;aspect-ratio:4/3;object-fit:cover;display:block">
+          <figcaption style="position:absolute;top:12px;left:12px;background:var(--accent);color:#fff;font-family:'Montserrat',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.14em;padding:5px 13px;border-radius:999px">AFTER</figcaption>
+        </figure>
+      </div>
+    </div>
+
     <div class="env-head">
       <div class="kicker" id="envKicker">Plan Your Project</div>
       <h2 id="envHeadline">Build the exterior plan around your home, your priorities, and your budget.</h2>
@@ -1696,6 +1711,58 @@ body:not(.envelope-active) #envelopeSection{display:none !important}
           <button class="env-accept-btn" id="envAcceptBtn" type="button" onclick="acceptEnvelope()">Lock Your Price</button>
         </div>
       </aside>
+    </div>
+
+    <!-- Curated section gallery (hand-picked photos, shown only when assigned) -->
+    <div id="envCuratedSections" hidden style="margin-top:40px">
+      <div class="section-head" style="margin-bottom:18px"><div class="kicker">Project Photos</div><h2>A closer look.</h2></div>
+      <div class="gallery-grid" id="envSectionGrid"></div>
+    </div>
+
+    <!-- Expandable detail sections: pricing / colours / inspection -->
+    <style>
+      .env-toggle{border:1px solid var(--border);border-radius:14px;background:#fff;overflow:hidden;box-shadow:var(--shadow)}
+      .env-toggle>summary{list-style:none;cursor:pointer;padding:16px 22px;font-family:'Montserrat',sans-serif;font-weight:700;color:var(--ink);display:flex;justify-content:space-between;align-items:center;gap:14px;font-size:1.02rem}
+      .env-toggle>summary::-webkit-details-marker{display:none}
+      .env-toggle>summary .ti{color:var(--accent);font-size:1.4rem;font-weight:400;line-height:1;transition:transform 0.2s;flex-shrink:0}
+      .env-toggle[open]>summary .ti{transform:rotate(45deg)}
+      .env-toggle-body{padding:0 22px 20px;color:var(--ink-body);font-size:0.96rem;line-height:1.6}
+      .env-toggle-body ul{margin:8px 0 0 18px}
+      .env-toggle-body li{margin-bottom:5px}
+      .env-insp-table{width:100%;border-collapse:collapse;margin-top:10px}
+      .env-insp-table td{padding:8px 4px;border-bottom:1px solid var(--border);font-size:0.92rem}
+      .env-insp-table td:first-child{color:var(--ink-muted)}
+      .env-insp-table td:last-child{text-align:right;font-weight:600;color:var(--ink)}
+    </style>
+    <div id="envCuratedToggles" style="margin-top:40px;display:flex;flex-direction:column;gap:12px">
+      <details class="env-toggle">
+        <summary>Your investment, explained <span class="ti">+</span></summary>
+        <div class="env-toggle-body">
+          <p>Your price reflects the full scope done as one coordinated project: a single mobilization, one supervisor, and one material order. That is why the bundle total comes in below the same work quoted as separate jobs.</p>
+          <ul>
+            <li>All materials, labour, disposal, and cleanup are included.</li>
+            <li>No hidden costs. The number you see is the number you pay.</li>
+            <li>Financing is available. Ask about monthly options.</li>
+            <li>Your price is locked for 30 days from today.</li>
+          </ul>
+        </div>
+      </details>
+      <details class="env-toggle">
+        <summary>Shingle &amp; siding colours <span class="ti">+</span></summary>
+        <div class="env-toggle-body">
+          <p>Final colour is your call. Physical samples are available on request, and we send the full colour chart before placing your order.</p>
+          <img src="/brand/plus-ultra/colors/color-chart.jpg" alt="Colour chart" loading="lazy" style="width:100%;border-radius:10px;margin-top:10px;border:1px solid var(--border)">
+        </div>
+      </details>
+      <details class="env-toggle">
+        <summary>What we measured &amp; inspected <span class="ti">+</span></summary>
+        <div class="env-toggle-body" id="envInspectionDetailBody"><p>Full measurements were taken on site and are reflected in your scope above.</p></div>
+      </details>
+    </div>
+
+    <!-- Curated closing "after" photo -->
+    <div id="envCuratedAfterBottom" hidden style="margin-top:40px;border-radius:16px;overflow:hidden;box-shadow:var(--shadow)">
+      <img id="envAfterBottomImg" src="" alt="Your finished home" loading="lazy" style="width:100%;display:block;object-fit:cover;max-height:540px">
     </div>
 
     <div class="env-ticker" id="envTicker"></div>
@@ -3779,9 +3846,75 @@ function envInit() {
     wireDiagram('envDiagramCard', 'envDiagramImg', env.media.envelope_diagram);
   }
 
+  try { envRenderCurated(); } catch (e) { console.warn('curated photos render failed', e); }
   envRenderAll();
   try { logEvent('envelope_opened', { system: envelopeState.system }); } catch(e){}
   return true;
+}
+
+// Curated photo layout for the envelope proposal. When Mac assigns photos to
+// slots in the builder (cover / before / after / section 1-3 / after bottom),
+// they render here instead of the auto-swapping config mockups. Each block
+// stays hidden unless its slot is filled, so an un-curated estimate is unchanged.
+function envCuratedActive() {
+  const c = (DATA.media && DATA.media.curated) || {};
+  return !!(c.before || c.after || c.afterBottom || (Array.isArray(c.sections) && c.sections.length));
+}
+function envRenderCurated() {
+  const c = (DATA.media && DATA.media.curated) || {};
+  const ba = document.getElementById('envCuratedBA');
+  if (ba && c.before && c.after) {
+    const b = document.getElementById('envBABefore');
+    const a = document.getElementById('envBAAfter');
+    if (b) b.src = c.before;
+    if (a) a.src = c.after;
+    ba.hidden = false;
+  }
+  const secWrap = document.getElementById('envCuratedSections');
+  const secGrid = document.getElementById('envSectionGrid');
+  if (secWrap && secGrid && Array.isArray(c.sections) && c.sections.length) {
+    secGrid.innerHTML = c.sections.map(s => `
+      <div class="gallery-item">
+        <img src="${s.img}" alt="${String(s.desc || '').replace(/"/g, '&quot;')}" loading="lazy">
+        ${s.desc ? `<div class="cap">${String(s.desc).replace(/</g, '&lt;')}</div>` : ''}
+      </div>`).join('');
+    secWrap.hidden = false;
+  }
+  const ab = document.getElementById('envCuratedAfterBottom');
+  if (ab && c.afterBottom) {
+    const img = document.getElementById('envAfterBottomImg');
+    if (img) img.src = c.afterBottom;
+    ab.hidden = false;
+  }
+  envFillInspectionDetail();
+}
+// Populate the "What we measured" toggle from the scope numbers already in DATA.
+function envFillInspectionDetail() {
+  const host = document.getElementById('envInspectionDetailBody');
+  if (!host) return;
+  const s = DATA.scope || {};
+  const rows = [];
+  const add = (label, val, unit) => {
+    if (val == null || val === '' || Number(val) === 0) return;
+    rows.push([label, unit ? `${val} ${unit}` : String(val)]);
+  };
+  const sq = s.measure && s.measure.sq;
+  if (sq && !isNaN(parseFloat(sq))) rows.push(['Roof area', `${sq} squares`]);
+  else add('Roof area', s.roofArea, 'sq ft');
+  add('Roof pitch', s.pitch);
+  add('Eaves', s.eaves, 'LF');
+  add('Rakes', s.rakes, 'LF');
+  add('Ridges', s.ridges, 'LF');
+  add('Chimneys', s.chimneys);
+  add('Soffit', s.soffit, 'LF');
+  add('Fascia', s.fascia, 'LF');
+  add('Gutters', s.gutter, 'LF');
+  add('Redeck sheets (OSB)', s.osbSheets);
+  if (!rows.length) return; // keep the default copy
+  host.innerHTML = '<p>Measured on site. Your scope is built on these numbers, not estimates.</p>' +
+    '<table class="env-insp-table">' +
+    rows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('') +
+    '</table>';
 }
 
 // Pick the right preview image for the customer's current selections.
@@ -3827,6 +3960,9 @@ function envRenderPreview(result) {
   const img = document.getElementById('envPreviewImg');
   const cap = document.getElementById('envPreviewCaption');
   if (!wrap || !img) return;
+  // When Mac curated photos for this estimate, the auto-swapping mockup preview
+  // is replaced by the hand-picked before/after + section gallery below.
+  if (envCuratedActive()) { wrap.hidden = true; return; }
   const env = DATA.envelope;
   const pick = envPickPreviewImage(env, result.selections);
   if (!pick) { wrap.hidden = true; return; }

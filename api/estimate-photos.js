@@ -12,7 +12,9 @@ import Busboy from 'busboy';
 import { promises as dns } from 'node:dns';
 import net from 'node:net';
 
-const VALID_CATEGORIES = new Set(['cover', 'before', 'after', 'damage', 'material', 'inspection', 'site', 'other', 'general']);
+// 'section1'..'section3' + 'after_bottom' are proposal-layout slots set in the
+// builder. Column is free-text (migration_068, no CHECK) so these persist fine.
+const VALID_CATEGORIES = new Set(['cover', 'before', 'after', 'after_bottom', 'section1', 'section2', 'section3', 'damage', 'material', 'inspection', 'site', 'other', 'general']);
 function normalizeCategory(c) {
   if (!c) return 'general';
   const lower = String(c).trim().toLowerCase();
