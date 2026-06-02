@@ -897,17 +897,22 @@ function render({ customer, estimates, workorders, paysheets, photos, roster, pu
   // estimate). Drives the FILES section + COPY SHARE LINK button. Cached on
   // window so the upload + copy handlers can read it without re-fetching.
   //
-  // Resolution rule (multi-WO customers): when the active workorder has a
-  // linked_estimate_id, that estimate is the ONLY candidate. Falling back
-  // to other estimates on the same customer would attach files / share
-  // links to a different job's gallery, which is worse than showing the
-  // soft "no project linked yet" state. Only when there's no active WO or
-  // no linked_estimate_id do we try primaryEst -- the no-WO case (estimate
-  // accepted, WO not yet created) still needs the FILES + share UI.
+  // Resolution rules:
+  //   1. activeWo has linked_estimate_id  -> use that (the only safe choice
+  //      on multi-WO/multi-estimate customers).
+  //   2. activeWo present but no link, AND only one estimate on this
+  //      customer -> use that one. Legacy older workorders predate the
+  //      linked_estimate_id column; the single-estimate case is unambiguous.
+  //   3. no activeWo -> use primaryEst (accepted-but-no-WO yet case).
+  //   4. anything else (active WO, no link, multiple estimates) -> null,
+  //      show the soft "no project linked yet" state rather than risk
+  //      attaching files to the wrong job's gallery.
   window._jobProjectId = null;
   let estCandidate = null;
   if (activeWo?.linked_estimate_id) {
     estCandidate = activeWo.linked_estimate_id;
+  } else if (activeWo && estimates.length === 1 && estimates[0]?.id) {
+    estCandidate = estimates[0].id;
   } else if (!activeWo && primaryEst?.id) {
     estCandidate = primaryEst.id;
   }
