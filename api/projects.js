@@ -1,9 +1,11 @@
-// Ryujin OS — Projects CRUD
-// GET    /api/projects              — List projects (with filters)
-// GET    /api/projects?id=X         — Get single project with files, comments, tickets
-// GET    /api/projects?share=TOKEN  — Client portal view (no auth needed)
-// POST   /api/projects              — Create project
-// PUT    /api/projects              — Update project
+// Ryujin OS - Projects CRUD
+// GET    /api/projects                       - List projects (with filters)
+// GET    /api/projects?id=X                  - Get single project with files, comments, tickets
+// GET    /api/projects?estimate_id=X         - Lookup project by linked estimate (lightweight)
+// GET    /api/projects?share=TOKEN           - Client portal view (no auth needed)
+// POST   /api/projects                       - Create project
+// POST   /api/projects?action=ensure-share   - Mint/refresh share_token (idempotent)
+// PUT    /api/projects                       - Update project
 import { supabaseAdmin } from '../lib/supabase.js';
 import { resolveTenant, requireTenant } from '../lib/tenant.js';
 import { gmailSend } from '../lib/google.js';
@@ -270,7 +272,26 @@ async function handler(req, res) {
 
   // ── GET ──
   if (req.method === 'GET') {
-    const { id, status, limit = 50, offset = 0 } = req.query;
+    const { id, estimate_id, status, limit = 50, offset = 0 } = req.query;
+
+    // Resolve project by estimate_id. Used by the Job Folder page (job.html)
+    // to find the project linked to the WO's accepted estimate so the FILES
+    // upload + COPY SHARE LINK button can target it. Migration 064 auto-creates
+    // a project on estimate accept, so this is a 1:1 lookup. Returns
+    // { id, share_token, name, address } only — caller doesn't need the heavy
+    // joins from ?id=. 404 cleanly when no project exists (older accepted
+    // estimates pre-064 backfill, or estimates not yet accepted).
+    if (estimate_id) {
+      const { data, error } = await supabaseAdmin
+        .from('projects')
+        .select('id, share_token, name, address, estimate_id, customer_id, status')
+        .eq('tenant_id', tenantId)
+        .eq('estimate_id', estimate_id)
+        .maybeSingle();
+      if (error) return res.status(500).json({ error: error.message });
+      if (!data) return res.status(404).json({ error: 'No project linked to this estimate' });
+      return res.json(data);
+    }
 
     if (id) {
       const { data, error } = await supabaseAdmin

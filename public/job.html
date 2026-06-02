@@ -703,6 +703,7 @@ function render({ customer, estimates, workorders, paysheets, photos, roster, pu
             <input type="file" id="jobUploadInput" accept="image/*,video/*" multiple data-est-id="${esc(_uploadEstId)}" style="display:none" onchange="uploadJobPhotos(this.files)">
           </label>` : ''}
           <a class="act ghost" id="genBeforeAfterBtn" href="#" title="Pick a before + an after to generate a side-by-side social post">GENERATE BEFORE/AFTER</a>
+          <button type="button" class="act ghost" id="copyShareLinkBtn" style="display:none" title="Copy a public photo-gallery link for the customer">COPY SHARE LINK</button>
           <span class="count" id="photoMix">-</span>
           <span class="count" id="uploadStatus" style="display:none"></span>
         </div>
@@ -710,15 +711,28 @@ function render({ customer, estimates, workorders, paysheets, photos, roster, pu
     </details>
   `);
 
-  // 7. FILES (placeholder until PR-B)
+  // 7. FILES (PDFs + non-image attachments backed by /api/files where
+  // mime_type = application/pdf. Project is resolved from the primary
+  // estimate post-render via /api/projects?estimate_id=. Older accepted
+  // estimates pre-migration-064 may have no project; the section then shows
+  // a soft "no project yet" empty state instead of upload UI.)
   sections.push(`
     <details class="acc" data-section="files">
       <summary>
         <div class="title"><svg viewBox="0 0 24 24"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg> FILES</div>
-        <div class="meta"><span>0 files</span><svg class="chev" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
+        <div class="meta"><span id="fileCount">0 files</span><svg class="chev" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
       </summary>
       <div class="acc-body">
-        <div class="empty-sec">NON-IMAGE FILES (PDF, DOCX, etc) WILL SURFACE HERE</div>
+        <div id="filesMount">
+          <div class="empty-sec" id="filesEmpty">LOADING FILES&hellip;</div>
+        </div>
+        <div class="gallery-actions" id="filesActions" style="display:none">
+          <label class="act cyan" style="cursor:pointer" title="Upload PDFs (EagleView, invoices, permits, etc)">
+            UPLOAD PDF
+            <input type="file" id="fileUploadInput" accept="application/pdf,.pdf" multiple style="display:none" onchange="uploadJobFiles(this.files)">
+          </label>
+          <span class="count" id="fileUploadStatus" style="display:none"></span>
+        </div>
       </div>
     </details>
   `);
@@ -879,6 +893,26 @@ function render({ customer, estimates, workorders, paysheets, photos, roster, pu
     });
   }
 
+  // Resolve project for this job (migration 064 auto-creates one per accepted
+  // estimate). Drives the FILES section + COPY SHARE LINK button. Cached on
+  // window so the upload + copy handlers can read it without re-fetching.
+  window._jobProjectId = null;
+  if (primaryEst?.id) {
+    resolveJobProject(primaryEst.id).then(project => {
+      window._jobProjectId = project?.id || null;
+      window._jobProject = project || null;
+      wireFilesSection(project);
+      wireCopyShareLink(project);
+    }).catch(err => {
+      console.warn('[job] project lookup failed', err);
+      wireFilesSection(null);
+      wireCopyShareLink(null);
+    });
+  } else {
+    wireFilesSection(null);
+    wireCopyShareLink(null);
+  }
+
   // Topbar expand / collapse
   document.querySelectorAll('details.acc').forEach(d => d._initial = d.open);
   $('expandAllBtn').addEventListener('click', e => {
@@ -1037,6 +1071,258 @@ function showUploadErrorBanner(errors, totalFiles, failed) {
   banner.style.cssText = 'background:rgba(239,68,68,0.15);border:2px solid #ef4444;color:#fecaca;padding:14px 16px;border-radius:10px;margin-bottom:12px;font-family:monospace;font-size:0.78em;line-height:1.5;white-space:pre-wrap;word-break:break-word;max-height:400px;overflow:auto';
   banner.innerHTML = `<div style="font-weight:700;color:#fff;margin-bottom:8px;font-family:sans-serif">UPLOAD FAILED: ${failed} of ${totalFiles} files</div>${errors.map(e => e.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))).join('\n\n')}`;
   mount.insertBefore(banner, mount.firstChild);
+}
+
+// -----------------------------------------------------------------
+// Project resolution + FILES section + COPY SHARE LINK
+// -----------------------------------------------------------------
+
+// Resolve the project linked to this job's primary estimate. Migration 064
+// auto-creates one when status flips to 'accepted'. Returns null when no
+// project exists yet (older accepted estimates pre-064 backfill OR an
+// estimate that hasn't been accepted yet). 404 from the API is treated as
+// a null result, not an error.
+async function resolveJobProject(estimateId) {
+  if (!estimateId) return null;
+  const r = await fetch('/api/projects?estimate_id=' + encodeURIComponent(estimateId), { headers: ah() });
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error('project lookup HTTP ' + r.status);
+  return r.json();
+}
+
+// Format bytes for display in the file list (e.g. "1.4 MB", "320 KB").
+function fmtBytes(n) {
+  if (!Number.isFinite(n) || n <= 0) return '-';
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(0) + ' KB';
+  return (n / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+// Wire the FILES section. Called after project lookup resolves (or fails).
+// project=null means no upload UI -- show the soft empty state explaining
+// that no project is linked yet so the operator knows what to do.
+function wireFilesSection(project) {
+  const empty = document.getElementById('filesEmpty');
+  const actions = document.getElementById('filesActions');
+  const mount = document.getElementById('filesMount');
+  if (!mount) return;
+
+  if (!project || !project.id) {
+    if (empty) empty.textContent = 'NO PROJECT LINKED YET / ACCEPT THE ESTIMATE TO ENABLE FILE UPLOADS';
+    if (actions) actions.style.display = 'none';
+    return;
+  }
+  if (actions) actions.style.display = '';
+  refreshFilesList(project.id);
+}
+
+// Fetch + render the project's file list. PDF/document mime types only --
+// images are surfaced in the PHOTOS section. Re-runs after each upload or
+// delete so the list reflects current state without a page reload.
+async function refreshFilesList(projectId) {
+  const mount = document.getElementById('filesMount');
+  const countEl = document.getElementById('fileCount');
+  if (!mount) return;
+
+  mount.innerHTML = '<div class="empty-sec">LOADING FILES&hellip;</div>';
+
+  let rows = [];
+  try {
+    const r = await fetch('/api/files?project_id=' + encodeURIComponent(projectId), { headers: ah() });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    rows = (data.files || []).filter(f => {
+      const mt = String(f.mime_type || '').toLowerCase();
+      // Anything not image/* and not video/* counts as a "file" -- pdf,
+      // future docx/xlsx/txt support if api/files.js ALLOWED_TYPES grows.
+      return !mt.startsWith('image/') && !mt.startsWith('video/');
+    });
+  } catch (e) {
+    mount.innerHTML = '';
+    mount.appendChild(el('div', { class: 'empty-sec' }, 'FAILED TO LOAD FILES: ' + e.message));
+    if (countEl) countEl.textContent = '0 files';
+    return;
+  }
+
+  if (countEl) countEl.textContent = rows.length + ' file' + (rows.length === 1 ? '' : 's');
+
+  mount.innerHTML = '';
+  if (!rows.length) {
+    mount.appendChild(el('div', { class: 'empty-sec' }, 'NO FILES YET / UPLOAD A PDF BELOW'));
+    return;
+  }
+
+  const wrap = el('div', { style: 'display:flex;flex-direction:column;gap:6px' });
+  rows.forEach(f => wrap.appendChild(buildFileRow(f, projectId)));
+  mount.appendChild(wrap);
+}
+
+// Single row in the FILES list. Live DOM (el() + textContent only) so
+// filename / caption rendering is XSS-safe. Download is a plain anchor to
+// the Vercel Blob URL; delete confirms then hits DELETE /api/files?id=.
+function buildFileRow(f, projectId) {
+  const row = el('div', {
+    style: 'display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:center;padding:8px 10px;background:rgba(6,10,20,0.55);border:1px solid rgba(251,146,60,0.12);border-radius:8px;font-size:0.82em'
+  });
+
+  const meta = el('div', { style: 'min-width:0' });
+  const name = el('div', {
+    style: 'color:rgba(230,240,255,0.92);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'
+  }, f.filename || '(unnamed)');
+  meta.appendChild(name);
+
+  const subBits = [];
+  if (f.category && f.category !== 'general') subBits.push(String(f.category));
+  if (f.uploaded_at) {
+    try {
+      subBits.push(new Date(f.uploaded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
+    } catch { /* ignore parse */ }
+  }
+  if (subBits.length) {
+    meta.appendChild(el('div', {
+      style: 'font-family:\'Share Tech Mono\',monospace;font-size:0.78em;color:rgba(200,220,255,0.5);letter-spacing:0.6px;margin-top:2px'
+    }, subBits.join(' / ')));
+  }
+  row.appendChild(meta);
+
+  const size = el('div', {
+    style: 'font-family:\'Share Tech Mono\',monospace;font-size:0.86em;color:rgba(200,220,255,0.65);white-space:nowrap'
+  }, fmtBytes(f.file_size));
+  row.appendChild(size);
+
+  if (f.url) {
+    const dl = el('a', {
+      href: f.url,
+      target: '_blank',
+      rel: 'noopener noreferrer',
+      class: 'act cyan',
+      style: 'padding:5px 12px;font-size:0.7em',
+      title: 'Open / download file'
+    }, 'OPEN');
+    row.appendChild(dl);
+  } else {
+    row.appendChild(el('span'));
+  }
+
+  const del = el('button', {
+    type: 'button',
+    class: 'act ghost',
+    style: 'padding:5px 12px;font-size:0.7em;color:#f87171;border-color:rgba(248,113,113,0.3)',
+    title: 'Delete this file permanently'
+  }, 'DELETE');
+  del.addEventListener('click', async () => {
+    if (!confirm('Delete "' + (f.filename || 'this file') + '"? The file will be removed from storage too.')) return;
+    try {
+      const r = await fetch('/api/files?id=' + encodeURIComponent(f.id), { method: 'DELETE', headers: ah() });
+      if (!r.ok) {
+        const msg = await r.text().catch(() => '');
+        throw new Error('HTTP ' + r.status + (msg ? ' ' + msg.slice(0, 120) : ''));
+      }
+      await refreshFilesList(projectId);
+    } catch (e) {
+      alert('Delete failed: ' + e.message);
+    }
+  });
+  row.appendChild(del);
+
+  return row;
+}
+
+// Upload handler for the FILES section. POSTs each file one-per-request to
+// /api/files with field name "file" + form field project_id (matches the
+// api/files.js multipart contract). Only PDF mime types are accepted for now
+// (api/files.js ALLOWED_TYPES gates this server-side too); expanding to
+// docx/xlsx requires widening ALLOWED_TYPES in a follow-up.
+async function uploadJobFiles(fileList) {
+  const projectId = window._jobProjectId;
+  const input = document.getElementById('fileUploadInput');
+  const status = document.getElementById('fileUploadStatus');
+  const files = Array.from(fileList || []);
+  if (!projectId) { alert('No project linked yet. Accept the estimate to enable uploads.'); return; }
+  if (!files.length) return;
+
+  const setStatus = (txt) => { if (status) { status.style.display = ''; status.textContent = txt; } };
+  setStatus('uploading 0 / ' + files.length + '...');
+
+  let done = 0, failed = 0;
+  const errors = [];
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    setStatus('uploading ' + (i + 1) + ' / ' + files.length + ': ' + f.name);
+    const fd = new FormData();
+    fd.append('project_id', projectId);
+    fd.append('category', 'document');
+    fd.append('file', f, f.name);
+    try {
+      const r = await fetch('/api/files', { method: 'POST', headers: ah(), body: fd });
+      if (!r.ok) {
+        const errText = await r.text().catch(() => '');
+        throw new Error('HTTP ' + r.status + (errText ? ' ' + errText.slice(0, 200) : ''));
+      }
+      // /api/files returns { files: [...] } where each entry may itself be
+      // { fileName, error } when validation rejected it server-side. Treat
+      // that as a per-file failure so the user sees the real reason.
+      const body = await r.json().catch(() => null);
+      const first = body && Array.isArray(body.files) ? body.files[0] : null;
+      if (first && first.error) throw new Error(first.error);
+      done++;
+    } catch (e) {
+      failed++;
+      errors.push(f.name + ': ' + e.message);
+      console.error('[file-upload]', f.name, e);
+    }
+    setStatus('uploaded ' + done + ' / ' + files.length + (failed ? ' (' + failed + ' failed)' : ''));
+  }
+
+  if (input) input.value = '';
+  await refreshFilesList(projectId);
+
+  if (errors.length) {
+    alert('File upload errors:\n\n' + errors.join('\n\n'));
+  }
+  setTimeout(() => {
+    if (status && !failed && status.textContent.startsWith('uploaded')) status.style.display = 'none';
+  }, 4000);
+}
+
+// Wire the COPY SHARE LINK button. Hidden until project resolves; then
+// hits /api/projects?action=ensure-share to mint/refresh the share token
+// and copies the public viewer URL to the clipboard. Idempotent server-side.
+function wireCopyShareLink(project) {
+  const btn = document.getElementById('copyShareLinkBtn');
+  if (!btn) return;
+  if (!project || !project.id) { btn.style.display = 'none'; return; }
+  btn.style.display = '';
+  btn.addEventListener('click', async () => {
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'COPYING...';
+    try {
+      const r = await fetch('/api/projects?action=ensure-share&id=' + encodeURIComponent(project.id), {
+        method: 'POST',
+        headers: { ...ah(), 'Content-Type': 'application/json' },
+      });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const data = await r.json();
+      const token = data.share_token;
+      if (!token) throw new Error('no token returned');
+      const url = location.origin + '/photos-share.html?share=' + encodeURIComponent(token);
+      await navigator.clipboard.writeText(url);
+      btn.textContent = 'LINK COPIED';
+      // Small toast for visibility, same pattern as copyMaterialsText().
+      const s = document.createElement('div');
+      s.textContent = 'Share link copied';
+      s.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#22d3ee;color:#020615;padding:8px 18px;border-radius:8px;font-weight:700;font-family:monospace;z-index:99999';
+      document.body.appendChild(s);
+      setTimeout(() => s.remove(), 1800);
+    } catch (e) {
+      console.error('[share-link] failed', e);
+      alert('Copy share link failed: ' + e.message);
+    } finally {
+      btn.disabled = false;
+      setTimeout(() => { btn.textContent = originalText; }, 2000);
+    }
+  });
 }
 
 console.log('[job.html] version 2026-05-25-uploadfix-v4-downscale loaded');
