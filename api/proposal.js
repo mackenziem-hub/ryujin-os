@@ -381,6 +381,10 @@ export default async function handler(req, res) {
   const curatedCover = photos.find(p => p.is_cover) || photos.find(p => slot(p) === 'cover') || null;
   const curatedMedia = {
     cover: curatedCover?.url || null,
+    // Any real uploaded cover (incl. the photos[0] fallback). Lets the envelope
+    // drop the seeded mockup cover/preview as soon as the estimate has its own
+    // photos, without requiring every slot to be tagged first.
+    realCover: photos.length ? (cover?.url || null) : null,
     before: beforePhoto?.url || null,
     after: afterPhoto?.url || null,
     afterBottom: afterBottomPhoto?.url || null,
