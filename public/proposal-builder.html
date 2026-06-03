@@ -774,6 +774,7 @@ body::before{
         <button class="anno-swatch" data-color="#22d3ee" style="background:#22d3ee" title="Cyan"></button>
         <span style="width:1px;height:22px;background:var(--border)"></span>
         <button data-act="undo">Undo</button>
+        <button data-act="revert">Revert to clean</button>
         <button data-act="cancel">Cancel</button>
         <button data-act="save" style="background:var(--accent);color:#0a0e1a;font-weight:700;border-color:var(--accent)">Save markup</button>
       </div>
@@ -917,6 +918,12 @@ body::before{
       backdrop.querySelectorAll('[data-color]').forEach(x => x.classList.toggle('on', x === b));
     }));
     backdrop.querySelector('[data-act="undo"]').addEventListener('click', () => { ops.pop(); redraw(); });
+    backdrop.querySelector('[data-act="revert"]').addEventListener('click', () => {
+      if (ops.length && !window.confirm('Clear all markings and revert to the clean photo?')) return;
+      ops.length = 0;
+      backdrop.querySelectorAll('.anno-textinput').forEach(n => n.remove());
+      redraw();
+    });
     backdrop.querySelector('[data-act="cancel"]').addEventListener('click', () => backdrop.remove());
     backdrop.querySelector('[data-act="save"]').addEventListener('click', async () => {
       const btn = backdrop.querySelector('[data-act="save"]');
@@ -937,10 +944,17 @@ body::before{
       try {
         const r = await fetch('/api/estimate-photos', { method: 'POST', headers: authHeaders(), body: fd });
         if (!r.ok) throw new Error('HTTP ' + r.status);
-        // Overtake the original: the marked-up copy replaces the photo it was
-        // drawn over (it already carries the original's slot/category), so there
-        // is one image, not two.
-        try { await fetch('/api/estimate-photos?id=' + encodeURIComponent(photoId), { method: 'DELETE', headers: authHeaders() }); } catch (_) {}
+        // Non-destructive overtake: the marked-up copy carries the original's
+        // slot so it takes over on the proposal, but the clean original is kept
+        // (un-slotted) so markup is always reversible. To revert, delete the
+        // marked-up copy and the clean original is still here.
+        try {
+          await fetch('/api/estimate-photos?id=' + encodeURIComponent(photoId), {
+            method: 'PATCH',
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ category: 'general', is_cover: false }),
+          });
+        } catch (_) {}
         toast('Markup saved', 'ok');
         backdrop.remove();
         loadInspectionPhotos();
