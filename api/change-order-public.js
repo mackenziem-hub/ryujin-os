@@ -1,10 +1,10 @@
-// Ryujin OS — Public Change Order Read (token-gated)
+// Ryujin OS - Public Change Order Read (token-gated)
 //
 //   GET /api/change-order-public?token=<customer_accept_token | sub_accept_token>
 //
 // No auth header. The accept token is the authentication. The token itself
 // determines which side (customer or sub) is viewing, and we return ONLY that
-// side's delta + scope — never the other side's number (a customer must not see
+// side's delta + scope - never the other side's number (a customer must not see
 // the sub rate, and vice-versa; mirrors paysheet-public's field policy).
 
 import { supabaseAdmin } from '../lib/supabase.js';
@@ -21,7 +21,7 @@ export default async function handler(req, res) {
   const { token } = req.query;
   if (!token) return res.status(400).json({ error: 'Missing token' });
   // Token is interpolated into the PostgREST .or() filter below, so constrain it
-  // to the base64url charset our generator emits — blocks filter injection.
+  // to the base64url charset our generator emits - blocks filter injection.
   if (!/^[A-Za-z0-9_-]{20,64}$/.test(token)) {
     return res.status(404).json({ error: 'Change order not found for this link' });
   }
@@ -48,7 +48,7 @@ export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   return res.status(200).json({
     id: data.id,
-    side,                       // 'customer' | 'sub'  — drives the page copy
+    side,                       // 'customer' | 'sub'  - drives the page copy
     reason: data.reason,
     scope_before: data.scope_before,
     scope_after: data.scope_after,
