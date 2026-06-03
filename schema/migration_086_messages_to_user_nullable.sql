@@ -1,0 +1,21 @@
+-- Ryujin OS — Migration 086: messages.to_user_id nullable (job-thread channels)
+--
+-- Applied directly via the Management API on 2026-06-02; this file documents it
+-- for the migration tracker (schema/ is documentation, not auto-run).
+--
+-- WHY: the messages table (migration 054) was a strict 1:1 DM model
+-- (to_user_id NOT NULL). The per-job TEAM THREAD feature posts shared, team-wide
+-- CHANNEL messages with no directed recipient: a job-thread row is keyed on
+-- ref_workorder_id, carries thread_id = the workorder id, and sets
+-- to_user_id = NULL to mark it a broadcast rather than a DM.
+--
+-- This keeps the two cleanly separated:
+--   * Personal DM views query to_user_id = me  -> never match NULL channel rows.
+--   * The job thread reads WHERE ref_workorder_id = X AND to_user_id IS NULL
+--     -> returns only channel broadcasts, never a directed DM that happened to
+--        reference the same workorder.
+--
+-- Safe because the messages table had no production UI adoption at the time.
+-- See api/messages.js (GET ?ref_workorder_id, POST thread_scope='job').
+
+ALTER TABLE messages ALTER COLUMN to_user_id DROP NOT NULL;
