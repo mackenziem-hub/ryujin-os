@@ -489,6 +489,28 @@ section{padding:80px 0;position:relative}
 }
 .internal-banner b{color:#fff}
 
+/* ─── REJUVENATION CALLOUT (optional per-estimate alternative path) ─── */
+.rejuv-card{
+  max-width:900px;margin:0 auto;padding:28px 32px;
+  background:var(--bg-card);border:1.5px solid var(--accent);border-radius:14px;
+  box-shadow:var(--shadow-sm);
+}
+.rejuv-card .rejuv-row{display:flex;justify-content:space-between;gap:24px;align-items:flex-start;flex-wrap:wrap}
+.rejuv-card .rejuv-headline{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.rejuv-card .rejuv-headline h3{font-family:'Montserrat',sans-serif;font-size:1.4rem;color:var(--ink);margin:0}
+.rejuv-card .rejuv-badge{display:inline-block;background:var(--accent);color:#fff;font-size:0.7rem;letter-spacing:0.08em;text-transform:uppercase;font-weight:700;padding:4px 10px;border-radius:999px}
+.rejuv-card .rejuv-desc{color:var(--ink-muted);margin:10px 0 0;font-size:0.96rem;line-height:1.55;max-width:560px}
+.rejuv-card .rejuv-price{font-family:'Montserrat',sans-serif;font-size:1.8rem;color:var(--accent);font-weight:700;white-space:nowrap}
+.rejuv-card .rejuv-bullets{list-style:none;margin:18px 0 0;padding:18px 0 0;border-top:1px dashed var(--border);display:grid;gap:8px}
+.rejuv-card .rejuv-bullets li{padding-left:24px;position:relative;font-size:0.94rem;color:var(--ink)}
+.rejuv-card .rejuv-bullets li::before{content:"";position:absolute;left:0;top:7px;width:13px;height:8px;border:solid var(--accent);border-width:0 0 2px 2px;transform:rotate(-45deg)}
+.rejuv-card .rejuv-warranty{margin:14px 0 0;font-size:0.88rem;color:var(--ink-muted);font-style:italic}
+@media(max-width:720px){
+  .rejuv-card{padding:22px 20px}
+  .rejuv-card .rejuv-row{flex-direction:column;gap:10px}
+  .rejuv-card .rejuv-price{font-size:1.5rem}
+}
+
 /* ─── SCOPE TABLE ─── */
 .scope-card{
   max-width:900px;margin:0 auto;padding:28px 32px;
@@ -1390,6 +1412,34 @@ body:not(.envelope-active) #envelopeSection{display:none !important}
 </section>
 
 <!-- ============================================================== -->
+<!-- 8b. REJUVENATION ALTERNATIVE (optional per-estimate callout)    -->
+<!-- Only renders when DATA.rejuvSection is present on the response. -->
+<!-- ============================================================== -->
+<section id="rejuvSection" hidden>
+  <div class="container">
+    <div class="section-head">
+      <div class="kicker" id="rejuvKicker">Another path</div>
+      <h2 id="rejuvHead">Or, consider rejuvenation.</h2>
+      <p id="rejuvSub"></p>
+    </div>
+    <div class="rejuv-card">
+      <div class="rejuv-row">
+        <div>
+          <div class="rejuv-headline">
+            <h3 id="rejuvHeadline"></h3>
+            <span class="rejuv-badge" id="rejuvBadge" hidden></span>
+          </div>
+          <p class="rejuv-desc" id="rejuvDesc"></p>
+        </div>
+        <div class="rejuv-price" id="rejuvPrice"></div>
+      </div>
+      <ul class="rejuv-bullets" id="rejuvBullets"></ul>
+      <p class="rejuv-warranty" id="rejuvWarranty"></p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================== -->
 <!-- 9. REVIEWS                                                      -->
 <!-- ============================================================== -->
 <section>
@@ -1798,7 +1848,7 @@ body:not(.envelope-active) #envelopeSection{display:none !important}
       <div class="kicker" style="color:var(--bronze)">Our Promise</div>
       <h2 style="font-family:'Montserrat',sans-serif;color:var(--ink);font-size:1.5rem;margin:6px 0 18px;letter-spacing:-0.01em">Three guarantees, in writing.</h2>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px">
-        <div><div style="font-weight:700;color:var(--ink);margin-bottom:5px">Workmanship for life</div><div style="color:var(--ink-body);font-size:0.92rem;line-height:1.55">If a leak ever traces back to our installation, we fix it free for as long as you own this home.</div></div>
+        <div><div style="font-weight:700;color:var(--ink);margin-bottom:5px">Written workmanship warranty</div><div style="color:var(--ink-body);font-size:0.92rem;line-height:1.55">15 to 25 years of Plus Ultra workmanship coverage depending on your tier, with a leak-free year-one guarantee. If a leak traces back to our installation in that window, we fix it free.</div></div>
         <div><div style="font-weight:700;color:var(--ink);margin-bottom:5px">CertainTeed backed</div><div style="color:var(--ink-body);font-size:0.92rem;line-height:1.55">Full manufacturer system coverage plus the 10-year CertainTeed SureStart workmanship warranty.</div></div>
         <div><div style="font-weight:700;color:var(--ink);margin-bottom:5px">The price you accept is the price you pay</div><div style="color:var(--ink-body);font-size:0.92rem;line-height:1.55">No surprise change orders once we open the roof. If we find rotten decking, you approve the $85 per sheet rate before we replace it.</div></div>
       </div>
@@ -2439,6 +2489,34 @@ function renderScope(){
     <div class="scope-row"><span class="lbl">${r.lbl}</span><span class="val">${r.val}</span></div>
   `).join('');
   wireBreakdownDropdown();
+}
+
+// Optional per-estimate rejuvenation callout. Renders the simple
+// "Or, consider rejuvenation" card between scope and reviews when the
+// estimate row carries a `_rejuv_section` block in custom_prices.
+// Hidden by default; only this estimate sees it.
+function renderRejuvSection(){
+  const section = document.getElementById('rejuvSection');
+  const data = DATA?.rejuvSection;
+  if (!section) return;
+  if (!data) { section.hidden = true; return; }
+  const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v || ''; };
+  if (data.kicker) setText('rejuvKicker', data.kicker);
+  if (data.title) setText('rejuvHead', data.title);
+  setText('rejuvSub', data.subtitle || '');
+  setText('rejuvHeadline', data.headline || '');
+  const badge = document.getElementById('rejuvBadge');
+  if (badge) {
+    if (data.badge) { badge.textContent = data.badge; badge.hidden = false; }
+    else badge.hidden = true;
+  }
+  setText('rejuvPrice', data.price || '');
+  setText('rejuvDesc', data.description || '');
+  const bullets = document.getElementById('rejuvBullets');
+  if (bullets) bullets.innerHTML = (data.bullets || [])
+    .map(b => `<li>${String(b).replace(/</g,'&lt;')}</li>`).join('');
+  setText('rejuvWarranty', data.warranty || '');
+  section.hidden = false;
 }
 
 let _breakdownWired = false;
@@ -4368,6 +4446,7 @@ function envelopeAcceptSubmit(result, signatureDataUrl) {
     renderGallery();
     renderTiers();
     renderScope();
+    renderRejuvSection();
     renderAddons();
     renderAccept();
     renderReviewsHead();
@@ -4429,43 +4508,45 @@ function envelopeAcceptSubmit(result, signatureDataUrl) {
     if (!DATA.rep)   DATA.rep   = DEMO.rep;
 
     renderHero(); renderIntro(); renderWhy(); renderVideo();
-    renderBeforeAfter();
-    initBeforeAfter();
+    // Skip before/after slider in envelope mode — the configurator's live
+    // preview already swaps Mary's actual home render based on her selection.
+    const hideSec = el => { const s = el && el.closest('section'); if (s) s.hidden = true; };
+    const _baSec = document.getElementById('baFrame')?.closest('section');
+    if (_baSec) _baSec.hidden = true;
 
     // Hide the sections the configurator owns.
-    const hideSec = el => { const s = el && el.closest('section'); if (s) s.hidden = true; };
     hideSec(document.getElementById('tiersGrid'));
     hideSec(document.getElementById('scopeList'));
     const acceptWrap = document.querySelector('.accept-wrap');
     if (acceptWrap) hideSec(acceptWrap);
 
     // The static CertainTeed asphalt "Integrity Roof System" materials section is
-    // accurate only for an asphalt-only envelope. Hide it for metal/mixed envelopes
-    // so the proposal never describes the wrong roofing system before the builder.
+    // accurate only for an asphalt-only envelope. Hide it for metal/mixed envelopes.
     const _asphaltOnly = _sys === 'asphalt' && !(_env.components && _env.components.roof_metal);
     if (!_asphaltOnly) { const sg = document.querySelector('.sys-grid'); if (sg) hideSec(sg); }
 
-    // The legacy hero PDF/contract buttons export the standard tier package, not
-    // the configured envelope selections — hide them. The configurator's own
-    // Export PDF / Lock Your Price is the export + accept path in envelope mode.
+    // Legacy hero PDF/contract buttons aren't envelope-aware — hide them.
     ['downloadPdfBtn','downloadContractBtn','gammaDeckBtn'].forEach(id => {
       const b = document.getElementById(id); if (b) b.style.display = 'none';
     });
 
-    // Trim: drop the redundant house-render gallery (the before/after already shows
-    // the transformation) and the back-half (reviews + transparency) so the
-    // configurator's own signature + CTA is the clean, concise close.
-    const _gal = document.getElementById('galleryGrid'); if (_gal) _gal.style.display = 'none';
-    hideSec(document.getElementById('reviewsGrid'));
-    const _trust = document.querySelector('.trust-grid'); if (_trust) hideSec(_trust);
+    // Keep reviews + warranty + gallery visible. Hide envelope's internal hero
+    // so we don't double-intro the proposal.
+    const _envHero = document.getElementById('envHero'); if (_envHero) _envHero.hidden = true;
 
     // Slot the configurator in where the tier grid sat.
-    // Do NOT move the envelope into the (now hidden) asphalt body; it is a
-    // standalone sibling section and renders on its own.
     const envSection = document.getElementById('envelopeSection');
     if (envSection) envSection.hidden = false;
 
     envInit();
+
+    // Hide curated B/A pair + curated section grid + after-bottom panel AFTER
+    // envInit→envRenderCurated unhides them. Those blocks aren't system-aware
+    // (hard-default to after_metal) so they keep showing a metal render above
+    // the shingle tier list even when the customer is on Shingle.
+    ['envCuratedBA','envCuratedSections','envCuratedAfterBottom'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.hidden = true;
+    });
 
     // Re-seed the before/after AFTER image from the system the customer actually
     // configured — envInit() applies any saved/exported ?envelope= selection to
