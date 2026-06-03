@@ -1584,9 +1584,9 @@ body:not(.envelope-active) #envelopeSection{display:none !important}
     </div>
 
     <div class="env-head">
-      <div class="kicker" id="envKicker">Plan Your Project</div>
-      <h2 id="envHeadline">Build the exterior plan around your home, your priorities, and your budget.</h2>
-      <p>Choose your scope below. Your package, total, and savings update in real time as you go.</p>
+      <div class="kicker" id="envKicker">Your Options</div>
+      <h2 id="envHeadline">Choose your roof.</h2>
+      <p>Pick a system below. Your package, price, and savings update in real time, and the preview shows your home in each one.</p>
     </div>
 
     <!-- Live preview — image swaps based on selections -->
@@ -3237,24 +3237,44 @@ function envRenderRoofOptions() {
   if (!env) return;
   const sys = envelopeState.system;
   const key = sys === 'asphalt' ? 'roof_asphalt' : 'roof_metal';
-  const tiers = env?.components?.[key]?.tiers || [];
+  let tiers = env?.components?.[key]?.tiers || [];
+  // Metal presents HIGH to LOW (premium anchor first); an "inquire" tier ranks
+  // above any priced tier so it sits at the top as the deliberate ceiling.
+  if (sys !== 'asphalt') {
+    tiers = [...tiers].sort((a, b) => {
+      const av = (a.inquire || a.price == null) ? Infinity : (a.price || 0);
+      const bv = (b.inquire || b.price == null) ? Infinity : (b.price || 0);
+      return bv - av;
+    });
+  }
   const wrap = document.getElementById('envRoofOptions');
   if (!wrap) return;
   wrap.innerHTML = tiers.map(t => {
     const on = t.slug === envelopeState.roof;
+    const isInquire = t.inquire === true || (sys !== 'asphalt' && t.price == null);
     const sid = envGetSidingTier(env, envelopeState.siding);
-    const inBundle = sid && sid.tier > 0;
+    const inBundle = sid && sid.tier > 0 && !isInquire;
     const aloneSelling = envRoofSelling(env, t);
     const bundleSelling = inBundle ? Math.round(((t.hard||0) + (env?.components?.wall_assembly?.hard||0) + (sid.hard||0)) * (envResolveBundleTier(env, t, sid)?.mult || 1.47)) : null;
-    const priceMain = inBundle && bundleSelling
-      ? `<div class="env-price-bundle">$${bundleSelling.toLocaleString()}</div><div class="env-price-alone">$${aloneSelling.toLocaleString()}</div><div class="env-price-save">in bundle</div>`
-      : `<div class="env-price-bundle">$${aloneSelling.toLocaleString()}</div><div class="env-price-alone" style="visibility:hidden">·</div><div class="env-price-save" style="opacity:0.5">standalone</div>`;
+    let priceMain;
+    if (isInquire) {
+      priceMain = `<div class="env-price-bundle" style="font-size:0.95rem">Inquire for details</div><div class="env-price-save" style="opacity:0.7;text-transform:none;letter-spacing:0">priced per roof</div>`;
+    } else if (inBundle && bundleSelling) {
+      priceMain = `<div class="env-price-bundle">$${bundleSelling.toLocaleString()}</div><div class="env-price-alone">$${aloneSelling.toLocaleString()}</div><div class="env-price-save">in bundle</div>`;
+    } else {
+      priceMain = `<div class="env-price-bundle">$${aloneSelling.toLocaleString()}</div><div class="env-price-alone" style="visibility:hidden">·</div><div class="env-price-save" style="opacity:0.5">standalone</div>`;
+    }
+    const badge = t.popular ? ` <span class="env-pop">${t.recommended_note ? 'Recommended' : 'Most Popular'}</span>` : '';
+    const nameLine = t.name
+      ? `<div class="env-label">${escapeHtml(t.name)}${badge}</div><div class="env-sub" style="font-size:0.72rem;letter-spacing:0.08em;text-transform:uppercase;color:rgba(232,237,245,0.5);margin-bottom:2px">${escapeHtml(t.label||t.slug)}</div>`
+      : `<div class="env-label">${escapeHtml(t.label||t.slug)}${badge}</div>`;
     return `
       <div class="env-option${on?' on':''}" onclick="envPickRoof('${t.slug}')">
         <div class="env-radio"></div>
         <div class="env-body">
-          <div class="env-label">${escapeHtml(t.label||t.slug)}${t.popular?' <span class="env-pop">Most Popular</span>':''}</div>
+          ${nameLine}
           ${t.subtitle?`<div class="env-sub">${escapeHtml(t.subtitle)}</div>`:''}
+          ${isInquire && t.inquire_note?`<div class="env-sub" style="color:rgba(253,204,2,0.85);margin-top:3px">${escapeHtml(t.inquire_note)}</div>`:''}
           ${t.warranty_label?`<div class="env-sub" style="color:rgba(253,204,2,0.7);font-size:0.78rem;margin-top:2px">${escapeHtml(t.warranty_label)}</div>`:''}
         </div>
         <div class="env-pricing">${priceMain}</div>
@@ -3596,13 +3616,20 @@ function envRenderSummary(result) {
     envelopeState.prevSavings = newSav;
     savEl.textContent = '$' + newSav.toLocaleString();
   }
-  // Investment + finance
+  // Investment + finance. A standing-seam "inquire" selection shows a quote
+  // prompt instead of a $0 total.
+  const selRoof = envGetRoofTier(DATA.envelope, result.selections && result.selections.system, result.selections && result.selections.roof);
+  const inquireSel = !!(selRoof && (selRoof.inquire || selRoof.price == null) && result.selections && result.selections.system === 'metal');
   const invEl = document.getElementById('envInvestment');
-  if (invEl) invEl.textContent = '$' + (result.finalSelling || 0).toLocaleString();
+  if (invEl) invEl.textContent = inquireSel ? 'Inquire' : '$' + (result.finalSelling || 0).toLocaleString();
   const finEl = document.getElementById('envFinance');
   if (finEl) {
-    const monthly = financeItMonthly ? financeItMonthly(result.finalSelling || 0, 120) : 0;
-    finEl.textContent = result.finalSelling > 0 ? `Or $${Math.round(monthly).toLocaleString()}/mo · FinanceIt 10-yr` : '— select a roof to see your monthly';
+    if (inquireSel) {
+      finEl.textContent = selRoof.inquire_note || 'Priced per roof after a measure-up.';
+    } else {
+      const monthly = financeItMonthly ? financeItMonthly(result.finalSelling || 0, 120) : 0;
+      finEl.textContent = result.finalSelling > 0 ? `Or $${Math.round(monthly).toLocaleString()}/mo with approved credit · FinanceIt 10-yr` : 'Select a roof to see your monthly';
+    }
   }
   // Mirror the headline numbers into the expandable price breakdown toggle.
   const breakdownEl = document.getElementById('envPricingBreakdown');
@@ -3993,22 +4020,33 @@ function envRenderPreview(result) {
   const img = document.getElementById('envPreviewImg');
   const cap = document.getElementById('envPreviewCaption');
   if (!wrap || !img) return;
-  // When Mac curated photos for this estimate, the auto-swapping mockup preview
-  // is replaced by the hand-picked before/after + section gallery below.
-  if (envSuppressSeeded()) { wrap.hidden = true; return; }
   const env = DATA.envelope;
-  const pick = envPickPreviewImage(env, result.selections);
-  if (!pick) { wrap.hidden = true; return; }
+  // Prefer the selected roof tier's real render of THIS home (the generated
+  // shingle / community barn / clay / standing-seam shots). Fall back to the
+  // per-system after-image, then the legacy mockup picker.
+  const selTier = envGetRoofTier(env, result.selections.system, result.selections.roof);
+  let url = selTier && selTier.render_url;
+  let caption = selTier ? ('Your home with ' + (selTier.name || selTier.label || 'the new roof')) : '';
+  if (!url) {
+    const m = (env && env.media) || {};
+    url = result.selections.system === 'metal' ? (m.after_metal || m.after_shingle) : m.after_shingle;
+    if (url) caption = 'Your home with the new roof';
+  }
+  if (!url) {
+    const pick = envPickPreviewImage(env, result.selections);
+    if (pick) { url = pick.url; caption = pick.caption; }
+  }
+  if (!url) { wrap.hidden = true; return; }
   // Only swap if the image URL actually changed. Avoid re-fading on every render.
-  if (img.dataset.currentSrc !== pick.url) {
+  if (img.dataset.currentSrc !== url) {
     img.classList.remove('loaded');
     img.onload = () => img.classList.add('loaded');
     img.onerror = () => img.classList.add('loaded');
-    img.src = pick.url;
-    img.dataset.currentSrc = pick.url;
+    img.src = url;
+    img.dataset.currentSrc = url;
     if (img.complete) img.classList.add('loaded');
   }
-  if (cap) cap.textContent = pick.caption;
+  if (cap) cap.textContent = caption;
   wrap.hidden = false;
 }
 
