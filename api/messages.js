@@ -56,6 +56,26 @@ async function handler(req, res) {
     const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
     const threadId = req.query.thread_id;
 
+    // Job thread: a shared, team-wide channel keyed on ref_workorder_id. Unlike
+    // the per-user DM boxes, this returns ALL messages on the WO (any from/to,
+    // to_user_id null = broadcast) in chronological order, so the whole team
+    // sees one thread. Auth still required (any signed-in tenant user).
+    const refWo = req.query.ref_workorder_id;
+    if (refWo) {
+      const { data, error } = await supabaseAdmin
+        .from('messages')
+        .select(`id, thread_id, reply_to, from_user_id, from_label, body, created_at, metadata, ref_workorder_id,
+                 from_user:users!messages_from_user_id_fkey(name, email, role)`)
+        .eq('tenant_id', tenantId)
+        .eq('ref_workorder_id', refWo)
+        .is('to_user_id', null)        // channel broadcasts only; never surface a directed DM that merely referenced this WO
+        .is('archived_at', null)
+        .order('created_at', { ascending: true })
+        .limit(limit);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ messages: data, me: { id: me.id, name: me.name } });
+    }
+
     // Order direction depends on view: threads display chronologically
     // (oldest → newest, replies anchor at bottom of the scrollable pane);
     // inbox/sent lists show newest first. We DON'T stack two .order calls
@@ -120,6 +140,33 @@ async function handler(req, res) {
         hint: 'No valid session token. Visit /login.html to sign in.'
       });
     }
+    // Job thread post: a team-wide channel message, not a DM. to_user_id is null
+    // (broadcast), thread_id is the WO id, keyed by ref_workorder_id. No directed
+    // recipient and no per-recipient SMS fan-out (it is a shared log, not a ping).
+    if (body.thread_scope === 'job') {
+      if (!me) return res.status(401).json({ error: 'Sign in to post', code: 'AUTH_REQUIRED' });
+      if (!body.ref_workorder_id) return res.status(400).json({ error: 'ref_workorder_id required for a job thread' });
+      if (!body.body) return res.status(400).json({ error: 'body required' });
+      const row = {
+        tenant_id: tenantId,
+        from_user_id: me.id,
+        from_label: me.name || null,
+        to_user_id: null,
+        thread_id: body.thread_id || body.ref_workorder_id,
+        body: body.body,
+        reply_to: body.reply_to || null,
+        ref_workorder_id: body.ref_workorder_id,
+        metadata: { ...(body.metadata || {}), channel: 'job' },
+      };
+      const { data, error } = await supabaseAdmin
+        .from('messages')
+        .insert(row)
+        .select('*, from_user:users!messages_from_user_id_fkey(name, email, role)')
+        .single();
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(201).json({ message: data });
+    }
+
     // Accept both single recipient (to_user_id) and multi-recipient (to_user_ids array).
     // Multi-recipient creates N rows sharing a single thread_id so the conversation
     // is one continuous thread visible to every participant.
