@@ -121,6 +121,14 @@ textarea.field-edit{font-family:'Inter',system-ui,sans-serif;font-size:0.88em;te
 .act.ghost:hover{color:#fb923c;border-color:#fb923c}
 .act.cyan{background:rgba(34,211,238,0.12);color:#22d3ee;border-color:rgba(34,211,238,0.35)}
 .act.cyan:hover{background:rgba(34,211,238,0.22)}
+.joblog-entry{padding:11px 0;border-bottom:1px solid rgba(251,146,60,0.07)}
+.joblog-entry:last-child{border-bottom:none}
+.joblog-entry-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:5px}
+.joblog-meta{font-family:'Share Tech Mono',monospace;font-size:0.62em;color:rgba(200,220,255,0.4);letter-spacing:1px}
+.joblog-entry-body{font-size:0.88em;color:rgba(200,220,255,0.82);line-height:1.5}
+.joblog-input{background:rgba(6,10,20,0.6);border:1px solid rgba(251,146,60,0.18);color:#e0e6f0;border-radius:9px;padding:8px 11px;font-family:inherit;font-size:0.85em}
+.joblog-input:focus{outline:none;border-color:#fb923c}
+.joblog-composer select.joblog-input{cursor:pointer}
 
 .status-pick{padding:5px 10px;border-radius:6px;background:rgba(6,10,20,0.6);border:1px solid rgba(251,146,60,0.28);color:#e0e6f0;font-family:'Share Tech Mono',monospace;font-size:0.68em;letter-spacing:1.2px;cursor:pointer;outline:none;text-transform:uppercase;margin-left:8px}
 .status-pick:hover{border-color:#fb923c}
@@ -712,6 +720,34 @@ function render({ customer, estimates, workorders, paysheets, photos, roster, pu
     </details>
   `);
 
+  // 6.5 JOB LOG (activity feed for the active WO — entries from /api/job-log)
+  sections.push(`
+    <details class="acc" open data-section="joblog">
+      <summary>
+        <div class="title"><svg viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg> JOB LOG</div>
+        <div class="meta"><span id="jobLogCount">-</span><svg class="chev" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
+      </summary>
+      <div class="acc-body">
+        ${activeWo ? `
+          <div id="jobLogMount"><div class="empty-sec">LOADING&hellip;</div></div>
+          <form id="jobLogForm" class="joblog-composer" style="margin-top:14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-top:1px solid rgba(251,146,60,0.12);padding-top:14px">
+            <select id="jobLogType" class="joblog-input">
+              <option value="note">Note</option>
+              <option value="material_purchase">Material</option>
+              <option value="additional_fee">Fee</option>
+              <option value="scope_change">Scope change</option>
+              <option value="advance_payout">Advance</option>
+            </select>
+            <input id="jobLogDesc" class="joblog-input" type="text" placeholder="What happened on this job&hellip;" style="flex:1;min-width:200px">
+            <input id="jobLogAmount" class="joblog-input" type="number" step="0.01" min="0" placeholder="$ optional" style="width:120px">
+            <button type="submit" class="act primary" id="jobLogAddBtn">ADD ENTRY</button>
+            <span id="jobLogMsg" class="count" style="display:none"></span>
+          </form>
+        ` : '<div class="empty-sec">NO WORK ORDER ON THIS JOB YET. THE LOG ATTACHES TO A WORK ORDER.</div>'}
+      </div>
+    </details>
+  `);
+
   // 7. FILES (placeholder until PR-B)
   sections.push(`
     <details class="acc" data-section="files">
@@ -789,6 +825,13 @@ function render({ customer, estimates, workorders, paysheets, photos, roster, pu
     const subCell = document.getElementById('subCell');
     if (crewCell) crewCell.appendChild(buildCrewSelect(activeWo, roster));
     if (subCell) subCell.appendChild(buildSubSelect(activeWo, roster));
+  }
+
+  // Job Log (activity feed) — load entries + wire the inline composer
+  if (activeWo) {
+    loadJobLog(activeWo.id);
+    const jlForm = document.getElementById('jobLogForm');
+    if (jlForm) jlForm.addEventListener('submit', (ev) => { ev.preventDefault(); addJobLogEntry(activeWo.id); });
   }
 
   // WO status pick
@@ -1348,6 +1391,99 @@ document.addEventListener('click', () => {
 });
 
 document.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); if (window.RyujinNav) RyujinNav.back('production-jobs.html'); else history.back(); } });
+
+// ───── JOB LOG (activity feed) ─────────────────────────────────
+// Tag -> {label, color}. Colors stay inline (per-tag) so we don't add a
+// CHECK-bound class per entry_type. 'communication' lands in PR3.
+const JOBLOG_TAGS = {
+  change_order:      { label: 'CHANGE ORDER',    color: '#fb923c' },
+  scope_change:      { label: 'SCOPE CHANGE',    color: '#f59e0b' },
+  material_purchase: { label: 'MATERIAL',        color: '#22d3ee' },
+  additional_fee:    { label: 'FEE',             color: '#f472b6' },
+  advance_payout:    { label: 'ADVANCE',         color: '#a78bfa' },
+  rate_suggestion:   { label: 'RATE SUGGESTION', color: '#fbbf24' },
+  communication:     { label: 'COMMUNICATION',   color: '#4ade80' },
+  photo:             { label: 'PHOTO',           color: '#94a3b8' },
+  note:              { label: 'NOTE',            color: '#94a3b8' },
+};
+
+function jobLogStatusBadge(status){
+  const cls = { approved: 'b-done', pending: 'b-draft', denied: 'b-draft' }[status] || 'b-draft';
+  return `<span class="badge ${cls}">${esc((status || '').toUpperCase())}</span>`;
+}
+
+function renderJobLogEntries(entries){
+  if (!entries.length) return '<div class="empty-sec">NO LOG ENTRIES YET</div>';
+  return entries.map(e => {
+    const tag = JOBLOG_TAGS[e.entry_type] || { label: String(e.entry_type || '').toUpperCase().replace(/_/g, ' '), color: '#94a3b8' };
+    let when = '';
+    if (e.created_at) { try { when = new Date(e.created_at).toLocaleString('en-CA', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch { when = ''; } }
+    const who = e.uploaded_by_name || e.subcontractor?.name || (e.created_by_sub ? 'Sub' : 'Owner');
+    const amt = Number(e.amount) > 0 ? `<span style="color:#4ade80;font-weight:700;margin-left:8px">${money(e.amount)}</span>` : '';
+    const vendor = e.vendor ? `<span style="color:rgba(200,220,255,0.5);margin-left:8px">/ ${esc(e.vendor)}</span>` : '';
+    const pics = Array.isArray(e.photos) ? e.photos.filter(u => typeof u === 'string' && u) : [];
+    const photos = pics.length
+      ? `<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">${pics.slice(0, 6).map(u => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" loading="lazy" style="width:46px;height:46px;object-fit:cover;border-radius:6px;border:1px solid rgba(251,146,60,0.2)"></a>`).join('')}</div>`
+      : '';
+    return `
+      <div class="joblog-entry">
+        <div class="joblog-entry-head">
+          <span class="badge" style="background:${tag.color}22;color:${tag.color};border:1px solid ${tag.color}55">${esc(tag.label)}</span>
+          ${jobLogStatusBadge(e.status)}
+          <span class="joblog-meta">${esc(when)} / ${esc(who)}</span>
+        </div>
+        <div class="joblog-entry-body">${esc(e.description || '')}${amt}${vendor}</div>
+        ${photos}
+      </div>`;
+  }).join('');
+}
+
+async function loadJobLog(woId){
+  const mount = document.getElementById('jobLogMount');
+  const countEl = document.getElementById('jobLogCount');
+  if (!mount) return;
+  try {
+    const r = await fetch('/api/job-log?workorder_id=' + encodeURIComponent(woId), { headers: ah() });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const { entries = [] } = await r.json();
+    mount.innerHTML = renderJobLogEntries(entries);
+    if (countEl) countEl.textContent = entries.length + ' entr' + (entries.length === 1 ? 'y' : 'ies');
+  } catch (e) {
+    mount.innerHTML = '<div class="empty-sec">COULD NOT LOAD LOG: ' + esc(e.message) + '</div>';
+    if (countEl) countEl.textContent = '-';
+  }
+}
+
+async function addJobLogEntry(woId){
+  const typeEl = document.getElementById('jobLogType');
+  const descEl = document.getElementById('jobLogDesc');
+  const amtEl  = document.getElementById('jobLogAmount');
+  const btn    = document.getElementById('jobLogAddBtn');
+  const msg    = document.getElementById('jobLogMsg');
+  const description = (descEl?.value || '').trim();
+  if (!description) { if (descEl) descEl.focus(); return; }
+  const payload = {
+    workorder_id: woId,
+    entry_type: typeEl?.value || 'note',
+    description,
+    amount: amtEl?.value ? Number(amtEl.value) : 0,
+    status: 'approved', // owner-logged entries are self-approved (not a sub reimbursement request)
+  };
+  if (btn) { btn.disabled = true; btn.textContent = 'SAVING…'; }
+  try {
+    const r = await fetch('/api/job-log', { method: 'POST', headers: { ...ah(), 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || ('HTTP ' + r.status)); }
+    if (descEl) descEl.value = '';
+    if (amtEl) amtEl.value = '';
+    await loadJobLog(woId);
+    if (msg) { msg.style.display = 'inline'; msg.style.color = '#4ade80'; msg.textContent = 'SAVED'; setTimeout(() => { msg.style.display = 'none'; }, 1800); }
+  } catch (e) {
+    if (msg) { msg.style.display = 'inline'; msg.style.color = '#f87171'; msg.textContent = e.message; }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'ADD ENTRY'; }
+  }
+}
+
 loadJob();
 </script>
 
