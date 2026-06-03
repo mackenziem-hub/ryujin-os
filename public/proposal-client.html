@@ -1441,6 +1441,34 @@ body:not(.envelope-active) #envelopeSection{display:none !important}
 </section>
 
 <!-- ============================================================== -->
+<!-- 8b. REJUVENATION ALTERNATIVE (optional per-estimate callout)    -->
+<!-- Only renders when DATA.rejuvSection is present on the response. -->
+<!-- ============================================================== -->
+<section id="rejuvSection" hidden>
+  <div class="container">
+    <div class="section-head">
+      <div class="kicker" id="rejuvKicker">Another path</div>
+      <h2 id="rejuvHead">Or, consider rejuvenation.</h2>
+      <p id="rejuvSub"></p>
+    </div>
+    <div class="rejuv-card">
+      <div class="rejuv-row">
+        <div>
+          <div class="rejuv-headline">
+            <h3 id="rejuvHeadline"></h3>
+            <span class="rejuv-badge" id="rejuvBadge" hidden></span>
+          </div>
+          <p class="rejuv-desc" id="rejuvDesc"></p>
+        </div>
+        <div class="rejuv-price" id="rejuvPrice"></div>
+      </div>
+      <ul class="rejuv-bullets" id="rejuvBullets"></ul>
+      <p class="rejuv-warranty" id="rejuvWarranty"></p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================== -->
 <!-- 9. REVIEWS                                                      -->
 <!-- ============================================================== -->
 <section>
@@ -1876,7 +1904,7 @@ body:not(.envelope-active) #envelopeSection{display:none !important}
       <div class="kicker" style="color:var(--bronze)">Our Promise</div>
       <h2 style="font-family:'Montserrat',sans-serif;color:var(--ink);font-size:1.5rem;margin:6px 0 18px;letter-spacing:-0.01em">Three guarantees, in writing.</h2>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px">
-        <div><div style="font-weight:700;color:var(--ink);margin-bottom:5px">Workmanship for life</div><div style="color:var(--ink-body);font-size:0.92rem;line-height:1.55">If a leak ever traces back to our installation, we fix it free for as long as you own this home.</div></div>
+        <div><div style="font-weight:700;color:var(--ink);margin-bottom:5px">Written workmanship warranty</div><div style="color:var(--ink-body);font-size:0.92rem;line-height:1.55">15 to 25 years of Plus Ultra workmanship coverage depending on your tier, with a leak-free year-one guarantee. If a leak traces back to our installation in that window, we fix it free.</div></div>
         <div><div style="font-weight:700;color:var(--ink);margin-bottom:5px">CertainTeed backed</div><div style="color:var(--ink-body);font-size:0.92rem;line-height:1.55">Full manufacturer system coverage plus the 10-year CertainTeed SureStart workmanship warranty.</div></div>
         <div><div style="font-weight:700;color:var(--ink);margin-bottom:5px">The price you accept is the price you pay</div><div style="color:var(--ink-body);font-size:0.92rem;line-height:1.55">No surprise change orders once we open the roof. If we find rotten decking, you approve the $85 per sheet rate before we replace it.</div></div>
       </div>
@@ -4511,6 +4539,7 @@ function envelopeAcceptSubmit(result, signatureDataUrl) {
     renderGallery();
     renderTiers();
     renderScope();
+    renderRejuvSection();
     renderAddons();
     renderAccept();
     renderReviewsHead();
@@ -4570,91 +4599,46 @@ function envelopeAcceptSubmit(result, signatureDataUrl) {
     if (!DATA.scope) DATA.scope = DEMO.scope;
     if (!DATA.rep)   DATA.rep   = DEMO.rep;
 
-    renderHero(); renderWhy(); renderVideo();
-    // Skip the intro letter — the hero already says "Prepared for {customer}",
-    // and the intro letter adds a second "Hi {first}, ... Mackenzie Mazerolle"
-    // signature block that reads as a double-intro before the proof content.
-    const _introGrid = document.querySelector('.intro-grid');
-    const _introSec = _introGrid ? _introGrid.closest('section') : null;
-    if (_introSec) _introSec.hidden = true;
-    // Restore the legacy scaffolding (gallery, vs-comparison, reviews, trust grid).
-    renderGallery();
-    renderReviewsHead();
-    renderReviews();
-    initFinTerms();
+    renderHero(); renderIntro(); renderWhy(); renderVideo();
+    // Skip before/after slider in envelope mode — the configurator's live
+    // preview already swaps Mary's actual home render based on her selection.
     const hideSec = el => { const s = el && el.closest('section'); if (s) s.hidden = true; };
-
-    // Hide the before/after slider — the before image (Mary's current home) and
-    // the after image (a Higgsfield render) are different angles and look mismatched.
-    // Until we have a render generated from the same base photo as the cover, the
-    // slider is a confusion source, not a value-add.
     const _baSec = document.getElementById('baFrame')?.closest('section');
     if (_baSec) _baSec.hidden = true;
 
-    // Hide envPreview at the top of the envelope section — its big "your home
-    // with the new roof" render right above the configurator reads as a second
-    // cover photo, re-introducing the proposal right before the blue selection
-    // panel. The tier cards already communicate the shingle vs metal choice.
-    const _envPrev = document.getElementById('envPreview');
-    if (_envPrev) _envPrev.hidden = true;
-
-    // Hide the sections the configurator owns — these need real tier data
-    // that the envelope payload doesn't shape for them.
+    // Hide the sections the configurator owns.
     hideSec(document.getElementById('tiersGrid'));
     hideSec(document.getElementById('scopeList'));
     const acceptWrap = document.querySelector('.accept-wrap');
     if (acceptWrap) hideSec(acceptWrap);
 
     // The static CertainTeed asphalt "Integrity Roof System" materials section is
-    // accurate only for an asphalt-only envelope. Hide it for metal/mixed envelopes
-    // so the proposal never describes the wrong roofing system before the builder.
+    // accurate only for an asphalt-only envelope. Hide it for metal/mixed envelopes.
     const _asphaltOnly = _sys === 'asphalt' && !(_env.components && _env.components.roof_metal);
     if (!_asphaltOnly) { const sg = document.querySelector('.sys-grid'); if (sg) hideSec(sg); }
 
-    // The legacy hero PDF/contract buttons export the standard tier package, not
-    // the configured envelope selections — hide them. The configurator's own
-    // Export PDF / Lock Your Price is the export + accept path in envelope mode.
+    // Legacy hero PDF/contract buttons aren't envelope-aware — hide them.
     ['downloadPdfBtn','downloadContractBtn','gammaDeckBtn'].forEach(id => {
       const b = document.getElementById(id); if (b) b.style.display = 'none';
     });
 
+    // Keep reviews + warranty + gallery visible. Hide envelope's internal hero
+    // so we don't double-intro the proposal.
+    const _envHero = document.getElementById('envHero'); if (_envHero) _envHero.hidden = true;
+
     // Slot the configurator in where the tier grid sat.
-    // Do NOT move the envelope into the (now hidden) asphalt body; it is a
-    // standalone sibling section and renders on its own.
     const envSection = document.getElementById('envelopeSection');
     if (envSection) envSection.hidden = false;
 
     envInit();
 
-    // Hide AFTER envInit because envInit unhides several of these on its own pass:
-    //   - envHero: envInit's hero-setup logic flips heroEl.hidden = false when
-    //     env.media.cover exists, double-introing the proposal (cover photo +
-    //     "Prepared by Mackenzie Mazerolle" + customer name above the configurator).
-    //   - envCuratedBA / envCuratedSections / envCuratedAfterBottom: envRenderCurated
-    //     unhides them if their underlying media slots exist.
-    //   - envFindings: envRenderFindings unhides it if any inspection photo has a
-    //     caption — for Mary that's 3 photos and the first reads as another cover.
-    //   - envInspectionBlock: legacy in-configurator inspection gallery, re-shown
-    //     by envRenderInspection — kept dark so only the bottom accordion renders.
-    ['envHero','envFindings','envCuratedBA','envCuratedSections','envCuratedAfterBottom','envInspectionBlock'].forEach(id => {
+    // Hide curated B/A pair + curated section grid + after-bottom panel AFTER
+    // envInit→envRenderCurated unhides them. Those blocks aren't system-aware
+    // (hard-default to after_metal) so they keep showing a metal render above
+    // the shingle tier list even when the customer is on Shingle.
+    ['envCuratedBA','envCuratedSections','envCuratedAfterBottom'].forEach(id => {
       const el = document.getElementById(id); if (el) el.hidden = true;
     });
-
-    // Populate the bottom-of-page inspection accordion with Mary's drone + walk-around
-    // photos. Closed by default — customer expands when they want to see the photos.
-    try {
-      const accord = document.getElementById('envInspectionAccordion');
-      const grid = document.getElementById('envInspectionAccordionGrid');
-      const photos = Array.isArray(DATA.inspectionPhotos) ? DATA.inspectionPhotos : [];
-      if (accord && grid && photos.length) {
-        grid.innerHTML = photos.map(p => `
-          <figure style="margin:0;border-radius:10px;overflow:hidden;background:#0b1220;box-shadow:var(--shadow)">
-            <img src="${escapeHtml(p.url)}" alt="${escapeHtml(p.caption || 'Inspection photo')}" loading="lazy" decoding="async" style="width:100%;aspect-ratio:4/3;object-fit:cover;display:block">
-            ${p.caption ? `<figcaption style="padding:8px 10px;color:#fff;font-size:0.78rem;font-family:'Montserrat',sans-serif;line-height:1.35">${escapeHtml(p.caption)}</figcaption>` : ''}
-          </figure>`).join('');
-        accord.hidden = false;
-      }
-    } catch (e) { console.warn('inspection accordion fill failed', e); }
 
     // Re-seed the before/after AFTER image from the system the customer actually
     // configured — envInit() applies any saved/exported ?envelope= selection to

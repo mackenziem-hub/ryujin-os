@@ -581,6 +581,12 @@ export default async function handler(req, res) {
     // roof/siding selection, trim toggles, package-name morph, savings
     // ticker, cash-discount meter) instead of (or alongside) flat tier cards.
     envelope: est.custom_prices?._envelope || null,
+    // Optional per-estimate rejuvenation alternative-path callout. Renders as
+    // a single card between scope and reviews when present. Strict schema:
+    // { kicker?, title?, subtitle?, headline, badge?, price, description,
+    //   bullets[], warranty? }. Hand-curated copy lives on the row, not the
+    //   engine — this is a sales narrative tool, not a pricing path.
+    rejuvSection: est.custom_prices?._rejuv_section || null,
     // Inspection photos for the linked project. Filled below before the
     // response is sent so the await stays out of the object literal.
     inspectionPhotos: [],
