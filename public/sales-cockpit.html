@@ -502,6 +502,18 @@ function renderQueue(snap){
   const tasks = (s.salesTasks?.tasks || []).filter(t => t.overdue || t.dueSoon);
   const krConvos = (s.agentReports?.daily?.krillin?.conversations || []).slice(0,3);
 
+  // Native quotes (instant-estimator / builder estimates) live in Supabase, not the
+  // legacy Estimator OS feed, so they never surface in the pipeline/revenue widgets.
+  // Show the most recent OPEN quotes (anything not closed/won/lost) opening straight
+  // to the proposal, so quotes like plus-ultra-76 (Guy Langis) are reachable here.
+  // Status enum: draft, calculated, proposal_sent, viewed, accepted, declined,
+  // scheduled, in_progress, complete, cancelled. Exclude the terminal/won set so a
+  // quote stays visible after it is priced or sent, not only while literally 'draft'.
+  const QUOTE_CLOSED = /accepted|declined|complete|cancelled|scheduled|in_progress/i;
+  const nativeQuotes = (s.nativeProposals?.proposals || [])
+    .filter(p => p.url && !QUOTE_CLOSED.test(p.status || ''))
+    .slice(0, 5);
+
   const cards = [];
 
   // Overdue / due-soon GHL tasks first
@@ -544,7 +556,29 @@ function renderQueue(snap){
   });
 
   const host = $('queueList'); host.innerHTML = '';
-  if (cards.length === 0) {
+
+  // Native quote cards first. Open straight to the proposal (new tab).
+  nativeQuotes.forEach(p => {
+    const chip = el('span', { cls: 'chip cyan', text: String(p.status || 'draft').toUpperCase() });
+    const ctxLine = el('div', { cls: 'deal-ctx', children: [
+      chip,
+      el('span', { text: ' ' + (p.address || p.mode || 'quote') })
+    ]});
+    host.appendChild(el('div', {
+      cls: 'deal',
+      children: [
+        el('div', { cls: 'deal-head', children: [
+          el('div', { cls: 'deal-name', text: p.customer, title: 'Open ' + p.customer + ' proposal',
+                      onClick: () => window.open(p.url, '_blank', 'noopener') }),
+          el('div', { cls: 'deal-amt', text: p.fromPrice ? ('from ' + fmtK(p.fromPrice)) : '' })
+        ]}),
+        ctxLine,
+        el('button', { cls: 'deal-act', text: 'OPEN QUOTE', onClick: () => window.open(p.url, '_blank', 'noopener') })
+      ]
+    }));
+  });
+
+  if (cards.length === 0 && nativeQuotes.length === 0) {
     host.appendChild(el('div', { cls: 'deal-empty', text: 'All clear · no overdue actions' }));
   } else {
     cards.forEach(c => {
@@ -568,7 +602,7 @@ function renderQueue(snap){
       }));
     });
   }
-  $('queueBadge').textContent = cards.length + ' CARDS';
+  $('queueBadge').textContent = (cards.length + nativeQuotes.length) + ' CARDS';
 }
 
 // ── Pipeline strip builder ──
