@@ -3870,7 +3870,9 @@ function envInit() {
   document.getElementById('envelopeSection').hidden = false;
   // Set initial system + roof from envelope.default_system + popular tier
   const env = DATA.envelope;
-  envelopeState.system = env.default_system || (env.show_systems?.[0]) || 'metal';
+  // Lead with metal whenever metal tiers exist (the 3-tier metal lineup + its
+  // renders are the showcase); fall back to the configured/first system otherwise.
+  envelopeState.system = (env.components?.roof_metal?.tiers?.length) ? 'metal' : (env.default_system || (env.show_systems?.[0]) || 'asphalt');
   const key = envelopeState.system === 'asphalt' ? 'roof_asphalt' : 'roof_metal';
   const tiers = env?.components?.[key]?.tiers || [];
   const popular = tiers.find(t => t.popular) || tiers[1] || tiers[0];
@@ -3993,11 +3995,17 @@ function envRenderFindings() {
 function envRenderCurated() {
   const c = (DATA.media && DATA.media.curated) || {};
   const ba = document.getElementById('envCuratedBA');
-  if (ba && c.before && c.after) {
+  // Before = the home as it is today (the cover photo); After = a new-roof render.
+  // Use explicit before/after slots when tagged, else fall back so the section
+  // always has a real pairing instead of staying hidden.
+  const _envM = (DATA.envelope && DATA.envelope.media) || {};
+  const beforeUrl = c.before || c.cover || (DATA.customer && DATA.customer.coverImage) || _envM.cover;
+  const afterUrl = c.after || _envM.after_metal || _envM.after_shingle || _envM.complete_system;
+  if (ba && beforeUrl && afterUrl && beforeUrl !== afterUrl) {
     const b = document.getElementById('envBABefore');
     const a = document.getElementById('envBAAfter');
-    if (b) b.src = c.before;
-    if (a) a.src = c.after;
+    if (b) b.src = beforeUrl;
+    if (a) a.src = afterUrl;
     ba.hidden = false;
   }
   const secWrap = document.getElementById('envCuratedSections');
