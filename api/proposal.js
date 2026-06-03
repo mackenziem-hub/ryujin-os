@@ -661,7 +661,13 @@ export default async function handler(req, res) {
   // All normalized to the same shape so the renderer doesn't branch.
   try {
     const inspComp = data.envelope?.components?.inspection_photos;
-    if (inspComp && !inspComp.hidden && est.customer_id) {
+    // Two ways to surface inspection photos:
+    //   1. Envelope mode with inspection_photos component visible (legacy path)
+    //   2. _inspection_section_visible flag on custom_prices (footer section, decoupled from envelope)
+    const inspectionFooterVisible = est.custom_prices?._inspection_section_visible === true;
+    data.inspectionFooterVisible = inspectionFooterVisible;
+    const wantInspection = (inspComp && !inspComp.hidden) || inspectionFooterVisible;
+    if (wantInspection && est.customer_id) {
       const merged = [];
       const seenIds = new Set();
 
