@@ -1,13 +1,13 @@
-// Ryujin OS — Change Orders (authed CRUD)
+// Ryujin OS - Change Orders (authed CRUD)
 //
-//   GET    /api/change-orders?workorder_id=X   — COs for a job (by job_id=wo)
-//          /api/change-orders?estimate_id=X     — COs for an estimate
-//          /api/change-orders?paysheet_id=X      — COs for a paysheet
-//          /api/change-orders?id=X               — single CO
-//   POST   /api/change-orders                    — create a CO (owner)
-//   PUT    /api/change-orders                    — owner edit / cancel
+//   GET    /api/change-orders?workorder_id=X   - COs for a job (by job_id=wo)
+//          /api/change-orders?estimate_id=X     - COs for an estimate
+//          /api/change-orders?paysheet_id=X      - COs for a paysheet
+//          /api/change-orders?id=X               - single CO
+//   POST   /api/change-orders                    - create a CO (owner)
+//   PUT    /api/change-orders                    - owner edit / cancel
 //
-// Doctrine (PR2, locked with Mac 2026-06-02): "record + log only" — accepting a
+// Doctrine (PR2, locked with Mac 2026-06-02): "record + log only" - accepting a
 // CO flips its status and writes change_order_log (via the DB trigger); it does
 // NOT auto-rewrite the estimate accepted total or the paysheet sub pay. That
 // reconciliation is a deliberate fast-follow, not this PR.
@@ -28,7 +28,7 @@ const centsToDollars = (v) => (v == null ? null : Number(v) / 100);
 const newToken = () => crypto.randomBytes(24).toString('base64url');
 
 // Public-facing columns echoed back to the owner (tokens included so the UI can
-// build the accept links). Never expose tokens cross-tenant — requireTenant scopes.
+// build the accept links). Never expose tokens cross-tenant - requireTenant scopes.
 const SELECT_COLS = '*';
 
 // Shape a DB row for the owner UI: cents -> dollars, attach the accept links.
@@ -159,7 +159,7 @@ async function handler(req, res) {
 
     const updates = { updated_at: new Date().toISOString() };
     // Whitelist owner-editable fields. Never let the client set tokens or
-    // acceptance status directly — those move only through the public accept flow.
+    // acceptance status directly - those move only through the public accept flow.
     if (b.reason != null) updates.reason = String(b.reason).trim();
     if (b.scope_before != null) updates.scope_before = b.scope_before;
     if (b.scope_after != null) updates.scope_after = b.scope_after;
