@@ -1689,10 +1689,14 @@ function renderThread(msgs, meId){
     const who = (m.from_user && m.from_user.name) || m.from_label || 'Team';
     let when = '';
     if (m.created_at) { try { when = new Date(m.created_at).toLocaleString('en-CA', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch { when = ''; } }
+    const names = Array.isArray(m.reader_names) ? m.reader_names : [];
+    const seen = names.length
+      ? `<div class="tmeta" style="color:rgba(74,222,128,0.55)">seen by ${esc(names.slice(0, 4).join(', '))}${names.length > 4 ? ' +' + (names.length - 4) : ''}</div>` : '';
     return `
       <div class="tmsg${mine ? ' mine' : ''}">
         <div class="tmeta">${esc(who)} / ${esc(when)}</div>
         <div class="tbody">${esc(m.body || '')}</div>
+        ${seen}
       </div>`;
   }).join('');
 }
@@ -1704,23 +1708,23 @@ async function loadTeamThread(woId){
     const r = await fetch('/api/messages?ref_workorder_id=' + encodeURIComponent(woId), { headers: ah() });
     if (r.status === 401) { mount.innerHTML = '<div class="empty-sec">SIGN IN TO SEE THE TEAM THREAD</div>'; if (countEl) countEl.textContent = '-'; return; }
     if (!r.ok) throw new Error('HTTP ' + r.status);
-    const { messages = [], me } = await r.json();
+    const { messages = [], unread = 0, me } = await r.json();
     mount.innerHTML = renderThread(messages, me?.id);
     mount.scrollTop = mount.scrollHeight;
-    // "new since last looked" badge via localStorage per WO. Compare with Date.parse
-    // (created_at carries +00:00, toISOString carries Z; string compare would lie).
-    let newCount = 0;
-    try {
-      const seenKey = 'teamthread_seen_' + woId;
-      const seen = localStorage.getItem(seenKey);
-      if (seen) { const t = Date.parse(seen); newCount = messages.filter(m => Date.parse(m.created_at) > t).length; }
-      localStorage.setItem(seenKey, new Date().toISOString());
-    } catch { /* localStorage unavailable: skip the badge */ }
-    if (countEl) countEl.textContent = messages.length + ' msg' + (messages.length === 1 ? '' : 's') + (newCount ? ' / ' + newCount + ' new' : '');
+    // Real unread (server-side per-user reads), not a localStorage guess.
+    if (countEl) countEl.textContent = messages.length + ' msg' + (messages.length === 1 ? '' : 's') + (unread ? ' / ' + unread + ' new' : '');
+    // Now that the thread is on screen, mark it read for me.
+    if (messages.length) markThreadRead(woId);
   } catch (e) {
     mount.innerHTML = '<div class="empty-sec">COULD NOT LOAD: ' + esc(e.message) + '</div>';
     if (countEl) countEl.textContent = '-';
   }
+}
+
+async function markThreadRead(woId){
+  try {
+    await fetch('/api/messages', { method: 'POST', headers: { ...ah(), 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'mark_read_thread', ref_workorder_id: woId }) });
+  } catch { /* best-effort read receipt */ }
 }
 
 async function postTeamMessage(woId){
