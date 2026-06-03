@@ -65,7 +65,8 @@ async function handler(req, res) {
       const { data, error } = await supabaseAdmin
         .from('messages')
         .select(`id, thread_id, reply_to, from_user_id, from_label, body, created_at, metadata, ref_workorder_id,
-                 from_user:users!messages_from_user_id_fkey(name, email, role)`)
+                 from_user:users!messages_from_user_id_fkey(name, email, role),
+                 reads:message_reads(user_id, reader:users(name))`)
         .eq('tenant_id', tenantId)
         .eq('ref_workorder_id', refWo)
         .is('to_user_id', null)        // channel broadcasts only; never surface a directed DM that merely referenced this WO
@@ -73,7 +74,18 @@ async function handler(req, res) {
         .order('created_at', { ascending: true })
         .limit(limit);
       if (error) return res.status(500).json({ error: error.message });
-      return res.status(200).json({ messages: data, me: { id: me.id, name: me.name } });
+      // Attach per-message reader names (excluding the author) + count my unread
+      // (messages from someone else that I have not read). Drop the raw reads join.
+      let unread = 0;
+      const messages = (data || []).map((m) => {
+        const reads = Array.isArray(m.reads) ? m.reads : [];
+        const reader_names = reads.filter((r) => r.user_id !== m.from_user_id).map((r) => r.reader?.name).filter(Boolean);
+        const readByMe = reads.some((r) => r.user_id === me.id);
+        if (!readByMe && m.from_user_id !== me.id) unread++;
+        const { reads: _drop, ...rest } = m;
+        return { ...rest, reader_names };
+      });
+      return res.status(200).json({ messages, unread, me: { id: me.id, name: me.name } });
     }
 
     // Order direction depends on view: threads display chronologically
@@ -126,6 +138,26 @@ async function handler(req, res) {
 
   if (req.method === 'POST') {
     const body = req.body || {};
+
+    // Mark a job thread read for the current user: upsert a message_reads row for
+    // every broadcast message on this WO. Idempotent via the (message_id, user_id)
+    // unique constraint. Used by the job profile thread to drive real read receipts.
+    if (body.action === 'mark_read_thread') {
+      if (!me) return res.status(401).json({ error: 'Sign in', code: 'AUTH_REQUIRED' });
+      if (!body.ref_workorder_id) return res.status(400).json({ error: 'ref_workorder_id required' });
+      const { data: msgs } = await supabaseAdmin
+        .from('messages').select('id')
+        .eq('tenant_id', tenantId).eq('ref_workorder_id', body.ref_workorder_id).is('to_user_id', null)
+        .limit(500);
+      const rows = (msgs || []).map((m) => ({ tenant_id: tenantId, message_id: m.id, user_id: me.id }));
+      if (rows.length) {
+        const { error } = await supabaseAdmin
+          .from('message_reads').upsert(rows, { onConflict: 'message_id,user_id', ignoreDuplicates: true });
+        if (error) return res.status(500).json({ error: error.message });
+      }
+      return res.status(200).json({ marked: rows.length });
+    }
+
     // Auth gate: human-sent messages MUST have a resolved session user.
     // Agent/system messages may run without a session user IFF they
     // (a) carry an explicit from_label AND (b) include metadata.source_user_id
