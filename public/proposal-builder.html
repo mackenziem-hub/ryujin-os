@@ -139,6 +139,18 @@ body::before{
 .insp-menu-btn:hover{background:rgba(0,0,0,0.85)}
 .insp-cap{width:100%;background:transparent;border:none;border-top:1px solid var(--border);color:var(--text);font-size:0.78em;padding:7px 9px;font-family:inherit;outline:none}
 .insp-cap:focus{background:rgba(45,212,191,0.06)}
+/* Slot dropdown: native option lists default to a white panel, which made the
+   light option text invisible until highlighted. Force a readable dark panel. */
+.insp-slot option{background:#141a2b;color:#e8edf5}
+/* Photo annotator modal (pen / arrow / text) */
+.anno-backdrop{position:fixed;inset:0;z-index:200;background:rgba(5,8,16,0.93);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px;gap:10px}
+.anno-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center;background:var(--card,#141a2b);border:1px solid var(--border);border-radius:12px;padding:8px 12px;max-width:100%}
+.anno-toolbar button{font-size:0.8em;padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:rgba(255,255,255,0.04);color:var(--text);cursor:pointer;font-family:inherit}
+.anno-toolbar button.on{background:var(--accent);color:#0a0e1a;border-color:var(--accent);font-weight:700}
+.anno-swatch{width:24px;height:24px;border-radius:50%;border:2px solid rgba(255,255,255,0.25);cursor:pointer;padding:0}
+.anno-swatch.on{border-color:#fff;box-shadow:0 0 0 2px var(--accent)}
+.anno-canvas-wrap{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;width:100%;overflow:auto}
+.anno-canvas-wrap canvas{max-width:100%;max-height:72vh;background:#000;border-radius:8px;touch-action:none;cursor:crosshair}
 .comp-tier{font-size:0.78em;color:var(--text-muted);display:flex;justify-content:space-between;gap:8px}
 .comp-tier b{color:var(--text-dim);font-weight:500}
 .comp-tier .tier-popular{color:var(--accent)}
@@ -351,11 +363,44 @@ body::before{
     originalSnapshot = JSON.stringify(envelope);
 
     if (!envelope){
-      fatal('No envelope on this estimate', 'This estimate has no <code>custom_prices._envelope</code> configurator structure. The proposal-builder only edits envelope-mode estimates today.');
+      // No envelope configurator on this estimate (e.g. a plain "Roof Only"
+      // proposal). The pricing sections need an envelope, but inspection-photo
+      // upload does not — it keys off estimate_id alone. Render a stripped-down
+      // view with just the photo uploader so Mac can still add cover / before /
+      // after / inspection shots without an envelope. (See the no-envelope fix:
+      // photos surface on the proposal via api/proposal's estimate_photos map.)
+      renderPhotoOnly();
       return;
     }
 
     render();
+  }
+
+  // ── Photo-only render (no envelope on this estimate) ──
+  function renderPhotoOnly(){
+    const cust = estimate.customer || {};
+    const statusPill = estimate.status ? `<span class="pill">${escapeHtml(estimate.status)}</span>` : '';
+    const header = `
+      <div class="header-card">
+        <div class="label">ESTIMATE PU-${escapeHtml(estimate.estimate_number || '?')}</div>
+        <div class="customer">${escapeHtml(cust.full_name || 'Unknown customer')}</div>
+        <div class="meta">${escapeHtml(cust.address || estimate.address || '(no address)')} ${cust.city ? '· ' + escapeHtml(cust.city) : ''}</div>
+        <div class="pills">${statusPill}<span class="pill warn">No configurator</span></div>
+      </div>
+    `;
+    const notice = `
+      <div class="section">
+        <div class="section-head">
+          <h2>Pricing configurator unavailable</h2>
+          <div class="sub">This estimate has no envelope structure, so the pricing/tier sections aren't editable here. You can still upload and manage inspection photos below. Cover and before/after shots will appear on the proposal automatically.</div>
+        </div>
+      </div>
+    `;
+    const inspectionPanel = renderInspectionPanel();
+    document.getElementById('app').innerHTML = header + notice + inspectionPanel;
+    // actionBar stays hidden: there's no envelope to save.
+    bindInspectionPanel();
+    loadInspectionPhotos();
   }
 
   // ── Render ──
@@ -415,17 +460,19 @@ body::before{
   function renderInspectionPanel(){
     return `
       <div class="section" id="inspectionPanel">
-        <div class="section-head">
-          <h2>Inspection Photos</h2>
+        <div class="section-head" id="inspPanelHead" style="cursor:pointer;user-select:none" title="Click to collapse or expand" onclick="var b=document.getElementById('inspPanelBody'),c=document.getElementById('inspChev');if(b){var hid=b.style.display==='none';b.style.display=hid?'':'none';if(c)c.style.transform=hid?'':'rotate(-90deg)';}">
+          <h2>Inspection Photos <span id="inspChev" style="display:inline-block;transition:transform 0.2s;font-size:0.8em">&#9662;</span></h2>
           <div class="sub">Upload + annotate. Show on proposal via the Inspection Photo Gallery toggle above.</div>
         </div>
-        <div id="inspUploadZone" class="insp-upload">
-          <input type="file" id="inspFileInput" accept="image/*,video/*" multiple hidden>
-          <button type="button" class="btn primary" id="inspUploadBtn" style="padding:11px 20px">+ Upload photos</button>
-          <span id="inspUploadStatus" style="font-size:0.82em;color:var(--text-dim);margin-left:10px"></span>
-        </div>
-        <div id="inspGrid" class="insp-grid">
-          <div style="color:var(--text-muted);font-size:0.85em;padding:14px 0">Loading photos...</div>
+        <div id="inspPanelBody">
+          <div id="inspUploadZone" class="insp-upload">
+            <input type="file" id="inspFileInput" accept="image/*,video/*" multiple hidden>
+            <button type="button" class="btn primary" id="inspUploadBtn" style="padding:11px 20px">+ Upload photos</button>
+            <span id="inspUploadStatus" style="font-size:0.82em;color:var(--text-dim);margin-left:10px"></span>
+          </div>
+          <div id="inspGrid" class="insp-grid">
+            <div style="color:var(--text-muted);font-size:0.85em;padding:14px 0">Loading photos...</div>
+          </div>
         </div>
       </div>
     `;
@@ -454,25 +501,71 @@ body::before{
     }
   }
 
+  // Where a photo lands on the proposal. 'general' = unassigned (shows in the
+  // loose gallery only). cover/before/after/section1-3/after_bottom drive the
+  // curated envelope layout; the rest are tags. Persisted to estimate_photos.category.
+  const PHOTO_SLOTS = [
+    { v: 'general',      l: 'Unassigned' },
+    { v: 'cover',        l: 'Cover' },
+    { v: 'before',       l: 'Before (top)' },
+    { v: 'after',        l: 'After (top)' },
+    { v: 'section1',     l: 'Section 1' },
+    { v: 'section2',     l: 'Section 2' },
+    { v: 'section3',     l: 'Section 3' },
+    { v: 'after_bottom', l: 'After (bottom)' },
+    { v: 'inspection',   l: 'Inspection' },
+    { v: 'damage',       l: 'Damage' },
+    { v: 'material',     l: 'Material' },
+    { v: 'site',         l: 'Site' },
+    { v: 'other',        l: 'Other' },
+  ];
+  let _inspPhotosCache = [];
+  const _inspSelected = new Set();
+
   function renderInspectionGrid(photos){
     const grid = document.getElementById('inspGrid');
     if (!grid) return;
+    _inspPhotosCache = photos;
+    // Drop selections for photos that no longer exist (post-delete, refetch).
+    const live = new Set(photos.map(p => p.id));
+    _inspSelected.forEach(id => { if (!live.has(id)) _inspSelected.delete(id); });
     if (!photos.length) {
+      _inspSelected.clear();
       grid.innerHTML = `<div style="color:var(--text-muted);font-size:0.85em;padding:14px 0">No photos uploaded yet. Drop drone shots + inspection photos in the uploader above.</div>`;
       return;
     }
-    grid.innerHTML = photos.map(p => `
-      <div class="insp-tile" data-id="${escapeHtml(p.id)}">
+    const sel = _inspSelected.size;
+    const slotOpts = cur => PHOTO_SLOTS.map(o => `<option value="${o.v}"${o.v === (cur || 'general') ? ' selected' : ''}>${o.l}</option>`).join('');
+    const toolbar = `
+      <div class="insp-toolbar" style="grid-column:1/-1;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;border:1px solid var(--border);border-radius:10px;background:rgba(255,255,255,0.02)">
+        <span style="font-size:0.8em;color:var(--text-dim)">${photos.length} photo${photos.length === 1 ? '' : 's'}${sel ? ` &bull; ${sel} selected` : ''}</span>
+        <button type="button" class="insp-selall" style="font-size:0.78em;padding:4px 10px;border-radius:7px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer">Select all</button>
+        <button type="button" class="insp-clearsel" style="font-size:0.78em;padding:4px 10px;border-radius:7px;border:1px solid var(--border);background:transparent;color:var(--text-dim);cursor:pointer">Clear</button>
+        <span style="flex:1"></span>
+        <button type="button" class="insp-delsel" ${sel ? '' : 'disabled'} style="font-size:0.78em;padding:4px 12px;border-radius:7px;border:1px solid var(--danger);background:${sel ? 'rgba(220,38,38,0.14)' : 'transparent'};color:var(--danger);cursor:${sel ? 'pointer' : 'not-allowed'};opacity:${sel ? '1' : '0.5'}">Delete selected${sel ? ` (${sel})` : ''}</button>
+      </div>`;
+    const tiles = photos.map(p => {
+      const checked = _inspSelected.has(p.id);
+      return `
+      <div class="insp-tile" data-id="${escapeHtml(p.id)}"${checked ? ' style="border-color:var(--accent)"' : ''}>
+        <label class="insp-check" style="position:absolute;top:4px;left:4px;z-index:4;width:24px;height:24px;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);border-radius:6px;cursor:pointer" title="Select for bulk delete">
+          <input type="checkbox" class="insp-sel" data-id="${escapeHtml(p.id)}" ${checked ? 'checked' : ''} style="width:15px;height:15px;accent-color:var(--accent);margin:0;cursor:pointer">
+        </label>
         <div class="insp-thumb"><img src="${escapeHtml(p.url)}" alt="${escapeHtml(p.caption || '')}" loading="lazy"></div>
         <button class="insp-menu-btn" type="button" data-id="${escapeHtml(p.id)}" title="Photo actions">&#8942;</button>
+        <select class="insp-slot" data-id="${escapeHtml(p.id)}" title="Where this photo appears on the proposal" style="width:100%;background:rgba(255,255,255,0.03);border:none;border-top:1px solid var(--border);color:var(--text);font-size:0.74em;padding:6px 8px;font-family:inherit;outline:none;cursor:pointer">${slotOpts(p.category)}</select>
         <input class="insp-cap" data-id="${escapeHtml(p.id)}" value="${escapeHtml(p.caption || '')}" placeholder="Caption (optional)">
-      </div>
-    `).join('');
+      </div>`;
+    }).join('');
+    grid.innerHTML = toolbar + tiles;
+    bindInspectionGrid();
+  }
+
+  function bindInspectionGrid(){
+    const grid = document.getElementById('inspGrid');
+    if (!grid) return;
     grid.querySelectorAll('.insp-menu-btn').forEach(b => {
-      b.addEventListener('click', e => {
-        e.stopPropagation();
-        showInspMenu(b.dataset.id, b);
-      });
+      b.addEventListener('click', e => { e.stopPropagation(); showInspMenu(b.dataset.id, b); });
     });
     grid.querySelectorAll('.insp-cap').forEach(inp => {
       let orig = inp.value;
@@ -494,6 +587,54 @@ body::before{
         }
       });
     });
+    // Slot assignment drives the curated proposal layout. 'cover' also flips
+    // is_cover (server unsets any prior cover); switching away clears is_cover.
+    grid.querySelectorAll('.insp-slot').forEach(s => {
+      s.addEventListener('change', async () => {
+        const v = s.value;
+        const body = (v === 'cover') ? { category: 'cover', is_cover: true } : { category: v, is_cover: false };
+        try {
+          const r = await fetch('/api/estimate-photos?id=' + encodeURIComponent(s.dataset.id), {
+            method: 'PATCH',
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify(body),
+          });
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          toast('Slot updated', 'ok');
+          if (v === 'cover') loadInspectionPhotos(); // refresh so the old cover badge clears
+        } catch (e) {
+          toast('Update failed', 'err');
+          loadInspectionPhotos();
+        }
+      });
+    });
+    grid.querySelectorAll('.insp-sel').forEach(cb => {
+      cb.addEventListener('change', () => {
+        if (cb.checked) _inspSelected.add(cb.dataset.id); else _inspSelected.delete(cb.dataset.id);
+        renderInspectionGrid(_inspPhotosCache);
+      });
+    });
+    const selAll = grid.querySelector('.insp-selall');
+    const clearSel = grid.querySelector('.insp-clearsel');
+    const delSel = grid.querySelector('.insp-delsel');
+    if (selAll) selAll.addEventListener('click', () => { _inspPhotosCache.forEach(p => _inspSelected.add(p.id)); renderInspectionGrid(_inspPhotosCache); });
+    if (clearSel) clearSel.addEventListener('click', () => { _inspSelected.clear(); renderInspectionGrid(_inspPhotosCache); });
+    if (delSel) delSel.addEventListener('click', bulkDeleteInspection);
+  }
+
+  async function bulkDeleteInspection(){
+    const ids = Array.from(_inspSelected);
+    if (!ids.length) return;
+    if (!window.confirm(`Delete ${ids.length} selected photo${ids.length === 1 ? '' : 's'} permanently?`)) return;
+    let ok = 0, fail = 0;
+    for (const id of ids) {
+      try {
+        const r = await fetch('/api/estimate-photos?id=' + encodeURIComponent(id), { method: 'DELETE', headers: authHeaders() });
+        if (r.ok) { ok++; _inspSelected.delete(id); } else { fail++; }
+      } catch { fail++; }
+    }
+    toast(`Deleted ${ok} photo${ok === 1 ? '' : 's'}${fail ? `, ${fail} failed` : ''}`, fail ? 'err' : 'ok');
+    loadInspectionPhotos();
   }
 
   function showInspMenu(photoId, anchor){
@@ -529,15 +670,79 @@ body::before{
     }, 10);
   }
 
+  // AI render picker: pick a roof material and re-roof the selected home photo
+  // via /api/generate-render (Higgsfield img2img). Saves the result as a new
+  // estimate photo. Needs HIGGSFIELD_API_KEY configured server-side.
+  function openRenderPicker(photoId){
+    const photo = (_inspPhotosCache || []).find(p => p.id === photoId);
+    if (!photo) { toast('Photo not found', 'err'); return; }
+    document.querySelectorAll('.render-backdrop').forEach(n => n.remove());
+    const TYPES = [
+      { v: 'shingle', l: 'Asphalt shingle' },
+      { v: 'community_barn', l: 'Community Barn metal' },
+      { v: 'metal', l: 'Standard metal' },
+      { v: 'euro_clay', l: 'European clay imitation' },
+      { v: 'standing_seam', l: 'Standing seam (premium)' },
+    ];
+    const back = document.createElement('div');
+    back.className = 'render-backdrop';
+    back.style.cssText = 'position:fixed;inset:0;z-index:200;background:rgba(5,8,16,0.9);display:flex;align-items:center;justify-content:center;padding:18px';
+    back.innerHTML = `
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;max-width:460px;width:100%;padding:20px">
+        <div style="font-family:'Montserrat',sans-serif;font-weight:700;color:var(--text);margin-bottom:6px">Generate roof render</div>
+        <div style="font-size:0.82em;color:var(--text-dim);margin-bottom:14px">Re-roof this photo in a new material. Takes up to a minute.</div>
+        <div style="display:flex;flex-direction:column;gap:8px" id="renderTypes"></div>
+        <div id="renderStatus" style="font-size:0.82em;color:var(--text-dim);margin-top:12px;min-height:18px"></div>
+        <div style="text-align:right;margin-top:12px"><button type="button" id="renderClose" style="font-size:0.82em;padding:7px 14px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text-dim);cursor:pointer">Close</button></div>
+      </div>`;
+    document.body.appendChild(back);
+    const status = back.querySelector('#renderStatus');
+    const typesWrap = back.querySelector('#renderTypes');
+    back.querySelector('#renderClose').addEventListener('click', () => back.remove());
+    let busy = false;
+    TYPES.forEach(t => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.textContent = t.l;
+      b.style.cssText = 'text-align:left;padding:11px 14px;border-radius:9px;border:1px solid var(--border);background:rgba(255,255,255,0.03);color:var(--text);font-size:0.9em;cursor:pointer;font-family:inherit';
+      b.addEventListener('click', async () => {
+        if (busy) return; busy = true;
+        typesWrap.querySelectorAll('button').forEach(x => x.disabled = true);
+        status.textContent = `Rendering ${t.l}... (up to about a minute)`;
+        try {
+          let r = await fetch('/api/generate-render', {
+            method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ estimate_id: estimateId, roof_type: t.v, base_image_url: photo.url }),
+          });
+          let j = await r.json().catch(() => ({}));
+          let tries = 0;
+          while (r.status === 202 && j.job_id && tries < 6) {
+            tries++;
+            status.textContent = `Still rendering ${t.l}... (${tries})`;
+            await new Promise(res => setTimeout(res, 7000));
+            r = await fetch(`/api/generate-render?estimate_id=${encodeURIComponent(estimateId)}&job_id=${encodeURIComponent(j.job_id)}&roof_type=${encodeURIComponent(t.v)}`, { headers: authHeaders() });
+            j = await r.json().catch(() => ({}));
+          }
+          if (r.status === 501) { status.textContent = j.error || 'Not configured yet.'; busy = false; typesWrap.querySelectorAll('button').forEach(x => x.disabled = false); return; }
+          if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+          toast('Render added', 'ok');
+          back.remove();
+          loadInspectionPhotos();
+        } catch (e) {
+          status.textContent = 'Failed: ' + e.message;
+          busy = false; typesWrap.querySelectorAll('button').forEach(x => x.disabled = false);
+        }
+      });
+      typesWrap.appendChild(b);
+    });
+  }
+
   async function handleInspectionAction(action, photoId){
     if (action === 'annotate') {
-      // estimate_photos isn't supported by /annotate.html yet (annotator is
-      // project_files only). Tell Mac instead of failing silently.
-      toast('Annotator supports project_files only right now. Coming for estimate photos next session.', 'err');
+      openAnnotator(photoId);
       return;
     }
     if (action === 'mockup') {
-      toast('AI mockup integration coming next session (Higgsfield)', 'err');
+      openRenderPicker(photoId);
       return;
     }
     if (action === 'delete') {
@@ -609,6 +814,221 @@ body::before{
     document.getElementById('inspFileInput').value = '';
     loadInspectionPhotos();
     setTimeout(() => { if (status) status.textContent = ''; }, 4000);
+  }
+
+  // Lightweight photo annotator: pen (colour swatches), arrow, and text box.
+  // Composites the markup onto the image at load resolution and uploads the
+  // result as a NEW estimate photo (carrying the original's slot/category), so
+  // the original is never destroyed. Replay-based op list gives a clean undo.
+  function openAnnotator(photoId){
+    const photo = (_inspPhotosCache || []).find(p => p.id === photoId);
+    if (!photo) { toast('Photo not found', 'err'); return; }
+    document.querySelectorAll('.anno-backdrop').forEach(n => n.remove());
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'anno-backdrop';
+    backdrop.innerHTML = `
+      <div class="anno-toolbar">
+        <button data-tool="pen" class="on">Pen</button>
+        <button data-tool="arrow">Arrow</button>
+        <button data-tool="text">Text</button>
+        <span style="width:1px;height:22px;background:var(--border)"></span>
+        <button class="anno-swatch on" data-color="#ffd400" style="background:#ffd400" title="Yellow"></button>
+        <button class="anno-swatch" data-color="#ff3b30" style="background:#ff3b30" title="Red"></button>
+        <button class="anno-swatch" data-color="#ffffff" style="background:#ffffff" title="White"></button>
+        <button class="anno-swatch" data-color="#111111" style="background:#111111" title="Black"></button>
+        <button class="anno-swatch" data-color="#22d3ee" style="background:#22d3ee" title="Cyan"></button>
+        <span style="width:1px;height:22px;background:var(--border)"></span>
+        <button data-act="undo">Undo</button>
+        <button data-act="revert">Revert to clean</button>
+        <button data-act="cancel">Cancel</button>
+        <button data-act="save" style="background:var(--accent);color:#0a0e1a;font-weight:700;border-color:var(--accent)">Save markup</button>
+      </div>
+      <div class="anno-canvas-wrap"><canvas></canvas></div>
+      <div style="font-size:0.75em;color:var(--text-dim)">Pen + arrow: click and drag. Text: tap where you want it.</div>
+    `;
+    document.body.appendChild(backdrop);
+
+    const canvas = backdrop.querySelector('canvas');
+    const ctx = canvas.getContext('2d');
+    const ops = [];
+    let tool = 'pen', color = '#ffd400', drawing = false, cur = null;
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const maxDim = 2400;
+      const ratio = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
+      canvas.width = Math.max(1, Math.round(img.naturalWidth * ratio));
+      canvas.height = Math.max(1, Math.round(img.naturalHeight * ratio));
+      redraw();
+    };
+    img.onerror = () => toast('Could not load image for markup', 'err');
+    img.src = photo.url;
+
+    const lineW = () => Math.max(2, Math.round(canvas.width / 320));
+    function redraw(){
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (img.complete && img.naturalWidth) ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      ops.forEach(drawOp);
+      if (cur) drawOp(cur);
+    }
+    function drawOp(op){
+      ctx.strokeStyle = op.color; ctx.fillStyle = op.color;
+      ctx.lineWidth = op.w || lineW(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      if (op.type === 'pen'){
+        ctx.beginPath();
+        op.pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+        ctx.stroke();
+      } else if (op.type === 'arrow'){
+        ctx.beginPath(); ctx.moveTo(op.x1, op.y1); ctx.lineTo(op.x2, op.y2); ctx.stroke();
+        const a = Math.atan2(op.y2 - op.y1, op.x2 - op.x1), h = (op.w || lineW()) * 4;
+        ctx.beginPath(); ctx.moveTo(op.x2, op.y2);
+        ctx.lineTo(op.x2 - h * Math.cos(a - Math.PI / 6), op.y2 - h * Math.sin(a - Math.PI / 6));
+        ctx.lineTo(op.x2 - h * Math.cos(a + Math.PI / 6), op.y2 - h * Math.sin(a + Math.PI / 6));
+        ctx.closePath(); ctx.fill();
+      } else if (op.type === 'text'){
+        const fs = op.size || Math.max(16, Math.round(canvas.width / 26));
+        ctx.font = `700 ${fs}px Inter, system-ui, sans-serif`;
+        ctx.textBaseline = 'top';
+        // Clamp x so there is room, then wrap to the remaining width so the text
+        // never runs off the photo.
+        const x = Math.min(op.x, canvas.width * 0.62);
+        const maxW = canvas.width - x - Math.round(canvas.width * 0.04);
+        const lines = wrapText(ctx, op.text, Math.max(60, maxW));
+        const lh = Math.round(fs * 1.25);
+        ctx.lineWidth = Math.max(2, fs / 8); ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+        lines.forEach((ln, i) => {
+          const ly = op.y + i * lh;
+          ctx.strokeText(ln, x, ly);
+          ctx.fillStyle = op.color;
+          ctx.fillText(ln, x, ly);
+        });
+      }
+    }
+    function wrapText(c, text, maxWidth){
+      const out = [];
+      String(text).split('\n').forEach(para => {
+        const words = para.split(/\s+/);
+        let line = '';
+        for (const w of words){
+          const test = line ? line + ' ' + w : w;
+          if (c.measureText(test).width > maxWidth && line){ out.push(line); line = w; }
+          else line = test;
+        }
+        out.push(line);
+      });
+      return out;
+    }
+    // Inline text box: a textarea overlaid at the tap point. Commits on blur or
+    // Enter (Shift+Enter inserts a newline; Esc cancels). The committed text
+    // wraps to the image width at render time so it stays on the photo.
+    function openTextEditor(canvasPt, ev){
+      const existing = backdrop.querySelector('.anno-textinput');
+      if (existing) existing.remove();
+      const ta = document.createElement('textarea');
+      ta.className = 'anno-textinput';
+      ta.rows = 1;
+      const left = Math.max(8, Math.min(ev.clientX, window.innerWidth - 230));
+      const top = Math.max(8, Math.min(ev.clientY, window.innerHeight - 90));
+      ta.style.cssText = `position:fixed;left:${left}px;top:${top}px;z-index:220;min-width:160px;max-width:60vw;background:rgba(10,14,26,0.96);color:${color};border:1px solid ${color};border-radius:8px;padding:6px 8px;font:700 16px Inter,system-ui,sans-serif;resize:none;outline:none`;
+      backdrop.appendChild(ta);
+      ta.focus();
+      let committed = false;
+      const commit = () => {
+        if (committed) return; committed = true;
+        const t = ta.value.trim();
+        ta.remove();
+        if (t){ ops.push({ type: 'text', color, x: canvasPt.x, y: canvasPt.y, text: t }); redraw(); }
+      };
+      ta.addEventListener('blur', commit);
+      ta.addEventListener('keydown', k => {
+        if (k.key === 'Enter' && !k.shiftKey){ k.preventDefault(); ta.blur(); }
+        else if (k.key === 'Escape'){ k.preventDefault(); ta.value = ''; ta.blur(); }
+      });
+      ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; });
+    }
+    function pos(e){
+      const r = canvas.getBoundingClientRect();
+      return { x: (e.clientX - r.left) * (canvas.width / r.width), y: (e.clientY - r.top) * (canvas.height / r.height) };
+    }
+    canvas.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      const p = pos(e);
+      if (tool === 'text'){
+        openTextEditor(p, e);
+        return;
+      }
+      drawing = true;
+      cur = tool === 'pen'
+        ? { type: 'pen', color, w: lineW(), pts: [p] }
+        : { type: 'arrow', color, w: lineW(), x1: p.x, y1: p.y, x2: p.x, y2: p.y };
+      try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+    });
+    canvas.addEventListener('pointermove', e => {
+      if (!drawing || !cur) return;
+      const p = pos(e);
+      if (cur.type === 'pen') cur.pts.push(p); else { cur.x2 = p.x; cur.y2 = p.y; }
+      redraw();
+    });
+    const endStroke = () => { if (drawing && cur) ops.push(cur); drawing = false; cur = null; redraw(); };
+    canvas.addEventListener('pointerup', endStroke);
+    canvas.addEventListener('pointercancel', endStroke);
+
+    backdrop.querySelectorAll('[data-tool]').forEach(b => b.addEventListener('click', () => {
+      tool = b.dataset.tool;
+      backdrop.querySelectorAll('[data-tool]').forEach(x => x.classList.toggle('on', x === b));
+    }));
+    backdrop.querySelectorAll('[data-color]').forEach(b => b.addEventListener('click', () => {
+      color = b.dataset.color;
+      backdrop.querySelectorAll('[data-color]').forEach(x => x.classList.toggle('on', x === b));
+    }));
+    backdrop.querySelector('[data-act="undo"]').addEventListener('click', () => { ops.pop(); redraw(); });
+    backdrop.querySelector('[data-act="revert"]').addEventListener('click', () => {
+      if (ops.length && !window.confirm('Clear all markings and revert to the clean photo?')) return;
+      ops.length = 0;
+      backdrop.querySelectorAll('.anno-textinput').forEach(n => n.remove());
+      redraw();
+    });
+    backdrop.querySelector('[data-act="cancel"]').addEventListener('click', () => backdrop.remove());
+    backdrop.querySelector('[data-act="save"]').addEventListener('click', async () => {
+      const btn = backdrop.querySelector('[data-act="save"]');
+      btn.disabled = true; btn.textContent = 'Saving...';
+      let blob;
+      try {
+        blob = await new Promise((res, rej) => canvas.toBlob(b => b ? res(b) : rej(new Error('toBlob returned null')), 'image/jpeg', 0.92));
+      } catch (err) {
+        toast('Markup blocked (image CORS) - could not save', 'err');
+        btn.disabled = false; btn.textContent = 'Save markup'; return;
+      }
+      const fd = new FormData();
+      fd.append('estimate_id', estimateId);
+      fd.append('category', photo.category || 'inspection');
+      const baseCap = (photo.caption || '').trim();
+      fd.append('caption', baseCap ? baseCap + ' (marked up)' : 'Marked up');
+      fd.append('file', new File([blob], 'markup-' + String(photoId).slice(0, 8) + '.jpg', { type: 'image/jpeg' }), 'markup.jpg');
+      try {
+        const r = await fetch('/api/estimate-photos', { method: 'POST', headers: authHeaders(), body: fd });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        // Non-destructive overtake: the marked-up copy carries the original's
+        // slot so it takes over on the proposal, but the clean original is kept
+        // (un-slotted) so markup is always reversible. To revert, delete the
+        // marked-up copy and the clean original is still here.
+        try {
+          await fetch('/api/estimate-photos?id=' + encodeURIComponent(photoId), {
+            method: 'PATCH',
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ category: 'general', is_cover: false }),
+          });
+        } catch (_) {}
+        toast('Markup saved', 'ok');
+        backdrop.remove();
+        loadInspectionPhotos();
+      } catch (err) {
+        toast('Save failed: ' + err.message, 'err');
+        btn.disabled = false; btn.textContent = 'Save markup';
+      }
+    });
   }
 
   function renderSection(section, allKeys){

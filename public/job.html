@@ -121,6 +121,34 @@ textarea.field-edit{font-family:'Inter',system-ui,sans-serif;font-size:0.88em;te
 .act.ghost:hover{color:#fb923c;border-color:#fb923c}
 .act.cyan{background:rgba(34,211,238,0.12);color:#22d3ee;border-color:rgba(34,211,238,0.35)}
 .act.cyan:hover{background:rgba(34,211,238,0.22)}
+.joblog-entry{padding:11px 0;border-bottom:1px solid rgba(251,146,60,0.07)}
+.joblog-entry:last-child{border-bottom:none}
+.joblog-entry-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:5px}
+.joblog-meta{font-family:'Share Tech Mono',monospace;font-size:0.62em;color:rgba(200,220,255,0.4);letter-spacing:1px}
+.joblog-entry-body{font-size:0.88em;color:rgba(200,220,255,0.82);line-height:1.5}
+.joblog-input{background:rgba(6,10,20,0.6);border:1px solid rgba(251,146,60,0.18);color:#e0e6f0;border-radius:9px;padding:8px 11px;font-family:inherit;font-size:0.85em}
+.joblog-input:focus{outline:none;border-color:#fb923c}
+.joblog-composer select.joblog-input{cursor:pointer}
+.co-entry{padding:12px 0;border-bottom:1px solid rgba(251,146,60,0.07)}
+.co-entry:last-child{border-bottom:none}
+.co-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.co-reason{font-size:0.9em;color:rgba(200,220,255,0.85);margin:2px 0 6px}
+.co-side{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:0.82em;color:rgba(200,220,255,0.8);margin:3px 0}
+.co-side .who{font-family:'Share Tech Mono',monospace;font-size:0.66em;letter-spacing:1px;color:rgba(200,220,255,0.45);min-width:70px}
+.co-new>summary{cursor:pointer;font-family:'Orbitron',sans-serif;font-size:0.64em;font-weight:700;letter-spacing:1.5px;color:#fb923c;list-style:none;padding:10px 0 4px}
+.co-new>summary::-webkit-details-marker{display:none}
+.co-form{display:flex;flex-direction:column;gap:8px;border-top:1px solid rgba(251,146,60,0.12);padding-top:12px;margin-top:2px}
+.co-form .row2{display:flex;gap:8px;flex-wrap:wrap}
+.co-form .row2 .joblog-input{flex:1;min-width:130px}
+.thread{display:flex;flex-direction:column;gap:10px;max-height:340px;overflow-y:auto;padding-right:4px}
+.tmsg{display:flex;flex-direction:column;gap:2px;max-width:88%}
+.tmsg.mine{align-self:flex-end;align-items:flex-end}
+.tmsg .tmeta{font-family:'Share Tech Mono',monospace;font-size:0.6em;letter-spacing:1px;color:rgba(200,220,255,0.45)}
+.tmsg .tbody{background:rgba(6,10,20,0.5);border:1px solid rgba(251,146,60,0.12);border-radius:10px;padding:9px 12px;font-size:0.9em;color:rgba(200,220,255,0.88);line-height:1.5;white-space:pre-wrap;word-break:break-word}
+.tmsg.mine .tbody{background:rgba(34,211,238,0.10);border-color:rgba(34,211,238,0.28)}
+.thread-composer{display:flex;gap:8px;align-items:flex-end;margin-top:12px;border-top:1px solid rgba(251,146,60,0.12);padding-top:12px}
+.thread-composer textarea{flex:1;min-height:42px;max-height:120px;resize:vertical;background:rgba(6,10,20,0.6);border:1px solid rgba(251,146,60,0.18);color:#e0e6f0;border-radius:9px;padding:9px 11px;font-family:inherit;font-size:0.88em}
+.thread-composer textarea:focus{outline:none;border-color:#fb923c}
 
 .status-pick{padding:5px 10px;border-radius:6px;background:rgba(6,10,20,0.6);border:1px solid rgba(251,146,60,0.28);color:#e0e6f0;font-family:'Share Tech Mono',monospace;font-size:0.68em;letter-spacing:1.2px;cursor:pointer;outline:none;text-transform:uppercase;margin-left:8px}
 .status-pick:hover{border-color:#fb923c}
@@ -712,6 +740,67 @@ function render({ customer, estimates, workorders, paysheets, photos, roster, pu
     </details>
   `);
 
+  // 6.5 JOB LOG (activity feed for the active WO, entries from /api/job-log)
+  sections.push(`
+    <details class="acc" open data-section="joblog">
+      <summary>
+        <div class="title"><svg viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg> JOB LOG</div>
+        <div class="meta"><span id="jobLogCount">-</span><svg class="chev" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
+      </summary>
+      <div class="acc-body">
+        ${activeWo ? `
+          <div id="jobLogMount"><div class="empty-sec">LOADING&hellip;</div></div>
+          <form id="jobLogForm" class="joblog-composer" style="margin-top:14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-top:1px solid rgba(251,146,60,0.12);padding-top:14px">
+            <select id="jobLogType" class="joblog-input">
+              <option value="note">Note</option>
+              <option value="material_purchase">Material</option>
+              <option value="additional_fee">Fee</option>
+              <option value="scope_change">Scope change</option>
+              <option value="advance_payout">Advance</option>
+            </select>
+            <input id="jobLogDesc" class="joblog-input" type="text" placeholder="What happened on this job&hellip;" style="flex:1;min-width:200px">
+            <input id="jobLogAmount" class="joblog-input" type="number" step="0.01" min="0" placeholder="$ optional" style="width:120px">
+            <button type="submit" class="act primary" id="jobLogAddBtn">ADD ENTRY</button>
+            <span id="jobLogMsg" class="count" style="display:none"></span>
+          </form>
+        ` : '<div class="empty-sec">NO WORK ORDER ON THIS JOB YET. THE LOG ATTACHES TO A WORK ORDER.</div>'}
+      </div>
+    </details>
+  `);
+
+  // 6.6 CHANGE ORDERS (full-duplex customer/sub accept; record + log only)
+  sections.push(`
+    <details class="acc" open data-section="changeorders">
+      <summary>
+        <div class="title"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg> CHANGE ORDERS</div>
+        <div class="meta"><span id="coCount">-</span><svg class="chev" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
+      </summary>
+      <div class="acc-body">
+        ${activeWo ? `
+          <div id="coMount"><div class="empty-sec">LOADING&hellip;</div></div>
+          <details class="co-new">
+            <summary>+ NEW CHANGE ORDER</summary>
+            <form id="coForm" class="co-form">
+              <input id="coReason" class="joblog-input" type="text" placeholder="Reason (e.g. 2-layer tear-off found on garage)">
+              <div class="row2">
+                <input id="coScopeBefore" class="joblog-input" type="text" placeholder="Scope before (optional)">
+                <input id="coScopeAfter" class="joblog-input" type="text" placeholder="Scope after (optional)">
+              </div>
+              <div class="row2">
+                <input id="coCustDelta" class="joblog-input" type="number" step="0.01" placeholder="Customer +$ (optional)">
+                <input id="coSubDelta" class="joblog-input" type="number" step="0.01" placeholder="Sub +$ (optional)">
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <button type="submit" class="act primary" id="coAddBtn">CREATE CHANGE ORDER</button>
+                <span id="coMsg" class="count" style="display:none"></span>
+              </div>
+            </form>
+          </details>
+        ` : '<div class="empty-sec">NO WORK ORDER ON THIS JOB YET. CHANGE ORDERS ATTACH TO A WORK ORDER.</div>'}
+      </div>
+    </details>
+  `);
+
   // 7. FILES (placeholder until PR-B)
   sections.push(`
     <details class="acc" data-section="files">
@@ -721,6 +810,26 @@ function render({ customer, estimates, workorders, paysheets, photos, roster, pu
       </summary>
       <div class="acc-body">
         <div class="empty-sec">NON-IMAGE FILES (PDF, DOCX, etc) WILL SURFACE HERE</div>
+      </div>
+    </details>
+  `);
+
+  // 7.5 TEAM THREAD (internal, shared per-WO channel via /api/messages)
+  sections.push(`
+    <details class="acc" open data-section="teamthread">
+      <summary>
+        <div class="title"><svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg> TEAM THREAD</div>
+        <div class="meta"><span id="threadCount">-</span><svg class="chev" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
+      </summary>
+      <div class="acc-body">
+        ${activeWo ? `
+          <div id="threadMount" class="thread"><div class="empty-sec">LOADING&hellip;</div></div>
+          <form id="threadForm" class="thread-composer">
+            <textarea id="threadInput" placeholder="Message the team about this job&hellip;"></textarea>
+            <button type="submit" class="act primary" id="threadSendBtn">SEND</button>
+          </form>
+          <div style="font-size:0.6em;color:rgba(200,220,255,0.35);font-family:'Share Tech Mono',monospace;letter-spacing:1px;margin-top:8px">INTERNAL ONLY. CUSTOMER SMS LIVES IN GHL (SEE COMMS HISTORY).</div>
+        ` : '<div class="empty-sec">NO WORK ORDER ON THIS JOB YET. THE TEAM THREAD ATTACHES TO A WORK ORDER.</div>'}
       </div>
     </details>
   `);
@@ -789,6 +898,31 @@ function render({ customer, estimates, workorders, paysheets, photos, roster, pu
     const subCell = document.getElementById('subCell');
     if (crewCell) crewCell.appendChild(buildCrewSelect(activeWo, roster));
     if (subCell) subCell.appendChild(buildSubSelect(activeWo, roster));
+  }
+
+  // Job Log (activity feed): load entries + wire the inline composer
+  if (activeWo) {
+    loadJobLog(activeWo.id);
+    const jlForm = document.getElementById('jobLogForm');
+    if (jlForm) jlForm.addEventListener('submit', (ev) => { ev.preventDefault(); addJobLogEntry(activeWo.id); });
+  }
+
+  // Change Orders: load list + wire the create composer
+  if (activeWo) {
+    loadChangeOrders(activeWo.id);
+    const coForm = document.getElementById('coForm');
+    if (coForm) coForm.addEventListener('submit', (ev) => { ev.preventDefault(); createChangeOrder(activeWo.id); });
+  }
+
+  // Team Thread: load + wire composer (Enter sends, Shift+Enter for newline)
+  if (activeWo) {
+    loadTeamThread(activeWo.id);
+    const tForm = document.getElementById('threadForm');
+    if (tForm) tForm.addEventListener('submit', (ev) => { ev.preventDefault(); postTeamMessage(activeWo.id); });
+    const tInput = document.getElementById('threadInput');
+    if (tInput) tInput.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); postTeamMessage(activeWo.id); }
+    });
   }
 
   // WO status pick
@@ -1348,6 +1482,268 @@ document.addEventListener('click', () => {
 });
 
 document.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); if (window.RyujinNav) RyujinNav.back('production-jobs.html'); else history.back(); } });
+
+// ───── JOB LOG (activity feed) ─────────────────────────────────
+// Tag -> {label, color}. Colors stay inline (per-tag) so we don't add a
+// CHECK-bound class per entry_type. 'communication' lands in PR3.
+const JOBLOG_TAGS = {
+  change_order:      { label: 'CHANGE ORDER',    color: '#fb923c' },
+  scope_change:      { label: 'SCOPE CHANGE',    color: '#f59e0b' },
+  material_purchase: { label: 'MATERIAL',        color: '#22d3ee' },
+  additional_fee:    { label: 'FEE',             color: '#f472b6' },
+  advance_payout:    { label: 'ADVANCE',         color: '#a78bfa' },
+  rate_suggestion:   { label: 'RATE SUGGESTION', color: '#fbbf24' },
+  communication:     { label: 'COMMUNICATION',   color: '#4ade80' },
+  photo:             { label: 'PHOTO',           color: '#94a3b8' },
+  note:              { label: 'NOTE',            color: '#94a3b8' },
+};
+
+function jobLogStatusBadge(status){
+  const cls = { approved: 'b-done', pending: 'b-draft', denied: 'b-draft' }[status] || 'b-draft';
+  return `<span class="badge ${cls}">${esc((status || '').toUpperCase())}</span>`;
+}
+
+function renderJobLogEntries(entries){
+  if (!entries.length) return '<div class="empty-sec">NO LOG ENTRIES YET</div>';
+  return entries.map(e => {
+    const tag = JOBLOG_TAGS[e.entry_type] || { label: String(e.entry_type || '').toUpperCase().replace(/_/g, ' '), color: '#94a3b8' };
+    let when = '';
+    if (e.created_at) { try { when = new Date(e.created_at).toLocaleString('en-CA', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch { when = ''; } }
+    const who = e.uploaded_by_name || e.subcontractor?.name || (e.created_by_sub ? 'Sub' : 'Owner');
+    const amt = Number(e.amount) > 0 ? `<span style="color:#4ade80;font-weight:700;margin-left:8px">${money(e.amount)}</span>` : '';
+    const vendor = e.vendor ? `<span style="color:rgba(200,220,255,0.5);margin-left:8px">/ ${esc(e.vendor)}</span>` : '';
+    const pics = Array.isArray(e.photos) ? e.photos.filter(u => typeof u === 'string' && u) : [];
+    const photos = pics.length
+      ? `<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">${pics.slice(0, 6).map(u => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" loading="lazy" style="width:46px;height:46px;object-fit:cover;border-radius:6px;border:1px solid rgba(251,146,60,0.2)"></a>`).join('')}</div>`
+      : '';
+    return `
+      <div class="joblog-entry">
+        <div class="joblog-entry-head">
+          <span class="badge" style="background:${tag.color}22;color:${tag.color};border:1px solid ${tag.color}55">${esc(tag.label)}</span>
+          ${jobLogStatusBadge(e.status)}
+          <span class="joblog-meta">${esc(when)} / ${esc(who)}</span>
+        </div>
+        <div class="joblog-entry-body">${esc(e.description || '')}${amt}${vendor}</div>
+        ${photos}
+      </div>`;
+  }).join('');
+}
+
+async function loadJobLog(woId){
+  const mount = document.getElementById('jobLogMount');
+  const countEl = document.getElementById('jobLogCount');
+  if (!mount) return;
+  try {
+    const r = await fetch('/api/job-log?workorder_id=' + encodeURIComponent(woId), { headers: ah() });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const { entries = [] } = await r.json();
+    mount.innerHTML = renderJobLogEntries(entries);
+    if (countEl) countEl.textContent = entries.length + ' entr' + (entries.length === 1 ? 'y' : 'ies');
+  } catch (e) {
+    mount.innerHTML = '<div class="empty-sec">COULD NOT LOAD LOG: ' + esc(e.message) + '</div>';
+    if (countEl) countEl.textContent = '-';
+  }
+}
+
+async function addJobLogEntry(woId){
+  const typeEl = document.getElementById('jobLogType');
+  const descEl = document.getElementById('jobLogDesc');
+  const amtEl  = document.getElementById('jobLogAmount');
+  const btn    = document.getElementById('jobLogAddBtn');
+  const msg    = document.getElementById('jobLogMsg');
+  const description = (descEl?.value || '').trim();
+  if (!description) { if (descEl) descEl.focus(); return; }
+  const payload = {
+    workorder_id: woId,
+    entry_type: typeEl?.value || 'note',
+    description,
+    amount: amtEl?.value ? Number(amtEl.value) : 0,
+    status: 'approved', // owner-logged entries are self-approved (not a sub reimbursement request)
+  };
+  if (btn) { btn.disabled = true; btn.textContent = 'SAVING…'; }
+  try {
+    const r = await fetch('/api/job-log', { method: 'POST', headers: { ...ah(), 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || ('HTTP ' + r.status)); }
+    if (descEl) descEl.value = '';
+    if (amtEl) amtEl.value = '';
+    await loadJobLog(woId);
+    if (msg) { msg.style.display = 'inline'; msg.style.color = '#4ade80'; msg.textContent = 'SAVED'; setTimeout(() => { msg.style.display = 'none'; }, 1800); }
+  } catch (e) {
+    if (msg) { msg.style.display = 'inline'; msg.style.color = '#f87171'; msg.textContent = e.message; }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'ADD ENTRY'; }
+  }
+}
+
+// ───── CHANGE ORDERS (full-duplex accept; record + log only) ─────
+const CO_STATUS = {
+  draft:            { label: 'DRAFT',            cls: 'b-draft' },
+  pending_customer: { label: 'PENDING CUSTOMER', cls: 'b-active' },
+  pending_sub:      { label: 'PENDING SUB',      cls: 'b-active' },
+  pending_both:     { label: 'PENDING BOTH',     cls: 'b-active' },
+  approved:         { label: 'APPROVED',         cls: 'b-done' },
+  rejected:         { label: 'REJECTED',         cls: 'b-draft' },
+  superseded:       { label: 'SUPERSEDED',       cls: 'b-draft' },
+  cancelled:        { label: 'CANCELLED',        cls: 'b-draft' },
+};
+
+function coSideAcceptBadge(status){
+  const m = {
+    pending:  { t: 'PENDING',    c: '#fbbf24' },
+    accepted: { t: 'ACCEPTED',   c: '#4ade80' },
+    declined: { t: 'DECLINED',   c: '#f87171' },
+    superseded:{ t: 'SUPERSEDED', c: '#94a3b8' },
+  }[status];
+  if (!m) return '';
+  return `<span class="badge" style="background:${m.c}22;color:${m.c};border:1px solid ${m.c}55">${m.t}</span>`;
+}
+
+function coSideRow(label, delta, acceptStatus, url){
+  if (acceptStatus == null || acceptStatus === 'not_applicable') return '';
+  // Zero-safe: the page-global money() returns '-' for 0 (falsy), but a $0 delta
+  // is a real, creatable CO side. Format directly so $0 shows as +$0.00.
+  const amt = delta != null
+    ? `<span style="color:#e0e6f0;font-weight:700">${delta < 0 ? '-' : '+'}$${Math.abs(delta).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>` : '';
+  const copy = (acceptStatus === 'pending' && url)
+    ? `<button class="act ghost" type="button" data-link="${esc(url)}" onclick="copyCoLink(this)" style="padding:4px 9px;font-size:0.6em">COPY LINK</button>` : '';
+  return `<div class="co-side"><span class="who">${esc(label)}</span>${amt} ${coSideAcceptBadge(acceptStatus)} ${copy}</div>`;
+}
+
+function renderChangeOrders(cos){
+  if (!cos.length) return '<div class="empty-sec">NO CHANGE ORDERS YET</div>';
+  return cos.map(c => {
+    const st = CO_STATUS[c.status] || { label: String(c.status || '').toUpperCase(), cls: 'b-draft' };
+    let when = '';
+    if (c.created_at) { try { when = new Date(c.created_at).toLocaleString('en-CA', { month: 'short', day: 'numeric' }); } catch { when = ''; } }
+    const scope = (c.scope_before || c.scope_after)
+      ? `<div style="font-size:0.8em;color:rgba(200,220,255,0.55);margin:2px 0 6px">${esc(c.scope_before || '?')} &rarr; ${esc(c.scope_after || '?')}</div>` : '';
+    return `
+      <div class="co-entry">
+        <div class="co-head">
+          <span class="badge ${st.cls}">${esc(st.label)}</span>
+          <span class="joblog-meta">${esc(when)}</span>
+          ${c.totals_applied_at ? '<span class="joblog-meta" style="color:#4ade80">totals applied</span>' : ''}
+        </div>
+        <div class="co-reason">${esc(c.reason || '')}</div>
+        ${scope}
+        ${coSideRow('Customer', c.price_delta_customer, c.customer_accept_status, c.customer_accept_url)}
+        ${coSideRow('Sub', c.rate_delta_sub, c.sub_accept_status, c.sub_accept_url)}
+      </div>`;
+  }).join('');
+}
+
+async function loadChangeOrders(woId){
+  const mount = document.getElementById('coMount'); const countEl = document.getElementById('coCount');
+  if (!mount) return;
+  try {
+    const r = await fetch('/api/change-orders?workorder_id=' + encodeURIComponent(woId), { headers: ah() });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const { change_orders = [] } = await r.json();
+    mount.innerHTML = renderChangeOrders(change_orders);
+    if (countEl) countEl.textContent = change_orders.length + (change_orders.length === 1 ? ' order' : ' orders');
+  } catch (e) {
+    mount.innerHTML = '<div class="empty-sec">COULD NOT LOAD: ' + esc(e.message) + '</div>';
+    if (countEl) countEl.textContent = '-';
+  }
+}
+
+window.copyCoLink = function(btn){
+  const url = btn.dataset.link; if (!url) return;
+  const done = () => { const t = btn.textContent; btn.textContent = 'COPIED'; setTimeout(() => { btn.textContent = t; }, 1500); };
+  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(url).then(done).catch(() => window.prompt('Copy this link:', url));
+  else window.prompt('Copy this link:', url);
+};
+
+async function createChangeOrder(woId){
+  const reason = (document.getElementById('coReason')?.value || '').trim();
+  const msg = document.getElementById('coMsg'); const btn = document.getElementById('coAddBtn');
+  if (!reason) { document.getElementById('coReason')?.focus(); return; }
+  const custRaw = document.getElementById('coCustDelta')?.value;
+  const subRaw = document.getElementById('coSubDelta')?.value;
+  const payload = {
+    workorder_id: woId, reason,
+    scope_before: (document.getElementById('coScopeBefore')?.value || '').trim() || null,
+    scope_after: (document.getElementById('coScopeAfter')?.value || '').trim() || null,
+    price_delta_customer: custRaw !== '' && custRaw != null ? Number(custRaw) : null,
+    rate_delta_sub: subRaw !== '' && subRaw != null ? Number(subRaw) : null,
+  };
+  if (btn) { btn.disabled = true; btn.textContent = 'CREATING…'; }
+  try {
+    const r = await fetch('/api/change-orders', { method: 'POST', headers: { ...ah(), 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || ('HTTP ' + r.status)); }
+    ['coReason', 'coScopeBefore', 'coScopeAfter', 'coCustDelta', 'coSubDelta'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    await loadChangeOrders(woId);
+    if (msg) { msg.style.display = 'inline'; msg.style.color = '#4ade80'; msg.textContent = 'CREATED'; setTimeout(() => { msg.style.display = 'none'; }, 1800); }
+  } catch (e) {
+    if (msg) { msg.style.display = 'inline'; msg.style.color = '#f87171'; msg.textContent = e.message; }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'CREATE CHANGE ORDER'; }
+  }
+}
+
+// ───── TEAM THREAD (internal per-WO channel via /api/messages) ─────
+function renderThread(msgs, meId){
+  if (!msgs.length) return '<div class="empty-sec">NO MESSAGES YET. START THE THREAD BELOW.</div>';
+  return msgs.map(m => {
+    const mine = m.from_user_id && meId && m.from_user_id === meId;
+    const who = (m.from_user && m.from_user.name) || m.from_label || 'Team';
+    let when = '';
+    if (m.created_at) { try { when = new Date(m.created_at).toLocaleString('en-CA', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch { when = ''; } }
+    const names = Array.isArray(m.reader_names) ? m.reader_names : [];
+    const seen = names.length
+      ? `<div class="tmeta" style="color:rgba(74,222,128,0.55)">seen by ${esc(names.slice(0, 4).join(', '))}${names.length > 4 ? ' +' + (names.length - 4) : ''}</div>` : '';
+    return `
+      <div class="tmsg${mine ? ' mine' : ''}">
+        <div class="tmeta">${esc(who)} / ${esc(when)}</div>
+        <div class="tbody">${esc(m.body || '')}</div>
+        ${seen}
+      </div>`;
+  }).join('');
+}
+
+async function loadTeamThread(woId){
+  const mount = document.getElementById('threadMount'); const countEl = document.getElementById('threadCount');
+  if (!mount) return;
+  try {
+    const r = await fetch('/api/messages?ref_workorder_id=' + encodeURIComponent(woId), { headers: ah() });
+    if (r.status === 401) { mount.innerHTML = '<div class="empty-sec">SIGN IN TO SEE THE TEAM THREAD</div>'; if (countEl) countEl.textContent = '-'; return; }
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const { messages = [], unread = 0, me } = await r.json();
+    mount.innerHTML = renderThread(messages, me?.id);
+    mount.scrollTop = mount.scrollHeight;
+    // Real unread (server-side per-user reads), not a localStorage guess.
+    if (countEl) countEl.textContent = messages.length + ' msg' + (messages.length === 1 ? '' : 's') + (unread ? ' / ' + unread + ' new' : '');
+    // Now that the thread is on screen, mark it read for me.
+    if (messages.length) markThreadRead(woId);
+  } catch (e) {
+    mount.innerHTML = '<div class="empty-sec">COULD NOT LOAD: ' + esc(e.message) + '</div>';
+    if (countEl) countEl.textContent = '-';
+  }
+}
+
+async function markThreadRead(woId){
+  try {
+    await fetch('/api/messages', { method: 'POST', headers: { ...ah(), 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'mark_read_thread', ref_workorder_id: woId }) });
+  } catch { /* best-effort read receipt */ }
+}
+
+async function postTeamMessage(woId){
+  const input = document.getElementById('threadInput'); const btn = document.getElementById('threadSendBtn');
+  const text = (input?.value || '').trim();
+  if (!text) { if (input) input.focus(); return; }
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+  try {
+    const r = await fetch('/api/messages', { method: 'POST', headers: { ...ah(), 'Content-Type': 'application/json' }, body: JSON.stringify({ thread_scope: 'job', ref_workorder_id: woId, body: text }) });
+    if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || ('HTTP ' + r.status)); }
+    if (input) { input.value = ''; input.placeholder = 'Message the team about this job…'; }
+    await loadTeamThread(woId);
+  } catch (e) {
+    if (input) input.placeholder = e.message;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'SEND'; }
+  }
+}
+
 loadJob();
 </script>
 

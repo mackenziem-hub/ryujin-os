@@ -87,6 +87,59 @@ async function nativeTicketStats() {
     return null;
   }
 }
+
+// Native proposals: the Ryujin-native estimates that live in Supabase
+// (instant-estimator quotes, builder drafts). The cockpit's sections.revenue
+// is sourced from the LEGACY Estimator OS (Replit) feed via /api/lookup, which
+// has no knowledge of these. Result: a native quote like plus-ultra-76 is
+// invisible on the Sales cockpit even though it exists. This pulls the most
+// recent native estimates (tenant-scoped, service-role read, fixed shape) so the
+// cockpit can surface them. Fully rebuilt each snapshot, so no preserveKeys entry
+// is needed (those are only for agent-POSTed sections).
+async function nativeProposalStats() {
+  try {
+    const { data: tenant } = await supabaseAdmin.from('tenants').select('id').eq('slug', 'plus-ultra').maybeSingle();
+    if (!tenant) return null;
+    const { data: rows } = await supabaseAdmin
+      .from('estimates')
+      .select('estimate_number, share_token, status, proposal_mode, calculated_packages, created_at, updated_at, customer:customers(full_name, address, city)')
+      .eq('tenant_id', tenant.id)
+      .neq('status', 'cancelled')
+      .order('created_at', { ascending: false })
+      .limit(20);
+    if (!rows) return null;
+
+    const proposals = rows.map(e => {
+      const cp = e.calculated_packages || {};
+      // Entry-tier "from" price: prefer gold, fall back to whichever tier exists.
+      const tier = cp.gold || cp.platinum || cp.diamond || null;
+      const fromPrice = tier ? (tier.total ?? tier.summary?.sellingPrice ?? null) : null;
+      const cust = e.customer || {};
+      return {
+        number: e.estimate_number,
+        shareToken: e.share_token || null,
+        status: e.status || 'draft',
+        mode: e.proposal_mode || null,
+        customer: cust.full_name || 'Unknown',
+        address: [cust.address, cust.city].filter(Boolean).join(', '),
+        fromPrice,
+        url: e.share_token ? ('/proposal-client.html?share=' + encodeURIComponent(e.share_token)) : null,
+        createdAt: e.created_at,
+        updatedAt: e.updated_at
+      };
+    });
+
+    return {
+      _note: 'Ryujin-native estimates (Supabase), NOT the legacy Estimator OS feed in sections.revenue. Powers the cockpit Recent Quotes so instant-estimator quotes are visible.',
+      total: proposals.length,
+      drafts: proposals.filter(p => /draft/i.test(p.status)).length,
+      proposals
+    };
+  } catch (e) {
+    console.warn('[snapshot] nativeProposalStats failed:', e.message);
+    return null;
+  }
+}
 let cachedBlobUrl = null;
 let storeBase = null;
 
@@ -168,11 +221,16 @@ async function buildFreshSnapshot() {
     nativeTicketStats(),
     tf('https://ryujin-os.vercel.app/api/ghl?mode=tasks').then(r => r.json()),
     tf('https://ryujin-os.vercel.app/api/ghl?mode=contacts&limit=100').then(r => r.json()),
+    // Native estimates (Supabase) so the cockpit can surface instant-estimator
+    // quotes that the legacy Estimator OS feed (sections.revenue) never sees.
+    nativeProposalStats(),
   ]);
 
-  const [stats, ghl, pipeline, conversations, tickets, ghlTasks, ghlContacts] = fetches.map(f =>
+  const [stats, ghl, pipeline, conversations, tickets, ghlTasks, ghlContacts, nativeProposals] = fetches.map(f =>
     f.status === 'fulfilled' ? f.value : null
   );
+
+  if (nativeProposals) snapshot.sections.nativeProposals = nativeProposals;
 
   // Pipeline & Revenue
   if (stats?.results) {
