@@ -140,6 +140,15 @@ textarea.field-edit{font-family:'Inter',system-ui,sans-serif;font-size:0.88em;te
 .co-form{display:flex;flex-direction:column;gap:8px;border-top:1px solid rgba(251,146,60,0.12);padding-top:12px;margin-top:2px}
 .co-form .row2{display:flex;gap:8px;flex-wrap:wrap}
 .co-form .row2 .joblog-input{flex:1;min-width:130px}
+.thread{display:flex;flex-direction:column;gap:10px;max-height:340px;overflow-y:auto;padding-right:4px}
+.tmsg{display:flex;flex-direction:column;gap:2px;max-width:88%}
+.tmsg.mine{align-self:flex-end;align-items:flex-end}
+.tmsg .tmeta{font-family:'Share Tech Mono',monospace;font-size:0.6em;letter-spacing:1px;color:rgba(200,220,255,0.45)}
+.tmsg .tbody{background:rgba(6,10,20,0.5);border:1px solid rgba(251,146,60,0.12);border-radius:10px;padding:9px 12px;font-size:0.9em;color:rgba(200,220,255,0.88);line-height:1.5;white-space:pre-wrap;word-break:break-word}
+.tmsg.mine .tbody{background:rgba(34,211,238,0.10);border-color:rgba(34,211,238,0.28)}
+.thread-composer{display:flex;gap:8px;align-items:flex-end;margin-top:12px;border-top:1px solid rgba(251,146,60,0.12);padding-top:12px}
+.thread-composer textarea{flex:1;min-height:42px;max-height:120px;resize:vertical;background:rgba(6,10,20,0.6);border:1px solid rgba(251,146,60,0.18);color:#e0e6f0;border-radius:9px;padding:9px 11px;font-family:inherit;font-size:0.88em}
+.thread-composer textarea:focus{outline:none;border-color:#fb923c}
 
 .status-pick{padding:5px 10px;border-radius:6px;background:rgba(6,10,20,0.6);border:1px solid rgba(251,146,60,0.28);color:#e0e6f0;font-family:'Share Tech Mono',monospace;font-size:0.68em;letter-spacing:1.2px;cursor:pointer;outline:none;text-transform:uppercase;margin-left:8px}
 .status-pick:hover{border-color:#fb923c}
@@ -805,6 +814,26 @@ function render({ customer, estimates, workorders, paysheets, photos, roster, pu
     </details>
   `);
 
+  // 7.5 TEAM THREAD (internal, shared per-WO channel via /api/messages)
+  sections.push(`
+    <details class="acc" open data-section="teamthread">
+      <summary>
+        <div class="title"><svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg> TEAM THREAD</div>
+        <div class="meta"><span id="threadCount">-</span><svg class="chev" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
+      </summary>
+      <div class="acc-body">
+        ${activeWo ? `
+          <div id="threadMount" class="thread"><div class="empty-sec">LOADING&hellip;</div></div>
+          <form id="threadForm" class="thread-composer">
+            <textarea id="threadInput" placeholder="Message the team about this job&hellip;"></textarea>
+            <button type="submit" class="act primary" id="threadSendBtn">SEND</button>
+          </form>
+          <div style="font-size:0.6em;color:rgba(200,220,255,0.35);font-family:'Share Tech Mono',monospace;letter-spacing:1px;margin-top:8px">INTERNAL ONLY. CUSTOMER SMS LIVES IN GHL (SEE COMMS HISTORY).</div>
+        ` : '<div class="empty-sec">NO WORK ORDER ON THIS JOB YET. THE TEAM THREAD ATTACHES TO A WORK ORDER.</div>'}
+      </div>
+    </details>
+  `);
+
   // 8. COMMS HISTORY (placeholder)
   sections.push(`
     <details class="acc" data-section="comms">
@@ -883,6 +912,17 @@ function render({ customer, estimates, workorders, paysheets, photos, roster, pu
     loadChangeOrders(activeWo.id);
     const coForm = document.getElementById('coForm');
     if (coForm) coForm.addEventListener('submit', (ev) => { ev.preventDefault(); createChangeOrder(activeWo.id); });
+  }
+
+  // Team Thread: load + wire composer (Enter sends, Shift+Enter for newline)
+  if (activeWo) {
+    loadTeamThread(activeWo.id);
+    const tForm = document.getElementById('threadForm');
+    if (tForm) tForm.addEventListener('submit', (ev) => { ev.preventDefault(); postTeamMessage(activeWo.id); });
+    const tInput = document.getElementById('threadInput');
+    if (tInput) tInput.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); postTeamMessage(activeWo.id); }
+    });
   }
 
   // WO status pick
@@ -1637,6 +1677,65 @@ async function createChangeOrder(woId){
     if (msg) { msg.style.display = 'inline'; msg.style.color = '#f87171'; msg.textContent = e.message; }
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'CREATE CHANGE ORDER'; }
+  }
+}
+
+// ───── TEAM THREAD (internal per-WO channel via /api/messages) ─────
+function renderThread(msgs, meId){
+  if (!msgs.length) return '<div class="empty-sec">NO MESSAGES YET. START THE THREAD BELOW.</div>';
+  return msgs.map(m => {
+    const mine = m.from_user_id && meId && m.from_user_id === meId;
+    const who = (m.from_user && m.from_user.name) || m.from_label || 'Team';
+    let when = '';
+    if (m.created_at) { try { when = new Date(m.created_at).toLocaleString('en-CA', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch { when = ''; } }
+    return `
+      <div class="tmsg${mine ? ' mine' : ''}">
+        <div class="tmeta">${esc(who)} / ${esc(when)}</div>
+        <div class="tbody">${esc(m.body || '')}</div>
+      </div>`;
+  }).join('');
+}
+
+async function loadTeamThread(woId){
+  const mount = document.getElementById('threadMount'); const countEl = document.getElementById('threadCount');
+  if (!mount) return;
+  try {
+    const r = await fetch('/api/messages?ref_workorder_id=' + encodeURIComponent(woId), { headers: ah() });
+    if (r.status === 401) { mount.innerHTML = '<div class="empty-sec">SIGN IN TO SEE THE TEAM THREAD</div>'; if (countEl) countEl.textContent = '-'; return; }
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const { messages = [], me } = await r.json();
+    mount.innerHTML = renderThread(messages, me?.id);
+    mount.scrollTop = mount.scrollHeight;
+    // "new since last looked" badge via localStorage per WO. Compare with Date.parse
+    // (created_at carries +00:00, toISOString carries Z; string compare would lie).
+    let newCount = 0;
+    try {
+      const seenKey = 'teamthread_seen_' + woId;
+      const seen = localStorage.getItem(seenKey);
+      if (seen) { const t = Date.parse(seen); newCount = messages.filter(m => Date.parse(m.created_at) > t).length; }
+      localStorage.setItem(seenKey, new Date().toISOString());
+    } catch { /* localStorage unavailable: skip the badge */ }
+    if (countEl) countEl.textContent = messages.length + ' msg' + (messages.length === 1 ? '' : 's') + (newCount ? ' / ' + newCount + ' new' : '');
+  } catch (e) {
+    mount.innerHTML = '<div class="empty-sec">COULD NOT LOAD: ' + esc(e.message) + '</div>';
+    if (countEl) countEl.textContent = '-';
+  }
+}
+
+async function postTeamMessage(woId){
+  const input = document.getElementById('threadInput'); const btn = document.getElementById('threadSendBtn');
+  const text = (input?.value || '').trim();
+  if (!text) { if (input) input.focus(); return; }
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+  try {
+    const r = await fetch('/api/messages', { method: 'POST', headers: { ...ah(), 'Content-Type': 'application/json' }, body: JSON.stringify({ thread_scope: 'job', ref_workorder_id: woId, body: text }) });
+    if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || ('HTTP ' + r.status)); }
+    if (input) { input.value = ''; input.placeholder = 'Message the team about this job…'; }
+    await loadTeamThread(woId);
+  } catch (e) {
+    if (input) input.placeholder = e.message;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'SEND'; }
   }
 }
 
