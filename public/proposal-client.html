@@ -1637,7 +1637,7 @@ body:not(.envelope-active) #envelopeSection{display:none !important}
         </div>
 
         <div class="env-block" id="envInspectionBlock" hidden>
-          <h3>Inspection Findings</h3>
+          <h3 style="cursor:pointer;user-select:none" title="Collapse or expand" onclick="var g=document.getElementById('envInspectionGrid'),c=this.querySelector('.ic');if(g){var hid=g.style.display==='none';g.style.display=hid?'':'none';if(c)c.style.transform=hid?'':'rotate(-90deg)';}">Inspection Findings <span class="ic" style="display:inline-block;transition:transform 0.2s;font-size:0.7em">&#9662;</span></h3>
           <div class="env-block-sub">Photos from our on-site inspection of your roof. Annotated where we flagged specific findings.</div>
           <div class="env-inspection-grid" id="envInspectionGrid"></div>
         </div>
@@ -3828,7 +3828,8 @@ function envInit() {
   const heroEyebrow = document.getElementById('envHeroEyebrow');
   // Prefer the curated/real cover photo (is_cover) over the seeded mockup cover,
   // so the protective-shell hero shows the actual home, not an auto render.
-  const heroCover = (DATA.media && DATA.media.curated && DATA.media.curated.cover) || env.media?.cover;
+  const _cur = (DATA.media && DATA.media.curated) || {};
+  const heroCover = _cur.cover || _cur.realCover || env.media?.cover;
   if (heroCover && heroImg && heroEl) {
     heroImg.classList.remove('loaded');
     heroImg.onload = () => heroImg.classList.add('loaded');
@@ -3860,9 +3861,9 @@ function envInit() {
       if (!revealed && img.complete && img.naturalWidth > 0) reveal();
     }, 8000);
   };
-  // Skip the auto-generated system/diagram mockups when Mac curated his own
-  // photos. Those renders are the "siding mockups" he asked to cut.
-  if (!envCuratedActive()) {
+  // Skip the auto-generated system/diagram mockups when the estimate has its
+  // own photos. Those renders are the "siding mockups" he asked to cut.
+  if (!envSuppressSeeded()) {
     // Primary: cleaner envelope visual
     wireDiagram('envSystemCard', 'envSystemImg', env.media?.complete_system || env.media?.envelope_diagram);
     // Secondary: detailed callout diagram (larger so writing is readable)
@@ -3884,6 +3885,13 @@ function envInit() {
 function envCuratedActive() {
   const c = (DATA.media && DATA.media.curated) || {};
   return !!(c.cover || c.before || c.after || c.afterBottom || (Array.isArray(c.sections) && c.sections.length));
+}
+// Cut the seeded auto-mockups (cover/after preview + system diagrams) when the
+// estimate has its own real cover photo OR any curated slot. So the stock
+// renders drop just from having real photos, no per-slot tagging required.
+function envSuppressSeeded() {
+  const c = (DATA.media && DATA.media.curated) || {};
+  return !!c.realCover || envCuratedActive();
 }
 function envRenderCurated() {
   const c = (DATA.media && DATA.media.curated) || {};
@@ -3987,7 +3995,7 @@ function envRenderPreview(result) {
   if (!wrap || !img) return;
   // When Mac curated photos for this estimate, the auto-swapping mockup preview
   // is replaced by the hand-picked before/after + section gallery below.
-  if (envCuratedActive()) { wrap.hidden = true; return; }
+  if (envSuppressSeeded()) { wrap.hidden = true; return; }
   const env = DATA.envelope;
   const pick = envPickPreviewImage(env, result.selections);
   if (!pick) { wrap.hidden = true; return; }

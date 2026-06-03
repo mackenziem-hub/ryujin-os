@@ -460,17 +460,19 @@ body::before{
   function renderInspectionPanel(){
     return `
       <div class="section" id="inspectionPanel">
-        <div class="section-head">
-          <h2>Inspection Photos</h2>
+        <div class="section-head" id="inspPanelHead" style="cursor:pointer;user-select:none" title="Click to collapse or expand" onclick="var b=document.getElementById('inspPanelBody'),c=document.getElementById('inspChev');if(b){var hid=b.style.display==='none';b.style.display=hid?'':'none';if(c)c.style.transform=hid?'':'rotate(-90deg)';}">
+          <h2>Inspection Photos <span id="inspChev" style="display:inline-block;transition:transform 0.2s;font-size:0.8em">&#9662;</span></h2>
           <div class="sub">Upload + annotate. Show on proposal via the Inspection Photo Gallery toggle above.</div>
         </div>
-        <div id="inspUploadZone" class="insp-upload">
-          <input type="file" id="inspFileInput" accept="image/*,video/*" multiple hidden>
-          <button type="button" class="btn primary" id="inspUploadBtn" style="padding:11px 20px">+ Upload photos</button>
-          <span id="inspUploadStatus" style="font-size:0.82em;color:var(--text-dim);margin-left:10px"></span>
-        </div>
-        <div id="inspGrid" class="insp-grid">
-          <div style="color:var(--text-muted);font-size:0.85em;padding:14px 0">Loading photos...</div>
+        <div id="inspPanelBody">
+          <div id="inspUploadZone" class="insp-upload">
+            <input type="file" id="inspFileInput" accept="image/*,video/*" multiple hidden>
+            <button type="button" class="btn primary" id="inspUploadBtn" style="padding:11px 20px">+ Upload photos</button>
+            <span id="inspUploadStatus" style="font-size:0.82em;color:var(--text-dim);margin-left:10px"></span>
+          </div>
+          <div id="inspGrid" class="insp-grid">
+            <div style="color:var(--text-muted);font-size:0.85em;padding:14px 0">Loading photos...</div>
+          </div>
         </div>
       </div>
     `;
@@ -788,7 +790,7 @@ body::before{
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
-      const maxDim = 2000;
+      const maxDim = 2400;
       const ratio = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
       canvas.width = Math.max(1, Math.round(img.naturalWidth * ratio));
       canvas.height = Math.max(1, Math.round(img.naturalHeight * ratio));
@@ -822,9 +824,62 @@ body::before{
         const fs = op.size || Math.max(16, Math.round(canvas.width / 26));
         ctx.font = `700 ${fs}px Inter, system-ui, sans-serif`;
         ctx.textBaseline = 'top';
-        ctx.lineWidth = Math.max(2, fs / 8); ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-        ctx.strokeText(op.text, op.x, op.y); ctx.fillStyle = op.color; ctx.fillText(op.text, op.x, op.y);
+        // Clamp x so there is room, then wrap to the remaining width so the text
+        // never runs off the photo.
+        const x = Math.min(op.x, canvas.width * 0.62);
+        const maxW = canvas.width - x - Math.round(canvas.width * 0.04);
+        const lines = wrapText(ctx, op.text, Math.max(60, maxW));
+        const lh = Math.round(fs * 1.25);
+        ctx.lineWidth = Math.max(2, fs / 8); ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+        lines.forEach((ln, i) => {
+          const ly = op.y + i * lh;
+          ctx.strokeText(ln, x, ly);
+          ctx.fillStyle = op.color;
+          ctx.fillText(ln, x, ly);
+        });
       }
+    }
+    function wrapText(c, text, maxWidth){
+      const out = [];
+      String(text).split('\n').forEach(para => {
+        const words = para.split(/\s+/);
+        let line = '';
+        for (const w of words){
+          const test = line ? line + ' ' + w : w;
+          if (c.measureText(test).width > maxWidth && line){ out.push(line); line = w; }
+          else line = test;
+        }
+        out.push(line);
+      });
+      return out;
+    }
+    // Inline text box: a textarea overlaid at the tap point. Commits on blur or
+    // Enter (Shift+Enter inserts a newline; Esc cancels). The committed text
+    // wraps to the image width at render time so it stays on the photo.
+    function openTextEditor(canvasPt, ev){
+      const existing = backdrop.querySelector('.anno-textinput');
+      if (existing) existing.remove();
+      const ta = document.createElement('textarea');
+      ta.className = 'anno-textinput';
+      ta.rows = 1;
+      const left = Math.max(8, Math.min(ev.clientX, window.innerWidth - 230));
+      const top = Math.max(8, Math.min(ev.clientY, window.innerHeight - 90));
+      ta.style.cssText = `position:fixed;left:${left}px;top:${top}px;z-index:220;min-width:160px;max-width:60vw;background:rgba(10,14,26,0.96);color:${color};border:1px solid ${color};border-radius:8px;padding:6px 8px;font:700 16px Inter,system-ui,sans-serif;resize:none;outline:none`;
+      backdrop.appendChild(ta);
+      ta.focus();
+      let committed = false;
+      const commit = () => {
+        if (committed) return; committed = true;
+        const t = ta.value.trim();
+        ta.remove();
+        if (t){ ops.push({ type: 'text', color, x: canvasPt.x, y: canvasPt.y, text: t }); redraw(); }
+      };
+      ta.addEventListener('blur', commit);
+      ta.addEventListener('keydown', k => {
+        if (k.key === 'Enter' && !k.shiftKey){ k.preventDefault(); ta.blur(); }
+        else if (k.key === 'Escape'){ k.preventDefault(); ta.value = ''; ta.blur(); }
+      });
+      ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; });
     }
     function pos(e){
       const r = canvas.getBoundingClientRect();
@@ -834,8 +889,7 @@ body::before{
       e.preventDefault();
       const p = pos(e);
       if (tool === 'text'){
-        const t = window.prompt('Text to add:');
-        if (t && t.trim()){ ops.push({ type: 'text', color, x: p.x, y: p.y, text: t.trim() }); redraw(); }
+        openTextEditor(p, e);
         return;
       }
       drawing = true;
@@ -869,7 +923,7 @@ body::before{
       btn.disabled = true; btn.textContent = 'Saving...';
       let blob;
       try {
-        blob = await new Promise((res, rej) => canvas.toBlob(b => b ? res(b) : rej(new Error('toBlob returned null')), 'image/jpeg', 0.9));
+        blob = await new Promise((res, rej) => canvas.toBlob(b => b ? res(b) : rej(new Error('toBlob returned null')), 'image/jpeg', 0.92));
       } catch (err) {
         toast('Markup blocked (image CORS) - could not save', 'err');
         btn.disabled = false; btn.textContent = 'Save markup'; return;
@@ -883,6 +937,10 @@ body::before{
       try {
         const r = await fetch('/api/estimate-photos', { method: 'POST', headers: authHeaders(), body: fd });
         if (!r.ok) throw new Error('HTTP ' + r.status);
+        // Overtake the original: the marked-up copy replaces the photo it was
+        // drawn over (it already carries the original's slot/category), so there
+        // is one image, not two.
+        try { await fetch('/api/estimate-photos?id=' + encodeURIComponent(photoId), { method: 'DELETE', headers: authHeaders() }); } catch (_) {}
         toast('Markup saved', 'ok');
         backdrop.remove();
         loadInspectionPhotos();
