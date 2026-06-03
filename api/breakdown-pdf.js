@@ -76,11 +76,14 @@ export default async function handler(req, res) {
     const sell = lockedTier.total;
     const laborBudget = Math.max(0, sell - matSubtotal);
 
+    // Site supervision + project management + workmanship-warranty backing are
+    // folded into the install line (was a separate 8% allocation). Customers
+    // shouldn't see a $700 line item labeled "supervisor" — it reads like a
+    // line item they could remove. It's part of doing the work, not an add-on.
     const allocations = [
       { label: 'Tear-off, deck inspection & disposal', share: 0.15 },
-      { label: 'Roofing system installation (skilled crew, multi-day)', share: 0.65 },
-      { label: 'Flashing, ventilation & detail work', share: 0.12 },
-      { label: 'Site supervision, project management & workmanship warranty', share: 0.08 }
+      { label: 'Roofing system installation (skilled crew, multi-day)', share: 0.73 },
+      { label: 'Flashing, ventilation & detail work', share: 0.12 }
     ];
     let allocated = 0;
     for (let i = 0; i < allocations.length - 1; i++) {
@@ -112,7 +115,7 @@ export default async function handler(req, res) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Detailed Breakdown — ${customerName}</title>
+<title>Detailed Breakdown · ${customerName}</title>
 <style>
   @page { size: Letter; margin: 0.5in 0.5in 0.6in 0.5in; }
   *{box-sizing:border-box}
@@ -209,7 +212,7 @@ export default async function handler(req, res) {
 </div>
 
 <div class="intro">
-  <strong>How to read this:</strong> Materials are shown at our supplier cost — line by line, exactly what's going on your roof. The Labor &amp; Installation section reflects the full cost of skilled crew, supervision, project management, and our workmanship warranty backing every project. The total at the bottom of each package is the price you've been quoted.
+  <strong>How to read this:</strong> Materials are shown at our supplier cost, line by line, exactly what's going on your roof. The Labor &amp; Installation section reflects the full cost of skilled crew, site management, and our workmanship warranty backing every project. The total at the bottom of each package is the price you've been quoted.
 </div>
 
 ${tiers.map(t => `
@@ -270,7 +273,7 @@ ${tiers.map(t => `
         <td class="right">${$w(t.tax)}</td>
       </tr>
       <tr class="final">
-        <td>${t.slug.toUpperCase()} package — final price</td>
+        <td>${t.slug.toUpperCase()} package · final price</td>
         <td class="right">${$w(t.total)}</td>
       </tr>
     </tbody>

@@ -100,6 +100,10 @@ function mayPromoDiscount(est, tierId, pkg) {
   if (est && (est.accepted_at || est.locked_at || est.final_accepted_total)) return 0;
   const status = String(est?.status || '').toLowerCase();
   if (status === 'signed' || status === 'accepted' || status === 'won' || status === 'closed') return 0;
+  // Wall-clock gate: once we're past the promo end date, never show "Book by May 31"
+  // to a customer viewing in June. Without this the gate was on estimate.created_at
+  // only, so a May 31 estimate kept rendering the May banner indefinitely.
+  if (new Date().toISOString() >= MAY_PROMO.endISO) return 0;
   const created = est && est.created_at;
   if (!created) return 0;
   const iso = new Date(created).toISOString();
@@ -585,7 +589,13 @@ export default async function handler(req, res) {
     media: {
       ...PU_DEFAULT_MEDIA,
       beforeImage: beforePhoto?.url || PU_DEFAULT_MEDIA.beforeImage,
-      afterImage: afterPhoto?.url || PU_DEFAULT_MEDIA.afterImage,
+      // Prefer explicit afterPhoto, then the AI-rendered cover (when there is
+      // a real before to pair with it), then the stock Plus Ultra fallback.
+      // Only use cover as the after when we have a real before too, so the
+      // slider stays coherent (no stock-crew before vs real-house after).
+      afterImage: afterPhoto?.url
+        || (beforePhoto && cover && cover.id !== beforePhoto.id ? cover.url : null)
+        || PU_DEFAULT_MEDIA.afterImage,
       videoUrl: resolveIntroVideo(rep, est.proposal_mode || 'shingle'),
       // Commercial estimates show every inspection photo — no 8-photo cap.
       // For commercial, also skip the stock-gallery fallback (only show real on-site photos).
