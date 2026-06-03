@@ -662,53 +662,66 @@ export default async function handler(req, res) {
   try {
     const inspComp = data.envelope?.components?.inspection_photos;
     // Two ways to surface inspection photos:
-    //   1. Envelope mode with inspection_photos component visible (legacy path)
-    //   2. _inspection_section_visible flag on custom_prices (footer section, decoupled from envelope)
+    //   1. Envelope mode with inspection_photos component visible (legacy path):
+    //      unions project_files + estimate_photos + companycam_archive
+    //   2. _inspection_section_visible flag on custom_prices (footer section):
+    //      ONLY estimate_photos that the user uploaded for THIS estimate.
+    //      No project_files (annotator surface), no CC archive (fuzzy address
+    //      matches pull random neighborhood shots — Mac flagged this Jun 3 2026
+    //      because his Catherine 62 Charlotte proposal surfaced 13 unrelated
+    //      "62 ..." CompanyCam projects alongside her 13 real drone shots).
+    //      Also strips is_cover photos and the AI-generated after-render (which
+    //      lives in the B/A slider, not the inspection grid).
+    const envelopeInspectionMode = !!(inspComp && !inspComp.hidden);
     const inspectionFooterVisible = est.custom_prices?._inspection_section_visible === true;
     data.inspectionFooterVisible = inspectionFooterVisible;
-    const wantInspection = (inspComp && !inspComp.hidden) || inspectionFooterVisible;
+    const wantInspection = envelopeInspectionMode || inspectionFooterVisible;
     if (wantInspection && est.customer_id) {
       const merged = [];
       const seenIds = new Set();
 
-      // Source 1: project_files for the customer's most-recent project
-      const { data: project } = await supabaseAdmin
-        .from('projects')
-        .select('id, address')
-        .eq('tenant_id', est.tenant_id)
-        .eq('customer_id', est.customer_id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      let projectAddress = project?.address || null;
-      if (project) {
-        const { data: files } = await supabaseAdmin
-          .from('project_files')
-          .select('id, url, annotated_url, caption, category, sort_order, uploaded_at, mime_type')
+      // Source 1: project_files for the customer's most-recent project.
+      // Envelope mode only — the footer section doesn't pull these.
+      let projectAddress = null;
+      if (envelopeInspectionMode) {
+        const { data: project } = await supabaseAdmin
+          .from('projects')
+          .select('id, address')
           .eq('tenant_id', est.tenant_id)
-          .eq('project_id', project.id)
-          .order('sort_order', { ascending: true })
-          .order('uploaded_at', { ascending: false });
-        for (const f of (files || [])) {
-          if (!f.mime_type?.startsWith('image/')) continue;
-          const id = 'pf_' + f.id;
-          if (seenIds.has(id)) continue;
-          seenIds.add(id);
-          merged.push({
-            id,
-            url: f.annotated_url || f.url,
-            original_url: f.url,
-            has_annotations: !!f.annotated_url,
-            caption: f.caption || '',
-            category: f.category || 'inspection',
-            source: 'project_files'
-          });
+          .eq('customer_id', est.customer_id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        projectAddress = project?.address || null;
+        if (project) {
+          const { data: files } = await supabaseAdmin
+            .from('project_files')
+            .select('id, url, annotated_url, caption, category, sort_order, uploaded_at, mime_type')
+            .eq('tenant_id', est.tenant_id)
+            .eq('project_id', project.id)
+            .order('sort_order', { ascending: true })
+            .order('uploaded_at', { ascending: false });
+          for (const f of (files || [])) {
+            if (!f.mime_type?.startsWith('image/')) continue;
+            const id = 'pf_' + f.id;
+            if (seenIds.has(id)) continue;
+            seenIds.add(id);
+            merged.push({
+              id,
+              url: f.annotated_url || f.url,
+              original_url: f.url,
+              has_annotations: !!f.annotated_url,
+              caption: f.caption || '',
+              category: f.category || 'inspection',
+              source: 'project_files'
+            });
+          }
         }
       }
 
-      // Source 2: estimate_photos for THIS estimate. This is where uploads
-      // from /job.html (the Photos & Video gallery) land, so without this
-      // union the inspection gallery never shows what Mac just uploaded.
+      // Source 2: estimate_photos for THIS estimate. Both paths include these.
+      // For footer mode, strip is_cover (rendered in hero) and category='after'
+      // (the AI-render lives in the B/A slider, not the inspection grid).
       const { data: epRows } = await supabaseAdmin
         .from('estimate_photos')
         .select('id, url, caption, category, is_cover, uploaded_at, mime_type')
@@ -716,6 +729,11 @@ export default async function handler(req, res) {
         .order('uploaded_at', { ascending: false });
       for (const ep of (epRows || [])) {
         if (ep.mime_type && !ep.mime_type.startsWith('image/')) continue;
+        if (inspectionFooterVisible && !envelopeInspectionMode) {
+          if (ep.is_cover) continue;
+          const cat = String(ep.category || '').toLowerCase();
+          if (cat === 'cover' || cat === 'after' || cat === 'metal_after' || cat === 'metal_cover') continue;
+        }
         const id = 'ep_' + ep.id;
         if (seenIds.has(id)) continue;
         seenIds.add(id);
@@ -723,48 +741,49 @@ export default async function handler(req, res) {
           id,
           url: ep.url,
           original_url: ep.url,
-          has_annotations: false, // estimate_photos doesn't carry annotated_url
+          has_annotations: false,
           caption: ep.caption || '',
           category: ep.category || 'inspection',
           source: 'estimate_photos'
         });
       }
 
-      // Source 3: companycam_archive matched by property address. Falls back
-      // to the customer's address if the project doesn't have one set.
-      // Address match is fuzzy (first token + city) to tolerate punctuation
-      // and number/street formatting drift. Capped at 24 photos so a property
-      // with hundreds of historical CompanyCam shots doesn't dump.
-      const addressForMatch = (projectAddress || est.customer?.address || '').trim();
-      if (addressForMatch) {
-        const firstToken = addressForMatch.split(/\s+/)[0]; // street number or first word
-        const { data: ccProjects } = await supabaseAdmin
-          .from('companycam_archive_projects')
-          .select('id, address')
-          .eq('tenant_id', est.tenant_id)
-          .ilike('address', `%${firstToken}%`);
-        const ccIds = (ccProjects || []).map(p => p.id);
-        if (ccIds.length) {
-          const { data: ccPhotos } = await supabaseAdmin
-            .from('companycam_archive_photos')
-            .select('id, url_archived, url_source, caption, captured_at')
+      // Source 3: companycam_archive matched by property address.
+      // Envelope mode only — the footer section doesn't pull these. Fuzzy
+      // first-token address match is too noisy for a customer-facing footer
+      // ("62 Charlotte" matches every other "62 ..." in CC).
+      if (envelopeInspectionMode) {
+        const addressForMatch = (projectAddress || est.customer?.address || '').trim();
+        if (addressForMatch) {
+          const firstToken = addressForMatch.split(/\s+/)[0];
+          const { data: ccProjects } = await supabaseAdmin
+            .from('companycam_archive_projects')
+            .select('id, address')
             .eq('tenant_id', est.tenant_id)
-            .in('archive_project_id', ccIds)
-            .order('captured_at', { ascending: false })
-            .limit(24);
-          for (const cc of (ccPhotos || [])) {
-            const id = 'cc_' + cc.id;
-            if (seenIds.has(id)) continue;
-            seenIds.add(id);
-            merged.push({
-              id,
-              url: cc.url_archived || cc.url_source,
-              original_url: cc.url_source,
-              has_annotations: false,
-              caption: cc.caption || '',
-              category: 'companycam',
-              source: 'companycam_archive'
-            });
+            .ilike('address', `%${firstToken}%`);
+          const ccIds = (ccProjects || []).map(p => p.id);
+          if (ccIds.length) {
+            const { data: ccPhotos } = await supabaseAdmin
+              .from('companycam_archive_photos')
+              .select('id, url_archived, url_source, caption, captured_at')
+              .eq('tenant_id', est.tenant_id)
+              .in('archive_project_id', ccIds)
+              .order('captured_at', { ascending: false })
+              .limit(24);
+            for (const cc of (ccPhotos || [])) {
+              const id = 'cc_' + cc.id;
+              if (seenIds.has(id)) continue;
+              seenIds.add(id);
+              merged.push({
+                id,
+                url: cc.url_archived || cc.url_source,
+                original_url: cc.url_source,
+                has_annotations: false,
+                caption: cc.caption || '',
+                category: 'companycam',
+                source: 'companycam_archive'
+              });
+            }
           }
         }
       }
