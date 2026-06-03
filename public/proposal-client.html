@@ -3548,7 +3548,14 @@ function envRenderInspection() {
   if (!block || !grid) return;
   const comp = env?.components?.inspection_photos;
   if (!comp || comp.hidden) { block.hidden = true; return; }
-  const photos = Array.isArray(DATA.inspectionPhotos) ? DATA.inspectionPhotos : [];
+  // This block used to dump every drone frame (a ~2700px wall of 36 photos).
+  // When curated findings (the annotated markups in "What We Found") exist, they
+  // ARE the inspection section, so hide this entirely. Otherwise show at most 6.
+  const allInsp = Array.isArray(DATA.inspectionPhotos) ? DATA.inspectionPhotos : [];
+  const annotated = allInsp.filter(p => p && (p.has_annotations || (p.caption && p.caption.trim())));
+  if (annotated.length) { block.hidden = true; return; }
+  const photos = allInsp.slice(0, 6);
+  if (!photos.length) { block.hidden = true; return; }
   block.hidden = false;
 
   // Owner-only edit shortcut. Probe localStorage for a portal token; if
