@@ -285,6 +285,18 @@ function resolveRepFromEstimate(est) {
   return REPS.darcy;
 }
 
+// True when the tenant has opted the v2 proposal renderer on.
+async function resolveV2Enabled(tenantId) {
+  try {
+    const { data } = await supabaseAdmin
+      .from('tenant_settings')
+      .select('proposal_v2_enabled')
+      .eq('tenant_id', tenantId)
+      .single();
+    return data?.proposal_v2_enabled === true;
+  } catch { return false; }
+}
+
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
@@ -516,12 +528,31 @@ export default async function handler(req, res) {
 
   const rep = resolveRepFromEstimate(est);
 
+  // v2 routing bridge: when the tenant has the v2 renderer enabled AND a sent v2
+  // instance exists for this estimate, route the customer to the v2 proposal.
+  // Legacy-safe: proposals without a sent v2 instance keep rendering here.
+  let v2Redirect = null;
+  try {
+    if (await resolveV2Enabled(est.tenant_id)) {
+      const { data: inst } = await supabaseAdmin
+        .from('proposal_instances')
+        .select('slug, created_at')
+        .eq('estimate_id', est.id)
+        .in('status', ['sent', 'viewed', 'accepted'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (inst?.slug) v2Redirect = `/p/${inst.slug}`;
+    }
+  } catch (e) { /* never block the legacy proposal on a routing lookup */ }
+
   const data = {
     refId: `PU-${est.estimate_number || est.id.slice(0, 8).toUpperCase()}`,
     estimateId: est.id,
     shareToken: est.share_token,
     estimateTags: Array.isArray(est.tags) ? est.tags : [],
     proposalMode: est.proposal_mode || '',
+    v2Redirect,
     customer: {
       name: customerName,
       address: customerAddress,

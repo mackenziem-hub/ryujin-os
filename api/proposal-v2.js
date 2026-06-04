@@ -715,6 +715,15 @@ export default async function handler(req, res) {
   }
 }
 
+// Best-effort view counter bump; never blocks the response.
+function trackInstanceView(row) {
+  supabaseAdmin
+    .from('proposal_instances')
+    .update({ view_count: (Number(row.view_count) || 0) + 1, last_viewed_at: new Date().toISOString() })
+    .eq('id', row.id)
+    .then(() => {}, () => {});
+}
+
 // ── Path A: frozen snapshot ──────────────────────────────────────────────────
 // Load the proposal_instances row and render its frozen snapshot AS-IS. We do
 // NOT re-resolve pricing, tokens, branding, or rep here. The snapshot is the
@@ -739,8 +748,21 @@ async function renderInstance(instance, res) {
   }
   if (!row) return res.status(404).json({ error: 'Proposal not found' });
 
-  // Snapshots store the fully-assembled pieces. Fall back to the bare row
-  // columns when an older snapshot didn't nest them.
+  // Frozen snapshot fast-path: the materializer stores the complete ProposalData
+  // in data_snapshot. Serve it verbatim (the no-edits-to-sent guarantee), only
+  // refreshing meta.status + the view counter.
+  if (row.data_snapshot && typeof row.data_snapshot === 'object') {
+    const snap = row.data_snapshot;
+    if (snap.meta) {
+      snap.meta.status = row.status || snap.meta.status;
+      snap.meta.instanceSlug = row.slug || snap.meta.instanceSlug;
+    }
+    trackInstanceView(row);
+    return res.json(snap);
+  }
+
+  // Legacy/fallback: assemble from the structured columns. Fall back to the bare
+  // row columns when an older snapshot didn't nest them.
   const branding = row.branding_snapshot || row.branding || { ...TENANT_BRANDING_DEFAULT };
   const rep = row.rep_snapshot || row.rep || repPublic(REPS.darcy);
   const customer = row.customer_snapshot || row.customer || { name: '', address: '', phone: '', email: '', coverImage: null };
@@ -783,16 +805,7 @@ async function renderInstance(instance, res) {
     products
   };
 
-  // Track the view (best-effort, never blocks the response).
-  supabaseAdmin
-    .from('proposal_instances')
-    .update({
-      view_count: (Number(row.view_count) || 0) + 1,
-      last_viewed_at: new Date().toISOString()
-    })
-    .eq('id', row.id)
-    .then(() => {}, () => {});
-
+  trackInstanceView(row);
   return res.json(data);
 }
 
@@ -800,29 +813,40 @@ async function renderInstance(instance, res) {
 // Load estimate + template + blocks, resolve sections, build products live.
 // Nothing is persisted here; this is the builder's preview surface.
 async function renderLivePreview(estimateId, templateSlug, res) {
+  const r = await assembleProposalData(estimateId, templateSlug);
+  if (!r.ok) return res.status(r.status || 500).json({ error: r.error });
+  return res.json(r.data);
+}
+
+// ── Shared assembler ─────────────────────────────────────────────────────────
+// estimate + template -> full ProposalData. Used by the live preview (returns it
+// as JSON) and by api/proposal-materialize.js (persists it as a frozen snapshot).
+// Returns { ok:false, status, error } on failure, { ok:true, data, est, template,
+// tenantId } on success.
+export async function assembleProposalData(estimateId, templateSlug) {
   const { data: est, error: estErr } = await supabaseAdmin
     .from('estimates')
     .select('*, customer:customers(*), photos:estimate_photos(*)')
     .eq('id', estimateId)
     .single();
-  if (estErr || !est) return res.status(404).json({ error: 'Estimate not found' });
+  if (estErr || !est) return { ok: false, status: 404, error: 'Estimate not found' };
 
   const tenantId = est.tenant_id;
 
-  // Resolve the template by slug for this tenant. A template is required for the
-  // live preview; it carries both the section spine and the product_plan.
+  // Resolve the template by slug for this tenant. A template carries both the
+  // section spine and the product_plan.
   let template = null;
   if (templateSlug) {
     const { data: tpl } = await supabaseAdmin
       .from('proposal_templates')
-      .select('slug, name, sections, product_plan')
+      .select('id, slug, name, sections, product_plan')
       .eq('tenant_id', tenantId)
       .eq('slug', templateSlug)
       .maybeSingle();
     template = tpl || null;
   }
   if (!template) {
-    return res.status(404).json({ error: `Template not found: ${templateSlug || '(missing ?template=)'}` });
+    return { ok: false, status: 404, error: `Template not found: ${templateSlug || '(missing ?template=)'}` };
   }
 
   const [branding, taxRate] = await Promise.all([
@@ -857,7 +881,7 @@ async function renderLivePreview(estimateId, templateSlug, res) {
     products
   };
 
-  return res.json(data);
+  return { ok: true, data, est, template, tenantId };
 }
 
 // Re-export for unit tests / downstream callers that want the assembly seam.
