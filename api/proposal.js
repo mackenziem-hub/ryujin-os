@@ -633,7 +633,7 @@ export default async function handler(req, res) {
       afterImage: afterPhoto?.url
         || (beforePhoto && cover && cover.id !== beforePhoto.id ? cover.url : null)
         || PU_DEFAULT_MEDIA.afterImage,
-      videoUrl: resolveIntroVideo(rep, est.proposal_mode || 'shingle'),
+      videoUrl: est.custom_prices?._video_visible === false ? null : resolveIntroVideo(rep, est.proposal_mode || 'shingle'),
       // Commercial estimates show every inspection photo — no 8-photo cap.
       // For commercial, also skip the stock-gallery fallback (only show real on-site photos).
       gallery: (Array.isArray(est.tags) && est.tags.includes('commercial'))
