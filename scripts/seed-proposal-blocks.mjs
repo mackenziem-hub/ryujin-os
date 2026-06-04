@@ -65,7 +65,7 @@ const TIER_CATALOG = {
   },
   diamond: {
     tag: 'BEST', name: 'Diamond · Grand Manor',
-    desc: 'CertainTeed Grand Manor — Super Shangle 5-layer construction with authentic slate profile.',
+    desc: 'CertainTeed Grand Manor, Super Shangle 5-layer construction with authentic slate profile.',
     perks: [
       'CertainTeed Grand Manor designer shingles',
       'Super Shangle® 5-layer construction',
@@ -129,14 +129,14 @@ const MACKENZIE = {
   phone: '(506) 540-1052',
   email: 'mackenzie.m@plusultraroofing.com',
   photo: `${BRAND_BASE}/rep-mackenzie.png`,
-  bio: "Mackenzie is the owner of Plus Ultra Roofing — a third-generation roofing company serving Greater Moncton and beyond. He grew up on job sites, runs the crews hands-on, and signs his own name to every proposal he writes. Tech-forward, certification-backed, and committed to doing every job the way he'd want it done on his own home."
+  bio: "Mackenzie is the owner of Plus Ultra Roofing, a third-generation roofing company serving Greater Moncton and beyond. He grew up on job sites, runs the crews hands-on, and signs his own name to every proposal he writes. Tech-forward, certification-backed, and committed to doing every job the way he'd want it done on his own home."
 };
 
 // WHY_CARDS stat cards from public/proposal-client.html
 const WHY_CARDS = [
   { stat: '20+ yrs',  label: 'Trades experience' },
   { stat: '5.0★',   label: '35+ Google reviews' },
-  { stat: '50–100+', label: 'Photos per job via Company Cam' },
+  { stat: '50-100+', label: 'Photos per job via Company Cam' },
   { stat: '$2M',      label: 'Liability insured + WCB covered' }
 ];
 
@@ -150,17 +150,17 @@ const COMPARISON_ROWS = [
   { label: 'CertainTeed Select ShingleMaster™ certified',  us: true, them: 'rarely' },
   { label: 'Written leak-free year-one guarantee',              us: true, them: 'verbal only' },
   { label: '$2M liability + WCB coverage',                      us: true, them: 'maybe' },
-  { label: '50–100+ photos every stage (Company Cam)',     us: true, them: false },
+  { label: '50-100+ photos every stage (Company Cam)',     us: true, them: false },
   { label: 'Magnet sweep + full debris haul',                   us: true, them: 'limited' },
   { label: 'Internal QA checklist on every install',            us: true, them: false }
 ];
-const COMPARISON_FOOT = 'A cheap quote saves 15–25% upfront — then costs you 3× that in early replacement, insurance claim denials, and water damage. Every row above is priced into our number as the starting point, so what you see here is what you pay.';
+const COMPARISON_FOOT = 'A cheap quote saves 15-25% upfront, then costs you 3x that in early replacement, insurance claim denials, and water damage. Every row above is priced into our number as the starting point, so what you see here is what you pay.';
 
 // Guarantee / SureStart copy from public/proposal-client.html (Transparency & Warranty)
 const GUARANTEE_ITEMS = [
   {
     title: 'Photo Documentation',
-    body: 'We document every stage with 50–100+ photos using Company Cam — before, during, after. You get the link to the full project album with every job.'
+    body: 'We document every stage with 50-100+ photos using Company Cam,before, during, after. You get the link to the full project album with every job.'
   },
   {
     title: 'Internal QA Checklist',
@@ -168,11 +168,11 @@ const GUARANTEE_ITEMS = [
   },
   {
     title: 'Leak-Free Year One',
-    body: 'If your roof leaks in the first year due to our workmanship, we fix it free. Every job comes with a written Plus Ultra workmanship warranty of 15–25 years depending on tier.'
+    body: 'If your roof leaks in the first year due to our workmanship, we fix it free. Every job comes with a written Plus Ultra workmanship warranty of 15-25 years depending on tier.'
   },
   {
     title: 'Rotten Wood, Priced Upfront',
-    body: 'If we find damaged sheathing during tear-off, the first 2 sheets of replacement are included. Anything beyond is quoted at $85/sheet and approved before we proceed — no surprise change orders.'
+    body: 'If we find damaged sheathing during tear-off, the first 2 sheets of replacement are included. Anything beyond is quoted at $85/sheet and approved before we proceed,no surprise change orders.'
   }
 ];
 const GUARANTEE_CERTS = [
@@ -196,10 +196,10 @@ const SCOPE_LINE_ITEMS = [
   { label: 'Substrate inspection + re-nail', value: 'included' },
   { label: 'Rotten wood allowance', value: 'first 2 sheets included, then $85/sheet approved in advance' },
   { label: 'Magnetic cleanup + debris haul', value: 'included' },
-  { label: '50–100+ photo documentation', value: 'every stage via Company Cam' },
+  { label: '50-100+ photo documentation', value: 'every stage via Company Cam' },
   { label: 'Internal QA checklist', value: 'every install' },
   { label: 'Manufacturer warranty', value: 'Lifetime limited + 10-yr SureStart™' },
-  { label: 'Plus Ultra workmanship', value: '15–25 yr + leak-free guarantee' }
+  { label: 'Plus Ultra workmanship', value: '15-25 yr + leak-free guarantee' }
 ];
 
 // ─────────────────────────────────────────────────────────────
@@ -237,10 +237,10 @@ const BLOCKS = [
     audience: 'customer',
     title: 'Introduction letter',
     content: {
-      greeting: 'Hi there,',
+      greeting: 'Hi {{firstName}},',
       paragraphs: [
         'Thank you for the opportunity to quote your roof replacement. Below is a detailed breakdown of the work we propose, along with upgrade options designed to maximize the longevity and performance of your home.',
-        'Every Plus Ultra install is handled by our own crew — fully trained, harnessed daily, and backed by $2M liability insurance. We document every job from start to finish and stand behind the workmanship for years after we leave the site.',
+        'Every Plus Ultra install is handled by our own crew,fully trained, harnessed daily, and backed by $2M liability insurance. We document every job from start to finish and stand behind the workmanship for years after we leave the site.',
         "If you have questions as you read, reach out directly. We're here to make this easy."
       ],
       rep: {
@@ -326,7 +326,7 @@ const BLOCKS = [
       subheading: 'Every Plus Ultra job starts the same way and ends looking like this.',
       beforeImage: `${BRAND_BASE}/gallery/03-crew-in-action.jpg`,
       afterImage: `${BRAND_BASE}/gallery/01-hero-lakeside-landmark.jpg`,
-      disclaimer: 'Before/after reflects a past Plus Ultra install — shown to illustrate finish quality, not your home.'
+      disclaimer: 'Before/after reflects a past Plus Ultra install, shown to illustrate finish quality, not your home.'
     }
   },
 
