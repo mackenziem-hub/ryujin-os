@@ -307,7 +307,7 @@ const STATUS_PILL = {
 };
 
 // State
-let DATA = { paysheets: [], tickets: [], psToWoId: new Map() };
+let DATA = { paysheets: [], tickets: [], workorders: [], psToWoId: new Map() };
 let LAST_OK_AT = null;
 let IN_FLIGHT = false;
 
@@ -354,11 +354,12 @@ async function loadAll(forceVisualPulse){
     if (psOk) DATA.paysheets = psR.data.paysheets;
     if (tkOk) DATA.tickets   = tkR.data.tickets;
     if (woOk) {
+      DATA.workorders = woR.data.workorders || [];
       // Build paysheet_id to workorder_id index for job-folder navigation.
       // The FK direction is workorders.linked_paysheet_id, so we reverse it
       // here once instead of per-card.
       DATA.psToWoId = new Map(
-        (woR.data.workorders || [])
+        DATA.workorders
           .filter(w => w.linked_paysheet_id)
           .map(w => [w.linked_paysheet_id, w.id])
       );
@@ -397,17 +398,78 @@ function watchStaleness(){
 }
 setInterval(watchStaleness, 5000);
 
+// ─── Unified active-job list ─────────────────────────────
+// A job's authoritative record is its WORK ORDER. Paysheets carry payout +
+// sub-acceptance and may not exist yet (a job that starts today, or an in-house
+// owner-operator build). So the production list is built from work orders FIRST,
+// with the linked paysheet merged in where present. This is why a real,
+// in-progress job no longer hides until someone creates a paysheet. Any active
+// paysheet with no work order is still included as a safety net.
+function normalizeJob(wo, ps, status){
+  return {
+    woId:        wo ? wo.id : (ps ? (DATA.psToWoId.get(ps.id) || null) : null),
+    paysheetId:  ps ? ps.id : null,
+    hasPaysheet: !!ps,
+    customer_name: (wo && wo.customer_name) || (ps && ps.customer_name) || '—',
+    address:     (wo && wo.address) || (ps && ps.address) || '',
+    status:      status,
+    start_date:  (wo && wo.start_date) || (ps && (ps.scheduled_date || ps.start_date)) || null,
+    subRaw:      String((ps && ps.subcontractor) || (wo && wo.sub_crew_lead) || ''),
+    total:       ps ? (Number(ps.total) || null)
+                    : (wo && wo.estimate && wo.estimate.final_accepted_total != null
+                        ? Number(wo.estimate.final_accepted_total) : null),
+    sub_acceptance_status: ps ? ps.sub_acceptance_status : null,
+    state:       ps ? ps.state : null
+  };
+}
+
+function activeJobList(){
+  const psById = new Map((DATA.paysheets || []).map(p => [p.id, p]));
+  const claimed = new Set();
+  const jobs = [];
+
+  // 1) Active work orders — the real book of current work
+  for (const w of (DATA.workorders || [])){
+    const st = String(w.status || '').toLowerCase();
+    let status = null;
+    if (st === 'in_progress' || st === 'active') status = 'in_progress';
+    else if (st === 'issued' || st === 'scheduled') status = 'scheduled';
+    else continue;                       // skip draft / complete / cancelled
+    const ps = w.linked_paysheet_id ? psById.get(w.linked_paysheet_id) : null;
+    if (ps) claimed.add(ps.id);
+    jobs.push(normalizeJob(w, ps, status));
+  }
+
+  // 2) Active paysheets with no work order — safety net so nothing visible
+  //    today silently vanishes
+  for (const p of (DATA.paysheets || [])){
+    if (claimed.has(p.id)) continue;
+    const st = String(p.status || '').toLowerCase();
+    if (st !== 'in_progress' && st !== 'scheduled') continue;
+    jobs.push(normalizeJob(null, p, st));
+  }
+
+  // in_progress first, then earliest start_date
+  jobs.sort((a,b) => {
+    if (a.status === 'in_progress' && b.status !== 'in_progress') return -1;
+    if (b.status === 'in_progress' && a.status !== 'in_progress') return 1;
+    const ad = a.start_date ? new Date(a.start_date).getTime() : Infinity;
+    const bd = b.start_date ? new Date(b.start_date).getTime() : Infinity;
+    return ad - bd;
+  });
+  return jobs;
+}
+
 // ─── KPI strip ───────────────────────────────────────────
 function renderKPIs(){
-  const ps = DATA.paysheets;
-  const active = ps.filter(p => p.status === 'scheduled' || p.status === 'in_progress');
-  const inProg = ps.filter(p => p.status === 'in_progress');
-  const sched  = ps.filter(p => p.status === 'scheduled');
-  // Pending acceptance ONLY counts on active jobs — historical completed
-  // paysheets that never had sub_acceptance_status flipped are noise.
-  const pendingActive = active.filter(p => p.sub_acceptance_status === 'pending');
-  const activeTotal = active.reduce((s,p) => s + (Number(p.total)||0), 0);
-  const pendingActiveTotal = pendingActive.reduce((s,p) => s + (Number(p.total)||0), 0);
+  const active = activeJobList();
+  const inProg = active.filter(j => j.status === 'in_progress');
+  const sched  = active.filter(j => j.status === 'scheduled');
+  // Pending acceptance is a paysheet concept — only count jobs that HAVE a
+  // paysheet still awaiting the sub's click.
+  const pendingActive = active.filter(j => j.hasPaysheet && j.sub_acceptance_status === 'pending');
+  const activeTotal = active.reduce((s,j) => s + (Number(j.total)||0), 0);
+  const pendingActiveTotal = pendingActive.reduce((s,j) => s + (Number(j.total)||0), 0);
 
   $('kpiActive').textContent = active.length;
   $('kpiActiveSub').textContent = active.length
@@ -438,54 +500,50 @@ function renderKPIs(){
 
 // ─── Active Jobs cards ───────────────────────────────────
 function renderActiveJobs(){
-  const cards = DATA.paysheets
-    .filter(p => p.status === 'scheduled' || p.status === 'in_progress')
-    .sort((a,b) => {
-      // in_progress first, then by start_date / roof_day ASC so the queue reads
-      // chronologically (earliest roof day at the top).
-      if (a.status === 'in_progress' && b.status !== 'in_progress') return -1;
-      if (b.status === 'in_progress' && a.status !== 'in_progress') return 1;
-      const ad = (a.start_date || a.roof_day) ? new Date(a.start_date || a.roof_day).getTime() : Infinity;
-      const bd = (b.start_date || b.roof_day) ? new Date(b.start_date || b.roof_day).getTime() : Infinity;
-      return ad - bd;
-    })
-    .slice(0, 6);
+  const cards = activeJobList().slice(0, 6);
 
   if (!cards.length){
     $('activeJobs').innerHTML = '<div class="empty">No active jobs. All caught up.</div>';
     return;
   }
 
-  $('activeJobs').innerHTML = cards.map(p => {
-    const pill = STATUS_PILL[p.status] || { cls:'pill-sched', label: (p.status||'—').toUpperCase() };
-    const next = nextActionFor(p);
-    const subRaw = String(p.subcontractor || '');
-    const lead = subRaw.match(/\(([^)]+)\)/)?.[1];
-    const sub = lead || subRaw.split('(')[0].trim() || 'Crew';
+  $('activeJobs').innerHTML = cards.map(j => {
+    const pill = STATUS_PILL[j.status] || { cls:'pill-sched', label: (j.status||'—').toUpperCase() };
+    const next = nextActionFor(j);
+    const lead = j.subRaw.match(/\(([^)]+)\)/)?.[1];
+    const sub = lead || j.subRaw.split('(')[0].trim() || 'Crew';
+    const href = j.woId ? `/job.html?wo=${esc(j.woId)}`
+               : j.paysheetId ? `/production-paysheet.html?id=${esc(j.paysheetId)}`
+               : '';
     return `
-      <div class="job-card" onclick="window.open(${(DATA.psToWoId && DATA.psToWoId.get(p.id)) ? `'/job.html?wo=${esc(DATA.psToWoId.get(p.id))}'` : `'/production-paysheet.html?id=${esc(p.id)}'`},'_blank')">
+      <div class="job-card"${href ? ` onclick="window.open('${href}','_blank')" style="cursor:pointer"` : ''}>
         <div class="head">
           <div>
-            <div class="cust">${esc(p.customer_name || '—')}</div>
-            <div class="addr">${esc(shortAddr(p.address))}</div>
+            <div class="cust">${esc(j.customer_name || '—')}</div>
+            <div class="addr">${esc(shortAddr(j.address))}</div>
           </div>
           <div class="status-pill ${pill.cls}">${esc(pill.label)}</div>
         </div>
         <div class="foot">
           <span class="sub">${esc(sub)}</span>
-          <span class="val">${money(p.total)}</span>
+          <span class="val">${money(j.total)}</span>
         </div>
         ${next ? `<div class="next">${esc(next)}</div>` : ''}
       </div>`;
   }).join('');
 }
 
-function nextActionFor(p){
-  const pending = p.sub_acceptance_status === 'pending';
-  if (pending && p.state === 'draft') return '✎ Mac needs to send paysheet';
-  if (pending && p.state === 'sent')  return '⟳ Sent · awaiting sub click';
-  if (p.status === 'in_progress')     return '⚒ Install in progress';
-  if (p.status === 'scheduled')       return '◷ Scheduled · ready to dispatch';
+function nextActionFor(j){
+  if (!j.hasPaysheet){
+    if (j.status === 'in_progress') return '⚒ Install in progress · paysheet not created';
+    if (j.status === 'scheduled')   return '◷ Scheduled · paysheet not created';
+    return null;
+  }
+  const pending = j.sub_acceptance_status === 'pending';
+  if (pending && j.state === 'draft') return '✎ Mac needs to send paysheet';
+  if (pending && j.state === 'sent')  return '⟳ Sent · awaiting sub click';
+  if (j.status === 'in_progress')     return '⚒ Install in progress';
+  if (j.status === 'scheduled')       return '◷ Scheduled · ready to dispatch';
   return null;
 }
 
@@ -493,43 +551,37 @@ function nextActionFor(p){
 // Renamed from "Today's Queue" because /api/schedule requires auth and
 // paysheets lack a scheduled_date today — would be lying to call it today's.
 function renderQueue(){
-  const list = DATA.paysheets
-    .filter(p => p.status === 'scheduled' || p.status === 'in_progress')
-    .sort((a,b) => {
-      if (a.status === 'in_progress' && b.status !== 'in_progress') return -1;
-      if (b.status === 'in_progress' && a.status !== 'in_progress') return 1;
-      const ad = (a.start_date || a.roof_day) ? new Date(a.start_date || a.roof_day).getTime() : Infinity;
-      const bd = (b.start_date || b.roof_day) ? new Date(b.start_date || b.roof_day).getTime() : Infinity;
-      return ad - bd;
-    })
-    .slice(0, 7);
+  const list = activeJobList().slice(0, 7);
 
   if (!list.length){
     $('prodQueue').innerHTML = '<div class="empty">No active dispatches.</div>';
     return;
   }
 
-  $('prodQueue').innerHTML = list.map(p => {
-    const subRaw = String(p.subcontractor || '');
+  $('prodQueue').innerHTML = list.map(j => {
+    const subRaw = j.subRaw;
     const sub = subRaw.replace(/\(.*?\)/,'').replace(/\s+/g,' ').trim() || 'Crew';
     const subShort = sub.length > 18 ? sub.slice(0,16) + '…' : sub;
     const leadMatch = subRaw.match(/\(([^)]+)\)/);
     const lead = leadMatch ? leadMatch[1] : '';
-    const dotCls = p.status === 'in_progress' ? 'amber' : '';
+    const dotCls = j.status === 'in_progress' ? 'amber' : '';
+    const href = j.woId ? `/job.html?wo=${esc(j.woId)}`
+               : j.paysheetId ? `/production-paysheet.html?id=${esc(j.paysheetId)}`
+               : '';
     return `
-      <div class="queue-row" onclick="window.open('/production-paysheet.html?id=${esc(p.id)}','_blank')" style="cursor:pointer">
+      <div class="queue-row"${href ? ` onclick="window.open('${href}','_blank')" style="cursor:pointer"` : ''}>
         <div class="crew">
           <div class="dot ${dotCls}"></div>
           <div>
             <div class="crew-name">${esc(lead || subShort)}</div>
-            <div class="crew-sub">${esc(p.status||'')}</div>
+            <div class="crew-sub">${esc(j.status||'')}</div>
           </div>
         </div>
         <div class="addr-cell">
-          <div style="font-weight:600">${esc(p.customer_name || '—')}</div>
-          <div style="font-size:0.85em;color:rgba(160,190,230,0.55)">${esc(shortAddr(p.address))}</div>
+          <div style="font-weight:600">${esc(j.customer_name || '—')}</div>
+          <div style="font-size:0.85em;color:rgba(160,190,230,0.55)">${esc(shortAddr(j.address))}</div>
         </div>
-        <div class="val-chip">${money(p.total)}</div>
+        <div class="val-chip">${money(j.total)}</div>
       </div>`;
   }).join('');
 }
@@ -639,9 +691,10 @@ function renderTiles(){
   const activePs = ps.filter(p => p.status === 'scheduled' || p.status === 'in_progress');
   const pendingActive = activePs.filter(p => p.sub_acceptance_status === 'pending').length;
   const subs = new Set(activePs.map(p => p.subcontractor).filter(Boolean));
+  const activeJobs = activeJobList();
 
-  $('tileWO').textContent = activePs.length;
-  $('tileWOmeta').textContent = activePs.length ? `${activePs.length} in flight · scope + crew` : 'signed jobs · crew · tasks';
+  $('tileWO').textContent = activeJobs.length;
+  $('tileWOmeta').textContent = activeJobs.length ? `${activeJobs.length} in flight · scope + crew` : 'signed jobs · crew · tasks';
 
   $('tilePS').textContent = activePs.length;
   $('tilePSmeta').textContent = pendingActive ? `${pendingActive} active · sub accept pending` : 'active paysheets · all accepted';
