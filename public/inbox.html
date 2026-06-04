@@ -278,7 +278,37 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
     return `<button class="btn btn-send" disabled title="This channel is review only. Copy the draft to reply.">Review only</button>`;
   }
 
+  // Sub-portal messages (e.g. Ryan's topic-routed questions) are bridged from
+  // the internal messages table. They have no GHL channel, so the reply lives in
+  // /messages.html instead of an Approve and Send box. Deep-link to the thread.
+  function subThreadLink(it){
+    const href = it.ref_id ? `/messages.html?thread=${encodeURIComponent(it.ref_id)}` : '/messages.html';
+    return `<a class="btn btn-send" style="text-decoration:none;display:flex;align-items:center;justify-content:center" href="${href}" target="_blank" rel="noopener">View thread</a>`;
+  }
+
+  function renderSubCard(it){
+    return `
+      <div class="card" data-id="${it.id}">
+        <div class="body">
+          <div class="head">
+            <span class="who">${escapeHtml(it.contact_name)}</span>
+            <span class="pill pill-channel">${escapeHtml(it.channel_label || 'Sub portal')}</span>
+            <span class="pill pill-cat">${escapeHtml(it.category || 'sub')}</span>
+            ${urgencyPill(it.urgency)}
+            <span class="tb-meta">${fmtDate(it.last_message_at)}</span>
+          </div>
+          <div class="summary">${escapeHtml(it.summary || '')}</div>
+          <div class="inbound">${escapeHtml(it.last_message_body || '(no message body)')}</div>
+          <div class="actions">
+            ${subThreadLink(it)}
+            <button class="btn btn-dismiss" onclick="dismiss('${it.id}', this)">Dismiss</button>
+          </div>
+        </div>
+      </div>`;
+  }
+
   function renderCard(it){
+    if (it.source === 'sub_portal') return renderSubCard(it);
     const notifyPill = it.notify
       ? '<span class="pill pill-notify">' + escapeHtml(it.notify_reason || 'needs you now') + '</span>'
       : '';

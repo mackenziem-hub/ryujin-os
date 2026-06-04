@@ -241,16 +241,94 @@ async function sendOwnerDigest(items, ownerContactId) {
   }
 }
 
+// ── Bridge: sub-portal questions -> inbox queue ──
+// Subs (Ryan) send topic-routed questions from the sub portal that land only in
+// the `messages` table (one row per recipient, shared thread_id). They fire a
+// Gmail alert but never reached /inbox.html. Mirror each un-bridged thread into
+// inbox_items (source='sub_portal') so the inbox is the single review pane,
+// GHL or not. notify stays false: the Gmail alert already pinged. Idempotent via
+// the partial unique index on (tenant_id, ref_table, ref_id).
+async function bridgeSubPortalMessages({ tenantId, runId }) {
+  const out = { bridged: 0, skipped: 0, errors: [] };
+
+  // Recent sub-portal messages. The unique index is the real dedup backstop, so
+  // re-scanning already-bridged threads each tick is harmless.
+  const { data: msgs, error } = await supabaseAdmin
+    .from('messages')
+    .select('id, thread_id, from_label, subject, body, created_at, ref_workorder_id, metadata')
+    .eq('tenant_id', tenantId)
+    .eq('metadata->>source', 'sub_portal')
+    .order('created_at', { ascending: false })
+    .limit(200);
+  if (error) { out.errors.push(`messages: ${error.message}`); return out; }
+  if (!msgs?.length) return out;
+
+  // One logical inbox item per thread (recipients share a thread_id). Keep the
+  // newest row per thread for the display fields.
+  const byThread = new Map();
+  for (const m of msgs) {
+    if (m.thread_id && !byThread.has(m.thread_id)) byThread.set(m.thread_id, m);
+  }
+  const threadIds = [...byThread.keys()];
+  if (!threadIds.length) return out;
+
+  // Skip threads already bridged (fast path; the unique index still guards races).
+  const { data: existing } = await supabaseAdmin
+    .from('inbox_items')
+    .select('ref_id')
+    .eq('tenant_id', tenantId)
+    .eq('ref_table', 'message_thread')
+    .in('ref_id', threadIds);
+  const already = new Set((existing || []).map(r => r.ref_id));
+
+  for (const [threadId, m] of byThread) {
+    if (already.has(threadId)) { out.skipped++; continue; }
+    const row = {
+      tenant_id: tenantId,
+      source: 'sub_portal',
+      ghl_conversation_id: null,
+      ghl_contact_id: null,
+      contact_name: m.from_label || 'Sub (sub portal)',
+      channel: 'sub_portal',
+      last_message_body: clampStr(m.body, 4000),
+      last_message_at: m.created_at || null,
+      last_message_id: m.id || null,
+      state_hash: threadId,                       // NOT NULL; the thread is the state key
+      summary: clampStr(m.subject || m.body, 300),
+      category: 'sub',
+      urgency: 'normal',
+      notify: false,                              // Gmail already alerted; queue-only
+      notify_reason: null,
+      needs_reply: true,
+      draft_reply: '',
+      status: 'needs_review',
+      ref_table: 'message_thread',
+      ref_id: threadId,
+      sub_id: m.metadata?.sub_id || null,
+      agent_run_id: runId,
+    };
+    const { error: insErr } = await supabaseAdmin.from('inbox_items').insert(row);
+    if (insErr) {
+      if (insErr.code === '23505') { out.skipped++; continue; } // raced another run
+      out.errors.push(`insert thread ${threadId}: ${insErr.message}`);
+      continue;
+    }
+    out.bridged++;
+  }
+  return out;
+}
+
 // ── Main scan for one tenant ──
 async function runInbox({ tenantId, runId, startTime, allowlist = [], notifyCustomers = false, ownerContactId = null }) {
-  const result = { scanned: 0, triaged: 0, inserted: 0, notify: 0, allowlisted: 0, customerNotify: 0, skipped: 0, errors: [] };
+  const result = { scanned: 0, triaged: 0, inserted: 0, notify: 0, allowlisted: 0, customerNotify: 0, bridged: 0, skipped: 0, errors: [] };
 
   let convos = [];
   try {
     convos = await listConversations({ limit: CONVO_LIMIT });
   } catch (e) {
+    // Do not return here: the GHL scan failed but the sub-portal bridge below
+    // is GHL-independent and should still run this tick.
     result.errors.push(`listConversations: ${e.message}`);
-    return result;
   }
   result.scanned = convos.length;
   if (convos.length >= CONVO_LIMIT) {
@@ -417,6 +495,19 @@ async function runInbox({ tenantId, runId, startTime, allowlist = [], notifyCust
     result.errors.push(`digest: ${e.message}`);
   }
 
+  // Bridge sub-portal questions (e.g. Ryan's topic-routed messages) into the
+  // same review queue. GHL-independent; idempotent via the partial unique index
+  // on (tenant_id, ref_table, ref_id). notify=false so it never adds a second
+  // SMS (the sub portal already fires a Gmail alert on send); this is queue
+  // visibility so the inbox is the single pane for "someone needs you".
+  try {
+    const bridge = await bridgeSubPortalMessages({ tenantId, runId });
+    result.bridged = bridge.bridged;
+    if (bridge.errors.length) result.errors.push(...bridge.errors);
+  } catch (e) {
+    result.errors.push(`bridge: ${e.message}`);
+  }
+
   return result;
 }
 
@@ -486,7 +577,7 @@ export default async function handler(req, res) {
       result.allowlisted ? `${result.allowlisted} allow-listed` : null,
       result.customerNotify ? `${result.customerNotify} customer` : null,
     ].filter(Boolean).join(', ');
-    const summary = `Scanned ${result.scanned}, triaged ${result.triaged}, queued ${result.inserted}, notified ${result.notify}${overrideBits ? ` (${overrideBits})` : ''}`;
+    const summary = `Scanned ${result.scanned}, triaged ${result.triaged}, queued ${result.inserted}, bridged ${result.bridged || 0}, notified ${result.notify}${overrideBits ? ` (${overrideBits})` : ''}`;
 
     if (runId) {
       await supabaseAdmin.from('agent_runs').update({

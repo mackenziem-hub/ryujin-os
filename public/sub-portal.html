@@ -889,13 +889,21 @@ function renderChecklistSection(){
     });
   });
 
+  // Persisted manual check-off (migration 093) is the explicit signal and wins
+  // both ways, layered on top of the auto-derived checklist matches above.
+  const dmap = (STATE.scope.deliverables && typeof STATE.scope.deliverables === 'object') ? STATE.scope.deliverables : {};
+  DELIVERABLES.forEach(d => {
+    if (dmap[d.key] === true) completedKeys.add(d.key);
+    else if (dmap[d.key] === false) completedKeys.delete(d.key);
+  });
+
   const completed = DELIVERABLES.filter(d => completedKeys.has(d.key)).length;
   const expanded = STATE.deliverablesExpanded === true; // default collapsed
   const arrow = expanded ? '▾' : '▸';
 
   const items = DELIVERABLES.map((d, idx) => {
     const done = completedKeys.has(d.key);
-    return `<div class="cl-item ${done ? 'done' : ''}" onclick="toggleDeliverable('${d.key}')" style="cursor:pointer">
+    return `<div class="cl-item ${done ? 'done' : ''}" onclick="toggleDeliverable('${d.key}', ${done})" style="cursor:pointer">
       <div class="cl-check ${done ? 'done' : ''}">${done ? '✓' : ''}</div>
       <div class="cl-body">
         <div class="cl-task">${esc(d.label)}</div>
@@ -937,23 +945,86 @@ function toggleDeliverablesExpanded(){
   document.getElementById('sectionsHost').innerHTML = renderJobSections();
 }
 
-async function toggleDeliverable(key){
-  // Optimistic UI: mark via existing checklist update endpoint by deliverable_key
+async function toggleDeliverable(key, currentlyDone){
   const token = localStorage.getItem('ry_sub_token');
-  try {
-    await api(`/sub-portal?action=update_checklist&token=${token}`, {
-      method: 'POST',
-      body: JSON.stringify({ wo_id: STATE.currentWoId, deliverable_key: key, completed: true })
-    });
-  } catch(e){ /* non-fatal — backend may not yet support deliverable_key field */ }
-  // Force a scope reload
-  await api(`/sub-portal?action=scope&wo_id=${STATE.currentWoId}&token=${token}`).then(r => STATE.scope = r).catch(()=>{});
+  const next = !currentlyDone;
+  // Optimistic local update so the tile flips instantly; persist to the
+  // dedicated deliverables map (see migration 093 + setDeliverable).
+  if (!STATE.scope.deliverables || typeof STATE.scope.deliverables !== 'object') STATE.scope.deliverables = {};
+  STATE.scope.deliverables[key] = next;
   document.getElementById('sectionsHost').innerHTML = renderJobSections();
+  try {
+    await api(`/sub-portal?action=set_deliverable&token=${token}`, {
+      method: 'PUT',
+      body: JSON.stringify({ wo_id: STATE.currentWoId, deliverable_key: key, completed: next })
+    });
+  } catch(e){
+    // Revert the optimistic flip if the save failed.
+    STATE.scope.deliverables[key] = currentlyDone;
+    document.getElementById('sectionsHost').innerHTML = renderJobSections();
+    toast('Could not save that, try again', 'err');
+  }
+}
+
+// Measurements + how the roof was measured (satellite vs EagleView). Ryan asked
+// for a breakdown of what's what for pitches / sections; this surfaces the
+// figures Plus Ultra scoped from, which the paysheet pay lines band against.
+function renderMeasurementsSection(){
+  const m = STATE.scope && STATE.scope.measurements;
+  if (!m) return '';
+
+  const VIA = { eagleview: 'EagleView', satellite: 'Satellite', hand_takeoff: 'Hand takeoff', other: 'On-site' };
+  const via = m.measured_via ? (VIA[m.measured_via] || m.measured_via) : null;
+  const totalSq = (m.total_sq != null && m.total_sq !== '') ? Number(m.total_sq) : null;
+  const headCount = totalSq != null ? `${totalSq} SQ` : (m.roof_pitch ? esc(m.roof_pitch) : '');
+
+  const viaBanner = via
+    ? `<div class="color-banner locked">📐 Measured via ${esc(via)}</div>`
+    : `<div class="color-banner tbd">📐 Measurement source not recorded</div>`;
+
+  const subLabel = (txt) => `<div style="font-size:11px;color:var(--ink-2);padding:8px 4px 2px;letter-spacing:1px;text-transform:uppercase">${txt}</div>`;
+
+  // Per-section pitch breakdown (estimate planes) when present; else single pitch.
+  let sectionsHtml = '';
+  if (Array.isArray(m.planes) && m.planes.length) {
+    const rows = m.planes.map(p => {
+      const sq = (p.sq != null) ? p.sq : (p.sqft != null ? Math.ceil(Number(p.sqft) / 100) : null);
+      const right = [sq != null ? `${sq} SQ` : null, p.pitch ? esc(p.pitch) : null].filter(Boolean).join(' @ ');
+      return `<div class="mat-row"><div><div class="lbl">${esc(p.label || 'Section')}</div></div><div class="qty">${right || '-'}</div></div>`;
+    }).join('');
+    sectionsHtml = subLabel('Sections') + rows;
+  } else if (m.roof_pitch || totalSq != null) {
+    const right = [totalSq != null ? `${totalSq} SQ` : null, m.roof_pitch ? esc(m.roof_pitch) : null].filter(Boolean).join(' @ ');
+    sectionsHtml = `<div class="mat-row"><div><div class="lbl">Roof</div></div><div class="qty">${right || '-'}</div></div>`;
+  }
+
+  const lf = [['Eaves', m.eaves_lf], ['Rakes', m.rakes_lf], ['Ridges', m.ridges_lf], ['Hips', m.hips_lf], ['Valleys', m.valleys_lf], ['Walls', m.walls_lf]]
+    .filter(([, v]) => Number(v) > 0).map(([k, v]) => `${k} ${Number(v)} LF`).join(' · ');
+  const lfHtml = lf ? subLabel('Edges') + `<div class="kv" style="font-size:13px;padding:2px 4px 6px">${esc(lf)}</div>` : '';
+
+  const pen = [['Pipes', m.pipes], ['Vents', m.vents], ['Chimneys', m.chimneys]]
+    .filter(([, v]) => Number(v) > 0).map(([k, v]) => `${k} ${Number(v)}`).join(' · ');
+  const penHtml = pen ? subLabel('Penetrations') + `<div class="kv" style="font-size:13px;padding:2px 4px 6px">${esc(pen)}</div>` : '';
+
+  if (!sectionsHtml && !lfHtml && !penHtml && !via) return ''; // nothing measured
+
+  return `<div class="section">
+    <div class="section-head">
+      <h3><span class="em">📐</span> Measurements</h3>
+      <span class="count">${headCount}</span>
+    </div>
+    ${viaBanner}
+    ${sectionsHtml}
+    ${lfHtml}
+    ${penHtml}
+    <div style="font-size:11px;color:var(--ink-2);padding:8px 4px 4px;border-top:1px solid var(--line);margin-top:4px">Figures Plus Ultra scoped from. Your paysheet pay lines band by each section's pitch.</div>
+  </div>`;
 }
 
 function renderJobSections(){
   const sections = [];
   if (STATE.scope && STATE.visibility.show_full_scope) sections.push(renderChecklistSection());
+  if (STATE.scope && STATE.visibility.show_full_scope) sections.push(renderMeasurementsSection());
   if (STATE.scope?.documents?.length) sections.push(renderDocumentsSection());
   if (STATE.schedule && STATE.visibility.show_schedule) sections.push(renderSiteSection());
   if (STATE.materials && STATE.visibility.show_materials) sections.push(renderMaterialsSection());
@@ -1080,11 +1151,23 @@ function renderPaySection(){
   const surcharges = (ps.surcharges || []).map(s =>
     `<div class="pay-line subtle"><div class="desc">${esc(s.label || s.description || 'Surcharge')}</div><div>${money(s.total)}</div></div>`
   ).join('');
+  // Brief measurement summary + how it was measured, so Ryan can tie the pay
+  // lines back to the scoped figures right where he verifies pay.
+  const m = STATE.scope && STATE.scope.measurements;
+  const VIA = { eagleview: 'EagleView', satellite: 'Satellite', hand_takeoff: 'Hand takeoff', other: 'On-site' };
+  let via = (m && m.measured_via) ? (VIA[m.measured_via] || m.measured_via) : null;
+  if (!via && ps.eagleview_report) via = 'EagleView';
+  const sq = (m && m.total_sq != null && m.total_sq !== '') ? Number(m.total_sq) : null;
+  const measureBits = [sq != null ? `${sq} SQ` : null, via ? `via ${esc(via)}` : null].filter(Boolean).join(' · ');
+  const measureLine = measureBits
+    ? `<div class="pay-line subtle"><div class="desc">Measurements</div><div>${measureBits}</div></div>`
+    : '';
   return `<div class="section">
     <div class="section-head">
       <h3><span class="em">💵</span> Pay</h3>
       <span class="count">${money(ps.total || 0)}</span>
     </div>
+    ${measureLine}
     ${lb}${surcharges}
     <div class="pay-line subtle"><div class="desc">Subtotal</div><div>${money(ps.subtotal||0)}</div></div>
     <div class="pay-line subtle"><div class="desc">HST (15%)</div><div>${money(ps.hst||0)}</div></div>
