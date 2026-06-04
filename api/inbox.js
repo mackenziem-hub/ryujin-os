@@ -26,7 +26,7 @@ const META_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 const CHANNEL_LABELS = {
   sms: 'SMS', email: 'Email', facebook: 'Facebook', instagram: 'Instagram',
-  whatsapp: 'WhatsApp', webchat: 'Web chat', gmb: 'Google',
+  whatsapp: 'WhatsApp', webchat: 'Web chat', gmb: 'Google', sub_portal: 'Sub portal',
 };
 
 // Strip em / en dashes from anything about to leave the building (defense in
@@ -71,6 +71,10 @@ function shapeItem(row) {
     error: row.error,
     created_at: row.created_at,
     window: metaWindow(row.channel, row.last_message_at),
+    source: row.source || 'ghl',
+    ref_table: row.ref_table || null,
+    ref_id: row.ref_id || null,
+    sub_id: row.sub_id || null,
   };
 }
 
@@ -154,6 +158,11 @@ async function sendReply({ tenantId, id, body }) {
   if (!item) return { error: 'Inbox item not found', status: 404 };
   if (item.status === 'sent') return { error: 'Already sent', status: 409 };
   if (item.status !== 'needs_review') return { error: 'Item is not awaiting review', status: 409 };
+  // Sub-portal items are bridged from the internal messages table and have no
+  // GHL channel to send through. Reply lives in /messages.html (keeps the thread).
+  if ((item.source || 'ghl') !== 'ghl') {
+    return { error: 'This is a sub portal message. Reply in /messages.html to keep the thread.', status: 422 };
+  }
   if (!item.ghl_contact_id) return { error: 'No contact id on this item, cannot send', status: 422 };
   if (!SENDABLE_CHANNELS.has(item.channel)) {
     return { error: item.channel === 'email' ? EMAIL_REVIEW_ONLY : channelReviewOnly(item.channel), status: 422 };

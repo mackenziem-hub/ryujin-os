@@ -7,6 +7,7 @@
 //   GET  /api/sub-portal?action=scope&wo_id=X&token=Y       — scope_items + checklist + measurements
 //   GET  /api/sub-portal?action=rates&token=Y               — rate sheet for this sub
 //   PUT  /api/sub-portal?action=update_checklist            — sub: mark a checklist step complete
+//   PUT  /api/sub-portal?action=set_deliverable             : sub toggle a deliverable check-off
 //   PUT  /api/sub-portal?action=admin-settings              — owner: update sub visibility + threshold
 //
 // Auth: every action requires a valid magic-link token. Owner action (admin-settings)
@@ -292,7 +293,7 @@ async function getSchedule(tenantId, woId, subId) {
 async function getScope(tenantId, woId, subId) {
   const { data: wo } = await supabaseAdmin
     .from('workorders')
-    .select('id, address, customer_name, total_sq, roof_pitch, shingle_product, shingle_color, scope_items, additional_scope, checklist, eaves_lf, rakes_lf, ridges_lf, hips_lf, valleys_lf, walls_lf, pipes, vents, chimneys, layers_to_remove, status, start_date')
+    .select('id, address, customer_name, total_sq, roof_pitch, shingle_product, shingle_color, scope_items, additional_scope, checklist, eaves_lf, rakes_lf, ridges_lf, hips_lf, valleys_lf, walls_lf, pipes, vents, chimneys, layers_to_remove, linked_estimate_id, measurement_method, deliverables, status, start_date')
     .eq('tenant_id', tenantId).eq('subcontractor_id', subId).eq('id', woId)
     .single();
   if (!wo) return { error: 'Work order not found', status: 404 };
@@ -324,6 +325,32 @@ async function getScope(tenantId, woId, subId) {
     } catch { /* ignore parse errors */ }
   }
 
+  // Per-section pitch breakdown comes from the linked estimate's planes
+  // (migration 034: [{sqft, pitch, label?}]). Null = single-pitch job, the UI
+  // falls back to total_sq + roof_pitch. Sub sees the shape only (no $ / tier).
+  let planes = null;
+  if (wo.linked_estimate_id) {
+    const { data: est } = await supabaseAdmin
+      .from('estimates')
+      .select('planes')
+      .eq('tenant_id', tenantId).eq('id', wo.linked_estimate_id)
+      .maybeSingle();
+    if (Array.isArray(est?.planes) && est.planes.length) {
+      planes = est.planes
+        .filter(p => p && (Number(p.sqft) > 0 || Number(p.sq) > 0))
+        .map(p => ({ label: p.label || null, sqft: Number(p.sqft) || null, sq: Number(p.sq) || null, pitch: p.pitch || null }));
+      if (!planes.length) planes = null;
+    }
+  }
+
+  // How the roof was measured. Explicit field wins; otherwise infer EagleView
+  // from a present EagleView document. Null = not recorded.
+  const hasEagleViewDoc = documents.some(d => {
+    const s = `${d.label || ''} ${d.type || ''} ${d.url || ''}`.toLowerCase();
+    return s.includes('eagleview') || s.includes('eagle view');
+  });
+  const measured_via = wo.measurement_method || (hasEagleViewDoc ? 'eagleview' : null);
+
   return {
     wo: {
       id: wo.id, address: wo.address,
@@ -335,10 +362,15 @@ async function getScope(tenantId, woId, subId) {
       // package_tier deliberately omitted — sub does not see customer-side tier
     },
     documents,
+    deliverables: (wo.deliverables && typeof wo.deliverables === 'object') ? wo.deliverables : {},
     measurements: {
       eaves_lf: wo.eaves_lf, rakes_lf: wo.rakes_lf, ridges_lf: wo.ridges_lf,
       hips_lf: wo.hips_lf, valleys_lf: wo.valleys_lf, walls_lf: wo.walls_lf,
-      pipes: wo.pipes, vents: wo.vents, chimneys: wo.chimneys
+      pipes: wo.pipes, vents: wo.vents, chimneys: wo.chimneys,
+      total_sq: wo.total_sq, roof_pitch: wo.roof_pitch,
+      measurement_method: wo.measurement_method || null,
+      measured_via,
+      planes
     },
     scope_items: (Array.isArray(wo.scope_items) ? wo.scope_items : []).map(s => typeof s === 'string' ? { item: s, included: true } : s),
     additional_scope: cleanedAdditional,
@@ -432,6 +464,30 @@ async function updateChecklistStep(tenantId, woId, subId, stepIndex, completed, 
   if (error) return { error: error.message, status: 500 };
 
   return { step: checklist[stepIndex], total: checklist.length, completed: checklist.filter(s => s && s.completed).length };
+}
+
+// ── Set a deliverable check-off (separate { key: bool } map; see migration 093)
+// Kept off the checklist array so it never cross-matches the fuzzy photo-gate
+// derivation or inflates checklist progress counts.
+async function setDeliverable(tenantId, woId, subId, key, completed) {
+  const k = String(key || '').trim();
+  if (!k) return { error: 'deliverable_key required', status: 400 };
+  const { data: wo } = await supabaseAdmin
+    .from('workorders')
+    .select('id, deliverables')
+    .eq('tenant_id', tenantId).eq('subcontractor_id', subId).eq('id', woId)
+    .single();
+  if (!wo) return { error: 'Work order not found', status: 404 };
+
+  const map = (wo.deliverables && typeof wo.deliverables === 'object') ? { ...wo.deliverables } : {};
+  map[k] = !!completed;
+
+  const { error } = await supabaseAdmin
+    .from('workorders')
+    .update({ deliverables: map, updated_at: new Date().toISOString() })
+    .eq('tenant_id', tenantId).eq('subcontractor_id', subId).eq('id', woId);
+  if (error) return { error: error.message, status: 500 };
+  return { deliverables: map };
 }
 
 // ── Rates (full Atlantic Roofing rate sheet) ────────────────────
@@ -737,6 +793,17 @@ async function handler(req, res) {
     return res.json(result);
   }
 
+  // Sub-write: deliverable check-off (separate map; see setDeliverable)
+  if (action === 'set_deliverable' && req.method === 'PUT') {
+    const { wo_id, deliverable_key, completed } = req.body || {};
+    if (!wo_id || !deliverable_key) {
+      return res.status(400).json({ error: 'wo_id and deliverable_key required' });
+    }
+    const result = await setDeliverable(tenantId, wo_id, sub.id, deliverable_key, completed);
+    if (result.error) return res.status(result.status || 500).json({ error: result.error });
+    return res.json(result);
+  }
+
   if (req.method !== 'GET') return res.status(405).json({ error: 'GET required for sub actions' });
 
   const woId = req.query.wo_id;
@@ -782,7 +849,7 @@ async function handler(req, res) {
     return res.json(result);
   }
 
-  return res.status(400).json({ error: 'Unknown action. Valid: photos, materials, schedule, scope, pay, rates, update_checklist, send_question, admin-settings' });
+  return res.status(400).json({ error: 'Unknown action. Valid: photos, materials, schedule, scope, pay, rates, update_checklist, set_deliverable, send_question, admin-settings' });
 }
 
 export default requireTenant(handler);
