@@ -744,6 +744,7 @@ function render({ customer, estimates, workorders, paysheets, photos, roster, pu
             <input type="file" id="jobUploadInput" accept="image/*,video/*" multiple data-est-id="${esc(_uploadEstId)}" style="display:none" onchange="uploadJobPhotos(this.files)">
           </label>` : ''}
           <a class="act ghost" id="genBeforeAfterBtn" href="#" title="Pick a before + an after to generate a side-by-side social post">GENERATE BEFORE/AFTER</a>
+          <button class="act cyan" id="custShareBtn" type="button" title="Copy the customer-facing photo gallery link">CUSTOMER LINK</button>
           <button class="act ghost" id="selectModeBtn" type="button" title="Select multiple photos to bulk-delete">SELECT</button>
           <span class="count" id="photoMix">-</span>
           <span class="count" id="uploadStatus" style="display:none"></span>
@@ -1030,6 +1031,8 @@ function render({ customer, estimates, workorders, paysheets, photos, roster, pu
   if (bulkAllBtn) bulkAllBtn.addEventListener('click', e => { e.preventDefault(); bulkSelectAll(); });
   const bulkDelBtn = document.getElementById('bulkDeleteBtn');
   if (bulkDelBtn) bulkDelBtn.addEventListener('click', e => { e.preventDefault(); bulkDeletePhotos(); });
+  const custShareBtn = document.getElementById('custShareBtn');
+  if (custShareBtn) custShareBtn.addEventListener('click', e => { e.preventDefault(); copyCustomerPhotoLink(customer, estimates, custShareBtn); });
   const genBtn = document.getElementById('genBeforeAfterBtn');
   if (genBtn && activeWo) {
     genBtn.addEventListener('click', e => {
@@ -1246,6 +1249,56 @@ async function deletePhoto(p) {
   });
   if (!r.ok) throw new Error('DELETE failed: HTTP ' + r.status);
   return r.json();
+}
+
+// Customer-facing photo gallery share link (photos-share.html, project-based).
+// Resolves the project for this job (by estimate, then customer), ensures a
+// non-expiring share token, copies the URL and opens it. Mirrors the
+// portal-mobile "Share with customer" flow.
+function photoToast(msg, isErr) {
+  const s = document.createElement('div');
+  s.textContent = msg;
+  s.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:'
+    + (isErr ? '#f87171' : '#22d3ee') + ';color:#020615;padding:8px 18px;border-radius:8px;font-weight:700;'
+    + 'font-family:monospace;z-index:99999;max-width:80vw;text-align:center;box-shadow:0 8px 24px rgba(0,0,0,0.5)';
+  document.body.appendChild(s);
+  setTimeout(() => s.remove(), isErr ? 4500 : 2200);
+}
+
+async function copyCustomerPhotoLink(customer, estimates, btn) {
+  const orig = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'GETTING LINK...'; }
+  try {
+    // 1. Resolve the project for this job: prefer the estimate link, fall back to customer.
+    // Scope to this customer so the lookup never pages past a capped, newest-first list.
+    const scope = (customer && customer.id) ? ('&customer_id=' + encodeURIComponent(customer.id)) : '';
+    const r = await fetch('/api/projects?limit=200' + scope, { headers: ah() });
+    if (!r.ok) throw new Error('projects HTTP ' + r.status);
+    const projects = (await r.json()).projects || [];
+    const estIds = new Set((estimates || []).map(e => e.id));
+    const project = projects.find(p => p.estimate_id && estIds.has(p.estimate_id))
+      || (customer && projects.find(p => p.customer_id === customer.id));
+    if (!project) {
+      photoToast('No customer photo gallery exists for this job yet. Upload job photos via the crew portal to create one.', true);
+      return;
+    }
+    // 2. Ensure an (idempotent) non-expiring share token.
+    const sr = await fetch('/api/projects?action=ensure-share&id=' + encodeURIComponent(project.id), {
+      method: 'POST', headers: { ...ah(), 'Content-Type': 'application/json' }, body: '{}',
+    });
+    if (!sr.ok) throw new Error('ensure-share HTTP ' + sr.status);
+    const token = (await sr.json()).share_token;
+    if (!token) throw new Error('no share token returned');
+    // 3. Copy + open the customer gallery URL.
+    const url = location.origin + '/photos-share.html?share=' + encodeURIComponent(token);
+    try { await navigator.clipboard.writeText(url); } catch (e) { /* clipboard may be blocked; link still opens */ }
+    window.open(url, '_blank', 'noopener,noreferrer');
+    photoToast('Customer photo link copied');
+  } catch (e) {
+    photoToast('Could not get the customer link: ' + e.message, true);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = orig; }
+  }
 }
 
 // Materials COPY / PRINT — read from window._jobMaterials (set by render()).
