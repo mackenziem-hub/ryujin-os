@@ -61,6 +61,28 @@ async function maybeNotifyFirstGalleryOpen(project) {
   }
 }
 
+// Merge estimate_photos + project_files into one customer gallery list:
+// cover first, then newest (captured_at, else uploaded_at). Only the first
+// cover keeps its flag so the gallery never renders two "Cover" tags.
+// Exported for unit testing.
+export function mergeGalleryPhotos(estimatePhotos = [], projectFiles = []) {
+  const ts = f => new Date(f.captured_at || f.uploaded_at || 0).getTime();
+  const all = [...estimatePhotos, ...projectFiles];
+  // Pick a single cover (newest among covers) and demote the rest BEFORE sorting,
+  // so the gallery never shows two "Cover" tags and a demoted cover falls back
+  // into date order rather than sticking near the top.
+  const covers = all.filter(f => f.is_cover);
+  const winnerId = covers.length
+    ? covers.reduce((best, f) => (ts(f) > ts(best) ? f : best), covers[0]).id
+    : null;
+  const normalized = all.map(f => (f.is_cover && f.id !== winnerId) ? { ...f, is_cover: false } : f);
+  return normalized.sort((a, b) => {
+    const ca = a.is_cover ? 1 : 0, cb = b.is_cover ? 1 : 0;
+    if (cb !== ca) return cb - ca;
+    return ts(b) - ts(a);
+  });
+}
+
 // Client portal — public access via share token
 async function handleShareAccess(req, res) {
   const token = req.query.share;
@@ -85,15 +107,48 @@ async function handleShareAccess(req, res) {
   // Fire-and-forget owner notification on first open (idempotent via tags)
   maybeNotifyFirstGalleryOpen(project).catch(() => {});
 
-  // Get client-visible files only
-  const { data: files } = await supabaseAdmin
-    .from('project_files')
-    .select('id, url, thumbnail_url, filename, mime_type, category, caption, tags, annotations, annotated_url, uploaded_at, captured_at, latitude, longitude, sort_order, is_cover')
-    .eq('project_id', project.id)
-    .eq('client_visible', true)
-    .order('is_cover', { ascending: false })
-    .order('sort_order', { ascending: true })
-    .order('captured_at', { ascending: false });
+  // All job photos for this customer: estimate_photos (proposal/inspection)
+  // unioned with image/video project_files (crew captures), mirroring the
+  // job.html grid. client_visible is intentionally ignored so the gallery
+  // shows everything the owner sees on the job (owner's choice 2026-06-04).
+  const tId = project.tenant_id;
+  const customerId = project.customer_id;
+  let estimatePhotos = [];
+  let projectFiles = [];
+  if (customerId) {
+    const { data: estIds } = await supabaseAdmin
+      .from('estimates').select('id').eq('tenant_id', tId).eq('customer_id', customerId);
+    const eids = (estIds || []).map(e => e.id);
+    if (eids.length) {
+      const { data: rows } = await supabaseAdmin
+        .from('estimate_photos')
+        .select('id, url, filename, mime_type, caption, category, is_cover, uploaded_at')
+        .in('estimate_id', eids)
+        .order('uploaded_at', { ascending: false });
+      estimatePhotos = (rows || []).map(r => ({
+        id: r.id, url: r.url, thumbnail_url: null, filename: r.filename,
+        mime_type: r.mime_type, category: r.category, caption: r.caption,
+        tags: null, annotations: null, annotated_url: null,
+        uploaded_at: r.uploaded_at, captured_at: null, latitude: null, longitude: null,
+        sort_order: 0, is_cover: r.is_cover, source: 'estimate_photos',
+      }));
+    }
+    const { data: projs } = await supabaseAdmin
+      .from('projects').select('id').eq('tenant_id', tId).eq('customer_id', customerId);
+    const pids = (projs || []).map(p => p.id);
+    if (pids.length) {
+      const { data: rows } = await supabaseAdmin
+        .from('project_files')
+        .select('id, url, thumbnail_url, filename, mime_type, category, caption, tags, annotations, annotated_url, uploaded_at, captured_at, latitude, longitude, sort_order, is_cover')
+        .eq('tenant_id', tId)
+        .in('project_id', pids)
+        .order('uploaded_at', { ascending: false });
+      projectFiles = (rows || [])
+        .filter(r => typeof r.mime_type === 'string' && (r.mime_type.startsWith('image/') || r.mime_type.startsWith('video/')))
+        .map(r => ({ ...r, source: 'project_files' }));
+    }
+  }
+  const files = mergeGalleryPhotos(estimatePhotos, projectFiles);
 
   // Get non-internal comments
   const { data: comments } = await supabaseAdmin
