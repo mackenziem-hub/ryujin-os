@@ -1437,6 +1437,24 @@ body:not(.envelope-active) #envelopeSection{display:none !important}
         </a>
       </div>
     </details>
+
+    <details class="breakdown-dropdown" id="eagleviewDropdown" hidden>
+      <summary>
+        <span class="bd-icon" aria-hidden="true">📐</span>
+        <span class="bd-title" id="eagleviewTitle">EagleView Measurement Report</span>
+        <span class="bd-sub">Independent aerial measurement &mdash; the same numbers your pricing is built on.</span>
+        <span class="bd-chevron" aria-hidden="true">▾</span>
+      </summary>
+      <div class="bd-body">
+        <div class="bd-actions">
+          <a id="eagleviewOpenTab" href="#" target="_blank" rel="noopener">↗ Open in new tab</a>
+          <a id="eagleviewDownloadPdf" href="#" target="_blank" rel="noopener">⤓ Download PDF</a>
+        </div>
+        <div class="bd-frame">
+          <iframe id="eagleviewFrame" title="EagleView measurement report" loading="lazy"></iframe>
+        </div>
+      </div>
+    </details>
   </div>
 </section>
 
@@ -2617,6 +2635,28 @@ function renderRejuvSection(){
     .map(b => `<li>${String(b).replace(/</g,'&lt;')}</li>`).join('');
   setText('rejuvWarranty', data.warranty || '');
   section.hidden = false;
+}
+
+// Optional EagleView (or any third-party measurement report) PDF dropdown.
+// Renders only when DATA.eagleviewPdfUrl is set on the row.
+let _eagleviewWired = false;
+function wireEagleviewDropdown(){
+  if (_eagleviewWired) return;
+  const url = DATA?.eagleviewPdfUrl;
+  const det = document.getElementById('eagleviewDropdown');
+  if (!det) return;
+  if (!url) { det.hidden = true; _eagleviewWired = true; return; }
+  const label = DATA?.eagleviewLabel || 'EagleView Measurement Report';
+  const title = document.getElementById('eagleviewTitle');
+  if (title) title.textContent = label;
+  const frame = document.getElementById('eagleviewFrame');
+  if (frame) frame.src = url;
+  const openTab = document.getElementById('eagleviewOpenTab');
+  if (openTab) openTab.href = url;
+  const dl = document.getElementById('eagleviewDownloadPdf');
+  if (dl) dl.href = url;
+  det.hidden = false;
+  _eagleviewWired = true;
 }
 
 let _breakdownWired = false;
@@ -4554,6 +4594,7 @@ function envelopeAcceptSubmit(result, signatureDataUrl) {
     renderGallery();
     renderTiers();
     renderScope();
+    wireEagleviewDropdown();
     renderRejuvSection();
     renderAddons();
     renderAccept();
@@ -4647,13 +4688,30 @@ function envelopeAcceptSubmit(result, signatureDataUrl) {
 
     envInit();
 
-    // Hide curated B/A pair + curated section grid + after-bottom panel AFTER
-    // envInit→envRenderCurated unhides them. Those blocks aren't system-aware
-    // (hard-default to after_metal) so they keep showing a metal render above
-    // the shingle tier list even when the customer is on Shingle.
-    ['envCuratedBA','envCuratedSections','envCuratedAfterBottom'].forEach(id => {
+    // Hide all the panels envInit's render pass unhides (envHero re-shows via
+    // envInit's hero block; envCuratedBA/Sections/AfterBottom via envRenderCurated;
+    // envFindings via envRenderFindings; envInspectionBlock via envRenderInspection).
+    // The inspection accordion at the bottom is the only inspection surface kept.
+    ['envHero','envCuratedBA','envCuratedSections','envCuratedAfterBottom','envFindings','envInspectionBlock'].forEach(id => {
       const el = document.getElementById(id); if (el) el.hidden = true;
     });
+
+    // Populate the bottom-of-page inspection accordion with all of Mary's drone +
+    // walk-around photos. Wrapped in try/catch so any per-photo render error can't
+    // block app-ready.
+    try {
+      const accord = document.getElementById('envInspectionAccordion');
+      const grid = document.getElementById('envInspectionAccordionGrid');
+      const photos = Array.isArray(DATA.inspectionPhotos) ? DATA.inspectionPhotos : [];
+      if (accord && grid && photos.length) {
+        grid.innerHTML = photos.filter(p => p && p.url).map(p => `
+          <figure style="margin:0;border-radius:10px;overflow:hidden;background:#0b1220;box-shadow:var(--shadow)">
+            <img src="${escapeHtml(p.url)}" alt="${escapeHtml(p.caption || 'Inspection photo')}" loading="lazy" decoding="async" style="width:100%;aspect-ratio:4/3;object-fit:cover;display:block">
+            ${p.caption ? `<figcaption style="padding:8px 10px;color:#fff;font-size:0.78rem;font-family:'Montserrat',sans-serif;line-height:1.35">${escapeHtml(p.caption)}</figcaption>` : ''}
+          </figure>`).join('');
+        accord.hidden = false;
+      }
+    } catch (e) { console.warn('inspection accordion fill failed', e); }
 
     // Re-seed the before/after AFTER image from the system the customer actually
     // configured — envInit() applies any saved/exported ?envelope= selection to

@@ -623,6 +623,10 @@ export default async function handler(req, res) {
     inspectionPhotos: [],
     gammaDeckUrl: est.custom_prices?._gamma_deck_url || null,
     gammaDeckLabel: est.custom_prices?._gamma_deck_label || 'View Visual Walkthrough',
+    // Optional EagleView (or any third-party measurement report) PDF.
+    // Renders as a collapsible <details> under the scope card. Per-estimate.
+    eagleviewPdfUrl: est.custom_prices?._eagleview_pdf_url || null,
+    eagleviewLabel: est.custom_prices?._eagleview_label || 'EagleView Measurement Report',
     media: {
       ...PU_DEFAULT_MEDIA,
       beforeImage: beforePhoto?.url || PU_DEFAULT_MEDIA.beforeImage,
