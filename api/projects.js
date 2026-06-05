@@ -270,7 +270,7 @@ async function handler(req, res) {
 
   // ── GET ──
   if (req.method === 'GET') {
-    const { id, status, limit = 50, offset = 0 } = req.query;
+    const { id, status, customer_id, estimate_id, limit = 50, offset = 0 } = req.query;
 
     if (id) {
       const { data, error } = await supabaseAdmin
@@ -305,6 +305,10 @@ async function handler(req, res) {
       .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
 
     if (status) query = query.eq('status', status);
+    // Scoped lookups (e.g. job.html resolving a job's project for the customer
+    // share link). Avoids paging the full, newest-first capped list.
+    if (customer_id) query = query.eq('customer_id', customer_id);
+    if (estimate_id) query = query.eq('estimate_id', estimate_id);
 
     const { data, error, count } = await query;
     if (error) return res.status(500).json({ error: error.message });
