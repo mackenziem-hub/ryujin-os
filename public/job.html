@@ -100,6 +100,17 @@ details.acc[open]>summary .chev{transform:rotate(90deg)}
 .ptile .pcap:focus{background:rgba(251,146,60,0.22);color:#fff}
 .gallery-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center}
 .gallery-actions .count{font-family:'Share Tech Mono',monospace;font-size:0.7em;color:rgba(200,220,255,0.55);letter-spacing:1.2px;margin-left:auto}
+/* Multi-select / bulk delete */
+.ptile .psel{position:absolute;top:7px;right:7px;width:22px;height:22px;z-index:7;cursor:pointer;display:none;accent-color:#f87171;margin:0}
+.gallery.selecting .ptile .psel{display:block}
+.gallery.selecting .ptile .menu-btn{display:none}
+.gallery.selecting .ptile .pthumb,.gallery.selecting .ptile{cursor:pointer}
+.ptile.selected{border-color:#f87171;box-shadow:0 0 0 2px rgba(248,113,113,0.55)}
+.gallery-bulk{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;padding:8px 10px;border:1px solid rgba(248,113,113,0.3);border-radius:9px;background:rgba(248,113,113,0.06)}
+.gallery-bulk .count{margin:0}
+.act.danger{background:rgba(248,113,113,0.14);color:#f87171;border-color:rgba(248,113,113,0.4)}
+.act.danger:hover{background:rgba(248,113,113,0.25);box-shadow:0 0 12px rgba(248,113,113,0.3)}
+.act.danger:disabled{cursor:not-allowed;opacity:0.45;box-shadow:none}
 
 /* Info rows */
 .info-row{display:grid;grid-template-columns:130px 1fr;gap:12px;padding:6px 0;font-size:0.88em;align-items:baseline}
@@ -733,8 +744,14 @@ function render({ customer, estimates, workorders, paysheets, photos, roster, pu
             <input type="file" id="jobUploadInput" accept="image/*,video/*" multiple data-est-id="${esc(_uploadEstId)}" style="display:none" onchange="uploadJobPhotos(this.files)">
           </label>` : ''}
           <a class="act ghost" id="genBeforeAfterBtn" href="#" title="Pick a before + an after to generate a side-by-side social post">GENERATE BEFORE/AFTER</a>
+          <button class="act ghost" id="selectModeBtn" type="button" title="Select multiple photos to bulk-delete">SELECT</button>
           <span class="count" id="photoMix">-</span>
           <span class="count" id="uploadStatus" style="display:none"></span>
+        </div>
+        <div class="gallery-bulk" id="galleryBulk" style="display:none">
+          <span class="count" id="bulkCount">0 selected</span>
+          <button class="act ghost" id="bulkSelectAll" type="button">SELECT ALL</button>
+          <button class="act danger" id="bulkDeleteBtn" type="button" disabled>DELETE SELECTED</button>
         </div>
       </div>
     </details>
@@ -1004,8 +1021,15 @@ function render({ customer, estimates, workorders, paysheets, photos, roster, pu
   // Interactive photo gallery + before/after generator link
   const photoMount = document.getElementById('photoMount');
   if (photoMount) {
+    setSelectMode(false); // fresh render starts out of select mode
     renderPhotoGallery(photoMount, photos, activeWo);
   }
+  const selBtn = document.getElementById('selectModeBtn');
+  if (selBtn) selBtn.addEventListener('click', e => { e.preventDefault(); setSelectMode(!_selectMode); });
+  const bulkAllBtn = document.getElementById('bulkSelectAll');
+  if (bulkAllBtn) bulkAllBtn.addEventListener('click', e => { e.preventDefault(); bulkSelectAll(); });
+  const bulkDelBtn = document.getElementById('bulkDeleteBtn');
+  if (bulkDelBtn) bulkDelBtn.addEventListener('click', e => { e.preventDefault(); bulkDeletePhotos(); });
   const genBtn = document.getElementById('genBeforeAfterBtn');
   if (genBtn && activeWo) {
     genBtn.addEventListener('click', e => {
@@ -1102,6 +1126,92 @@ function photoRole(p) {
 
 function isVideo(p) {
   return typeof p.mime_type === 'string' && p.mime_type.startsWith('video/');
+}
+
+// --- Multi-select / bulk delete state ---
+// Selection survives a cover-triggered re-render; _galleryState mirrors the
+// live tiles so the bulk bar count and delete loop stay in sync.
+let _selectMode = false;
+let _galleryState = [];
+const _selectedIds = new Set();
+
+function tileById(id) {
+  return Array.from(document.querySelectorAll('.ptile')).find(t => t.dataset.id === id) || null;
+}
+function selectedPhotos() {
+  return _galleryState.filter(p => _selectedIds.has(p.id));
+}
+function updateBulkBar() {
+  // Drop ids whose photos are gone (e.g. after upload re-render or a delete).
+  for (const id of Array.from(_selectedIds)) {
+    if (!_galleryState.some(p => p.id === id)) _selectedIds.delete(id);
+  }
+  const n = _selectedIds.size;
+  const c = document.getElementById('bulkCount');
+  if (c) c.textContent = n + ' selected';
+  const del = document.getElementById('bulkDeleteBtn');
+  if (del) del.disabled = n === 0;
+}
+function toggleSelect(p, tile, on) {
+  if (on) _selectedIds.add(p.id); else _selectedIds.delete(p.id);
+  if (tile) tile.classList.toggle('selected', on);
+  updateBulkBar();
+}
+function setSelectMode(on) {
+  _selectMode = on;
+  if (!on) _selectedIds.clear();
+  const grid = document.getElementById('photoGrid');
+  if (grid) grid.classList.toggle('selecting', on);
+  const bulk = document.getElementById('galleryBulk');
+  if (bulk) bulk.style.display = on ? 'flex' : 'none';
+  const btn = document.getElementById('selectModeBtn');
+  if (btn) { btn.textContent = on ? 'CANCEL' : 'SELECT'; btn.classList.toggle('cyan', on); }
+  if (!on) {
+    document.querySelectorAll('.ptile.selected').forEach(t => t.classList.remove('selected'));
+    document.querySelectorAll('.ptile .psel').forEach(c => { c.checked = false; });
+  }
+  updateBulkBar();
+}
+function bulkSelectAll() {
+  const all = _galleryState;
+  const allOn = all.length > 0 && all.every(p => _selectedIds.has(p.id));
+  all.forEach(p => {
+    const next = !allOn;
+    if (next) _selectedIds.add(p.id); else _selectedIds.delete(p.id);
+    const tile = tileById(p.id);
+    if (tile) {
+      tile.classList.toggle('selected', next);
+      const box = tile.querySelector('.psel');
+      if (box) box.checked = next;
+    }
+  });
+  updateBulkBar();
+}
+async function bulkDeletePhotos() {
+  const targets = selectedPhotos();
+  if (!targets.length) return;
+  if (!confirm('Delete ' + targets.length + ' photo' + (targets.length === 1 ? '' : 's')
+    + ' permanently? The files will be removed from storage too.')) return;
+  const btn = document.getElementById('bulkDeleteBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'DELETING...'; }
+  const failures = [];
+  for (const p of targets) {
+    try {
+      await deletePhoto(p);
+      const idx = _galleryState.findIndex(o => o.id === p.id);
+      if (idx >= 0) _galleryState.splice(idx, 1);
+      _selectedIds.delete(p.id);
+      const tile = tileById(p.id);
+      if (tile) tile.remove();
+    } catch (e) {
+      failures.push((p.caption || p.id) + ': ' + e.message);
+    }
+  }
+  if (btn) btn.textContent = 'DELETE SELECTED';
+  updateGalleryMeta(_galleryState);
+  if (!_galleryState.length) setSelectMode(false);
+  else updateBulkBar();
+  if (failures.length) alert('Some photos could not be deleted:\n' + failures.join('\n'));
 }
 
 // PATCH/PUT a photo. Branches on source (estimate_photos vs project_files).
@@ -1280,13 +1390,16 @@ function renderPhotoGallery(mount, photos, refWo) {
     return;
   }
 
-  const grid = el('div', { class: 'gallery' });
+  const grid = el('div', { class: 'gallery', id: 'photoGrid' });
   const state = photos.map(p => ({ ...p })); // local mutable copy
+  _galleryState = state; // mirror for the bulk-delete bar
+  if (_selectMode) grid.classList.add('selecting');
 
   state.forEach(p => grid.appendChild(buildTile(p, refWo, state)));
   mount.appendChild(grid);
 
   updateGalleryMeta(state);
+  updateBulkBar();
 }
 
 function updateGalleryMeta(state) {
@@ -1316,8 +1429,27 @@ function buildTile(p, refWo, state) {
   } else {
     thumbWrap.appendChild(el('img', { src: p.url, loading: 'lazy', alt: p.caption || '' }));
   }
-  thumbWrap.addEventListener('click', () => window.open(p.url, '_blank', 'noopener,noreferrer'));
+  thumbWrap.addEventListener('click', () => {
+    if (_selectMode) {
+      const next = !_selectedIds.has(p.id);
+      const box = tile.querySelector('.psel');
+      if (box) box.checked = next;
+      toggleSelect(p, tile, next);
+      return;
+    }
+    window.open(p.url, '_blank', 'noopener,noreferrer');
+  });
   tile.appendChild(thumbWrap);
+
+  // Multi-select checkbox (shown only in select mode via .gallery.selecting).
+  const selBox = el('input', { type: 'checkbox', class: 'psel', title: 'Select photo' });
+  selBox.checked = _selectedIds.has(p.id);
+  if (selBox.checked) tile.classList.add('selected');
+  selBox.addEventListener('click', ev => {
+    ev.stopPropagation();
+    toggleSelect(p, tile, selBox.checked);
+  });
+  tile.appendChild(selBox);
 
   // Badges
   const badges = el('div', { class: 'badges' });
