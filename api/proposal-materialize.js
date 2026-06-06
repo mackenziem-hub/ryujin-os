@@ -65,7 +65,7 @@ async function handler(req, res) {
     }
 
     const shareToken = randomBytes(12).toString('hex');
-    const base = kebab(est.customer?.address || data.customer?.address || data.customer?.name || templateSlug);
+    const base = kebab(est.customer?.address || data.customer?.address || data.customer?.name || template?.slug);
     const slug = `${base}-${shareToken.slice(0, 6)}`;
 
     // Bake the resolved slug + status into the frozen snapshot's meta.

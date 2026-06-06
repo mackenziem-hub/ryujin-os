@@ -642,7 +642,7 @@ function scopeLineItemsFromEstimate(est) {
 // ── Section resolution (LIVE preview) ────────────────────────────────────────
 // Given the template's ordered section keys and the tenant's proposal_blocks,
 // resolve each to { type: block_type, content: tokens-resolved block.content }.
-async function resolveSections(tenantId, sectionKeys, vars) {
+async function resolveSections(tenantId, sectionKeys, vars, overrides) {
   const keys = Array.isArray(sectionKeys) ? sectionKeys : [];
   if (!keys.length) return [];
 
@@ -663,10 +663,15 @@ async function resolveSections(tenantId, sectionKeys, vars) {
   for (const key of keys) {
     const block = byKey.get(key);
     if (!block) continue;                     // template referenced an unseeded block
-    sections.push({
-      type: block.block_type,
-      content: resolveTokens(block.content || {}, vars)
-    });
+    let content = resolveTokens(block.content || {}, vars);
+    // Per-proposal operator copy edits (the builder's right-rail editor) ride in as
+    // an override map keyed by block_key. Merge them over the seeded block content
+    // so the live preview and the frozen materialized snapshot stay identical.
+    const ov = overrides && overrides[key];
+    if (ov && typeof ov === 'object') {
+      content = Object.assign({}, content, resolveTokens(ov, vars));
+    }
+    sections.push({ type: block.block_type, content });
   }
   return sections;
 }
@@ -883,8 +888,14 @@ export async function assembleProposalData(estimateId, templateInput) {
   const customer = buildCustomer(est, coverImage);
   const refId = `PU-${est.estimate_number || String(est.id).slice(0, 8).toUpperCase()}`;
 
+  // Inline preview/materialize payloads may carry per-section content overrides
+  // (operator copy edits keyed by block_key); thread them into section resolution.
+  const overrides = (templateInput && typeof templateInput === 'object'
+    && templateInput._overrides && typeof templateInput._overrides === 'object')
+    ? templateInput._overrides : null;
+
   const variables = buildVariables({ branding, rep, customer, est, refId });
-  const sections = await resolveSections(tenantId, template.sections, variables);
+  const sections = await resolveSections(tenantId, template.sections, variables, overrides);
   enrichProofPhotos(sections, est);
   const products = buildProducts({ est, productPlan: template.product_plan, taxRate });
 

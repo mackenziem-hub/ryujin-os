@@ -992,17 +992,14 @@ function runPreview() {
 
   setDot('loading');
   var tpl = currentTemplateInline();
-  // Apply content overrides into the inline template by overlaying onto blocks?
-  // The assembler resolves sections from the saved blocks server-side, so content
-  // edits must ride along as an override map the POST path understands. The
-  // server overlays nothing it wasn't given, so we send the overrides under a
-  // recognized seam: inline per-section content via _overrides (ignored if the
-  // backend doesn't read it — preview still reflects order/products live).
+  // Per-section copy edits ride along under a recognized seam (_overrides, keyed by
+  // block_key); the server assembler overlays them onto the seeded blocks, so the
+  // live preview reflects exactly what materialize will freeze. No client-side
+  // overlay — the server is the single source of truth for both paths.
   var body = { estimate: est.id, template: tpl };
   if (Object.keys(state.contentOverrides).length) body.template._overrides = state.contentOverrides;
 
   postJSON('/api/proposal-v2', body).then(function (data) {
-    applyOverridesClientSide(data);
     var frame = $('previewFrame');
     if (frame && frame.contentWindow) {
       frame.contentWindow.postMessage({ type: 'pv2-preview', data: data }, '*');
@@ -1012,23 +1009,6 @@ function runPreview() {
   }).catch(function (e) {
     setDot('err');
     toast('Preview: ' + e.message, 'err');
-  });
-}
-
-// Overlay content edits onto the assembled ProposalData client-side so they show
-// in the preview even though they are not persisted. Matches sections by order:
-// state.sections[i] (block_key) -> data.sections[j] is order-preserving minus any
-// missing blocks, so we re-walk in the same order and apply overrides by position.
-function applyOverridesClientSide(data) {
-  if (!data || !Array.isArray(data.sections)) return;
-  if (!Object.keys(state.contentOverrides).length) return;
-  // Build the list of block_keys that actually resolved (present in library).
-  var resolvedKeys = state.sections.filter(function (k) { return !!state.blocksByKey[k]; });
-  data.sections.forEach(function (sec, i) {
-    var key = resolvedKeys[i];
-    if (key && state.contentOverrides[key]) {
-      sec.content = Object.assign({}, sec.content || {}, state.contentOverrides[key]);
-    }
   });
 }
 
