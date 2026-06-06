@@ -12,7 +12,7 @@
 // Otherwise → auto-approved (status='approved', auto_approved_at stamped).
 
 import { supabaseAdmin } from '../lib/supabase.js';
-import { requireTenant } from '../lib/tenant.js';
+import { requirePortalSessionAndTenant } from '../lib/portalAuth.js';
 import { resolveSession, isPrivileged } from '../lib/portalAuth.js';
 import { gmailSend } from '../lib/google.js';
 
@@ -110,7 +110,7 @@ async function handler(req, res) {
     // Hard gate types always require approval; otherwise check threshold.
     const isHardGate = HARD_GATE_TYPES.has(body.entry_type) || amount >= threshold;
 
-    const explicitStatus = body.status; // honor explicit status if owner posts
+    const explicitStatus = isPrivileged(req.session) ? body.status : undefined; // only owner/admin may pre-set status
     const computedStatus = explicitStatus || (isHardGate ? 'pending' : 'approved');
 
     const row = {
@@ -253,4 +253,4 @@ async function handler(req, res) {
   return res.status(405).json({ error: 'Method not allowed' });
 }
 
-export default requireTenant(handler);
+export default requirePortalSessionAndTenant(handler);
