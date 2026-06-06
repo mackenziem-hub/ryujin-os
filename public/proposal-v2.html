@@ -1559,8 +1559,32 @@
     root.appendChild(boot);
   }
 
+  function renderData(data, opts) {
+    DATA = data || {};
+    if (!DATA.sections && !DATA.products) {
+      throw new Error('This proposal has no content yet.');
+    }
+    buildCtx();
+    renderAll();
+    if (!(opts && opts.silent)) logEvent('proposal_viewed', {});
+  }
+
   function boot() {
     var params = new URLSearchParams(location.search);
+
+    // Builder preview mode: do not fetch. Wait for the parent window (the block
+    // builder) to post the assembled ProposalData on every edit, render in place.
+    if (params.get('preview') === '1') {
+      window.addEventListener('message', function (e) {
+        var m = e && e.data;
+        if (m && m.type === 'pv2-preview' && m.data) {
+          try { renderData(m.data, { silent: true }); } catch (err) { showError(err.message); }
+        }
+      });
+      try { if (window.parent) window.parent.postMessage({ type: 'pv2-preview-ready' }, '*'); } catch (e) {}
+      return;
+    }
+
     var qs = new URLSearchParams();
     var instance = params.get('instance');
     var estimate = params.get('estimate');
@@ -1578,15 +1602,7 @@
         if (!res.ok) throw new Error('Request failed (' + res.status + ')');
         return res.json();
       })
-      .then(function (data) {
-        DATA = data || {};
-        if (!DATA.sections && !DATA.products) {
-          throw new Error('This proposal has no content yet.');
-        }
-        buildCtx();
-        renderAll();
-        logEvent('proposal_viewed', {});
-      })
+      .then(function (data) { renderData(data); })
       .catch(function (err) {
         console.error('[proposal-v2] boot failed:', err);
         showError(err && err.message ? err.message : 'Unknown error.');
