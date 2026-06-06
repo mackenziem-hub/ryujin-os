@@ -6,7 +6,7 @@
 // PUT    /api/roles                  — Update role (name, permissions)
 // DELETE /api/roles?id=X             — Delete role (if not system, not in use)
 import { supabaseAdmin } from '../lib/supabase.js';
-import { requireTenant } from '../lib/tenant.js';
+import { requireOwnerOrAdmin } from '../lib/auth-server.js';
 
 // Master permissions list — grouped by category for the admin UI checkbox editor
 const PERMISSIONS = {
@@ -81,7 +81,13 @@ const PERMISSIONS = {
 async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const tenantId = req.tenant.id;
+  // Owner/admin only: this endpoint reads and mutates the tenant's authorization
+  // matrix. requireTenant alone trusted a client-supplied tenant slug with no
+  // identity, so anyone could rewrite roles/permissions. Tenant is now derived
+  // from the authenticated session.
+  const auth = await requireOwnerOrAdmin(req, res);
+  if (!auth) return;
+  const tenantId = auth.tenant_id;
 
   // Return master permissions list
   if (req.method === 'GET' && req.query.permissions === '1') {
@@ -142,15 +148,23 @@ async function handler(req, res) {
   }
 
   if (req.method === 'PUT') {
-    const { id, ...updates } = req.body || {};
+    const body = req.body || {};
+    const { id } = body;
     if (!id) return res.status(400).json({ error: 'Missing id' });
 
-    // Can't edit system roles' core properties
+    // Can't edit system roles' core properties. Scope the lookup to the tenant so
+    // a cross-tenant id can't probe another tenant's roles.
     const { data: existing } = await supabaseAdmin
-      .from('roles').select('is_system').eq('id', id).single();
-
-    if (existing?.is_system && updates.slug) {
+      .from('roles').select('is_system').eq('id', id).eq('tenant_id', tenantId).single();
+    if (!existing) return res.status(404).json({ error: 'Role not found' });
+    if (existing.is_system && body.slug) {
       return res.status(403).json({ error: 'Cannot change system role slug' });
+    }
+
+    // Allowlist writable columns — no mass-assignment of tenant_id / is_system / id / slug.
+    const updates = {};
+    for (const k of ['name', 'description', 'permissions', 'sort_order']) {
+      if (body[k] !== undefined) updates[k] = body[k];
     }
 
     const { data, error } = await supabaseAdmin
@@ -171,7 +185,7 @@ async function handler(req, res) {
 
     // Check if system role
     const { data: role } = await supabaseAdmin
-      .from('roles').select('is_system, name').eq('id', id).single();
+      .from('roles').select('is_system, name').eq('id', id).eq('tenant_id', tenantId).single();
 
     if (role?.is_system) return res.status(403).json({ error: `Cannot delete system role "${role.name}"` });
 
@@ -191,4 +205,4 @@ async function handler(req, res) {
   return res.status(405).json({ error: 'Method not allowed' });
 }
 
-export default requireTenant(handler);
+export default handler;

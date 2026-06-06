@@ -34,7 +34,14 @@ async function handler(req, res) {
       .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
 
     if (search) {
-      query = query.or(`full_name.ilike.%${search}%,address.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`);
+      // P3: sanitize before interpolating into a PostgREST .or() filter tree.
+      // Commas/parens/dots/backslashes are PostgREST logic-tree control chars;
+      // an attacker could otherwise inject extra OR clauses. Strip them; the
+      // value is already wrapped in %...% for ilike so trimming is safe.
+      const term = String(search).replace(/[,()\\*]/g, '').slice(0, 100);
+      if (term) {
+        query = query.or(`full_name.ilike.%${term}%,address.ilike.%${term}%,email.ilike.%${term}%,phone.ilike.%${term}%`);
+      }
     }
 
     const { data, error, count } = await query;
@@ -44,9 +51,13 @@ async function handler(req, res) {
 
   if (req.method === 'POST') {
     const body = req.body || {};
+    // Strip client-controlled identity/ownership + server-managed columns so a
+    // caller cannot forge tenant_id (cross-tenant write), set a primary key, or
+    // backdate rows. tenant_id is then applied authoritatively from the session.
+    const { id: _ignoredId, tenant_id: _ignoredTenant, created_at: _ignoredCreated, updated_at: _ignoredUpdated, ...safeBody } = body;
     const { data, error } = await supabaseAdmin
       .from('customers')
-      .insert({ tenant_id: tenantId, ...body })
+      .insert({ ...safeBody, tenant_id: tenantId })
       .select('*')
       .single();
 

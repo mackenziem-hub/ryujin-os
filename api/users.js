@@ -6,6 +6,7 @@
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireTenant } from '../lib/tenant.js';
 import { requireOwnerOrAdmin } from '../lib/auth-server.js';
+import { resolveSession } from '../lib/portalAuth.js';
 import { hashPassword } from '../lib/passwords.js';
 import crypto from 'node:crypto';
 
@@ -19,13 +20,22 @@ async function handler(req, res) {
   const tenantId = req.tenant.id;
 
   if (req.method === 'GET') {
+    // GATE: the staff directory was readable unauthenticated by tenant slug.
+    // Require a valid portal session (any signed-in user in the tenant) or the
+    // RYUJIN_SERVICE_TOKEN for server-to-server callers. Scope the query to the
+    // SESSION's tenant, not the client-supplied x-tenant-id/?tenant=, so a
+    // logged-in user of tenant A cannot read tenant B's directory.
+    const session = await resolveSession(req);
+    if (!session) return res.status(401).json({ error: 'sign_in_required', code: 'NO_SESSION' });
+    const scopedTenantId = session.tenant_id;
+
     const { id, role } = req.query;
 
     if (id) {
       const { data, error } = await supabaseAdmin
         .from('users')
         .select(SAFE_USER_FIELDS)
-        .eq('tenant_id', tenantId)
+        .eq('tenant_id', scopedTenantId)
         .eq('id', id)
         .single();
 
@@ -36,7 +46,7 @@ async function handler(req, res) {
     let query = supabaseAdmin
       .from('users')
       .select(SAFE_USER_FIELDS)
-      .eq('tenant_id', tenantId)
+      .eq('tenant_id', scopedTenantId)
       .eq('active', true)
       .order('name');
 
@@ -122,12 +132,22 @@ async function handler(req, res) {
     // Owner/admin-only (was an open blind update that could rewrite any user's role).
     const auth = await requireOwnerOrAdmin(req, res);
     if (!auth) return;
-    const { id, ...updates } = req.body || {};
+    const body = req.body || {};
+    const { id } = body;
     if (!id) return res.status(400).json({ error: 'Missing id' });
-    // Never let raw sensitive columns be written through this endpoint.
-    delete updates.password_hash; delete updates.reset_token; delete updates.reset_token_expires_at; delete updates.magic_token;
+    // P3: explicit allowlist instead of spreading req.body. The old `...updates`
+    // spread let a caller mass-assign tenant_id / role / role_id (privilege
+    // escalation + cross-tenant move) along with sensitive columns. Only these
+    // profile fields may be written here; role/role_id/tenant_id changes are NOT
+    // permitted through the generic update path.
+    const ALLOWED_UPDATE_FIELDS = ['name', 'email', 'username', 'phone', 'avatar_url', 'bio', 'active'];
+    const updates = {};
+    for (const k of ALLOWED_UPDATE_FIELDS) {
+      if (body[k] !== undefined) updates[k] = body[k];
+    }
     if (updates.email) updates.email = String(updates.email).toLowerCase().trim();
     if (updates.username) updates.username = String(updates.username).toLowerCase().trim();
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No updatable fields provided' });
 
     const { data, error } = await supabaseAdmin
       .from('users')

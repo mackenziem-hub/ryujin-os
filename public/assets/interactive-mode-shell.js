@@ -296,7 +296,8 @@
     }
     if (k === 'run_agent' && p.agent_slug) {
       try {
-        await fetch(`/api/agents/${p.agent_slug}`, { headers: { 'x-tenant-id': TENANT } });
+        const tok = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token');
+        await fetch(`/api/agents/${p.agent_slug}`, { headers: { 'x-tenant-id': TENANT, ...(tok ? { Authorization: 'Bearer ' + tok } : {}) } });
         elContext.textContent = `Agent ${p.agent_slug} ran. Re-loading options…`;
       } catch {}
       loadOptions('after_agent_run');

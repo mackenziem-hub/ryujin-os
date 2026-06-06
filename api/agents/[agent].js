@@ -12,11 +12,19 @@
 //   Also supported for quote calculations (easier to pass complex specs)
 
 import { AGENTS, calculateQuote } from './_shared.js';
+import { resolveSession } from '../../lib/portalAuth.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({ error: 'GET or POST only' });
   }
+
+  // Gate: any valid portal session (or RYUJIN_SERVICE_TOKEN for server-to-server).
+  // These on-demand agent runs expose live pipeline/AR/ops/marketing intel and the
+  // quote engine; previously this endpoint was fully unauthenticated. Kept at
+  // session-level (not owner-only) so crew/sales consoles keep working.
+  const session = await resolveSession(req);
+  if (!session) return res.status(401).json({ error: 'sign_in_required' });
 
   const { agent } = req.query;
   const agentName = (agent || '').toLowerCase();

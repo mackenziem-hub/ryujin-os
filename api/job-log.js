@@ -13,6 +13,7 @@
 
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireTenant } from '../lib/tenant.js';
+import { resolveSession, isPrivileged } from '../lib/portalAuth.js';
 import { gmailSend } from '../lib/google.js';
 
 const HARD_GATE_TYPES = new Set(['scope_change', 'advance_payout', 'rate_suggestion', 'change_order']);
@@ -163,22 +164,50 @@ async function handler(req, res) {
   }
 
   if (req.method === 'PUT') {
-    const { id, ...updates } = req.body || {};
-    if (!id) return res.status(400).json({ error: 'id required' });
-    updates.updated_at = new Date().toISOString();
+    // Approving/denying a job-log entry releases money (advance payouts,
+    // change orders, reimbursements). Lock it to an owner/admin session and
+    // NEVER spread the client body into the update — a sub or anonymous
+    // caller could otherwise self-approve and inflate `amount`. Allowlist
+    // only the two owner-editable fields.
+    const session = await resolveSession(req);
+    if (!session) return res.status(401).json({ error: 'sign_in_required', code: 'NO_SESSION' });
+    if (!isPrivileged(session)) return res.status(403).json({ error: 'owner_or_admin_required' });
 
-    // If status is flipping to approved, stamp reviewed_at
-    if (updates.status === 'approved' || updates.status === 'denied') {
+    const body = req.body || {};
+    const { id } = body;
+    if (!id) return res.status(400).json({ error: 'id required' });
+
+    const ALLOWED_STATUS = new Set(['approved', 'denied']);
+    const updates = { updated_at: new Date().toISOString() };
+
+    if (body.status !== undefined) {
+      if (!ALLOWED_STATUS.has(body.status)) {
+        return res.status(400).json({ error: "status must be 'approved' or 'denied'" });
+      }
+      updates.status = body.status;
       updates.reviewed_at = new Date().toISOString();
+      // reviewed_by is a uuid FK to users; only stamp it for a real DB-backed
+      // user (skip the synthetic service-token session, user_id='service-internal').
+      if (session.user_id && session.user_id !== 'service-internal') {
+        updates.reviewed_by = session.user_id;
+      }
     }
 
+    if (body.review_notes !== undefined) {
+      updates.review_notes = body.review_notes == null ? null : String(body.review_notes).slice(0, 2000);
+    }
+
+    // Derive tenant from the authenticated session, NOT the client-trusted
+    // req.tenant.id, so a privileged user of tenant A can't pass ?tenant=B
+    // to approve another tenant's entries.
     const { data, error } = await supabaseAdmin
       .from('job_log_entries')
       .update(updates)
-      .eq('tenant_id', tenantId).eq('id', id)
+      .eq('tenant_id', session.tenant_id).eq('id', id)
       .select('*')
-      .single();
+      .maybeSingle();
     if (error) return res.status(500).json({ error: error.message });
+    if (!data) return res.status(404).json({ error: 'entry not found' });
     return res.json(data);
   }
 

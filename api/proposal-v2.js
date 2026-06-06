@@ -37,6 +37,7 @@ import { calculateRepairQuote } from '../lib/repairQuoteEngine.js';
 import { calculateRejuvenationQuote } from '../lib/rejuvenationQuote.js';
 import { calculateGutterQuote } from '../lib/gutterQuoteEngine.js';
 import { isMetalSlug, getMetalCopy } from '../lib/metalProposalCopy.js';
+import { requirePortalSessionAndTenant } from '../lib/portalAuth.js';
 
 // ── Brand + rep constants (mirror api/proposal.js verbatim) ──────────────────
 const BRAND_BASE = '/brand/plus-ultra';
@@ -701,13 +702,51 @@ function enrichProofPhotos(sections, est) {
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
+  // ── PRIVILEGED: estimate-by-id LIVE preview ────────────────────────────────
+  // POST {estimate,template} and GET ?estimate=<id> both assemble a proposal
+  // directly from an estimate row (full customer PII + raw pricing) with NO
+  // share_token. That bypasses the public share model and is an IDOR if left
+  // open, so it requires an owner/admin (or service) session and is scoped to
+  // that session's tenant. The public GET ?instance=<slug|share_token> snapshot
+  // path below stays open (that IS the share model).
+  const wantsEstimatePath =
+    req.method === 'POST' ||
+    (req.method === 'GET'
+      && String(req.query.estimate || '').trim()
+      && !String(req.query.instance || '').trim());
+
+  if (wantsEstimatePath) {
+    return requirePortalSessionAndTenant(handleEstimatePath)(req, res);
+  }
+
+  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+
+  const instance = String(req.query.instance || '').trim();
+  if (!instance) {
+    return res.status(400).json({ error: 'Missing ?instance=<slug|share_token> or ?estimate=<id>&template=<slug>' });
+  }
+
+  try {
+    return await renderInstance(instance, res);
+  } catch (e) {
+    console.error('[proposal-v2] handler error:', e?.message, e?.stack);
+    return res.status(500).json({ error: 'Proposal assembly failed', message: String(e?.message || e) });
+  }
+}
+
+// Gated estimate-by-id assembler path. The wrapper sets req.session + req.tenant;
+// every estimate read here is scoped to req.tenant.id so a logged-in user of one
+// tenant cannot read another tenant's estimate by id.
+async function handleEstimatePath(req, res) {
+  const tenantId = req.tenant?.id || null;
+
   // POST: live preview of an ad-hoc (unsaved) template from the builder.
   if (req.method === 'POST') {
     try {
       const body = req.body || {};
       const estimateId = String(body.estimate || '').trim();
       if (!estimateId) return res.status(400).json({ error: 'POST needs { estimate, template }' });
-      const r = await assembleProposalData(estimateId, body.template);
+      const r = await assembleProposalData(estimateId, body.template, tenantId);
       if (!r.ok) return res.status(r.status || 500).json({ error: r.error });
       return res.json(r.data);
     } catch (e) {
@@ -716,20 +755,13 @@ export default async function handler(req, res) {
     }
   }
 
-  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
-
-  const instance = String(req.query.instance || '').trim();
+  // GET ?estimate=<id>&template=<slug>
   const estimateId = String(req.query.estimate || '').trim();
   const templateSlug = String(req.query.template || '').trim();
-
   try {
-    if (instance) {
-      return await renderInstance(instance, res);
-    }
-    if (estimateId) {
-      return await renderLivePreview(estimateId, templateSlug, res);
-    }
-    return res.status(400).json({ error: 'Missing ?instance=<slug|share_token> or ?estimate=<id>&template=<slug>' });
+    const r = await assembleProposalData(estimateId, templateSlug, tenantId);
+    if (!r.ok) return res.status(r.status || 500).json({ error: r.error });
+    return res.json(r.data);
   } catch (e) {
     console.error('[proposal-v2] handler error:', e?.message, e?.stack);
     return res.status(500).json({ error: 'Proposal assembly failed', message: String(e?.message || e) });
@@ -844,13 +876,22 @@ async function renderLivePreview(estimateId, templateSlug, res) {
 // as JSON) and by api/proposal-materialize.js (persists it as a frozen snapshot).
 // Returns { ok:false, status, error } on failure, { ok:true, data, est, template,
 // tenantId } on success.
-export async function assembleProposalData(estimateId, templateInput) {
+export async function assembleProposalData(estimateId, templateInput, expectedTenantId = null) {
   const { data: est, error: estErr } = await supabaseAdmin
     .from('estimates')
     .select('*, customer:customers(*), photos:estimate_photos(*)')
     .eq('id', estimateId)
     .single();
   if (estErr || !est) return { ok: false, status: 404, error: 'Estimate not found' };
+
+  // Tenant isolation: supabaseAdmin bypasses RLS, so when a caller supplies the
+  // authenticated tenant (estimate-by-id live preview), enforce that the loaded
+  // estimate belongs to it. Return 404 (not 403) so cross-tenant probes cannot
+  // confirm an id exists. Callers that pass no tenant (in-process materialize,
+  // which runs its own tenant check) keep the prior behavior.
+  if (expectedTenantId && est.tenant_id !== expectedTenantId) {
+    return { ok: false, status: 404, error: 'Estimate not found' };
+  }
 
   const tenantId = est.tenant_id;
 

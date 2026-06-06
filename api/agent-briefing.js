@@ -15,9 +15,7 @@
 //   P3 = info/convenience (rate hold expiring soon, GHL drift on draft work)
 
 import { supabaseAdmin } from '../lib/supabase.js';
-
-const TENANT_HEADER = 'x-tenant-id';
-const PLUS_ULTRA_TENANT_ID = '84c91cb9-df07-4424-8938-075e9c50cb3b';
+import { requirePortalSessionAndTenant } from '../lib/portalAuth.js';
 
 // Manus peer review §1.2 + §2.1: estimates in any of these states are
 // commercially committed. GHL sync drift on these is a P0 trust issue.
@@ -43,10 +41,6 @@ const ACTIVE_PAYSHEET_STATES = new Set([
 // is missing, instead of silently skipping every request. This boolean is
 // reset on serverless cold start which is acceptable.
 let warnedMissingChangeOrdersTable = false;
-
-function resolveTenantId(req) {
-  return (req.query?.tenant_id || req.headers?.[TENANT_HEADER] || PLUS_ULTRA_TENANT_ID).toString().trim();
-}
 
 function nowIso() { return new Date().toISOString(); }
 function hoursAgoIso(h) { return new Date(Date.now() - h * 3600 * 1000).toISOString(); }
@@ -437,15 +431,14 @@ async function contractMissingClaims(tenantId) {
 
 // ── Handler ────────────────────────────────────────────────────────────
 
-export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-tenant-id');
-  res.setHeader('Cache-Control', 's-maxage=30, stale-while-revalidate=60');
+async function handler(req, res) {
+  res.setHeader('Cache-Control', 'private, no-store');
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'GET') return res.status(405).json({ error: 'GET only' });
 
-  const tenantId = resolveTenantId(req);
+  // Tenant is derived authoritatively from the authenticated session by
+  // requirePortalSessionAndTenant (req.tenant.id), never from the client.
+  const tenantId = req.tenant.id;
 
   // Gather all blocks in parallel
   const [
@@ -495,3 +488,5 @@ export default async function handler(req, res) {
     blocks
   });
 }
+
+export default requirePortalSessionAndTenant(handler);

@@ -841,6 +841,18 @@ let estimatesCache = null;
 const CACHE_TTL = 60000; // 1 minute
 let cacheTimestamps = {};
 
+// Headers for raw fetch() calls to /api/render (which bypass the api() helper).
+// Must carry the same Bearer token api() sends, or requirePortalSessionAndTenant
+// on /api/render returns 401.
+function renderHeaders() {
+  const h = { 'Content-Type': 'application/json' };
+  try {
+    const tok = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token');
+    if (tok) h['Authorization'] = 'Bearer ' + tok;
+  } catch { /* ignore */ }
+  return h;
+}
+
 async function api(path, opts = {}) {
   const sep = path.includes('?') ? '&' : '?';
   const baseHeaders = { 'Content-Type': 'application/json' };
@@ -2731,7 +2743,7 @@ async function printMaterialList() {
     customer: quoteState.answers.customerName || '',
     address: quoteState.answers.address || ''
   };
-  const resp = await fetch(API + '/render?type=materials&tenant=' + TENANT, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
+  const resp = await fetch(API + '/render?type=materials&tenant=' + TENANT, {method:'POST', headers:renderHeaders(), body:JSON.stringify(data)});
   if (!resp.ok) { toast('Render failed', 'error'); return; }
   const html = await resp.text();
   const w = window.open('', '_blank');
@@ -2763,7 +2775,7 @@ async function toggleProposalPreview() {
     };
     const od = await api('/outputs?type=proposal', {method:'POST', body:JSON.stringify(payload)});
     if (od.error) { toast('Preview error: ' + od.error, 'error'); return; }
-    const resp = await fetch(API + '/render?type=proposal&tenant=' + TENANT, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(od)});
+    const resp = await fetch(API + '/render?type=proposal&tenant=' + TENANT, {method:'POST', headers:renderHeaders(), body:JSON.stringify(od)});
     if (!resp.ok) { toast('Render failed', 'error'); return; }
     const html = await resp.text();
     iframe.srcdoc = html;
@@ -3140,12 +3152,12 @@ async function generateOutputs(type) {
 
       // Render and open sales page
       const spData = allData.outputs?.salesPage || {};
-      const spResp = await fetch(`${API}/render?type=sales_page&tenant=${TENANT}&_t=${Date.now()}`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(spData)});
+      const spResp = await fetch(`${API}/render?type=sales_page&tenant=${TENANT}&_t=${Date.now()}`, {method:'POST', headers:renderHeaders(), body:JSON.stringify(spData)});
       if (spResp.ok) { const h = await spResp.text(); if (h.length > 100) { const w = window.open('','_blank'); if(w){w.document.write(h);w.document.close();} } }
 
       // Render and open proposal in second tab
       const prData = allData.outputs?.proposal || {};
-      const prResp = await fetch(`${API}/render?type=proposal&tenant=${TENANT}&_t=${Date.now()}`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(prData)});
+      const prResp = await fetch(`${API}/render?type=proposal&tenant=${TENANT}&_t=${Date.now()}`, {method:'POST', headers:renderHeaders(), body:JSON.stringify(prData)});
       if (prResp.ok) { const h = await prResp.text(); if (h.length > 100) { const w = window.open('','_blank'); if(w){w.document.write(h);w.document.close();} } }
 
       toast('Sales page + proposal opened', 'success');
@@ -3156,7 +3168,7 @@ async function generateOutputs(type) {
     const od = await api(`/outputs?type=${type}`, {method:'POST', body:JSON.stringify(payload)});
     if (od.error) { toast('Output error: ' + od.error, 'error'); return; }
 
-    const resp = await fetch(`${API}/render?type=${type}&tenant=${TENANT}&_t=${Date.now()}`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(od)});
+    const resp = await fetch(`${API}/render?type=${type}&tenant=${TENANT}&_t=${Date.now()}`, {method:'POST', headers:renderHeaders(), body:JSON.stringify(od)});
     if (!resp.ok) { toast('Render failed — ' + resp.status, 'error'); return; }
     const html = await resp.text();
     if (!html || html.length < 100) { toast('Empty render response', 'error'); return; }
@@ -3178,7 +3190,7 @@ async function generateOutputs(type) {
       if (t === 'sales_page' && ad.outputs?.proposal) {
         data._proposalData = ad.outputs.proposal;
       }
-      const resp = await fetch(`${API}/render?type=${t}&tenant=${TENANT}&_t=${Date.now()}`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
+      const resp = await fetch(`${API}/render?type=${t}&tenant=${TENANT}&_t=${Date.now()}`, {method:'POST', headers:renderHeaders(), body:JSON.stringify(data)});
       if (!resp.ok) continue;
       const html = await resp.text();
       if (!html || html.length < 100) continue;
@@ -3657,7 +3669,7 @@ async function generateFunnel(type) {
       const od = await api('/outputs?type=' + t, { method: 'POST', body: JSON.stringify(payload) });
       if (od.error) continue;
       const resp = await fetch(API + '/render?type=' + t + '&tenant=' + TENANT + '&_t=' + Date.now(), {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(od)
+        method: 'POST', headers: renderHeaders(), body: JSON.stringify(od)
       });
       if (!resp.ok) continue;
       const html = await resp.text();
@@ -3669,7 +3681,7 @@ async function generateFunnel(type) {
     const od = await api('/outputs?type=' + type, { method: 'POST', body: JSON.stringify(payload) });
     if (od.error) { toast('Error: ' + od.error, 'error'); funnelState.generating = false; return; }
     const resp = await fetch(API + '/render?type=' + type + '&tenant=' + TENANT + '&_t=' + Date.now(), {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(od)
+      method: 'POST', headers: renderHeaders(), body: JSON.stringify(od)
     });
     if (!resp.ok) { toast('Render failed', 'error'); funnelState.generating = false; return; }
     const html = await resp.text();
@@ -4389,7 +4401,8 @@ async function populateAssigneeSelect(currentAssignedId) {
   if (!sel) return;
   if (!_crewUsersCache) {
     try {
-      const r = await fetch('/api/users', { headers: { 'x-tenant-id': TENANT } });
+      const _tok = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token');
+      const r = await fetch('/api/users', { headers: Object.assign({ 'x-tenant-id': TENANT }, _tok ? { Authorization: 'Bearer ' + _tok } : {}) });
       if (r.ok) {
         const data = await r.json();
         _crewUsersCache = (data.users || data.data || data || []).filter(u => u.active !== false);
@@ -4977,7 +4990,7 @@ async function generateEstOutputs(id, type) {
   const od = await api('/outputs?type=' + type, {method:'POST', body:JSON.stringify(payload)});
   if (od.error) { toast('Output error: ' + od.error, 'error'); return; }
 
-  const resp = await fetch(API + '/render?type=' + type + '&tenant=' + TENANT, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(od)});
+  const resp = await fetch(API + '/render?type=' + type + '&tenant=' + TENANT, {method:'POST', headers:renderHeaders(), body:JSON.stringify(od)});
   if (!resp.ok) { toast('Render failed', 'error'); return; }
   const html = await resp.text();
   const w = window.open('', '_blank');

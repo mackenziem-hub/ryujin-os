@@ -477,8 +477,21 @@ function currentTemplateInline() {
 }
 
 // ── API ──
+// Send the operator's session token so privileged endpoints (e.g. the gated
+// estimate-by-id preview on /api/proposal-v2) accept the call. Mirrors the
+// Authorization: Bearer <ryujin_token> convention used across the admin pages.
+function authToken() {
+  try { return localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token') || ''; }
+  catch (e) { return ''; }
+}
+function authHeaders(base) {
+  var h = Object.assign({}, base || {});
+  var tok = authToken();
+  if (tok) h['Authorization'] = 'Bearer ' + tok;
+  return h;
+}
 function getJSON(path) {
-  return fetch(API(path), { headers: { 'x-tenant-id': TENANT } }).then(function (r) {
+  return fetch(API(path), { headers: authHeaders({ 'x-tenant-id': TENANT }) }).then(function (r) {
     return r.json().then(function (j) {
       if (!r.ok) throw new Error(j && (j.error || j.message) || ('HTTP ' + r.status));
       return j;
@@ -488,7 +501,7 @@ function getJSON(path) {
 function postJSON(path, body) {
   return fetch(API(path), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-tenant-id': TENANT },
+    headers: authHeaders({ 'Content-Type': 'application/json', 'x-tenant-id': TENANT }),
     body: JSON.stringify(body)
   }).then(function (r) {
     return r.json().then(function (j) {

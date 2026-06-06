@@ -8,6 +8,7 @@
 import { runVegeta, runPiccolo, runKrillin, runGohan, sendFallbackEmail } from './_shared.js';
 import { buildMetaAdsSnapshot, checkTokenHealth, auditAdSetConfig } from '../../lib/meta.js';
 import { requireCronOrOwner } from '../../lib/cronAuth.js';
+import { snapshotHeaders } from '../../lib/snapshotClient.js';
 
 const BASE_URL = 'https://ryujin-os.vercel.app';
 const AGENT_TIMEOUT = 25000; // 25s per agent
@@ -35,7 +36,7 @@ export default async function handler(req, res) {
       console.log(`[Z Fighter Daily] ${tokenStatus.expiryWarning}`);
       await fetch(`${BASE_URL}/api/snapshot`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: snapshotHeaders(),
         body: JSON.stringify({ tokenWarning: { timestamp: new Date().toISOString(), daysLeft: tokenStatus.daysLeft, message: tokenStatus.expiryWarning } })
       });
       // Escalation at 14d / 7d / 3d / expired so it doesn't just sit silent in the snapshot.
@@ -56,7 +57,7 @@ export default async function handler(req, res) {
     configAudit = { status: 'ok', total: audit.totalAdSets, active: audit.activeAdSets, flagged: audit.flaggedCount };
     await fetch(`${BASE_URL}/api/snapshot`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: snapshotHeaders(),
       body: JSON.stringify({ metaConfigAudit: audit })
     });
     if (audit.flaggedCount > 0) {
@@ -76,7 +77,7 @@ export default async function handler(req, res) {
     if (tokenStatus?.expiresAt) metaAds._tokenExpiresAt = tokenStatus.expiresAt;
     await fetch(`${BASE_URL}/api/snapshot`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: snapshotHeaders(),
       body: JSON.stringify({ metaAds })
     });
     metaRefresh = { status: 'ok', campaigns: metaAds.activeCampaignCount, alerts: metaAds.alerts.length, tokenDaysLeft: tokenStatus?.daysLeft };
@@ -127,7 +128,7 @@ export default async function handler(req, res) {
   try {
     await fetch(`${BASE_URL}/api/snapshot`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: snapshotHeaders(),
       body: JSON.stringify({
         agentReports: {
           daily: {

@@ -154,11 +154,17 @@ export default async function handler(req, res) {
   const body = req.body || {};
   const { refId, estimateId, shareToken, customer, rep, tier, financing, signature, acceptedAt, selectedAddons, addonsSubtotal, envelope } = body;
   const addonsList = Array.isArray(selectedAddons) ? selectedAddons : [];
-  const addonsSum = Number(addonsSubtotal) || addonsList.reduce((s, a) => s + (Number(a?.price) || 0), 0);
+  // SECURITY (P1): never trust client money. addonsSubtotal / a.price from the
+  // body are display-only echoes; the persisted add-on subtotal is re-derived
+  // below from est.custom_prices._addons by slug. Kept here only for the audit
+  // breakdown, not for any persisted financial value.
+  const clientAddonsSum = Number(addonsSubtotal) || addonsList.reduce((s, a) => s + (Number(a?.price) || 0), 0);
   // Envelope mode payload (Performance Shell configurator). When present,
   // this is the customer's full configuration: which roof tier, which siding
   // tier, which trim toggles, plus the engine-computed bundle/savings/cash.
-  // Trust the client total — but record the full breakdown for audit.
+  // NOTE (P1 residual): finalSelling here is still client-computed (see
+  // needsHumanConfirm) — there is no stored authoritative envelope total to
+  // re-derive against.
   const envelopeAccept = envelope && typeof envelope === 'object' ? envelope : null;
 
   // Bug-sweep #1/S1 (2026-04-24): shareToken is mandatory. Public endpoint cannot
@@ -174,7 +180,7 @@ export default async function handler(req, res) {
   // 1. Resolve estimate by share token (authoritative — do not trust estimateId from client)
   const lookup = await supabaseAdmin
     .from('estimates')
-    .select('id, tenant_id, estimate_number, customer_id, status, selected_package, notes, calculated_packages, ghl_opportunity_id, share_token, proposal_mode, tags, customer:customers(full_name, email, phone, address, ghl_contact_id)')
+    .select('id, tenant_id, estimate_number, customer_id, status, selected_package, notes, calculated_packages, custom_prices, ghl_opportunity_id, share_token, proposal_mode, tags, customer:customers(full_name, email, phone, address, ghl_contact_id)')
     .eq('share_token', shareToken)
     .limit(1)
     .maybeSingle();
@@ -216,7 +222,21 @@ export default async function handler(req, res) {
   // the chosen tier total.
   let tierBaseTotal, tierTotalWithTax, acceptanceBodyExtra = '';
 
+  // SECURITY (P1): re-price add-ons SERVER-SIDE from est.custom_prices._addons
+  // (the authoritative list proposal.js serves) keyed by slug. Ignore the
+  // client-supplied a.price / addonsSubtotal entirely for persisted values.
+  // Unknown slugs (e.g. the dynamic gutter-package not present in static
+  // _addons — see needsHumanConfirm) contribute 0 to the persisted total.
+  const serverAddons = Array.isArray(est.custom_prices?._addons) ? est.custom_prices._addons : [];
+  const serverAddonPrice = (slug) => {
+    const match = serverAddons.find(a => a && a.slug === slug);
+    return match ? (Number(match.price) || 0) : 0;
+  };
+  const addonsSum = addonsList.reduce((s, a) => s + serverAddonPrice(a?.slug), 0);
+
   if (envelopeAccept && envelopeAccept.finalSelling != null) {
+    // Envelope mode: see needsHumanConfirm — finalSelling cannot yet be
+    // re-derived server-side, so it is intentionally left unchanged here.
     tierBaseTotal = Number(envelopeAccept.finalSelling) || 0;
     tierTotalWithTax = Math.round(tierBaseTotal * 1.15);
     const sel = envelopeAccept.selections || {};
@@ -233,10 +253,21 @@ export default async function handler(req, res) {
       : '';
     acceptanceBodyExtra = ` [${envelopeAccept.packageName || 'Custom Package'}] ${lines.join(' · ')}.${savingsLine}${cashLine}`;
   } else {
-    tierBaseTotal = (Number(tier.total) || 0) + addonsSum;
-    tierTotalWithTax = tier.totalWithTax || Math.round(tierBaseTotal * 1.15);
+    // SECURITY (P1): re-derive the tier base price SERVER-SIDE from the frozen
+    // est.calculated_packages[tier.id]. Never trust client tier.total /
+    // tier.totalWithTax — they drive final_accepted_total + the 33% deposit.
+    // Mirrors api/proposal.js + api/proposal-v2-accept.js: pkg.total ?? summary.sellingPrice.
+    const pkgs = est.calculated_packages && typeof est.calculated_packages === 'object' ? est.calculated_packages : {};
+    const pkg = pkgs[tier.id];
+    const serverTierBase = pkg ? Number(pkg.total ?? pkg.summary?.sellingPrice ?? 0) : 0;
+    if (!pkg || !(serverTierBase > 0)) {
+      return res.status(400).json({ error: 'Unknown or unpriced tier for this proposal', tier: tier.id });
+    }
+    tierBaseTotal = serverTierBase + addonsSum;
+    // Re-derive HST from the server base; ignore any client-supplied totalWithTax.
+    tierTotalWithTax = Math.round(tierBaseTotal * 1.15);
     if (addonsList.length) {
-      acceptanceBodyExtra = ' Add-ons: ' + addonsList.map(a => `${a.label || a.slug} ($${Number(a.price || 0).toLocaleString()})`).join(', ') + `. Add-ons subtotal pre-tax: $${addonsSum.toLocaleString()}.`;
+      acceptanceBodyExtra = ' Add-ons: ' + addonsList.map(a => `${a.label || a.slug} ($${serverAddonPrice(a?.slug).toLocaleString()})`).join(', ') + `. Add-ons subtotal pre-tax: $${addonsSum.toLocaleString()}.`;
     }
   }
 
@@ -303,8 +334,9 @@ export default async function handler(req, res) {
     details: {
       tier_id: tier.id,
       tier_name: tier.name || null,
-      total_pre_tax: tier.total || null,
+      total_pre_tax: tierBaseTotal,
       total_with_tax: tierTotalWithTax,
+      client_claimed_pre_tax: tier.total ?? null,
       financing,
       customer_name: customer?.name || null,
       customer_email: customer?.email || null,

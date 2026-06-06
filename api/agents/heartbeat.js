@@ -93,7 +93,7 @@ export default async function handler(req, res) {
   try {
     await fetch(`${BASE_URL}/api/snapshot`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: snapshotHeaders(),
       body: JSON.stringify({
         heartbeat: {
           lastRun: new Date().toISOString(),

@@ -10,7 +10,28 @@
 // POST /api/merchants (mode=price)           — Set merchant price for a product
 // PUT /api/merchants                         — Update merchant, product, or price
 import { supabaseAdmin } from '../lib/supabase.js';
-import { requireTenant } from '../lib/tenant.js';
+import { requirePortalSessionAndTenant, isPrivileged } from '../lib/portalAuth.js';
+
+// Per-table column allowlists for PUT (prevents mass-assignment of
+// identity/FK/timestamp columns via the request body). Keys are the
+// only fields a client may update; everything else in the body is dropped.
+// id / tenant_id / merchant_id / product_id are identity+FK keys and must
+// never be reassignable; created_at/updated_at/last_verified_at are managed
+// by DB triggers.
+const PUT_ALLOWLIST = {
+  merchants: ['name', 'slug', 'type', 'address', 'city', 'province', 'postal_code', 'country', 'latitude', 'longitude', 'phone', 'website', 'product_url_pattern', 'notes', 'active'],
+  products: ['category_id', 'name', 'description', 'unit', 'units_per_coverage', 'brand', 'model', 'specs', 'photo_url', 'tags', 'active'],
+  merchant_products: ['price', 'price_currency', 'bulk_price', 'bulk_min_qty', 'sku', 'aisle', 'product_url', 'in_stock', 'stock_qty', 'lead_time_days', 'verified_by', 'auto_update', 'update_notes'],
+};
+
+function pickAllowed(table, body) {
+  const allowed = PUT_ALLOWLIST[table] || [];
+  const out = {};
+  for (const key of allowed) {
+    if (Object.prototype.hasOwnProperty.call(body, key)) out[key] = body[key];
+  }
+  return out;
+}
 
 async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -22,8 +43,13 @@ async function handler(req, res) {
 
     // Single merchant with its products
     if (id) {
+      // Scope to this tenant's merchants OR platform-wide (tenant_id null);
+      // never another tenant's merchant. maybeSingle() avoids a throw when
+      // the row exists but belongs to a different tenant (filtered out).
       const { data: merchant } = await supabaseAdmin
-        .from('merchants').select('*').eq('id', id).single();
+        .from('merchants').select('*').eq('id', id)
+        .or(`tenant_id.eq.${tenantId},tenant_id.is.null`)
+        .maybeSingle();
       if (!merchant) return res.status(404).json({ error: 'Merchant not found' });
 
       const { data: products } = await supabaseAdmin
@@ -236,25 +262,43 @@ async function handler(req, res) {
 
   // ── PUT ──
   if (req.method === 'PUT') {
-    const { id, type, ...updates } = req.body || {};
+    const body = req.body || {};
+    const { id, type } = body;
     if (!id) return res.status(400).json({ error: 'Missing id' });
 
     const table = type === 'product' ? 'products'
       : type === 'price' ? 'merchant_products'
       : 'merchants';
 
-    const { data, error } = await supabaseAdmin
-      .from(table)
-      .update(updates)
-      .eq('id', id)
-      .select('*')
-      .single();
+    // Mass-assignment guard: only allowlisted columns survive.
+    const updates = pickAllowed(table, body);
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'No updatable fields provided' });
+    }
+
+    // Tenant scoping: merchants + merchant_products carry tenant_id, so an
+    // update MUST be constrained to this tenant (own rows; platform-wide
+    // rows with tenant_id null are intentionally not editable by tenants).
+    // The shared `products` catalog has NO tenant_id column, so a tenant_id
+    // filter there would silently match zero rows — gate it instead so a
+    // single tenant can't mutate the platform catalog cross-tenant.
+    let query = supabaseAdmin.from(table).update(updates).eq('id', id);
+    if (table === 'products') {
+      if (!isPrivileged(req.session)) {
+        return res.status(403).json({ error: 'Editing the shared product catalog requires owner/admin.' });
+      }
+    } else {
+      query = query.eq('tenant_id', tenantId);
+    }
+
+    const { data, error } = await query.select('*').maybeSingle();
 
     if (error) return res.status(500).json({ error: error.message });
+    if (!data) return res.status(404).json({ error: 'Not found or not owned by this tenant' });
     return res.json(data);
   }
 
   return res.status(405).json({ error: 'Method not allowed' });
 }
 
-export default requireTenant(handler);
+export default requirePortalSessionAndTenant(handler);

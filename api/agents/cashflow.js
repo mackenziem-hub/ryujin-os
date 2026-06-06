@@ -234,7 +234,7 @@ export async function runCashflow() {
   try {
     await fetch(`${RYUJIN_BASE}/api/snapshot`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: snapshotHeaders(),
       body: JSON.stringify({ cashflow: report.cashflow }),
       signal: AbortSignal.timeout(10000)
     });

@@ -156,7 +156,7 @@ export default async function handler(req, res) {
       try {
         const base = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://ryujin-os.vercel.app';
         await fetch(`${base}/api/snapshot`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: snapshotHeaders(),
           body: JSON.stringify({ reconcile: { lastRun: new Date().toISOString(), figures: F, openFindings: result.findings.length } }),
           signal: AbortSignal.timeout(10000),
         });

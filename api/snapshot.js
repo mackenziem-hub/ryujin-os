@@ -9,6 +9,7 @@
 import { put, list } from '@vercel/blob';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { resolveSession } from '../lib/portalAuth.js';
+import { requireCronOrOwner } from '../lib/cronAuth.js';
 import { snapshotHeaders } from '../lib/snapshotClient.js';
 
 const SNAPSHOT_BLOB_KEY = 'ryujin-snapshot.json';
@@ -603,6 +604,17 @@ export default async function handler(req, res) {
   if (req.method === 'GET' || req.method === 'PUT') {
     const session = await resolveSession(req).catch(() => null);
     if (!session) return res.status(401).json({ error: 'sign_in_required', code: 'NO_SESSION' });
+    // The snapshot blob is Plus-Ultra-specific (its sections aggregate Plus Ultra
+    // customer PII + revenue). A logged-in user from ANY other tenant must not be
+    // able to read it. Bind the read to the snapshot's owning tenant: require the
+    // session tenant to be Plus Ultra. The service token (snapshotHeaders sends
+    // x-tenant-id: plus-ultra) resolves to the Plus Ultra synthetic-admin session,
+    // so cron/agents/server libs still pass.
+    const { data: snapTenant } = await supabaseAdmin
+      .from('tenants').select('id').eq('slug', 'plus-ultra').maybeSingle();
+    if (!snapTenant || session.tenant_id !== snapTenant.id) {
+      return res.status(403).json({ error: 'cross_tenant_forbidden', code: 'WRONG_TENANT' });
+    }
   }
 
   if (req.method === 'GET') {
@@ -624,6 +636,13 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
+    // GATE (write path): POST overwrites top-level sections.* of the central
+    // snapshot blob. Previously fully open -> anyone could clobber heartbeat,
+    // revenue, metaAds, etc. Restrict to the agent/cron fleet: Bearer CRON_SECRET
+    // (Vercel cron), an owner/admin session, or RYUJIN_SERVICE_TOKEN (the synthetic
+    // admin session every agent self-call carries via snapshotHeaders()).
+    const auth = await requireCronOrOwner(req);
+    if (!auth.ok) return res.status(401).json({ error: auth.error, code: 'WRITE_FORBIDDEN' });
     // Agents POST partial updates to merge into the snapshot.
     //
     // CONCURRENCY: this is a lockless read-modify-write of a single blob
