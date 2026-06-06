@@ -10,8 +10,13 @@
 // Gating is two-layer:
 //   1. requireOwnerOrAdmin  -> must be a logged-in owner/admin session.
 //   2. tenant scope         -> the session's tenant must own the requested deck
-//      (DECK_OWNER registry). Stops an owner/admin of tenant B from reading
+//      (DECKS registry). Stops an owner/admin of tenant B from reading
 //      tenant A's confidential deck. The registry doubles as the slug whitelist.
+//
+// GET /api/internal-deck?list=1  ->  JSON of the decks the caller's tenant owns
+// (slug, title, desc, slides). The public catalog (decks.html) calls this after
+// owner login to render its "Internal" section, so confidential slugs/titles
+// never live in any statically fetchable HTML.
 //
 // The viewer is public/internal-deck.html, a PII-free shell that reads the
 // ryujin_token from localStorage and fetches this endpoint with it.
@@ -24,9 +29,20 @@ import path from 'path';
 import { requireOwnerOrAdmin } from '../lib/auth-server.js';
 import { supabaseAdmin } from '../lib/supabase.js';
 
-// slug -> owning tenant slug. Whitelist + tenant scope in one map.
-const DECK_OWNER = {
-  'q2-numbers': 'plus-ultra',
+// slug -> { owning tenant slug, list-card metadata }. Whitelist + tenant scope
+// + the metadata the catalog's gated list returns. The HTML body itself lives in
+// api/_decks/deck-<slug>.html.
+const DECKS = {
+  'q2-numbers': {
+    tenant: 'plus-ultra', tag: 'Finance', slides: 9,
+    title: 'Q2 2026 · The Numbers',
+    desc: 'Receipt-verified Q2 revenue, job by job, with the booked pipeline still to land.',
+  },
+  '10x-blueprint': {
+    tenant: 'plus-ultra', tag: 'Strategy', slides: 18,
+    title: 'The 10x Path',
+    desc: 'The growth blueprint: the one binding constraint, the real numbers, Operation Revive as the spearhead, and the 30 to 60 day sequence.',
+  },
 };
 
 export default async function handler(req, res) {
@@ -40,19 +56,31 @@ export default async function handler(req, res) {
   const auth = await requireOwnerOrAdmin(req, res);
   if (!auth) return;
 
+  // Resolve the caller's tenant slug once (used for list filter + per-deck scope).
+  const { data: callerTenant } = await supabaseAdmin
+    .from('tenants').select('slug').eq('id', auth.tenant_id).maybeSingle();
+  const callerSlug = callerTenant?.slug || null;
+
+  // List mode: return only the decks this tenant owns. No slug ever ships in static HTML.
+  if (req.query?.list) {
+    const decks = Object.entries(DECKS)
+      .filter(([, d]) => d.tenant === callerSlug)
+      .map(([slug, d]) => ({ slug, title: d.title, desc: d.desc, slides: d.slides, tag: d.tag }));
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(200).json({ decks });
+  }
+
   const slug = String(req.query?.slug || '').trim().toLowerCase();
   if (!/^[a-z0-9-]+$/.test(slug)) {
     return res.status(400).json({ error: 'bad_slug' });
   }
 
   // Whitelist: unknown slugs 404 (never touch the filesystem with them).
-  const ownerSlug = DECK_OWNER[slug];
-  if (!ownerSlug) return res.status(404).json({ error: 'not_found' });
+  const deck = DECKS[slug];
+  if (!deck) return res.status(404).json({ error: 'not_found' });
 
   // Layer 2: tenant scope. Only an owner/admin of the deck's tenant may read it.
-  const { data: tenant } = await supabaseAdmin
-    .from('tenants').select('id').eq('slug', ownerSlug).maybeSingle();
-  if (!tenant || tenant.id !== auth.tenant_id) {
+  if (deck.tenant !== callerSlug) {
     return res.status(403).json({ error: 'forbidden' });
   }
 
