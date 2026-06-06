@@ -516,7 +516,7 @@ export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({ error: 'GET or POST only' });
   }
-  const auth = requireCronOrOwner(req);
+  const auth = await requireCronOrOwner(req);
   if (!auth.ok) return res.status(401).json({ error: auth.error });
 
   const startTime = Date.now();

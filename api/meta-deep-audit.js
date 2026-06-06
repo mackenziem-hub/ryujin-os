@@ -21,7 +21,7 @@ const DEFAULT_AD_SETS = [
 const PIXEL_ID = '1166833781416817';
 
 export default async function handler(req, res) {
-  const auth = requireCronOrOwner(req);
+  const auth = await requireCronOrOwner(req);
   if (!auth.ok) return res.status(401).json({ error: auth.error });
 
   try {

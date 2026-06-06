@@ -30,7 +30,7 @@ const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim(
 const GHL_VERSION = '2021-07-28';
 
 export default async function handler(req, res) {
-  const auth = requireCronOrOwner(req);
+  const auth = await requireCronOrOwner(req);
   if (!auth.ok) return res.status(401).json({ error: auth.error });
 
   // Vercel cron strips query strings, so ?type=morning/evening from vercel.json doesn't reach us.
