@@ -883,12 +883,15 @@ body.gp-mode * { cursor: none !important; }
   display: none;
   flex-direction: column;
   opacity: 0;
-  transition: opacity 0.45s;
+  transform: scale(1.045);
+  transform-origin: center center;
+  transition: opacity 0.45s ease-out, transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
   backdrop-filter: blur(6px);
 }
 #sectionOverlay.on {
   display: flex;
   opacity: 1;
+  transform: scale(1);
 }
 #sectionHud {
   height: 46px;
@@ -2478,7 +2481,11 @@ const PANEL_COUNT = 8;
 const ORBIT_RADIUS = 1200;
 const ORBIT_Y_VARIANCE = 30;
 const CAMERA_START = { x: 0, y: 160, z: 950 };
-const ZOOM_DISTANCE = 760;
+// Focus/browse stop: panel ~fills the frame but stays bordered (down from 760, which parked you in the "near" zone).
+const ZOOM_DISTANCE = 470;
+// Click-to-enter dive: plunge until the panel face overflows the viewport, then crossfade to the live page.
+// Kept above controls.minDistance (220) so OrbitControls never clamps it back out.
+const ENTER_DISTANCE = 250;
 const COLORS = {
   cyan: 0x22d3ee,
   purple: 0x7c3aed,
@@ -2828,7 +2835,7 @@ function zoomToPanel(index, onComplete) {
   const panelPos = obj.position.clone();
   const dir = panelPos.clone().normalize();
   const camPos = panelPos.clone().sub(dir.clone().multiplyScalar(ZOOM_DISTANCE));
-  camPos.y = panelPos.y + 30;
+  camPos.y = panelPos.y + 20;
 
   focusedPanel = index;
   controls.autoRotate = false;
@@ -2840,12 +2847,29 @@ function zoomToPanel(index, onComplete) {
   });
 }
 
-// Single-click on a panel: fly-to-panel, then open the overlay in one smooth motion
+// Single-click / scroll-in on a panel: one continuous plunge from the ring,
+// through the panel face, into the full live page. No mid-stop, no popup. The
+// camera dives until the panel overflows the viewport while the overlay
+// crossfades in over the tail of the dive, so the panel dissolves into the page.
 function flyAndEnter(index){
   if (isAnimating) return;
-  zoomToPanel(index, () => {
-    setTimeout(() => enterFocusedPanel(), 120);
-  });
+  const obj = panelObjects[index];
+  const panelPos = obj.position.clone();
+  const dir = panelPos.clone().normalize();
+  const camPos = panelPos.clone().sub(dir.clone().multiplyScalar(ENTER_DISTANCE));
+  camPos.y = panelPos.y + 14;
+
+  focusedPanel = index;
+  controls.autoRotate = false;
+  panelData.forEach((pd, i) => pd.element.classList.toggle('focused', i === index));
+  document.getElementById('instruction').style.opacity = '0';
+
+  const DIVE = 0.85; // seconds
+  animateCamera(camPos, panelPos, DIVE);
+  // Start the full-page crossfade partway through the dive so the 0.45s overlay
+  // fade lands right as the camera bottoms out, so the two motions overlap.
+  clearTimeout(flyAndEnter._t);
+  flyAndEnter._t = setTimeout(() => enterFocusedPanel(), DIVE * 1000 * 0.45);
 }
 
 function zoomOut() {
@@ -2873,6 +2897,10 @@ function enterFocusedPanel() {
   // Strip the ?embed=1 flag cleanly so the iframe loads the full interactive page
   frame.src = panel.url.split('?')[0];
   title.textContent = panel.title;
+  // Two-step: lay it out first, force a reflow, THEN flip .on so the opacity +
+  // scale transition actually fires (a single-frame display:none -> flex can't transition).
+  overlay.style.display = 'flex';
+  void overlay.offsetWidth;
   overlay.classList.add('on');
 }
 window.enterFocusedPanel = enterFocusedPanel;
@@ -2881,7 +2909,8 @@ function exitSectionOverlay() {
   const overlay = document.getElementById('sectionOverlay');
   const frame = document.getElementById('sectionFrame');
   overlay.classList.remove('on');
-  setTimeout(() => { frame.src = ''; }, 450); // unload after fade
+  // Unload + drop the inline display after the fade so the hidden overlay stops capturing clicks.
+  setTimeout(() => { frame.src = ''; overlay.style.display = ''; }, 450);
   // Reset focused panel state so next click works without needing to back all the way out
   if (focusedPanel !== null) {
     setTimeout(zoomOut, 200);
