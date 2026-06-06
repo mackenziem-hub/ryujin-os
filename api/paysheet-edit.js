@@ -13,6 +13,7 @@
 import { randomBytes } from 'node:crypto';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { paysheetEditRequiresReAccept } from '../lib/state.js';
+import { requireOwnerOrAdmin } from '../lib/auth-server.js';
 
 const GHL_BASE = 'https://services.leadconnectorhq.com';
 const APP_BASE = (process.env.APP_BASE_URL || 'https://ryujin-os.vercel.app').trim();
@@ -63,6 +64,11 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
+  // Owner/admin auth. Accepts Authorization: Bearer <token> or x-user-token
+  // (lib/auth-server.js readBearerToken). On failure it sends 401/403 itself.
+  const auth = await requireOwnerOrAdmin(req, res);
+  if (!auth) return;
+
   const { paysheet_id, fields, edit_reason } = req.body || {};
   if (!paysheet_id) return res.status(400).json({ error: 'paysheet_id required' });
   if (!fields || typeof fields !== 'object') {
@@ -77,6 +83,13 @@ export default async function handler(req, res) {
     .single();
 
   if (lookupErr || !paysheet) {
+    return res.status(404).json({ error: 'Paysheet not found' });
+  }
+
+  // Tenant isolation: supabaseAdmin bypasses RLS, so verify the paysheet
+  // belongs to the caller's tenant before any mutation. Return 404 (not 403)
+  // so cross-tenant probes can't confirm a paysheet id exists.
+  if (paysheet.tenant_id !== auth.tenant_id) {
     return res.status(404).json({ error: 'Paysheet not found' });
   }
 
@@ -132,7 +145,8 @@ export default async function handler(req, res) {
     .from('paysheets')
     .update(update)
     .eq('id', paysheet_id)
-    .select('id, state, version, sub_acceptance_token, total, updated_at')
+    .eq('tenant_id', auth.tenant_id)
+    .select('id, state, version, total, updated_at')
     .single();
 
   if (updateErr) {
@@ -151,7 +165,6 @@ export default async function handler(req, res) {
     version: updated.version,
     superseded_prior_token: needsReAccept,
     reason: needsReAccept ? reAcceptReason : null,
-    new_public_link: publicLink,
     sms_sent: !!(needsReAccept && paysheet.sub_contact_id),
     paysheet: {
       id: updated.id,

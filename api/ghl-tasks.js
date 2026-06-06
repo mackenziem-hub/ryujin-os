@@ -2,6 +2,8 @@
 // Routes: POST /api/ghl-tasks (create task on contact)
 // Wraps the GHL Contacts Tasks API with user-friendly assignedTo names
 
+import { resolveSession } from '../lib/portalAuth.js';
+
 const GHL_BASE = 'https://services.leadconnectorhq.com';
 const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
 const GHL_VERSION = '2021-07-28';
@@ -19,13 +21,20 @@ const USER_MAP = {
 // Mackenzie's own contact ID for general tasks not tied to a client
 const MACKENZIE_CONTACT_ID = '02IhxZfSwZZAZ2fooVGu';
 
-function checkAuth(req) {
-  const key = req.headers['x-api-key'];
-  const origin = req.headers.origin || req.headers.referer || '';
-  const isSameOrigin = origin.includes('ryujin-os.vercel.app') || origin.includes('localhost');
-  if (isSameOrigin) return true;
-  if (!RYUJIN_API_KEY) return false; // fail closed if no key configured
-  return key === RYUJIN_API_KEY;
+async function checkAuth(req) {
+  // A real session (DB-backed portal session OR RYUJIN_SERVICE_TOKEN via
+  // Authorization: Bearer) is the primary credential. The previous
+  // Origin/Referer 'same-origin' check was spoofable (any client can set
+  // those headers) and has been removed.
+  const session = await resolveSession(req).catch(() => null);
+  if (session) return true;
+  // Optional service-to-service key path, only honored when configured.
+  // RYUJIN_API_KEY is not confirmed set in prod, so this stays fail-closed.
+  if (RYUJIN_API_KEY) {
+    const key = req.headers['x-api-key'];
+    if (key === RYUJIN_API_KEY) return true;
+  }
+  return false;
 }
 
 async function ghlFetch(path, options = {}) {
@@ -54,7 +63,7 @@ async function findContactByName(query) {
 }
 
 export default async function handler(req, res) {
-  if (!checkAuth(req)) {
+  if (!(await checkAuth(req))) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 

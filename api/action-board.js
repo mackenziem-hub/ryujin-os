@@ -1,10 +1,14 @@
 // Ryujin OS — Action Board proxy (read-only)
 // Proxies to ultra-task-manager.replit.app (the canonical crew ticket system)
 // using the server-side API key so the browser doesn't need it.
+// Gated: requires a valid portal session (bearer token). This proxy exposes
+// the full crew ticket list, so an unauthenticated caller must not reach it.
+import { requirePortalSession } from '../lib/portalAuth.js';
+
 const ACTION_BOARD_URL = 'https://ultra-task-manager.replit.app';
 const KEY = (process.env.ACTION_BOARD_KEY || '').trim();
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
   if (!KEY) return res.status(500).json({ error: 'ACTION_BOARD_KEY not configured' });
@@ -22,3 +26,5 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: e.message });
   }
 }
+
+export default requirePortalSession(handler);
