@@ -5,7 +5,12 @@
 // (25% of payouts held) sat unread because Gmail does not flow through the
 // GHL conversation tab the inbox agent watches.
 //
-// It reuses the inbox_items surface: each matching email is inserted as a
+// Of the watched-sender mail it surfaces ONLY support / review / account-
+// status messages (SURFACE_KEYWORDS) -- reserves, disputes, reviews, appeals,
+// verification, payout problems -- and skips routine receipts and successful-
+// payout notices so the inbox stays high-signal.
+//
+// It reuses the inbox_items surface: each surfaced email is inserted as a
 // channel='email', notify=true row, so it shows on /inbox.html AND gets
 // picked up by the inbox agent's SMS digest (channel-agnostic, runs every
 // 20 min). The operator API treats email items as review-only, so nothing
@@ -34,12 +39,19 @@ const PLUS_ULTRA_SLUG = 'plus-ultra';
 // domain (and its subdomains), and the From-header check below is the backstop.
 const WATCHED_SENDERS = ['stripe.com'];
 
+// Of the watched-sender mail, surface ONLY support / review / account-status
+// messages. Matched against subject + snippet. This is the high-signal gate:
+// reserves, disputes, reviews, appeals, verification, payout problems, account
+// restrictions get through; routine receipts and successful-payout notices do
+// not. EXTEND this regex to catch more.
+const SURFACE_KEYWORDS = /reserve|dispute|chargeback|\breview\b|appeal|verif|account (update|review|information|restrict|on hold|status)|additional (information|details|document)|under review|on hold|withheld|restrict|frozen|freeze|suspend|deactivat|action (required|needed)|request(ed)? (for )?(information|document|details)|further review|payout (failed|paused|delayed|on hold|withheld)|unable to (process|pay)|we need|inquiry|\bcase\b|funds on hold/i;
+
 const DEFAULT_LOOKBACK_DAYS = 2;   // cron runs every 20 min, so 2d is heavy overlap (idempotent re-scan)
 const MAX_LOOKBACK_DAYS = 30;      // cap on the ?days= manual override
 const MAX_RESULTS = 25;
 
-// Urgency hint only (NOT a notify gate -- per config, every watched email
-// notifies). Lets the inbox sort the scary ones up. Open text, no schema.
+// Urgency hint only (every surfaced email already passed the keyword gate and
+// pings). Lets the inbox sort the scary ones up. Open text, no schema.
 function classifyUrgency(text) {
   const s = (text || '').toLowerCase();
   if (/reserve|dispute|chargeback|review|verification|verify|payout (failed|on hold)|on hold|restricted|frozen|suspend|action required|deactivat|cannot (process|pay)/.test(s)) {
@@ -93,6 +105,10 @@ export async function runGmailStripeFeeder({ tenantSlug = PLUS_ULTRA_SLUG, lookb
       const from = (m.from || '').toLowerCase();
       if (!WATCHED_SENDERS.some(s => from.includes(s))) { report.skipped++; continue; }
 
+      // Keyword gate: only support / review / account-status mail gets surfaced
+      // (skips routine receipts + successful-payout notices). See SURFACE_KEYWORDS.
+      if (!SURFACE_KEYWORDS.test(`${m.subject || ''} ${m.snippet || ''}`)) { report.skipped++; continue; }
+
       const convoKey = `gmail:${m.threadId}`;
       // Per-message state hash (the Gmail message id is already unique; hash to
       // keep it short and consistent with the inbox agent's state_hash style).
@@ -123,7 +139,7 @@ export async function runGmailStripeFeeder({ tenantSlug = PLUS_ULTRA_SLUG, lookb
         summary: `Stripe email: ${subject}`.slice(0, 500),
         category: 'finance',
         urgency,
-        notify: true,                         // per config: every Stripe email pings
+        notify: true,                         // surfaced = matched a review/support keyword -> ping
         notify_reason: `Stripe: ${subject}`.slice(0, 160),
         needs_reply: false,                   // informational; no auto-reply to Stripe
         draft_reply: '',
