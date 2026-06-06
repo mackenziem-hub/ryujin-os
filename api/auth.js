@@ -72,6 +72,10 @@ export default async function handler(req, res) {
       roleInfo = role;
     }
 
+    // Also mint an httpOnly session cookie (= the same session token) so the edge
+    // gate in middleware.js can authenticate top-level page navigations. localStorage
+    // is invisible to the edge; the existing token-in-localStorage flow is untouched.
+    res.setHeader('Set-Cookie', `ryujin_session=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${30 * 24 * 60 * 60}`);
     return res.json({
       token,
       user: {
@@ -405,6 +409,8 @@ export default async function handler(req, res) {
     if (token) {
       await supabaseAdmin.from('sessions').delete().eq('token', token);
     }
+    // Clear the edge-gate cookie.
+    res.setHeader('Set-Cookie', 'ryujin_session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0');
     return res.json({ ok: true });
   }
 
