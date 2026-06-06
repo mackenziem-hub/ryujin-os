@@ -4240,7 +4240,7 @@ async function callClaude(apiKey, systemPrompt, messages, useTools = true, effor
 const EFFORT_CONFIG = {
   low:    { model: 'claude-haiku-4-5',  thinking: null, output_config: null },
   medium: { model: 'claude-sonnet-4-6', thinking: null, output_config: null },
-  high:   { model: 'claude-opus-4-7',   thinking: { type: 'adaptive', display: 'summarized' }, output_config: { effort: 'high' } }
+  high:   { model: 'claude-opus-4-8',   thinking: { type: 'adaptive', display: 'summarized' }, output_config: { effort: 'high' } }
 };
 function effortToConfig(effort) {
   return EFFORT_CONFIG[effort] || EFFORT_CONFIG.medium;
@@ -4319,6 +4319,8 @@ async function callClaudeStream(apiKey, systemPrompt, messages, onDelta, useTool
 
       if (data.type === 'message_start') {
         messageMeta = data.message;
+        // Capture cache + input token usage from message_start (cache fields are not on message_delta).
+        if (data.message && data.message.usage) usage = { ...data.message.usage };
       } else if (data.type === 'content_block_start') {
         const cb = data.content_block;
         builders[data.index] = { type: cb.type };
@@ -4359,13 +4361,24 @@ async function callClaudeStream(apiKey, systemPrompt, messages, onDelta, useTool
         delete builders[data.index];
       } else if (data.type === 'message_delta') {
         if (data.delta?.stop_reason) stopReason = data.delta.stop_reason;
-        if (data.usage) usage = data.usage;
+        if (data.usage) usage = { ...(usage || {}), ...data.usage };
       } else if (data.type === 'message_stop') {
         // done
       } else if (data.type === 'error') {
         throw new Error('Anthropic stream error: ' + JSON.stringify(data.error || data));
       }
     }
+  }
+
+  // Surface cache + token usage so we can confirm the ephemeral cache breakpoints are actually hitting.
+  if (usage) {
+    console.log('[chat] usage', JSON.stringify({
+      model: cfg.model,
+      in: usage.input_tokens,
+      out: usage.output_tokens,
+      cache_read: usage.cache_read_input_tokens || 0,
+      cache_creation: usage.cache_creation_input_tokens || 0
+    }));
   }
 
   return {

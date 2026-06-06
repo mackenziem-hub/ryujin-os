@@ -101,6 +101,7 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg)
     <div class="wordmark">RYUJIN <span>OS</span></div>
     <div class="bar-actions">
       <button class="bar-btn" id="newConvo" type="button">New</button>
+      <button class="bar-btn" id="briefBtn" type="button" title="Speak today's briefing">Briefing</button>
       <button class="bar-btn" id="exportBtn" type="button" title="Copy conversation for debugging">Copy log</button>
     </div>
   </header>
@@ -300,7 +301,7 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg)
     var toolsWrap=null, toolNodes={}, toolEnded={};
     setState('thinking');
 
-    var body={ message:text, history:conversation.slice(-12).map(function(m){return {role:m.role,content:m.content};}), mode:'quick', effort:'medium', conversation_id:streamConvId||undefined, current_page:{ path: cockpitHostPage() } };
+    var body={ message:text, history:conversation.slice(-12).map(function(m){return {role:m.role,content:m.content};}), mode:'quick', effort:'low', conversation_id:streamConvId||undefined, current_page:{ path: cockpitHostPage() } };
     var answer='', gotText=false, finished=false, pendingNav=null;
     // any tool chip that never received a tool_end (stream cut / timeout) must not
     // hang on "wait" — flip it to error. pending_approval chips DID get a tool_end
@@ -384,6 +385,48 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg)
     renderHistory(); clearTrail(); loadOptions(); loadTopics(); cmd.focus();
   }
 
+  // ── Speak the latest briefing (reads the snapshot, narrates via TTS through the orb) ──
+  function stripMd(s){
+    return String(s||'')
+      .replace(/```[\s\S]*?```/g,' ')
+      .replace(/^#{1,6}\s*/gm,'')
+      .replace(/\*\*([^*]+)\*\*/g,'$1')
+      .replace(/\*([^*]+)\*/g,'$1')
+      .replace(/^\s*[-*]\s+/gm,'')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g,'$1')
+      .replace(/[·•]/g,', ')
+      .replace(/\s+/g,' ')
+      .trim();
+  }
+  function speakBriefing(){
+    if(busy) return;
+    var btn=$('briefBtn'); if(btn) btn.disabled=true;
+    function done(){ setState('idle'); if(btn) btn.disabled=false; }
+    fetch('/api/snapshot',{ headers:tHeaders() })
+      .then(function(r){ return r.ok?r.json():null; })
+      .then(function(snap){
+        var root=snap||{}; var sec=root.sections||root;
+        function grab(k){ return (sec&&sec[k])||root[k]||null; }
+        var m=grab('briefing_morning'), e=grab('briefing_evening'), pick=null;
+        if(m&&m.briefMarkdown) pick=m;
+        if(e&&e.briefMarkdown && (!pick||(e.timestamp||0)>(pick.timestamp||0))) pick=e;
+        if(!pick||!pick.briefMarkdown){ greetingEl.textContent='No briefing available yet.'; done(); return; }
+        var when='';
+        try{ if(pick.timestamp){ var d=new Date(pick.timestamp); when='Briefing as of '+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})+'. '; } }catch(e2){}
+        var spoken=when+stripMd(pick.briefMarkdown);
+        setState('speaking');
+        return fetch('/api/tts',{ method:'POST', headers:authHeaders(), body:JSON.stringify({ text:spoken, timestamps:false }) })
+          .then(function(rr){ if(!rr.ok) throw new Error('tts '+rr.status); return rr.blob(); })
+          .then(function(blob){
+            var url=URL.createObjectURL(blob); var audio=new Audio(url);
+            audio.addEventListener('ended',function(){ URL.revokeObjectURL(url); done(); });
+            audio.addEventListener('error',function(){ done(); });
+            var p=audio.play(); if(p&&p.catch) p.catch(function(){ done(); });
+          });
+      })
+      .catch(function(){ done(); });
+  }
+
   // ── Events ──
   cmd.addEventListener('focus',function(){ if(!busy)setState('listening'); });
   cmd.addEventListener('blur',function(){ if(!busy&&!cmd.value)setState('idle'); });
@@ -391,6 +434,7 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg)
   form.addEventListener('submit',function(e){ e.preventDefault(); summon(cmd.value); });
   $('exportBtn').addEventListener('click',exportLog);
   $('newConvo').addEventListener('click',newConversation);
+  if($('briefBtn')) $('briefBtn').addEventListener('click',speakBriefing);
 
   // Ambient dragon video
   (function bgDragon(){ var v=$('bg-dragon'); if(!v)return; var start=function(){ if(!v.getAttribute('src')&&v.dataset.src){ v.setAttribute('src',v.dataset.src); v.setAttribute('autoplay',''); v.load(); var p=v.play(); if(p&&p.catch)p.catch(function(){ var r=function(){v.play().catch(function(){});document.removeEventListener('pointerdown',r);}; document.addEventListener('pointerdown',r,{once:true}); }); } }; if(document.readyState==='complete')setTimeout(start,1500); else window.addEventListener('load',function(){setTimeout(start,1500);}); })();
