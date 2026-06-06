@@ -4,6 +4,7 @@
 // POST /api/auth?action=logout     — Invalidate session
 // GET  /api/auth?action=me         — Get current user from session token
 import { supabaseAdmin } from '../lib/supabase.js';
+import { gmailSend } from '../lib/google.js';
 import crypto from 'crypto';
 
 // Simple password hashing (bcrypt-like but using built-in crypto)
@@ -247,9 +248,33 @@ export default async function handler(req, res) {
     const resetUrl = `${proto}://${host}/reset-password.html?token=${token}`;
     console.log(`[auth/forgot] Reset URL for ${user.email}: ${resetUrl} (expires ${expires.toISOString()})`);
 
+    // Email the link to the account owner. Same server-side Gmail path used by
+    // leads/approve. Swallow send errors so we never leak whether the email
+    // exists; the console log above stays the admin fallback if delivery fails.
+    try {
+      await gmailSend(
+        user.email,
+        'Reset your Plus Ultra Roofing password',
+        [
+          'Hi,',
+          '',
+          'We received a request to reset the password on your Plus Ultra Roofing account.',
+          'Use the link below within the next hour to set a new password:',
+          '',
+          resetUrl,
+          '',
+          'If you did not request this, you can ignore this email and your password stays the same.',
+          '',
+          'Plus Ultra Roofing'
+        ].join('\n')
+      );
+    } catch (e) {
+      console.error('[auth/forgot] reset email send failed:', e?.message);
+    }
+
     return res.json({
       ok: true,
-      message: 'If the account exists, a reset link is available. Contact your administrator to retrieve it until email delivery is wired.'
+      message: 'If the account exists, a reset link has been emailed. The link expires in 1 hour.'
     });
   }
 
