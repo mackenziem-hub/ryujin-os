@@ -14,8 +14,10 @@
 // Gated by tenant_settings.inbox_agent_enabled (same opt-in as the inbox
 // agent it feeds), so no new flag / migration is required.
 //
-// Schedule: cron entry in vercel.json (every 20 min). Manual / smoke test:
-//   GET /api/feeders/gmail-stripe?tenant=plus-ultra   (add header x-owner-call: 1)
+// Schedule: cron entry in vercel.json (every 20 min). Manual / smoke test
+// needs an owner/admin session (Authorization: Bearer <ryujin_token>) or the
+// cron secret (Authorization: Bearer $CRON_SECRET):
+//   GET /api/feeders/gmail-stripe?tenant=plus-ultra
 //   optional ?days=N widens the Gmail lookback for backfill/testing (cap 30).
 // ═══════════════════════════════════════════════════════════════
 
@@ -148,7 +150,7 @@ export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({ error: 'GET or POST only' });
   }
-  const auth = requireCronOrOwner(req);
+  const auth = await requireCronOrOwner(req);
   if (!auth.ok) return res.status(401).json({ error: auth.error });
 
   const tenantSlug = (req.query?.tenant || req.headers['x-tenant-id'] || PLUS_ULTRA_SLUG).toString();
