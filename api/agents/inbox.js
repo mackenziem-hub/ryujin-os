@@ -24,6 +24,7 @@ import { createHash } from 'crypto';
 import { supabaseAdmin } from '../../lib/supabase.js';
 import { requireCronOrOwner } from '../../lib/cronAuth.js';
 import { listConversations, getConversationMessages, ghlSendMessage, getContactByPhone } from '../../lib/ghl.js';
+import { gmailSearch } from '../../lib/google.js';
 import { snapshotHeaders } from '../../lib/snapshotClient.js';
 
 const PLUS_ULTRA_SLUG = 'plus-ultra';
@@ -319,9 +320,83 @@ async function bridgeSubPortalMessages({ tenantId, runId }) {
   return out;
 }
 
+// Pull a display name out of an RFC From header ("Ryan <a@b.com>" -> "Ryan").
+function senderName(from) {
+  const s = String(from == null ? '' : from).trim();
+  const m = s.match(/^\s*"?([^"<]+?)"?\s*</);
+  return m ? m[1].trim() : '';
+}
+
+// ── Allow-list EMAIL leg: watch specific senders' inbound EMAIL ──
+// The GHL allow-list (matchAllowlist) only sees the GHL conversation tab
+// (SMS/messaging). When a watched contact replies by EMAIL instead (e.g. a sub
+// answering a paysheet question we emailed), that reply never touches GHL. For
+// each allow-list entry that carries an `email`, pull recent inbound from that
+// address via Gmail and queue it as a notify=true inbox item, so the SAME digest
+// below texts the owner. Dedup + once-only SMS ride the standard
+// (tenant_id, ghl_conversation_id, state_hash) unique index + the notified_at
+// gate, exactly like the GHL path: a `from:<email>` search only matches mail
+// FROM them (our own replies are from us, so they never re-trigger), and the
+// gmail message id is the state key so a re-scan next tick hits 23505 and skips.
+// Fail-soft: a Gmail error on one address is logged and skipped, never crashing
+// the cron (Gmail creds / quota must not take down the whole inbox run).
+async function scanAllowlistEmails({ tenantId, runId, allowlist, result }) {
+  const watched = (Array.isArray(allowlist) ? allowlist : [])
+    .filter(e => e && typeof e === 'object' && typeof e.email === 'string' && e.email.includes('@'));
+  if (!watched.length) return;
+
+  for (const entry of watched) {
+    const email = entry.email.trim().toLowerCase();
+    let msgs = [];
+    try {
+      msgs = await gmailSearch(`from:${email} newer_than:2d`, 10);
+    } catch (e) {
+      result.errors.push(`allowlist email ${email}: ${e.message}`);
+      continue;
+    }
+    for (const m of msgs) {
+      if (!m?.id) continue;
+      // Belt-and-suspenders: a from:<them> match is inherently inbound, but skip
+      // anything we authored that somehow carries their address.
+      if (Array.isArray(m.labels) && (m.labels.includes('SENT') || m.labels.includes('DRAFT'))) continue;
+      const t = m.date ? new Date(m.date) : null;
+      const iso = t && !isNaN(t.getTime()) ? t.toISOString() : null;
+      const who = entry.note || senderName(m.from) || email;
+      const row = {
+        tenant_id: tenantId,
+        ghl_conversation_id: `email:${m.threadId || m.id}`,  // synthetic, namespaced
+        ghl_contact_id: null,
+        contact_name: who,
+        channel: 'email',
+        source: 'gmail',
+        last_message_body: clampStr(m.snippet, 4000),
+        last_message_at: iso,
+        last_message_id: m.id,
+        state_hash: m.id,                       // gmail message id, unique per email
+        summary: clampStr(`Email from ${who}: ${m.snippet || m.subject || ''}`, 500),
+        category: clampStr(entry.category || 'other', 40),
+        urgency: 'normal',
+        notify: true,                           // a watched sender replied -> always ping
+        notify_reason: clampStr(`email reply, ${who}`, 160),
+        needs_reply: true,
+        draft_reply: '',
+        status: 'needs_review',
+        agent_run_id: runId,
+      };
+      const { error: insErr } = await supabaseAdmin.from('inbox_items').insert(row);
+      if (insErr) {
+        if (insErr.code === '23505') continue;   // already queued on a prior tick
+        result.errors.push(`allowlist email insert ${m.id}: ${insErr.message}`);
+        continue;
+      }
+      result.emailQueued = (result.emailQueued || 0) + 1;
+    }
+  }
+}
+
 // ── Main scan for one tenant ──
 async function runInbox({ tenantId, runId, startTime, allowlist = [], notifyCustomers = false, ownerContactId = null }) {
-  const result = { scanned: 0, triaged: 0, inserted: 0, notify: 0, allowlisted: 0, customerNotify: 0, bridged: 0, skipped: 0, errors: [] };
+  const result = { scanned: 0, triaged: 0, inserted: 0, notify: 0, allowlisted: 0, customerNotify: 0, emailQueued: 0, bridged: 0, skipped: 0, errors: [] };
 
   let convos = [];
   try {
@@ -465,6 +540,15 @@ async function runInbox({ tenantId, runId, startTime, allowlist = [], notifyCust
     }
   }
 
+  // Allow-list EMAIL leg: watched senders who reply by EMAIL (off the GHL tab).
+  // Runs BEFORE the digest so any queued email pings go out this same tick.
+  // Fail-soft so a Gmail outage never strands the GHL digest below.
+  try {
+    await scanAllowlistEmails({ tenantId, runId, allowlist, result });
+  } catch (e) {
+    result.errors.push(`allowlist email leg: ${e.message}`);
+  }
+
   // Build the SMS digest from the DB (not just this run's inserts) so a run
   // killed after inserting a notify item but before it could ping self-heals:
   // the next tick re-finds any notify=true row still unpinged. notified_at is
@@ -577,6 +661,7 @@ export default async function handler(req, res) {
     const overrideBits = [
       result.allowlisted ? `${result.allowlisted} allow-listed` : null,
       result.customerNotify ? `${result.customerNotify} customer` : null,
+      result.emailQueued ? `${result.emailQueued} email` : null,
     ].filter(Boolean).join(', ');
     const summary = `Scanned ${result.scanned}, triaged ${result.triaged}, queued ${result.inserted}, bridged ${result.bridged || 0}, notified ${result.notify}${overrideBits ? ` (${overrideBits})` : ''}`;
 
