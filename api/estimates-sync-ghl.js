@@ -18,6 +18,7 @@ import { requireTenant } from '../lib/tenant.js';
 // Always hit the production alias — preview deployment URLs are behind
 // Vercel SSO and would 401 the self-fetch.
 const GHL_BASE_LOCAL = 'https://ryujin-os.vercel.app';
+const ghlSyncHeaders = (extra = {}) => { const t = (process.env.RYUJIN_SERVICE_TOKEN || '').trim(); return { 'x-tenant-id': 'plus-ultra', ...(t ? { Authorization: `Bearer ${t}` } : {}), ...extra }; };
 
 function pickPrice(est) {
   if (est.final_accepted_total) return Number(est.final_accepted_total);
@@ -55,7 +56,7 @@ async function findOrCreateGhlContact(customer) {
   const lastName = rest.join(' ') || '';
   const cr = await fetch(`${GHL_BASE_LOCAL}/api/ghl?action=create-contact`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: ghlSyncHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({
       firstName,
       lastName,
@@ -160,6 +161,7 @@ async function handler(req, res) {
 
   const er = await fetch(`${GHL_BASE_LOCAL}/api/ghl?action=create-estimate`, {
     method: 'POST',
+    headers: ghlSyncHeaders({ 'Content-Type': 'application/json' }),
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(ghlBody)
   });

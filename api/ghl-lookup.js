@@ -11,6 +11,7 @@ import { requireTenant } from '../lib/tenant.js';
 // transition window (drop 2026-05-21).
 const RYUJIN_BASE_URL = (process.env.RYUJIN_BASE_URL || process.env.SHENRON_URL || 'https://ryujin-os.vercel.app').trim();
 const GHL_TENANTS = new Set(['plus-ultra']);
+const ghlSvcHeaders = () => { const t = (process.env.RYUJIN_SERVICE_TOKEN || '').trim(); return { 'x-tenant-id': 'plus-ultra', ...(t ? { Authorization: `Bearer ${t}` } : {}) }; };
 
 async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -24,7 +25,7 @@ async function handler(req, res) {
 
   try {
     if (id) {
-      const r = await fetch(`${RYUJIN_BASE_URL}/api/ghl?mode=contact-detail&id=${encodeURIComponent(id)}`);
+      const r = await fetch(`${RYUJIN_BASE_URL}/api/ghl?mode=contact-detail&id=${encodeURIComponent(id)}`, { headers: ghlSvcHeaders() });
       if (!r.ok) return res.status(r.status).json({ error: await r.text() });
       const data = await r.json();
       return res.json({ contact: normalize(data.contact, data.opportunities) });
@@ -34,8 +35,8 @@ async function handler(req, res) {
     if (trimmed.length < 2) return res.json({ contacts: [] });
 
     const [contactsResp, oppsResp] = await Promise.all([
-      fetch(`${RYUJIN_BASE_URL}/api/ghl?mode=contacts&q=${encodeURIComponent(trimmed)}&limit=10`),
-      fetch(`${RYUJIN_BASE_URL}/api/ghl?mode=pipeline&q=${encodeURIComponent(trimmed)}&limit=20`)
+      fetch(`${RYUJIN_BASE_URL}/api/ghl?mode=contacts&q=${encodeURIComponent(trimmed)}&limit=10`, { headers: ghlSvcHeaders() }),
+      fetch(`${RYUJIN_BASE_URL}/api/ghl?mode=pipeline&q=${encodeURIComponent(trimmed)}&limit=20`, { headers: ghlSvcHeaders() })
     ]);
     if (!contactsResp.ok) return res.status(contactsResp.status).json({ error: await contactsResp.text() });
     const contactsData = await contactsResp.json();

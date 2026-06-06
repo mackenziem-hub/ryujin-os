@@ -15,13 +15,20 @@ import { snapshotHeaders } from '../../lib/snapshotClient.js';
 
 const BASE_URL = 'https://ryujin-os.vercel.app';
 
+// Service-token headers so agent self-calls pass the now-gated /api/ghl + /api/snapshot.
+// resolveSession maps RYUJIN_SERVICE_TOKEN to a synthetic admin session scoped to x-tenant-id.
+function svcHeaders() {
+  const t = (process.env.RYUJIN_SERVICE_TOKEN || '').trim();
+  return { 'x-tenant-id': 'plus-ultra', ...(t ? { Authorization: `Bearer ${t}` } : {}) };
+}
+
 export async function fetchJSON(url, headers = {}) {
   // Cache-bust to defeat Vercel edge caching that otherwise serves stale snapshot
   // data (discovered 2026-04-11 — agents were reading stale metaAds even after
   // /api/snapshot POST writes succeeded). Adding ?_t= bypasses the edge cache.
   const sep = url.includes('?') ? '&' : '?';
   const bustedUrl = `${url}${sep}_t=${Date.now()}`;
-  const resp = await fetch(bustedUrl, { headers, cache: 'no-store', signal: AbortSignal.timeout(15000) });
+  const resp = await fetch(bustedUrl, { headers: { ...svcHeaders(), ...headers }, cache: 'no-store', signal: AbortSignal.timeout(15000) });
   if (!resp.ok) return { error: `HTTP ${resp.status}` };
   return resp.json();
 }
@@ -89,7 +96,7 @@ export async function runVegeta() {
   }
 
   // Estimator stats
-  const stats = await fetchJSON(`${BASE_URL}/api/lookup?mode=stats`);
+  const stats = await fetchJSON(`${BASE_URL}/api/lookup?mode=stats`, snapshotHeaders());
   const estStats = stats.results?.find(r => r.source === 'Estimator OS');
   if (estStats?.stats) {
     report.estimatorStats = {
@@ -151,7 +158,7 @@ export async function runVegeta() {
 export async function runPiccolo() {
   const report = { agent: 'Piccolo', role: 'Operations & Crew', timestamp: new Date().toISOString(), findings: [], tasks: [] };
 
-  const stats = await fetchJSON(`${BASE_URL}/api/lookup?mode=stats`);
+  const stats = await fetchJSON(`${BASE_URL}/api/lookup?mode=stats`, snapshotHeaders());
   const ticketStats = stats.results?.find(r => r.source === 'Action Board');
 
   if (ticketStats?.stats) {
@@ -185,7 +192,7 @@ export async function runPiccolo() {
     }
   }
 
-  const estData = await fetchJSON(`${BASE_URL}/api/lookup?source=estimates`);
+  const estData = await fetchJSON(`${BASE_URL}/api/lookup?source=estimates`, snapshotHeaders());
   const accepted = (estData.results?.[0]?.data || []).filter(e => e.status === 'Proposal Accepted');
   if (accepted.length > 0) {
     report.findings.push(`${accepted.length} accepted proposals — verify crew tickets exist`);
@@ -445,7 +452,7 @@ export async function runBulma() {
   const report = { agent: 'Bulma', role: 'Intel & Analytics', timestamp: new Date().toISOString(), findings: [], tasks: [] };
 
   const [lookupStats, ghlOverview, ghlPipeline] = await Promise.all([
-    fetchJSON(`${BASE_URL}/api/lookup?mode=stats`),
+    fetchJSON(`${BASE_URL}/api/lookup?mode=stats`, snapshotHeaders()),
     fetchJSON(`${BASE_URL}/api/ghl`),
     fetchJSON(`${BASE_URL}/api/ghl?mode=pipeline&limit=100`)
   ]);

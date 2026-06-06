@@ -9,6 +9,7 @@
 import { put, list } from '@vercel/blob';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { resolveSession } from '../lib/portalAuth.js';
+import { snapshotHeaders } from '../lib/snapshotClient.js';
 
 const SNAPSHOT_BLOB_KEY = 'ryujin-snapshot.json';
 const LEGACY_SNAPSHOT_BLOB_KEY = 'shenron-snapshot.json';
@@ -211,9 +212,11 @@ async function saveSnapshot(data) {
 async function buildFreshSnapshot() {
   const snapshot = { updated_at: new Date().toISOString(), sections: {} };
 
-  const tf = (url, opts = {}) => fetch(url, { ...opts, signal: AbortSignal.timeout(15000) });
+  const _svcToken = (process.env.RYUJIN_SERVICE_TOKEN || '').trim();
+  const _svcHeaders = { 'x-tenant-id': 'plus-ultra', ...(_svcToken ? { Authorization: `Bearer ${_svcToken}` } : {}) };
+  const tf = (url, opts = {}) => fetch(url, { ...opts, headers: { ..._svcHeaders, ...(opts.headers || {}) }, signal: AbortSignal.timeout(15000) });
   const fetches = await Promise.allSettled([
-    tf('https://ryujin-os.vercel.app/api/lookup?mode=stats').then(r => r.json()),
+    tf('https://ryujin-os.vercel.app/api/lookup?mode=stats', { headers: snapshotHeaders() }).then(r => r.json()),
     tf('https://ryujin-os.vercel.app/api/ghl').then(r => r.json()),
     tf('https://ryujin-os.vercel.app/api/ghl?mode=pipeline').then(r => r.json()),
     tf('https://ryujin-os.vercel.app/api/ghl?mode=conversations').then(r => r.json()),
@@ -504,7 +507,7 @@ async function buildFreshSnapshot() {
     if (idsToFetch.length > 0) {
       const noteResults = await Promise.allSettled(
         idsToFetch.map(cid =>
-          fetch(`https://ryujin-os.vercel.app/api/ghl?action=notes&id=${cid}`)
+          fetch(`https://ryujin-os.vercel.app/api/ghl?action=notes&id=${cid}`, { headers: { 'x-tenant-id': 'plus-ultra', ...((process.env.RYUJIN_SERVICE_TOKEN || '').trim() ? { Authorization: `Bearer ${(process.env.RYUJIN_SERVICE_TOKEN || '').trim()}` } : {}) } })
             .then(r => r.json())
             .then(data => ({ contactId: cid, notes: data.notes || [] }))
         )

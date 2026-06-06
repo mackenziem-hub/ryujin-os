@@ -1,3 +1,5 @@
+import { resolveSession } from '../lib/portalAuth.js';
+
 const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
 const GHL_BASE = 'https://services.leadconnectorhq.com';
 const GHL_LOCATION_ID = 'aHotOUdq9D8m3JPrRz9n';
@@ -101,6 +103,20 @@ function searchResults(results, query) {
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  // Auth gate: this endpoint proxies GHL contact PII + the Replit estimator/leads
+  // apps (with hardcoded fallback keys), so it must never be reachable
+  // unauthenticated. Owner/admin session required. Server-to-server callers
+  // (snapshot rebuild, EA agents, chat lookup_data tool) authenticate with
+  // RYUJIN_SERVICE_TOKEN + x-tenant-id, which resolveSession maps to a synthetic
+  // admin session. Fail closed: 401 with no session, 403 if role is not owner/admin.
+  const session = await resolveSession(req);
+  if (!session) {
+    return res.status(401).json({ error: 'sign_in_required', code: 'NO_SESSION' });
+  }
+  if (session.role !== 'owner' && session.role !== 'admin') {
+    return res.status(403).json({ error: 'Owner or admin role required', current_role: session.role });
   }
 
   const { q, source, mode } = req.query;
