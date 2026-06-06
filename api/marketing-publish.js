@@ -438,11 +438,19 @@ const tenantWrapped = requireTenant(tenantHandler);
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
   // Sweep mode: no tenant required, uses cron / internal-key auth.
-  if (req.query.next) return sweepHandler(req, res);
+  // Vercel cron jobs fire as GET, so accept GET here as well as POST (manual
+  // curl / internal triggers). This handler was POST-only, so every 10-minute
+  // cron run silently 405'd and the sweep never executed (no posts ever went out).
+  if (req.query.next) {
+    if (req.method !== 'GET' && req.method !== 'POST') {
+      return res.status(405).json({ error: 'GET or POST only' });
+    }
+    return sweepHandler(req, res);
+  }
 
-  // Single-clip mode: tenant scoped via header.
+  // Single-clip mode: tenant scoped via header. The UI "Publish now" sends POST.
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
   return tenantWrapped(req, res);
 }

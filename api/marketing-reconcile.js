@@ -15,8 +15,9 @@
 //   3. If neither env var is set, the endpoint is open (dev only).
 //
 // Endpoints:
-//   GET  /api/marketing-reconcile          → dry run, returns what *would* change
-//   POST /api/marketing-reconcile          → actually reconciles
+//   GET/POST /api/marketing-reconcile       → reconciles (writes posted/failed back).
+//                                             Vercel cron fires GET, so GET must write.
+//   GET  /api/marketing-reconcile?dry=1     → dry run, returns what *would* change
 //   Optional ?tenant=<slug> to scope to one tenant (default: all tenants)
 //   Optional ?limit=N (default 50, hard cap 200)
 //
@@ -81,7 +82,11 @@ export default async function handler(req, res) {
   const auth = checkAuth(req);
   if (!auth.ok) return res.status(401).json({ error: 'Unauthorized' });
 
-  const dryRun = req.method === 'GET';
+  // Dry run is now opt-in via ?dry=1, NOT implied by GET. Vercel cron fires
+  // GET, and previously GET == dry-run unconditionally, so the cron only ever
+  // dry-ran and scheduled_posts never advanced past 'scheduled'. Now the cron
+  // (GET, no ?dry) reconciles for real; ?dry=1 preserves the inspect-only mode.
+  const dryRun = req.query.dry === '1' || req.query.dry === 'true';
   const limit = Math.min(parseInt(req.query.limit) || DEFAULT_LIMIT, HARD_LIMIT);
   const tenantSlug = req.query.tenant;
 
