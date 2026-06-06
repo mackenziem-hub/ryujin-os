@@ -101,7 +101,14 @@ export default async function handler(req, res) {
   });
   if (!match) return tellUser(res, 404, `No teammate matches "${slug}". Ask Mac for a fresh link.`);
 
-  if (match.password_hash && !match.reset_token) {
+  // SECURITY: reset_token is shared by team invites (api/users.js invite mode +
+  // api/accept-invite.js) AND forgot-password (api/auth.js?action=forgot). A genuine
+  // pending invite has NO password yet (password_hash IS NULL); an already-activated
+  // account that just hit forgot-password has password_hash SET plus a live reset_token.
+  // We must ONLY render the token for the former. Any account with a password_hash is
+  // treated as activated and sent to /login.html, so an attacker can't forgot() a victim
+  // and then GET /i/<firstname> to harvest the reset_token (account takeover).
+  if (match.password_hash) {
     return renderRedirect(res, { destination: '/login.html', name: match.name, role: match.role });
   }
 
