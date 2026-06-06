@@ -27,7 +27,7 @@ async function sendFallbackAlert(subject, body) {
 }
 
 export default async function handler(req, res) {
-  const auth = requireCronOrOwner(req);
+  const auth = await requireCronOrOwner(req);
   if (!auth.ok) return res.status(401).json({ error: auth.error });
 
   const startTime = Date.now();

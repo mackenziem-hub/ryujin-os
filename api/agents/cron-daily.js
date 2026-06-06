@@ -29,6 +29,7 @@ import { runInventoryScan } from '../../lib/agents/inventory_scan.js';
 import { runStrategyScan } from '../../lib/agents/strategy_scan.js';
 import { persistAgentRun } from '../../lib/agents/persistAgentRun.js';
 import { supabaseAdmin } from '../../lib/supabase.js';
+import { requireCronOrOwner } from '../../lib/cronAuth.js';
 
 const TENANT_SLUG = 'plus-ultra';
 const AGENT_TIMEOUT_MS = 25000;
@@ -145,15 +146,11 @@ async function runAndPersist(slug, runFn, tenantId, trigger) {
 }
 
 export default async function handler(req, res) {
-  // Auth: cron must present CRON_SECRET; manual must be authenticated owner (header injected upstream)
-  const cronSecret = (process.env.CRON_SECRET || '').trim();
-  const authHeader = req.headers.authorization || '';
-  const isCron = cronSecret && authHeader === `Bearer ${cronSecret}`;
-  const isManual = !!req.headers['x-owner-call'];
-  if (!isCron && !isManual) {
-    return res.status(401).json({ error: 'Unauthorized — provide CRON_SECRET or owner header' });
-  }
-  const trigger = isCron ? 'cron_daily' : 'manual';
+  // Auth: cron presents Bearer CRON_SECRET; manual requires a real owner/admin
+  // session. The forgeable x-owner-call bypass has been removed (see lib/cronAuth.js).
+  const auth = await requireCronOrOwner(req);
+  if (!auth.ok) return res.status(401).json({ error: auth.error });
+  const trigger = auth.via === 'cron-secret' ? 'cron_daily' : 'manual';
 
   // Resolve tenant
   const t = await supabaseAdmin
