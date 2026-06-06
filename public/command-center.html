@@ -27,7 +27,10 @@
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
-  background: #020408;
+  background:
+    radial-gradient(ellipse 120% 85% at 50% -15%, rgba(34,211,238,0.07), transparent 60%),
+    radial-gradient(ellipse 110% 90% at 82% 115%, rgba(124,58,237,0.08), transparent 55%),
+    radial-gradient(ellipse at center, #061222 0%, #030814 55%, #010307 100%);
   color: #d0daf0;
   font-family: 'Inter', system-ui, sans-serif;
   overflow: hidden;
@@ -36,20 +39,6 @@ body {
   cursor: grab;
 }
 body:active { cursor: grabbing; }
-
-/* Dragon video — plain playback in place, looped, no motion tricks. */
-#bg-dragon {
-  position: fixed;
-  inset: 0;
-  width: 100vw;
-  height: 100vh;
-  object-fit: cover;
-  z-index: 0;
-  opacity: 0.42;
-  mix-blend-mode: screen;
-  filter: hue-rotate(-8deg) saturate(1.15) brightness(1.05) contrast(1.1);
-  pointer-events: none;
-}
 
 /* Opening cutscene flash — white/cyan pulse on entry. Composited layer
    (transform/opacity only) so it doesn't fight WebGL init for the main thread. */
@@ -110,7 +99,7 @@ body:active { cursor: grabbing; }
   100% { opacity: 0; transform: translate(-50%, -50%) scale(1.15); }
 }
 
-/* WebGL background canvas (stars on top of dragon) */
+/* WebGL background canvas (deep-space starfield) */
 #bg-canvas {
   position: fixed;
   inset: 0;
@@ -124,6 +113,47 @@ body:active { cursor: grabbing; }
   position: fixed;
   inset: 0;
   z-index: 2;
+}
+
+/* Holographic pillar-name labels: screen-space, projected above each panel
+   every frame so they stay a constant, legible size from any zoom distance.
+   pointer-events:none so they never intercept a panel click. */
+#pillar-labels {
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  overflow: hidden;
+}
+.pillar-label {
+  position: absolute;
+  top: 0; left: 0;
+  font-family: 'Orbitron', 'Share Tech Mono', monospace;
+  font-size: 0.72em;
+  font-weight: 800;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #dff7ff;
+  padding: 5px 14px;
+  background: linear-gradient(180deg, rgba(8,20,38,0.82), rgba(6,14,28,0.6));
+  border: 1px solid rgba(34,211,238,0.42);
+  border-radius: 8px;
+  text-shadow: 0 0 10px rgba(34,211,238,0.7);
+  box-shadow: 0 0 18px rgba(34,211,238,0.22), inset 0 0 12px rgba(34,211,238,0.06);
+  backdrop-filter: blur(4px);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  will-change: transform, opacity;
+}
+/* Stem connecting the floating label down to its panel */
+.pillar-label::after {
+  content: '';
+  position: absolute;
+  left: 50%; bottom: -11px;
+  width: 1px; height: 11px;
+  transform: translateX(-50%);
+  background: linear-gradient(180deg, rgba(34,211,238,0.7), transparent);
 }
 
 /* HUD overlay — must be above CSS3D layer (z-index 1) */
@@ -1450,9 +1480,6 @@ html.mode-8bit .hud-bottom { display: none !important; }
 </head>
 <body>
 
-<!-- Gliding dragon video layer — src attached by JS below only when not in LOW_PERF -->
-<video id="bg-dragon" muted playsinline loop preload="none" disableremoteplayback data-src="assets/videos/bacround cinematic update.mp4"></video>
-
 <!-- Opening cutscene flash + wordmark -->
 <div id="entry-flash"></div>
 <div id="entry-mark"><div>RYUJIN</div><span class="sub">COMMAND CENTER ONLINE</span></div>
@@ -1475,10 +1502,9 @@ html.mode-8bit .hud-bottom { display: none !important; }
 
 /* Bug-sweep P4 (2026-04-24): respect prefers-reduced-motion.
    Accessibility + helps integrated-GPU laptops (per feedback_laptop_lag).
-   The existing JS LOW_PERF flag (line ~2400) already disables the
-   background dragon video on this signal, but the 40+ CSS animations/
-   transitions/keyframes elsewhere on the page were unaffected. Disable
-   them globally when the user (or OS) signals reduced motion. */
+   The 40+ CSS animations/transitions/keyframes across the page were
+   unaffected by the JS LOW_PERF flag, so disable them globally when the
+   user (or OS) signals reduced motion. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -1486,11 +1512,6 @@ html.mode-8bit .hud-bottom { display: none !important; }
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-  /* Hide the large background dragon video (heavy WebGL-feel loop) but
-     keep #sentinel-video — that's the agent-state indicator (idle /
-     listening / speaking), so hiding it would remove a functional UI
-     cue. Codex P2 catch. */
-  .bg-video, #bg-dragon { display: none !important; }
 }
 </style>
 <script>
@@ -2377,7 +2398,6 @@ if (window.__RY_8BIT__) {
   // 8-bit: hide WebGL/CSS3D layers, render a static 9-tile pillar grid.
   const cssC = document.getElementById('css3d-container'); if (cssC) cssC.style.display = 'none';
   const bgC = document.getElementById('bg-canvas'); if (bgC) bgC.style.display = 'none';
-  const dragon = document.getElementById('bg-dragon'); if (dragon) dragon.style.display = 'none';
   const orb = document.getElementById('sentinel-orb'); if (orb) orb.style.display = 'none';
   const panels = [
     { id:'dashboard',  title:'HQ / DASHBOARD', url:'dashboard-v2.html'    },
@@ -2399,7 +2419,6 @@ if (window.__RY_8BIT__) {
   // Agent: hide cockpit, scale orb, mount full-screen chat brain via Ryujin.init when ready.
   const cssC = document.getElementById('css3d-container'); if (cssC) cssC.style.display = 'none';
   const bgC = document.getElementById('bg-canvas'); if (bgC) bgC.style.display = 'none';
-  const dragon = document.getElementById('bg-dragon'); if (dragon) dragon.style.display = 'none';
   const mount = document.createElement('div');
   mount.id = 'agent-chat-mount';
   mount.innerHTML = '<div id="agentChatTarget"></div>';
@@ -2429,32 +2448,6 @@ const LOW_PERF = LITE_FORCED || (
   (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) ||
   (navigator.connection && (navigator.connection.saveData || /2g/.test(navigator.connection.effectiveType || '')))
 );
-// Video is deferred (no src attached). Attach + play only on capable devices
-// AND after the page has settled (2s after DOMContentLoaded) so it doesn't
-// fight with initial render. On low-perf, stays permanently disabled.
-(function handleBgDragon(){
-  const bgv = document.getElementById('bg-dragon');
-  if (!bgv) return;
-  if (LOW_PERF || window.RyujinPerf?.isLite?.()) {
-    bgv.style.display = 'none';
-    return;
-  }
-  const start = () => {
-    if (!bgv.getAttribute('src') && bgv.dataset.src) {
-      bgv.setAttribute('src', bgv.dataset.src);
-      bgv.setAttribute('autoplay','');
-      bgv.load();
-      const p = bgv.play();
-      if (p && p.catch) p.catch(() => {
-        // Autoplay blocked — wait for user gesture
-        const resume = () => { bgv.play().catch(()=>{}); document.removeEventListener('pointerdown', resume); };
-        document.addEventListener('pointerdown', resume, { once: true });
-      });
-    }
-  };
-  if (document.readyState === 'complete') setTimeout(start, 2000);
-  else window.addEventListener('load', () => setTimeout(start, 2000));
-})();
 
 // Small HUD indicator + click-to-toggle (bottom-left, subtle)
 (function liteToggle(){
@@ -2744,6 +2737,12 @@ const cssScene = new THREE.Scene();
 
 // Place dashboard (i=0) directly in the camera's forward view (on -Z axis beyond origin)
 const ANGLE_OFFSET = -Math.PI / 2;
+
+// Holographic pillar-name layer: screen-space labels that float above each panel.
+const pillarLabelLayer = document.createElement('div');
+pillarLabelLayer.id = 'pillar-labels';
+document.body.appendChild(pillarLabelLayer);
+
 panels.forEach((p, i) => {
   const angle = (i / PANEL_COUNT) * Math.PI * 2 + ANGLE_OFFSET;
   const yOffset = Math.sin(angle * 2) * ORBIT_Y_VARIANCE;
@@ -2779,7 +2778,14 @@ panels.forEach((p, i) => {
 
   cssScene.add(obj);
   panelObjects.push(obj);
-  panelData.push({ angle, yOffset, element: el });
+
+  // Floating holographic name tag for this pillar (positioned each frame in updatePillarLabels).
+  const label = document.createElement('div');
+  label.className = 'pillar-label';
+  label.textContent = p.title;
+  pillarLabelLayer.appendChild(label);
+
+  panelData.push({ angle, yOffset, element: el, label });
 });
 
 // ──────────────────────────────────────────
@@ -2938,9 +2944,6 @@ function toggleAutoRotate() {
 }
 window.toggleAutoRotate = toggleAutoRotate;
 
-// Dragon video start/retry is handled by handleBgDragon() above — which
-// defers the src entirely on LOW_PERF devices. No duplicate autoplay loop.
-
 // ──────────────────────────────────────────
 // BUILD STAMP — visible in bottom-left so you can confirm the right version loaded
 // ──────────────────────────────────────────
@@ -2999,15 +3002,8 @@ function snapZoom(dir) {
     return;
   }
   const prev = zoomLevelIdx;
-  // Special case: already at ULTRA (idx 0) and user scrolls IN again → focus nearest panel
-  if (prev === 0 && dir < 0) {
-    const idx = nearestPanelToCamera();
-    if (idx !== -1) {
-      zoomCooldown = performance.now() + 500;
-      flyAndEnter(idx);
-      return;
-    }
-  }
+  // Entering a panel is click-only: the wheel only changes the overview zoom
+  // level, it never auto-selects or opens a panel.
   zoomLevelIdx = Math.max(0, Math.min(ZOOM_LEVELS.length - 1, zoomLevelIdx + dir));
   if (zoomLevelIdx === prev) return;
   zoomCooldown = performance.now() + 380;
@@ -3016,21 +3012,6 @@ function snapZoom(dir) {
   const newPos = new THREE.Vector3().setFromSpherical(spherical);
   animateCamera(newPos, controls.target.clone(), 0.45);
   showZoomLabel();
-}
-
-// Find the panel the camera is currently most "facing" (for scroll-to-focus)
-function nearestPanelToCamera(){
-  if (!panelObjects || !panelObjects.length) return -1;
-  const forward = new THREE.Vector3();
-  camera.getWorldDirection(forward); // unit vector camera is looking toward
-  const camPos = camera.position.clone();
-  let bestIdx = -1, bestDot = -Infinity;
-  panelObjects.forEach((obj, i) => {
-    const toPanel = obj.position.clone().sub(camPos).normalize();
-    const dot = toPanel.dot(forward);
-    if (dot > bestDot) { bestDot = dot; bestIdx = i; }
-  });
-  return bestIdx;
 }
 
 function showZoomLabel(){
@@ -3343,6 +3324,31 @@ function processGamepad(dt) {
 // ──────────────────────────────────────────
 // ANIMATE
 // ──────────────────────────────────────────
+// Project each pillar's name to screen space and park it just above the panel.
+// Screen-space keeps the text crisp and constant-size (legible from afar); it
+// hides when a panel is focused/open or when the panel falls behind the camera.
+const _pillarV = new THREE.Vector3();
+function updatePillarLabels() {
+  const hideAll = focusedPanel !== null ||
+    document.getElementById('sectionOverlay').classList.contains('on');
+  for (let i = 0; i < panelData.length; i++) {
+    const label = panelData[i].label;
+    if (!label) continue;
+    if (hideAll) { label.style.opacity = '0'; continue; }
+    const pos = panelObjects[i].position;
+    _pillarV.set(pos.x, pos.y + 285, pos.z).project(camera);
+    // z >= 1 is behind the camera / beyond far; large x|y is off-screen.
+    if (_pillarV.z >= 1 || Math.abs(_pillarV.x) > 1.35 || Math.abs(_pillarV.y) > 1.35) {
+      label.style.opacity = '0';
+      continue;
+    }
+    const x = (_pillarV.x * 0.5 + 0.5) * window.innerWidth;
+    const y = (-_pillarV.y * 0.5 + 0.5) * window.innerHeight;
+    label.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) translate(-50%, -100%)`;
+    label.style.opacity = '1';
+  }
+}
+
 function animate() {
   requestAnimationFrame(animate);
   const dt = clock.getDelta();
@@ -3351,6 +3357,9 @@ function animate() {
   // Update camera animation
   updateCameraAnimation(dt);
   controls.update();
+
+  // Position the holographic pillar labels in screen space
+  updatePillarLabels();
 
   // Animate background
   starMat.uniforms.uTime.value = elapsed;
