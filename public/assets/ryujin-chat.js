@@ -438,8 +438,8 @@
         const map = JSON.parse(localStorage.getItem('ryujin_archetype_effort') || '{}');
         if (map[arch]) return map[arch];
       }
-      return localStorage.getItem('ryujin_last_effort') || 'medium';
-    } catch { return 'medium'; }
+      return localStorage.getItem('ryujin_last_effort') || 'low';
+    } catch { return 'low'; }
   }
   function setLastMode(m){ try { localStorage.setItem('ryujin_last_mode', m); } catch {} }
   function setLastEffort(e){ try { localStorage.setItem('ryujin_last_effort', e); } catch {} }
@@ -1137,8 +1137,8 @@
     const archetype = (typeof localStorage !== 'undefined' && localStorage.getItem('ryujin_archetype')) || null;
     const inVoice = !!(window.RyujinVoiceMode && window.RyujinVoiceMode.isActive && window.RyujinVoiceMode.isActive());
     // Drop timestamps on Low effort to save credits — fall back to time-proportional reveal
-    let lastEffort = 'medium';
-    try { lastEffort = localStorage.getItem('ryujin_last_effort') || 'medium'; } catch {}
+    let lastEffort = 'low';
+    try { lastEffort = localStorage.getItem('ryujin_last_effort') || 'low'; } catch {}
     const wantTimestamps = inVoice && lastEffort !== 'low';
 
     // Cache hit fast-path for short phrases
