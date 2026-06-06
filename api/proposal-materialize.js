@@ -12,6 +12,7 @@
 import { randomBytes } from 'node:crypto';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { assembleProposalData } from './proposal-v2.js';
+import { requireTenant } from '../lib/tenant.js';
 
 function kebab(s) {
   return String(s || '')
@@ -34,31 +35,37 @@ async function readBody(req) {
   });
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const body = await readBody(req);
   const estimateId = String(body.estimate || body.estimateId || req.query.estimate || '').trim();
-  const templateSlug = String(body.template || body.templateSlug || req.query.template || '').trim();
+  const templateInput = body.template ?? body.templateSlug ?? req.query.template ?? '';
   // 'sent' freezes it as the live version (legacy links route to it). 'draft'
   // creates the snapshot without making it the routed default.
   const status = ['sent', 'draft'].includes(String(body.status || '').trim())
     ? String(body.status).trim()
     : 'sent';
 
-  if (!estimateId || !templateSlug) {
+  const hasTemplate = (typeof templateInput === 'object' && templateInput)
+    ? Array.isArray(templateInput.sections)
+    : !!String(templateInput).trim();
+  if (!estimateId || !hasTemplate) {
     return res.status(400).json({ error: 'Need { estimate, template }' });
   }
 
   try {
-    const r = await assembleProposalData(estimateId, templateSlug);
+    const r = await assembleProposalData(estimateId, templateInput);
     if (!r.ok) return res.status(r.status || 500).json({ error: r.error });
 
     const { data, est, template, tenantId } = r;
+    if (req.tenant?.id && tenantId && req.tenant.id !== tenantId) {
+      return res.status(403).json({ error: 'Estimate belongs to a different tenant' });
+    }
 
     const shareToken = randomBytes(12).toString('hex');
-    const base = kebab(est.customer?.address || data.customer?.address || data.customer?.name || templateSlug);
+    const base = kebab(est.customer?.address || data.customer?.address || data.customer?.name || template?.slug);
     const slug = `${base}-${shareToken.slice(0, 6)}`;
 
     // Bake the resolved slug + status into the frozen snapshot's meta.
@@ -106,3 +113,5 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Materialize failed', message: String(e?.message || e) });
   }
 }
+
+export default requireTenant(handler);

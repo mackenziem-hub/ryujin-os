@@ -642,7 +642,7 @@ function scopeLineItemsFromEstimate(est) {
 // ── Section resolution (LIVE preview) ────────────────────────────────────────
 // Given the template's ordered section keys and the tenant's proposal_blocks,
 // resolve each to { type: block_type, content: tokens-resolved block.content }.
-async function resolveSections(tenantId, sectionKeys, vars) {
+async function resolveSections(tenantId, sectionKeys, vars, overrides) {
   const keys = Array.isArray(sectionKeys) ? sectionKeys : [];
   if (!keys.length) return [];
 
@@ -663,10 +663,15 @@ async function resolveSections(tenantId, sectionKeys, vars) {
   for (const key of keys) {
     const block = byKey.get(key);
     if (!block) continue;                     // template referenced an unseeded block
-    sections.push({
-      type: block.block_type,
-      content: resolveTokens(block.content || {}, vars)
-    });
+    let content = resolveTokens(block.content || {}, vars);
+    // Per-proposal operator copy edits (the builder's right-rail editor) ride in as
+    // an override map keyed by block_key. Merge them over the seeded block content
+    // so the live preview and the frozen materialized snapshot stay identical.
+    const ov = overrides && overrides[key];
+    if (ov && typeof ov === 'object') {
+      content = Object.assign({}, content, resolveTokens(ov, vars));
+    }
+    sections.push({ type: block.block_type, content });
   }
   return sections;
 }
@@ -695,6 +700,22 @@ function enrichProofPhotos(sections, est) {
 // ════════════════════════════════════════════════════════════════════════════
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
+
+  // POST: live preview of an ad-hoc (unsaved) template from the builder.
+  if (req.method === 'POST') {
+    try {
+      const body = req.body || {};
+      const estimateId = String(body.estimate || '').trim();
+      if (!estimateId) return res.status(400).json({ error: 'POST needs { estimate, template }' });
+      const r = await assembleProposalData(estimateId, body.template);
+      if (!r.ok) return res.status(r.status || 500).json({ error: r.error });
+      return res.json(r.data);
+    } catch (e) {
+      console.error('[proposal-v2] preview error:', e?.message);
+      return res.status(500).json({ error: 'Preview failed', message: String(e?.message || e) });
+    }
+  }
+
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
   const instance = String(req.query.instance || '').trim();
@@ -823,7 +844,7 @@ async function renderLivePreview(estimateId, templateSlug, res) {
 // as JSON) and by api/proposal-materialize.js (persists it as a frozen snapshot).
 // Returns { ok:false, status, error } on failure, { ok:true, data, est, template,
 // tenantId } on success.
-export async function assembleProposalData(estimateId, templateSlug) {
+export async function assembleProposalData(estimateId, templateInput) {
   const { data: est, error: estErr } = await supabaseAdmin
     .from('estimates')
     .select('*, customer:customers(*), photos:estimate_photos(*)')
@@ -833,20 +854,28 @@ export async function assembleProposalData(estimateId, templateSlug) {
 
   const tenantId = est.tenant_id;
 
-  // Resolve the template by slug for this tenant. A template carries both the
-  // section spine and the product_plan.
+  // Template may be a saved slug (string) or an inline definition (object) from
+  // the builder's live preview. Both carry { sections, product_plan }.
   let template = null;
-  if (templateSlug) {
+  if (templateInput && typeof templateInput === 'object' && Array.isArray(templateInput.sections)) {
+    template = {
+      id: null,
+      slug: templateInput.slug || '(preview)',
+      name: templateInput.name || 'Preview',
+      sections: templateInput.sections,
+      product_plan: templateInput.product_plan || {}
+    };
+  } else if (templateInput) {
     const { data: tpl } = await supabaseAdmin
       .from('proposal_templates')
       .select('id, slug, name, sections, product_plan')
       .eq('tenant_id', tenantId)
-      .eq('slug', templateSlug)
+      .eq('slug', String(templateInput))
       .maybeSingle();
     template = tpl || null;
   }
   if (!template) {
-    return { ok: false, status: 404, error: `Template not found: ${templateSlug || '(missing ?template=)'}` };
+    return { ok: false, status: 404, error: `Template not found: ${templateInput || '(missing template)'}` };
   }
 
   const [branding, taxRate] = await Promise.all([
@@ -859,8 +888,14 @@ export async function assembleProposalData(estimateId, templateSlug) {
   const customer = buildCustomer(est, coverImage);
   const refId = `PU-${est.estimate_number || String(est.id).slice(0, 8).toUpperCase()}`;
 
+  // Inline preview/materialize payloads may carry per-section content overrides
+  // (operator copy edits keyed by block_key); thread them into section resolution.
+  const overrides = (templateInput && typeof templateInput === 'object'
+    && templateInput._overrides && typeof templateInput._overrides === 'object')
+    ? templateInput._overrides : null;
+
   const variables = buildVariables({ branding, rep, customer, est, refId });
-  const sections = await resolveSections(tenantId, template.sections, variables);
+  const sections = await resolveSections(tenantId, template.sections, variables, overrides);
   enrichProofPhotos(sections, est);
   const products = buildProducts({ est, productPlan: template.product_plan, taxRate });
 
