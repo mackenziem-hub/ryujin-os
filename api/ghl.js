@@ -1,4 +1,4 @@
-import { resolveSession } from '../lib/portalAuth.js';
+import { resolveSession, isPrivileged } from '../lib/portalAuth.js';
 
 const GHL_BASE = 'https://services.leadconnectorhq.com';
 const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
@@ -211,6 +211,24 @@ export default async function handler(req, res) {
 
   if (!GHL_TOKEN) {
     return res.status(500).json({ error: 'GHL_TOKEN not configured' });
+  }
+
+  // === AUTH GATE (top of handler — applies to ALL verbs) ===
+  // The whole GHL CRM proxy exposes contact PII, conversations, pipeline value
+  // and accepts create/update/delete. It was previously unauthenticated except
+  // for the appointments GET branch. Require a valid session for every request:
+  //  - reads (GET): any valid portal session, OR the RYUJIN_SERVICE_TOKEN
+  //    (server-to-server callers: snapshot, agents, chat tools, ghl-lookup).
+  //  - mutations (POST/PATCH/DELETE): owner/admin only. The service token
+  //    resolves to a synthetic role:'admin' session so internal sync still works.
+  // resolveSession reads Authorization: Bearer <ryujin_token | RYUJIN_SERVICE_TOKEN>;
+  // service-token path additionally needs x-tenant-id / ?tenant= to resolve tenant.
+  const session = await resolveSession(req);
+  if (!session) {
+    return res.status(401).json({ error: 'sign_in_required', code: 'NO_SESSION' });
+  }
+  if (req.method !== 'GET' && !isPrivileged(session)) {
+    return res.status(403).json({ error: 'forbidden', code: 'NOT_PRIVILEGED' });
   }
 
   // === PATCH: Update opportunity ===

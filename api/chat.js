@@ -2466,7 +2466,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       if (input.id) params.set('id', input.id);
       if (input.query) params.set('q', input.query);
       const url = `https://ryujin-os.vercel.app/api/ghl?${params}`;
-      const resp = await fetch(url);
+      const resp = await fetch(url, { headers: { 'x-tenant-id': 'plus-ultra', ...((process.env.RYUJIN_SERVICE_TOKEN || '').trim() ? { Authorization: `Bearer ${(process.env.RYUJIN_SERVICE_TOKEN || '').trim()}` } : {}) } });
       if (!resp.ok) throw new Error(`Contact detail returned ${resp.status}`);
       const data = await resp.json();
       const str = JSON.stringify(data);
@@ -2488,7 +2488,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
         const sourceParam = input.source !== 'all' ? `&source=${input.source}` : '';
         url = `https://ryujin-os.vercel.app/api/lookup?x=1${sourceParam}${q}`;
       }
-      const resp = await fetch(url);
+      const resp = await fetch(url, { headers: { 'x-tenant-id': 'plus-ultra', ...((process.env.RYUJIN_SERVICE_TOKEN || '').trim() ? { Authorization: `Bearer ${(process.env.RYUJIN_SERVICE_TOKEN || '').trim()}` } : {}) } });
       if (!resp.ok) throw new Error(`Lookup returned ${resp.status}`);
       const data = await resp.json();
       // Truncate large responses to avoid token overflow
@@ -3407,7 +3407,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       let contactName = input.contact_name;
       if (!contactId && contactName) {
         try {
-          const searchResp = await fetch(`https://ryujin-os.vercel.app/api/ghl?mode=contacts&q=${encodeURIComponent(contactName)}&limit=1`);
+          const searchResp = await fetch(`https://ryujin-os.vercel.app/api/ghl?mode=contacts&q=${encodeURIComponent(contactName)}&limit=1`, { headers: { 'x-tenant-id': 'plus-ultra', ...((process.env.RYUJIN_SERVICE_TOKEN || '').trim() ? { Authorization: `Bearer ${(process.env.RYUJIN_SERVICE_TOKEN || '').trim()}` } : {}) } });
           const searchData = await searchResp.json();
           const found = (searchData.contacts || [])[0];
           if (found) {

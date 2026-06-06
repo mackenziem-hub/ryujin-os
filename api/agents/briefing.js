@@ -87,7 +87,7 @@ export default async function handler(req, res) {
   // Pull live GHL/Automator sales tasks (these are CEO-priority and must be in every briefing)
   let ghlTasks = null;
   try {
-    const tr = await fetch(`${BASE_URL}/api/ghl?mode=tasks`);
+    const tr = await fetch(`${BASE_URL}/api/ghl?mode=tasks`, { headers: { 'x-tenant-id': 'plus-ultra', ...((process.env.RYUJIN_SERVICE_TOKEN || '').trim() ? { Authorization: `Bearer ${(process.env.RYUJIN_SERVICE_TOKEN || '').trim()}` } : {}) } });
     if (tr.ok) ghlTasks = await tr.json();
   } catch (e) {
     errors.push(`GHL tasks fetch failed: ${e.message}`);
