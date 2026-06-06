@@ -8,6 +8,8 @@
 //
 // Since agents run on Vercel (no filesystem), they read from the snapshot API.
 
+import { snapshotHeaders } from '../../lib/snapshotClient.js';
+
 const BASE_URL = 'https://ryujin-os.vercel.app';
 
 /**
@@ -24,7 +26,7 @@ export async function fetchAdData() {
 
   try {
     // Cache-bust to defeat Vercel edge cache (see _shared.js fetchJSON note)
-    const resp = await fetch(`${BASE_URL}/api/snapshot?_t=${Date.now()}`, { cache: 'no-store' });
+    const resp = await fetch(`${BASE_URL}/api/snapshot?_t=${Date.now()}`, { cache: 'no-store', headers: snapshotHeaders() });
     if (!resp.ok) {
       result.errors.push(`Snapshot fetch failed: HTTP ${resp.status}`);
       return result;

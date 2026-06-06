@@ -14,6 +14,7 @@
 // Query param: ?type=morning|evening (default: morning)
 
 import { runVegeta, runPiccolo, runKrillin, fetchJSON } from './_shared.js';
+import { snapshotHeaders } from '../../lib/snapshotClient.js';
 import { calendarList, gmailSend } from '../../lib/google.js';
 import { buildMetaAdsSnapshot } from '../../lib/meta.js';
 import { fetchMetaYesterday, reconcileYesterday, computeCacRoas } from '../../lib/marketingPulse.js';
@@ -73,7 +74,7 @@ export default async function handler(req, res) {
       runVegeta().catch(e => { errors.push(`Vegeta: ${e.message}`); return null; }),
       runPiccolo().catch(e => { errors.push(`Piccolo: ${e.message}`); return null; }),
       runKrillin().catch(e => { errors.push(`Krillin: ${e.message}`); return null; }),
-      fetchJSON(`${BASE_URL}/api/snapshot`).catch(() => null),
+      fetchJSON(`${BASE_URL}/api/snapshot`, snapshotHeaders()).catch(() => null),
       calendarList(todayStart.toISOString(), todayEnd.toISOString()).catch(e => {
         errors.push(`Calendar: ${e.message}`);
         return null;

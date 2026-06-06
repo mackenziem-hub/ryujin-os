@@ -11,6 +11,7 @@ import { calculateQuote } from './_quoteEngine.js';
 import { fetchAdData, analyzeAdPerformance } from './_adData.js';
 import { gmailSend } from '../../lib/google.js';
 import { runCashflow } from './cashflow.js';
+import { snapshotHeaders } from '../../lib/snapshotClient.js';
 
 const BASE_URL = 'https://ryujin-os.vercel.app';
 
@@ -117,7 +118,7 @@ export async function runVegeta() {
   // No ad data = no way to detect paused campaigns, no way to track CPL, no early warning.
   // This must be top_priority because a stale ad feed is how we missed the lead-flow stoppage.
   try {
-    const snapshot = await fetchJSON(`${BASE_URL}/api/snapshot`);
+    const snapshot = await fetchJSON(`${BASE_URL}/api/snapshot`, snapshotHeaders());
     const metaAds = snapshot?.sections?.metaAds;
     if (!metaAds) {
       report.findings.push(`🚨 Meta Ads section MISSING from snapshot — ad performance is invisible.`);
@@ -236,7 +237,7 @@ export async function runKrillin() {
   let krillinSnapshot = null;
   try {
     try {
-      krillinSnapshot = await fetchJSON(`${BASE_URL}/api/snapshot`);
+      krillinSnapshot = await fetchJSON(`${BASE_URL}/api/snapshot`, snapshotHeaders());
     } catch (e) { /* snapshot fetch optional */ }
 
     const leadData = krillinSnapshot?.sections?.leads || {};
@@ -327,7 +328,7 @@ export async function runKrillin() {
   report.adPerformance = adData.combined || null;
 
   // Gmail urgents from enriched snapshot (reuse krillinSnapshot if available)
-  const snapshot = krillinSnapshot || await fetchJSON(`${BASE_URL}/api/snapshot`);
+  const snapshot = krillinSnapshot || await fetchJSON(`${BASE_URL}/api/snapshot`, snapshotHeaders());
   if (snapshot?.sections?.gmail?.urgentUnread) {
     const urgent = snapshot.sections.gmail.urgentUnread;
     if (urgent.length > 0) {
@@ -369,7 +370,7 @@ export async function runGohan() {
   // Dynamic game health check — Supabase player stats when available
   const gameHealth = { online: report.gameOnline, hqOnline: report.hqOnline };
   try {
-    const snapshot = await fetchJSON(`${BASE_URL}/api/snapshot`);
+    const snapshot = await fetchJSON(`${BASE_URL}/api/snapshot`, snapshotHeaders());
     if (snapshot?.sections?.aetheria) {
       gameHealth.players = snapshot.sections.aetheria.players || null;
       gameHealth.sessions = snapshot.sections.aetheria.sessions || null;
@@ -505,7 +506,7 @@ export async function runBulma() {
     report.tasks.push({ title: 'No proposals sent — pipeline risk', description: 'Estimator OS shows 0 proposals sent. Check if quotes are being prepared.', priority: 'high' });
   }
 
-  const snapshot = await fetchJSON(`${BASE_URL}/api/snapshot`);
+  const snapshot = await fetchJSON(`${BASE_URL}/api/snapshot`, snapshotHeaders());
   if (snapshot?.sections?.metaAds) {
     const meta = snapshot.sections.metaAds;
     report.metaAds = {

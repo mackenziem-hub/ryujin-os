@@ -7,6 +7,7 @@
 
 import { gmailSend } from '../../lib/google.js';
 import { requireCronOrOwner } from '../../lib/cronAuth.js';
+import { snapshotHeaders } from '../../lib/snapshotClient.js';
 
 const BASE_URL = 'https://ryujin-os.vercel.app';
 const NOTIFY_EMAIL = (process.env.NOTIFY_EMAIL || 'mackenzie.m@plusultraroofing.com').trim();
@@ -36,7 +37,7 @@ export default async function handler(req, res) {
   // ── 1. Fetch snapshot ──
   let snapshot;
   try {
-    const r = await fetch(`${BASE_URL}/api/snapshot?_t=${Date.now()}`, { cache: 'no-store' });
+    const r = await fetch(`${BASE_URL}/api/snapshot?_t=${Date.now()}`, { cache: 'no-store', headers: snapshotHeaders() });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     snapshot = await r.json();
   } catch (e) {
