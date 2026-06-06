@@ -8,6 +8,7 @@
 
 import { put, list } from '@vercel/blob';
 import { supabaseAdmin } from '../lib/supabase.js';
+import { resolveSession } from '../lib/portalAuth.js';
 
 const SNAPSHOT_BLOB_KEY = 'ryujin-snapshot.json';
 const LEGACY_SNAPSHOT_BLOB_KEY = 'shenron-snapshot.json';
@@ -584,6 +585,23 @@ async function buildFreshSnapshot() {
 }
 
 export default async function handler(req, res) {
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  // GATE (read paths): GET and PUT return the full blob, which aggregates
+  // customer PII (names, addresses, phone/email) and revenue. They must never
+  // be world-readable. The browser cockpit sends the logged-in user's session
+  // token; cron agents + server libs send RYUJIN_SERVICE_TOKEN (resolveSession
+  // maps it to a synthetic admin session). No session -> 401.
+  //
+  // POST (agent section writes) is intentionally left open in THIS change so it
+  // does not break the agent write fleet mid-flight; it returns only a status
+  // ack (no PII) so it is not part of the read leak. Gating POST + authing the
+  // ~10 agent writers is the tracked follow-up.
+  if (req.method === 'GET' || req.method === 'PUT') {
+    const session = await resolveSession(req).catch(() => null);
+    if (!session) return res.status(401).json({ error: 'sign_in_required', code: 'NO_SESSION' });
+  }
+
   if (req.method === 'GET') {
     try {
       // Check if we have a cached snapshot

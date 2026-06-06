@@ -2,6 +2,7 @@
 import { gmailSearch, gmailReadMessage, gmailReadThread, gmailDraft, gmailSend, calendarList, calendarCreate, calendarUpdate, driveSearch, driveReadFile } from '../lib/google.js';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { peerReview, LENSES as PEER_REVIEW_LENSES } from '../lib/peer_review.js';
+import { snapshotHeaders } from '../lib/snapshotClient.js';
 import crypto from 'node:crypto';
 import { resolveSession } from '../lib/portalAuth.js';
 import { describeCurrentPage, catalogForPrompt, resolveNavUrl } from '../lib/pageCatalog.js';
@@ -932,7 +933,7 @@ let _snapshotCache = { data: '', expires: 0 };
 async function fetchSnapshot() {
   if (Date.now() < _snapshotCache.expires && _snapshotCache.data) return _snapshotCache.data;
   try {
-    const resp = await fetch('https://ryujin-os.vercel.app/api/snapshot');
+    const resp = await fetch('https://ryujin-os.vercel.app/api/snapshot', { headers: snapshotHeaders() });
     if (!resp.ok) return _snapshotCache.data || '';
     const snapshot = await resp.json();
     if (!snapshot?.sections) return _snapshotCache.data || '';
@@ -3721,7 +3722,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       const data = await resp.json();
       // Also pull the full snapshot metaAds for complete campaign list
       if (!input.detail) {
-        const snapResp = await fetch('https://ryujin-os.vercel.app/api/snapshot?_t=' + Date.now(), { cache: 'no-store' });
+        const snapResp = await fetch('https://ryujin-os.vercel.app/api/snapshot?_t=' + Date.now(), { cache: 'no-store', headers: snapshotHeaders() });
         if (snapResp.ok) {
           const snap = await snapResp.json();
           if (snap?.metaAds) data.fullCampaignData = snap.metaAds;

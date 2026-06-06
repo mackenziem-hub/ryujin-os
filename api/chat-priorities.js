@@ -18,6 +18,8 @@
 // Public endpoint — no tenant header required (Plus Ultra is single-tenant for
 // now; multi-tenant routing can come later when other tenants land).
 
+import { snapshotHeaders } from '../lib/snapshotClient.js';
+
 const SNAPSHOT_URL = 'https://ryujin-os.vercel.app/api/snapshot';
 const FETCH_TIMEOUT_MS = 4000;
 
@@ -25,7 +27,7 @@ async function fetchSnapshot() {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
-    const r = await fetch(SNAPSHOT_URL, { signal: ctrl.signal });
+    const r = await fetch(SNAPSHOT_URL, { signal: ctrl.signal, headers: snapshotHeaders() });
     if (!r.ok) throw new Error(`snapshot ${r.status}`);
     return await r.json();
   } finally {
