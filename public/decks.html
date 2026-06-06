@@ -44,6 +44,7 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0a0e1a;c
 .tag{font-size:0.66em;letter-spacing:1.2px;text-transform:uppercase;font-weight:800;padding:4px 10px;border-radius:999px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.14);color:rgba(255,255,255,0.7)}
 .tag.new{background:rgba(250,204,21,0.16);border-color:rgba(250,204,21,0.5);color:var(--gold-2)}
 .tag.ops{background:rgba(13,148,136,0.16);border-color:rgba(13,148,136,0.5);color:#5eead4}
+.tag.lock{background:rgba(220,38,38,0.16);border-color:rgba(220,38,38,0.5);color:#fca5a5}
 .card h2{font-size:1.25em;font-weight:800;color:#fff;letter-spacing:-0.01em;line-height:1.2;margin-bottom:8px}
 .card p{font-size:0.9em;color:rgba(255,255,255,0.7);margin-bottom:16px;flex:1}
 .card .foot{display:flex;justify-content:space-between;align-items:center;border-top:1px solid rgba(255,255,255,0.08);padding-top:14px}
@@ -146,11 +147,42 @@ footer .accent{color:var(--gold-2);font-weight:700}
     </a>
 
   </div>
+
+  <div class="section-label" id="internalLabel" style="display:none">Internal &middot; owner only</div>
+  <div class="grid" id="internalDecks" style="display:none"></div>
 </div>
 
 <footer>
   <span class="accent">PLUS ULTRA ROOFING</span> · Ryujin Proposal Generator · Smart systems designed for you, by you.
 </footer>
 
+<script>
+// Internal decks are fetched from the gated endpoint after owner login, so no
+// confidential slug or title ever lives in this statically-served file.
+(function(){
+  var token=null;
+  try{ token=localStorage.getItem('ryujin_token')||sessionStorage.getItem('ryujin_token'); }catch(e){ return; }
+  if(!token) return;
+  function esc(s){ return String(s).replace(/[&<>"]/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  fetch('/api/internal-deck?list=1',{headers:{Authorization:'Bearer '+token}})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(data){
+      if(!data || !data.decks || !data.decks.length) return;
+      var grid=document.getElementById('internalDecks');
+      var label=document.getElementById('internalLabel');
+      grid.innerHTML=data.decks.map(function(d){
+        return '<a class="card" href="/internal-deck.html?slug='+encodeURIComponent(d.slug)+'">'
+          +'<div class="tag-row"><span class="tag lock">Confidential</span>'+(d.tag?'<span class="tag ops">'+esc(d.tag)+'</span>':'')+'</div>'
+          +'<h2>'+esc(d.title)+'</h2>'
+          +'<p>'+esc(d.desc)+'</p>'
+          +'<div class="foot"><span class="slides">'+esc(d.slides)+' slides</span><span class="open">Open deck <span class="arrow">&rarr;</span></span></div>'
+          +'</a>';
+      }).join('');
+      label.style.display='';
+      grid.style.display='';
+    })
+    .catch(function(){});
+})();
+</script>
 </body>
 </html>
