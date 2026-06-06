@@ -867,7 +867,8 @@
       return `Task added: ${p.title}`;
     }
     if (k === 'run_agent' && p.agent_slug) {
-      const r = await fetch(`/api/agents/${p.agent_slug}`, { headers: { 'x-tenant-id': TENANT } });
+      const tok = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token');
+      const r = await fetch(`/api/agents/${p.agent_slug}`, { headers: { 'x-tenant-id': TENANT, ...(tok ? { Authorization: 'Bearer ' + tok } : {}) } });
       return r.ok ? `Agent ${p.agent_slug} ran.` : `Agent ${p.agent_slug} returned ${r.status}.`;
     }
     if (k === 'noop') return 'Acknowledged.';

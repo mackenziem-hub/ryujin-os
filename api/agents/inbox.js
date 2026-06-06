@@ -24,6 +24,7 @@ import { createHash } from 'crypto';
 import { supabaseAdmin } from '../../lib/supabase.js';
 import { requireCronOrOwner } from '../../lib/cronAuth.js';
 import { listConversations, getConversationMessages, ghlSendMessage, getContactByPhone } from '../../lib/ghl.js';
+import { snapshotHeaders } from '../../lib/snapshotClient.js';
 
 const PLUS_ULTRA_SLUG = 'plus-ultra';
 const RYUJIN_BASE = 'https://ryujin-os.vercel.app';
@@ -623,7 +624,7 @@ export default async function handler(req, res) {
     try {
       await fetch(`${RYUJIN_BASE}/api/snapshot`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: snapshotHeaders(),
         body: JSON.stringify({
           inbox: {
             lastRun: new Date().toISOString(),

@@ -11,7 +11,7 @@
 // updates are restricted. To make pricing/scope edits, create a NEW estimate
 // (revision) instead.
 import { supabaseAdmin } from '../lib/supabase.js';
-import { requirePortalSessionAndTenant } from '../lib/portalAuth.js';
+import { requirePortalSessionAndTenant, isPrivileged } from '../lib/portalAuth.js';
 import { captureEstimateSnapshot } from '../lib/estimateSnapshot.js';
 
 // Fields that can still be appended/edited on a locked estimate.
@@ -39,6 +39,56 @@ const PRESENTED_ACTIVITY_ACTIONS = new Set([
 // Status values that imply the proposal has gone out (moved beyond Draft)
 const PRESENTED_STATUS = new Set([
   'proposal_sent', 'viewed', 'accepted', 'scheduled', 'in_progress', 'complete'
+]);
+
+// ── PUT mass-assignment allowlist ──────────────────────────────
+// The generic PUT previously spread the raw request body straight into the
+// UPDATE, letting any caller mass-assign money/lifecycle columns
+// (final_accepted_total, deposit_amount, calculated_packages, status,
+// tenant_id, ...). We now drop anything not on this allowlist. id + tenant_id
+// are stripped unconditionally below (never client-assignable).
+//
+// PUT_WRITABLE_FIELDS: safe for any authenticated session (sales/crew/admin).
+// Scope/measurement edits are still blocked once an estimate is locked by the
+// lock-enforcement check below; the allowlist only governs WHICH columns may
+// be named at all.
+const PUT_WRITABLE_FIELDS = new Set([
+  // notes / scheduling (also the SAFE_LOCKED_FIELDS append set)
+  'notes', 'internal_notes', 'sales_notes', 'production_notes',
+  'scheduled_start_date', 'scheduled_end_date',
+  // lifecycle status the UI flips (draft -> proposal_sent, declined, etc.)
+  'status',
+  // ownership / classification
+  'customer_id', 'sales_owner', 'created_by', 'proposal_mode', 'pricing_model',
+  'complexity', 'tags', 'ghl_opportunity_id', 'selected_package',
+  // envelope / per-estimate price config edited by the proposal builder
+  'custom_prices',
+  // measurements + scope (editable on UNLOCKED estimates)
+  'roof_area_sqft', 'roof_pitch', 'planes',
+  'eaves_lf', 'rakes_lf', 'ridges_lf', 'valleys_lf', 'walls_lf', 'hips_lf',
+  'pipes', 'vents', 'chimneys', 'chimney_size', 'chimney_cricket',
+  'stories', 'extra_layers', 'cedar_tearoff', 'redeck_sheets', 'new_construction',
+  'siding_sqft', 'soffit_lf', 'fascia_lf', 'gutter_lf', 'window_count',
+  'door_count', 'osb_sheets', 'remediation_allowance', 'distance_km',
+  // admin 'extend by 30 days' re-dates the row
+  'created_at'
+]);
+
+// PUT_PRIVILEGED_FIELDS: money + lifecycle-machine columns. Writable only by
+// owner/admin sessions and the service-token chat caller (create_ryujin_proposal
+// lock path), which derives final_accepted_total server-side from the
+// quote-engine tier. A non-privileged session (or a spoofed body) that tries
+// to set these gets them silently dropped. The authoritative place to set
+// accepted totals/deposits remains the acceptance pipeline
+// (api/proposal-accept.js, api/proposal-v2-accept.js).
+const PUT_PRIVILEGED_FIELDS = new Set([
+  'final_accepted_total', 'deposit_amount', 'deposit_status',
+  'finance_status', 'finance_provider',
+  'calculated_packages', 'proposal_status', 'state',
+  'accepted_at', 'approved_at',
+  'locked_at', 'locked_reason',
+  'rate_hold_expires_at', 'rep_call_due_at',
+  'share_token', 'estimate_number'
 ]);
 
 function shouldAutoLock(updates, existing) {
@@ -228,8 +278,35 @@ async function handler(req, res) {
 
   // ── PUT ──
   if (req.method === 'PUT') {
-    const { id, force_unlock, ...updates } = req.body || {};
+    // Strip id + tenant_id from the body (never client-assignable). tenant_id
+    // is bound from the session by requirePortalSessionAndTenant; allowing it
+    // in the body would let a caller re-home an estimate into another tenant.
+    const { id, force_unlock, tenant_id: _ignoredTenantId, ...rawUpdates } = req.body || {};
     if (!id) return res.status(400).json({ error: 'Missing id' });
+
+    // ── Mass-assignment allowlist ─────────────────────────────
+    // Keep only known-writable columns; privileged (money/lifecycle) columns
+    // require an owner/admin or service-token session. Anything else (unknown
+    // columns, or privileged columns from a non-privileged caller) is dropped.
+    const privileged = isPrivileged(req.session);
+    const updates = {};
+    const droppedFields = [];
+    for (const [k, v] of Object.entries(rawUpdates)) {
+      if (PUT_WRITABLE_FIELDS.has(k)) {
+        updates[k] = v;
+      } else if (PUT_PRIVILEGED_FIELDS.has(k)) {
+        if (privileged) updates[k] = v;
+        else droppedFields.push(k);
+      } else {
+        droppedFields.push(k);
+      }
+    }
+    if (droppedFields.length) {
+      console.warn('[estimates PUT] dropped non-writable fields', { id, privileged, droppedFields });
+    }
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'No writable fields in update', dropped_fields: droppedFields });
+    }
 
     // Prevent cross-tenant updates + pull lock state
     const { data: existing } = await supabaseAdmin
@@ -272,6 +349,7 @@ async function handler(req, res) {
       .from('estimates')
       .update(writePayload)
       .eq('id', id)
+      .eq('tenant_id', tenantId)
       .select('*')
       .single();
 

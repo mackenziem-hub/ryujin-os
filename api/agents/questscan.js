@@ -304,7 +304,7 @@ export default async function handler(req, res) {
         const base = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://ryujin-os.vercel.app';
         await fetch(`${base}/api/snapshot`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: snapshotHeaders(),
           body: JSON.stringify({ questscan: { lastRun: new Date().toISOString(), created: result.created, expired: result.expired, byRule: result.byRule } }),
           signal: AbortSignal.timeout(10000),
         });

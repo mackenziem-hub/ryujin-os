@@ -13,11 +13,17 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { supabaseAdmin } from '../lib/supabase.js';
-import { requireTenant } from '../lib/tenant.js';
+import { requirePortalSessionAndTenant, isPrivileged } from '../lib/portalAuth.js';
 import { requirePillar } from '../lib/entitlements.js';
 
 async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
+  // Finance ledger exposes Stripe payment_intent_id and lets the caller
+  // fabricate/edit payment rows. Reads + writes are owner/admin only.
+  // (requirePortalSessionAndTenant guarantees req.session is set here.)
+  if (!isPrivileged(req.session)) {
+    return res.status(403).json({ error: 'owner_or_admin_required' });
+  }
   const tenantId = req.tenant.id;
 
   if (req.method === 'GET') {
@@ -104,5 +110,7 @@ async function handler(req, res) {
   return res.status(405).json({ error: 'GET, POST, PATCH only' });
 }
 
-// Wrap order: requireTenant first (sets req.tenant), then requirePillar('finance').
-export default requireTenant(requirePillar('finance')(handler));
+// Wrap order: requirePortalSessionAndTenant first (authenticates the session
+// and derives req.tenant from session.tenant_id, ignoring client-supplied
+// x-tenant-id/?tenant=), then requirePillar('finance') (reads req.tenant.id).
+export default requirePortalSessionAndTenant(requirePillar('finance')(handler));

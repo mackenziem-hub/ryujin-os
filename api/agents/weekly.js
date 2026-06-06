@@ -7,6 +7,7 @@
 
 import { runTrunks, runBulma } from './_shared.js';
 import { requireCronOrOwner } from '../../lib/cronAuth.js';
+import { snapshotHeaders } from '../../lib/snapshotClient.js';
 
 const BASE_URL = 'https://ryujin-os.vercel.app';
 
@@ -37,7 +38,7 @@ export default async function handler(req, res) {
   try {
     await fetch(`${BASE_URL}/api/snapshot`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: snapshotHeaders(),
       body: JSON.stringify({
         agentReports: {
           weekly: {

@@ -3,13 +3,21 @@
 // GET    /api/router       → List pending approvals (current user / tenant)
 // GET    /api/router?code=X→ Look up specific approval by code
 //
-// Auth: Bearer token (same as chat). Defaults tenant to caller's tenant. Falls back to plus-ultra
-// when called from chat.js with no token (preserves existing chat-routed approvals).
+// Auth: GET and POST both require a valid session. Browser callers send Authorization: Bearer
+// <ryujin_token>; the internal chat.js approval router sends RYUJIN_SERVICE_TOKEN + x-tenant-id.
+// Tenant and requester role are derived from the resolved session, never from client-supplied
+// defaults. (Previously POST was unauthenticated and seeded an owner-attributed pending_approvals
+// row under plus-ultra for any anonymous caller.)
 //
 // Note: this endpoint creates the approval record. Execution of the underlying action happens
 // when an approver hits PATCH /api/approvals?code=X with status=approved (see api/approvals.js).
 
 import { supabaseAdmin } from '../lib/supabase.js';
+import { resolveSession } from '../lib/portalAuth.js';
+
+// Postgres UUID matcher - service-token sessions carry a synthetic non-UUID user_id
+// ('service-internal') that must not be written into the uuid requested_by_user_id column.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const APPROVAL_TIMEOUT_MS = 3 * 60 * 60 * 1000; // 3 hours
 
@@ -42,29 +50,14 @@ async function uniqueCode(agent) {
   return `${generateCode(agent)}-${Date.now().toString(36).slice(-3)}`;
 }
 
+// Thin adapter over the shared session resolver (lib/portalAuth.js). resolveSession handles
+// both DB-backed Bearer tokens and the RYUJIN_SERVICE_TOKEN (synthetic admin scoped to
+// x-tenant-id), and validates expiry. We just remap its shape to the {userId, tenantId, role}
+// the handler already consumes on the GET path.
 async function resolveCallerContext(req) {
-  const authHeader = req.headers.authorization || '';
-  const token = authHeader.replace(/^Bearer\s+/i, '').trim()
-    || req.headers['x-ryujin-token']
-    || req.query?.token
-    || (req.body?.token);
-  if (!token) return null;
-
-  const { data: session } = await supabaseAdmin
-    .from('sessions').select('user_id, tenant_id, expires_at').eq('token', token).single();
-  if (!session || new Date(session.expires_at) < new Date()) return null;
-
-  const { data: user } = await supabaseAdmin
-    .from('users').select('id, role, role_id').eq('id', session.user_id).single();
-  if (!user) return null;
-
-  let roleSlug = user.role || 'crew';
-  if (user.role_id) {
-    const { data: roleRow } = await supabaseAdmin.from('roles').select('slug').eq('id', user.role_id).single();
-    if (roleRow?.slug) roleSlug = roleRow.slug;
-  }
-
-  return { userId: user.id, tenantId: session.tenant_id, role: roleSlug };
+  const session = await resolveSession(req).catch(() => null);
+  if (!session) return null;
+  return { userId: session.user_id, tenantId: session.tenant_id, role: session.role || 'crew' };
 }
 
 // Find the tenant owner (default approver when no specific assignee given)
@@ -90,14 +83,18 @@ export default async function handler(req, res) {
   const ctx = await resolveCallerContext(req);
 
   if (req.method === 'POST') {
+    if (!ctx) return res.status(401).json({ error: 'Unauthorized - a valid session is required to create an approval' });
+
     const body = req.body || {};
     const { trigger, action, target, summary, details, execute_payload, agent } = body;
     if (!action) return res.status(400).json({ error: 'action required' });
 
-    // For backward-compat with chat.js (calls without auth), default to plus-ultra tenant
-    const tenantId = ctx?.tenantId || PLUS_ULTRA_TENANT_ID;
-    const requesterId = ctx?.userId || null;
-    const requesterRole = ctx?.role || 'owner';
+    // Tenant + requester derived authoritatively from the session - no anon/plus-ultra default.
+    const tenantId = ctx.tenantId;
+    // Service-token sessions carry a non-UUID user_id ('service-internal'); store null there
+    // so the uuid column accepts it (the approval is still tenant-scoped + role-attributed).
+    const requesterId = UUID_RE.test(String(ctx.userId || '')) ? ctx.userId : null;
+    const requesterRole = ctx.role || 'crew';
 
     // Default assignee = tenant owner
     const assigneeId = await findTenantOwner(tenantId);

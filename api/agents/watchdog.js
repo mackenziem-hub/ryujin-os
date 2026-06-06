@@ -8,6 +8,7 @@
 import { gmailSearch, gmailReadMessage } from '../../lib/google.js';
 import { put, list } from '@vercel/blob';
 import { requireCronOrOwner } from '../../lib/cronAuth.js';
+import { snapshotHeaders } from '../../lib/snapshotClient.js';
 
 const GHL_BASE = 'https://services.leadconnectorhq.com';
 const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
@@ -320,7 +321,7 @@ export default async function handler(req, res) {
     try {
       await fetch('https://ryujin-os.vercel.app/api/snapshot', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: snapshotHeaders(),
         body: JSON.stringify({
           watchdog: {
             lastRun: new Date().toISOString(),

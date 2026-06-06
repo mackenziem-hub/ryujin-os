@@ -2140,7 +2140,11 @@ const ROUTER_URL = 'https://ryujin-os.vercel.app/api/router';
 async function routeForApproval(actionType, target, summary, executePayload) {
   const resp = await fetch(ROUTER_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-tenant-id': 'plus-ultra',
+      ...((process.env.RYUJIN_SERVICE_TOKEN || '').trim() ? { Authorization: `Bearer ${(process.env.RYUJIN_SERVICE_TOKEN || '').trim()}` } : {})
+    },
     body: JSON.stringify({
       trigger: 'ryujin-chat',
       action: actionType,
@@ -2306,7 +2310,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       if (input.assignedTo) {
         try {
           const usersResp = await fetch('https://ryujin-os.vercel.app/api/users', {
-            headers: { 'x-tenant-id': 'plus-ultra' }
+            headers: { 'x-tenant-id': 'plus-ultra', ...((process.env.RYUJIN_SERVICE_TOKEN || '').trim() ? { Authorization: `Bearer ${(process.env.RYUJIN_SERVICE_TOKEN || '').trim()}` } : {}) }
           });
           if (usersResp.ok) {
             const ud = await usersResp.json();
@@ -2616,7 +2620,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       try {
         const quoteResp = await fetch('https://ryujin-os.vercel.app/api/agents/vegeta', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'x-tenant-id': 'plus-ultra', ...((process.env.RYUJIN_SERVICE_TOKEN || '').trim() ? { Authorization: `Bearer ${(process.env.RYUJIN_SERVICE_TOKEN || '').trim()}` } : {}) },
           body: JSON.stringify({
             action: 'quote',
             spec: {
@@ -3614,7 +3618,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       if (agentName === 'vegeta' && input.action === 'quote' && input.spec) {
         const resp = await fetch(`https://ryujin-os.vercel.app/api/agents/vegeta`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'x-tenant-id': 'plus-ultra', ...((process.env.RYUJIN_SERVICE_TOKEN || '').trim() ? { Authorization: `Bearer ${(process.env.RYUJIN_SERVICE_TOKEN || '').trim()}` } : {}) },
           body: JSON.stringify({ action: 'quote', spec: input.spec })
         });
         if (!resp.ok) throw new Error(`Vegeta quote returned HTTP ${resp.status}`);
@@ -3623,7 +3627,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       }
 
       // Standard agent run
-      const resp = await fetch(`https://ryujin-os.vercel.app/api/agents/${agentName}`);
+      const resp = await fetch(`https://ryujin-os.vercel.app/api/agents/${agentName}`, { headers: { 'x-tenant-id': 'plus-ultra', ...((process.env.RYUJIN_SERVICE_TOKEN || '').trim() ? { Authorization: `Bearer ${(process.env.RYUJIN_SERVICE_TOKEN || '').trim()}` } : {}) } });
       if (!resp.ok) throw new Error(`Agent ${agentName} returned HTTP ${resp.status}`);
       const data = await resp.json();
       const str = JSON.stringify(data);

@@ -6,7 +6,7 @@
 //
 // Returns styled HTML ready for browser display / print / PDF export
 import { supabaseAdmin } from '../lib/supabase.js';
-import { requireTenant } from '../lib/tenant.js';
+import { requirePortalSessionAndTenant } from '../lib/portalAuth.js';
 import { renderProposalHTML, renderContractHTML, renderSalesPageHTML, renderMaterialPickupHTML } from '../lib/documentRenderer.js';
 
 async function handler(req, res) {
@@ -41,4 +41,4 @@ async function handler(req, res) {
   return res.send(html);
 }
 
-export default requireTenant(handler);
+export default requirePortalSessionAndTenant(handler);

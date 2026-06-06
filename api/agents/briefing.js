@@ -51,7 +51,7 @@ export default async function handler(req, res) {
     const metaAds = await buildMetaAdsSnapshot();
     await fetch(`${BASE_URL}/api/snapshot`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: snapshotHeaders(),
       body: JSON.stringify({ metaAds })
     });
     console.log(`[Z Fighter Briefing] Meta Ads refreshed — ${metaAds.activeCampaignCount} active`);
@@ -343,7 +343,7 @@ export default async function handler(req, res) {
   try {
     await fetch(`${BASE_URL}/api/snapshot`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: snapshotHeaders(),
       body: JSON.stringify({
         [`briefing_${type}`]: {
           timestamp: briefing.timestamp,
