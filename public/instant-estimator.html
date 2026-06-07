@@ -1029,6 +1029,25 @@ body{
     // yet (rare: instant autofill + submit), the lead is still captured now,
     // just without the estimator values. Logged, never thrown, so a lead is
     // never lost on a network/API hiccup.
+    // Ad attribution: capture utm/fbclid/gclid from this page's URL, falling
+    // back to the ry_utm stash that landing.html sets. Rides along on the lead
+    // so the click ties to the eventual customer + proposal (closed-loop).
+    const ryAttribution = (() => {
+      const keys = ['utm_source','utm_medium','utm_campaign','utm_content','utm_term','fbclid','gclid'];
+      const out = {};
+      try {
+        const p = new URLSearchParams(location.search);
+        keys.forEach(k => { if (p.has(k)) out[k] = p.get(k); });
+        if (!Object.keys(out).length) {
+          const raw = localStorage.getItem('ry_utm');
+          if (raw) { const s = JSON.parse(raw) || {}; keys.forEach(k => { if (s[k]) out[k] = s[k]; }); }
+        }
+        out.landing_url = location.href.slice(0, 500);
+        out.captured_at = new Date().toISOString();
+      } catch (e) {}
+      return out;
+    })();
+
     const leadPayload = {
       source: 'instant-estimator-v3',
       name: state.name,
@@ -1036,6 +1055,7 @@ body{
       phone: state.phone,
       address: state.address || null,
       city: state.city || null,
+      attribution: ryAttribution,
       meta_event_id: metaEventId,
       metadata: {
         sqft: state.sqft, sizePreset: state.sizePreset,

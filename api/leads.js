@@ -22,6 +22,7 @@
 import { requireTenant } from '../lib/tenant.js';
 import { gmailSend } from '../lib/google.js';
 import { sendCAPIEvent } from '../lib/meta.js';
+import { supabaseAdmin } from '../lib/supabase.js';
 
 const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
 const LOCATION_ID = (process.env.GHL_LOCATION_ID || 'aHotOUdq9D8m3JPrRz9n').trim();
@@ -193,12 +194,21 @@ async function handler(req, res) {
   // ── POST: inbound lead ──
   if (req.method === 'POST') {
     const body = req.body || {};
-    const { source, name, email, phone, address, city, metadata, meta_event_id } = body;
+    const { source, name, email, phone, address, city, metadata, meta_event_id, attribution } = body;
 
     if (!email && !phone) {
       return res.status(400).json({ error: 'email or phone required' });
     }
     const { firstName, lastName } = splitName(name);
+
+    // Ad attribution (utm/fbclid) captured by the funnel. Normalize + derive
+    // the paid channel, and build the Meta _fbc click id for CAPI matching.
+    const attr = (attribution && typeof attribution === 'object') ? attribution : {};
+    const adChannel =
+      (attr.fbclid || /facebook|instagram|meta|\bfb\b/i.test(attr.utm_source || '')) ? 'meta'
+        : (attr.gclid || /google/i.test(attr.utm_source || '')) ? 'google'
+          : (attr.utm_source ? 'other-paid' : 'direct');
+    const fbc = attr.fbclid ? `fb.1.${Math.floor(Date.now() / 1000)}.${attr.fbclid}` : null;
 
     // Base tags drive the marketing-leads view (source: filter + stats).
     // The Automator trigger tag (when the source has one) is what fires the
@@ -297,11 +307,14 @@ async function handler(req, res) {
         ...(metadata?.postal ? { zp: metadata.postal } : {}),
         ...(capiClientIp ? { ip: capiClientIp } : {}),
         ...(capiClientUa ? { userAgent: capiClientUa } : {}),
+        ...(fbc ? { fbc } : {}),
         external_id: contactId
       },
       customData: {
-        content_name: source || 'unknown',
-        content_category: 'roofing'
+        content_name: attr.utm_campaign || source || 'unknown',
+        content_category: 'roofing',
+        ...(attr.utm_source ? { utm_source: attr.utm_source } : {}),
+        ...(attr.utm_campaign ? { utm_campaign: attr.utm_campaign } : {})
       }
     })
       .then(() => ({ ok: true }))
@@ -309,6 +322,31 @@ async function handler(req, res) {
         console.warn(`[leads] CAPI Lead failed: ${e.message} (contact ${contactId})`);
         return { ok: false, error: e.message };
       });
+
+    // Persist the lead + ad attribution into Ryujin's leads table so the
+    // click -> lead -> sale chain is queryable on our side, not only in GHL.
+    // Runs CONCURRENTLY with the GHL/CAPI fan-out (no serial latency) and is
+    // awaited (bounded) before the response so the serverless freeze can't drop
+    // it. Never throws into the request path.
+    const leadsPromise = req.tenant?.id
+      ? supabaseAdmin.from('leads').insert({
+          tenant_id: req.tenant.id,
+          source: source || 'unknown',
+          campaign: attr.utm_campaign || null,
+          channel: adChannel,
+          status: 'new',
+          metadata: {
+            attribution: attr,
+            ghl_contact_id: contactId,
+            name: name || null,
+            email: email || null,
+            phone: phone || null,
+            meta_event_id: meta_event_id || null
+          }
+        })
+          .then(({ error }) => (error ? { ok: false, error: error.message } : { ok: true }))
+          .catch(e => ({ ok: false, error: e.message }))
+      : Promise.resolve(null);
 
     let opportunityId = null;
     let opportunityError = null;
@@ -358,6 +396,21 @@ async function handler(req, res) {
     } catch (e) {
       capiError = e.message;
     }
+
+    // Bounded wait for the concurrent leads-table capture. It started with the
+    // fan-out so it is usually already resolved; the cap stops a slow/hung DB
+    // from stalling the form.
+    let leadsError = null;
+    try {
+      const leadsRes = await Promise.race([
+        leadsPromise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('leads insert timeout')), 1500))
+      ]);
+      if (leadsRes && !leadsRes.ok) leadsError = leadsRes.error;
+    } catch (e) {
+      leadsError = e.message;
+    }
+    if (leadsError) console.warn(`[leads] leads capture: ${leadsError} (contact ${contactId})`);
 
     return res.status(201).json({
       ok: true,
