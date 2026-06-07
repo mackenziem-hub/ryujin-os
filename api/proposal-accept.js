@@ -16,6 +16,7 @@
 import { supabaseAdmin } from '../lib/supabase.js';
 import { put } from '@vercel/blob';
 import { gmailSend } from '../lib/google.js';
+import { sendCAPIEvent } from '../lib/meta.js';
 import {
   computeRateHoldExpiry,
   computeRepCallDue,
@@ -180,7 +181,7 @@ export default async function handler(req, res) {
   // 1. Resolve estimate by share token (authoritative — do not trust estimateId from client)
   const lookup = await supabaseAdmin
     .from('estimates')
-    .select('id, tenant_id, estimate_number, customer_id, status, selected_package, notes, calculated_packages, custom_prices, ghl_opportunity_id, share_token, proposal_mode, tags, roof_area_sqft, roof_pitch, eaves_lf, rakes_lf, ridges_lf, valleys_lf, hips_lf, walls_lf, pipes, vents, chimneys, extra_layers, new_construction, customer:customers(full_name, email, phone, address, ghl_contact_id)')
+    .select('id, tenant_id, estimate_number, customer_id, status, selected_package, notes, calculated_packages, custom_prices, ghl_opportunity_id, share_token, proposal_mode, tags, roof_area_sqft, roof_pitch, eaves_lf, rakes_lf, ridges_lf, valleys_lf, hips_lf, walls_lf, pipes, vents, chimneys, extra_layers, new_construction, attribution, customer:customers(full_name, email, phone, address, ghl_contact_id)')
     .eq('share_token', shareToken)
     .limit(1)
     .maybeSingle();
@@ -514,7 +515,15 @@ export default async function handler(req, res) {
     return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
   };
 
-  const [notifyResult, ghlResult] = await Promise.allSettled([
+  // Meta Purchase CAPI: send the signed contract value back to Meta so it can
+  // optimize toward REVENUE (not just leads) and close the ROAS loop. fbc from
+  // captured attribution improves match; deterministic event_id dedupes on a
+  // re-accept so revenue is never double-counted.
+  const pCustomer = est.customer || {};
+  const pAttr = est.attribution || {};
+  const pFbc = pAttr.fbclid ? `fb.1.${Math.floor(Date.now() / 1000)}.${pAttr.fbclid}` : null;
+
+  const [notifyResult, ghlResult, purchaseResult] = await Promise.allSettled([
     withTimeout(notifyMackenzie({
       est, tier, financing, customer: customerPayload, rep,
       signatureUrl, tierTotalWithTax,
@@ -526,7 +535,27 @@ export default async function handler(req, res) {
       customer: customerPayload,
       tierTotalWithTax,
       signatureUrl
-    }), 8000, 'ghl update')
+    }), 8000, 'ghl update'),
+    withTimeout(sendCAPIEvent({
+      eventName: 'Purchase',
+      eventTime: Math.floor(Date.now() / 1000),
+      eventId: `purchase_${est.id}`,
+      sourceUrl: `https://ryujin-os.vercel.app/proposal-client.html?share=${encodeURIComponent(est.share_token || '')}`,
+      userData: {
+        ...(pCustomer.email ? { em: pCustomer.email } : {}),
+        ...(pCustomer.phone ? { ph: pCustomer.phone } : {}),
+        ...(pFbc ? { fbc: pFbc } : {}),
+        external_id: pCustomer.ghl_contact_id || est.id
+      },
+      customData: {
+        currency: 'CAD',
+        value: Number(tierTotalWithTax) || 0,
+        content_name: tier.name || tier.id || 'roof',
+        content_category: 'roofing',
+        ...(pAttr.campaign_id ? { campaign_id: pAttr.campaign_id } : {}),
+        ...(pAttr.utm_campaign ? { utm_campaign: pAttr.utm_campaign } : {})
+      }
+    }), 8000, 'purchase capi')
   ]);
 
   if (notifyResult.status === 'rejected') {
@@ -538,6 +567,11 @@ export default async function handler(req, res) {
     console.error('[proposal-accept] ghl update failed', ghlResult.reason?.message);
   } else {
     console.log('[proposal-accept] ghl results', ghlResult.value);
+  }
+  if (purchaseResult.status === 'rejected') {
+    console.error('[proposal-accept] purchase CAPI failed', purchaseResult.reason?.message);
+  } else {
+    console.log('[proposal-accept] purchase CAPI sent', tierTotalWithTax);
   }
 
   return res.status(200).json({
