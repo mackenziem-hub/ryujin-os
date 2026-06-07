@@ -553,9 +553,11 @@ export default async function handler(req, res) {
   // chat + captions). Cap is owner-tunable via inbox_config.triage_daily_cap (default 150,
   // well above a normal day's volume so it only ever catches a runaway).
   const TODAY = new Date().toISOString().slice(0, 10);
-  const triageCap = Number.isFinite(cfg.triage_daily_cap) ? cfg.triage_daily_cap : 150;
+  // Floor the cap at 1 so a fat-fingered triage_daily_cap of 0 or negative falls back
+  // to the default instead of silently throttling ALL triage.
+  const triageCap = (Number.isFinite(cfg.triage_daily_cap) && cfg.triage_daily_cap > 0) ? cfg.triage_daily_cap : 150;
   const priorCount = (cfg.triage_budget && cfg.triage_budget.date === TODAY) ? (cfg.triage_budget.count || 0) : 0;
-  const budget = { count: priorCount, cap: triageCap, throttled: false };
+  const budget = { count: priorCount, cap: triageCap };
   //  - owner SMS target: explicit contact id, else resolve the owner cell to a
   //    GHL contact id at runtime, else the legacy constant. (The hardcoded id
   //    went stale once -> GHL 400 "Contact not found".)
