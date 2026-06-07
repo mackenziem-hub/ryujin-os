@@ -330,7 +330,7 @@ async function bridgeSubPortalMessages({ tenantId, runId }) {
 }
 
 // ── Main scan for one tenant ──
-async function runInbox({ tenantId, runId, startTime, allowlist = [], notifyCustomers = false, ownerContactId = null }) {
+async function runInbox({ tenantId, runId, startTime, allowlist = [], notifyCustomers = false, ownerContactId = null, budget = null }) {
   const result = { scanned: 0, triaged: 0, inserted: 0, notify: 0, allowlisted: 0, customerNotify: 0, bridged: 0, skipped: 0, errors: [] };
 
   let convos = [];
@@ -400,8 +400,15 @@ async function runInbox({ tenantId, runId, startTime, allowlist = [], notifyCust
         messages = [{ direction: 'inbound', body: c.lastMessageBody, dateAdded: c.lastMessageAt }];
       }
 
+      // Per-day spend cap (fail-open safety net): once the tenant's daily triage
+      // budget is spent, stop calling Claude so a nightly inbound burst can't drain
+      // the shared ANTHROPIC key and take down chat/captions (the recurring overnight
+      // cap trip). Normal days run far under the cap, so behavior is unchanged. Rows
+      // already inserted/deduped are unaffected; un-triaged convos re-evaluate next day.
+      if (budget && budget.count >= budget.cap) { result.throttled = true; break; }
       // Triage with Claude.
       const triage = await triageMessage({ contactName: c.contactName, channel: c.channel, messages });
+      if (budget) budget.count++;
       result.triaged++;
 
       // Owner notify overrides, layered ON TOP of the leak/lead triage gate.
@@ -552,6 +559,15 @@ export default async function handler(req, res) {
     .concat(activeWatches(cfg).filter(w => w.match));
   //  - notify_customers: any existing/booked customer (triage category) pings.
   const notifyCustomers = cfg.notify_customers === true;
+
+  // Per-day Claude-triage budget (fail-open). Prevents a nightly inbound burst from
+  // draining the shared ANTHROPIC key (the recurring overnight cap trip that also kills
+  // chat + captions). Cap is owner-tunable via inbox_config.triage_daily_cap (default 150,
+  // well above a normal day's volume so it only ever catches a runaway).
+  const TODAY = new Date().toISOString().slice(0, 10);
+  const triageCap = Number.isFinite(cfg.triage_daily_cap) ? cfg.triage_daily_cap : 150;
+  const priorCount = (cfg.triage_budget && cfg.triage_budget.date === TODAY) ? (cfg.triage_budget.count || 0) : 0;
+  const budget = { count: priorCount, cap: triageCap, throttled: false };
   //  - owner SMS target: explicit contact id, else resolve the owner cell to a
   //    GHL contact id at runtime, else the legacy constant. (The hardcoded id
   //    went stale once -> GHL 400 "Contact not found".)
@@ -583,14 +599,22 @@ export default async function handler(req, res) {
   // unwinds past both try and catch cannot then strand a zombie running row.
   let runClosed = false;
   try {
-    const result = await runInbox({ tenantId: tenant.id, runId, startTime, allowlist, notifyCustomers, ownerContactId });
+    const result = await runInbox({ tenantId: tenant.id, runId, startTime, allowlist, notifyCustomers, ownerContactId, budget });
+
+    // Persist the day's triage spend (fail-open: a write failure just under-counts).
+    try {
+      await supabaseAdmin.from('tenant_settings')
+        .update({ inbox_config: { ...cfg, triage_budget: { date: TODAY, count: budget.count } } })
+        .eq('tenant_id', tenant.id);
+    } catch (e) { console.warn('[Inbox] triage budget writeback failed:', e.message); }
+
     const durationMs = Date.now() - startTime;
     const status = result.errors.length ? 'partial' : 'success';
     const overrideBits = [
       result.allowlisted ? `${result.allowlisted} allow-listed` : null,
       result.customerNotify ? `${result.customerNotify} customer` : null,
     ].filter(Boolean).join(', ');
-    const summary = `Scanned ${result.scanned}, triaged ${result.triaged}, queued ${result.inserted}, bridged ${result.bridged || 0}, notified ${result.notify}${overrideBits ? ` (${overrideBits})` : ''}`;
+    const summary = `Scanned ${result.scanned}, triaged ${result.triaged}, queued ${result.inserted}, bridged ${result.bridged || 0}, notified ${result.notify}${overrideBits ? ` (${overrideBits})` : ''}${result.throttled ? ` [THROTTLED: daily triage cap ${budget.cap} reached]` : ''}`;
 
     if (runId) {
       await supabaseAdmin.from('agent_runs').update({
