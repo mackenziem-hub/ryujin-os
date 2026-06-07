@@ -319,25 +319,30 @@ export default async function handler(req, res) {
     }
 
     // --- Update calendar config (POST action=update-calendar-config&id=<calendarId>) ---
-    // Owner/admin only (top-of-handler gate). Partial update of a calendar's
-    // post-booking behavior. Primary use: point a booking calendar's confirmation
-    // at a redirect URL — so a conversion pixel on that landing page (Google Ads /
-    // Meta) fires — instead of an inline thank-you message.
+    // Owner/admin only (top-of-handler gate). Updates a calendar's post-booking
+    // behavior and slot timing. Primary use: point a booking calendar's
+    // confirmation at a redirect URL — so a conversion pixel on that landing page
+    // (Google Ads / Meta) fires — instead of an inline thank-you message.
     //
-    // GHL casing gotcha (verified against the official CalendarUpdateDTO spec and
-    // a live 422): the WRITE DTO uses formSubmitRedirectURL (upper) + enum value
-    // RedirectURL, while the GET *response* model returns formSubmitRedirectUrl
-    // (lower). We send the write-DTO casing and read back tolerantly. The update
-    // is a strict partial DTO — we send ONLY the changed fields; echoing the full
-    // GET object back fails validation (its openHours shape differs from OpenHour).
+    // Two GHL gotchas, both verified against the official CalendarUpdateDTO spec
+    // and live 422/diff testing:
+    //  1) Casing: the WRITE DTO uses formSubmitRedirectURL (upper) + enum value
+    //     RedirectURL, but the GET *response* returns lowercase formSubmitRedirectUrl.
+    //     We send write casing and read either casing back.
+    //  2) Default-reset: omitting a field that has a DTO default can reset it to
+    //     that default (observed: a form-only write reset slotDuration/slotInterval
+    //     60 -> 30). So before writing we GET the calendar and carry the current
+    //     value of every defaulted field forward, unless the caller overrides it.
+    //     We do NOT echo the full object — its openHours shape fails write validation.
     //   body: { formSubmitType?: 'RedirectURL' | 'ThankYouMessage',
-    //           formSubmitRedirectURL?: string, formSubmitThanksMessage?: string }
+    //           formSubmitRedirectURL?: string, formSubmitThanksMessage?: string,
+    //           slotDuration?: number, slotInterval?: number }
     if (postAction === 'update-calendar-config' && !cId) {
       return res.status(400).json({ error: 'Missing id query parameter. Pass ?id=<calendarId>.' });
     }
     if (postAction === 'update-calendar-config' && cId) {
       const body = req.body || {};
-      const ALLOWED = ['formSubmitType', 'formSubmitRedirectURL', 'formSubmitThanksMessage'];
+      const ALLOWED = ['formSubmitType', 'formSubmitRedirectURL', 'formSubmitThanksMessage', 'slotDuration', 'slotInterval'];
       const update = {};
       for (const k of ALLOWED) if (body[k] !== undefined) update[k] = body[k];
       if (!Object.keys(update).length) {
@@ -355,20 +360,45 @@ export default async function handler(req, res) {
       if (update.formSubmitRedirectURL && !/^https?:\/\//i.test(update.formSubmitRedirectURL)) {
         return res.status(400).json({ error: 'formSubmitRedirectURL must be an absolute http(s) URL.' });
       }
+      for (const k of ['slotDuration', 'slotInterval']) {
+        if (update[k] !== undefined && (!Number.isInteger(update[k]) || update[k] < 1 || update[k] > 1440)) {
+          return res.status(400).json({ error: `${k} must be an integer number of minutes (1-1440).` });
+        }
+      }
       try {
-        // Minimal partial body — the update DTO validates per-field and rejects
-        // unknown/misshaped properties, so only the allowlisted changes are sent.
-        const data = await ghlFetch(`/calendars/${cId}`, {}, { method: 'PUT', body: update });
+        // Default-reset guard (gotcha #2): carry forward the current value of every
+        // CalendarUpdateDTO field that has a default, so a targeted write never
+        // silently resets an unrelated setting. These are all simple scalars that
+        // are safe to echo back; complex fields (openHours, availabilities) are NOT
+        // defaulted and are left untouched by omission.
+        const cur = await ghlFetch(`/calendars/${cId}`, {});
+        const c = cur.calendar || cur;
+        const preserve = {};
+        for (const k of ['widgetType', 'eventColor', 'slotDuration', 'slotInterval', 'enableRecurring', 'formSubmitType']) {
+          if (c[k] !== undefined && c[k] !== null) preserve[k] = c[k];
+        }
+        // If the effective form type is RedirectURL, the URL must travel with it
+        // (write casing); the GET returns it lowercase, so map it.
+        const effectiveType = update.formSubmitType ?? preserve.formSubmitType;
+        if (effectiveType === 'RedirectURL' && update.formSubmitRedirectURL === undefined) {
+          const curRedirect = c.formSubmitRedirectURL ?? c.formSubmitRedirectUrl;
+          if (curRedirect) preserve.formSubmitRedirectURL = curRedirect;
+        }
+        const payload = { ...preserve, ...update };
+        const data = await ghlFetch(`/calendars/${cId}`, {}, { method: 'PUT', body: payload });
         const cal = data.calendar || data;
         return res.json({
           action: 'calendar_config_updated',
           calendarId: cId,
           applied: update,
+          preserved: Object.keys(preserve).filter(k => !(k in update)),
           formSubmit: {
             formSubmitType: cal.formSubmitType ?? null,
             formSubmitRedirectURL: cal.formSubmitRedirectURL ?? cal.formSubmitRedirectUrl ?? null,
             formSubmitThanksMessage: cal.formSubmitThanksMessage ?? null
           },
+          slotDuration: cal.slotDuration ?? null,
+          slotInterval: cal.slotInterval ?? null,
           timestamp: new Date().toISOString()
         });
       } catch (err) {
