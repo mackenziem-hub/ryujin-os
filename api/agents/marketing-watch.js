@@ -52,7 +52,7 @@ async function surface(tenantId, { type, urgency, summary, body, runId }) {
   return !error;
 }
 
-export async function runMarketingWatch({ tenantSlug = PLUS_ULTRA_SLUG } = {}) {
+export async function runMarketingWatch({ tenantSlug = PLUS_ULTRA_SLUG, trigger = 'cron_daily' } = {}) {
   const report = { agent: 'marketing-watch', tenant: tenantSlug, alerts: [], errors: [] };
   const { data: tenant } = await supabaseAdmin.from('tenants').select('id').eq('slug', tenantSlug).maybeSingle();
   if (!tenant) { report.errors.push(`tenant ${tenantSlug} not found`); return report; }
@@ -62,7 +62,7 @@ export async function runMarketingWatch({ tenantSlug = PLUS_ULTRA_SLUG } = {}) {
   let runId = null;
   try {
     const { data: run } = await supabaseAdmin.from('agent_runs')
-      .insert({ tenant_id: tid, agent_slug: 'marketing', status: 'running' }).select('id').single();
+      .insert({ tenant_id: tid, agent_slug: 'marketing', trigger, status: 'running' }).select('id').single();
     runId = run?.id || null;
   } catch { /* non-fatal */ }
 
@@ -131,7 +131,7 @@ export default async function handler(req, res) {
   if (!auth.ok) return res.status(401).json({ error: auth.error });
   const tenantSlug = (req.query?.tenant || req.headers['x-tenant-id'] || PLUS_ULTRA_SLUG).toString();
   try {
-    const report = await runMarketingWatch({ tenantSlug });
+    const report = await runMarketingWatch({ tenantSlug, trigger: auth.via === 'cron-secret' ? 'cron_daily' : 'manual' });
     return res.status(200).json({ ok: report.errors.length === 0, ...report });
   } catch (e) {
     console.error('[marketing-watch]', e.message);
