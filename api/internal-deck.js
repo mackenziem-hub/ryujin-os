@@ -44,9 +44,9 @@ const DECKS = {
     desc: 'The growth blueprint: the one binding constraint, the real numbers, Operation Revive as the spearhead, and the 30 to 60 day sequence.',
   },
   'approvals-review': {
-    tenant: 'plus-ultra', tag: 'Operations', slides: 9,
-    title: 'The Approval Queue',
-    desc: '25 agent actions queued for your approval, triaged: 9 real actions, the rest duplicates and one test, with a recommended call on each.',
+    tenant: 'plus-ultra', tag: 'Operations', slides: 8,
+    title: 'Decisions: Approval Queue',
+    desc: 'The 5 decisions that actually need your call out of 25 queued actions, one per slide with options. The other 20 are duplicates or stale and clear on your nod.',
   },
 };
 
