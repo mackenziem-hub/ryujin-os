@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ryujin OS · Marketing Intelligence</title>
+<style>
+  :root{
+    --bg:#0a0814; --card:rgba(28,22,48,0.7); --line:rgba(167,139,250,0.18);
+    --text:#e7e3f5; --dim:#9b94c0; --accent:#a78bfa; --deep:#7c3aed;
+    --good:#34d399; --warn:#fbbf24; --bad:#f87171;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:radial-gradient(1200px 600px at 70% -10%, rgba(124,58,237,0.18), transparent), var(--bg);
+    color:var(--text); font-family:'Inter',system-ui,-apple-system,sans-serif; padding:22px; min-height:100vh}
+  .wrap{max-width:1240px;margin:0 auto}
+  header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:8px;flex-wrap:wrap}
+  h1{font-size:1.35rem;font-weight:800;letter-spacing:.5px}
+  h1 span{color:var(--accent)}
+  .controls{display:flex;gap:8px;align-items:center}
+  select,button{background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:7px 12px;font-size:.85rem;cursor:pointer}
+  .asof{color:var(--dim);font-size:.78rem;margin-bottom:18px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+  .card .lbl{font-size:.72rem;color:var(--dim);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px}
+  .card .val{font-size:1.55rem;font-weight:800;line-height:1.1}
+  .card .sub{font-size:.72rem;color:var(--dim);margin-top:4px}
+  .card.hero{background:linear-gradient(135deg,rgba(124,58,237,0.28),rgba(167,139,250,0.08));border-color:rgba(167,139,250,0.4)}
+  .card.hero .val{color:var(--accent)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:18px}
+  @media(max-width:880px){.grid2{grid-template-columns:1fr}}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}
+  .panel h2{font-size:.85rem;text-transform:uppercase;letter-spacing:.6px;color:var(--accent);margin-bottom:12px}
+  .funnel-row{display:flex;align-items:center;gap:10px;margin-bottom:7px}
+  .funnel-row .nm{width:120px;font-size:.78rem;color:var(--dim)}
+  .funnel-bar{height:22px;background:linear-gradient(90deg,var(--deep),var(--accent));border-radius:5px;min-width:2px}
+  .funnel-row .vv{font-size:.8rem;font-weight:700}
+  table{width:100%;border-collapse:collapse;font-size:.8rem}
+  th{text-align:left;color:var(--dim);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--card)}
+  td{padding:6px 8px;border-bottom:1px solid rgba(167,139,250,0.07)}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .tablewrap{max-height:340px;overflow:auto}
+  .alert{display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border-radius:9px;margin-bottom:7px;font-size:.8rem;background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.2)}
+  .alert.warn{background:rgba(251,191,36,0.08);border-color:rgba(251,191,36,0.22)}
+  .pill{font-size:.66rem;padding:1px 7px;border-radius:20px;background:rgba(167,139,250,0.16);color:var(--accent)}
+  .loading{color:var(--dim);padding:40px;text-align:center}
+  .err{color:var(--bad);padding:20px}
+  a.back{color:var(--dim);text-decoration:none;font-size:.8rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Marketing <span>Intelligence</span></h1>
+    <div class="controls">
+      <a class="back" href="marketing.html">&larr; Pillar</a>
+      <select id="period">
+        <option value="30">Last 30 days</option>
+        <option value="90" selected>Last 90 days</option>
+      </select>
+      <button id="refresh">Refresh</button>
+    </div>
+  </header>
+  <div class="asof" id="asof">Loading live Meta + Ryujin data...</div>
+
+  <div class="cards" id="cards"></div>
+
+  <div class="grid2">
+    <div class="panel"><h2>Funnel</h2><div id="funnel"></div></div>
+    <div class="panel"><h2>Attention</h2><div id="alerts"></div></div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel"><h2>Top ads (by spend)</h2><div class="tablewrap"><table id="adsTable"><thead><tr>
+      <th>Ad</th><th class="num">Spend</th><th class="num">Leads</th><th class="num">CPL</th><th class="num">Hook</th><th class="num">Hold</th><th class="num">Thru</th>
+    </tr></thead><tbody></tbody></table></div></div>
+    <div class="panel"><h2>Campaigns (by spend)</h2><div class="tablewrap"><table id="campTable"><thead><tr>
+      <th>Campaign</th><th class="num">Spend</th><th class="num">Leads</th><th class="num">CPL</th>
+    </tr></thead><tbody></tbody></table></div></div>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+function token(){ return localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token') || ''; }
+function headers(){ const h={'Accept':'application/json'}; const t=token(); if(t) h['Authorization']='Bearer '+t; h['x-tenant-id']='plus-ultra'; return h; }
+const money = n => n==null ? '-' : '$'+Number(n).toLocaleString('en-US',{maximumFractionDigits:0});
+const num = n => n==null ? '-' : Number(n).toLocaleString('en-US');
+const x = n => n==null ? '-' : n+'x';
+const pctTxt = n => n==null ? '-' : n+'%';
+
+async function getJSON(url){
+  const r = await fetch(url, { headers: headers(), cache:'no-store' });
+  if(!r.ok) throw new Error(url+' -> '+r.status);
+  return r.json();
+}
+
+function renderCards(t){
+  const cards = [
+    ['Ad spend', money(t.adSpend), t.leads+' leads · '+money(t.cpl)+' CPL'],
+    ['Signed', num(t.signed)+' jobs', money(t.signedRevenue)+' revenue'],
+    ['Ad-sourced ROAS', x(t.adSourcedRoas), money(t.adSourcedRevenue)+' · '+t.adSourcedJobs+' jobs', false],
+    ['Ad-influenced ROAS', x(t.adInfluencedRoas), money(t.adInfluencedRevenue)+' · '+t.adInfluencedJobs+' jobs', true],
+    ['Blended ROAS', x(t.blendedRoas), 'CAC '+money(t.blendedCAC)],
+    ['Reach / CTR', num(t.reach), pctTxt(t.ctr)+' CTR · '+num(t.clicks)+' clicks'],
+    ['Video', num(t.thruplays)+' thru', 'hook '+pctTxt(t.hookRate)+' · hold '+pctTxt(t.holdRate)],
+    ['Proposals', num(t.proposalsSent)+' sent', num(t.proposalsOpened)+' opened']
+  ];
+  $('#cards').innerHTML = cards.map(c =>
+    '<div class="card'+(c[3]?' hero':'')+'"><div class="lbl">'+c[0]+'</div><div class="val">'+c[1]+'</div><div class="sub">'+(c[2]||'')+'</div></div>'
+  ).join('');
+}
+
+function renderFunnel(funnel){
+  const max = Math.max(...funnel.map(f=>f.value), 1);
+  $('#funnel').innerHTML = funnel.map(f =>
+    '<div class="funnel-row"><div class="nm">'+f.stage+'</div><div class="funnel-bar" style="width:'+Math.max(2,(f.value/max)*100)+'%"></div><div class="vv">'+num(f.value)+'</div></div>'
+  ).join('');
+}
+
+function renderAlerts(kpi, sweep){
+  const a = [];
+  const dl = sweep && sweep.tokenHealth && sweep.tokenHealth.daysLeft;
+  if (dl!=null && dl < 14) a.push(['bad','Meta token expires in '+dl+' days. Rotate META_ACCESS_TOKEN in Vercel or the pipeline goes dark.']);
+  const waste = (sweep && sweep.ads||[]).filter(ad => ad.spend>50 && ad.leads===0);
+  const wasteSpend = waste.reduce((s,ad)=>s+ad.spend,0);
+  if (wasteSpend>100) a.push(['warn','$'+Math.round(wasteSpend)+' on '+waste.length+' ads with spend but zero leads (some may be awareness/video).']);
+  if (kpi.totals.cpl && kpi.totals.cpl > 90) a.push(['warn','Blended CPL is '+money(kpi.totals.cpl)+' (watch the lead-intent campaigns).']);
+  $('#alerts').innerHTML = a.length ? a.map(r=>'<div class="alert '+(r[0]==='warn'?'warn':'')+'">'+r[1]+'</div>').join('')
+    : '<div style="color:var(--dim);font-size:.82rem">No anomalies. Pixel firing, spend tracking.</div>';
+}
+
+function renderAds(sweep){
+  const rows = (sweep.ads||[]).slice(0,25).map(a =>
+    '<tr><td>'+(a.adName||'?').slice(0,40)+'</td><td class="num">'+money(a.spend)+'</td><td class="num">'+a.leads+'</td><td class="num">'+(a.cpl?money(a.cpl):'-')+'</td><td class="num">'+(a.video.hookRate??'-')+'</td><td class="num">'+(a.video.holdRate??'-')+'</td><td class="num">'+num(a.video.thruplays)+'</td></tr>'
+  ).join('');
+  $('#adsTable tbody').innerHTML = rows || '<tr><td colspan="7" style="color:var(--dim)">no ad data</td></tr>';
+}
+
+function renderCamps(kpi){
+  const rows = (kpi.byCampaign||[]).filter(c=>c.spend>0).slice(0,20).map(c =>
+    '<tr><td>'+(c.campaignName||'?').slice(0,40)+'</td><td class="num">'+money(c.spend)+'</td><td class="num">'+c.leads+'</td><td class="num">'+(c.cpl?money(c.cpl):'-')+'</td></tr>'
+  ).join('');
+  $('#campTable tbody').innerHTML = rows || '<tr><td colspan="4" style="color:var(--dim)">no campaign data</td></tr>';
+}
+
+async function load(){
+  const days = $('#period').value;
+  $('#asof').textContent = 'Loading...';
+  try{
+    const [kpi, sweep] = await Promise.all([
+      getJSON('/api/marketing-kpis?days='+days),
+      getJSON('/api/meta-sweep?days='+days).catch(()=>({ads:[],tokenHealth:{}}))
+    ]);
+    renderCards(kpi.totals);
+    renderFunnel(kpi.funnel);
+    renderAlerts(kpi, sweep);
+    renderAds(sweep);
+    renderCamps(kpi);
+    const w = kpi.window;
+    $('#asof').textContent = 'Window '+w.since+' to '+w.until+'  ·  blended ROAS includes non-ad revenue; ad-influenced excludes only clear non-ad origins (e.g. prior-year realtor).';
+  }catch(e){
+    $('#asof').innerHTML = '<span class="err">Failed to load: '+e.message+'. Make sure you are logged in.</span>';
+  }
+}
+
+$('#refresh').addEventListener('click', load);
+$('#period').addEventListener('change', load);
+load();
+</script>
+</body>
+</html>
