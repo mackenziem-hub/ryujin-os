@@ -318,6 +318,65 @@ export default async function handler(req, res) {
       }
     }
 
+    // --- Update calendar config (POST action=update-calendar-config&id=<calendarId>) ---
+    // Owner/admin only (top-of-handler gate). Allowlisted partial update of a
+    // calendar's post-booking behavior. Primary use: point a booking calendar's
+    // confirmation at a redirect URL — so a conversion pixel on that landing page
+    // (Google Ads / Meta) fires — instead of showing an inline thank-you message.
+    //   body: { formSubmitType?: 'RedirectURL' | 'ThankYouMessage',
+    //           formSubmitRedirectURL?: string, formSubmitThanksMessage?: string }
+    if (postAction === 'update-calendar-config' && !cId) {
+      return res.status(400).json({ error: 'Missing id query parameter. Pass ?id=<calendarId>.' });
+    }
+    if (postAction === 'update-calendar-config' && cId) {
+      const body = req.body || {};
+      const ALLOWED = ['formSubmitType', 'formSubmitRedirectURL', 'formSubmitThanksMessage'];
+      const update = {};
+      for (const k of ALLOWED) if (body[k] !== undefined) update[k] = body[k];
+      if (!Object.keys(update).length) {
+        return res.status(400).json({
+          error: 'No updatable fields. Send at least one of: ' + ALLOWED.join(', '),
+          example: { formSubmitType: 'RedirectURL', formSubmitRedirectURL: 'https://booking.example.com/success-booking' }
+        });
+      }
+      if (update.formSubmitType && !['RedirectURL', 'ThankYouMessage'].includes(update.formSubmitType)) {
+        return res.status(400).json({ error: "formSubmitType must be 'RedirectURL' or 'ThankYouMessage'." });
+      }
+      if (update.formSubmitType === 'RedirectURL' && !update.formSubmitRedirectURL) {
+        return res.status(400).json({ error: 'formSubmitRedirectURL is required when formSubmitType is RedirectURL.' });
+      }
+      if (update.formSubmitRedirectURL && !/^https?:\/\//i.test(update.formSubmitRedirectURL)) {
+        return res.status(400).json({ error: 'formSubmitRedirectURL must be an absolute http(s) URL.' });
+      }
+      try {
+        // Read-merge-write. GHL's PUT /calendars/{id} may REPLACE rather than
+        // patch, so a body of only our 3 fields could blank every other setting
+        // (availability, slot duration, team, notifications). Fetch the current
+        // object and overlay the allowlisted fields — correct under BOTH partial
+        // and full-replace semantics. Strip server-managed identity keys that the
+        // update endpoint rejects when echoed back.
+        const cur = await ghlFetch(`/calendars/${cId}`, {});
+        const current = cur.calendar || cur;
+        const merged = { ...current, ...update };
+        for (const k of ['id', 'locationId', 'dateAdded', 'dateUpdated']) delete merged[k];
+        const data = await ghlFetch(`/calendars/${cId}`, {}, { method: 'PUT', body: merged });
+        const cal = data.calendar || data;
+        return res.json({
+          action: 'calendar_config_updated',
+          calendarId: cId,
+          applied: update,
+          formSubmit: {
+            formSubmitType: cal.formSubmitType ?? null,
+            formSubmitRedirectURL: cal.formSubmitRedirectURL ?? null,
+            formSubmitThanksMessage: cal.formSubmitThanksMessage ?? null
+          },
+          timestamp: new Date().toISOString()
+        });
+      } catch (err) {
+        return res.status(500).json({ error: err.message, hint: `Inspect current shape via GET ?mode=calendar-config&id=${cId}` });
+      }
+    }
+
     // --- Create estimate (POST with action=create-estimate) ---
     if (postAction === 'create-estimate') {
       const body = req.body;
@@ -525,6 +584,40 @@ export default async function handler(req, res) {
   const resolvedMode = mode || (action === 'contact' ? 'contacts' : action === 'conversation' ? 'conversations' : action) || null;
 
   try {
+    // === CALENDAR CONFIG (read a calendar's settings, incl. post-booking behavior) ===
+    // Gated owner/admin-or-service by the top-of-handler auth gate. Without &id,
+    // lists the location's calendars so the caller can pick the right calendarId.
+    // With &id=<calendarId>, returns the full calendar object plus a curated
+    // formSubmit summary: formSubmitType ('ThankYouMessage' | 'RedirectURL'),
+    // formSubmitRedirectURL, formSubmitThanksMessage. Pairs with the POST
+    // action=update-calendar-config write mode below.
+    if (resolvedMode === 'calendar-config') {
+      if (!id) {
+        const data = await ghlFetch('/calendars/', { locationId: LOCATION_ID });
+        const calendars = (data.calendars || []).map(c => ({
+          id: c.id, name: c.name || 'Untitled calendar', isActive: c.isActive !== false
+        }));
+        return res.json({
+          mode: 'calendar-config',
+          hint: 'Pass &id=<calendarId> to inspect one calendar\'s settings.',
+          calendars,
+          timestamp: new Date().toISOString()
+        });
+      }
+      const data = await ghlFetch(`/calendars/${id}`, {});
+      const cal = data.calendar || data;
+      return res.json({
+        mode: 'calendar-config',
+        calendar: cal,
+        formSubmit: {
+          formSubmitType: cal.formSubmitType ?? null,
+          formSubmitRedirectURL: cal.formSubmitRedirectURL ?? null,
+          formSubmitThanksMessage: cal.formSubmitThanksMessage ?? null
+        },
+        timestamp: new Date().toISOString()
+      });
+    }
+
     // === SINGLE CONTACT BY ID ===
     if ((resolvedMode === 'contacts' || action === 'contact') && id) {
       // Fetch contact + notes in parallel — notes require a separate API call
