@@ -96,6 +96,20 @@ export default async function handler(req, res) {
     const requesterId = UUID_RE.test(String(ctx.userId || '')) ? ctx.userId : null;
     const requesterRole = ctx.role || 'crew';
 
+    // Dedupe: if an identical action is already pending for this tenant, return that one
+    // instead of stacking another copy. This is what let one ticket / payment email queue
+    // 5-12x when the executor was unwired and approved rows reverted to pending and re-ran.
+    const payloadForRow = execute_payload || (typeof details === 'string' ? safeJSON(details) : details) || {};
+    const sig = stableStringify(payloadForRow);
+    const { data: pendingDupes } = await supabaseAdmin
+      .from('pending_approvals')
+      .select('code, id, expires_at, execute_payload')
+      .eq('tenant_id', tenantId)
+      .eq('action_type', action)
+      .eq('status', 'pending');
+    const dup = (pendingDupes || []).find(d => stableStringify(d.execute_payload || {}) === sig);
+    if (dup) return res.json({ code: dup.code, id: dup.id, expires_at: dup.expires_at, deduped: true });
+
     // Default assignee = tenant owner
     const assigneeId = await findTenantOwner(tenantId);
 
@@ -114,7 +128,7 @@ export default async function handler(req, res) {
         action_type: action,
         target: target || null,
         summary: summary || null,
-        execute_payload: execute_payload || (typeof details === 'string' ? safeJSON(details) : details) || {},
+        execute_payload: payloadForRow,
         status: 'pending',
         expires_at: expiresAt
       })
@@ -161,3 +175,11 @@ export default async function handler(req, res) {
 }
 
 function safeJSON(s) { try { return JSON.parse(s); } catch { return {}; } }
+
+// Deterministic stringify (sorted keys, recursive) so two payloads that are equal
+// regardless of key order produce the same dedupe signature.
+function stableStringify(o) {
+  if (o === null || typeof o !== 'object') return JSON.stringify(o);
+  if (Array.isArray(o)) return '[' + o.map(stableStringify).join(',') + ']';
+  return '{' + Object.keys(o).sort().map(k => JSON.stringify(k) + ':' + stableStringify(o[k])).join(',') + '}';
+}

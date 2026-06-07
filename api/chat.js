@@ -2505,7 +2505,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
         'add-contact-note',
         `Contact ${input.contactId}`,
         `Add note to CRM contact: "${(input.note || '').substring(0, 80)}"`,
-        { contactId: input.contactId, noteText: input.note }
+        { tool: 'add_contact_note', contactId: input.contactId, noteText: input.note }
       );
       return {
         status: 'pending_approval',
@@ -2730,7 +2730,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
               'add-contact-note',
               `Contact ${input.ghl_contact_id}`,
               `Add estimate note to CRM: ${input.customer_name}`,
-              { contactId: input.ghl_contact_id, noteText: noteLines.join('\n') }
+              { tool: 'add_contact_note', contactId: input.ghl_contact_id, noteText: noteLines.join('\n') }
             );
             results.approval_codes.push({ code: noteResult.code, action: `Log job details to CRM` });
             results.steps.push(`CRM note queued (${noteResult.code})`);

@@ -20,7 +20,7 @@ import { gmailSend } from '../lib/google.js';
 // Dispatch an approved action by its execute_payload.tool. Returns
 // { executed:true, details } on success or { executed:false, error } otherwise.
 // Throwing is caught by the caller and treated as a failed (non-executed) attempt.
-async function executePayload(payload) {
+export async function executePayload(payload, ctx = {}) {
   const tool = payload && payload.tool;
   switch (tool) {
     case 'send_email': {
@@ -28,6 +28,24 @@ async function executePayload(payload) {
       if (!to || !subject) return { executed: false, error: 'send_email payload missing to/subject' };
       await gmailSend(to, subject, body || '', { cc, threadId });
       return { executed: true, details: `Email sent to ${to}` };
+    }
+    case 'create_ticket': {
+      const { title, description, priority, tags } = payload;
+      if (!title) return { executed: false, error: 'create_ticket payload missing title' };
+      if (!ctx.tenant_id) return { executed: false, error: 'create_ticket missing tenant context' };
+      // `assignedTo` in the payload is a display name, not a users.id (uuid) -> leave unassigned.
+      // Drop the internal 'quest' tag; keep real category tags.
+      const cleanTags = Array.isArray(tags) ? tags.filter(t => t && t !== 'quest') : null;
+      const { data, error } = await supabaseAdmin.from('tickets').insert({
+        tenant_id: ctx.tenant_id,
+        title,
+        description: description || null,
+        priority: priority || 'medium',
+        status: 'open',
+        tags: cleanTags && cleanTags.length ? cleanTags : null
+      }).select('ticket_number').single();
+      if (error) return { executed: false, error: `create_ticket failed: ${error.message}` };
+      return { executed: true, details: `Ticket #${data.ticket_number} created: ${title}` };
     }
     default:
       // Other write tools route through approval but have no executor wired here yet.
@@ -104,7 +122,7 @@ export default async function handler(req, res) {
   // We own the row now. Execute the underlying action.
   let exec;
   try {
-    exec = await executePayload(row.execute_payload || {});
+    exec = await executePayload(row.execute_payload || {}, { tenant_id: row.tenant_id });
   } catch (e) {
     exec = { executed: false, error: e && e.message ? e.message : String(e) };
   }
