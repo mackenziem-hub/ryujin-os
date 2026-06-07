@@ -319,47 +319,46 @@ export default async function handler(req, res) {
     }
 
     // --- Update calendar config (POST action=update-calendar-config&id=<calendarId>) ---
-    // Owner/admin only (top-of-handler gate). Allowlisted partial update of a
-    // calendar's post-booking behavior. Primary use: point a booking calendar's
-    // confirmation at a redirect URL — so a conversion pixel on that landing page
-    // (Google Ads / Meta) fires — instead of showing an inline thank-you message.
-    //   body: { formSubmitType?: 'RedirectUrl' | 'ThankYouMessage',
-    //           formSubmitRedirectUrl?: string, formSubmitThanksMessage?: string }
+    // Owner/admin only (top-of-handler gate). Partial update of a calendar's
+    // post-booking behavior. Primary use: point a booking calendar's confirmation
+    // at a redirect URL — so a conversion pixel on that landing page (Google Ads /
+    // Meta) fires — instead of an inline thank-you message.
+    //
+    // GHL casing gotcha (verified against the official CalendarUpdateDTO spec and
+    // a live 422): the WRITE DTO uses formSubmitRedirectURL (upper) + enum value
+    // RedirectURL, while the GET *response* model returns formSubmitRedirectUrl
+    // (lower). We send the write-DTO casing and read back tolerantly. The update
+    // is a strict partial DTO — we send ONLY the changed fields; echoing the full
+    // GET object back fails validation (its openHours shape differs from OpenHour).
+    //   body: { formSubmitType?: 'RedirectURL' | 'ThankYouMessage',
+    //           formSubmitRedirectURL?: string, formSubmitThanksMessage?: string }
     if (postAction === 'update-calendar-config' && !cId) {
       return res.status(400).json({ error: 'Missing id query parameter. Pass ?id=<calendarId>.' });
     }
     if (postAction === 'update-calendar-config' && cId) {
       const body = req.body || {};
-      const ALLOWED = ['formSubmitType', 'formSubmitRedirectUrl', 'formSubmitThanksMessage'];
+      const ALLOWED = ['formSubmitType', 'formSubmitRedirectURL', 'formSubmitThanksMessage'];
       const update = {};
       for (const k of ALLOWED) if (body[k] !== undefined) update[k] = body[k];
       if (!Object.keys(update).length) {
         return res.status(400).json({
           error: 'No updatable fields. Send at least one of: ' + ALLOWED.join(', '),
-          example: { formSubmitType: 'RedirectUrl', formSubmitRedirectUrl: 'https://booking.example.com/success-booking' }
+          example: { formSubmitType: 'RedirectURL', formSubmitRedirectURL: 'https://booking.example.com/success-booking' }
         });
       }
-      if (update.formSubmitType && !['RedirectUrl', 'ThankYouMessage'].includes(update.formSubmitType)) {
-        return res.status(400).json({ error: "formSubmitType must be 'RedirectUrl' or 'ThankYouMessage'." });
+      if (update.formSubmitType && !['RedirectURL', 'ThankYouMessage'].includes(update.formSubmitType)) {
+        return res.status(400).json({ error: "formSubmitType must be 'RedirectURL' or 'ThankYouMessage'." });
       }
-      if (update.formSubmitType === 'RedirectUrl' && !update.formSubmitRedirectUrl) {
-        return res.status(400).json({ error: 'formSubmitRedirectUrl is required when formSubmitType is RedirectUrl.' });
+      if (update.formSubmitType === 'RedirectURL' && !update.formSubmitRedirectURL) {
+        return res.status(400).json({ error: 'formSubmitRedirectURL is required when formSubmitType is RedirectURL.' });
       }
-      if (update.formSubmitRedirectUrl && !/^https?:\/\//i.test(update.formSubmitRedirectUrl)) {
-        return res.status(400).json({ error: 'formSubmitRedirectUrl must be an absolute http(s) URL.' });
+      if (update.formSubmitRedirectURL && !/^https?:\/\//i.test(update.formSubmitRedirectURL)) {
+        return res.status(400).json({ error: 'formSubmitRedirectURL must be an absolute http(s) URL.' });
       }
       try {
-        // Read-merge-write. GHL's PUT /calendars/{id} may REPLACE rather than
-        // patch, so a body of only our 3 fields could blank every other setting
-        // (availability, slot duration, team, notifications). Fetch the current
-        // object and overlay the allowlisted fields — correct under BOTH partial
-        // and full-replace semantics. Strip server-managed identity keys that the
-        // update endpoint rejects when echoed back.
-        const cur = await ghlFetch(`/calendars/${cId}`, {});
-        const current = cur.calendar || cur;
-        const merged = { ...current, ...update };
-        for (const k of ['id', 'locationId', 'dateAdded', 'dateUpdated']) delete merged[k];
-        const data = await ghlFetch(`/calendars/${cId}`, {}, { method: 'PUT', body: merged });
+        // Minimal partial body — the update DTO validates per-field and rejects
+        // unknown/misshaped properties, so only the allowlisted changes are sent.
+        const data = await ghlFetch(`/calendars/${cId}`, {}, { method: 'PUT', body: update });
         const cal = data.calendar || data;
         return res.json({
           action: 'calendar_config_updated',
@@ -367,7 +366,7 @@ export default async function handler(req, res) {
           applied: update,
           formSubmit: {
             formSubmitType: cal.formSubmitType ?? null,
-            formSubmitRedirectUrl: cal.formSubmitRedirectUrl ?? null,
+            formSubmitRedirectURL: cal.formSubmitRedirectURL ?? cal.formSubmitRedirectUrl ?? null,
             formSubmitThanksMessage: cal.formSubmitThanksMessage ?? null
           },
           timestamp: new Date().toISOString()
@@ -588,8 +587,8 @@ export default async function handler(req, res) {
     // Gated owner/admin-or-service by the top-of-handler auth gate. Without &id,
     // lists the location's calendars so the caller can pick the right calendarId.
     // With &id=<calendarId>, returns the full calendar object plus a curated
-    // formSubmit summary: formSubmitType ('ThankYouMessage' | 'RedirectUrl'),
-    // formSubmitRedirectUrl, formSubmitThanksMessage. Pairs with the POST
+    // formSubmit summary: formSubmitType ('ThankYouMessage' | 'RedirectURL'),
+    // formSubmitRedirectURL, formSubmitThanksMessage. Pairs with the POST
     // action=update-calendar-config write mode below.
     if (resolvedMode === 'calendar-config') {
       if (!id) {
@@ -611,7 +610,7 @@ export default async function handler(req, res) {
         calendar: cal,
         formSubmit: {
           formSubmitType: cal.formSubmitType ?? null,
-          formSubmitRedirectUrl: cal.formSubmitRedirectUrl ?? null,
+          formSubmitRedirectURL: cal.formSubmitRedirectUrl ?? cal.formSubmitRedirectURL ?? null,
           formSubmitThanksMessage: cal.formSubmitThanksMessage ?? null
         },
         timestamp: new Date().toISOString()
