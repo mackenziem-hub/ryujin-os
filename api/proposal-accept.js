@@ -180,7 +180,7 @@ export default async function handler(req, res) {
   // 1. Resolve estimate by share token (authoritative — do not trust estimateId from client)
   const lookup = await supabaseAdmin
     .from('estimates')
-    .select('id, tenant_id, estimate_number, customer_id, status, selected_package, notes, calculated_packages, custom_prices, ghl_opportunity_id, share_token, proposal_mode, tags, customer:customers(full_name, email, phone, address, ghl_contact_id)')
+    .select('id, tenant_id, estimate_number, customer_id, status, selected_package, notes, calculated_packages, custom_prices, ghl_opportunity_id, share_token, proposal_mode, tags, roof_area_sqft, roof_pitch, eaves_lf, rakes_lf, ridges_lf, valleys_lf, hips_lf, walls_lf, pipes, vents, chimneys, extra_layers, new_construction, customer:customers(full_name, email, phone, address, ghl_contact_id)')
     .eq('share_token', shareToken)
     .limit(1)
     .maybeSingle();
@@ -404,6 +404,95 @@ export default async function handler(req, res) {
         }).then(() => {}, () => {});
       })
       .catch(e => console.error('[proposal-accept] service_ticket insert threw', e?.message));
+  }
+
+  // 4c. Auto-create a DRAFT production work order for non-repair (replacement)
+  //     roof accepts. Repairs go to AJ's service queue above; envelope/shell
+  //     configs are skipped (different production path). Created as status
+  //     'draft' with shingle color / sub / start date left blank for the owner
+  //     to fill at scheduling. Idempotent: skips if a WO already links this
+  //     estimate. Awaited (not fire-and-forget) so it completes before the
+  //     response - same serverless-freeze lesson as the notifications (PR #270).
+  const proposalModeStr = String(est.proposal_mode || '').toLowerCase();
+  const isNonRoof = proposalModeStr.includes('siding') || proposalModeStr.includes('exterior');
+  if (!isRepair && !envelopeAccept && !isNonRoof) {
+    try {
+      const { data: existingWo } = await supabaseAdmin
+        .from('workorders')
+        .select('id, wo_number')
+        .eq('linked_estimate_id', est.id)
+        .limit(1)
+        .maybeSingle();
+
+      if (existingWo) {
+        console.log('[proposal-accept] work order already exists, skipping wo', existingWo.wo_number);
+      } else {
+        const sqft = Number(est.roof_area_sqft) || null;
+        const addonNote = addonsList.length
+          ? `Add-ons (signed): ${addonsList.map(a => a.label || a.slug).filter(Boolean).join(', ')}.`
+          : '';
+        // package_tier has a CHECK (gold|platinum|diamond|grand_manor|null);
+        // map anything else (economy, custom slugs) to null so the insert can't fail.
+        const allowedTier = ['gold', 'platinum', 'diamond', 'grand_manor'].includes(tier.id) ? tier.id : null;
+
+        const woInsert = {
+          tenant_id: est.tenant_id,
+          // wo_number omitted on purpose: workorders.wo_number has a serial
+          // default (workorders_wo_number_seq). Let the DB assign it so this
+          // matches api/workorders.js POST and avoids a max+1 race.
+          linked_estimate_id: est.id,
+          customer_name: customerPayload.name || est.customer?.full_name || 'customer',
+          address: est.customer?.address || '',
+          phone: customerPayload.phone || null,
+          email: customerPayload.email || null,
+          job_type: 'full_replacement',
+          package_tier: allowedTier,
+          status: 'draft',
+          total_sq: sqft ? Number((sqft / 100).toFixed(2)) : null,
+          roof_pitch: est.roof_pitch || null,
+          layers_to_remove: est.new_construction ? 0 : (Number(est.extra_layers) || 0) + 1,
+          shingle_color: null,            // owner fills at scheduling
+          sub_crew_lead: null,            // owner assigns
+          start_date: null,               // owner schedules
+          eaves_lf: est.eaves_lf ?? null,
+          rakes_lf: est.rakes_lf ?? null,
+          ridges_lf: est.ridges_lf ?? null,
+          hips_lf: est.hips_lf ?? null,
+          valleys_lf: est.valleys_lf ?? null,
+          walls_lf: est.walls_lf ?? null,
+          pipes: est.pipes ?? null,
+          vents: est.vents ?? null,
+          chimneys: est.chimneys ?? null,
+          measurement_method: 'estimate_carryover',
+          special_notes: [
+            `Auto-created on signing. ${tier.name || tier.id} - ${fmtMoney(tierTotalWithTax)} w/ HST. Estimate PU-${est.estimate_number || est.id.slice(0, 8)}.`,
+            addonNote,
+            `TBD before issuing: shingle COLOR, SUB/crew, START DATE.`
+          ].filter(Boolean).join('\n')
+        };
+
+        const { data: woRow, error: woErr } = await supabaseAdmin
+          .from('workorders')
+          .insert(woInsert)
+          .select('id, wo_number')
+          .single();
+
+        if (woErr) {
+          console.error('[proposal-accept] work order insert failed', woErr.message);
+        } else {
+          console.log('[proposal-accept] draft work order created wo', woRow.wo_number);
+          supabaseAdmin.from('activity_log').insert({
+            tenant_id: est.tenant_id,
+            entity_type: 'workorder',
+            entity_id: woRow.id,
+            action: 'created',
+            details: { source: 'proposal_accept_replacement_automation', estimate_id: est.id, wo_number: woRow.wo_number, status: 'draft' }
+          }).then(() => {}, () => {});
+        }
+      }
+    } catch (e) {
+      console.error('[proposal-accept] work order automation threw', e?.message);
+    }
   }
 
   // 5. Run the owner notification + GHL sync to completion BEFORE responding.
