@@ -132,6 +132,24 @@ if (tenantId) {
   } catch (e) { fail('deck_suggestions', e); console.log(`\n[FAIL] deck_suggestions: ${out.sources.deck_suggestions.error}`); }
 }
 
+// 4d) GHL appointments (next 48h upcoming inspections/bookings) - via the app endpoint
+// with the service token (GHL creds are prod-only). Closes the "confirmed appointment
+// invisible at load" gap (the Ken Tolembek whiffed-inspection miss).
+if (SVC) {
+  try {
+    const r = await fetch(`${APP}/api/ghl?mode=appointments&days=2`, { headers: { Authorization: `Bearer ${SVC}`, 'x-tenant-id': TENANT } });
+    if (!r.ok) throw new Error(`/api/ghl appointments ${r.status}: ${(await r.text()).slice(0, 120)}`);
+    const j = await r.json();
+    const appts = (j.appointments || []).filter(a => a.status !== 'cancelled');
+    ok('ghl_appointments', { count: appts.length, items: appts.map(a => ({ title: a.title, contact: a.contactName, startTime: a.startTime, status: a.status })) });
+    console.log(`\n## GHL appointments (next 48h): ${appts.length}`);
+    for (const a of appts.slice(0, 10)) console.log(`  ${String(a.startTime || '').slice(0, 16).replace('T', ' ')} ${a.status === 'confirmed' ? 'CONFIRMED' : (a.status || '')} - ${a.title}${a.contactName ? ' (' + a.contactName + ')' : ''}`);
+    if (!appts.length) console.log('  (none in next 48h)');
+  } catch (e) { fail('ghl_appointments', e); console.log(`\n[FAIL] ghl_appointments: ${out.sources.ghl_appointments.error}`); }
+} else {
+  out.sources.ghl_appointments = { status: 'skipped', error: 'no RYUJIN_SERVICE_TOKEN' };
+}
+
 // 5) Daily snapshot (cross-sector brief) — needs service token
 if (SVC) {
   try {
