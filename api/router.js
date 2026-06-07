@@ -178,8 +178,14 @@ function safeJSON(s) { try { return JSON.parse(s); } catch { return {}; } }
 
 // Deterministic stringify (sorted keys, recursive) so two payloads that are equal
 // regardless of key order produce the same dedupe signature.
+// Skips `undefined`-valued keys so the in-memory payload (which may carry optional
+// fields as undefined, e.g. send_email cc/threadId) matches the same payload after a
+// Supabase JSONB round-trip (which DROPS undefined keys) - else dupes never match.
 function stableStringify(o) {
+  if (o === undefined) return 'null';
   if (o === null || typeof o !== 'object') return JSON.stringify(o);
   if (Array.isArray(o)) return '[' + o.map(stableStringify).join(',') + ']';
-  return '{' + Object.keys(o).sort().map(k => JSON.stringify(k) + ':' + stableStringify(o[k])).join(',') + '}';
+  return '{' + Object.keys(o).sort()
+    .filter(k => o[k] !== undefined)
+    .map(k => JSON.stringify(k) + ':' + stableStringify(o[k])).join(',') + '}';
 }

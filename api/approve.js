@@ -45,7 +45,10 @@ export async function executePayload(payload, ctx = {}) {
         tags: cleanTags && cleanTags.length ? cleanTags : null
       }).select('ticket_number').single();
       if (error) return { executed: false, error: `create_ticket failed: ${error.message}` };
-      return { executed: true, details: `Ticket #${data.ticket_number} created: ${title}` };
+      // Insert succeeded; tolerate a missing returned row number rather than throw (which
+      // would falsely revert the row to pending and re-queue an already-created ticket).
+      const num = data && data.ticket_number;
+      return { executed: true, details: `Ticket ${num ? '#' + num : ''} created: ${title}`.replace('  ', ' ') };
     }
     default:
       // Other write tools route through approval but have no executor wired here yet.
