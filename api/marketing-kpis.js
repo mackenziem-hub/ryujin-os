@@ -75,18 +75,25 @@ async function handler(req, res) {
     // ── Ryujin sales spine ──
     const ests = estRes.data || [];
     let created = 0, sent = 0, signed = 0, signedRevenue = 0;
+    let adSourcedRevenue = 0, adSourcedJobs = 0, adInfluencedRevenue = 0, adInfluencedJobs = 0;
     for (const e of ests) {
       created += 1;
       if (e.status === 'proposal_sent' || e.status === 'accepted') sent += 1;
       if (e.status === 'accepted') {
         signed += 1;
-        signedRevenue += Number(e.final_accepted_total) || 0;
-        // exact per-campaign attribution (populates going forward)
-        const cid = e.attribution && e.attribution.campaign_id;
+        const rev = Number(e.final_accepted_total) || 0;
+        signedRevenue += rev;
+        const a = e.attribution || {};
+        // ad_sourced = came directly through an ad/funnel (hard evidence).
+        // ad_influenced = brand-persuaded even if another touchpoint closed it.
+        if (a.ad_sourced === true) { adSourcedRevenue += rev; adSourcedJobs += 1; }
+        if (a.ad_influenced === true) { adInfluencedRevenue += rev; adInfluencedJobs += 1; }
+        // exact per-campaign attribution (populates going forward from real capture)
+        const cid = a.campaign_id;
         if (cid && campMap.has(cid)) {
           const c = campMap.get(cid);
           c.attributedSigned += 1;
-          c.attributedRevenue += Number(e.final_accepted_total) || 0;
+          c.attributedRevenue += rev;
         }
       }
     }
@@ -122,6 +129,14 @@ async function handler(req, res) {
       signedRevenue: r2(signedRevenue),
       blendedCAC: signed > 0 ? r2(meta.spend / signed) : null,
       blendedRoas: meta.spend > 0 ? r2(signedRevenue / meta.spend) : null,
+      // ad-sourced = hard evidence of ad/funnel origin (conservative).
+      adSourcedJobs,
+      adSourcedRevenue: r2(adSourcedRevenue),
+      adSourcedRoas: meta.spend > 0 ? r2(adSourcedRevenue / meta.spend) : null,
+      // ad-influenced = brand-persuaded (Mac's view); excludes only clear non-ad origins.
+      adInfluencedJobs,
+      adInfluencedRevenue: r2(adInfluencedRevenue),
+      adInfluencedRoas: meta.spend > 0 ? r2(adInfluencedRevenue / meta.spend) : null,
       attributedSigned: byCampaign.reduce((s, c) => s + c.attributedSigned, 0),
       attributedRevenue: r2(byCampaign.reduce((s, c) => s + c.attributedRevenue, 0))
     };
