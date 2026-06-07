@@ -180,7 +180,7 @@ export default async function handler(req, res) {
   // 1. Resolve estimate by share token (authoritative — do not trust estimateId from client)
   const lookup = await supabaseAdmin
     .from('estimates')
-    .select('id, tenant_id, estimate_number, customer_id, status, selected_package, notes, calculated_packages, custom_prices, ghl_opportunity_id, share_token, proposal_mode, tags, roof_area_sqft, roof_pitch, eaves_lf, rakes_lf, ridges_lf, valleys_lf, hips_lf, walls_lf, pipes, vents, chimneys, extra_layers, customer:customers(full_name, email, phone, address, ghl_contact_id)')
+    .select('id, tenant_id, estimate_number, customer_id, status, selected_package, notes, calculated_packages, custom_prices, ghl_opportunity_id, share_token, proposal_mode, tags, roof_area_sqft, roof_pitch, eaves_lf, rakes_lf, ridges_lf, valleys_lf, hips_lf, walls_lf, pipes, vents, chimneys, extra_layers, new_construction, customer:customers(full_name, email, phone, address, ghl_contact_id)')
     .eq('share_token', shareToken)
     .limit(1)
     .maybeSingle();
@@ -413,7 +413,9 @@ export default async function handler(req, res) {
   //     to fill at scheduling. Idempotent: skips if a WO already links this
   //     estimate. Awaited (not fire-and-forget) so it completes before the
   //     response - same serverless-freeze lesson as the notifications (PR #270).
-  if (!isRepair && !envelopeAccept) {
+  const proposalModeStr = String(est.proposal_mode || '').toLowerCase();
+  const isNonRoof = proposalModeStr.includes('siding') || proposalModeStr.includes('exterior');
+  if (!isRepair && !envelopeAccept && !isNonRoof) {
     try {
       const { data: existingWo } = await supabaseAdmin
         .from('workorders')
@@ -425,33 +427,30 @@ export default async function handler(req, res) {
       if (existingWo) {
         console.log('[proposal-accept] work order already exists, skipping wo', existingWo.wo_number);
       } else {
-        const { data: maxRow } = await supabaseAdmin
-          .from('workorders')
-          .select('wo_number')
-          .eq('tenant_id', est.tenant_id)
-          .order('wo_number', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        const nextWoNumber = (maxRow?.wo_number || 0) + 1;
         const sqft = Number(est.roof_area_sqft) || null;
         const addonNote = addonsList.length
           ? `Add-ons (signed): ${addonsList.map(a => a.label || a.slug).filter(Boolean).join(', ')}.`
           : '';
+        // package_tier has a CHECK (gold|platinum|diamond|grand_manor|null);
+        // map anything else (economy, custom slugs) to null so the insert can't fail.
+        const allowedTier = ['gold', 'platinum', 'diamond', 'grand_manor'].includes(tier.id) ? tier.id : null;
 
         const woInsert = {
           tenant_id: est.tenant_id,
-          wo_number: nextWoNumber,
+          // wo_number omitted on purpose: workorders.wo_number has a serial
+          // default (workorders_wo_number_seq). Let the DB assign it so this
+          // matches api/workorders.js POST and avoids a max+1 race.
           linked_estimate_id: est.id,
           customer_name: customerPayload.name || est.customer?.full_name || 'customer',
           address: est.customer?.address || '',
           phone: customerPayload.phone || null,
           email: customerPayload.email || null,
           job_type: 'full_replacement',
-          package_tier: tier.id,
+          package_tier: allowedTier,
           status: 'draft',
           total_sq: sqft ? Number((sqft / 100).toFixed(2)) : null,
           roof_pitch: est.roof_pitch || null,
-          layers_to_remove: (Number(est.extra_layers) || 0) + 1,
+          layers_to_remove: est.new_construction ? 0 : (Number(est.extra_layers) || 0) + 1,
           shingle_color: null,            // owner fills at scheduling
           sub_crew_lead: null,            // owner assigns
           start_date: null,               // owner schedules
