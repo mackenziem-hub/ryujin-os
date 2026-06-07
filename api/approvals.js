@@ -5,6 +5,7 @@
 // DELETE /api/approvals?code=X      → delete (only for own pending approvals or owner)
 
 import { supabaseAdmin } from '../lib/supabase.js';
+import { executePayload } from './approve.js';
 
 async function resolveCallerContext(req) {
   const authHeader = req.headers.authorization || '';
@@ -102,23 +103,44 @@ export default async function handler(req, res) {
       return res.status(403).json({ error: 'Only owner or assignee can decide' });
     }
 
-    const update = {
-      status,
-      decided_at: new Date().toISOString(),
-      decided_by_user_id: ctx.userId,
-      decision_note: note ? String(note).slice(0, 500) : null
-    };
+    const decidedAt = new Date().toISOString();
+    const decisionNote = note ? String(note).slice(0, 500) : null;
 
-    // If approved, mark for execution. The chat brain or a downstream worker picks it up.
-    // For Phase 9, we mark approved and let the requester (chat.js approve_action tool) handle execution.
-    const { data, error } = await supabaseAdmin
+    // Reject: just flip the status.
+    if (status === 'rejected') {
+      const { data, error } = await supabaseAdmin
+        .from('pending_approvals')
+        .update({ status: 'rejected', decided_at: decidedAt, decided_by_user_id: ctx.userId, decision_note: decisionNote })
+        .eq('id', existing.id).eq('status', 'pending').select().single();
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ approval: data });
+    }
+
+    // Approve: atomically CLAIM, then actually EXECUTE via the shared executor.
+    // (Previously this path only flipped the flag and relied on chat.js to execute, so the
+    // portal Approve button ran NOTHING - even send_email was lost. Now it runs the same
+    // executePayload as api/approve.js, with the same claim + revert-on-failure semantics.)
+    const { data: claimed, error: claimErr } = await supabaseAdmin
       .from('pending_approvals')
-      .update(update)
-      .eq('id', existing.id)
-      .select()
-      .single();
-    if (error) return res.status(500).json({ error: error.message });
-    return res.json({ approval: data });
+      .update({ status: 'approved', decided_at: decidedAt, decided_by_user_id: ctx.userId, decision_note: decisionNote })
+      .eq('id', existing.id).eq('status', 'pending').select('id');
+    if (claimErr) return res.status(500).json({ error: claimErr.message });
+    if (!claimed || claimed.length === 0) return res.status(409).json({ error: 'Already being processed' });
+
+    let exec;
+    try { exec = await executePayload(existing.execute_payload || {}, { tenant_id: existing.tenant_id }); }
+    catch (e) { exec = { executed: false, error: e && e.message ? e.message : String(e) }; }
+
+    if (exec.executed) {
+      const { data } = await supabaseAdmin.from('pending_approvals')
+        .update({ execution_result: exec }).eq('id', existing.id).select().single();
+      return res.json({ approval: data, execution: { executed: true, details: exec.details } });
+    }
+    // Not executed (no executor wired / failed) -> revert to pending so it can be retried.
+    const { data: reverted } = await supabaseAdmin.from('pending_approvals')
+      .update({ status: 'pending', decided_at: null, decided_by_user_id: null, execution_result: exec })
+      .eq('id', existing.id).select().single();
+    return res.status(200).json({ approval: reverted, execution: { executed: false, details: 'Not executed: ' + (exec.error || 'unknown') } });
   }
 
   // ── DELETE ──
