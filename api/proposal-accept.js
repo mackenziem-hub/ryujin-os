@@ -406,24 +406,50 @@ export default async function handler(req, res) {
       .catch(e => console.error('[proposal-accept] service_ticket insert threw', e?.message));
   }
 
-  // 5. Fire-and-forget notifications — never block the success response on these.
-  //    They're non-critical: if email or GHL calls fail, the acceptance is still
-  //    recorded and Mackenzie will still see it in the next snapshot refresh.
+  // 5. Run the owner notification + GHL sync to completion BEFORE responding.
+  //    On Vercel the function instance is frozen the instant the response is
+  //    sent, so any promise still in flight after res.json() is silently killed.
+  //    That is exactly why "PROPOSAL ACCEPTED" emails were not arriving: the
+  //    Gmail round-trip was started fire-and-forget, then the freeze cut it off
+  //    mid-send (the DB write, signature and activity_log all completed because
+  //    they run before this point). Awaiting them guarantees delivery. They run
+  //    concurrently (latency = the slower one, not the sum) and each is bounded
+  //    by a timeout so a slow GHL call can never hang the customer's acceptance.
+  //    allSettled: one failing must not swallow the other.
   //    customerPayload was resolved earlier (before the repair-ticket block).
-  notifyMackenzie({
-    est, tier, financing, customer: customerPayload, rep,
-    signatureUrl, tierTotalWithTax,
-    acceptedAt: acceptedAt || now,
-    refId, shareToken: est.share_token
-  }).catch(e => console.error('[proposal-accept] notify email failed', e?.message));
+  const withTimeout = (promise, ms, label) => {
+    let timer;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+  };
 
-  fireGhlUpdates({
-    est, tier,
-    customer: customerPayload,
-    tierTotalWithTax,
-    signatureUrl
-  }).then(r => console.log('[proposal-accept] ghl results', r))
-    .catch(e => console.error('[proposal-accept] ghl update failed', e?.message));
+  const [notifyResult, ghlResult] = await Promise.allSettled([
+    withTimeout(notifyMackenzie({
+      est, tier, financing, customer: customerPayload, rep,
+      signatureUrl, tierTotalWithTax,
+      acceptedAt: acceptedAt || now,
+      refId, shareToken: est.share_token
+    }), 8000, 'notify email'),
+    withTimeout(fireGhlUpdates({
+      est, tier,
+      customer: customerPayload,
+      tierTotalWithTax,
+      signatureUrl
+    }), 8000, 'ghl update')
+  ]);
+
+  if (notifyResult.status === 'rejected') {
+    console.error('[proposal-accept] notify email failed', notifyResult.reason?.message);
+  } else {
+    console.log('[proposal-accept] notify email sent');
+  }
+  if (ghlResult.status === 'rejected') {
+    console.error('[proposal-accept] ghl update failed', ghlResult.reason?.message);
+  } else {
+    console.log('[proposal-accept] ghl results', ghlResult.value);
+  }
 
   return res.status(200).json({
     ok: true,
