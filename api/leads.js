@@ -22,6 +22,7 @@
 import { requireTenant } from '../lib/tenant.js';
 import { gmailSend } from '../lib/google.js';
 import { sendCAPIEvent } from '../lib/meta.js';
+import { supabaseAdmin } from '../lib/supabase.js';
 
 const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
 const LOCATION_ID = (process.env.GHL_LOCATION_ID || 'aHotOUdq9D8m3JPrRz9n').trim();
@@ -193,12 +194,21 @@ async function handler(req, res) {
   // ── POST: inbound lead ──
   if (req.method === 'POST') {
     const body = req.body || {};
-    const { source, name, email, phone, address, city, metadata, meta_event_id } = body;
+    const { source, name, email, phone, address, city, metadata, meta_event_id, attribution } = body;
 
     if (!email && !phone) {
       return res.status(400).json({ error: 'email or phone required' });
     }
     const { firstName, lastName } = splitName(name);
+
+    // Ad attribution (utm/fbclid) captured by the funnel. Normalize + derive
+    // the paid channel, and build the Meta _fbc click id for CAPI matching.
+    const attr = (attribution && typeof attribution === 'object') ? attribution : {};
+    const adChannel =
+      (attr.fbclid || /facebook|instagram|meta|\bfb\b/i.test(attr.utm_source || '')) ? 'meta'
+        : (attr.gclid || /google/i.test(attr.utm_source || '')) ? 'google'
+          : (attr.utm_source ? 'other-paid' : 'direct');
+    const fbc = attr.fbclid ? `fb.1.${Math.floor(Date.now() / 1000)}.${attr.fbclid}` : null;
 
     // Base tags drive the marketing-leads view (source: filter + stats).
     // The Automator trigger tag (when the source has one) is what fires the
@@ -252,6 +262,31 @@ async function handler(req, res) {
       return res.status(502).json({ ok: false, error: ghlError || 'GHL contact create failed' });
     }
 
+    // Persist the lead + ad attribution into Ryujin's leads table so the
+    // click -> lead -> sale chain is queryable on our side, not only in GHL.
+    // Best-effort: never block or fail the lead on this.
+    if (req.tenant?.id) {
+      try {
+        await supabaseAdmin.from('leads').insert({
+          tenant_id: req.tenant.id,
+          source: source || 'unknown',
+          campaign: attr.utm_campaign || null,
+          channel: adChannel,
+          status: 'new',
+          metadata: {
+            attribution: attr,
+            ghl_contact_id: contactId,
+            name: name || null,
+            email: email || null,
+            phone: phone || null,
+            meta_event_id: meta_event_id || null
+          }
+        });
+      } catch (e) {
+        console.warn('[leads] supabase leads insert failed:', e.message);
+      }
+    }
+
     // Single 5s deadline across opp creation + owner notification combined.
     // Both run in parallel starting now; whichever finishes within the
     // remaining budget gets recorded, slow ones time out with an error
@@ -297,11 +332,14 @@ async function handler(req, res) {
         ...(metadata?.postal ? { zp: metadata.postal } : {}),
         ...(capiClientIp ? { ip: capiClientIp } : {}),
         ...(capiClientUa ? { userAgent: capiClientUa } : {}),
+        ...(fbc ? { fbc } : {}),
         external_id: contactId
       },
       customData: {
-        content_name: source || 'unknown',
-        content_category: 'roofing'
+        content_name: attr.utm_campaign || source || 'unknown',
+        content_category: 'roofing',
+        ...(attr.utm_source ? { utm_source: attr.utm_source } : {}),
+        ...(attr.utm_campaign ? { utm_campaign: attr.utm_campaign } : {})
       }
     })
       .then(() => ({ ok: true }))
