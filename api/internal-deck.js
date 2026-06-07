@@ -43,6 +43,11 @@ const DECKS = {
     title: 'The 10x Path',
     desc: 'The growth blueprint: the one binding constraint, the real numbers, Operation Revive as the spearhead, and the 30 to 60 day sequence.',
   },
+  'approvals-review': {
+    tenant: 'plus-ultra', tag: 'Operations', slides: 9,
+    title: 'The Approval Queue',
+    desc: '25 agent actions queued for your approval, triaged: 9 real actions, the rest duplicates and one test, with a recommended call on each.',
+  },
 };
 
 export default async function handler(req, res) {
