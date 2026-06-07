@@ -262,31 +262,6 @@ async function handler(req, res) {
       return res.status(502).json({ ok: false, error: ghlError || 'GHL contact create failed' });
     }
 
-    // Persist the lead + ad attribution into Ryujin's leads table so the
-    // click -> lead -> sale chain is queryable on our side, not only in GHL.
-    // Best-effort: never block or fail the lead on this.
-    if (req.tenant?.id) {
-      try {
-        await supabaseAdmin.from('leads').insert({
-          tenant_id: req.tenant.id,
-          source: source || 'unknown',
-          campaign: attr.utm_campaign || null,
-          channel: adChannel,
-          status: 'new',
-          metadata: {
-            attribution: attr,
-            ghl_contact_id: contactId,
-            name: name || null,
-            email: email || null,
-            phone: phone || null,
-            meta_event_id: meta_event_id || null
-          }
-        });
-      } catch (e) {
-        console.warn('[leads] supabase leads insert failed:', e.message);
-      }
-    }
-
     // Single 5s deadline across opp creation + owner notification combined.
     // Both run in parallel starting now; whichever finishes within the
     // remaining budget gets recorded, slow ones time out with an error
@@ -348,6 +323,31 @@ async function handler(req, res) {
         return { ok: false, error: e.message };
       });
 
+    // Persist the lead + ad attribution into Ryujin's leads table so the
+    // click -> lead -> sale chain is queryable on our side, not only in GHL.
+    // Runs CONCURRENTLY with the GHL/CAPI fan-out (no serial latency) and is
+    // awaited (bounded) before the response so the serverless freeze can't drop
+    // it. Never throws into the request path.
+    const leadsPromise = req.tenant?.id
+      ? supabaseAdmin.from('leads').insert({
+          tenant_id: req.tenant.id,
+          source: source || 'unknown',
+          campaign: attr.utm_campaign || null,
+          channel: adChannel,
+          status: 'new',
+          metadata: {
+            attribution: attr,
+            ghl_contact_id: contactId,
+            name: name || null,
+            email: email || null,
+            phone: phone || null,
+            meta_event_id: meta_event_id || null
+          }
+        })
+          .then(({ error }) => (error ? { ok: false, error: error.message } : { ok: true }))
+          .catch(e => ({ ok: false, error: e.message }))
+      : Promise.resolve(null);
+
     let opportunityId = null;
     let opportunityError = null;
     let notifyError = null;
@@ -396,6 +396,21 @@ async function handler(req, res) {
     } catch (e) {
       capiError = e.message;
     }
+
+    // Bounded wait for the concurrent leads-table capture. It started with the
+    // fan-out so it is usually already resolved; the cap stops a slow/hung DB
+    // from stalling the form.
+    let leadsError = null;
+    try {
+      const leadsRes = await Promise.race([
+        leadsPromise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('leads insert timeout')), 1500))
+      ]);
+      if (leadsRes && !leadsRes.ok) leadsError = leadsRes.error;
+    } catch (e) {
+      leadsError = e.message;
+    }
+    if (leadsError) console.warn(`[leads] leads capture: ${leadsError} (contact ${contactId})`);
 
     return res.status(201).json({
       ok: true,
