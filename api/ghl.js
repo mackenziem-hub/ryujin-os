@@ -323,30 +323,30 @@ export default async function handler(req, res) {
     // calendar's post-booking behavior. Primary use: point a booking calendar's
     // confirmation at a redirect URL — so a conversion pixel on that landing page
     // (Google Ads / Meta) fires — instead of showing an inline thank-you message.
-    //   body: { formSubmitType?: 'RedirectURL' | 'ThankYouMessage',
-    //           formSubmitRedirectURL?: string, formSubmitThanksMessage?: string }
+    //   body: { formSubmitType?: 'RedirectUrl' | 'ThankYouMessage',
+    //           formSubmitRedirectUrl?: string, formSubmitThanksMessage?: string }
     if (postAction === 'update-calendar-config' && !cId) {
       return res.status(400).json({ error: 'Missing id query parameter. Pass ?id=<calendarId>.' });
     }
     if (postAction === 'update-calendar-config' && cId) {
       const body = req.body || {};
-      const ALLOWED = ['formSubmitType', 'formSubmitRedirectURL', 'formSubmitThanksMessage'];
+      const ALLOWED = ['formSubmitType', 'formSubmitRedirectUrl', 'formSubmitThanksMessage'];
       const update = {};
       for (const k of ALLOWED) if (body[k] !== undefined) update[k] = body[k];
       if (!Object.keys(update).length) {
         return res.status(400).json({
           error: 'No updatable fields. Send at least one of: ' + ALLOWED.join(', '),
-          example: { formSubmitType: 'RedirectURL', formSubmitRedirectURL: 'https://booking.example.com/success-booking' }
+          example: { formSubmitType: 'RedirectUrl', formSubmitRedirectUrl: 'https://booking.example.com/success-booking' }
         });
       }
-      if (update.formSubmitType && !['RedirectURL', 'ThankYouMessage'].includes(update.formSubmitType)) {
-        return res.status(400).json({ error: "formSubmitType must be 'RedirectURL' or 'ThankYouMessage'." });
+      if (update.formSubmitType && !['RedirectUrl', 'ThankYouMessage'].includes(update.formSubmitType)) {
+        return res.status(400).json({ error: "formSubmitType must be 'RedirectUrl' or 'ThankYouMessage'." });
       }
-      if (update.formSubmitType === 'RedirectURL' && !update.formSubmitRedirectURL) {
-        return res.status(400).json({ error: 'formSubmitRedirectURL is required when formSubmitType is RedirectURL.' });
+      if (update.formSubmitType === 'RedirectUrl' && !update.formSubmitRedirectUrl) {
+        return res.status(400).json({ error: 'formSubmitRedirectUrl is required when formSubmitType is RedirectUrl.' });
       }
-      if (update.formSubmitRedirectURL && !/^https?:\/\//i.test(update.formSubmitRedirectURL)) {
-        return res.status(400).json({ error: 'formSubmitRedirectURL must be an absolute http(s) URL.' });
+      if (update.formSubmitRedirectUrl && !/^https?:\/\//i.test(update.formSubmitRedirectUrl)) {
+        return res.status(400).json({ error: 'formSubmitRedirectUrl must be an absolute http(s) URL.' });
       }
       try {
         // Read-merge-write. GHL's PUT /calendars/{id} may REPLACE rather than
@@ -367,7 +367,7 @@ export default async function handler(req, res) {
           applied: update,
           formSubmit: {
             formSubmitType: cal.formSubmitType ?? null,
-            formSubmitRedirectURL: cal.formSubmitRedirectURL ?? null,
+            formSubmitRedirectUrl: cal.formSubmitRedirectUrl ?? null,
             formSubmitThanksMessage: cal.formSubmitThanksMessage ?? null
           },
           timestamp: new Date().toISOString()
@@ -588,8 +588,8 @@ export default async function handler(req, res) {
     // Gated owner/admin-or-service by the top-of-handler auth gate. Without &id,
     // lists the location's calendars so the caller can pick the right calendarId.
     // With &id=<calendarId>, returns the full calendar object plus a curated
-    // formSubmit summary: formSubmitType ('ThankYouMessage' | 'RedirectURL'),
-    // formSubmitRedirectURL, formSubmitThanksMessage. Pairs with the POST
+    // formSubmit summary: formSubmitType ('ThankYouMessage' | 'RedirectUrl'),
+    // formSubmitRedirectUrl, formSubmitThanksMessage. Pairs with the POST
     // action=update-calendar-config write mode below.
     if (resolvedMode === 'calendar-config') {
       if (!id) {
@@ -611,7 +611,7 @@ export default async function handler(req, res) {
         calendar: cal,
         formSubmit: {
           formSubmitType: cal.formSubmitType ?? null,
-          formSubmitRedirectURL: cal.formSubmitRedirectURL ?? null,
+          formSubmitRedirectUrl: cal.formSubmitRedirectUrl ?? null,
           formSubmitThanksMessage: cal.formSubmitThanksMessage ?? null
         },
         timestamp: new Date().toISOString()
