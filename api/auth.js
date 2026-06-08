@@ -31,7 +31,7 @@ export default async function handler(req, res) {
 
   // ── LOGIN ──
   if (action === 'login' && req.method === 'POST') {
-    const { email, username, password, tenant_slug } = req.body || {};
+    const { email, username, password, tenant_slug, remember } = req.body || {};
     const ident = String(username || email || '').toLowerCase().trim();
     if (!ident || !password) return res.status(400).json({ error: 'Username or email and password required' });
 
@@ -54,9 +54,13 @@ export default async function handler(req, res) {
     if (!user || !user.password_hash) return res.status(401).json({ error: 'Invalid credentials' });
     if (!verifyPassword(password, user.password_hash)) return res.status(401).json({ error: 'Invalid credentials' });
 
-    // Create session
+    // Create session. Initial TTL caps absolute lifetime if the user never
+    // returns: Remember Me checked = 365 days, unchecked = 90 days. Sliding
+    // refresh in lib/portalAuth.js bumps expires_at to (now + 90 days) on
+    // every authed call, so active users never get kicked out either way.
     const token = generateToken();
-    const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+    const ttlDays = remember ? 365 : 90;
+    const expires = new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000);
 
     await supabaseAdmin.from('sessions').insert({
       tenant_id: tenant.id,
