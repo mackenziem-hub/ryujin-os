@@ -33,6 +33,11 @@ import { supabaseAdmin } from '../lib/supabase.js';
 // + the metadata the catalog's gated list returns. The HTML body itself lives in
 // api/_decks/deck-<slug>.html.
 const DECKS = {
+  'jun9-comms': {
+    tenant: 'plus-ultra', tag: 'Operations', slides: 6,
+    title: 'Tue June 9 · Two Jobs · The Comms Package',
+    desc: 'Tomorrow\'s crew day end to end: the crew email, the deduped portal view, the group-chat message, and the customer note for the 57 Bolton completion.',
+  },
   'q2-numbers': {
     tenant: 'plus-ultra', tag: 'Finance', slides: 9,
     title: 'Q2 2026 · The Numbers',
