@@ -1595,6 +1595,10 @@ if(window.__RY_8BIT__){var _v=document.getElementById('sentinel-video');if(_v){_
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
       <span id="btnTutorialsLabel">Tutorials: ON</span>
     </button>
+    <button class="hud-nav-btn" id="btnInboxAgent" title="Pause/resume the inbox triage agent. Anyone signed in can flip it. ON means the agent scans GHL every 20 min and drafts replies; OFF means it skips every run until flipped back.">
+      <svg viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+      <span id="btnInboxAgentLabel">Inbox Agent: …</span>
+    </button>
     <button class="hud-nav-btn" id="btnChat" title="Show or hide the Ryujin chat fab on every page">
       <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
       <span id="btnChatLabel">Chat: ON</span>
@@ -1657,6 +1661,74 @@ if(window.__RY_8BIT__){var _v=document.getElementById('sentinel-video');if(_v){_
     render();
   });
   render();
+})();
+(function(){
+  // Inbox Agent toggle. Backed by tenant_settings.inbox_agent_enabled so it
+  // affects every signed-in user (Mac + Cat see the same state). Anyone in a
+  // privileged role can flip it. The cron at /api/agents/inbox checks this
+  // column at run-time and early-returns when false.
+  const btn = document.getElementById('btnInboxAgent');
+  const lbl = document.getElementById('btnInboxAgentLabel');
+  if (!btn || !lbl) return;
+  let state = null; // unknown until first GET
+  let inflight = false;
+
+  function render() {
+    if (state === null) {
+      lbl.textContent = 'Inbox Agent: …';
+      btn.classList.remove('active');
+      btn.style.opacity = '0.6';
+      return;
+    }
+    lbl.textContent = state ? 'Inbox Agent: ON' : 'Inbox Agent: OFF';
+    btn.classList.toggle('active', !!state);
+    btn.style.opacity = '1';
+  }
+
+  async function load() {
+    try {
+      const headers = (window.RyujinAuth && window.RyujinAuth.headers) ? window.RyujinAuth.headers() : {};
+      const r = await fetch('/api/settings', { headers: { 'x-tenant-id': 'plus-ultra', ...headers } });
+      if (!r.ok) { state = null; render(); return; }
+      const d = await r.json();
+      state = d.inbox_agent_enabled !== false;
+      render();
+    } catch (e) {
+      state = null; render();
+    }
+  }
+
+  btn.addEventListener('click', async () => {
+    if (inflight || state === null) return;
+    inflight = true;
+    const next = !state;
+    btn.style.opacity = '0.6';
+    try {
+      const headers = (window.RyujinAuth && window.RyujinAuth.headers) ? window.RyujinAuth.headers() : {};
+      const r = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'x-tenant-id': 'plus-ultra', ...headers },
+        body: JSON.stringify({ inbox_agent_enabled: next })
+      });
+      if (r.ok) {
+        state = next;
+      } else if (r.status === 401) {
+        alert('Sign in expired. Open /login.html to flip the toggle.');
+      } else if (r.status === 403) {
+        alert('You need admin role to flip this toggle.');
+      } else {
+        alert('Toggle failed: HTTP ' + r.status);
+      }
+    } catch (e) {
+      alert('Toggle failed: ' + e.message);
+    } finally {
+      inflight = false;
+      render();
+    }
+  });
+
+  render();
+  load();
 })();
 </script>
 
