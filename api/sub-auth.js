@@ -4,11 +4,14 @@
 // GET  /api/sub-auth?sub_id=...&action=jobs — returns this sub's assigned WOs + paysheets
 // POST /api/sub-auth?action=rotate       — owner rotates a sub's magic-link token
 // POST /api/sub-auth?action=create       — owner creates a new subcontractor + issues token
+// POST /api/sub-auth?action=request_link  self-serve: sub texts their phone, gets fresh link via SMS
 //
 // Magic-link URL shape: https://ryujin-os.vercel.app/sub-portal.html?token=XYZ
 
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireTenant } from '../lib/tenant.js';
+import { sendSMS } from '../lib/sms.js';
+import { normalizePhone } from '../lib/twilio.js';
 import crypto from 'crypto';
 
 function newToken() {
@@ -262,7 +265,99 @@ async function handler(req, res) {
     return res.json({ member: { ...data, portal_url } });
   }
 
+  // ── Self-serve: sub requests a fresh magic-link via SMS ──
+  // POST body: { phone }. Matches by E.164-normalized phone across subcontractors
+  // and sub_crew_members. Rotates the token and texts a new portal URL to the
+  // number on file (NOT to whatever the requester typed; that's the whole
+  // point of the lookup, the sender must already be in our records).
+  // Generic 200 response either way to avoid number enumeration.
+  if (req.method === 'POST' && action === 'request_link') {
+    const { phone } = req.body || {};
+    const normalized = normalizePhone(phone);
+    if (!normalized) return res.status(400).json({ error: 'Enter a valid phone number' });
+
+    // Best-effort per-instance throttle. Cold starts reset this; Twilio's
+    // own per-number rate limits remain the floor.
+    const rateKey = `${tenantId}:${normalized}`;
+    const now = Date.now();
+    const last = REQUEST_LINK_RATE.get(rateKey) || 0;
+    if (now - last < 60_000) return res.json({ ok: true });
+    REQUEST_LINK_RATE.set(rateKey, now);
+
+    // Find sub by phone. If multiple match (e.g. owner-cell shared with the
+    // in-house "Crew" bucket sub), the most recently updated active row wins.
+    const { data: subs } = await supabaseAdmin
+      .from('subcontractors')
+      .select('id, name, phone')
+      .eq('tenant_id', tenantId)
+      .eq('phone', normalized)
+      .eq('active', true)
+      .is('archived_at', null)
+      .order('updated_at', { ascending: false });
+
+    let target = null;
+    if (subs && subs.length) {
+      const sub = subs[0];
+      const token = newToken();
+      const expires = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+      await supabaseAdmin
+        .from('subcontractors')
+        .update({ magic_link_token: token, magic_link_expires_at: expires.toISOString(), updated_at: new Date().toISOString() })
+        .eq('id', sub.id);
+      target = { name: sub.name, phone: sub.phone, token };
+    } else {
+      // Fall back to crew members.
+      const { data: members } = await supabaseAdmin
+        .from('sub_crew_members')
+        .select('id, name, phone, sub_id')
+        .eq('tenant_id', tenantId)
+        .eq('phone', normalized)
+        .eq('active', true)
+        .is('archived_at', null)
+        .order('created_at', { ascending: false });
+      if (members && members.length) {
+        const m = members[0];
+        const token = newToken();
+        await supabaseAdmin
+          .from('sub_crew_members')
+          .update({ magic_token: token })
+          .eq('id', m.id);
+        target = { name: m.name, phone: m.phone, token };
+      }
+    }
+
+    if (target) {
+      // Use the tenant owner's ryujin_phone_number as outbound sender so the
+      // recipient sees a familiar number (matches the messages.js pattern).
+      const { data: owner } = await supabaseAdmin
+        .from('users')
+        .select('ryujin_phone_number, name')
+        .eq('tenant_id', tenantId)
+        .eq('role', 'owner')
+        .not('ryujin_phone_number', 'is', null)
+        .maybeSingle();
+
+      const fromPhone = owner?.ryujin_phone_number || null;
+      if (fromPhone) {
+        const firstName = (target.name || '').split(/\s+/)[0] || 'there';
+        const portalUrl = `https://ryujin-os.vercel.app/sub-portal.html?token=${target.token}`;
+        const smsBody = `Hey ${firstName}, here's your portal link, good for 90 days: ${portalUrl}`;
+        sendSMS({ from: fromPhone, to: target.phone, body: smsBody })
+          .then(r => { if (!r.ok) console.warn(`[sub-auth.request_link] SMS to ${target.name} failed: ${r.error}`); })
+          .catch(e => console.warn(`[sub-auth.request_link] SMS to ${target.name} crashed: ${e.message}`));
+      } else {
+        console.warn(`[sub-auth.request_link] no owner ryujin_phone_number set for tenant ${tenantId}, cannot deliver`);
+      }
+    }
+
+    return res.json({ ok: true });
+  }
+
   return res.status(400).json({ error: 'Unknown action' });
 }
+
+// Module-scope rate-limit bucket. Keyed by `${tenantId}:${normalizedPhone}`.
+// Best-effort; resets on cold start. Twilio's per-number cap is the real floor.
+const REQUEST_LINK_RATE = new Map();
 
 export default requireTenant(handler);
