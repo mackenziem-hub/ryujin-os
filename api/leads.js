@@ -62,7 +62,9 @@ const ESTIMATOR_FIELD_IDS = {
   high:     'dOjnqLvXnPfCat2k6etr',
   material: '15ZVvX8Z3Q5CbcCyOIBy',
   address:  '8dYsptjZpaGXeEUBFlF8',
-  size:     'czp6Qb4UkZBpvWqcMcXu'
+  size:     'czp6Qb4UkZBpvWqcMcXu',
+  city:     'IbCxRWNfhGO853eZ5Q83',
+  postal:   'oKdValBJRlDArSX9A2bL'
 };
 
 // Build the GHL customFields array from an untrusted `estimator` object.
