@@ -15,6 +15,22 @@ import { snapshotHeaders } from '../lib/snapshotClient.js';
 const SNAPSHOT_BLOB_KEY = 'ryujin-snapshot.json';
 const LEGACY_SNAPSHOT_BLOB_KEY = 'shenron-snapshot.json';
 
+// Cat-test contact patterns. Catherine's QA personas + system-test threads
+// leak into GHL conversations and pollute every snapshot consumer (Krillin
+// lead-flow alarm, briefing comms section, chat tools). The scan-check-in
+// protocol filters these client-side, but the snapshot itself stays dirty.
+// Patterns are LITERAL phrases ("Cat Test", "Catherine Zeta", "Lead Verify")
+// so a real customer named Catherine/Cat is never matched.
+const CAT_TEST_NAME_PATTERNS = [
+  /\bcat\s*test\b/i, /\bcatherine\s*test\b/i, /\bcat\s*livetest\b/i,
+  /\btest\s*replied\b/i, /\bcatherine[^a-z]{0,3}zeta\b/i,
+  /\blead\s*verify\b/i, /\btest\s*rejuv\b/i, /\btest\s*flow\b/i,
+];
+const isCatTestContact = (name) => {
+  const s = String(name || '');
+  return CAT_TEST_NAME_PATTERNS.some(p => p.test(s));
+};
+
 // Compute "tickets" stats from the WORKORDERS table (the real source of
 // truth for active jobs). The legacy `tickets` table went dormant in May
 // 2026 -- the cockpit was showing 35 abandoned April checklist items as
@@ -432,9 +448,11 @@ async function buildFreshSnapshot() {
       }));
   }
 
-  // Conversations
+  // Conversations — filter Cat-test pollution BEFORE slicing so the 20 we
+  // surface are 20 real ones, not 15 real + 5 test.
   if (conversations?.conversations) {
     snapshot.sections.conversations = conversations.conversations
+      .filter(c => !isCatTestContact(c.contactName))
       .slice(0, 20)
       .map(c => ({
         name: c.contactName, unread: c.unreadCount,
