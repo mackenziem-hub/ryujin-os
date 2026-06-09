@@ -226,10 +226,12 @@ export default async function handler(req, res) {
   // Push briefing to snapshot so Ryujin chat can reference it.
   // NOTE: We push BEFORE SMS dispatch (so even if SMS dies, the briefing survives),
   // and then push a small follow-up update with smsSent + errors AFTER SMS attempt.
+  // Auth: snapshotHeaders() carries RYUJIN_SERVICE_TOKEN. Without it this POST 401s
+  // silently against the gated /api/snapshot, defeating the safety-net design.
   try {
     await fetch(`${BASE_URL}/api/snapshot`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: snapshotHeaders(),
       body: JSON.stringify({
         [`briefing_${type}`]: {
           timestamp: briefing.timestamp,
