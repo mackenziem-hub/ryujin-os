@@ -608,6 +608,10 @@ async function buildFreshSnapshot() {
     // Quest scanner (migration 080) - daily cron writes sections.questscan
     // with created/expired/byRule counts. Preserve so the hourly rebuild keeps it.
     'questscan',
+    // Metrics contract v1 - rebuilt fresh each cycle by nativeMetrics(); this
+    // entry only matters when that compute fails (returns null), where it
+    // carries the last good section forward instead of dropping it for an hour.
+    'metrics',
     // Reconciliation agent (migration 082) - daily cron writes sections.reconcile
     // with the committed-revenue figures + open finding count. Same wipe risk.
     'reconcile'
