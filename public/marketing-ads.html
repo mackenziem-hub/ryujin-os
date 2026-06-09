@@ -32,7 +32,11 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
 
 .main{margin-left:var(--sidebar-w);padding:18px 22px 60px;max-width:1600px}
 
-.hq-header{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-bottom:16px;flex-wrap:wrap}
+.hq-header{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-bottom:16px;flex-wrap:wrap;position:relative}
+/* Decorative wave banner behind the header. Teal line art on pure black, so
+   mix-blend-mode:screen composites the black away on the dark background. */
+.hq-wave{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;mix-blend-mode:screen;opacity:.28;pointer-events:none}
+.hq-header>.hq-title,.hq-header>.hq-actions{position:relative;z-index:1}
 .hq-title{flex:1;min-width:280px}
 .hq-title .crumb{font-family:'Share Tech Mono',monospace;font-size:0.72em;color:var(--text-dim);letter-spacing:2px;text-transform:uppercase;margin-bottom:4px}
 .hq-title h1{font-family:'Orbitron',monospace;font-size:1.7em;font-weight:700;letter-spacing:1.5px;background:linear-gradient(135deg,#e0e6f0 20%,var(--cyan) 70%,var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
@@ -157,6 +161,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
 <main class="main">
 
   <div class="hq-header">
+    <img class="hq-wave" src="/assets/state-art/banner-wave.svg" alt="" aria-hidden="true" onerror="this.style.display='none'">
     <div class="hq-title">
       <div class="crumb">Marketing · Ads</div>
       <h1>Ad Performance</h1>
@@ -232,6 +237,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
 <script>
 const TENANT = window.RYUJIN_TENANT_SLUG;
 let cache = [];
+// True after the first successful campaign render. Once set, a failed or
+// timed-out Refresh keeps the last-good list + KPIs on screen and only shows
+// the banner + token pill (same last-good rule as dashboard-v2 / sales-cockpit).
+let loadedOnce = false;
 let activeStatus = '';
 let activeSort = 'spend';
 let drawerCampaign = null;
@@ -239,6 +248,16 @@ let drawerCampaign = null;
 function escapeHtml(s) { if (s == null) return ''; return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function fmtMoney(n) { if (n == null || isNaN(n)) return '—'; return '$' + Math.round(parseFloat(n)).toLocaleString(); }
 function fmtMoney2(n) { if (n == null || isNaN(n)) return '—'; return '$' + parseFloat(n).toFixed(2); }
+
+function authHeaders() {
+  try { const t = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token') || ''; return t ? { 'Authorization': 'Bearer ' + t } : {}; } catch (e) { return {}; }
+}
+// Every live fetch gets a 10s cap so no panel can sit on a loading state forever.
+function fetchTimeout(url, opts, ms) {
+  const signal = (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) ? AbortSignal.timeout(ms || 10000) : undefined;
+  return fetch(url, Object.assign({}, opts || {}, signal ? { signal } : {}));
+}
+function isTimeoutError(e) { return !!e && (e.name === 'TimeoutError' || e.name === 'AbortError'); }
 
 function showBanner(msg, kind='warn', isHtml=false) {
   const slot = document.getElementById('banner-slot');
@@ -252,13 +271,21 @@ function setTokenPill(state, label) {
   el.innerHTML = `<span class="dot"></span>${escapeHtml(label)}`;
 }
 
-function renderKpis(summary) {
+function renderKpis(summary, metrics) {
   const cplFlagged = summary.alerts && summary.alerts.length > 0;
+  // CPL is canonical from the metrics contract (sections.metrics.ads.cpl30d),
+  // not the Meta summary. Iron rule: render the shipped value + label verbatim.
+  const cplMetric = (metrics && metrics.ads && metrics.ads.cpl30d) || null;
+  const cplLabel = cplMetric ? cplMetric.label : 'CPL (30d)';
+  const cplValue = cplMetric ? fmtMoney2(cplMetric.value) : '-';
+  const cplSub = (cplMetric && cplMetric.leads != null && cplMetric.spend != null)
+    ? `${cplMetric.leads} leads / ${fmtMoney(cplMetric.spend)} (30d)`
+    : 'metrics unavailable';
   document.getElementById('kpiRail').innerHTML = `
     <div class="kpi-tile"><div class="kpi-label">Total Spend</div><div class="kpi-value cyan">${fmtMoney(summary.totalSpend)}</div><div class="kpi-sub">${summary.activeCampaigns || 0} active campaigns</div></div>
     <div class="kpi-tile"><div class="kpi-label">Total Leads</div><div class="kpi-value green">${summary.totalLeads || 0}</div></div>
-    <div class="kpi-tile"><div class="kpi-label">Avg CPL</div><div class="kpi-value gold">${fmtMoney2(summary.avgCPL)}</div><div class="kpi-sub">$50 = alert threshold</div></div>
-    <div class="kpi-tile ${cplFlagged ? 'alert' : ''}"><div class="kpi-label">CPL Alerts</div><div class="kpi-value ${cplFlagged ? 'red' : 'green'}">${(summary.alerts || []).length}</div></div>
+    <div class="kpi-tile"><div class="kpi-label">${escapeHtml(cplLabel)}</div><div class="kpi-value gold">${cplValue}</div><div class="kpi-sub">${escapeHtml(cplSub)}</div></div>
+    <div class="kpi-tile ${cplFlagged ? 'alert' : ''}"><div class="kpi-label">CPL Alerts</div><div class="kpi-value ${cplFlagged ? 'red' : 'green'}">${(summary.alerts || []).length}</div><div class="kpi-sub">$50 = alert threshold</div></div>
     <div class="kpi-tile"><div class="kpi-label">Total Campaigns</div><div class="kpi-value purple">${summary.totalCampaigns || 0}</div></div>
   `;
 }
@@ -289,7 +316,9 @@ function renderCampaigns(list) {
   document.getElementById('campCount').textContent = list.length;
   const el = document.getElementById('campList');
   if (list.length === 0) {
-    el.innerHTML = `<div class="empty-state"><div class="ico">◇</div>No campaigns match the current filters.</div>`;
+    el.innerHTML = `<div class="empty-state">
+      <img src="/assets/state-art/empty.svg" alt="" onerror="this.style.display='none'" style="mix-blend-mode:screen;max-width:180px;opacity:.8;display:block;margin:0 auto 10px">
+      No campaigns match the current filters.</div>`;
     return;
   }
   el.innerHTML = list.map(c => {
@@ -316,20 +345,39 @@ function renderCampaigns(list) {
   });
 }
 
+// Error state for the campaign list - replaces skeletons so the panel
+// never sits on a loading shimmer after a failed or timed-out fetch.
+function renderCampaignsError(msg) {
+  document.getElementById('campCount').textContent = '-';
+  document.getElementById('campList').innerHTML = `
+    <div class="empty-state">
+      <img src="/assets/state-art/error.svg" alt="" onerror="this.style.display='none'" style="mix-blend-mode:screen;max-width:180px;opacity:.8;display:block;margin:0 auto 10px">
+      ${escapeHtml(msg)}
+    </div>`;
+}
+
 async function load() {
+  setTokenPill('', 'checking…');
+  // Canonical CPL from the metrics contract, fetched independently so a slow
+  // metrics call can never hang the Meta panel (and vice versa). On failure it
+  // degrades to a "metrics unavailable" CPL tile instead of blocking the page.
+  const metricsPromise = fetchTimeout('/api/metrics', { headers: { 'x-tenant-id': TENANT, ...authHeaders() } })
+    .then(r => (r.ok ? r.json() : null))
+    .catch(() => null);
   try {
-    const resp = await fetch('/api/meta-ads', { headers: { 'x-tenant-id': TENANT, ...((function(){try{var t=localStorage.getItem('ryujin_token')||sessionStorage.getItem('ryujin_token')||'';return t?{'Authorization':'Bearer '+t}:{};}catch(e){return {};}})()) } });
+    const resp = await fetchTimeout('/api/meta-ads', { headers: { 'x-tenant-id': TENANT, ...authHeaders() } });
     if (resp.status === 401) {
-      const data = await resp.json();
+      const data = await resp.json().catch(() => ({}));
       setTokenPill('bad', 'token expired');
       showBanner(`Meta token invalid: <code>${escapeHtml(data.detail || 'check META_ACCESS_TOKEN')}</code>. Generate a System User token in Meta Business Settings → System Users.`, 'bad', true);
-      cache = []; renderKpis({}); renderCampaigns([]);
+      if (!loadedOnce) { cache = []; renderKpis({}, await metricsPromise); renderCampaignsError('Meta token invalid. Fix the token, then hit Refresh.'); }
       return;
     }
     if (!resp.ok) {
       const txt = await resp.text();
-      showBanner(`Could not load Meta Ads: HTTP ${resp.status} — ${txt.slice(0, 200)}`);
-      cache = []; renderKpis({}); renderCampaigns([]);
+      setTokenPill('bad', 'api error');
+      showBanner(`Could not load Meta Ads: HTTP ${resp.status} - ${txt.slice(0, 200)}`);
+      if (!loadedOnce) { cache = []; renderKpis({}, await metricsPromise); renderCampaignsError(`Could not load campaigns (HTTP ${resp.status}). Hit Refresh to retry.`); }
       return;
     }
     const data = await resp.json();
@@ -346,10 +394,22 @@ async function load() {
       setTokenPill('bad', 'token issue');
     }
 
-    renderKpis(data.summary || {});
+    renderKpis(data.summary || {}, await metricsPromise);
     renderCampaigns(applyFilters());
+    loadedOnce = true;
   } catch (e) {
-    showBanner(`Network error: ${e.message}`);
+    const timedOut = isTimeoutError(e);
+    setTokenPill('bad', timedOut ? 'timed out' : 'unreachable');
+    showBanner(timedOut
+      ? 'Meta Ads request timed out after 10s. The API is not responding, hit Refresh to retry.'
+      : `Network error: ${e.message}`);
+    // Only blank the panel if we never rendered real data; a transient blip on
+    // Refresh must not destroy a healthy list (this page has no auto-retry).
+    if (!loadedOnce) {
+      cache = [];
+      renderKpis({}, await metricsPromise);
+      renderCampaignsError(timedOut ? 'Request timed out after 10s.' : 'Could not reach the API.');
+    }
   }
 }
 
@@ -380,7 +440,7 @@ async function openDrawer(campaignId) {
   document.getElementById('drawerBackdrop').classList.add('show');
 
   try {
-    const resp = await fetch(`/api/meta-ads?detail=${encodeURIComponent(campaignId)}`, { headers: { 'x-tenant-id': TENANT, ...((function(){try{var t=localStorage.getItem('ryujin_token')||sessionStorage.getItem('ryujin_token')||'';return t?{'Authorization':'Bearer '+t}:{};}catch(e){return {};}})()) } });
+    const resp = await fetchTimeout(`/api/meta-ads?detail=${encodeURIComponent(campaignId)}`, { headers: { 'x-tenant-id': TENANT, ...authHeaders() } });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
     const sets = data.adSets || [];
@@ -396,7 +456,10 @@ async function openDrawer(campaignId) {
         </div>`).join('');
     }
   } catch (e) {
-    document.getElementById('drawerAdSets').innerHTML = `<div class="empty-state" style="padding:14px">Could not load ad sets: ${escapeHtml(e.message)}</div>`;
+    const msg = isTimeoutError(e)
+      ? 'Ad set request timed out after 10s. Close and reopen to retry.'
+      : `Could not load ad sets: ${e.message}`;
+    document.getElementById('drawerAdSets').innerHTML = `<div class="empty-state" style="padding:14px">${escapeHtml(msg)}</div>`;
   }
 }
 function closeDrawer() {
@@ -410,13 +473,29 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.g
 document.getElementById('btnPause').addEventListener('click', async () => {
   if (!drawerCampaign) return;
   if (!confirm(`Pause "${drawerCampaign.name}"?`)) return;
-  await fetch(`/api/meta-ads?campaign=${drawerCampaign.id}&action=pause`, { method: 'POST', headers: { 'x-tenant-id': TENANT, ...((function(){try{var t=localStorage.getItem('ryujin_token')||sessionStorage.getItem('ryujin_token')||'';return t?{'Authorization':'Bearer '+t}:{};}catch(e){return {};}})()) } });
-  closeDrawer(); load();
+  try {
+    const resp = await fetchTimeout(`/api/meta-ads?campaign=${drawerCampaign.id}&action=pause`, { method: 'POST', headers: { 'x-tenant-id': TENANT, ...authHeaders() } });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    closeDrawer(); load();
+  } catch (e) {
+    closeDrawer();
+    showBanner(isTimeoutError(e)
+      ? 'Pause request timed out after 10s. Check Meta Ads Manager before retrying.'
+      : `Could not pause campaign: ${e.message}`);
+  }
 });
 document.getElementById('btnResume').addEventListener('click', async () => {
   if (!drawerCampaign) return;
-  await fetch(`/api/meta-ads?campaign=${drawerCampaign.id}&action=resume`, { method: 'POST', headers: { 'x-tenant-id': TENANT, ...((function(){try{var t=localStorage.getItem('ryujin_token')||sessionStorage.getItem('ryujin_token')||'';return t?{'Authorization':'Bearer '+t}:{};}catch(e){return {};}})()) } });
-  closeDrawer(); load();
+  try {
+    const resp = await fetchTimeout(`/api/meta-ads?campaign=${drawerCampaign.id}&action=resume`, { method: 'POST', headers: { 'x-tenant-id': TENANT, ...authHeaders() } });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    closeDrawer(); load();
+  } catch (e) {
+    closeDrawer();
+    showBanner(isTimeoutError(e)
+      ? 'Resume request timed out after 10s. Check Meta Ads Manager before retrying.'
+      : `Could not resume campaign: ${e.message}`);
+  }
 });
 
 load();

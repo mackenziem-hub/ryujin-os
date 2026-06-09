@@ -6,36 +6,36 @@
   const INDEX = [
     // Sector shortcuts
     { type:'sector', label:'Dashboard', sub:'live AI command center', url:'dashboard-v2.html', tag:'DASH' },
-    { type:'sector', label:'Marketing', sub:'ads \u00B7 campaigns \u00B7 creatives \u00B7 leads \u00B7 strategy', url:'marketing.html', tag:'MKT' },
-    { type:'sector', label:'Sales', sub:'pipeline \u00B7 proposals \u00B7 follow-ups \u00B7 customers \u00B7 transcripts', url:'sales.html', tag:'SLS' },
-    { type:'sector', label:'Production', sub:'jobs \u00B7 schedule \u00B7 pay sheets \u00B7 materials', url:'production.html', tag:'PROD' },
-    { type:'sector', label:'Post-Production', sub:'close-out \u00B7 walk-through \u00B7 reviews \u00B7 warranties', url:'post-production.html', tag:'POST' },
-    { type:'sector', label:'Administration', sub:'pricing \u00B7 team \u00B7 integrations', url:'administration.html', tag:'ADMIN' },
+    { type:'sector', label:'Marketing', sub:'ads · campaigns · creatives · leads · strategy', url:'marketing.html', tag:'MKT' },
+    { type:'sector', label:'Sales', sub:'pipeline · proposals · follow-ups · customers · transcripts', url:'sales.html', tag:'SLS' },
+    { type:'sector', label:'Production', sub:'jobs · schedule · pay sheets · materials', url:'production.html', tag:'PROD' },
+    { type:'sector', label:'Post-Production', sub:'close-out · walk-through · reviews · warranties', url:'post-production.html', tag:'POST' },
+    { type:'sector', label:'Administration', sub:'pricing · team · integrations', url:'administration.html', tag:'ADMIN' },
     // Tools
     { type:'tool', label:'New Proposal', sub:'generate a customer proposal', url:'sales-proposal.html', tag:'PROP' },
     { type:'tool', label:'Pay Sheet Generator', sub:'sub contractor pay', url:'production-paysheet.html', tag:'PAY' },
     { type:'tool', label:'Campaign Creator', sub:'launch a new ad campaign', url:'marketing-campaign.html', tag:'CAMP' },
     { type:'tool', label:'Walk-Through Tool', sub:'14-point checklist + signature', url:'post-production-walkthrough.html', tag:'WALK' },
     { type:'tool', label:'Pricing Engine Editor', sub:'edit tenant rates live', url:'admin-pricing.html', tag:'PRICE' },
-    { type:'tool', label:'Marketing Strategy', sub:'Hormozi Core Four \u00B7 Martell hierarchy', url:'marketing-strategy.html', tag:'STRAT' },
+    { type:'tool', label:'Marketing Strategy', sub:'Hormozi Core Four · Martell hierarchy', url:'marketing-strategy.html', tag:'STRAT' },
     // Customers (the hot ones)
-    { type:'customer', label:'Robert Partridge', sub:'Moncton \u00B7 $44.4K \u00B7 quote sent \u00B7 3 views', url:'sales-customers.html#partridge', tag:'CUST' },
-    { type:'customer', label:'Shelagh Peach', sub:'Moncton \u00B7 $19.7K \u00B7 Darcy presenting Apr 20', url:'sales-customers.html#peach', tag:'CUST' },
-    { type:'customer', label:'Nadine Lipton', sub:'Dieppe \u00B7 $27.4K \u00B7 metal SS \u00B7 cooling', url:'sales-customers.html#lipton', tag:'CUST' },
-    { type:'customer', label:'Diaa Juha', sub:'Moncton \u00B7 $20.5K \u00B7 cooling 5d', url:'sales-customers.html#juha', tag:'CUST' },
-    { type:'customer', label:'APHL \u00B7 Kevin Chase', sub:'Riverview \u00B7 $16.2K \u00B7 Tara Court', url:'sales-customers.html#aphl', tag:'CUST' },
-    { type:'customer', label:'Richard Seyeau', sub:'Shediac \u00B7 $29.9K \u00B7 Edgewater complete', url:'sales-customers.html#seyeau', tag:'CUST' },
-    { type:'customer', label:'Jim Faulkner', sub:'178 Summerhill \u00B7 $18.4K \u00B7 scheduled Wed', url:'sales-customers.html#faulkner', tag:'CUST' },
-    { type:'customer', label:'Northrup', sub:'repair \u00B7 $3.1K \u00B7 paid', url:'sales-customers.html#northrup', tag:'CUST' },
+    { type:'customer', label:'Robert Partridge', sub:'Moncton · $44.4K · quote sent · 3 views', url:'sales-customers.html#partridge', tag:'CUST' },
+    { type:'customer', label:'Shelagh Peach', sub:'Moncton · $19.7K · Darcy presenting Apr 20', url:'sales-customers.html#peach', tag:'CUST' },
+    { type:'customer', label:'Nadine Lipton', sub:'Dieppe · $27.4K · metal SS · cooling', url:'sales-customers.html#lipton', tag:'CUST' },
+    { type:'customer', label:'Diaa Juha', sub:'Moncton · $20.5K · cooling 5d', url:'sales-customers.html#juha', tag:'CUST' },
+    { type:'customer', label:'APHL · Kevin Chase', sub:'Riverview · $16.2K · Tara Court', url:'sales-customers.html#aphl', tag:'CUST' },
+    { type:'customer', label:'Richard Seyeau', sub:'Shediac · $29.9K · Edgewater complete', url:'sales-customers.html#seyeau', tag:'CUST' },
+    { type:'customer', label:'Jim Faulkner', sub:'178 Summerhill · $18.4K · scheduled Wed', url:'sales-customers.html#faulkner', tag:'CUST' },
+    { type:'customer', label:'Northrup', sub:'repair · $3.1K · paid', url:'sales-customers.html#northrup', tag:'CUST' },
     // Jobs
-    { type:'job', label:'10 Edgewater \u00B7 Seyeau', sub:'mansard + caulk \u00B7 Diego', url:'production-jobs.html', tag:'JOB' },
-    { type:'job', label:'105 Rue Fortune', sub:'asphalt \u00B7 AJ starting', url:'production-jobs.html', tag:'JOB' },
-    { type:'job', label:'178 Summerhill \u00B7 Faulkner', sub:'pushed Wed \u00B7 3-day window', url:'production-jobs.html', tag:'JOB' },
-    { type:'job', label:'810 Route 124 \u00B7 Gould', sub:'repair \u00B7 overdue 2d', url:'production-jobs.html', tag:'JOB' },
+    { type:'job', label:'10 Edgewater · Seyeau', sub:'mansard + caulk · Diego', url:'production-jobs.html', tag:'JOB' },
+    { type:'job', label:'105 Rue Fortune', sub:'asphalt · AJ starting', url:'production-jobs.html', tag:'JOB' },
+    { type:'job', label:'178 Summerhill · Faulkner', sub:'pushed Wed · 3-day window', url:'production-jobs.html', tag:'JOB' },
+    { type:'job', label:'810 Route 124 · Gould', sub:'repair · overdue 2d', url:'production-jobs.html', tag:'JOB' },
     // Follow-ups / high-priority actions
     { type:'action', label:'Handle Gould overdue', sub:'apologize + reassign Friday', url:'sales-followups.html#gould', tag:'ACT' },
-    { type:'action', label:'Ben Crocker Zoom', sub:'Tue 1 PM \u00B7 NanoSeal partnership', url:'sales-followups.html#crocker', tag:'ACT' },
-    { type:'action', label:'Ulnooweg IYE follow-up', sub:'Apr 22 \u00B7 $25K funding app', url:'sales-followups.html#ulnooweg', tag:'ACT' }
+    { type:'action', label:'Ben Crocker Zoom', sub:'Tue 1 PM · NanoSeal partnership', url:'sales-followups.html#crocker', tag:'ACT' },
+    { type:'action', label:'Ulnooweg IYE follow-up', sub:'Apr 22 · $25K funding app', url:'sales-followups.html#ulnooweg', tag:'ACT' }
   ];
 
   const STYLES = `
@@ -79,7 +79,7 @@
         <input id="rs-input" type="text" placeholder="Search customers, jobs, tools, or type a sector name..." autocomplete="off"/>
         <div id="rs-results"></div>
         <div class="rs-hint">
-          <span><kbd>\u2191</kbd><kbd>\u2193</kbd> navigate \u00B7 <kbd>Enter</kbd> open \u00B7 <kbd>Esc</kbd> close</span>
+          <span><kbd>\u2191</kbd><kbd>\u2193</kbd> navigate · <kbd>Enter</kbd> open · <kbd>Esc</kbd> close</span>
           <span>Press <kbd>/</kbd> anywhere to open</span>
         </div>
       </div>`;

@@ -385,8 +385,8 @@
       <div class="ry-head">
         <div class="ry-avatar"></div>
         <div class="ry-who">
-          <div class="n">RYUJIN <span style="opacity:0.5;font-size:0.8em">\u00B7 SENTINEL</span></div>
-          <div class="s"><span class="dot"></span>ACTIVE \u00B7 <span id="ry-sector-label"></span></div>
+          <div class="n">RYUJIN <span style="opacity:0.5;font-size:0.8em">· SENTINEL</span></div>
+          <div class="s"><span class="dot"></span>ACTIVE · <span id="ry-sector-label"></span></div>
         </div>
       </div>
       <div class="ry-msgs" id="ry-msgs"></div>
@@ -620,7 +620,7 @@
         await wait(700);
         const sys = document.createElement('div');
         sys.className = 'ry-bubble sys';
-        sys.textContent = '\u25CA Priority pulse \u00B7 ' + data.greeting;
+        sys.textContent = '\u25CA Priority pulse · ' + data.greeting;
         msgsEl.appendChild(sys);
         msgsEl.scrollTop = msgsEl.scrollHeight;
       }
