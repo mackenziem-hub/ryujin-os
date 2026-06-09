@@ -8,6 +8,7 @@
 
 import { put, list } from '@vercel/blob';
 import { supabaseAdmin } from '../lib/supabase.js';
+import { computeMetrics } from '../lib/metricsContract.js';
 import { resolveSession } from '../lib/portalAuth.js';
 import { requireCronOrOwner } from '../lib/cronAuth.js';
 import { snapshotHeaders } from '../lib/snapshotClient.js';
@@ -225,6 +226,19 @@ async function saveSnapshot(data) {
   return blob;
 }
 
+// Canonical cross-page KPIs (metrics contract v1). Fully rebuilt each
+// snapshot, so no preserveKeys entry needed. Same compute as /api/metrics.
+async function nativeMetrics() {
+  try {
+    const { data: tenant } = await supabaseAdmin.from('tenants').select('id').eq('slug', 'plus-ultra').maybeSingle();
+    if (!tenant) return null;
+    return await computeMetrics(supabaseAdmin, tenant.id);
+  } catch (e) {
+    console.warn('[snapshot] nativeMetrics failed:', e.message);
+    return null;
+  }
+}
+
 // Build a fresh snapshot by pulling all APIs
 async function buildFreshSnapshot() {
   const snapshot = { updated_at: new Date().toISOString(), sections: {} };
@@ -245,13 +259,16 @@ async function buildFreshSnapshot() {
     // Native estimates (Supabase) so the cockpit can surface instant-estimator
     // quotes that the legacy Estimator OS feed (sections.revenue) never sees.
     nativeProposalStats(),
+    // Canonical KPIs (metrics contract v1) — pages migrate to this section.
+    nativeMetrics(),
   ]);
 
-  const [stats, ghl, pipeline, conversations, tickets, ghlTasks, ghlContacts, nativeProposals] = fetches.map(f =>
+  const [stats, ghl, pipeline, conversations, tickets, ghlTasks, ghlContacts, nativeProposals, metrics] = fetches.map(f =>
     f.status === 'fulfilled' ? f.value : null
   );
 
   if (nativeProposals) snapshot.sections.nativeProposals = nativeProposals;
+  if (metrics) snapshot.sections.metrics = metrics;
 
   // Pipeline & Revenue
   if (stats?.results) {
@@ -591,6 +608,10 @@ async function buildFreshSnapshot() {
     // Quest scanner (migration 080) - daily cron writes sections.questscan
     // with created/expired/byRule counts. Preserve so the hourly rebuild keeps it.
     'questscan',
+    // Metrics contract v1 - rebuilt fresh each cycle by nativeMetrics(); this
+    // entry only matters when that compute fails (returns null), where it
+    // carries the last good section forward instead of dropping it for an hour.
+    'metrics',
     // Reconciliation agent (migration 082) - daily cron writes sections.reconcile
     // with the committed-revenue figures + open finding count. Same wipe risk.
     'reconcile'

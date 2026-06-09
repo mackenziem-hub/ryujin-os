@@ -1,4 +1,4 @@
--- Migration 094: enforce per-tenant uniqueness on estimates.estimate_number
+-- Migration 095: enforce per-tenant uniqueness on estimates.estimate_number
 -- Applied to prod 2026-06-09 via Management API (with the data fix below).
 --
 -- Root cause: estimate_number is a plain serial with no unique constraint
