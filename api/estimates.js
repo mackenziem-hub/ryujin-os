@@ -249,7 +249,7 @@ async function handler(req, res) {
 
     // Generate share token. share_token is UNIQUE in the schema, so a
     // number-based token can collide if a row already holds it (e.g. imported
-    // rows that squatted a number before migration_094). Check the update
+    // rows that squatted a number before migration_095). Check the update
     // result and fall back to an id-based token instead of silently leaving
     // the estimate without a share link while reporting one to the caller.
     let shareToken = `${req.tenant.slug}-${data.estimate_number || data.id.slice(0, 8)}`;
