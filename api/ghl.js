@@ -1,4 +1,5 @@
 import { resolveSession, isPrivileged } from '../lib/portalAuth.js';
+import { ghlDateToIso } from '../lib/ghl.js';
 
 const GHL_BASE = 'https://services.leadconnectorhq.com';
 const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
@@ -883,7 +884,7 @@ export default async function handler(req, res) {
         contactId: c.contactId,
         contactName: c.fullName || c.contactName,
         lastMessage: c.lastMessageBody,
-        lastMessageAt: c.lastMessageDate,
+        lastMessageAt: ghlDateToIso(c.lastMessageDate),
         type: c.lastMessageType,
         unread: c.unreadCount || 0
       }));
