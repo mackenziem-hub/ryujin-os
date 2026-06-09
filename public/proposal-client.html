@@ -1846,10 +1846,12 @@ body:not(.envelope-active) #envelopeSection{display:none !important}
       </aside>
     </div>
 
-    <!-- Confidence statement: value made visible, no hedging -->
-    <div style="margin-top:36px;background:#fff;border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:14px;box-shadow:var(--shadow);padding:24px 26px">
-      <div style="font-family:'Montserrat',sans-serif;font-weight:800;color:var(--ink);font-size:1.15rem;margin-bottom:8px">Why we are rarely the lowest bid.</div>
-      <p style="color:var(--ink-body);font-size:0.98rem;line-height:1.6;margin:0">On a steep 14/12 with two chimneys, the lowest bid is usually the one cutting the flashing, the underlayment, or the safety setup. Every line in your scope is included, in writing, at the price shown. No surprise change orders, no corners.</p>
+    <!-- Confidence statement: value made visible, no hedging. Default copy is
+         generic; per-estimate copy comes from envelope.confidence_title /
+         confidence_note (set confidence_note:false to hide the block). -->
+    <div id="envConfidenceBlock" style="margin-top:36px;background:#fff;border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:14px;box-shadow:var(--shadow);padding:24px 26px">
+      <div id="envConfidenceTitle" style="font-family:'Montserrat',sans-serif;font-weight:800;color:var(--ink);font-size:1.15rem;margin-bottom:8px">Why we are rarely the lowest bid.</div>
+      <p id="envConfidenceBody" style="color:var(--ink-body);font-size:0.98rem;line-height:1.6;margin:0">On a roof like this, the lowest bid is usually the one cutting the flashing, the underlayment, or the safety setup. Every line in your scope is included, in writing, at the price shown. No surprise change orders, no corners.</p>
     </div>
 
     <!-- Expandable detail sections: pricing / colours / inspection -->
@@ -3659,7 +3661,11 @@ function envRenderRoofPrep() {
     `;
   }).join('');
   if (!tiles.trim()) {
-    wrap.innerHTML = `<div class="env-prep-note" style="padding:14px 16px;border:1px dashed rgba(232,237,245,0.22);border-radius:10px;color:rgba(232,237,245,0.78);font-size:0.9rem;line-height:1.5">Installed straight over your existing roof on a strapped batten system. No tear-off, no redeck, no landfill bin — included in your price.</div>`;
+    // Per-estimate override via envelope.prep_notes[system]; the default
+    // describes the overlay road and is wrong for full-replacement metal.
+    const prepNote = (env.prep_notes && env.prep_notes[sys])
+      || 'Installed straight over your existing roof on a strapped batten system. No tear-off, no redeck, no landfill bin, included in your price.';
+    wrap.innerHTML = `<div class="env-prep-note" style="padding:14px 16px;border:1px dashed rgba(232,237,245,0.22);border-radius:10px;color:rgba(232,237,245,0.78);font-size:0.9rem;line-height:1.5">${escapeHtml(prepNote)}</div>`;
   } else {
     wrap.innerHTML = tiles;
   }
@@ -3922,6 +3928,9 @@ function envRenderSummary(result) {
   const statusEl = document.getElementById('envCashStatus');
   const cd = result.cashDiscount;
   if (meterEl && fillEl && statusEl) {
+    // No discount program at all (cash_discount_tiers: []) — hide the meter
+    // instead of showing the static threshold copy.
+    meterEl.style.display = cd ? '' : 'none';
     if (cd && cd.applies) {
       meterEl.classList.add('unlocked');
       fillEl.style.width = '100%';
@@ -4099,6 +4108,17 @@ function envInit() {
   envelopeState.trim = { gutters: false, soffit: false, fascia: false };
   // Seed roof prep from this system's defaults (asphalt recommends redeck ON).
   envelopeState.roofPrep = envDefaultPrep(env, envelopeState.system);
+
+  // Confidence block: per-estimate copy, or hide entirely with confidence_note:false.
+  const confBlock = document.getElementById('envConfidenceBlock');
+  if (confBlock) {
+    if (env.confidence_note === false) {
+      confBlock.style.display = 'none';
+    } else {
+      if (typeof env.confidence_title === 'string') document.getElementById('envConfidenceTitle').textContent = env.confidence_title;
+      if (typeof env.confidence_note === 'string') document.getElementById('envConfidenceBody').textContent = env.confidence_note;
+    }
+  }
 
   // PDF mode: if ?envelope=<base64> is on the URL, decode the customer's
   // selections so the PDF renders frozen at exactly what they configured.
