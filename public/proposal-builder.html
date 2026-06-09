@@ -646,7 +646,6 @@ body::before{
     menu.style.cssText = `position:fixed;top:${rect.bottom+4}px;left:${rect.right-180}px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:6px;z-index:50;min-width:180px;box-shadow:0 8px 24px rgba(0,0,0,0.4)`;
     const items = [
       { label: 'Annotate (mark up)', action: 'annotate', note: 'Estimate photos cannot be annotated yet' },
-      { label: 'Generate mockup (AI)', action: 'mockup', note: 'Coming soon' },
       { label: 'Delete', action: 'delete', danger: true },
     ];
     items.forEach(it => {
@@ -670,79 +669,9 @@ body::before{
     }, 10);
   }
 
-  // AI render picker: pick a roof material and re-roof the selected home photo
-  // via /api/generate-render (Higgsfield img2img). Saves the result as a new
-  // estimate photo. Needs HIGGSFIELD_API_KEY configured server-side.
-  function openRenderPicker(photoId){
-    const photo = (_inspPhotosCache || []).find(p => p.id === photoId);
-    if (!photo) { toast('Photo not found', 'err'); return; }
-    document.querySelectorAll('.render-backdrop').forEach(n => n.remove());
-    const TYPES = [
-      { v: 'shingle', l: 'Asphalt shingle' },
-      { v: 'community_barn', l: 'Community Barn metal' },
-      { v: 'metal', l: 'Standard metal' },
-      { v: 'euro_clay', l: 'European clay imitation' },
-      { v: 'standing_seam', l: 'Standing seam (premium)' },
-    ];
-    const back = document.createElement('div');
-    back.className = 'render-backdrop';
-    back.style.cssText = 'position:fixed;inset:0;z-index:200;background:rgba(5,8,16,0.9);display:flex;align-items:center;justify-content:center;padding:18px';
-    back.innerHTML = `
-      <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;max-width:460px;width:100%;padding:20px">
-        <div style="font-family:'Montserrat',sans-serif;font-weight:700;color:var(--text);margin-bottom:6px">Generate roof render</div>
-        <div style="font-size:0.82em;color:var(--text-dim);margin-bottom:14px">Re-roof this photo in a new material. Takes up to a minute.</div>
-        <div style="display:flex;flex-direction:column;gap:8px" id="renderTypes"></div>
-        <div id="renderStatus" style="font-size:0.82em;color:var(--text-dim);margin-top:12px;min-height:18px"></div>
-        <div style="text-align:right;margin-top:12px"><button type="button" id="renderClose" style="font-size:0.82em;padding:7px 14px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text-dim);cursor:pointer">Close</button></div>
-      </div>`;
-    document.body.appendChild(back);
-    const status = back.querySelector('#renderStatus');
-    const typesWrap = back.querySelector('#renderTypes');
-    back.querySelector('#renderClose').addEventListener('click', () => back.remove());
-    let busy = false;
-    TYPES.forEach(t => {
-      const b = document.createElement('button');
-      b.type = 'button'; b.textContent = t.l;
-      b.style.cssText = 'text-align:left;padding:11px 14px;border-radius:9px;border:1px solid var(--border);background:rgba(255,255,255,0.03);color:var(--text);font-size:0.9em;cursor:pointer;font-family:inherit';
-      b.addEventListener('click', async () => {
-        if (busy) return; busy = true;
-        typesWrap.querySelectorAll('button').forEach(x => x.disabled = true);
-        status.textContent = `Rendering ${t.l}... (up to about a minute)`;
-        try {
-          let r = await fetch('/api/generate-render', {
-            method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({ estimate_id: estimateId, roof_type: t.v, base_image_url: photo.url }),
-          });
-          let j = await r.json().catch(() => ({}));
-          let tries = 0;
-          while (r.status === 202 && j.job_id && tries < 6) {
-            tries++;
-            status.textContent = `Still rendering ${t.l}... (${tries})`;
-            await new Promise(res => setTimeout(res, 7000));
-            r = await fetch(`/api/generate-render?estimate_id=${encodeURIComponent(estimateId)}&job_id=${encodeURIComponent(j.job_id)}&roof_type=${encodeURIComponent(t.v)}`, { headers: authHeaders() });
-            j = await r.json().catch(() => ({}));
-          }
-          if (r.status === 501) { status.textContent = j.error || 'Not configured yet.'; busy = false; typesWrap.querySelectorAll('button').forEach(x => x.disabled = false); return; }
-          if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
-          toast('Render added', 'ok');
-          back.remove();
-          loadInspectionPhotos();
-        } catch (e) {
-          status.textContent = 'Failed: ' + e.message;
-          busy = false; typesWrap.querySelectorAll('button').forEach(x => x.disabled = false);
-        }
-      });
-      typesWrap.appendChild(b);
-    });
-  }
-
   async function handleInspectionAction(action, photoId){
     if (action === 'annotate') {
       openAnnotator(photoId);
-      return;
-    }
-    if (action === 'mockup') {
-      openRenderPicker(photoId);
       return;
     }
     if (action === 'delete') {
