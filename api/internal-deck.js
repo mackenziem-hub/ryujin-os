@@ -33,6 +33,11 @@ import { supabaseAdmin } from '../lib/supabase.js';
 // + the metadata the catalog's gated list returns. The HTML body itself lives in
 // api/_decks/deck-<slug>.html.
 const DECKS = {
+  'diego-account': {
+    tenant: 'plus-ultra', tag: 'Operations', slides: 5,
+    title: 'Diego\'s Account · What It Can and Cannot Do',
+    desc: 'Field-crew access on Ryujin: how he logs in, what he can see (workorders, tasks, calendar, materials) and what he cannot (paysheets, pricing, admin).',
+  },
   'jun9-comms': {
     tenant: 'plus-ultra', tag: 'Operations', slides: 6,
     title: 'Tue June 9 · Two Jobs · The Comms Package',
