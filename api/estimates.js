@@ -247,14 +247,24 @@ async function handler(req, res) {
 
     if (error) return res.status(500).json({ error: error.message });
 
-    // Generate share token
-    const shareToken = `${req.tenant.slug}-${data.estimate_number || data.id.slice(0, 8)}`;
-    await supabaseAdmin
+    // Generate share token. share_token is UNIQUE in the schema, so a
+    // number-based token can collide if a row already holds it (e.g. imported
+    // rows that squatted a number before migration_094). Check the update
+    // result and fall back to an id-based token instead of silently leaving
+    // the estimate without a share link while reporting one to the caller.
+    let shareToken = `${req.tenant.slug}-${data.estimate_number || data.id.slice(0, 8)}`;
+    let { error: tokenErr } = await supabaseAdmin
       .from('estimates')
       .update({ share_token: shareToken })
       .eq('id', data.id);
-
-    data.share_token = shareToken;
+    if (tokenErr) {
+      shareToken = `${req.tenant.slug}-${data.id.slice(0, 8)}`;
+      ({ error: tokenErr } = await supabaseAdmin
+        .from('estimates')
+        .update({ share_token: shareToken })
+        .eq('id', data.id));
+    }
+    data.share_token = tokenErr ? null : shareToken;
 
     // Log activity
     await supabaseAdmin.from('activity_log').insert({
