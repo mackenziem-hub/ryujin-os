@@ -13,6 +13,7 @@
 import { gmailSearch, gmailReadMessage } from '../../lib/google.js';
 import { supabaseAdmin } from '../../lib/supabase.js';
 import { requireCronOrOwner } from '../../lib/cronAuth.js';
+import { snapshotHeaders } from '../../lib/snapshotClient.js';
 
 const ESTIMATOR_BASE = 'https://estimator-os.replit.app/api';
 const ESTIMATOR_KEY = (process.env.ESTIMATOR_KEY || process.env.ESTIMATOR_OS_KEY || 'pu-estimator-2026').trim();
