@@ -612,6 +612,9 @@ export default async function handler(req, res) {
     // roof/siding selection, trim toggles, package-name morph, savings
     // ticker, cash-discount meter) instead of (or alongside) flat tier cards.
     envelope: est.custom_prices?._envelope || null,
+    // Commercial GC bid block (custom_prices._gc_bid). When present the
+    // proposal-client redirects to commercial-bid.html, which renders it.
+    gcBid: est.custom_prices?._gc_bid || null,
     // Optional per-estimate rejuvenation alternative-path callout. Renders as
     // a single card between scope and reviews when present. Strict schema:
     // { kicker?, title?, subtitle?, headline, badge?, price, description,
