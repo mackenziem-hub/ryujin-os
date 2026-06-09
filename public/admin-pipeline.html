@@ -73,12 +73,34 @@
   .empty .big { font-size: 32px; color: var(--accent); margin-bottom: 8px; }
   .err { color: var(--bad); padding: 16px; border: 1px solid rgba(239,68,68,0.3); border-radius: 8px; background: rgba(239,68,68,0.08); }
   .age { color: var(--fg-dim); font-size: 11px; }
+
+  /* KPI header (metrics contract v1) */
+  .kpis { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+  .kpi {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 16px; min-width: 220px; flex: 1;
+  }
+  .kpi .kpi-value { font-size: 22px; font-weight: 700; color: var(--accent); }
+  .kpi .kpi-label { color: var(--fg-dim); font-size: 12px; margin-top: 2px; }
+  .kpi .kpi-count { color: var(--fg-dim); font-size: 11px; margin-top: 4px; }
+  .kpi-status { color: var(--fg-dim); font-size: 12px; padding: 6px 0; }
+  .kpi-status.err-text { color: var(--bad); }
+  .kpi-status button, .state-block .retry {
+    background: transparent; color: var(--accent); border: 1px solid var(--accent);
+    padding: 4px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;
+    font-family: inherit; margin-left: 8px;
+  }
+  .state-block { text-align: center; color: var(--fg-dim); padding: 40px 16px; }
+  .state-block .err-msg { color: var(--bad); margin: 10px 0; }
+  .state-block .retry { margin: 6px 0 0; }
 </style>
 </head>
 <body>
 
 <h1>Pipeline Suggestions</h1>
 <div class="sub">Production agent's stage proposals. Confirm or correct before they apply to job folders. Nothing here auto-updates.</div>
+
+<div class="kpis" id="kpis" aria-live="polite"><div class="kpi-status">Loading pipeline KPIs...</div></div>
 
 <div class="toolbar">
   <button data-filter="pending" class="active">Pending</button>
@@ -96,6 +118,70 @@
 <script>
 const STAGES = ['unknown','prospect','proposal_sent','accepted','scheduled','in_progress','completed','paid','lost','cold'];
 let currentFilter = 'pending';
+
+// Stage id -> human label. Unknown ids (e.g. a raw GHL stage UUID that never
+// got mapped) must NEVER render bare: fall back to 'Unmapped stage' + first 8 chars.
+const STAGE_LABELS = {
+  unknown: 'Unknown', prospect: 'Prospect', proposal_sent: 'Proposal sent',
+  accepted: 'Accepted', scheduled: 'Scheduled', in_progress: 'In progress',
+  completed: 'Completed', paid: 'Paid', lost: 'Lost', cold: 'Cold',
+};
+function stageLabel(id) {
+  if (!id) return STAGE_LABELS.unknown;
+  if (STAGE_LABELS[id]) return STAGE_LABELS[id];
+  return 'Unmapped stage (' + String(id).slice(0, 8) + ')';
+}
+function stageClass(id) {
+  return STAGES.indexOf(id) !== -1 ? id : 'unknown';
+}
+
+const FETCH_TIMEOUT_MS = 10000;
+async function fetchWithTimeout(url, opts) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, Object.assign({}, opts, { signal: ctrl.signal }));
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+function fmtMoney(v) {
+  if (typeof v !== 'number' || !isFinite(v)) return '?';
+  return '$' + Math.round(v).toLocaleString('en-CA');
+}
+
+// KPI header: metrics contract v1 (/api/metrics live, sections.metrics in the
+// snapshot). IRON RULE: render metric.value and metric.label verbatim, no
+// page-side math, no hardcoded labels.
+async function loadKpis() {
+  const box = document.getElementById('kpis');
+  box.innerHTML = '<div class="kpi-status">Loading pipeline KPIs...</div>';
+  try {
+    const r = await fetchWithTimeout('/api/metrics', { credentials: 'include', headers: authHeaders() });
+    if (!r.ok) {
+      box.innerHTML = '<div class="kpi-status err-text">Pipeline KPIs unavailable (HTTP ' + r.status + '). The suggestions board below still works.<button onclick="loadKpis()">Retry</button></div>';
+      return;
+    }
+    const m = await r.json();
+    const pipe = (m && m.pipeline) || (m && m.sections && m.sections.metrics && m.sections.metrics.pipeline) || null;
+    if (!pipe || (!pipe.proposalsOut && !pipe.signedBacklog)) {
+      box.innerHTML = '<div class="kpi-status">No pipeline KPIs shipped yet.</div>';
+      return;
+    }
+    box.innerHTML = ['proposalsOut', 'signedBacklog'].map(key => {
+      const metric = pipe[key];
+      if (!metric) return '';
+      const count = (typeof metric.count === 'number')
+        ? '<div class="kpi-count">count: ' + metric.count + '</div>' : '';
+      return '<div class="kpi"><div class="kpi-value">' + fmtMoney(metric.value) + '</div>'
+        + '<div class="kpi-label">' + esc(metric.label || key) + '</div>' + count + '</div>';
+    }).join('');
+  } catch (e) {
+    const msg = (e && e.name === 'AbortError') ? 'timed out after 10s' : esc(e && e.message || 'network error');
+    box.innerHTML = '<div class="kpi-status err-text">Pipeline KPIs unavailable: ' + msg + '.<button onclick="loadKpis()">Retry</button></div>';
+  }
+}
 
 // Auth: portal session lives in localStorage.ryujin_token; mirror the pattern
 // used by command-center.html and the other portal pages so deep-links from
@@ -117,25 +203,40 @@ function ago(iso) {
   const d = Math.floor(h / 24); return d + 'd ago';
 }
 
+const STATE_ART_STYLE = 'mix-blend-mode:screen;max-width:180px;opacity:.8';
+function errorBlock(msg) {
+  return '<div class="state-block">'
+    + '<img src="/assets/state-art/error.svg" alt="" style="' + STATE_ART_STYLE + '" onerror="this.style.display=\'none\'">'
+    + '<div class="err-msg">' + msg + '</div>'
+    + '<button class="retry" onclick="load()">Retry</button></div>';
+}
+
+let loadSeq = 0;
 async function load() {
+  const seq = ++loadSeq;
   const list = document.getElementById('list');
   const counter = document.getElementById('counter');
-  list.textContent = '';
+  list.innerHTML = '<div class="state-block">Loading ' + esc(currentFilter) + ' suggestions...</div>';
   counter.textContent = 'loading…';
   try {
-    const r = await fetch('/api/pipeline-suggestions?status=' + currentFilter, { credentials: 'include', headers: authHeaders() });
+    const r = await fetchWithTimeout('/api/pipeline-suggestions?status=' + currentFilter, { credentials: 'include', headers: authHeaders() });
+    if (seq !== loadSeq) return; // a newer filter click superseded this load
     if (!r.ok) {
-      list.innerHTML = '<div class="err">' + r.status + ' ' + r.statusText + ' -- ' + (await r.text()).slice(0, 200) + '</div>';
+      list.innerHTML = errorBlock('Could not load suggestions: HTTP ' + r.status + ' ' + esc(r.statusText) + '. ' + esc((await r.text()).slice(0, 200)));
       counter.textContent = '';
       return;
     }
     const data = await r.json();
+    if (seq !== loadSeq) return;
     const items = data.suggestions || [];
     counter.textContent = items.length + ' ' + currentFilter;
     if (!items.length) {
-      list.innerHTML = '<div class="empty"><div class="big">' + (currentFilter === 'pending' ? '✓' : '·') + '</div>nothing ' + currentFilter + '</div>';
+      list.innerHTML = '<div class="state-block">'
+        + '<img src="/assets/state-art/empty.svg" alt="" style="' + STATE_ART_STYLE + '" onerror="this.style.display=\'none\'">'
+        + '<div>Nothing ' + esc(currentFilter) + (currentFilter === 'pending' ? '. All caught up.' : '.') + '</div></div>';
       return;
     }
+    list.textContent = '';
     items.forEach(s => list.appendChild(card(s)));
     // Honour #suggestion-<id> deep-link from the Workspace Drawer.
     if (location.hash && location.hash.indexOf('#suggestion-') === 0) {
@@ -148,7 +249,12 @@ async function load() {
       }
     }
   } catch (e) {
-    list.innerHTML = '<div class="err">' + e.message + '</div>';
+    if (seq !== loadSeq) return;
+    counter.textContent = '';
+    const msg = (e && e.name === 'AbortError')
+      ? 'Loading suggestions timed out after 10 seconds. The API may be slow, try again in a moment.'
+      : 'Could not load suggestions: ' + esc(e && e.message || 'network error');
+    list.innerHTML = errorBlock(msg);
   }
 }
 
@@ -169,9 +275,9 @@ function card(s) {
       ${jf.customer_name ? `<div class="cust">${esc(jf.customer_name)}</div>` : ''}
     </div>
     <div>
-      <span class="stage prev ${s.previous_stage || 'unknown'}">${s.previous_stage || 'unknown'}</span>
+      <span class="stage prev ${stageClass(s.previous_stage)}">${esc(stageLabel(s.previous_stage))}</span>
       <span class="arrow">→</span>
-      <span class="stage ${s.suggested_stage}">${s.suggested_stage}</span>
+      <span class="stage ${stageClass(s.suggested_stage)}">${esc(stageLabel(s.suggested_stage))}</span>
     </div>
   `;
   wrap.appendChild(head);
@@ -207,7 +313,7 @@ function card(s) {
     const correctWrap = document.createElement('div'); correctWrap.className = 'correct'; correctWrap.style.display = 'flex'; correctWrap.style.gap = '4px';
     const sel = document.createElement('select');
     STAGES.forEach(st => {
-      const o = document.createElement('option'); o.value = st; o.textContent = st;
+      const o = document.createElement('option'); o.value = st; o.textContent = stageLabel(st);
       if (st === s.suggested_stage) o.selected = true;
       sel.appendChild(o);
     });
@@ -228,7 +334,7 @@ function card(s) {
   } else {
     const meta = document.createElement('div');
     meta.className = 'age';
-    meta.textContent = `${s.status}${s.confirmed_stage ? ` as "${s.confirmed_stage}"` : ''} · resolved ${s.resolved_at ? ago(s.resolved_at) : '?'}`;
+    meta.textContent = `${s.status}${s.confirmed_stage ? ` as "${stageLabel(s.confirmed_stage)}"` : ''} · resolved ${s.resolved_at ? ago(s.resolved_at) : '?'}`;
     wrap.appendChild(meta);
   }
 
@@ -302,6 +408,7 @@ document.getElementById('btnAutoAccept').addEventListener('click', async () => {
   }
 });
 
+loadKpis();
 load();
 </script>
 </body>

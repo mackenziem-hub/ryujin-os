@@ -84,9 +84,14 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg-deep);color:va
 .kpi-value.red{background:linear-gradient(135deg,#fff 20%,var(--red));-webkit-background-clip:text;-webkit-text-fill-color:transparent;
   filter:drop-shadow(0 0 10px rgba(248,113,113,0.2))}
 .kpi-meta{display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:0.68em}
-.kpi-sub{color:var(--text-muted)}
+.kpi-sub{color:var(--text-muted);line-height:1.3}
 .kpi-trend{font-family:'Share Tech Mono',monospace;color:var(--text-dim);letter-spacing:0.5px}
 .kpi-trend.up{color:var(--green)}.kpi-trend.down{color:var(--red)}
+/* KPI rail async states: loading pulse, error border (thin tiles, text-only states) */
+.kpi-rail.loading .kpi{opacity:0.55}
+.kpi-rail.loading .kpi-value{animation:kpiPulse 1.2s ease-in-out infinite}
+@keyframes kpiPulse{0%,100%{opacity:1}50%{opacity:0.35}}
+.kpi-rail.error .kpi{border-color:rgba(248,113,113,0.4)}
 
 /* ─── Body columns (row 3) ─── */
 .col{background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);
@@ -220,7 +225,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg-deep);color:va
       <span>PIPELINE</span>
     </a>
     <div class="tb-status" style="font-size:0.66em">SNAP <span id="ts" style="color:var(--cyan)">—</span></div>
-    <div class="tb-status" style="font-size:0.66em" title="Morning briefing cron (Signed MTD, Pipeline KPI)">KPI <span id="kpiAge" style="color:var(--cyan)">—</span></div>
+    <div class="tb-status" style="font-size:0.66em" title="Metrics contract v1 (Signed + Pipeline KPIs)">KPI <span id="kpiAge" style="color:var(--cyan)">—</span></div>
     <div class="tb-status" style="font-size:0.66em" title="Daily agents cron (Triage counts, Awaiting Reply, Stale Leads, Conversations)">AGENTS <span id="agentsAge" style="color:var(--cyan)">—</span></div>
     <button class="tb-icon" title="Refresh" onclick="loadAll()">
       <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
@@ -233,9 +238,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg-deep);color:va
   <!-- KPI RAIL -->
   <div class="kpi-rail">
     <div class="kpi">
-      <div class="kpi-label">Signed MTD</div>
+      <div class="kpi-label">Signed</div>
       <div class="kpi-value green" id="k-signed">—</div>
-      <div class="kpi-meta"><span class="kpi-sub" id="k-signed-sub">this month</span><span class="kpi-trend" id="k-signed-trend"></span></div>
+      <div class="kpi-meta"><span class="kpi-sub" id="k-signed-sub">loading</span><span class="kpi-trend" id="k-signed-trend"></span></div>
+      <div class="kpi-meta"><span class="kpi-sub" id="k-signed-ytd"></span></div>
     </div>
     <div class="kpi">
       <div class="kpi-label">Close Rate</div>
@@ -245,7 +251,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg-deep);color:va
     <div class="kpi">
       <div class="kpi-label">Pipeline</div>
       <div class="kpi-value" id="k-pipeline">—</div>
-      <div class="kpi-meta"><span class="kpi-sub" id="k-pipeline-sub">deals open</span><span class="kpi-trend" id="k-pipeline-trend"></span></div>
+      <div class="kpi-meta"><span class="kpi-sub" id="k-pipeline-sub">loading</span><span class="kpi-trend" id="k-pipeline-trend"></span></div>
+      <div class="kpi-meta"><span class="kpi-sub" id="k-pipeline-backlog"></span></div>
     </div>
     <div class="kpi">
       <div class="kpi-label">Awaiting Reply</div>
@@ -654,26 +661,37 @@ function renderStrip(snap){
 // ── KPI rail ──
 function renderKPIs(snap){
   const s = snap.sections || {};
-  const brief = s.briefing_morning?.kpiScouter || {};
   const vegeta = s.agentReports?.daily?.vegeta || {};
   const krillin = s.agentReports?.daily?.krillin || {};
+  const metrics = s.metrics || {};
 
-  // ---- Signed MTD ----
-  setText('k-signed', brief.signedRevenue != null ? fmtK(brief.signedRevenue) : '—');
-  setText('k-signed-sub', brief.signedRevenue != null ? 'this month' : 'no briefing');
+  // ---- Signed (metrics contract v1) ----
+  // IRON RULE: render metric.value and metric.label verbatim, no page-side math,
+  // no hardcoded window labels (the old 'this month' sub-label was wrong, the
+  // legacy briefing number was not MTD). MTD is the headline, YTD is the sub-line.
+  const signedMtd = metrics.signed?.mtd;
+  const signedYtd = metrics.signed?.ytd;
+  setText('k-signed', signedMtd?.value != null ? fmtK(signedMtd.value) : '—');
+  setText('k-signed-sub', signedMtd?.label || 'no metrics yet');
+  const ytdEl = $('k-signed-ytd');
+  if (ytdEl) ytdEl.textContent = (signedYtd?.value != null && signedYtd.label)
+    ? fmtK(signedYtd.value) + ' · ' + signedYtd.label : '';
 
   // ---- Close rate ----
   const closeRate = krillin.leadFlow?.conversionRate;
   setText('k-close', closeRate != null ? closeRate.toFixed(1) + '%' : '—');
   setText('k-close-sub', closeRate != null ? 'lead → signed' : 'no agent run');
 
-  // ---- Pipeline ----
-  // Only render dollar value if BOTH openDeals and totalValue exist on briefing_morning.
-  // Otherwise show "—" rather than $0 (which would falsely imply zero pipeline).
-  const pipeVal = s.briefing_morning?.pipeline?.totalValue;
-  const openDeals = brief.openDeals;
-  setText('k-pipeline', pipeVal != null ? fmtK(pipeVal) : '—');
-  setText('k-pipeline-sub', openDeals != null ? (openDeals + ' deals open') : 'no briefing');
+  // ---- Pipeline (metrics contract v1) ----
+  // proposalsOut is the headline; signedBacklog rides as a sub-line with its
+  // shipped label. Both rendered verbatim, '—' (never $0) when metrics absent.
+  const proposalsOut = metrics.pipeline?.proposalsOut;
+  setText('k-pipeline', proposalsOut?.value != null ? fmtK(proposalsOut.value) : '—');
+  setText('k-pipeline-sub', proposalsOut?.label || 'no metrics yet');
+  const backlog = metrics.pipeline?.signedBacklog;
+  const backlogEl = $('k-pipeline-backlog');
+  if (backlogEl) backlogEl.textContent = (backlog?.value != null && backlog.label)
+    ? fmtK(backlog.value) + ' · ' + backlog.label : '';
 
   // ---- Awaiting Reply ----
   const awaitCount = krillin.stats?.awaitingReplyCount;
@@ -683,20 +701,42 @@ function renderKPIs(snap){
   else setText('k-reply-sub', 'all under 4h');
 
   if (snap.updated_at) setText('ts', new Date(snap.updated_at).toLocaleTimeString());
-  // Two cron-frozen sources to surface separately:
-  //   - briefing_morning.timestamp drives Signed MTD + Pipeline KPI (7am + 5pm AT crons)
+  // Two freshness sources to surface separately:
+  //   - metrics.asOf drives the Signed + Pipeline KPIs (metrics contract v1)
   //   - agentReports.daily.lastRun drives Awaiting Reply, Stale Leads, Triage, Conversations (7am AT cron)
-  setAgeChip('kpiAge', s.briefing_morning?.timestamp, 6);
+  setAgeChip('kpiAge', metrics.asOf, 6);
   setAgeChip('agentsAge', s.agentReports?.daily?.lastRun, 6);
 }
 
 // ── Loader ──
+// KPI rail async states: loading pulse on every fetch, 10s timeout, error state
+// with a human message. On a refresh failure after a prior good load, keep the
+// last-good numbers and only flag the rail (do not wipe data with error text).
+let snapLoadedOnce = false;
+const KPI_TILE_IDS = ['k-signed', 'k-close', 'k-pipeline', 'k-reply'];
+function setKpiRailState(state, msg){
+  const rail = document.querySelector('.kpi-rail');
+  if (!rail) return;
+  rail.classList.toggle('loading', state === 'loading');
+  rail.classList.toggle('error', state === 'error');
+  if (state === 'error' && !snapLoadedOnce) {
+    KPI_TILE_IDS.forEach(id => {
+      const v = $(id); if (v) v.textContent = '—';
+      const sub = $(id + '-sub'); if (sub) sub.textContent = msg || 'could not load';
+    });
+  }
+}
 async function loadAll(){
   if (location.protocol === 'file:') return;
+  setKpiRailState('loading');
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10000);
   try {
-    const res = await fetch('/api/snapshot', { cache: 'no-store', headers: { 'x-tenant-id': 'plus-ultra', 'Authorization': 'Bearer ' + (localStorage.getItem('ryujin_token') || '') } });
+    const res = await fetch('/api/snapshot', { cache: 'no-store', signal: ctrl.signal, headers: { 'x-tenant-id': 'plus-ultra', 'Authorization': 'Bearer ' + (localStorage.getItem('ryujin_token') || '') } });
     if (!res.ok) throw new Error('snapshot ' + res.status);
     const snap = await res.json();
+    snapLoadedOnce = true;
+    setKpiRailState('ready');
     renderKPIs(snap);
     renderTriage(snap);
     renderQueue(snap);
@@ -704,7 +744,11 @@ async function loadAll(){
     $('ghlStatus').textContent = 'GHL · SYNCED';
   } catch(e){
     console.warn('snapshot fail', e);
-    $('ghlStatus').textContent = 'OFFLINE';
+    const timedOut = e && e.name === 'AbortError';
+    setKpiRailState('error', timedOut ? 'timed out after 10s, retrying soon' : 'could not load, retrying soon');
+    $('ghlStatus').textContent = timedOut ? 'GHL · TIMEOUT' : 'OFFLINE';
+  } finally {
+    clearTimeout(timer);
   }
 }
 loadAll();

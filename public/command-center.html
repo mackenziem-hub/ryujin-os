@@ -560,6 +560,23 @@ body:active { cursor: grabbing; }
   pointer-events: none;
   image-rendering: high-quality;
 }
+/* Pre-hydration placeholder: shown until the panel's iframe gets a real src.
+   Native loading=lazy can't defer iframes inside a CSS3D transform container,
+   so panels boot cold and hydrate when the camera actually looks at them. */
+.panel-standby {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.7em;
+  letter-spacing: 2.5px;
+  color: rgba(34,211,238,0.4);
+  background: radial-gradient(ellipse at center, rgba(34,211,238,0.06), transparent 70%);
+  z-index: 2;
+  pointer-events: none;
+}
 /* Click shield so pointer events always hit the panel, never the iframe */
 .panel-click-shield {
   position: absolute;
@@ -2465,8 +2482,28 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS3DRenderer, CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
 
+// Self-embed guard: /command-center.html is a valid navigation target in the
+// page catalog, so a page running inside one of the orbital iframes can route
+// back here. Booting WebGL + 8 live iframes inside an iframe would recurse the
+// whole scene, so any embedded load gets a flat escape hatch and nothing else.
+const RY_EMBEDDED = (() => { try { return window.self !== window.top; } catch (e) { return true; } })();
+
 // 8-bit + agent modes never instantiate Three.js. Both render flat alternatives.
-if (window.__RY_8BIT__) {
+if (RY_EMBEDDED) {
+  const cssC = document.getElementById('css3d-container'); if (cssC) cssC.style.display = 'none';
+  const bgC = document.getElementById('bg-canvas'); if (bgC) bgC.style.display = 'none';
+  const orb = document.getElementById('sentinel-orb'); if (orb) orb.style.display = 'none';
+  const guard = document.createElement('div');
+  guard.id = 'embed-guard';
+  guard.style.cssText = 'position:fixed;inset:0;z-index:5000;display:flex;align-items:center;justify-content:center;background:#060a14';
+  guard.innerHTML = `
+    <div style="text-align:center;max-width:440px;padding:30px 34px;border:1px solid rgba(34,211,238,0.3);border-radius:14px;background:rgba(10,16,30,0.92);box-shadow:0 0 40px rgba(34,211,238,0.08)">
+      <div style="font-family:'Orbitron',monospace;font-size:0.9em;letter-spacing:3px;color:#22d3ee;margin-bottom:10px">COMMAND CENTER</div>
+      <div style="font-family:'Share Tech Mono',monospace;font-size:0.78em;line-height:1.7;color:rgba(200,220,255,0.6);margin-bottom:18px">The 3D hub does not run inside another page, it would embed itself recursively. Open it full screen instead.</div>
+      <a href="/command-center.html" target="_top" style="display:inline-block;font-family:'Orbitron',monospace;font-size:0.72em;letter-spacing:2px;padding:9px 18px;border-radius:9px;border:1px solid rgba(34,211,238,0.5);color:#22d3ee;text-decoration:none;background:rgba(34,211,238,0.08)">OPEN FULL SCREEN &rsaquo;</a>
+    </div>`;
+  document.body.appendChild(guard);
+} else if (window.__RY_8BIT__) {
   // 8-bit: hide WebGL/CSS3D layers, render a static 9-tile pillar grid.
   const cssC = document.getElementById('css3d-container'); if (cssC) cssC.style.display = 'none';
   const bgC = document.getElementById('bg-canvas'); if (bgC) bgC.style.display = 'none';
@@ -2829,7 +2866,8 @@ panels.forEach((p, i) => {
       ${p.badge}
     </div>
     <div class="panel-preview">
-      <iframe class="panel-frame" src="${p.url}" loading="lazy" scrolling="no" tabindex="-1"></iframe>
+      <iframe class="panel-frame" data-src="${p.url}" scrolling="no" tabindex="-1"></iframe>
+      <div class="panel-standby">STANDBY &middot; LOADS ON APPROACH</div>
       <div class="panel-click-shield"></div>
     </div>
   `;
@@ -2857,8 +2895,43 @@ panels.forEach((p, i) => {
   label.textContent = p.title;
   pillarLabelLayer.appendChild(label);
 
-  panelData.push({ angle, yOffset, element: el, label });
+  panelData.push({ angle, yOffset, element: el, label, hydrated: false });
 });
+
+// ──────────────────────────────────────────
+// LAZY PANEL HYDRATION
+// Native loading="lazy" cannot defer iframes inside a CSS3DRenderer transform
+// container (the browser treats them as in-viewport), and every embedded page
+// fires its own /api/snapshot fetch + poll on boot. So panels start with only
+// a data-src and get a real src the first time the camera actually looks at
+// them, or immediately on explicit focus / zoom / dive / gamepad select.
+// ──────────────────────────────────────────
+function hydratePanel(index) {
+  const pd = panelData[index];
+  if (!pd || pd.hydrated) return;
+  pd.hydrated = true;
+  const frame = pd.element.querySelector('.panel-frame');
+  if (frame && !frame.src) frame.src = frame.dataset.src;
+  const standby = pd.element.querySelector('.panel-standby');
+  if (standby) standby.remove();
+}
+
+const _lazyCamDir = new THREE.Vector3();
+const _lazyToPanel = new THREE.Vector3();
+let _lazyNextCheck = 0;
+// Checked at 2Hz from the render loop. dot > 0.92 is roughly a 23 degree cone
+// around the view center, so a panel hydrates as the camera swings onto it.
+function lazyHydrateVisible(elapsed) {
+  if (elapsed < _lazyNextCheck) return;
+  _lazyNextCheck = elapsed + 0.5;
+  if (document.hidden) return;
+  camera.getWorldDirection(_lazyCamDir);
+  for (let i = 0; i < panelData.length; i++) {
+    if (panelData[i].hydrated) continue;
+    _lazyToPanel.copy(panelObjects[i].position).sub(camera.position).normalize();
+    if (_lazyCamDir.dot(_lazyToPanel) > 0.92) hydratePanel(i);
+  }
+}
 
 // ──────────────────────────────────────────
 // CAMERA ANIMATION
@@ -2909,6 +2982,7 @@ function updateCameraAnimation(dt) {
 
 function zoomToPanel(index, onComplete) {
   if (isAnimating) return;
+  hydratePanel(index);
   const obj = panelObjects[index];
   const panelPos = obj.position.clone();
   const dir = panelPos.clone().normalize();
@@ -2931,6 +3005,7 @@ function zoomToPanel(index, onComplete) {
 // crossfades in over the tail of the dive, so the panel dissolves into the page.
 function flyAndEnter(index){
   if (isAnimating) return;
+  hydratePanel(index);
   const obj = panelObjects[index];
   const panelPos = obj.position.clone();
   const dir = panelPos.clone().normalize();
@@ -3243,6 +3318,7 @@ function gpHighlightPanel(index) {
 
 function gpOrbitToPanel(index) {
   if (isAnimating || focusedPanel !== null) return;
+  hydratePanel(index);
   gpSelectedIndex = index;
   gpHighlightPanel(index);
 
@@ -3451,6 +3527,9 @@ function animate() {
 
   // Position the holographic pillar labels in screen space
   updatePillarLabels();
+
+  // Hydrate panel iframes the camera is actually looking at (throttled inside)
+  lazyHydrateVisible(elapsed);
 
   // Animate background
   starMat.uniforms.uTime.value = elapsed;
