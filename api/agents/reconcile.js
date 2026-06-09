@@ -27,6 +27,7 @@ import { supabaseAdmin } from '../../lib/supabase.js';
 import { requireCronOrOwner } from '../../lib/cronAuth.js';
 import { reconcile } from '../../lib/reconcile.js';
 import { fetchWonOpportunities, crossCheckGhl } from '../../lib/ghlReconcile.js';
+import { snapshotHeaders } from '../../lib/snapshotClient.js';
 
 export const config = { maxDuration: 60 };
 
