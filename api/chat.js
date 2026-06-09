@@ -3117,13 +3117,19 @@ async function executeTool(name, input, attachments = [], conversationId = null)
         // 4. Fire-and-forget logging
         logOperation('create_ryujin_proposal', { customer: input.customer_name, address: input.customer_address, tier: selected, locked: !!input.lock, photos: photoLinks.length }, { estimate_id: est.id, share_token: est.share_token }, 'ok', null).catch(() => {});
 
-        const shareUrl = `${RYUJIN_BASE}/proposal-client.html?share=${est.share_token}`;
+        // share_token can be null if the token persist failed in /api/estimates.
+        // /api/proposal resolves ONLY by share_token, so never fabricate a link
+        // from anything else; return null + a warning instead of "?share=null".
+        const shareUrl = est.share_token
+          ? `${RYUJIN_BASE}/proposal-client.html?share=${est.share_token}`
+          : null;
         const adminUrl = `${RYUJIN_BASE}/sales-proposal.html?id=${est.id}`;
         return {
           status: 'complete',
           estimate_id: est.id,
           share_token: est.share_token,
           share_url: shareUrl,
+          ...(shareUrl ? {} : { warning: 'share link unavailable: share_token failed to persist; use admin_url and regenerate the token' }),
           admin_url: adminUrl,
           rep: input.sales_owner || 'darcy',
           tiers: {

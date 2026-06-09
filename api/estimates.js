@@ -258,11 +258,13 @@ async function handler(req, res) {
       .update({ share_token: shareToken })
       .eq('id', data.id);
     if (tokenErr) {
+      console.error('[estimates POST] share_token persist failed, retrying id-based:', tokenErr.message);
       shareToken = `${req.tenant.slug}-${data.id.slice(0, 8)}`;
       ({ error: tokenErr } = await supabaseAdmin
         .from('estimates')
         .update({ share_token: shareToken })
         .eq('id', data.id));
+      if (tokenErr) console.error('[estimates POST] id-based share_token also failed:', tokenErr.message);
     }
     data.share_token = tokenErr ? null : shareToken;
 
