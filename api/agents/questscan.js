@@ -24,6 +24,7 @@
 
 import { supabaseAdmin } from '../../lib/supabase.js';
 import { requireCronOrOwner } from '../../lib/cronAuth.js';
+import { snapshotHeaders } from '../../lib/snapshotClient.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 // Staleness thresholds (days). Owner-tunable later via questscan_config if needed.
