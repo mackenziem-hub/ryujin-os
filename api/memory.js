@@ -46,7 +46,10 @@ async function writeBlob(key, data) {
   const blob = await put(`${BLOB_PREFIX}${key}`, JSON.stringify(data, null, 2), {
     access: 'public',
     addRandomSuffix: false,
-    contentType: 'application/json'
+    contentType: 'application/json',
+    // Blob CDN ignores query-string cache-busts; without a short max-age,
+    // read-modify-write over a stale edge copy can drop recent writes.
+    cacheControlMaxAge: 60
   });
   return blob;
 }

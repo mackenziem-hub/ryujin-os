@@ -219,7 +219,13 @@ async function saveSnapshot(data) {
   const blob = await put(SNAPSHOT_BLOB_KEY, JSON.stringify(data), {
     access: 'public',
     addRandomSuffix: false,
-    contentType: 'application/json'
+    contentType: 'application/json',
+    // The blob CDN ignores query strings, so the ?t= cache-bust in getSnapshot
+    // does NOT defeat edge caching; with the default (long) max-age a rebuild
+    // can read a STALE snapshot and resurrect old sections over newer writes
+    // (2026-06-10: hourly rebuild reverted briefing_morning to its first-write
+    // shape, wiping briefMarkdown). 60s is the Blob minimum.
+    cacheControlMaxAge: 60
   });
   cachedBlobUrl = blob.url;
   if (!storeBase) storeBase = extractStoreBase(blob.url);
