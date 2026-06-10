@@ -306,8 +306,14 @@
       if (recognizer !== r) return;
       recognizing = false;
       recognizer = null;
-      // Print mic failures verbatim: 'audio-capture' here usually means another
-      // app (Wispr Flow zombies are the known culprit) is holding the device.
+      // Silence is a normal way for a listen to end (especially in
+      // conversation mode), not a failure: back to idle, no red state.
+      if (e.error === 'no-speech') {
+        if (state === 'listening') setState('idle');
+        return;
+      }
+      // Print real mic failures verbatim: 'audio-capture' here usually means
+      // another app (Wispr Flow zombies are the known culprit) holds the device.
       const detail = 'Mic error: ' + (e.error || 'unknown') + (e.error === 'audio-capture' ? ' (is another app holding the microphone?)' : '');
       setState('error', detail);
       emit('error', detail);
