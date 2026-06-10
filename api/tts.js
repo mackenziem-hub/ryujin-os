@@ -4,9 +4,12 @@
 // Voice resolution priority: explicit voice_id > archetype-mapped > default
 // Falls back with 503 if ELEVENLABS_API_KEY not configured (front-end then uses browser TTS).
 //
-// Auth: Bearer token (same as chat). No-auth defaults to plus-ultra owner for backward compat with chat-fab calls.
+// Auth: REQUIRED. Valid portal session or RYUJIN_SERVICE_TOKEN (+ x-tenant-id), else 401.
+// (The old no-auth plus-ultra-owner default was an ungated ElevenLabs credit spend; every
+// front-end caller already attaches the Bearer token and falls back to browser TTS on non-ok.)
 
 import { supabaseAdmin } from '../lib/supabase.js';
+import { resolveSession } from '../lib/portalAuth.js';
 
 const ELEVEN_API = 'https://api.elevenlabs.io/v1/text-to-speech';
 // Phase 16: cost-conscious default. flash_v2_5 is 1/3 the credits of multilingual_v2 with quality
@@ -43,22 +46,6 @@ const VOICE_SETTINGS = {
   use_speaker_boost: true
 };
 
-async function resolveSession(req) {
-  const authHeader = req.headers.authorization || '';
-  const token = authHeader.replace(/^Bearer\s+/i, '').trim()
-    || req.headers['x-ryujin-token']
-    || req.query?.token;
-  if (!token) return null;
-  try {
-    const { data: session } = await supabaseAdmin
-      .from('sessions').select('user_id, tenant_id, expires_at').eq('token', token).single();
-    if (!session || new Date(session.expires_at) < new Date()) return null;
-    return { userId: session.user_id, tenantId: session.tenant_id };
-  } catch {
-    return null;
-  }
-}
-
 // Pull user's persona.voice_id if set (overrides archetype default)
 async function userVoiceOverride(userId) {
   if (!userId) return null;
@@ -72,9 +59,17 @@ async function userVoiceOverride(userId) {
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-tenant-id, x-ryujin-token');
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+
+  // Hard gate: every TTS call spends real ElevenLabs credits. Valid portal session
+  // or service token required; unauthenticated callers get 401 and the existing
+  // front-end non-ok path drops them to browser speechSynthesis.
+  const session = await resolveSession(req);
+  if (!session) {
+    return res.status(401).json({ error: 'sign_in_required', code: 'NO_SESSION', fallback: 'browser' });
+  }
 
   const apiKey = (process.env.ELEVENLABS_API_KEY || '').trim();
   if (!apiKey) {
@@ -93,13 +88,12 @@ export default async function handler(req, res) {
   // Archetype wins over persona override because the archetype IS the character speaking.
   // Mac's persona voice only kicks in when there's no archetype context (legacy / non-archetype flows).
   // (Earlier this was inverted — that's why every archetype sounded like one voice.)
-  const ctx = await resolveSession(req);
   let resolvedVoiceId = voice_id;
   if (!resolvedVoiceId && archetype && ARCHETYPE_VOICE[archetype]) {
     resolvedVoiceId = ARCHETYPE_VOICE[archetype];
   }
-  if (!resolvedVoiceId && ctx?.userId) {
-    resolvedVoiceId = await userVoiceOverride(ctx.userId);
+  if (!resolvedVoiceId && session.user_id && session.user_id !== 'service-internal') {
+    resolvedVoiceId = await userVoiceOverride(session.user_id);
   }
   if (!resolvedVoiceId) resolvedVoiceId = DEFAULT_VOICE;
 

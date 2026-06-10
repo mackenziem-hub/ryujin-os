@@ -4417,8 +4417,11 @@ export default async function handler(req, res) {
 
   let { message, history = [], liveData, agent, attachments = [], conversation_id, quest_id, archetype: requestedArchetype, voiceMode: requestedVoiceMode, viewAs: requestedViewAs, effort: requestedEffort, mode: requestedMode, current_page } = req.body;
   // Phase 17: validate effort + mode. Default medium / quick.
-  const effort = ['low', 'medium', 'high'].includes(requestedEffort) ? requestedEffort : 'medium';
+  // Speech mode defaults to low effort (Haiku tier): a voice turn lives or dies on
+  // first-token latency. Explicit effort from the caller still wins.
   const interactionMode = ['quick', 'speech', 'agent'].includes(requestedMode) ? requestedMode : 'quick';
+  const effort = ['low', 'medium', 'high'].includes(requestedEffort) ? requestedEffort
+    : (interactionMode === 'speech' ? 'low' : 'medium');
   if (!message && attachments.length === 0) {
     return res.status(400).json({ error: 'No message provided' });
   }
@@ -4590,7 +4593,7 @@ Answer the question. Stop.
 - If you don't know something, say "I don't know" in one line and stop. Don't speculate.
 - Don't ask follow-up questions unless the request is genuinely ambiguous.`;
 
-  if (requestedVoiceMode === true) {
+  if (requestedVoiceMode === true || interactionMode === 'speech') {
     userBasePrompt += `\n\n## VOICE MODE ACTIVE
 The user is talking with you through voice — they're listening, not reading. Adjust your delivery accordingly:
 - Conversational tone, like a knowledgeable colleague catching up over coffee
@@ -4600,6 +4603,13 @@ The user is talking with you through voice — they're listening, not reading. A
 - Aim for under 80 words on most answers, longer only when the user truly needs detail
 - Read aloud well: avoid jargon-dense phrasing, parenthetical asides, or anything that would sound stiff
 - Use natural mid-sentence pauses ("so,", "right,", "look,") sparingly when they actually fit your archetype voice`;
+  }
+  if (interactionMode === 'speech') {
+    userBasePrompt += `\n\n## SPEECH MODE SPOKEN CAP (HARD)
+Your reply is spoken aloud through TTS in the cockpit dock while tool results render on screen beside the transcript.
+- Cap the reply at one or two short sentences. Lead with the number or the verdict.
+- Never read lists, tables, IDs, or URLs aloud; the screen carries the detail.
+- If the user asks for depth, give the single most important line and say the rest is on screen.`;
   }
   // Phase 5.3: tool gating. Filter TOOLS array per role before Claude sees it.
   const allowedTools = TOOLS.filter(t => roleCanUseTool(userRole, t.name));
