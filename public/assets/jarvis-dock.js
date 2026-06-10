@@ -63,6 +63,7 @@
     '  <div class="jv-title">JARVIS</div>',
     '  <div class="jv-eq" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>',
     '  <div class="jv-state" id="jv-state" role="status">Tap the mic or press Ctrl+Shift+V</div>',
+    '  <button class="jv-auto" id="jv-auto" title="Conversation mode: listen again automatically after Jarvis answers">AUTO</button>',
     '  <button class="jv-close" id="jv-close" aria-label="Close Jarvis">&times;</button>',
     '</div>',
     '<div class="jv-brief" id="jv-brief">',
@@ -92,6 +93,7 @@
     setTimeout(syncFabOffset, 1500);
     setTimeout(syncFabOffset, 4000);
     wire();
+    setAutoOn(isAutoOn()); // sync the AUTO button to the persisted setting
   }
   function syncFabOffset() {
     document.body.classList.toggle('jarvis-has-fab', !!document.getElementById('ry-fab'));
@@ -115,6 +117,24 @@
   let assistantBuffer = '';
   let wiredCore = false;
   let spaceHeld = false;
+  // Conversation mode: after Jarvis finishes SPEAKING a reply to a SPOKEN
+  // question, re-open the mic so the exchange flows without another press.
+  // Manual interrupts (Esc, tap-to-interrupt) suppress the next re-listen.
+  let lastInputWasVoice = false;
+  let suppressAuto = false;
+  let prevState = 'idle';
+  let micStarting = false; // blocks re-entrant auto-listen from startListening's own cancel
+  // In-memory source of truth; localStorage is best-effort persistence so a
+  // blocked storage can never desync the button from the behavior.
+  let autoOn = false;
+  try { autoOn = localStorage.getItem('jarvis_auto_listen') === '1'; } catch {}
+  function isAutoOn() { return autoOn; }
+  function setAutoOn(v) {
+    autoOn = !!v;
+    try { localStorage.setItem('jarvis_auto_listen', autoOn ? '1' : '0'); } catch {}
+    const b = $('jv-auto');
+    if (b) b.classList.toggle('on', autoOn);
+  }
 
   function setDockState(state, detail) {
     dock.dataset.state = state;
@@ -151,11 +171,25 @@
 
     core.on('state', ({ state, detail }) => {
       setDockState(state, detail);
+      // Mirror onto the command-center sentinel orb when present. It accepts
+      // the same state names (idle/listening/thinking/speaking) and validates
+      // internally; our error state maps to its alert look.
+      if (typeof window.setSentinelState === 'function') {
+        window.setSentinelState(state === 'error' ? 'alert' : state);
+      }
       // No final transcript arrived (silence, error, cancel): drop the ghost.
       if (state !== 'listening' && state !== 'thinking' && interimNode) {
         interimNode.remove();
         interimNode = null;
       }
+      // Conversation mode: turn finished speaking, user spoke last, no manual
+      // interrupt: listen again. Silence (listening -> idle) does NOT loop,
+      // and micStarting blocks the speaking->idle that startListening's own
+      // barge-in cancel emits from re-entering startMic.
+      if (prevState === 'speaking' && state === 'idle' && isAutoOn() && lastInputWasVoice && !suppressAuto && !micStarting && dock.classList.contains('open')) {
+        startMic();
+      }
+      prevState = state;
     });
 
     core.on('interim', (text) => {
@@ -240,7 +274,10 @@
     if (fromSpace && !spaceHeld) return;
     const core = window.RyujinVoiceCore;
     core.setSendInterceptor(spokenApprovalGuard);
-    core.startListening();
+    lastInputWasVoice = true;
+    suppressAuto = false;
+    micStarting = true;
+    try { core.startListening(); } finally { micStarting = false; }
   }
 
   function stopMic() {
@@ -256,6 +293,7 @@
     wireCoreEvents();
     if (!token()) { addSys('Not signed in. Jarvis needs a session: open /login.html, then come back.'); return; }
     input.value = '';
+    lastInputWasVoice = false;
     window.RyujinVoiceCore.sendText(text);
   }
 
@@ -360,14 +398,20 @@
 
     // Speaking state label doubles as the interrupt affordance.
     $('jv-state').addEventListener('click', () => {
-      if (dock.dataset.state === 'speaking' && window.RyujinVoiceCore) window.RyujinVoiceCore.cancel();
+      if (dock.dataset.state === 'speaking' && window.RyujinVoiceCore) {
+        suppressAuto = true;
+        window.RyujinVoiceCore.cancel();
+      }
     });
+
+    $('jv-auto').addEventListener('click', () => setAutoOn(!isAutoOn()));
 
     $('jv-speak-brief').addEventListener('click', async () => {
       const ok = await ensureCore();
       if (!ok) { addSys('voice-core.js failed to load. Refresh and retry.'); return; }
       wireCoreEvents();
       if (!token()) { addSys('Not signed in. Jarvis needs a session: open /login.html, then come back.'); return; }
+      lastInputWasVoice = false;
       window.RyujinVoiceCore.sendText('Give me my morning brief: signed this month, what needs me today, and anything overdue. Four short sentences max.');
     });
 
@@ -381,8 +425,12 @@
       const inInput = e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable);
       if (e.key === 'Escape') {
         const core = window.RyujinVoiceCore;
-        if (core && (core.state === 'speaking' || core.state === 'thinking' || core.state === 'listening')) core.cancel();
-        else closeDock();
+        if (core && (core.state === 'speaking' || core.state === 'thinking' || core.state === 'listening')) {
+          suppressAuto = true;
+          core.cancel();
+        } else {
+          closeDock();
+        }
         return;
       }
       if (e.code === 'Space' && !inInput && !e.repeat) {
