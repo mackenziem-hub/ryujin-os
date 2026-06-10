@@ -52,7 +52,10 @@ const KPI_MAPS = {
   ops: {
     'stats.totalTickets':         { key: 'ops.tickets_total',          label: 'Crew Tickets',              unit: 'count', sort_order: 30 },
     'stats.overdueCount':         { key: 'ops.tickets_overdue',        label: 'Overdue Tickets',           unit: 'count', sort_order: 31 },
-    'stats.activeToday':          { key: 'ops.tickets_active_today',   label: 'Active Today',              unit: 'count', sort_order: 32 },
+    // totalOpen reuses the legacy active_today key so the existing kpis row
+    // updates in place (api/kpis has no DELETE; the old activeToday field died
+    // with the retired Replit board and had frozen this tile).
+    'stats.totalOpen':            { key: 'ops.tickets_active_today',   label: 'Open Tickets',              unit: 'count', sort_order: 32 },
     // Workload imbalance metric — Piccolo computes max-min crew load delta
     'stats.workloadImbalance':    { key: 'ops.workload_imbalance',     label: 'Workload Imbalance',        unit: 'count', sort_order: 33 },
     // Workorder + paysheet domain metrics — populate once Piccolo is extended
