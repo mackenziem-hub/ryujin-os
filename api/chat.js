@@ -35,6 +35,8 @@ const TOOL_REQUIRED_ROLE = {
   'log_operation': ['owner'],
   'save_preference': ['owner'],
   'delete_preference': ['owner'],
+  'save_memory': ['owner', 'admin'],
+  'delete_memory': ['owner', 'admin'],
   'delete_opportunity': ['owner'],
   'delete_contact_note': ['owner'],
   'create_full_estimate': ['owner', 'admin'],
@@ -403,6 +405,8 @@ The snapshot's salesTasks section has the live list. Overdue tasks are CRITICAL 
 
 ## LEARNING — YOU CAN BE TAUGHT
 You have a **save_preference** tool. When Mackenzie gives you feedback — "stop doing that", "don't do X", "always do Y", "I like when you..." — use save_preference to store it. His preferences are loaded into your context on every session startup, so you'll remember across conversations.
+
+You also have a **save_memory** tool for durable BUSINESS FACTS (not behavior rules): supplier quotes and their expiry ("Lance at Community Metal quoted $2.90/sqft all-in, valid 7 days"), rates, decisions, contact details, job-specific commitments. Use it when Mackenzie says "remember...", states a fact worth keeping, or closes a negotiation. Saved facts load into your context every session under DURABLE FACTS. Use delete_memory when a fact is superseded or he says to forget it. Preference = how to behave; memory = what is true.
 
 **Auto-detect feedback patterns:**
 - "stop", "don't", "quit", "never", "no more" → save as a "don't" preference
@@ -952,7 +956,7 @@ async function fetchSnapshot() {
 // Preference injection — load Mackenzie's saved behavioral preferences
 async function fetchPreferences() {
   try {
-    const resp = await fetch('https://ryujin-os.vercel.app/api/memory?type=preferences');
+    const resp = await fetch('https://ryujin-os.vercel.app/api/memory?type=preferences', { headers: snapshotHeaders() });
     if (!resp.ok) return '';
     const data = await resp.json();
     const prefs = data.preferences || [];
@@ -973,10 +977,30 @@ async function fetchPreferences() {
   }
 }
 
+// Durable business facts (semantic memory): saved via the save_memory tool,
+// injected every session so the brain remembers quotes/rates/decisions.
+async function fetchFacts() {
+  try {
+    const resp = await fetch('https://ryujin-os.vercel.app/api/memory?type=facts&limit=60', { headers: snapshotHeaders() });
+    if (!resp.ok) return '';
+    const data = await resp.json();
+    const facts = data.facts || [];
+    if (facts.length === 0) return '';
+    let context = '\n\n---\n\n# DURABLE FACTS (saved memories: treat as true unless contradicted)\n';
+    for (const f of facts) {
+      const day = (f.saved_at || '').slice(0, 10);
+      context += `- [${f.id}${day ? ' · ' + day : ''}${f.topic ? ' · ' + f.topic : ''}] ${f.fact}\n`;
+    }
+    return context;
+  } catch (e) {
+    return '';
+  }
+}
+
 // Memory injection — load persistent context from previous sessions + agent reports
 async function fetchMemoryContext() {
   try {
-    const resp = await fetch('https://ryujin-os.vercel.app/api/memory?type=startup');
+    const resp = await fetch('https://ryujin-os.vercel.app/api/memory?type=startup', { headers: snapshotHeaders() });
     if (!resp.ok) return '';
     const memory = await resp.json();
 
@@ -1024,7 +1048,7 @@ async function logOperation(action, input, output, status, notes) {
   try {
     await fetch('https://ryujin-os.vercel.app/api/memory?type=ops', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...snapshotHeaders() },
       body: JSON.stringify({ action, input, output, status, notes })
     });
   } catch (e) { /* non-blocking */ }
@@ -1787,6 +1811,29 @@ const TOOLS = [
         type: { type: 'string', enum: ['do', 'dont', 'style', 'workflow'], description: 'Category: do=always do this, dont=never do this, style=communication preference, workflow=process preference' }
       },
       required: ['key', 'rule', 'type']
+    }
+  },
+  {
+    name: 'save_memory',
+    description: 'Save a durable BUSINESS FACT to persistent memory (loaded into context every session). Use for supplier quotes + expiry dates, agreed rates, decisions, contact details, commitments. NOT for behavior rules (use save_preference for those). Executes immediately.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        fact: { type: 'string', description: 'The fact in one plain sentence, specific enough to be useful months later (names, numbers, dates)' },
+        topic: { type: 'string', description: 'Short topic tag, e.g. "suppliers", "pricing", "crew", "jobs" (optional)' }
+      },
+      required: ['fact']
+    }
+  },
+  {
+    name: 'delete_memory',
+    description: 'Remove a saved business fact by id (ids are shown in the DURABLE FACTS context section). Use when a fact is superseded or Mackenzie says to forget it.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'The fact id to remove' }
+      },
+      required: ['id']
     }
   },
   {
@@ -3575,7 +3622,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       };
       const resp = await fetch('https://ryujin-os.vercel.app/api/memory?type=session', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...snapshotHeaders() },
         body: JSON.stringify(sessionData)
       });
       if (!resp.ok) throw new Error(`Session save failed: ${resp.status}`);
@@ -3593,7 +3640,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       try {
         const resp = await fetch('https://ryujin-os.vercel.app/api/memory?type=preferences', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...snapshotHeaders() },
           body: JSON.stringify({ key: input.key, rule: input.rule, type: input.type })
         });
         if (!resp.ok) throw new Error(`Save failed: ${resp.status}`);
@@ -3604,10 +3651,37 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       }
     }
 
+    if (name === 'save_memory') {
+      try {
+        const resp = await fetch('https://ryujin-os.vercel.app/api/memory?type=facts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...snapshotHeaders() },
+          body: JSON.stringify({ fact: input.fact, topic: input.topic || null })
+        });
+        if (!resp.ok) throw new Error(`Save failed: ${resp.status}`);
+        const result = await resp.json();
+        return { status: 'saved', id: result.id, message: `Remembered: "${input.fact}"` };
+      } catch (e) {
+        return { error: `Failed to save memory: ${e.message}` };
+      }
+    }
+
+    if (name === 'delete_memory') {
+      try {
+        const resp = await fetch(`https://ryujin-os.vercel.app/api/memory?type=facts&id=${encodeURIComponent(input.id)}`, {
+          method: 'DELETE', headers: snapshotHeaders()
+        });
+        if (!resp.ok) throw new Error(`Delete failed: ${resp.status}`);
+        return { status: 'deleted', id: input.id, message: 'Fact removed from memory' };
+      } catch (e) {
+        return { error: `Failed to delete memory: ${e.message}` };
+      }
+    }
+
     if (name === 'delete_preference') {
       try {
         const resp = await fetch(`https://ryujin-os.vercel.app/api/memory?type=preferences&key=${encodeURIComponent(input.key)}`, {
-          method: 'DELETE'
+          method: 'DELETE', headers: snapshotHeaders()
         });
         if (!resp.ok) throw new Error(`Delete failed: ${resp.status}`);
         return { status: 'deleted', key: input.key, message: `Preference "${input.key}" removed` };
@@ -4672,10 +4746,13 @@ You are now Mackenzie's game development and product specialist.
 
   // Build system prompt — snapshot + memory + preferences + docs index are the data sources
   // Docs index is role-filtered (Phase 5.4)
-  const [snapshotContext, memoryContext, preferencesContext, docsContext] = await Promise.all([
+  const [snapshotContext, memoryContext, preferencesContext, factsContext, docsContext] = await Promise.all([
     fetchSnapshot(),
     fetchMemoryContext(),
     fetchPreferences(),
+    // Facts carry supplier quotes/rates/deal terms: owner/admin context only,
+    // same boundary as the save_memory/delete_memory tools.
+    (userRole === 'owner' || userRole === 'admin') ? fetchFacts() : Promise.resolve(''),
     fetchDocsIndex(userRole)
   ]);
   let liveDataBlock = '';
@@ -4695,7 +4772,7 @@ You are now Mackenzie's game development and product specialist.
   //   3. PER-REQUEST: agent persona overlay + file attachments + live data. Uncached.
   // Bug-sweep #2 (2026-04-24): system prompt cost was the largest single $ leak.
   // Phase 5.2 + 13 caught BASE_PROMPT + memory + docs; this catches snapshot too.
-  const stableCached  = userBasePrompt + preferencesContext + memoryContext + docsContext;
+  const stableCached  = userBasePrompt + preferencesContext + factsContext + memoryContext + docsContext;
   const snapshotBlock = snapshotContext || '';
   // Where the operator is right now — per-request (changes on every navigation),
   // so it MUST stay in the uncached block or it poisons the snapshot cache.
@@ -4776,6 +4853,8 @@ You are now Mackenzie's game development and product specialist.
       case 'create_proposal_pages': return `📄 Creating proposal pages`;
       case 'save_preference': return `🧠 Saving preference: ${input?.rule || ''}`;
       case 'delete_preference': return `🧠 Removing preference`;
+      case 'save_memory': return `🧠 Remembering: ${(input?.fact || '').slice(0, 60)}`;
+      case 'delete_memory': return `🧠 Forgetting a saved fact`;
       case 'create_quest': return `📜 Creating quest: "${input.title}"`;
       case 'create_ticket': return `🎫 Creating crew ticket: "${input.title}"`;
       case 'create_workorder': return `📋 Creating work order: "${input.customer_name}"`;

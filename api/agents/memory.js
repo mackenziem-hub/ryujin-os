@@ -4,6 +4,7 @@
 
 import { runVegeta, runPiccolo, runKrillin, runGohan, runBulma, runTrunks, fetchJSON, sendFallbackEmail } from './_shared.js';
 import { requireCronOrOwner } from '../../lib/cronAuth.js';
+import { snapshotHeaders } from '../../lib/snapshotClient.js';
 
 const AGENT_TIMEOUT = 25000;
 function withTimeout(promise, ms, label) {
@@ -17,7 +18,7 @@ const MEMORY_API = 'https://ryujin-os.vercel.app/api/memory';
 
 async function readAgentMemory(agent) {
   try {
-    const resp = await fetch(`${MEMORY_API}?type=agent&name=${agent}`);
+    const resp = await fetch(`${MEMORY_API}?type=agent&name=${agent}`, { headers: snapshotHeaders() });
     if (!resp.ok) return null;
     const data = await resp.json();
     return data.memory;
@@ -26,11 +27,12 @@ async function readAgentMemory(agent) {
 
 async function writeAgentMemory(agent, memory) {
   try {
-    await fetch(`${MEMORY_API}?type=agent&name=${agent}`, {
+    const resp = await fetch(`${MEMORY_API}?type=agent&name=${agent}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...snapshotHeaders() },
       body: JSON.stringify(memory)
     });
+    if (!resp.ok) throw new Error(`write failed: HTTP ${resp.status}`);
   } catch (e) {
     console.error(`[Memory] Failed to write ${agent} memory:`, e.message);
   }

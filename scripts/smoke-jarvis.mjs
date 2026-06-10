@@ -70,6 +70,20 @@ try {
     ok ? `signed.mtd = ${j.signed.mtd.value}` : `status ${r.status}, body ${JSON.stringify(j).slice(0, 200)}`);
 } catch (e) { record('metrics authed -> contract v1', false, e.message); }
 
+// 4b. memory store unauthenticated must 401 (holds prefs, session logs, facts)
+try {
+  const r = await fetch(`${BASE}/api/memory?type=facts`);
+  record('memory unauth -> 401', r.status === 401, `status ${r.status}`);
+} catch (e) { record('memory unauth -> 401', false, e.message); }
+
+// 4c. memory facts readable with service token
+try {
+  const r = await fetch(`${BASE}/api/memory?type=facts`, { headers: auth });
+  const j = await r.json().catch(() => null);
+  const ok = r.status === 200 && !!j && Array.isArray(j.facts);
+  record('memory authed -> facts array', ok, ok ? `${j.count} facts` : `status ${r.status}`);
+} catch (e) { record('memory authed -> facts array', false, e.message); }
+
 // 5. chat speech mode must stream SSE text and terminate with done:true
 try {
   const ctrl = new AbortController();
