@@ -42,17 +42,18 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
 .section-head h2{font-size:0.78em;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--text)}
 .section-head .count-pill{font-size:0.65em;font-family:'Share Tech Mono',monospace;padding:2px 8px;border-radius:10px;background:rgba(34,211,238,0.1);border:1px solid var(--glass-border);color:var(--cyan)}
 
-.cust-list{display:flex;flex-direction:column;gap:6px}
-.cust-row{display:grid;grid-template-columns:1fr auto auto auto auto;gap:14px;align-items:center;background:var(--glass);border:1px solid var(--glass-border);border-radius:var(--radius);padding:12px 14px;cursor:pointer;transition:all 0.2s}
-.cust-row:hover{border-color:var(--glass-border-hi)}
-.cust-info{min-width:0}
-.cust-name{font-weight:600;color:var(--text);font-size:0.95em;margin-bottom:2px}
-.cust-meta{font-family:'Share Tech Mono',monospace;font-size:0.72em;color:var(--text-dim);letter-spacing:0.5px;display:flex;gap:10px;flex-wrap:wrap}
-.cust-jobs{font-family:'Orbitron',monospace;font-size:0.85em;font-weight:700;color:var(--cyan)}
-.cust-ltv{font-family:'Orbitron',monospace;font-size:0.95em;font-weight:700;color:var(--gold);white-space:nowrap}
-.cust-status{font-family:'Share Tech Mono',monospace;font-size:0.6em;letter-spacing:1px;text-transform:uppercase;padding:2px 7px;border-radius:8px}
+.cust-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(255px,1fr));gap:14px}
+.cust-row{position:relative;display:flex;flex-direction:column;gap:8px;background:rgba(14,22,40,0.92);border:1px solid var(--glass-border);border-radius:14px;padding:14px 16px;cursor:pointer;transition:transform 0.15s,border-color 0.15s,box-shadow 0.15s;backdrop-filter:blur(8px)}
+.cust-row:hover{border-color:var(--glass-border-hi);transform:translateY(-2px);box-shadow:0 0 18px rgba(34,211,238,0.12)}
+.cust-field .flabel{font-family:'Share Tech Mono',monospace;font-size:0.58em;letter-spacing:1.6px;text-transform:uppercase;color:var(--text-muted);margin-bottom:1px}
+.cust-field .fval{font-size:0.82em;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cust-name-card{font-weight:700;font-size:1em;color:var(--text);padding-right:78px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cust-est-badge{position:absolute;top:12px;right:14px;font-family:'Share Tech Mono',monospace;font-size:0.62em;letter-spacing:0.8px;padding:3px 9px;border-radius:999px;background:rgba(34,211,238,0.12);border:1px solid rgba(34,211,238,0.35);color:var(--cyan);white-space:nowrap}
+.cust-foot{display:flex;justify-content:space-between;align-items:center;margin-top:4px;gap:8px}
+.cust-ltv{font-family:'Orbitron',monospace;font-size:0.88em;font-weight:700;color:var(--gold);white-space:nowrap}
+.cust-status{font-family:'Share Tech Mono',monospace;font-size:0.6em;letter-spacing:1px;text-transform:uppercase;padding:2px 9px;border-radius:999px}
 .cust-status.active{background:rgba(74,222,128,0.1);color:var(--green);border:1px solid rgba(74,222,128,0.25)}
-.cust-status.repeat{background:rgba(124,58,237,0.1);color:#a78bfa;border:1px solid rgba(124,58,237,0.25)}
+.cust-status.repeat{background:rgba(124,58,237,0.12);color:#a78bfa;border:1px solid rgba(124,58,237,0.3)}
 .cust-status.dormant{background:rgba(140,170,220,0.08);color:var(--text-dim);border:1px solid var(--glass-border)}
 
 .filter-chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
@@ -67,7 +68,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
 .banner{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius);font-size:0.8em;margin-bottom:14px}
 .banner.warn{background:rgba(251,146,60,0.08);border:1px solid rgba(251,146,60,0.25);color:var(--orange)}
 
-@media(max-width:768px){.main{padding:12px}.hq-title h1{font-size:1.3em}.cust-row{grid-template-columns:1fr auto auto;gap:10px}.cust-row .cust-status,.cust-row .cust-jobs,.cust-row .cust-est{display:none}}
+@media(max-width:768px){.main{padding:12px}.hq-title h1{font-size:1.3em}.cust-list{grid-template-columns:1fr}}
 @media(max-width:430px){.toolbar,.filter-row,.search-row,.controls,.hq-header{flex-wrap:wrap;gap:8px}.toolbar > *,.filter-row > *,.controls > *{min-width:0}.btn,button{max-width:100%}}
 </style>
   <script src="/assets/ryujin-slug.js"></script>
@@ -93,7 +94,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
   <div class="hq-header">
     <div class="hq-title">
       <div class="crumb">Customer · List</div>
-      <h1>Customer Database</h1>
+      <h1>Client Navigator</h1>
       <div class="sub">Searchable. Sorted by lifetime value. Click a row to open the profile (jobs, payments, communications, callbacks).</div>
     </div>
     <a class="btn primary" href="/customer.html">← Customer</a>
@@ -138,18 +139,15 @@ function renderList(list) {
     const status = c.job_count > 1 ? 'repeat' : c.last_job_at && (Date.now() - new Date(c.last_job_at).getTime() < 365 * 86400000) ? 'active' : 'dormant';
     return `
       <div class="cust-row" data-id="${c.id}">
-        <div class="cust-info">
-          <div class="cust-name">${escapeHtml(c.full_name || 'unnamed')}</div>
-          <div class="cust-meta">
-            ${c.email ? `<span>${escapeHtml(c.email)}</span>` : ''}
-            ${c.phone ? `<span>${escapeHtml(c.phone)}</span>` : ''}
-            ${c.address ? `<span>${escapeHtml(c.address)}</span>` : ''}
-          </div>
+        ${c.est_count ? `<div class="cust-est-badge">${c.est_count} Estimate${c.est_count===1?'':'s'}</div>` : ''}
+        <div class="cust-field"><div class="flabel">Customer Name</div><div class="cust-name-card">${escapeHtml(c.full_name || 'unnamed')}</div></div>
+        <div class="cust-field"><div class="flabel">Street Address</div><div class="fval">${escapeHtml(c.address || '—')}</div></div>
+        <div class="cust-field"><div class="flabel">Phone Number</div><div class="fval">${escapeHtml(c.phone || '—')}</div></div>
+        <div class="cust-field"><div class="flabel">Email</div><div class="fval">${escapeHtml(c.email || '—')}</div></div>
+        <div class="cust-foot">
+          <div class="cust-ltv">${fmtMoney(c.lifetime_value)}</div>
+          <div class="cust-status ${status}">${status}</div>
         </div>
-        <div class="cust-est">${c.est_count ? `<b>${c.est_count}</b> est${c.open_est_count ? ` · ${c.open_est_count} open` : ''}` : ''}</div>
-        <div class="cust-status ${status}">${status}</div>
-        <div class="cust-jobs">${c.job_count || 0}<span style="font-size:0.65em;color:var(--text-muted);font-weight:500;margin-left:3px">jobs</span></div>
-        <div class="cust-ltv">${fmtMoney(c.lifetime_value)}</div>
       </div>`;
   }).join('');
   el.querySelectorAll('.cust-row').forEach(row => row.addEventListener('click', () => window.location.href = `/customer-profile.html?id=${row.dataset.id}`));
