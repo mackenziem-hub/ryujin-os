@@ -362,7 +362,7 @@ function renderWorkorders(wos) {
           <div class="wo-meta">
             ${w.start_date ? `<span>▸ Start ${fmtDate(w.start_date)}</span>` : ''}
             ${w.completed_at ? `<span>✓ Done ${fmtDate(w.completed_at)}</span>` : ''}
-            ${w.job_type ? `<span>${escapeHtml(w.job_type)}</span>` : ''}
+            ${w.job_type ? `<span>${escapeHtml(String(w.job_type).replace(/_/g, ' '))}</span>` : ''}
             ${w.package_tier ? `<span>${escapeHtml(w.package_tier)} tier</span>` : ''}
             ${w.shingle_color ? `<span>${escapeHtml(w.shingle_color)}</span>` : ''}
             ${w.sub_crew_lead ? `<span>Crew: ${escapeHtml(w.sub_crew_lead)}</span>` : ''}
@@ -391,8 +391,10 @@ function renderPhotos(photos, customerId, hasProjects) {
     cell.addEventListener('click', () => window.open(cell.dataset.url, '_blank', 'noopener')));
 }
 
+let authFailed = false;
 async function fetchJson(url) {
   const r = await fetch(url, { headers: _headers() });
+  if (r.status === 401) { authFailed = true; return null; }
   if (!r.ok) return null;
   return r.json();
 }
@@ -409,7 +411,11 @@ async function load() {
     ]);
 
     const customer = cData?.customer || cData;
-    if (!customer || !customer.id) { showBanner('Customer not found.'); document.getElementById('pageTitle').textContent = 'Not Found'; return; }
+    if (!customer || !customer.id) {
+      showBanner(authFailed ? 'Session expired. Sign in again to load this customer.' : 'Customer not found.');
+      document.getElementById('pageTitle').textContent = authFailed ? 'Signed Out' : 'Not Found';
+      return;
+    }
 
     const estimates = eData?.estimates || eData?.data || customer.estimates || [];
     const projects = pData?.projects || pData?.data || (Array.isArray(pData) ? pData : []);
