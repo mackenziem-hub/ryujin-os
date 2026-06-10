@@ -55,6 +55,11 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
 .cust-status.repeat{background:rgba(124,58,237,0.1);color:#a78bfa;border:1px solid rgba(124,58,237,0.25)}
 .cust-status.dormant{background:rgba(140,170,220,0.08);color:var(--text-dim);border:1px solid var(--glass-border)}
 
+.filter-chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.fchip{font-family:'Share Tech Mono',monospace;font-size:0.7em;letter-spacing:1px;text-transform:uppercase;padding:5px 13px;border-radius:999px;border:1px solid var(--glass-border);background:transparent;color:var(--text-dim);cursor:pointer;transition:all 0.15s}
+.fchip.active{border-color:var(--cyan);color:var(--cyan);background:rgba(34,211,238,0.08)}
+.cust-est{font-family:'Share Tech Mono',monospace;font-size:0.68em;color:var(--text-dim);white-space:nowrap}
+.cust-est b{color:var(--cyan);font-weight:600}
 .empty-state{text-align:center;padding:30px 16px;color:var(--text-dim);border:1px dashed var(--glass-border);border-radius:var(--radius);font-size:0.85em}
 .empty-state .ico{font-size:1.8em;margin-bottom:6px;opacity:0.5}
 .skeleton{background:linear-gradient(90deg,var(--glass) 0%,var(--glass2) 50%,var(--glass) 100%);background-size:200% 100%;animation:sk 1.4s infinite;border:1px solid var(--glass-border);border-radius:var(--radius);height:64px;margin-bottom:6px}
@@ -62,7 +67,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
 .banner{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius);font-size:0.8em;margin-bottom:14px}
 .banner.warn{background:rgba(251,146,60,0.08);border:1px solid rgba(251,146,60,0.25);color:var(--orange)}
 
-@media(max-width:768px){.main{padding:12px}.hq-title h1{font-size:1.3em}.cust-row{grid-template-columns:1fr auto auto;gap:10px}.cust-row .cust-status,.cust-row .cust-jobs{display:none}}
+@media(max-width:768px){.main{padding:12px}.hq-title h1{font-size:1.3em}.cust-row{grid-template-columns:1fr auto auto;gap:10px}.cust-row .cust-status,.cust-row .cust-jobs,.cust-row .cust-est{display:none}}
 @media(max-width:430px){.toolbar,.filter-row,.search-row,.controls,.hq-header{flex-wrap:wrap;gap:8px}.toolbar > *,.filter-row > *,.controls > *{min-width:0}.btn,button{max-width:100%}}
 </style>
   <script src="/assets/ryujin-slug.js"></script>
@@ -101,6 +106,15 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
     <button class="btn" id="btnSort">Sort: LTV ↓</button>
   </div>
 
+  <div class="filter-chips" id="filterChips">
+    <button class="fchip active" data-f="all">All</button>
+    <button class="fchip" data-f="open">Open Estimate</button>
+    <button class="fchip" data-f="signed">Signed</button>
+    <button class="fchip" data-f="repeat">Repeat</button>
+    <button class="fchip" data-f="dormant">Dormant</button>
+    <button class="fchip" data-f="none">No Estimate</button>
+  </div>
+
   <div class="section-head"><h2>Customers</h2><span class="count-pill" id="custCount">—</span></div>
   <div class="cust-list" id="custList"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
 
@@ -108,7 +122,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
 
 <script>
 const TENANT = window.RYUJIN_TENANT_SLUG;
-let cache = []; let sortMode = 'ltv'; let searchTerm = '';
+let cache = []; let sortMode = 'ltv'; let searchTerm = ''; let filterMode = 'all';
+const SIGNED_STATES = ['closed_won','signed','accepted','won'];
+const LOST_STATES = ['closed_lost','lost','rejected'];
+function estState(e) { return String(e.state || e.status || '').toLowerCase(); }
 function escapeHtml(s) { if (s == null) return ''; return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function fmtMoney(n) { if (n == null || isNaN(n)) return '—'; return '$' + Math.round(n).toLocaleString(); }
 function showBanner(msg, isHtml=false) { const slot = document.getElementById('banner-slot'); if (isHtml) slot.innerHTML = `<div class="banner warn">${msg}</div>`; else slot.innerHTML = `<div class="banner warn">${escapeHtml(msg)}</div>`; }
@@ -129,6 +146,7 @@ function renderList(list) {
             ${c.address ? `<span>${escapeHtml(c.address)}</span>` : ''}
           </div>
         </div>
+        <div class="cust-est">${c.est_count ? `<b>${c.est_count}</b> est${c.open_est_count ? ` · ${c.open_est_count} open` : ''}` : ''}</div>
         <div class="cust-status ${status}">${status}</div>
         <div class="cust-jobs">${c.job_count || 0}<span style="font-size:0.65em;color:var(--text-muted);font-weight:500;margin-left:3px">jobs</span></div>
         <div class="cust-ltv">${fmtMoney(c.lifetime_value)}</div>
@@ -137,9 +155,19 @@ function renderList(list) {
   el.querySelectorAll('.cust-row').forEach(row => row.addEventListener('click', () => window.location.href = `/customer-profile.html?id=${row.dataset.id}`));
 }
 
+function matchesFilter(c) {
+  if (filterMode === 'all') return true;
+  if (filterMode === 'open') return c.open_est_count > 0;
+  if (filterMode === 'signed') return c.signed_est_count > 0;
+  if (filterMode === 'none') return !c.est_count;
+  if (filterMode === 'repeat') return c.job_count > 1;
+  if (filterMode === 'dormant') return !(c.job_count > 1) && !(c.last_job_at && (Date.now() - new Date(c.last_job_at).getTime() < 365 * 86400000));
+  return true;
+}
+
 function applyFiltersSort() {
   const term = searchTerm.toLowerCase().trim();
-  let list = cache.slice();
+  let list = cache.filter(matchesFilter);
   if (term) list = list.filter(c => `${c.full_name || ''} ${c.email || ''} ${c.phone || ''} ${c.address || ''}`.toLowerCase().includes(term));
   if (sortMode === 'ltv') list.sort((a, b) => (b.lifetime_value || 0) - (a.lifetime_value || 0));
   else if (sortMode === 'name') list.sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
@@ -155,9 +183,10 @@ async function load() {
     // Roster from the session-gated customers API; lifetime value from
     // /api/customer-state (computed server-side via lib/customerLtvCalc.js).
     // No page-side money math: the API computes, this page renders.
-    const [cs, st] = await Promise.all([
+    const [cs, st, es] = await Promise.all([
       fetch('/api/customers?limit=500', { headers: { 'x-tenant-id': TENANT, ...window.RyujinAuth.headers() }, signal: ctrl.signal }),
-      fetch('/api/customer-state', { headers: { 'x-tenant-id': TENANT, ...window.RyujinAuth.headers() }, signal: ctrl.signal })
+      fetch('/api/customer-state', { headers: { 'x-tenant-id': TENANT, ...window.RyujinAuth.headers() }, signal: ctrl.signal }),
+      fetch('/api/estimates?limit=500', { headers: { 'x-tenant-id': TENANT, ...window.RyujinAuth.headers() }, signal: ctrl.signal }).catch(() => null)
     ]);
     if (!cs.ok) {
       showBanner(`Could not load customers: HTTP ${cs.status}`);
@@ -173,11 +202,26 @@ async function load() {
     } else {
       showBanner(`Lifetime values unavailable (HTTP ${st.status}) - showing the roster without LTV.`);
     }
+    const estByCustomer = {};
+    if (es && es.ok) {
+      const eData = await es.json();
+      for (const e of (eData.estimates || eData.data || [])) {
+        if (!e.customer_id) continue;
+        const bucket = estByCustomer[e.customer_id] = estByCustomer[e.customer_id] || { total: 0, open: 0, signed: 0 };
+        bucket.total++;
+        const s = estState(e);
+        if (SIGNED_STATES.includes(s)) bucket.signed++;
+        else if (!LOST_STATES.includes(s)) bucket.open++;
+      }
+    }
     cache = (customers || []).map(c => ({
       ...c,
       lifetime_value: valueByCustomer[c.id]?.lifetime_value || 0,
       job_count: valueByCustomer[c.id]?.job_count || 0,
-      last_job_at: valueByCustomer[c.id]?.last_job_at || null
+      last_job_at: valueByCustomer[c.id]?.last_job_at || null,
+      est_count: estByCustomer[c.id]?.total || 0,
+      open_est_count: estByCustomer[c.id]?.open || 0,
+      signed_est_count: estByCustomer[c.id]?.signed || 0
     }));
     if (st.ok) document.getElementById('banner-slot').innerHTML = '';
     applyFiltersSort();
@@ -191,6 +235,11 @@ async function load() {
 }
 
 document.getElementById('searchInput').addEventListener('input', e => { searchTerm = e.target.value; applyFiltersSort(); });
+document.querySelectorAll('#filterChips .fchip').forEach(btn => btn.addEventListener('click', () => {
+  filterMode = btn.dataset.f;
+  document.querySelectorAll('#filterChips .fchip').forEach(b => b.classList.toggle('active', b === btn));
+  applyFiltersSort();
+}));
 document.getElementById('btnSort').addEventListener('click', () => {
   const modes = ['ltv','name','recent'];
   const labels = { ltv: 'Sort: LTV ↓', name: 'Sort: A-Z', recent: 'Sort: Recent' };
