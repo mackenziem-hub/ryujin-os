@@ -1,4 +1,5 @@
 import { resolveSession } from '../lib/portalAuth.js';
+import { supabaseAdmin } from '../lib/supabase.js';
 
 const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
 const GHL_BASE = 'https://services.leadconnectorhq.com';
@@ -13,12 +14,6 @@ const APIS = {
     statsUrl: 'https://estimator-os.replit.app/api/stats',
     key: (process.env.ESTIMATOR_KEY || process.env.ESTIMATOR_OS_KEY || 'pu-estimator-2026').trim()
   },
-  tickets: {
-    label: 'Action Board',
-    url: 'https://ultra-task-manager.replit.app/api/tickets',
-    statsUrl: 'https://ultra-task-manager.replit.app/api/stats',
-    key: (process.env.ACTION_BOARD_KEY || 'pu-actionboard-2026').trim()
-  },
   leads: {
     label: 'Instant Estimator',
     url: 'https://plus-ultra-roof-estimator.replit.app/api/leads',
@@ -26,6 +21,71 @@ const APIS = {
     key: (process.env.INSTANT_EST_KEY || process.env.INSTANT_ESTIMATOR_KEY || 'pu-instantest-2026').trim()
   }
 };
+
+// Crew tickets migrated to the native Ryujin `tickets` table on 2026-05-11;
+// the Replit Action Board is read-only history and stopped reflecting reality
+// (chat answered "4 open tickets" while the cockpit/load-scan counted 46).
+// Same open-ticket definition as scripts/load-scan.mjs so every surface agrees.
+const OPEN_TICKET_EXCLUDE = '(completed,closed,done,cancelled)';
+
+async function fetchNativeTickets(tenantId) {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('tickets')
+      .select('ticket_number, title, status, priority, assigned_to, created_at')
+      .eq('tenant_id', tenantId)
+      .not('status', 'in', OPEN_TICKET_EXCLUDE)
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if (error) return { source: 'Crew Tickets', error: error.message, data: [] };
+    return { source: 'Crew Tickets', data: data || [] };
+  } catch (e) {
+    return { source: 'Crew Tickets', error: e.message, data: [] };
+  }
+}
+
+// Legacy-compatible stats shape ({totalTickets, byStatus, overdueCount,
+// byAssignee}) so runPiccolo/runBulma in api/agents/_shared.js keep working,
+// now fed by live data instead of the dead board.
+async function fetchNativeTicketStats(tenantId) {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('tickets')
+      .select('status, assigned_to, due_date')
+      .eq('tenant_id', tenantId)
+      .limit(2000);
+    if (error) return { source: 'Crew Tickets', error: error.message, stats: {} };
+    const rows = data || [];
+    // NULL status is excluded, matching NOT IN semantics in the search query + load-scan
+    const isOpen = (s) => s != null && !['completed', 'closed', 'done', 'cancelled'].includes(String(s).toLowerCase());
+    const byStatus = {};
+    for (const r of rows) {
+      const k = r.status || 'unknown';
+      byStatus[k] = (byStatus[k] || 0) + 1;
+    }
+    const open = rows.filter((r) => isOpen(r.status));
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Moncton' });
+    const overdueCount = open.filter((r) => r.due_date && r.due_date < today).length;
+    const byAssignee = {};
+    const ids = [...new Set(open.map((r) => r.assigned_to).filter(Boolean))];
+    if (ids.length) {
+      const { data: users } = await supabaseAdmin.from('users').select('id, name').in('id', ids);
+      const nameOf = Object.fromEntries((users || []).map((u) => [u.id, u.name || u.id.slice(0, 8)]));
+      for (const r of open) {
+        const key = r.assigned_to ? (nameOf[r.assigned_to] || 'Unknown') : 'Unassigned';
+        byAssignee[key] = (byAssignee[key] || 0) + 1;
+      }
+    } else if (open.length) {
+      byAssignee.Unassigned = open.length;
+    }
+    return {
+      source: 'Crew Tickets',
+      stats: { totalTickets: rows.length, totalOpen: open.length, byStatus, overdueCount, byAssignee }
+    };
+  } catch (e) {
+    return { source: 'Crew Tickets', error: e.message, stats: {} };
+  }
+}
 
 async function fetchAPI(api, query) {
   try {
@@ -121,20 +181,28 @@ export default async function handler(req, res) {
 
   const { q, source, mode } = req.query;
 
-  // Stats mode — return KPIs from all 3 apps
+  // Stats mode: KPIs from the external apps + native crew tickets
   if (mode === 'stats') {
     const sources = source ? [APIS[source]].filter(Boolean) : Object.values(APIS);
-    const stats = await Promise.all(sources.map(s => fetchStats(s)));
+    const statFetches = sources.map(s => fetchStats(s));
+    if (!source || source === 'tickets') {
+      statFetches.push(fetchNativeTicketStats(session.tenant_id));
+    }
+    const stats = await Promise.all(statFetches);
     return res.json({ mode: 'stats', results: stats, timestamp: new Date().toISOString() });
   }
 
-  // Lookup mode — query data across all apps + GHL CRM
+  // Lookup mode: query data across the apps + native tickets + GHL CRM
   const sources = source ? [APIS[source]].filter(Boolean) : Object.values(APIS);
-  if (source && sources.length === 0 && source !== 'ghl') {
+  if (source && sources.length === 0 && source !== 'ghl' && source !== 'tickets') {
     return res.status(400).json({ error: `Invalid source. Use: estimates, tickets, leads, ghl` });
   }
 
   const fetches = sources.map(s => fetchAPI(s, q));
+  // Native crew tickets (the Ryujin tickets table, NOT the retired Replit board)
+  if (!source || source === 'tickets') {
+    fetches.push(fetchNativeTickets(session.tenant_id));
+  }
   // Include GHL contacts unless filtering to a specific non-GHL source
   if (!source || source === 'ghl') {
     fetches.push(fetchGHLContacts(q));

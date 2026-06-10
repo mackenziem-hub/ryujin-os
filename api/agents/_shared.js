@@ -159,7 +159,7 @@ export async function runPiccolo() {
   const report = { agent: 'Piccolo', role: 'Operations & Crew', timestamp: new Date().toISOString(), findings: [], tasks: [] };
 
   const stats = await fetchJSON(`${BASE_URL}/api/lookup?mode=stats`, snapshotHeaders());
-  const ticketStats = stats.results?.find(r => r.source === 'Action Board');
+  const ticketStats = stats.results?.find(r => r.source === 'Crew Tickets' || r.source === 'Action Board');
 
   if (ticketStats?.stats) {
     report.stats = {
@@ -458,7 +458,7 @@ export async function runBulma() {
   ]);
 
   const estStats = lookupStats.results?.find(r => r.source === 'Estimator OS')?.stats || {};
-  const ticketStats = lookupStats.results?.find(r => r.source === 'Action Board')?.stats || {};
+  const ticketStats = lookupStats.results?.find(r => r.source === 'Crew Tickets' || r.source === 'Action Board')?.stats || {};
   const leadStats = lookupStats.results?.find(r => r.source === 'Instant Estimator')?.stats || {};
 
   report.plusUltra = {

@@ -159,7 +159,8 @@ if (SVC) {
     const s = snap.snapshot || snap;
     const brief = s.briefing_morning && s.briefing_morning.briefMarkdown;
     const cash = s.cashflow || (s.sections && s.sections.cashflow);
-    ok('snapshot', { hasBrief: !!brief, briefAgeMin: s.briefing_morning && s.briefing_morning.generated_at ? Math.round((Date.now() - new Date(s.briefing_morning.generated_at)) / 60000) : null, hasCashflow: !!cash });
+    const briefStamp = s.briefing_morning && (s.briefing_morning.generated_at || s.briefing_morning.timestamp);
+    ok('snapshot', { hasBrief: !!brief, briefAgeMin: briefStamp ? Math.round((Date.now() - new Date(briefStamp)) / 60000) : null, hasCashflow: !!cash });
     console.log(`\n## Daily snapshot: brief=${brief ? 'present' : 'MISSING'} cashflow=${cash ? 'present' : 'MISSING'}`);
     if (brief) console.log(brief.split('\n').slice(0, 8).map(l => '  ' + l).join('\n'));
   } catch (e) { fail('snapshot', e); console.log(`\n[FAIL] snapshot: ${out.sources.snapshot.error}`); }
