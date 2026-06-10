@@ -339,6 +339,44 @@
     font-size:0.72em;letter-spacing:0.5px}
   .ry-retry:hover{background:rgba(34,211,238,0.2)}
   .ry-retry svg{width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
+  /* Sidebar search */
+  .ry-side-search{margin:0 10px 6px;padding:6px 10px;background:rgba(6,10,20,0.6);
+    border:1px solid rgba(34,211,238,0.15);border-radius:8px;color:#e0e6f0;
+    font-family:'Inter',system-ui,sans-serif;font-size:0.72em;outline:none;flex-shrink:0}
+  .ry-side-search:focus{border-color:rgba(34,211,238,0.4)}
+  .ry-side-search::placeholder{color:rgba(160,190,230,0.3)}
+  /* Conversation row rename */
+  .ry-conv-edit{width:22px;height:22px;border-radius:5px;background:none;border:none;
+    color:rgba(160,190,230,0.4);cursor:pointer;display:none;align-items:center;justify-content:center;
+    flex-shrink:0;transition:all 0.15s}
+  .ry-conv:hover .ry-conv-edit{display:flex}
+  .ry-conv-edit:hover{color:#22d3ee;background:rgba(34,211,238,0.1)}
+  .ry-conv-edit svg{width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  .ry-conv-rename{width:100%;box-sizing:border-box;padding:3px 6px;background:rgba(6,10,20,0.9);
+    border:1px solid rgba(34,211,238,0.45);border-radius:5px;color:#e0e6f0;
+    font-family:'Inter',system-ui,sans-serif;font-size:0.78em;outline:none}
+  /* Workspace welcome — empty-thread capability showcase */
+  .ry-welcome{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:18px;padding:18px 10px;animation:ry-pick-fade 0.4s ease}
+  .ry-welcome-title{font-family:'Orbitron',sans-serif;font-size:1.15em;font-weight:700;
+    letter-spacing:3px;color:#e0e6f0;text-align:center}
+  .ry-welcome-sub{font-family:'Share Tech Mono',monospace;font-size:0.68em;letter-spacing:1.5px;
+    color:rgba(160,190,230,0.55);text-transform:uppercase;text-align:center;margin-top:-10px}
+  .ry-cap-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;
+    width:100%;max-width:720px}
+  .ry-cap-card{background:rgba(8,16,32,0.65);border:1px solid rgba(34,211,238,0.16);border-radius:12px;
+    padding:11px 12px;transition:border-color 0.2s}
+  .ry-cap-card:hover{border-color:rgba(34,211,238,0.4)}
+  .ry-cap-card .h{display:flex;align-items:center;gap:7px;margin-bottom:7px;
+    font-family:'Orbitron',sans-serif;font-size:0.62em;font-weight:700;letter-spacing:1.5px;
+    color:#22d3ee;text-transform:uppercase}
+  .ry-cap-card .h svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+  .ry-cap-prompt{display:block;width:100%;text-align:left;padding:6px 8px;margin:2px 0;border-radius:7px;
+    background:none;border:none;color:rgba(208,218,240,0.85);cursor:pointer;
+    font-family:'Inter',system-ui,sans-serif;font-size:0.74em;line-height:1.35;transition:all 0.15s}
+  .ry-cap-prompt:hover{background:rgba(34,211,238,0.09);color:#e0e6f0}
+  @media (max-width:760px){.ry-cap-grid{grid-template-columns:1fr 1fr}}
+  @media (max-width:480px){.ry-cap-grid{grid-template-columns:1fr}}
   `;
 
   function injectStyles(){
@@ -369,6 +407,7 @@
             <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
             New conversation
           </button>
+          <input type="text" class="ry-side-search" id="ry-side-search" placeholder="Search conversations...">
           <div id="ry-side-list"><div class="empty">Loading history...</div></div>
         </div>
         <div class="ry-head">
@@ -501,6 +540,7 @@
           <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
           New conversation
         </button>
+        <input type="text" class="ry-side-search" id="ry-side-search" placeholder="Search conversations...">
         <div id="ry-side-list"><div class="empty">Loading history...</div></div>
       </div>
       <div class="ry-ws-main">
@@ -937,6 +977,7 @@
 
   function pickChoice(choice){
     logChoice(choice);
+    removeWelcome();
     // Log user bubble
     const msgsEl = document.getElementById('ry-msgs');
     const userBubble = document.createElement('div');
@@ -1053,25 +1094,53 @@
       }
       list.innerHTML = '';
       convs.forEach(c => list.appendChild(renderConvRow(c)));
+      applySideFilter();
     } catch {
       list.innerHTML = '<div class="empty">History unavailable.</div>';
     }
   }
 
+  // Client-side filter over the loaded list (newest 50). Rows carry their
+  // title in data-title so renames update the filter source too.
+  function applySideFilter(){
+    const q = (document.getElementById('ry-side-search')?.value || '').trim().toLowerCase();
+    const list = document.getElementById('ry-side-list');
+    if (!list) return;
+    let visible = 0;
+    list.querySelectorAll('.ry-conv').forEach(row => {
+      const hit = !q || (row.dataset.title || '').includes(q);
+      row.style.display = hit ? '' : 'none';
+      if (hit) visible++;
+    });
+    let none = list.querySelector('.ry-conv-nomatch');
+    if (q && !visible && list.querySelector('.ry-conv')) {
+      if (!none) {
+        none = document.createElement('div');
+        none.className = 'empty ry-conv-nomatch';
+        none.textContent = 'No matches.';
+        list.appendChild(none);
+      }
+    } else if (none) none.remove();
+  }
+
   function renderConvRow(c){
     const row = document.createElement('div');
     row.className = 'ry-conv';
+    row.dataset.title = String(c.title || 'Untitled').toLowerCase();
     if (c.id === currentConversationId) row.classList.add('active');
     row.innerHTML =
       '<div class="ry-conv-body">' +
         '<div class="ry-conv-title">' + escapeHtml(c.title || 'Untitled') + '</div>' +
         '<div class="ry-conv-time">' + escapeHtml(relativeTime(c.updated_at || c.created_at)) + '</div>' +
       '</div>' +
+      '<button class="ry-conv-edit" title="Rename">' +
+        '<svg viewBox="0 0 24 24"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg>' +
+      '</button>' +
       '<button class="ry-conv-del" title="Delete">' +
         '<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>' +
       '</button>';
     row.addEventListener('click', (e) => {
-      if (e.target.closest('.ry-conv-del')) return;
+      if (e.target.closest('.ry-conv-del') || e.target.closest('.ry-conv-edit') || e.target.closest('.ry-conv-rename')) return;
       loadConversationById(c.id);
     });
     const del = row.querySelector('.ry-conv-del');
@@ -1080,7 +1149,59 @@
       if (!confirm('Delete this conversation?')) return;
       deleteConversation(c.id);
     });
+    const edit = row.querySelector('.ry-conv-edit');
+    if (edit) edit.addEventListener('click', (e) => {
+      e.stopPropagation();
+      startRename(row, c);
+    });
     return row;
+  }
+
+  function startRename(row, c){
+    const titleEl = row.querySelector('.ry-conv-title');
+    if (!titleEl || row.querySelector('.ry-conv-rename')) return;
+    const old = c.title || 'Untitled';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'ry-conv-rename';
+    input.value = old;
+    input.maxLength = 200;
+    titleEl.replaceWith(input);
+    input.focus();
+    input.select();
+    let settled = false;
+    const finish = async (commit) => {
+      if (settled) return;
+      settled = true;
+      const next = input.value.trim();
+      const restore = document.createElement('div');
+      restore.className = 'ry-conv-title';
+      restore.textContent = old;
+      input.replaceWith(restore);
+      if (!commit || !next || next === old) return;
+      restore.textContent = next;
+      row.dataset.title = next.toLowerCase();
+      try {
+        const r = await fetch('/api/chat-conversations?id=' + encodeURIComponent(c.id), {
+          method: 'PATCH',
+          headers: convHeaders(true),
+          body: JSON.stringify({ title: next }),
+        });
+        if (!r.ok) throw new Error('rename failed');
+        c.title = next;
+      } catch {
+        restore.textContent = old;
+        row.dataset.title = old.toLowerCase();
+      }
+      applySideFilter();
+    };
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') finish(true);
+      if (e.key === 'Escape') finish(false);
+    });
+    input.addEventListener('blur', () => finish(true));
+    input.addEventListener('click', (e) => e.stopPropagation());
   }
 
   async function loadConversationById(id){
@@ -1132,10 +1253,68 @@
     if (choicesEl) choicesEl.innerHTML = '';
     historyStack = [];
     lastPrioritiesGreeting = null;
-    renderState('root');
-    refreshPriorities({ withGreeting: true });
+    if (document.querySelector('.ry-workspace')) {
+      renderWorkspaceWelcome();
+      refreshPriorities({ withGreeting: false });
+    } else {
+      renderState('root');
+      refreshPriorities({ withGreeting: true });
+    }
     const side = document.getElementById('ry-side');
     if (side) side.classList.remove('on');
+  }
+
+  // ── Workspace welcome: empty-thread capability showcase ──
+  // The whole company runs through this surface; a blank thread should show
+  // what the AI can actually do. Each prompt is a real, answerable ask that
+  // routes through the same path as typed input. Removed on the first turn.
+  const CAPABILITIES = [
+    { domain: 'Company pulse',
+      svg: '<svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>',
+      prompts: ['Give me the morning briefing', 'Top 3 priorities right now', 'What changed in the last 24 hours?'] },
+    { domain: 'Sales + pipeline',
+      svg: '<svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>',
+      prompts: ["What's in the pipeline right now?", 'Which estimates are awaiting signature?', 'Draft a follow-up for a quiet lead'] },
+    { domain: 'Operations',
+      svg: '<svg viewBox="0 0 24 24"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>',
+      prompts: ["What's on the crew schedule today?", 'List open tickets by priority', 'Any jobs waiting on materials?'] },
+    { domain: 'Customers',
+      svg: '<svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+      prompts: ['Who needs a follow-up today?', 'Summarize recent customer messages'] },
+    { domain: 'Marketing',
+      svg: '<svg viewBox="0 0 24 24"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>',
+      prompts: ['How are the ads performing this week?', 'Lead flow by source, last 7 days'] },
+    { domain: 'Money',
+      svg: '<svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
+      prompts: ['Unpaid invoices and cash position', 'Revenue this month vs last month'] },
+  ];
+
+  function renderWorkspaceWelcome(){
+    const msgsEl = document.getElementById('ry-msgs');
+    if (!msgsEl || document.getElementById('ry-welcome')) return;
+    const el = document.createElement('div');
+    el.id = 'ry-welcome';
+    el.className = 'ry-welcome';
+    el.innerHTML =
+      '<div class="ry-welcome-title">RYUJIN</div>' +
+      '<div class="ry-welcome-sub">Run the company. Ask anything.</div>' +
+      '<div class="ry-cap-grid">' + CAPABILITIES.map(c =>
+        '<div class="ry-cap-card"><div class="h">' + c.svg + '<span>' + escapeHtml(c.domain) + '</span></div>' +
+        c.prompts.map(p => '<button class="ry-cap-prompt">' + escapeHtml(p) + '</button>').join('') +
+        '</div>').join('') +
+      '</div>';
+    el.querySelectorAll('.ry-cap-prompt').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const input = document.getElementById('ry-input');
+        if (input) { input.value = btn.textContent; sendTyped(); }
+      });
+    });
+    msgsEl.appendChild(el);
+  }
+
+  function removeWelcome(){
+    const el = document.getElementById('ry-welcome');
+    if (el) el.remove();
   }
 
   function wireEvents(){
@@ -1283,6 +1462,11 @@
     }
     if (newConv) {
       newConv.addEventListener('click', () => startNewConversation());
+    }
+    const sideSearch = document.getElementById('ry-side-search');
+    if (sideSearch) {
+      sideSearch.addEventListener('input', applySideFilter);
+      sideSearch.addEventListener('keydown', (e) => e.stopPropagation());
     }
 
     // ── Phase 6: voice + persona ──
@@ -1795,6 +1979,7 @@
     input.value = '';
     autoGrow(input);
     input.focus();
+    removeWelcome();
     const msgsEl = document.getElementById('ry-msgs');
 
     // User bubble (with attachment chips if any)
@@ -2093,10 +2278,16 @@
     wireEvents();
     const lbl = document.getElementById('ry-sector-label');
     if (lbl) lbl.textContent = (cfg.sector || 'HUB').toUpperCase();
-    // Embedded mode is always "open" — render root immediately
+    // Embedded mode is always "open" — render root immediately.
+    // Workspace gets the capability showcase instead of the bare greeting.
     if (cfg.embedTarget) {
-      if (cfg.workspace) { loadConversationsList(); updateModeChip(); }
-      setTimeout(() => renderState('root'), 400);
+      if (cfg.workspace) {
+        loadConversationsList();
+        updateModeChip();
+        setTimeout(() => { renderWorkspaceWelcome(); refreshPriorities({ withGreeting: false }); }, 400);
+      } else {
+        setTimeout(() => renderState('root'), 400);
+      }
     } else if (cfg.autoOpen !== false) {
       setTimeout(() => togglePanel(true), 900);
     }
