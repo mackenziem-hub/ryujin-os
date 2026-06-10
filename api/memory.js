@@ -15,6 +15,7 @@
 // DELETE /api/memory?type=preferences&key=x   — remove a preference by key
 
 import { put, list, head } from '@vercel/blob';
+import { resolveSession } from '../lib/portalAuth.js';
 
 const BLOB_PREFIX = 'ryujin-memory/';
 const LEGACY_BLOB_PREFIX = 'shenron-memory/';
@@ -30,7 +31,10 @@ async function readBlob(key) {
       ({ blobs } = await list({ prefix: `${LEGACY_BLOB_PREFIX}${key}`, limit: 1 }));
     }
     if (blobs.length === 0) return null;
-    const resp = await fetch(blobs[0].url);
+    // Cache-bust: overwritten blobs serve stale from the CDN for minutes
+    // (known footgun). Without this, two quick writes to the same key can
+    // read-modify-write over stale state and silently drop the first write.
+    const resp = await fetch(blobs[0].url + (blobs[0].url.includes('?') ? '&' : '?') + '_t=' + Date.now(), { cache: 'no-store' });
     if (!resp.ok) return null;
     return await resp.json();
   } catch (e) {
@@ -65,6 +69,17 @@ async function listBlobs(prefix, limit = 10) {
 // ═══════════════════════════════════════════
 
 export default async function handler(req, res) {
+  // Hard gate: this store holds preferences, session summaries, ops logs and
+  // durable business facts. Owner/admin session or RYUJIN_SERVICE_TOKEN
+  // (+ x-tenant-id) required; it was previously readable unauthenticated.
+  const session = await resolveSession(req);
+  if (!session) {
+    return res.status(401).json({ error: 'sign_in_required', code: 'NO_SESSION' });
+  }
+  if (session.role !== 'owner' && session.role !== 'admin') {
+    return res.status(403).json({ error: 'owner_or_admin_required', current_role: session.role });
+  }
+
   const { type, name, limit = '10' } = req.query;
 
   if (!type) {
@@ -167,6 +182,13 @@ export default async function handler(req, res) {
       return res.json({ count: prefs.length, preferences: prefs, timestamp: new Date().toISOString() });
     }
 
+    // Read durable business facts (semantic memory), newest first
+    if (type === 'facts') {
+      const data = await readBlob('facts.json');
+      const facts = (data?.facts || []).slice(0, Math.min(Math.max(parseInt(limit, 10) || 50, 1), 300));
+      return res.json({ count: facts.length, facts, timestamp: new Date().toISOString() });
+    }
+
     return res.status(400).json({ error: `Unknown type: ${type}` });
   }
 
@@ -182,7 +204,17 @@ export default async function handler(req, res) {
       await writeBlob('preferences.json', data);
       return res.json({ status: 'deleted', key: req.query.key, remaining: data.preferences.length });
     }
-    return res.status(400).json({ error: 'DELETE requires type=preferences&key=...' });
+    if (type === 'facts' && req.query.id) {
+      const data = await readBlob('facts.json') || { facts: [] };
+      const before = data.facts.length;
+      data.facts = data.facts.filter(f => f.id !== req.query.id);
+      if (data.facts.length === before) {
+        return res.status(404).json({ error: `Fact "${req.query.id}" not found` });
+      }
+      await writeBlob('facts.json', data);
+      return res.json({ status: 'deleted', id: req.query.id, remaining: data.facts.length });
+    }
+    return res.status(400).json({ error: 'DELETE requires type=preferences&key=... or type=facts&id=...' });
   }
 
   // ─── WRITE OPERATIONS ───
@@ -250,6 +282,25 @@ export default async function handler(req, res) {
       }
       await writeBlob('preferences.json', data);
       return res.json({ status: 'saved', key, total: data.preferences.length, timestamp: pref.saved_at });
+    }
+
+    // Save a durable business fact (semantic memory). Newest first, capped.
+    if (type === 'facts') {
+      const fact = String(body.fact || '').trim();
+      if (fact.length < 3 || fact.length > 600) {
+        return res.status(400).json({ error: 'fact must be 3-600 characters' });
+      }
+      const data = await readBlob('facts.json') || { facts: [] };
+      const entry = {
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        fact,
+        topic: typeof body.topic === 'string' ? body.topic.slice(0, 60) : null,
+        saved_at: new Date().toISOString()
+      };
+      data.facts.unshift(entry);
+      if (data.facts.length > 300) data.facts = data.facts.slice(0, 300);
+      await writeBlob('facts.json', data);
+      return res.json({ status: 'saved', id: entry.id, total: data.facts.length, timestamp: entry.saved_at });
     }
 
     // Append to operations log
