@@ -179,6 +179,7 @@ async function notifyOwner({ contactId, source, name, email, phone, address, cit
     if (md.complexity)             lines.push(`  Complexity:  ${safeHeader(md.complexity)}`);
     if (md.chimneyType)            lines.push(`  Chimney:     ${safeHeader(md.chimneyType)}`);
     if (md.postal)                 lines.push(`  Postal:      ${safeHeader(md.postal)}`);
+    if (md.measured)               lines.push(`  Measured:    ${safeHeader(md.measured)}${md.solar_sq ? ` (${safeHeader(md.solar_sq)} SQ @ ${safeHeader(md.solar_pitch_x12)}/12 from imagery)` : ''}`);
     lines.push('');
   }
 
