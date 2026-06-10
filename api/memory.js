@@ -14,7 +14,7 @@
 // POST /api/memory?type=preferences           — save/update a preference (body: {key, rule, type})
 // DELETE /api/memory?type=preferences&key=x   — remove a preference by key
 
-import { put, list, head } from '@vercel/blob';
+import { put, list, head, del } from '@vercel/blob';
 import { resolveSession } from '../lib/portalAuth.js';
 
 const BLOB_PREFIX = 'ryujin-memory/';
@@ -24,33 +24,53 @@ const LEGACY_BLOB_PREFIX = 'shenron-memory/';
 // BLOB HELPERS
 // ═══════════════════════════════════════════
 
+// Versioned storage: every write lands on a NEW timestamped key, so URLs are
+// immutable and the CDN can never serve a stale overwrite (edge entries cached
+// under the old long TTL ignored both ?_t= busts and later max-age changes;
+// that resurrected hours-old data on 2026-06-10). list() is API-backed, so
+// newest-version discovery is always fresh. Legacy bare keys remain readable
+// and naturally lose to any newer versioned write.
+function versionedKey(key) {
+  return `${BLOB_PREFIX}${key}.v${String(Date.now()).padStart(15, '0')}`;
+}
+
+// Codepoint compare, descending: collation must never depend on locale.
+function byPathnameDesc(a, b) {
+  return b.pathname < a.pathname ? -1 : b.pathname > a.pathname ? 1 : 0;
+}
+
 async function readBlob(key) {
-  try {
-    let { blobs } = await list({ prefix: `${BLOB_PREFIX}${key}`, limit: 1 });
-    if (blobs.length === 0) {
-      ({ blobs } = await list({ prefix: `${LEGACY_BLOB_PREFIX}${key}`, limit: 1 }));
-    }
-    if (blobs.length === 0) return null;
-    // Cache-bust: overwritten blobs serve stale from the CDN for minutes
-    // (known footgun). Without this, two quick writes to the same key can
-    // read-modify-write over stale state and silently drop the first write.
-    const resp = await fetch(blobs[0].url + (blobs[0].url.includes('?') ? '&' : '?') + '_t=' + Date.now(), { cache: 'no-store' });
-    if (!resp.ok) return null;
-    return await resp.json();
-  } catch (e) {
-    return null;
+  // Transient errors THROW (caller 500s) instead of returning null: a null on
+  // a read-modify-write path (preferences/facts/ops) would start from empty
+  // and WIPE the store on the next write (review P1 class).
+  let { blobs } = await list({ prefix: `${BLOB_PREFIX}${key}`, limit: 1000 });
+  if (blobs.length === 0) {
+    ({ blobs } = await list({ prefix: `${LEGACY_BLOB_PREFIX}${key}`, limit: 1000 }));
   }
+  if (blobs.length === 0) return null;
+  // Newest version wins; bare legacy keys (no .v suffix) lose the descending
+  // sort to any versioned sibling, so they only win pre-cutover.
+  const newest = blobs.sort(byPathnameDesc)[0];
+  const resp = await fetch(newest.url, { cache: 'no-store' });
+  if (!resp.ok) throw new Error(`memory blob fetch HTTP ${resp.status} for ${key}`);
+  return await resp.json();
 }
 
 async function writeBlob(key, data) {
-  const blob = await put(`${BLOB_PREFIX}${key}`, JSON.stringify(data, null, 2), {
+  const blob = await put(versionedKey(key), JSON.stringify(data, null, 2), {
     access: 'public',
     addRandomSuffix: false,
     contentType: 'application/json',
-    // Blob CDN ignores query-string cache-busts; without a short max-age,
-    // read-modify-write over a stale edge copy can drop recent writes.
     cacheControlMaxAge: 60
   });
+  // Best-effort prune: keep the 2 newest versions of this logical key.
+  try {
+    const { blobs } = await list({ prefix: `${BLOB_PREFIX}${key}.v`, limit: 1000 });
+    const stale = blobs.sort(byPathnameDesc).slice(2).map(b => b.url);
+    if (stale.length) await del(stale);
+  } catch (e) {
+    console.error('[memory] version prune failed:', e.message);
+  }
   return blob;
 }
 
