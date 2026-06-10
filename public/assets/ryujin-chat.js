@@ -272,6 +272,36 @@
     font-family:'Share Tech Mono',monospace;font-size:0.55em;letter-spacing:0.8px;color:#22d3ee;
     cursor:pointer;text-transform:uppercase}
   .ry-mode-chip:hover{background:rgba(34,211,238,0.2)}
+
+  /* ── Workspace mode (HQ full chat) ── */
+  .ry-workspace{display:grid;grid-template-columns:230px 1fr;height:100%;min-height:0;position:relative;z-index:3;
+    background:rgba(6,12,24,0.55);border:1px solid rgba(34,211,238,0.18);border-radius:14px;overflow:hidden}
+  .ry-workspace::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;z-index:5;
+    background:linear-gradient(90deg,transparent,#22d3ee,#7c3aed,transparent);opacity:0.7}
+  .ry-workspace #ry-side{position:static;transform:none;width:auto;height:auto;min-height:0;
+    display:flex;flex-direction:column;border-right:1px solid rgba(34,211,238,0.12);background:rgba(4,9,18,0.6)}
+  .ry-workspace .ry-side-head .ry-close{display:none}
+  .ry-ws-main{display:flex;flex-direction:column;min-width:0;min-height:0}
+  .ry-workspace .ry-head{padding:12px 16px;border-bottom:1px solid rgba(34,211,238,0.15);display:flex;align-items:center;gap:10px}
+  .ry-workspace .ry-msgs{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:16px 18px}
+  .ry-workspace .ry-bubble{font-size:0.85em;max-width:76%}
+  .ry-orb-mount{width:38px;height:38px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+  .ry-bubble .ry-meta{display:flex;align-items:center;gap:8px;margin-top:6px;
+    font-family:'Share Tech Mono',monospace;font-size:0.75em;color:rgba(160,190,230,0.45)}
+  .ry-bubble .ry-copy{background:none;border:none;cursor:pointer;color:rgba(160,190,230,0.45);
+    padding:2px;display:flex;align-items:center}
+  .ry-bubble .ry-copy:hover{color:#22d3ee}
+  .ry-bubble .ry-copy svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  .ry-bubble.dragon pre{background:rgba(4,9,18,0.8);border:1px solid rgba(34,211,238,0.15);border-radius:8px;
+    padding:10px;overflow-x:auto;font-family:'Share Tech Mono',monospace;font-size:0.9em;margin:6px 0}
+  .ry-bubble.dragon code{background:rgba(34,211,238,0.1);border-radius:4px;padding:1px 5px;
+    font-family:'Share Tech Mono',monospace;font-size:0.92em}
+  .ry-bubble.dragon pre code{background:none;padding:0}
+  .ry-bubble.dragon ul,.ry-bubble.dragon ol{margin:4px 0;padding-left:20px}
+  .ry-bubble.dragon li{margin:2px 0}
+  .ry-bubble.dragon a{color:#22d3ee}
+  .ry-bubble.dragon h1,.ry-bubble.dragon h2,.ry-bubble.dragon h3{font-size:1.05em;margin:8px 0 4px;color:#9be7ff}
+  @media (max-width:760px){.ry-workspace{grid-template-columns:1fr}.ry-workspace #ry-side{display:none}}
   `;
 
   function injectStyles(){
@@ -414,6 +444,71 @@
         </button>
       </div>
     `;
+  }
+
+  // Workspace mode: full chat surface for the HQ center — persistent history
+  // sidebar + thread + composer. Same engine, same ids, same master AI.
+  function createWorkspaceDom(targetSelector){
+    const target = document.querySelector(targetSelector);
+    if (!target) { console.warn('Ryujin embedTarget not found', targetSelector); createDom(); return; }
+    target.classList.add('ry-workspace');
+    target.innerHTML = `
+      <div id="ry-side">
+        <div class="ry-side-head">
+          <div class="lbl">History</div>
+          <button class="ry-close" id="ry-side-close" title="Close history">
+            <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </div>
+        <button class="ry-new-conv" id="ry-new-conv" title="Start a new conversation">
+          <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+          New conversation
+        </button>
+        <div id="ry-side-list"><div class="empty">Loading history...</div></div>
+      </div>
+      <div class="ry-ws-main">
+        <div class="ry-head">
+          <div class="ry-orb-mount" id="ry-orb-mount"></div>
+          <div class="ry-who">
+            <div class="n">RYUJIN</div>
+            <div class="s"><span class="dot"></span>ACTIVE · <span id="ry-sector-label"></span></div>
+          </div>
+        </div>
+        <div class="ry-msgs" id="ry-msgs"></div>
+        <div class="ry-sugg-wrap" id="ry-sugg-wrap">
+          <div class="ry-sugg-head" id="ry-sugg-head" title="Toggle suggestions">
+            <span class="ry-sugg-label">Suggestions</span>
+            <span class="ry-sugg-chev"><svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></span>
+          </div>
+          <div class="ry-choices" id="ry-choices"></div>
+        </div>
+        <div class="ry-footer">
+          <button class="ry-icon-btn" id="ry-mic" title="Voice input">
+            <svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+          </button>
+          <button class="ry-icon-btn" id="ry-speak-toggle" title="Auto-speak AI responses">
+            <svg viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+          </button>
+          <button class="ry-icon-btn" id="ry-attach" title="Attach files (photos, EagleView PDF, competitor quote)">
+            <svg viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+          </button>
+          <input type="file" id="ry-file-input" multiple accept="image/*,application/pdf,.pdf,.txt,.csv,.md,.docx,.xlsx" style="display:none">
+          <input class="ry-input" id="ry-input" placeholder="ask Ryujin to handle something..."/>
+          <button class="ry-send" id="ry-send" title="Send">
+            <svg viewBox="0 0 24 24"><polyline points="5 12 12 5 19 12" transform="rotate(90 12 12)"/><line x1="12" y1="19" x2="12" y2="5"/></svg>
+          </button>
+        </div>
+      </div>
+    `;
+    // Synapse orb avatar — static when idle, fires while thinking/speaking.
+    if (window.SynapseOrb) {
+      const orb = window.SynapseOrb.create(document.getElementById('ry-orb-mount'), { size: 38 });
+      document.addEventListener('ry-activity', (e) => orb.setState(e.detail || 'idle'));
+    }
+  }
+
+  function setActivity(state){
+    try { document.dispatchEvent(new CustomEvent('ry-activity', { detail: state })); } catch {}
   }
 
   // ── Mode + Effort picker ───────────────────────────────────────────
@@ -657,6 +752,48 @@
     return String(s||'').replace(/[&<>"']/g, (c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
 
+  // Minimal markdown → HTML for AI bubbles. Escapes first, then formats:
+  // code blocks, inline code, bold, italic, headings, lists, links.
+  function renderMarkdown(s){
+    let t = escapeHtml(s);
+    // fenced code blocks
+    t = t.replace(/```([\s\S]*?)```/g, (_, code) => '<pre><code>' + code.replace(/^\w+\n/, '') + '</code></pre>');
+    t = t.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+    t = t.replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
+    t = t.replace(/(^|\s)\*([^*\n]+)\*(?=\s|$|[.,;:!?])/g, '$1<i>$2</i>');
+    t = t.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+    t = t.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+    t = t.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+    t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    // unordered + ordered list runs
+    t = t.replace(/((?:^[-*] .+\n?)+)/gm, (m) => '<ul>' + m.trim().split('\n').map(l => '<li>' + l.replace(/^[-*] /, '') + '</li>').join('') + '</ul>');
+    t = t.replace(/((?:^\d+\. .+\n?)+)/gm, (m) => '<ol>' + m.trim().split('\n').map(l => '<li>' + l.replace(/^\d+\. /, '') + '</li>').join('') + '</ol>');
+    // line breaks outside block elements
+    t = t.replace(/\n(?!<\/?(ul|ol|li|pre|h\d))/g, '<br>');
+    return t;
+  }
+
+  // Timestamp + copy button on finished AI bubbles.
+  function decorateBubble(bubble, rawText){
+    const meta = document.createElement('div');
+    meta.className = 'ry-meta';
+    const time = document.createElement('span');
+    time.textContent = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    const copy = document.createElement('button');
+    copy.className = 'ry-copy';
+    copy.title = 'Copy';
+    copy.innerHTML = '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+    copy.addEventListener('click', () => {
+      navigator.clipboard?.writeText(rawText).then(() => {
+        copy.innerHTML = '<svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>';
+        setTimeout(() => { copy.innerHTML = '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>'; }, 1200);
+      }).catch(() => {});
+    });
+    meta.appendChild(time);
+    meta.appendChild(copy);
+    bubble.appendChild(meta);
+  }
+
   async function renderState(stateKey){
     const state = stateKey === 'root' ? config.root : config.states[stateKey];
     if (!state) return;
@@ -828,6 +965,7 @@
       if (!r.ok) return; // Silent — migration may not be applied yet
       const saved = await r.json();
       if (saved && saved.id) setCurrentConvId(saved.id);
+      if (document.querySelector('.ry-workspace')) loadConversationsList();
     } catch {}
   }
 
@@ -898,13 +1036,15 @@
         if (!m || !m.content) return;
         const bubble = document.createElement('div');
         bubble.className = 'ry-bubble ' + (m.role === 'user' ? 'user' : 'dragon');
-        bubble.textContent = m.content;
+        if (m.role === 'user') bubble.textContent = m.content;
+        else bubble.innerHTML = renderMarkdown(m.content);
         msgsEl.appendChild(bubble);
       });
       if (msgsEl) msgsEl.scrollTop = msgsEl.scrollHeight;
       // Refresh sidebar active highlight + priorities
       const side = document.getElementById('ry-side');
       if (side) side.classList.remove('on');
+      if (document.querySelector('.ry-workspace')) loadConversationsList();
       refreshPriorities({ withGreeting: false });
     } catch {}
   }
@@ -1549,6 +1689,7 @@
     typing.innerHTML = '<span></span><span></span><span></span>';
     msgsEl.appendChild(typing);
     msgsEl.scrollTop = msgsEl.scrollHeight;
+    setActivity('thinking');
 
     try {
       const ryujinToken = (typeof localStorage !== 'undefined' && localStorage.getItem('ryujin_token')) || '';
@@ -1623,8 +1764,9 @@
             }
           }
           if (data.text) {
+            if (!assembled) setActivity('speaking');
             assembled += data.text;
-            bubble.textContent = assembled;
+            bubble.innerHTML = renderMarkdown(assembled);
           } else if (data.error) {
             serverError = data.error;
             console.error('[ryujin-chat] server error:', data.error);
@@ -1652,6 +1794,7 @@
       }
 
       if (assembled) {
+        decorateBubble(bubble, assembled);
         chatHistory.push({ role: 'assistant', content: assembled });
         // Phase 6B: TTS auto-speak if toggle on
         if (RY.maybeSpeak) RY.maybeSpeak(assembled);
@@ -1676,6 +1819,8 @@
       err.className = 'ry-bubble dragon';
       err.textContent = 'Connection interrupted. Standing by.';
       msgsEl.appendChild(err);
+    } finally {
+      setActivity('idle');
     }
   }
 
@@ -1726,13 +1871,15 @@
     config = cfg;
     historyStack = [];
     injectStyles();
-    if (cfg.embedTarget) createEmbeddedDom(cfg.embedTarget);
+    if (cfg.workspace && cfg.embedTarget) createWorkspaceDom(cfg.embedTarget);
+    else if (cfg.embedTarget) createEmbeddedDom(cfg.embedTarget);
     else createDom();
     wireEvents();
     const lbl = document.getElementById('ry-sector-label');
     if (lbl) lbl.textContent = (cfg.sector || 'HUB').toUpperCase();
     // Embedded mode is always "open" — render root immediately
     if (cfg.embedTarget) {
+      if (cfg.workspace) loadConversationsList();
       setTimeout(() => renderState('root'), 400);
     } else if (cfg.autoOpen !== false) {
       setTimeout(() => togglePanel(true), 900);
