@@ -204,7 +204,9 @@ const TENANT = window.RYUJIN_TENANT_SLUG;
 const params = new URLSearchParams(location.search);
 const id = params.get('id');
 
-const SIGNED_STATES = ['closed_won','signed','accepted','won'];
+// Won/lost predicates mirror lib/customerLtvCalc.js: signing = acceptance,
+// and won estimates keep moving through scheduled/in_progress/complete.
+const WON_STATUSES = ['signed','accepted','scheduled','in_progress','complete','won'];
 const LOST_STATES = ['closed_lost','lost','rejected'];
 const TIER_ORDER = ['economy','standard','premium','gold','platinum','diamond'];
 
@@ -216,18 +218,31 @@ function fmtMonthYear(iso) { if (!iso) return '—'; return new Date(iso).toLoca
 function showBanner(msg) { document.getElementById('banner-slot').innerHTML = `<div class="banner warn">${escapeHtml(msg)}</div>`; }
 function _headers() { return { 'x-tenant-id': TENANT, ...window.RyujinAuth.headers() }; }
 
+// Tier precedence mirrors lib/customerLtvCalc.js estimateValue: total
+// carries overrides, summary.sellingPrice is the raw-engine shape, flat
+// sellingPrice is legacy. Local math only fires when customer-state is
+// unreachable.
+function tierVal(p) {
+  if (!p) return null;
+  const v = p.total ?? p.summary?.sellingPrice ?? p.sellingPrice;
+  return v != null ? Number(v) || 0 : null;
+}
+
 function sellingPrice(e) {
-  if (e.final_accepted_total) return e.final_accepted_total;
-  const tier = String(e.selected_package || 'gold').toLowerCase();
-  const pkg = e.calculated_packages?.[tier] || {};
-  return pkg.sellingPrice || pkg.total || 0;
+  if (e.final_accepted_total != null) return Number(e.final_accepted_total) || 0;
+  const pkgs = e.calculated_packages || {};
+  const sel = tierVal(pkgs[String(e.selected_package || 'gold').toLowerCase()]);
+  if (sel != null) return sel;
+  let best = 0;
+  for (const k of Object.keys(pkgs)) { const v = tierVal(pkgs[k]); if (v != null && v > best) best = v; }
+  return best;
 }
 
 function estKind(e) {
-  const s = estState(e);
-  if (SIGNED_STATES.includes(s)) return 'signed';
-  if (LOST_STATES.includes(s)) return 'lost';
-  if (s.includes('draft')) return 'draft';
+  const status = String(e.status || '').toLowerCase();
+  if (e.state === 'closed_won' || WON_STATUSES.includes(status)) return 'signed';
+  if (e.state === 'closed_lost' || LOST_STATES.includes(status)) return 'lost';
+  if (estState(e).includes('draft')) return 'draft';
   return 'open';
 }
 
@@ -287,7 +302,7 @@ function tierBoxes(e) {
   const pk = e.calculated_packages || {};
   const sel = String(e.selected_package || '').toLowerCase();
   const keys = Object.keys(pk)
-    .filter(k => pk[k] && (pk[k].sellingPrice || pk[k].total))
+    .filter(k => tierVal(pk[k]))
     .sort((a, b) => {
       const ia = TIER_ORDER.indexOf(a.toLowerCase()), ib = TIER_ORDER.indexOf(b.toLowerCase());
       return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
@@ -295,7 +310,7 @@ function tierBoxes(e) {
     .slice(0, 4);
   if (!keys.length) return '';
   return `<div class="tier-row">${keys.map(k => {
-    const price = pk[k].sellingPrice || pk[k].total;
+    const price = tierVal(pk[k]);
     const isSel = k.toLowerCase() === sel;
     const goldT = k.toLowerCase() === 'gold' ? ' gold-t' : '';
     return `<div class="tier-box${goldT}${isSel ? ' sel' : ''}"><div class="t-name">${escapeHtml(k)}</div><div class="t-price">${fmtMoney(price)}</div></div>`;
@@ -389,7 +404,7 @@ async function load() {
       fetchJson(`/api/customers?id=${encodeURIComponent(id)}`),
       fetchJson(`/api/estimates?customer_id=${encodeURIComponent(id)}&limit=100`),
       fetchJson(`/api/projects?customer_id=${encodeURIComponent(id)}&limit=20`),
-      fetchJson(`/api/workorders`),
+      fetchJson(`/api/workorders?limit=500`),
       fetchJson(`/api/customer-state`)
     ]);
 
