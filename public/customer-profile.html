@@ -144,10 +144,11 @@ async function load() {
     document.getElementById('profileCard').innerHTML = `
       <div class="profile-name">${escapeHtml(customer.full_name || 'Unnamed')}</div>
       <div class="profile-contact">
-        ${customer.email ? `<span>📧 ${escapeHtml(customer.email)}</span>` : ''}
-        ${customer.phone ? `<span>📞 ${escapeHtml(customer.phone)}</span>` : ''}
+        ${customer.email ? `<a href="mailto:${escapeHtml(customer.email)}" style="color:var(--cyan);text-decoration:none">📧 ${escapeHtml(customer.email)}</a>` : ''}
+        ${customer.phone ? `<a href="tel:${escapeHtml(customer.phone)}" style="color:var(--cyan);text-decoration:none">📞 ${escapeHtml(customer.phone)}</a>` : ''}
         ${customer.address ? `<span>📍 ${escapeHtml(customer.address)}</span>` : ''}
         ${customer.city ? `<span>${escapeHtml(customer.city)}</span>` : ''}
+        ${customer.ghl_contact_id ? `<a href="https://app.gohighlevel.com/v2/location/aHotOUdq9D8m3JPrRz9n/contacts/detail/${encodeURIComponent(customer.ghl_contact_id)}" target="_blank" rel="noopener" style="color:var(--cyan);text-decoration:none">↗ OPEN IN GHL</a>` : ''}
       </div>
       <div class="profile-stats">
         <div class="pstat"><div class="v gold">${fmtMoney(ltv)}</div><div class="l">Lifetime Value</div></div>
@@ -162,13 +163,14 @@ async function load() {
       kind: ['closed_won','signed'].includes(e.state || e.status) ? 'signed' : ['closed_lost','lost'].includes(e.state || e.status) ? 'lost' : (e.state || e.status) === 'proposal_draft' ? 'draft' : 'estimate',
       label: `Estimate #${e.estimate_number || e.id?.slice(0,8)} · ${e.proposal_mode || ''} · ${e.state || e.status}`,
       amount: sellingPrice(e),
-      at: e.closed_won_at || e.updated_at || e.created_at
+      at: e.closed_won_at || e.updated_at || e.created_at,
+      share: e.share_token || null
     }));
     events.sort((a, b) => new Date(b.at) - new Date(a.at));
     document.getElementById('historyCount').textContent = events.length;
     const el = document.getElementById('historyList');
     if (events.length === 0) el.innerHTML = `<div class="empty-state">No history yet for this customer.</div>`;
-    else el.innerHTML = events.map(ev => `<div class="history-row"><div class="history-dot ${ev.kind}"></div><div class="history-name">${escapeHtml(ev.label)}</div><div class="history-amount">${fmtMoney(ev.amount)}</div><div class="history-date">${fmtDate(ev.at)}</div></div>`).join('');
+    else el.innerHTML = events.map(ev => `<div class="history-row"><div class="history-dot ${ev.kind}"></div><div class="history-name">${escapeHtml(ev.label)}${ev.share ? ` <a href="/proposal-client.html?share=${encodeURIComponent(ev.share)}" target="_blank" rel="noopener" style="color:var(--cyan);text-decoration:none;font-size:0.8em;margin-left:6px">PROPOSAL ›</a>` : ''}</div><div class="history-amount">${fmtMoney(ev.amount)}</div><div class="history-date">${fmtDate(ev.at)}</div></div>`).join('');
   } catch (e) { showBanner(`Network: ${e.message}`); }
 }
 load();
