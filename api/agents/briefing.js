@@ -166,6 +166,8 @@ export default async function handler(req, res) {
     // ③ OPS STATUS
     operations: piccolo ? {
       totalTickets: piccolo.stats?.totalTickets || 0,
+      // totalOpen = open + active crew tickets, the count the cockpit reports
+      totalOpen: piccolo.stats?.totalOpen ?? null,
       overdueCount: piccolo.stats?.overdueCount || 0,
       byStatus: piccolo.stats?.byStatus || {},
       byAssignee: piccolo.stats?.byAssignee || {},
