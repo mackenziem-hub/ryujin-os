@@ -1195,7 +1195,7 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        source: { type: 'string', enum: ['all', 'estimates', 'tickets', 'leads', 'crm', 'pipeline', 'conversations', 'tasks'], description: 'Which data source to query. Use "tasks" for GHL/Automator sales tasks (location-wide list of all open tasks tied to contacts).' },
+        source: { type: 'string', enum: ['all', 'estimates', 'tickets', 'leads', 'crm', 'pipeline', 'conversations', 'tasks'], description: 'Which data source to query. "tickets" returns OPEN crew tickets from the native Ryujin tickets table (same counts the cockpit and load-scan show; the old Replit Action Board is retired history). Use "tasks" for GHL/Automator sales tasks (location-wide list of all open tasks tied to contacts).' },
         query: { type: 'string', description: 'Search term (name, email, etc). Optional — omit for all records.' },
         mode: { type: 'string', enum: ['search', 'stats'], description: 'search for records, stats for KPI summary' },
         id: { type: 'string', description: 'Contact ID for single contact lookup (crm source only)' },

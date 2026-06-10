@@ -235,6 +235,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         [`briefing_${type}`]: {
           timestamp: briefing.timestamp,
+          generated_at: new Date().toISOString(),
           kpiScouter: briefing.kpiScouter,
           top3: briefing.top3,
           calendar: briefing.calendar,
@@ -255,6 +256,7 @@ export default async function handler(req, res) {
   let emailSent = false;
   let briefMarkdown = null;
   let briefStatus = null;
+  let briefDateLabel = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Moncton' });
 
   if (type === 'morning') {
     const [pulseCampaigns, reconcile, pendingConvs, unreadEmails, systems] = await Promise.all([
@@ -265,6 +267,11 @@ export default async function handler(req, res) {
       runSystemsCheck().catch(e => { errors.push(`Systems: ${e.message}`); return null; })
     ]);
 
+    // Anything below that throws must NOT kill the function before the final
+    // snapshot write: a thrown buildBriefMarkdown left briefing_morning without
+    // briefMarkdown on 2026-06-10 and the load scan reported brief=MISSING.
+    // Fail loud INSIDE the data instead.
+    try {
     // Map per-source data into the brief's bySource shape
     const bySource = (pulseCampaigns || []).filter(c => c.status === 'ACTIVE').map(c => {
       const cpl = c.leads > 0 ? c.spend / c.leads : null;
@@ -323,12 +330,18 @@ export default async function handler(req, res) {
     const built = buildBriefMarkdown(briefCtx);
     briefMarkdown = built.markdown;
     briefStatus = built.status;
+    briefDateLabel = built.dateLabel || briefDateLabel;
+    } catch (e) {
+      errors.push(`Brief build failed: ${e.message}`);
+      briefMarkdown = `Brief generation failed: ${e.message}. Check the Vercel logs for api/agents/briefing.`;
+      briefStatus = 'red';
+    }
 
     // Email delivery disabled per owner directive 2026-05-12 — briefing lives in
     // snapshot + admin dashboard only. Re-enable by removing the OWNER_BRIEFING_EMAIL_MUTED gate.
     if (process.env.OWNER_BRIEFING_EMAIL_MUTED !== '1') {
       try {
-        const subject = `Daily Brief — ${built.dateLabel} · ${built.status === 'red' ? '🔴' : built.status === 'yellow' ? '🟡' : '🟢'}`;
+        const subject = `Daily Brief · ${briefDateLabel} · ${briefStatus === 'red' ? '🔴' : briefStatus === 'yellow' ? '🟡' : '🟢'}`;
         await gmailSend('mackenzie.m@plusultraroofing.com', subject, briefMarkdown);
         emailSent = true;
       } catch (e) {
@@ -349,6 +362,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         [`briefing_${type}`]: {
           timestamp: briefing.timestamp,
+          generated_at: new Date().toISOString(),
           kpiScouter: briefing.kpiScouter,
           top3: briefing.top3,
           calendar: briefing.calendar,
