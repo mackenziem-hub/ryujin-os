@@ -94,16 +94,70 @@ async function handler(req, res) {
     if (Object.keys(update).length === 0) return res.status(400).json({ error: 'no allowed fields to update' });
 
     // If operator just attached an estimate, flip status to matched.
+    // An explicit clear (matched_estimate_id: null) flips it back to unmatched.
     if (update.matched_estimate_id && !('status' in update)) update.status = 'matched';
+    if ('matched_estimate_id' in update && !update.matched_estimate_id && !('status' in update)) update.status = 'unmatched';
 
-    const { data, error } = await supabaseAdmin
+    // Audit context: capture the row before the write so the activity_log
+    // entry can record previous -> new matched_estimate_id. Also a cheap
+    // tenant-scoped existence check (404 instead of a silent no-row update).
+    const { data: previous, error: prevError } = await supabaseAdmin
       .from('payments')
-      .update(update)
+      .select('id, matched_estimate_id, status')
+      .eq('id', id)
+      .eq('tenant_id', tenantId)
+      .single();
+    if (prevError || !previous) return res.status(404).json({ error: 'payment not found' });
+
+    // Stamp who/when on every update (migration 096: updated_at + updated_by).
+    // Service-token callers resolve to the synthetic 'service-internal' session.
+    // Soft-fail like the 097/098 consumers: until 096 is hand-applied those
+    // columns do not exist and Postgres rejects the whole UPDATE, which would
+    // 500 every PATCH (reconcile modal included). On a column error, retry
+    // the write without the stamps so the deploy-before-migration window
+    // degrades to no-audit-stamp instead of a broken ledger.
+    const isService = req.session.user_id === 'service-internal';
+    const stampedBy = isService ? 'service' : (req.session.email || req.session.name || 'unknown');
+    const stamped = { ...update, updated_at: new Date().toISOString(), updated_by: stampedBy };
+
+    let { data, error } = await supabaseAdmin
+      .from('payments')
+      .update(stamped)
       .eq('id', id)
       .eq('tenant_id', tenantId)
       .select('*')
       .single();
+    if (error && /updated_(at|by)/i.test(error.message || '')) {
+      ({ data, error } = await supabaseAdmin
+        .from('payments')
+        .update(update)
+        .eq('id', id)
+        .eq('tenant_id', tenantId)
+        .select('*')
+        .single());
+    }
     if (error) return res.status(500).json({ error: error.message });
+
+    // Audit row: 'matched'/'unmatched' when the estimate link actually changed,
+    // plain 'updated' otherwise. user_id only for real users; the service
+    // token's synthetic session has no users row and would violate the FK.
+    // Non-fatal by design (supabase-js returns errors, it does not throw).
+    const prevMatch = previous.matched_estimate_id || null;
+    const newMatch = data.matched_estimate_id || null;
+    const linkChanged = ('matched_estimate_id' in body) && prevMatch !== newMatch;
+    await supabaseAdmin.from('activity_log').insert({
+      tenant_id: tenantId,
+      user_id: isService ? null : (req.session.user_id || null),
+      entity_type: 'payment',
+      entity_id: id,
+      action: linkChanged ? (newMatch ? 'matched' : 'unmatched') : 'updated',
+      details: {
+        fields: Object.keys(update),
+        previous_matched_estimate_id: prevMatch,
+        new_matched_estimate_id: newMatch,
+        updated_by: stampedBy,
+      },
+    });
     return res.status(200).json({ payment: data });
   }
 

@@ -100,6 +100,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
 </style>
   <script src="/assets/nav-buttons.js" defer></script>
 <script src="/assets/production-toolbar.js" defer></script>
+<script src="/assets/numeric-guard.js"></script>
 </head>
 <body>
 
@@ -358,7 +359,12 @@ function updateLine(section, idx, field, value){
   const p = EDIT_WORKING; if (!p) return;
   const arr = p[section]; if (!arr || !arr[idx]) return;
   if (field === 'total' || field === 'qty_sq') {
-    arr[idx][field] = value === '' ? 0 : Number(value);
+    // NumericGuard.parse strips $/commas/spaces, so "$1,500" stores 1500
+    // instead of NaN. Invalid text keeps the raw string: the on-blur guard
+    // paints it red immediately and validatePaysheetBeforeSave blocks the
+    // save with the offending value in the message. Never silently zeroed.
+    const parsed = window.NumericGuard ? NumericGuard.parse(value) : { ok: value === '' || Number.isFinite(Number(value)), num: Number(value) || 0 };
+    arr[idx][field] = parsed.ok ? parsed.num : value;
   } else {
     arr[idx][field] = value;
   }
@@ -402,9 +408,9 @@ function renderEditModal(){
     const qtyField = section === 'labour_breakdown' ? 'qty_sq' : 'qty';
     return `<tr>
       <td><input class="edit-in" value="${esc(line.description||'')}" oninput="updateLine('${section}',${i},'description',this.value)"></td>
-      <td style="width:90px"><input class="edit-in narrow" value="${esc(qty)}" oninput="updateLine('${section}',${i},'${qtyField}',this.value)"></td>
+      <td style="width:90px"><input class="edit-in narrow${section==='labour_breakdown'?' ng-num':''}" value="${esc(qty)}" oninput="updateLine('${section}',${i},'${qtyField}',this.value)"></td>
       <td style="width:90px"><input class="edit-in narrow" value="${esc(line.rate_per_sq || line.rate || '')}" oninput="updateLine('${section}',${i},'${section==='labour_breakdown'?'rate_per_sq':'rate'}',this.value)"></td>
-      <td style="width:100px"><input class="edit-in num" value="${line.total ?? 0}" oninput="updateLine('${section}',${i},'total',this.value)"></td>
+      <td style="width:100px"><input class="edit-in num ng-num" value="${line.total ?? 0}" oninput="updateLine('${section}',${i},'total',this.value)"></td>
       <td style="width:36px"><button class="btn-sm del" onclick="removeLine('${section}',${i})" title="Remove">×</button></td>
     </tr>`;
   };
@@ -460,12 +466,18 @@ function renderEditModal(){
   $('modalBody').innerHTML = html;
   $('modalBody').dataset.editingId = p.id;
   $('modalBg').classList.add('on');
+  // On-blur numeric guard for qty/total cells (Bug Class #10): red border +
+  // inline message on junk like "abc" or "12 sq" instead of silent 0.
+  if (window.NumericGuard) $('modalBody').querySelectorAll('input.ng-num').forEach(inp => NumericGuard.attach(inp));
   recomputeTotals(p);
 }
 
 function openDetail(idx){
   const p = CACHED[idx];
   if (!p) return;
+  // Leaving edit mode (cancel/save) re-renders the modal; drop any floating
+  // guard messages whose inputs are about to be replaced.
+  if (window.NumericGuard) NumericGuard.dismissAll();
   const lbr = (p.labour_breakdown || []).filter(x => !/subtotal/i.test(x.description || ''));
   const adds = p.add_ons || [];
   const sur = p.surcharges || [];
@@ -505,7 +517,11 @@ function openDetail(idx){
   $('modalBg').classList.add('on');
 }
 
-function closeModal(){ $('modalBg').classList.remove('on'); }
+function closeModal(){
+  $('modalBg').classList.remove('on');
+  // Floating guard messages are body-level; clear them with the modal.
+  if (window.NumericGuard) NumericGuard.dismissAll();
+}
 
 function goBack(){
   if (window.parent !== window && window.parent.exitSectionOverlay) { window.parent.exitSectionOverlay(); return; }

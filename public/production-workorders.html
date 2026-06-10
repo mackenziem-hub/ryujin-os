@@ -7,6 +7,10 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=optional" rel="stylesheet">
 <link rel="stylesheet" href="/assets/ryujin-perf.css">
 <script src="/assets/ryujin-perf.js"></script>
+<!-- Session gate + token helper: /api/estimate-photos and /api/estimates are
+     requirePortalSessionAndTenant-gated and 401 without the Bearer token.
+     Same include as the sibling production-* pages and job.html. -->
+<script src="/assets/auth-guard.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{height:100%;width:100%}
@@ -93,9 +97,24 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
 .scope-list li.off .chk{background:rgba(200,220,255,0.05);color:rgba(200,220,255,0.35);border-color:rgba(200,220,255,0.15)}
 .scope-list li.off{color:rgba(200,220,255,0.4);text-decoration:line-through}
 .scope-list li .chk svg{width:10px;height:10px;stroke:currentColor;fill:none;stroke-width:3}
+
+/* Scope photo strip (WO detail modal) */
+.photo-strip{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}
+.photo-tile{position:relative;aspect-ratio:1;border-radius:9px;overflow:hidden;background:rgba(6,10,20,0.6);border:1px solid rgba(251,146,60,0.16);cursor:pointer;display:block;text-decoration:none}
+.photo-tile:hover{border-color:rgba(251,146,60,0.55)}
+.photo-tile img{width:100%;height:100%;object-fit:cover;display:block}
+.photo-tile .cat{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(to top,rgba(3,6,17,0.85),transparent);padding:4px 7px;font-family:'Share Tech Mono',monospace;font-size:0.6em;letter-spacing:1px;color:#fb923c;text-transform:uppercase}
+.photo-tile .vid{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fb923c;font-family:'Orbitron',sans-serif;font-size:0.66em;font-weight:800;letter-spacing:2px}
+.photo-state{padding:18px 14px;text-align:center;color:rgba(200,220,255,0.5);font-family:'Share Tech Mono',monospace;font-size:0.74em;letter-spacing:1.5px;line-height:1.6}
+.photo-state img.art{width:84px;height:84px;display:block;margin:0 auto 8px;mix-blend-mode:screen;opacity:0.8}
+.photo-state.err{color:#f87171}
 </style>
   <script src="/assets/nav-buttons.js" defer></script>
 <script src="/assets/production-toolbar.js" defer></script>
+<!-- Shared numeric input guard (built on the D-data track at this path).
+     All calls below are existence-guarded, so the page works with or
+     without it; validateWoFieldsBeforeSave() stays the hard save gate. -->
+<script src="/assets/numeric-guard.js" defer></script>
 </head>
 <body>
 
@@ -191,6 +210,13 @@ const statusBadge = s => {
 
 let CACHED = [];
 let LOADED = false;
+
+// Tenant + session headers. /api/workorders only needs the tenant header,
+// but /api/estimate-photos + /api/estimates hard-401 without the Bearer
+// token (auth-guard.js guarantees window.RyujinAuth past its redirect).
+function woHeaders(){
+  return { 'x-tenant-id': 'plus-ultra', ...(window.RyujinAuth ? window.RyujinAuth.headers() : {}) };
+}
 
 async function loadAll(){
   try {
@@ -321,8 +347,18 @@ async function saveEditWo(){
   if (!WO_EDIT) return;
   const v = validateWoFieldsBeforeSave();
   if (!v.ok) { alert(`Save blocked: ${v.error}`); return; }
+  // Batch D2 guard: a WO cannot be (or stay) issued without a linked
+  // estimate - every issued WO must trace back to the estimate it was sold
+  // from. The red banner in Lifecycle explains; the picker fixes it inline.
+  if (WO_EDIT.status === 'issued' && !WO_EDIT.linked_estimate_id) {
+    updateIssuedGuard();
+    alert('Save blocked: an ISSUED work order needs a linked estimate. Pick the source estimate under Lifecycle, or set status back to DRAFT.');
+    return;
+  }
   const body = {
     id: WO_EDIT.id,
+    status: WO_EDIT.status || 'draft',
+    linked_estimate_id: WO_EDIT.linked_estimate_id || null,
     customer_name: WO_EDIT.customer_name,
     address: WO_EDIT.address,
     phone: WO_EDIT.phone,
@@ -358,7 +394,7 @@ async function saveEditWo(){
   };
   const r = await fetch('/api/workorders', {
     method: 'PUT',
-    headers: {'x-tenant-id':'plus-ultra','Content-Type':'application/json'},
+    headers: { ...woHeaders(), 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
   if (!r.ok) { alert('Save failed: HTTP ' + r.status); return; }
@@ -397,6 +433,10 @@ function renderEditWo(){
   const w = WO_EDIT; if (!w) return;
   const txt = (label, field, value) => `
     <div class="edit-field"><label>${label}</label><input class="edit-in" value="${esc(value||'')}" oninput="setWoField('${field}', this.value)"></div>`;
+  // Numeric fields get the shared numeric-guard (validates on blur, catches
+  // '12 sq' / 'abc' before they coerce to 0 downstream in the material list).
+  const num = (label, field, value) => `
+    <div class="edit-field"><label>${label}</label><input class="edit-in numeric-guard" inputmode="decimal" data-field="${field}" value="${esc(value||'')}" oninput="setWoField('${field}', this.value)"></div>`;
   const sel = (label, field, value, opts) => `
     <div class="edit-field"><label>${label}</label>
       <select class="edit-in" onchange="setWoField('${field}', this.value)">
@@ -420,10 +460,29 @@ function renderEditWo(){
     <textarea class="edit-in" rows="2" oninput="setWoField('special_notes', this.value)">${esc(w.special_notes||'')}</textarea></div>
     </div>
 
+    <div class="modal-section"><h3>Lifecycle</h3>
+    <!-- Batch D2: a WO cannot move to (or stay) ISSUED without a linked
+         estimate. Red banner + inline picker; saveEditWo() is the hard gate. -->
+    <div id="issuedGuard" style="display:none;padding:10px 14px;margin-bottom:10px;background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.45);border-radius:10px;color:#f87171;font-size:0.82em;line-height:1.45">
+      <strong>Cannot issue without a linked estimate.</strong> Pick the source estimate below, or set status back to DRAFT. Every issued WO must trace back to the estimate it was sold from.
+    </div>
+    <div class="edit-grid">
+      <div class="edit-field"><label>Status</label>
+        <select class="edit-in" onchange="setWoField('status', this.value); updateIssuedGuard()">
+          ${['draft','issued','in_progress','complete','cancelled'].map(o => `<option value="${o}" ${o === (w.status || 'draft') ? 'selected' : ''}>${o.toUpperCase().replace(/_/g,' ')}</option>`).join('')}
+        </select>
+      </div>
+      <div class="edit-field"><label>Linked Estimate</label>
+        <select class="edit-in" id="woEstimatePicker" onchange="setWoField('linked_estimate_id', this.value || null); updateIssuedGuard()">
+          <option value="">Loading estimates...</option>
+        </select>
+      </div>
+    </div></div>
+
     <div class="modal-section"><h3>Schedule</h3>
     <div class="edit-grid">
       ${txt('Start Date (YYYY-MM-DD)','start_date', w.start_date)}
-      ${txt('Duration (days)','estimated_duration_days', w.estimated_duration_days)}
+      ${num('Duration (days)','estimated_duration_days', w.estimated_duration_days)}
       ${txt('Sub / Crew Lead','sub_crew_lead', w.sub_crew_lead)}
       ${txt('On-site Contact','onsite_contact', w.onsite_contact)}
     </div></div>
@@ -431,9 +490,9 @@ function renderEditWo(){
     <div class="modal-section"><h3>Scope</h3>
     <div class="edit-grid">
       ${sel('Job Type','job_type', w.job_type || 'full_replacement', ['full_replacement','repair','gutters','siding','other'])}
-      ${txt('Total SQ','total_sq', w.total_sq)}
+      ${num('Total SQ','total_sq', w.total_sq)}
       ${txt('Pitch','roof_pitch', w.roof_pitch)}
-      ${txt('Layers to Remove','layers_to_remove', w.layers_to_remove)}
+      ${num('Layers to Remove','layers_to_remove', w.layers_to_remove)}
       ${txt('Shingle Product','shingle_product', w.shingle_product)}
       ${txt('Shingle Color','shingle_color', w.shingle_color)}
       ${sel('Package Tier','package_tier', w.package_tier || 'gold', ['gold','platinum','diamond','grand_manor'])}
@@ -441,16 +500,16 @@ function renderEditWo(){
 
     <div class="modal-section"><h3>Measurements <span style="font-size:0.6em;color:rgba(200,220,255,0.45);letter-spacing:1.5px">· drives the material list</span></h3>
     <div class="edit-grid">
-      ${txt('Eaves (LF)','eaves_lf', w.eaves_lf)}
-      ${txt('Rakes (LF)','rakes_lf', w.rakes_lf)}
-      ${txt('Ridges (LF)','ridges_lf', w.ridges_lf)}
-      ${txt('Hips (LF)','hips_lf', w.hips_lf)}
-      ${txt('Valleys (LF)','valleys_lf', w.valleys_lf)}
-      ${txt('Wall Flashing (LF)','walls_lf', w.walls_lf)}
-      ${txt('Pipes','pipes', w.pipes)}
-      ${txt('Vents','vents', w.vents)}
-      ${txt('Chimneys','chimneys', w.chimneys)}
-      ${txt('OSB Redeck (sheets)','osb_sheets', w.osb_sheets)}
+      ${num('Eaves (LF)','eaves_lf', w.eaves_lf)}
+      ${num('Rakes (LF)','rakes_lf', w.rakes_lf)}
+      ${num('Ridges (LF)','ridges_lf', w.ridges_lf)}
+      ${num('Hips (LF)','hips_lf', w.hips_lf)}
+      ${num('Valleys (LF)','valleys_lf', w.valleys_lf)}
+      ${num('Wall Flashing (LF)','walls_lf', w.walls_lf)}
+      ${num('Pipes','pipes', w.pipes)}
+      ${num('Vents','vents', w.vents)}
+      ${num('Chimneys','chimneys', w.chimneys)}
+      ${num('OSB Redeck (sheets)','osb_sheets', w.osb_sheets)}
     </div></div>
 
     <div class="modal-section"><h3>Scope Checklist</h3>
@@ -480,6 +539,71 @@ function renderEditWo(){
   $('modalBody').innerHTML = html;
   $('modalBody').dataset.editingId = w.id;
   $('modalBg').classList.add('on');
+  // Wire the shared numeric guard (D-data track, /assets/numeric-guard.js)
+  // onto the numeric inputs just rendered: red border + inline message on
+  // blur for '12 sq' / '$100' style entries. Existence-guarded so the page
+  // still works if the script fails to load; validateWoFieldsBeforeSave()
+  // stays the hard gate at save time either way.
+  if (window.NumericGuard && typeof window.NumericGuard.attach === 'function') {
+    $('modalBody').querySelectorAll('input.numeric-guard').forEach(el => {
+      try { window.NumericGuard.attach(el, { allowNegative: false }); } catch (e) { /* guard must never break editing */ }
+    });
+  }
+  loadWoEstimateOptions(w.linked_estimate_id || null);
+  updateIssuedGuard();
+}
+
+// D2: show the red banner whenever the in-edit WO is issued with no linked
+// estimate. Called on status / picker change; saveEditWo() is the hard gate.
+function updateIssuedGuard(){
+  const g = $('issuedGuard');
+  if (!g || !WO_EDIT) return;
+  g.style.display = (WO_EDIT.status === 'issued' && !WO_EDIT.linked_estimate_id) ? '' : 'none';
+}
+
+// Estimate picker for the D2 guard. Fetched once per page load (cached);
+// loading / 10s-timeout / error / empty states all preserve the current
+// link so a failed fetch can never silently unlink the estimate on save.
+let WO_EST_CACHE = null;
+async function loadWoEstimateOptions(selectedId){
+  const sel = $('woEstimatePicker');
+  if (!sel) return;
+  const render = (list) => {
+    const opts = ['<option value="">No linked estimate</option>'];
+    let found = false;
+    for (const e of list) {
+      if (selectedId && e.id === selectedId) found = true;
+      const label = [e.estimate_number ? 'EST-' + e.estimate_number : (e.id || '').slice(0,8), e.customer?.full_name || e.customer_name || '', e.status || ''].filter(Boolean).join(' · ');
+      opts.push('<option value="' + esc(e.id) + '">' + esc(label) + '</option>');
+    }
+    if (selectedId && !found) opts.push('<option value="' + esc(selectedId) + '">Current linked estimate</option>');
+    if (opts.length === 1) opts.push('<option value="" disabled>No estimates found for this tenant</option>');
+    sel.innerHTML = opts.join('');
+    sel.value = selectedId || '';
+  };
+  if (WO_EST_CACHE) { render(WO_EST_CACHE); return; }
+  sel.innerHTML = '<option value="">Loading estimates...</option>';
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
+  try {
+    const r = await fetch('/api/estimates?limit=100', { headers: woHeaders(), signal: controller.signal });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    WO_EST_CACHE = Array.isArray(data.estimates) ? data.estimates : [];
+    if (!$('woEstimatePicker')) return;  // modal re-rendered or closed mid-fetch
+    render(WO_EST_CACHE);
+  } catch (e) {
+    if (!$('woEstimatePicker')) return;
+    const msg = (e && e.name === 'AbortError') ? 'timed out after 10s' : e.message;
+    const opts = [];
+    if (selectedId) opts.push('<option value="' + esc(selectedId) + '">Current linked estimate</option>');
+    else opts.push('<option value="">No linked estimate</option>');
+    opts.push('<option value="" disabled>Could not load estimates (' + esc(msg) + ')</option>');
+    sel.innerHTML = opts.join('');
+    sel.value = selectedId || '';
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function openDetail(idx){
@@ -498,6 +622,7 @@ function openDetail(idx){
     <div class="sub">WO-${w.wo_number || '-'} · ${statusBadge(w.status || 'draft')}${w.package_tier ? ' · ' + (w.package_tier.toUpperCase()) : ''}</div>
     <h2>${esc(w.customer_name || '')}</h2>
     <div style="font-size:0.9em;color:rgba(200,220,255,0.7);margin-top:4px">${esc(w.address || '')}</div>
+    ${w.status === 'issued' && !w.linked_estimate_id ? `<div style="margin-top:10px;padding:10px 14px;background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.45);border-radius:10px;color:#f87171;font-size:0.82em;line-height:1.45"><strong>Issued with no linked estimate.</strong> Click EDIT and pick the source estimate under Lifecycle - issued WOs must trace back to the estimate they were sold from.</div>` : ''}
     ${w.phone && false ? `<div style="font-size:0.8em;color:rgba(200,220,255,0.55);margin-top:2px;font-family:'Share Tech Mono',monospace;letter-spacing:1px">${esc(w.phone)}</div>` : ''}
 
     <div class="modal-section"><h3>Job Details</h3>
@@ -529,6 +654,10 @@ function openDetail(idx){
       <strong style="color:#fb923c">Not recorded.</strong> Click EDIT above to enter eaves, rakes, valleys, ridges, and hips — the material order can't be calculated accurately without them.
     </div></div>`}
 
+    <div class="modal-section"><h3>Scope Photos <span style="font-size:0.6em;color:rgba(200,220,255,0.45);letter-spacing:1.5px">· estimate gallery + crew captures</span></h3>
+      <div id="photoStrip"><div class="photo-state">LOADING PHOTOS...</div></div>
+    </div>
+
     ${scope.length ? `<div class="modal-section"><h3>Scope Checklist</h3>
     <ul class="scope-list">${scope.map(s => `<li class="${s.included ? '' : 'off'}"><span class="chk">${s.included ? checkMark : dashMark}</span>${esc(s.item)}${s.qty ? ' (' + s.qty + ')' : ''}</li>`).join('')}</ul></div>` : ''}
 
@@ -540,9 +669,65 @@ function openDetail(idx){
   $('modalBody').dataset.currentId = w.id;
   delete $('modalBody').dataset.editingId;
   $('modalBg').classList.add('on');
+  // Edit-mode inputs left the DOM; drop any floating numeric-guard messages.
+  if (window.NumericGuard) try { window.NumericGuard.dismissAll(); } catch (e) {}
+  loadWoPhotos(w.id, !!w.linked_estimate_id);
 }
 
-function closeModal(){ $('modalBg').classList.remove('on'); }
+// Scope photo strip. /api/estimate-photos?wo_id walks workorder -> linked
+// estimate -> customer and unions estimate_photos with crew project_files
+// (same endpoint job.html uses). Crew-facing page, so tiles show only the
+// category label, never captions (captions can carry pricing talk).
+async function loadWoPhotos(woId, hasLinkedEstimate){
+  if (!$('photoStrip')) return;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
+  try {
+    const r = await fetch('/api/estimate-photos?wo_id=' + encodeURIComponent(woId), { headers: woHeaders(), signal: controller.signal });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    // The modal may have moved to another WO or into edit mode mid-fetch.
+    if ($('modalBody').dataset.currentId !== woId || !$('photoStrip')) return;
+    const photos = Array.isArray(data.photos) ? data.photos : [];
+    if (!photos.length) {
+      const hint = hasLinkedEstimate
+        ? 'NO PHOTOS YET · UPLOADS ON THE ESTIMATE OR CREW APP LAND HERE'
+        : 'NO PHOTOS FOUND · NO ESTIMATE LINKED TO THIS WO';
+      $('photoStrip').innerHTML = '<div class="photo-state"><img class="art" src="/assets/state-art/empty.svg" alt=""/>' + hint + '</div>';
+      return;
+    }
+    // Cap the strip: some jobs carry 80+ full-res originals (no server-side
+    // thumbnails on estimate_photos), so render the newest 24 and route the
+    // rest to the job folder view which is built for big galleries.
+    const CAP = 24;
+    const shown = photos.slice(0, CAP);
+    const moreCount = photos.length - shown.length;
+    const moreTile = moreCount > 0
+      ? '<a class="photo-tile" href="job.html?wo=' + encodeURIComponent(woId) + '" title="Open the full job folder"><span class="vid">+' + moreCount + ' MORE</span></a>'
+      : '';
+    $('photoStrip').innerHTML = '<div class="photo-strip">' + shown.map(p => {
+      const full = esc(p.url || '');
+      const thumb = esc(p.thumbnail_url || p.url || '');
+      const cat = esc(p.category || 'photo');
+      const isVideo = typeof p.mime_type === 'string' && p.mime_type.startsWith('video/');
+      const inner = isVideo
+        ? '<span class="vid">▶ VIDEO</span>'
+        : '<img src="' + thumb + '" loading="lazy" alt="' + cat + '" onerror="this.style.display=\'none\'"/>';
+      return '<a class="photo-tile" href="' + full + '" target="_blank" rel="noopener" title="Open full size">' + inner + '<span class="cat">' + cat + '</span></a>';
+    }).join('') + moreTile + '</div>';
+  } catch (e) {
+    if ($('modalBody').dataset.currentId !== woId || !$('photoStrip')) return;
+    const msg = (e && e.name === 'AbortError') ? 'PHOTO LOAD TIMED OUT (10S) · REOPEN TO RETRY' : 'COULD NOT LOAD PHOTOS · ' + esc(e.message).toUpperCase();
+    $('photoStrip').innerHTML = '<div class="photo-state err"><img class="art" src="/assets/state-art/error.svg" alt=""/>' + msg + '</div>';
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function closeModal(){
+  $('modalBg').classList.remove('on');
+  if (window.NumericGuard) try { window.NumericGuard.dismissAll(); } catch (e) {}
+}
 
 function openPrivacySettings(){
   const terms = loadSensitiveTerms();

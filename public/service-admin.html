@@ -104,7 +104,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
       <div class="field"><label>Acknowledge SLA (hours)</label><input id="f_ack_sla" type="number" value="4" /></div>
       <div class="field"><label>Schedule SLA (hours)</label><input id="f_sched_sla" type="number" value="48" /></div>
     </div>
-    <div class="field"><label>Resolution Target (days)</label><input id="f_resolve_days" type="number" value="14" /></div>
+    <div class="field-row">
+      <div class="field"><label>Resolution Target (days)</label><input id="f_resolve_days" type="number" value="14" /></div>
+      <div class="field"><label>Overdue Grace After Scheduled (hours)</label><input id="f_overdue_grace" type="number" value="24" /></div>
+    </div>
   </div>
 
   <div class="section">
@@ -125,6 +128,11 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
     <div class="toggle-row"><div class="toggle-info"><div class="toggle-label">SMS AJ on new ticket assigned</div><div class="toggle-desc">Heads-up text whenever a ticket lands in AJ's queue.</div></div><div class="toggle on" id="t_aj_sms"></div></div>
     <div class="toggle-row"><div class="toggle-info"><div class="toggle-label">SMS Mac on warranty claim filed</div><div class="toggle-desc">Notify when a warranty claim transitions to <code>filed</code>.</div></div><div class="toggle on" id="t_mac_warranty"></div></div>
     <div class="toggle-row"><div class="toggle-info"><div class="toggle-label">Auto-create callback on customer report</div><div class="toggle-desc">When customer messages "leak" / "issue" / "warranty", auto-create a callback ticket.</div></div><div class="toggle" id="t_auto_callback"></div></div>
+    <div class="field" style="margin-top:14px;margin-bottom:0">
+      <label>Callback Rate Alert Threshold (%)</label>
+      <input id="f_callback_threshold" type="number" value="8" step="0.5" min="0" />
+      <div class="toggle-desc" style="margin-top:5px">Daily service scan flags when the 12-month callback rate crosses this.</div>
+    </div>
   </div>
 
   <div class="actions">
@@ -141,18 +149,18 @@ document.querySelectorAll('.toggle').forEach(t => t.addEventListener('click', ()
 function readForm() {
   return {
     auto_route: { aj_cap: parseFloat(document.getElementById('f_aj_cap').value) || 2500, default_assignee_above_cap: document.getElementById('f_default_assignee').value },
-    sla: { ack_hours: parseInt(document.getElementById('f_ack_sla').value) || 4, schedule_hours: parseInt(document.getElementById('f_sched_sla').value) || 48, resolve_days: parseInt(document.getElementById('f_resolve_days').value) || 14 },
+    sla: { ack_hours: parseInt(document.getElementById('f_ack_sla').value) || 4, schedule_hours: parseInt(document.getElementById('f_sched_sla').value) || 48, resolve_days: parseInt(document.getElementById('f_resolve_days').value) || 14, overdue_grace_hours: parseInt(document.getElementById('f_overdue_grace').value) || 24 },
     rates: { service_call_min: parseFloat(document.getElementById('f_min').value) || 250, travel_per_km: parseFloat(document.getElementById('f_travel').value) || 0.65, hourly: parseFloat(document.getElementById('f_hourly').value) || 125, after_hours_multiplier: parseFloat(document.getElementById('f_after_mult').value) || 1.5 },
-    behaviors: { aj_sms_on_assign: document.getElementById('t_aj_sms').classList.contains('on'), mac_sms_on_warranty: document.getElementById('t_mac_warranty').classList.contains('on'), auto_callback_on_report: document.getElementById('t_auto_callback').classList.contains('on') }
+    behaviors: { aj_sms_on_assign: document.getElementById('t_aj_sms').classList.contains('on'), mac_sms_on_warranty: document.getElementById('t_mac_warranty').classList.contains('on'), auto_callback_on_report: document.getElementById('t_auto_callback').classList.contains('on'), callback_threshold_pct: parseFloat(document.getElementById('f_callback_threshold').value) || 8 }
   };
 }
 
 function fillForm(c) {
   if (!c) return;
   if (c.auto_route) { document.getElementById('f_aj_cap').value = c.auto_route.aj_cap ?? 2500; document.getElementById('f_default_assignee').value = c.auto_route.default_assignee_above_cap || 'mac'; }
-  if (c.sla) { document.getElementById('f_ack_sla').value = c.sla.ack_hours ?? 4; document.getElementById('f_sched_sla').value = c.sla.schedule_hours ?? 48; document.getElementById('f_resolve_days').value = c.sla.resolve_days ?? 14; }
+  if (c.sla) { document.getElementById('f_ack_sla').value = c.sla.ack_hours ?? 4; document.getElementById('f_sched_sla').value = c.sla.schedule_hours ?? 48; document.getElementById('f_resolve_days').value = c.sla.resolve_days ?? 14; document.getElementById('f_overdue_grace').value = c.sla.overdue_grace_hours ?? 24; }
   if (c.rates) { document.getElementById('f_min').value = c.rates.service_call_min ?? 250; document.getElementById('f_travel').value = c.rates.travel_per_km ?? 0.65; document.getElementById('f_hourly').value = c.rates.hourly ?? 125; document.getElementById('f_after_mult').value = c.rates.after_hours_multiplier ?? 1.5; }
-  if (c.behaviors) { document.getElementById('t_aj_sms').classList.toggle('on', c.behaviors.aj_sms_on_assign ?? true); document.getElementById('t_mac_warranty').classList.toggle('on', c.behaviors.mac_sms_on_warranty ?? true); document.getElementById('t_auto_callback').classList.toggle('on', c.behaviors.auto_callback_on_report ?? false); }
+  if (c.behaviors) { document.getElementById('t_aj_sms').classList.toggle('on', c.behaviors.aj_sms_on_assign ?? true); document.getElementById('t_mac_warranty').classList.toggle('on', c.behaviors.mac_sms_on_warranty ?? true); document.getElementById('t_auto_callback').classList.toggle('on', c.behaviors.auto_callback_on_report ?? false); document.getElementById('f_callback_threshold').value = c.behaviors.callback_threshold_pct ?? 8; }
 }
 
 async function load() { try { const r = await fetch('/api/settings', { headers: { 'x-tenant-id': TENANT, ...(window.RyujinAuth ? window.RyujinAuth.headers() : {}) } }); if (!r.ok) return; const data = await r.json(); fillForm(data.service_config || {}); } catch {} }
