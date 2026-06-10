@@ -148,42 +148,46 @@ function applyFiltersSort() {
 }
 
 async function load() {
+  // 10s timeout so a hung API leaves an error state, not skeletons forever.
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10000);
   try {
-    // Pull customers + their estimates separately, then aggregate client-side
-    const [cs, es] = await Promise.all([
-      fetch('/api/customers?limit=500', { headers: { 'x-tenant-id': TENANT, ...window.RyujinAuth.headers() } }),
-      fetch('/api/estimates?limit=500', { headers: { 'x-tenant-id': TENANT, ...window.RyujinAuth.headers() } })
+    // Roster from the session-gated customers API; lifetime value from
+    // /api/customer-state (computed server-side via lib/customerLtvCalc.js).
+    // No page-side money math: the API computes, this page renders.
+    const [cs, st] = await Promise.all([
+      fetch('/api/customers?limit=500', { headers: { 'x-tenant-id': TENANT, ...window.RyujinAuth.headers() }, signal: ctrl.signal }),
+      fetch('/api/customer-state', { headers: { 'x-tenant-id': TENANT, ...window.RyujinAuth.headers() }, signal: ctrl.signal })
     ]);
-    if (!cs.ok) { showBanner(`Could not load customers: HTTP ${cs.status}`); return; }
-    const customers = (await cs.json()).customers || (await cs.json().catch(() => ({})))?.data || [];
-    let estimates = [];
-    if (es.ok) {
-      const eData = await es.json();
-      estimates = eData.estimates || eData.data || [];
+    if (!cs.ok) {
+      showBanner(`Could not load customers: HTTP ${cs.status}`);
+      document.getElementById('custList').innerHTML = `<div class="empty-state"><div class="ico">⚠</div>Could not load customers (HTTP ${cs.status}).</div>`;
+      return;
     }
-    // Aggregate
+    const cData = await cs.json();
+    const customers = cData.customers || cData.data || [];
     const valueByCustomer = {};
-    for (const e of estimates) {
-      if (!e.customer_id) continue;
-      if ((e.state || e.status) !== 'closed_won' && (e.state || e.status) !== 'signed') continue;
-      const tier = (e.selected_package || 'gold').toLowerCase();
-      const pkg = e.calculated_packages?.[tier] || {};
-      const v = pkg.sellingPrice || pkg.total || 0;
-      if (!valueByCustomer[e.customer_id]) valueByCustomer[e.customer_id] = { total: 0, count: 0, latest: null };
-      valueByCustomer[e.customer_id].total += v;
-      valueByCustomer[e.customer_id].count++;
-      const ts = e.closed_won_at || e.updated_at;
-      if (!valueByCustomer[e.customer_id].latest || ts > valueByCustomer[e.customer_id].latest) valueByCustomer[e.customer_id].latest = ts;
+    if (st.ok) {
+      const sData = await st.json();
+      for (const v of sData.customer_values || []) valueByCustomer[v.id] = v;
+    } else {
+      showBanner(`Lifetime values unavailable (HTTP ${st.status}) - showing the roster without LTV.`);
     }
     cache = (customers || []).map(c => ({
       ...c,
-      lifetime_value: valueByCustomer[c.id]?.total || 0,
-      job_count: valueByCustomer[c.id]?.count || 0,
-      last_job_at: valueByCustomer[c.id]?.latest || null
+      lifetime_value: valueByCustomer[c.id]?.lifetime_value || 0,
+      job_count: valueByCustomer[c.id]?.job_count || 0,
+      last_job_at: valueByCustomer[c.id]?.last_job_at || null
     }));
-    document.getElementById('banner-slot').innerHTML = '';
+    if (st.ok) document.getElementById('banner-slot').innerHTML = '';
     applyFiltersSort();
-  } catch (e) { showBanner(`Network: ${e.message}`); }
+  } catch (e) {
+    const msg = e.name === 'AbortError' ? 'Request timed out after 10s' : `Network: ${e.message}`;
+    showBanner(msg);
+    document.getElementById('custList').innerHTML = `<div class="empty-state"><div class="ico">⚠</div>${escapeHtml(msg)}</div>`;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 document.getElementById('searchInput').addEventListener('input', e => { searchTerm = e.target.value; applyFiltersSort(); });

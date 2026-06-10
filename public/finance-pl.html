@@ -70,13 +70,13 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
 
 <main class="main">
   <div class="hq-header">
-    <div class="hq-title"><div class="crumb">Finance · P&amp;L</div><h1>Profit &amp; Loss</h1><div class="sub">Revenue minus material + labor + overhead. Derived from estimates + paysheets + tenant_settings.daily_overhead.</div></div>
+    <div class="hq-title"><div class="crumb">Finance · P&amp;L</div><h1>Profit &amp; Loss</h1><div class="sub">Revenue minus material + labor + overhead. Derived from estimates + paysheets + tenant_settings overhead (categories when set, flat daily rate otherwise).</div></div>
     <a class="btn primary" href="/finance.html">← Finance</a>
   </div>
   <div id="banner-slot"></div>
 
   <div class="banner info">
-    <strong>v1 P&amp;L:</strong> revenue = signed estimates totals; COGS = sum of paysheets total_pay + estimated material; overhead = daily × period days. Real GAAP P&amp;L (depreciation, owner draw, equipment) lands when you hook a real bookkeeping integration.
+    <strong>v1 P&amp;L:</strong> revenue = signed estimates totals; COGS = sum of paysheets total_pay + estimated material; overhead = monthly categories prorated to the period (Finance Admin), or daily × period days when no categories are set. Real GAAP P&amp;L (depreciation, owner draw, equipment) lands when you hook a real bookkeeping integration.
   </div>
 
   <div class="range-bar">
@@ -94,10 +94,12 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
 
 <script>
 const TENANT = window.RYUJIN_TENANT_SLUG;
-let activeDays = 30; let dailyOverhead = 90;
+let activeDays = 30; let dailyOverhead = 90; let overheadCats = [];
+const DAYS_PER_MONTH = 30.44; // 365.25 / 12, for prorating monthly category amounts
 function fmtMoney(n) { if (n == null || isNaN(n)) return '$0'; return (n < 0 ? '-' : '') + '$' + Math.abs(Math.round(n)).toLocaleString(); }
+function escapeHtml(s) { if (s == null) return ''; return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
-async function loadOverhead() { try { const r = await fetch('/api/settings', { headers: { 'x-tenant-id': TENANT, ...(window.RyujinAuth ? window.RyujinAuth.headers() : {}) } }); if (r.ok) { const d = await r.json(); if (d.daily_overhead) dailyOverhead = parseFloat(d.daily_overhead); } } catch {} }
+async function loadOverhead() { try { const r = await fetch('/api/settings', { headers: { 'x-tenant-id': TENANT, ...(window.RyujinAuth ? window.RyujinAuth.headers() : {}) } }); if (r.ok) { const d = await r.json(); if (d.daily_overhead) dailyOverhead = parseFloat(d.daily_overhead); if (Array.isArray(d.overhead_categories)) overheadCats = d.overhead_categories.filter(c => c && c.name && parseFloat(c.monthly) > 0); } } catch {} }
 
 async function loadPL() {
   try {
@@ -127,7 +129,11 @@ async function loadPL() {
       const psTotal = periodPs.reduce((s, p) => s + parseFloat(p.total_pay || 0), 0);
       if (psTotal > 0) laborCost = psTotal; // prefer real paysheet data over estimate-derived
     }
-    const overhead = dailyOverhead * activeDays;
+    // Overhead: sum the configured monthly categories (prorated to the
+    // period) when any exist; otherwise the flat daily rate (legacy v1).
+    const catMonthly = overheadCats.reduce((s, c) => s + parseFloat(c.monthly || 0), 0);
+    const useCats = catMonthly > 0;
+    const overhead = useCats ? catMonthly / DAYS_PER_MONTH * activeDays : dailyOverhead * activeDays;
     const cogs = materialCost + laborCost;
     const grossProfit = revenue - cogs;
     const netProfit = grossProfit - overhead;
@@ -146,7 +152,10 @@ async function loadPL() {
       <div class="pl-line"><div class="label-l">Gross Profit</div><div class="amt green">${fmtMoney(grossProfit)} <span style="font-size:0.6em;color:var(--text-dim)">(${grossPct}%)</span></div></div>
 
       <div class="pl-line section"><div class="label-l">Operating Expenses</div><div class="amt"></div></div>
-      <div class="pl-line dim"><div class="label-l">Overhead ($${dailyOverhead}/day × ${activeDays}d)</div><div class="amt red">${fmtMoney(-overhead)}</div></div>
+      ${useCats
+        ? overheadCats.map(c => `<div class="pl-line dim"><div class="label-l">${escapeHtml(c.name)} (${fmtMoney(parseFloat(c.monthly))}/mo)</div><div class="amt red">${fmtMoney(-(parseFloat(c.monthly) / DAYS_PER_MONTH * activeDays))}</div></div>`).join('') +
+          `<div class="pl-line"><div class="label-l">Overhead Total (${activeDays}d, prorated monthly)</div><div class="amt red">${fmtMoney(-overhead)}</div></div>`
+        : `<div class="pl-line dim"><div class="label-l">Overhead ($${dailyOverhead}/day × ${activeDays}d)</div><div class="amt red">${fmtMoney(-overhead)}</div></div>`}
 
       <div class="pl-line total"><div class="label-l">Net Profit</div><div class="amt">${fmtMoney(netProfit)} <span style="font-size:0.55em;color:var(--text-dim)">(${netPct}%)</span></div></div>
     `;

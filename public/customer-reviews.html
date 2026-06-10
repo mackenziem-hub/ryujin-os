@@ -94,7 +94,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
   </div>
 
   <div class="banner info">
-    <strong>Customer agent flags review-ready customers daily.</strong> The list below shows signed jobs ≥14 days post-close that haven't received a review request yet. (Tracking <code style="font-family:'Share Tech Mono',monospace;background:rgba(0,0,0,0.3);padding:1px 6px;border-radius:4px;color:var(--text)">review_request_sent_at</code> per-customer is a v1.1 schema add.)
+    <strong>Customer agent flags review-ready customers daily.</strong> The list below shows signed jobs ≥14 days post-close. Customers asked in the last 90 days are hidden automatically; clicking Email or Text stamps the ask. Only ask after a confirmed positive signal (thank-you, compliment, posted review) - silence is not satisfaction.
   </div>
 
   <div class="section-head"><h2>Review-Ask Queue</h2><span class="count-pill" id="queueCount">—</span></div>
@@ -107,34 +107,96 @@ const TENANT = window.RYUJIN_TENANT_SLUG;
 function escapeHtml(s) { if (s == null) return ''; return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function fmtDays(iso) { if (!iso) return '—'; return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000) + 'd'; }
 
-async function load() {
+// Stamp review_request_sent_at (migration 098) when an ask goes out, so the
+// 90-day dedupe hides this customer on the next load. Fired from the
+// Email/Text link click; the mailto:/sms: default action still proceeds.
+async function stampReviewSent(customerId, linkEl) {
+  if (!customerId) return;
   try {
-    const r = await fetch('/api/estimates?status=signed&limit=200', { headers: { 'x-tenant-id': TENANT, ...window.RyujinAuth.headers() } });
-    if (!r.ok) { document.getElementById('queueList').innerHTML = `<div class="empty-state">Could not load.</div>`; return; }
+    const r = await fetch('/api/customers', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'x-tenant-id': TENANT, ...window.RyujinAuth.headers() },
+      body: JSON.stringify({ id: customerId, review_request_sent_at: new Date().toISOString() })
+    });
+    if (!r.ok) { console.error('review-ask stamp failed: HTTP ' + r.status); return; }
+    const row = linkEl && linkEl.closest ? linkEl.closest('.queue-row') : null;
+    if (row) {
+      row.style.opacity = '0.45';
+      const age = row.querySelector('.age');
+      if (age) age.textContent = 'asked just now';
+    }
+  } catch (err) {
+    console.error('review-ask stamp failed:', err);
+  }
+}
+
+async function load() {
+  // 10s timeout so a hung API shows an error, not "Loading…" forever.
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10000);
+  try {
+    // Estimates drive eligibility; the customers roster carries the
+    // review_request_sent_at dedupe stamp + email/phone (the estimates
+    // list embed only ships full_name/address/city/phone).
+    // No ?status= filter: the API only supports a single-status eq and prod
+    // won rows carry status='accepted' (zero rows have status='signed' or
+    // state='closed_won', verified 2026-06-09). Pull recent estimates and
+    // apply the canonical won predicate (lib/customerLtvCalc.js twin) here.
+    const [r, cr] = await Promise.all([
+      fetch('/api/estimates?limit=200', { headers: { 'x-tenant-id': TENANT, ...window.RyujinAuth.headers() }, signal: ctrl.signal }),
+      fetch('/api/customers?limit=500', { headers: { 'x-tenant-id': TENANT, ...window.RyujinAuth.headers() }, signal: ctrl.signal })
+    ]);
+    if (!r.ok) { document.getElementById('queueList').innerHTML = `<div class="empty-state">Could not load (HTTP ${r.status}).</div>`; return; }
     const data = await r.json();
     const ests = data.estimates || data.data || [];
+    const custById = {};
+    if (cr.ok) {
+      const cData = await cr.json();
+      for (const c of cData.customers || cData.data || []) custById[c.id] = c;
+    }
     const fourteenDays = 14 * 86400000;
+    const ninetyDays = 90 * 86400000;
     const now = Date.now();
+    // Canonical won predicate + won-date precedence (client twin of
+    // lib/customerLtvCalc.js isWonEstimate/wonAt - change both together).
+    const WON_STATUSES = ['signed', 'accepted', 'scheduled', 'in_progress', 'complete'];
+    const isWon = e => e.state === 'closed_won' || WON_STATUSES.includes(e.status);
+    const wonAtOf = e => e.closed_won_at || e.accepted_at || e.updated_at || null;
     const eligible = ests.filter(e => {
-      const closed = e.closed_won_at || (e.state === 'closed_won' && e.updated_at);
-      return closed && (now - new Date(closed).getTime()) >= fourteenDays;
+      if (!isWon(e)) return false;
+      const closed = wonAtOf(e);
+      if (!closed || (now - new Date(closed).getTime()) < fourteenDays) return false;
+      // Dedupe (migration 098): hide anyone asked within the last 90 days.
+      const sentAt = custById[e.customer_id]?.review_request_sent_at;
+      if (sentAt && (now - new Date(sentAt).getTime()) < ninetyDays) return false;
+      return true;
     }).slice(0, 50);
     document.getElementById('queueCount').textContent = eligible.length;
     if (eligible.length === 0) { document.getElementById('queueList').innerHTML = `<div class="empty-state"><div class="ico">⭐</div>No customers ready for a review ask right now.</div>`; return; }
     document.getElementById('queueList').innerHTML = eligible.map(e => {
-      const closed = e.closed_won_at || e.updated_at;
+      const closed = wonAtOf(e);
+      const cust = custById[e.customer_id] || {};
+      const name = e.customer?.full_name || cust.full_name || e.customer_name || 'unknown';
+      const email = e.customer?.email || cust.email || '';
+      const phone = e.customer?.phone || cust.phone || '';
+      const stamp = e.customer_id ? `onclick="stampReviewSent('${escapeHtml(e.customer_id)}', this)"` : '';
       return `
         <div class="queue-row">
           <div>
-            <div class="name">${escapeHtml(e.customer?.full_name || e.customer_name || 'unknown')}</div>
-            <div class="meta">est ${escapeHtml(e.estimate_number || e.id?.slice(0,8))}${e.customer?.email ? ' · ' + escapeHtml(e.customer.email) : ''}</div>
+            <div class="name">${escapeHtml(name)}</div>
+            <div class="meta">est ${escapeHtml(e.estimate_number || e.id?.slice(0,8))}${email ? ' · ' + escapeHtml(email) : ''}</div>
           </div>
           <div class="age">${fmtDays(closed)} post-close</div>
-          ${e.customer?.email ? `<a href="mailto:${escapeHtml(e.customer.email)}?subject=Quick%20favor%20%E2%80%94%20Plus%20Ultra%20Roofing&body=Hi%20${encodeURIComponent(e.customer.full_name || '')}%2C%0A%0AWould%20you%20take%2030%20seconds%20to%20leave%20us%20a%20Google%20review%3F%20Here%27s%20the%20direct%20link%3A%0Ahttps%3A%2F%2Fg.page%2Fplusultra%2Freview%0A%0AThanks%2C%0AMac">Email</a>` : '<span></span>'}
-          ${e.customer?.phone ? `<a href="sms:${escapeHtml(e.customer.phone)}?body=Hey%20${encodeURIComponent(e.customer.full_name?.split(' ')[0] || '')}%2C%20would%20you%20take%2030%20sec%20to%20leave%20Plus%20Ultra%20a%20Google%20review%3F%20https%3A%2F%2Fg.page%2Fplusultra%2Freview%20%E2%80%94%20Mac">Text</a>` : '<span></span>'}
+          ${email ? `<a ${stamp} href="mailto:${escapeHtml(email)}?subject=Quick%20favor%20-%20Plus%20Ultra%20Roofing&body=Hi%20${encodeURIComponent(name)}%2C%0A%0AWould%20you%20take%2030%20seconds%20to%20leave%20us%20a%20Google%20review%3F%20Here%27s%20the%20direct%20link%3A%0Ahttps%3A%2F%2Fg.page%2Fplusultra%2Freview%0A%0AThanks%2C%0AMac">Email</a>` : '<span></span>'}
+          ${phone ? `<a ${stamp} href="sms:${escapeHtml(phone)}?body=Hey%20${encodeURIComponent(String(name).split(' ')[0] || '')}%2C%20would%20you%20take%2030%20sec%20to%20leave%20Plus%20Ultra%20a%20Google%20review%3F%20https%3A%2F%2Fg.page%2Fplusultra%2Freview%20-%20Mac">Text</a>` : '<span></span>'}
         </div>`;
     }).join('');
-  } catch {}
+  } catch (err) {
+    const msg = err.name === 'AbortError' ? 'Request timed out after 10s.' : 'Could not load: ' + err.message;
+    document.getElementById('queueList').innerHTML = `<div class="empty-state">${escapeHtml(msg)}</div>`;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 load();
 </script>

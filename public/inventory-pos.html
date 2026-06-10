@@ -95,6 +95,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
 </style>
 <script src="/assets/portal-auth-client.js"></script>
   <script src="/assets/ryujin-slug.js"></script>
+<script src="/assets/numeric-guard.js"></script>
 </head>
 <body>
 
@@ -283,6 +284,11 @@ function renderLineItems(items) {
     row.querySelector('.li-total').value = (qty * price).toFixed(2);
     recomputeSubtotal();
   }));
+  // On-blur numeric guard (Bug Class #10): type=number swallows "$100"
+  // (value reads '' while the junk stays on screen), so the only feedback
+  // was a silently zeroed line. Guard flags it red on blur; save() blocks
+  // while any guarded input is invalid.
+  if (window.NumericGuard) wrap.querySelectorAll('.li-qty, .li-price').forEach(inp => NumericGuard.attach(inp));
 }
 
 function currentLineItems() {
@@ -342,11 +348,23 @@ async function openEdit(id) {
 function closeModal() {
   document.getElementById('modalBackdrop').classList.remove('open');
   editingId = null;
+  // Floating guard messages are body-level; clear them with the modal.
+  if (window.NumericGuard) NumericGuard.dismissAll();
 }
 
 async function save() {
   const merchant_id = document.getElementById('merchantSelect').value;
   if (!merchant_id) { alert('Pick a supplier first.'); return; }
+  // Re-validate every qty/cost cell; an invalid one would otherwise save as 0.
+  if (window.NumericGuard) {
+    const bad = Array.from(document.querySelectorAll('#lineItems .li-qty, #lineItems .li-price'))
+      .find(inp => !NumericGuard.validate(inp).ok);
+    if (bad) {
+      bad.focus();
+      alert('Fix the highlighted line-item number before saving (numbers only, no $ signs or letters).');
+      return;
+    }
+  }
   const body = {
     po_number: document.getElementById('poNumber').value.trim() || undefined,
     merchant_id,

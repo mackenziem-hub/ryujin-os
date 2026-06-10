@@ -123,6 +123,20 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
 .fu-actions a:hover{color:var(--cyan);border-color:var(--glass-border-hi)}
 .fu-actions svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 
+/* Upcoming installs */
+.install-list{display:flex;flex-direction:column;gap:6px}
+.install-row{
+  display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center;
+  background:var(--glass);border:1px solid var(--glass-border);
+  border-radius:8px;padding:10px 14px;font-size:0.85em;
+}
+.install-name{font-weight:600;color:var(--text)}
+.install-addr{font-family:'Share Tech Mono',monospace;font-size:0.78em;color:var(--text-dim);letter-spacing:0.5px;margin-top:2px}
+.install-date{font-family:'Orbitron',monospace;font-size:0.8em;font-weight:700;color:var(--cyan)}
+.install-status{font-family:'Share Tech Mono',monospace;font-size:0.62em;letter-spacing:1.5px;text-transform:uppercase;padding:3px 8px;border-radius:6px;border:1px solid var(--glass-border);color:var(--text-dim)}
+.install-status.issued{color:var(--cyan);border-color:rgba(34,211,238,0.3);background:rgba(34,211,238,0.06)}
+.install-status.in_progress{color:var(--green);border-color:rgba(74,222,128,0.35);background:rgba(74,222,128,0.08)}
+
 /* Timeline */
 .timeline{display:flex;flex-direction:column;gap:5px}
 .tl-row{
@@ -183,7 +197,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
     </div>
     <div class="owner-pill-row" id="ownerPills">
       <button class="owner-pill active" data-owner="darcy"><span class="dot"></span>Darcy</button>
-      <button class="owner-pill" data-owner="mac"><span class="dot"></span>Mac</button>
+      <button class="owner-pill" data-owner="mackenzie"><span class="dot"></span>Mac</button>
     </div>
   </div>
 
@@ -200,29 +214,36 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
   <!-- Commission -->
   <div class="comm-strip" id="commStrip">
     <h3>Commission</h3>
-    <div class="comm-tile"><div class="v cyan" id="cmPending">—</div><div class="l">Pending</div></div>
-    <div class="comm-tile"><div class="v gold" id="cmMonth">—</div><div class="l">Signed This Month</div></div>
-    <div class="comm-tile"><div class="v green" id="cmLifetime">—</div><div class="l">Lifetime Signed</div></div>
+    <div class="comm-tile"><div class="v cyan" id="cmPending">-</div><div class="l">Pending</div></div>
+    <div class="comm-tile"><div class="v gold" id="cmMonth">-</div><div class="l">Signed This Month</div></div>
+    <div class="comm-tile"><div class="v green" id="cmLifetime">-</div><div class="l">Lifetime Signed</div></div>
   </div>
 
   <!-- Pipeline -->
   <div class="section-head">
     <h2>Pipeline</h2>
-    <span class="count-pill" id="pipeCount">—</span>
+    <span class="count-pill" id="pipeCount">-</span>
   </div>
   <div class="pipeline-grid" id="pipelineGrid"></div>
+
+  <!-- Upcoming installs -->
+  <div class="section-head" style="margin-top:24px">
+    <h2>Upcoming Installs</h2>
+    <span class="count-pill" id="instCount">-</span>
+  </div>
+  <div class="install-list" id="installList"><div class="skeleton" style="height:54px"></div></div>
 
   <!-- Follow-ups -->
   <div class="section-head" style="margin-top:24px">
     <h2>Follow-ups Needed</h2>
-    <span class="count-pill" id="fuCount">—</span>
+    <span class="count-pill" id="fuCount">-</span>
   </div>
   <div class="fu-list" id="fuList"></div>
 
   <!-- Recent activity -->
   <div class="section-head" style="margin-top:24px">
     <h2>Recent Activity</h2>
-    <span class="count-pill" id="tlCount">—</span>
+    <span class="count-pill" id="tlCount">-</span>
   </div>
   <div class="timeline" id="timelineList"></div>
 
@@ -231,9 +252,12 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
 <script>
 const TENANT = window.RYUJIN_TENANT_SLUG;
 let owner = new URLSearchParams(location.search).get('owner') || localStorage.getItem('sales_portal_owner') || 'darcy';
+// Live estimates are tagged sales_owner:mackenzie (20 rows), not :mac (1 stray).
+// Normalize old links / stale localStorage so Mac's pipeline + installs populate.
+if (owner === 'mac') owner = 'mackenzie';
 
 function escapeHtml(s) { if (s == null) return ''; return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-function fmtMoney(n) { if (n == null || isNaN(n)) return '—'; return '$' + Math.round(n).toLocaleString(); }
+function fmtMoney(n) { if (n == null || isNaN(n)) return '-'; return '$' + Math.round(n).toLocaleString(); }
 function fmtRel(iso) {
   if (!iso) return '';
   const dt = Date.now() - new Date(iso).getTime();
@@ -264,7 +288,7 @@ function renderStats(s) {
     <div class="stat-tile"><div class="stat-label">In-Flight</div><div class="stat-value cyan">${s.inFlight || 0}</div></div>
     <div class="stat-tile"><div class="stat-label">Pipeline Value</div><div class="stat-value">${fmtMoney(s.pipelineValue)}</div></div>
     <div class="stat-tile"><div class="stat-label">Won</div><div class="stat-value green">${s.won || 0}</div></div>
-    <div class="stat-tile"><div class="stat-label">Close Rate</div><div class="stat-value gold">${s.closeRate != null ? s.closeRate + '%' : '—'}</div></div>
+    <div class="stat-tile"><div class="stat-label">Close Rate</div><div class="stat-value gold">${s.closeRate != null ? s.closeRate + '%' : '-'}</div></div>
   `;
 }
 
@@ -290,7 +314,7 @@ function renderPipeline(p) {
         ? `<div class="empty-state" style="padding:14px"><div style="font-size:0.85em">None</div></div>`
         : col.items.slice(0, 8).map(e => `
           <div class="pipe-card">
-            <div class="name">${escapeHtml(e.customer || '—')}</div>
+            <div class="name">${escapeHtml(e.customer || '-')}</div>
             <div class="num">est ${escapeHtml(e.estimate_number || e.id?.slice(0, 8) || '')}</div>
             <div class="price">${fmtMoney(e.selling_price)}</div>
           </div>
@@ -305,7 +329,7 @@ function renderFollowUps(list) {
   document.getElementById('fuCount').textContent = list.length;
   const el = document.getElementById('fuList');
   if (list.length === 0) {
-    el.innerHTML = `<div class="empty-state"><div class="ico">✓</div>No stale proposals — pipeline is clean.</div>`;
+    el.innerHTML = `<div class="empty-state"><div class="ico">✓</div>No stale proposals - pipeline is clean.</div>`;
     return;
   }
   el.innerHTML = list.map(f => {
@@ -326,6 +350,65 @@ function renderFollowUps(list) {
   }).join('');
 }
 
+function installsMessage(html) {
+  document.getElementById('instCount').textContent = '-';
+  document.getElementById('installList').innerHTML = `<div class="empty-state">${html}</div>`;
+}
+
+// Upcoming installs for the selected owner. Workorders carry no rep column;
+// the rep link is workorders.linked_estimate_id -> estimates tagged
+// sales_owner:<owner>, and the owner's estimate ids already ride along in the
+// /api/sales-portal payload (commission.by_estimate).
+async function loadInstalls(ownerEstimateIds) {
+  const cap = owner.charAt(0).toUpperCase() + owner.slice(1);
+  const listEl = document.getElementById('installList');
+  const countEl = document.getElementById('instCount');
+  listEl.innerHTML = '<div class="skeleton" style="height:54px"></div>';
+  countEl.textContent = '-';
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10000);
+  try {
+    const [issued, inProgress] = await Promise.all(['issued', 'in_progress'].map(s =>
+      fetch(`/api/workorders?status=${s}&limit=100`, { headers: { 'x-tenant-id': TENANT }, signal: ctrl.signal })
+        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    ));
+    clearTimeout(timer);
+    const all = [...(issued.workorders || []), ...(inProgress.workorders || [])];
+    const mine = all.filter(w => w.linked_estimate_id && ownerEstimateIds.has(w.linked_estimate_id));
+    mine.sort((a, b) => {
+      if (!a.start_date) return 1;
+      if (!b.start_date) return -1;
+      return new Date(a.start_date) - new Date(b.start_date);
+    });
+    countEl.textContent = mine.length;
+    if (!mine.length) {
+      listEl.innerHTML = `<div class="empty-state"><div class="ico">·</div>No scheduled installs for ${escapeHtml(cap)} right now.</div>`;
+      return;
+    }
+    listEl.innerHTML = mine.map(w => {
+      // start_date is a bare DATE - pin to local midnight so it doesn't shift a day
+      const dateLabel = w.start_date
+        ? new Date(String(w.start_date).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        : 'TBD';
+      const st = w.status === 'in_progress' ? 'in_progress' : 'issued';
+      const stLabel = w.status === 'in_progress' ? 'IN PROGRESS' : 'ISSUED';
+      return `
+        <div class="install-row">
+          <div>
+            <div class="install-name">${escapeHtml(w.customer_name || '-')}</div>
+            <div class="install-addr">${escapeHtml(w.address || '-')}</div>
+          </div>
+          <div class="install-date">${escapeHtml(dateLabel)}</div>
+          <div class="install-status ${st}">${stLabel}</div>
+        </div>`;
+    }).join('');
+  } catch (e) {
+    clearTimeout(timer);
+    if (e.name === 'AbortError') installsMessage('Timed out loading installs (10s). Refresh to retry.');
+    else installsMessage('Could not load installs: ' + escapeHtml(e.message));
+  }
+}
+
 function renderTimeline(list) {
   document.getElementById('tlCount').textContent = list.length;
   const el = document.getElementById('timelineList');
@@ -336,7 +419,7 @@ function renderTimeline(list) {
   el.innerHTML = list.map(e => `
     <div class="tl-row">
       <div class="tl-dot ${e.kind}"></div>
-      <div class="tl-text"><span class="kind">${escapeHtml(e.kind)}</span>${escapeHtml(e.customer || '—')} <span style="color:var(--text-muted);font-size:0.85em">· est ${escapeHtml(e.estimate_number || '')}</span></div>
+      <div class="tl-text"><span class="kind">${escapeHtml(e.kind)}</span>${escapeHtml(e.customer || '-')} <span style="color:var(--text-muted);font-size:0.85em">· est ${escapeHtml(e.estimate_number || '')}</span></div>
       <div class="tl-time">${fmtRel(e.at)}</div>
     </div>
   `).join('');
@@ -348,7 +431,8 @@ async function load() {
     const resp = await fetch(`/api/sales-portal?owner=${encodeURIComponent(owner)}`, { headers: { 'x-tenant-id': TENANT } });
     if (!resp.ok) {
       const txt = await resp.text();
-      showBanner(`Could not load sales data: HTTP ${resp.status} — ${txt.slice(0, 200)}`);
+      showBanner(`Could not load sales data: HTTP ${resp.status} - ${txt.slice(0, 200)}`);
+      installsMessage('Sales data unavailable - installs not loaded.');
       return;
     }
     const data = await resp.json();
@@ -358,8 +442,11 @@ async function load() {
     renderPipeline(data.pipeline || {});
     renderFollowUps(data.followUps || []);
     renderTimeline(data.timeline || []);
+    const ownerEstimateIds = new Set(((data.commission || {}).by_estimate || []).map(c => c.id));
+    loadInstalls(ownerEstimateIds);
   } catch (e) {
     showBanner(`Network error: ${e.message}`);
+    installsMessage('Network error - installs not loaded.');
   }
 }
 

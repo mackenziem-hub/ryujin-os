@@ -13,7 +13,7 @@ Ryujin OS is a white-label business operating system for contractors. Multi-tena
 - **Database:** Supabase (PostgreSQL + RLS)
 - **Storage:** Vercel Blob (photos, documents)
 - **AI:** Claude API (per-tenant configurable persona)
-- **Schema:** `schema/migrations.sql` + `migration_002` through `migration_008`
+- **Schema:** `schema/migrations.sql` + `migration_002` through `migration_098` (applied by hand via the Supabase Management API; see schema note below)
 
 ## Multi-Tenant
 Every table has `tenant_id`. Every API route uses `requireTenant()` middleware from `lib/tenant.js`. Tenant resolved from:
@@ -21,7 +21,10 @@ Every table has `tenant_id`. Every API route uses `requireTenant()` middleware f
 2. `?tenant=` query param
 3. Custom domain lookup
 
-## Database Schema (8 migrations applied)
+## Database Schema (migration files through 098; latest APPLIED is 095)
+Migration files in `schema/` run 001 through 098. **Latest applied to prod: 095** (`migration_095_estimate_number_unique.sql`). 096-098 were staged 2026-06-09 (096 payments audit, 097 service SLA, 098 review_request_sent) and are pending hand-apply via the Management API. Migration files are documentation of what gets applied by hand; keep them idempotent (IF NOT EXISTS guards).
+
+Early foundations (full list is the `schema/` directory):
 | Migration | Contents |
 |---|---|
 | 001 (base) | tenants, users, customers, estimates, tickets, inspections, time_entries, files |
@@ -32,6 +35,7 @@ Every table has `tenant_id`. Every API route uses `requireTenant()` middleware f
 | 006 | Expanded catalog: housewrap, VentiGrid, EPS, siding variants, windows, siding accessories, contractor_referrals |
 | 007 | tenant_settings (configurable labor rates, tax, multipliers, margins, mobilization, branding) |
 | 008 | Offer restructure: commercial, flat, metal, combined offers. offer_category + has_estimated_pricing columns |
+| 063 | purchase_orders table (Inventory pillar: PO tracking, JSONB line items, draft/sent/confirmed/partial/received/cancelled lifecycle) |
 
 ## Quote Engine v3.1 (`lib/quoteEngineV3.js`)
 

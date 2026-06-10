@@ -58,6 +58,25 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
 .banner{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius);font-size:0.8em;margin-bottom:14px}
 .banner.warn{background:rgba(251,146,60,0.08);border:1px solid rgba(251,146,60,0.25);color:var(--orange)}
 
+.modal-overlay{position:fixed;inset:0;background:rgba(4,8,16,0.75);backdrop-filter:blur(3px);z-index:100;display:none;align-items:flex-start;justify-content:center;padding:60px 16px}
+.modal-overlay.open{display:flex}
+.modal{background:var(--glass);border:1px solid var(--glass-border-hi);border-radius:14px;width:100%;max-width:560px;padding:18px;box-shadow:0 18px 60px rgba(0,0,0,0.5)}
+.modal h3{font-family:'Orbitron',monospace;font-size:0.85em;letter-spacing:2px;text-transform:uppercase;color:var(--text);margin-bottom:4px}
+.modal .modal-sub{font-size:0.78em;color:var(--text-dim);margin-bottom:12px}
+.modal input.search{width:100%;background:rgba(6,10,20,0.5);border:1px solid var(--glass-border);color:var(--text);padding:9px 12px;border-radius:8px;font-size:0.9em;font-family:inherit;outline:none;margin-bottom:10px}
+.est-list{max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:5px}
+.est-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;background:rgba(6,10,20,0.4);border:1px solid var(--glass-border);border-radius:10px;padding:9px 12px;cursor:pointer;transition:all 0.15s}
+.est-row:hover{border-color:var(--glass-border-hi);background:rgba(34,211,238,0.05)}
+.est-row .ename{font-weight:600;color:var(--text);font-size:0.85em}
+.est-row .emeta{font-family:'Share Tech Mono',monospace;font-size:0.68em;color:var(--text-dim)}
+.est-row .eamt{font-family:'Orbitron',monospace;font-weight:700;color:var(--gold);font-size:0.8em;white-space:nowrap}
+.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+.modal-msg{font-size:0.78em;padding:6px 0;color:var(--text-dim);min-height:1.4em}
+.modal-msg.err{color:var(--red)}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(10px);background:rgba(8,14,26,0.97);border:1px solid rgba(74,222,128,0.4);color:var(--green);padding:10px 18px;border-radius:10px;font-size:0.82em;z-index:200;opacity:0;transition:all 0.25s;pointer-events:none}
+.toast.err{border-color:rgba(248,113,113,0.4);color:var(--red)}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
 @media(max-width:768px){.main{padding:12px}.hq-title h1{font-size:1.3em}}
 </style>
   <script src="/assets/ryujin-slug.js"></script>
@@ -93,6 +112,18 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
 
 </main>
 
+<div class="modal-overlay" id="matchModal">
+  <div class="modal">
+    <h3>Match Payment to Estimate</h3>
+    <div class="modal-sub" id="matchSub"></div>
+    <input class="search" id="estSearch" type="text" placeholder="Search by customer, estimate #, or address..." autocomplete="off">
+    <div class="est-list" id="estList"></div>
+    <div class="modal-msg" id="matchMsg"></div>
+    <div class="modal-actions"><button class="btn" id="matchCancel" type="button">Cancel</button></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
 <script>
 const TENANT = window.RYUJIN_TENANT_SLUG;
 let cache = []; let activeFilter = '';
@@ -111,14 +142,182 @@ function render(list) {
         <div class="pay-status ${matched ? 'matched' : 'unmatched'}">${matched ? '✓ Matched' : 'Unmatched'}</div>
         <div class="pay-info">
           <div class="name">${escapeHtml(p.customer_name || 'Unknown')}</div>
-          <div class="meta">${escapeHtml(p.invoice_description || p.payment_method || '—')}${p.matched_estimate_id ? ' · est ' + p.matched_estimate_id.slice(0,8) : ''}</div>
+          <div class="meta">${escapeHtml(p.invoice_description || p.payment_method || '—')}${typeof p.matched_estimate_id === 'string' ? ' · est ' + p.matched_estimate_id.slice(0,8) : ''}</div>
         </div>
         <div class="pay-amt">${fmtMoney(p.amount)}</div>
         <div class="pay-date">${fmtDate(p.payment_date)}</div>
-        ${matched ? '<span></span>' : '<button class="btn" onclick="alert(\'Match flow: full reconciliation UI in v1.1. Today: edit the payment row in Supabase Studio and set matched_estimate_id manually.\')">Match</button>'}
+        ${!p.id ? '<span></span>' : (matched
+          ? `<button class="btn" data-unmatch="${escapeHtml(p.id)}">Unmatch</button>`
+          : `<button class="btn" data-match="${escapeHtml(p.id)}">Match</button>`)}
       </div>`;
   }).join('');
 }
+
+// ── Reconcile modal (match payment -> estimate) ──────────────
+let estCache = null;          // estimates fetched once per page load
+let estLoadError = null;
+let matchingPaymentId = null; // payment currently being matched
+let matchBusy = false;
+
+function toast(msg, isErr) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.toggle('err', !!isErr);
+  t.classList.add('show');
+  clearTimeout(toast._h);
+  toast._h = setTimeout(() => t.classList.remove('show'), 3500);
+}
+
+function fetchWithTimeout(url, opts = {}, ms = 10000) {
+  const ctrl = new AbortController();
+  const h = setTimeout(() => ctrl.abort(), ms);
+  return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(h));
+}
+
+function estPrice(e) {
+  const tier = (e.selected_package || 'gold').toLowerCase();
+  const pkg = (e.calculated_packages || {})[tier] || {};
+  return pkg.total ?? pkg.summary?.sellingPrice ?? pkg.sellingPrice ?? 0;
+}
+
+async function loadEstimates() {
+  if (estCache) return estCache;
+  estLoadError = null;
+  try {
+    const r = await fetchWithTimeout('/api/estimates?limit=500', { headers: { 'x-tenant-id': TENANT, ...window.RyujinAuth.headers() } });
+    if (!r.ok) { estLoadError = `HTTP ${r.status}`; return null; }
+    const data = await r.json();
+    estCache = data.estimates || data.data || [];
+    return estCache;
+  } catch (e) {
+    estLoadError = e.name === 'AbortError' ? 'Timed out after 10s' : e.message;
+    return null;
+  }
+}
+
+function renderEstList(filter) {
+  const el = document.getElementById('estList');
+  if (estLoadError) {
+    el.innerHTML = `<div class="empty-state">Could not load estimates: ${escapeHtml(estLoadError)} <button class="btn" type="button" onclick="estCache=null;estLoadError=null;refreshEstList()">Retry</button></div>`;
+    return;
+  }
+  if (!estCache) { el.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>'; return; }
+  if (estCache.length === 0) { el.innerHTML = '<div class="empty-state">No estimates found for this tenant yet.</div>'; return; }
+  const q = (filter || '').trim().toLowerCase();
+  const list = estCache.filter(e => {
+    if (!q) return true;
+    const hay = [e.estimate_number, e.customer?.full_name, e.customer?.address, e.customer?.city].filter(Boolean).join(' ').toLowerCase();
+    return hay.includes(q);
+  }).slice(0, 50);
+  if (list.length === 0) { el.innerHTML = '<div class="empty-state">No estimates match that search.</div>'; return; }
+  el.innerHTML = list.map(e => {
+    const price = estPrice(e);
+    return `
+      <div class="est-row" data-est="${escapeHtml(e.id)}">
+        <div>
+          <div class="ename">#${escapeHtml(e.estimate_number != null ? e.estimate_number : '?')} · ${escapeHtml(e.customer?.full_name || 'Unknown')}</div>
+          <div class="emeta">${escapeHtml([e.customer?.address, e.customer?.city].filter(Boolean).join(', ') || '')}${e.status ? ' · ' + escapeHtml(e.status) : ''}</div>
+        </div>
+        <div class="eamt">${price ? fmtMoney(price) : ''}</div>
+      </div>`;
+  }).join('');
+}
+
+async function refreshEstList() {
+  renderEstList(document.getElementById('estSearch').value); // skeleton while loading
+  await loadEstimates();
+  renderEstList(document.getElementById('estSearch').value);
+}
+
+function openMatchModal(paymentId) {
+  const p = cache.find(x => x.id === paymentId);
+  if (!p) return;
+  matchingPaymentId = paymentId;
+  matchBusy = false;
+  document.getElementById('matchSub').textContent = `${p.customer_name || 'Unknown'} · ${fmtMoney(p.amount)} · ${fmtDate(p.payment_date)}. Pick the estimate this payment belongs to.`;
+  document.getElementById('matchMsg').textContent = '';
+  document.getElementById('matchMsg').classList.remove('err');
+  document.getElementById('estSearch').value = '';
+  document.getElementById('matchModal').classList.add('open');
+  document.getElementById('estSearch').focus();
+  refreshEstList();
+}
+
+function closeMatchModal() {
+  matchingPaymentId = null;
+  document.getElementById('matchModal').classList.remove('open');
+}
+
+async function patchPayment(paymentId, body) {
+  const r = await fetchWithTimeout(`/api/payments?id=${encodeURIComponent(paymentId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', 'x-tenant-id': TENANT, ...window.RyujinAuth.headers() },
+    body: JSON.stringify(body)
+  });
+  if (!r.ok) {
+    let msg = `HTTP ${r.status}`;
+    try { const d = await r.json(); if (d.error) msg = d.error; } catch {}
+    throw new Error(msg);
+  }
+  const d = await r.json();
+  return d.payment;
+}
+
+async function doMatch(estimateId) {
+  if (matchBusy || !matchingPaymentId) return;
+  matchBusy = true;
+  const msg = document.getElementById('matchMsg');
+  msg.classList.remove('err');
+  msg.textContent = 'Matching...';
+  const est = (estCache || []).find(e => e.id === estimateId);
+  const p = cache.find(x => x.id === matchingPaymentId);
+  const body = { matched_estimate_id: estimateId };
+  // Enrich the payment row from the estimate when the payment is missing links.
+  if (est && est.customer_id && !(p && p.customer_id)) body.customer_id = est.customer_id;
+  if (est && est.customer?.full_name && !(p && p.customer_name)) body.customer_name = est.customer.full_name;
+  try {
+    const updated = await patchPayment(matchingPaymentId, body);
+    const i = cache.findIndex(x => x.id === matchingPaymentId);
+    if (i !== -1) cache[i] = { ...cache[i], ...updated };
+    closeMatchModal();
+    applyFilter();
+    toast(`Payment matched to estimate #${est?.estimate_number != null ? est.estimate_number : estimateId.slice(0, 8)}.`);
+    load(); // background refresh so the list reflects server truth
+  } catch (e) {
+    msg.classList.add('err');
+    msg.textContent = `Match failed: ${e.name === 'AbortError' ? 'timed out after 10s' : e.message}`;
+  }
+  matchBusy = false;
+}
+
+async function doUnmatch(paymentId) {
+  if (!confirm('Clear the estimate match on this payment?')) return;
+  try {
+    const updated = await patchPayment(paymentId, { matched_estimate_id: null, status: 'unmatched' });
+    const i = cache.findIndex(x => x.id === paymentId);
+    if (i !== -1) cache[i] = { ...cache[i], ...updated };
+    applyFilter();
+    toast('Match cleared. Payment is back in the unmatched queue.');
+    load();
+  } catch (e) {
+    toast(`Unmatch failed: ${e.name === 'AbortError' ? 'timed out after 10s' : e.message}`, true);
+  }
+}
+
+document.getElementById('payList').addEventListener('click', (e) => {
+  const m = e.target.closest('[data-match]');
+  if (m) return openMatchModal(m.dataset.match);
+  const u = e.target.closest('[data-unmatch]');
+  if (u) return doUnmatch(u.dataset.unmatch);
+});
+document.getElementById('estList').addEventListener('click', (e) => {
+  const row = e.target.closest('[data-est]');
+  if (row) doMatch(row.dataset.est);
+});
+document.getElementById('estSearch').addEventListener('input', () => renderEstList(document.getElementById('estSearch').value));
+document.getElementById('matchCancel').addEventListener('click', closeMatchModal);
+document.getElementById('matchModal').addEventListener('click', (e) => { if (e.target === e.currentTarget) closeMatchModal(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMatchModal(); });
 
 function applyFilter() {
   let list = cache.slice();

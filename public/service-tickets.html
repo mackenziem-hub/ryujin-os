@@ -7,6 +7,7 @@
 <title>Service Tickets · Ryujin OS</title>
 <link rel="icon" href="/assets/logo/icon.png" onerror="this.href='/assets/logo/logo-glow.jpg'">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=optional" rel="stylesheet">
+<script src="/assets/auth-guard.js"></script>
 <script src="/assets/service-toolbar.js" defer></script>
 <style>
 :root{--bg:#060a14;--glass:rgba(20,30,50,0.85);--glass2:rgba(22,34,58,0.80);--glass-border:rgba(34,211,238,0.16);--glass-border-hi:rgba(34,211,238,0.35);--text:#d0daf0;--text-dim:rgba(160,190,230,0.55);--text-muted:rgba(140,170,220,0.30);--cyan:#22d3ee;--blue:#4a9eff;--purple:#7c3aed;--green:#4ade80;--yellow:#facc15;--red:#f87171;--orange:#fb923c;--gold:#fbbf24;--radius:12px;--sidebar-w:72px}
@@ -30,6 +31,15 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
 .btn{font-family:'Orbitron',monospace;font-size:0.7em;letter-spacing:1.5px;text-transform:uppercase;font-weight:600;padding:8px 16px;border-radius:18px;cursor:pointer;border:1px solid var(--glass-border);background:transparent;color:var(--text-dim);transition:all 0.2s}
 .btn:hover{color:var(--text);border-color:var(--glass-border-hi)}
 .btn.primary{background:linear-gradient(135deg,var(--cyan),var(--purple));color:#0a0e1a;border:none;box-shadow:0 0 12px rgba(34,211,238,0.3)}
+
+.stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.stat-tile{background:var(--glass);border:1px solid var(--glass-border);border-radius:var(--radius);padding:12px 14px;position:relative;overflow:hidden;cursor:pointer;text-align:left;font-family:inherit;color:var(--text);transition:all 0.2s}
+.stat-tile:hover{border-color:var(--glass-border-hi)}
+.stat-tile.active{border-color:rgba(34,211,238,0.45);background:linear-gradient(135deg,rgba(34,211,238,0.10),rgba(124,58,237,0.05))}
+.stat-tile::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--cyan),transparent);opacity:0.45}
+.stat-tile .num{font-family:'Orbitron',monospace;font-size:1.5em;font-weight:800;line-height:1.1}
+.stat-tile .num.cyan{color:var(--cyan)}.stat-tile .num.purple{color:#a78bfa}.stat-tile .num.red{color:var(--red)}.stat-tile .num.orange{color:var(--orange)}
+.stat-tile .lbl{font-family:'Orbitron',monospace;font-size:0.58em;letter-spacing:1.8px;color:var(--text-dim);text-transform:uppercase;margin-top:5px}
 
 .filter-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px;background:var(--glass);border:1px solid var(--glass-border);border-radius:var(--radius);padding:10px 12px;position:relative;overflow:hidden}
 .filter-bar::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--cyan) 50%,transparent);opacity:0.4}
@@ -88,7 +98,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
 .field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
 
-@media(max-width:768px){.main{padding:12px}.hq-title h1{font-size:1.3em}.ticket-row{grid-template-columns:auto 1fr auto;gap:10px}.ticket-row .ticket-cost,.ticket-row .ticket-time{grid-column:1/-1;justify-self:end}}
+@media(max-width:768px){.main{padding:12px}.hq-title h1{font-size:1.3em}.stat-row{grid-template-columns:repeat(2,1fr)}.ticket-row{grid-template-columns:auto 1fr auto;gap:10px}.ticket-row .ticket-cost,.ticket-row .ticket-time{grid-column:1/-1;justify-self:end}}
 </style>
   <script src="/assets/ryujin-slug.js"></script>
 </head>
@@ -119,6 +129,13 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
   </div>
 
   <div id="banner-slot"></div>
+
+  <div class="stat-row">
+    <button class="stat-tile" id="tile_open" title="Filter: open tickets"><div class="num cyan" id="tile_open_num">·</div><div class="lbl">Tickets Open</div></button>
+    <button class="stat-tile" id="tile_scheduled" title="Filter: scheduled tickets"><div class="num purple" id="tile_scheduled_num">·</div><div class="lbl">Scheduled</div></button>
+    <button class="stat-tile" id="tile_overdue" title="Filter: scheduled date passed"><div class="num red" id="tile_overdue_num">·</div><div class="lbl">Overdue</div></button>
+    <button class="stat-tile" id="tile_callbacks" title="Filter: open callbacks"><div class="num orange" id="tile_callbacks_num">·</div><div class="lbl">Callbacks Open</div></button>
+  </div>
 
   <div class="filter-bar">
     <span class="label">Status</span>
@@ -156,12 +173,21 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
       <div class="field"><label>Type</label><select id="f_type"><option value="repair">Repair</option><option value="callback">Callback</option><option value="maintenance">Maintenance</option><option value="warranty_visit">Warranty Visit</option><option value="inspection">Inspection</option></select></div>
       <div class="field"><label>Priority</label><select id="f_prio"><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option><option value="low">Low</option></select></div>
     </div>
+    <div class="field"><label>Customer (optional)</label>
+      <input id="f_cust_search" placeholder="Type to search name / address / phone" autocomplete="off" style="margin-bottom:6px" />
+      <select id="f_customer"><option value="">No linked customer</option></select>
+    </div>
+    <div class="field"><label>Source Estimate (optional)</label><select id="f_estimate" disabled><option value="">Select a customer first</option></select></div>
     <div class="field"><label>Description</label><textarea id="f_desc" placeholder="What did the customer report?"></textarea></div>
     <div class="field-row">
       <div class="field"><label>Scheduled (optional)</label><input id="f_sched" type="datetime-local" /></div>
       <div class="field"><label>Estimated Cost ($)</label><input id="f_cost" type="number" step="50" /></div>
     </div>
     <div class="modal-actions">
+      <div style="margin-right:auto;display:flex;gap:8px">
+        <button class="btn" id="btnEscalate" style="display:none">Escalate to Mac</button>
+        <button class="btn" id="btnAck" style="display:none" title="Stamp acknowledged_at so the ack-SLA scan stops flagging this ticket">Acknowledge</button>
+      </div>
       <button class="btn" id="btnCancel">Cancel</button>
       <button class="btn primary" id="btnSave">Save Ticket</button>
     </div>
@@ -173,7 +199,26 @@ const TENANT = window.RYUJIN_TENANT_SLUG;
 let cache = [];
 let activeStatus = '';
 let activeType = '';
+let overdueOnly = false;   // tile drill-down: scheduled tickets whose date passed
 let editing = null;
+
+// Session headers: /api/customers + /api/estimates are gated with
+// requirePortalSessionAndTenant and hard-401 without the Bearer token
+// (auth-guard.js guarantees window.RyujinAuth exists past the redirect).
+function authHeaders() {
+  return { 'x-tenant-id': TENANT, ...(window.RyujinAuth ? window.RyujinAuth.headers() : {}) };
+}
+
+// Shared fetch with a 10s timeout so a hung API can't strand a loading state.
+async function fetchJson(url, ms = 10000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const r = await fetch(url, { headers: authHeaders(), signal: ctrl.signal });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return await r.json();
+  } finally { clearTimeout(timer); }
+}
 
 function escapeHtml(s) { if (s == null) return ''; return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function fmtMoney(n) { if (n == null || isNaN(n)) return ''; return '$' + Math.round(n).toLocaleString(); }
@@ -212,7 +257,7 @@ async function load() {
     const params = new URLSearchParams();
     if (activeStatus) params.set('status', activeStatus);
     if (activeType) params.set('type', activeType);
-    const resp = await fetch(`/api/service-tickets?${params}`, { headers: { 'x-tenant-id': TENANT } });
+    const resp = await fetch(`/api/service-tickets?${params}`, { headers: authHeaders() });
     if (!resp.ok) {
       const txt = await resp.text();
       if (resp.status === 500 && /relation .* does not exist/i.test(txt)) showBanner(`Migration <code>047_service</code> not applied yet.`, true);
@@ -221,10 +266,110 @@ async function load() {
       return;
     }
     const data = await resp.json();
-    cache = data.tickets || [];
+    let list = data.tickets || [];
+    if (overdueOnly) {
+      const now = Date.now();
+      list = list.filter(t => t.scheduled_at && new Date(t.scheduled_at).getTime() < now);
+    }
+    cache = list;
     document.getElementById('banner-slot').innerHTML = '';
     renderTickets(cache);
   } catch (e) { showBanner(`Network: ${e.message}`); }
+}
+
+// ── Stat tiles (unfiltered counts; tiles double as drill-down filters) ──
+async function loadStats() {
+  const tileIds = ['tile_open_num','tile_scheduled_num','tile_overdue_num','tile_callbacks_num'];
+  try {
+    const data = await fetchJson('/api/service-tickets?limit=500');
+    const now = Date.now();
+    let open = 0, scheduled = 0, overdue = 0, callbacks = 0;
+    for (const t of data.tickets || []) {
+      if (t.status === 'open') { open++; if (t.ticket_type === 'callback') callbacks++; }
+      else if (t.status === 'scheduled') { scheduled++; if (t.scheduled_at && new Date(t.scheduled_at).getTime() < now) overdue++; }
+    }
+    document.getElementById('tile_open_num').textContent = open;
+    document.getElementById('tile_scheduled_num').textContent = scheduled;
+    document.getElementById('tile_overdue_num').textContent = overdue;
+    document.getElementById('tile_callbacks_num').textContent = callbacks;
+  } catch (e) {
+    tileIds.forEach(id => { const el = document.getElementById(id); el.textContent = '?'; el.title = `Stats unavailable: ${e.message}`; });
+  }
+}
+
+// ── Filter state helpers (chips + tiles + URL stay in sync) ──
+function setStatusFilter(st) { activeStatus = st; document.querySelectorAll('.fchip[data-st]').forEach(x => x.classList.toggle('active', x.dataset.st === st)); }
+function setTypeFilter(tp) { activeType = tp; document.querySelectorAll('.fchip[data-tp]').forEach(x => x.classList.toggle('active', x.dataset.tp === tp)); }
+function syncUrl() {
+  const p = new URLSearchParams();
+  if (activeStatus) p.set('status', activeStatus);
+  if (activeType) p.set('type', activeType);
+  if (overdueOnly) p.set('overdue', '1');
+  const qs = p.toString();
+  history.replaceState(null, '', qs ? `?${qs}` : location.pathname);
+}
+function paintTiles() {
+  document.getElementById('tile_open').classList.toggle('active', activeStatus === 'open' && !activeType && !overdueOnly);
+  document.getElementById('tile_scheduled').classList.toggle('active', activeStatus === 'scheduled' && !overdueOnly);
+  document.getElementById('tile_overdue').classList.toggle('active', overdueOnly);
+  document.getElementById('tile_callbacks').classList.toggle('active', activeStatus === 'open' && activeType === 'callback');
+}
+
+// ── Modal dropdowns: customer (searchable) + source estimate ──
+async function loadCustomerOptions(term, selectedId, selectedLabel) {
+  const sel = document.getElementById('f_customer');
+  sel.innerHTML = '<option value="">Loading customers...</option>';
+  try {
+    const params = new URLSearchParams({ limit: '50' });
+    if (term) params.set('search', term);
+    const data = await fetchJson(`/api/customers?${params}`);
+    const opts = ['<option value="">No linked customer</option>'];
+    let found = false;
+    for (const c of data.customers || []) {
+      if (selectedId && c.id === selectedId) found = true;
+      opts.push(`<option value="${c.id}">${escapeHtml(c.full_name)}${c.phone ? ' · ' + escapeHtml(c.phone) : ''}</option>`);
+    }
+    if (selectedId && !found) opts.push(`<option value="${selectedId}">${escapeHtml(selectedLabel || 'Current customer')}</option>`);
+    if (opts.length === 1 && term) opts.push('<option value="" disabled>No customers match that search</option>');
+    sel.innerHTML = opts.join('');
+    sel.value = selectedId || '';
+  } catch (e) {
+    // Preserve the current link on fetch failure so saving the edit form
+    // can't silently wipe an existing customer_id.
+    const opts = [`<option value="" disabled>Could not load customers (${escapeHtml(e.message)})</option>`];
+    if (selectedId) opts.unshift(`<option value="${selectedId}">${escapeHtml(selectedLabel || 'Current customer')}</option>`);
+    else opts.unshift('<option value="">No linked customer</option>');
+    sel.innerHTML = opts.join('');
+    sel.value = selectedId || '';
+  }
+}
+
+async function loadEstimateOptions(customerId, selectedId) {
+  const sel = document.getElementById('f_estimate');
+  if (!customerId) { sel.innerHTML = '<option value="">Select a customer first</option>'; sel.disabled = true; return; }
+  sel.disabled = false;
+  sel.innerHTML = '<option value="">Loading estimates...</option>';
+  try {
+    const data = await fetchJson(`/api/estimates?customer_id=${encodeURIComponent(customerId)}&limit=50`);
+    const list = data.estimates || [];
+    const opts = ['<option value="">No linked estimate</option>'];
+    let found = false;
+    for (const e of list) {
+      if (selectedId && e.id === selectedId) found = true;
+      const label = [e.estimate_number || e.id.slice(0, 8), e.status, e.created_at ? e.created_at.slice(0, 10) : ''].filter(Boolean).join(' · ');
+      opts.push(`<option value="${e.id}">${escapeHtml(label)}</option>`);
+    }
+    if (selectedId && !found) opts.push(`<option value="${selectedId}">Current linked estimate</option>`);
+    if (opts.length === 1) opts.push('<option value="" disabled>No estimates for this customer</option>');
+    sel.innerHTML = opts.join('');
+    sel.value = selectedId || '';
+  } catch (e2) {
+    const opts = [`<option value="" disabled>Could not load estimates (${escapeHtml(e2.message)})</option>`];
+    if (selectedId) opts.unshift(`<option value="${selectedId}">Current linked estimate</option>`);
+    else opts.unshift('<option value="">No linked estimate</option>');
+    sel.innerHTML = opts.join('');
+    sel.value = selectedId || '';
+  }
 }
 
 function openModal(t) {
@@ -236,6 +381,11 @@ function openModal(t) {
   document.getElementById('f_desc').value = t?.description || '';
   document.getElementById('f_sched').value = t?.scheduled_at ? t.scheduled_at.slice(0,16) : '';
   document.getElementById('f_cost').value = t?.estimated_cost ?? '';
+  document.getElementById('f_cust_search').value = '';
+  document.getElementById('btnEscalate').style.display = t ? '' : 'none';
+  document.getElementById('btnAck').style.display = (t && !t.acknowledged_at) ? '' : 'none';
+  loadCustomerOptions('', t?.customer_id || null, t?.customer?.full_name || null);
+  loadEstimateOptions(t?.customer_id || null, t?.source_estimate || null);
   document.getElementById('modalBackdrop').classList.add('show');
 }
 function closeModal() { document.getElementById('modalBackdrop').classList.remove('show'); editing = null; }
@@ -248,24 +398,82 @@ async function saveTicket() {
     priority: document.getElementById('f_prio').value,
     description: document.getElementById('f_desc').value.trim() || null,
     scheduled_at: document.getElementById('f_sched').value ? new Date(document.getElementById('f_sched').value).toISOString() : null,
-    estimated_cost: parseFloat(document.getElementById('f_cost').value) || null
+    estimated_cost: parseFloat(document.getElementById('f_cost').value) || null,
+    customer_id: document.getElementById('f_customer').value || null,
+    source_estimate: document.getElementById('f_estimate').value || null
   };
   if (!payload.title) { alert('Title required'); return; }
   const url = editing ? `/api/service-tickets?id=${editing.id}` : '/api/service-tickets';
   const method = editing ? 'PUT' : 'POST';
-  const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json', 'x-tenant-id': TENANT }, body: JSON.stringify(payload) });
-  if (r.ok) { closeModal(); load(); } else { alert(`Save failed: ${r.status}`); }
+  const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify(payload) });
+  if (r.ok) { closeModal(); load(); loadStats(); } else { alert(`Save failed: ${r.status}`); }
 }
 
-document.querySelectorAll('.fchip[data-st]').forEach(c => c.addEventListener('click', () => { document.querySelectorAll('.fchip[data-st]').forEach(x => x.classList.toggle('active', x === c)); activeStatus = c.dataset.st; load(); }));
-document.querySelectorAll('.fchip[data-tp]').forEach(c => c.addEventListener('click', () => { document.querySelectorAll('.fchip[data-tp]').forEach(x => x.classList.toggle('active', x === c)); activeType = c.dataset.tp; load(); }));
+document.querySelectorAll('.fchip[data-st]').forEach(c => c.addEventListener('click', () => { overdueOnly = false; setStatusFilter(c.dataset.st); syncUrl(); paintTiles(); load(); }));
+document.querySelectorAll('.fchip[data-tp]').forEach(c => c.addEventListener('click', () => { setTypeFilter(c.dataset.tp); syncUrl(); paintTiles(); load(); }));
+document.getElementById('tile_open').addEventListener('click', () => { overdueOnly = false; setStatusFilter('open'); setTypeFilter(''); syncUrl(); paintTiles(); load(); });
+document.getElementById('tile_scheduled').addEventListener('click', () => { overdueOnly = false; setStatusFilter('scheduled'); setTypeFilter(''); syncUrl(); paintTiles(); load(); });
+document.getElementById('tile_overdue').addEventListener('click', () => { overdueOnly = true; setStatusFilter('scheduled'); setTypeFilter(''); syncUrl(); paintTiles(); load(); });
+document.getElementById('tile_callbacks').addEventListener('click', () => { overdueOnly = false; setStatusFilter('open'); setTypeFilter('callback'); syncUrl(); paintTiles(); load(); });
 document.getElementById('btnNew').addEventListener('click', () => openModal(null));
 document.getElementById('btnCancel').addEventListener('click', closeModal);
 document.getElementById('btnSave').addEventListener('click', saveTicket);
 document.getElementById('modalBackdrop').addEventListener('click', e => { if (e.target.id === 'modalBackdrop') closeModal(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.getElementById('modalBackdrop').classList.contains('show')) closeModal(); });
 
+let custSearchTimer = null;
+document.getElementById('f_cust_search').addEventListener('input', () => {
+  clearTimeout(custSearchTimer);
+  custSearchTimer = setTimeout(() => {
+    const keepId = document.getElementById('f_customer').value || null;
+    loadCustomerOptions(document.getElementById('f_cust_search').value.trim(), keepId, null);
+  }, 300);
+});
+document.getElementById('f_customer').addEventListener('change', () => {
+  loadEstimateOptions(document.getElementById('f_customer').value || null, null);
+});
+
+// Escalate: server resolves the tenant owner, sets priority high, logs activity.
+document.getElementById('btnEscalate').addEventListener('click', async () => {
+  if (!editing) return;
+  if (!confirm('Escalate this ticket to Mac? Sets priority to high and reassigns.')) return;
+  const btn = document.getElementById('btnEscalate');
+  btn.disabled = true; btn.textContent = 'Escalating...';
+  try {
+    const r = await fetch(`/api/service-tickets?id=${editing.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ escalate: true }) });
+    if (r.ok) { closeModal(); load(); loadStats(); } else { alert(`Escalate failed: ${r.status}`); }
+  } catch (e) { alert(`Network: ${e.message}`); }
+  btn.disabled = false; btn.textContent = 'Escalate to Mac';
+});
+
+// Acknowledge: stamps acknowledged_at (migration 097) so the service scan's
+// ack-SLA check has a write side - without this, every open ticket breaches
+// the SLA forever and the daily 'Acknowledge N tickets' task can never clear.
+document.getElementById('btnAck').addEventListener('click', async () => {
+  if (!editing) return;
+  const btn = document.getElementById('btnAck');
+  btn.disabled = true; btn.textContent = 'Acknowledging...';
+  try {
+    const r = await fetch(`/api/service-tickets?id=${editing.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ acknowledged_at: new Date().toISOString() }) });
+    if (r.ok) { closeModal(); load(); loadStats(); }
+    else { alert(`Acknowledge failed: HTTP ${r.status}${r.status === 500 ? ' (migration 097 may not be applied yet)' : ''}`); }
+  } catch (e) { alert(`Network: ${e.message}`); }
+  btn.disabled = false; btn.textContent = 'Acknowledge';
+});
+
+// ── Consume ?status= / ?type= / ?overdue=1 (tile drill-downs from service.html) ──
+(function initFromUrl() {
+  const p = new URLSearchParams(location.search);
+  overdueOnly = p.get('overdue') === '1';
+  const st = overdueOnly ? 'scheduled' : (p.get('status') || '');
+  const tp = p.get('type') || '';
+  if (st) setStatusFilter(st);
+  if (tp) setTypeFilter(tp);
+  paintTiles();
+})();
+
 load();
+loadStats();
 </script>
 </body>
 </html>

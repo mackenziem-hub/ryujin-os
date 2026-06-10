@@ -91,14 +91,14 @@ body::after{content:'';position:fixed;inset:0;z-index:1;background-image:linear-
   <div class="hero">
     <div class="eyebrow">EVERY PROPOSAL · DRAFT + SENT + ACCEPTED</div>
     <h1>All Proposals</h1>
-    <p>Every proposal you've built in Ryujin — draft, sent, accepted. Search by client, address, or ref. Click any row to open.</p>
+    <p>Every proposal you've built in Ryujin - draft, sent, accepted. Search by client, address, or ref. Click any row to open.</p>
   </div>
 
   <div class="stats">
     <div class="stat"><div class="lbl">Total</div><div class="val" id="sTotal">0</div></div>
     <div class="stat"><div class="lbl">Drafts</div><div class="val" id="sDrafts">0</div></div>
     <div class="stat"><div class="lbl">Accepted</div><div class="val" id="sAccepted">0</div></div>
-    <div class="stat"><div class="lbl">Pipeline Value</div><div class="val" id="sPipe">—</div></div>
+    <div class="stat"><div class="lbl">Pipeline Value</div><div class="val" id="sPipe">-</div></div>
   </div>
 
   <div class="search">
@@ -147,7 +147,21 @@ function fmtDate(iso){
   return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'}) + ' · ' + d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
 }
 
-function money(n){ return n ? '$' + Math.round(n/1000) + 'K' : '—'; }
+function money(n){ return n ? '$' + Math.round(n/1000) + 'K' : '-'; }
+
+// Days-since-sent line under the date cell. sentAt = estimates.locked_at
+// (auto-stamped on the draft -> presented transition); local rows use their
+// own send time. Staleness colors only while still awaiting a response.
+function sentAgeLine(p){
+  const sentAt = p.sentAt || (p._server ? null : p.at);
+  if (!sentAt) return '';
+  const days = Math.floor((Date.now() - new Date(sentAt).getTime()) / 86400000);
+  if (!isFinite(days) || days < 0) return '';
+  const awaiting = /sent|viewed/i.test(p.status || '');
+  const color = awaiting && days > 14 ? '#f87171' : (awaiting && days > 7 ? '#facc15' : 'rgba(200,220,255,0.5)');
+  const label = days === 0 ? 'sent today' : 'sent ' + days + 'd ago';
+  return `<div style="font-family:'Share Tech Mono',monospace;font-size:0.62em;letter-spacing:0.5px;color:${color};margin-top:2px">${esc(label)}</div>`;
+}
 
 function statusBadge(status){
   const s = String(status || 'draft').toLowerCase();
@@ -169,7 +183,7 @@ function renderStats(all){
   $('sAccepted').textContent = all.filter(p => /accepted|signed/i.test(p.status || '')).length;
   const pipe = all.filter(p => !/accepted|signed|rejected|cancelled/i.test(p.status || ''))
                   .reduce((s,p) => s + (p.value || 0), 0);
-  $('sPipe').textContent = pipe ? money(pipe) : '—';
+  $('sPipe').textContent = pipe ? money(pipe) : '-';
 }
 
 function renderList(list){
@@ -180,7 +194,7 @@ function renderList(list){
   }
   const rows = list.map((p, i) => {
     const url = p.url || p.proposalUrl || '#';
-    // Extract share token from URL if present — powers PDF + timeline buttons
+    // Extract share token from URL if present - powers PDF + timeline buttons
     let shareToken = p.shareToken || '';
     if (!shareToken && url.includes('share=')) {
       try { shareToken = new URL(url, location.origin).searchParams.get('share') || ''; } catch(e){}
@@ -195,13 +209,14 @@ function renderList(list){
     return `
       <div class="row" data-idx="${i}" data-status="${esc((p.status||'').toLowerCase())}" data-search="${esc(((p.client||'') + ' ' + (p.refId||'') + ' ' + (p.address||'')).toLowerCase())}">
         <div>
-          <div class="client-name">${esc(p.client || '—')}</div>
+          <div class="client-name">${esc(p.client || '-')}</div>
           <div class="client-meta">${esc(p.refId || '')} ${p.address ? '· ' + esc(p.address) : ''}</div>
         </div>
         <div>${statusBadge(p.status)}</div>
         <div>
           <div class="date">${esc(fmtDate(p.at))}</div>
           <div class="date-rel">${esc(relDate(p.at))}</div>
+          ${sentAgeLine(p)}
         </div>
         <div class="ref" style="font-family:'Orbitron',sans-serif;font-weight:800;color:#22d3ee">${money(p.value)}</div>
         <div class="actions">
@@ -318,7 +333,7 @@ async function openTimeline(shareToken, client){
           <div style="font-family:'Share Tech Mono',monospace;font-size:0.58em;letter-spacing:1.2px;color:var(--text-dim);margin-top:2px">TIERS</div>
         </div>
         <div style="padding:10px;background:${s.accepted?'rgba(74,222,128,0.14)':'rgba(148,163,184,0.08)'};border:1px solid ${s.accepted?'rgba(74,222,128,0.35)':'var(--border)'};border-radius:8px;text-align:center">
-          <div style="font-family:'Orbitron',sans-serif;font-size:1.4em;font-weight:800;color:${s.accepted?'#4ade80':'var(--text-dim)'}">${s.accepted?'✓':'—'}</div>
+          <div style="font-family:'Orbitron',sans-serif;font-size:1.4em;font-weight:800;color:${s.accepted?'#4ade80':'var(--text-dim)'}">${s.accepted?'✓':'-'}</div>
           <div style="font-family:'Share Tech Mono',monospace;font-size:0.58em;letter-spacing:1.2px;color:var(--text-dim);margin-top:2px">SIGNED</div>
         </div>
       </div>
@@ -340,7 +355,7 @@ async function openTimeline(shareToken, client){
       `;
     }).join('') : '<div style="padding:40px 0;text-align:center;color:var(--text-muted)">No activity yet.</div>';
 
-    // Version history rail — list every saved snapshot for this estimate with
+    // Version history rail - list every saved snapshot for this estimate with
     // a downloadable archived PDF + diff summary. Owner/admin only (snaps API
     // returns 401 for unauthed users; we just hide the rail in that case).
     let versionRail = '';
@@ -354,12 +369,12 @@ async function openTimeline(shareToken, client){
           for (const [tier, fields] of Object.entries(d.packages)) {
             const pieces = [];
             if (fields.total) pieces.push(`${moneyFmt(fields.total.from)} → ${moneyFmt(fields.total.to)}`);
-            if (fields.promoLabel) pieces.push('promo: ' + (fields.promoLabel.to || '—'));
-            if (fields.warranty_years) pieces.push(`warranty: ${fields.warranty_years.from||'—'}y → ${fields.warranty_years.to||'—'}y`);
+            if (fields.promoLabel) pieces.push('promo: ' + (fields.promoLabel.to || '-'));
+            if (fields.warranty_years) pieces.push(`warranty: ${fields.warranty_years.from||'-'}y → ${fields.warranty_years.to||'-'}y`);
             if (pieces.length) lines.push(`<b>${tier}</b> · ${pieces.join(' · ')}`);
           }
         }
-        if (d.status) lines.push(`status: ${d.status.from||'—'} → <b>${d.status.to||'—'}</b>`);
+        if (d.status) lines.push(`status: ${d.status.from||'-'} → <b>${d.status.to||'-'}</b>`);
         if (d.final_accepted_total) lines.push(`signed total: ${moneyFmt(d.final_accepted_total.to)}`);
         if (d.tags_added && d.tags_added.length) lines.push(`+tags: ${d.tags_added.join(', ')}`);
         if (d.tags_removed && d.tags_removed.length) lines.push(`−tags: ${d.tags_removed.join(', ')}`);
@@ -458,11 +473,12 @@ async function fetchServerEstimates(){
       const honored = e.final_accepted_total != null ? Number(e.final_accepted_total) : null;
       const selVal = honored != null && honored > 0 ? honored : pkgVal;
       return {
-        at: e.contract_signed_at || e.accepted_at || e.proposal_sent_at || e.created_at,
+        at: e.contract_signed_at || e.accepted_at || e.locked_at || e.created_at,
+        sentAt: e.locked_at || null,
         client: e.customer?.full_name || '(no name)',
         refId: 'PU-' + (e.estimate_number || e.id.slice(0, 8).toUpperCase()),
         address: [e.customer?.address, e.customer?.city].filter(Boolean).join(', '),
-        tier: e.selected_package || '—',
+        tier: e.selected_package || '-',
         value: selVal,
         url: '/proposal-client.html?share=' + encodeURIComponent(e.share_token || ''),
         status: e.status,
