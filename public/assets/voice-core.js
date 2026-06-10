@@ -18,6 +18,8 @@
 //   'assistant_delta' streamed reply text chunk
 //   'assistant_done' full assembled reply
 //   'tool_step'      {id, label, status: 'start'|'ok'|'error', error}
+//   'caption'        {text, duration} sentence now being spoken (wall-clock s)
+//   'audio_start'/'audio_stop'  per-sentence playback boundaries
 //   'error'          human-readable failure, verbatim (fail loud)
 // ═══════════════════════════════════════════════════════════════
 (function () {
@@ -66,11 +68,50 @@
   // ── TTS queue ───────────────────────────────────────────────
   // gen invalidates every async callback from a cancelled turn.
   let gen = 0;
-  let ttsQueue = [];          // sentence strings waiting to speak
+  let ttsQueue = [];          // {text, blobP} items waiting to speak
   let ttsPlaying = false;
   let currentAudio = null;
   let inflightTts = new Set(); // AbortControllers for /api/tts fetches
   let speechBuffer = '';       // streamed assistant text not yet sentence-split
+
+  // Playback rate: persisted, applied live to the playing clip.
+  let rate = 1.0;
+  try { const r = parseFloat(localStorage.getItem('jarvis_rate')); if (r >= 0.5 && r <= 2) rate = r; } catch {}
+  function setRate(r) {
+    const v = parseFloat(r);
+    if (!(v >= 0.5 && v <= 2)) return;
+    rate = v;
+    try { localStorage.setItem('jarvis_rate', String(v)); } catch {}
+    if (currentAudio) { try { currentAudio.playbackRate = v; } catch {} }
+  }
+
+  // Prefetch the next sentences' audio while the current one plays so the
+  // queue never stalls on a /api/tts round-trip between sentences.
+  const PREFETCH_AHEAD = 2;
+  function fetchTts(item) {
+    if (item.blobP) return item.blobP;
+    const ctrl = new AbortController();
+    inflightTts.add(ctrl);
+    const headers = { 'Content-Type': 'application/json' };
+    const t = token();
+    if (t) headers.Authorization = 'Bearer ' + t;
+    item.blobP = fetch('/api/tts', {
+      method: 'POST', headers, signal: ctrl.signal,
+      body: JSON.stringify({ text: item.text })
+    })
+      .then((r) => (r.ok ? r.blob() : null))
+      .catch(() => null)
+      .finally(() => inflightTts.delete(ctrl));
+    return item.blobP;
+  }
+  function prefetch() {
+    const n = Math.min(PREFETCH_AHEAD, ttsQueue.length);
+    for (let i = 0; i < n; i++) fetchTts(ttsQueue[i]);
+  }
+
+  function estimateDuration(sentence) {
+    return Math.max(0.6, sentence.split(/\s+/).length * 0.34) / rate;
+  }
 
   function enqueueSentences(text, flush) {
     speechBuffer += text;
@@ -90,34 +131,28 @@
     }
     for (const s of sentences) {
       const clean = cleanForSpeech(s);
-      if (clean) ttsQueue.push(clean);
+      if (clean) ttsQueue.push({ text: clean, blobP: null });
     }
+    prefetch();
     if (ttsQueue.length && !ttsPlaying) playNext(gen);
   }
 
   async function playNext(myGen) {
     if (myGen !== gen) return;
-    const sentence = ttsQueue.shift();
-    if (!sentence) { ttsPlaying = false; maybeIdle(); return; }
+    const item = ttsQueue.shift();
+    if (!item) { ttsPlaying = false; maybeIdle(); return; }
+    const sentence = item.text;
     ttsPlaying = true;
     setState('speaking');
     emit('audio_start', sentence);
-    const ctrl = new AbortController();
-    inflightTts.add(ctrl);
+    prefetch(); // warm the next sentences while this one plays
     try {
-      const headers = { 'Content-Type': 'application/json' };
-      const t = token();
-      if (t) headers.Authorization = 'Bearer ' + t;
-      const r = await fetch('/api/tts', {
-        method: 'POST', headers, signal: ctrl.signal,
-        body: JSON.stringify({ text: sentence })
-      });
+      const blob = await fetchTts(item);
       if (myGen !== gen) return;
-      if (r.ok) {
-        const blob = await r.blob();
-        if (myGen !== gen) return;
+      if (blob) {
         const url = URL.createObjectURL(blob);
         const audio = new Audio(url);
+        audio.playbackRate = rate;
         currentAudio = audio;
         const advance = () => {
           URL.revokeObjectURL(url);
@@ -127,7 +162,13 @@
         };
         audio.onended = advance;
         audio.onerror = advance;
-        await audio.play().catch(() => {
+        await audio.play().then(() => {
+          if (myGen !== gen) return; // cancelled while play() was resolving
+          const dur = (isFinite(audio.duration) && audio.duration > 0)
+            ? audio.duration / rate
+            : estimateDuration(sentence);
+          emit('caption', { text: sentence, duration: dur });
+        }).catch(() => {
           // detach so the error event can't ALSO advance the queue
           audio.onended = null;
           audio.onerror = null;
@@ -137,13 +178,11 @@
         });
         return;
       }
-      // 401/503/etc: designed fallback path is browser TTS
+      // 401/503/network: designed fallback path is browser TTS
       speakBrowser(sentence, myGen);
     } catch (e) {
       if (myGen !== gen) return;
       speakBrowser(sentence, myGen);
-    } finally {
-      inflightTts.delete(ctrl);
     }
   }
 
@@ -152,7 +191,8 @@
     if (!('speechSynthesis' in window)) { emit('audio_stop', sentence); playNext(myGen); return; }
     try {
       const utter = new SpeechSynthesisUtterance(sentence);
-      utter.rate = 1.0; utter.pitch = 1.0; utter.volume = 1.0;
+      utter.rate = rate; utter.pitch = 1.0; utter.volume = 1.0;
+      emit('caption', { text: sentence, duration: estimateDuration(sentence) });
       const advance = () => { if (myGen === gen) { emit('audio_stop', sentence); playNext(myGen); } };
       utter.onend = advance;
       utter.onerror = advance;
@@ -360,7 +400,11 @@
     ttsQueue = [];
     speechBuffer = '';
     ttsPlaying = false;
-    if (currentAudio) { try { currentAudio.pause(); } catch {} currentAudio = null; }
+    if (currentAudio) {
+      try { currentAudio.pause(); } catch {}
+      try { URL.revokeObjectURL(currentAudio.src); } catch {}
+      currentAudio = null;
+    }
     inflightTts.forEach((c) => { try { c.abort(); } catch {} });
     inflightTts.clear();
     try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch {}
@@ -388,6 +432,8 @@
     cancel,
     get state() { return state; },
     get isListening() { return recognizing; },
+    get rate() { return rate; },
+    setRate,
     setSendInterceptor(fn) { sendInterceptor = typeof fn === 'function' ? fn : null; },
     resetHistory() { history.length = 0; },
     cleanForSpeech
