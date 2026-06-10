@@ -124,9 +124,19 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
 <script>
 const TENANT = window.RYUJIN_TENANT_SLUG;
 let cache = []; let sortMode = 'ltv'; let searchTerm = ''; let filterMode = 'all';
-const SIGNED_STATES = ['closed_won','signed','accepted','won'];
+// Won/lost predicates mirror lib/customerLtvCalc.js (signing = acceptance;
+// won estimates keep moving through scheduled/in_progress/complete).
+const WON_STATUSES = ['signed','accepted','scheduled','in_progress','complete','won'];
 const LOST_STATES = ['closed_lost','lost','rejected'];
-function estState(e) { return String(e.state || e.status || '').toLowerCase(); }
+function isWonEst(e) { return e.state === 'closed_won' || WON_STATUSES.includes(String(e.status || '').toLowerCase()); }
+function isLostEst(e) { return e.state === 'closed_lost' || LOST_STATES.includes(String(e.status || '').toLowerCase()); }
+// QA personas (Cat-test patterns + example.com seeds) pollute the roster;
+// same filter class the snapshot applies server-side.
+function isTestRow(c) {
+  if (/\b(test|livetest)\b/i.test(String(c.full_name || ''))) return true;
+  const email = String(c.email || '').toLowerCase();
+  return email.endsWith('@example.com') || email.includes('catherinezeta');
+}
 function escapeHtml(s) { if (s == null) return ''; return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function fmtMoney(n) { if (n == null || isNaN(n)) return '—'; return '$' + Math.round(n).toLocaleString(); }
 function showBanner(msg, isHtml=false) { const slot = document.getElementById('banner-slot'); if (isHtml) slot.innerHTML = `<div class="banner warn">${msg}</div>`; else slot.innerHTML = `<div class="banner warn">${escapeHtml(msg)}</div>`; }
@@ -207,12 +217,11 @@ async function load() {
         if (!e.customer_id) continue;
         const bucket = estByCustomer[e.customer_id] = estByCustomer[e.customer_id] || { total: 0, open: 0, signed: 0 };
         bucket.total++;
-        const s = estState(e);
-        if (SIGNED_STATES.includes(s)) bucket.signed++;
-        else if (!LOST_STATES.includes(s)) bucket.open++;
+        if (isWonEst(e)) bucket.signed++;
+        else if (!isLostEst(e)) bucket.open++;
       }
     }
-    cache = (customers || []).map(c => ({
+    cache = (customers || []).filter(c => !isTestRow(c)).map(c => ({
       ...c,
       lifetime_value: valueByCustomer[c.id]?.lifetime_value || 0,
       job_count: valueByCustomer[c.id]?.job_count || 0,

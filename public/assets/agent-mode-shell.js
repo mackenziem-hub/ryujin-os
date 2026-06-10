@@ -81,7 +81,7 @@
     sales:      { name: 'Hero',      accent_color: '#fbbf24', avatar_image: '/assets/archetypes/sovereign-bust.png', avatar_video: '/assets/archetypes/hero.mp4',      avatar_poster: '/assets/archetypes/hero.jpg' },
     marketing:  { name: 'Magician',  accent_color: '#7c3aed', avatar_image: '/assets/archetypes/sage-bust.png',      avatar_video: '/assets/archetypes/magician.mp4',  avatar_poster: '/assets/archetypes/magician.jpg' },
     service:    { name: 'Caregiver', accent_color: '#4ade80', avatar_image: '/assets/archetypes/caregiver-bust.png', avatar_video: '/assets/archetypes/caregiver.mp4', avatar_poster: '/assets/archetypes/caregiver.jpg' },
-    customer:   { name: 'Lover',     accent_color: '#f87171', avatar_image: '/assets/archetypes/caregiver-bust.png', avatar_video: '/assets/archetypes/lover.mp4',     avatar_poster: '/assets/archetypes/lover.jpg' },
+    customer:   { name: 'Advocate',  accent_color: '#f87171', avatar_image: '/assets/archetypes/caregiver-bust.png', avatar_video: '/assets/archetypes/lover.mp4',     avatar_poster: '/assets/archetypes/lover.jpg' },
     finance:    { name: 'Ruler',     accent_color: '#a78bfa', avatar_image: '/assets/archetypes/sovereign-bust.png', avatar_video: '/assets/archetypes/ruler.mp4',     avatar_poster: '/assets/archetypes/ruler.jpg' },
     production: { name: 'Sovereign', accent_color: '#fb923c', avatar_image: '/assets/archetypes/sovereign-bust.png', avatar_video: null, avatar_poster: null },
   };
