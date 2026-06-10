@@ -13,7 +13,7 @@
 //
 // Query param: ?type=morning|evening (default: morning)
 
-import { runVegeta, runPiccolo, runKrillin, fetchJSON } from './_shared.js';
+import { runVegeta, runPiccolo, runKrillin, fetchJSON, sendFallbackEmail } from './_shared.js';
 import { snapshotHeaders } from '../../lib/snapshotClient.js';
 import { calendarList, gmailSend } from '../../lib/google.js';
 import { buildMetaAdsSnapshot } from '../../lib/meta.js';
@@ -135,6 +135,22 @@ export default async function handler(req, res) {
   const watchdog = snapshot?.sections?.watchdog || null;
   const docketItems = watchdog?.docketItems || [];
 
+  // Canonical money numbers come from the metrics contract, NOT the legacy
+  // Estimator OS feed. The 2026-06-10 grader audit caught the brief reporting
+  // $113,657 signed while the contract said $33,264 MTD: the exact multi-source
+  // disagreement the contract exists to kill. Legacy values stay as fallback
+  // and the source is stamped so the disagreement can never hide again.
+  let contract = null;
+  try {
+    const { supabaseAdmin } = await import('../../lib/supabase.js');
+    const { computeMetrics } = await import('../../lib/metricsContract.js');
+    const { data: t, error: terr } = await supabaseAdmin.from('tenants').select('id').eq('slug', 'plus-ultra').single();
+    if (terr) errors.push(`Metrics contract tenant lookup failed: ${terr.message}`);
+    if (t) contract = await computeMetrics(supabaseAdmin, t.id);
+  } catch (e) {
+    errors.push(`Metrics contract compute failed: ${e.message}`);
+  }
+
   // ── BUILD STRUCTURED BRIEFING ──
   const briefing = {
     type,
@@ -143,8 +159,11 @@ export default async function handler(req, res) {
 
     // ① KPI SCOUTER — the numbers that matter
     kpiScouter: {
-      signedRevenue: vegeta?.estimatorStats?.signedRevenue || 0,
-      pendingRevenue: vegeta?.estimatorStats?.pendingRevenue || 0,
+      signedRevenue: contract ? contract.signed.mtd.value : (vegeta?.estimatorStats?.signedRevenue || 0),
+      signedRevenueLabel: contract ? contract.signed.mtd.label : 'Signed (LEGACY Estimator OS feed, off-contract)',
+      pendingRevenue: contract ? contract.pipeline.proposalsOut.value : (vegeta?.estimatorStats?.pendingRevenue || 0),
+      pendingRevenueLabel: contract ? contract.pipeline.proposalsOut.label : 'Pending (LEGACY Estimator OS feed, off-contract)',
+      kpiSource: contract ? 'metrics-contract-v1' : 'legacy-estimator-fallback',
       openDeals: vegeta?.stats?.open || 0,
       staleLeads: vegeta?.staleLeads || 0,
       overdueTickets: piccolo?.stats?.overdueCount || 0,
@@ -154,11 +173,16 @@ export default async function handler(req, res) {
 
     // ② PIPELINE PULSE
     pipeline: vegeta ? {
+      // openDeals/totalValue/staleLeads are GHL pipeline counts (labeled so);
+      // money figures come from the metrics contract like kpiScouter, never a
+      // second source that can disagree with it.
       openDeals: vegeta.stats?.open || 0,
       totalValue: vegeta.stats?.totalValue || 0,
+      ghlNote: 'openDeals/totalValue are raw GHL opportunities (includes stale/test); contract proposalsOut is the trusted money number',
       staleLeads: vegeta.staleLeads || 0,
-      pendingRevenue: vegeta.estimatorStats?.pendingRevenue || 0,
-      signedRevenue: vegeta.estimatorStats?.signedRevenue || 0,
+      pendingRevenue: contract ? contract.pipeline.proposalsOut.value : (vegeta.estimatorStats?.pendingRevenue || 0),
+      signedRevenue: contract ? contract.signed.mtd.value : (vegeta.estimatorStats?.signedRevenue || 0),
+      moneySource: contract ? 'metrics-contract-v1' : 'legacy-estimator-fallback',
       proposalsSent: vegeta.estimatorStats?.proposalsSent || 0,
       highValueDeals: vegeta.findings?.filter(f => f.includes('$10K'))?.length || 0
     } : null,
@@ -357,32 +381,50 @@ export default async function handler(req, res) {
   briefing.briefStatus = briefStatus;
 
   // Update snapshot with the brief markdown so the local vault-writer can pull it.
-  try {
-    await fetch(`${BASE_URL}/api/snapshot`, {
-      method: 'POST',
-      headers: snapshotHeaders(),
-      body: JSON.stringify({
-        [`briefing_${type}`]: {
-          timestamp: briefing.timestamp,
-          generated_at: new Date().toISOString(),
-          kpiScouter: briefing.kpiScouter,
-          top3: briefing.top3,
-          calendar: briefing.calendar,
-          pipeline: briefing.pipeline,
-          operations: briefing.operations,
-          comms: briefing.comms,
-          briefMarkdown,
-          briefStatus,
-          emailSent,
-          errors: errors.length > 0 ? errors : null
-        }
-      })
-    });
-  } catch (e) {
-    console.error(`[Briefing] Final snapshot update failed: ${e.message}`);
+  // This write is THE deliverable: if it silently fails the cockpit greets the
+  // owner with "No briefing available" (it happened twice on 2026-06-10).
+  // Retry with backoff and fail LOUD (errors + response + fallback email).
+  let briefWriteOk = false;
+  const finalPayload = JSON.stringify({
+    [`briefing_${type}`]: {
+      timestamp: briefing.timestamp,
+      generated_at: new Date().toISOString(),
+      kpiScouter: briefing.kpiScouter,
+      top3: briefing.top3,
+      calendar: briefing.calendar,
+      pipeline: briefing.pipeline,
+      operations: briefing.operations,
+      comms: briefing.comms,
+      briefMarkdown,
+      briefStatus,
+      emailSent,
+      errors: errors.length > 0 ? errors : null
+    }
+  });
+  for (let attempt = 1; attempt <= 3 && !briefWriteOk; attempt++) {
+    try {
+      const w = await fetch(`${BASE_URL}/api/snapshot`, {
+        method: 'POST',
+        headers: snapshotHeaders(),
+        body: finalPayload
+      });
+      if (!w.ok) throw new Error(`HTTP ${w.status}`);
+      briefWriteOk = true;
+    } catch (e) {
+      console.error(`[Briefing] Final snapshot write attempt ${attempt}/3 failed: ${e.message}`);
+      if (attempt === 3) {
+        errors.push(`FINAL BRIEF WRITE FAILED after 3 attempts: ${e.message}`);
+        // Await it: Vercel freezes the lambda right after res.json, and an
+        // unawaited email is exactly the silent failure this block exists to kill.
+        await sendFallbackEmail(`${type} brief write FAILED`, `The ${type} briefing generated but could not be written to the snapshot after 3 attempts (${e.message}). The cockpit will show "No briefing available" until the next run.`);
+      } else {
+        await new Promise(r => setTimeout(r, 2000 * attempt));
+      }
+    }
   }
+  briefing.briefWriteOk = briefWriteOk;
 
-  console.log(`[Z Fighter Briefing] ${type} complete — ${allRecommendations.length} actions, email: ${emailSent}, status: ${briefStatus}`);
+  console.log(`[Z Fighter Briefing] ${type} complete: ${allRecommendations.length} actions, email: ${emailSent}, status: ${briefStatus}, briefWrite: ${briefWriteOk}`);
 
   res.json(briefing);
 }
