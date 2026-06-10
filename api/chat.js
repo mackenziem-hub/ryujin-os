@@ -941,7 +941,7 @@ async function fetchSnapshot() {
     // pulse (issued/in_progress jobs from the workorders table), a naming
     // holdover. Without the note the model answers "how many open tickets"
     // from it (4 workorders) while the cockpit counts 46 real crew tickets.
-    const formatted = `\n\n---\n\n# RYUJIN SNAPSHOT (updated ${snapshot.updated_at})\nDATA NOTE: the "tickets" section in this snapshot is the PRODUCTION WORKORDER pulse (jobs), NOT crew tickets. For any crew-ticket question or count ("open tickets", "overdue tickets", workload) ALWAYS call lookup_data with source "tickets" first; it returns the native crew board and matches the cockpit numbers.\n${JSON.stringify(snapshot.sections)}`;
+    const formatted = `\n\n---\n\n# RYUJIN SNAPSHOT (updated ${snapshot.updated_at})\nDATA NOTE: the "tickets" section in this snapshot is the PRODUCTION WORKORDER pulse (jobs), NOT crew tickets. For any crew-ticket question or count ("open tickets", "overdue tickets", workload) ALWAYS call lookup_data with source "tickets" first; it returns the native crew board and matches the cockpit numbers. When quoting an open-ticket count from any stats object, use totalOpen (open plus active), not byStatus.open alone.\n${JSON.stringify(snapshot.sections)}`;
     _snapshotCache = { data: formatted, expires: Date.now() + 60_000 };
     return formatted;
   } catch (e) {
