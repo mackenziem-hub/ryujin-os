@@ -6,7 +6,7 @@
 // Storage: Vercel Blob (deterministic URL, no Replit round-trip)
 // ═══════════════════════════════════════════════════════════════
 
-import { put, list } from '@vercel/blob';
+import { put, list, del } from '@vercel/blob';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { computeMetrics } from '../lib/metricsContract.js';
 import { resolveSession } from '../lib/portalAuth.js';
@@ -15,6 +15,13 @@ import { snapshotHeaders } from '../lib/snapshotClient.js';
 
 const SNAPSHOT_BLOB_KEY = 'ryujin-snapshot.json';
 const LEGACY_SNAPSHOT_BLOB_KEY = 'shenron-snapshot.json';
+// Versioned store: every save writes a NEW key so its URL is immutable and the
+// CDN can never serve a stale overwrite. The 2026-06-10 brief-wipe bug: edge
+// entries cached under the old 1-year TTL kept serving hours-old snapshots
+// even after cacheControlMaxAge was added, so the hourly rebuild resurrected
+// dead sections. list() is API-backed (never CDN-cached), so newest-by-key
+// discovery is always fresh. Old versions are pruned, newest 3 kept.
+const SNAPSHOT_VERSIONED_PREFIX = 'ryujin-snapshot-v/';
 
 // Cat-test contact patterns. Catherine's QA personas + system-test threads
 // leak into GHL conversations and pollute every snapshot consumer (Krillin
@@ -193,8 +200,25 @@ async function discoverBlobUrl() {
   return null;
 }
 
+// Codepoint compare, descending: collation must never depend on locale.
+function byPathnameDesc(a, b) {
+  return b.pathname < a.pathname ? -1 : b.pathname > a.pathname ? 1 : 0;
+}
+
 async function getSnapshot() {
-  // Fast path: direct URL construction (no list() needed)
+  // Versioned-first: keys are timestamped (lexically sortable), URLs immutable.
+  // IMPORTANT: transient list/fetch errors must THROW (caller 500s, cron
+  // retries). Falling back to the frozen bare key on an error would let the
+  // next POST merge enshrine CDN-poisoned stale data as the newest version,
+  // with worse staleness than the bug this design fixes (review P1).
+  const { blobs } = await list({ prefix: SNAPSHOT_VERSIONED_PREFIX, limit: 1000 });
+  if (blobs.length > 0) {
+    const newest = blobs.sort(byPathnameDesc)[0];
+    const resp = await fetch(newest.url, { cache: 'no-store' });
+    if (!resp.ok) throw new Error(`versioned snapshot fetch HTTP ${resp.status}`);
+    return await resp.json();
+  }
+  // Genuinely no versioned snapshot yet (first deploy): legacy single key.
   const base = await ensureStoreBase();
   if (base) {
     const directUrl = `${base}/${SNAPSHOT_BLOB_KEY}`;
@@ -203,7 +227,6 @@ async function getSnapshot() {
       if (resp.ok) return await resp.json();
     } catch {}
   }
-  // Fallback: discover via list()
   const url = await discoverBlobUrl();
   if (!url) return null;
   try {
@@ -216,19 +239,26 @@ async function getSnapshot() {
 }
 
 async function saveSnapshot(data) {
-  const blob = await put(SNAPSHOT_BLOB_KEY, JSON.stringify(data), {
+  // Timestamped key: zero-padded ms epoch keeps pathname sort == time sort.
+  const key = `${SNAPSHOT_VERSIONED_PREFIX}${String(Date.now()).padStart(15, '0')}.json`;
+  const blob = await put(key, JSON.stringify(data), {
     access: 'public',
     addRandomSuffix: false,
     contentType: 'application/json',
-    // The blob CDN ignores query strings, so the ?t= cache-bust in getSnapshot
-    // does NOT defeat edge caching; with the default (long) max-age a rebuild
-    // can read a STALE snapshot and resurrect old sections over newer writes
-    // (2026-06-10: hourly rebuild reverted briefing_morning to its first-write
-    // shape, wiping briefMarkdown). 60s is the Blob minimum.
     cacheControlMaxAge: 60
   });
-  cachedBlobUrl = blob.url;
-  if (!storeBase) storeBase = extractStoreBase(blob.url);
+  // Best-effort prune: keep the 3 newest versions (rolling operational cache,
+  // regenerated hourly; not user data).
+  try {
+    const { blobs } = await list({ prefix: SNAPSHOT_VERSIONED_PREFIX, limit: 1000 });
+    const stale = blobs
+      .sort(byPathnameDesc)
+      .slice(3)
+      .map(b => b.url);
+    if (stale.length) await del(stale);
+  } catch (e) {
+    console.error('[snapshot] version prune failed:', e.message);
+  }
   return blob;
 }
 
