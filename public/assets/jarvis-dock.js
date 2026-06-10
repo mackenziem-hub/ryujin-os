@@ -66,6 +66,10 @@
     '  <button class="jv-auto" id="jv-auto" title="Conversation mode: listen again automatically after Jarvis answers">AUTO</button>',
     '  <button class="jv-close" id="jv-close" aria-label="Close Jarvis">&times;</button>',
     '</div>',
+    '<div class="jv-orb-zone" aria-hidden="true">',
+    '  <div class="jv-orb"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>',
+    '</div>',
+    '<div class="jv-caption" id="jv-caption" aria-live="off"></div>',
     '<div class="jv-brief" id="jv-brief">',
     '  <div class="jv-brief-head">',
     '    <div class="jv-brief-title">Jarvis Brief</div>',
@@ -79,6 +83,7 @@
     '    <button id="jv-mic" aria-label="Push to talk">' + MIC_SVG + '</button>',
     '    <input id="jv-text" type="text" placeholder="Or type it..." autocomplete="off">',
     '    <button id="jv-send">SEND</button>',
+    '    <button id="jv-rate" title="Speech speed">1&times;</button>',
     '  </div>',
     '  <div class="jv-hint">Ctrl+Shift+V toggle &middot; hold Space to talk &middot; Esc stops</div>',
     '</div>'
@@ -136,6 +141,58 @@
     if (b) b.classList.toggle('on', autoOn);
   }
 
+  // ── live caption: word-by-word highlight paced to clip duration ──
+  let capRaf = null;
+  function clearCaption() {
+    if (capRaf) { cancelAnimationFrame(capRaf); capRaf = null; }
+    const cap = $('jv-caption');
+    if (cap) { cap.innerHTML = ''; cap.classList.remove('live'); }
+  }
+  function renderCaption(text, duration) {
+    const cap = $('jv-caption');
+    if (!cap) return;
+    if (capRaf) { cancelAnimationFrame(capRaf); capRaf = null; }
+    cap.innerHTML = '';
+    cap.classList.add('live');
+    const spans = String(text).split(/\s+/).map((w) => {
+      const s = document.createElement('span');
+      s.textContent = w + ' ';
+      cap.appendChild(s);
+      return s;
+    });
+    const t0 = performance.now();
+    const total = Math.max(0.5, duration || 1) * 1000;
+    const step = (now) => {
+      const frac = Math.min(1, (now - t0) / total);
+      const upto = Math.ceil(frac * spans.length);
+      for (let i = 0; i < spans.length; i++) spans[i].classList.toggle('said', i < upto);
+      if (frac < 1) capRaf = requestAnimationFrame(step);
+      else capRaf = null;
+    };
+    capRaf = requestAnimationFrame(step);
+  }
+
+  // ── speech speed: cycles persisted jarvis_rate, applied live ──
+  const RATES = [1, 1.15, 1.3, 1.5];
+  function getRate() {
+    let r = 1;
+    try { const v = parseFloat(localStorage.getItem('jarvis_rate')); if (v >= 0.5 && v <= 2) r = v; } catch {}
+    return r;
+  }
+  function fmtRate(r) { return (r === 1 ? '1' : String(r)) + '×'; }
+  function syncRateBtn() {
+    const b = $('jv-rate');
+    if (b) b.textContent = fmtRate(getRate());
+  }
+  function cycleRate() {
+    const cur = getRate();
+    const idx = RATES.indexOf(cur);
+    const next = RATES[(idx + 1) % RATES.length] || RATES[0];
+    if (window.RyujinVoiceCore) window.RyujinVoiceCore.setRate(next);
+    else { try { localStorage.setItem('jarvis_rate', String(next)); } catch {} }
+    syncRateBtn();
+  }
+
   function setDockState(state, detail) {
     dock.dataset.state = state;
     const el = $('jv-state');
@@ -169,8 +226,11 @@
     wiredCore = true;
     const core = window.RyujinVoiceCore;
 
+    core.on('caption', ({ text, duration }) => renderCaption(text, duration));
+
     core.on('state', ({ state, detail }) => {
       setDockState(state, detail);
+      if (state !== 'speaking' && state !== 'thinking') clearCaption();
       // Mirror onto the command-center sentinel orb when present. It accepts
       // the same state names (idle/listening/thinking/speaking) and validates
       // internally; our error state maps to its alert look.
@@ -422,6 +482,8 @@
     });
 
     $('jv-auto').addEventListener('click', () => setAutoOn(!isAutoOn()));
+    $('jv-rate').addEventListener('click', cycleRate);
+    syncRateBtn();
 
     $('jv-speak-brief').addEventListener('click', async () => {
       const ok = await ensureCore();
