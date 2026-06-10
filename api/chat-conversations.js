@@ -3,6 +3,7 @@
 // GET    /api/chat-conversations            list newest 50, no messages payload (lightweight)
 // GET    /api/chat-conversations?id=X       full conversation including messages array
 // POST   /api/chat-conversations            upsert: { id?, title?, messages } — id given → update, else create
+// PATCH  /api/chat-conversations?id=X       rename: { title } only, messages untouched
 // DELETE /api/chat-conversations?id=X       hard delete
 //
 // Tenant-scoped via requireTenant middleware. Until migration_021 is applied
@@ -81,6 +82,27 @@ async function handler(req, res) {
 
     if (error) return res.status(500).json({ error: error.message });
     return res.status(201).json(data);
+  }
+
+  if (req.method === 'PATCH') {
+    const { id } = req.query || {};
+    if (!id) return res.status(400).json({ error: 'Missing id' });
+    const title = String((req.body || {}).title || '').trim().slice(0, 200);
+    if (!title) return res.status(400).json({ error: 'Missing title' });
+
+    // Intentionally no updated_at bump: the sidebar orders by last activity
+    // and a rename should not hoist an old thread to the top.
+    const { data, error } = await supabaseAdmin
+      .from('chat_conversations')
+      .update({ title })
+      .eq('id', id)
+      .eq('tenant_id', tenantId)
+      .select('id, title, updated_at')
+      .maybeSingle();
+
+    if (error) return res.status(500).json({ error: error.message });
+    if (!data) return res.status(404).json({ error: 'Conversation not found' });
+    return res.json(data);
   }
 
   if (req.method === 'DELETE') {
