@@ -168,13 +168,12 @@ export async function runPiccolo() {
       totalOpen: ticketStats.stats.totalOpen,
       byStatus: ticketStats.stats.byStatus,
       overdueCount: ticketStats.stats.overdueCount,
-      byAssignee: ticketStats.stats.byAssignee,
-      activeToday: ticketStats.stats.activeToday
+      byAssignee: ticketStats.stats.byAssignee
     };
 
     if (ticketStats.stats.overdueCount > 0) {
       report.findings.push(`${ticketStats.stats.overdueCount} overdue tickets`);
-      report.tasks.push({ title: `Address ${ticketStats.stats.overdueCount} overdue crew tickets`, description: `Overdue tickets need attention. Check Action Board for details.`, priority: 'top_priority' });
+      report.tasks.push({ title: `Address ${ticketStats.stats.overdueCount} overdue crew tickets`, description: `Overdue tickets need attention. Check the crew board (admin.html#crew) for details.`, priority: 'top_priority' });
     }
 
     const assignees = ticketStats.stats.byAssignee || {};
@@ -423,7 +422,6 @@ export async function runTrunks() {
 
   const apiTests = [
     { name: 'Estimator OS', url: 'https://estimator-os.replit.app/api/stats', headers: { 'x-api-key': 'pu-estimator-2026' } },
-    { name: 'Action Board', url: 'https://ultra-task-manager.replit.app/api/stats', headers: { 'x-api-key': 'pu-actionboard-2026' } },
     { name: 'Instant Estimator', url: 'https://plus-ultra-roof-estimator.replit.app/api/stats', headers: { 'x-api-key': 'pu-instantest-2026' } },
     { name: 'GHL CRM', url: `${BASE_URL}/api/ghl`, headers: {} }
   ];
