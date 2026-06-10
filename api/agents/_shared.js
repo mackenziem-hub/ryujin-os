@@ -164,6 +164,8 @@ export async function runPiccolo() {
   if (ticketStats?.stats) {
     report.stats = {
       totalTickets: ticketStats.stats.totalTickets,
+      // totalOpen = open + active, THE number the cockpit and load-scan report
+      totalOpen: ticketStats.stats.totalOpen,
       byStatus: ticketStats.stats.byStatus,
       overdueCount: ticketStats.stats.overdueCount,
       byAssignee: ticketStats.stats.byAssignee,
