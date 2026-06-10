@@ -365,7 +365,7 @@ export default async function handler(req, res) {
 
     // Email delivery disabled per owner directive 2026-05-12 — briefing lives in
     // snapshot + admin dashboard only. Re-enable by removing the OWNER_BRIEFING_EMAIL_MUTED gate.
-    if (process.env.OWNER_BRIEFING_EMAIL_MUTED !== '1') {
+    if ((process.env.OWNER_BRIEFING_EMAIL_MUTED || '').trim() !== '1') {
       try {
         const subject = `Daily Brief · ${briefDateLabel} · ${briefStatus === 'red' ? '🔴' : briefStatus === 'yellow' ? '🟡' : '🟢'}`;
         await gmailSend('mackenzie.m@plusultraroofing.com', subject, briefMarkdown);
