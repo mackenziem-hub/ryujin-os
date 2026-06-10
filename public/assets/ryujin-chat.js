@@ -301,7 +301,15 @@
   .ry-bubble.dragon li{margin:2px 0}
   .ry-bubble.dragon a{color:#22d3ee}
   .ry-bubble.dragon h1,.ry-bubble.dragon h2,.ry-bubble.dragon h3{font-size:1.05em;margin:8px 0 4px;color:#9be7ff}
-  @media (max-width:760px){.ry-workspace{grid-template-columns:1fr}.ry-workspace #ry-side{display:none}}
+  .ry-ws-side-toggle{display:none}
+  @media (max-width:760px){
+    .ry-workspace{grid-template-columns:1fr}
+    .ry-workspace #ry-side{position:absolute;top:0;left:0;width:240px;height:100%;z-index:10;
+      transform:translateX(-100%);transition:transform 0.22s;border-right:1px solid rgba(34,211,238,0.25)}
+    .ry-workspace #ry-side.on{transform:translateX(0)}
+    .ry-ws-side-toggle{display:flex}
+    .ry-workspace .ry-side-head .ry-close{display:flex}
+  }
   `;
 
   function injectStyles(){
@@ -468,6 +476,9 @@
       </div>
       <div class="ry-ws-main">
         <div class="ry-head">
+          <button class="ry-side-toggle ry-ws-side-toggle" id="ry-side-toggle" title="Show history">
+            <svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+          </button>
           <div class="ry-orb-mount" id="ry-orb-mount"></div>
           <div class="ry-who">
             <div class="n">RYUJIN</div>
@@ -756,8 +767,13 @@
   // code blocks, inline code, bold, italic, headings, lists, links.
   function renderMarkdown(s){
     let t = escapeHtml(s);
-    // fenced code blocks
-    t = t.replace(/```([\s\S]*?)```/g, (_, code) => '<pre><code>' + code.replace(/^\w+\n/, '') + '</code></pre>');
+    // Fenced code blocks first, stashed as placeholders so later passes
+    // (bold/headings/lists/<br>) never touch code interiors.
+    const stash = [];
+    t = t.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+      stash.push('<pre><code>' + code.replace(/\n$/, '') + '</code></pre>');
+      return '\x00' + (stash.length - 1) + '\x00';
+    });
     t = t.replace(/`([^`\n]+)`/g, '<code>$1</code>');
     t = t.replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
     t = t.replace(/(^|\s)\*([^*\n]+)\*(?=\s|$|[.,;:!?])/g, '$1<i>$2</i>');
@@ -770,6 +786,7 @@
     t = t.replace(/((?:^\d+\. .+\n?)+)/gm, (m) => '<ol>' + m.trim().split('\n').map(l => '<li>' + l.replace(/^\d+\. /, '') + '</li>').join('') + '</ol>');
     // line breaks outside block elements
     t = t.replace(/\n(?!<\/?(ul|ol|li|pre|h\d))/g, '<br>');
+    t = t.replace(/\x00(\d+)\x00/g, (_, i) => stash[+i]);
     return t;
   }
 
@@ -1766,7 +1783,8 @@
           if (data.text) {
             if (!assembled) setActivity('speaking');
             assembled += data.text;
-            bubble.innerHTML = renderMarkdown(assembled);
+            // Plain text while streaming; markdown once at end of stream.
+            bubble.textContent = assembled;
           } else if (data.error) {
             serverError = data.error;
             console.error('[ryujin-chat] server error:', data.error);
@@ -1794,6 +1812,7 @@
       }
 
       if (assembled) {
+        bubble.innerHTML = renderMarkdown(assembled);
         decorateBubble(bubble, assembled);
         chatHistory.push({ role: 'assistant', content: assembled });
         // Phase 6B: TTS auto-speak if toggle on
