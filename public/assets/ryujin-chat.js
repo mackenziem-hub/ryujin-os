@@ -355,7 +355,7 @@
   .ry-conv-rename{width:100%;box-sizing:border-box;padding:3px 6px;background:rgba(6,10,20,0.9);
     border:1px solid rgba(34,211,238,0.45);border-radius:5px;color:#e0e6f0;
     font-family:'Inter',system-ui,sans-serif;font-size:0.78em;outline:none}
-  /* Workspace welcome — empty-thread capability showcase */
+  /* Workspace welcome: empty-thread capability showcase */
   .ry-welcome{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
     gap:18px;padding:18px 10px;animation:ry-pick-fade 0.4s ease}
   .ry-welcome-title{font-family:'Orbitron',sans-serif;font-size:1.15em;font-weight:700;
@@ -1011,15 +1011,14 @@
   // The widget calls /api/chat-conversations to save/load history. Until
   // migration_021 is applied the endpoint 500s — we fail silent so the chat
   // still works without the sidebar.
+  // Always starts null on page load. chatHistory does not survive reloads, so
+  // resuming a persisted id would make the next POST replace that whole
+  // conversation's messages array with just the new turn (silent data loss).
   let currentConversationId = null;
-  try { currentConversationId = localStorage.getItem('ry_conv_id') || null; } catch {}
+  try { localStorage.removeItem('ry_conv_id'); } catch {}
 
   function setCurrentConvId(id){
     currentConversationId = id || null;
-    try {
-      if (id) localStorage.setItem('ry_conv_id', id);
-      else localStorage.removeItem('ry_conv_id');
-    } catch {}
   }
 
   // Build a 4-6 word title from the first user message — no Haiku call,
@@ -1197,6 +1196,7 @@
     };
     input.addEventListener('keydown', (e) => {
       e.stopPropagation();
+      if (e.isComposing) return;
       if (e.key === 'Enter') finish(true);
       if (e.key === 'Escape') finish(false);
     });
@@ -1291,7 +1291,9 @@
 
   function renderWorkspaceWelcome(){
     const msgsEl = document.getElementById('ry-msgs');
-    if (!msgsEl || document.getElementById('ry-welcome')) return;
+    // childElementCount also guards the 400ms init timer racing a sidebar
+    // conversation click: never paint the welcome under loaded bubbles.
+    if (!msgsEl || msgsEl.childElementCount > 0) return;
     const el = document.createElement('div');
     el.id = 'ry-welcome';
     el.className = 'ry-welcome';
@@ -2278,7 +2280,7 @@
     wireEvents();
     const lbl = document.getElementById('ry-sector-label');
     if (lbl) lbl.textContent = (cfg.sector || 'HUB').toUpperCase();
-    // Embedded mode is always "open" — render root immediately.
+    // Embedded mode is always "open"; render root immediately.
     // Workspace gets the capability showcase instead of the bare greeting.
     if (cfg.embedTarget) {
       if (cfg.workspace) {

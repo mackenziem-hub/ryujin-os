@@ -90,15 +90,18 @@ async function handler(req, res) {
     const title = String((req.body || {}).title || '').trim().slice(0, 200);
     if (!title) return res.status(400).json({ error: 'Missing title' });
 
+    // Intentionally no updated_at bump: the sidebar orders by last activity
+    // and a rename should not hoist an old thread to the top.
     const { data, error } = await supabaseAdmin
       .from('chat_conversations')
-      .update({ title, updated_at: new Date().toISOString() })
+      .update({ title })
       .eq('id', id)
       .eq('tenant_id', tenantId)
       .select('id, title, updated_at')
-      .single();
+      .maybeSingle();
 
     if (error) return res.status(500).json({ error: error.message });
+    if (!data) return res.status(404).json({ error: 'Conversation not found' });
     return res.json(data);
   }
 
