@@ -64,6 +64,7 @@
     '  <div class="jv-eq" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>',
     '  <div class="jv-state" id="jv-state" role="status">Tap the mic or press Ctrl+Shift+V</div>',
     '  <button class="jv-auto" id="jv-auto" title="Conversation mode: listen again automatically after Jarvis answers">AUTO</button>',
+    '  <button class="jv-expand" id="jv-expand" title="Command overlay (full screen)" aria-label="Expand to full-screen overlay">&#x26F6;</button>',
     '  <button class="jv-close" id="jv-close" aria-label="Close Jarvis">&times;</button>',
     '</div>',
     '<div class="jv-orb-zone" aria-hidden="true">',
@@ -89,9 +90,25 @@
     '</div>'
   ].join('\n');
 
+  // ── command overlay: full-screen takeover, same engine ──────
+  const overlay = document.createElement('div');
+  overlay.id = 'jarvis-overlay';
+  overlay.dataset.state = 'idle';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-label', 'Jarvis command overlay');
+  overlay.innerHTML = [
+    '<div class="jv-ov-title">J A R V I S</div>',
+    '<div class="jv-orb big" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>',
+    '<div class="jv-ov-caption" id="jv-ov-caption" aria-live="off"></div>',
+    '<div class="jv-ov-kpis" id="jv-ov-kpis"></div>',
+    '<div class="jv-ov-pill" id="jv-ov-state" role="status">Tap the mic or press Ctrl+Shift+V</div>',
+    '<div class="jv-ov-hint">ESC TO DISMISS &middot; HOLD SPACE TO TALK</div>'
+  ].join('\n');
+
   function mount() {
     document.body.appendChild(pill);
     document.body.appendChild(dock);
+    document.body.appendChild(overlay);
     syncFabOffset();
     // ryujin-chat.js builds its fab asynchronously; re-check so the pill
     // never sits on top of it.
@@ -143,13 +160,18 @@
 
   // ── live caption: word-by-word highlight paced to clip duration ──
   let capRaf = null;
+  function captionHost() {
+    return overlay.classList.contains('open') ? $('jv-ov-caption') : $('jv-caption');
+  }
   function clearCaption() {
     if (capRaf) { cancelAnimationFrame(capRaf); capRaf = null; }
-    const cap = $('jv-caption');
-    if (cap) { cap.innerHTML = ''; cap.classList.remove('live'); }
+    for (const id of ['jv-caption', 'jv-ov-caption']) {
+      const cap = $(id);
+      if (cap) { cap.innerHTML = ''; cap.classList.remove('live'); }
+    }
   }
   function renderCaption(text, duration) {
-    const cap = $('jv-caption');
+    const cap = captionHost();
     if (!cap) return;
     if (capRaf) { cancelAnimationFrame(capRaf); capRaf = null; }
     cap.innerHTML = '';
@@ -195,8 +217,12 @@
 
   function setDockState(state, detail) {
     dock.dataset.state = state;
+    overlay.dataset.state = state;
+    const label = state === 'error' && detail ? detail : (STATE_LABEL[state] || state);
     const el = $('jv-state');
-    if (el) el.textContent = state === 'error' && detail ? detail : (STATE_LABEL[state] || state);
+    if (el) el.textContent = label;
+    const ov = $('jv-ov-state');
+    if (ov) ov.textContent = label;
     pill.classList.toggle('busy', state === 'thinking' || state === 'speaking');
   }
 
@@ -366,12 +392,65 @@
     if (input) input.focus({ preventScroll: true });
   }
   function closeDock() {
+    closeOverlay();
     dock.classList.remove('open');
     if (window.RyujinVoiceCore) window.RyujinVoiceCore.cancel();
   }
   function toggleDock() {
     if (dock.classList.contains('open')) closeDock();
     else openDock();
+  }
+
+  // Overlay rides on top of an OPEN dock (the dock is hidden via CSS, so all
+  // dock hotkeys keep working). Esc peels the overlay first, dock second.
+  // A caption mid-karaoke survives the switch: the rAF loop holds the span
+  // NODES, so moving them between hosts keeps the highlight running.
+  function migrateCaption(fromId, toId) {
+    const a = $(fromId), b = $(toId);
+    if (!a || !b || !a.classList.contains('live')) return;
+    while (a.firstChild) b.appendChild(a.firstChild);
+    b.classList.add('live');
+    a.classList.remove('live');
+  }
+  function openOverlay() {
+    overlay.classList.add('open');
+    document.body.classList.add('jarvis-overlay-open');
+    loadOverlayKpis();
+    migrateCaption('jv-caption', 'jv-ov-caption');
+  }
+  function closeOverlay() {
+    if (!overlay.classList.contains('open')) return;
+    overlay.classList.remove('open');
+    document.body.classList.remove('jarvis-overlay-open');
+    migrateCaption('jv-ov-caption', 'jv-caption');
+    const input = $('jv-text');
+    if (input && dock.classList.contains('open')) input.focus({ preventScroll: true });
+  }
+
+  async function loadOverlayKpis() {
+    const host = $('jv-ov-kpis');
+    const t = token();
+    if (!host || !t) return;
+    try {
+      const r = await fetch('/api/metrics', { headers: { Authorization: 'Bearer ' + t } });
+      if (!r.ok) return;
+      const m = await r.json();
+      if (m.contract !== 'v1') return;
+      host.innerHTML = '';
+      for (const [a, b] of BRIEF_PATHS.slice(0, 3)) {
+        const kpi = m[a] && m[a][b];
+        if (!kpi || typeof kpi.label !== 'string') continue;
+        const chip = document.createElement('div');
+        chip.className = 'jv-ov-kpi';
+        const v = document.createElement('b');
+        v.textContent = fmtValue(kpi.value);
+        const l = document.createElement('span');
+        l.textContent = kpi.label; // contract rule: render the shipped label, no page-side wording
+        chip.appendChild(v);
+        chip.appendChild(l);
+        host.appendChild(chip);
+      }
+    } catch {}
   }
 
   // ── Jarvis Brief: gated /api/metrics, labels byte-verbatim ──
@@ -474,12 +553,15 @@
     });
 
     // Speaking state label doubles as the interrupt affordance.
-    $('jv-state').addEventListener('click', () => {
+    const interrupt = () => {
       if (dock.dataset.state === 'speaking' && window.RyujinVoiceCore) {
         suppressAuto = true;
         window.RyujinVoiceCore.cancel();
       }
-    });
+    };
+    $('jv-state').addEventListener('click', interrupt);
+    $('jv-ov-state').addEventListener('click', interrupt);
+    $('jv-expand').addEventListener('click', openOverlay);
 
     $('jv-auto').addEventListener('click', () => setAutoOn(!isAutoOn()));
     $('jv-rate').addEventListener('click', cycleRate);
@@ -512,6 +594,8 @@
         if (core && (core.state === 'speaking' || core.state === 'thinking' || core.state === 'listening')) {
           suppressAuto = true;
           core.cancel();
+        } else if (overlay.classList.contains('open')) {
+          closeOverlay();
         } else {
           closeDock();
         }
