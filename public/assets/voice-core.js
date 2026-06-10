@@ -68,7 +68,7 @@
   // ── TTS queue ───────────────────────────────────────────────
   // gen invalidates every async callback from a cancelled turn.
   let gen = 0;
-  let ttsQueue = [];          // {text, ctrl, blobP} items waiting to speak
+  let ttsQueue = [];          // {text, blobP} items waiting to speak
   let ttsPlaying = false;
   let currentAudio = null;
   let inflightTts = new Set(); // AbortControllers for /api/tts fetches
@@ -91,7 +91,6 @@
   function fetchTts(item) {
     if (item.blobP) return item.blobP;
     const ctrl = new AbortController();
-    item.ctrl = ctrl;
     inflightTts.add(ctrl);
     const headers = { 'Content-Type': 'application/json' };
     const t = token();
@@ -132,7 +131,7 @@
     }
     for (const s of sentences) {
       const clean = cleanForSpeech(s);
-      if (clean) ttsQueue.push({ text: clean, ctrl: null, blobP: null });
+      if (clean) ttsQueue.push({ text: clean, blobP: null });
     }
     prefetch();
     if (ttsQueue.length && !ttsPlaying) playNext(gen);
@@ -164,6 +163,7 @@
         audio.onended = advance;
         audio.onerror = advance;
         await audio.play().then(() => {
+          if (myGen !== gen) return; // cancelled while play() was resolving
           const dur = (isFinite(audio.duration) && audio.duration > 0)
             ? audio.duration / rate
             : estimateDuration(sentence);
@@ -178,7 +178,7 @@
         });
         return;
       }
-      // 401/503/abort/network: designed fallback path is browser TTS
+      // 401/503/network: designed fallback path is browser TTS
       speakBrowser(sentence, myGen);
     } catch (e) {
       if (myGen !== gen) return;
@@ -400,7 +400,11 @@
     ttsQueue = [];
     speechBuffer = '';
     ttsPlaying = false;
-    if (currentAudio) { try { currentAudio.pause(); } catch {} currentAudio = null; }
+    if (currentAudio) {
+      try { currentAudio.pause(); } catch {}
+      try { URL.revokeObjectURL(currentAudio.src); } catch {}
+      currentAudio = null;
+    }
     inflightTts.forEach((c) => { try { c.abort(); } catch {} });
     inflightTts.clear();
     try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch {}
