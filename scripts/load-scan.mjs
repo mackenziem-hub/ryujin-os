@@ -157,9 +157,12 @@ if (SVC) {
     if (!r.ok) throw new Error(`/api/snapshot ${r.status}: ${(await r.text()).slice(0, 120)}`);
     const snap = await r.json();
     const s = snap.snapshot || snap;
-    const brief = s.briefing_morning && s.briefing_morning.briefMarkdown;
+    // briefing_morning lives under sections.* (same as cashflow); reading only
+    // the top level reported brief=MISSING on 2026-06-10 while the brief existed.
+    const bm = s.briefing_morning || (s.sections && s.sections.briefing_morning);
+    const brief = bm && bm.briefMarkdown;
     const cash = s.cashflow || (s.sections && s.sections.cashflow);
-    const briefStamp = s.briefing_morning && (s.briefing_morning.generated_at || s.briefing_morning.timestamp);
+    const briefStamp = bm && (bm.generated_at || bm.timestamp);
     ok('snapshot', { hasBrief: !!brief, briefAgeMin: briefStamp ? Math.round((Date.now() - new Date(briefStamp)) / 60000) : null, hasCashflow: !!cash });
     console.log(`\n## Daily snapshot: brief=${brief ? 'present' : 'MISSING'} cashflow=${cash ? 'present' : 'MISSING'}`);
     if (brief) console.log(brief.split('\n').slice(0, 8).map(l => '  ' + l).join('\n'));
