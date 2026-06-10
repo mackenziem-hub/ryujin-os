@@ -23,6 +23,10 @@
       const existing = document.querySelector('script[data-ry-voice]');
       if (existing) {
         existing.addEventListener('load', () => resolve(!!window.RyujinVoiceMode));
+        existing.addEventListener('error', () => resolve(false));
+        // The script may have already loaded or failed before we attached
+        // listeners; without this the promise never settles and mode picks hang.
+        setTimeout(() => resolve(!!window.RyujinVoiceMode), 4000);
         return;
       }
       const s = document.createElement('script');
@@ -310,6 +314,31 @@
     .ry-ws-side-toggle{display:flex}
     .ry-workspace .ry-side-head .ry-close{display:flex}
   }
+
+  /* Composer: auto-grow textarea, buttons pinned to the bottom edge */
+  .ry-footer{align-items:flex-end}
+  textarea.ry-input{resize:none;overflow-y:auto;max-height:132px;min-height:36px;line-height:1.45;
+    box-sizing:border-box;font-family:'Inter',system-ui,sans-serif;display:block}
+  /* Send button morphs into stop while a reply is streaming */
+  .ry-send.stop{background:linear-gradient(135deg,rgba(248,113,113,0.22),rgba(124,58,237,0.12));
+    border-color:rgba(248,113,113,0.5);color:#f87171}
+  /* Scroll-to-latest pill, sticky inside the message scroller */
+  .ry-jump{position:sticky;bottom:4px;align-self:center;z-index:6;width:max-content;
+    display:none;align-items:center;gap:6px;padding:6px 13px;border-radius:16px;cursor:pointer;
+    background:rgba(8,16,32,0.92);border:1px solid rgba(34,211,238,0.4);color:#22d3ee;
+    font-family:'Share Tech Mono',monospace;font-size:0.65em;letter-spacing:1px;
+    box-shadow:0 6px 20px rgba(0,0,0,0.5)}
+  .ry-jump.on{display:flex}
+  .ry-jump:hover{background:rgba(34,211,238,0.15)}
+  .ry-jump svg{width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
+  #ry-panel.fullscreen .ry-msgs > .ry-jump{width:max-content;align-self:center}
+  /* Retry button inside error bubbles */
+  .ry-retry{display:flex;align-items:center;gap:5px;width:max-content;margin-top:8px;padding:4px 10px;
+    border-radius:8px;cursor:pointer;background:rgba(34,211,238,0.1);
+    border:1px solid rgba(34,211,238,0.3);color:#22d3ee;font-family:'Share Tech Mono',monospace;
+    font-size:0.72em;letter-spacing:0.5px}
+  .ry-retry:hover{background:rgba(34,211,238,0.2)}
+  .ry-retry svg{width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
   `;
 
   function injectStyles(){
@@ -377,7 +406,7 @@
             <svg viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
           </button>
           <input type="file" id="ry-file-input" multiple accept="image/*,application/pdf,.pdf,.txt,.csv,.md,.docx,.xlsx" style="display:none">
-          <input class="ry-input" id="ry-input" placeholder="or type a command..."/>
+          <textarea class="ry-input" id="ry-input" rows="1" placeholder="or type a command..."></textarea>
           <button class="ry-send" id="ry-send" title="Send">
             <svg viewBox="0 0 24 24"><polyline points="5 12 12 5 19 12" transform="rotate(90 12 12)"/><line x1="12" y1="19" x2="12" y2="5"/></svg>
           </button>
@@ -446,7 +475,7 @@
           <svg viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
         </button>
         <input type="file" id="ry-file-input" multiple accept="image/*,application/pdf,.pdf,.txt,.csv,.md,.docx,.xlsx" style="display:none">
-        <input class="ry-input" id="ry-input" placeholder="ask Ryujin to handle something..."/>
+        <textarea class="ry-input" id="ry-input" rows="1" placeholder="ask Ryujin to handle something..."></textarea>
         <button class="ry-send" id="ry-send" title="Send">
           <svg viewBox="0 0 24 24"><polyline points="5 12 12 5 19 12" transform="rotate(90 12 12)"/><line x1="12" y1="19" x2="12" y2="5"/></svg>
         </button>
@@ -504,7 +533,7 @@
             <svg viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
           </button>
           <input type="file" id="ry-file-input" multiple accept="image/*,application/pdf,.pdf,.txt,.csv,.md,.docx,.xlsx" style="display:none">
-          <input class="ry-input" id="ry-input" placeholder="ask Ryujin to handle something..."/>
+          <textarea class="ry-input" id="ry-input" rows="1" placeholder="ask Ryujin to handle something..."></textarea>
           <button class="ry-send" id="ry-send" title="Send">
             <svg viewBox="0 0 24 24"><polyline points="5 12 12 5 19 12" transform="rotate(90 12 12)"/><line x1="12" y1="19" x2="12" y2="5"/></svg>
           </button>
@@ -608,9 +637,20 @@
       };
     });
   }
+  function ensurePicker(){
+    // Workspace/embedded surfaces never build the FAB root, so the picker
+    // overlay is created on demand the first time it's opened.
+    let p = document.getElementById('ry-picker');
+    if (!p) {
+      p = document.createElement('div');
+      p.id = 'ry-picker';
+      p.innerHTML = '<div class="ry-pick-card" id="ry-pick-card"></div>';
+      document.body.appendChild(p);
+    }
+    return p;
+  }
   function openPicker(){
-    const p = document.getElementById('ry-picker');
-    if (!p) return;
+    const p = ensurePicker();
     renderModeCard();
     p.classList.add('on');
     if (!p._wired) {
@@ -628,7 +668,7 @@
     if (p) p.classList.remove('on');
   }
   function updateModeChip(){
-    const head = document.querySelector('#ry-panel .ry-head');
+    const head = document.querySelector('#ry-panel .ry-head') || document.querySelector('.ry-workspace .ry-head');
     if (!head) return;
     let chip = document.getElementById('ry-mode-chip');
     if (!chip) {
@@ -646,6 +686,14 @@
     chip.querySelectorAll('svg').forEach(s => s.setAttribute('style', 'width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round'));
   }
   function dispatchMode(mode, effort){
+    // Speech/Agent need voice-mode.js, which is lazy-loaded. Pull it in, then re-enter.
+    if ((mode === 'speech' || mode === 'agent') && !window.RyujinVoiceMode) {
+      ensureVoiceModeLoaded().then(ok => {
+        if (ok) dispatchMode(mode, effort);
+        else { togglePanel(true); updateModeChip(); }
+      });
+      return;
+    }
     if (mode === 'speech') {
       if (window.RyujinVoiceMode && window.RyujinVoiceMode.enter) {
         const archetype = (function(){ try { return JSON.parse(localStorage.getItem('ryujin_persona')||'{}').archetype || null; } catch { return null; } })();
@@ -1133,7 +1181,10 @@
         : '<svg viewBox="0 0 24 24"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
     });
     const send = document.getElementById('ry-send');
-    if (send) send.addEventListener('click', sendTyped);
+    if (send) send.addEventListener('click', () => {
+      if (activeController) { activeController.abort(); return; }
+      sendTyped();
+    });
 
     // Paperclip → file picker
     const attachBtn = document.getElementById('ry-attach');
@@ -1191,7 +1242,16 @@
       if (e.dataTransfer.files?.length) uploadFiles(e.dataTransfer.files);
     });
     const input = document.getElementById('ry-input');
-    if (input) input.addEventListener('keydown', e => { if (e.key === 'Enter') sendTyped(); });
+    if (input) {
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendTyped(); }
+      });
+      input.addEventListener('input', () => autoGrow(input));
+    }
+    // Esc stops an in-flight reply, matching modern chat UIs
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && activeController) activeController.abort();
+    });
 
     // Suggestions collapse toggle — persists across sessions
     const sugHead = document.getElementById('ry-sugg-head');
@@ -1656,12 +1716,85 @@
     }
   }
 
+  // ── Streaming send: abort control, scroll anchoring, composer helpers ──
+  let activeController = null;
+  RY.isStreaming = () => !!activeController;
+  const RY_SEND_SVG = '<svg viewBox="0 0 24 24"><polyline points="5 12 12 5 19 12" transform="rotate(90 12 12)"/><line x1="12" y1="19" x2="12" y2="5"/></svg>';
+  const RY_STOP_SVG = '<svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5"/></svg>';
+  function setSendStop(streaming){
+    const btn = document.getElementById('ry-send');
+    if (!btn) return;
+    btn.classList.toggle('stop', !!streaming);
+    btn.title = streaming ? 'Stop (Esc)' : 'Send';
+    btn.innerHTML = streaming ? RY_STOP_SVG : RY_SEND_SVG;
+  }
+  function autoGrow(el){
+    if (!el || el.tagName !== 'TEXTAREA') return;
+    if (!el.value) { el.style.height = ''; return; }
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 132) + 'px';
+  }
+  // An unclosed code fence gets a temporary close so partial text renders sanely.
+  function renderMarkdownSafe(src){
+    if (((src.match(/```/g) || []).length) % 2 === 1) src += '\n```';
+    return renderMarkdown(src);
+  }
+  function isNearBottom(el){ return el.scrollHeight - el.scrollTop - el.clientHeight < 140; }
+  function ensureJumpPill(msgsEl){
+    let pill = document.getElementById('ry-jump');
+    if (!pill || pill.parentNode !== msgsEl) {
+      if (pill) pill.remove();
+      pill = document.createElement('button');
+      pill.id = 'ry-jump';
+      pill.className = 'ry-jump';
+      pill.innerHTML = '<svg viewBox="0 0 24 24"><polyline points="19 12 12 19 5 12"/><line x1="12" y1="5" x2="12" y2="19"/></svg>Latest';
+      pill.onclick = () => { msgsEl.scrollTop = msgsEl.scrollHeight; pill.classList.remove('on'); };
+      msgsEl.appendChild(pill);
+    }
+    if (!msgsEl._ryScrollWired) {
+      msgsEl._ryScrollWired = true;
+      msgsEl.addEventListener('scroll', () => {
+        if (isNearBottom(msgsEl)) {
+          const p = document.getElementById('ry-jump');
+          if (p) p.classList.remove('on');
+        }
+      });
+    }
+    return pill;
+  }
+  // Autoscroll only when the reader is already near the bottom; otherwise show
+  // the jump pill instead of yanking them away from scrollback.
+  function scrollMsgs(msgsEl, force){
+    if (!msgsEl) return;
+    const pill = ensureJumpPill(msgsEl);
+    msgsEl.appendChild(pill); // keep the sticky pill last in flow
+    if (force || isNearBottom(msgsEl)) {
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+      pill.classList.remove('on');
+    } else {
+      pill.classList.add('on');
+    }
+  }
+
   async function sendTyped(){
     const input = document.getElementById('ry-input');
     const text = input.value.trim();
     const hasAttach = pendingAttachments.length > 0;
     if (!text && !hasAttach) return;
+    if (activeController) {
+      // A new send interrupts the in-flight turn instead of being swallowed.
+      // Priority chips, voice transcripts and STT all funnel through here;
+      // silently dropping their text reads as the assistant ignoring the user.
+      if (sendTyped._waiting) return;
+      sendTyped._waiting = true;
+      activeController.abort();
+      for (let i = 0; i < 40 && activeController; i++) await new Promise(r => setTimeout(r, 25));
+      sendTyped._waiting = false;
+      if (activeController) return;
+    }
     input.value = '';
+    autoGrow(input);
+    input.focus();
     const msgsEl = document.getElementById('ry-msgs');
 
     // User bubble (with attachment chips if any)
@@ -1689,25 +1822,57 @@
       userBubble.appendChild(txtNode);
     }
     msgsEl.appendChild(userBubble);
-    msgsEl.scrollTop = msgsEl.scrollHeight;
+    scrollMsgs(msgsEl, true);
 
     // Capture PRIOR history (don't include current message — it goes in `message`)
     const historyToSend = chatHistory.slice(-10);
-    chatHistory.push({ role: 'user', content: text || '(attachments only)' });
+    const userTurn = { role: 'user', content: text || '(attachments only)' };
+    chatHistory.push(userTurn);
 
     // Clear pending attachments — they're committed to this turn now
     const attachmentsForThisTurn = pendingAttachments.slice();
     pendingAttachments.length = 0;
     renderAttachmentChips();
 
+    // Retry affordance for failed turns: rewinds the user entry + bubble and resends.
+    const attachRetry = (errEl) => {
+      const btn = document.createElement('button');
+      btn.className = 'ry-retry';
+      btn.innerHTML = '<svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>Retry';
+      btn.onclick = () => {
+        if (activeController) return; // a newer turn is mid-stream; retry after it settles
+        errEl.remove();
+        if (userBubble.parentNode) userBubble.remove();
+        // Remove this turn's entry by identity: later turns may have moved it
+        // off the tail, and a blind pop would eat the wrong message.
+        const ix = chatHistory.indexOf(userTurn);
+        if (ix !== -1) chatHistory.splice(ix, 1);
+        const inp = document.getElementById('ry-input');
+        const draft = inp ? inp.value : '';
+        if (inp) inp.value = text || '';
+        for (const a of attachmentsForThisTurn) {
+          if (!pendingAttachments.includes(a)) pendingAttachments.push(a);
+        }
+        renderAttachmentChips();
+        sendTyped();
+        if (inp) { inp.value = draft; autoGrow(inp); }
+      };
+      errEl.appendChild(btn);
+    };
+
     // Typing indicator
     const typing = document.createElement('div');
     typing.className = 'ry-typing';
     typing.innerHTML = '<span></span><span></span><span></span>';
     msgsEl.appendChild(typing);
-    msgsEl.scrollTop = msgsEl.scrollHeight;
+    scrollMsgs(msgsEl, true);
     setActivity('thinking');
+    activeController = new AbortController();
+    setSendStop(true);
 
+    let bubble = null;
+    let assembled = '';
+    let toolBubble = null;
     try {
       const ryujinToken = (typeof localStorage !== 'undefined' && localStorage.getItem('ryujin_token')) || '';
       const headers = { 'Content-Type': 'application/json' };
@@ -1718,6 +1883,7 @@
       const resp = await fetch('/api/chat', {
         method: 'POST',
         headers,
+        signal: activeController.signal,
         body: JSON.stringify({ message: text || '', history: historyToSend, attachments: attachmentsForThisTurn, conversation_id: currentConversationId || undefined, voiceMode: inVoiceMode, viewAs: viewAs || undefined, mode: getLastMode(), effort: getLastEffort(), archetype: (getLastMode() === 'agent' && lockedAgentArchetype) ? lockedAgentArchetype : undefined })
       });
       typing.remove();
@@ -1732,18 +1898,21 @@
         return;
       }
       if (!resp.ok || !resp.body) {
+        let detail = '';
+        try { const j = await resp.json(); detail = j.detail || j.error || ''; } catch {}
         const err = document.createElement('div');
         err.className = 'ry-bubble dragon';
-        err.textContent = `Signal lost (HTTP ${resp.status}). Try again.`;
+        err.textContent = `Signal lost (HTTP ${resp.status})` + (detail ? ': ' + detail : '') + '.';
+        attachRetry(err);
         msgsEl.appendChild(err);
+        scrollMsgs(msgsEl, true);
         return;
       }
 
-      const bubble = document.createElement('div');
+      bubble = document.createElement('div');
       bubble.className = 'ry-bubble dragon';
       msgsEl.appendChild(bubble);
-      let assembled = '';
-      let toolBubble = null;
+      let lastMdRender = 0;
       let serverError = null;
       let stopReasonSeen = null;
       let toolsAttempted = 0;
@@ -1783,8 +1952,12 @@
           if (data.text) {
             if (!assembled) setActivity('speaking');
             assembled += data.text;
-            // Plain text while streaming; markdown once at end of stream.
-            bubble.textContent = assembled;
+            // Progressive markdown, throttled so long streams stay cheap.
+            const now = Date.now();
+            if (now - lastMdRender > 120) {
+              lastMdRender = now;
+              bubble.innerHTML = renderMarkdownSafe(assembled);
+            }
           } else if (data.error) {
             serverError = data.error;
             console.error('[ryujin-chat] server error:', data.error);
@@ -1807,12 +1980,12 @@
               }
             }
           }
-          msgsEl.scrollTop = msgsEl.scrollHeight;
+          scrollMsgs(msgsEl);
         }
       }
 
       if (assembled) {
-        bubble.innerHTML = renderMarkdown(assembled);
+        bubble.innerHTML = renderMarkdownSafe(assembled);
         decorateBubble(bubble, assembled);
         chatHistory.push({ role: 'assistant', content: assembled });
         // Phase 6B: TTS auto-speak if toggle on
@@ -1822,6 +1995,7 @@
         refreshPriorities({ withGreeting: false });
       } else if (serverError) {
         bubble.textContent = 'Server error: ' + serverError;
+        attachRetry(bubble);
       } else {
         // Empty stream — surface every clue we have so the next debug isn't blind
         const clues = [];
@@ -1832,13 +2006,36 @@
           ? 'No reply text. (' + clues.join(' · ') + '). Check browser console + Vercel logs.'
           : 'No response. Check browser console + Vercel logs.';
       }
+      scrollMsgs(msgsEl);
     } catch (e) {
       typing.remove();
-      const err = document.createElement('div');
-      err.className = 'ry-bubble dragon';
-      err.textContent = 'Connection interrupted. Standing by.';
-      msgsEl.appendChild(err);
+      if (e && e.name === 'AbortError') {
+        // User hit stop. Keep whatever streamed in; persist it like a normal turn.
+        if (toolBubble) { toolBubble.remove(); toolBubble = null; }
+        if (assembled && bubble) {
+          bubble.innerHTML = renderMarkdownSafe(assembled);
+          decorateBubble(bubble, assembled);
+          chatHistory.push({ role: 'assistant', content: assembled });
+          persistConversationTurn();
+        } else if (bubble) {
+          bubble.textContent = 'Stopped.';
+        } else {
+          const sb = document.createElement('div');
+          sb.className = 'ry-bubble sys';
+          sb.textContent = '◊ Stopped.';
+          msgsEl.appendChild(sb);
+        }
+      } else {
+        const err = document.createElement('div');
+        err.className = 'ry-bubble dragon';
+        err.textContent = 'Connection interrupted. Standing by.';
+        attachRetry(err);
+        msgsEl.appendChild(err);
+        scrollMsgs(msgsEl, true);
+      }
     } finally {
+      activeController = null;
+      setSendStop(false);
       setActivity('idle');
     }
   }
@@ -1855,7 +2052,7 @@
   // Default greeting for pages that don't define a sector menu — the brain
   // takes over once the user starts typing.
   const DEFAULT_ROOT = {
-    msg: "I'm Ryujin. Ask me anything — quotes, tickets, leads, ads, today's priorities.",
+    msg: "I'm Ryujin. Ask me anything: quotes, tickets, leads, ads, today's priorities.",
     choices: []
   };
 
@@ -1898,7 +2095,7 @@
     if (lbl) lbl.textContent = (cfg.sector || 'HUB').toUpperCase();
     // Embedded mode is always "open" — render root immediately
     if (cfg.embedTarget) {
-      if (cfg.workspace) loadConversationsList();
+      if (cfg.workspace) { loadConversationsList(); updateModeChip(); }
       setTimeout(() => renderState('root'), 400);
     } else if (cfg.autoOpen !== false) {
       setTimeout(() => togglePanel(true), 900);

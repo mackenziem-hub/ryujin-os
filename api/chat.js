@@ -4475,6 +4475,28 @@ async function callClaudeStream(apiKey, systemPrompt, messages, onDelta, useTool
 }
 
 export default async function handler(req, res) {
+  try {
+    return await chatHandler(req, res);
+  } catch (err) {
+    // Pre-stream failures (bad body, auth backend down, router crash) used to surface
+    // as opaque FUNCTION_INVOCATION_FAILED 500s. Return structured JSON instead, or a
+    // final SSE error frame if the stream already started.
+    console.error('[chat] unhandled:', err);
+    const detail = String((err && err.message) || err).slice(0, 300);
+    if (!res.headersSent) {
+      return res.status(500).json({ error: 'chat_failed', detail });
+    }
+    try {
+      res.write(`data: ${JSON.stringify({ error: detail })}\n\n`);
+      res.write(`data: ${JSON.stringify({ done: true, stop_reason: 'error' })}\n\n`);
+      res.end();
+    } catch (e) {
+      console.error('[chat] could not write error frame:', e.message);
+    }
+  }
+}
+
+async function chatHandler(req, res) {
   // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -4493,7 +4515,9 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
   }
 
-  let { message, history = [], liveData, agent, attachments = [], conversation_id, quest_id, archetype: requestedArchetype, voiceMode: requestedVoiceMode, viewAs: requestedViewAs, effort: requestedEffort, mode: requestedMode, current_page } = req.body;
+  let { message, history = [], liveData, agent, attachments = [], conversation_id, quest_id, archetype: requestedArchetype, voiceMode: requestedVoiceMode, viewAs: requestedViewAs, effort: requestedEffort, mode: requestedMode, current_page } = req.body || {};
+  if (!Array.isArray(history)) history = [];
+  if (!Array.isArray(attachments)) attachments = [];
   // Phase 17: validate effort + mode. Default medium / quick.
   // Speech mode defaults to low effort (Haiku tier): a voice turn lives or dies on
   // first-token latency. Explicit effort from the caller still wins.
