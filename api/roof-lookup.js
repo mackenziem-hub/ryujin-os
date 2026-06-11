@@ -140,6 +140,8 @@ async function handler(req, res) {
 
     return res.status(200).json({
       ok: true,
+      lat,
+      lng,
       roofSqft,
       sq: Math.round(roofSqft / 10) / 10,
       pitchX12: Math.round(pitchX12 * 10) / 10,
