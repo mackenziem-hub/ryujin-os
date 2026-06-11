@@ -95,6 +95,14 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
 .hstatus-sent{color:#10b981}
 .hstatus-dismissed{color:rgba(160,190,230,0.55)}
 
+.watch-hint{font-size:0.78em;color:rgba(160,190,230,0.6);line-height:1.45;margin-bottom:12px}
+.watch-form{display:grid;grid-template-columns:1fr 1.2fr 1.2fr 84px auto;gap:8px;margin-top:12px}
+.watch-form input{background:rgba(3,8,18,0.65);border:1px solid rgba(34,211,238,0.22);border-radius:8px;padding:9px 10px;color:#e6ecf6;font-family:'Inter',system-ui,sans-serif;font-size:0.84em;min-width:0}
+.watch-form input:focus{outline:none;border-color:rgba(34,211,238,0.6);background:rgba(3,8,18,0.85)}
+.watch-form .btn{flex:0 0 auto;min-width:110px}
+.wexpired{opacity:0.45}
+.wbtn{flex:0 0 auto;min-width:0;padding:7px 10px}
+
 .empty{padding:30px 14px;text-align:center;font-family:'Share Tech Mono',monospace;font-size:0.85em;letter-spacing:1px;color:rgba(160,190,230,0.5)}
 .loading{padding:18px 14px;text-align:center;font-family:'Share Tech Mono',monospace;font-size:0.78em;color:rgba(160,190,230,0.55);letter-spacing:1.5px}
 
@@ -106,6 +114,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
   .kpi-row{grid-template-columns:1fr 1fr 1fr;gap:8px}
   .kpi .val{font-size:1.6em}
   .stage{padding:74px 10px 18px 10px}
+  .watch-form{grid-template-columns:1fr 1fr}
+  .watch-form .btn{grid-column:1 / -1}
 }
 </style>
 <script src="/assets/auth-guard.js"></script>
@@ -156,6 +166,22 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
   <div class="glass panel">
     <div class="panel-head"><h2>Recently handled</h2></div>
     <div id="handledBody"><div class="loading">Loading...</div></div>
+  </div>
+
+  <div class="glass panel">
+    <div class="panel-head">
+      <h2>Watches</h2>
+      <div class="panel-action" onclick="loadWatches(true)">Refresh</div>
+    </div>
+    <div class="watch-hint">Always ping me when these people get back to me. Contact name watches GHL threads (SMS / FB / IG); email watches Gmail by exact address. Watches expire so the list never rots (blank the days field for a permanent one).</div>
+    <div id="watchBody"><div class="loading">Loading watches...</div></div>
+    <div class="watch-form">
+      <input id="wName" placeholder="Contact name (GHL)" maxlength="80">
+      <input id="wEmail" placeholder="Email address (Gmail)" maxlength="160">
+      <input id="wNote" placeholder="Note (what for)" maxlength="160">
+      <input id="wDays" type="number" min="1" max="365" value="14" title="Days until this watch expires. Blank = never.">
+      <button class="btn btn-send" onclick="addWatch(this)">Add watch</button>
+    </div>
   </div>
 
 </div>
@@ -436,13 +462,120 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
     finally { if (btn) { btn.disabled = false; btn.textContent = 'Scan Now'; } }
   }
 
+  // ── Watches panel (unified inbox watch list; see lib/inboxWatches.js).
+  // Reads inbox_config via GET /api/settings (full row needs a session) and
+  // writes the full watches array back via PATCH ?field=inbox_config. ──
+  let inboxCfg = null;
+
+  function isExpired(w){
+    if (!w || !w.expires_at) return false;
+    const t = new Date(w.expires_at).getTime();
+    return Number.isFinite(t) && t <= Date.now();
+  }
+
+  async function loadWatches(showError){
+    try {
+      const s = await api('/api/settings');
+      inboxCfg = ('inbox_config' in (s || {})) ? (s.inbox_config || {}) : null;
+      renderWatches();
+    } catch(e){
+      if (showError) document.getElementById('watchBody').innerHTML =
+        '<div class="empty">Could not load watches: ' + escapeHtml(e.message) + '</div>';
+    }
+  }
+
+  function renderWatches(){
+    const body = document.getElementById('watchBody');
+    if (!inboxCfg) {
+      body.innerHTML = '<div class="empty">Sign in as owner/admin to manage watches.</div>';
+      return;
+    }
+    const watches = Array.isArray(inboxCfg.watches) ? inboxCfg.watches : [];
+    const legacy = Array.isArray(inboxCfg.notify_allowlist) ? inboxCfg.notify_allowlist : [];
+    const rows = [];
+    watches.forEach((w, i) => {
+      const expired = isExpired(w);
+      const what = [w.match ? escapeHtml(w.match) : '', w.email ? escapeHtml(w.email) : ''].filter(Boolean).join(' · ');
+      const meta = [
+        w.note ? escapeHtml(w.note) : '',
+        w.expires_at ? (expired ? 'EXPIRED' : 'until ' + fmtDate(w.expires_at)) : 'no expiry',
+      ].filter(Boolean).join(' · ');
+      rows.push(`<div class="hrow${expired ? ' wexpired' : ''}"><div><div class="ht">${what}</div><div class="hm">${meta}</div></div><button class="btn btn-dismiss wbtn" onclick="removeWatch(${i}, this)">Remove</button></div>`);
+    });
+    legacy.forEach((raw, i) => {
+      const e = (raw && typeof raw === 'object') ? raw : { match: raw };
+      const meta = [e.note ? escapeHtml(String(e.note)) : '', 'legacy list · GHL only · no expiry'].filter(Boolean).join(' · ');
+      rows.push(`<div class="hrow"><div><div class="ht">${escapeHtml(String(e.match || ''))}</div><div class="hm">${meta}</div></div><button class="btn btn-dismiss wbtn" onclick="removeLegacyWatch(${i}, this)">Remove</button></div>`);
+    });
+    body.innerHTML = rows.length
+      ? '<div class="list">' + rows.join('') + '</div>'
+      : '<div class="empty">No watches. Add one below; their next reply pings your phone.</div>';
+  }
+
+  async function patchInboxConfig(delta){
+    const out = await api('/api/settings?field=inbox_config', { method: 'PATCH', body: delta });
+    inboxCfg = out.inbox_config || {};
+    renderWatches();
+  }
+
+  async function addWatch(btn){
+    const match = document.getElementById('wName').value.trim();
+    const email = document.getElementById('wEmail').value.trim();
+    const note = document.getElementById('wNote').value.trim();
+    if (!inboxCfg) { toast('Watches not loaded yet. Hit Refresh first.', true); return; }
+    if (!match && !email) { toast('Give the watch a contact name or an email.', true); return; }
+    const entry = {};
+    if (match) entry.match = match;
+    if (email) entry.email = email;
+    if (note) entry.note = note;
+    const days = parseInt(document.getElementById('wDays').value, 10);
+    if (Number.isFinite(days) && days > 0) entry.expires_at = new Date(Date.now() + days * 86400000).toISOString();
+    const done = busy(btn, 'Adding...');
+    try {
+      const current = (inboxCfg && Array.isArray(inboxCfg.watches)) ? inboxCfg.watches : [];
+      await patchInboxConfig({ watches: current.concat([entry]) });
+      document.getElementById('wName').value = '';
+      document.getElementById('wEmail').value = '';
+      document.getElementById('wNote').value = '';
+      toast('Watch added.');
+    } catch(e){ toast(e.message, true); }
+    finally { if (done) done(); }
+  }
+
+  async function removeWatch(idx, btn){
+    const done = busy(btn, '...');
+    try {
+      const current = (inboxCfg && Array.isArray(inboxCfg.watches)) ? inboxCfg.watches.slice() : [];
+      current.splice(idx, 1);
+      await patchInboxConfig({ watches: current.length ? current : null }); // null clears the key
+      toast('Watch removed.');
+    } catch(e){ toast(e.message, true); }
+    finally { if (done) done(); }
+  }
+
+  async function removeLegacyWatch(idx, btn){
+    const done = busy(btn, '...');
+    try {
+      const current = (inboxCfg && Array.isArray(inboxCfg.notify_allowlist)) ? inboxCfg.notify_allowlist.slice() : [];
+      current.splice(idx, 1);
+      await patchInboxConfig({ notify_allowlist: current.length ? current : null });
+      toast('Watch removed.');
+    } catch(e){ toast(e.message, true); }
+    finally { if (done) done(); }
+  }
+
   window.loadQueue = loadQueue;
   window.send = send;
   window.saveDraft = saveDraft;
   window.dismiss = dismiss;
   window.fireScan = fireScan;
+  window.loadWatches = loadWatches;
+  window.addWatch = addWatch;
+  window.removeWatch = removeWatch;
+  window.removeLegacyWatch = removeLegacyWatch;
 
   loadQueue(true);
+  loadWatches(true);
   setInterval(() => loadQueue(false), POLL_MS);
 })();
 

@@ -9,10 +9,12 @@ import { supabaseAdmin } from '../lib/supabase.js';
 import { requireTenant } from '../lib/tenant.js';
 import { resolveSession, isPrivileged } from '../lib/portalAuth.js';
 import { validateOverridesPatch } from '../lib/labels.js';
+import { validateWatches } from '../lib/inboxWatches.js';
 
 // Whitelist of jsonb columns that PATCH may merge into.
 const PATCH_FIELDS = new Set([
   'label_overrides',
+  'inbox_config',
   // Future: per-pillar configs etc. could land here.
 ]);
 
@@ -111,6 +113,13 @@ async function handler(req, res) {
     if (field === 'label_overrides') {
       const v = validateOverridesPatch(patch);
       if (!v.ok) return res.status(400).json({ error: v.error });
+    }
+    // inbox_config.watches is the unified inbox watch list; validate +
+    // normalize it (null/'' still falls through to the merge's key-clear).
+    if (field === 'inbox_config' && patch.watches != null && patch.watches !== '') {
+      const v = validateWatches(patch.watches);
+      if (!v.ok) return res.status(400).json({ error: v.error });
+      patch.watches = v.watches;
     }
 
     // Read current value, merge, write back. Race-tolerant for low write rates.

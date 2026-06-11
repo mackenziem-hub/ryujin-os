@@ -25,6 +25,7 @@ import { supabaseAdmin } from '../../lib/supabase.js';
 import { requireCronOrOwner } from '../../lib/cronAuth.js';
 import { listConversations, getConversationMessages, ghlSendMessage, getContactByPhone } from '../../lib/ghl.js';
 import { snapshotHeaders } from '../../lib/snapshotClient.js';
+import { activeWatches } from '../../lib/inboxWatches.js';
 
 const PLUS_ULTRA_SLUG = 'plus-ultra';
 const RYUJIN_BASE = 'https://ryujin-os.vercel.app';
@@ -100,7 +101,7 @@ function clampStr(s, n) {
   return s.length > n ? s.slice(0, n) : s;
 }
 
-// ── Owner NOTIFY allow-list (tenant_settings.inbox_config.notify_allowlist) ──
+// ── Owner NOTIFY allow-list (inbox_config: notify_allowlist + watches[].match) ──
 // A list of watched contacts whose inbound ALWAYS pings the owner, layered ON
 // TOP of the leak/lead triage gate (it only ever turns notify ON, never off).
 // Built for "I'm waiting on a vendor for pricing, text me when they reply"
@@ -536,8 +537,10 @@ export default async function handler(req, res) {
 
   // Owner-tunable NOTIFY config (tenant_settings.inbox_config).
   const cfg = settings?.inbox_config || {};
-  //  - notify_allowlist: watched contacts that always ping.
-  const allowlist = Array.isArray(cfg.notify_allowlist) ? cfg.notify_allowlist : [];
+  //  - watched contacts that always ping: legacy notify_allowlist + the
+  //    unified watches list (lib/inboxWatches.js; entries with a name `match`).
+  const allowlist = (Array.isArray(cfg.notify_allowlist) ? cfg.notify_allowlist : [])
+    .concat(activeWatches(cfg).filter(w => w.match));
   //  - notify_customers: any existing/booked customer (triage category) pings.
   const notifyCustomers = cfg.notify_customers === true;
   //  - owner SMS target: explicit contact id, else resolve the owner cell to a
