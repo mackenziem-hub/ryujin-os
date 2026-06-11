@@ -3,8 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Your Roofing Proposal</title>
+<title>Your Roofing Proposal · Plus Ultra Roofing</title>
 <meta name="robots" content="noindex, nofollow">
+<link rel="icon" type="image/png" href="/brand/plus-ultra/favicon-mark.png">
+<link rel="apple-touch-icon" href="/brand/plus-ultra/favicon-mark.png">
+<meta property="og:title" content="Your Plus Ultra Roofing Proposal">
+<meta property="og:description" content="Your complete roof plan: transparent pricing, full scope, and a workmanship warranty we stand behind.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="https://ryujin-os.vercel.app/brand/plus-ultra/gallery/01-hero-lakeside-landmark.jpg">
+<meta property="og:site_name" content="Plus Ultra Roofing">
+<meta name="twitter:card" content="summary_large_image">
 
 <!-- Fonts: Fraunces (display) + Inter (body), per proposal-v2.css header. -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -150,10 +158,13 @@
   var ctx = null;
 
   // The live selection state. The products component owns and mutates this.
+  // variantSel maps a multi-variant card's base id to its active variant id
+  // (the metal card's European Clay vs Flat Panel toggle).
   var state = {
     tierId: null,
     pathId: null,
-    addons: new Set()
+    addons: new Set(),
+    variantSel: {}
   };
 
   /* --------------------------------------------------------------------------
@@ -770,10 +781,26 @@
     return p.tiers || [];
   }
 
+  // Resolve the active variant of a multi-variant card. Plain cards pass through.
+  function effTier(t) {
+    if (!t || !t.variants || !t.variants.length) return t;
+    var sel = state.variantSel[t.id];
+    for (var i = 0; i < t.variants.length; i++) if (t.variants[i].id === sel) return t.variants[i];
+    return t.variants[0];
+  }
+
   function findTier(id) {
     var list = activeTiers();
-    for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
-    return list[0] || null;
+    for (var i = 0; i < list.length; i++) {
+      var t = list[i];
+      if (t.id === id) return effTier(t);
+      if (t.variants) {
+        for (var j = 0; j < t.variants.length; j++) {
+          if (t.variants[j].id === id) return t.variants[j];
+        }
+      }
+    }
+    return list[0] ? effTier(list[0]) : null;
   }
 
   function getAddons() {
@@ -904,44 +931,75 @@
     logEvent('addon_toggled', { slug: slug, on: state.addons.has(slug) });
   }
 
-  // Build one tier card.
+  // Build one tier card. A card may carry variants (the metal European Clay vs
+  // Flat Panel toggle); v is the active variant and supplies every displayed
+  // field plus the selectable id, so price, monthly, perks and the accept
+  // payload all follow the toggle.
   function tierCard(t, recommended) {
+    var v = effTier(t);
     var card = el('div', 'pv2-tier');
-    card.dataset.tier = t.id;
+    card.dataset.tier = v.id;
     card.tabIndex = 0;
     card.setAttribute('role', 'button');
-    card.setAttribute('aria-pressed', String(t.id === state.tierId));
+    card.setAttribute('aria-pressed', String(v.id === state.tierId));
     if (recommended) card.classList.add('best');
-    if (t.id === state.tierId) card.classList.add('is-selected');
+    if (v.id === state.tierId) card.classList.add('is-selected');
 
-    if (recommended) card.appendChild(el('div', 'pv2-ribbon', esc(t.promoLabel || 'Recommended')));
+    if (recommended) card.appendChild(el('div', 'pv2-ribbon', esc(v.promoLabel || 'Recommended')));
 
     var check = el('div', 'pv2-tier__check');
     check.setAttribute('aria-hidden', 'true');
     card.appendChild(check);
 
-    if (t.tag) card.appendChild(el('div', 'pv2-tier__grade', esc(resolveVars(t.tag))));
-    card.appendChild(el('div', 'pv2-tier__name', esc(resolveVars(t.name))));
-    if (t.sub || t.desc) card.appendChild(el('div', 'pv2-tier__sub', esc(resolveVars(t.sub || t.desc))));
+    if (v.tag) card.appendChild(el('div', 'pv2-tier__grade', esc(resolveVars(v.tag))));
+
+    // Variant toggle pills, panel-style switch inside the one metal card.
+    if (t.variants && t.variants.length > 1) {
+      var seg = el('div', 'pv2-tier__variants');
+      seg.setAttribute('role', 'group');
+      seg.setAttribute('aria-label', 'Panel style');
+      t.variants.forEach(function (vv) {
+        var vb = el('button', 'pv2-tier__varbtn' + (vv.id === v.id ? ' is-on' : ''),
+          esc(resolveVars(vv.toggle || vv.name)));
+        vb.type = 'button';
+        vb.setAttribute('aria-pressed', String(vv.id === v.id));
+        vb.addEventListener('click', function (e) {
+          e.stopPropagation();
+          if (vv.id === v.id) return;
+          state.variantSel[t.id] = vv.id;
+          // If this card is the current pick, the pick follows the panel style.
+          if (state.tierId === v.id) state.tierId = vv.id;
+          renderTierCards();
+          recompute();
+          logEvent('variant_toggled', { card: t.id, id: vv.id });
+        });
+        vb.addEventListener('keydown', function (e) { e.stopPropagation(); });
+        seg.appendChild(vb);
+      });
+      card.appendChild(seg);
+    }
+
+    card.appendChild(el('div', 'pv2-tier__name', esc(resolveVars(v.name))));
+    if (v.sub || v.desc) card.appendChild(el('div', 'pv2-tier__sub', esc(resolveVars(v.sub || v.desc))));
 
     // Price shown incl. HST, rounded to 25, with the pre-tax origin honoured.
-    var incHst = round25((Number(t.total) || 0) * (1 + taxRate()));
+    var incHst = round25((Number(v.total) || 0) * (1 + taxRate()));
 
     // When a discount applies, show the struck pre-discount price plus a bronze
     // promo tag above the live price (originalTotal is the pre-tax list price).
-    if (t.originalTotal != null && Number(t.originalTotal) > Number(t.total)) {
-      var wasHst = round25((Number(t.originalTotal) || 0) * (1 + taxRate()));
+    if (v.originalTotal != null && Number(v.originalTotal) > Number(v.total)) {
+      var wasHst = round25((Number(v.originalTotal) || 0) * (1 + taxRate()));
       var wasRow = el('div', 'pv2-tier__was');
       wasRow.appendChild(document.createTextNode(money(wasHst)));
-      if (t.promoLabel) {
-        wasRow.appendChild(el('span', 'pv2-tier__promo', esc(resolveVars(t.promoLabel))));
+      if (v.promoLabel) {
+        wasRow.appendChild(el('span', 'pv2-tier__promo', esc(resolveVars(v.promoLabel))));
       }
       card.appendChild(wasRow);
     }
 
     card.appendChild(el('div', 'pv2-tier__price', money(incHst)));
     var pnBits = ['incl. HST'];
-    if (t.persq) pnBits.push(money(t.persq) + '/SQ');
+    if (v.persq) pnBits.push(money(v.persq) + '/SQ');
     card.appendChild(el('div', 'pv2-tier__pn', esc(pnBits.join(' · '))));
 
     // Monthly payment promoted to its own weighted line on the card.
@@ -954,7 +1012,7 @@
       card.appendChild(moBox);
     }
 
-    var perks = t.perks || t.features || [];
+    var perks = v.perks || v.features || [];
     if (perks.length) {
       var ul = el('ul', 'pv2-tier__list');
       perks.forEach(function (perk) {
@@ -965,13 +1023,13 @@
 
     var pick = el('div', 'pv2-tier__pick');
     var btn = el('button', 'pv2-tier__pickbtn',
-      (t.id === state.tierId) ? 'Selected' : 'Choose ' + esc(resolveVars(t.name)));
+      (v.id === state.tierId) ? 'Selected' : 'Choose ' + esc(resolveVars(v.name)));
     btn.type = 'button';
     pick.appendChild(btn);
     card.appendChild(pick);
 
     // The whole card and its button both select.
-    function pick_() { selectTier(t.id); }
+    function pick_() { selectTier(v.id); }
     card.addEventListener('click', pick_);
     card.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick_(); }
@@ -1031,25 +1089,25 @@
     host.appendChild(box);
   }
 
-  // The path switcher for two-path mode.
+  // The system switcher for two-path mode: a centered segmented control
+  // (e.g. Asphalt Shingles | Metal Roof) above the tier grid.
   function pathSwitcher() {
     var p = DATA.products.twoPath;
-    var wrap = el('div', 'pv2-mt-2');
-    wrap.style.display = 'flex';
-    wrap.style.gap = '8px';
-    wrap.style.flexWrap = 'wrap';
-    wrap.style.marginBottom = '24px';
+    var wrap = el('div', 'pv2-paths');
+    wrap.setAttribute('role', 'group');
+    wrap.setAttribute('aria-label', 'Roof system');
 
     [['A', p.pathA], ['B', p.pathB]].forEach(function (pair) {
       var id = pair[0], path = pair[1];
       if (!path) return;
       var on = (state.pathId === id);
-      var btn = el('button', 'pv2-tier__pickbtn', esc(resolveVars(path.label || ('Option ' + id))));
+      var btn = el('button', 'pv2-paths__btn' + (on ? ' is-on' : ''),
+        esc(resolveVars(path.label || ('Option ' + id))));
       btn.type = 'button';
-      btn.style.width = 'auto';
-      btn.style.flex = '1 1 220px';
-      if (on) { btn.style.background = 'var(--royal)'; btn.style.color = '#fff'; }
-      btn.addEventListener('click', function () { selectPath(id); });
+      btn.setAttribute('aria-pressed', String(on));
+      btn.addEventListener('click', function () {
+        if (state.pathId !== id) selectPath(id);
+      });
       wrap.appendChild(btn);
     });
     return wrap;
@@ -1131,7 +1189,7 @@
     // Initialise selection defaults the first time through.
     if (state.tierId == null) {
       if (mode === 'two_path' && prods.twoPath) {
-        if (state.pathId == null) state.pathId = 'B';
+        if (state.pathId == null) state.pathId = (prods.twoPath.defaultPath === 'A') ? 'A' : 'B';
         var path = (state.pathId === 'A') ? prods.twoPath.pathA : prods.twoPath.pathB;
         state.tierId = (path && path.recommended) || (path && path.tiers && path.tiers[0] && path.tiers[0].id) || null;
       } else {
