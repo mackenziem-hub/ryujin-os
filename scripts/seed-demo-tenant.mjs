@@ -191,14 +191,11 @@ async function cloneOffers(tenantId) {
 
   let n = 0;
   for (const o of src) {
-    const row = {
-      tenant_id: tenantId,
-      name: o.name, slug: o.slug, description: o.description, system: o.system,
-      scope_template: o.scope_template, pricing_method: o.pricing_method,
-      multipliers: o.multipliers, margin_floor: o.margin_floor,
-      warranty_years: o.warranty_years, warranty_adder_per_sq: o.warranty_adder_per_sq,
-      badge: o.badge, sort_order: o.sort_order, is_default: o.is_default, active: o.active,
-    };
+    // Copy every offer column except identity/ownership/timestamps. This stays
+    // faithful to schema additions (e.g. migration 008 offer_category +
+    // has_estimated_pricing) instead of dropping them via an allow-list.
+    const { id, tenant_id, created_at, updated_at, ...rest } = o;
+    const row = { ...rest, tenant_id: tenantId };
     const { data: ex } = await sb
       .from('offers').select('id').eq('tenant_id', tenantId).eq('slug', o.slug).maybeSingle();
     if (ex) {
