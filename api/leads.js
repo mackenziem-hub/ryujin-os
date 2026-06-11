@@ -134,19 +134,32 @@ function duplicateContactId(err) {
   }
 }
 
-// Sync the fresh submission onto the existing contact. Only provided values
-// are sent so a sparse form can never blank real data. Tags go through the
-// additive /tags endpoint: a PUT with a tags array REPLACES the contact's
-// tags and would wipe customer/warranty history. Phone is the dedup key and
-// is never touched. Best-effort: partial failure still keeps the lead alive.
+// Sync the fresh submission onto the existing contact. Identity fields are
+// fill-if-empty ONLY: this is a public endpoint, so a submission matching a
+// real customer's phone must not be able to rewrite their email (rebinding
+// future comms), name, or address. Estimator custom fields always refresh,
+// they are "latest quote" values by design and the Automator follow-up email
+// reads them. Tags go through the additive /tags endpoint: a PUT with a tags
+// array REPLACES the contact's tags and would wipe customer/warranty history.
+// Phone is the dedup key and is never touched. Best-effort throughout:
+// partial failure still keeps the lead alive.
 async function syncExistingContact(contactId, { firstName, lastName, email, address, city, tags, customFields }) {
   const errors = [];
+  let existing = null;
+  try {
+    const got = await ghlFetch(`/contacts/${contactId}`);
+    existing = got?.contact || null;
+  } catch (e) {
+    errors.push(`lookup: ${e.message}`);
+  }
+  const fillIfEmpty = (key, value) =>
+    (value && existing && !String(existing[key] || '').trim()) ? { [key]: value } : {};
   const update = {
-    ...(firstName ? { firstName } : {}),
-    ...(lastName ? { lastName } : {}),
-    ...(email ? { email } : {}),
-    ...(address ? { address1: address } : {}),
-    ...(city ? { city } : {}),
+    ...fillIfEmpty('firstName', firstName),
+    ...fillIfEmpty('lastName', lastName),
+    ...fillIfEmpty('email', email),
+    ...fillIfEmpty('address1', address),
+    ...fillIfEmpty('city', city),
     ...(customFields && customFields.length ? { customFields } : {})
   };
   if (Object.keys(update).length) {
@@ -171,9 +184,24 @@ function safeHeader(v) {
   return String(v == null ? '' : v).replace(/[\r\n]+/g, ' ').trim();
 }
 
-async function createOpportunity({ contactId, source, name, metadata }) {
+async function createOpportunity({ contactId, source, name, metadata, deduped }) {
   const route = OPP_ROUTING[source];
   if (!route) return { ok: false, error: `no routing for source: ${source}` };
+
+  // A dedup-recovered submission may already have an open card from a recent
+  // run; reuse it instead of stacking duplicates on the kanban. Fail-open:
+  // any search hiccup falls through to the normal create.
+  if (deduped) {
+    try {
+      const found = await ghlFetch('/opportunities/search', {
+        location_id: LOCATION_ID,
+        contact_id: contactId,
+        status: 'open'
+      });
+      const open = (found?.opportunities || []).find(o => o.pipelineId === route.pipelineId);
+      if (open) return { ok: true, opportunity_id: open.id, reused: true };
+    } catch { /* fall through to create */ }
+  }
 
   const md = metadata || {};
   const cleanName = (name || '').trim();
@@ -199,7 +227,7 @@ async function createOpportunity({ contactId, source, name, metadata }) {
   return { ok: true, opportunity_id: data?.opportunity?.id || data?.id || null };
 }
 
-async function notifyOwner({ contactId, source, name, email, phone, address, city, metadata }) {
+async function notifyOwner({ contactId, source, name, email, phone, address, city, metadata, deduped }) {
   if (!NOTIFY_EMAIL) return;
   const md = metadata || {};
   const safeName    = safeHeader(name);
@@ -209,12 +237,15 @@ async function notifyOwner({ contactId, source, name, email, phone, address, cit
   const safeCity    = safeHeader(city);
   const safeSource  = safeHeader(source) || 'unknown';
 
-  const subjectName = safeName || safeEmail || safePhone || 'New lead';
-  const subject = safeHeader(`New lead · ${safeSource} · ${subjectName}`);
+  const leadKind = deduped ? 'Returning lead' : 'New lead';
+  const subjectName = safeName || safeEmail || safePhone || leadKind;
+  const subject = safeHeader(`${leadKind} · ${safeSource} · ${subjectName}`);
 
   const ghlUrl = `https://app.gohighlevel.com/v2/location/${LOCATION_ID}/contacts/detail/${contactId}`;
   const lines = [
-    `New lead from ${safeSource}.`,
+    deduped
+      ? `RETURNING customer from ${safeSource} (matched existing contact by phone).`
+      : `New lead from ${safeSource}.`,
     '',
     `Name:    ${safeName    || '(not provided)'}`,
     `Phone:   ${safePhone   || '(not provided)'}`,
@@ -336,7 +367,7 @@ async function handler(req, res) {
     const startedAt = Date.now();
     const remaining = () => Math.max(0, POST_LEAD_BUDGET_MS - (Date.now() - startedAt));
 
-    const notifyPromise = notifyOwner({ contactId, source, name, email, phone, address, city, metadata })
+    const notifyPromise = notifyOwner({ contactId, source, name, email, phone, address, city, metadata, deduped })
       .then(() => ({ ok: true }))
       .catch(e => {
         console.warn(`[leads] notifyOwner failed: ${e.message} (contact ${contactId})`);
@@ -344,7 +375,7 @@ async function handler(req, res) {
       });
 
     const oppPromise = OPP_ROUTING[source]
-      ? createOpportunity({ contactId, source, name, metadata })
+      ? createOpportunity({ contactId, source, name, metadata, deduped })
           .catch(e => {
             console.warn(`[leads] createOpportunity failed: ${e.message} (contact ${contactId})`);
             return { ok: false, error: e.message };
@@ -404,6 +435,7 @@ async function handler(req, res) {
           metadata: {
             attribution: attr,
             ghl_contact_id: contactId,
+            deduped,
             name: name || null,
             email: email || null,
             phone: phone || null,
