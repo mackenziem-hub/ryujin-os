@@ -10,8 +10,12 @@
 //   1. Splits name → firstName/lastName
 //   2. Creates GHL contact via /api/ghl ?action=create-contact
 //      with tags ['source:<source>', 'lead']
+//      Returning clients: GHL location dedup rejects the create with a 400
+//      carrying the existing contact's id. We re-attach to that contact
+//      (field/custom-field sync + additive tags) instead of dropping the
+//      lead, then the opportunity/notify/CAPI fan-out runs as normal.
 //   3. Optionally adds a contact note with metadata for context
-//   4. Returns { ok, contact_id, ghl }
+//   4. Returns { ok, contact_id, deduped, ghl }
 //
 // GET /api/leads
 //   ?source=instant-estimator   filter by source tag
@@ -108,9 +112,69 @@ async function ghlFetch(path, query = {}, opts = {}) {
   });
   if (!res.ok) {
     const txt = await res.text().catch(() => '');
-    throw new Error(`GHL ${res.status}: ${txt.slice(0, 240)}`);
+    const err = new Error(`GHL ${res.status}: ${txt.slice(0, 240)}`);
+    err.status = res.status;
+    err.body = txt;
+    throw err;
   }
   return res.json();
+}
+
+// GHL location-level dedup (matches on phone) rejects a returning customer's
+// create with a 400 whose body carries the existing contact's id. That is a
+// "found", not a "failed": without recovery the lead silently vanishes while
+// the customer still sees their prices. Fatal for the rejuv estimator, whose
+// audience is past customers (all duplicates by definition).
+function duplicateContactId(err) {
+  if (err?.status !== 400 || !err.body) return null;
+  try {
+    return JSON.parse(err.body)?.meta?.contactId || null;
+  } catch {
+    return null;
+  }
+}
+
+// Sync the fresh submission onto the existing contact. Identity fields are
+// fill-if-empty ONLY: this is a public endpoint, so a submission matching a
+// real customer's phone must not be able to rewrite their email (rebinding
+// future comms), name, or address. Estimator custom fields always refresh,
+// they are "latest quote" values by design and the Automator follow-up email
+// reads them. Tags go through the additive /tags endpoint: a PUT with a tags
+// array REPLACES the contact's tags and would wipe customer/warranty history.
+// Phone is the dedup key and is never touched. Best-effort throughout:
+// partial failure still keeps the lead alive.
+async function syncExistingContact(contactId, { firstName, lastName, email, address, city, tags, customFields }) {
+  const errors = [];
+  let existing = null;
+  try {
+    const got = await ghlFetch(`/contacts/${contactId}`);
+    existing = got?.contact || null;
+  } catch (e) {
+    errors.push(`lookup: ${e.message}`);
+  }
+  const fillIfEmpty = (key, value) =>
+    (value && existing && !String(existing[key] || '').trim()) ? { [key]: value } : {};
+  const update = {
+    ...fillIfEmpty('firstName', firstName),
+    ...fillIfEmpty('lastName', lastName),
+    ...fillIfEmpty('email', email),
+    ...fillIfEmpty('address1', address),
+    ...fillIfEmpty('city', city),
+    ...(customFields && customFields.length ? { customFields } : {})
+  };
+  if (Object.keys(update).length) {
+    try {
+      await ghlFetch(`/contacts/${contactId}`, {}, { method: 'PUT', body: update });
+    } catch (e) {
+      errors.push(`update: ${e.message}`);
+    }
+  }
+  try {
+    await ghlFetch(`/contacts/${contactId}/tags`, {}, { method: 'POST', body: { tags } });
+  } catch (e) {
+    errors.push(`tags: ${e.message}`);
+  }
+  return errors.length ? errors.join('; ') : null;
 }
 
 // Strip CR/LF from any value interpolated into the email subject or body.
@@ -120,9 +184,24 @@ function safeHeader(v) {
   return String(v == null ? '' : v).replace(/[\r\n]+/g, ' ').trim();
 }
 
-async function createOpportunity({ contactId, source, name, metadata }) {
+async function createOpportunity({ contactId, source, name, metadata, deduped }) {
   const route = OPP_ROUTING[source];
   if (!route) return { ok: false, error: `no routing for source: ${source}` };
+
+  // A dedup-recovered submission may already have an open card from a recent
+  // run; reuse it instead of stacking duplicates on the kanban. Fail-open:
+  // any search hiccup falls through to the normal create.
+  if (deduped) {
+    try {
+      const found = await ghlFetch('/opportunities/search', {
+        location_id: LOCATION_ID,
+        contact_id: contactId,
+        status: 'open'
+      });
+      const open = (found?.opportunities || []).find(o => o.pipelineId === route.pipelineId);
+      if (open) return { ok: true, opportunity_id: open.id, reused: true };
+    } catch { /* fall through to create */ }
+  }
 
   const md = metadata || {};
   const cleanName = (name || '').trim();
@@ -148,7 +227,7 @@ async function createOpportunity({ contactId, source, name, metadata }) {
   return { ok: true, opportunity_id: data?.opportunity?.id || data?.id || null };
 }
 
-async function notifyOwner({ contactId, source, name, email, phone, address, city, metadata }) {
+async function notifyOwner({ contactId, source, name, email, phone, address, city, metadata, deduped }) {
   if (!NOTIFY_EMAIL) return;
   const md = metadata || {};
   const safeName    = safeHeader(name);
@@ -158,12 +237,15 @@ async function notifyOwner({ contactId, source, name, email, phone, address, cit
   const safeCity    = safeHeader(city);
   const safeSource  = safeHeader(source) || 'unknown';
 
-  const subjectName = safeName || safeEmail || safePhone || 'New lead';
-  const subject = safeHeader(`New lead · ${safeSource} · ${subjectName}`);
+  const leadKind = deduped ? 'Returning lead' : 'New lead';
+  const subjectName = safeName || safeEmail || safePhone || leadKind;
+  const subject = safeHeader(`${leadKind} · ${safeSource} · ${subjectName}`);
 
   const ghlUrl = `https://app.gohighlevel.com/v2/location/${LOCATION_ID}/contacts/detail/${contactId}`;
   const lines = [
-    `New lead from ${safeSource}.`,
+    deduped
+      ? `RETURNING customer from ${safeSource} (matched existing contact by phone).`
+      : `New lead from ${safeSource}.`,
     '',
     `Name:    ${safeName    || '(not provided)'}`,
     `Phone:   ${safePhone   || '(not provided)'}`,
@@ -243,11 +325,23 @@ async function handler(req, res) {
 
     let contactId = null;
     let ghlError = null;
+    let deduped = false;
     try {
       const created = await ghlFetch('/contacts/', {}, { method: 'POST', body: contactPayload });
       contactId = created?.contact?.id || created?.id || null;
     } catch (e) {
-      ghlError = e.message;
+      const dupId = duplicateContactId(e);
+      if (dupId) {
+        contactId = dupId;
+        deduped = true;
+        const syncErr = await syncExistingContact(dupId, {
+          firstName, lastName, email, address, city, tags,
+          customFields: estimatorCustomFields
+        });
+        if (syncErr) ghlError = `duplicate sync: ${syncErr}`;
+      } else {
+        ghlError = e.message;
+      }
     }
 
     // Optional: add a context note with metadata when contact created
@@ -273,7 +367,7 @@ async function handler(req, res) {
     const startedAt = Date.now();
     const remaining = () => Math.max(0, POST_LEAD_BUDGET_MS - (Date.now() - startedAt));
 
-    const notifyPromise = notifyOwner({ contactId, source, name, email, phone, address, city, metadata })
+    const notifyPromise = notifyOwner({ contactId, source, name, email, phone, address, city, metadata, deduped })
       .then(() => ({ ok: true }))
       .catch(e => {
         console.warn(`[leads] notifyOwner failed: ${e.message} (contact ${contactId})`);
@@ -281,7 +375,7 @@ async function handler(req, res) {
       });
 
     const oppPromise = OPP_ROUTING[source]
-      ? createOpportunity({ contactId, source, name, metadata })
+      ? createOpportunity({ contactId, source, name, metadata, deduped })
           .catch(e => {
             console.warn(`[leads] createOpportunity failed: ${e.message} (contact ${contactId})`);
             return { ok: false, error: e.message };
@@ -341,6 +435,7 @@ async function handler(req, res) {
           metadata: {
             attribution: attr,
             ghl_contact_id: contactId,
+            deduped,
             name: name || null,
             email: email || null,
             phone: phone || null,
@@ -420,6 +515,7 @@ async function handler(req, res) {
       contact_id: contactId,
       opportunity_id: opportunityId,
       source,
+      deduped,
       ghlError,
       opportunityError,
       notifyError,
