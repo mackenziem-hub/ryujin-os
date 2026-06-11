@@ -222,7 +222,7 @@ You have tools that let you interact with Mackenzie's systems. USE THEM when ask
 - **update_estimate** — Update an estimate in Estimator OS — REQUIRES APPROVAL
 - **add_contact_note** — Add a note to a CRM contact (call summaries, follow-up context, pricing summaries, proposal links) — REQUIRES APPROVAL (confirm code in chat)
 - **generate_proposal** — Generate a Plus Ultra branded intro sales page for an existing estimate. NOT the proposal itself — it's a warm-up page with the client's house photo, video, crew gallery, and a CTA linking to the full Estimator OS proposal. Auto-pulls cover photo from Estimator OS, adapts footer/bio to the assigned salesperson (Darcy or Mackenzie). Executes immediately (no approval needed). IMPORTANT: Always look up the real client name from GHL first — never use placeholder names. After generating, ALWAYS share TWO links: the customer-facing URL and the edit URL (append &edit=1) so Mackenzie can self-service upload cover photos, videos, and edit the message without a Claude Code session.
-- **create_ryujin_proposal** — Create a native Ryujin proposal (NOT Estimator OS) with multi-tier Gold/Platinum/Diamond pricing and return the client-facing share URL. Use when Mackenzie says "[address] is ready" or describes a just-measured job. Auto-runs the Ryujin quote engine (corrected multipliers hitting 12/17/23% net after loaded costs) and persists the estimate in Supabase. Executes immediately. If Mackenzie has dropped attachments in this conversation (EagleView PDFs, site photos, competitor quotes), read measurements directly from EagleView (squareFeet = main-house area excluding sheds unless told otherwise, pitch = predominant, eaves/rakes/ridges/valleys/hips from length diagram), and pass before/after photo attachment URLs as before_photo_url and after_photo_url so they auto-link to the estimate. For honored legacy quotes (customer revisiting an old quote), use custom_prices with the honored amount, lock set to true, and selected_package set to the locked tier. Before calling, look up the contact in GHL by address for phone/email/contactId. No placeholder client info.
+- **create_ryujin_proposal** — Create a native Ryujin proposal (NOT Estimator OS) with multi-tier Gold/Platinum/Diamond pricing and return the client-facing share URL. Use when Mackenzie says "[address] is ready" or describes a just-measured job. Auto-runs the Ryujin quote engine (corrected multipliers hitting 12/17/23% net after loaded costs) and persists the estimate in Supabase. Executes immediately. If Mackenzie has dropped attachments in this conversation (EagleView PDFs, site photos, competitor quotes), read measurements directly from EagleView (pitch = predominant, eaves/rakes/ridges/valleys/hips from length diagram). IMPORTANT: EagleView's "Total Roof Area" is the SLOPED surface — it is ALREADY pitch-adjusted, NOT the 2D footprint. Pass that Total Roof Area number as square_feet AND set area_is_pitch_adjusted:true, or the engine pitch-adjusts it a second time and over-measures the roof (the double-pitch bug). Exclude detached sheds unless told otherwise. Then pass before/after photo attachment URLs as before_photo_url and after_photo_url so they auto-link to the estimate. For honored legacy quotes (customer revisiting an old quote), use custom_prices with the honored amount, lock set to true, and selected_package set to the locked tier. Before calling, look up the contact in GHL by address for phone/email/contactId. No placeholder client info.
 - **set_sub_visibility** — Update what a sub sees on their Ryujin sub-portal and/or their auto-approve threshold for job log entries. Use when Mackenzie says "hide Ryan\'s pay sheet visibility", "let Ryan see his rates", "auto-approve material purchases under $300 for Ryan". Identify the sub by name fragment (e.g. "Ryan", "Atlantic"). Executes immediately — owner-only config, no approval gate.
 - **create_ghl_task** — Create a task on an Automator/GHL contact, assignable to Mackenzie or Darcy — REQUIRES APPROVAL (confirm code in chat)
 
@@ -455,6 +455,8 @@ Pitch multipliers (for converting top-down/2D measurements to actual roof area �
 - 12/12: 1.414
 
 **IMPORTANT — pass raw 2D sqft, not pitch-adjusted.** The engine applies the pitch multiplier itself. If Mackenzie says "14x17 back porch at 5/12", pass \`square_feet: 238\` (= 14×17), not 258 (= pre-uplifted). For multi-pitch roofs, pass each section's RAW 2D sqft inside its plane: \`planes:[{sqft:238, pitch:"5/12", label:"back porch"}, ...]\`.
+
+**EagleView EXCEPTION — Total Roof Area is already pitched.** An EagleView "Total Roof Area" figure is the actual sloped surface, NOT the 2D footprint. Do NOT divide it down yourself. Pass it as \`square_feet\` and set \`area_is_pitch_adjusted: true\` — the engine then skips its pitch multiplier (it still uses \`pitch\` for the labor band). Passing an EagleView Total Area as a raw footprint double-counts the pitch and over-measures the roof by 8% (5/12) to 41% (12/12). For mixed-pitch EagleView jobs, use \`planes\` with each section's raw 2D area instead.
 
 Sub labor bands (Ryan 2025 actualized): $110/SQ at 4-6 pitch, $135 at 7-9, $160 at 10-12, $180 at 13+. Multi-pitch roofs split labor per-band when planes input is used. Single-pitch roofs apply one band to the whole job.
 
@@ -1502,8 +1504,9 @@ const TOOLS = [
         customer_province: { type: 'string', description: 'Default NB' },
         ghl_contact_id: { type: 'string', description: 'GHL contactId if known — stored on estimate for later linking' },
         sales_owner: { type: 'string', enum: ['mackenzie', 'darcy'], description: 'Which rep owns this lead. Controls rep card, signed letter, intro video on the proposal. Default: darcy (since he handles most sales).' },
-        square_feet: { type: 'number', description: '2D footprint sqft (engine applies pitch multiplier itself — do NOT pre-adjust). Use this OR `planes` — when planes is provided it overrides square_feet+pitch.' },
-        pitch: { type: 'string', description: 'Dominant pitch e.g. "8/12". Use for single-pitch roofs. For mixed-pitch (e.g. main 5/12 + steep rakes 12/12) use `planes` instead so each section gets the correct labor band rate.' },
+        square_feet: { type: 'number', description: '2D footprint sqft, OR an already-pitched roof area when area_is_pitch_adjusted is true. By default the engine applies the pitch multiplier itself, so pass the raw 2D footprint and do NOT pre-adjust. An EagleView "Total Roof Area" is the sloped surface (already pitch-adjusted): pass that value WITH area_is_pitch_adjusted:true. Use this OR `planes` — when planes is provided it overrides square_feet+pitch.' },
+        area_is_pitch_adjusted: { type: 'boolean', description: 'Set TRUE when square_feet is already the pitched/actual roof area rather than the 2D footprint — i.e. an EagleView "Total Roof Area" number. The engine then skips its pitch multiplier so the roof is not measured twice (the double-pitch bug, +8% at 5/12 up to +41% at 12/12). Leave false/omit when you have the true 2D footprint, or when using `planes` (plane sqft are always raw 2D).' },
+        pitch: { type: 'string', description: 'Dominant pitch e.g. "8/12". Still required even with area_is_pitch_adjusted — it sets the labor band. Use for single-pitch roofs. For mixed-pitch (e.g. main 5/12 + steep rakes 12/12) use `planes` instead so each section gets the correct labor band rate.' },
         planes: {
           type: 'array',
           description: 'Multi-pitch roof breakdown. ARRAY of {sqft, pitch, label} for jobs where different sections have different pitches. Engine sums per-plane pitch-adjusted area AND splits sub-paysheet labor into per-band rates ($110/SQ at 4-6, $135 at 7-9, $160 at 10-12, $180 at 13+). Use this whenever a roof has steep dormers, rakes, additions, or otherwise mixed pitches — single `pitch` underbills the steep sections. Leave empty for single-pitch roofs.',
@@ -3003,8 +3006,29 @@ async function executeTool(name, input, attachments = [], conversationId = null)
         const planesSqft = cleanPlanes.reduce((sum, p) => sum + (Number(p.sqft) || 0), 0);
         const canonicalSqFt = cleanPlanes.length > 0 ? planesSqft : (Number(input.square_feet) || 0);
 
+        // area_is_pitch_adjusted: square_feet is an ALREADY-pitched roof area (an
+        // EagleView "Total Roof Area" is the sloped surface, not the 2D footprint).
+        // Only meaningful for single-pitch input — planes[] are always raw 2D per
+        // section. When set, the engine skips its pitch multiplier (areaIsPitchAdjusted)
+        // so the roof is not measured twice over (the recurring EagleView double-pitch
+        // bug: +8% at 5/12 up to +41% at 12/12). We still PERSIST the 2D footprint in
+        // roof_area_sqft (area / pitch multiplier) so every downstream re-run of the
+        // engine — which reads roof_area_sqft as raw footprint — reproduces the same SQ.
+        const areaIsPitchAdjusted = !!input.area_is_pitch_adjusted && cleanPlanes.length === 0;
+        // Mirror lib/quoteEngineV3.js PITCH_MULTIPLIERS exactly (incl. its 1.083
+        // fallback for unknown pitches) so the stored footprint round-trips through
+        // the engine on re-read with no off-by-one. flat → 1.0 (footprint == area).
+        const ENGINE_PITCH_MULT = {
+          '4/12': 1.054, '5/12': 1.083, '6/12': 1.118, '7/12': 1.158,
+          '8/12': 1.202, '9/12': 1.250, '10/12': 1.302, '11/12': 1.357,
+          '12/12': 1.414, '13/12': 1.474, '14/12': 1.537, 'flat': 1.00
+        };
+        const pitchMul = ENGINE_PITCH_MULT[String(input.pitch || '5/12')] || 1.083;
+        const storedFootprintSqFt = areaIsPitchAdjusted ? Math.round(canonicalSqFt / pitchMul) : canonicalSqFt;
+
         const measurements = {
           squareFeet: canonicalSqFt,
+          areaIsPitchAdjusted,
           pitch: String(input.pitch || '5/12'),
           planes: cleanPlanes.length > 0 ? cleanPlanes : undefined,
           complexity: input.complexity || 'medium',
@@ -3085,7 +3109,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
           },
           proposal_mode: 'Roof Only',
           pricing_model: pricingModel,
-          roof_area_sqft: measurements.squareFeet,
+          roof_area_sqft: storedFootprintSqFt,
           roof_pitch: measurements.pitch,
           planes: cleanPlanes.length > 0 ? cleanPlanes : null,
           complexity: measurements.complexity,
