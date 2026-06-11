@@ -68,6 +68,11 @@ const DECKS = {
     title: 'Ryujin · The CEO Design and the Sell',
     desc: 'Deploy truth, the live telemetry mirror, three judged designs with a unanimous winner, the outcomes-first sell sequence, the compliance landmines, and the 5 decisions only Mac can make.',
   },
+  'action-plan': {
+    tenant: 'plus-ultra', tag: 'Operations', slides: 11,
+    title: 'What Moves Money Right Now',
+    desc: 'The highest-leverage sequence for the empty-pipeline week: 7 Tier-1 calls and the $450K quote pools, the three 5-minute sends, the 48h draft wave, the Sunday META deadline, the Ryan lock-in, the quiet in-house wind-down, and the Darcy closeout.',
+  },
 };
 
 export default async function handler(req, res) {
