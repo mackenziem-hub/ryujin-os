@@ -10,8 +10,12 @@
 //   1. Splits name → firstName/lastName
 //   2. Creates GHL contact via /api/ghl ?action=create-contact
 //      with tags ['source:<source>', 'lead']
+//      Returning clients: GHL location dedup rejects the create with a 400
+//      carrying the existing contact's id. We re-attach to that contact
+//      (field/custom-field sync + additive tags) instead of dropping the
+//      lead, then the opportunity/notify/CAPI fan-out runs as normal.
 //   3. Optionally adds a contact note with metadata for context
-//   4. Returns { ok, contact_id, ghl }
+//   4. Returns { ok, contact_id, deduped, ghl }
 //
 // GET /api/leads
 //   ?source=instant-estimator   filter by source tag
@@ -108,9 +112,56 @@ async function ghlFetch(path, query = {}, opts = {}) {
   });
   if (!res.ok) {
     const txt = await res.text().catch(() => '');
-    throw new Error(`GHL ${res.status}: ${txt.slice(0, 240)}`);
+    const err = new Error(`GHL ${res.status}: ${txt.slice(0, 240)}`);
+    err.status = res.status;
+    err.body = txt;
+    throw err;
   }
   return res.json();
+}
+
+// GHL location-level dedup (matches on phone) rejects a returning customer's
+// create with a 400 whose body carries the existing contact's id. That is a
+// "found", not a "failed": without recovery the lead silently vanishes while
+// the customer still sees their prices. Fatal for the rejuv estimator, whose
+// audience is past customers (all duplicates by definition).
+function duplicateContactId(err) {
+  if (err?.status !== 400 || !err.body) return null;
+  try {
+    return JSON.parse(err.body)?.meta?.contactId || null;
+  } catch {
+    return null;
+  }
+}
+
+// Sync the fresh submission onto the existing contact. Only provided values
+// are sent so a sparse form can never blank real data. Tags go through the
+// additive /tags endpoint: a PUT with a tags array REPLACES the contact's
+// tags and would wipe customer/warranty history. Phone is the dedup key and
+// is never touched. Best-effort: partial failure still keeps the lead alive.
+async function syncExistingContact(contactId, { firstName, lastName, email, address, city, tags, customFields }) {
+  const errors = [];
+  const update = {
+    ...(firstName ? { firstName } : {}),
+    ...(lastName ? { lastName } : {}),
+    ...(email ? { email } : {}),
+    ...(address ? { address1: address } : {}),
+    ...(city ? { city } : {}),
+    ...(customFields && customFields.length ? { customFields } : {})
+  };
+  if (Object.keys(update).length) {
+    try {
+      await ghlFetch(`/contacts/${contactId}`, {}, { method: 'PUT', body: update });
+    } catch (e) {
+      errors.push(`update: ${e.message}`);
+    }
+  }
+  try {
+    await ghlFetch(`/contacts/${contactId}/tags`, {}, { method: 'POST', body: { tags } });
+  } catch (e) {
+    errors.push(`tags: ${e.message}`);
+  }
+  return errors.length ? errors.join('; ') : null;
 }
 
 // Strip CR/LF from any value interpolated into the email subject or body.
@@ -243,11 +294,23 @@ async function handler(req, res) {
 
     let contactId = null;
     let ghlError = null;
+    let deduped = false;
     try {
       const created = await ghlFetch('/contacts/', {}, { method: 'POST', body: contactPayload });
       contactId = created?.contact?.id || created?.id || null;
     } catch (e) {
-      ghlError = e.message;
+      const dupId = duplicateContactId(e);
+      if (dupId) {
+        contactId = dupId;
+        deduped = true;
+        const syncErr = await syncExistingContact(dupId, {
+          firstName, lastName, email, address, city, tags,
+          customFields: estimatorCustomFields
+        });
+        if (syncErr) ghlError = `duplicate sync: ${syncErr}`;
+      } else {
+        ghlError = e.message;
+      }
     }
 
     // Optional: add a context note with metadata when contact created
@@ -420,6 +483,7 @@ async function handler(req, res) {
       contact_id: contactId,
       opportunity_id: opportunityId,
       source,
+      deduped,
       ghlError,
       opportunityError,
       notifyError,
