@@ -56,6 +56,11 @@ const SURFACE_KEYWORDS = /reserve|dispute|chargeback|\breview\b|appeal|verif|acc
 
 const DEFAULT_LOOKBACK_DAYS = 2;   // cron runs every 20 min, so 2d is heavy overlap (idempotent re-scan)
 const MAX_LOOKBACK_DAYS = 30;      // cap on the ?days= manual override
+// Per-QUERY page size. Each watch address gets its own Gmail query (review
+// P2 2026-06-11): with one combined query, a heavy Stripe-receipt window
+// could fill the single newest-first page and silently starve a watched
+// vendor reply off it -- a missed ping, the exact failure this feeder exists
+// to prevent.
 const MAX_RESULTS = 25;
 
 // Urgency hint only (domain-sender mail already passed the keyword gate and
@@ -112,17 +117,30 @@ export async function runGmailWatchFeeder({ tenantSlug = PLUS_ULTRA_SLUG, lookba
     .map(w => ({ ...w, email: String(w.email).toLowerCase().trim() }));
   report.watched_addresses = addressWatches.length;
 
-  const fromClause = KEYWORD_GATED_DOMAINS
-    .concat(addressWatches.map(w => w.email))
-    .map(s => `from:${s}`).join(' OR ');
-  const query = `(${fromClause}) newer_than:${lookbackDays}d`;
+  // One query for the gated domains + one per watch address, so senders never
+  // compete for the same result page. A failed query logs and moves on rather
+  // than killing the whole run.
+  const queries = [];
+  if (KEYWORD_GATED_DOMAINS.length) {
+    queries.push(`(${KEYWORD_GATED_DOMAINS.map(s => `from:${s}`).join(' OR ')}) newer_than:${lookbackDays}d`);
+  }
+  for (const w of addressWatches) {
+    queries.push(`from:${w.email} newer_than:${lookbackDays}d`);
+  }
 
-  let messages = [];
-  try {
-    messages = await gmailSearch(query, MAX_RESULTS);
-  } catch (e) {
-    report.errors.push(`gmailSearch: ${e.message}`);
-    return report;
+  const messages = [];
+  const seenIds = new Set();
+  for (const q of queries) {
+    try {
+      const batch = await gmailSearch(q, MAX_RESULTS);
+      for (const m of batch) {
+        if (m.id && seenIds.has(m.id)) continue;   // same message can match two queries
+        if (m.id) seenIds.add(m.id);
+        messages.push(m);
+      }
+    } catch (e) {
+      report.errors.push(`gmailSearch(${q}): ${e.message}`);
+    }
   }
   report.scanned = messages.length;
 
