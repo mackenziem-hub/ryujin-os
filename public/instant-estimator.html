@@ -142,8 +142,11 @@ h1,h2,h3{font-family:'Montserrat',sans-serif;letter-spacing:-0.02em;text-wrap:ba
 .plabel{font-size:0.74em;color:var(--ink-mute);font-weight:600;text-align:center;min-height:1em}
 .pstep.active .plabel{color:var(--pu-navy)}
 .pstep.done .plabel{color:var(--green)}
-.pbar{flex:1;height:2px;background:var(--line);max-width:48px;margin-top:-22px}
-.pbar.done{background:var(--green)}
+.pbar{flex:1;height:2px;background:var(--line);max-width:48px;margin-top:-22px;position:relative;overflow:hidden}
+.pbar::after{content:'';position:absolute;inset:0;background:var(--green);transform:scaleX(0);transform-origin:left;transition:transform 0.3s var(--ease)}
+.pbar.done::after{transform:scaleX(1)}
+.pstep.done .pdot{animation:dotDone 0.3s var(--ease)}
+@keyframes dotDone{0%{transform:scale(0.85)}55%{transform:scale(1.14)}100%{transform:scale(1)}}
 @media(max-width:640px){
   .plabel{display:none}
   .progress{margin-bottom:20px}
@@ -152,9 +155,9 @@ h1,h2,h3{font-family:'Montserrat',sans-serif;letter-spacing:-0.02em;text-wrap:ba
 }
 
 /* ─── Step content ─── */
-.form-step{display:none;animation:fadeIn 0.25s var(--ease)}
+.form-step{display:none;animation:fadeIn 0.3s var(--ease)}
 .form-step.active{display:block}
-@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 
 .step-head{margin-bottom:22px}
 .step-head h2{
@@ -196,7 +199,14 @@ h1,h2,h3{font-family:'Montserrat',sans-serif;letter-spacing:-0.02em;text-wrap:ba
   content:'✓';position:absolute;top:6px;right:8px;
   width:18px;height:18px;border-radius:50%;background:var(--pu-navy);color:#fff;
   font-size:0.72em;font-weight:700;display:flex;align-items:center;justify-content:center;
+  animation:checkPop 0.24s var(--ease);
 }
+@keyframes checkPop{0%{transform:scale(0.4);opacity:0}70%{transform:scale(1.12)}100%{transform:scale(1);opacity:1}}
+.opt.selected::before{
+  content:'';position:absolute;inset:-1.5px;border-radius:12px;pointer-events:none;
+  animation:selPulse 0.3s var(--ease);
+}
+@keyframes selPulse{from{box-shadow:0 0 0 0 rgba(26,58,140,0.28)}to{box-shadow:0 0 0 10px rgba(26,58,140,0)}}
 .opt .opt-label{font-weight:700;color:var(--ink);font-size:0.98em;margin-bottom:3px}
 .opt .opt-sub{color:var(--ink-mute);font-size:0.78em;line-height:1.35}
 .pitch-svg{width:64px;height:40px;color:var(--pu-navy);margin:0 auto 8px;display:block;opacity:0.7;transition:opacity 0.18s, color 0.18s}
@@ -410,6 +420,50 @@ h1,h2,h3{font-family:'Montserrat',sans-serif;letter-spacing:-0.02em;text-wrap:ba
 #btnLookupYes{width:100%;max-width:340px}
 #btnLookupAdjust{width:100%;max-width:340px;margin-top:10px}
 
+/* ─── Entrance + choreography ───
+   Every move ≤300ms ease-out-quint; sequences are built from staggered
+   delays, not longer durations (DESIGN.md: only the scan + price counter
+   exceed 300ms). `backwards` fill keeps elements hidden through their delay. */
+@keyframes riseIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+
+/* Page load: headline → lede → trust chips → form card */
+.hero h1{animation:riseIn 0.3s var(--ease) backwards}
+.hero .lede{animation:riseIn 0.3s var(--ease) 80ms backwards}
+.hero-bullets{animation:riseIn 0.3s var(--ease) 160ms backwards}
+.form-card{animation:riseIn 0.3s var(--ease) 240ms backwards}
+
+/* Step entrance: option cards cascade in 40ms behind each other */
+.form-step.active .option-grid .opt{animation:fadeIn 0.3s var(--ease) backwards}
+.form-step.active .option-grid .opt:nth-child(2){animation-delay:40ms}
+.form-step.active .option-grid .opt:nth-child(3){animation-delay:80ms}
+.form-step.active .option-grid .opt:nth-child(4){animation-delay:120ms}
+.form-step.active .option-grid .opt:nth-child(n+5){animation-delay:160ms}
+
+/* Confirm moment: card rises, gold stats land one beat apart,
+   corner brackets lock onto the satellite tile from outside in */
+#lookupConfirm .moment{animation:riseIn 0.3s var(--ease)}
+#lookupConfirm .cstat{animation:riseIn 0.3s var(--ease) backwards}
+#lookupConfirm .cstat:nth-child(1){animation-delay:90ms}
+#lookupConfirm .cstat:nth-child(2){animation-delay:180ms}
+.confirm-tile.on .corners i{animation:brktIn 0.3s var(--ease) backwards}
+.confirm-tile.on .corners i:nth-child(1){--bx:-9px;--by:-9px}
+.confirm-tile.on .corners i:nth-child(2){--bx:9px;--by:-9px;animation-delay:60ms}
+.confirm-tile.on .corners i:nth-child(3){--bx:-9px;--by:9px;animation-delay:120ms}
+.confirm-tile.on .corners i:nth-child(4){--bx:9px;--by:9px;animation-delay:180ms}
+@keyframes brktIn{from{opacity:0;transform:translate(var(--bx,0),var(--by,0))}to{opacity:1;transform:translate(0,0)}}
+
+/* Result reveal: hero → book band → recap → recommended card, then the
+   price counter fires as the climax (JS delays it to land on this beat) */
+.form-step[data-step="result"].active .result-hero{animation:riseIn 0.3s var(--ease) backwards}
+.form-step[data-step="result"].active .book-band{animation:riseIn 0.3s var(--ease) 100ms backwards}
+.form-step[data-step="result"].active .estimate-recap{animation:riseIn 0.3s var(--ease) 200ms backwards}
+.form-step[data-step="result"].active #recommendedCard{animation:riseIn 0.3s var(--ease) 300ms backwards}
+.form-step[data-step="result"].active .see-all-toggle{animation:riseIn 0.3s var(--ease) 400ms backwards}
+
+/* Scroll reveals: JS adds reveal-init at boot (no-JS sees everything) */
+.reveal-init{opacity:0;transform:translateY(14px);transition:opacity 0.3s var(--ease),transform 0.3s var(--ease)}
+.reveal-init.reveal-in{opacity:1;transform:none}
+
 /* ─── Reduced motion ─── */
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
@@ -419,6 +473,18 @@ h1,h2,h3{font-family:'Montserrat',sans-serif;letter-spacing:-0.02em;text-wrap:ba
   .confirm-tile{transition:opacity 0.2s linear}
   .opt,.btn,.tier-card,.pdot{transition:none}
   .opt:active,.btn:active{transform:none}
+  .hero h1,.hero .lede,.hero-bullets,.form-card,
+  .form-step.active .option-grid .opt,
+  .opt.selected::before,.opt.selected::after,
+  .pstep.done .pdot,
+  #lookupConfirm .moment,#lookupConfirm .cstat,
+  .confirm-tile.on .corners i,
+  .form-step[data-step="result"].active .result-hero,
+  .form-step[data-step="result"].active .book-band,
+  .form-step[data-step="result"].active .estimate-recap,
+  .form-step[data-step="result"].active #recommendedCard,
+  .form-step[data-step="result"].active .see-all-toggle{animation:none}
+  .pbar::after{transition:none}
 }
 </style>
 <script src="/assets/ryujin-slug.js"></script>
@@ -1263,6 +1329,20 @@ h1,h2,h3{font-family:'Montserrat',sans-serif;letter-spacing:-0.02em;text-wrap:ba
   }
   applyDefaults();
 
+  // Scroll reveals for the proof sections. Classes only exist when JS +
+  // IO are available and motion is allowed, so the no-JS render is intact.
+  if ('IntersectionObserver' in window && !REDUCED_MOTION) {
+    const io = new IntersectionObserver(entries => {
+      entries.forEach(en => {
+        if (en.isIntersecting) { en.target.classList.add('reveal-in'); io.unobserve(en.target); }
+      });
+    }, { threshold: 0.15 });
+    document.querySelectorAll('.ba-block, .testimonials').forEach(el => {
+      el.classList.add('reveal-init');
+      io.observe(el);
+    });
+  }
+
   const sqftInput = document.getElementById('f_sqft');
   if (sqftInput) {
     sqftInput.addEventListener('input', e => {
@@ -1491,7 +1571,10 @@ h1,h2,h3{font-family:'Montserrat',sans-serif;letter-spacing:-0.02em;text-wrap:ba
     const otherOrder = ['gold','diamond'].filter(k => tiers[k]);
     document.getElementById('otherCards').innerHTML = otherOrder.map(k => buildTierCard(k, tiers[k], { recommended:false })).join('');
 
-    runPriceCounter();
+    // Counter fires as the recommended card finishes its 300ms-delayed
+    // entrance, so the count-up is the last thing to move.
+    if (REDUCED_MOTION) runPriceCounter();
+    else setTimeout(runPriceCounter, 450);
   }
 
   // Price reveal: the recommended numbers count up ~900ms with ease-out-expo
