@@ -315,7 +315,7 @@ function buildGoodBetterBestTiers(est, offerSlugs) {
     const meta = TIER_CATALOG[id];
     const metalCopy = !meta ? getMetalCopy(id) : null;
 
-    let name, sub, tag, desc, perks, warrantyYears;
+    let name, sub, tag, desc, perks, warrantyYears, toggle = null;
     if (meta) {
       const split = splitTierName(meta.name, id);
       name = split.name; sub = split.sub;
@@ -333,6 +333,7 @@ function buildGoodBetterBestTiers(est, offerSlugs) {
       tag = metalCopy.tag; desc = metalCopy.bestFit || '';
       perks = norm.perks?.length ? norm.perks : (metalCopy.bullets || []);
       warrantyYears = norm.warrantyYears ?? metalCopy.warrantyYears ?? null;
+      toggle = metalCopy.toggleLabel || null;
     } else {
       // Unknown slug (commercial-*, custom offer), render with whatever copy
       // the package carried, no fabricated catalog text.
@@ -354,12 +355,28 @@ function buildGoodBetterBestTiers(est, offerSlugs) {
       persq: norm.persq || 0,
       warrantyYears,
       originalTotal: norm.originalTotal ?? null,
-      promoLabel: norm.promoLabel ?? null
+      promoLabel: norm.promoLabel ?? null,
+      toggle
     });
   }
 
   tiers.sort((a, b) => a.total - b.total);
-  return tiers;
+  return mergeMetalVariants(tiers);
+}
+
+// Two or more metal-* packages collapse into ONE card with a variant toggle
+// (European Clay vs Flat Panel) instead of widening the grid to a fifth card.
+// Default variant is euro-clay when present: it is the panel the customer
+// asked about; the flat panel is the sharper-price alternative.
+function mergeMetalVariants(tiers) {
+  const metals = tiers.filter(t => isMetalSlug(t.id));
+  if (metals.length < 2) return tiers;
+  const def = metals.find(t => t.id === 'metal-euro-clay') || metals[0];
+  const merged = { ...def, variants: [def, ...metals.filter(m => m !== def)] };
+  const out = tiers.filter(t => !isMetalSlug(t.id));
+  out.push(merged);
+  out.sort((a, b) => a.total - b.total);
+  return out;
 }
 
 // Build a single-tier list from an engine result (repair / rejuvenation / gutters).
