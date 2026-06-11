@@ -63,6 +63,11 @@ const DECKS = {
     title: 'Ryujin OS · 9 Pillars, Verified',
     desc: 'Full-platform review, every finding adversarially verified: the scoreboard, the orphan map, 28 small fixes in 6 session batches, and the 5 large bets that move market value before July.',
   },
+  'ceo-design': {
+    tenant: 'plus-ultra', tag: 'Strategy', slides: 16,
+    title: 'Ryujin · The CEO Design and the Sell',
+    desc: 'Deploy truth, the live telemetry mirror, three judged designs with a unanimous winner, the outcomes-first sell sequence, the compliance landmines, and the 5 decisions only Mac can make.',
+  },
 };
 
 export default async function handler(req, res) {
