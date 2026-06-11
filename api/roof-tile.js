@@ -19,6 +19,28 @@ import { requireTenant } from '../lib/tenant.js';
 const KEY = (process.env.GOOGLE_MAPS_API_KEY || '').trim();
 const FETCH_TIMEOUT_MS = 5000;
 
+// Hotlink guard: this is otherwise an open proxy that spends Google quota on
+// arbitrary world coordinates. A third-party page embedding the URL sends its
+// own origin as Referer and gets a 403. Empty referer is allowed (privacy
+// strippers; those callers still hit the rate limit).
+const ALLOWED_REFERER_HOSTS = new Set([
+  'ryujin-os.vercel.app',
+  'plusultraroofing.com',
+  'www.plusultraroofing.com',
+  'localhost',
+  '127.0.0.1'
+]);
+
+function refererBlocked(req) {
+  const ref = req.headers.referer || req.headers.origin || '';
+  if (!ref) return false;
+  try {
+    return !ALLOWED_REFERER_HOSTS.has(new URL(ref).hostname);
+  } catch {
+    return true;
+  }
+}
+
 // Same soft per-instance limiter as roof-lookup: public unauthenticated
 // endpoint that spends Google quota per call.
 const RATE_LIMIT = 40;
@@ -41,6 +63,7 @@ async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'GET') return res.status(405).end();
   if (!KEY) return res.status(404).end();
+  if (refererBlocked(req)) return res.status(403).end();
 
   const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
   if (rateLimited(ip)) return res.status(429).end();
