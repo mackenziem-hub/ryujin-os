@@ -789,16 +789,44 @@ export default async function handler(req, res) {
       });
     }
 
-    // === CONTACTS (search) ===
+    // === CONTACTS (search + pagination) ===
+    // GHL /contacts/ hard-caps at 100 per request. The old version made a single
+    // call, so any limit above 100 silently returned only the newest 100 and every
+    // consumer was blind to all but the newest slice of ~1900 contacts. Now we page
+    // via meta.startAfter + meta.startAfterId (same pattern as the pipeline path).
+    // Pagination is OPT-IN: limit<=100 makes exactly one upstream call, so the
+    // default response (limit defaults to 100) is byte-identical for existing
+    // consumers. Pass limit>100 to page deeper. To fetch one contact by id use
+    // ?action=contact&id=<id> (handled above), not the list path.
     if (resolvedMode === 'contacts' || (!resolvedMode && q)) {
-      const params = { locationId: LOCATION_ID, limit };
-      if (q) params.query = q;
-      const data = await ghlFetch('/contacts/', params);
-      const contacts = (data.contacts || []).map(enrichContact);
+      const requested = Math.min(parseInt(limit, 10) || 100, 2000);
+      const PAGE = 100;
+      const baseParams = { locationId: LOCATION_ID };
+      if (q) baseParams.query = q;
+
+      const contacts = [];
+      let metaTotal = null;
+      let startAfter = null;
+      let startAfterId = null;
+      while (contacts.length < requested) {
+        const params = { ...baseParams, limit: String(Math.min(PAGE, requested - contacts.length)) };
+        if (startAfter) params.startAfter = startAfter;
+        if (startAfterId) params.startAfterId = startAfterId;
+        const data = await ghlFetch('/contacts/', params);
+        const page = (data.contacts || []).map(enrichContact);
+        if (metaTotal == null) metaTotal = data.meta?.total ?? null;
+        if (!page.length) break;
+        contacts.push(...page);
+        startAfter = data.meta?.startAfter || null;
+        startAfterId = data.meta?.startAfterId || null;
+        if (!startAfter && !startAfterId) break;
+        if (page.length < PAGE) break;
+      }
+
       return res.json({
         mode: 'contacts',
         query: q || null,
-        total: data.meta?.total || contacts.length,
+        total: metaTotal ?? contacts.length,
         contacts,
         timestamp: new Date().toISOString()
       });
