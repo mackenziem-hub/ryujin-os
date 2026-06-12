@@ -99,6 +99,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
 .watch-form{display:grid;grid-template-columns:1fr 1.2fr 1.2fr 84px auto;gap:8px;margin-top:12px}
 .watch-form input{background:rgba(3,8,18,0.65);border:1px solid rgba(34,211,238,0.22);border-radius:8px;padding:9px 10px;color:#e6ecf6;font-family:'Inter',system-ui,sans-serif;font-size:0.84em;min-width:0}
 .watch-form input:focus{outline:none;border-color:rgba(34,211,238,0.6);background:rgba(3,8,18,0.85)}
+.panel-head-right{display:flex;align-items:center;gap:12px;min-width:0}
+#queueFilter{background:rgba(3,8,18,0.65);border:1px solid rgba(34,211,238,0.22);border-radius:8px;padding:8px 12px;color:#e6ecf6;font-family:'Inter',system-ui,sans-serif;font-size:0.84em;width:220px;max-width:48vw}
+#queueFilter:focus{outline:none;border-color:rgba(34,211,238,0.6);background:rgba(3,8,18,0.85)}
+#queueFilter::placeholder{color:rgba(160,190,230,0.4)}
 .watch-form .btn{flex:0 0 auto;min-width:110px}
 .wexpired{opacity:0.45}
 .wbtn{flex:0 0 auto;min-width:0;padding:7px 10px}
@@ -158,7 +162,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
   <div class="glass panel">
     <div class="panel-head">
       <h2>Review queue</h2>
-      <div class="panel-action" onclick="loadQueue(true)">Refresh</div>
+      <div class="panel-head-right">
+        <input id="queueFilter" type="search" placeholder="Find a customer..." maxlength="80" autocomplete="off">
+        <div class="panel-action" onclick="loadQueue(true)">Refresh</div>
+      </div>
     </div>
     <div id="queueBody"><div class="loading">Loading inbox...</div></div>
   </div>
@@ -197,6 +204,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
   const POLL_MS = 45000;
   let state = { needs_review: [], recent_handled: [], counts: {}, last_run: null };
   let inflight = false;
+  let queueFilterText = '';
 
   function authHeaders(extra){
     const h = Object.assign({ 'x-tenant-id': TENANT_SLUG }, extra || {});
@@ -400,10 +408,23 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
       'last scan: ' + (lr && lr.started_at ? fmtDate(lr.started_at) : 'never');
 
     // Notify items first, then most-recent message.
-    const items = (state.needs_review || []).slice().sort((a, b) => {
+    let items = (state.needs_review || []).slice().sort((a, b) => {
       if (!!b.notify !== !!a.notify) return (b.notify ? 1 : 0) - (a.notify ? 1 : 0);
       return new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0);
     });
+    // Client-side find (Walk 1 item 2): match name, summary, or message body
+    // so "did the agent draft something for Richard?" is one keystroke, not a
+    // 68-card scroll. The input lives OUTSIDE queueBody so the 45s poll
+    // re-render never steals focus or wipes the query.
+    const totalCount = items.length;
+    const f = (queueFilterText || '').trim().toLowerCase();
+    if (f) {
+      items = items.filter(it =>
+        (it.contact_name || '').toLowerCase().includes(f) ||
+        (it.summary || '').toLowerCase().includes(f) ||
+        (it.last_message_body || '').toLowerCase().includes(f)
+      );
+    }
     const qb = document.getElementById('queueBody');
     // Preserve any in-progress draft text (plus focus + caret) across this
     // re-render so the background poll cannot wipe what the operator is typing.
@@ -415,7 +436,9 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
     });
     qb.innerHTML = items.length
       ? items.map(renderCard).join('')
-      : '<div class="empty">Inbox is clear. Nothing waiting on you.</div>';
+      : (f
+          ? '<div class="empty">No items match "' + escapeHtml(f) + '" (' + totalCount + ' in the queue). <span class="panel-action" style="display:inline" onclick="clearQueueFilter()">Clear</span></div>'
+          : '<div class="empty">Inbox is clear. Nothing waiting on you.</div>');
     Object.keys(liveDrafts).forEach(id => {
       const t = document.getElementById(id);
       if (t && liveDrafts[id] != null && liveDrafts[id] !== t.value) t.value = liveDrafts[id];
@@ -596,6 +619,20 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
   window.saveDraft = saveDraft;
   window.dismiss = dismiss;
   window.fireScan = fireScan;
+
+  // Queue find wiring. Re-render is cheap (client-side array filter), so no
+  // debounce; Escape clears.
+  const qf = document.getElementById('queueFilter');
+  if (qf) {
+    qf.addEventListener('input', () => { queueFilterText = qf.value; render(); });
+    qf.addEventListener('keydown', e => { if (e.key === 'Escape') { clearQueueFilter(); } });
+  }
+  function clearQueueFilter(){
+    queueFilterText = '';
+    if (qf) { qf.value = ''; }
+    render();
+  }
+  window.clearQueueFilter = clearQueueFilter;
   window.loadWatches = loadWatches;
   window.addWatch = addWatch;
   window.removeWatch = removeWatch;
