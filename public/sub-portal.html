@@ -1290,6 +1290,7 @@ function openPhotoModal(presetStage){
 }
 
 let rapidSessionCount = 0;
+let bridgeWarnedThisBatch = false; // one gallery-miss toast per batch, not per photo
 
 async function handlePhotoFiles(ev){
   const files = Array.from(ev.target.files || []);
@@ -1301,6 +1302,7 @@ async function handlePhotoFiles(ev){
   const caption = document.getElementById('photoCaption').value.trim();
 
   // Process in parallel — each photo independently uploads + logs.
+  bridgeWarnedThisBatch = false;
   await Promise.all(files.map(file => uploadAndLogOne(file, stageLabel, caption, feed)));
 }
 
@@ -1330,6 +1332,20 @@ async function uploadAndLogOne(file, stageLabel, caption, feed){
     const r = await fetch(`/api/job-log-photo?tenant=${TENANT}`, { method:'POST', headers:{'x-tenant-id':TENANT}, body: fd });
     const body = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
+    if (!body.url) throw new Error('No photo URL returned');
+
+    // Read-back (portal QA S1, 2026-06-12): the photo must really exist at its
+    // URL before this slot turns green. Catches half-written uploads on flaky LTE.
+    const head = await fetch(body.url, { method: 'HEAD' }).catch(() => null);
+    if (!head || !head.ok) throw new Error('Photo did not verify after upload');
+
+    // bridged: did it reach the customer/job gallery? (estimate_photo_id is
+    // the pre-deploy compat signal; bridged is the explicit one.)
+    const bridged = !!(body.bridged || body.estimate_photo_id);
+    if (!bridged && !bridgeWarnedThisBatch) {
+      bridgeWarnedThisBatch = true;
+      toast('Photos saved, but they did not reach the job gallery. The office has been flagged.', 'err');
+    }
 
     // 3. Create the job_log entry (one per photo → deletable individually).
     // Audit: credit the actual person — parent sub OR a specific crew member.
@@ -1351,11 +1367,15 @@ async function uploadAndLogOne(file, stageLabel, caption, feed){
       })
     });
 
-    // 4. Update the slot — ready, with delete affordance
+    // 4. Update the slot: ready, with delete affordance. A photo that saved
+    // but missed the gallery shows an amber badge instead of a false green.
     slot.classList.remove('uploading');
+    const badge = bridged
+      ? `<div class="badge">✓ ${esc(stageLabel)}</div>`
+      : `<div class="badge" style="background:rgba(180,120,0,0.85);color:#fff;text-shadow:none;padding:2px 0">⚠ saved · not in gallery</div>`;
     slot.innerHTML = `<img src="${esc(body.url)}" alt="">
       <button class="x" title="Delete" onclick="deletePhotoSlot('${slotId}','${entry.id}')">×</button>
-      <div class="badge">✓ ${esc(stageLabel)}</div>`;
+      ${badge}`;
 
     // 5. Push into STATE.entries so the main gallery reflects it without a full refetch
     STATE.entries = [entry, ...STATE.entries];
