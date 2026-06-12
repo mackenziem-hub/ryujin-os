@@ -39,6 +39,12 @@ const OPP_ROUTING = {
   'instant-estimator-v3': {
     pipelineId: 'eJm8vgBePJStA1QdZqmA',           // Instant Estimator
     pipelineStageId: '1e82765c-2ef2-4810-bcbf-9d6a926dba7b' // New IE Submission
+  },
+  // Revive (rejuvenation) estimator lands on the same kanban; the
+  // 'Revive Estimator Submission' tag is what splits the GHL nurture.
+  'revive-estimator-v1': {
+    pipelineId: 'eJm8vgBePJStA1QdZqmA',           // Instant Estimator
+    pipelineStageId: '1e82765c-2ef2-4810-bcbf-9d6a926dba7b' // New IE Submission
   }
 };
 
@@ -51,7 +57,11 @@ const OPP_ROUTING = {
 // NOTE: GHL stores tags lowercased; the Automator trigger must match the same
 // tag (case-insensitive in the GHL UI).
 const AUTOMATOR_TAGS = {
-  'instant-estimator-v3': 'Instant Estimator Submission'
+  'instant-estimator-v3': 'Instant Estimator Submission',
+  // Distinct trigger tag so the Revive nurture workflow (when Mac builds it in
+  // Automator) fires separately from the replacement IE follow-up. Inert until
+  // a workflow triggers on it; the source:revive-estimator-v1 tag still lands.
+  'revive-estimator-v1': 'Revive Estimator Submission'
 };
 
 // GHL custom field IDs for the Instant Estimator values (pre-existing fields,
@@ -239,7 +249,10 @@ async function notifyOwner({ contactId, source, name, email, phone, address, cit
 
   const leadKind = deduped ? 'Returning lead' : 'New lead';
   const subjectName = safeName || safeEmail || safePhone || leadKind;
-  const subject = safeHeader(`${leadKind} · ${safeSource} · ${subjectName}`);
+  // Revive leads get a loud prefix so they read apart from replacement-IE
+  // leads at a glance in the inbox.
+  const kindPrefix = /^revive/i.test(safeSource) ? 'REVIVE · ' : '';
+  const subject = safeHeader(`${kindPrefix}${leadKind} · ${safeSource} · ${subjectName}`);
 
   const ghlUrl = `https://app.gohighlevel.com/v2/location/${LOCATION_ID}/contacts/detail/${contactId}`;
   const lines = [
@@ -260,6 +273,11 @@ async function notifyOwner({ contactId, source, name, email, phone, address, cit
     if (md.pitch)                  lines.push(`  Pitch:       ${safeHeader(md.pitch)}`);
     if (md.complexity)             lines.push(`  Complexity:  ${safeHeader(md.complexity)}`);
     if (md.chimneyType)            lines.push(`  Chimney:     ${safeHeader(md.chimneyType)}`);
+    if (md.age)                    lines.push(`  Shingle age: ${safeHeader(md.age)}`);
+    if (md.moss)                   lines.push(`  Moss:        ${safeHeader(md.moss)}`);
+    if (md.damage)                 lines.push(`  Damage:      ${safeHeader(md.damage)}`);
+    if (md.leaks)                  lines.push(`  Leaks:       ${safeHeader(md.leaks)}`);
+    if (md.gate)                   lines.push(`  Gate:        ${safeHeader(md.gate)}${md.gate === 'pivot' ? ' (offered replacement quote)' : md.gate === 'advise' ? ' (under 5yr, advised to wait)' : ''}`);
     if (md.postal)                 lines.push(`  Postal:      ${safeHeader(md.postal)}`);
     if (md.measured)               lines.push(`  Measured:    ${safeHeader(md.measured)}${md.solar_sq ? ` (${safeHeader(md.solar_sq)} SQ @ ${safeHeader(md.solar_pitch_x12)}/12 from imagery)` : ''}`);
     lines.push('');
