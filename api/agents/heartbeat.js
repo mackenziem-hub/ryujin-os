@@ -10,13 +10,20 @@ import { requireCronOrOwner } from '../../lib/cronAuth.js';
 import { snapshotHeaders } from '../../lib/snapshotClient.js';
 
 const BASE_URL = 'https://ryujin-os.vercel.app';
-const NOTIFY_EMAIL = (process.env.NOTIFY_EMAIL || 'mackenzie.m@plusultraroofing.com').trim();
+// White-label: no hardcoded recipient fallback (set in Vercel env for the live
+// deployment). Missing env -> skip-and-log; callers already tolerate ok:false
+// and the SMS dead-man fallback still fires for true emergencies.
+const NOTIFY_EMAIL = (process.env.NOTIFY_EMAIL || '').trim();
 
 // How fresh the morning briefing must be (hours).
 // Cron fires at 9 AM AT, briefing runs at 7 AM AT, so 3 hours is the cutoff.
 const BRIEFING_MAX_AGE_HOURS = 3;
 
 async function sendFallbackAlert(subject, body) {
+  if (!NOTIFY_EMAIL) {
+    console.error('[Heartbeat] NOTIFY_EMAIL not set; skipping email fallback');
+    return { ok: false, error: 'NOTIFY_EMAIL not set' };
+  }
   try {
     await gmailSend(NOTIFY_EMAIL, `[Ryujin Heartbeat] ${subject}`, body);
     return { ok: true };
