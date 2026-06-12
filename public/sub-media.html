@@ -150,6 +150,7 @@ h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.3px; margin: 14px 4px
   <img id="lightboxImg" src="" alt="">
 </div>
 
+<script src="/assets/ry-upload-queue.js"></script>
 <script>
 const TENANT = 'plus-ultra';
 const API = '/api';
@@ -352,6 +353,52 @@ async function compressImage(file) {
   }
 }
 
+// One photo through the full pipeline: compress, POST, read-back verify,
+// job_log audit leg. Shared by onPick and the offline retry queue (QA S3).
+// Returns { ok:true, bridged } or throws (err.status set for HTTP rejections
+// so callers can tell retryable network trouble from a hard 4xx).
+async function uploadOneMedia(woId, file) {
+  const compressed = await compressImage(file);
+  const fd = new FormData();
+  fd.append('photo', compressed, compressed.name || 'photo.jpg');
+  fd.append('token', TOKEN);
+  fd.append('workorder_id', woId);
+  fd.append('stage_label', 'Field');
+  const r = await fetch(`${API}/job-log-photo?tenant=${TENANT}`, {
+    method: 'POST',
+    headers: { 'x-tenant-id': TENANT },
+    body: fd
+  });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) { const err = new Error(body.error || `HTTP ${r.status}`); err.status = r.status; throw err; }
+  if (!body.url) throw new Error('No photo URL returned');
+
+  // Read-back: the photo must exist at its URL before we claim success.
+  const head = await fetch(body.url, { method: 'HEAD' }).catch(() => null);
+  if (!head || !head.ok) throw new Error('Photo did not verify after upload');
+
+  // The job_log entry (audit trail of record), mirroring sub-portal's leg.
+  try {
+    await api('/job-log', {
+      method: 'POST',
+      body: JSON.stringify({
+        workorder_id: woId,
+        subcontractor_id: SUB.id,
+        paysheet_id: null,
+        entry_type: 'photo',
+        description: `[Field] photo from ${SUB.name}`.slice(0, 280),
+        amount: 0,
+        photos: [body.url],
+        created_by_sub: true,
+        uploaded_by_name: SUB.name
+      })
+    });
+  } catch (e) {
+    console.warn('job-log entry failed (photo stored, log entry missing)', e);
+  }
+  return { ok: true, bridged: !!body.bridged };
+}
+
 async function onPick(idx, input) {
   const files = Array.from(input.files || []);
   if (!files.length) return;
@@ -369,54 +416,26 @@ async function onPick(idx, input) {
   // previously never created (it rode entirely on the silently-skippable
   // gallery bridge), and (3) only counts as fully landed when the bridge
   // confirms. Anything less reports loudly instead of a false checkmark.
-  let done = 0, failed = 0, savedNotGallery = 0;
+  // QA S3: retryable failures (network drop, 5xx, half-written blob) land in
+  // the offline queue with a visible chip instead of vanishing.
+  let done = 0, failed = 0, savedNotGallery = 0, queued = 0;
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
     status.textContent = `Uploading ${i + 1} of ${files.length}…`;
     try {
-      const compressed = await compressImage(file);
-      const fd = new FormData();
-      fd.append('photo', compressed, compressed.name || 'photo.jpg');
-      fd.append('token', TOKEN);
-      fd.append('workorder_id', w.id);
-      fd.append('stage_label', 'Field');
-      const r = await fetch(`${API}/job-log-photo?tenant=${TENANT}`, {
-        method: 'POST',
-        headers: { 'x-tenant-id': TENANT },
-        body: fd
-      });
-      const body = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
-      if (!body.url) throw new Error('No photo URL returned');
-
-      // Read-back: the photo must exist at its URL before we claim success.
-      const head = await fetch(body.url, { method: 'HEAD' }).catch(() => null);
-      if (!head || !head.ok) throw new Error('Photo did not verify after upload');
-
-      // The job_log entry (audit trail of record), mirroring sub-portal's leg.
-      try {
-        await api('/job-log', {
-          method: 'POST',
-          body: JSON.stringify({
-            workorder_id: w.id,
-            subcontractor_id: SUB.id,
-            paysheet_id: null,
-            entry_type: 'photo',
-            description: `[Field] photo from ${SUB.name}`.slice(0, 280),
-            amount: 0,
-            photos: [body.url],
-            created_by_sub: true,
-            uploaded_by_name: SUB.name
-          })
-        });
-      } catch (e) {
-        console.warn('job-log entry failed (photo stored, log entry missing)', e);
-      }
-
-      if (body.bridged) { done++; }
-      else { savedNotGallery++; console.warn('gallery bridge skipped:', body.bridge_skip); }
+      const r = await uploadOneMedia(w.id, file);
+      if (r.bridged) { done++; }
+      else { savedNotGallery++; console.warn('gallery bridge skipped'); }
     } catch (e) {
-      failed++;
+      // Hard 4xx = the server rejected the photo (bad type etc.): not retryable.
+      // Everything else (fetch rejection, 5xx, readback miss) goes to the queue.
+      if (e && e.status && e.status >= 400 && e.status < 500) {
+        failed++;
+      } else if (window.RyUploadQueue && await RyUploadQueue.enqueue({ woId: w.id }, file)) {
+        queued++;
+      } else {
+        failed++;
+      }
       console.error('upload failed', e);
     }
   }
@@ -424,18 +443,21 @@ async function onPick(idx, input) {
   input.value = '';
   if (camBtn) camBtn.disabled = false;
   if (libBtn) libBtn.disabled = false;
-  if (failed === 0 && savedNotGallery === 0) {
+  const qNote = queued ? ` ${queued} queued for auto-retry when signal returns.` : '';
+  if (failed === 0 && queued === 0 && savedNotGallery === 0) {
     status.className = 'upload-status ok';
     status.textContent = `✓ Uploaded ${done} photo${done === 1 ? '' : 's'}, saved and in the job gallery.`;
   } else if (failed === 0 && savedNotGallery > 0) {
     status.className = 'upload-status err';
-    status.textContent = `${done + savedNotGallery} saved, but ${savedNotGallery} did not reach the job gallery. The office has been flagged automatically.`;
-  } else if (done + savedNotGallery === 0) {
+    status.textContent = `${done + savedNotGallery} saved, but ${savedNotGallery} did not reach the job gallery. The office has been flagged automatically.${qNote}`;
+  } else if (done + savedNotGallery === 0 && (failed || queued)) {
     status.className = 'upload-status err';
-    status.textContent = `Upload failed (${failed}). Check your signal and tap Take Photo again.`;
+    status.textContent = failed
+      ? `Upload failed (${failed}). Check your signal and tap Take Photo again.${qNote}`
+      : `No signal.${qNote}`;
   } else {
     status.className = 'upload-status err';
-    status.textContent = `${done + savedNotGallery} uploaded, ${failed} failed. Try the missing ones again.`;
+    status.textContent = `${done + savedNotGallery} uploaded, ${failed} failed.${qNote}`;
   }
 
   // Refresh the grid so newly uploaded photos appear.
@@ -512,6 +534,19 @@ installBtn.addEventListener('click', async () => {
 });
 iosInstallClose.addEventListener('click', () => iosInstallModal.classList.remove('open'));
 if (isIos() && !isStandalone()) installBtn.classList.add('on');
+
+// QA S3: offline retry queue. Failed uploads persist and auto-retry when
+// connectivity returns; the chip is the visible promise that nothing vanished.
+if (window.RyUploadQueue) {
+  RyUploadQueue.init({
+    storageKey: 'ry_upq_submedia',
+    uploader: async (item, file) => {
+      if (!SUB) return { ok: false }; // auth not ready yet, retry later
+      const r = await uploadOneMedia(item.woId, file);
+      return { ok: r.ok === true };
+    }
+  });
+}
 
 boot();
 </script>
