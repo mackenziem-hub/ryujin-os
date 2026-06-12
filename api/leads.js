@@ -237,9 +237,10 @@ async function createOpportunity({ contactId, source, name, metadata, deduped })
   return { ok: true, opportunity_id: data?.opportunity?.id || data?.id || null };
 }
 
-async function notifyOwner({ contactId, source, name, email, phone, address, city, metadata, deduped }) {
+async function notifyOwner({ contactId, source, name, email, phone, address, city, metadata, deduped, estimator }) {
   if (!NOTIFY_EMAIL) return;
   const md = metadata || {};
+  const est = (estimator && typeof estimator === 'object') ? estimator : null;
   const safeName    = safeHeader(name);
   const safeEmail   = safeHeader(email);
   const safePhone   = safeHeader(phone);
@@ -280,6 +281,22 @@ async function notifyOwner({ contactId, source, name, email, phone, address, cit
     if (md.gate)                   lines.push(`  Gate:        ${safeHeader(md.gate)}${md.gate === 'pivot' ? ' (offered replacement quote)' : md.gate === 'advise' ? ' (under 5yr, advised to wait)' : ''}`);
     if (md.postal)                 lines.push(`  Postal:      ${safeHeader(md.postal)}`);
     if (md.measured)               lines.push(`  Measured:    ${safeHeader(md.measured)}${md.solar_sq ? ` (${safeHeader(md.solar_sq)} SQ @ ${safeHeader(md.solar_pitch_x12)}/12 from imagery)` : ''}`);
+    lines.push('');
+  }
+
+  // The package + price range the customer actually saw. These were always
+  // written to the GHL custom fields but never made it into this email
+  // (Cat's flag: notify emails missing the package/size figures), so the
+  // first thing everyone did was open GHL to find the number.
+  if (est && (est.material || est.low || est.high)) {
+    lines.push('What they saw:');
+    if (est.material)            lines.push(`  Package:     ${safeHeader(est.material)}`);
+    if (est.low || est.high) {
+      const lo = est.low != null ? `$${Number(est.low).toLocaleString()}` : '?';
+      const hi = est.high != null ? `$${Number(est.high).toLocaleString()}` : '?';
+      lines.push(`  Range shown: ${lo} to ${hi}`);
+    }
+    if (est.size)                lines.push(`  Roof size:   ${safeHeader(est.size)}`);
     lines.push('');
   }
 
@@ -385,7 +402,7 @@ async function handler(req, res) {
     const startedAt = Date.now();
     const remaining = () => Math.max(0, POST_LEAD_BUDGET_MS - (Date.now() - startedAt));
 
-    const notifyPromise = notifyOwner({ contactId, source, name, email, phone, address, city, metadata, deduped })
+    const notifyPromise = notifyOwner({ contactId, source, name, email, phone, address, city, metadata, deduped, estimator: body.estimator })
       .then(() => ({ ok: true }))
       .catch(e => {
         console.warn(`[leads] notifyOwner failed: ${e.message} (contact ${contactId})`);
