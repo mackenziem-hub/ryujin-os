@@ -55,13 +55,14 @@ const GATED_TOOLS = [
 // When this array is empty, every gated action Mac approves actually executes.
 // 2026-06-12 batch 1 (the create_full_estimate estimate bundle): wired
 // create_estimate, update_estimate, add_contact_note -> coverage 2/12 to 5/12.
+// 2026-06-12 batch 2 (the CRM/pipeline surface): wired create_contact,
+// update_contact, create_opportunity, move_pipeline -> coverage 5/12 to 9/12.
+// Remaining 3 are batch 3: update_ticket (in-house tickets) + the two
+// destructive deletes (delete_contact_note, delete_opportunity), held back for
+// extra safeguards / Mac sign-off before a delete fires on approval.
 const BASELINE_UNWIRED = [
   'update_ticket',
   'delete_contact_note',
-  'create_contact',
-  'update_contact',
-  'create_opportunity',
-  'move_pipeline',
   'delete_opportunity',
 ];
 
