@@ -25,28 +25,31 @@ const ESTIMATOR_KEY = (process.env.ESTIMATOR_KEY || '').trim();
 const RYUJIN_BASE = 'https://ryujin-os.vercel.app';
 const SERVICE_TOKEN = (process.env.RYUJIN_SERVICE_TOKEN || '').trim();
 
-// POST through the deployed /api/ghl proxy (the same CRM write surface the
-// operator pages call), server-to-server with the service token. Throws on a
-// non-2xx so the executePayload caller reverts the approval to pending.
-async function ghlPost(action, id, body) {
-  const qs = new URLSearchParams({ action });
+// Call the deployed /api/ghl proxy (the same CRM write surface the operator
+// pages call), server-to-server with the service token. Throws on a non-2xx
+// so the executePayload caller reverts the approval to pending. method is
+// POST by default; DELETE (opportunity removal) sends no body and no action.
+async function ghlCall(action, id, body, method = 'POST') {
+  const qs = new URLSearchParams();
+  if (action) qs.set('action', action);
   if (id) qs.set('id', id);
   const r = await fetch(`${RYUJIN_BASE}/api/ghl?${qs.toString()}`, {
-    method: 'POST',
+    method,
     headers: {
       'Content-Type': 'application/json',
       'x-tenant-id': 'plus-ultra',
       ...(SERVICE_TOKEN ? { Authorization: `Bearer ${SERVICE_TOKEN}` } : {}),
     },
-    body: JSON.stringify(body || {}),
+    ...(method === 'POST' ? { body: JSON.stringify(body || {}) } : {}),
     signal: AbortSignal.timeout(15000),
   });
   if (!r.ok) {
     const t = await r.text().catch(() => '');
-    throw new Error(`ghl ${action} failed: HTTP ${r.status} ${t.slice(0, 140)}`);
+    throw new Error(`ghl ${action || method} failed: HTTP ${r.status} ${t.slice(0, 140)}`);
   }
   return r.json().catch(() => ({}));
 }
+const ghlPost = (action, id, body) => ghlCall(action, id, body, 'POST');
 
 // Dispatch an approved action by its execute_payload.tool. Returns
 // { executed:true, details } on success or { executed:false, error } otherwise.
@@ -183,6 +186,86 @@ export async function executePayload(payload, ctx = {}) {
       if (!pipelineStageId) return { executed: false, error: 'move_pipeline payload missing pipelineStageId' };
       await ghlPost('move-pipeline', opportunityId, { pipelineId, pipelineStageId, status });
       return { executed: true, details: `Opportunity ${opportunityId} moved to stage ${pipelineStageId}` };
+    }
+    case 'update_ticket': {
+      // { tool:'update_ticket', ticket_id, updates }. Native Ryujin tickets
+      // table is the write surface (Action Board is read-only history since
+      // 2026-05-11). ticket_id from chat is the NUMERIC ticket_number; accept
+      // a uuid string too. Updates arrive in the tool's camelCase vocabulary,
+      // so whitelist-map them onto real columns; assignedTo is a display name
+      // (not a users.id uuid), so it is dropped, same as create_ticket does.
+      const { ticket_id, updates } = payload;
+      if (ticket_id == null || ticket_id === '') return { executed: false, error: 'update_ticket payload missing ticket_id' };
+      if (!updates || typeof updates !== 'object' || !Object.keys(updates).length) {
+        return { executed: false, error: 'update_ticket payload missing updates' };
+      }
+      if (!ctx.tenant_id) return { executed: false, error: 'update_ticket missing tenant context' };
+
+      const COLUMN_MAP = {
+        title: 'title', description: 'description', status: 'status', priority: 'priority',
+        dueDate: 'due_date', due_date: 'due_date',
+        completionNotes: 'notes', notes: 'notes',
+      };
+      const row = {};
+      const dropped = [];
+      for (const [k, v] of Object.entries(updates)) {
+        const col = COLUMN_MAP[k];
+        if (col) row[col] = v; else dropped.push(k);
+      }
+      // Normalize the legacy 'complete' status and stamp completed_at on done,
+      // mirroring api/tickets.js's complete action.
+      if (row.status === 'complete') row.status = 'done';
+      if (row.status === 'done') row.completed_at = new Date().toISOString();
+      if (!Object.keys(row).length) {
+        return { executed: false, error: `update_ticket: no mappable fields in updates (dropped: ${dropped.join(', ')})` };
+      }
+
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(ticket_id));
+      const q = supabaseAdmin.from('tickets').update(row).eq('tenant_id', ctx.tenant_id);
+      const { data, error } = await (isUuid
+        ? q.eq('id', ticket_id)
+        : q.eq('ticket_number', Number(ticket_id))
+      ).select('ticket_number').maybeSingle();
+      if (error) return { executed: false, error: `update_ticket failed: ${error.message}` };
+      if (!data) return { executed: false, error: `update_ticket: ticket ${ticket_id} not found in tenant` };
+      const note = dropped.length ? ` (ignored unsupported fields: ${dropped.join(', ')})` : '';
+      return { executed: true, details: `Ticket #${data.ticket_number} updated: ${Object.keys(row).join(', ')}${note}` };
+    }
+    case 'create_ghl_task': {
+      // { tool:'create_ghl_task', contact_id, title, description, due_date, assigned_to }.
+      // POST /api/ghl?action=create-task&id=<contactId>, the operator task path
+      // (it expects dueDate/assignedTo camelCase in the body).
+      const { contact_id, title, description, due_date, assigned_to } = payload;
+      if (!contact_id) return { executed: false, error: 'create_ghl_task payload missing contact_id' };
+      if (!title) return { executed: false, error: 'create_ghl_task payload missing title' };
+      await ghlPost('create-task', contact_id, {
+        title,
+        description: description || '',
+        dueDate: due_date || null,
+        assignedTo: assigned_to || null,
+      });
+      return { executed: true, details: `Task created on contact ${contact_id}: ${title}` };
+    }
+    case 'delete_contact_note': {
+      // { tool:'delete_contact_note', contactId, noteId }. DESTRUCTIVE but
+      // small-blast-radius (one CRM note). Executes only after Mac approves a
+      // row that names the exact note + contact; that approval IS the sign-off
+      // (Mac greenlit wiring all gated executors with the gate as safeguard).
+      const { contactId, noteId } = payload;
+      if (!contactId) return { executed: false, error: 'delete_contact_note payload missing contactId' };
+      if (!noteId) return { executed: false, error: 'delete_contact_note payload missing noteId' };
+      await ghlPost('delete-note', contactId, { noteId });
+      return { executed: true, details: `Note ${noteId} deleted from contact ${contactId}` };
+    }
+    case 'delete_opportunity': {
+      // { tool:'delete_opportunity', opportunityId, reason }. DESTRUCTIVE and
+      // permanent in GHL. Wired per Mac's all-12 greenlight: the approval row
+      // reads "Delete opportunity <id>: <reason>" and nothing fires until he
+      // approves it. The reason is carried into the result for the audit trail.
+      const { opportunityId, reason } = payload;
+      if (!opportunityId) return { executed: false, error: 'delete_opportunity payload missing opportunityId' };
+      await ghlCall(null, opportunityId, null, 'DELETE');
+      return { executed: true, details: `Opportunity ${opportunityId} deleted${reason ? ` (${reason})` : ''}` };
     }
     default:
       // Other write tools route through approval but have no executor wired here yet.

@@ -48,6 +48,10 @@ const GATED_TOOLS = [
   'create_opportunity',
   'move_pipeline',
   'delete_opportunity',
+  // Batch 3 finding: create_ghl_task routes through routeForApproval too but
+  // was missed by the original 12-tool audit. The completeness check below
+  // (set equality against chat.js's actual payload literals) prevents a recur.
+  'create_ghl_task',
 ];
 
 // Documented baseline of gated tools with NO executor wired in api/approve.js.
@@ -57,14 +61,12 @@ const GATED_TOOLS = [
 // create_estimate, update_estimate, add_contact_note -> coverage 2/12 to 5/12.
 // 2026-06-12 batch 2 (the CRM/pipeline surface): wired create_contact,
 // update_contact, create_opportunity, move_pipeline -> coverage 5/12 to 9/12.
-// Remaining 3 are batch 3: update_ticket (in-house tickets) + the two
-// destructive deletes (delete_contact_note, delete_opportunity), held back for
-// extra safeguards / Mac sign-off before a delete fires on approval.
-const BASELINE_UNWIRED = [
-  'update_ticket',
-  'delete_contact_note',
-  'delete_opportunity',
-];
+// 2026-06-12 batch 3 (final): wired update_ticket, create_ghl_task (the missed
+// 13th gated tool) + the two destructive deletes per Mac's all-executors
+// greenlight (the approval row names exactly what gets deleted; his approve
+// click is the sign-off) -> coverage 13/13. EMPTY = every gated action Mac
+// approves actually executes.
+const BASELINE_UNWIRED = [];
 
 let pass = 0, fail = 0;
 function ok(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); } else { fail++; console.log('  FAIL ' + msg); } }
@@ -78,6 +80,20 @@ for (const tool of GATED_TOOLS) {
   const re = new RegExp("tool:\\s*'" + tool + "'");
   ok(re.test(chatSrc), `chat.js registers gated tool '${tool}'`);
 }
+
+// 1b) COMPLETENESS (added batch 3 after create_ghl_task was found missing from
+//     the original audit): every `tool: '<name>'` payload literal in chat.js is
+//     an approval-routed registration, so the extracted set must EQUAL
+//     GATED_TOOLS. A new write tool added to chat.js without a conscious entry
+//     here (and an executor, or a baseline line) now fails the suite instead of
+//     shipping as a silent no-op.
+const registered = new Set();
+for (const m of chatSrc.matchAll(/tool:\s*'([a-z_]+)'/g)) registered.add(m[1]);
+const notListed = [...registered].filter(t => !GATED_TOOLS.includes(t)).sort();
+ok(notListed.length === 0,
+  notListed.length
+    ? `chat.js registers approval payload(s) [${notListed.join(', ')}] missing from GATED_TOOLS - add + wire them`
+    : 'every chat.js tool payload literal is accounted for in GATED_TOOLS');
 
 // 2) Extract wired executor cases from api/approve.js. The only switch in that
 //    file is executeApproved's `switch (tool)`, so case labels = wired tools.
