@@ -282,6 +282,7 @@ textarea{min-height:90px;resize:vertical}
 .rate-line .val small{color:var(--ink-3);font-weight:400;font-size:11px;margin-left:3px}
 </style>
   <script src="/assets/ryujin-slug.js"></script>
+  <script src="/assets/ry-upload-queue.js"></script>
 </head>
 <body>
 <div class="wrap" id="wrap">
@@ -440,7 +441,14 @@ async function api(path, opts){
   const sep = path.includes('?') ? '&' : '?';
   const r = await fetch(`${API}${path}${sep}tenant=${TENANT}`, { headers:{'Content-Type':'application/json','x-tenant-id':TENANT}, ...(opts||{}) });
   const body = await r.json().catch(()=>({}));
-  if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
+  if (!r.ok) {
+    // Carry the HTTP status so callers can tell a real auth rejection (401/403)
+    // from a server hiccup. A pure network failure rejects inside fetch() and
+    // never reaches this line, so err.status stays undefined there. (QA S4)
+    const err = new Error(body.error || `HTTP ${r.status}`);
+    err.status = r.status;
+    throw err;
+  }
   return body;
 }
 
@@ -523,8 +531,18 @@ async function boot(){
     document.getElementById('brandSub').textContent = 'Crew Portal';
     await loadJobs();
   } catch (e) {
-    localStorage.removeItem('ry_sub_token');
-    window.location.replace('/sub-login.html?reason=expired');
+    // QA S4 (2026-06-12): only a REAL auth rejection invalidates the link.
+    // A network blip on one bar of LTE used to wipe the token and sign the
+    // sub out; now it keeps the credential and offers a retry.
+    if (e && (e.status === 401 || e.status === 403)) {
+      localStorage.removeItem('ry_sub_token');
+      window.location.replace('/sub-login.html?reason=expired');
+      return;
+    }
+    const root = document.getElementById('root') || document.body;
+    root.innerHTML = `<h1>Connection problem</h1>
+      <div class="alert red"><div class="ico">⚠</div>Could not reach the office server. Your link is still good. Check your signal and retry.</div>
+      <button class="btn primary" style="width:100%;min-height:52px;font-size:16px" onclick="boot()">RETRY</button>`;
   }
 }
 
@@ -1306,6 +1324,50 @@ async function handlePhotoFiles(ev){
   await Promise.all(files.map(file => uploadAndLogOne(file, stageLabel, caption, feed)));
 }
 
+// Core upload pipeline for one photo: compress, POST (token + stage so the
+// gallery bridge can verify + label), read-back verify, job_log audit entry.
+// Shared by the live flow and the offline retry queue (QA S3). Throws with
+// err.status set on HTTP rejections so callers can tell a hard 4xx from
+// retryable network trouble.
+async function uploadPhotoCore(woId, stageLabel, caption, file, paysheetId){
+  const compressed = await compressImage(file);
+  const fd = new FormData();
+  fd.append('file', compressed, compressed.name || 'photo.jpg');
+  fd.append('workorder_id', woId);
+  fd.append('stage_label', stageLabel);
+  if (caption) fd.append('caption', caption);
+  const portalToken = localStorage.getItem('ry_sub_token');
+  if (portalToken) fd.append('token', portalToken);
+  const r = await fetch(`/api/job-log-photo?tenant=${TENANT}`, { method:'POST', headers:{'x-tenant-id':TENANT}, body: fd });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) { const err = new Error(body.error || `HTTP ${r.status}`); err.status = r.status; throw err; }
+  if (!body.url) throw new Error('No photo URL returned');
+
+  // Read-back (portal QA S1, 2026-06-12): the photo must really exist at its
+  // URL before we claim it. Catches half-written uploads on flaky LTE.
+  const head = await fetch(body.url, { method: 'HEAD' }).catch(() => null);
+  if (!head || !head.ok) throw new Error('Photo did not verify after upload');
+
+  const uploaderName = STATE.auth?.member_name || STATE.sub?.name || 'Sub';
+  const desc = `[${stageLabel}] ${caption || `${stageLabel} photo from ${uploaderName}`}`.slice(0, 280);
+  const entry = await api('/job-log', {
+    method: 'POST',
+    body: JSON.stringify({
+      workorder_id: woId,
+      subcontractor_id: STATE.sub?.id,
+      paysheet_id: paysheetId || null,
+      entry_type: 'photo',
+      description: desc,
+      amount: 0,
+      photos: [body.url],
+      created_by_sub: true,
+      sub_crew_member_id: STATE.auth?.member_id || null,
+      uploaded_by_name: uploaderName
+    })
+  });
+  return { body, entry, bridged: !!(body.bridged || body.estimate_photo_id) };
+}
+
 async function uploadAndLogOne(file, stageLabel, caption, feed){
   // 1. Drop placeholder in the feed immediately
   const slotId = 'slot_' + Math.random().toString(36).slice(2, 10);
@@ -1317,55 +1379,14 @@ async function uploadAndLogOne(file, stageLabel, caption, feed){
   feed.prepend(slot);
 
   try {
-    // 2. Compress + upload. token + stage_label + caption travel to the server
-    // so the estimate_photos gallery bridge can verify the sub and label the
-    // gallery row (e.g. "[Tear-off]"). Token gates the bridge — without it
-    // the upload still succeeds but skips the gallery insert.
-    const compressed = await compressImage(file);
-    const fd = new FormData();
-    fd.append('file', compressed, compressed.name || 'photo.jpg');
-    fd.append('workorder_id', STATE.currentWoId);
-    fd.append('stage_label', stageLabel);
-    if (caption) fd.append('caption', caption);
-    const portalToken = localStorage.getItem('ry_sub_token');
-    if (portalToken) fd.append('token', portalToken);
-    const r = await fetch(`/api/job-log-photo?tenant=${TENANT}`, { method:'POST', headers:{'x-tenant-id':TENANT}, body: fd });
-    const body = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
-    if (!body.url) throw new Error('No photo URL returned');
+    // 2+3. The shared pipeline: compress, upload, read-back, job_log entry.
+    const { body, entry, bridged } = await uploadPhotoCore(
+      STATE.currentWoId, stageLabel, caption, file, STATE.currentWo?.paysheet?.id || null);
 
-    // Read-back (portal QA S1, 2026-06-12): the photo must really exist at its
-    // URL before this slot turns green. Catches half-written uploads on flaky LTE.
-    const head = await fetch(body.url, { method: 'HEAD' }).catch(() => null);
-    if (!head || !head.ok) throw new Error('Photo did not verify after upload');
-
-    // bridged: did it reach the customer/job gallery? (estimate_photo_id is
-    // the pre-deploy compat signal; bridged is the explicit one.)
-    const bridged = !!(body.bridged || body.estimate_photo_id);
     if (!bridged && !bridgeWarnedThisBatch) {
       bridgeWarnedThisBatch = true;
       toast('Photos saved, but they did not reach the job gallery. The office has been flagged.', 'err');
     }
-
-    // 3. Create the job_log entry (one per photo → deletable individually).
-    // Audit: credit the actual person — parent sub OR a specific crew member.
-    const uploaderName = STATE.auth?.member_name || STATE.sub.name;
-    const desc = `[${stageLabel}] ${caption || `${stageLabel} photo from ${uploaderName}`}`.slice(0, 280);
-    const entry = await api('/job-log', {
-      method: 'POST',
-      body: JSON.stringify({
-        workorder_id: STATE.currentWoId,
-        subcontractor_id: STATE.sub.id,
-        paysheet_id: STATE.currentWo?.paysheet?.id || null,
-        entry_type: 'photo',
-        description: desc,
-        amount: 0,
-        photos: [body.url],
-        created_by_sub: true,
-        sub_crew_member_id: STATE.auth?.member_id || null,
-        uploaded_by_name: uploaderName
-      })
-    });
 
     // 4. Update the slot: ready, with delete affordance. A photo that saved
     // but missed the gallery shows an amber badge instead of a false green.
@@ -1387,8 +1408,21 @@ async function uploadAndLogOne(file, stageLabel, caption, feed){
     counter.classList.remove('hide');
   } catch (e) {
     slot.classList.remove('uploading');
-    slot.innerHTML = `<img src="${objUrl}" alt="" style="opacity:0.4"><div class="badge" style="background:var(--red);color:#fff;text-shadow:none;padding:2px 0">FAILED</div>`;
-    toast('Upload failed: ' + e.message, 'err');
+    // QA S3: hard 4xx = the server rejected the photo, do not retry forever.
+    // Everything else (network drop, 5xx, readback miss) joins the retry queue.
+    const retryable = !(e && e.status && e.status >= 400 && e.status < 500);
+    let queued = false;
+    if (retryable && window.RyUploadQueue) {
+      queued = await RyUploadQueue.enqueue(
+        { woId: STATE.currentWoId, stage: stageLabel, caption: caption || '' }, file);
+    }
+    if (queued) {
+      slot.innerHTML = `<img src="${objUrl}" alt="" style="opacity:0.5"><div class="badge" style="background:rgba(180,120,0,0.85);color:#fff;text-shadow:none;padding:2px 0">QUEUED · WILL RETRY</div>`;
+      toast('No signal. Photo queued, it will retry automatically.', 'err');
+    } else {
+      slot.innerHTML = `<img src="${objUrl}" alt="" style="opacity:0.4"><div class="badge" style="background:var(--red);color:#fff;text-shadow:none;padding:2px 0">FAILED</div>`;
+      toast('Upload failed: ' + e.message, 'err');
+    }
   }
 }
 
@@ -1734,6 +1768,18 @@ document.addEventListener('click', (e) => {
   });
   if (isIos() && !isStandalone()) btn.classList.add('on');
 })();
+
+// QA S3: offline retry queue. Retried photos re-run the full pipeline.
+if (window.RyUploadQueue) {
+  RyUploadQueue.init({
+    storageKey: 'ry_upq_subportal',
+    uploader: async (item, file) => {
+      if (!STATE.sub) return { ok: false }; // auth not ready, keep queued
+      await uploadPhotoCore(item.woId, item.stage || 'Field', item.caption || '', file, null);
+      return { ok: true };
+    }
+  });
+}
 
 boot();
 </script>
