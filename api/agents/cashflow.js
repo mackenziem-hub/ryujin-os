@@ -14,7 +14,7 @@ import { gmailSearch, gmailReadMessage } from '../../lib/google.js';
 import { supabaseAdmin } from '../../lib/supabase.js';
 import { requireCronOrOwner } from '../../lib/cronAuth.js';
 import { snapshotHeaders } from '../../lib/snapshotClient.js';
-import { matchPaymentToEstimate } from '../../lib/paymentMatcher.js';
+import { matchPaymentToEstimate, dedupeEstimatePool } from '../../lib/paymentMatcher.js';
 
 const ESTIMATOR_BASE = 'https://estimator-os.replit.app/api';
 const ESTIMATOR_KEY = (process.env.ESTIMATOR_KEY || process.env.ESTIMATOR_OS_KEY || 'pu-estimator-2026').trim();
@@ -124,7 +124,12 @@ export async function runCashflow() {
     report.findings.push(`Ryujin estimates unreachable: ${e.message}`);
   }
 
-  // 4. Match payments to estimates
+  // 4. Match payments to estimates. Dedupe the pool first: the same customer
+  // in both sources binds by push-order otherwise, and the Estimator OS row
+  // (pre-tax or null total) wins over the Ryujin row (tax-inclusive, what the
+  // customer actually pays), producing phantom over-collections and null
+  // contracts. See dedupeEstimatePool in lib/paymentMatcher.js.
+  estimates = dedupeEstimatePool(estimates);
   const byEstimate = {};
   const unmatched = [];
   for (const pmt of payments) {
