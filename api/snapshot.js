@@ -277,7 +277,14 @@ async function nativeMetrics() {
 
 // Build a fresh snapshot by pulling all APIs
 async function buildFreshSnapshot() {
-  const snapshot = { updated_at: new Date().toISOString(), sections: {} };
+  // last_full_rebuild_at marks when the live-fetch sections (metrics, revenue,
+  // pipeline, tickets, leads, crm, conversations, salesTasks, nativeProposals)
+  // were actually rebuilt. Partial agent POSTs bump updated_at but never touch
+  // this field, so the GET staleness gate must read THIS, not updated_at, or the
+  // sub-hourly agent cadence keeps updated_at fresh forever and the rebuild never
+  // fires (live sections froze at 2026-06-09 until this fix).
+  const now = new Date().toISOString();
+  const snapshot = { updated_at: now, last_full_rebuild_at: now, sections: {} };
 
   const _svcToken = (process.env.RYUJIN_SERVICE_TOKEN || '').trim();
   const _svcHeaders = { 'x-tenant-id': 'plus-ultra', ...(_svcToken ? { Authorization: `Bearer ${_svcToken}` } : {}) };
@@ -697,9 +704,15 @@ export default async function handler(req, res) {
       // Check if we have a cached snapshot
       let snapshot = await getSnapshot();
 
-      // If no snapshot or older than 1 hour, build fresh
-      if (!snapshot || !snapshot.updated_at ||
-          (Date.now() - new Date(snapshot.updated_at).getTime() > 1 * 60 * 60 * 1000)) {
+      // If the live-fetch sections have not been rebuilt in over an hour, build
+      // fresh. Gate on last_full_rebuild_at (set only by buildFreshSnapshot), NOT
+      // updated_at: partial agent POSTs bump updated_at every few minutes, so
+      // gating on it meant this rebuild never fired and the live sections froze.
+      // A cached blob from before this fix has no last_full_rebuild_at -> the
+      // first GET after deploy rebuilds immediately (self-healing).
+      const lastFullRebuild = snapshot?.last_full_rebuild_at;
+      if (!snapshot || !lastFullRebuild ||
+          (Date.now() - new Date(lastFullRebuild).getTime() > 1 * 60 * 60 * 1000)) {
         snapshot = await buildFreshSnapshot();
         await saveSnapshot(snapshot);
       }
