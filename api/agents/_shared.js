@@ -440,7 +440,11 @@ export async function runTrunks() {
   const apiTests = [
     { name: 'Estimator OS', url: 'https://estimator-os.replit.app/api/stats', headers: { 'x-api-key': 'pu-estimator-2026' } },
     { name: 'Instant Estimator', url: 'https://plus-ultra-roof-estimator.replit.app/api/stats', headers: { 'x-api-key': 'pu-instantest-2026' } },
-    { name: 'GHL CRM', url: `${BASE_URL}/api/ghl`, headers: {} }
+    // Cert defect 3 (2026-06-12): this check sent NO auth, so it 401'd against
+    // the Jun 6 service gate and false-flagged GHL in every weekly report while
+    // the proxy itself was healthy. svcHeaders() is the same Bearer +
+    // x-tenant-id pair every authed internal caller uses.
+    { name: 'GHL CRM', url: `${BASE_URL}/api/ghl?mode=pipeline&limit=1`, headers: svcHeaders() }
   ];
 
   let keysValid = 0;
@@ -572,63 +576,15 @@ export async function runBulma() {
 }
 
 // ===== ANDROID 18: Creative & Media =====
+// Cert defect 5 (2026-06-12): this agent's ONLY duty was watching the
+// Shenron-era RunPod GPU (pod g2ukr7elm8l5nv), which is dead (negative
+// balance, pod not found). The check is retired; the agent reports its own
+// retirement honestly instead of alarming on a corpse every day.
+// ORPHAN-AGENT FLAG for Mac: give Android 18 a real media duty (e.g. the
+// marketing-clips render queue) or remove it from the roster.
 export async function runAndroid18() {
   const report = { agent: 'Android 18', role: 'Creative & Media', timestamp: new Date().toISOString(), findings: [], tasks: [] };
-
-  const RUNPOD_KEY = (process.env.RUNPOD_API_KEY || '').trim();
-  const POD_ID = 'g2ukr7elm8l5nv';
-
-  if (!RUNPOD_KEY) {
-    report.findings.push('RunPod API key not configured. Cloud GPU offline.');
-    return report;
-  }
-
-  // Check RunPod balance
-  try {
-    const balanceResp = await fetch('https://api.runpod.io/graphql', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${RUNPOD_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: '{ myself { clientBalance currentSpendPerHr } }' })
-    });
-    const balanceData = await balanceResp.json();
-    const balance = balanceData?.data?.myself?.clientBalance ?? 'unknown';
-    const spendPerHr = balanceData?.data?.myself?.currentSpendPerHr ?? 0;
-    report.stats = { balance, spendPerHr, estimatedHoursRemaining: balance !== 'unknown' ? Math.floor(balance / 0.22) : 'unknown' };
-    report.findings.push(`RunPod balance: $${balance} (~${report.stats.estimatedHoursRemaining}hrs at $0.22/hr)`);
-
-    if (typeof balance === 'number' && balance < 5) {
-      report.findings.push('WARNING: RunPod balance below $5 — refill soon');
-      report.tasks.push({ title: 'RunPod credits low — refill needed', description: `Balance: $${balance}. At $0.22/hr, only ~${Math.floor(balance / 0.22)} hours remain.`, priority: 'high' });
-    }
-  } catch (e) {
-    report.findings.push(`RunPod balance check failed: ${e.message}`);
-  }
-
-  // Check pod status
-  try {
-    const podResp = await fetch('https://api.runpod.io/graphql', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${RUNPOD_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: `{ pod(input: { podId: "${POD_ID}" }) { id name desiredStatus runtime { uptimeInSeconds } } }` })
-    });
-    const podData = await podResp.json();
-    const pod = podData?.data?.pod;
-    if (pod) {
-      report.pod = { id: pod.id, name: pod.name, status: pod.desiredStatus, uptime: pod.runtime?.uptimeInSeconds || 0 };
-      report.findings.push(`Pod "${pod.name}": ${pod.desiredStatus} (uptime: ${Math.round((pod.runtime?.uptimeInSeconds || 0) / 60)}min)`);
-
-      // Auto-stop idle pod (running > 30 min with no active work)
-      if (pod.desiredStatus === 'RUNNING' && (pod.runtime?.uptimeInSeconds || 0) > 1800) {
-        report.findings.push('Pod idle >30min — recommend stopping to save credits');
-        report.tasks.push({ title: 'Stop idle RunPod — saving credits', description: `Pod "${pod.name}" has been running ${Math.round((pod.runtime?.uptimeInSeconds || 0) / 60)} minutes. Stop it to conserve budget.`, priority: 'medium' });
-      }
-    } else {
-      report.findings.push('Pod not found or terminated.');
-    }
-  } catch (e) {
-    report.findings.push(`Pod status check failed: ${e.message}`);
-  }
-
+  report.findings.push('RunPod watch RETIRED 2026-06-12 (Shenron-era pod dead: negative balance, pod not found). Agent has no active duty; awaiting reassignment or removal.');
   return report;
 }
 
