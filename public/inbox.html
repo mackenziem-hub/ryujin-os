@@ -246,17 +246,20 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
   // Fallback path only; the normal route is RyujinAuth.clearAndRedirect below
   // (the documented auth-guard contract: wipe the stale token, bounce to
   // login.html?next=<here> so Mac lands straight back after signing in).
+  // Signed-out state: the door render itself is the SHARED partial in
+  // auth-guard.js (RyujinAuth.sessionEnded, one implementation fleet-wide);
+  // this wrapper only adds the page-specific bits (disable Scan Now, quiet
+  // the handled section).
   function renderSignedOut(){
-    const next = encodeURIComponent(window.location.pathname + window.location.search);
     const btn = document.getElementById('runBtn');
     if (btn) { btn.disabled = true; btn.textContent = 'Signed out'; btn.title = 'Sign in to scan'; }
-    const body = document.getElementById('queueBody');
-    if (body) {
-      body.innerHTML =
-        '<div class="empty" style="text-align:center;padding:34px 16px">' +
-          '<div style="margin-bottom:14px">Your session expired. Sign back in to see the inbox.</div>' +
-          '<a href="/login.html?next=' + next + '" class="tb-btn" style="display:inline-block;padding:12px 28px;text-decoration:none;font-size:1em">Sign in</a>' +
-        '</div>';
+    const hb = document.getElementById('handledBody');
+    if (hb) hb.innerHTML = '<div class="empty">Sign in to see recent activity.</div>';
+    if (window.RyujinAuth && typeof window.RyujinAuth.sessionEnded === 'function') {
+      window.RyujinAuth.sessionEnded(document.getElementById('queueBody'));
+    } else {
+      // Guard missing entirely (should not happen): plain redirect.
+      window.location.href = '/login.html?next=' + encodeURIComponent(window.location.pathname);
     }
   }
 
@@ -271,12 +274,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
     let body;
     try { body = text ? JSON.parse(text) : {}; } catch(e){ body = { error: text }; }
     if (r.status === 401) {
-      toast('Session expired. Taking you to sign in...', true);
-      if (window.RyujinAuth && typeof window.RyujinAuth.clearAndRedirect === 'function') {
-        window.RyujinAuth.clearAndRedirect();
-      } else {
-        renderSignedOut();
-      }
+      toast('Session expired.', true);
+      renderSignedOut();
       throw new Error('sign_in_required');
     }
     if (!r.ok) throw new Error(body.error || ('HTTP ' + r.status));
@@ -293,6 +292,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
       document.getElementById('lastSync').textContent = fmtSyncTime();
     } catch(e){
       console.error('inbox load failed:', e);
+      // 401 already rendered the signed-out door; do not paint over it.
+      if (e.message === 'sign_in_required') return;
       if (showSpinner) {
         document.getElementById('queueBody').innerHTML =
           '<div class="empty">Could not load inbox: ' + escapeHtml(e.message) + '</div>';

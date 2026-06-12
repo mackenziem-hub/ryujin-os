@@ -60,12 +60,39 @@
     return;
   }
 
+  // ── Shared signed-out partial (Walk 2 item 2) ──────────────────
+  // Every authed page used to hand-roll its failure state ("Could not load
+  // customers: HTTP 401") with no door in. This is the ONE implementation:
+  // plain words plus a Sign in button that returns here via login's ?next=.
+  function authErrorHtml() {
+    const next = encodeURIComponent(window.location.pathname + window.location.search);
+    return '<div class="ry-auth-error" style="text-align:center;padding:34px 16px">' +
+      '<div style="margin-bottom:14px;opacity:0.85">Your session ended.</div>' +
+      '<a href="' + LOGIN_URL + '?next=' + next + '" style="display:inline-block;padding:12px 28px;border-radius:10px;border:1px solid rgba(34,211,238,0.5);background:rgba(34,211,238,0.10);color:#22d3ee;text-decoration:none;font-weight:600;letter-spacing:0.5px">Sign in</a>' +
+      '</div>';
+  }
+
+  // Call on any 401: wipes the stale token and renders the door into the
+  // given container (element or selector string). With no container it falls
+  // back to the login redirect.
+  function sessionEnded(container) {
+    try {
+      localStorage.removeItem(TOKEN_KEY);
+      sessionStorage.removeItem(TOKEN_KEY);
+    } catch { /* ignore */ }
+    const el = (typeof container === 'string') ? document.querySelector(container) : container;
+    if (el) { el.innerHTML = authErrorHtml(); return; }
+    redirectToLogin();
+  }
+
   window.RyujinAuth = Object.freeze({
     token,
     headers() {
       return { Authorization: `Bearer ${token}` };
     },
     clearAndRedirect,
-    redirectToLogin
+    redirectToLogin,
+    authErrorHtml,
+    sessionEnded
   });
 })();
