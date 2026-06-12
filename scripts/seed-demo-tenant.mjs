@@ -28,6 +28,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
+import { cloneDefaultOffers } from '../lib/cloneOffers.js';
 
 // ── env load (matches scripts/seed_test_metal.mjs) ───────────────
 const envPath = path.resolve('.env.local');
@@ -180,33 +181,14 @@ async function upsertOwnerUser(tenantId) {
 }
 
 // ── offers: clone live from plus-ultra so they never drift ───────
+// Delegates to lib/cloneOffers.js (the shared GAP-A path) so the seed and real
+// tenant provisioning (api/tenants.js) use identical logic. The local
+// assertNotPlusUltra stays as a belt-and-suspenders guard; the lib also refuses
+// to clone a tenant's offers onto itself.
 async function cloneOffers(tenantId) {
   assertNotPlusUltra(tenantId, 'offers');
-  if (!plusUltraId) { log('skip offers (no plus-ultra source)'); return 0; }
-
-  const { data: src, error } = await sb
-    .from('offers').select('*').eq('tenant_id', plusUltraId);
-  if (error) throw error;
-  if (!src?.length) { log('no plus-ultra offers to clone'); return 0; }
-
-  let n = 0;
-  for (const o of src) {
-    // Copy every offer column except identity/ownership/timestamps. This stays
-    // faithful to schema additions (e.g. migration 008 offer_category +
-    // has_estimated_pricing) instead of dropping them via an allow-list.
-    const { id, tenant_id, created_at, updated_at, ...rest } = o;
-    const row = { ...rest, tenant_id: tenantId };
-    const { data: ex } = await sb
-      .from('offers').select('id').eq('tenant_id', tenantId).eq('slug', o.slug).maybeSingle();
-    if (ex) {
-      if (!DRY_RUN) { const { error: e } = await sb.from('offers').update(row).eq('id', ex.id); if (e) throw e; }
-    } else {
-      if (!DRY_RUN) { const { error: e } = await sb.from('offers').insert(row); if (e) throw e; }
-    }
-    n++;
-  }
-  log(`cloned ${n} offers from plus-ultra`);
-  return n;
+  const result = await cloneDefaultOffers(tenantId, { sb, dryRun: DRY_RUN, log });
+  return result.cloned;
 }
 
 // ── sample customers ─────────────────────────────────────────────
