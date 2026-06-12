@@ -120,6 +120,10 @@
       if (b.company_name) patch.name = b.company_name;
       if (b.company_phone) patch.phone = b.company_phone;
       if (b.company_email) patch.email = b.company_email;
+      // Protocol-stripped + trailing-slash-trimmed so it matches the DEFAULT
+      // format (plus-ultra DEFAULT is 'plusultraroofing.com', tenant_settings is
+      // 'https://plusultraroofing.com'); keeps tenant #1 a zero-visible-change.
+      if (b.company_website) patch.website = String(b.company_website).replace(/^https?:\/\//i, '').replace(/\/+$/, '');
       if (!Object.keys(patch).length) return;
       cached = Object.assign({}, cached, patch);
       rebrand();
