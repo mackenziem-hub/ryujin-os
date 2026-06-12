@@ -34,8 +34,12 @@ export async function fetchJSON(url, headers = {}) {
 }
 
 // Email-based fallback for agent crashes/alerts. Default channel — user prefers email.
-const NOTIFY_EMAIL = (process.env.NOTIFY_EMAIL || 'mackenzie.m@plusultraroofing.com').trim();
+// White-label: no hardcoded recipient fallback. NOTIFY_EMAIL is set in Vercel env
+// for the live deployment; if it is ever missing we skip-and-log instead of
+// silently mailing tenant #1's owner from someone else's deployment.
+const NOTIFY_EMAIL = (process.env.NOTIFY_EMAIL || '').trim();
 export async function sendFallbackEmail(subject, body) {
+  if (!NOTIFY_EMAIL) { console.error('[Fallback Email] NOTIFY_EMAIL not set; skipping'); return; }
   try {
     await gmailSend(NOTIFY_EMAIL, `[Ryujin Agent] ${subject}`, body);
   } catch (e) { console.error(`[Fallback Email] Failed: ${e.message}`); }
@@ -397,7 +401,8 @@ export async function runTrunks() {
   const apps = [
     { name: 'Aetheria Game', url: 'https://pwa-six-iota.vercel.app' },
     { name: 'Aetheria HQ', url: 'https://pwa-hq.vercel.app' },
-    { name: 'Plus Ultra HQ', url: 'https://plus-ultra-hq.vercel.app' },
+    // Plus Ultra HQ removed 2026-06-12: decommissioned Apr 28 2026, the URL only
+    // parks a redirect, so the HEAD ping was counting a dead app as healthy.
     { name: 'Ryujin OS', url: 'https://ryujin-os.vercel.app' }
   ];
 

@@ -17,7 +17,10 @@
 import { supabaseAdmin } from '../lib/supabase.js';
 import { gmailSend } from '../lib/google.js';
 
-const NOTIFY_EMAIL = (process.env.NOTIFY_EMAIL || 'mackenzie.m@plusultraroofing.com').trim();
+// White-label: no hardcoded recipient fallback (set in Vercel env for the live
+// deployment). When missing, the accept still succeeds; only the internal
+// notification email is skipped (logged below).
+const NOTIFY_EMAIL = (process.env.NOTIFY_EMAIL || '').trim();
 const SITE_BASE = (process.env.SITE_BASE || 'https://ryujin-os.vercel.app').trim();
 
 function fmtMoney(n) {
@@ -182,11 +185,17 @@ export default async function handler(req, res) {
     `Ryujin OS`
   ].filter(Boolean);
 
-  try {
-    await gmailSend(NOTIFY_EMAIL, subject, lines.join('\n'));
-  } catch (e) {
-    console.error('[custom-proposal-accept] gmailSend failed', e);
-    return res.status(500).json({ error: 'email_send_failed' });
+  if (NOTIFY_EMAIL) {
+    try {
+      await gmailSend(NOTIFY_EMAIL, subject, lines.join('\n'));
+    } catch (e) {
+      console.error('[custom-proposal-accept] gmailSend failed', e);
+      return res.status(500).json({ error: 'email_send_failed' });
+    }
+  } else {
+    // The customer's acceptance must never fail because an internal ops email
+    // is unconfigured; the row is already saved above.
+    console.error('[custom-proposal-accept] NOTIFY_EMAIL not set; acceptance recorded without notification email');
   }
 
   return res.status(200).json({
