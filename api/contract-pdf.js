@@ -14,14 +14,17 @@ import chromium from '@sparticuz/chromium';
 import puppeteer from 'puppeteer-core';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { generateContract } from '../lib/outputGenerators.js';
+import { DEFAULT_BRAND } from '../lib/brandDefaults.js';
 
+// Sourced from the shared platform default (white-label PR3); the contract
+// document keeps its own navy accent, distinct from the sales-page orange.
 const BRANDING_DEFAULT = {
-  companyName: 'Plus Ultra Roofing',
-  phone: '(506) 540-1052',
-  email: 'plusultraroofing@gmail.com',
-  website: 'plusultraroofing.com',
-  address: '6 McDowell Ave, Riverview, NB',
-  accentColor: '#0b1d3a'
+  companyName: DEFAULT_BRAND.companyName,
+  phone: DEFAULT_BRAND.phone,
+  email: DEFAULT_BRAND.email,
+  website: DEFAULT_BRAND.website,
+  address: DEFAULT_BRAND.address,
+  accentColor: DEFAULT_BRAND.contractAccent
 };
 
 function escapeHtml(s) {
