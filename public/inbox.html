@@ -230,6 +230,24 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
     toast._t = setTimeout(() => el.classList.remove('show'), 3400);
   }
 
+  // Expired/invalid session: a real signed-out state instead of a dead end.
+  // Fallback path only; the normal route is RyujinAuth.clearAndRedirect below
+  // (the documented auth-guard contract: wipe the stale token, bounce to
+  // login.html?next=<here> so Mac lands straight back after signing in).
+  function renderSignedOut(){
+    const next = encodeURIComponent(window.location.pathname + window.location.search);
+    const btn = document.getElementById('runBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Signed out'; btn.title = 'Sign in to scan'; }
+    const body = document.getElementById('queueBody');
+    if (body) {
+      body.innerHTML =
+        '<div class="empty" style="text-align:center;padding:34px 16px">' +
+          '<div style="margin-bottom:14px">Your session expired. Sign back in to see the inbox.</div>' +
+          '<a href="/login.html?next=' + next + '" class="tb-btn" style="display:inline-block;padding:12px 28px;text-decoration:none;font-size:1em">Sign in</a>' +
+        '</div>';
+    }
+  }
+
   async function api(path, opts){
     const init = Object.assign({ headers: authHeaders((opts && opts.headers) || {}) }, opts || {});
     if (init.body && typeof init.body !== 'string') {
@@ -240,6 +258,15 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
     const text = await r.text();
     let body;
     try { body = text ? JSON.parse(text) : {}; } catch(e){ body = { error: text }; }
+    if (r.status === 401) {
+      toast('Session expired. Taking you to sign in...', true);
+      if (window.RyujinAuth && typeof window.RyujinAuth.clearAndRedirect === 'function') {
+        window.RyujinAuth.clearAndRedirect();
+      } else {
+        renderSignedOut();
+      }
+      throw new Error('sign_in_required');
+    }
     if (!r.ok) throw new Error(body.error || ('HTTP ' + r.status));
     return body;
   }
