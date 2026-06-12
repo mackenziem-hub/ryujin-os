@@ -267,6 +267,9 @@ export default async function handler(req, res) {
   const { data: settings } = await supabaseAdmin
     .from('tenant_settings').select('questscan_agent_enabled').eq('tenant_id', tenant.id).maybeSingle();
   if (!settings?.questscan_agent_enabled && !dry) {
+    // Cron stays armed on purpose: the flag is the no-deploy enable switch.
+    // Log the skip so the daily no-op is visible in Vercel logs, not silent.
+    console.log(`[questscan] skipped: questscan_agent_enabled=false for ${slug}`);
     return res.json({ agent: 'questscan', skipped: 'questscan_agent_enabled is false for this tenant', tenant: slug });
   }
 
