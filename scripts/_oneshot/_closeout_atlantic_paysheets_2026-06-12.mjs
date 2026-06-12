@@ -1,12 +1,12 @@
-// Owner-override close-out: mark the 9 Atlantic paysheets Mac settled
-// out-of-band as PAID in the system. RUN BY TERMINAL A. Dry-run by default;
-// pass --apply to write. Surface the printed list to Mac before applying.
+// Owner-override close-out: mark the 11 Atlantic paysheets Mac settled
+// out-of-band as PAID in the system. Dry-run by default; pass --apply to
+// write. Run by Terminal A or by Mac himself from the repo root.
 //
-// WHY: the system carries ~$56K of Atlantic AP that reads as unpaid, but per
-// Mac (Jun 11, memory project_ryan_atlantic_balance_state_jun11) everything is
-// settled out-of-band except 34 Wilbur ($3,596.51) and 51 Woodlawn ($4,293.41).
-// Ryan has no system-side payment visibility, every AP read is inflated, and
-// the MIT lists this as the close-out backlog.
+// GROUND TRUTH (updated Jun 12 18:48Z, Mac verbatim): "Every job, including
+// Wilbur and Wood Lawn, has been paid in full. I have already secured payroll
+// for today." That supersedes the Jun 11 state where Wilbur + Woodlawn were
+// still pending. The system carried ~$56K of Atlantic AP reading as unpaid;
+// closing these 11 clears $47,413.95 of it and gives Ryan real visibility.
 //
 // WHAT IT DOES per row (deployed API, no direct DB):
 //   PUT /api/paysheets { id, paid_at, paid_to_date: total, balance_due: 0,
@@ -17,13 +17,14 @@
 //
 // SCOPE (tripwires assert this exact scope at runtime):
 //   - subcontractor 7a03d15e-5d3b-4b6b-876b-59e1ba2c0a86 (Atlantic) AND
-//     status === 'completed' AND paid_at still null
-//   - expected: exactly 9 rows totalling $39,524.03
+//     status in (completed, in_progress, scheduled) AND paid_at still null
+//   - expected: exactly 11 rows totalling $47,413.95
+//     (the 9 completed rows + 34 Wilbur in_progress $3,596.51 + 51 Woodlawn
+//      scheduled $4,293.41)
 //   EXCLUDED on purpose:
-//   - 34 Wilbur (in_progress) + 51 Woodlawn (scheduled): genuinely owed
-//   - 10 Edgewater (invoice_final): PAID per Mac but the payout amount is
+//   - 10 Edgewater (invoice_final): PAID per Mac but the RECORDED amount is
 //     disputed (disk $5,495.28 vs system $8,909.17). Close it manually once
-//     Mac confirms the real figure.
+//     Mac picks the number.
 //   - non-Atlantic subs and the two NULL-sub rows (need attribution first)
 import fs from 'node:fs';
 import path from 'node:path';
@@ -31,8 +32,9 @@ import path from 'node:path';
 const APPLY = process.argv.includes('--apply');
 const BASE = process.env.RYUJIN_BASE || 'https://ryujin-os.vercel.app';
 const ATLANTIC = '7a03d15e-5d3b-4b6b-876b-59e1ba2c0a86';
-const EXPECT_COUNT = 9;
-const EXPECT_TOTAL = 39524.03;
+const CLOSE_STATUSES = new Set(['completed', 'in_progress', 'scheduled']);
+const EXPECT_COUNT = 11;
+const EXPECT_TOTAL = 47413.95;
 
 let TOKEN = (process.env.RYUJIN_SERVICE_TOKEN || '').trim();
 if (!TOKEN) {
@@ -56,7 +58,7 @@ const rows = Array.isArray(body) ? body : (body.paysheets || body.data || []);
 
 const targets = rows.filter(p =>
   p.subcontractor_id === ATLANTIC &&
-  p.status === 'completed' &&
+  CLOSE_STATUSES.has(p.status) &&
   p.paid_at == null
 );
 const total = Math.round(targets.reduce((s, p) => s + Number(p.total || 0), 0) * 100) / 100;
@@ -83,11 +85,17 @@ const now = new Date().toISOString();
 let ok = 0, fail = 0;
 for (const p of targets) {
   const tracker = Array.isArray(p.payment_tracker) ? p.payment_tracker : [];
+  // The 9 completed rows trace to Mac's Jun 11 confirmation; Wilbur (in_progress)
+  // and Woodlawn (scheduled) trace to the Jun 12 18:48Z all-paid statement
+  // (etransfer, payroll secured).
+  const citation = p.status === 'completed'
+    ? 'Owner close-out: settled out-of-band per Mac confirmation Jun 11 2026.'
+    : 'Owner close-out: paid in full per Mac confirmation Jun 12 2026 18:48Z (etransfer, payroll secured).';
   tracker.push({
     date: now,
     method: 'etransfer_oob',
     amount: Number(p.total),
-    note: 'Owner close-out: settled out-of-band per Mac confirmation Jun 11 2026. Backfilled by _closeout_atlantic_paysheets_2026-06-12.'
+    note: citation + ' Backfilled by _closeout_atlantic_paysheets_2026-06-12.'
   });
   const resp = await fetch(`${BASE}/api/paysheets`, {
     method: 'PUT',
@@ -104,5 +112,5 @@ for (const p of targets) {
   else { fail++; console.error(`  FAIL ${p.id.slice(0, 8)} HTTP ${resp.status}: ${(await resp.text()).slice(0, 150)}`); }
 }
 console.log(`\nDone: ${ok} closed out, ${fail} failed.`);
-console.log('Open Atlantic items remaining: 34 Wilbur $3,596.51 (in_progress), 51 Woodlawn $4,293.41 (scheduled), 10 Edgewater held for amount confirm.');
+console.log('Only Atlantic item remaining open: 10 Edgewater (paid, held until Mac picks the recorded amount: disk $5,495.28 vs system $8,909.17).');
 process.exit(fail ? 1 : 0);
