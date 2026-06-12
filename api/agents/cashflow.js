@@ -14,6 +14,7 @@ import { gmailSearch, gmailReadMessage } from '../../lib/google.js';
 import { supabaseAdmin } from '../../lib/supabase.js';
 import { requireCronOrOwner } from '../../lib/cronAuth.js';
 import { snapshotHeaders } from '../../lib/snapshotClient.js';
+import { matchPaymentToEstimate } from '../../lib/paymentMatcher.js';
 
 const ESTIMATOR_BASE = 'https://estimator-os.replit.app/api';
 const ESTIMATOR_KEY = (process.env.ESTIMATOR_KEY || process.env.ESTIMATOR_OS_KEY || 'pu-estimator-2026').trim();
@@ -173,6 +174,55 @@ export async function runCashflow() {
   const recent = payments.filter(p => new Date(p.date).getTime() > sevenDaysAgo);
   const last7Collected = recent.reduce((s, p) => s + p.amount, 0);
 
+  // AR exception surface. Computed every run so a mis-attribution or duplicate
+  // shows up in the snapshot within 4 hours instead of at the next manual audit.
+  // Rides inside the existing cashflow section (no new top-level snapshot key).
+  const arExceptions = [];
+  for (const job of jobs) {
+    if (job.contractValue && job.totalCollected > job.contractValue + 1) {
+      arExceptions.push({
+        type: 'over_collected',
+        customer: job.customer,
+        estimateId: job.estimateId,
+        contractValue: job.contractValue,
+        totalCollected: job.totalCollected,
+        excess: Math.round((job.totalCollected - job.contractValue) * 100) / 100
+      });
+    }
+  }
+  for (const pmt of unmatched) {
+    if (pmt.amount >= 1000) {
+      arExceptions.push({
+        type: 'unmatched_large',
+        customer: pmt.customer,
+        amount: pmt.amount,
+        description: pmt.invoiceDescription || null,
+        date: pmt.date,
+        emailId: pmt.emailId
+      });
+    }
+  }
+  // Same-amount payments landing within 60s of each other are duplicate suspects
+  // (double-click on a payment link, or a double webhook/notification).
+  const byAmount = {};
+  for (const pmt of payments) (byAmount[pmt.amount] = byAmount[pmt.amount] || []).push(pmt);
+  for (const group of Object.values(byAmount)) {
+    if (group.length < 2) continue;
+    const sorted = [...group].sort((a, b) => new Date(a.date) - new Date(b.date));
+    for (let i = 1; i < sorted.length; i++) {
+      const gapMs = Math.abs(new Date(sorted[i].date) - new Date(sorted[i - 1].date));
+      if (gapMs <= 60000) {
+        arExceptions.push({
+          type: 'duplicate_suspect',
+          customer: sorted[i].customer,
+          amount: sorted[i].amount,
+          dates: [sorted[i - 1].date, sorted[i].date],
+          emailIds: [sorted[i - 1].emailId, sorted[i].emailId]
+        });
+      }
+    }
+  }
+
   report.cashflow = {
     last90Days: {
       paymentsReceived: payments.length,
@@ -186,8 +236,12 @@ export async function runCashflow() {
       collected: last7Collected
     },
     byJob: jobs.sort((a, b) => (b.balanceRemaining || 0) - (a.balanceRemaining || 0)),
-    unmatchedPayments: unmatched
+    unmatchedPayments: unmatched,
+    arExceptions
   };
+  if (arExceptions.length > 0) {
+    report.findings.push(`${arExceptions.length} AR exception(s): ${arExceptions.map(x => `${x.type}:${x.customer}`).join(', ')}`);
+  }
 
   report.findings.push(`Last 90d: $${totalCollected.toFixed(2)} collected on $${totalContract.toFixed(2)} signed (outstanding: $${totalOutstanding.toFixed(2)})`);
   report.findings.push(`${payments.length - unmatched.length}/${payments.length} payments matched`);
@@ -326,48 +380,11 @@ function classifyInvoiceType(label) {
   return 'unknown';
 }
 
-// Match by: exact name → last-name → address-token in invoice description.
-// Estimates are the unified pool from BOTH sources (estimator-os + ryujin), each
-// with normalized {id, source, fullName, address, finalAcceptedTotal, ...}.
-function matchPaymentToEstimate(payment, estimates) {
-  const pmtName = (payment.customer || '').toLowerCase().trim();
-  if (!pmtName) return null;
-
-  // Exact full-name match
-  let hit = estimates.find(e => (e.fullName || '').toLowerCase().trim() === pmtName);
-  if (hit) return hit;
-
-  // Last-name match (only if last name is distinctive — avoid "Smith" collisions)
-  const pmtParts = pmtName.split(/\s+/);
-  const lastName = pmtParts[pmtParts.length - 1];
-  if (lastName && lastName.length >= 4) {
-    const matches = estimates.filter(e => {
-      const fn = (e.fullName || '').toLowerCase();
-      const parts = fn.split(/\s+/);
-      return parts[parts.length - 1] === lastName;
-    });
-    if (matches.length === 1) return matches[0];
-  }
-
-  // Address-token match from invoice description (e.g. "5380 Rte. 495" → "5380").
-  // Allow ±20 on the street number to absorb data-entry slop (5380 vs 5360 case).
-  if (payment.invoiceDescription) {
-    const numMatch = payment.invoiceDescription.match(/\b(\d{2,5})\b/);
-    if (numMatch) {
-      const streetNum = parseInt(numMatch[1], 10);
-      const exact = estimates.filter(e => (e.address || '').includes(numMatch[1]));
-      if (exact.length === 1) return exact[0];
-      const fuzzy = estimates.filter(e => {
-        const m = (e.address || '').match(/\b(\d{2,5})\b/);
-        if (!m) return false;
-        return Math.abs(parseInt(m[1], 10) - streetNum) <= 20;
-      });
-      if (fuzzy.length === 1) return fuzzy[0];
-    }
-  }
-
-  return null;
-}
+// matchPaymentToEstimate now lives in lib/paymentMatcher.js (dependency-free so
+// it is unit-testable). The address fallback there requires a shared street-name
+// token on top of the +-20 civic-number window; the old number-only window
+// mis-attributed cross-street payments to whichever estimate sat alone in the
+// numeric band. See tests/paymentMatcher.test.mjs.
 
 // ─── HANDLER (on-demand + cron entry point) ──────────────────
 export default async function handler(req, res) {
