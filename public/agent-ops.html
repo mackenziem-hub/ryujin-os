@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#030611">
+<title>Ryujin · Agent Ops</title>
+<link rel="icon" href="/apple-touch-icon.png">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<!-- Auth gate: tokenless users bounce to /login before any logic runs -->
+<script src="/assets/auth-guard.js"></script>
+<style>
+:root{
+  --bg:#030611; --bg-2:#06101f; --surface:rgba(8,18,32,0.72); --surface-2:rgba(14,26,40,0.6);
+  --teal:#2dd4bf; --teal-2:#5eead4; --teal-dim:rgba(45,212,191,0.5);
+  --ink:#e6f1f4; --ink-dim:rgba(190,214,222,0.66); --ink-faint:rgba(190,214,222,0.42);
+  --line:rgba(45,212,191,0.16); --line-2:rgba(45,212,191,0.32);
+  --red:#f87171; --amber:#fbbf24; --green:#4ade80; --blue:#0ea5e9; --slate:#94a3b8;
+  --z-sticky:100;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{min-height:100%}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--ink);line-height:1.55;-webkit-font-smoothing:antialiased}
+
+#bg-dragon{position:fixed;inset:0;width:100vw;height:100vh;object-fit:cover;z-index:0;opacity:0.14;mix-blend-mode:screen;filter:hue-rotate(120deg) saturate(1.2) brightness(1.05);pointer-events:none}
+.vignette{position:fixed;inset:0;z-index:1;pointer-events:none;background:radial-gradient(120% 80% at 50% 18%,rgba(3,6,17,0) 0%,rgba(3,6,17,0.5) 62%,rgba(3,6,17,0.95) 100%)}
+
+.shell{position:relative;z-index:2;max-width:1180px;margin:0 auto;padding:0 18px 64px}
+
+/* Top bar */
+.topbar{position:sticky;top:0;z-index:var(--z-sticky);display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 2px 12px;background:linear-gradient(180deg,var(--bg) 60%,rgba(3,6,17,0));backdrop-filter:blur(4px)}
+.wordmark{font-weight:900;letter-spacing:3px;font-size:0.92em}
+.wordmark span{color:var(--teal)}
+.bar-right{display:flex;align-items:center;gap:10px}
+.refresh-meta{font-size:0.7em;color:var(--ink-faint);font-family:'JetBrains Mono',monospace;letter-spacing:0.3px}
+.bar-btn{font:inherit;font-size:0.74em;font-weight:700;letter-spacing:0.5px;color:var(--ink-dim);background:rgba(255,255,255,0.04);border:1px solid var(--line);border-radius:999px;padding:8px 14px;cursor:pointer;transition:color 0.14s,border-color 0.14s;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+.bar-btn:hover{color:var(--teal-2);border-color:var(--line-2)}
+
+/* Masthead */
+.masthead{padding:10px 2px 4px}
+.masthead h1{font-size:clamp(1.5rem,4vw,2.1rem);font-weight:800;letter-spacing:-0.02em;text-wrap:balance}
+.masthead p{color:var(--ink-dim);font-size:0.92em;max-width:68ch;margin-top:6px}
+
+/* Summary strip */
+.summary{display:flex;flex-wrap:wrap;gap:10px;margin:18px 2px 6px}
+.stat{display:flex;align-items:baseline;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 16px;min-width:108px}
+.stat .n{font-size:1.5em;font-weight:800;font-family:'JetBrains Mono',monospace;line-height:1}
+.stat .l{font-size:0.72em;color:var(--ink-dim);letter-spacing:0.4px;text-transform:uppercase}
+.stat.fresh .n{color:var(--green)} .stat.late .n{color:var(--amber)} .stat.stale .n{color:var(--red)} .stat.idle .n{color:var(--slate)}
+
+/* Group sections */
+.group{margin-top:30px}
+.group-head{display:flex;align-items:center;gap:10px;margin:0 2px 12px}
+.group-head h2{font-size:0.82em;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:var(--teal-2)}
+.group-head .count{font-size:0.74em;color:var(--ink-faint);font-family:'JetBrains Mono',monospace}
+.group-head .rule{flex:1;height:1px;background:linear-gradient(90deg,var(--line-2),transparent)}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:12px}
+
+/* Agent card */
+.card{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:15px 16px 14px;display:flex;flex-direction:column;gap:10px;transition:border-color 0.16s,transform 0.16s;opacity:0;transform:translateY(8px);animation:rise 0.5s cubic-bezier(0.22,1,0.36,1) forwards}
+.card:hover{border-color:var(--line-2)}
+@keyframes rise{to{opacity:1;transform:none}}
+@media (prefers-reduced-motion: reduce){.card{opacity:1;transform:none;animation:none}}
+
+.card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.card-id{display:flex;align-items:center;gap:9px;min-width:0}
+.dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto;margin-top:5px;box-shadow:0 0 0 0 currentColor}
+.dot.fresh{background:var(--green);color:var(--green)} .dot.late{background:var(--amber);color:var(--amber)}
+.dot.stale{background:var(--red);color:var(--red)} .dot.idle{background:var(--slate);color:var(--slate)} .dot.unknown{background:var(--ink-faint);color:var(--ink-faint)}
+.dot.fresh{animation:halo 2.4s ease-in-out infinite}
+@keyframes halo{0%,100%{box-shadow:0 0 0 0 rgba(74,222,128,0.4)}50%{box-shadow:0 0 0 5px rgba(74,222,128,0)}}
+@media (prefers-reduced-motion: reduce){.dot.fresh{animation:none}}
+.card-name{font-weight:700;font-size:0.98em;line-height:1.2}
+.card-role{font-size:0.74em;color:var(--ink-dim);margin-top:1px}
+.verdict{flex:0 0 auto;font-size:0.64em;font-weight:800;letter-spacing:0.8px;text-transform:uppercase;padding:4px 9px;border-radius:999px;border:1px solid currentColor}
+.verdict.fresh{color:var(--green)} .verdict.late{color:var(--amber)} .verdict.stale{color:var(--red)} .verdict.idle{color:var(--slate)} .verdict.unknown{color:var(--ink-faint)}
+
+.card-meta{display:flex;flex-direction:column;gap:5px;font-size:0.8em}
+.row{display:flex;align-items:center;gap:8px;color:var(--ink-dim)}
+.row .k{color:var(--ink-faint);font-size:0.92em;min-width:62px;letter-spacing:0.2px}
+.row .v{color:var(--ink);font-family:'JetBrains Mono',monospace;font-size:0.92em}
+.row .v.sched{color:var(--teal-2)}
+
+.card-note{font-size:0.78em;color:var(--ink-dim);line-height:1.5;border-top:1px solid var(--line);padding-top:9px;white-space:pre-wrap;word-break:break-word}
+.card-note.err{color:#fca5a5}
+.card-note .src{display:inline-block;font-size:0.82em;color:var(--ink-faint);font-family:'JetBrains Mono',monospace;margin-bottom:3px}
+
+.state-msg{margin:40px auto;text-align:center;color:var(--ink-dim);font-size:0.95em;max-width:46ch}
+.state-msg b{color:var(--ink)}
+.spinner{width:26px;height:26px;border:2px solid var(--line-2);border-top-color:var(--teal);border-radius:50%;margin:0 auto 14px;animation:spin 0.8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.spinner{animation-duration:2s}}
+
+footer{margin-top:34px;text-align:center;color:var(--ink-faint);font-size:0.74em;line-height:1.7}
+footer code{font-family:'JetBrains Mono',monospace;color:var(--ink-dim)}
+</style>
+</head>
+<body>
+
+<video id="bg-dragon" muted playsinline loop preload="none" autoplay data-src="/assets/videos/bacround cinematic update.mp4"></video>
+<div class="vignette"></div>
+
+<div class="shell">
+  <header class="topbar">
+    <div class="wordmark">RYUJIN <span>OS</span></div>
+    <div class="bar-right">
+      <span class="refresh-meta" id="refreshMeta">loading…</span>
+      <a class="bar-btn" href="/admin.html">&#8592; Admin</a>
+      <button class="bar-btn" id="refreshBtn" type="button">Refresh</button>
+    </div>
+  </header>
+
+  <div class="masthead">
+    <h1>Agent Ops</h1>
+    <p>Health of the scheduled Ryujin agents. Freshness is read from the live snapshot and the last-24h run log; nothing here triggers an agent.</p>
+  </div>
+
+  <div class="summary" id="summary" aria-live="polite"></div>
+
+  <div id="board">
+    <div class="state-msg"><div class="spinner"></div>Reading the snapshot…</div>
+  </div>
+
+  <footer>
+    Schedule ground truth: <code>vercel.json</code> crons (UTC). Freshness is computed from run-timestamp age, so it is correct across DST.<br>
+    Read-only: this page calls <code>/api/snapshot</code> and <code>/api/cron-health</code> only. It never invokes an agent endpoint.
+  </footer>
+</div>
+
+<script>window.RYUJIN_TENANT_SLUG = window.RYUJIN_TENANT_SLUG || 'plus-ultra';</script>
+<script>
+(function () {
+  'use strict';
+  var TENANT = window.RYUJIN_TENANT_SLUG || 'plus-ultra';
+  var MIN = 60 * 1000, HOUR = 60 * MIN;
+
+  function authHeaders(){ var h = {}; try { var t = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token'); if (t) h.Authorization = 'Bearer ' + t; } catch (e) {} return h; }
+  function tHeaders(){ var h = authHeaders(); h['x-tenant-id'] = TENANT; return h; }
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function (c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+
+  // Read a top-level-or-sectioned snapshot key. Preserve-keys live at the doc
+  // root, but some deployments nest under .sections, so try both.
+  function snapKey(snap, key){ if (!snap) return undefined; if (snap[key] != null) return snap[key]; if (snap.sections && snap.sections[key] != null) return snap.sections[key]; return undefined; }
+  // Pull the first present timestamp-ish field off an object.
+  function tsOf(obj){
+    if (!obj || typeof obj !== 'object') return null;
+    var keys = ['lastRun', 'last_run', 'generated_at', 'generatedAt', 'ranAt', 'ran_at', 'completed_at', 'updated_at'];
+    for (var i = 0; i < keys.length; i++){ if (obj[keys[i]]) return obj[keys[i]]; }
+    return null;
+  }
+
+  // REGISTRY — the recurring agents. snap: how to read a run timestamp from the
+  // snapshot. slug: matching agent_runs slug in /api/cron-health. maxAgeMin: the
+  // largest healthy gap (FRESH within it, LATE up to 2x, STALE beyond). due:
+  // 'periodic' agents stay idle-styled rather than alarming between fires.
+  var REGISTRY = [
+    { group: 'Z-Fighters · daily 07:00 AT', items: [
+      { name: 'Vegeta', role: 'Sales scan', sched: 'Daily 07:04 AT', maxAgeMin: 26*60, snap: function(s){ var d = snapKey(s,'agentReports'); return d && d.daily && (d.daily.vegeta || d.daily.sales); } },
+      { name: 'Piccolo', role: 'Ops scan', sched: 'Daily 07:04 AT', maxAgeMin: 26*60, snap: function(s){ var d = snapKey(s,'agentReports'); return d && d.daily && (d.daily.piccolo || d.daily.ops); } },
+      { name: 'Krillin', role: 'Comms scan', sched: 'Daily 07:04 AT', maxAgeMin: 26*60, snap: function(s){ var d = snapKey(s,'agentReports'); return d && d.daily && (d.daily.krillin || d.daily.comms); } },
+      { name: 'Gohan', role: 'Game health', sched: 'Daily 07:04 AT', maxAgeMin: 26*60, snap: function(s){ var d = snapKey(s,'agentReports'); return d && d.daily && (d.daily.gohan || d.daily.game); } }
+    ]},
+    { group: 'Z-Fighters · weekly (Mon 06:07 AT)', items: [
+      { name: 'Trunks', role: 'Infra & security', sched: 'Mon 06:07 AT', maxAgeMin: 8*24*60, due: 'periodic', snap: function(s){ var d = snapKey(s,'agentReports'); return d && d.weekly && (d.weekly.trunks || d.weekly.infra); } },
+      { name: 'Bulma', role: 'Weekly KPIs', sched: 'Mon 06:07 AT', maxAgeMin: 8*24*60, due: 'periodic', snap: function(s){ var d = snapKey(s,'agentReports'); return d && d.weekly && (d.weekly.bulma || d.weekly.kpis); } }
+    ]},
+    { group: 'Briefings & monitors', items: [
+      { name: 'Morning Briefing', role: 'Compiled 07:00 AT', sched: 'Daily 07:00 AT', maxAgeMin: 26*60, snap: function(s){ return snapKey(s,'briefing_morning'); } },
+      { name: 'Evening Briefing', role: 'Compiled 18:00 AT', sched: 'Daily 18:00 AT', maxAgeMin: 26*60, snap: function(s){ return snapKey(s,'briefing_evening'); } },
+      { name: 'Watchdog', role: 'System monitor', sched: 'Every 2h · 09-19 AT', maxAgeMin: 14*60, snap: function(s){ return snapKey(s,'watchdog'); } },
+      { name: 'Heartbeat', role: 'Liveness ping', sched: 'Daily 09:30 AT', maxAgeMin: 26*60, snap: function(s){ return snapKey(s,'heartbeat'); } }
+    ]},
+    { group: 'Business lanes · daily 07:45 AT', items: [
+      { name: 'Sales', role: 'Pipeline', sched: 'Daily 07:45 AT', maxAgeMin: 26*60, slug: 'sales' },
+      { name: 'Ops', role: 'Operations', sched: 'Daily 07:45 AT', maxAgeMin: 26*60, slug: 'ops' },
+      { name: 'Finance', role: 'AR / AP', sched: 'Daily 07:45 AT', maxAgeMin: 26*60, slug: 'finance' },
+      { name: 'Customer', role: 'Relationships', sched: 'Daily 07:45 AT', maxAgeMin: 26*60, slug: 'customer' },
+      { name: 'Service', role: 'Tickets', sched: 'Daily 07:45 AT', maxAgeMin: 26*60, slug: 'service' },
+      { name: 'Inventory', role: 'Materials', sched: 'Daily 07:45 AT', maxAgeMin: 26*60, slug: 'inventory' },
+      { name: 'Strategy', role: 'CEO scan', sched: 'Daily 07:45 AT', maxAgeMin: 26*60, slug: 'strategy' }
+    ]},
+    { group: 'High-frequency', items: [
+      { name: 'Inbox Triage', role: 'Conversation triage', sched: 'Every 20 min', maxAgeMin: 45, slug: 'inbox', snap: function(s){ return snapKey(s,'inbox'); } },
+      { name: 'Production', role: 'Job folders', sched: 'Every 30 min', maxAgeMin: 70, slug: 'production' },
+      { name: 'Reconcile', role: 'Discrepancy scan', sched: 'Daily 08:15 AT', maxAgeMin: 26*60, slug: 'reconcile' },
+      { name: 'Questscan', role: 'Quest flags', sched: 'Daily 08:45 AT', maxAgeMin: 26*60, slug: 'questscan' },
+      { name: 'Marketing Watch', role: 'Ad performance', sched: 'Daily 08:20 AT', maxAgeMin: 26*60, slug: 'marketing' },
+      { name: 'Cashflow', role: 'Payments roll-up', sched: 'Every 4h', maxAgeMin: 5*60, slug: 'cashflow' }
+    ]},
+    { group: 'Occasional & maintenance', items: [
+      { name: 'Generator', role: 'Social media posts', sched: 'Sun 20:00 AT', maxAgeMin: 8*24*60, due: 'periodic', slug: 'generator' },
+      { name: 'Memory', role: 'Consolidation', sched: 'Daily 00:59 AT', maxAgeMin: 26*60, slug: 'memory' },
+      { name: 'Peer Audit', role: 'Copy review', sched: 'Daily 07:30 AT', maxAgeMin: 26*60, slug: 'peer-audit' }
+    ]}
+  ];
+
+  function relTime(iso){
+    if (!iso) return 'no run yet';
+    var t = new Date(iso).getTime();
+    if (isNaN(t)) return 'no run yet';
+    var ms = Date.now() - t, s = Math.round(ms / 1000);
+    if (s < 0) return 'just now';
+    if (s < 60) return s + 's ago';
+    var m = Math.round(s / 60); if (m < 60) return m + 'm ago';
+    var h = Math.round(m / 60); if (h < 48) return h + 'h ago';
+    return Math.round(h / 24) + 'd ago';
+  }
+
+  // Verdict from timestamp age vs the agent's healthy window.
+  function verdict(item, iso, runStatus){
+    if (!iso) return item.due === 'periodic' ? 'idle' : 'unknown';
+    var t = new Date(iso).getTime();
+    if (isNaN(t)) return 'unknown';
+    if (runStatus && String(runStatus).toLowerCase() === 'error') return 'stale';
+    var ageMin = (Date.now() - t) / MIN, max = item.maxAgeMin;
+    if (ageMin <= max) return 'fresh';
+    if (item.due === 'periodic') return ageMin <= max * 1.5 ? 'late' : 'stale';
+    return ageMin <= max * 2 ? 'late' : 'stale';
+  }
+  var VERDICT_LABEL = { fresh: 'Fresh', late: 'Late', stale: 'Stale', idle: 'Idle', unknown: 'No data' };
+
+  function render(snap, cronHealth){
+    var board = document.getElementById('board');
+    var agentsBySlug = {};
+    if (cronHealth && cronHealth.agents){ cronHealth.agents.forEach(function (a){ if (a && a.agent_slug) agentsBySlug[a.agent_slug] = a; }); }
+
+    var tally = { fresh: 0, late: 0, stale: 0, idle: 0, unknown: 0, total: 0 };
+    var html = '';
+
+    REGISTRY.forEach(function (grp){
+      var cards = '';
+      grp.items.forEach(function (item, i){
+        var run = item.slug ? agentsBySlug[item.slug] : null;
+        var iso = null, source = '';
+        if (item.snap){ var sv = item.snap(snap); var st = tsOf(sv); if (st){ iso = st; source = 'snapshot'; } }
+        if (!iso && run && run.last_run){ iso = run.last_run; source = 'run log'; }
+        var v = verdict(item, iso, run && run.last_status);
+        tally[v]++; tally.total++;
+
+        var note = '', noteCls = '';
+        if (run && (run.last_error_message || run.errors_24h > 0)){
+          noteCls = ' err';
+          note = '<span class="src">last error</span>' + esc((run.last_error_message || 'error logged in last 24h').slice(0, 180));
+        } else if (run && run.last_summary){
+          note = '<span class="src">' + esc(source || 'run log') + '</span>' + esc(run.last_summary.slice(0, 180));
+        } else if (iso){
+          note = '<span class="src">' + esc(source) + '</span>Last run logged. No summary attached.';
+        } else {
+          note = item.due === 'periodic' ? 'Not due yet. Stays idle between scheduled fires.' : 'No run timestamp in the snapshot or 24h log.';
+        }
+        var runs = run && run.runs_24h != null ? (run.runs_24h + ' run' + (run.runs_24h === 1 ? '' : 's') + ' / 24h') : null;
+
+        cards +=
+          '<article class="card" style="animation-delay:' + Math.min(i * 40, 240) + 'ms">' +
+            '<div class="card-top">' +
+              '<div class="card-id">' +
+                '<span class="dot ' + v + '" aria-hidden="true"></span>' +
+                '<div><div class="card-name">' + esc(item.name) + '</div><div class="card-role">' + esc(item.role) + '</div></div>' +
+              '</div>' +
+              '<span class="verdict ' + v + '">' + VERDICT_LABEL[v] + '</span>' +
+            '</div>' +
+            '<div class="card-meta">' +
+              '<div class="row"><span class="k">Schedule</span><span class="v sched">' + esc(item.sched) + '</span></div>' +
+              '<div class="row"><span class="k">Last run</span><span class="v">' + esc(relTime(iso)) + '</span></div>' +
+              (runs ? '<div class="row"><span class="k">Activity</span><span class="v">' + esc(runs) + '</span></div>' : '') +
+            '</div>' +
+            '<div class="card-note' + noteCls + '">' + note + '</div>' +
+          '</article>';
+      });
+      html +=
+        '<section class="group">' +
+          '<div class="group-head"><h2>' + esc(grp.group) + '</h2><span class="count">' + grp.items.length + '</span><span class="rule"></span></div>' +
+          '<div class="grid">' + cards + '</div>' +
+        '</section>';
+    });
+
+    board.innerHTML = html;
+
+    var sum = document.getElementById('summary');
+    function stat(cls, n, l){ return '<div class="stat ' + cls + '"><span class="n">' + n + '</span><span class="l">' + l + '</span></div>'; }
+    sum.innerHTML =
+      stat('fresh', tally.fresh, 'Fresh') +
+      stat('late', tally.late, 'Late') +
+      stat('stale', tally.stale, 'Stale') +
+      stat('idle', tally.idle + tally.unknown, 'Idle') +
+      stat('', tally.total, 'Agents');
+  }
+
+  function stateMsg(htmlInner){ document.getElementById('board').innerHTML = '<div class="state-msg">' + htmlInner + '</div>'; document.getElementById('summary').innerHTML = ''; }
+
+  async function load(){
+    var tok = (function (){ try { return localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token'); } catch (e) { return null; } })();
+    if (!tok){ stateMsg('<b>Sign-in required.</b><br>This board reads the authed snapshot.'); return; }
+    var meta = document.getElementById('refreshMeta');
+    meta.textContent = 'refreshing…';
+    // Both reads are independent and read-only; settle whichever return.
+    var results = await Promise.allSettled([
+      fetch('/api/snapshot', { headers: tHeaders(), cache: 'no-store' }),
+      fetch('/api/cron-health', { headers: tHeaders(), cache: 'no-store' })
+    ]);
+    var snap = null, cron = null, snapErr = null;
+    try { if (results[0].status === 'fulfilled' && results[0].value.ok) snap = await results[0].value.json(); else snapErr = results[0].status === 'fulfilled' ? ('HTTP ' + results[0].value.status) : 'network'; } catch (e) { snapErr = e.message; }
+    try { if (results[1].status === 'fulfilled' && results[1].value.ok) cron = await results[1].value.json(); } catch (e) {}
+
+    if (!snap && !cron){ stateMsg('<b>Couldn\'t load.</b><br>Snapshot ' + esc(snapErr || 'failed') + '. The schedule reference still applies; retry shortly.'); meta.textContent = 'load failed'; return; }
+    render(snap || {}, cron);
+    var stamp = (cron && cron.generated_at) || (snap && (snap.updated_at || snap.generatedAt));
+    meta.textContent = 'updated ' + (stamp ? new Date(stamp).toLocaleTimeString() : new Date().toLocaleTimeString()) + ' · auto 60s';
+  }
+
+  document.getElementById('refreshBtn').addEventListener('click', load);
+  // Lazy-load the ambient background only when idle, never block first paint.
+  (function (){ var v = document.getElementById('bg-dragon'); if (v && v.dataset.src){ var go = function (){ v.src = v.dataset.src; }; if ('requestIdleCallback' in window) requestIdleCallback(go); else setTimeout(go, 1200); } })();
+  load();
+  setInterval(load, 60 * 1000);
+})();
+</script>
+
+</body>
+</html>

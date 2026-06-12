@@ -26,7 +26,7 @@
     '/marketing.html', '/marketing-leads.html', '/finance.html',
     '/finance-receivables.html', '/finance-payments.html', '/service.html',
     '/service-tickets.html', '/inbox.html', '/messages.html', '/approvals.html',
-    '/admin-pipeline.html', '/admin-cron-health.html', '/admin-team.html',
+    '/admin-pipeline.html', '/admin-cron-health.html', '/agent-ops.html', '/admin-team.html',
     '/admin-pricing.html', '/generator.html', '/decks.html', '/instant-estimator.html',
     '/admin-advanced.html', '/sales-advanced.html', '/marketing-advanced.html',
     '/finance-advanced.html', '/production-advanced.html', '/service-advanced.html',
