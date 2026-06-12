@@ -57,8 +57,12 @@ export default async function handler(req, res) {
     if (ageHours > BRIEFING_MAX_AGE_HOURS) {
       failures.push(`Morning briefing is ${ageHours.toFixed(1)}h old (max ${BRIEFING_MAX_AGE_HOURS}h). Cron may have skipped or function crashed.`);
     }
-    // Email dispatch check (briefing.js writes emailSent into snapshot)
-    if (briefingMorning.emailSent === false) {
+    // Email dispatch check (briefing.js writes emailSent into snapshot).
+    // Skip when the owner has intentionally muted the briefing email
+    // (OWNER_BRIEFING_EMAIL_MUTED, directive 2026-05-12). Without this guard the
+    // heartbeat alerted every day on a by-design emailSent=false and fired a
+    // daily fallback SMS. Only flag a genuine send failure, not an intentional mute.
+    if (briefingMorning.emailSent === false && !briefingMorning.emailMuted) {
       failures.push(`Morning briefing ran but email did NOT send. See briefing errors.`);
     }
     if (briefingMorning.errors && briefingMorning.errors.length > 0) {

@@ -280,6 +280,7 @@ export default async function handler(req, res) {
   // ── EMAIL DELIVERY (morning only — replaces SMS) ──
   // Pull EA context, marketing pulse, systems check, then build markdown brief.
   let emailSent = false;
+  const emailMuted = (process.env.OWNER_BRIEFING_EMAIL_MUTED || '').trim() === '1';
   let briefMarkdown = null;
   let briefStatus = null;
   let briefDateLabel = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Moncton' });
@@ -365,7 +366,10 @@ export default async function handler(req, res) {
 
     // Email delivery disabled per owner directive 2026-05-12 — briefing lives in
     // snapshot + admin dashboard only. Re-enable by removing the OWNER_BRIEFING_EMAIL_MUTED gate.
-    if ((process.env.OWNER_BRIEFING_EMAIL_MUTED || '').trim() !== '1') {
+    // emailMuted is written into the snapshot below so the heartbeat can tell an
+    // intentional mute (emailSent false BY DESIGN) apart from a real send failure.
+    // Without it the heartbeat false-alarms every day and burns a fallback SMS.
+    if (!emailMuted) {
       try {
         const subject = `Daily Brief · ${briefDateLabel} · ${briefStatus === 'red' ? '🔴' : briefStatus === 'yellow' ? '🟡' : '🟢'}`;
         await gmailSend('mackenzie.m@plusultraroofing.com', subject, briefMarkdown);
@@ -398,6 +402,7 @@ export default async function handler(req, res) {
       briefMarkdown,
       briefStatus,
       emailSent,
+      emailMuted,
       errors: errors.length > 0 ? errors : null
     }
   });
