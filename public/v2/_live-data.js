@@ -375,7 +375,7 @@ export async function loadLiveData(tenantSlug) {
 
   return {
     tenant: {
-      name: 'Plus Ultra Roofing', // overridden by _tenant.js
+      name: 'Ryujin OS', // neutral white-label default; overridden per tenant by _tenant.js (company_name)
       today
     },
     pillars: [
