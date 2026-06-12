@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0a0a1f">
+<title>Ryujin OS · Builder Room</title>
+<link rel="icon" href="/apple-touch-icon.png">
+<!-- Auth gate: tokenless users bounce to /login before any logic runs -->
+<script src="/assets/auth-guard.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* NES wall palette (Guild Hall) bridged onto the Ryujin internal scaffold. */
+  --bg:#070716; --navy-deep:#0a0a24; --navy-wall:#14143c; --navy-panel:#1a1a4a;
+  --ink:#05050f; --stone:#3a3a5e;
+  --parchment:#e8e0c8; --parchment-mid:#a8a08c; --parchment-dim:#6f6a58;
+  /* Signal language: gold = needs Mac, green = working, never mixed. */
+  --gold:#f8b800; --gold-bright:#fcd048; --green:#58d854; --green-deep:#00a844;
+  --red:#f83800; --red-soft:#ff8a6a; --teal:#2dd4bf;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{min-height:100%}
+body{
+  font-family:'VT323','Courier New',monospace;
+  background:
+    radial-gradient(120% 90% at 50% 0%, #161642 0%, var(--bg) 60%, #040410 100%);
+  color:var(--parchment); line-height:1.3; letter-spacing:0.3px;
+  -webkit-font-smoothing:none; image-rendering:pixelated;
+  min-height:100vh; overflow-x:hidden;
+}
+/* Pixel chrome helpers */
+.px{ font-family:'Press Start 2P',monospace; -webkit-font-smoothing:none; }
+.panel{
+  position:relative; background:rgba(20,20,60,0.92);
+  border:3px solid var(--ink);
+  box-shadow:
+    0 0 0 3px var(--navy-panel),
+    0 0 0 6px var(--ink),
+    0 10px 0 rgba(0,0,0,0.35),
+    0 14px 40px rgba(0,0,0,0.5);
+}
+.panel-head{
+  display:flex; align-items:center; gap:10px; padding:12px 16px;
+  background:linear-gradient(180deg, var(--navy-panel), var(--navy-wall));
+  border-bottom:3px solid var(--ink);
+}
+.panel-head .tag{ font-size:11px; color:var(--gold-bright); text-shadow:2px 2px 0 var(--ink); letter-spacing:1px; }
+.panel-head .sub{ margin-left:auto; font-size:18px; color:var(--parchment-mid); }
+.link-go{
+  font-family:'Press Start 2P',monospace; font-size:9px; letter-spacing:1px;
+  color:var(--ink); background:var(--gold-bright); border:3px solid var(--ink);
+  padding:7px 10px; text-decoration:none; display:inline-flex; align-items:center; gap:6px;
+  box-shadow:0 4px 0 var(--ink); transition:transform .08s, box-shadow .08s;
+}
+.link-go:hover{ transform:translateY(-1px); box-shadow:0 5px 0 var(--ink); background:var(--gold); }
+.link-go:active{ transform:translateY(3px); box-shadow:0 1px 0 var(--ink); }
+
+/* Scanline + vignette overlays */
+#scanlines{ position:fixed; inset:0; z-index:60; pointer-events:none;
+  background:repeating-linear-gradient(0deg, rgba(0,0,0,0.16) 0 1px, transparent 1px 3px); opacity:0.5; }
+#vignette{ position:fixed; inset:0; z-index:59; pointer-events:none;
+  background:radial-gradient(120% 80% at 50% 30%, transparent 55%, rgba(4,4,16,0.7) 100%); }
+
+/* Topbar */
+.topbar{
+  position:sticky; top:0; z-index:50; display:flex; align-items:center; gap:14px;
+  padding:14px 20px; background:linear-gradient(180deg, var(--navy-wall) 70%, transparent);
+  border-bottom:3px solid var(--ink);
+}
+.wordmark{ font-size:14px; color:var(--gold); text-shadow:2px 2px 0 var(--ink); white-space:nowrap; }
+.wordmark .dim{ color:var(--parchment-mid); }
+.topbar .spacer{ flex:1; }
+.clock{ font-size:22px; color:var(--parchment-mid); white-space:nowrap; }
+.refresh-meta{ font-size:16px; color:var(--parchment-dim); white-space:nowrap; }
+.back-btn{
+  font-family:'Press Start 2P',monospace; font-size:10px; letter-spacing:1px;
+  color:#fff; background:var(--green-deep); border:3px solid var(--ink);
+  padding:10px 14px; cursor:pointer; display:inline-flex; align-items:center; gap:8px;
+  box-shadow:0 4px 0 var(--ink); transition:transform .08s, box-shadow .08s;
+}
+.back-btn:hover{ transform:translateY(-1px); box-shadow:0 5px 0 var(--ink); background:var(--green); color:var(--ink); }
+.back-btn:active{ transform:translateY(3px); box-shadow:0 1px 0 var(--ink); }
+
+.wrap{ max-width:1180px; margin:0 auto; padding:22px 18px 70px; position:relative; z-index:2; }
+
+/* Hero AI cockpit */
+.hero{ margin-bottom:22px; overflow:hidden; }
+.hero-body{
+  display:flex; align-items:center; gap:26px; padding:30px 28px;
+  background:
+    radial-gradient(80% 140% at 12% 50%, rgba(45,212,191,0.12), transparent 60%),
+    linear-gradient(180deg, rgba(26,26,74,0.6), rgba(10,10,36,0.6));
+}
+.hero-orb{
+  width:120px; height:120px; flex:none; border-radius:0;
+  background:#040d22 url('/assets/branding/orb.jpg') center/cover;
+  border:4px solid var(--ink); box-shadow:0 0 0 4px var(--teal), 0 0 34px rgba(45,212,191,0.5);
+  image-rendering:auto;
+}
+.hero-copy{ flex:1; min-width:0; }
+.hero-copy .eyebrow{ font-size:10px; color:var(--teal); letter-spacing:2px; text-shadow:2px 2px 0 var(--ink); }
+.hero-copy h1{ font-family:'Press Start 2P',monospace; font-size:20px; line-height:1.5; color:var(--parchment); margin:14px 0 10px; text-shadow:3px 3px 0 var(--ink); }
+.hero-copy p{ font-size:21px; color:var(--parchment-mid); max-width:52ch; }
+.enter-btn{
+  margin-top:18px; font-family:'Press Start 2P',monospace; font-size:13px; letter-spacing:1px;
+  color:var(--ink); background:linear-gradient(180deg, var(--gold-bright), var(--gold));
+  border:4px solid var(--ink); padding:16px 24px; cursor:pointer;
+  display:inline-flex; align-items:center; gap:12px;
+  box-shadow:0 6px 0 var(--ink), 0 0 26px rgba(248,184,0,0.35); transition:transform .08s, box-shadow .08s;
+}
+.enter-btn:hover{ transform:translateY(-2px); box-shadow:0 8px 0 var(--ink), 0 0 36px rgba(248,184,0,0.55); }
+.enter-btn:active{ transform:translateY(4px); box-shadow:0 2px 0 var(--ink); }
+
+/* Two-column grid */
+.grid{ display:grid; grid-template-columns:1fr 1fr; gap:22px; }
+.den-frame{ width:100%; height:560px; border:0; background:var(--navy-deep); display:block; }
+.den-loading{ padding:40px 20px; text-align:center; color:var(--parchment-mid); font-size:20px; }
+
+/* Workplace stats */
+#fleet{ padding:14px; display:flex; flex-direction:column; gap:12px; max-height:560px; overflow-y:auto; }
+.desk-card{
+  position:relative; border:3px solid var(--ink); background:rgba(10,10,36,0.7);
+  box-shadow:0 4px 0 rgba(0,0,0,0.3); padding:12px 14px;
+}
+.desk-card[data-stale="true"]{ opacity:0.62; }
+.dc-top{ display:flex; align-items:center; gap:10px; }
+.dc-badge{
+  width:34px; height:34px; flex:none; display:flex; align-items:center; justify-content:center;
+  font-family:'Press Start 2P',monospace; font-size:13px; color:var(--ink);
+  background:var(--gold-bright); border:3px solid var(--ink);
+}
+.dc-lane{ font-size:18px; color:var(--gold); letter-spacing:1px; text-transform:uppercase; line-height:1.1; }
+.dc-machine{ font-size:15px; color:var(--parchment-dim); }
+.dc-status{ margin-left:auto; display:flex; align-items:center; gap:7px; font-size:16px; color:var(--parchment-mid); }
+.led{ width:11px; height:11px; border:2px solid var(--ink); background:var(--stone); flex:none; }
+.led.working{ background:var(--green); box-shadow:0 0 8px var(--green); animation:blink 1s steps(2) infinite; }
+.led.waiting{ background:var(--gold); box-shadow:0 0 8px var(--gold); }
+.led.done{ background:var(--green-deep); }
+.led.idle{ background:var(--stone); }
+.led.offline{ background:#202038; }
+@keyframes blink{ 50%{ background:var(--green-deep); } }
+.dc-task{ font-size:18px; color:var(--parchment); margin-top:9px; line-height:1.25;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.dc-bar{ height:12px; border:2px solid var(--ink); background:rgba(10,10,36,0.85); margin-top:9px; overflow:hidden; }
+.dc-bar i{ display:block; height:100%; background:linear-gradient(90deg, var(--green-deep), var(--green)); width:0%; transition:width .4s; }
+.dc-foot{ display:flex; align-items:center; gap:10px; margin-top:8px; font-size:15px; color:var(--parchment-dim); }
+.dc-age{ margin-left:auto; }
+.chip-stale{ color:var(--ink); background:var(--gold); border:2px solid var(--ink); padding:1px 6px; font-size:13px; letter-spacing:0.5px; }
+.dc-usage{ margin-top:8px; display:flex; flex-wrap:wrap; gap:6px; }
+.usage-chip{ font-size:13px; color:var(--red-soft); border:2px solid var(--red); background:rgba(248,56,0,0.12); padding:1px 7px; }
+.usage-chip.note{ color:var(--parchment-mid); border-color:var(--stone); background:rgba(58,58,94,0.2); }
+
+.state-msg{ padding:36px 20px; text-align:center; color:var(--parchment-mid); font-size:20px; }
+.state-msg.err{ color:var(--red-soft); }
+
+.footnote{ margin-top:26px; font-size:17px; color:var(--parchment-dim); text-align:center; line-height:1.5; }
+
+@media (max-width:880px){
+  .grid{ grid-template-columns:1fr; }
+  .hero-body{ flex-direction:column; text-align:center; gap:18px; padding:24px 18px; }
+  .hero-copy p{ max-width:none; }
+  .hero-orb{ width:96px; height:96px; }
+  .den-frame{ height:460px; }
+  .wordmark{ font-size:11px; }
+  .refresh-meta{ display:none; }
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="wordmark px">&#9876; BUILDER ROOM <span class="dim">· RYUJIN</span></div>
+  <div class="spacer"></div>
+  <div class="refresh-meta" id="refreshMeta">fleet --</div>
+  <div class="clock" id="clock">--:--:--</div>
+  <button class="back-btn" id="backBtn" type="button">&#9664; HUB</button>
+</div>
+
+<div class="wrap">
+
+  <!-- AI COCKPIT hero -->
+  <section class="panel hero">
+    <div class="panel-head">
+      <span class="tag px">&#9889; AI COCKPIT</span>
+      <span class="sub">the one brain that runs Ryujin</span>
+    </div>
+    <div class="hero-body">
+      <div class="hero-orb" aria-hidden="true"></div>
+      <div class="hero-copy">
+        <div class="eyebrow px">FULL-SCREEN CHAT WORKSPACE</div>
+        <h1>Open the Cockpit</h1>
+        <p>Tool-enabled chat that drafts, estimates, updates tickets, and searches your live data. Approve an action and it executes. Press the button or hit C.</p>
+        <button class="enter-btn px" id="enterCockpit" type="button">ENTER COCKPIT &#9656;</button>
+      </div>
+    </div>
+  </section>
+
+  <div class="grid">
+
+    <!-- AGENT DEN -->
+    <section class="panel">
+      <div class="panel-head">
+        <span class="tag px">&#129302; AGENT DEN</span>
+        <a class="link-go" id="denFull" href="/agent-ops.html" target="_blank" rel="noopener">OPEN FULL &#9656;</a>
+      </div>
+      <div id="denWrap">
+        <div class="den-loading" id="denLoading">Waking the recurring-agent health board&hellip;</div>
+        <iframe class="den-frame" id="denFrame" title="Agent Ops health board" src="/agent-ops.html?embed=1" style="display:none" loading="lazy"></iframe>
+      </div>
+    </section>
+
+    <!-- WORKPLACE STATS -->
+    <section class="panel">
+      <div class="panel-head">
+        <span class="tag px">&#128202; WORKPLACE STATS</span>
+        <span class="sub" id="deskCount">--</span>
+      </div>
+      <div id="fleet">
+        <div class="state-msg" id="fleetState">Reading the fleet&hellip;</div>
+      </div>
+    </section>
+
+  </div>
+
+  <div class="footnote">
+    Liveness is server-stamped, a desk reads STALE after 30 minutes of silence.
+    Usage and rate-limit figures are self-reported estimates from each desk, not metered account data.
+  </div>
+
+</div>
+
+<div id="vignette"></div>
+<div id="scanlines"></div>
+
+<script>
+(function(){
+  'use strict';
+
+  var TENANT = window.RYUJIN_TENANT_SLUG || 'plus-ultra';
+  var COCKPIT_URL = '/cockpit.html';
+
+  function token(){
+    try { return localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token') || ''; }
+    catch(e){ return ''; }
+  }
+  function authHeaders(){
+    var h = { 'x-tenant-id': TENANT };
+    var t = token();
+    if (t) h['Authorization'] = 'Bearer ' + t;
+    return h;
+  }
+  function esc(s){
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+      return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
+    });
+  }
+
+  // ── Cockpit entry (top window, since this page can be iframed in the hub) ──
+  function openCockpit(){
+    try { (window.top || window).location.href = COCKPIT_URL; }
+    catch(e){ window.location.href = COCKPIT_URL; }
+  }
+  document.getElementById('enterCockpit').addEventListener('click', openCockpit);
+  document.addEventListener('keydown', function(e){
+    var t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (e.key === 'c' || e.key === 'C') openCockpit();
+    if (e.key === 'Escape') goBack();
+  });
+
+  // ── Back to hub ──
+  function goBack(){
+    try {
+      if (window.parent !== window && window.parent.exitSectionOverlay) { window.parent.exitSectionOverlay(); return; }
+    } catch(e){}
+    window.location.href = '/command-center.html';
+  }
+  document.getElementById('backBtn').addEventListener('click', goBack);
+
+  // ── Clock ──
+  function tickClock(){
+    var d = new Date(), p = function(n){ return String(n).padStart(2,'0'); };
+    document.getElementById('clock').textContent = p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+  }
+  setInterval(tickClock, 1000); tickClock();
+
+  // ── Agent Den iframe reveal (swap loader for frame once it loads) ──
+  (function(){
+    var frame = document.getElementById('denFrame'), loading = document.getElementById('denLoading');
+    var shown = false;
+    function reveal(){ if (shown) return; shown = true; loading.style.display = 'none'; frame.style.display = 'block'; }
+    frame.addEventListener('load', reveal);
+    setTimeout(reveal, 4000); // fail-safe reveal even if load never fires
+  })();
+
+  // ── Fleet (Workplace Stats) ──
+  var ledClass = { working:'working', waiting_on_mac:'waiting', done:'done', idle:'idle', offline:'offline' };
+  var statusLabel = { working:'WORKING', waiting_on_mac:'NEEDS MAC', done:'DONE', idle:'IDLE', offline:'OFFLINE' };
+
+  function fmtAge(ms){
+    if (ms == null) return 'no report';
+    var s = Math.floor(ms/1000);
+    if (s < 60) return s + 's ago';
+    var m = Math.floor(s/60);
+    if (m < 60) return m + 'm ago';
+    var h = Math.floor(m/60);
+    if (h < 24) return h + 'h ago';
+    return Math.floor(h/24) + 'd ago';
+  }
+
+  function usageChips(events){
+    if (!Array.isArray(events) || !events.length) return '';
+    var html = events.slice(0, 4).map(function(ev){
+      var isRate = ev && /rate|limit/i.test(String(ev.type || ev.kind || ''));
+      var text = esc(ev && (ev.note || ev.label || ev.type || ev.kind || JSON.stringify(ev)));
+      return '<span class="usage-chip ' + (isRate ? '' : 'note') + '">' + text + '</span>';
+    }).join('');
+    return '<div class="dc-usage" title="Self-reported by the desk">' + html + '</div>';
+  }
+
+  function deskCard(id, d){
+    var st = String(d.status || 'idle');
+    var led = ledClass[st] || 'idle';
+    var label = statusLabel[st] || st.toUpperCase();
+    var stale = d.stale === true;
+    var prog = (typeof d.progress === 'number' && isFinite(d.progress)) ? Math.max(0, Math.min(100, d.progress)) : null;
+    var lane = esc(d.lane || ('DESK ' + id));
+    var machine = esc(d.machine || '');
+    var task = esc(d.task || 'no task reported');
+    var ageTxt = fmtAge(typeof d.ageMs === 'number' ? d.ageMs : null);
+
+    return '' +
+      '<div class="desk-card" data-stale="' + (stale ? 'true' : 'false') + '">' +
+        '<div class="dc-top">' +
+          '<div class="dc-badge">' + esc(id) + '</div>' +
+          '<div>' +
+            '<div class="dc-lane">' + lane + '</div>' +
+            (machine ? '<div class="dc-machine">' + machine + '</div>' : '') +
+          '</div>' +
+          '<div class="dc-status"><span class="led ' + led + '"></span>' + esc(label) + '</div>' +
+        '</div>' +
+        '<div class="dc-task">' + task + '</div>' +
+        (prog != null ? '<div class="dc-bar"><i style="width:' + prog + '%"></i></div>' : '') +
+        '<div class="dc-foot">' +
+          (prog != null ? '<span>' + prog + '%</span>' : '<span>--</span>') +
+          (stale ? '<span class="chip-stale px">STALE</span>' : '') +
+          '<span class="dc-age">' + esc(ageTxt) + '</span>' +
+        '</div>' +
+        usageChips(d.usageEvents) +
+      '</div>';
+  }
+
+  function renderFleet(data){
+    var fleet = document.getElementById('fleet');
+    var desks = (data && data.desks) || {};
+    var ids = Object.keys(desks).sort();
+    document.getElementById('deskCount').textContent = ids.length ? (ids.length + ' DESKS') : '0';
+    if (!ids.length){
+      fleet.innerHTML = '<div class="state-msg">No desks have reported yet. Once a desk heartbeat fires, it lands here.</div>';
+      return;
+    }
+    fleet.innerHTML = ids.map(function(id){ return deskCard(id, desks[id] || {}); }).join('');
+  }
+
+  function setRefreshMeta(txt){ document.getElementById('refreshMeta').textContent = txt; }
+
+  function loadFleet(){
+    var ctrl = new AbortController();
+    var timer = setTimeout(function(){ ctrl.abort(); }, 10000);
+    fetch('/api/fleet', { headers: authHeaders(), cache: 'no-store', signal: ctrl.signal })
+      .then(function(r){
+        if (r.status === 401){ throw new Error('auth'); }
+        if (!r.ok){ throw new Error('HTTP ' + r.status); }
+        return r.json();
+      })
+      .then(function(data){
+        renderFleet(data);
+        var p = function(n){ return String(n).padStart(2,'0'); };
+        var d = new Date();
+        setRefreshMeta('fleet ' + p(d.getHours()) + ':' + p(d.getMinutes()));
+      })
+      .catch(function(e){
+        var fleet = document.getElementById('fleet');
+        if (e && e.message === 'auth'){
+          fleet.innerHTML = '<div class="state-msg err">Session needs a refresh. Reload the page to sign back in.</div>';
+        } else if (!document.querySelector('#fleet .desk-card')) {
+          // Only paint an error if we have nothing good on screen (stale beats blank).
+          fleet.innerHTML = '<div class="state-msg err">Fleet did not load (' + esc(e && e.message || 'error') + '). Retrying.</div>';
+        }
+        setRefreshMeta('fleet offline');
+      })
+      .finally(function(){ clearTimeout(timer); });
+  }
+
+  loadFleet();
+  setInterval(loadFleet, 30000);
+})();
+</script>
+
+</body>
+</html>
