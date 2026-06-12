@@ -48,18 +48,30 @@ export async function sendFallbackEmail(subject, body) {
 // SMS fallback retained for true emergencies (heartbeat dead-man) where email infra may also be down.
 const GHL_BASE_SMS = 'https://services.leadconnectorhq.com';
 const MACKENZIE_CONTACT = '02IhxZfSwZZAZ2fooVGu';
+// Returns {ok, error} so dead-man callers (heartbeat) can report which
+// transports actually fired; null = muted or unconfigured (silent by design).
+// Existing callers that ignore the return are unaffected.
 export async function sendFallbackSMS(message) {
   if (process.env.OWNER_SMS_MUTED === '1') { console.log('[Fallback SMS] muted via OWNER_SMS_MUTED'); return null; }
   const token = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
   if (!token) return null;
   try {
-    await fetch(`${GHL_BASE_SMS}/conversations/messages`, {
+    const resp = await fetch(`${GHL_BASE_SMS}/conversations/messages`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Version': '2021-07-28', 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'SMS', contactId: MACKENZIE_CONTACT, message }),
       signal: AbortSignal.timeout(10000)
     });
-  } catch (e) { console.error(`[Fallback SMS] Failed: ${e.message}`); }
+    if (!resp.ok) {
+      const txt = await resp.text().catch(() => '');
+      console.error(`[Fallback SMS] GHL ${resp.status}: ${txt.slice(0, 120)}`);
+      return { ok: false, error: `GHL ${resp.status}` };
+    }
+    return { ok: true };
+  } catch (e) {
+    console.error(`[Fallback SMS] Failed: ${e.message}`);
+    return { ok: false, error: e.message };
+  }
 }
 
 // ===== VEGETA: Sales & Pipeline =====

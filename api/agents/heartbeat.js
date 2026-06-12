@@ -8,6 +8,7 @@
 import { gmailSend } from '../../lib/google.js';
 import { requireCronOrOwner } from '../../lib/cronAuth.js';
 import { snapshotHeaders } from '../../lib/snapshotClient.js';
+import { sendFallbackSMS } from './_shared.js';
 
 const BASE_URL = 'https://ryujin-os.vercel.app';
 // White-label: no hardcoded recipient fallback (set in Vercel env for the live
@@ -48,7 +49,9 @@ export default async function handler(req, res) {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     snapshot = await r.json();
   } catch (e) {
-    // Snapshot itself is dead. Send raw alert and bail.
+    // Snapshot itself is dead. The whole system may be down with it, so SMS
+    // leads (email infra may be down too) and email follows only if configured.
+    await sendFallbackSMS(`[Ryujin Heartbeat] Snapshot API unreachable: ${e.message}. Whole system may be down.`);
     await sendFallbackAlert(`Heartbeat fail — snapshot unreachable`, `Snapshot API unreachable: ${e.message}\n\nWhole system may be down. Check Vercel logs.`);
     return res.status(500).json({ status: 'snapshot_dead', error: e.message });
   }
@@ -89,16 +92,42 @@ export default async function handler(req, res) {
   // NOTE: watchdog only writes to snapshot when there are tier2 emails, so missing
   // section ≠ broken. We don't alert on absence — only on stale.
 
-  // ── 4. If anything failed, send a fallback email ──
-  let fallbackResult = null;
+  // ── 4. If anything failed, fire the fallback chain: SMS first (the proven
+  // GHL path, same transport /api/notify uses), then email only if
+  // NOTIFY_EMAIL is configured. The white-label silent skip on email stays
+  // correct; the report below names the gap so it is visible, never silent.
+  let smsResult = null;
+  let emailResult = null;
   if (failures.length > 0) {
+    const headline = failures[0].slice(0, 140);
+    smsResult = await sendFallbackSMS(`[Ryujin Heartbeat] ${failures.length} failure(s): ${headline}${failures.length > 1 ? ' (+more)' : ''}`);
+
     const lines = ['Morning briefing pipeline issue:\n'];
     for (const f of failures.slice(0, 4)) {
       lines.push(`• ${f}`);
     }
     lines.push('\nCheck Vercel logs at https://vercel.com/mackenziem-8357s-projects/ryujin-os');
-    fallbackResult = await sendFallbackAlert(`${failures.length} briefing failures detected`, lines.join('\n'));
+    emailResult = await sendFallbackAlert(`${failures.length} briefing failures detected`, lines.join('\n'));
   }
+
+  // Which transports actually fired. sms.configured false = GHL token missing
+  // or OWNER_SMS_MUTED (sendFallbackSMS returns null). email.configured false
+  // = NOTIFY_EMAIL unset.
+  const transports = {
+    sms: {
+      configured: failures.length === 0 ? true : smsResult !== null,
+      sent: !!(smsResult && smsResult.ok),
+      error: (smsResult && smsResult.error) || null
+    },
+    email: {
+      configured: !!NOTIFY_EMAIL,
+      sent: !!(emailResult && emailResult.ok),
+      error: (NOTIFY_EMAIL && emailResult && emailResult.error) || null
+    }
+  };
+  const transportNote = !NOTIFY_EMAIL
+    ? 'sms-only (NOTIFY_EMAIL unset)'
+    : (failures.length > 0 && !transports.sms.sent && !transports.email.sent ? 'ALL TRANSPORTS FAILED' : null);
 
   // ── 5. Write heartbeat status to snapshot ──
   try {
@@ -111,7 +140,9 @@ export default async function handler(req, res) {
           status: failures.length === 0 ? 'ok' : 'alert',
           failures,
           checks,
-          fallbackSMSSent: !!(fallbackResult && fallbackResult.ok)
+          transports,
+          ...(transportNote ? { transportNote } : {}),
+          fallbackSMSSent: transports.sms.sent
         }
       })
     });
@@ -127,7 +158,9 @@ export default async function handler(req, res) {
     duration: `${duration}ms`,
     failures,
     checks,
-    fallbackSMSSent: !!(fallbackResult && fallbackResult.ok),
-    fallbackSMSError: fallbackResult?.error || null
+    transports,
+    ...(transportNote ? { transportNote } : {}),
+    fallbackSMSSent: transports.sms.sent,
+    fallbackSMSError: transports.sms.error
   });
 }
