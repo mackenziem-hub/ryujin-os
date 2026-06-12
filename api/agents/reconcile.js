@@ -25,7 +25,7 @@
 
 import { supabaseAdmin } from '../../lib/supabase.js';
 import { requireCronOrOwner } from '../../lib/cronAuth.js';
-import { reconcile } from '../../lib/reconcile.js';
+import { reconcile, sentinelChecks } from '../../lib/reconcile.js';
 import { fetchWonOpportunities, crossCheckGhl } from '../../lib/ghlReconcile.js';
 import { snapshotHeaders } from '../../lib/snapshotClient.js';
 
@@ -44,11 +44,59 @@ async function fetchData(tenantId) {
   const [est, wos, pay, cust] = await Promise.all([
     sel('estimates', 'id,estimate_number,customer_id,status,final_accepted_total,accepted_at,created_at'),
     sel('workorders', 'id,wo_number,customer_name,address,status,total_sq,linked_estimate_id,linked_paysheet_id'),
-    sel('paysheets', 'id,customer_name,address,status,total,subtotal,linked_estimate_id'),
+    sel('paysheets', 'id,customer_name,address,status,total,subtotal,linked_estimate_id,paid_at,completed_at,completed_date'),
     sel('customers', 'id,full_name,address'),
   ]);
   for (const r of [est, wos, pay, cust]) if (r.error) throw new Error(r.error.message);
   return { estimates: est.data || [], workorders: wos.data || [], paysheets: pay.data || [], customers: cust.data || [] };
+}
+
+// ── Sentinel data assembly (Mac Jun 12: continuous money-bug scans) ──
+const ESTIMATOR_BASE = 'https://estimator-os.replit.app/api';
+const ESTIMATOR_KEY = (process.env.ESTIMATOR_KEY || process.env.ESTIMATOR_OS_KEY || 'pu-estimator-2026').trim();
+const RYUJIN_BASE = 'https://ryujin-os.vercel.app';
+
+// Unified estimate pool, same shape the cashflow matcher uses, so the
+// dup_estimate_rows sentinel sees exactly what payment matching sees.
+async function buildEstimatePool(data) {
+  const pool = [];
+  try {
+    const r = await fetch(`${ESTIMATOR_BASE}/estimates`, { headers: { 'x-api-key': ESTIMATOR_KEY }, signal: AbortSignal.timeout(15000) });
+    if (r.ok) {
+      const d = await r.json();
+      const arr = Array.isArray(d) ? d : (d.estimates || d.data || []);
+      for (const e of arr) {
+        if (e.proposalStatus === 'Accepted' || e.jobStatus === 'Proposal Accepted') {
+          pool.push({ id: e.id, source: 'estimator-os', fullName: e.customer?.fullName || '', address: e.customer?.address || '', finalAcceptedTotal: e.finalAcceptedTotal ?? null });
+        }
+      }
+    }
+  } catch { /* estimator-os unreachable: pool stays ryujin-only, the check degrades gracefully */ }
+  const custById = new Map((data.customers || []).map(c => [c.id, c]));
+  for (const e of (data.estimates || [])) {
+    if (!String(e.status || '').toLowerCase().includes('accept')) continue;
+    const c = custById.get(e.customer_id) || {};
+    pool.push({ id: e.id, source: 'ryujin', fullName: c.full_name || '', address: c.address || '', finalAcceptedTotal: e.final_accepted_total ?? null });
+  }
+  return pool;
+}
+
+// Current snapshot sections: the cashflow section carries byJob + the
+// arExceptions the payment matcher emits (PR #392), and reconcile.log holds
+// the run history this agent appends to.
+async function fetchSnapshotSections() {
+  try {
+    const r = await fetch(`${RYUJIN_BASE}/api/snapshot`, {
+      headers: {
+        ...(process.env.RYUJIN_SERVICE_TOKEN ? { Authorization: `Bearer ${process.env.RYUJIN_SERVICE_TOKEN.trim()}` } : {}),
+        'x-tenant-id': 'plus-ultra'
+      },
+      signal: AbortSignal.timeout(10000)
+    });
+    if (!r.ok) return {};
+    const s = await r.json();
+    return s.sections || {};
+  } catch { return {}; }
 }
 
 async function persistFindings(tenantId, findings) {
@@ -138,16 +186,25 @@ export default async function handler(req, res) {
     if (ghlWon) result.findings.push(...crossCheckGhl(ghlWon, result.jobs));
     result.figures.ghl_won_checked = ghlWon ? ghlWon.length : 0;
 
+    // Slice 4: sentinel checks (Mac Jun 12: continuous money-bug scans).
+    // Duplicate estimate rows, matcher exceptions, contract-vs-collected
+    // drift, aged unpaid paysheets. Findings ride the same persistence
+    // machinery below (dedup + dismiss + auto-resolve).
+    const [pool, sections] = await Promise.all([buildEstimatePool(data), fetchSnapshotSections()]);
+    const sentinels = sentinelChecks({ pool, cashflow: sections.cashflow || null, paysheets: data.paysheets });
+    result.findings.push(...sentinels);
+    result.figures.sentinel_findings = sentinels.length;
+
     let persistence = { persisted: 0, resolved: 0, skippedDismissed: 0 };
     if (!dry) persistence = await persistFindings(tenant.id, result.findings);
 
     const F = result.figures;
-    const summary = `${F.committed_delivered_jobs} jobs; recorded $${F.figureA_accepted_sum.toLocaleString()}, est true ~$${F.estimated_true_committed_mid.toLocaleString()}; ${result.findings.length} findings (${F.jobs_with_no_recorded_contract_value} no-value)`;
+    const summary = `${F.committed_delivered_jobs} jobs; recorded $${F.figureA_accepted_sum.toLocaleString()}, est true ~$${F.estimated_true_committed_mid.toLocaleString()}; ${result.findings.length} findings (${F.jobs_with_no_recorded_contract_value} no-value, ${sentinels.length} sentinel)`;
 
     if (runId) {
       await supabaseAdmin.from('agent_runs').update({
         status: 'success', completed_at: new Date().toISOString(), summary,
-        output: { figures: F, persistence, finding_count: result.findings.length },
+        output: { figures: F, persistence, finding_count: result.findings.length, sentinel_count: sentinels.length },
         duration_ms: Date.now() - startTime,
       }).eq('id', runId);
       runClosed = true;
@@ -156,9 +213,23 @@ export default async function handler(req, res) {
     if (!dry) {
       try {
         const base = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://ryujin-os.vercel.app';
+        // RECONCILE LOG: one line per run, capped at the last 60 entries, so
+        // the UIs (activity-log panel) can read a continuous history instead
+        // of only the latest state. Lives inside sections.reconcile, which is
+        // already in snapshot preserveKeys.
+        const prevLog = Array.isArray(sections.reconcile?.log) ? sections.reconcile.log : [];
+        const byKind = {};
+        for (const f of sentinels) byKind[f.kind] = (byKind[f.kind] || 0) + 1;
+        const log = [...prevLog.slice(-59), {
+          at: new Date().toISOString(),
+          summary,
+          findings: result.findings.length,
+          sentinels: sentinels.length,
+          byKind
+        }];
         await fetch(`${base}/api/snapshot`, {
           method: 'POST', headers: snapshotHeaders(),
-          body: JSON.stringify({ reconcile: { lastRun: new Date().toISOString(), figures: F, openFindings: result.findings.length } }),
+          body: JSON.stringify({ reconcile: { lastRun: new Date().toISOString(), figures: F, openFindings: result.findings.length, sentinels: sentinels.length, log } }),
           signal: AbortSignal.timeout(10000),
         });
       } catch { /* snapshot is best-effort */ }
