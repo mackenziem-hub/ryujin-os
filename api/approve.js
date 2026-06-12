@@ -17,6 +17,14 @@ import { supabaseAdmin } from '../lib/supabase.js';
 import { resolveSession, isPrivileged } from '../lib/portalAuth.js';
 import { gmailSend } from '../lib/google.js';
 
+// External write surfaces the executors call. These mirror the exact paths the
+// chat.js tools + operator pages already use (Estimator OS REST for estimates,
+// the deployed /api/ghl proxy for CRM notes); no new write path is invented.
+const ESTIMATOR_URL = 'https://estimator-os.replit.app/api';
+const ESTIMATOR_KEY = (process.env.ESTIMATOR_KEY || '').trim();
+const RYUJIN_BASE = 'https://ryujin-os.vercel.app';
+const SERVICE_TOKEN = (process.env.RYUJIN_SERVICE_TOKEN || '').trim();
+
 // Dispatch an approved action by its execute_payload.tool. Returns
 // { executed:true, details } on success or { executed:false, error } otherwise.
 // Throwing is caught by the caller and treated as a failed (non-executed) attempt.
@@ -49,6 +57,73 @@ export async function executePayload(payload, ctx = {}) {
       // would falsely revert the row to pending and re-queue an already-created ticket).
       const num = data && data.ticket_number;
       return { executed: true, details: `Ticket ${num ? '#' + num : ''} created: ${title}`.replace('  ', ' ') };
+    }
+    case 'create_estimate': {
+      // chat.js create_estimate + the create_full_estimate chain both register
+      // { tool:'create_estimate', payload:<full Estimator OS estimate> }.
+      // Create it in Estimator OS, the same REST surface the operator uses.
+      if (!ESTIMATOR_KEY) return { executed: false, error: 'create_estimate: ESTIMATOR_KEY not configured' };
+      const estimate = payload && payload.payload;
+      if (!estimate || !estimate.customer) return { executed: false, error: 'create_estimate payload missing estimate body' };
+      const r = await fetch(`${ESTIMATOR_URL}/estimates`, {
+        method: 'POST',
+        headers: { 'x-api-key': ESTIMATOR_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify(estimate),
+        signal: AbortSignal.timeout(20000),
+      });
+      if (!r.ok) {
+        const t = await r.text().catch(() => '');
+        return { executed: false, error: `create_estimate failed: HTTP ${r.status} ${t.slice(0, 140)}` };
+      }
+      const data = await r.json().catch(() => null);
+      const id = data && (data.id || data.estimateId || (data.estimate && data.estimate.id));
+      const who = (estimate.customer && estimate.customer.fullName) || 'customer';
+      return { executed: true, details: `Estimate created for ${who}${id ? ` (#${id})` : ''}` };
+    }
+    case 'update_estimate': {
+      // { tool:'update_estimate', estimate_id, updates }. PUT to Estimator OS,
+      // the same path api/agents/cashflow.js uses to patch estimate fields.
+      if (!ESTIMATOR_KEY) return { executed: false, error: 'update_estimate: ESTIMATOR_KEY not configured' };
+      const { estimate_id, updates } = payload;
+      if (!estimate_id) return { executed: false, error: 'update_estimate payload missing estimate_id' };
+      if (!updates || typeof updates !== 'object' || !Object.keys(updates).length) {
+        return { executed: false, error: 'update_estimate payload missing updates' };
+      }
+      const r = await fetch(`${ESTIMATOR_URL}/estimates/${encodeURIComponent(estimate_id)}`, {
+        method: 'PUT',
+        headers: { 'x-api-key': ESTIMATOR_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+        signal: AbortSignal.timeout(20000),
+      });
+      if (!r.ok) {
+        const t = await r.text().catch(() => '');
+        return { executed: false, error: `update_estimate failed: HTTP ${r.status} ${t.slice(0, 140)}` };
+      }
+      return { executed: true, details: `Estimate #${estimate_id} updated: ${Object.keys(updates).join(', ')}` };
+    }
+    case 'add_contact_note': {
+      // { tool:'add_contact_note', contactId, noteText }. Write through the
+      // deployed /api/ghl proxy (default POST = add note), the same surface the
+      // operator CRM pages call. Server-to-server with the service token.
+      const contactId = payload.contactId;
+      const noteText = payload.noteText;
+      if (!contactId) return { executed: false, error: 'add_contact_note payload missing contactId' };
+      if (!noteText) return { executed: false, error: 'add_contact_note payload missing noteText' };
+      const r = await fetch(`${RYUJIN_BASE}/api/ghl?id=${encodeURIComponent(contactId)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-tenant-id': 'plus-ultra',
+          ...(SERVICE_TOKEN ? { Authorization: `Bearer ${SERVICE_TOKEN}` } : {}),
+        },
+        body: JSON.stringify({ body: noteText }),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!r.ok) {
+        const t = await r.text().catch(() => '');
+        return { executed: false, error: `add_contact_note failed: HTTP ${r.status} ${t.slice(0, 140)}` };
+      }
+      return { executed: true, details: `Note added to contact ${contactId}` };
     }
     default:
       // Other write tools route through approval but have no executor wired here yet.

@@ -50,15 +50,13 @@ const GATED_TOOLS = [
   'delete_opportunity',
 ];
 
-// Documented baseline of gated tools with NO executor wired in api/approve.js
-// as of 2026-06-11. This is the backlog to burn down: wire an executor, then
-// delete it from here. When this array is empty, every gated action Mac
-// approves actually executes.
+// Documented baseline of gated tools with NO executor wired in api/approve.js.
+// This is the backlog to burn down: wire an executor, then delete it from here.
+// When this array is empty, every gated action Mac approves actually executes.
+// 2026-06-12 batch 1 (the create_full_estimate estimate bundle): wired
+// create_estimate, update_estimate, add_contact_note -> coverage 2/12 to 5/12.
 const BASELINE_UNWIRED = [
   'update_ticket',
-  'create_estimate',
-  'update_estimate',
-  'add_contact_note',
   'delete_contact_note',
   'create_contact',
   'update_contact',
