@@ -82,7 +82,8 @@ export async function runCashflow() {
           selectedPackage: e.selectedPackage || null,
           salesOwner: e.salesOwner || null,
           scheduleStatus: e.scheduleStatus || null,
-          scheduledStartDate: e.scheduledStartDate || null
+          scheduledStartDate: e.scheduledStartDate || null,
+          depositPaid: (e.depositPaid != null ? Number(e.depositPaid) : null)
         }));
       estimates.push(...accepted);
     } else {
@@ -139,6 +140,7 @@ export async function runCashflow() {
         salesOwner: est.salesOwner || null,
         scheduleStatus: est.scheduleStatus || null,
         scheduledStartDate: est.scheduledStartDate || null,
+        currentDepositPaid: (est.depositPaid != null ? est.depositPaid : null),
         depositsCollected: 0,
         balancesCollected: 0,
         payments: []
@@ -211,10 +213,36 @@ export async function runCashflow() {
   }
 
   // 6. PUT depositPaid back to Estimator OS (only — Ryujin schema doesn't have that column yet).
-  const syncResults = { ok: 0, fail: 0, skipped: 0 };
+  //
+  // GUARDED, IDEMPOTENT writeback. This loop runs every 4h. The old version
+  // re-PUT depositPaid on every run, which bumped each paid job's updated_at on
+  // Estimator OS to "now". Estimator OS /api/stats then surfaced months-old
+  // completed jobs in recentActivity as "Proposal Accepted" today, producing the
+  // phantom same-second bulk-flip that flooded snapshot.revenue. Two guards stop
+  // that at the source without ever changing a status or mutating a real row:
+  //   - over-contract guard: a computed deposit above the contract value means
+  //     matchPaymentToEstimate over-matched another job's payment in. Writing it
+  //     back would inflate Estimator OS (this is how the >100% depositPaid rows
+  //     appeared). Skip and flag instead of propagating the bad number.
+  //   - idempotency guard: if Estimator OS already holds this deposit to the
+  //     cent, do not re-PUT. No change means no updated_at bump means no phantom
+  //     recentActivity entry on the next snapshot rebuild.
+  const syncResults = { ok: 0, fail: 0, skipped: 0, unchanged: 0, flagged: 0 };
   for (const job of jobs) {
     if (job.depositsCollected <= 0) continue;
     if (job.source !== 'estimator-os') { syncResults.skipped++; continue; }
+
+    if (job.contractValue && job.depositsCollected > job.contractValue + 1) {
+      syncResults.flagged++;
+      report.findings.push(`Deposit sync flagged (over-contract, not written): ${job.customer} computed $${job.depositsCollected.toFixed(2)} > contract $${job.contractValue.toFixed(2)}, likely a payment mis-match in matchPaymentToEstimate`);
+      continue;
+    }
+
+    if (job.currentDepositPaid != null && Math.abs(job.currentDepositPaid - job.depositsCollected) < 1) {
+      syncResults.unchanged++;
+      continue;
+    }
+
     const firstDeposit = job.payments.find(p => p.type !== 'balance' && p.type !== 'final') || job.payments[0];
     try {
       const resp = await fetch(`${ESTIMATOR_BASE}/estimates/${job.estimateId}`, {
@@ -229,7 +257,7 @@ export async function runCashflow() {
       if (resp.ok) syncResults.ok++; else syncResults.fail++;
     } catch (e) { syncResults.fail++; }
   }
-  report.findings.push(`Estimator OS sync: ${syncResults.ok} ok, ${syncResults.fail} failed, ${syncResults.skipped} ryujin-only (skipped)`);
+  report.findings.push(`Estimator OS sync: ${syncResults.ok} written, ${syncResults.unchanged} unchanged (idempotent skip), ${syncResults.flagged} flagged over-contract, ${syncResults.fail} failed, ${syncResults.skipped} ryujin-only`);
 
   // 7. Push cashflow section into snapshot
   try {
