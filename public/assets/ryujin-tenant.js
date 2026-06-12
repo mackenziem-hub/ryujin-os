@@ -87,10 +87,51 @@
   }
   T.rebrand = rebrand;
 
+  // Hydrate tenant identity from tenant_settings via /api/tenant-branding, the
+  // same source the v2 portal uses. This moves the internal-portal brand strings
+  // off the hardcoded Plus Ultra DEFAULT and behind tenant_settings, across every
+  // internal page that includes this helper.
+  //
+  // Scope is deliberately the lowest-risk subset: only name, phone, and email,
+  // whose hardcoded DEFAULT already equals tenant_settings for plus-ultra. So
+  // this is a zero-visible-change for tenant #1 while giving any other tenant its
+  // own identity. tagline, accent, and website are intentionally NOT pulled here
+  // because the helper's defaults differ from tenant_settings and changing them
+  // would alter Plus Ultra's current look (a separate reconciliation PR, not the
+  // lowest-risk batch). On any error the DEFAULT/localStorage config stands.
+  // In-memory only (not persisted) so a shared browser is never pinned to one
+  // tenant's branding.
+  async function hydrateFromApi(){
+    try {
+      let slug = window.RYUJIN_TENANT_SLUG;
+      if (!slug) { try { slug = localStorage.getItem('ry_tenant'); } catch(e){} }
+      if (!slug) slug = cached.slug;
+      const url = slug ? ('/api/tenant-branding?tenant=' + encodeURIComponent(slug)) : '/api/tenant-branding';
+      const headers = {};
+      try {
+        const tok = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token');
+        if (tok) headers.Authorization = 'Bearer ' + tok;
+      } catch(e){}
+      const res = await fetch(url, { headers, cache: 'no-store' });
+      if (!res.ok) return;
+      const body = await res.json();
+      const b = (body && body.branding) || {};
+      const patch = {};
+      if (b.company_name) patch.name = b.company_name;
+      if (b.company_phone) patch.phone = b.company_phone;
+      if (b.company_email) patch.email = b.company_email;
+      if (!Object.keys(patch).length) return;
+      cached = Object.assign({}, cached, patch);
+      rebrand();
+    } catch(e){ /* keep DEFAULT */ }
+  }
+  T.hydrate = hydrateFromApi;
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', rebrand);
   } else {
     rebrand();
   }
   document.addEventListener('ryujin-tenant-change', rebrand);
+  hydrateFromApi();
 })();
