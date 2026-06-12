@@ -101,6 +101,31 @@
   .pv2-modal__amt{font-family:'Fraunces','Georgia',serif;color:#b08d57;font-size:22px;margin:14px 0}
 
   .pv2-visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+  /* Save as PDF: a floating action on every proposal. Hidden when printing. */
+  .pv2-pdfbtn{
+    position:fixed;top:16px;right:16px;z-index:40;
+    display:inline-flex;align-items:center;gap:8px;
+    background:#13294b;color:#fff;border:1px solid rgba(255,255,255,.25);
+    border-radius:999px;padding:10px 18px;cursor:pointer;
+    font-family:'Inter',system-ui,sans-serif;font-size:13px;font-weight:600;letter-spacing:.02em;
+    box-shadow:0 10px 30px rgba(19,41,75,.35);
+  }
+  .pv2-pdfbtn:hover{background:#1b3766}
+  .pv2-pdfbtn svg{width:15px;height:15px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  @media (max-width:560px){.pv2-pdfbtn{top:10px;right:10px;padding:9px 14px;font-size:12px}}
+
+  /* Print = the PDF. Interactive chrome goes away, brand colors stay, cards
+     never split across pages, and the sticky total bar becomes a static row. */
+  @media print{
+    .pv2-pdfbtn,.pv2-modal,.pv2-sig,.pv2-accept__btn,.pv2-total__cta,
+    .pv2-tier__pick,.pv2-switch,.pv2-paths{display:none !important}
+    body{background:#fff}
+    body,.pv2{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .pv2-total{position:static !important;box-shadow:none !important}
+    .pv2-tier,.pv2-review,.pv2-scope__row,.pv2-guarantee,.pv2-why__card,
+    .pv2-letter{break-inside:avoid;page-break-inside:avoid}
+  }
 </style>
 </head>
 <body class="pv2">
@@ -1624,7 +1649,23 @@
     }
     buildCtx();
     renderAll();
+    mountPdfButton();
     if (!(opts && opts.silent)) logEvent('proposal_viewed', {});
+  }
+
+  // The always-on PDF affordance. The browser's print-to-PDF dialog does the
+  // rendering, so the saved file matches the page the customer is looking at.
+  function mountPdfButton() {
+    if ($('.pv2-pdfbtn')) return;
+    var btn = el('button', 'pv2-pdfbtn');
+    btn.type = 'button';
+    btn.setAttribute('aria-label', 'Save this proposal as a PDF');
+    btn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"></path><polyline points="7 10 12 15 17 10"></polyline><path d="M5 21h14"></path></svg>Save as PDF';
+    btn.addEventListener('click', function () {
+      logEvent('pdf_save', {});
+      window.print();
+    });
+    document.body.appendChild(btn);
   }
 
   function boot() {

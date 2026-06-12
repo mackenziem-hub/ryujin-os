@@ -1,10 +1,22 @@
 // Ryujin OS - Materialize a v2 proposal instance (freeze a sent proposal).
 //
-// POST /api/proposal-materialize  { estimate, template, status? }
+// POST /api/proposal-materialize
+//   { estimate, template, status?,
+//     productsOverride?, variablesPatch?, sectionsPatch?, slugBase? }
 //
 // Assembles the full ProposalData from an estimate + template (the SAME shared
 // assembler the live preview uses) and persists it as a FROZEN proposal_instances
 // snapshot (data_snapshot). Returns { slug, shareToken, url }.
+//
+// Optional explicit shaping, applied AFTER assembly and BEFORE freezing (this is
+// how hand-shaped offers like a shingles|metal two_path land without direct DB
+// writes):
+//   productsOverride  object; its top-level keys REPLACE data.products keys
+//                     wholesale (mode, recommended, tiers, twoPath, scope, ...)
+//   variablesPatch    object; shallow-merged over data.variables
+//   sectionsPatch     [{ type, content }]; replaces the content of the FIRST
+//                     section of that type (unknown types are ignored)
+//   slugBase          string; overrides the kebab base used for the public slug
 //
 // Each call creates a NEW immutable instance (re-materialize = a new version with
 // a new slug). The customer is sent /p/<slug>; api/proposal-v2.js serves the
@@ -64,8 +76,28 @@ async function handler(req, res) {
       return res.status(403).json({ error: 'Estimate belongs to a different tenant' });
     }
 
+    // Explicit shaping (see header). Objects only; anything else is ignored.
+    const isObj = v => v && typeof v === 'object' && !Array.isArray(v);
+    if (isObj(body.productsOverride)) {
+      data.products = { ...(data.products || {}), ...body.productsOverride };
+    }
+    if (isObj(body.variablesPatch)) {
+      data.variables = { ...(data.variables || {}), ...body.variablesPatch };
+    }
+    if (Array.isArray(body.sectionsPatch) && Array.isArray(data.sections)) {
+      for (const patch of body.sectionsPatch) {
+        if (!patch || typeof patch.type !== 'string' || !isObj(patch.content)) continue;
+        const i = data.sections.findIndex(s => s && s.type === patch.type);
+        if (i >= 0) data.sections[i] = { type: patch.type, content: patch.content };
+      }
+    }
+
     const shareToken = randomBytes(12).toString('hex');
-    const base = kebab(est.customer?.address || data.customer?.address || data.customer?.name || template?.slug);
+    const base = kebab(
+      (typeof body.slugBase === 'string' && body.slugBase.trim())
+        ? body.slugBase
+        : (est.customer?.address || data.customer?.address || data.customer?.name || template?.slug)
+    );
     const slug = `${base}-${shareToken.slice(0, 6)}`;
 
     // Bake the resolved slug + status into the frozen snapshot's meta.
