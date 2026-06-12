@@ -74,51 +74,93 @@ async function handler(req, res) {
   // Auth: caller must present a valid sub-portal magic-link token AND the
   // workorder must be assigned to that sub. Anything weaker would let any
   // caller who can hit the endpoint inject images into Mac's gallery
-  // (codex P1, 2026-05-26). Failure to authenticate just skips the bridge
-  // — the blob upload still succeeds so the owner-side flow (if any) is
-  // unaffected. job_log_entries is the audit trail of record either way.
+  // (codex P1, 2026-05-26). A failed bridge still returns the blob (owner-side
+  // callers unaffected) but is now REPORTED, not silent (portal QA S1,
+  // 2026-06-12): the response carries bridged + bridge_skip so the uploader's
+  // UI can warn, and every plausible gallery miss writes an activity_log row
+  // the reconcile sentinel can flag. job_log_entries stays the audit trail.
   let estimate_photo_id = null;
-  if (wo && wo !== 'misc' && f.mimeType?.startsWith('image/')) {
+  let bridge_skip = null; // why the gallery insert did not happen (null = bridged)
+  const isImage = !!f.mimeType?.startsWith('image/');
+  if (wo && wo !== 'misc' && isImage) {
     try {
       const token = (fields.token || '').trim();
-      const sub = token ? await verifySubToken(req.tenant.id, token) : null;
-      if (sub) {
-        const { data: woRow } = await supabaseAdmin
-          .from('workorders')
-          .select('linked_estimate_id')
-          .eq('id', wo)
-          .eq('tenant_id', req.tenant.id)
-          .eq('subcontractor_id', sub.id)
-          .maybeSingle();
-        if (woRow?.linked_estimate_id) {
-          const stage = (fields.stage_label || '').trim();
-          const userCaption = (fields.caption || '').trim();
-          const caption = stage && userCaption
-            ? `[${stage}] ${userCaption}`
-            : (stage ? `[${stage}]` : (userCaption || null));
-          const { data: photoRow, error: insErr } = await supabaseAdmin
-            .from('estimate_photos')
-            .insert({
-              estimate_id: woRow.linked_estimate_id,
-              url: blob.url,
-              filename: safe,
-              mime_type: f.mimeType,
-              category: 'site',
-              caption,
-              is_cover: false,
-            })
-            .select('id')
-            .single();
-          if (insErr) console.warn('[job-log-photo] estimate_photos insert failed', insErr.message);
-          else estimate_photo_id = photoRow?.id || null;
+      if (!token) {
+        bridge_skip = 'no_token';
+      } else {
+        const sub = await verifySubToken(req.tenant.id, token);
+        if (!sub) {
+          bridge_skip = 'bad_token';
+        } else {
+          const { data: woRow } = await supabaseAdmin
+            .from('workorders')
+            .select('linked_estimate_id')
+            .eq('id', wo)
+            .eq('tenant_id', req.tenant.id)
+            .eq('subcontractor_id', sub.id)
+            .maybeSingle();
+          if (!woRow) {
+            bridge_skip = 'wo_not_owned';
+          } else if (!woRow.linked_estimate_id) {
+            bridge_skip = 'no_linked_estimate';
+          } else {
+            const stage = (fields.stage_label || '').trim();
+            const userCaption = (fields.caption || '').trim();
+            const caption = stage && userCaption
+              ? `[${stage}] ${userCaption}`
+              : (stage ? `[${stage}]` : (userCaption || null));
+            const { data: photoRow, error: insErr } = await supabaseAdmin
+              .from('estimate_photos')
+              .insert({
+                estimate_id: woRow.linked_estimate_id,
+                url: blob.url,
+                filename: safe,
+                mime_type: f.mimeType,
+                category: 'site',
+                caption,
+                is_cover: false,
+              })
+              .select('id')
+              .single();
+            if (insErr) {
+              console.warn('[job-log-photo] estimate_photos insert failed', insErr.message);
+              bridge_skip = 'insert_failed';
+            } else {
+              estimate_photo_id = photoRow?.id || null;
+            }
+          }
         }
       }
     } catch (e) {
       console.warn('[job-log-photo] gallery bridge failed', e.message);
+      bridge_skip = 'bridge_error';
     }
+
+    // Sentinel trail: a field photo that should have reached the gallery and
+    // did not. Fail-open: the trail write must never break the upload response.
+    if (bridge_skip) {
+      try {
+        await supabaseAdmin.from('activity_log').insert({
+          tenant_id: req.tenant.id,
+          entity_type: 'job_log_photo',
+          entity_id: wo,
+          action: 'gallery_bridge_skipped',
+          details: { reason: bridge_skip, blob_url: blob.url, filename: safe },
+        });
+      } catch (e) {
+        console.warn('[job-log-photo] skip-trail insert failed', e?.message || e);
+      }
+    }
+  } else {
+    bridge_skip = isImage ? 'no_workorder' : 'not_image';
   }
 
-  return res.json({ url: blob.url, estimate_photo_id });
+  return res.json({
+    url: blob.url,
+    estimate_photo_id,
+    bridged: !!estimate_photo_id,
+    bridge_skip: estimate_photo_id ? null : bridge_skip,
+  });
 }
 
 export default requireTenant(handler);
