@@ -27,8 +27,18 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { cloneDefaultOffers } from '../lib/cloneOffers.js';
+
+// Mirror api/auth.js hashPassword exactly so the seeded password verifies at
+// login (scrypt, stored as `salt:hash`). FIX-2: the demo owner needs a real
+// credential so a stranger can sign in at /login.html.
+function hashPassword(password, salt) {
+  if (!salt) salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return `${salt}:${hash}`;
+}
 
 // ── env load (matches scripts/seed_test_metal.mjs) ───────────────
 const envPath = path.resolve('.env.local');
@@ -62,6 +72,10 @@ const DEMO = {
   accent_color: '#2B6CB0',
   tagline: 'Roofing done right.',
   proposal_header: 'Your Home. Protected.',
+  // FIX-2 demo login + FIX-5 demo logo. The password is intentionally a known
+  // demo credential (documented in _brain/qa/DEMO_LOGIN.md), not a secret.
+  owner_password: 'AuroraDemo2026',
+  logo_url: '/assets/branding/aurora-demo-logo.svg',
 };
 
 let plusUltraId = null;
@@ -94,9 +108,11 @@ async function run() {
   const customers = await upsertCustomers(tenantId);
   const estimate = await upsertSampleEstimate(tenantId, customers[0]);
   await upsertSampleProject(tenantId, customers[0], estimate);
+  const inboxCount = await seedInboxItems(tenantId);
 
   log('DONE.');
-  log(`tenant=${tenantId} slug=${DEMO.slug} offers=${offerCount} customers=${customers.length}`);
+  log(`tenant=${tenantId} slug=${DEMO.slug} offers=${offerCount} customers=${customers.length} inbox=${inboxCount}`);
+  log(`login: /login.html  email=${DEMO.owner_email}  password=${DEMO.owner_password}  tenant=${DEMO.slug}`);
   if (estimate?.share_token) {
     log(`proposal: https://ryujin-os.vercel.app/proposal-client.html?share=${estimate.share_token}`);
   }
@@ -149,6 +165,7 @@ async function upsertSettings(tenantId) {
     accent_color: DEMO.accent_color,
     tagline: DEMO.tagline,
     proposal_header: DEMO.proposal_header,
+    logo_url: DEMO.logo_url,
   };
 
   if (existing) {
@@ -170,12 +187,29 @@ async function upsertOwnerUser(tenantId) {
   assertNotPlusUltra(tenantId, 'user');
   const email = DEMO.owner_email;
   const { data: existing } = await sb
-    .from('users').select('id').eq('tenant_id', tenantId).eq('email', email).maybeSingle();
-  if (existing) { log('owner user exists'); return; }
-  log('creating owner user');
+    .from('users').select('id, password_hash').eq('tenant_id', tenantId).eq('email', email).maybeSingle();
+
+  // FIX-2: ensure the owner has a login credential. The owner row may already
+  // exist (POST /api/tenants creates it without a password), so backfill the
+  // password_hash when it is missing rather than only setting it on insert.
+  if (existing) {
+    if (!existing.password_hash) {
+      log('owner user exists without password; setting demo credential');
+      if (!DRY_RUN) {
+        const { error } = await sb.from('users')
+          .update({ password_hash: hashPassword(DEMO.owner_password) }).eq('id', existing.id);
+        if (error) throw error;
+      }
+    } else {
+      log('owner user exists with a password; leaving it');
+    }
+    return;
+  }
+  log('creating owner user with demo password');
   if (DRY_RUN) return;
   const { error } = await sb.from('users').insert({
     tenant_id: tenantId, email, name: 'Demo Owner', role: 'owner', active: true,
+    password_hash: hashPassword(DEMO.owner_password),
   });
   if (error) throw error;
 }
@@ -257,6 +291,81 @@ async function upsertSampleProject(tenantId, customer, estimate) {
   });
   if (error) throw error;
   log('sample project created');
+}
+
+// ── demo inbox items (FIX-4) ─────────────────────────────────────
+// Seed 2-3 representative curated-inbox rows (a lead, a warranty question, a
+// sub message) with drafted replies so the inbox stop demos live without a
+// sandbox GHL. Idempotent by (tenant_id, ghl_conversation_id). state_hash is
+// not null in the schema, so a stable synthetic value is supplied per row.
+async function seedInboxItems(tenantId) {
+  assertNotPlusUltra(tenantId, 'inbox');
+  const nowIso = new Date().toISOString();
+  const items = [
+    {
+      ghl_conversation_id: 'demo-conv-lead-001',
+      contact_name: 'Taylor Bishop',
+      channel: 'sms',
+      last_message_body: 'Hi, saw your sign in the neighbourhood. My roof started leaking after the storm. Can you come quote a replacement?',
+      category: 'lead', urgency: 'high', notify: true, notify_reason: 'new reroof lead',
+      summary: 'Storm-damage leak, wants a replacement quote.',
+      draft_reply: 'Hi Taylor, sorry to hear about the leak. We can get out this week to take a look and put a quote together. What is the best address and a daytime number to reach you?',
+      source: 'ghl',
+    },
+    {
+      ghl_conversation_id: 'demo-conv-warranty-002',
+      contact_name: 'Morgan Reyes',
+      channel: 'email',
+      last_message_body: "One of the ridge caps lifted in last week's wind. Is that something covered under our workmanship warranty?",
+      category: 'customer', urgency: 'normal', notify: false, notify_reason: null,
+      summary: 'Lifted ridge cap, asking about warranty coverage.',
+      draft_reply: 'Hi Morgan, thanks for flagging it. A lifted ridge cap in the first years is exactly what the workmanship warranty covers. We will get a crew out to reseat it at no charge. What day this week works for a quick visit?',
+      source: 'ghl',
+    },
+    {
+      ghl_conversation_id: 'demo-conv-sub-003',
+      contact_name: 'Casey (crew lead)',
+      channel: 'sms',
+      last_message_body: 'Crew wrapped 12 Maple Crescent. Photos uploaded. Ready for the next address.',
+      category: 'sub', urgency: 'normal', notify: false, notify_reason: null,
+      summary: 'Job done at 12 Maple, crew free for the next assignment.',
+      draft_reply: 'Nice work Casey. Next up is 48 Birch Lane, tear-off in the morning. I will send the work order and material drop time tonight.',
+      source: 'sub_portal',
+    },
+  ];
+
+  let n = 0;
+  for (const it of items) {
+    const { data: ex } = await sb
+      .from('inbox_items').select('id')
+      .eq('tenant_id', tenantId).eq('ghl_conversation_id', it.ghl_conversation_id).maybeSingle();
+    if (ex) { n++; continue; }
+    if (DRY_RUN) { n++; continue; }
+    const row = {
+      tenant_id: tenantId,
+      ghl_conversation_id: it.ghl_conversation_id,
+      contact_name: it.contact_name,
+      channel: it.channel,
+      last_message_body: it.last_message_body,
+      last_message_at: nowIso,
+      last_message_id: it.ghl_conversation_id + '-m1',
+      state_hash: it.ghl_conversation_id + '-m1',
+      summary: it.summary,
+      category: it.category,
+      urgency: it.urgency,
+      notify: it.notify,
+      notify_reason: it.notify_reason,
+      needs_reply: true,
+      draft_reply: it.draft_reply,
+      status: 'needs_review',
+      source: it.source,
+    };
+    const { error } = await sb.from('inbox_items').insert(row);
+    if (error) throw error;
+    n++;
+  }
+  log(`inbox items ready: ${n}`);
+  return n;
 }
 
 run().catch((e) => { console.error('[seed] FAILED:', e.message || e); process.exit(1); });
