@@ -30,6 +30,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
 .tb-spacer{flex:1}
 .tb-stat{display:flex;align-items:center;gap:6px;font-family:'Share Tech Mono',monospace;font-size:0.68em;color:rgba(160,190,230,0.62);letter-spacing:1px}
 .tb-stat .dot{width:6px;height:6px;border-radius:50%;background:#4ade80;box-shadow:0 0 6px #4ade80;animation:pulse 2s infinite}
+/* Tagline, not tabs: the old TRIAGE · DRAFT · APPROVE read as navigation and
+   solicited taps (Walk 1 item 4). Lowercase, lower contrast, explicit
+   non-interactive cursor, so it reads as a status line beside the live dot. */
+.tb-tagline{color:rgba(160,190,230,0.42);letter-spacing:0.6px;cursor:default;user-select:none}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
 .tb-btn{padding:7px 12px;border-radius:9px;background:rgba(34,211,238,0.12);border:1px solid rgba(34,211,238,0.36);color:#22d3ee;font-family:'Orbitron',sans-serif;font-size:0.62em;letter-spacing:2px;text-transform:uppercase;cursor:pointer;transition:all 0.18s}
 .tb-btn:hover{background:rgba(34,211,238,0.22);border-color:rgba(34,211,238,0.6);color:#fff}
@@ -133,7 +137,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
 <div class="topbar">
   <button class="back-btn" onclick="goBackToMainHub()" aria-label="Back" title="Back"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
   <div class="brand"><div class="brand-mark"></div><div class="brand-name">RYUJIN <span class="dim">× INBOX</span></div></div>
-  <div class="tb-stat"><div class="dot"></div><span>TRIAGE · DRAFT · APPROVE</span></div>
+  <div class="tb-stat tb-tagline"><div class="dot"></div><span>drafts prepped for your approval</span></div>
   <div class="tb-spacer"></div>
   <div class="tb-sync" id="lastSync">SYNC · idle</div>
   <button class="tb-btn" id="runBtn" onclick="fireScan()">Scan Now</button>
@@ -171,7 +175,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
   </div>
 
   <div class="glass panel">
-    <div class="panel-head"><h2>Recently handled</h2></div>
+    <div class="panel-head"><h2>Recently handled</h2><div class="panel-action" onclick="loadQueue(true)">Refresh</div></div>
     <div id="handledBody"><div class="loading">Loading...</div></div>
   </div>
 
@@ -292,6 +296,12 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
       if (showSpinner) {
         document.getElementById('queueBody').innerHTML =
           '<div class="empty">Could not load inbox: ' + escapeHtml(e.message) + '</div>';
+        // Same treatment for Recently handled: without this it sits on
+        // "Loading..." forever in any failure state (Walk 1 item 5), leaving
+        // stalled indistinguishable from broken. Its panel head now carries
+        // the same Refresh action the Review queue has.
+        document.getElementById('handledBody').innerHTML =
+          '<div class="empty">Could not load: ' + escapeHtml(e.message) + '</div>';
         toast('Failed to load: ' + e.message, true);
       }
     } finally {
