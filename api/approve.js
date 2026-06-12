@@ -25,6 +25,29 @@ const ESTIMATOR_KEY = (process.env.ESTIMATOR_KEY || '').trim();
 const RYUJIN_BASE = 'https://ryujin-os.vercel.app';
 const SERVICE_TOKEN = (process.env.RYUJIN_SERVICE_TOKEN || '').trim();
 
+// POST through the deployed /api/ghl proxy (the same CRM write surface the
+// operator pages call), server-to-server with the service token. Throws on a
+// non-2xx so the executePayload caller reverts the approval to pending.
+async function ghlPost(action, id, body) {
+  const qs = new URLSearchParams({ action });
+  if (id) qs.set('id', id);
+  const r = await fetch(`${RYUJIN_BASE}/api/ghl?${qs.toString()}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-tenant-id': 'plus-ultra',
+      ...(SERVICE_TOKEN ? { Authorization: `Bearer ${SERVICE_TOKEN}` } : {}),
+    },
+    body: JSON.stringify(body || {}),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!r.ok) {
+    const t = await r.text().catch(() => '');
+    throw new Error(`ghl ${action} failed: HTTP ${r.status} ${t.slice(0, 140)}`);
+  }
+  return r.json().catch(() => ({}));
+}
+
 // Dispatch an approved action by its execute_payload.tool. Returns
 // { executed:true, details } on success or { executed:false, error } otherwise.
 // Throwing is caught by the caller and treated as a failed (non-executed) attempt.
@@ -124,6 +147,42 @@ export async function executePayload(payload, ctx = {}) {
         return { executed: false, error: `add_contact_note failed: HTTP ${r.status} ${t.slice(0, 140)}` };
       }
       return { executed: true, details: `Note added to contact ${contactId}` };
+    }
+    case 'create_contact': {
+      // { tool:'create_contact', firstName, lastName?, email?, phone?, tags?, ... }.
+      // The chat tool already shapes GHL-compatible fields; forward all but `tool`.
+      const { tool: _t, ...contact } = payload;
+      if (!contact.firstName) return { executed: false, error: 'create_contact payload missing firstName' };
+      const data = await ghlPost('create-contact', null, contact);
+      const id = data && data.contact && data.contact.id;
+      return { executed: true, details: `Contact created${id ? ` (${id})` : ''}: ${contact.firstName} ${contact.lastName || ''}`.trim() };
+    }
+    case 'update_contact': {
+      // { tool:'update_contact', contactId, updates }.
+      const { contactId, updates } = payload;
+      if (!contactId) return { executed: false, error: 'update_contact payload missing contactId' };
+      if (!updates || typeof updates !== 'object' || !Object.keys(updates).length) {
+        return { executed: false, error: 'update_contact payload missing updates' };
+      }
+      await ghlPost('update-contact', contactId, updates);
+      return { executed: true, details: `Contact ${contactId} updated: ${Object.keys(updates).join(', ')}` };
+    }
+    case 'create_opportunity': {
+      // { tool:'create_opportunity', name, contactId, pipelineId, pipelineStageId, ... }.
+      const { tool: _t, ...opp } = payload;
+      const missing = ['name', 'contactId', 'pipelineId', 'pipelineStageId'].filter(k => !opp[k]);
+      if (missing.length) return { executed: false, error: `create_opportunity payload missing ${missing.join(', ')}` };
+      const data = await ghlPost('create-opportunity', null, opp);
+      const id = data && data.opportunity && data.opportunity.id;
+      return { executed: true, details: `Opportunity created${id ? ` (${id})` : ''}: ${opp.name}` };
+    }
+    case 'move_pipeline': {
+      // { tool:'move_pipeline', opportunityId, pipelineStageId, pipelineId, status }.
+      const { opportunityId, pipelineStageId, pipelineId, status } = payload;
+      if (!opportunityId) return { executed: false, error: 'move_pipeline payload missing opportunityId' };
+      if (!pipelineStageId) return { executed: false, error: 'move_pipeline payload missing pipelineStageId' };
+      await ghlPost('move-pipeline', opportunityId, { pipelineId, pipelineStageId, status });
+      return { executed: true, details: `Opportunity ${opportunityId} moved to stage ${pipelineStageId}` };
     }
     default:
       // Other write tools route through approval but have no executor wired here yet.
