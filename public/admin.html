@@ -1258,11 +1258,52 @@ async function gqSubmit(){
 
   document.getElementById('gutter-modal').remove();
   const url = `${location.origin}/gutter-proposal.html?share=${est.share_token}`;
-  if (confirm(`✓ Estimate #${est.estimate_number} created.\n\nShare link:\n${url}\n\nOpen now?`)) {
-    window.open(url, '_blank', 'noopener');
-  }
+  showEstimateCreated(est.estimate_number, url);
 }
 window.gqSubmit = gqSubmit;
+
+// The win moment of the funnel deserves better than a browser confirm()
+// (million-dollar ledger row 2). Same overlay vocabulary as the quote modal
+// it follows: panel, border, radius, cyan kicker. One primary next action.
+// Keyboard: Enter opens the proposal, Escape closes.
+function showEstimateCreated(estimateNumber, url) {
+  const old = document.getElementById('est-created-modal');
+  if (old) old.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'est-created-modal';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px)';
+  overlay.innerHTML = `
+    <div style="background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:28px;max-width:480px;width:100%;color:var(--text);text-align:center">
+      <div style="width:52px;height:52px;border-radius:50%;margin:0 auto 14px;display:flex;align-items:center;justify-content:center;background:rgba(74,222,128,0.12);border:1px solid rgba(74,222,128,0.4);color:var(--green);font-size:1.5em">&#10003;</div>
+      <div style="font-family:'Orbitron',monospace;font-size:0.7em;color:var(--cyan);letter-spacing:0.15em;text-transform:uppercase">Estimate created</div>
+      <h2 style="margin:6px 0 14px;font-size:1.35em">Estimate #${esc(String(estimateNumber))}</h2>
+      <div style="font-size:0.82em;color:var(--text-dim);margin-bottom:6px">Customer share link</div>
+      <input id="estCreatedLink" readonly value="${esc(url)}" onclick="this.select()" style="width:100%;background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.8em;margin-bottom:18px;text-align:center" />
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+        <button id="estCreatedOpen" class="btn">Open proposal</button>
+        <button id="estCreatedCopy" class="btn btn-outline">Copy link</button>
+        <button id="estCreatedDone" class="btn btn-outline">Done</button>
+      </div>
+      <div style="margin-top:12px;font-size:0.72em;color:var(--text-dim)">Enter opens &middot; Esc closes</div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+  const openIt = () => { window.open(url, '_blank', 'noopener'); close(); };
+  const onKey = (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    else if (e.key === 'Enter') { e.preventDefault(); openIt(); }
+  };
+  document.addEventListener('keydown', onKey);
+  overlay.onclick = (e) => { if (e.target === overlay) close(); };
+  overlay.querySelector('#estCreatedOpen').onclick = openIt;
+  overlay.querySelector('#estCreatedDone').onclick = close;
+  overlay.querySelector('#estCreatedCopy').onclick = async () => {
+    try { await navigator.clipboard.writeText(url); toast('Link copied', 'success'); }
+    catch (e) { const inp = overlay.querySelector('#estCreatedLink'); inp.select(); document.execCommand('copy'); toast('Link copied', 'success'); }
+  };
+  overlay.querySelector('#estCreatedOpen').focus();
+  toast(`Estimate #${estimateNumber} created`, 'success');
+}
 function navigate(page) {
   currentPage = page;
   document.title = (PAGE_TITLES[page]||page) + ' — Ryujin OS';

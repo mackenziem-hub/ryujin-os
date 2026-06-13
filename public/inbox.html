@@ -89,6 +89,11 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
 .btn-save{background:rgba(251,191,36,0.14);color:#fbbf24;border-color:rgba(251,191,36,0.4)}
 .btn-save:hover{background:rgba(251,191,36,0.28);color:#fff;border-color:rgba(251,191,36,0.7)}
 .btn-dismiss{background:rgba(160,190,230,0.1);color:rgba(190,210,240,0.85);border-color:rgba(160,190,230,0.3)}
+/* Armed two-step confirm: gold = needs-you per the locked signal language.
+   The state change IS the motion (150ms); Escape or 4s reverts. */
+.btn-arm{background:rgba(253,204,2,0.14)!important;color:#fdcc02!important;border-color:rgba(253,204,2,0.55)!important;transition:background 0.15s,color 0.15s,border-color 0.15s}
+.btn-arm:focus-visible{outline:2px solid rgba(253,204,2,0.8);outline-offset:2px}
+@media (prefers-reduced-motion: reduce){.btn-arm{transition:none}}
 .btn-dismiss:hover{background:rgba(160,190,230,0.2);color:#fff}
 .btn[disabled]{opacity:0.45;cursor:wait}
 
@@ -476,15 +481,45 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
     return () => { btn.disabled = false; btn.textContent = original; };
   }
 
+  // Two-step inline confirm (million-dollar ledger row 3): the highest-stakes
+  // action in the product no longer rides a native confirm(). First tap arms
+  // the button with the RECIPIENT'S NAME on it (the draft + their message sit
+  // directly above, so nothing sends blind); a second tap within 4s executes.
+  // Escape or the timer reverts. Same API call, same guards.
+  function armConfirm(btn, confirmLabel){
+    if (btn.dataset.armed === '1') {
+      disarmConfirm(btn);
+      return true;                       // second tap: proceed
+    }
+    btn.dataset.armed = '1';
+    btn.dataset.idleLabel = btn.textContent;
+    btn.textContent = confirmLabel;
+    btn.classList.add('btn-arm');
+    const revert = () => disarmConfirm(btn);
+    btn._armTimer = setTimeout(revert, 4000);
+    btn._armKey = (e) => { if (e.key === 'Escape') revert(); };
+    document.addEventListener('keydown', btn._armKey);
+    return false;                        // first tap: armed, await confirm
+  }
+  function disarmConfirm(btn){
+    if (btn.dataset.armed !== '1') return;
+    btn.dataset.armed = '';
+    if (btn.dataset.idleLabel) btn.textContent = btn.dataset.idleLabel;
+    btn.classList.remove('btn-arm');
+    clearTimeout(btn._armTimer);
+    if (btn._armKey) { document.removeEventListener('keydown', btn._armKey); btn._armKey = null; }
+  }
+
   async function send(id, btn){
     const ta = document.getElementById('draft-' + id);
     const body = ta ? ta.value.trim() : '';
     if (!body) { toast('Nothing to send. Write a reply first.', true); return; }
-    if (!confirm('Send this reply to the customer now?')) return;
+    const who = ((btn.closest('.card') || {}).querySelector?.('.who')?.textContent || 'this customer').split(' ')[0];
+    if (!armConfirm(btn, 'Confirm send to ' + who + '?')) return;
     const done = busy(btn, 'Sending...');
     try {
       await api('/api/inbox', { method: 'PUT', body: { id, action: 'send', body } });
-      toast('Sent.');
+      toast('Sent to ' + who + '.');
       loadQueue();
     } catch(e){ toast(e.message, true); }
     finally { if (done) done(); }
@@ -502,7 +537,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
   }
 
   async function dismiss(id, btn){
-    if (!confirm('Dismiss this message? It leaves the queue.')) return;
+    if (!armConfirm(btn, 'Confirm dismiss?')) return;
     const done = busy(btn, 'Dismissing...');
     try {
       await api('/api/inbox', { method: 'PUT', body: { id, action: 'dismiss' } });
