@@ -206,13 +206,15 @@ const PU_DEFAULT_MEDIA = {
   gallery:     GALLERY
 };
 
-function resolveIntroVideo(rep, systemType) {
+function resolveIntroVideo(rep, systemType, fallbackUrl = null) {
   const sys = String(systemType || 'shingle').toLowerCase();
   const key = sys.includes('metal') ? 'metal'
             : sys.includes('flat') ? 'flat'
             : sys.includes('shell') || sys.includes('exterior') ? 'exterior'
             : 'shingle';
-  return (rep.introVideos && rep.introVideos[key]) || rep.introVideo || PU_DEFAULT_MEDIA.videoUrl;
+  // fallbackUrl is the plus-ultra intro video ONLY for the plus-ultra tenant;
+  // a white-label rep with no video passes null so it never inherits PU's mp4.
+  return (rep.introVideos && rep.introVideos[key]) || rep.introVideo || fallbackUrl;
 }
 
 const TENANT_BRANDING_DEFAULT = {
@@ -226,7 +228,72 @@ const TENANT_BRANDING_DEFAULT = {
   tagline: 'Go Beyond. Go Plus Ultra.'
 };
 
-function buildScopeLineItems(est) {
+// Neutral branding for white-label tenants that have not supplied a value.
+// CRITICAL: a non-plus-ultra tenant must NEVER inherit a Plus Ultra default
+// (name, phone, email, address, logo, accent) — that leaks tenant 1's identity
+// onto another contractor's customer-facing proposal. Slate accent is a safe,
+// non-PU neutral; see the BLOCKED ON MAC note for the accent/logo policy call.
+const NEUTRAL_BRANDING_DEFAULT = {
+  companyName: '', phone: '', email: '', website: '',
+  address: '', logoUrl: '', accentColor: '#475569', tagline: ''
+};
+
+// Resolve tenant branding + the plus-ultra gate for an estimate. Shared by the
+// roof proposal handler and the gutter payload so the white-label gating cannot
+// drift between the two. isPlusUltra gates every hardcoded Plus Ultra asset
+// (rep, gallery, certs, testimonials, reviews, workmanship branding): only the
+// plus-ultra tenant renders those; every other tenant gets neutral fallbacks.
+async function resolveTenantBranding(est) {
+  const { data: tenantSettings } = await supabaseAdmin
+    .from('tenant_settings')
+    .select('company_name, company_phone, company_email, company_website, logo_url, accent_color, tagline')
+    .eq('tenant_id', est.tenant_id)
+    .single();
+
+  // Seed the gate from data already in hand so a transient slug-lookup failure
+  // never strips Plus Ultra's own assets nor leaks them to another tenant: no
+  // settings row OR the Plus Ultra company name => assume PU; the slug lookup
+  // below is authoritative whenever it succeeds.
+  let isPlusUltra = !tenantSettings || tenantSettings.company_name === TENANT_BRANDING_DEFAULT.companyName;
+  try {
+    const { data: t } = await supabaseAdmin.from('tenants').select('slug').eq('id', est.tenant_id).single();
+    if (t && typeof t.slug === 'string') isPlusUltra = (t.slug === 'plus-ultra');
+  } catch { /* keep the company-name-derived default */ }
+
+  const dflt = isPlusUltra ? TENANT_BRANDING_DEFAULT : NEUTRAL_BRANDING_DEFAULT;
+  const branding = tenantSettings ? {
+    companyName: tenantSettings.company_name || dflt.companyName,
+    phone: tenantSettings.company_phone || dflt.phone,
+    email: tenantSettings.company_email || dflt.email,
+    website: tenantSettings.company_website || dflt.website,
+    logoUrl: tenantSettings.logo_url || dflt.logoUrl,
+    accentColor: tenantSettings.accent_color || dflt.accentColor,
+    tagline: tenantSettings.tagline || dflt.tagline,
+    address: dflt.address
+  } : TENANT_BRANDING_DEFAULT;
+
+  return { branding, isPlusUltra };
+}
+
+// Build a neutral rep for a white-label tenant with no configured rep: company
+// contact info from its own branding, initials avatar (empty photo => the
+// client renders initials), no bio, no video. Never a Plus Ultra rep.
+function neutralRepFromBranding(branding) {
+  const name = branding.companyName || '';
+  return {
+    name: name ? `${name} Team` : 'Sales Team',
+    title: name,
+    initials: (name.replace(/[^A-Za-z]/g, '').slice(0, 2).toUpperCase()) || '—',
+    phone: branding.phone || '',
+    email: branding.email || '',
+    photo: '',
+    introVideo: null,
+    introVideos: {},
+    bio: ''
+  };
+}
+
+function buildScopeLineItems(est, workmanshipBrand = 'Plus Ultra') {
   const sq = est.roof_area_sqft ? (est.roof_area_sqft / 100).toFixed(1) : null;
   const sel = String(est.selected_package || 'platinum').toLowerCase();
   const prod = {
@@ -255,7 +322,7 @@ function buildScopeLineItems(est) {
   items.push({ label: '50–100+ photo documentation', value: 'every stage via Company Cam' });
   items.push({ label: 'Internal QA checklist', value: 'every install' });
   items.push({ label: 'Manufacturer warranty', value: 'Lifetime limited + 10-yr SureStart™' });
-  items.push({ label: 'Plus Ultra workmanship', value: workmanship + ' + leak-free guarantee' });
+  items.push({ label: `${workmanshipBrand} workmanship`, value: workmanship + ' + leak-free guarantee' });
   return items;
 }
 
@@ -333,25 +400,17 @@ export default async function handler(req, res) {
     if (wantsHtml) {
       return res.redirect(302, `/gutter-proposal.html?share=${encodeURIComponent(share)}`);
     }
-    return res.json(buildGutterProposalPayload(est));
+    return res.json(await buildGutterProposalPayload(est));
   }
 
-  const { data: tenantSettings } = await supabaseAdmin
-    .from('tenant_settings')
-    .select('company_name, company_phone, company_email, company_website, logo_url, accent_color, tagline')
-    .eq('tenant_id', est.tenant_id)
-    .single();
-
-  const branding = tenantSettings ? {
-    companyName: tenantSettings.company_name || TENANT_BRANDING_DEFAULT.companyName,
-    phone: tenantSettings.company_phone || TENANT_BRANDING_DEFAULT.phone,
-    email: tenantSettings.company_email || TENANT_BRANDING_DEFAULT.email,
-    website: tenantSettings.company_website || TENANT_BRANDING_DEFAULT.website,
-    logoUrl: tenantSettings.logo_url || TENANT_BRANDING_DEFAULT.logoUrl,
-    accentColor: tenantSettings.accent_color || TENANT_BRANDING_DEFAULT.accentColor,
-    tagline: tenantSettings.tagline || TENANT_BRANDING_DEFAULT.tagline,
-    address: TENANT_BRANDING_DEFAULT.address
-  } : TENANT_BRANDING_DEFAULT;
+  const { branding, isPlusUltra } = await resolveTenantBranding(est);
+  // White-label media defaults: plus-ultra keeps its stock gallery, before/after,
+  // video cover, and intro video; every other tenant gets neutral (no Plus Ultra
+  // assets). Per-tenant media columns are a migration-099 follow-up; until then a
+  // non-PU tenant shows only its own uploaded photos (customGallery), never PU's.
+  const tenantMedia = isPlusUltra ? PU_DEFAULT_MEDIA : {
+    beforeImage: null, afterImage: null, videoCover: null, videoUrl: null, gallery: []
+  };
 
   const photos = Array.isArray(est.photos) ? est.photos : [];
   const cap = p => String(p.caption || '').toLowerCase().replace(/[\s_-]+/g, '_');
@@ -434,6 +493,11 @@ export default async function handler(req, res) {
           ? `${warrantyOverride}-yr Plus Ultra workmanship warranty`
           : p);
       }
+      // White-label: swap "Plus Ultra workmanship" for the tenant's own company
+      // name. PU keeps the literal byte-for-byte (the override above ran first).
+      if (!isPlusUltra) {
+        perks = perks.map(p => p.replace(/Plus Ultra workmanship/gi, `${branding.companyName} workmanship`));
+      }
 
       // May 2026 free-warranty auto-promo (Platinum only). Mirrors the
       // Shelley Hope LEGACY_OVERRIDES pattern but evaluated at render time so
@@ -498,7 +562,9 @@ export default async function handler(req, res) {
         subtitle: copy.subtitle,
         warrantyYears: copy.warrantyYears,
         warrantyLabel: copy.warrantyLabel,
-        bullets: copy.bullets,
+        // De-brand the shared metal copy's "Plus Ultra workmanship" bullet for
+        // white-label tenants; PU keeps the literal (shared lib untouched).
+        bullets: isPlusUltra ? copy.bullets : copy.bullets.map(b => b.replace(/Plus Ultra workmanship/gi, `${branding.companyName} workmanship`)),
         bestFit: copy.bestFit,
         total,
         persq: pkg.persq ?? summary.pricePerSQ ?? 0
@@ -526,7 +592,9 @@ export default async function handler(req, res) {
   const customerAddress = [est.customer?.address, est.customer?.city, est.customer?.province]
     .filter(Boolean).join(', ');
 
-  const rep = resolveRepFromEstimate(est);
+  // Plus-ultra resolves its own rep catalog (Mackenzie/Darcy); every other tenant
+  // gets a neutral rep from its own branding so it never shows a Plus Ultra rep.
+  const rep = isPlusUltra ? resolveRepFromEstimate(est) : neutralRepFromBranding(branding);
 
   // v2 routing bridge: when the tenant has the v2 renderer enabled AND a sent v2
   // instance exists for this estimate, route the customer to the v2 proposal.
@@ -558,13 +626,17 @@ export default async function handler(req, res) {
       address: customerAddress,
       phone: est.customer?.phone || '',
       email: est.customer?.email || '',
-      coverImage: cover?.url || PU_DEFAULT_MEDIA.afterImage
+      coverImage: cover?.url || (isPlusUltra ? PU_DEFAULT_MEDIA.afterImage : null)
     },
     rep,
     branding,
-    certifications: CERTIFICATIONS,
-    testimonials: TESTIMONIALS,
-    reviewStats: REVIEW_STATS,
+    // Social proof is plus-ultra-specific (its CertainTeed/CompanyCam certs, its
+    // named Google testimonials, its 5.0/35-review screenshot). White-label
+    // tenants render empty until they seed their own (migration-099 follow-up),
+    // never Plus Ultra's. The client hides empty social-proof sections.
+    certifications: isPlusUltra ? CERTIFICATIONS : [],
+    testimonials: isPlusUltra ? TESTIMONIALS : [],
+    reviewStats: isPlusUltra ? REVIEW_STATS : null,
     scope: {
       system: isMetal ? 'metal' : 'asphalt',
       recommended: est.selected_package || 'platinum',
@@ -576,7 +648,7 @@ export default async function handler(req, res) {
       soffit: est.soffit_lf, fascia: est.fascia_lf, gutter: est.gutter_lf,
       osbSheets: est.osb_sheets, remediation: est.remediation_allowance,
       measure: { sq: est.roof_area_sqft ? (est.roof_area_sqft / 100).toFixed(1) : '—' },
-      lineItems: buildScopeLineItems(est)
+      lineItems: buildScopeLineItems(est, isPlusUltra ? 'Plus Ultra' : branding.companyName)
     },
     optionalAdders: (() => {
       // Strip reserved keys (_addons, _envelope) so they don't leak as tier overrides.
@@ -631,21 +703,25 @@ export default async function handler(req, res) {
     eagleviewPdfUrl: est.custom_prices?._eagleview_pdf_url || null,
     eagleviewLabel: est.custom_prices?._eagleview_label || 'EagleView Measurement Report',
     media: {
-      ...PU_DEFAULT_MEDIA,
-      beforeImage: beforePhoto?.url || PU_DEFAULT_MEDIA.beforeImage,
+      ...tenantMedia,
+      beforeImage: beforePhoto?.url || tenantMedia.beforeImage,
       // Prefer explicit afterPhoto, then the AI-rendered cover (when there is
-      // a real before to pair with it), then the stock Plus Ultra fallback.
-      // Only use cover as the after when we have a real before too, so the
-      // slider stays coherent (no stock-crew before vs real-house after).
+      // a real before to pair with it), then the tenant fallback (PU stock for
+      // plus-ultra, null for white-label). Only use cover as the after when we
+      // have a real before too, so the slider stays coherent.
       afterImage: afterPhoto?.url
         || (beforePhoto && cover && cover.id !== beforePhoto.id ? cover.url : null)
-        || PU_DEFAULT_MEDIA.afterImage,
-      videoUrl: est.custom_prices?._video_visible === false ? null : resolveIntroVideo(rep, est.proposal_mode || 'shingle'),
+        || tenantMedia.afterImage,
+      videoUrl: est.custom_prices?._video_visible === false ? null : resolveIntroVideo(rep, est.proposal_mode || 'shingle', isPlusUltra ? PU_DEFAULT_MEDIA.videoUrl : null),
       // Commercial estimates show every inspection photo — no 8-photo cap.
       // For commercial, also skip the stock-gallery fallback (only show real on-site photos).
+      // The stock Plus Ultra GALLERY only backfills the plus-ultra tenant; a
+      // white-label tenant shows only its own uploaded photos (empty when none).
       gallery: (Array.isArray(est.tags) && est.tags.includes('commercial'))
         ? (customGallery.length ? customGallery : [])
-        : (customGallery.length ? [...customGallery, ...GALLERY].slice(0, 8) : GALLERY),
+        : (isPlusUltra
+            ? (customGallery.length ? [...customGallery, ...GALLERY].slice(0, 8) : GALLERY)
+            : customGallery),
       curated: curatedMedia
     },
     // Per pricing_formula_v2.md Section 3: multiplier IS the price. No bumping,
@@ -1080,12 +1156,15 @@ function buildLegacyScopeLineItems(estOs) {
 // Kept intentionally separate from the roof proposal shape — different
 // schema, different render template.
 // ─────────────────────────────────────────────
-function buildGutterProposalPayload(est) {
+async function buildGutterProposalPayload(est) {
   const pkg = est.calculated_packages?.gutters || {};
   const inputs = pkg.inputs || {};
   const customerAddress = [est.customer?.address, est.customer?.city, est.customer?.province]
     .filter(Boolean).join(', ');
-  const rep = resolveRepFromEstimate(est);
+  // White-label: resolve the tenant's own branding + rep so a non-plus-ultra
+  // gutter proposal never shows Plus Ultra's rep, name, phone, email, or address.
+  const { branding, isPlusUltra } = await resolveTenantBranding(est);
+  const rep = isPlusUltra ? resolveRepFromEstimate(est) : neutralRepFromBranding(branding);
 
   return {
     type: 'gutters',
@@ -1106,7 +1185,7 @@ function buildGutterProposalPayload(est) {
       phone: rep.phone,
       email: rep.email
     },
-    branding: TENANT_BRANDING_DEFAULT,
+    branding,
     scope: {
       total_lf: (inputs.lf_lower || 0) + (inputs.lf_upper || 0),
       lf_lower: inputs.lf_lower || 0,
