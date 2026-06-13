@@ -343,6 +343,26 @@ tr:hover td{background:rgba(34,211,238,0.02)}
 @keyframes toastIn{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:none}}
 @keyframes toastOut{to{opacity:0;transform:translateX(40px)}}
 
+/* ─── Inline field validation (replaces alert() form scolding) ─── */
+.field-invalid{border-color:var(--red)!important;box-shadow:0 0 0 2px rgba(248,113,113,0.25)!important}
+.field-err{color:var(--red);font-size:0.72em;margin-top:5px;line-height:1.35;display:flex;align-items:flex-start;gap:6px}
+.field-err::before{content:"!";flex:0 0 auto;width:14px;height:14px;margin-top:1px;border-radius:50%;background:rgba(248,113,113,0.18);font-weight:700;font-size:0.74em;display:flex;align-items:center;justify-content:center}
+
+/* ─── Confirm dialog (two-step destructive gate, reuses the #420 estimate-created overlay vocabulary) ─── */
+.confirm-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px)}
+.confirm-card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:26px;max-width:420px;width:100%;color:var(--text);animation:confirmIn 0.18s cubic-bezier(0.22,1,0.36,1)}
+.confirm-card .ck{font-family:'Orbitron',monospace;font-size:0.66em;letter-spacing:0.15em;text-transform:uppercase;color:var(--cyan)}
+.confirm-card.danger .ck{color:var(--red)}
+.confirm-card h3{margin:7px 0 8px;font-size:1.18em;line-height:1.3}
+.confirm-card p{margin:0 0 18px;font-size:0.85em;color:var(--text-dim);line-height:1.45}
+.confirm-actions{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
+.btn-danger{background:rgba(248,113,113,0.14);color:var(--red);border:1px solid rgba(248,113,113,0.55)}
+.btn-danger:hover{background:rgba(248,113,113,0.22)}
+.confirm-card .btn:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+.confirm-card .btn-danger:focus-visible{outline-color:var(--red)}
+@keyframes confirmIn{from{opacity:0;transform:translateY(8px) scale(0.98)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion: reduce){.confirm-card{animation:none}}
+
 /* ─── Loading ─── */
 .loading{display:flex;align-items:center;justify-content:center;padding:40px;color:var(--text-dim);gap:10px}
 .spinner{width:20px;height:20px;border:2px solid rgba(34,211,238,0.12);border-top-color:var(--cyan);border-radius:50%;animation:spin 0.7s linear infinite;box-shadow:0 0 8px rgba(34,211,238,0.1)}
@@ -895,6 +915,73 @@ function toast(msg, type='info', duration=3500) {
   setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 300); }, duration);
 }
 
+// ─── Inline field validation (replaces alert() form scolding; million-dollar
+// ledger admin row). Marks the field, writes a message under it, focuses it,
+// preserves the input, and clears itself as soon as the operator edits. ───
+function clearFieldErrors(scope) {
+  const root = scope || document;
+  root.querySelectorAll('.field-invalid').forEach(el => el.classList.remove('field-invalid'));
+  root.querySelectorAll('.field-err').forEach(el => el.remove());
+}
+function fieldError(el, msg) {
+  if (!el) { toast(msg, 'error'); return false; }
+  el.classList.add('field-invalid');
+  const host = el.closest('label') || el.parentElement || el;
+  let err = host.querySelector(':scope > .field-err');
+  if (!err) { err = document.createElement('div'); err.className = 'field-err'; host.appendChild(err); }
+  err.textContent = msg;
+  const clear = () => {
+    el.classList.remove('field-invalid'); err.remove();
+    el.removeEventListener('input', clear); el.removeEventListener('change', clear);
+  };
+  el.addEventListener('input', clear); el.addEventListener('change', clear);
+  try { el.focus(); el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {}
+  return false;
+}
+
+// ─── Confirm dialog: a deliberate two-step gate replacing native confirm().
+// Reuses the PR #420 estimate-created overlay vocabulary (panel, kicker, btn
+// classes, Esc to close, focus restore) instead of the inbox inline-arm, because
+// these delete handlers are invoked without a button element to arm. Opening the
+// dialog is step one; the labeled destructive button is the deliberate step two.
+// Returns a Promise that resolves true only on explicit confirm. ───
+function armedConfirm({ title, message = '', confirmLabel = 'Confirm', danger = false } = {}) {
+  return new Promise(resolve => {
+    const prev = document.activeElement;
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.innerHTML = `
+      <div class="confirm-card${danger ? ' danger' : ''}" role="document">
+        <div class="ck">${danger ? 'Confirm deletion' : 'Please confirm'}</div>
+        <h3>${esc(title || 'Are you sure?')}</h3>
+        ${message ? `<p>${esc(message)}</p>` : ''}
+        <div class="confirm-actions">
+          <button class="btn btn-outline" data-act="cancel">Cancel</button>
+          <button class="btn ${danger ? 'btn-danger' : ''}" data-act="ok">${esc(confirmLabel)}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const done = (val) => {
+      document.removeEventListener('keydown', onKey, true);
+      overlay.remove();
+      try { if (prev && prev.focus) prev.focus(); } catch (e) {}
+      resolve(val);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); done(false); }
+      else if (e.key === 'Enter' && !danger) { e.preventDefault(); done(true); }
+    };
+    document.addEventListener('keydown', onKey, true);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) done(false); });
+    overlay.querySelector('[data-act="cancel"]').onclick = () => done(false);
+    overlay.querySelector('[data-act="ok"]').onclick = () => done(true);
+    // Destructive dialogs focus the safe action so a stray Enter cancels, never deletes.
+    (danger ? overlay.querySelector('[data-act="cancel"]') : overlay.querySelector('[data-act="ok"]')).focus();
+  });
+}
+
 // ─── Global Search (Ctrl+K) ───
 const globalSearch = {
   open: false,
@@ -906,7 +993,7 @@ const globalSearch = {
       overlay.id = 'searchOverlay';
       overlay.className = 'search-overlay';
       overlay.innerHTML = `<div class="search-box">
-        <input class="search-input" id="globalSearchInput" placeholder="Search customers, estimates, pages..." oninput="globalSearch.search(this.value)">
+        <input class="search-input" id="globalSearchInput" aria-label="Search customers, estimates, and pages" placeholder="Search customers, estimates, pages..." oninput="globalSearch.search(this.value)">
         <div class="search-results" id="searchResults"></div>
         <div class="search-hint"><span><kbd>Esc</kbd> close</span><span><kbd>Enter</kbd> select</span><span><kbd>D</kbd> dashboard <kbd>Q</kbd> quote <kbd>E</kbd> estimates</span></div>
       </div>`;
@@ -1194,6 +1281,7 @@ async function gqPreview(){
 window.gqPreview = gqPreview;
 
 async function gqSubmit(){
+  clearFieldErrors(document.getElementById('gutter-modal') || document);
   const name = (document.getElementById('gq-name').value || '').trim();
   const address = (document.getElementById('gq-address').value || '').trim();
   // Bug-sweep #10 (2026-04-24): gqInputs() uses Number(x) || 0 which silently
@@ -1214,21 +1302,21 @@ async function gqSubmit(){
     // ($100, 1,000, etc.) but sets el.validity.badInput=true. Check the
     // validity flag first so bad-input doesn't get treated as "empty/optional".
     if (el.validity?.badInput) {
-      return alert(`${f.label} contains text that's not a number — please clear and re-enter.`);
+      return fieldError(el, `${f.label} needs to be a number. Clear it and type digits only.`);
     }
     const raw = (el.value || '').trim();
     if (raw !== '' && !Number.isFinite(Number(raw))) {
-      return alert(`${f.label} must be a number. Got: "${raw}"`);
+      return fieldError(el, `${f.label} must be a number. You entered "${raw}".`);
     }
   }
   const inputs = gqInputs();
-  if (!name) return alert('Customer name required');
-  if (!address) return alert('Address required');
-  if (inputs.lf_lower + inputs.lf_upper <= 0) return alert('Enter at least one LF measurement');
+  if (!name) return fieldError(document.getElementById('gq-name'), 'Add the customer name to continue.');
+  if (!address) return fieldError(document.getElementById('gq-address'), 'Add the property address to continue.');
+  if (inputs.lf_lower + inputs.lf_upper <= 0) return fieldError(document.getElementById('gq-lf-lower'), 'Enter at least one linear-foot measurement (lower or upper level).');
 
   let quote;
   try { quote = await api('/quote?mode=gutters', { method:'POST', body: JSON.stringify(inputs) }); }
-  catch (e) { return alert('Quote calculation failed: ' + e.message); }
+  catch (e) { toast('Could not calculate the quote. ' + (e.message || 'Please try again.'), 'error', 5000); return; }
 
   const rep = document.getElementById('gq-rep').value || 'darcy';
   const body = {
@@ -1254,7 +1342,7 @@ async function gqSubmit(){
 
   let est;
   try { est = await api('/estimates', { method:'POST', body: JSON.stringify(body) }); }
-  catch (e) { return alert('Estimate creation failed: ' + e.message); }
+  catch (e) { toast('Could not create the estimate. ' + (e.message || 'Please try again.'), 'error', 5000); return; }
 
   document.getElementById('gutter-modal').remove();
   const url = `${location.origin}/gutter-proposal.html?share=${est.share_token}`;
@@ -2640,13 +2728,13 @@ function renderQuoteResult(el, r) {
     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
       <div style="flex:1;min-width:180px">
         <label style="font-size:0.6em;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--text-dim);display:block;margin-bottom:4px">Proposal Template</label>
-        <select onchange="selectedTemplate=this.value" style="width:100%;padding:6px 10px;font-size:0.82em">
+        <select aria-label="Proposal template" onchange="selectedTemplate=this.value" style="width:100%;padding:6px 10px;font-size:0.82em">
           ${Object.entries(PROPOSAL_TEMPLATES).map(([k,t]) => `<option value="${k}" ${selectedTemplate===k?'selected':''}>${t.icon} ${t.label}</option>`).join('')}
         </select>
       </div>
       <div style="flex:1;min-width:180px">
         <label style="font-size:0.6em;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--text-dim);display:block;margin-bottom:4px">Assigned Salesperson</label>
-        <select onchange="selectedRep=this.value" style="width:100%;padding:6px 10px;font-size:0.82em">
+        <select aria-label="Assigned salesperson" onchange="selectedRep=this.value" style="width:100%;padding:6px 10px;font-size:0.82em">
           ${Object.entries(SALES_REPS).map(([k,r]) => `<option value="${k}" ${selectedRep===k?'selected':''}>${r.name} — ${r.title}</option>`).join('')}
         </select>
       </div>
@@ -2967,7 +3055,7 @@ function clearPhotoSelection() {
 async function bulkDeleteSelectedPhotos() {
   const ids = Array.from(_selectedPhotoIds);
   if (!ids.length) return;
-  if (!confirm(`Delete ${ids.length} selected photo${ids.length===1?'':'s'}? This cannot be undone.`)) return;
+  if (!await armedConfirm({ title: `Delete ${ids.length} selected photo${ids.length===1?'':'s'}?`, message: 'This cannot be undone.', confirmLabel: `Delete ${ids.length} photo${ids.length===1?'':'s'}`, danger: true })) return;
   const estId = quoteState.answers._estimate_id;
   let ok = 0, fail = 0;
   for (const id of ids) {
@@ -3136,7 +3224,7 @@ async function patchEstPhoto(id, patch) {
 }
 
 async function deleteEstPhoto(id) {
-  if (!confirm('Delete this photo?')) return;
+  if (!await armedConfirm({ title: 'Delete this photo?', message: 'This cannot be undone.', confirmLabel: 'Delete photo', danger: true })) return;
   const estId = quoteState.answers._estimate_id;
   const r = await fetch(`/api/estimate-photos?id=${encodeURIComponent(id)}`, {
     method: 'DELETE',
@@ -4123,7 +4211,7 @@ async function saveCustomerEdit(id) {
 }
 
 async function deleteCustomer(id, name) {
-  if (!confirm('Delete customer "' + name + '"? This cannot be undone.')) return;
+  if (!await armedConfirm({ title: 'Delete customer "' + name + '"?', message: 'This cannot be undone.', confirmLabel: 'Delete customer', danger: true })) return;
   const r = await api('/customers?id=' + id, {method:'DELETE'});
   if (r.error) { toast('Error: ' + r.error, 'error'); return; }
   toast('Customer deleted', 'success');
@@ -4225,7 +4313,7 @@ function drawCrewBoard() {
       <button class="${crewState.statusFilter==='all'?'active':''}" onclick="crewSetFilter('all')">All</button>
       <button class="${crewState.statusFilter==='done'?'active':''}" onclick="crewSetFilter('done')">Done</button>
     </div>
-    <select onchange="crewState.priorityFilter=this.value;drawCrewBoard()" style="width:auto;padding:6px 30px 6px 10px;font-size:0.78em">
+    <select aria-label="Filter tickets by priority" onchange="crewState.priorityFilter=this.value;drawCrewBoard()" style="width:auto;padding:6px 30px 6px 10px;font-size:0.78em">
       <option value="all"${crewState.priorityFilter==='all'?' selected':''}>All Priorities</option>
       <option value="urgent"${crewState.priorityFilter==='urgent'?' selected':''}>Urgent</option>
       <option value="high"${crewState.priorityFilter==='high'?' selected':''}>High</option>
@@ -4520,7 +4608,7 @@ async function crewMarkDone() {
 async function crewDeleteTicket() {
   const t = crewState.selected;
   if (!t) return;
-  if (!confirm(`Delete ticket "${t.title}"? This cannot be undone.`)) return;
+  if (!await armedConfirm({ title: `Delete ticket "${t.title}"?`, message: 'This cannot be undone.', confirmLabel: 'Delete ticket', danger: true })) return;
   try {
     const r = await api('/tickets?id=' + t.id, { method:'DELETE' });
     if (r.error) { toast('Failed: ' + r.error, 'error'); return; }
@@ -4663,7 +4751,7 @@ async function duplicateEstimate(id) {
 }
 
 async function deleteEstimate(id) {
-  if (!confirm('Delete this estimate? This cannot be undone.')) return;
+  if (!await armedConfirm({ title: 'Delete this estimate?', message: 'This cannot be undone.', confirmLabel: 'Delete estimate', danger: true })) return;
   const r = await api('/estimates?id=' + id, {method:'DELETE'});
   if (r.error) { toast('Error: ' + r.error, 'error'); return; }
   toast('Estimate deleted', 'success');
@@ -4687,7 +4775,7 @@ function toggleEstSelect(id, checked) {
 async function bulkEstAction(action) {
   if (estSelected.size === 0) return;
   const ids = [...estSelected];
-  if (action === 'delete' && !confirm('Delete ' + ids.length + ' estimates?')) return;
+  if (action === 'delete' && !await armedConfirm({ title: 'Delete ' + ids.length + ' estimate' + (ids.length===1?'':'s') + '?', message: 'This cannot be undone.', confirmLabel: 'Delete ' + ids.length + ' estimate' + (ids.length===1?'':'s'), danger: true })) return;
   for (const id of ids) {
     if (action === 'delete') await api('/estimates?id=' + id, {method:'DELETE'});
     else await api('/estimates', {method:'PUT', body:JSON.stringify({id, status: action})});
@@ -5090,7 +5178,7 @@ function renderDocList() {
 }
 
 async function docSelect(slug) {
-  if (_docState.dirty && !confirm('Discard unsaved changes?')) return;
+  if (_docState.dirty && !await armedConfirm({ title: 'Discard unsaved changes?', message: 'Your edits to this document will be lost.', confirmLabel: 'Discard changes', danger: true })) return;
   _docState.activeSlug = slug;
   _docState.dirty = false;
   document.getElementById('docList').innerHTML = renderDocList();
@@ -5235,7 +5323,7 @@ async function docNew() {
 async function docDelete() {
   const slug = _docState.activeSlug;
   if (!slug) return;
-  if (!confirm(`Delete "${slug}"? This cannot be undone.`)) return;
+  if (!await armedConfirm({ title: `Delete "${slug}"?`, message: 'This document cannot be recovered.', confirmLabel: 'Delete document', danger: true })) return;
   const resp = await fetch(`${API}/docs?slug=${encodeURIComponent(slug)}&tenant=${TENANT}`, { method: 'DELETE' });
   if (!resp.ok) { toast('Delete failed', 'error'); return; }
   toast('Deleted', 'success');
@@ -5251,10 +5339,10 @@ async function docGenerateGamma() {
   const slug = _docState.activeSlug;
   if (!slug) return;
   if (_docState.dirty) {
-    if (!confirm('You have unsaved changes. Gamma will use the saved version of this doc. Save and continue?')) return;
+    if (!await armedConfirm({ title: 'Save changes before generating?', message: 'Gamma uses the saved version of this document. Save now and continue?', confirmLabel: 'Save and continue' })) return;
     await docSave();
   }
-  if (!confirm('Generate a Gamma slide deck from this document?\n\nThis uses ~50 Gamma credits. Takes 2-3 minutes. The deck will open in a new tab when ready.')) return;
+  if (!await armedConfirm({ title: 'Generate a Gamma slide deck?', message: 'This uses about 50 Gamma credits and takes 2 to 3 minutes. The deck opens in a new tab when ready.', confirmLabel: 'Generate deck' })) return;
   const btn = document.getElementById('gammaGenBtn');
   if (btn) { btn.disabled = true; btn.textContent = 'Starting…'; }
   const r = await api(`/gamma-generate?slug=${encodeURIComponent(slug)}`, { method: 'POST' });
@@ -5438,6 +5526,8 @@ const cutscene = {
   done: false,
 
   shouldPlay() {
+    // Deliberate replay: /admin.html?boot=1 always plays the ceremony again.
+    try { if (new URLSearchParams(location.search).get('boot') === '1') return true; } catch (e) {}
     return !localStorage.getItem('ryujin_cutscene_seen');
   },
 
@@ -5450,6 +5540,11 @@ const cutscene = {
       renderPage();
       return;
     }
+
+    // First-run only (million-dollar ledger admin row 1): mark seen the moment
+    // the ceremony shows, not on finish. An operator who reloads mid-ceremony or
+    // never clicks SKIP must not see it again. The page is just THERE after this.
+    try { localStorage.setItem('ryujin_cutscene_seen', '1'); } catch (e) {}
 
     // Bulletproof skip — document-level click + key listeners while the
     // cutscene is open. Bubble-based onclick on the cutscene div alone
