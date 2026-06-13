@@ -12,6 +12,7 @@ import { fetchAdData, analyzeAdPerformance } from './_adData.js';
 import { gmailSend } from '../../lib/google.js';
 import { runCashflow } from './cashflow.js';
 import { snapshotHeaders } from '../../lib/snapshotClient.js';
+import { AGENT_NAMES } from './_names.js';
 
 const BASE_URL = 'https://ryujin-os.vercel.app';
 
@@ -76,7 +77,7 @@ export async function sendFallbackSMS(message) {
 
 // ===== VEGETA: Sales & Pipeline =====
 export async function runVegeta() {
-  const report = { agent: 'Vegeta', role: 'Sales & Pipeline', timestamp: new Date().toISOString(), findings: [], tasks: [] };
+  const report = { agent: AGENT_NAMES.vegeta.displayName, role: 'Sales & Pipeline', timestamp: new Date().toISOString(), findings: [], tasks: [] };
 
   const pipeline = await fetchJSON(`${BASE_URL}/api/ghl?mode=pipeline&limit=100`);
   if (pipeline.error) { report.findings.push(`Pipeline fetch failed: ${pipeline.error}`); return report; }
@@ -147,7 +148,7 @@ export async function runVegeta() {
       report.findings.push(`🚨 Meta Ads section MISSING from snapshot — ad performance is invisible.`);
       report.tasks.push({
         title: `🚨 Meta Ads data missing — Ryujin is blind to ad performance`,
-        description: `snapshot.sections.metaAds is not populated. Vegeta cannot detect paused campaigns, high CPL, or budget issues. Action: re-enrich the snapshot from the Meta CSV in Plus Ultra/Marketing/Facebook Ads Export/, or wire up live Meta Ads API.`,
+        description: `snapshot.sections.metaAds is not populated. The sales agent cannot detect paused campaigns, high CPL, or budget issues. Action: re-enrich the snapshot from the Meta CSV in Plus Ultra/Marketing/Facebook Ads Export/, or wire up live Meta Ads API.`,
         priority: 'top_priority'
       });
     } else {
@@ -172,7 +173,7 @@ export async function runVegeta() {
 
 // ===== PICCOLO: Operations & Crew =====
 export async function runPiccolo() {
-  const report = { agent: 'Piccolo', role: 'Operations & Crew', timestamp: new Date().toISOString(), findings: [], tasks: [] };
+  const report = { agent: AGENT_NAMES.piccolo.displayName, role: 'Operations & Crew', timestamp: new Date().toISOString(), findings: [], tasks: [] };
 
   const stats = await fetchJSON(`${BASE_URL}/api/lookup?mode=stats`, snapshotHeaders());
   const ticketStats = stats.results?.find(r => r.source === 'Crew Tickets' || r.source === 'Action Board');
@@ -220,7 +221,7 @@ export async function runPiccolo() {
 
 // ===== KRILLIN: Comms & Marketing =====
 export async function runKrillin() {
-  const report = { agent: 'Krillin', role: 'Comms & Marketing', timestamp: new Date().toISOString(), findings: [], tasks: [] };
+  const report = { agent: AGENT_NAMES.krillin.displayName, role: 'Comms & Marketing', timestamp: new Date().toISOString(), findings: [], tasks: [] };
 
   const convos = await fetchJSON(`${BASE_URL}/api/ghl?mode=conversations&limit=30`);
   if (convos.conversations) {
@@ -369,7 +370,7 @@ export async function runKrillin() {
 
 // ===== GOHAN: Game Dev & Product =====
 export async function runGohan() {
-  const report = { agent: 'Gohan', role: 'Game Dev & Product', timestamp: new Date().toISOString(), findings: [], tasks: [] };
+  const report = { agent: AGENT_NAMES.gohan.displayName, role: 'Game Dev & Product', timestamp: new Date().toISOString(), findings: [], tasks: [] };
 
   try {
     const gameResp = await fetch('https://pwa-six-iota.vercel.app', { method: 'HEAD' });
@@ -408,7 +409,7 @@ export async function runGohan() {
 
 // ===== TRUNKS: Security & Infrastructure =====
 export async function runTrunks() {
-  const report = { agent: 'Trunks', role: 'Security & Infra', timestamp: new Date().toISOString(), findings: [], tasks: [] };
+  const report = { agent: AGENT_NAMES.trunks.displayName, role: 'Security & Infra', timestamp: new Date().toISOString(), findings: [], tasks: [] };
 
   const apps = [
     { name: 'Aetheria Game', url: 'https://pwa-six-iota.vercel.app' },
@@ -470,7 +471,7 @@ export async function runTrunks() {
 
 // ===== BULMA: Intel & Analytics =====
 export async function runBulma() {
-  const report = { agent: 'Bulma', role: 'Intel & Analytics', timestamp: new Date().toISOString(), findings: [], tasks: [] };
+  const report = { agent: AGENT_NAMES.bulma.displayName, role: 'Intel & Analytics', timestamp: new Date().toISOString(), findings: [], tasks: [] };
 
   const [lookupStats, ghlOverview, ghlPipeline] = await Promise.all([
     fetchJSON(`${BASE_URL}/api/lookup?mode=stats`, snapshotHeaders()),
@@ -583,7 +584,7 @@ export async function runBulma() {
 // ORPHAN-AGENT FLAG for Mac: give Android 18 a real media duty (e.g. the
 // marketing-clips render queue) or remove it from the roster.
 export async function runAndroid18() {
-  const report = { agent: 'Android 18', role: 'Creative & Media', timestamp: new Date().toISOString(), findings: [], tasks: [] };
+  const report = { agent: AGENT_NAMES.android18.displayName, role: 'Creative & Media', timestamp: new Date().toISOString(), findings: [], tasks: [] };
   report.findings.push('RunPod watch RETIRED 2026-06-12 (Shenron-era pod dead: negative balance, pod not found). Agent has no active duty; awaiting reassignment or removal.');
   return report;
 }

@@ -95,10 +95,10 @@ export default async function handler(req, res) {
 
   try {
     const [vegeta, piccolo, krillin, gohan] = await Promise.all([
-      withTimeout(runVegeta(), AGENT_TIMEOUT, 'Vegeta').catch(e => { errors.push(`vegeta: ${e.message}`); return null; }),
-      withTimeout(runPiccolo(), AGENT_TIMEOUT, 'Piccolo').catch(e => { errors.push(`piccolo: ${e.message}`); return null; }),
-      withTimeout(runKrillin(), AGENT_TIMEOUT, 'Krillin').catch(e => { errors.push(`krillin: ${e.message}`); return null; }),
-      withTimeout(runGohan(), AGENT_TIMEOUT, 'Gohan').catch(e => { errors.push(`gohan: ${e.message}`); return null; })
+      withTimeout(runVegeta(), AGENT_TIMEOUT, 'Vantage').catch(e => { errors.push(`vegeta: ${e.message}`); return null; }),
+      withTimeout(runPiccolo(), AGENT_TIMEOUT, 'Keystone').catch(e => { errors.push(`piccolo: ${e.message}`); return null; }),
+      withTimeout(runKrillin(), AGENT_TIMEOUT, 'Relay').catch(e => { errors.push(`krillin: ${e.message}`); return null; }),
+      withTimeout(runGohan(), AGENT_TIMEOUT, 'Beacon').catch(e => { errors.push(`gohan: ${e.message}`); return null; })
     ]);
 
     reports = { vegeta, piccolo, krillin, gohan };
