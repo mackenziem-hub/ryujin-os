@@ -28,8 +28,106 @@ import { requireCronOrOwner } from '../../lib/cronAuth.js';
 import { reconcile, sentinelChecks } from '../../lib/reconcile.js';
 import { fetchWonOpportunities, crossCheckGhl } from '../../lib/ghlReconcile.js';
 import { snapshotHeaders } from '../../lib/snapshotClient.js';
+import { buildCollections } from '../../lib/collections.js';
 
 export const config = { maxDuration: 60 };
+
+// Owner SMS alert path (the pre-built Automator/GHL channel, exempt from the
+// outbound sign-off rule because it pings the OWNER, never a customer).
+const GHL_BASE = 'https://services.leadconnectorhq.com';
+const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
+const GHL_VERSION = '2021-07-28';
+const OWNER_SMS_CONTACT_ID = '02IhxZfSwZZAZ2fooVGu';
+
+async function sendOwnerSMS(message) {
+  if (process.env.OWNER_SMS_MUTED === '1') return { muted: true };
+  if (!GHL_TOKEN) return { error: 'no GHL_TOKEN' };
+  try {
+    const resp = await fetch(`${GHL_BASE}/conversations/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${GHL_TOKEN}`, Version: GHL_VERSION, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'SMS', contactId: OWNER_SMS_CONTACT_ID, message }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!resp.ok) return { error: `SMS ${resp.status}: ${(await resp.text()).slice(0, 200)}` };
+    return { sent: true };
+  } catch (e) {
+    return { error: String(e.message).slice(0, 200) };
+  }
+}
+
+// Weekly collections pass: read the cashflow AR book from the snapshot, classify
+// + draft per job (lib/collections.js), write a sections.collections section, and
+// SMS the owner if collections have stayed dry for 7 days while AR is open. Drafts
+// are NEVER auto-sent. Invoked via ?collections=1 (Monday cron); ?dry=1 previews.
+async function runCollections({ req, res, tenant, slug, dry, startTime }) {
+  const trigger = req.query.manual === '1' ? 'manual' : 'cron_daily';
+  let runId = null, runClosed = false;
+  try {
+    if (!dry) {
+      const { data: run, error: runErr } = await supabaseAdmin
+        .from('agent_runs')
+        .insert({ tenant_id: tenant.id, agent_slug: 'reconcile', trigger, status: 'running' })
+        .select('id').single();
+      if (runErr) console.error('collections: agent_runs insert failed:', runErr.message);
+      runId = run?.id || null;
+    }
+
+    const base = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://ryujin-os.vercel.app';
+    let cashflow = null;
+    try {
+      const r = await fetch(`${base}/api/snapshot`, { headers: snapshotHeaders(), signal: AbortSignal.timeout(10000) });
+      const snap = await r.json();
+      cashflow = snap?.sections?.cashflow || null;
+    } catch (e) {
+      throw new Error(`snapshot read failed: ${e.message}`);
+    }
+    if (!cashflow) throw new Error('cashflow section missing from snapshot (run the cashflow agent first)');
+
+    const now = new Date().toISOString();
+    const collections = buildCollections(cashflow, now);
+
+    // Owner SMS only on the live cron path (never on dry preview or manual run),
+    // and only when the 7-day-dry condition holds. Weekly cadence = at most one ping/week.
+    let smsResult = null;
+    if (!dry && trigger === 'cron_daily' && collections.alert.dry7d) {
+      smsResult = await sendOwnerSMS(`RYUJIN COLLECTIONS\n\n${collections.alert.message}`);
+    }
+    collections.alert.smsFired = !!(smsResult && smsResult.sent);
+
+    const summary = `collections: ${collections.openCount} open AR, ${collections.trueChases} chase(s), $${collections.collectibleNow.toLocaleString()} collectible now, 7d collected $${collections.collected7d}${collections.alert.dry7d ? ' [DRY ALERT]' : ''}`;
+
+    if (runId) {
+      await supabaseAdmin.from('agent_runs').update({
+        status: 'success', completed_at: new Date().toISOString(), summary,
+        output: { mode: 'collections', collections, smsResult },
+        duration_ms: Date.now() - startTime,
+      }).eq('id', runId);
+      runClosed = true;
+    }
+
+    if (!dry) {
+      try {
+        await fetch(`${base}/api/snapshot`, {
+          method: 'POST', headers: snapshotHeaders(),
+          body: JSON.stringify({ collections }), signal: AbortSignal.timeout(10000),
+        });
+      } catch { /* snapshot is best-effort */ }
+    }
+
+    return res.json({ agent: 'reconcile', mode: 'collections', tenant: slug, dry, summary, collections, smsResult });
+  } catch (e) {
+    if (runId && !runClosed) {
+      try {
+        await supabaseAdmin.from('agent_runs').update({
+          status: 'error', completed_at: new Date().toISOString(),
+          error_message: String(e.message).slice(0, 500), duration_ms: Date.now() - startTime,
+        }).eq('id', runId);
+      } catch { /* ignore */ }
+    }
+    return res.status(500).json({ agent: 'reconcile', mode: 'collections', tenant: slug, error: e.message });
+  }
+}
 
 const normJob = (s) => String(s || '')
   .toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
@@ -165,6 +263,12 @@ export default async function handler(req, res) {
     .from('tenant_settings').select('reconcile_agent_enabled').eq('tenant_id', tenant.id).maybeSingle();
   if (!settings?.reconcile_agent_enabled && !dry) {
     return res.json({ agent: 'reconcile', skipped: 'reconcile_agent_enabled is false for this tenant', tenant: slug });
+  }
+
+  // Weekly collections pass (P0 cash lever): own AR-aging + chase-draft path,
+  // wired to a Monday cron. Shares the reconcile slug + enable gate; ?dry=1 previews.
+  if (req.query.collections === '1' || req.query.collections === 'true') {
+    return runCollections({ req, res, tenant, slug, dry, startTime });
   }
 
   let runId = null, runClosed = false;

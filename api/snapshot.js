@@ -658,7 +658,10 @@ async function buildFreshSnapshot() {
     'metrics',
     // Reconciliation agent (migration 082) - daily cron writes sections.reconcile
     // with the committed-revenue figures + open finding count. Same wipe risk.
-    'reconcile'
+    'reconcile',
+    // Collections pass (weekly Monday cron, reconcile?collections=1) writes
+    // sections.collections with AR-aging + chase drafts + the dry-7d alert.
+    'collections'
   ];
   if (existing?.sections) {
     for (const key of preserveKeys) {
