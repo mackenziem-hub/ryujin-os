@@ -15,12 +15,8 @@
 // reaches the button from. If abuse becomes an issue, add a shared secret + signed URL.
 
 import { supabaseAdmin } from '../lib/supabase.js';
-import { gmailSend } from '../lib/google.js';
+import { notifyLeadEvent } from '../lib/leadNotify.js';
 
-// White-label: no hardcoded recipient fallback (set in Vercel env for the live
-// deployment). When missing, the accept still succeeds; only the internal
-// notification email is skipped (logged below).
-const NOTIFY_EMAIL = (process.env.NOTIFY_EMAIL || '').trim();
 const SITE_BASE = (process.env.SITE_BASE || 'https://ryujin-os.vercel.app').trim();
 
 function fmtMoney(n) {
@@ -185,17 +181,26 @@ export default async function handler(req, res) {
     `Ryujin OS`
   ].filter(Boolean);
 
-  if (NOTIFY_EMAIL) {
-    try {
-      await gmailSend(NOTIFY_EMAIL, subject, lines.join('\n'));
-    } catch (e) {
-      console.error('[custom-proposal-accept] gmailSend failed', e);
-      return res.status(500).json({ error: 'email_send_failed' });
-    }
-  } else {
-    // The customer's acceptance must never fail because an internal ops email
-    // is unconfigured; the row is already saved above.
-    console.error('[custom-proposal-accept] NOTIFY_EMAIL not set; acceptance recorded without notification email');
+  // Unified spine: same email content + durable inbox ping + direct owner SMS.
+  // Best-effort and non-throwing, so the customer's acceptance is NEVER failed
+  // by an internal notification problem (the row is already saved above). A
+  // custom proposal has no GHL opportunity, so dedup on the quote id (stable
+  // per proposal); the Vegeta won stage scan keys on opp ids and so will not
+  // collide here, but a custom proposal is not on a pipeline either, so there
+  // is no double-fire source for it.
+  const notifyRes = await notifyLeadEvent({
+    tenantId: proposal._tenant_id || null,
+    event: 'won',
+    title: subject,
+    body: lines.join('\n'),
+    contactName: proposal.customer || null,
+    ghlContactId: proposal.ghl_contact_id || null,
+    urgency: 'high',
+    dedupeKey: `custom:${proposal.quote_id || proposal._row_id || slug}`,
+    sms: true,
+  });
+  if (notifyRes.errors && notifyRes.errors.length) {
+    console.warn('[custom-proposal-accept] notify issues:', notifyRes.errors.join('; '));
   }
 
   return res.status(200).json({

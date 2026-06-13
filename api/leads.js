@@ -24,9 +24,9 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { requireTenant } from '../lib/tenant.js';
-import { gmailSend } from '../lib/google.js';
 import { sendCAPIEvent } from '../lib/meta.js';
 import { supabaseAdmin } from '../lib/supabase.js';
+import { notifyLeadEvent } from '../lib/leadNotify.js';
 
 const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
 const LOCATION_ID = (process.env.GHL_LOCATION_ID || 'aHotOUdq9D8m3JPrRz9n').trim();
@@ -237,7 +237,7 @@ async function createOpportunity({ contactId, source, name, metadata, deduped })
   return { ok: true, opportunity_id: data?.opportunity?.id || data?.id || null };
 }
 
-async function notifyOwner({ contactId, source, name, email, phone, address, city, metadata, deduped, estimator }) {
+async function notifyOwner({ tenantId, contactId, source, name, email, phone, address, city, metadata, deduped, estimator }) {
   if (!NOTIFY_EMAIL) return;
   const md = metadata || {};
   const est = (estimator && typeof estimator === 'object') ? estimator : null;
@@ -253,7 +253,10 @@ async function notifyOwner({ contactId, source, name, email, phone, address, cit
   // Revive leads get a loud prefix so they read apart from replacement-IE
   // leads at a glance in the inbox.
   const kindPrefix = /^revive/i.test(safeSource) ? 'REVIVE · ' : '';
-  const subject = safeHeader(`${kindPrefix}${leadKind} · ${safeSource} · ${subjectName}`);
+  // A submission that explicitly requested a proposal gets a one-line flag in
+  // the subject so it reads apart at a glance.
+  const proposalSuffix = md.wants_proposal ? ' + PROPOSAL REQUESTED' : '';
+  const subject = safeHeader(`${kindPrefix}${leadKind} · ${safeSource} · ${subjectName}${proposalSuffix}`);
 
   const ghlUrl = `https://app.gohighlevel.com/v2/location/${LOCATION_ID}/contacts/detail/${contactId}`;
   const lines = [
@@ -304,7 +307,24 @@ async function notifyOwner({ contactId, source, name, email, phone, address, cit
   lines.push('');
   lines.push('Ryujin OS');
 
-  await gmailSend(NOTIFY_EMAIL, subject, lines.join('\n'));
+  // Route through the unified spine: same email content, plus a durable
+  // inbox_items ping so the lead lands on /inbox.html and rides the SMS
+  // digest. No direct SMS for a new lead (sms:false). Dedup on the GHL
+  // contact id so a retried POST for the same contact collapses to one ping.
+  return notifyLeadEvent({
+    tenantId,
+    event: 'lead',
+    title: subject,
+    body: lines.join('\n'),
+    contactName: safeName || subjectName,
+    ghlContactId: contactId,
+    urgency: 'normal',
+    // Append ':proposal' when the submission requested a proposal so the proposal
+    // request is a DISTINCT notification, not deduped against the same contact's
+    // original new-lead ping (the IE proposal lane re-POSTs the same contact).
+    dedupeKey: (contactId || safeEmail || safePhone || subjectName) + (md.wants_proposal ? ':proposal' : ''),
+    sms: false,
+  });
 }
 
 async function handler(req, res) {
@@ -402,8 +422,8 @@ async function handler(req, res) {
     const startedAt = Date.now();
     const remaining = () => Math.max(0, POST_LEAD_BUDGET_MS - (Date.now() - startedAt));
 
-    const notifyPromise = notifyOwner({ contactId, source, name, email, phone, address, city, metadata, deduped, estimator: body.estimator })
-      .then(() => ({ ok: true }))
+    const notifyPromise = notifyOwner({ tenantId: req.tenant?.id, contactId, source, name, email, phone, address, city, metadata, deduped, estimator: body.estimator })
+      .then((r) => ({ ok: true, status: r }))
       .catch(e => {
         console.warn(`[leads] notifyOwner failed: ${e.message} (contact ${contactId})`);
         return { ok: false, error: e.message };
@@ -501,11 +521,17 @@ async function handler(req, res) {
       }
     }
 
-    // Wait the rest of the budget for notify (often already settled).
+    // Owner notification runs on its OWN budget, NOT the shared remaining()
+    // deadline. A slow GHL opportunity create used to consume the whole 5s
+    // window and silently starve the notify (the inbox row never landed and no
+    // email fired). The inbox row insert is a fast DB write and the email is
+    // best-effort inside notifyLeadEvent, so a short dedicated budget here is
+    // plenty and is independent of how long the opp took above.
+    const NOTIFY_BUDGET_MS = 4000;
     try {
       const notifyRes = await Promise.race([
         notifyPromise,
-        new Promise((_, reject) => setTimeout(() => reject(new Error('notify timeout')), remaining()))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('notify timeout')), NOTIFY_BUDGET_MS))
       ]);
       if (notifyRes && !notifyRes.ok) notifyError = notifyRes.error;
     } catch (e) {

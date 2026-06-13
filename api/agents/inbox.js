@@ -25,7 +25,8 @@ import { supabaseAdmin } from '../../lib/supabase.js';
 import { requireCronOrOwner } from '../../lib/cronAuth.js';
 import { listConversations, getConversationMessages, ghlSendMessage, getContactByPhone } from '../../lib/ghl.js';
 import { snapshotHeaders } from '../../lib/snapshotClient.js';
-import { activeWatches } from '../../lib/inboxWatches.js';
+import { activeWatches, DEFAULT_NOTIFY_EMAIL } from '../../lib/inboxWatches.js';
+import { sendEmail } from '../../lib/email.js';
 
 const PLUS_ULTRA_SLUG = 'plus-ultra';
 const RYUJIN_BASE = 'https://ryujin-os.vercel.app';
@@ -225,31 +226,68 @@ export async function triageMessage({ contactName, channel, messages }) {
 // ownerContactId is resolved by the handler (config id, or phone->contact, or
 // the legacy constant as a last resort). Passed in so the send target is not
 // a hardcoded id that can go stale.
-async function sendOwnerDigest(items, ownerContactId) {
+async function sendOwnerDigest(items, ownerContactId, notifyEmail) {
+  if (!items.length) return { sent: false };
+  const result = { sent: false };
+
+  // ── SMS leg (gated by OWNER_SMS_MUTED, unchanged behavior) ──
   if (process.env.OWNER_SMS_MUTED === '1') {
     console.log('[Inbox] SMS muted via OWNER_SMS_MUTED');
-    return { muted: true };
+    result.smsMuted = true;
+  } else {
+    const contactId = ownerContactId || MACKENZIE_CONTACT_ID;
+    const lines = ['RYUJIN INBOX'];
+    lines.push(`${items.length} need${items.length > 1 ? '' : 's'} you now:`);
+    for (const it of items.slice(0, DIGEST_MAX_ITEMS)) {
+      const who = it.contact_name && it.contact_name !== 'Unknown contact' ? it.contact_name : it.channel;
+      const reason = it.notify_reason || it.summary || 'new message';
+      lines.push(`- ${stripDashes(reason)} (${who})`);
+    }
+    if (items.length > DIGEST_MAX_ITEMS) lines.push(`+${items.length - DIGEST_MAX_ITEMS} more`);
+    lines.push(`Review: ${INBOX_URL}`);
+    try {
+      await ghlSendMessage({ contactId, type: 'SMS', message: lines.join('\n') });
+      result.sent = true;
+      result.contactId = contactId;
+    } catch (e) {
+      console.error('[Inbox] digest SMS failed:', e.message);
+      result.error = e.message;
+    }
   }
-  if (!items.length) return { sent: false };
-  const contactId = ownerContactId || MACKENZIE_CONTACT_ID;
 
-  const lines = ['RYUJIN INBOX'];
-  lines.push(`${items.length} need${items.length > 1 ? '' : 's'} you now:`);
-  for (const it of items.slice(0, DIGEST_MAX_ITEMS)) {
-    const who = it.contact_name && it.contact_name !== 'Unknown contact' ? it.contact_name : it.channel;
-    const reason = it.notify_reason || it.summary || 'new message';
-    lines.push(`- ${stripDashes(reason)} (${who})`);
-  }
-  if (items.length > DIGEST_MAX_ITEMS) lines.push(`+${items.length - DIGEST_MAX_ITEMS} more`);
-  lines.push(`Review: ${INBOX_URL}`);
-
+  // ── Email leg (mirrors the SMS, with the full draft_reply for each item) ──
+  // Best-effort and separate from the SMS so a failed Gmail send never blocks
+  // the SMS path and vice versa. The email carries more than the SMS: each
+  // item's suggested draft_reply, so Mac can act straight from his inbox.
+  const to = String(notifyEmail || '').trim() || DEFAULT_NOTIFY_EMAIL;
   try {
-    await ghlSendMessage({ contactId, type: 'SMS', message: lines.join('\n') });
-    return { sent: true, contactId };
+    const subject = `Ryujin inbox · ${items.length} need${items.length > 1 ? '' : 's'} you`;
+    const blocks = [`${items.length} item${items.length > 1 ? 's' : ''} need your attention.`, ''];
+    for (const it of items) {
+      const who = it.contact_name && it.contact_name !== 'Unknown contact' ? it.contact_name : it.channel;
+      const reason = stripDashes(it.notify_reason || it.summary || 'new message');
+      blocks.push(`${who}: ${reason}`);
+      if (it.draft_reply && String(it.draft_reply).trim()) {
+        blocks.push(`  Suggested reply: ${stripDashes(String(it.draft_reply).trim())}`);
+      }
+      blocks.push('');
+    }
+    blocks.push(`Review and approve: ${INBOX_URL}`);
+    blocks.push('');
+    blocks.push('Ryujin OS');
+    const emailRes = await sendEmail({ to, subject, body: blocks.join('\n') });
+    result.emailSent = !!emailRes?.ok;
+    if (!emailRes?.ok) result.emailError = emailRes?.error || 'unknown';
   } catch (e) {
-    console.error('[Inbox] digest SMS failed:', e.message);
-    return { sent: false, error: e.message };
+    console.error('[Inbox] digest email failed:', e.message);
+    result.emailError = e.message;
   }
+
+  // Treat the digest as delivered if EITHER channel landed, so notified_at is
+  // stamped and the item is not re-pinged forever when SMS is muted but email
+  // succeeded.
+  if (result.emailSent) result.sent = true;
+  return result;
 }
 
 // ── Bridge: sub-portal questions -> inbox queue ──
@@ -330,8 +368,8 @@ async function bridgeSubPortalMessages({ tenantId, runId }) {
 }
 
 // ── Main scan for one tenant ──
-async function runInbox({ tenantId, runId, startTime, allowlist = [], notifyCustomers = false, ownerContactId = null }) {
-  const result = { scanned: 0, triaged: 0, inserted: 0, notify: 0, allowlisted: 0, customerNotify: 0, bridged: 0, skipped: 0, errors: [] };
+async function runInbox({ tenantId, runId, startTime, allowlist = [], notifyCustomers = false, notifyAllLeads = false, ownerContactId = null, notifyEmail = null }) {
+  const result = { scanned: 0, triaged: 0, inserted: 0, notify: 0, allowlisted: 0, customerNotify: 0, leadNotify: 0, bridged: 0, skipped: 0, errors: [] };
 
   let convos = [];
   try {
@@ -413,13 +451,22 @@ async function runInbox({ tenantId, runId, startTime, allowlist = [], notifyCust
       //      booked, per the triage prompt) ALWAYS pings.
       const allowHit = matchAllowlist(c.contactName, allowlist);
       const customerHit = notifyCustomers && triage.category === 'customer';
-      if (!triage.notify && (allowHit || customerHit)) {
+      //  (3) notify_all_leads: every inbound the model classified category='lead'
+      //      ALWAYS pings, not only the present-intent ones the triage gate
+      //      already catches. Captures low-intent leads that would otherwise sit
+      //      silently in the queue. Default ON for Plus Ultra.
+      const leadHit = notifyAllLeads && triage.category === 'lead';
+      if (!triage.notify && (allowHit || customerHit || leadHit)) {
         triage.notify = true;
         const reason = allowHit
           ? `watching ${c.contactName}${allowHit.note ? ` (${allowHit.note})` : ''}`
-          : `existing/booked customer: ${c.contactName}`;
+          : customerHit
+            ? `existing/booked customer: ${c.contactName}`
+            : `new lead: ${c.contactName}`;
         triage.notify_reason = clampStr(triage.notify_reason || reason, 160);
-        if (allowHit) result.allowlisted++; else result.customerNotify++;
+        if (allowHit) result.allowlisted++;
+        else if (customerHit) result.customerNotify++;
+        else result.leadNotify++;
       }
 
       // Insert the new state row first (so a later supersede can't orphan it).
@@ -492,7 +539,7 @@ async function runInbox({ tenantId, runId, startTime, allowlist = [], notifyCust
       .limit(20);
 
     if (toNotify && toNotify.length) {
-      const digest = await sendOwnerDigest(toNotify, ownerContactId);
+      const digest = await sendOwnerDigest(toNotify, ownerContactId, notifyEmail);
       if (digest.sent) {
         await supabaseAdmin
           .from('inbox_items')
@@ -552,6 +599,12 @@ export default async function handler(req, res) {
     .concat(activeWatches(cfg).filter(w => w.match));
   //  - notify_customers: any existing/booked customer (triage category) pings.
   const notifyCustomers = cfg.notify_customers === true;
+  //  - notify_all_leads: every lead-category inbound pings, not just the
+  //    present-intent ones. Default ON (true) unless explicitly disabled, so
+  //    Plus Ultra catches low-intent leads without a migration to flip a flag.
+  const notifyAllLeads = cfg.notify_all_leads !== false;
+  //  - notify_email: owner email destination for the digest email leg.
+  const notifyEmail = String(cfg.notify_email || '').trim() || DEFAULT_NOTIFY_EMAIL;
   //  - owner SMS target: explicit contact id, else resolve the owner cell to a
   //    GHL contact id at runtime, else the legacy constant. (The hardcoded id
   //    went stale once -> GHL 400 "Contact not found".)
@@ -583,7 +636,7 @@ export default async function handler(req, res) {
   // unwinds past both try and catch cannot then strand a zombie running row.
   let runClosed = false;
   try {
-    const result = await runInbox({ tenantId: tenant.id, runId, startTime, allowlist, notifyCustomers, ownerContactId });
+    const result = await runInbox({ tenantId: tenant.id, runId, startTime, allowlist, notifyCustomers, notifyAllLeads, ownerContactId, notifyEmail });
     const durationMs = Date.now() - startTime;
     const status = result.errors.length ? 'partial' : 'success';
     const overrideBits = [

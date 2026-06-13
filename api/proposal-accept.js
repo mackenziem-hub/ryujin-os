@@ -15,8 +15,8 @@
 
 import { supabaseAdmin } from '../lib/supabase.js';
 import { put } from '@vercel/blob';
-import { gmailSend } from '../lib/google.js';
 import { sendCAPIEvent } from '../lib/meta.js';
+import { notifyLeadEvent } from '../lib/leadNotify.js';
 import {
   computeRateHoldExpiry,
   computeRepCallDue,
@@ -24,7 +24,6 @@ import {
   ESTIMATE_TIMING
 } from '../lib/state.js';
 
-const NOTIFY_EMAIL = (process.env.NOTIFY_EMAIL || 'mackenzie.m@plusultraroofing.com').trim();
 const GHL_BASE = 'https://services.leadconnectorhq.com';
 const GHL_TOKEN = (process.env.GHL_TOKEN || '').trim();
 const GHL_VERSION = '2021-07-28';
@@ -87,10 +86,25 @@ async function notifyMackenzie({ est, tier, financing, customer, rep, signatureU
     `Client view: ${proposalUrl}`,
     `Back office: ${backofficeUrl}`,
     ``,
-    `— Ryujin OS`
+    `Ryujin OS`
   ].filter(Boolean);
 
-  return gmailSend(NOTIFY_EMAIL, subject, lines.join('\n'));
+  // Route through the unified spine: same email content, plus a durable inbox
+  // ping, plus a direct owner SMS (won is the one event worth a buzz). Dedup on
+  // the GHL opportunity id when known so this collapses to ONE notification with
+  // the daily pipeline stage scan (which also keys won on the opp id); fall back
+  // to the estimate id when the estimate has no linked opp.
+  return notifyLeadEvent({
+    tenantId: est.tenant_id,
+    event: 'won',
+    title: subject,
+    body: lines.join('\n'),
+    contactName: customer?.name || null,
+    ghlContactId: est.customer?.ghl_contact_id || null,
+    urgency: 'high',
+    dedupeKey: est.ghl_opportunity_id || est.id,
+    sms: true,
+  });
 }
 
 async function fireGhlUpdates({ est, tier, customer, tierTotalWithTax, signatureUrl }) {
