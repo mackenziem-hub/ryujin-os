@@ -2188,6 +2188,18 @@ const TOOLS = [
     name: 'get_fleet_status',
     description: 'Read the live Guild Hall / Builder Room fleet state: the decision queue of what the fleet is BLOCKED ON MAC for (money confirmations, design picks, deploy go-aheads), per-desk builder status, and overall fleet health. Use whenever Mac asks what the Builder Room / fleet / desks / builders need from him, what is blocked on him, what decisions the fleet is waiting on, or the fleet status.',
     input_schema: { type: 'object', properties: {} }
+  },
+  {
+    name: 'record_directive',
+    description: 'Record a directive, decision, or instruction Mac just gave you so the Operator and the fleet pick it up on their next pass. This is HOW Mac\'s intent reaches the Builder Room. It ONLY records the directive to a queue, it does NOT execute anything (no sends, no deploys, no changes to data or CRM). Use whenever Mac tells you to do / decide / build / hold / greenlight something, locks a decision, or asks you to "log this to the fleet" or "tell the team". Always pass his exact words verbatim. After recording, tell Mac it is logged and the Operator will pick it up.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        verbatim: { type: 'string', description: "Mac's exact words, the directive as he said it" },
+        summary: { type: 'string', description: 'A one-line summary of the directive for the fleet queue' }
+      },
+      required: ['verbatim', 'summary']
+    }
   }
 ];
 
@@ -2567,6 +2579,24 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       const fleet = snap && snap.sections && snap.sections.fleet;
       if (!fleet) return { available: false, note: 'No fleet state has been posted yet (the local Guild Hall hub poster may be offline).' };
       return fleet;
+    }
+
+    if (name === 'record_directive') {
+      const verbatim = String(input.verbatim || '').slice(0, 4000).trim();
+      const summary = String(input.summary || '').slice(0, 300).trim();
+      if (!verbatim && !summary) throw new Error('record_directive needs the directive text');
+      const hdrs = { 'x-tenant-id': 'plus-ultra', ...((process.env.RYUJIN_SERVICE_TOKEN || '').trim() ? { Authorization: `Bearer ${(process.env.RYUJIN_SERVICE_TOKEN || '').trim()}` } : {}) };
+      let items = [];
+      try {
+        const cur = await fetch('https://ryujin-os.vercel.app/api/snapshot', { headers: hdrs });
+        if (cur.ok) { const s = await cur.json(); items = (s && s.sections && s.sections.directives && Array.isArray(s.sections.directives.items)) ? s.sections.directives.items : []; }
+      } catch (e) { /* start fresh if the read fails */ }
+      const entry = { id: 'dir-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), verbatim, summary, status: 'received', recordedAt: new Date().toISOString() };
+      items.push(entry);
+      if (items.length > 50) items = items.slice(-50);
+      const resp = await fetch('https://ryujin-os.vercel.app/api/snapshot', { method: 'POST', headers: { ...hdrs, 'Content-Type': 'application/json' }, body: JSON.stringify({ directives: { _note: 'Directives Mac gave Ryujin in the cockpit. The Operator reads these every pass and relays them into the fleet (Intent Ledger).', items, updatedAt: new Date().toISOString() } }) });
+      if (!resp.ok) throw new Error(`Recording directive returned ${resp.status}`);
+      return { recorded: true, id: entry.id, queueDepth: items.length, note: 'Logged to the fleet Intent Ledger. The Operator picks it up on its next pass.' };
     }
 
     if (name === 'add_contact_note') {
@@ -4910,6 +4940,7 @@ You are now Mackenzie's game development and product specialist.
       case 'navigate': return `🧭 Opening ${input.url || 'a page'}`;
       case 'lookup_data': return `🔍 Searching ${input.source}${input.query ? ` for "${input.query}"` : ''}`;
       case 'get_fleet_status': return `🛰️ Checking the Builder Room fleet`;
+      case 'record_directive': return `📝 Logging your directive to the fleet`;
       case 'get_contact_detail': return `🔍 Looking up contact: ${input.query || input.id}`;
       case 'search_gmail': return `📧 Searching Gmail: "${input.query}"`;
       case 'read_email': return `📧 Reading email`;
