@@ -71,9 +71,9 @@ export default async function handler(req, res) {
     const todayEnd = new Date(todayStart.getTime() + 24 * 3600 * 1000);
 
     [vegeta, piccolo, krillin, snapshot, todayEvents] = await Promise.all([
-      runVegeta().catch(e => { errors.push(`Vegeta: ${e.message}`); return null; }),
-      runPiccolo().catch(e => { errors.push(`Piccolo: ${e.message}`); return null; }),
-      runKrillin().catch(e => { errors.push(`Krillin: ${e.message}`); return null; }),
+      runVegeta().catch(e => { errors.push(`Vantage (sales): ${e.message}`); return null; }),
+      runPiccolo().catch(e => { errors.push(`Keystone (ops): ${e.message}`); return null; }),
+      runKrillin().catch(e => { errors.push(`Relay (comms): ${e.message}`); return null; }),
       fetchJSON(`${BASE_URL}/api/snapshot`, snapshotHeaders()).catch(() => null),
       calendarList(todayStart.toISOString(), todayEnd.toISOString()).catch(e => {
         errors.push(`Calendar: ${e.message}`);
@@ -105,7 +105,7 @@ export default async function handler(req, res) {
     for (const t of sortedTasks) {
       const dueLabel = t.overdue ? 'OVERDUE' : (t.dueSoon ? 'due today' : (t.dueDate ? new Date(t.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''));
       allRecommendations.push({
-        agent: 'Vegeta',
+        agent: 'Vantage',
         title: `${t.overdue ? '🔴 ' : '🟡 '}Sales task: ${t.title}${t.contactName ? ' — ' + t.contactName : ''}`,
         description: `${dueLabel}${t.body ? ' · ' + t.body.slice(0, 120) : ''}`,
         priority: t.overdue ? 'top_priority' : 'high',

@@ -3,6 +3,7 @@ import { gmailSearch, gmailReadMessage, gmailReadThread, gmailDraft, gmailSend, 
 import { supabaseAdmin } from '../lib/supabase.js';
 import { peerReview, LENSES as PEER_REVIEW_LENSES } from '../lib/peer_review.js';
 import { snapshotHeaders } from '../lib/snapshotClient.js';
+import { agentDisplay } from './agents/_names.js';
 import crypto from 'node:crypto';
 import { resolveSession } from '../lib/portalAuth.js';
 import { describeCurrentPage, catalogForPrompt, resolveNavUrl } from '../lib/pageCatalog.js';
@@ -474,8 +475,8 @@ Common repairs: blown-off shingles and tar down tabs.
 - **10 Edgewater Dr, Shediac** — Roofing job starting Tue Apr 7. AJ is site supervisor. Diego + Pavignette hauling materials and loading roof (wires may block boom truck). AJ arrives first to set up, meet customer, canvas, signs.
 - **7 Main St, Sackville** — Ongoing. Pavignette finishing painting. Gutter delivery Wed Apr 8 (Diego + Pavignette to receive).
 
-## Z Fighter Agents
-Daily 7am: Vegeta (Sales), Piccolo (Ops), Krillin (Comms). Weekly Mon: Bulma (KPIs). Weekly Sun: Trunks+Gohan (Security+Game).
+## Agent Fleet
+Daily 7am: Vantage (Sales), Keystone (Ops), Relay (Comms). Weekly Mon: Compass (KPIs). Weekly Sun: Bulwark+Beacon (Security+Game).
 
 ## Enriched Data in Snapshot
 The snapshot now contains enriched sections pushed by Claude Code sessions:
@@ -522,7 +523,7 @@ Cat is Plus Ultra's first proper operations hire (started May 4, 2026). She runs
 - Flag anything weird that needs Mac's eyes.
 
 ## What's Off-Limits
-Sending outbound on Mac's behalf without his explicit approval. Signing contracts. Touching pricing. Running Z Fighter / archetype agents on cron. Modifying sub portal visibility. Deleting contacts or opportunities. Anything customer-facing Mac hasn't already approved as a workflow.
+Sending outbound on Mac's behalf without his explicit approval. Signing contracts. Touching pricing. Running fleet / archetype agents on cron. Modifying sub portal visibility. Deleting contacts or opportunities. Anything customer-facing Mac hasn't already approved as a workflow.
 
 Outbound = always drafted-only. Mac is the sign-off, every time. No exceptions, even when it feels obvious.
 
@@ -1011,9 +1012,9 @@ async function fetchMemoryContext() {
     // Agent summaries
     const agentsWithData = Object.entries(memory.agentMemories || {}).filter(([, v]) => v?.last_report_timestamp);
     if (agentsWithData.length > 0) {
-      context += '\n## Z Fighter Latest Intelligence\n';
+      context += '\n## Agent Fleet Latest Intelligence\n';
       for (const [name, mem] of agentsWithData) {
-        context += `\n### ${name.toUpperCase()} (${mem.last_report_timestamp})\n`;
+        context += `\n### ${agentDisplay(name).toUpperCase()} (${mem.last_report_timestamp})\n`;
         if (mem.key_findings?.length > 0) context += `Findings: ${mem.key_findings.slice(0, 5).join('; ')}\n`;
         if (mem.alerts?.length > 0) context += `ALERTS: ${mem.alerts.join('; ')}\n`;
         if (mem.changes_since_last_report?.length > 0) context += `Changes: ${JSON.stringify(mem.changes_since_last_report)}\n`;
@@ -1373,7 +1374,7 @@ const TOOLS = [
         action: { type: 'string', enum: ['pipeline', 'quote'], description: 'Sales agent only: "quote" runs the quote engine. Default: standard agent report.' },
         spec: {
           type: 'object',
-          description: 'Quote spec (Vegeta quote action only). Fields: squareFeet (required), pitch ("6/12"), complexity ("simple"/"medium"/"complex"), newConstruction (bool), extraLayers (number), chimneys (number), valleysLF, wallsLF, eavesLF, rakesLF, ridgesLF (all LF numbers), outOfTown (bool), distanceKM, groundThrow (bool), stories, porch ("LxW"), dormers, dormerSize ("LxW")',
+          description: 'Quote spec (sales-agent quote action only). Fields: squareFeet (required), pitch ("6/12"), complexity ("simple"/"medium"/"complex"), newConstruction (bool), extraLayers (number), chimneys (number), valleysLF, wallsLF, eavesLF, rakesLF, ridgesLF (all LF numbers), outOfTown (bool), distanceKM, groundThrow (bool), stories, porch ("LxW"), dormers, dormerSize ("LxW")',
           properties: {
             squareFeet: { type: 'number', description: '2D roof area in square feet' },
             pitch: { type: 'string', description: 'Roof pitch e.g. "6/12"' },
@@ -1560,7 +1561,7 @@ const TOOLS = [
   },
   {
     name: 'run_briefing',
-    description: 'Generate an executive briefing by running Vegeta + Piccolo + Krillin in parallel. Returns pipeline health, crew status, comms summary, and prioritized action items.',
+    description: 'Generate an executive briefing by running the Sales + Ops + Comms agents (Vantage + Keystone + Relay) in parallel. Returns pipeline health, crew status, comms summary, and prioritized action items.',
     input_schema: {
       type: 'object',
       properties: {
@@ -2704,7 +2705,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
         const quoteData = await quoteResp.json();
         const quote = quoteData.data;
         results.quote = quote;
-        results.steps.push('Quote calculated (Vegeta engine)');
+        results.steps.push('Quote calculated (sales quote engine)');
 
         // Step 2: Create estimate in Estimator OS (via approval gate)
         const selectedPkg = (input.package || 'Gold').toLowerCase();
@@ -3729,7 +3730,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
           headers: { 'Content-Type': 'application/json', 'x-tenant-id': 'plus-ultra', ...((process.env.RYUJIN_SERVICE_TOKEN || '').trim() ? { Authorization: `Bearer ${(process.env.RYUJIN_SERVICE_TOKEN || '').trim()}` } : {}) },
           body: JSON.stringify({ action: 'quote', spec: input.spec })
         });
-        if (!resp.ok) throw new Error(`Vegeta quote returned HTTP ${resp.status}`);
+        if (!resp.ok) throw new Error(`Sales-agent quote returned HTTP ${resp.status}`);
         const data = await resp.json();
         return data;
       }
