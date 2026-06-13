@@ -6,105 +6,401 @@
 <meta name="theme-color" content="#030611">
 <title>Ryujin · Cockpit</title>
 <link rel="icon" href="/apple-touch-icon.png">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <!-- Auth gate: tokenless users bounce to /login before any cockpit logic runs -->
 <script src="/assets/auth-guard.js"></script>
 <script src="/assets/page-catalog.js"></script>
 <style>
+/* ══════════════════════════════════════════════════════════════════
+   COCKPIT v2: one working layer, three skins (Mac, 2026-06-13:
+   "all the options, do not get rid of anything" - same alternating
+   pattern as the fleet deck). Manual toggle, persisted, no rotation.
+     deck   = FLIGHT DECK  (mockup-cockpit-1, evolutionary)
+     summon = SUMMON       (mockup-cockpit-2, AI-dock dominant)
+     bridge = DRAGON BRIDGE(mockup-cockpit-3, radical cinematic)
+   The chat/stream/approval/persist/TTS layer is cockpit v1's,
+   behavior unchanged. Skins only re-stage the same elements.
+   ══════════════════════════════════════════════════════════════════ */
 :root{
-  --bg:#030611; --bg-2:#06101f;
-  --teal:#2dd4bf; --teal-2:#5eead4; --teal-dim:rgba(45,212,191,0.5);
-  --ink:#e6f1f4; --ink-dim:rgba(190,214,222,0.62);
-  --line:rgba(45,212,191,0.16); --line-2:rgba(45,212,191,0.32);
-  --red:#f87171; --amber:#fbbf24; --green:#4ade80; --blue:#0ea5e9;
+  --bg:#030611; --bg-2:#06101f; --pane:rgba(8,18,32,0.62); --pane-edge:rgba(45,212,191,0.16);
+  --line:rgba(148,180,210,0.1); --line-2:rgba(45,212,191,0.32);
+  --teal:#2dd4bf; --teal-2:#5eead4; --teal-dim:rgba(45,212,191,0.5); --blue:#0ea5e9;
+  --ink:#e6f1f3; --ink-dim:#8aa3b0;
+  --red:#fb7185; --amber:#fbbf24; --green:#34d399;
+  --glass:rgba(10,22,38,0.52); --glass-edge:rgba(94,234,212,0.18);
+  /* 1.333 scale on 15px (mockup contract) */
+  --t-1:11.3px; --t0:15px; --t1:20px; --t2:26.6px; --t3:35.5px;
+  /* z scale: ambient 0 / texture 1 / stage 2 / panes 3 / front 4 / chrome 6 */
+  --z-ambient:0; --z-texture:1; --z-stage:2; --z-panes:3; --z-front:4; --z-chrome:6;
 }
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{height:100%}
-body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--ink);line-height:1.55;-webkit-font-smoothing:antialiased;overflow:hidden}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--ink);line-height:1.5;-webkit-font-smoothing:antialiased;overflow:hidden;font-size:var(--t0)}
+body[data-skin="bridge"]{--bg:#020409;background:var(--bg)}
 
-#bg-dragon{position:fixed;inset:0;width:100vw;height:100vh;object-fit:cover;z-index:0;opacity:0.16;mix-blend-mode:screen;filter:hue-rotate(120deg) saturate(1.2) brightness(1.05);pointer-events:none}
-.vignette{position:fixed;inset:0;z-index:1;pointer-events:none;background:radial-gradient(120% 80% at 50% 30%,rgba(3,6,17,0) 0%,rgba(3,6,17,0.55) 60%,rgba(3,6,17,0.94) 100%)}
+/* ── ambient layers ── */
+#bg-dragon{position:fixed;inset:0;width:100vw;height:100vh;object-fit:cover;z-index:var(--z-ambient);opacity:0.14;mix-blend-mode:screen;filter:hue-rotate(120deg) saturate(1.2) brightness(1.05);pointer-events:none}
+#void{position:fixed;inset:0;z-index:var(--z-ambient);pointer-events:none;background:
+  radial-gradient(900px 520px at 50% 38%, rgba(45,212,191,0.07), transparent 60%),
+  radial-gradient(1200px 800px at 85% 110%, rgba(76,29,93,0.25), transparent 55%),
+  radial-gradient(1000px 700px at 10% -20%, rgba(8,47,73,0.35), transparent 60%)}
+body[data-skin="summon"] #void{background:
+  radial-gradient(760px 500px at 50% 30%, rgba(45,212,191,0.09), transparent 62%),
+  radial-gradient(1100px 760px at 88% 112%, rgba(76,29,93,0.22), transparent 55%),
+  radial-gradient(900px 660px at 6% -14%, rgba(8,47,73,0.32), transparent 58%)}
+body[data-skin="summon"] #void::after{content:'';position:absolute;inset:0;background:
+  radial-gradient(1px 1px at 18% 22%,rgba(94,234,212,0.6),transparent 40%),
+  radial-gradient(1px 1px at 72% 64%,rgba(94,234,212,0.4),transparent 40%),
+  radial-gradient(1.5px 1.5px at 84% 18%,rgba(14,165,233,0.5),transparent 40%),
+  radial-gradient(1px 1px at 32% 82%,rgba(94,234,212,0.35),transparent 40%);animation:twinkle 7s ease-in-out infinite alternate}
+body[data-skin="bridge"] #void{background:
+  radial-gradient(1100px 700px at 50% 118%, rgba(45,212,191,0.12), transparent 55%),
+  radial-gradient(900px 600px at 12% -10%, rgba(8,47,73,0.5), transparent 60%),
+  radial-gradient(1000px 700px at 92% -16%, rgba(76,29,93,0.35), transparent 58%)}
+body[data-skin="bridge"] #bg-dragon{display:none}
+#grain{position:fixed;inset:0;z-index:var(--z-texture);pointer-events:none;opacity:0.05;mix-blend-mode:overlay;
+  background-image:repeating-conic-gradient(rgba(255,255,255,0.6) 0% 0.0001%, transparent 0.0002% 0.0004%);background-size:6px 6px}
+.vignette{position:fixed;inset:0;z-index:var(--z-texture);pointer-events:none;background:radial-gradient(120% 80% at 50% 30%,rgba(3,6,17,0) 0%,rgba(3,6,17,0.55) 60%,rgba(3,6,17,0.94) 100%)}
+body[data-skin="bridge"] #grain,body[data-skin="bridge"] .vignette{display:none}
 
-.shell{position:relative;z-index:2;height:100vh;height:100dvh;display:grid;grid-template-rows:52px 1fr auto;max-width:860px;margin:0 auto}
+/* bridge-only ambient: aurora ribbons, stars, glass floor */
+.ribbon,#stars,#floor,#horizon{display:none}
+body[data-skin="bridge"] .ribbon{display:block;position:fixed;left:-20%;width:140%;height:280px;z-index:var(--z-ambient);filter:blur(34px);opacity:0.5;pointer-events:none;
+  background:linear-gradient(90deg,transparent, rgba(45,212,191,0.16) 28%, rgba(14,165,233,0.2) 52%, rgba(94,234,212,0.13) 74%, transparent);transform:rotate(-7deg)}
+body[data-skin="bridge"] .ribbon.r1{top:6%;animation:ribbonDrift 26s ease-in-out infinite alternate}
+body[data-skin="bridge"] .ribbon.r2{top:30%;height:200px;opacity:0.32;filter:blur(46px);animation:ribbonDrift 34s ease-in-out infinite alternate-reverse}
+@keyframes ribbonDrift{from{transform:rotate(-7deg) translateX(-3%)}to{transform:rotate(-5deg) translateX(3%)}}
+body[data-skin="bridge"] #stars{display:block;position:fixed;inset:0;z-index:var(--z-ambient);pointer-events:none;background:
+  radial-gradient(1px 1px at 12% 18%,rgba(230,241,243,0.8),transparent 40%),
+  radial-gradient(1px 1px at 38% 9%,rgba(94,234,212,0.7),transparent 40%),
+  radial-gradient(1.5px 1.5px at 67% 14%,rgba(230,241,243,0.5),transparent 40%),
+  radial-gradient(1px 1px at 85% 26%,rgba(14,165,233,0.6),transparent 40%),
+  radial-gradient(1px 1px at 25% 33%,rgba(230,241,243,0.4),transparent 40%);
+  animation:twinkle 8s ease-in-out infinite alternate}
+@keyframes twinkle{to{opacity:0.45}}
+body[data-skin="bridge"] #floor{display:block;position:fixed;left:0;right:0;bottom:0;height:34vh;z-index:var(--z-stage);pointer-events:none;
+  background:linear-gradient(180deg, transparent, rgba(3,10,18,0.85) 46%, rgba(2,6,11,0.97));
+  -webkit-mask-image:linear-gradient(180deg,transparent,#000 30%);mask-image:linear-gradient(180deg,transparent,#000 30%)}
+body[data-skin="bridge"] #floor::before{content:'';position:absolute;inset:0;opacity:0.35;
+  background:repeating-linear-gradient(90deg, rgba(94,234,212,0.12) 0 1px, transparent 1px 11.11%),
+             repeating-linear-gradient(180deg, rgba(94,234,212,0.1) 0 1px, transparent 1px 26%);
+  transform:perspective(420px) rotateX(58deg) scale(1.6);transform-origin:50% 0}
+body[data-skin="bridge"] #floor::after{content:'';position:absolute;left:50%;bottom:0;transform:translateX(-50%);width:min(76vh,800px);height:48%;
+  background:radial-gradient(ellipse at 50% 0%, rgba(45,212,191,0.18), transparent 70%);filter:blur(8px)}
 
-/* Top bar */
-.topbar{display:flex;align-items:center;justify-content:space-between;padding:0 18px}
-.wordmark{font-weight:900;letter-spacing:3px;font-size:0.92em}
+/* ── top bar (shared chrome) ── */
+.topbar{grid-area:bar;position:relative;z-index:var(--z-chrome);display:flex;align-items:center;gap:14px;padding:0 2px}
+body[data-skin="deck"] .topbar{border-bottom:1px solid var(--line)}
+.wordmark{font-weight:800;letter-spacing:0.22em;font-size:13px;white-space:nowrap}
 .wordmark span{color:var(--teal)}
-.bar-actions{display:flex;gap:8px}
-.bar-btn{font:inherit;font-size:0.72em;font-weight:700;letter-spacing:0.5px;color:var(--ink-dim);background:rgba(255,255,255,0.04);border:1px solid var(--line);border-radius:999px;padding:7px 13px;cursor:pointer;transition:all 0.14s}
-.bar-btn:hover{color:var(--teal-2);border-color:var(--line-2)}
-.bar-btn.flash{color:var(--green);border-color:rgba(74,222,128,0.4)}
+.crumb{color:var(--ink-dim);font-size:11.5px;letter-spacing:0.1em;white-space:nowrap}
+body[data-skin="summon"] .crumb{display:none}
+.bar-actions{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.bar-btn{font:600 11.5px/1 'Inter';letter-spacing:0.06em;color:var(--ink-dim);border:1px solid var(--line);
+  border-radius:999px;padding:7px 12px;cursor:pointer;background:transparent;transition:all .18s cubic-bezier(0.23,1,0.32,1)}
+.bar-btn:hover{color:var(--teal-2);border-color:var(--pane-edge)}
+.bar-btn:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+.bar-btn.flash{color:var(--green);border-color:rgba(52,211,153,0.4)}
+#skinBtn{border-color:var(--pane-edge);color:var(--teal-2)}
+body[data-skin="bridge"] .topbar{position:fixed;top:0;left:0;right:0;padding:15px 26px;background:linear-gradient(180deg, rgba(2,6,11,0.8), transparent)}
+body[data-skin="bridge"] .bar-btn{background:rgba(4,10,18,0.5);backdrop-filter:blur(10px)}
+body[data-skin="bridge"] .crumb{letter-spacing:0.12em;text-transform:uppercase}
 
-/* History */
-.history{overflow-y:auto;padding:8px 18px 4px;display:flex;flex-direction:column;gap:12px;scroll-behavior:smooth}
-.history::-webkit-scrollbar{width:6px}.history::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
-.bubble{max-width:88%;padding:11px 15px;border-radius:14px;font-size:0.98em;white-space:pre-wrap;word-wrap:break-word}
-.bubble.user{align-self:flex-end;background:rgba(45,212,191,0.12);border:1px solid var(--line-2);color:#fff;border-bottom-right-radius:5px}
-.bubble.assistant{align-self:flex-start;background:rgba(8,18,32,0.72);border:1px solid var(--line);border-left:3px solid var(--teal);border-bottom-left-radius:5px}
-.bubble .lens{display:inline-block;font-size:0.62em;letter-spacing:1.2px;text-transform:uppercase;font-weight:800;color:var(--teal-2);opacity:0.8;margin-bottom:5px}
-.bubble .content:empty::after{content:'…';color:var(--ink-dim)}
-.tools{display:flex;flex-direction:column;gap:4px;margin-top:8px}
-.tool{display:flex;align-items:center;gap:8px;font-size:0.76em;color:var(--ink-dim);font-family:'JetBrains Mono',monospace}
-.tool .dot{width:6px;height:6px;border-radius:50%;background:var(--amber);flex:0 0 auto;box-shadow:0 0 6px currentColor;animation:pulse 1s infinite}
-.tool.ok .dot{background:var(--green);animation:none}.tool.err .dot{background:var(--red);animation:none}.tool.wait .dot{background:var(--teal)}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
-.approve-btn{display:inline-flex;align-items:center;gap:8px;font:inherit;font-size:0.84em;font-weight:700;color:#04121a;background:linear-gradient(160deg,var(--teal),var(--blue));border:none;border-radius:10px;padding:9px 14px;cursor:pointer;margin-top:8px}
-.approve-btn.done{background:rgba(74,222,128,0.16);color:var(--green);box-shadow:0 0 0 1px rgba(74,222,128,0.4) inset;cursor:default}
-.approve-btn .code{font-family:'JetBrains Mono',monospace;font-size:0.82em;opacity:0.8}
-.empty-hist{margin:auto;text-align:center;color:var(--ink-dim);font-size:0.9em;padding:20px}
+/* ── shells: deck 3-column grid / summon centered column / bridge floating theater ── */
+.shell{position:relative;z-index:var(--z-stage);height:100dvh;display:grid;column-gap:18px;row-gap:0}
+body[data-skin="deck"] .shell{padding:0 22px 18px;
+  grid-template-areas:"bar bar bar" "signals stage choices" "signals history choices" "command command command";
+  grid-template-rows:52px auto minmax(0,1fr) auto;
+  grid-template-columns:300px minmax(0,1fr) 360px}
+body[data-skin="summon"] .shell{max-width:860px;margin:0 auto;padding:0 24px;
+  grid-template-areas:"bar" "signals" "command" "choices" "history";
+  grid-template-rows:52px auto auto auto minmax(0,1fr);
+  grid-template-columns:minmax(0,1fr)}
+body[data-skin="bridge"] .shell{display:block}
 
-/* Console (dragon + choices + input + topics) */
-.console{padding:6px 16px calc(14px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:10px}
-.orb-stage{position:relative;min-height:288px;display:flex;align-items:center;justify-content:center;flex:0 0 auto;margin-top:4px}
-.orb-wrap{position:relative;width:min(280px,56vw);height:min(280px,56vw);z-index:2}
-#orb{width:100%;height:100%;object-fit:contain;mix-blend-mode:screen;-webkit-mask-image:radial-gradient(circle at 50% 50%,#000 47%,transparent 60%);mask-image:radial-gradient(circle at 50% 50%,#000 47%,transparent 60%);animation:coreSpin 64s linear infinite;filter:drop-shadow(0 0 34px rgba(45,212,191,0.5))}
-.orb-glow{position:absolute;inset:-10%;border-radius:50%;background:radial-gradient(circle,rgba(45,212,191,0.2) 0%,rgba(45,212,191,0) 64%);animation:breathe 5s ease-in-out infinite;z-index:-1}
-.orb-wrap[data-state="listening"] #orb{animation-duration:30s;filter:drop-shadow(0 0 30px rgba(14,165,233,0.55))}
-.orb-wrap[data-state="thinking"] #orb{animation-duration:9s;filter:drop-shadow(0 0 34px rgba(45,212,191,0.7))}
-.orb-wrap[data-state="speaking"] #orb{filter:drop-shadow(0 0 40px rgba(94,234,212,0.85))}
-.orb-wrap[data-state="thinking"] .orb-glow{animation-duration:1.3s}
-.orb-wrap[data-state="speaking"] .orb-glow{background:radial-gradient(circle,rgba(94,234,212,0.34) 0%,rgba(45,212,191,0) 70%)}
-.orb-wrap[data-state="listening"] .orb-glow{background:radial-gradient(circle,rgba(14,165,233,0.3) 0%,rgba(45,212,191,0) 66%)}
-@keyframes breathe{0%,100%{transform:scale(1);opacity:0.8}50%{transform:scale(1.07);opacity:1}}
-@keyframes coreSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
-@media (prefers-reduced-motion: reduce){#orb{animation:none}}
-/* Star Wars text trail — decorative layer behind the orb */
+/* ── SIGNALS: one dataset, three shapes ── */
+#signals{grid-area:signals;min-height:0}
+#signals h2,#choices h2{font:700 var(--t-1)/1 'JetBrains Mono';letter-spacing:0.24em;color:var(--ink-dim);padding:4px 2px 8px}
+.sig .k{font:600 var(--t-1)/1 'Inter';letter-spacing:0.14em;color:var(--ink-dim);text-transform:uppercase}
+.sig .v{font:700 var(--t2)/1.1 'JetBrains Mono';margin-top:6px;font-variant-numeric:tabular-nums}
+.sig .v.warn{color:var(--amber)}.sig .v.bad{color:var(--red)}.sig .v.good{color:var(--teal-2)}
+.sig .sub{font-size:12.5px;color:var(--ink-dim);margin-top:4px;line-height:1.5}
+.sig .act{display:none;margin-top:12px;font:700 11.5px/1 'Inter';letter-spacing:0.06em;color:#04121a;
+  background:linear-gradient(160deg,var(--teal),var(--blue));border:none;border-radius:9px;padding:9px 13px;cursor:pointer;transition:transform .15s}
+.sig .act:active{transform:scale(0.95)}
+.sig .act:focus-visible{outline:2px solid var(--teal-2);outline-offset:2px}
+#sig-asof{font:600 10.5px/1 'JetBrains Mono';color:var(--ink-dim);letter-spacing:0.08em;padding-top:8px}
+
+/* deck: instrument rail (mockup 1) */
+body[data-skin="deck"] #signals{display:flex;flex-direction:column;gap:10px;overflow-y:auto;padding-top:16px}
+body[data-skin="deck"] #signals::-webkit-scrollbar{width:5px}
+body[data-skin="deck"] #signals::-webkit-scrollbar-thumb{background:var(--line)}
+body[data-skin="deck"] .sig{background:var(--pane);border:1px solid var(--line);border-radius:12px;padding:14px 16px;animation:rise .3s cubic-bezier(0.23,1,0.32,1) backwards}
+body[data-skin="deck"] .sig[data-pos="2"]{animation-delay:60ms}
+body[data-skin="deck"] .sig[data-pos="3"]{animation-delay:120ms}
+body[data-skin="deck"] .sig[data-pos="4"]{animation-delay:180ms}
+
+/* summon: the pulse line (mockup 2) */
+body[data-skin="summon"] #signals{display:flex;justify-content:center;align-items:baseline;gap:6px 18px;flex-wrap:wrap;padding-top:7vh;text-align:center}
+body[data-skin="summon"] #signals h2,body[data-skin="summon"] .sig .sub,body[data-skin="summon"] .sig .act{display:none}
+body[data-skin="summon"] .sig{display:flex;flex-direction:row-reverse;align-items:baseline;gap:7px;animation:rise .4s cubic-bezier(0.23,1,0.32,1) backwards}
+body[data-skin="summon"] .sig .k{letter-spacing:0.05em;text-transform:none;font:600 12.5px/1.7 'JetBrains Mono';color:var(--ink-dim)}
+body[data-skin="summon"] .sig .v{font-size:12.5px;line-height:1.7;margin:0}
+body[data-skin="summon"] #sig-asof{width:100%;text-align:center;padding-top:2px}
+
+/* bridge: orbiting glass panes (mockup 3) */
+body[data-skin="bridge"] #signals{display:contents}
+body[data-skin="bridge"] #signals h2{display:none}
+body[data-skin="bridge"] .sig{position:fixed;z-index:var(--z-panes);width:300px;background:var(--glass);border:1px solid var(--glass-edge);border-radius:16px;
+  padding:16px 18px;backdrop-filter:blur(16px) saturate(1.25);
+  box-shadow:0 26px 70px rgba(0,0,0,0.55), inset 0 1px 0 rgba(94,234,212,0.1);
+  animation:panefloat 11s ease-in-out infinite alternate, paneIn .5s cubic-bezier(0.23,1,0.32,1) backwards}
+body[data-skin="bridge"] .sig:hover{border-color:rgba(94,234,212,0.4)}
+@keyframes panefloat{to{transform:translateY(-10px)}}
+@keyframes paneIn{from{opacity:0;transform:translateY(26px) scale(0.97)}to{opacity:1;transform:none}}
+body[data-skin="bridge"] .sig .k{font:700 var(--t-1)/1 'JetBrains Mono';letter-spacing:0.22em;text-transform:none}
+body[data-skin="bridge"] .sig .v{font-size:var(--t3);line-height:1.05;margin-top:8px;letter-spacing:-0.01em}
+body[data-skin="bridge"] .sig .sub{font-size:12.5px;margin-top:6px}
+body[data-skin="bridge"] .sig .act{display:inline-flex}
+body[data-skin="bridge"] .sig[data-pos="1"]{left:6vw;top:17vh;animation-delay:.1s,.15s}
+body[data-skin="bridge"] .sig[data-pos="2"]{right:6vw;top:15vh;animation-delay:1.6s,.3s;animation-duration:13s,.5s}
+body[data-skin="bridge"] .sig[data-pos="3"]{left:9vw;bottom:21vh;animation-delay:.9s,.45s;animation-duration:12s,.5s}
+body[data-skin="bridge"] .sig[data-pos="4"]{right:9vw;bottom:23vh;animation-delay:2.2s,.6s;animation-duration:14s,.5s}
+body[data-skin="bridge"] .sig[data-sev="now"]{border-top:2px solid var(--red)}
+body[data-skin="bridge"] .sig[data-sev="today"]{border-top:2px solid var(--amber)}
+body[data-skin="bridge"] #sig-asof{position:fixed;left:50%;bottom:2.5vh;transform:translateX(-50%);z-index:var(--z-panes);padding:0}
+
+/* ── horizon greeting (bridge only) ── */
+body[data-skin="bridge"] #horizon{display:block;position:fixed;left:50%;top:13vh;transform:translateX(-50%);z-index:var(--z-panes);text-align:center;animation:paneIn .5s cubic-bezier(0.23,1,0.32,1) backwards}
+#horizon .hello{font:600 13px/1 'JetBrains Mono';letter-spacing:0.3em;color:var(--teal-2);text-transform:uppercase;opacity:0.9}
+#horizon h1{font-size:var(--t2);font-weight:800;letter-spacing:-0.01em;margin-top:10px;text-shadow:0 0 30px rgba(45,212,191,0.3);text-wrap:balance}
+#horizon .sub{font-size:13px;color:var(--ink-dim);margin-top:6px}
+
+/* ── ORB: one presence, three mounts ── */
+.orb-mount{position:relative}
+.orb-mount img{width:100%;height:100%;object-fit:contain;mix-blend-mode:screen;
+  -webkit-mask-image:radial-gradient(circle at 50% 50%,#000 47%,transparent 60%);
+  mask-image:radial-gradient(circle at 50% 50%,#000 47%,transparent 60%);
+  animation:coreSpin 64s linear infinite;filter:drop-shadow(0 0 30px rgba(45,212,191,0.45))}
+@keyframes coreSpin{to{transform:rotate(360deg)}}
+.orb-glow{position:absolute;inset:-12%;border-radius:50%;z-index:-1;
+  background:radial-gradient(circle,rgba(45,212,191,0.18) 0%,transparent 64%);animation:breathe 5s ease-in-out infinite}
+@keyframes breathe{50%{transform:scale(1.06);opacity:0.8}}
+.orb-mount[data-state="listening"] img{animation-duration:30s;filter:drop-shadow(0 0 26px rgba(14,165,233,0.55))}
+.orb-mount[data-state="thinking"] img{animation-duration:9s;filter:drop-shadow(0 0 30px rgba(45,212,191,0.7))}
+.orb-mount[data-state="speaking"] img{filter:drop-shadow(0 0 36px rgba(94,234,212,0.85))}
+.orb-mount[data-state="thinking"] .orb-glow{animation-duration:1.3s}
+.orb-mount[data-state="speaking"] .orb-glow{background:radial-gradient(circle,rgba(94,234,212,0.3) 0%,transparent 68%)}
+.orb-mount[data-state="listening"] .orb-glow{background:radial-gradient(circle,rgba(14,165,233,0.26) 0%,transparent 66%)}
+
+/* deck: center-stage orb (mockup 1) */
+#stage{grid-area:stage;display:flex;flex-direction:column;align-items:center;min-height:0;padding-top:16px}
+.stagewrap{position:relative}
+#orb-stage{width:min(230px,24vh);aspect-ratio:1;flex:none}
+#statusline{font:600 12.5px/1 'JetBrains Mono';color:var(--ink-dim);letter-spacing:0.06em;margin-top:14px;min-height:13px;text-align:center}
+#statusline b{color:var(--teal-2);font-weight:600}
+body[data-skin="summon"] #stage,body[data-skin="bridge"] #stage{display:none}
+
+/* summon: the eye inside the field (mockup 2) */
+#orb-eye{display:none;width:52px;height:52px;flex:none}
+#orb-eye img{animation-duration:48s;filter:drop-shadow(0 0 14px rgba(45,212,191,0.55))}
+#orb-eye .orb-glow{inset:-30%;background:radial-gradient(circle,rgba(45,212,191,0.22),transparent 62%);animation-duration:4.5s}
+body[data-skin="summon"] #orb-eye{display:block}
+
+/* bridge: the colossal reactor on the horizon (mockup 3) */
+#orb-reactor{display:none;position:fixed;left:50%;bottom:-26vh;transform:translateX(-50%);width:min(78vh,820px);aspect-ratio:1;z-index:var(--z-texture);pointer-events:none}
+#orb-reactor img{animation-duration:140s;filter:drop-shadow(0 0 90px rgba(45,212,191,0.4)) saturate(1.05)}
+#orb-reactor .orb-glow{inset:-8%;background:radial-gradient(circle, rgba(45,212,191,0.16) 0%, transparent 62%);animation-duration:7s}
+body[data-skin="bridge"] #orb-reactor{display:block}
+
+/* star-wars text trail (deck stage only) */
 .trail{position:absolute;inset:0;z-index:1;pointer-events:none;overflow:hidden;perspective:420px;perspective-origin:50% 100%}
 .trail .word{position:absolute;left:50%;bottom:2px;transform:translateX(-50%);white-space:nowrap;color:var(--teal-2);font-size:0.82em;font-weight:600;opacity:0;text-shadow:0 0 8px rgba(45,212,191,0.4);animation:crawl 2.6s ease-out forwards;will-change:transform,opacity}
 @keyframes crawl{0%{opacity:0;transform:translateX(-50%) translateY(0) rotateX(52deg) scale(1)}14%{opacity:0.7}100%{opacity:0;transform:translateX(-50%) translateY(-92px) rotateX(52deg) scale(0.45)}}
-@media (prefers-reduced-motion: reduce){.trail{display:none}}
 
-.greeting{text-align:center;font-size:0.76em;color:var(--ink-dim);min-height:14px;letter-spacing:0.3px}
-.choices{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.choice{text-align:left;font:inherit;font-size:0.82em;font-weight:600;color:var(--ink);background:rgba(8,18,32,0.6);border:1px solid var(--line);border-radius:12px;padding:11px 13px;cursor:pointer;transition:all 0.14s;min-height:44px;display:flex;flex-direction:column;gap:2px}
-.choice:hover{border-color:var(--line-2);background:rgba(45,212,191,0.07)}
-.choice .why{font-size:0.82em;font-weight:400;color:var(--ink-dim)}
-.choice.rec{border-color:var(--line-2);box-shadow:0 0 0 1px rgba(45,212,191,0.12) inset}
-.choice.skeleton{opacity:0.4;pointer-events:none;color:transparent;background:linear-gradient(90deg,rgba(255,255,255,0.03),rgba(255,255,255,0.06),rgba(255,255,255,0.03))}
-@media(max-width:520px){.choices{grid-template-columns:1fr}}
+/* ── THREAD: the conversation ── */
+#history{grid-area:history;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:12px;scroll-behavior:smooth;padding:2px}
+#history::-webkit-scrollbar{width:5px}#history::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+body[data-skin="deck"] #history{width:min(640px,100%);justify-self:center;margin-top:14px}
+body[data-skin="summon"] #history{margin-top:26px;padding-bottom:24px}
+body[data-skin="bridge"] #history{position:fixed;left:50%;bottom:18vh;transform:translateX(-50%);z-index:var(--z-front);width:min(680px,calc(100vw - 40px));max-height:42vh}
 
-#summon-form{display:flex;align-items:center;gap:8px;background:rgba(8,18,32,0.7);backdrop-filter:blur(10px);border:1px solid var(--line-2);border-radius:15px;padding:5px 5px 5px 18px}
-#summon-form:focus-within{border-color:var(--teal-dim);box-shadow:0 0 24px rgba(45,212,191,0.16)}
-#cmd{flex:1;background:transparent;border:none;outline:none;color:var(--ink);font:inherit;font-size:1.06em;font-weight:500;padding:12px 0}
-#cmd::placeholder{color:rgba(190,214,222,0.4)}
-#send{flex:0 0 auto;width:44px;height:44px;border-radius:11px;border:none;background:linear-gradient(160deg,var(--teal),var(--blue));color:#04121a;font-size:1.2em;font-weight:900;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:transform 0.1s,filter 0.1s}
-#send:hover{filter:brightness(1.1)}#send:active{transform:scale(0.94)}#send:disabled{opacity:0.5}
-.topics{display:flex;gap:7px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}.topics::-webkit-scrollbar{display:none}
-.topic{flex:0 0 auto;font:inherit;font-size:0.78em;font-weight:600;color:var(--ink-dim);background:rgba(14,26,40,0.6);border:1px solid var(--line);border-radius:999px;padding:8px 14px;cursor:pointer;white-space:nowrap;transition:all 0.14s}
-.topic:hover{color:var(--teal-2);border-color:var(--line-2)}
-.topic.high{border-color:rgba(248,113,113,0.4);color:#fca5a5}
+.bubble{max-width:86%;padding:11px 15px;border-radius:14px;font-size:14.5px;line-height:1.55;white-space:pre-wrap;word-wrap:break-word;animation:rise .3s cubic-bezier(0.23,1,0.32,1) backwards}
+.bubble.user{align-self:flex-end;background:rgba(14,165,233,0.12);border:1px solid rgba(14,165,233,0.25);color:#fff;border-bottom-right-radius:5px}
+.bubble.assistant{align-self:flex-start;background:var(--pane);border:1px solid var(--line);border-left:2px solid var(--teal);border-bottom-left-radius:5px}
+body[data-skin="summon"] .bubble.assistant{align-self:stretch;max-width:none;border-radius:16px;border-left:1px solid var(--line);padding:16px 18px;font-size:15px;line-height:1.6}
+body[data-skin="bridge"] .bubble{background:var(--glass);backdrop-filter:blur(16px) saturate(1.25);box-shadow:0 18px 50px rgba(0,0,0,0.45)}
+body[data-skin="bridge"] .bubble.user{background:rgba(14,165,233,0.14)}
+.bubble .lens{display:inline-flex;align-items:center;gap:8px;font:700 11px/1 'JetBrains Mono';letter-spacing:0.2em;text-transform:uppercase;color:var(--teal-2);opacity:0.9;margin-bottom:7px}
+.bubble .lens::before{content:'';width:16px;height:16px;border-radius:50%;flex:none;
+  background:radial-gradient(circle at 36% 32%, var(--teal-2), var(--teal) 55%, #0b4a44 95%);box-shadow:0 0 12px rgba(45,212,191,0.5)}
+.bubble .content:empty::after{content:'…';color:var(--ink-dim)}
+.tools{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+.tool{display:inline-flex;align-items:center;gap:7px;font:600 11px/1 'JetBrains Mono';color:var(--teal-2);
+  background:rgba(45,212,191,0.08);border:1px solid var(--pane-edge);border-radius:999px;padding:5px 10px}
+.tool .dot{width:6px;height:6px;border-radius:50%;background:var(--amber);flex:none;box-shadow:0 0 6px currentColor;animation:pulse 1s infinite}
+.tool.ok .dot{background:var(--green);animation:none}.tool.err .dot{background:var(--red);animation:none}.tool.wait .dot{background:var(--teal)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+.approve-btn{display:inline-flex;align-items:center;gap:8px;font:700 12.5px/1 'Inter';letter-spacing:0.04em;color:#04121a;
+  background:linear-gradient(160deg,var(--teal),var(--blue));border:none;border-radius:11px;padding:11px 16px;cursor:pointer;margin-top:10px;
+  box-shadow:0 0 24px rgba(45,212,191,0.25);transition:transform .15s}
+.approve-btn:active{transform:scale(0.96)}
+.approve-btn:focus-visible{outline:2px solid var(--teal-2);outline-offset:2px}
+.approve-btn.done{background:rgba(52,211,153,0.16);color:var(--green);box-shadow:0 0 0 1px rgba(52,211,153,0.4) inset;cursor:default}
+.approve-btn .code{font-family:'JetBrains Mono',monospace;font-size:0.82em;opacity:0.8}
+.empty-hist{margin:auto;text-align:center;color:var(--ink-dim);font-size:0.9em;padding:20px}
+body[data-skin="bridge"] .empty-hist{display:none}
+
+/* ── CHOICES (/api/options): deck ranked queue / summon intents / bridge chips ── */
+#choices{grid-area:choices;min-height:0}
+body[data-skin="deck"] #choices{display:flex;flex-direction:column;gap:10px;overflow-y:auto;padding-top:16px}
+body[data-skin="deck"] #choices::-webkit-scrollbar{width:5px}
+body[data-skin="deck"] #choices::-webkit-scrollbar-thumb{background:var(--line)}
+body[data-skin="summon"] #choices h2,body[data-skin="bridge"] #choices h2{display:none}
+body[data-skin="deck"] .choice{text-align:left;font:inherit;font-size:var(--t0);background:var(--pane);border:1px solid var(--line);border-radius:12px;padding:13px 15px;cursor:pointer;
+  transition:border-color .18s, transform .18s;animation:rise .3s cubic-bezier(0.23,1,0.32,1) backwards;display:block;color:var(--ink);width:100%}
+body[data-skin="deck"] .choice:hover{border-color:var(--pane-edge);transform:translateY(-1px)}
+body[data-skin="deck"] .choice:nth-of-type(2){animation-delay:60ms}
+body[data-skin="deck"] .choice:nth-of-type(3){animation-delay:120ms}
+body[data-skin="deck"] .choice:nth-of-type(4){animation-delay:180ms}
+body[data-skin="deck"] .choice .t{font-weight:700;font-size:14.5px;line-height:1.35;display:block}
+body[data-skin="deck"] .choice .why{display:block;font-size:12.5px;color:var(--ink-dim);margin-top:5px;line-height:1.5}
+body[data-skin="deck"] .choice.rec{background:linear-gradient(170deg,rgba(45,212,191,0.1),var(--pane));border-left:3px solid var(--red)}
+body[data-skin="deck"] .choice .go{display:none}
+body[data-skin="deck"] .choice.rec .go{display:inline-flex;margin-top:10px;font:700 11.5px/1 'Inter';letter-spacing:0.08em;color:#04121a;
+  background:linear-gradient(160deg,var(--teal),var(--blue));border-radius:9px;padding:8px 12px;pointer-events:none}
+
+body[data-skin="summon"] #choices{display:flex;flex-wrap:wrap;gap:9px;justify-content:center;margin-top:14px}
+body[data-skin="summon"] .choice{font:600 12.5px/1.3 'Inter';color:var(--ink);background:var(--pane);border:1px solid var(--line);
+  border-radius:999px;padding:9px 15px;cursor:pointer;transition:all .18s;animation:rise .4s cubic-bezier(0.23,1,0.32,1) backwards}
+body[data-skin="summon"] .choice:nth-of-type(1){animation-delay:140ms}
+body[data-skin="summon"] .choice:nth-of-type(2){animation-delay:200ms}
+body[data-skin="summon"] .choice:nth-of-type(3){animation-delay:260ms}
+body[data-skin="summon"] .choice:nth-of-type(4){animation-delay:320ms}
+body[data-skin="summon"] .choice:hover{border-color:var(--pane-edge);transform:translateY(-1px);color:var(--teal-2)}
+body[data-skin="summon"] .choice .why,body[data-skin="summon"] .choice .go{display:none}
+body[data-skin="summon"] .choice .t::before{content:'';display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:8px;vertical-align:1px;background:var(--teal)}
+body[data-skin="summon"] .choice.rec .t::before{background:var(--red)}
+
+body[data-skin="bridge"] #choices{position:fixed;left:50%;bottom:13vh;transform:translateX(-50%);z-index:var(--z-front);
+  display:flex;gap:8px;max-width:min(680px,calc(100vw - 40px));overflow-x:auto;scrollbar-width:none}
+body[data-skin="bridge"] #choices::-webkit-scrollbar{display:none}
+body[data-skin="bridge"] .choice{flex:none;font:600 12px/1.3 'Inter';color:var(--ink);background:var(--glass);border:1px solid var(--glass-edge);
+  border-radius:999px;padding:8px 14px;cursor:pointer;backdrop-filter:blur(14px);transition:all .18s}
+body[data-skin="bridge"] .choice:hover{border-color:rgba(94,234,212,0.4);color:var(--teal-2)}
+body[data-skin="bridge"] .choice .why,body[data-skin="bridge"] .choice .go{display:none}
+body[data-skin="bridge"] .choice .t::before{content:'';display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:8px;vertical-align:1px;background:var(--teal)}
+body[data-skin="bridge"] .choice.rec .t::before{background:var(--red)}
+.choice:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+.choice.skeleton{opacity:0.4;pointer-events:none;color:transparent !important;background:linear-gradient(90deg,rgba(255,255,255,0.03),rgba(255,255,255,0.06),rgba(255,255,255,0.03)) !important;min-height:20px;border-color:transparent !important}
+
+/* ── COMMAND: the AI dock (bar / field / capsule) ── */
+#command{grid-area:command;position:relative;z-index:var(--z-chrome)}
+.dock{width:100%}
+body[data-skin="deck"] #command{display:flex;justify-content:center;padding-top:14px}
+body[data-skin="deck"] .dock{width:min(760px,100%)}
+body[data-skin="summon"] #command{padding-top:18px}
+body[data-skin="bridge"] #command{position:fixed;left:50%;bottom:7vh;transform:translateX(-50%);width:min(680px,calc(100vw - 40px));padding:0}
+
+#summon-form{display:flex;align-items:center;gap:12px;background:rgba(6,16,31,0.85);
+  border:1px solid var(--pane-edge);border-radius:16px;padding:8px 8px 8px 18px;
+  box-shadow:0 10px 40px rgba(0,0,0,0.5), 0 0 36px rgba(45,212,191,0.1);transition:box-shadow .25s,border-color .25s}
+#summon-form:focus-within{box-shadow:0 10px 40px rgba(0,0,0,0.5), 0 0 52px rgba(45,212,191,0.22);border-color:rgba(45,212,191,0.32)}
+body[data-skin="summon"] #summon-form{border-radius:22px;padding:12px 12px 12px 14px;background:rgba(6,16,31,0.88);
+  box-shadow:0 18px 70px rgba(0,0,0,0.55), 0 0 60px rgba(45,212,191,0.12), inset 0 1px 0 rgba(94,234,212,0.08)}
+body[data-skin="summon"] #summon-form:focus-within{border-color:rgba(45,212,191,0.4);box-shadow:0 18px 70px rgba(0,0,0,0.55), 0 0 90px rgba(45,212,191,0.22), inset 0 1px 0 rgba(94,234,212,0.12)}
+body[data-skin="bridge"] #summon-form{border-radius:999px;background:rgba(5,13,24,0.78);border-color:rgba(94,234,212,0.32);
+  padding:10px 10px 10px 22px;backdrop-filter:blur(20px) saturate(1.3);
+  box-shadow:0 24px 80px rgba(0,0,0,0.65), 0 0 70px rgba(45,212,191,0.18), inset 0 1px 0 rgba(94,234,212,0.14);
+  animation:capsuleBreathe 6s ease-in-out 1s infinite}
+@keyframes capsuleBreathe{50%{box-shadow:0 24px 80px rgba(0,0,0,0.65), 0 0 96px rgba(45,212,191,0.26), inset 0 1px 0 rgba(94,234,212,0.14)}}
+#cmd{flex:1;background:none;border:none;outline:none;color:var(--ink);font:500 16px/1.4 'Inter';min-width:0}
+body[data-skin="summon"] #cmd{font-size:19px}
+body[data-skin="bridge"] #cmd{font-size:17px}
+#cmd::placeholder{color:var(--ink-dim)}
+#kbdHint{font:600 10.5px/1 'JetBrains Mono';color:var(--ink-dim);border:1px solid var(--line);border-radius:5px;padding:4px 6px;white-space:nowrap}
+#send{flex:none;width:42px;height:42px;border-radius:11px;border:none;cursor:pointer;color:#04121a;font-size:18px;font-weight:900;
+  background:linear-gradient(160deg,var(--teal),var(--blue));transition:transform .15s;display:flex;align-items:center;justify-content:center}
+body[data-skin="summon"] #send{width:46px;height:46px;border-radius:14px;box-shadow:0 0 22px rgba(45,212,191,0.35)}
+body[data-skin="bridge"] #send{width:46px;height:46px;border-radius:50%;box-shadow:0 0 26px rgba(45,212,191,0.5)}
+#send:hover{filter:brightness(1.1)}
+#send:active{transform:scale(0.94)}
+#send:focus-visible{outline:2px solid var(--teal-2);outline-offset:2px}
+#send:disabled{opacity:0.5}
+
+#greeting{text-align:center;font-size:12.5px;color:var(--ink-dim);min-height:14px;letter-spacing:0.3px;padding-top:8px}
+.topics{display:flex;gap:7px;overflow-x:auto;padding:8px 0 2px;scrollbar-width:none;justify-content:center}
+.topics::-webkit-scrollbar{display:none}
+body[data-skin="bridge"] #greeting,body[data-skin="bridge"] .topics{display:none}
+.topic{flex:none;font:600 12px/1 'Inter';color:var(--ink-dim);background:rgba(14,26,40,0.6);border:1px solid var(--line);border-radius:999px;padding:8px 14px;cursor:pointer;white-space:nowrap;transition:all .14s}
+.topic:hover{color:var(--teal-2);border-color:var(--pane-edge)}
+.topic.high{border-color:rgba(251,113,133,0.4);color:#fda4af}
+.topic:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+
+/* ── MOBILE per skin, per the mockups ── */
+@media(max-width:980px){
+  body[data-skin="deck"]{overflow:auto}
+  body[data-skin="deck"] .shell{height:auto;min-height:100dvh;
+    grid-template-areas:"bar" "signals" "stage" "history" "choices" "command";
+    grid-template-rows:auto auto auto auto auto auto;grid-template-columns:minmax(0,1fr);row-gap:14px}
+  body[data-skin="deck"] .topbar{flex-wrap:wrap;padding:10px 2px;row-gap:6px}
+  .topics{justify-content:flex-start}
+  body[data-skin="deck"] #signals,body[data-skin="deck"] #choices{overflow:visible;padding-top:0}
+  body[data-skin="deck"] #stage{padding-top:0}
+  body[data-skin="deck"] #orb-stage{width:160px}
+  body[data-skin="deck"] #history{max-height:300px;margin-top:0}
+  body[data-skin="deck"] #command{position:sticky;bottom:0;background:linear-gradient(180deg,transparent,var(--bg) 40%);padding-bottom:12px}
+}
+@media(max-width:720px){
+  body[data-skin="summon"]{overflow:auto}
+  body[data-skin="summon"] .shell{height:auto;min-height:100dvh}
+  body[data-skin="summon"] #signals{padding-top:3vh}
+  body[data-skin="summon"] #command{position:sticky;top:0;z-index:var(--z-chrome);background:linear-gradient(180deg,var(--bg) 78%,transparent);padding-bottom:10px}
+  body[data-skin="summon"] #cmd{font-size:16.5px}
+  body[data-skin="summon"] #choices{flex-wrap:nowrap;overflow-x:auto;justify-content:flex-start;padding-bottom:4px;scrollbar-width:none}
+  body[data-skin="summon"] #choices::-webkit-scrollbar{display:none}
+  body[data-skin="summon"] .choice{flex:none}
+}
+@media(max-width:900px){
+  body[data-skin="bridge"]{overflow-y:auto}
+  body[data-skin="bridge"] .shell{height:auto;min-height:100dvh}
+  body[data-skin="bridge"] #orb-reactor{width:130vw;bottom:auto;top:-12vh;opacity:0.55}
+  body[data-skin="bridge"] #floor{display:none}
+  body[data-skin="bridge"] .topbar{position:static;background:none;padding:14px 16px;flex-wrap:wrap;row-gap:6px}
+  body[data-skin="bridge"] #horizon{position:static;transform:none;margin:18px 16px;text-align:left}
+  body[data-skin="bridge"] #signals{display:block;position:relative;z-index:var(--z-panes)}
+  body[data-skin="bridge"] .sig{position:static;width:auto;margin:0 16px 12px;animation:paneIn .5s cubic-bezier(0.23,1,0.32,1) backwards}
+  body[data-skin="bridge"] #history{position:static;transform:none;width:auto;margin:6px 16px 0;max-height:none;padding-bottom:150px}
+  body[data-skin="bridge"] #choices{bottom:calc(14px + 64px)}
+  body[data-skin="bridge"] #command{bottom:14px}
+  body[data-skin="bridge"] #sig-asof{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  .orb-mount img,.orb-glow,.sig,.choice,.bubble,.ribbon,#stars,#summon-form,#horizon,.trail,.tool .dot{animation:none !important}
+  body[data-skin="summon"] #void::after{animation:none !important}
+  .trail{display:none}
+}
 </style>
 </head>
-<body>
+<body data-skin="deck">
 
 <video id="bg-dragon" muted playsinline loop preload="none" disableremoteplayback data-src="/assets/videos/bacround cinematic update.mp4"></video>
+<div id="void"></div>
+<div class="ribbon r1"></div><div class="ribbon r2"></div>
+<div id="stars"></div>
+<div id="orb-reactor" class="orb-mount" data-state="idle" aria-hidden="true"><img src="/assets/cockpit/neural-core.webp" alt=""><div class="orb-glow"></div></div>
+<div id="floor"></div>
 <div class="vignette"></div>
+<div id="grain"></div>
 
 <div class="shell">
   <header class="topbar">
-    <div class="wordmark">RYUJIN <span>OS</span></div>
+    <span class="wordmark">RYUJIN <span>OS</span></span>
+    <span class="crumb" id="crumb">cockpit · plus-ultra</span>
     <div class="bar-actions">
+      <button class="bar-btn" id="skinBtn" type="button" title="Switch cockpit skin">Skin: Deck</button>
       <button class="bar-btn" id="palBtn" type="button" title="Command palette (Cmd-K)">&#8984;K</button>
       <button class="bar-btn" id="newConvo" type="button">New</button>
       <button class="bar-btn" id="briefBtn" type="button" title="Speak today's briefing">Briefing</button>
@@ -112,24 +408,46 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg)
     </div>
   </header>
 
-  <div class="history" id="history"></div>
+  <div id="horizon" aria-live="polite">
+    <div class="hello">The dragon is awake</div>
+    <h1 id="horizon-h1">Welcome back.</h1>
+    <div class="sub" id="horizon-sub">Everything else is handled, drafted, or watched.</div>
+  </div>
 
-  <div class="console">
-    <div class="orb-stage">
+  <aside id="signals" aria-label="Signals">
+    <h2>SIGNALS</h2>
+    <div id="sig-asof"></div>
+  </aside>
+
+  <section id="stage" aria-label="Ryujin">
+    <div class="stagewrap">
       <div class="trail" id="trail" aria-hidden="true"></div>
-      <div class="orb-wrap" id="orbWrap" data-state="idle">
+      <div id="orb-stage" class="orb-mount" data-state="idle">
         <img id="orb" src="/assets/cockpit/neural-core.webp" alt="" />
         <div class="orb-glow"></div>
       </div>
     </div>
-    <div class="greeting" id="greeting"></div>
-    <div class="choices" id="choices"></div>
-    <form id="summon-form" autocomplete="off">
-      <input id="cmd" name="cmd" placeholder="What do you need?" aria-label="Command" autocomplete="off" />
-      <button id="send" type="submit" aria-label="Send">&#8593;</button>
-    </form>
-    <div class="topics" id="topics"></div>
-  </div>
+    <div id="statusline"></div>
+  </section>
+
+  <div id="history" class="history"></div>
+
+  <aside id="choices" aria-label="Needs you">
+    <h2>NEEDS YOU · RANKED</h2>
+  </aside>
+
+  <footer id="command">
+    <div class="dock">
+      <form id="summon-form" autocomplete="off">
+        <span id="orb-eye" class="orb-mount" data-state="idle" aria-hidden="true"><img src="/assets/cockpit/neural-core.webp" alt=""><div class="orb-glow"></div></span>
+        <input id="cmd" name="cmd" placeholder="What do you need?" aria-label="Ask Ryujin" autocomplete="off" />
+        <kbd id="kbdHint">&#8984;K</kbd>
+        <button id="send" type="submit" aria-label="Send">&#8593;</button>
+      </form>
+      <div id="greeting" class="greeting"></div>
+      <div class="topics" id="topics"></div>
+    </div>
+  </footer>
 </div>
 
 <script>window.RYUJIN_TENANT_SLUG = window.RYUJIN_TENANT_SLUG || 'plus-ultra';</script>
@@ -138,29 +456,74 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg)
   'use strict';
 
   var TENANT = window.RYUJIN_TENANT_SLUG || 'plus-ultra';
-  // Neural core presence is a single image animated by CSS off data-state (idle/listening/thinking/speaking).
+  // Neural core presence is a single asset on three mounts (stage / eye / reactor),
+  // animated by CSS off data-state (idle/listening/thinking/speaking).
 
   var $ = function (id) { return document.getElementById(id); };
-  var orb=$('orb'), orbWrap=$('orbWrap'), trail=$('trail'), historyEl=$('history'),
+  var trail=$('trail'), historyEl=$('history'),
       form=$('summon-form'), cmd=$('cmd'), sendBtn=$('send'),
-      choicesEl=$('choices'), topicsEl=$('topics'), greetingEl=$('greeting');
+      choicesEl=$('choices'), topicsEl=$('topics'), greetingEl=$('greeting'),
+      signalsEl=$('signals');
+
+  /* ── SKINS: deck / summon / bridge. Manual toggle only, persisted. ── */
+  var SKINS=['deck','summon','bridge'];
+  var SKIN_LABEL={deck:'Deck',summon:'Summon',bridge:'Bridge'};
+  var PLACEHOLDER={
+    deck:'Ask Ryujin anything, it has the whole business in reach',
+    summon:'Summon Ryujin. It already knows the whole business.',
+    bridge:'Speak to the dragon. It runs the back office.'
+  };
+  var KBD={deck:'↵',summon:'⌘K',bridge:'⌘K'};
+  function applySkin(s){
+    if(SKINS.indexOf(s)<0) s='deck';
+    document.body.setAttribute('data-skin',s);
+    $('skinBtn').textContent='Skin: '+SKIN_LABEL[s];
+    cmd.placeholder=PLACEHOLDER[s];
+    $('kbdHint').textContent=KBD[s];
+    $('crumb').textContent=(s==='bridge'?'the bridge · ':'cockpit · ')+TENANT;
+    try{ localStorage.setItem('ry_cockpit_skin',s); }catch(e){}
+  }
+  $('skinBtn').addEventListener('click',function(){
+    var cur=document.body.getAttribute('data-skin');
+    applySkin(SKINS[(SKINS.indexOf(cur)+1)%SKINS.length]);
+  });
 
   var conversation = [];   // lean {role,content} sent to /api/chat as history
   var transcript = [];     // rich {role,content,tools,error,ts} for render + persist + export
   var persistUuid = null;  // chat_conversations UUID (cockpit-owned persistence)
   var streamConvId = null; // conv_... id from /api/chat done event (sticky working_on)
   var busy = false, state = 'idle';
+  var lastAsOf = null;     // metrics.asOf from the snapshot (NEVER updated_at)
 
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
   function authHeaders(){ var h={'Content-Type':'application/json'}; try{ var t=localStorage.getItem('ryujin_token')||sessionStorage.getItem('ryujin_token'); if(t)h.Authorization='Bearer '+t; }catch(e){} return h; }
   function tHeaders(){ var h=authHeaders(); h['x-tenant-id']=TENANT; return h; }
+  function relTime(iso){
+    try{
+      var ms=Date.now()-new Date(iso).getTime(); if(!isFinite(ms))return ''; if(ms<0)ms=0;
+      var s=Math.floor(ms/1000); if(s<60)return s+'s ago';
+      var m=Math.floor(s/60); if(m<60)return m+'m ago';
+      var h=Math.floor(m/60); if(h<48)return h+'h ago';
+      return Math.floor(h/24)+'d ago';
+    }catch(e){ return ''; }
+  }
+  function fmtMoney(n){ if(n==null||isNaN(Number(n))) return null; return '$'+Number(n).toLocaleString('en-CA',{maximumFractionDigits:0}); }
 
   function setState(s){
-    if(s===state) return; state=s; orbWrap.setAttribute('data-state',s);
+    if(s===state) return; state=s;
+    var mounts=document.querySelectorAll('.orb-mount');
+    for(var i=0;i<mounts.length;i++) mounts[i].setAttribute('data-state',s);
+    paintStatus();
+  }
+  function paintStatus(){
+    var el=$('statusline'); if(!el) return;
+    var sweep=lastAsOf?(' · last sweep '+relTime(lastAsOf)):'';
+    el.innerHTML='<b>'+esc(state)+'</b>'+esc(sweep);
   }
 
-  // ── Star Wars text trail ──
+  /* ── Star Wars text trail (deck stage only; hidden elsewhere) ── */
   function spawnTrail(text){
+    if(document.body.getAttribute('data-skin')!=='deck') return;
     var words = String(text).split(/\s+/).filter(Boolean);
     for(var i=0;i<words.length;i++){
       var w=document.createElement('span'); w.className='word'; w.textContent=words[i];
@@ -172,7 +535,66 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg)
   }
   function clearTrail(){ while(trail.firstChild) trail.removeChild(trail.firstChild); }
 
-  // ── History rendering ──
+  /* ── SIGNALS: snapshot-fed instruments / pulse / panes ── */
+  function sigNode(o){
+    var d=document.createElement('div'); d.className='sig'; d.setAttribute('data-pos',String(o.pos));
+    if(o.sev) d.setAttribute('data-sev',o.sev);
+    var v=(o.v==null||o.v==='')?'--':o.v;
+    d.innerHTML='<div class="k">'+esc(o.k)+'</div><div class="v'+(o.cls?' '+o.cls:'')+'">'+esc(v)+'</div>'+(o.sub?'<div class="sub">'+esc(o.sub)+'</div>':'');
+    if(o.act){
+      var b=document.createElement('button'); b.type='button'; b.className='act'; b.textContent=o.act.label;
+      b.addEventListener('click',o.act.run); d.appendChild(b);
+    }
+    return d;
+  }
+  function loadSignals(){
+    fetch('/api/snapshot',{ headers:tHeaders(), cache:'no-store' })
+      .then(function(r){ return r.ok?r.json():null; })
+      .then(function(snap){
+        if(!snap) return;
+        var sec=snap.sections||{};
+        var tk=sec.tickets||{}, stt=sec.salesTasks||{}, mx=sec.metrics||{};
+        // Staleness honesty: stamp from metrics.asOf only. updated_at is bumped by
+        // partial agent POSTs and lies about freshness (snapshot rebuild gate, PR #378).
+        lastAsOf=mx.asOf||null;
+
+        var overdue=(tk.overdueCount!=null)?Number(tk.overdueCount):null;
+        var names=(tk.activeToday||[]).filter(function(j){ return (j.days_overdue||0)>0; }).slice(0,3)
+          .map(function(j){
+            var n=String(j.title||('WO-'+(j.wo_number||''))).split(' (')[0];
+            return n+(j.days_overdue?' '+j.days_overdue+'d':'');
+          }).join(' · ');
+        var tOver=(stt.overdue!=null)?Number(stt.overdue):null;
+        var backlog=mx.pipeline&&mx.pipeline.signedBacklog;
+        var mtd=mx.signed&&mx.signed.mtd;
+
+        var old=signalsEl.querySelectorAll('.sig');
+        for(var i=0;i<old.length;i++) old[i].parentNode.removeChild(old[i]);
+        var anchor=$('sig-asof');
+        var frag=document.createDocumentFragment();
+        frag.appendChild(sigNode({ k:'Overdue jobs', v:(overdue==null?null:String(overdue)),
+          cls:(overdue>0?'bad':'good'), sev:(overdue>0?'now':null), pos:1,
+          sub:(overdue>0?(names||'Past start date, not complete'):'Nothing past start date'),
+          act:{ label:'Open the board →', run:function(){ if(ryNavSafe('/production-jobs.html')) window.location.href='/production-jobs.html'; } } }));
+        frag.appendChild(sigNode({ k:'Overdue sales tasks', v:(tOver==null?null:String(tOver)),
+          cls:(tOver>0?'warn':'good'), sev:(tOver>0?'today':null), pos:2,
+          sub:(stt.open!=null?(stt.open+' open total'):''),
+          act:{ label:'Triage now →', run:function(){ summon('Triage my overdue sales tasks and tell me which three to clear first.'); } } }));
+        // Metrics contract v1: render value + label verbatim, no page-side math
+        // (sales-cockpit iron rule). '--' (never $0) when metrics absent.
+        frag.appendChild(sigNode({ k:'Signed backlog', v:(backlog&&backlog.value!=null?fmtMoney(backlog.value):null),
+          cls:'warn', sev:'today', pos:3,
+          sub:(backlog?((backlog.count!=null?backlog.count+' jobs · ':'')+(backlog.label||'')):'no metrics yet') }));
+        frag.appendChild(sigNode({ k:'Signed MTD', v:(mtd&&mtd.value!=null?fmtMoney(mtd.value):null),
+          cls:'good', pos:4, sub:(mtd?(mtd.label||''):'no metrics yet') }));
+        signalsEl.insertBefore(frag,anchor);
+        anchor.textContent=lastAsOf?('metrics as of '+relTime(lastAsOf)):'';
+        paintStatus();
+      })
+      .catch(function(){});
+  }
+
+  /* ── History rendering ── */
   function bubbleEl(msg){
     var b=document.createElement('div'); b.className='bubble '+(msg.role==='user'?'user':'assistant');
     var inner='';
@@ -195,7 +617,7 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg)
   }
   function scrollDown(){ historyEl.scrollTop=historyEl.scrollHeight; }
 
-  // ── Persistence (cockpit owns chat_conversations) ──
+  /* ── Persistence (cockpit owns chat_conversations) ── */
   function persist(){
     var body={ id:persistUuid||undefined, messages:transcript };
     if(!persistUuid){ var first=transcript.find(function(m){return m.role==='user';}); if(first) body.title=String(first.content||'').slice(0,60); }
@@ -241,24 +663,36 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg)
     return !!(window.RyujinPages && window.RyujinPages.validateUrl && window.RyujinPages.validateUrl(u));
   }
 
-  // ── 4 contextual choices (/api/options) ──
-  function renderSkeletonChoices(){ choicesEl.innerHTML=''; for(var i=0;i<4;i++){ var s=document.createElement('div'); s.className='choice skeleton'; s.textContent='...'; choicesEl.appendChild(s); } }
+  /* ── 4 contextual choices (/api/options): one renderer, skins reshape via CSS ── */
+  function clearChoices(){ var old=choicesEl.querySelectorAll('.choice'); for(var i=0;i<old.length;i++) old[i].parentNode.removeChild(old[i]); }
+  function renderSkeletonChoices(){ clearChoices(); for(var i=0;i<4;i++){ var s=document.createElement('div'); s.className='choice skeleton'; s.textContent='...'; choicesEl.appendChild(s); } }
+  function goLabel(o){
+    var k=o.kind||'';
+    if(k==='navigate_to'||k==='open_estimate'||k==='open_customer') return 'Open →';
+    if(k==='run_agent') return 'Run →';
+    return 'Go →';
+  }
   function loadOptions(){
     renderSkeletonChoices();
     fetch('/api/options?pillar=hq&cp='+encodeURIComponent(cockpitHostPage()),{ headers:tHeaders() })
       .then(function(r){ return r.ok?r.json():null; })
       .then(function(d){
-        choicesEl.innerHTML='';
+        clearChoices();
         var opts=(d && d.options)||[];
+        var hsub=$('horizon-sub');
+        if(hsub) hsub.textContent = opts.length
+          ? (opts.length+' ranked move'+(opts.length===1?'':'s')+' below. Everything else is handled, drafted, or watched.')
+          : 'Everything else is handled, drafted, or watched.';
         if(!opts.length){ return; }
         opts.slice(0,4).forEach(function(o){
           var btn=document.createElement('button'); btn.type='button'; btn.className='choice'+(o.recommended_rank===1?' rec':'');
-          btn.innerHTML='<span>'+esc(o.label)+'</span>'+(o.why?'<span class="why">'+esc(o.why)+'</span>':'');
+          btn.innerHTML='<span class="t">'+esc(o.label)+'</span>'+(o.why?'<span class="why">'+esc(o.why)+'</span>':'')+
+            (o.recommended_rank===1?'<span class="go">'+esc(goLabel(o))+'</span>':'');
           btn.addEventListener('click',function(){ executeOption(o); });
           choicesEl.appendChild(btn);
         });
       })
-      .catch(function(){ choicesEl.innerHTML=''; });
+      .catch(function(){ clearChoices(); });
   }
   function executeOption(o){
     var k=o.kind, p=o.payload||{};
@@ -271,13 +705,17 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg)
     summon(o.label);
   }
 
-  // ── Topic suggestions (/api/chat-priorities) ──
+  /* ── Topic suggestions (/api/chat-priorities) ── */
+  function hourHello(){ var h=new Date().getHours(); return h<12?'Morning.':(h<17?'Afternoon.':'Evening.'); }
   function loadTopics(){
     fetch('/api/chat-priorities')
       .then(function(r){ return r.ok?r.json():null; })
       .then(function(d){
         if(!d) return;
-        if(d.greeting) greetingEl.textContent=d.greeting;
+        if(d.greeting){
+          greetingEl.textContent=d.greeting;
+          var hh=$('horizon-h1'); if(hh) hh.textContent=d.greeting;
+        }
         topicsEl.innerHTML='';
         var items=(d.items)||[];
         items.slice(0,4).forEach(function(it){
@@ -289,7 +727,7 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg)
       .catch(function(){});
   }
 
-  // ── The summon (live /api/chat stream) ──
+  /* ── The summon (live /api/chat stream) ── */
   function summon(text){
     text=(text||'').trim(); if(!text||busy) return;
     busy=true; sendBtn.disabled=true; cmd.value='';
@@ -308,7 +746,7 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg)
     var body={ message:text, history:conversation.slice(-12).map(function(m){return {role:m.role,content:m.content};}), mode:'quick', effort:'low', conversation_id:streamConvId||undefined, current_page:{ path: cockpitHostPage() } };
     var answer='', gotText=false, finished=false, pendingNav=null;
     // any tool chip that never received a tool_end (stream cut / timeout) must not
-    // hang on "wait" — flip it to error. pending_approval chips DID get a tool_end
+    // hang on "wait", flip it to error. pending_approval chips DID get a tool_end
     // (tracked in toolEnded), so they are left alone.
     function flipStuck(){ for(var k in toolNodes){ if(!toolEnded[k]&&toolNodes[k]) toolNodes[k].className='tool err'; } }
 
@@ -367,9 +805,9 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg)
     aEl.appendChild(btn);
   }
 
-  // ── Export (copy-pasteable for debugging) ──
+  /* ── Export (copy-pasteable for debugging) ── */
   function exportLog(){
-    var lines=['# Ryujin cockpit log','tenant: '+TENANT,'persist id: '+(persistUuid||'(unsaved)'),'stream id: '+(streamConvId||'(none)'),'turns: '+transcript.length,''];
+    var lines=['# Ryujin cockpit log','tenant: '+TENANT,'skin: '+document.body.getAttribute('data-skin'),'persist id: '+(persistUuid||'(unsaved)'),'stream id: '+(streamConvId||'(none)'),'turns: '+transcript.length,''];
     transcript.forEach(function(m){
       lines.push(m.role==='user'?'### User':'### Ryujin'+(m.lens?' ('+m.lens+')':''));
       lines.push(m.content||'');
@@ -389,7 +827,7 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg)
     renderHistory(); clearTrail(); loadOptions(); loadTopics(); cmd.focus();
   }
 
-  // ── Speak the latest briefing (reads the snapshot, narrates via TTS through the orb) ──
+  /* ── Speak the latest briefing (reads the snapshot, narrates via TTS) ── */
   function stripMd(s){
     return String(s||'')
       .replace(/```[\s\S]*?```/g,' ')
@@ -431,7 +869,7 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg)
       .catch(function(){ done(); });
   }
 
-  // ── Events ──
+  /* ── Events ── */
   cmd.addEventListener('focus',function(){ if(!busy)setState('listening'); });
   cmd.addEventListener('blur',function(){ if(!busy&&!cmd.value)setState('idle'); });
   cmd.addEventListener('input',function(){ if(!busy)setState(cmd.value?'listening':'idle'); });
@@ -441,14 +879,22 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg)
   if($('briefBtn')) $('briefBtn').addEventListener('click',speakBriefing);
   if($('palBtn')) $('palBtn').addEventListener('click',function(){ if(window.RyujinPalette) window.RyujinPalette.open(); });
 
-  // Ambient dragon video
+  // Ambient dragon video (deck + summon; bridge paints its own sky)
   (function bgDragon(){ var v=$('bg-dragon'); if(!v)return; var start=function(){ if(!v.getAttribute('src')&&v.dataset.src){ v.setAttribute('src',v.dataset.src); v.setAttribute('autoplay',''); v.load(); var p=v.play(); if(p&&p.catch)p.catch(function(){ var r=function(){v.play().catch(function(){});document.removeEventListener('pointerdown',r);}; document.addEventListener('pointerdown',r,{once:true}); }); } }; if(document.readyState==='complete')setTimeout(start,1500); else window.addEventListener('load',function(){setTimeout(start,1500);}); })();
 
-  // Boot
-  loadHistory(); loadOptions(); loadTopics(); cmd.focus();
+  // Boot: restore skin (saved choice -> ?skin= override -> deck), then data
+  (function(){
+    var saved=null;
+    try{ saved=localStorage.getItem('ry_cockpit_skin'); }catch(e){}
+    try{ var qs=new URLSearchParams(location.search).get('skin'); if(qs) saved=qs; }catch(e){}
+    applySkin(saved||'deck');
+  })();
+  $('horizon-h1').textContent=hourHello();
+  loadHistory(); loadOptions(); loadTopics(); loadSignals(); cmd.focus();
+  setInterval(loadSignals, 300000);
 
   // Expose for the command palette (Cmd-K) and cross-page deep-links (/cockpit.html?q=...).
-  window.RyujinCockpit = { summon: summon, speakBriefing: (typeof speakBriefing==='function'?speakBriefing:function(){}), newConversation: newConversation };
+  window.RyujinCockpit = { summon: summon, speakBriefing: speakBriefing, newConversation: newConversation, setSkin: applySkin };
   try{ var _q=new URLSearchParams(location.search).get('q'); if(_q){ setTimeout(function(){ summon(_q); }, 300); } }catch(e){}
 })();
 </script>
