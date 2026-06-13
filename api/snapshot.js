@@ -70,6 +70,7 @@ async function nativeTicketStats() {
     let overdueCount = 0;
     const now = new Date();
     const activeToday = [];
+    const completedCustomers = new Set();
 
     for (const w of rows) {
       // Normalize status: workorders use 'complete', the consumer enum expects 'done'
@@ -82,6 +83,9 @@ async function nativeTicketStats() {
 
       const isActive = !w.completed_at;
       if (isActive && w.start_date && new Date(w.start_date) < now) overdueCount++;
+      // Completed-job customers: used downstream to relabel stale "Proposal Accepted"
+      // rows in revenue.recentActivity (done jobs that the old 4h re-PUT bumped).
+      if (!isActive && w.customer_name) completedCustomers.add(w.customer_name.trim().toLowerCase());
 
       if (isActive) {
         const title = w.customer_name
@@ -106,7 +110,8 @@ async function nativeTicketStats() {
         byStatus,
         byAssignee,
         overdueCount,
-        activeToday: activeToday.sort((a, b) => (b.days_overdue || 0) - (a.days_overdue || 0))
+        activeToday: activeToday.sort((a, b) => (b.days_overdue || 0) - (a.days_overdue || 0)),
+        completedCustomers: [...completedCustomers]
       }
     };
   } catch (e) {
@@ -318,6 +323,18 @@ async function buildFreshSnapshot() {
     const est = stats.results.find(r => r.source === 'Estimator OS');
 
     if (est?.stats) {
+      // Honesty fix (desk D cycle-14): the old 4h cashflow re-PUT bumped completed
+      // jobs' updated_at on Estimator OS (root cause fixed in PR #381), so its feed
+      // still surfaces done jobs as "Proposal Accepted" today, reading as phantom new
+      // signings. Relabel any row whose customer has a completed workorder so the
+      // activity feed stops implying a fresh signing. The signed-MTD KPI is always the
+      // metrics contract (metrics.signed.mtd, count 1), never this row count.
+      const completedCust = new Set((tickets?.stats?.completedCustomers) || []);
+      const recentActivity = (est.stats.recentActivity || []).slice(0, 5).map(r =>
+        (r && r.action === 'Proposal Accepted' && r.customer && completedCust.has(String(r.customer).trim().toLowerCase()))
+          ? { ...r, action: 'Previously accepted (job complete)' }
+          : r
+      );
       snapshot.sections.revenue = {
         signedRevenue: est.stats.signedRevenue,
         pendingRevenue: est.stats.pendingRevenue,
@@ -325,7 +342,7 @@ async function buildFreshSnapshot() {
         byStatus: est.stats.byStatus,
         proposalsSent: est.stats.proposalsSent,
         awaitingSchedule: est.stats.awaitingSchedule,
-        recentActivity: (est.stats.recentActivity || []).slice(0, 5)
+        recentActivity
       };
     }
     if (tickets?.stats) {

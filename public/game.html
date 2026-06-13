@@ -1599,6 +1599,9 @@ function el(tag, attrs, children) {
 }
 const $ = id => document.getElementById(id);
 function fmt$(n) { if (n == null) return '--'; if (n >= 1000) return '$' + Math.round(n/1000) + 'K'; return '$' + Math.round(n); }
+// Signed month-to-date: the honest contract is metrics.signed.mtd (count 1, de-duped),
+// NOT revenue.signedRevenue (the all-time accepted sum) which read as a phantom MTD.
+function signedMtd$(s, rev) { var m = s && s.metrics && s.metrics.signed && s.metrics.signed.mtd; return fmt$((m && m.value != null) ? m.value : (rev && rev.signedRevenue)); }
 function pct(n) { return n == null ? '--' : Math.round(n * 100) + '%'; }
 
 // ═════ Snapshot normalization ═════
@@ -1809,7 +1812,7 @@ function sectorStatBlocks(sectorId) {
       { k:'SECTORS', v: String(SECTORS.length) }
     ];
     case 'SALES': return [
-      { k:'SIGNED MTD', v: fmt$(rev.signedRevenue) },
+      { k:'SIGNED MTD', v: signedMtd$(s, rev) },
       { k:'PIPELINE', v: fmt$(pipe.totalValue) },
       { k:'OPEN DEALS', v: pipe.openDeals || 0 },
       { k:'TOP DEAL', v: pipe.top5_deals && pipe.top5_deals[0] ? fmt$(pipe.top5_deals[0].value) : '--' }
@@ -1833,7 +1836,7 @@ function sectorStatBlocks(sectorId) {
       { k:'CONVERSION', v: leads.conversionRate != null ? leads.conversionRate.toFixed(1) + '%' : '--' }
     ];
     case 'FINANCE': return [
-      { k:'SIGNED MTD', v: fmt$(rev.signedRevenue) },
+      { k:'SIGNED MTD', v: signedMtd$(s, rev) },
       { k:'PENDING', v: fmt$(rev.pendingRevenue) },
       { k:'AD ROI', v: (brief.kpiScouter && brief.kpiScouter.adROI) || '--' },
       { k:'ACTIVE CAMPAIGNS', v: ads.activeCampaigns || 0 }
@@ -1941,7 +1944,7 @@ function sectorHeadline(sectorId) {
     case 'PRODUCTION': return `${(t.byStatus && t.byStatus.open) || 0} open · ${t.overdueCount || 0} overdue`;
     case 'SERVICE': return `${(t.byStatus && t.byStatus.active) || 0} active`;
     case 'CUSTOMER': return `${t.total || 0} tickets`;
-    case 'FINANCE': return `${fmt$(rev.signedRevenue)} MTD`;
+    case 'FINANCE': return `${signedMtd$(s, rev)} MTD`;
     case 'ADMIN': {
       const watchdog = alerts.find(a => /watchdog|cron/i.test(String(a)));
       return watchdog ? 'WATCHDOG DOWN' : 'systems nominal';
@@ -2139,7 +2142,7 @@ function renderTopbar() {
 
   const chips = [
     { l: 'CEO MACK', v: 'Lv ' + computeLevel(rev.signedRevenue || 0) },
-    { l: 'MTD', v: fmt$(rev.signedRevenue) },
+    { l: 'MTD', v: signedMtd$(s, rev) },
     { l: 'TICKETS', v: ((t.byStatus && t.byStatus.open) || 0) + ' open' },
     { l: 'OVERDUE', v: t.overdueCount || 0, level: (t.overdueCount || 0) > 20 ? 'alert' : (t.overdueCount || 0) > 5 ? 'warn' : '' },
     { l: 'BRIEF', v: (brief.status || '?').toUpperCase(), level: brief.status === 'red' ? 'alert' : brief.status === 'yellow' ? 'warn' : '' },
