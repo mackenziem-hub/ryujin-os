@@ -8,6 +8,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=optional" rel="stylesheet">
 <link rel="stylesheet" href="/assets/ryujin-perf.css">
 <script src="/assets/ryujin-perf.js"></script>
+<!-- Auth gate: same guard as every other internal page; also provides the
+     shared RyujinAuth.sessionEnded door the 401 snapshot path renders. -->
+<script src="/assets/auth-guard.js"></script>
 <style>
 :root{
   --bg:#060a14; --bg-deep:#030611;
@@ -35,7 +38,7 @@ body{
 }
 .bg-caustic{
   position:fixed;inset:0;z-index:1;
-  background-image:url('assets/grok-image-13862a83-9822-4cbd-9913-0bf1c615e042.png');
+  background-image:url('assets/_review/grok-image-13862a83-9822-4cbd-9913-0bf1c615e042.png');
   background-size:cover;background-position:center;
   opacity:0.18;mix-blend-mode:screen;pointer-events:none
 }
@@ -156,7 +159,7 @@ body{
   background:linear-gradient(90deg,transparent 2%,var(--cyan) 25%,var(--purple) 50%,var(--cyan) 75%,transparent 98%);opacity:0.65}
 .dragon-img{
   position:absolute;inset:0;
-  background-image:url('assets/grok-image-7faae61d-ab16-4bdd-9cbd-847de42e01db.png');
+  background-image:url('assets/_review/grok-image-7faae61d-ab16-4bdd-9cbd-847de42e01db.png');
   background-size:cover;background-position:center;
   opacity:0.18;mix-blend-mode:screen;
   transition:opacity 1.5s, filter 1.5s;
@@ -766,13 +769,27 @@ function setPanelState(state, msg) {
 }
 
 let snapshotLoadedOnce = false;
+let snapshotDoorShown = false;
 
 async function loadSnapshot(showToast) {
   if (location.protocol === 'file:') return;
+  if (snapshotDoorShown) return; // signed out: the door is up, retrying cannot succeed
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10000);
   try {
     const res = await fetch('/api/snapshot', { cache: 'no-store', headers: { 'x-tenant-id': 'plus-ultra', 'Authorization': 'Bearer ' + (localStorage.getItem('ryujin_token') || '') }, signal: controller.signal });
+    if (res.status === 401 || res.status === 403) {
+      // Signed-out is not an outage. Render the shared door (PR #412 pattern)
+      // instead of promising a retry that cannot succeed.
+      snapshotDoorShown = true;
+      setPanelState('auth', 'Signed out');
+      if (window.RyujinAuth && window.RyujinAuth.sessionEnded) {
+        window.RyujinAuth.sessionEnded(document.querySelector('.sectors'));
+      } else {
+        setPanelState('auth', 'Your session ended. Sign in again to reload.');
+      }
+      return;
+    }
     if (!res.ok) throw new Error('snapshot ' + res.status);
     const snap = await res.json();
     const s = snap.sections || {};
