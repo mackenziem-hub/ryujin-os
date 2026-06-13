@@ -161,6 +161,10 @@
   #ry-side-list::-webkit-scrollbar-thumb{background:rgba(34,211,238,0.18);border-radius:2px}
   #ry-side-list .empty{padding:10px 14px;font-family:'Share Tech Mono',monospace;font-size:0.65em;
     color:rgba(160,190,230,0.4);letter-spacing:0.5px}
+  #ry-side-list .ry-empty-retry{display:inline;margin-left:2px;padding:0;background:none;border:none;
+    font:inherit;color:rgba(34,211,238,0.85);cursor:pointer;text-decoration:underline;letter-spacing:0.5px}
+  #ry-side-list .ry-empty-retry:hover{color:#22d3ee}
+  #ry-side-list .ry-empty-retry:focus-visible{outline:2px solid rgba(34,211,238,0.6);outline-offset:2px;border-radius:3px}
   .ry-conv{display:flex;align-items:center;gap:6px;padding:7px 10px;border-radius:8px;
     cursor:pointer;color:#d0daf0;transition:background 0.15s;position:relative}
   .ry-conv:hover{background:rgba(34,211,238,0.06)}
@@ -1074,6 +1078,14 @@
     } catch {}
   }
 
+  // Failed history load: an honest sentence plus a real way forward (re-fetch),
+  // never a dead end. Rule 4: errors are a sentence with a door out.
+  function renderHistoryRetry(list, msg){
+    list.innerHTML = '<div class="empty">' + msg + ' <button type="button" class="ry-empty-retry" id="ry-hist-retry">Try again</button></div>';
+    const rb = document.getElementById('ry-hist-retry');
+    if (rb) rb.addEventListener('click', loadConversationsList);
+  }
+
   async function loadConversationsList(){
     const list = document.getElementById('ry-side-list');
     if (!list) return;
@@ -1081,21 +1093,26 @@
     try {
       const r = await fetch('/api/chat-conversations', { headers: convHeaders() });
       if (!r.ok) {
-        // Migration not applied or auth failure — show graceful fallback
-        list.innerHTML = '<div class="empty">History will appear here once enabled.</div>';
+        // Distinguish a signed-out session from a load failure; both get a
+        // plain-language sentence and a way forward, never a dead "once enabled".
+        if (r.status === 401 || r.status === 403) {
+          list.innerHTML = '<div class="empty">Your session ended. Sign in again to see your chat history.</div>';
+        } else {
+          renderHistoryRetry(list, 'Chat history did not load.');
+        }
         return;
       }
       const data = await r.json();
       const convs = (data && Array.isArray(data.conversations)) ? data.conversations : [];
       if (!convs.length) {
-        list.innerHTML = '<div class="empty">No conversations yet.</div>';
+        list.innerHTML = '<div class="empty">No conversations yet. Start one above and it shows up here.</div>';
         return;
       }
       list.innerHTML = '';
       convs.forEach(c => list.appendChild(renderConvRow(c)));
       applySideFilter();
     } catch {
-      list.innerHTML = '<div class="empty">History unavailable.</div>';
+      renderHistoryRetry(list, 'Chat history did not load.');
     }
   }
 
