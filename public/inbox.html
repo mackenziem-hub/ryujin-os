@@ -115,6 +115,9 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
 .watch-form .btn{flex:0 0 auto;min-width:110px}
 .wexpired{opacity:0.45}
 .wbtn{flex:0 0 auto;min-width:0;padding:7px 10px}
+.lead-form{grid-template-columns:1.6fr auto 84px auto}
+.lead-check{display:flex;align-items:center;gap:7px;font-size:0.8em;color:rgba(200,220,245,0.85);white-space:nowrap;cursor:pointer}
+.lead-check input{width:16px;height:16px;accent-color:#22d3ee;flex:0 0 auto}
 
 .empty{padding:30px 14px;text-align:center;font-family:'Share Tech Mono',monospace;font-size:0.85em;letter-spacing:1px;color:rgba(160,190,230,0.5)}
 .loading{padding:18px 14px;text-align:center;font-family:'Share Tech Mono',monospace;font-size:0.78em;color:rgba(160,190,230,0.55);letter-spacing:1.5px}
@@ -129,6 +132,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
   .stage{padding:74px 10px 18px 10px}
   .watch-form{grid-template-columns:1fr 1fr}
   .watch-form .btn{grid-column:1 / -1}
+  .lead-form{grid-template-columns:1fr 1fr}
 }
 </style>
 <script src="/assets/auth-guard.js"></script>
@@ -198,6 +202,21 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
       <input id="wNote" placeholder="Note (what for)" maxlength="160">
       <input id="wDays" type="number" min="1" max="365" value="14" title="Days until this watch expires. Blank = never.">
       <button class="btn btn-send" onclick="addWatch(this)">Add watch</button>
+    </div>
+  </div>
+
+  <div class="glass panel">
+    <div class="panel-head">
+      <h2>Lead alerts</h2>
+      <div class="panel-action" onclick="loadWatches(true)">Refresh</div>
+    </div>
+    <div class="watch-hint">Where lead-event emails land, whether every lead pings (not just clear buying intent), and how many quiet days before a lead is flagged as going cold.</div>
+    <div id="leadAlertBody"><div class="loading">Loading...</div></div>
+    <div class="watch-form lead-form">
+      <input id="nEmail" type="email" placeholder="Notify email" maxlength="160" title="Where lead-event emails and the inbox digest land.">
+      <label class="lead-check" title="When on, every lead-category message pings, not just present-intent ones."><input id="nAllLeads" type="checkbox"> Ping me for every lead</label>
+      <input id="nColdDays" type="number" min="1" max="60" placeholder="Cold days" title="Days with no pipeline movement before a lead is flagged going cold.">
+      <button class="btn btn-send" onclick="saveLeadAlerts(this)">Save</button>
     </div>
   </div>
 
@@ -607,6 +626,50 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
     body.innerHTML = rows.length
       ? '<div class="list">' + rows.join('') + '</div>'
       : '<div class="empty">No watches. Add one below; their next reply pings your phone.</div>';
+    renderLeadAlerts();
+  }
+
+  // ── Lead-alert config (notify_email / notify_all_leads / cold_lead_days).
+  // Defaults mirror lib/inboxWatches.js leadNotifyConfig so a blank config still
+  // shows the live behavior. Stored in the same inbox_config jsonb. ──
+  const LEAD_ALERT_DEFAULTS = { notify_email: 'mackenzie.m@plusultraroofing.com', notify_all_leads: true, cold_lead_days: 4 };
+
+  function renderLeadAlerts(){
+    const body = document.getElementById('leadAlertBody');
+    if (!body) return;
+    if (!inboxCfg) {
+      body.innerHTML = '<div class="empty">Sign in as owner/admin to manage lead alerts.</div>';
+      return;
+    }
+    const c = inboxCfg;
+    const email = String(c.notify_email || '').trim() || LEAD_ALERT_DEFAULTS.notify_email;
+    const allLeads = (c.notify_all_leads === undefined || c.notify_all_leads === null)
+      ? LEAD_ALERT_DEFAULTS.notify_all_leads : (c.notify_all_leads !== false);
+    const coldDays = (Number.isFinite(Number(c.cold_lead_days)) && Number(c.cold_lead_days) > 0)
+      ? Math.floor(Number(c.cold_lead_days)) : LEAD_ALERT_DEFAULTS.cold_lead_days;
+    body.innerHTML = `<div class="hm">Emails to <strong>${escapeHtml(email)}</strong> · every lead pings: <strong>${allLeads ? 'on' : 'off'}</strong> · cold after <strong>${coldDays}</strong> day${coldDays === 1 ? '' : 's'}.</div>`;
+    const eEl = document.getElementById('nEmail'); if (eEl) eEl.value = email;
+    const aEl = document.getElementById('nAllLeads'); if (aEl) aEl.checked = allLeads;
+    const dEl = document.getElementById('nColdDays'); if (dEl) dEl.value = coldDays;
+  }
+
+  async function saveLeadAlerts(btn){
+    if (!inboxCfg) { toast('Lead alerts not loaded yet. Hit Refresh first.', true); return; }
+    const email = document.getElementById('nEmail').value.trim();
+    const allLeads = !!document.getElementById('nAllLeads').checked;
+    const daysRaw = parseInt(document.getElementById('nColdDays').value, 10);
+    const delta = {
+      // Blank email clears the key -> falls back to the default owner address.
+      notify_email: email || null,
+      notify_all_leads: allLeads,
+      cold_lead_days: (Number.isFinite(daysRaw) && daysRaw > 0) ? daysRaw : null,
+    };
+    const done = busy(btn, 'Saving...');
+    try {
+      await patchInboxConfig(delta);
+      toast('Lead alerts saved.');
+    } catch(e){ toast(e.message, true); }
+    finally { if (done) done(); }
   }
 
   async function patchInboxConfig(delta){
@@ -684,6 +747,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
   window.addWatch = addWatch;
   window.removeWatch = removeWatch;
   window.removeLegacyWatch = removeLegacyWatch;
+  window.saveLeadAlerts = saveLeadAlerts;
 
   loadQueue(true);
   loadWatches(true);

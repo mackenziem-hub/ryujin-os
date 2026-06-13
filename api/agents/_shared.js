@@ -13,6 +13,44 @@ import { gmailSend } from '../../lib/google.js';
 import { runCashflow } from './cashflow.js';
 import { snapshotHeaders } from '../../lib/snapshotClient.js';
 import { AGENT_NAMES } from './_names.js';
+import { supabaseAdmin } from '../../lib/supabase.js';
+import { leadNotifyConfig } from '../../lib/inboxWatches.js';
+import { notifyLeadEvent } from '../../lib/leadNotify.js';
+
+const PLUS_ULTRA_SLUG = 'plus-ultra';
+
+// Won / signed stages across all pipelines (human names from
+// api/ghl.js PIPELINE_STAGES). enrichOpportunity maps an opp's stage id to
+// these names, so the daily pipeline scan can detect a deal that landed in a
+// signed stage by ANY path, including a manual GHL drag with no proposal
+// acceptance. Lowercased for a case-insensitive compare.
+const WON_STAGE_NAMES = new Set([
+  'contract signed',
+  'client signed',
+  'approved',
+  'closed',
+]);
+
+// Resolve the plus-ultra tenant id + lead-notify config once per scan. Best
+// effort: a lookup failure returns nulls and the notify blocks no-op rather
+// than throwing into the sales report.
+async function resolveLeadNotifyContext() {
+  try {
+    const { data: tenant } = await supabaseAdmin
+      .from('tenants').select('id').eq('slug', PLUS_ULTRA_SLUG).maybeSingle();
+    const tenantId = tenant?.id || null;
+    let cfg = {};
+    if (tenantId) {
+      const { data: settings } = await supabaseAdmin
+        .from('tenant_settings').select('inbox_config').eq('tenant_id', tenantId).maybeSingle();
+      cfg = settings?.inbox_config || {};
+    }
+    return { tenantId, ...leadNotifyConfig(cfg) };
+  } catch (e) {
+    console.warn('[Vegeta] lead-notify context resolve failed:', e.message);
+    return { tenantId: null, ...leadNotifyConfig({}) };
+  }
+}
 
 const BASE_URL = 'https://ryujin-os.vercel.app';
 
@@ -92,18 +130,113 @@ export async function runVegeta() {
     totalValue: opps.reduce((s, o) => s + (o.value || 0), 0)
   };
 
-  // Stale leads (same stage 3+ days)
+  // Lead-notify context (tenant id + owner-tunable thresholds). One resolve
+  // shared by the cold-lead scan and the won stage-diff below.
+  const notifyCtx = await resolveLeadNotifyContext();
+  const COLD_DAYS = notifyCtx.cold_lead_days; // default 4 (was hardcoded 3)
+
+  // Stale leads (no status change in COLD_DAYS+). Threshold is now config-driven.
   const stale = open.filter(o => {
     if (!o.lastStatusChange) return false;
     const days = (today - new Date(o.lastStatusChange)) / (1000 * 60 * 60 * 24);
-    return days >= 3;
+    return days >= COLD_DAYS;
   });
   report.staleLeads = stale.length;
   if (stale.length > 0) {
-    report.findings.push(`${stale.length} leads stale 3+ days: ${stale.slice(0, 5).map(o => `${o.name} (${o.stage})`).join(', ')}`);
+    report.findings.push(`${stale.length} leads stale ${COLD_DAYS}+ days: ${stale.slice(0, 5).map(o => `${o.name} (${o.stage})`).join(', ')}`);
+    // Keep the existing rollup-task behavior (>= 3 stale leads -> one task).
     if (stale.length >= 3) {
       report.tasks.push({ title: `Follow up on ${stale.length} stale pipeline leads`, description: `Stale leads: ${stale.map(o => `${o.name} — ${o.stage} — last activity ${o.lastStatusChange}`).join('\n')}`, priority: 'high' });
     }
+    // Per-lead "going cold" notification (email + inbox ping, no SMS). The
+    // dedupeKey is bucketed to a coarse ~7-day window keyed off the lead's own
+    // lastStatusChange, so the SAME cold lead does not re-alert on every daily
+    // scan; it only re-pings if it is STILL cold a week later (a new bucket).
+    let coldNotified = 0;
+    for (const o of stale) {
+      if (!o.id) continue;
+      // Only alert on leads that RECENTLY crossed cold (within a few days of the
+      // threshold), not the entire long-stale backlog. Without this the first run
+      // dumps a notification for every old stale lead at once. The deep backlog is
+      // the post-estimate review list's job, not a fresh "going cold" ping.
+      const coldAgeDays = (today - new Date(o.lastStatusChange)) / (1000 * 60 * 60 * 24);
+      if (!(coldAgeDays >= 0) || coldAgeDays > COLD_DAYS + 3) continue;
+      const anchorMs = new Date(o.lastStatusChange || today).getTime() || today.getTime();
+      const weekBucket = Math.floor(anchorMs / (7 * 24 * 60 * 60 * 1000));
+      const res = await notifyLeadEvent({
+        tenantId: notifyCtx.tenantId,
+        event: 'cold_lead',
+        title: `Lead going cold · ${o.name || 'Unnamed lead'}`,
+        body: [
+          `${o.name || 'A lead'} has had no pipeline movement in ${COLD_DAYS}+ days.`,
+          '',
+          `Stage:        ${o.stage || 'unknown'}`,
+          `Pipeline:     ${o.pipeline || 'unknown'}`,
+          `Value:        ${o.value ? '$' + Number(o.value).toLocaleString() : 'n/a'}`,
+          `Last change:  ${o.lastStatusChange || 'unknown'}`,
+          '',
+          'Ryujin OS',
+        ].join('\n'),
+        contactName: o.name || null,
+        urgency: 'normal',
+        dedupeKey: `${o.id}@${weekBucket}`,
+        sms: false,
+      });
+      if (res.inboxInserted) coldNotified++;
+    }
+    report.coldLeadAlerts = coldNotified;
+  }
+
+  // ── Event 4 (manual GHL close detection): won/signed stage scan ──
+  // A deal dragged into a signed/won stage in GHL (no proposal acceptance on a
+  // Ryujin /p/ page) fires nothing today. Scan ALL opps (open + closed) for a
+  // signed-stage landing and fire a won notification with an SMS. Idempotency
+  // is the inbox_items unique constraint via the dedupeKey. The key is the GHL
+  // opportunity id (event:won + oppId), so a deal fires its won notification
+  // EXACTLY once across BOTH this scan AND the proposal-accept path: the accept
+  // handlers key the won event on the SAME ghl_opportunity_id when they have
+  // it, so an accept that already pinged makes this scan a no-op for that deal
+  // (and vice versa). A deal already sitting in a signed stage when this ships
+  // fires one backfill notification, then never again.
+  try {
+    let wonNotified = 0;
+    for (const o of opps) {
+      if (!o.id) continue;
+      const stageName = String(o.stage || '').trim().toLowerCase();
+      if (!WON_STAGE_NAMES.has(stageName)) continue;
+      // Recency guard: only notify on a deal that entered a signed stage RECENTLY.
+      // Without this, the first scan would backfill a won alert (with SMS) for every
+      // historical signed deal at once. lastStatusChange is when the opp last moved
+      // stages; a real new close lands inside the window and fires exactly once
+      // (deduped on oppId). Deals signed long ago never alert.
+      if (!o.lastStatusChange) continue;
+      const wonAgeDays = (today - new Date(o.lastStatusChange)) / (1000 * 60 * 60 * 24);
+      if (!(wonAgeDays >= 0) || wonAgeDays > 14) continue;
+      const res = await notifyLeadEvent({
+        tenantId: notifyCtx.tenantId,
+        event: 'won',
+        title: `Deal signed · ${o.name || 'Customer'}${o.value ? ' · $' + Number(o.value).toLocaleString() : ''}`,
+        body: [
+          `${o.name || 'A deal'} is now in a signed stage in GHL.`,
+          '',
+          `Stage:     ${o.stage || 'unknown'}`,
+          `Pipeline:  ${o.pipeline || 'unknown'}`,
+          `Value:     ${o.value ? '$' + Number(o.value).toLocaleString() : 'n/a'}`,
+          '',
+          'Detected from the pipeline scan (manual close or proposal acceptance).',
+          '',
+          'Ryujin OS',
+        ].join('\n'),
+        contactName: o.name || null,
+        urgency: 'high',
+        dedupeKey: o.id,
+        sms: true,
+      });
+      if (res.inboxInserted) wonNotified++;
+    }
+    report.wonStageAlerts = wonNotified;
+  } catch (e) {
+    report.findings.push(`Won stage scan failed: ${e.message}`);
   }
 
   // High-value open deals

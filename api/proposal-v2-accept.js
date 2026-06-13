@@ -26,13 +26,12 @@
 // authentication, mirroring proposal-accept.js + custom-proposal-accept.js.
 
 import { supabaseAdmin } from '../lib/supabase.js';
-import { gmailSend } from '../lib/google.js';
+import { notifyLeadEvent } from '../lib/leadNotify.js';
 // Reuse the estimate-backed acceptance pipeline wholesale. This handler runs
 // the share-token auth, migration-038 state machine, GHL updates, owner email,
 // and repair-ticket auto-create. We never duplicate that logic.
 import estimateAccept from './proposal-accept.js';
 
-const NOTIFY_EMAIL = (process.env.NOTIFY_EMAIL || 'mackenzie.m@plusultraroofing.com').trim();
 const SITE_BASE = (process.env.SITE_BASE || 'https://ryujin-os.vercel.app').trim();
 const GHL_BASE = 'https://services.leadconnectorhq.com';
 const GHL_TOKEN = (process.env.GHL_TOKEN || '').trim();
@@ -118,7 +117,20 @@ async function notifyOwnerStandalone({ inst, customer, total, selectedTier, sele
     `Ryujin OS`
   ].filter(Boolean);
 
-  return gmailSend(NOTIFY_EMAIL, subject, lines.join('\n'));
+  // Unified spine: same email content + durable inbox ping + direct owner SMS.
+  // Standalone v2 proposals have no estimate and usually no GHL opp, so dedup on
+  // the opp id when present else the instance id (stable uuid).
+  return notifyLeadEvent({
+    tenantId: inst.tenant_id,
+    event: 'won',
+    title: subject,
+    body: lines.join('\n'),
+    contactName: customer.name || null,
+    ghlContactId: inst.ghl_contact_id || inst.customer?.ghl_contact_id || null,
+    urgency: 'high',
+    dedupeKey: inst.ghl_opportunity_id || inst.id,
+    sms: true,
+  });
 }
 
 async function fireGhlStandalone({ inst, customer, total, selectedTier }) {
