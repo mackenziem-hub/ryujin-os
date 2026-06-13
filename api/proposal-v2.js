@@ -53,6 +53,15 @@ const TENANT_BRANDING_DEFAULT = {
   tagline: 'Go Beyond. Go Plus Ultra.'
 };
 
+// Neutral branding for white-label tenants. A non-plus-ultra tenant must never
+// fall back to a Plus Ultra default (name, phone, email, address, logo, accent);
+// that leaks tenant 1's identity onto another contractor's proposal. Mirrors
+// api/proposal.js. Slate accent is a safe non-PU neutral.
+const NEUTRAL_BRANDING_DEFAULT = {
+  companyName: '', phone: '', email: '', website: '',
+  address: '', logoUrl: '', accentColor: '#475569', tagline: ''
+};
+
 const REPS = {
   mackenzie: {
     name: 'Mackenzie Mazerolle',
@@ -155,9 +164,30 @@ function repPublic(rep) {
   };
 }
 
+// Neutral rep for a white-label tenant with no configured rep: built from its
+// own branding (initials avatar, empty photo/bio), never a Plus Ultra rep.
+// Mirrors api/proposal.js neutralRepFromBranding.
+function neutralRepV2(branding) {
+  const name = (branding && branding.companyName) || '';
+  return {
+    name: name ? `${name} Team` : 'Sales Team',
+    title: name,
+    initials: (name.replace(/[^A-Za-z]/g, '').slice(0, 2).toUpperCase()) || '—',
+    phone: (branding && branding.phone) || '',
+    email: (branding && branding.email) || '',
+    photo: '',
+    bio: ''
+  };
+}
+
 // ── Branding resolution (mirror api/proposal.js tenant_settings read) ────────
+// Returns { branding, isPlusUltra }. isPlusUltra gates the plus-ultra-only
+// assets (rep, workmanship branding); for every other tenant the branding falls
+// back to NEUTRAL_BRANDING_DEFAULT, never Plus Ultra's. Fail-safe: seed the gate
+// from company_name so a transient slug-lookup blip never strips PU's own
+// branding nor leaks it; the slug lookup is authoritative when it succeeds.
 async function resolveBranding(tenantId) {
-  if (!tenantId) return { ...TENANT_BRANDING_DEFAULT };
+  if (!tenantId) return { branding: { ...TENANT_BRANDING_DEFAULT }, isPlusUltra: true };
   let row = null;
   try {
     const { data } = await supabaseAdmin
@@ -169,15 +199,25 @@ async function resolveBranding(tenantId) {
   } catch {
     row = null;
   }
-  if (!row) return { ...TENANT_BRANDING_DEFAULT };
+  let isPlusUltra = !row || row.company_name === TENANT_BRANDING_DEFAULT.companyName;
+  try {
+    const { data: t } = await supabaseAdmin.from('tenants').select('slug').eq('id', tenantId).single();
+    if (t && typeof t.slug === 'string') isPlusUltra = (t.slug === 'plus-ultra');
+  } catch { /* keep the company-name-derived default */ }
+
+  if (!row) return { branding: { ...TENANT_BRANDING_DEFAULT }, isPlusUltra };
+  const dflt = isPlusUltra ? TENANT_BRANDING_DEFAULT : NEUTRAL_BRANDING_DEFAULT;
   return {
-    companyName: row.company_name || TENANT_BRANDING_DEFAULT.companyName,
-    phone: row.company_phone || TENANT_BRANDING_DEFAULT.phone,
-    email: row.company_email || TENANT_BRANDING_DEFAULT.email,
-    website: row.company_website || TENANT_BRANDING_DEFAULT.website,
-    logoUrl: row.logo_url || TENANT_BRANDING_DEFAULT.logoUrl,
-    accentColor: row.accent_color || TENANT_BRANDING_DEFAULT.accentColor,
-    tagline: row.tagline || TENANT_BRANDING_DEFAULT.tagline
+    branding: {
+      companyName: row.company_name || dflt.companyName,
+      phone: row.company_phone || dflt.phone,
+      email: row.company_email || dflt.email,
+      website: row.company_website || dflt.website,
+      logoUrl: row.logo_url || dflt.logoUrl,
+      accentColor: row.accent_color || dflt.accentColor,
+      tagline: row.tagline || dflt.tagline
+    },
+    isPlusUltra
   };
 }
 
@@ -300,7 +340,7 @@ function splitTierName(fullName, fallbackId) {
 // ProposalData tiers, filter to offer_slugs when supplied, sort by total asc.
 // mergeMetals=false skips the variant collapse: used by path builds where the
 // metal grades ARE the ladder and every grade must keep its own card.
-function buildGoodBetterBestTiers(est, offerSlugs, { mergeMetals = true } = {}) {
+function buildGoodBetterBestTiers(est, offerSlugs, { mergeMetals = true, workmanshipBrand = 'Plus Ultra' } = {}) {
   const normalized = normalizeCalculatedPackages(est?.calculated_packages || {}, {
     est,
     applyPromo: true
@@ -360,6 +400,16 @@ function buildGoodBetterBestTiers(est, offerSlugs, { mergeMetals = true } = {}) 
       promoLabel: norm.promoLabel ?? null,
       toggle
     });
+  }
+
+  // White-label: rebrand the "Plus Ultra workmanship" perk to the tenant's own
+  // company name. PU passes 'Plus Ultra' so this is a no-op (byte-identical).
+  for (const t of tiers) {
+    if (Array.isArray(t.perks)) {
+      t.perks = t.perks.map(p => typeof p === 'string'
+        ? p.replace(/Plus Ultra workmanship/gi, `${workmanshipBrand} workmanship`)
+        : p);
+    }
   }
 
   tiers.sort((a, b) => a.total - b.total);
@@ -468,7 +518,7 @@ function buildAddons(est) {
 }
 
 // ── Products assembly per product_plan.mode ──────────────────────────────────
-function buildProducts({ est, productPlan, taxRate }) {
+function buildProducts({ est, productPlan, taxRate, workmanshipBrand = 'Plus Ultra' }) {
   const mode = String(productPlan?.mode || 'good_better_best').toLowerCase();
   const base = {
     mode,
@@ -487,11 +537,11 @@ function buildProducts({ est, productPlan, taxRate }) {
   };
 
   if (mode === 'good_better_best') {
-    base.tiers = buildGoodBetterBestTiers(est, productPlan?.offer_slugs);
+    base.tiers = buildGoodBetterBestTiers(est, productPlan?.offer_slugs, { workmanshipBrand });
     base.recommended = productPlan?.recommended
       || (base.tiers.find(t => t.id === 'platinum')?.id)
       || (base.tiers[Math.floor(base.tiers.length / 2)]?.id ?? null);
-    base.scope.lineItems = scopeLineItemsFromEstimate(est);
+    base.scope.lineItems = scopeLineItemsFromEstimate(est, workmanshipBrand);
     return base;
   }
 
@@ -547,7 +597,7 @@ function buildProducts({ est, productPlan, taxRate }) {
     base.envelope = est?.custom_prices?._envelope || null;
     base.mode = 'configurator';
     base.scope.system = 'exterior';
-    base.scope.lineItems = scopeLineItemsFromEstimate(est);
+    base.scope.lineItems = scopeLineItemsFromEstimate(est, workmanshipBrand);
     return base;
   }
 
@@ -560,8 +610,8 @@ function buildProducts({ est, productPlan, taxRate }) {
     // ladder, so every grade keeps its own card.
     if (Array.isArray(pathAPlanRaw.offer_slugs) && pathAPlanRaw.offer_slugs.length) {
       const pathBPlanRaw = productPlan?.two_path?.pathB || {};
-      const pathATiers = buildGoodBetterBestTiers(est, pathAPlanRaw.offer_slugs, { mergeMetals: false });
-      const pathBTiers = buildGoodBetterBestTiers(est, pathBPlanRaw.offer_slugs, { mergeMetals: false });
+      const pathATiers = buildGoodBetterBestTiers(est, pathAPlanRaw.offer_slugs, { mergeMetals: false, workmanshipBrand });
+      const pathBTiers = buildGoodBetterBestTiers(est, pathBPlanRaw.offer_slugs, { mergeMetals: false, workmanshipBrand });
       const recA = pathAPlanRaw.recommended
         || (pathATiers[Math.floor(pathATiers.length / 2)]?.id ?? null);
       const recB = pathBPlanRaw.recommended
@@ -579,7 +629,7 @@ function buildProducts({ est, productPlan, taxRate }) {
           tiers: pathATiers,
           scope: {
             system: pathAPlanRaw.system || 'asphalt',
-            lineItems: scopeLineItemsFromEstimate(est),
+            lineItems: scopeLineItemsFromEstimate(est, workmanshipBrand),
             measure: estimateScopeMeasure(est)
           }
         },
@@ -589,19 +639,19 @@ function buildProducts({ est, productPlan, taxRate }) {
           tiers: pathBTiers,
           scope: {
             system: pathBPlanRaw.system || 'metal',
-            lineItems: scopeLineItemsFromEstimate(est),
+            lineItems: scopeLineItemsFromEstimate(est, workmanshipBrand),
             measure: estimateScopeMeasure(est)
           }
         }
       };
-      base.scope.lineItems = scopeLineItemsFromEstimate(est);
+      base.scope.lineItems = scopeLineItemsFromEstimate(est, workmanshipBrand);
       return base;
     }
 
     // Legacy flavor: Path A = single NuRoof Revive rejuvenation tier,
     // Path B = full replacement good/better/best from calculated_packages.
     const pathBPlan = productPlan?.two_path?.pathB || {};
-    const pathBTiers = buildGoodBetterBestTiers(est, pathBPlan.offer_slugs);
+    const pathBTiers = buildGoodBetterBestTiers(est, pathBPlan.offer_slugs, { workmanshipBrand });
     const pathBRecommended = pathBPlan.recommended
       || (pathBTiers.find(t => t.id === 'platinum')?.id)
       || (pathBTiers[0]?.id ?? null);
@@ -648,25 +698,25 @@ function buildProducts({ est, productPlan, taxRate }) {
         tiers: pathBTiers,
         scope: {
           system: 'asphalt',
-          lineItems: scopeLineItemsFromEstimate(est),
+          lineItems: scopeLineItemsFromEstimate(est, workmanshipBrand),
           measure: estimateScopeMeasure(est)
         }
       }
     };
-    base.scope.lineItems = scopeLineItemsFromEstimate(est);
+    base.scope.lineItems = scopeLineItemsFromEstimate(est, workmanshipBrand);
     return base;
   }
 
   // Unknown mode: degrade to an empty single-mode shell rather than throwing.
   base.mode = 'single';
-  base.scope.lineItems = scopeLineItemsFromEstimate(est);
+  base.scope.lineItems = scopeLineItemsFromEstimate(est, workmanshipBrand);
   return base;
 }
 
 // Static "always included" scope narrative, with per-estimate measurements
 // injected where available. Mirrors api/proposal.js buildScopeLineItems intent
 // but emits the {label,value} ProposalData scope shape.
-function scopeLineItemsFromEstimate(est) {
+function scopeLineItemsFromEstimate(est, workmanshipBrand = 'Plus Ultra') {
   const sqVal = Number(est?.roof_area_sqft) > 0 ? (Number(est.roof_area_sqft) / 100).toFixed(1) : null;
   const sel = String(est?.selected_package || 'platinum').toLowerCase();
   const prod = {
@@ -702,7 +752,7 @@ function scopeLineItemsFromEstimate(est) {
   items.push({ label: '50 to 100+ photo documentation', value: 'every stage via Company Cam' });
   items.push({ label: 'Internal QA checklist', value: 'every install' });
   items.push({ label: 'Manufacturer warranty', value: 'Lifetime limited + 10-yr SureStart' });
-  items.push({ label: 'Plus Ultra workmanship', value: `${workmanship} + leak-free guarantee` });
+  items.push({ label: `${workmanshipBrand} workmanship`, value: `${workmanship} + leak-free guarantee` });
   return items;
 }
 
@@ -881,9 +931,20 @@ async function renderInstance(instance, res) {
   }
 
   // Legacy/fallback: assemble from the structured columns. Fall back to the bare
-  // row columns when an older snapshot didn't nest them.
-  const branding = row.branding_snapshot || row.branding || { ...TENANT_BRANDING_DEFAULT };
-  const rep = row.rep_snapshot || row.rep || repPublic(REPS.darcy);
+  // row columns when an older snapshot didn't nest them. A non-plus-ultra
+  // instance missing its frozen branding/rep must NOT fall back to Plus Ultra
+  // defaults; resolve the tenant slug to pick the right neutral fallback.
+  let legacyIsPU = true;
+  if (row.tenant_id) {
+    try {
+      const { data: t } = await supabaseAdmin.from('tenants').select('slug').eq('id', row.tenant_id).single();
+      if (t && typeof t.slug === 'string') legacyIsPU = (t.slug === 'plus-ultra');
+    } catch { /* default to PU defaults */ }
+  }
+  const branding = row.branding_snapshot || row.branding
+    || (legacyIsPU ? { ...TENANT_BRANDING_DEFAULT } : { ...NEUTRAL_BRANDING_DEFAULT });
+  const rep = row.rep_snapshot || row.rep
+    || (legacyIsPU ? repPublic(REPS.darcy) : repPublic(neutralRepV2(branding)));
   const customer = row.customer_snapshot || row.customer || { name: '', address: '', phone: '', email: '', coverImage: null };
   const variables = row.variables || {};
   const sections = Array.isArray(row.sections) ? row.sections : [];
@@ -985,11 +1046,13 @@ export async function assembleProposalData(estimateId, templateInput, expectedTe
     return { ok: false, status: 404, error: `Template not found: ${templateInput || '(missing template)'}` };
   }
 
-  const [branding, taxRate] = await Promise.all([
+  const [{ branding, isPlusUltra }, taxRate] = await Promise.all([
     resolveBranding(tenantId),
     resolveTaxRate(tenantId)
   ]);
-  const repFull = resolveRepFromEstimate(est);
+  // Plus-ultra resolves its own rep catalog; every other tenant gets a neutral
+  // rep from its own branding so it never shows a Plus Ultra rep.
+  const repFull = isPlusUltra ? resolveRepFromEstimate(est) : neutralRepV2(branding);
   const rep = repPublic(repFull);
   const coverImage = pickCoverImage(est);
   const customer = buildCustomer(est, coverImage);
@@ -1004,7 +1067,7 @@ export async function assembleProposalData(estimateId, templateInput, expectedTe
   const variables = buildVariables({ branding, rep, customer, est, refId });
   const sections = await resolveSections(tenantId, template.sections, variables, overrides);
   enrichProofPhotos(sections, est);
-  const products = buildProducts({ est, productPlan: template.product_plan, taxRate });
+  const products = buildProducts({ est, productPlan: template.product_plan, taxRate, workmanshipBrand: isPlusUltra ? 'Plus Ultra' : (branding.companyName || 'Our') });
 
   const data = {
     meta: {
