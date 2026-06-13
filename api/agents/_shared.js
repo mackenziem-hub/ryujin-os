@@ -507,7 +507,7 @@ export async function runBulma() {
       totalOpportunities: ghlOverview.totalOpportunities || 0,
       openOpportunities: ghlOverview.openOpportunities || 0,
       pipelineValue_NOT_REVENUE: ghlOverview.pipelineValue || 0,
-      _note: 'pipelineValue is total of ALL GHL opportunities. Use estimates.signedRevenue for actual signed contracts.'
+      _note: 'pipelineValue is total of ALL GHL opportunities. Use estimates.signedRevenue for actual signed contracts. openOpportunities is a SAMPLE (open within the 10 most recent opps, max 10), not the global open count; never report it as total open pipeline.'
     }
   };
 

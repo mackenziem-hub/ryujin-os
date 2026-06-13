@@ -457,6 +457,7 @@ async function buildFreshSnapshot() {
       totalContacts: ghl.totalContacts,
       totalOpportunities: ghl.totalOpportunities,
       openOpportunities: ghl.openOpportunities,
+      _openOppsNote: 'SAMPLE stat: open-status count within the 10 most recent opportunities only (max 10). NOT the global open count; GHL holds far more status-open. Use mode=pipeline for the full book.',
       pipelineValue_NOT_REVENUE: ghl.pipelineValue,
       _pipelineNote: 'This is total value of ALL GHL opportunities (open+closed+lost). NOT actual signed revenue. Use sections.revenue for real numbers.',
       recentContacts: (ghl.recentContacts || []).slice(0, 20).map(c => ({
