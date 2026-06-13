@@ -657,6 +657,9 @@ async function buildFreshSnapshot() {
     // queue + desk states + fleet health). Preserve or the hourly rebuild wipes it
     // and the cockpit brain goes Builder-Room-blind again within the hour.
     'fleet',
+    // directives: Mac's intent recorded by Ryujin's record_directive tool (the
+    // Intent Ledger write-back leg). Preserve or the hourly rebuild wipes the queue.
+    'directives',
     'metaAds', 'googleAds', 'gmail', 'calendar',
     'briefing_morning', 'briefing_afternoon', 'briefing_evening',
     'watchdog', 'heartbeat', 'tokenRefresh',
