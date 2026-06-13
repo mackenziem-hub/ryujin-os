@@ -33,14 +33,16 @@ export default async function handler(req, res) {
   const auth = await requireCronOrOwner(req);
   if (!auth.ok) return res.status(401).json({ error: auth.error });
 
-  // Vercel cron strips query strings, so ?type=morning/evening from vercel.json doesn't reach us.
-  // Detect by Atlantic Time hour: 4 AM – 1:59 PM AT → morning, 2 PM – 3:59 AM AT → evening.
+  // Vercel cron strips query strings, so ?type= from vercel.json doesn't reach us.
+  // Detect by Atlantic Time hour. Three editions (owner directive 2026-06-12):
+  //   morning cron 10:00 UTC = 7 AM AT, afternoon 16:00 UTC = 1 PM AT, evening 21:00 UTC = 6 PM AT.
+  //   hourAT < 11 → morning, 11-14:59 → afternoon, else evening.
   // Manual triggers can still override via explicit ?type= param.
   const now = new Date();
   // Atlantic Time is UTC-3 in DST (March-Nov), UTC-4 otherwise. Approximate as UTC-3 for now.
   const hourAT = (now.getUTCHours() + 24 - 3) % 24;
-  const inferredType = hourAT < 14 ? 'morning' : 'evening';
-  const type = req.query?.type || inferredType;
+  const inferredType = hourAT < 11 ? 'morning' : (hourAT < 15 ? 'afternoon' : 'evening');
+  const type = ['morning', 'afternoon', 'evening'].includes(req.query?.type) ? req.query.type : inferredType;
   const startTime = Date.now();
   console.log(`[Z Fighter Briefing] Generating ${type} briefing...`);
 
@@ -277,10 +279,50 @@ export default async function handler(req, res) {
     errors.push(`Snapshot push failed: ${e.message}`);
   }
 
-  // ── EMAIL DELIVERY (morning only — replaces SMS) ──
-  // Pull EA context, marketing pulse, systems check, then build markdown brief.
+  // ── EMAIL DELIVERY (all three editions) ──
+  // Owner directive 2026-06-12 (supersedes the 2026-05-12 mute): briefing
+  // emails are ON for morning, afternoon AND evening. The old
+  // OWNER_BRIEFING_EMAIL_MUTED gate is RETIRED in code so a stale env var
+  // cannot silently keep the intent off; emailMuted stays in the snapshot
+  // payload (always false) because the heartbeat reads it to tell an
+  // intentional mute apart from a send failure.
   let emailSent = false;
-  const emailMuted = (process.env.OWNER_BRIEFING_EMAIL_MUTED || '').trim() === '1';
+  let emailError = null;
+  const emailMuted = false;
+  if ((process.env.OWNER_BRIEFING_EMAIL_MUTED || '').trim() === '1') {
+    console.warn('[Briefing] OWNER_BRIEFING_EMAIL_MUTED is set but RETIRED (owner directive 2026-06-12: briefings ON). Remove the env var.');
+  }
+  // Loud config visibility, the PR #405 heartbeat pattern: report which email
+  // transports are configured so a missing credential is a named finding in
+  // every run instead of a silent emailSent:false.
+  const transports = {
+    // gmailSend (lib/google.js) is THE briefing transport.
+    googleOauth: {
+      configured: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_REFRESH_TOKEN)
+    },
+    // lib/email.js SMTP path (api/send-email, inbox outbound, PR #303). Not
+    // used by this agent, but its dormancy belongs in the morning report.
+    smtp: {
+      configured: !!((process.env.GMAIL_USER || '').trim() && (process.env.GMAIL_APP_PASSWORD || '').trim())
+    }
+  };
+  if (!transports.googleOauth.configured) {
+    errors.push('EMAIL NOT CONFIGURED: GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REFRESH_TOKEN missing in Vercel env. Briefing emails cannot send until set.');
+  }
+  if (!transports.smtp.configured) {
+    errors.push('SMTP DORMANT (separate from briefings): GMAIL_USER + GMAIL_APP_PASSWORD missing in Vercel env, so api/send-email outbound (PR #303) stays dead. One-step: myaccount.google.com > Security > 2-Step Verification > App passwords > generate "Ryujin OS", then: vercel env add GMAIL_USER production / vercel env add GMAIL_APP_PASSWORD production');
+  }
+  // Podcast slot: config-driven Listen section on every edition. Set
+  // BRIEFING_PODCAST_URL (+ optional BRIEFING_PODCAST_TITLE) to the latest
+  // published NotebookLM episode; section is omitted while unset. Auto-wiring
+  // the publish pipeline (brief > Drive > Manus > NotebookLM) is a FOLLOWUP,
+  // out of this repo.
+  const podcast = (process.env.BRIEFING_PODCAST_URL || '').trim()
+    ? { url: (process.env.BRIEFING_PODCAST_URL || '').trim(), title: (process.env.BRIEFING_PODCAST_TITLE || '').trim() || 'Latest fleet podcast' }
+    : null;
+  function podcastSection() {
+    return podcast ? `\n\n## Listen\n${podcast.title}\n${podcast.url}\n` : '';
+  }
   let briefMarkdown = null;
   let briefStatus = null;
   let briefDateLabel = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Moncton' });
@@ -363,24 +405,37 @@ export default async function handler(req, res) {
       briefMarkdown = `Brief generation failed: ${e.message}. Check the Vercel logs for api/agents/briefing.`;
       briefStatus = 'red';
     }
+  } else {
+    // Afternoon = midday delta vs the morning brief; evening = wrap-up.
+    // Built from the structured briefing this run already computed, plus the
+    // morning edition still sitting in the snapshot for the delta.
+    try {
+      briefMarkdown = buildEditionMarkdown(type, briefing, snapshot?.sections?.briefing_morning || null);
+      briefStatus = errors.length > 2 ? 'yellow' : 'green';
+    } catch (e) {
+      errors.push(`${type} edition build failed: ${e.message}`);
+      briefMarkdown = `${type} edition generation failed: ${e.message}. Check the Vercel logs for api/agents/briefing.`;
+      briefStatus = 'red';
+    }
+  }
 
-    // Email delivery disabled per owner directive 2026-05-12 — briefing lives in
-    // snapshot + admin dashboard only. Re-enable by removing the OWNER_BRIEFING_EMAIL_MUTED gate.
-    // emailMuted is written into the snapshot below so the heartbeat can tell an
-    // intentional mute (emailSent false BY DESIGN) apart from a real send failure.
-    // Without it the heartbeat false-alarms every day and burns a fallback SMS.
-    if (!emailMuted) {
-      try {
-        const subject = `Daily Brief · ${briefDateLabel} · ${briefStatus === 'red' ? '🔴' : briefStatus === 'yellow' ? '🟡' : '🟢'}`;
-        await gmailSend('mackenzie.m@plusultraroofing.com', subject, briefMarkdown);
-        emailSent = true;
-      } catch (e) {
-        errors.push(`Email delivery failed: ${e.message}`);
-      }
+  // One send path for all three editions.
+  {
+    const SUBJECT_PREFIX = { morning: 'Daily Brief', afternoon: 'Afternoon Brief', evening: 'Evening Wrap' };
+    try {
+      const subject = `${SUBJECT_PREFIX[type] || 'Brief'} · ${briefDateLabel} · ${briefStatus === 'red' ? '🔴' : briefStatus === 'yellow' ? '🟡' : '🟢'}`;
+      await gmailSend('mackenzie.m@plusultraroofing.com', subject, (briefMarkdown || '') + podcastSection());
+      emailSent = true;
+    } catch (e) {
+      emailError = e.message;
+      errors.push(`Email delivery failed (${type}): ${e.message}`);
     }
   }
 
   briefing.emailSent = emailSent;
+  briefing.emailError = emailError;
+  briefing.transports = transports;
+  briefing.podcast = podcast;
   briefing.briefMarkdown = briefMarkdown;
   briefing.briefStatus = briefStatus;
 
@@ -402,7 +457,10 @@ export default async function handler(req, res) {
       briefMarkdown,
       briefStatus,
       emailSent,
+      emailError,
       emailMuted,
+      transports,
+      podcast,
       errors: errors.length > 0 ? errors : null
     }
   });
@@ -432,4 +490,65 @@ export default async function handler(req, res) {
   console.log(`[Z Fighter Briefing] ${type} complete: ${allRecommendations.length} actions, email: ${emailSent}, status: ${briefStatus}, briefWrite: ${briefWriteOk}`);
 
   res.json(briefing);
+}
+
+// Afternoon and evening editions: short markdown built from this run's
+// structured briefing. Afternoon leads with the delta against the morning
+// edition (read back from the snapshot); evening reads as a wrap-up. The
+// morning edition keeps the full buildBriefMarkdown CEO ritual.
+function buildEditionMarkdown(type, briefing, morningPrev) {
+  const k = briefing.kpiScouter || {};
+  const money = (v) => v == null ? 'n/a' : '$' + Math.round(v).toLocaleString('en-CA');
+  const L = [];
+  L.push(type === 'afternoon' ? '# Afternoon Brief' : '# Evening Wrap');
+
+  if (type === 'afternoon') {
+    L.push('\n## Since the morning brief');
+    const pk = morningPrev && morningPrev.kpiScouter ? morningPrev.kpiScouter : null;
+    if (pk) {
+      const moves = [];
+      const dRev = (k.signedRevenue ?? 0) - (pk.signedRevenue ?? 0);
+      if (dRev) moves.push(`Signed MTD moved ${dRev > 0 ? '+' : '-'}${money(Math.abs(dRev))}, now ${money(k.signedRevenue)}`);
+      const dDeals = (k.openDeals ?? 0) - (pk.openDeals ?? 0);
+      if (dDeals) moves.push(`Open deals ${dDeals > 0 ? '+' : ''}${dDeals}, now ${k.openDeals}`);
+      const dTick = (k.overdueTickets ?? 0) - (pk.overdueTickets ?? 0);
+      if (dTick) moves.push(`Overdue tickets ${dTick > 0 ? '+' : ''}${dTick}, now ${k.overdueTickets}`);
+      const dMsg = (k.unreadMessages ?? 0) - (pk.unreadMessages ?? 0);
+      if (dMsg) moves.push(`Unread messages ${dMsg > 0 ? '+' : ''}${dMsg}, now ${k.unreadMessages}`);
+      L.push(moves.length ? moves.map(m => '- ' + m).join('\n') : '- No KPI movement since this morning.');
+    } else {
+      L.push('- No morning brief in the snapshot to diff against; numbers below are absolute.');
+    }
+  }
+
+  L.push('\n## Where things stand');
+  L.push([
+    `- Signed MTD: ${money(k.signedRevenue)} (${k.kpiSource || 'unknown source'})`,
+    `- Proposals out: ${money(k.pendingRevenue)}`,
+    `- Open deals: ${k.openDeals ?? 'n/a'} · stale leads: ${k.staleLeads ?? 'n/a'}`,
+    `- Overdue tickets: ${k.overdueTickets ?? 'n/a'} · unread messages: ${k.unreadMessages ?? 'n/a'}`
+  ].join('\n'));
+
+  const top3 = briefing.top3 || [];
+  if (top3.length) {
+    L.push(type === 'afternoon' ? '\n## Still on the desk' : '\n## Tomorrow opens with');
+    L.push(top3.map(t => `${t.rank}. ${t.action}`).join('\n'));
+  }
+
+  if (type === 'afternoon') {
+    const nowMs = Date.now();
+    const remaining = (briefing.calendar || []).filter(e => e.start && new Date(e.start).getTime() > nowMs);
+    if (remaining.length) {
+      L.push('\n## Rest of today');
+      L.push(remaining.map(e => `- ${e.start ? new Date(e.start).toLocaleTimeString('en-CA', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'America/Moncton' }) : ''} ${e.summary}${e.location ? ' (' + e.location + ')' : ''}`).join('\n'));
+    }
+  }
+
+  const errs = briefing.errors || [];
+  if (errs.length) {
+    L.push('\n## Pipeline flags');
+    L.push(errs.slice(0, 5).map(e => '- ' + e).join('\n'));
+  }
+
+  return L.join('\n');
 }
