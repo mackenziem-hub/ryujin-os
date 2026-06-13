@@ -1098,6 +1098,11 @@ export default async function handler(req, res) {
 
     const recentContacts = (contactsData.contacts || []).map(enrichContact);
     const opps = (oppsData.opportunities || []).map(enrichOpportunity);
+    // openOpportunities is a SAMPLE stat: open-status count within the 10 most
+    // recent opportunities fetched above, so it can never exceed 10. It is NOT
+    // the global open count (GHL held ~92 status-open while this read 10).
+    // The key name is a stable contract for snapshot/_shared/dashboards, so
+    // consumers label it honestly instead of renaming it here.
     const openOpps = opps.filter(o => o.status === 'open');
 
     return res.json({
@@ -1105,6 +1110,7 @@ export default async function handler(req, res) {
       totalContacts: contactsData.meta?.total || 0,
       totalOpportunities: oppsData.meta?.total || 0,
       openOpportunities: openOpps.length,
+      openOpportunitiesNote: 'open within the 10 most recent opportunities (sample, max 10), not the global open count',
       pipelineValue: opps.reduce((s, o) => s + o.value, 0),
       pipelines: Object.values(PIPELINE_NAMES),
       recentContacts,
