@@ -399,8 +399,34 @@ async function fetchJson(url) {
   return r.json();
 }
 
+// Terminal failure owns the WHOLE page (Walk 2 item 1): H1 and every section
+// shell flip to the error state so nothing keeps wearing a progress costume.
+// Auth failures get the shared signed-out door (auth-guard sessionEnded).
+function terminalState(title, msg, auth) {
+  document.getElementById('pageTitle').textContent = title;
+  const fill = '<div class="empty-state">' + escapeHtml(msg) + '</div>';
+  for (const sid of ['woList', 'photoWrap']) {
+    const el = document.getElementById(sid);
+    if (el) el.innerHTML = fill;
+  }
+  const est = document.getElementById('estList');
+  if (est) {
+    if (auth && window.RyujinAuth && window.RyujinAuth.sessionEnded) window.RyujinAuth.sessionEnded(est);
+    else est.innerHTML = fill;
+  }
+  for (const cid of ['estCount', 'woCount', 'photoCount']) {
+    const el = document.getElementById(cid);
+    if (el) el.textContent = '—';
+  }
+}
+
+let coreRendered = false;
 async function load() {
-  if (!id) { showBanner('Missing customer id in URL.'); return; }
+  if (!id) {
+    showBanner('Missing customer id in URL.');
+    terminalState('Not Found', 'No customer id in the URL. Open a customer from the Client Navigator.', false);
+    return;
+  }
   try {
     const [cData, eData, pData, wData, stData] = await Promise.all([
       fetchJson(`/api/customers?id=${encodeURIComponent(id)}`),
@@ -413,7 +439,11 @@ async function load() {
     const customer = cData?.customer || cData;
     if (!customer || !customer.id) {
       showBanner(authFailed ? 'Session expired. Sign in again to load this customer.' : 'Customer not found.');
-      document.getElementById('pageTitle').textContent = authFailed ? 'Signed Out' : 'Not Found';
+      terminalState(
+        authFailed ? 'Signed Out' : 'Not Found',
+        authFailed ? 'Your session ended.' : 'No customer with this id.',
+        authFailed
+      );
       return;
     }
 
@@ -424,6 +454,7 @@ async function load() {
     const wos = allWos.filter(w => w.linked_estimate_id && estimateIds.has(w.linked_estimate_id));
 
     document.getElementById('pageTitle').textContent = customer.full_name || 'Unnamed';
+    coreRendered = true;
     document.title = `${customer.full_name || 'Customer'} · Ryujin OS`;
 
     // Server-computed LTV (same source as the navigator list); fall back
@@ -457,6 +488,9 @@ async function load() {
     renderPhotos(photos, customer.id, true);
   } catch (e) {
     showBanner(`Network: ${e.message}`);
+    // Only flip the whole page to the error state if it never rendered; a
+    // late hiccup (e.g. the photos fetch) on a rendered page stays a banner.
+    if (!coreRendered) terminalState('Could Not Load', `Network problem loading this customer: ${e.message}. Refresh to retry.`, false);
   }
 }
 load();

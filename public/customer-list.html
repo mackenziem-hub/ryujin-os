@@ -124,6 +124,18 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
 <script>
 const TENANT = window.RYUJIN_TENANT_SLUG;
 let cache = []; let sortMode = 'ltv'; let searchTerm = ''; let filterMode = 'all';
+// Terminal load failure: the error owns the page. Filters and search go
+// inert so a chip tap cannot repaint the lying "No customers match" over the
+// real story (Walk 2 item 1).
+let loadFailed = false;
+function setLoadFailed(v) {
+  loadFailed = v;
+  const chips = document.getElementById('filterChips');
+  if (chips) { chips.style.opacity = v ? '0.35' : ''; chips.style.pointerEvents = v ? 'none' : ''; }
+  const search = document.getElementById('searchInput');
+  if (search) search.disabled = v;
+  if (v) document.getElementById('custCount').textContent = '—';
+}
 // Won/lost predicates mirror lib/customerLtvCalc.js (signing = acceptance;
 // won estimates keep moving through scheduled/in_progress/complete).
 const WON_STATUSES = ['signed','accepted','scheduled','in_progress','complete','won'];
@@ -142,6 +154,10 @@ function fmtMoney(n) { if (n == null || isNaN(n)) return '—'; return '$' + Mat
 function showBanner(msg, isHtml=false) { const slot = document.getElementById('banner-slot'); if (isHtml) slot.innerHTML = `<div class="banner warn">${msg}</div>`; else slot.innerHTML = `<div class="banner warn">${escapeHtml(msg)}</div>`; }
 
 function renderList(list) {
+  // Error owns the page (Walk 2 item 1): after a terminal load failure the
+  // filter chips must not repaint the body with a lying "No customers match"
+  // over the real story.
+  if (loadFailed) return;
   document.getElementById('custCount').textContent = list.length;
   const el = document.getElementById('custList');
   if (list.length === 0) { el.innerHTML = `<div class="empty-state"><div class="ico">◇</div>No customers match the search.</div>`; return; }
@@ -197,10 +213,18 @@ async function load() {
       fetch('/api/estimates?limit=500', { headers: { 'x-tenant-id': TENANT, ...window.RyujinAuth.headers() }, signal: ctrl.signal }).catch(() => null)
     ]);
     if (!cs.ok) {
-      showBanner(`Could not load customers: HTTP ${cs.status}`);
-      document.getElementById('custList').innerHTML = `<div class="empty-state"><div class="ico">⚠</div>Could not load customers (HTTP ${cs.status}).</div>`;
+      setLoadFailed(true);
+      if (cs.status === 401 && window.RyujinAuth && window.RyujinAuth.sessionEnded) {
+        // Shared signed-out partial: plain words + the door back in.
+        window.RyujinAuth.sessionEnded(document.getElementById('custList'));
+        document.getElementById('banner-slot').innerHTML = '';
+      } else {
+        showBanner(`Could not load customers (server said ${cs.status}). Refresh to retry.`);
+        document.getElementById('custList').innerHTML = `<div class="empty-state"><div class="ico">⚠</div>Could not load customers. Refresh to retry.</div>`;
+      }
       return;
     }
+    setLoadFailed(false);
     const cData = await cs.json();
     const customers = cData.customers || cData.data || [];
     const valueByCustomer = {};
@@ -233,6 +257,7 @@ async function load() {
     if (st.ok) document.getElementById('banner-slot').innerHTML = '';
     applyFiltersSort();
   } catch (e) {
+    setLoadFailed(true);
     const msg = e.name === 'AbortError' ? 'Request timed out after 10s' : `Network: ${e.message}`;
     showBanner(msg);
     document.getElementById('custList').innerHTML = `<div class="empty-state"><div class="ico">⚠</div>${escapeHtml(msg)}</div>`;
