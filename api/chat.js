@@ -4835,7 +4835,12 @@ You are now Mackenzie's game development and product specialist.
   //   3. PER-REQUEST: agent persona overlay + file attachments + live data. Uncached.
   // Bug-sweep #2 (2026-04-24): system prompt cost was the largest single $ leak.
   // Phase 5.2 + 13 caught BASE_PROMPT + memory + docs; this catches snapshot too.
-  const stableCached  = userBasePrompt + preferencesContext + factsContext + memoryContext + docsContext;
+  // Fleet/Builder-Room visibility (Jun 13 2026): the snapshot now carries a
+  // 'fleet' section and there is a get_fleet_status tool. Without this assertion
+  // the brain follows poisoned conversation history that pre-dates the wiring and
+  // wrongly insists it "cannot access the Builder Room". Stable-cached.
+  const FLEET_AWARENESS = '\n\n## FLEET / BUILDER ROOM\nYou are connected to the Guild Hall / Builder Room fleet through the snapshot "fleet" section and the get_fleet_status tool. When Mac asks what the Builder Room / fleet / desks / builders need from him, what is blocked on him, or the fleet status, CHECK that fleet data first (call get_fleet_status for the freshest read) and answer from it. Report honestly: if the fleet data is present, summarize the decision queue and desk status; if get_fleet_status returns unavailable or the fleet section is empty, tell Mac the fleet data is momentarily unavailable and the local hub may need a restart. Do not tell Mac the Builder Room is "not connected to your systems", because it is connected; the data may simply be empty or stale, which you should check and report truthfully.';
+  const stableCached  = userBasePrompt + FLEET_AWARENESS + preferencesContext + factsContext + memoryContext + docsContext;
   const snapshotBlock = snapshotContext || '';
   // Where the operator is right now — per-request (changes on every navigation),
   // so it MUST stay in the uncached block or it poisons the snapshot cache.
