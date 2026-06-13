@@ -294,6 +294,13 @@ body[data-skin="bridge"] .choice.rec .t::before{background:var(--red)}
 .choice:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
 .choice.skeleton{opacity:0.4;pointer-events:none;color:transparent !important;background:linear-gradient(90deg,rgba(255,255,255,0.03),rgba(255,255,255,0.06),rgba(255,255,255,0.03)) !important;min-height:20px;border-color:transparent !important}
 
+/* stream-fault line: plain words inside the bubble, never a stack trace */
+.sys-fault{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:9px;font-size:12.5px;color:var(--ink-dim);line-height:1.5}
+.sys-fault .retry-btn{flex:none;font:700 11.5px/1 'Inter';letter-spacing:0.04em;color:var(--teal-2);background:rgba(45,212,191,0.08);border:1px solid var(--pane-edge);border-radius:999px;padding:7px 13px;cursor:pointer;transition:all .15s}
+.sys-fault .retry-btn:hover{border-color:var(--line-2)}
+.sys-fault .retry-btn:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+.sys-fault .retry-btn:active{transform:scale(0.96)}
+
 /* ── COMMAND: the AI dock (bar / field / capsule) ── */
 #command{grid-area:command;position:relative;z-index:var(--z-chrome)}
 .dock{width:100%}
@@ -606,7 +613,12 @@ body[data-skin="bridge"] #greeting,body[data-skin="bridge"] .topics{display:none
       msg.tools.forEach(function(t){ var d=document.createElement('div'); d.className='tool '+(t.status==='error'?'err':t.status==='ok'?'ok':'wait'); d.innerHTML='<span class="dot"></span><span>'+esc(t.label||'Working')+'</span>'; tw.appendChild(d); });
       b.appendChild(tw);
     }
-    if(msg.error){ var e=document.createElement('div'); e.style.color='var(--red)'; e.style.fontSize='0.85em'; e.style.marginTop='6px'; e.textContent='Error: '+msg.error; b.appendChild(e); }
+    if(msg.error){
+      // Historical render after a reload: plain words only. The raw detail
+      // stays in the transcript for Copy log, never in the conversation.
+      var e=document.createElement('div'); e.className='sys-fault';
+      e.textContent='This answer was cut short.'; b.appendChild(e);
+    }
     return b;
   }
   function renderHistory(){
@@ -727,14 +739,43 @@ body[data-skin="bridge"] #greeting,body[data-skin="bridge"] .topics{display:none
       .catch(function(){});
   }
 
+  /* ── Stream faults: calm words in the thread, raw detail in the console ── */
+  function streamFault(aEl,aMsg,kind,detail,retryText){
+    try{ console.error('[cockpit stream '+kind+']', detail); }catch(e){}
+    aMsg.error=String(detail||kind); // raw kept in the transcript for Copy log
+    if(aEl.querySelector('.sys-fault')) return;
+    var line=document.createElement('div'); line.className='sys-fault';
+    var msgEl=document.createElement('span');
+    msgEl.textContent=(kind==='server')
+      ? 'Ryujin hit a snag answering that. Tap retry.'
+      : 'The connection dropped mid-thought. Tap retry.';
+    var btn=document.createElement('button'); btn.type='button'; btn.className='retry-btn'; btn.textContent='Retry';
+    btn.addEventListener('click',function(){
+      if(busy) return;
+      // Drop the failed assistant turn, keep the user's bubble, resend the
+      // same message without duplicating it.
+      var idx=transcript.indexOf(aMsg); if(idx>-1) transcript.splice(idx,1);
+      conversation=transcript.filter(function(m){return m.role==='user'||m.role==='assistant';}).map(function(m){return {role:m.role,content:m.content};});
+      if(aEl.parentNode) aEl.parentNode.removeChild(aEl);
+      summon(retryText,{retry:true});
+    });
+    line.appendChild(msgEl); line.appendChild(btn);
+    aEl.appendChild(line); scrollDown();
+  }
+
   /* ── The summon (live /api/chat stream) ── */
-  function summon(text){
+  function summon(text,opts){
+    opts=opts||{};
     text=(text||'').trim(); if(!text||busy) return;
     busy=true; sendBtn.disabled=true; cmd.value='';
-    var userMsg={role:'user',content:text,ts:Date.now()};
-    transcript.push(userMsg); conversation.push({role:'user',content:text});
-    historyEl.querySelector('.empty-hist') && (historyEl.innerHTML='');
-    historyEl.appendChild(bubbleEl(userMsg)); scrollDown();
+    if(!opts.retry){
+      var userMsg={role:'user',content:text,ts:Date.now()};
+      transcript.push(userMsg); conversation.push({role:'user',content:text});
+      historyEl.querySelector('.empty-hist') && (historyEl.innerHTML='');
+      historyEl.appendChild(bubbleEl(userMsg)); scrollDown();
+    }
+    // retry mode: the user's bubble and transcript turn already exist, and the
+    // retry handler rebuilt the lean history with that turn last.
 
     var aMsg={role:'assistant',content:'',tools:[],error:null,lens:null,ts:Date.now()};
     transcript.push(aMsg); // keep the assistant turn in the transcript so it persists + reloads
@@ -752,7 +793,7 @@ body[data-skin="bridge"] #greeting,body[data-skin="bridge"] .topics{display:none
 
     fetch('/api/chat',{ method:'POST', headers:authHeaders(), body:JSON.stringify(body) }).then(function(res){
       if(res.status===401){ if(window.RyujinAuth&&window.RyujinAuth.clearAndRedirect) window.RyujinAuth.clearAndRedirect(); else window.location.href='/login.html?next='+encodeURIComponent(location.pathname); return null; }
-      if(!res.ok||!res.body){ aMsg.error='HTTP '+res.status; contentEl.parentNode.appendChild(Object.assign(document.createElement('div'),{textContent:'Error: HTTP '+res.status,style:'color:var(--red);font-size:0.85em;margin-top:6px'})); setState('idle'); busy=false; sendBtn.disabled=false; return null; }
+      if(!res.ok||!res.body){ streamFault(aEl,aMsg,'server','HTTP '+res.status,text); setState('idle'); busy=false; sendBtn.disabled=false; return null; }
       var reader=res.body.getReader(), dec=new TextDecoder(), buf='';
       function pump(){
         return reader.read().then(function(chunk){
@@ -769,7 +810,7 @@ body[data-skin="bridge"] #greeting,body[data-skin="bridge"] .topics{display:none
             else if(d.matched_archetype){ aMsg.lens=d.matched_archetype; }
             else if(d.navigate && d.navigate.url){ if(ryNavSafe(d.navigate.url)) pendingNav=d.navigate.url; }
             else if(d.done){ if(d.conversation_id) streamConvId=d.conversation_id; finished=true; break; }
-            else if(d.error){ aMsg.error=d.error; flipStuck(); var ee=document.createElement('div'); ee.style.cssText='color:var(--red);font-size:0.85em;margin-top:6px'; ee.textContent='Error: '+d.error; aEl.appendChild(ee); finished=true; break; }
+            else if(d.error){ flipStuck(); streamFault(aEl,aMsg,'server',d.error,text); finished=true; break; }
           }
           if(finished){ try{reader.cancel();}catch(e){} return; }
           return pump();
@@ -778,6 +819,9 @@ body[data-skin="bridge"] #greeting,body[data-skin="bridge"] .topics{display:none
       return pump();
     }).catch(function(err){ aMsg.error=(err&&err.message)||'network error'; }).then(function(){
       flipStuck();
+      // Mid-stream cuts land here via the catch with no visible trace; give
+      // them the same calm fault line + retry as the explicit error paths.
+      if(aMsg.error && !aEl.querySelector('.sys-fault')) streamFault(aEl,aMsg,'network',aMsg.error,text);
       aMsg.content=answer;
       if(answer){ conversation.push({role:'assistant',content:answer}); }
       else { conversation.pop(); } // drop the user turn from lean history if no answer
