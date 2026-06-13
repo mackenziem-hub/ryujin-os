@@ -107,11 +107,13 @@ body[data-skin="bridge"] .bar-btn{background:rgba(4,10,18,0.5);backdrop-filter:b
 body[data-skin="bridge"] .crumb{letter-spacing:0.12em;text-transform:uppercase}
 
 /* ── shells: deck 3-column grid / summon centered column / bridge floating theater ── */
-.shell{position:relative;z-index:var(--z-stage);height:100dvh;display:grid;column-gap:18px;row-gap:0}
+.shell{position:relative;z-index:var(--z-stage);height:100dvh;display:grid;column-gap:18px;row-gap:0;
+  --lw:300px;--rw:360px;transition:grid-template-columns .28s cubic-bezier(0.23,1,0.32,1)}
+#signals,#choices{min-width:0}
 body[data-skin="deck"] .shell{padding:0 22px 18px;
   grid-template-areas:"bar bar bar" "signals stage choices" "signals history choices" "command command command";
   grid-template-rows:52px auto minmax(0,1fr) auto;
-  grid-template-columns:300px minmax(0,1fr) 360px}
+  grid-template-columns:var(--lw) minmax(0,1fr) var(--rw)}
 body[data-skin="summon"] .shell{max-width:860px;margin:0 auto;padding:0 24px;
   grid-template-areas:"bar" "signals" "command" "choices" "history";
   grid-template-rows:52px auto auto auto minmax(0,1fr);
@@ -389,6 +391,67 @@ body[data-skin="bridge"] #greeting,body[data-skin="bridge"] .topics{display:none
   body[data-skin="summon"] #void::after{animation:none !important}
   .trail{display:none}
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   BRIDGE, re-staged (Mac 2026-06-13): keep the cinematic sky + glass,
+   but lay the panels out in the SAME readable 3-pane grid as Deck.
+   The original bridge floated signals/history/choices as fixed panes
+   in the corners; they overlapped and could not be read. This block
+   is append-only and overrides those positions by source order.
+   Left = signals · Center = the AI (orb + thread) · Right = action required.
+   ══════════════════════════════════════════════════════════════════ */
+body[data-skin="bridge"] .shell{display:grid;padding:0 24px 18px;column-gap:20px;
+  grid-template-areas:"bar bar bar" "signals stage choices" "signals history choices" "command command command";
+  grid-template-rows:60px auto minmax(0,1fr) auto;grid-template-columns:var(--lw) minmax(0,1fr) var(--rw)}
+body[data-skin="bridge"] .topbar{position:relative;top:auto;left:auto;right:auto;background:none;padding:0 2px}
+/* left column: signals stack as glass cards (not fixed corners) */
+body[data-skin="bridge"] #signals{display:flex;flex-direction:column;gap:12px;overflow-y:auto;padding-top:14px;position:relative;z-index:var(--z-panes)}
+body[data-skin="bridge"] #signals::-webkit-scrollbar{width:5px}
+body[data-skin="bridge"] #signals::-webkit-scrollbar-thumb{background:var(--line)}
+body[data-skin="bridge"] #signals h2{display:block}
+body[data-skin="bridge"] .sig{position:static;width:auto;animation:paneIn .4s cubic-bezier(0.23,1,0.32,1) backwards}
+body[data-skin="bridge"] .sig .v{font-size:var(--t2)}
+body[data-skin="bridge"] #sig-asof{position:static;transform:none;padding-top:8px}
+/* center column: real orb stage + flowing thread (no giant horizon reactor) */
+body[data-skin="bridge"] #horizon{display:none}
+body[data-skin="bridge"] #stage{display:flex}
+body[data-skin="bridge"] #orb-reactor{display:none}
+body[data-skin="bridge"] #floor{display:none}
+body[data-skin="bridge"] #history{position:static;transform:none;width:min(640px,100%);justify-self:center;margin:14px 0 0;max-height:none;bottom:auto;left:auto}
+/* right column: action required as a readable ranked list (not bottom chips) */
+body[data-skin="bridge"] #choices{position:static;transform:none;display:flex;flex-direction:column;gap:10px;overflow-y:auto;padding-top:14px;max-width:none;bottom:auto;left:auto}
+body[data-skin="bridge"] #choices h2{display:block}
+body[data-skin="bridge"] .choice{flex:none;display:block;width:100%;text-align:left;border-radius:13px;padding:13px 15px;
+  background:var(--glass);border:1px solid var(--glass-edge);backdrop-filter:blur(14px)}
+body[data-skin="bridge"] .choice .t{font-weight:700;font-size:14.5px;line-height:1.35;display:block}
+body[data-skin="bridge"] .choice .t::before{display:none}
+body[data-skin="bridge"] .choice .why{display:block;font-size:12.5px;color:var(--ink-dim);margin-top:5px;line-height:1.5}
+body[data-skin="bridge"] .choice.rec{border-left:3px solid var(--red)}
+/* bottom: the AI dock as a centered bar; greeting + priorities strip restored */
+body[data-skin="bridge"] #command{position:static;transform:none;display:flex;justify-content:center;padding-top:14px;width:auto;left:auto;bottom:auto}
+body[data-skin="bridge"] .dock{width:min(760px,100%)}
+body[data-skin="bridge"] #summon-form{border-radius:16px;animation:none}
+body[data-skin="bridge"] #greeting{display:block}
+body[data-skin="bridge"] .topics{display:flex}
+@media(max-width:980px){
+  body[data-skin="bridge"]{overflow-y:auto}
+  body[data-skin="bridge"] .shell{height:auto;min-height:100dvh;grid-template-columns:minmax(0,1fr);row-gap:14px;
+    grid-template-areas:"bar" "signals" "stage" "history" "choices" "command";grid-template-rows:auto}
+  body[data-skin="bridge"] #signals,body[data-skin="bridge"] #choices{overflow:visible;padding-top:0}
+  body[data-skin="bridge"] #command{position:sticky;bottom:0;background:linear-gradient(180deg,transparent,var(--bg) 40%);padding-bottom:12px}
+}
+
+/* ── collapsible side panels (Claude-style): collapse both = pure chatbot,
+   open both = full command center. Driven by --lw / --rw on .shell. ── */
+body.lp-collapsed .shell{--lw:0px}
+body.rp-collapsed .shell{--rw:0px}
+body.lp-collapsed #signals{opacity:0;pointer-events:none;overflow:hidden}
+body.rp-collapsed #choices{opacity:0;pointer-events:none;overflow:hidden}
+#signals,#choices{transition:opacity .18s}
+.bar-btn.on{color:var(--teal-2);border-color:var(--pane-edge);background:rgba(45,212,191,0.08)}
+/* the two panel toggles only make sense in the 3-pane skins */
+body[data-skin="summon"] #lpBtn,body[data-skin="summon"] #rpBtn{display:none}
+@media(max-width:980px){ body.lp-collapsed #signals,body.rp-collapsed #choices{display:none} }
 </style>
 </head>
 <body data-skin="deck">
@@ -407,6 +470,9 @@ body[data-skin="bridge"] #greeting,body[data-skin="bridge"] .topics{display:none
     <span class="wordmark">RYUJIN <span>OS</span></span>
     <span class="crumb" id="crumb">cockpit · plus-ultra</span>
     <div class="bar-actions">
+      <button class="bar-btn" id="lpBtn" type="button" title="Toggle activity panel (left)">Log</button>
+      <button class="bar-btn" id="rpBtn" type="button" title="Toggle action panel (right)">Tasks</button>
+      <button class="bar-btn" id="fsBtn" type="button" title="Fullscreen app view">Full</button>
       <button class="bar-btn" id="skinBtn" type="button" title="Switch cockpit skin">Skin: Deck</button>
       <button class="bar-btn" id="palBtn" type="button" title="Command palette (Cmd-K)">&#8984;K</button>
       <button class="bar-btn" id="newConvo" type="button">New</button>
@@ -923,6 +989,18 @@ body[data-skin="bridge"] #greeting,body[data-skin="bridge"] .topics{display:none
   if($('briefBtn')) $('briefBtn').addEventListener('click',speakBriefing);
   if($('palBtn')) $('palBtn').addEventListener('click',function(){ if(window.RyujinPalette) window.RyujinPalette.open(); });
 
+  /* ── collapsible panels + fullscreen (Mac 2026-06-13): collapse both and the
+     center becomes a pure chatbot; bring them back for the full command center.
+     Persisted per side. ── */
+  function setPane(side,on){
+    document.body.classList.toggle(side==='l'?'lp-collapsed':'rp-collapsed',!on);
+    var btn=$(side==='l'?'lpBtn':'rpBtn'); if(btn) btn.classList.toggle('on',on);
+    try{ localStorage.setItem('ry_cockpit_'+side+'pane', on?'1':'0'); }catch(e){}
+  }
+  if($('lpBtn')) $('lpBtn').addEventListener('click',function(){ setPane('l', document.body.classList.contains('lp-collapsed')); });
+  if($('rpBtn')) $('rpBtn').addEventListener('click',function(){ setPane('r', document.body.classList.contains('rp-collapsed')); });
+  if($('fsBtn')) $('fsBtn').addEventListener('click',function(){ try{ if(document.fullscreenElement) document.exitFullscreen(); else if(document.documentElement.requestFullscreen) document.documentElement.requestFullscreen(); }catch(e){} });
+
   // Ambient dragon video (deck + summon; bridge paints its own sky)
   (function bgDragon(){ var v=$('bg-dragon'); if(!v)return; var start=function(){ if(!v.getAttribute('src')&&v.dataset.src){ v.setAttribute('src',v.dataset.src); v.setAttribute('autoplay',''); v.load(); var p=v.play(); if(p&&p.catch)p.catch(function(){ var r=function(){v.play().catch(function(){});document.removeEventListener('pointerdown',r);}; document.addEventListener('pointerdown',r,{once:true}); }); } }; if(document.readyState==='complete')setTimeout(start,1500); else window.addEventListener('load',function(){setTimeout(start,1500);}); })();
 
@@ -931,7 +1009,8 @@ body[data-skin="bridge"] #greeting,body[data-skin="bridge"] .topics{display:none
     var saved=null;
     try{ saved=localStorage.getItem('ry_cockpit_skin'); }catch(e){}
     try{ var qs=new URLSearchParams(location.search).get('skin'); if(qs) saved=qs; }catch(e){}
-    applySkin(saved||'deck');
+    applySkin(saved||'bridge');
+    ['l','r'].forEach(function(s){ var collapsed=false; try{ collapsed=localStorage.getItem('ry_cockpit_'+s+'pane')==='0'; }catch(e){} setPane(s,!collapsed); });
   })();
   $('horizon-h1').textContent=hourHello();
   loadHistory(); loadOptions(); loadTopics(); loadSignals(); cmd.focus();
