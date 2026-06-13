@@ -169,6 +169,16 @@ body{
   0%,100%{opacity:0.14;filter:drop-shadow(0 0 20px rgba(34,211,238,0.15)) brightness(0.95)}
   50%{opacity:0.22;filter:drop-shadow(0 0 30px rgba(34,211,238,0.3)) brightness(1.1)}
 }
+/* ─── Board calm mode ─── When the snapshot is stale, failed, or signed out, the
+   pulsing "LIVE" dot and the breathing backdrop are theater over dead numbers.
+   Pause that motion and recolor the signal so the board reads honestly; motion
+   stays only while data is genuinely live. Toggled by setBoardState(). */
+body[data-board="stale"] .tb-dot{animation:none;background:var(--yellow);box-shadow:none}
+body[data-board="offline"] .tb-dot{animation:none;background:var(--text-muted);box-shadow:none}
+body[data-board="stale"] .dragon-img,
+body[data-board="offline"] .dragon-img{animation:none}
+body[data-board="stale"] #tbState{color:var(--yellow)}
+body[data-board="offline"] #tbState{color:var(--text-muted)}
 /* Dead gamification overlay CSS removed 2026-06-09 (dragon "power" quote,
    status text, activate animation): it styled elements that were never in
    this page's markup. The stage + breathing dragon image above are kept;
@@ -345,7 +355,7 @@ body{
     </div>
     <div class="tb-status">
       <div class="tb-dot"></div>
-      <span>LIVE · <span class="ts-val" id="ts">00:00:00</span></span>
+      <span><span id="tbState">LIVE</span> · <span class="ts-val" id="ts">00:00:00</span></span>
     </div>
     <div class="tb-spacer"></div>
     <div class="tb-ctrl">
@@ -625,15 +635,18 @@ function renderKpis(s) {
 // the rail quietly impersonate live data.
 function renderStaleChip(snap) {
   const chip = document.getElementById('kpiStaleChip');
-  if (!chip) return;
   const t = snap && snap.updated_at ? new Date(snap.updated_at).getTime() : NaN;
   const days = Number.isFinite(t) ? Math.floor((Date.now() - t) / 86400000) : null;
-  if (days != null && days >= 1) {
-    chip.textContent = 'STALE · snapshot ' + days + 'd old';
-    chip.classList.add('on');
-  } else {
-    chip.classList.remove('on');
+  const stale = days != null && days >= 1;
+  if (chip) {
+    if (stale) {
+      chip.textContent = 'STALE · snapshot ' + days + 'd old';
+      chip.classList.add('on');
+    } else {
+      chip.classList.remove('on');
+    }
   }
+  return stale;
 }
 
 function renderSectors(s) {
@@ -771,6 +784,21 @@ function setPanelState(state, msg) {
 let snapshotLoadedOnce = false;
 let snapshotDoorShown = false;
 
+// Board liveness signal: 'live' keeps the pulsing dot + ticking clock honest;
+// 'stale'/'offline' freeze that motion (see body[data-board] CSS) so the board
+// never impersonates fresh data over dead or aging numbers.
+function setBoardState(mode){
+  document.body.setAttribute('data-board', mode);
+  const lbl = document.getElementById('tbState');
+  if (lbl) lbl.textContent = mode === 'live' ? 'LIVE' : mode === 'stale' ? 'STALE' : 'OFFLINE';
+  // No data ever loaded: show an honest placeholder rather than a clock that
+  // keeps ticking as if the board were live.
+  if (mode === 'offline' && !snapshotLoadedOnce) {
+    const ts = document.getElementById('ts');
+    if (ts) ts.textContent = '--:--:--';
+  }
+}
+
 async function loadSnapshot(showToast) {
   if (location.protocol === 'file:') return;
   if (snapshotDoorShown) return; // signed out: the door is up, retrying cannot succeed
@@ -783,6 +811,7 @@ async function loadSnapshot(showToast) {
       // instead of promising a retry that cannot succeed.
       snapshotDoorShown = true;
       setPanelState('auth', 'Signed out');
+      setBoardState('offline');
       if (window.RyujinAuth && window.RyujinAuth.sessionEnded) {
         window.RyujinAuth.sessionEnded(document.querySelector('.sectors'));
       } else {
@@ -794,7 +823,7 @@ async function loadSnapshot(showToast) {
     const snap = await res.json();
     const s = snap.sections || {};
     if (!Object.keys(s).length) {
-      if (!snapshotLoadedOnce) setPanelState('empty', 'No snapshot data yet, check back shortly');
+      if (!snapshotLoadedOnce) { setPanelState('empty', 'No snapshot data yet, check back shortly'); setBoardState('offline'); }
       return;
     }
     snapshotLoadedOnce = true;
@@ -805,7 +834,8 @@ async function loadSnapshot(showToast) {
     renderPriorities(s);
     renderAlerts(s);
     renderTimestamp(snap);
-    renderStaleChip(snap);
+    const stale = renderStaleChip(snap);
+    setBoardState(stale ? 'stale' : 'live');
     if (showToast && window.RyujinToast) RyujinToast('Live snapshot synced · ' + new Date(snap.updated_at).toLocaleTimeString());
   } catch (e) {
     // Before the first successful load, paint an honest failure state. After a
@@ -813,6 +843,7 @@ async function loadSnapshot(showToast) {
     if (!snapshotLoadedOnce) {
       if (e && e.name === 'AbortError') setPanelState('timeout', 'Snapshot timed out after 10s, retrying in 5 min');
       else setPanelState('error', 'Snapshot failed to load, retrying in 5 min');
+      setBoardState('offline');
     }
     console.info('Snapshot not available:', e.message);
   } finally {
@@ -849,8 +880,13 @@ Ryujin.init({ sector: 'DASHBOARD', embedTarget: '#dragonChatMount', workspace: t
 <script>
 // Live timestamp
 function tickTs(){
+  // Tick only while the board is live (or still booting, before the first load
+  // resolves). When stale/offline the status holds the snapshot's real age
+  // instead of a clock that keeps faking live data.
+  const board=document.body.getAttribute('data-board');
+  if(board&&board!=='live')return;
   const d=new Date(),p=n=>String(n).padStart(2,'0');
-  document.getElementById('ts').textContent=`${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  const el=document.getElementById('ts');if(el)el.textContent=`${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 setInterval(tickTs,1000);tickTs();
 
