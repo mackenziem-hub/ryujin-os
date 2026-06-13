@@ -627,7 +627,7 @@ async function buildFreshSnapshot() {
   // - metaAds: live Meta Graph API data (pushed by daily.js and briefing.js)
   // - googleAds: CSV enrichment via enrich-ads.js (until Google Ads API is approved)
   // - gmail/calendar: pushed by Claude Code MCP sessions
-  // - briefing_morning/briefing_evening: pushed by /api/agents/briefing cron
+  // - briefing_morning/afternoon/evening: pushed by /api/agents/briefing cron
   // - watchdog: pushed by /api/agents/watchdog cron
   // - heartbeat: pushed by /api/agents/heartbeat cron
   // - tokenRefresh: pushed by daily.js when token auto-refresh fires
@@ -636,7 +636,7 @@ async function buildFreshSnapshot() {
   const existing = await getSnapshot();
   const preserveKeys = [
     'metaAds', 'googleAds', 'gmail', 'calendar',
-    'briefing_morning', 'briefing_evening',
+    'briefing_morning', 'briefing_afternoon', 'briefing_evening',
     'watchdog', 'heartbeat', 'tokenRefresh',
     'cashflow',
     // Same bug pattern as 2026-04-11 (watchdog wipe) - daily.js writes
