@@ -2183,6 +2183,11 @@ const TOOLS = [
       },
       required: ['estimate_identifier']
     }
+  },
+  {
+    name: 'get_fleet_status',
+    description: 'Read the live Guild Hall / Builder Room fleet state: the decision queue of what the fleet is BLOCKED ON MAC for (money confirmations, design picks, deploy go-aheads), per-desk builder status, and overall fleet health. Use whenever Mac asks what the Builder Room / fleet / desks / builders need from him, what is blocked on him, what decisions the fleet is waiting on, or the fleet status.',
+    input_schema: { type: 'object', properties: {} }
   }
 ];
 
@@ -2553,6 +2558,15 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       // Truncate large responses to avoid token overflow
       const str = JSON.stringify(data);
       return str.length > 8000 ? { _truncated: true, data: str.substring(0, 8000) + '...' } : data;
+    }
+
+    if (name === 'get_fleet_status') {
+      const resp = await fetch('https://ryujin-os.vercel.app/api/snapshot', { headers: { 'x-tenant-id': 'plus-ultra', ...((process.env.RYUJIN_SERVICE_TOKEN || '').trim() ? { Authorization: `Bearer ${(process.env.RYUJIN_SERVICE_TOKEN || '').trim()}` } : {}) } });
+      if (!resp.ok) throw new Error(`Snapshot returned ${resp.status}`);
+      const snap = await resp.json();
+      const fleet = snap && snap.sections && snap.sections.fleet;
+      if (!fleet) return { available: false, note: 'No fleet state has been posted yet (the local Guild Hall hub poster may be offline).' };
+      return fleet;
     }
 
     if (name === 'add_contact_note') {
@@ -4890,6 +4904,7 @@ You are now Mackenzie's game development and product specialist.
     switch (name) {
       case 'navigate': return `🧭 Opening ${input.url || 'a page'}`;
       case 'lookup_data': return `🔍 Searching ${input.source}${input.query ? ` for "${input.query}"` : ''}`;
+      case 'get_fleet_status': return `🛰️ Checking the Builder Room fleet`;
       case 'get_contact_detail': return `🔍 Looking up contact: ${input.query || input.id}`;
       case 'search_gmail': return `📧 Searching Gmail: "${input.query}"`;
       case 'read_email': return `📧 Reading email`;

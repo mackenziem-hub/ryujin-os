@@ -653,6 +653,10 @@ async function buildFreshSnapshot() {
   // misfires (which is exactly what happened on 2026-04-11).
   const existing = await getSnapshot();
   const preserveKeys = [
+    // fleet: pushed by the local Guild Hall hub poster (the blockedOnMac decision
+    // queue + desk states + fleet health). Preserve or the hourly rebuild wipes it
+    // and the cockpit brain goes Builder-Room-blind again within the hour.
+    'fleet',
     'metaAds', 'googleAds', 'gmail', 'calendar',
     'briefing_morning', 'briefing_afternoon', 'briefing_evening',
     'watchdog', 'heartbeat', 'tokenRefresh',
