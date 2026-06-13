@@ -158,7 +158,7 @@ async function handler(req, res) {
 
   // ── Multi-offer comparison ──
   if (req.query.mode === 'compare') {
-    const { offer_ids, measurements, overrides, choices, extras } = body;
+    const { offer_ids, measurements, overrides, choices, extras, commissionPct } = body;
 
     let ids = offer_ids;
     if (!ids || !Array.isArray(ids) || ids.length === 0) {
@@ -173,7 +173,8 @@ async function handler(req, res) {
       measurements: measurements || {},
       overrides: overrides || {},
       choices: choices || {},
-      extras: extras || []
+      extras: extras || [],
+      commissionPct: commissionPct === 0 ? 0 : null
     });
 
     result.tenant = req.tenant.slug;
