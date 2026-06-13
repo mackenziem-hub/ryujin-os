@@ -20,6 +20,7 @@
 
 import { supabaseAdmin } from '../lib/supabase.js';
 import { cloneDefaultOffers } from '../lib/cloneOffers.js';
+import { seedSampleProposal } from '../lib/seedSampleProposal.js';
 
 const SERVICE_TOKEN = (process.env.RYUJIN_SERVICE_TOKEN || '').trim();
 const PROTECTED_SLUGS = new Set(['plus-ultra']);
@@ -121,12 +122,35 @@ export default async function handler(req, res) {
       ownerUserCreated = true;
     }
 
+    // ── 5. sample proposal (sell-readiness: signup -> branded proposal) ──
+    // A fresh tenant has offers but zero estimates, so /api/proposal has
+    // nothing to render. Seed a sample published proposal branded with THIS
+    // tenant (the renderer pulls its name/accent/rep from tenant_settings) so
+    // the signup flow lands on a rendered, their-branded proposal with no
+    // manual steps. Default: sandbox tenants (trials/demos) get one; a paying
+    // tenant opts in with seed_sample:true or out with seed_sample:false.
+    // Never fails provisioning — the tenant is already usable without it.
+    let sampleProposal = null;
+    const wantSample = body.seed_sample === true
+      || (body.seed_sample !== false && tenantRow.is_sandbox === true);
+    if (wantSample) {
+      try {
+        sampleProposal = await seedSampleProposal(tenantId, { slug });
+      } catch (e) {
+        sampleProposal = { error: e && e.message ? e.message : String(e) };
+      }
+    }
+
     return res.status(created ? 201 : 200).json({
       tenant_id: tenantId,
       slug,
       created,
       offers,
       owner_user_created: ownerUserCreated,
+      sample_proposal: sampleProposal,
+      sample_proposal_url: sampleProposal && sampleProposal.share_token
+        ? `/proposal-client.html?share=${sampleProposal.share_token}`
+        : null,
     });
   } catch (e) {
     return res.status(500).json({ error: e && e.message ? e.message : String(e) });
