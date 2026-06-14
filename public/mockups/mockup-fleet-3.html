@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FLEET TRACKING 3 of 3: DISPATCH (editorial list)</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:ital,opsz@1,18&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{ --bg:#0c0d10; --panel:#141519; --line:rgba(255,255,255,.08); --line-2:rgba(255,255,255,.05);
+    --ink:#edeef1; --mid:rgba(231,233,238,.66); --dim:rgba(231,233,238,.4);
+    --accent:#7c9cff; --ok:#5fd08a; --warn:#e6b150; --no:#e87b6e; }
+  *{margin:0;box-sizing:border-box}
+  body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;padding:26px}
+  .wrap{max-width:920px;margin:0 auto}
+  h1{font-family:'Newsreader',Georgia,serif;font-style:italic;font-size:1.7rem;font-weight:500;letter-spacing:.2px}
+  .sub{color:var(--dim);font-size:.85rem;margin:5px 0 20px}
+  .bar{display:flex;align-items:center;gap:22px;padding-bottom:14px;margin-bottom:6px;border-bottom:1px solid var(--line)}
+  .kpi{display:flex;flex-direction:column}
+  .kpi .n{font-family:'JetBrains Mono',monospace;font-size:1.4rem;font-weight:600}
+  .kpi .l{font-size:.66rem;color:var(--dim);letter-spacing:1.4px;text-transform:uppercase;margin-top:2px}
+  .add{margin-left:auto;font-weight:600;font-size:.84rem;color:var(--ink);background:transparent;border:1px solid var(--line);
+    border-radius:8px;padding:9px 15px;cursor:pointer;transition:border-color .14s,background .14s}
+  .add:hover{border-color:var(--accent);background:rgba(124,156,255,.08)}
+  .row{display:grid;grid-template-columns:16px 150px 1fr 88px 30px;align-items:center;gap:14px;
+    padding:14px 6px;border-bottom:1px solid var(--line-2)}
+  .row.head{padding:8px 6px;border-bottom:1px solid var(--line)}
+  .row.head span{font-size:.64rem;letter-spacing:1.4px;text-transform:uppercase;color:var(--dim)}
+  .dot{width:8px;height:8px;border-radius:50%}
+  .dot.working{background:var(--ok)} .dot.idle{background:var(--dim)} .dot.blocked{background:var(--warn)} .dot.done{background:var(--accent)}
+  .who{display:flex;flex-direction:column;min-width:0}
+  .lane{font-weight:600;font-size:.92rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .machine{font-family:'JetBrains Mono',monospace;font-size:.64rem;color:var(--dim)}
+  .task{font-size:.86rem;color:var(--mid);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .prog{display:flex;align-items:center;gap:8px}
+  .track{flex:1;height:4px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden}
+  .track i{display:block;height:100%;background:var(--accent)}
+  .pct{font-family:'JetBrains Mono',monospace;font-size:.7rem;color:var(--mid);min-width:30px;text-align:right}
+  .rm{color:var(--dim);background:transparent;border:0;cursor:pointer;font-size:1rem;line-height:1;padding:4px;border-radius:6px}
+  .rm:hover{color:var(--no);background:rgba(232,123,110,.1)}
+  .note{margin-top:18px;font-size:.78rem;color:var(--dim)}
+  @media(max-width:680px){ .row{grid-template-columns:14px 1fr 70px 26px} .task,.row.head span.c-task,.row.head span.c-mach{display:none} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Fleet Tracking &mdash; Dispatch</h1>
+  <div class="sub">Editorial list variant 3 of 3 &middot; calm and dense, the desk count is dynamic</div>
+  <div class="bar">
+    <div class="kpi"><span class="n" id="kWork">0</span><span class="l">Working</span></div>
+    <div class="kpi"><span class="n" id="kBlock">0</span><span class="l">Needs Mac</span></div>
+    <div class="kpi"><span class="n" id="kTotal">0</span><span class="l">Desks</span></div>
+    <button class="add" id="add">+ Add desk</button>
+  </div>
+  <div class="row head"><span></span><span>Desk</span><span class="c-task">Current task</span><span>Progress</span><span></span></div>
+  <div id="list"></div>
+  <div class="note">Mockup. Count not fixed: Add desk appends a row, the x retires one. Quiet status dots: green working, amber needs Mac, grey idle, blue done.</div>
+</div>
+<script>
+(function(){
+  var LANES=['Sales','Ops','Comms','Research','Creative','Audit','Infra','Passive'];
+  var TASKS=['Drafting the Monday call stack','Reconciling pay sheets','Triaging the unified inbox','Deep-researching best-in-class exemplars','Cutting the lakeside drone reel','Re-running the AI-layer benchmark','Rotating oversized fleet artifacts','Building the passive income lane'];
+  var ST=['working','working','idle','blocked','done'];
+  var desks=[], n=0;
+  function rnd(a){return a[Math.floor(Math.random()*a.length)];}
+  function addDesk(){
+    var id=String.fromCharCode(65+(n%8)); n++;
+    desks.push({id:id,lane:rnd(LANES),machine:rnd(['HAL','Mind Palace']),task:rnd(TASKS),st:rnd(ST),prog:Math.floor(Math.random()*100)});
+    render();
+  }
+  function render(){
+    var L=document.getElementById('list'); L.innerHTML=''; var work=0,block=0;
+    desks.forEach(function(d,i){
+      if(d.st==='working')work++; if(d.st==='blocked')block++;
+      var r=document.createElement('div'); r.className='row';
+      r.innerHTML='<span class="dot '+d.st+'" title="'+d.st+'"></span>'+
+        '<span class="who"><span class="lane">'+d.id+' &middot; '+d.lane+'</span><span class="machine">'+d.machine+'</span></span>'+
+        '<span class="task">'+d.task+'</span>'+
+        '<span class="prog"><span class="track"><i style="width:'+d.prog+'%"></i></span><span class="pct">'+d.prog+'%</span></span>'+
+        '<button class="rm" title="Retire desk">&times;</button>';
+      r.querySelector('.rm').onclick=function(){desks.splice(i,1);render();};
+      L.appendChild(r);
+    });
+    document.getElementById('kWork').textContent=work;
+    document.getElementById('kBlock').textContent=block;
+    document.getElementById('kTotal').textContent=desks.length;
+  }
+  document.getElementById('add').onclick=addDesk;
+  for(var i=0;i<6;i++) addDesk();
+})();
+</script>
+</body>
+</html>

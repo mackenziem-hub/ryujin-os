@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FLEET TRACKING 2 of 3: GLASS OPS (sci-fi glass)</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Orbitron:wght@600;700;800&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  :root{ --bg:#030611; --bg2:#060a14; --glass:rgba(14,22,40,.62); --line:rgba(74,158,255,.24);
+    --line-soft:rgba(74,158,255,.12); --ink:#e6ecf6; --mid:rgba(198,214,240,.78); --dim:rgba(160,190,230,.55);
+    --accent:#4a9eff; --accent-d:#2563eb; --ok:#4ade80; --warn:#f5b13a; --no:#f87171; }
+  *{margin:0;box-sizing:border-box}
+  body{font-family:'Inter',system-ui,sans-serif;color:var(--ink);min-height:100vh;padding:22px;position:relative;
+    background:radial-gradient(ellipse at 28% 14%,rgba(74,158,255,.12),transparent 55%),radial-gradient(ellipse at 76% 90%,rgba(124,58,237,.09),transparent 55%),linear-gradient(180deg,var(--bg2),var(--bg))}
+  h1{font-family:'Orbitron',sans-serif;font-size:1.2rem;font-weight:800;letter-spacing:.5px}
+  .sub{color:var(--dim);font-size:.86rem;margin:4px 0 18px}
+  .bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
+  .kpi{background:var(--glass);backdrop-filter:blur(16px);border:1px solid var(--line);border-radius:13px;padding:10px 16px;position:relative;overflow:hidden}
+  .kpi::before{content:'';position:absolute;top:0;left:12%;right:12%;height:1px;background:linear-gradient(90deg,transparent,rgba(150,190,255,.6),transparent)}
+  .kpi .n{font-family:'Share Tech Mono',monospace;font-size:1.5rem;color:var(--accent)}
+  .kpi .l{font-size:.64rem;color:var(--dim);letter-spacing:1.5px;text-transform:uppercase}
+  .btn{margin-left:auto;font-weight:700;font-size:.86rem;color:#06121f;background:linear-gradient(180deg,var(--accent),var(--accent-d));
+    border:0;border-radius:11px;padding:11px 17px;cursor:pointer;box-shadow:0 6px 18px rgba(74,158,255,.4);display:inline-flex;gap:8px;align-items:center}
+  .btn:hover{transform:translateY(-1px)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px}
+  .desk{position:relative;background:var(--glass);backdrop-filter:blur(14px);border:1px solid var(--line);border-radius:16px;
+    padding:15px;overflow:hidden;box-shadow:0 14px 40px rgba(0,0,0,.42),inset 0 1px 0 rgba(120,170,255,.1)}
+  .desk::before{content:'';position:absolute;top:0;left:10%;right:10%;height:1px;background:linear-gradient(90deg,transparent,rgba(150,190,255,.55),transparent)}
+  .top{display:flex;align-items:center;gap:10px}
+  .badge{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-family:'Orbitron',sans-serif;
+    font-weight:800;font-size:.85rem;color:#06121f;background:linear-gradient(135deg,var(--accent),var(--accent-d))}
+  .lane{font-weight:700;font-size:.96rem;letter-spacing:.3px}
+  .machine{font-family:'Share Tech Mono',monospace;font-size:.64rem;color:var(--dim);letter-spacing:1px}
+  .dot{width:9px;height:9px;border-radius:50%;margin-left:auto}
+  .dot.working{background:var(--ok);box-shadow:0 0 8px var(--ok)} .dot.idle{background:var(--dim)}
+  .dot.blocked{background:var(--warn);box-shadow:0 0 8px var(--warn)} .dot.done{background:var(--accent)}
+  .stat{font-family:'Share Tech Mono',monospace;font-size:.62rem;letter-spacing:1px;color:var(--mid);margin-top:9px;text-transform:uppercase}
+  .task{font-size:.9rem;color:var(--mid);margin-top:4px;min-height:40px;line-height:1.35}
+  .track{height:6px;border-radius:99px;background:rgba(0,0,0,.35);margin-top:10px;overflow:hidden}
+  .track i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--accent-d),var(--accent))}
+  .foot{display:flex;align-items:center;margin-top:9px;font-family:'Share Tech Mono',monospace;font-size:.66rem;color:var(--dim)}
+  .rm{margin-left:auto;color:var(--no);background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.4);border-radius:7px;
+    width:26px;height:26px;cursor:pointer;font-size:.9rem;line-height:1}
+  .note{margin-top:20px;font-size:.8rem;color:var(--dim);text-align:center}
+</style>
+</head>
+<body>
+  <h1>Fleet Tracking &mdash; Glass Ops</h1>
+  <div class="sub">Sci-fi glass variant 2 of 3 &middot; the desk count is dynamic, add or retire any time</div>
+  <div class="bar">
+    <div class="kpi"><div class="n" id="kWork">0</div><div class="l">Working</div></div>
+    <div class="kpi"><div class="n" id="kBlock">0</div><div class="l">Needs Mac</div></div>
+    <div class="kpi"><div class="n" id="kTotal">0</div><div class="l">Desks</div></div>
+    <button class="btn" id="add">+ Add desk</button>
+  </div>
+  <div class="grid" id="grid"></div>
+  <div class="note">Mockup. Count not fixed: Add desk, or the x on a card retires it. Status dots: green working, amber needs Mac, grey idle.</div>
+<script>
+(function(){
+  var LANES=['Sales','Ops','Comms','Research','Creative','Audit','Infra','Passive'];
+  var TASKS=['Drafting the Monday call stack','Reconciling pay sheets','Triaging the inbox','Deep-researching exemplars','Cutting the drone reel','AI-layer benchmark rerun','Rotating oversized artifacts','Building the income lane'];
+  var ST=['working','working','idle','blocked','done'];
+  var desks=[], n=0;
+  function rnd(a){return a[Math.floor(Math.random()*a.length)];}
+  function addDesk(){
+    var id=String.fromCharCode(65+(n%8)); n++;
+    desks.push({id:id,lane:rnd(LANES),machine:rnd(['HAL','Mind Palace']),task:rnd(TASKS),st:rnd(ST),prog:Math.floor(Math.random()*100)});
+    render();
+  }
+  function render(){
+    var g=document.getElementById('grid'); g.innerHTML=''; var work=0,block=0;
+    desks.forEach(function(d,i){
+      if(d.st==='working')work++; if(d.st==='blocked')block++;
+      var el=document.createElement('div'); el.className='desk';
+      el.innerHTML='<div class="top"><div class="badge">'+d.id+'</div><div><div class="lane">'+d.lane+'</div>'+
+        '<div class="machine">'+d.machine+'</div></div><span class="dot '+d.st+'"></span></div>'+
+        '<div class="stat">'+d.st+'</div><div class="task">'+d.task+'</div>'+
+        '<div class="track"><i style="width:'+d.prog+'%"></i></div>'+
+        '<div class="foot"><span>'+d.prog+'% complete</span><button class="rm" title="Retire desk">&times;</button></div>';
+      el.querySelector('.rm').onclick=function(){desks.splice(i,1);render();};
+      g.appendChild(el);
+    });
+    document.getElementById('kWork').textContent=work;
+    document.getElementById('kBlock').textContent=block;
+    document.getElementById('kTotal').textContent=desks.length;
+  }
+  document.getElementById('add').onclick=addDesk;
+  for(var i=0;i<5;i++) addDesk();
+})();
+</script>
+</body>
+</html>
