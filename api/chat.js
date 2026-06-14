@@ -1,5 +1,5 @@
 // Ryujin Chat API — powered by snapshot + tool use
-import { gmailSearch, gmailReadMessage, gmailReadThread, gmailDraft, gmailSend, calendarList, calendarCreate, calendarUpdate, driveSearch, driveReadFile } from '../lib/google.js';
+import { gmailSearch, gmailReadMessage, gmailReadThread, gmailDraft, gmailSend, gmailListAttachments, gmailDownloadAttachment, calendarList, calendarCreate, calendarUpdate, driveSearch, driveReadFile, driveDownloadFile } from '../lib/google.js';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { peerReview, LENSES as PEER_REVIEW_LENSES } from '../lib/peer_review.js';
 import { snapshotHeaders } from '../lib/snapshotClient.js';
@@ -1691,6 +1691,42 @@ const TOOLS = [
       type: 'object',
       properties: {
         fileId: { type: 'string', description: 'Google Drive file ID' }
+      },
+      required: ['fileId']
+    }
+  },
+  {
+    name: 'list_email_attachments',
+    description: 'List the attachments on a Gmail message (filename, size, mimeType, attachmentId). Use search_gmail or read_email to find the message ID first. Does not download.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        messageId: { type: 'string', description: 'Gmail message ID' }
+      },
+      required: ['messageId']
+    }
+  },
+  {
+    name: 'download_email_attachment',
+    description: 'Download a Gmail attachment and re-host it on Ryujin storage, returning a public URL agents can attach to jobs/proposals. Run list_email_attachments first to get the attachmentId and filename. Files over 25MB are not re-hosted (returns a note to open in Gmail).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        messageId: { type: 'string', description: 'Gmail message ID' },
+        attachmentId: { type: 'string', description: 'Attachment ID from list_email_attachments' },
+        filename: { type: 'string', description: 'Attachment filename (used for the stored file name and content type)' },
+        mimeType: { type: 'string', description: 'Attachment mimeType (optional)' }
+      },
+      required: ['messageId', 'attachmentId']
+    }
+  },
+  {
+    name: 'download_drive_file',
+    description: 'Download a Google Drive file (PDF, image, zip, and other binary files) and re-host it on Ryujin storage, returning a public URL. For Google Docs/Sheets use read_drive_file instead. Files over 25MB are not re-hosted (returns a note with the Drive link).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'Google Drive file ID (use search_drive to find it)' }
       },
       required: ['fileId']
     }
@@ -3869,6 +3905,18 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       return await driveReadFile(input.fileId);
     }
 
+    if (name === 'list_email_attachments') {
+      return await gmailListAttachments(input.messageId);
+    }
+
+    if (name === 'download_email_attachment') {
+      return await gmailDownloadAttachment(input.messageId, input.attachmentId, input.filename || 'attachment', input.mimeType || '');
+    }
+
+    if (name === 'download_drive_file') {
+      return await driveDownloadFile(input.fileId);
+    }
+
     // ── META ADS OPERATIONS ──
     if (name === 'refresh_meta_ads') {
       const url = input.detail
@@ -4949,6 +4997,9 @@ You are now Mackenzie's game development and product specialist.
       case 'update_event': return `📅 Updating calendar event`;
       case 'search_drive': return `📁 Searching Drive: "${input.query}"`;
       case 'read_drive_file': return `📁 Reading file`;
+      case 'list_email_attachments': return `📎 Listing attachments`;
+      case 'download_email_attachment': return `📎 Downloading attachment${input.filename ? ': ' + input.filename : ''}`;
+      case 'download_drive_file': return `📁 Downloading Drive file`;
       case 'batch_approve': return `✅ Approving batched actions`;
       case 'create_proposal_pages': return `📄 Creating proposal pages`;
       case 'save_preference': return `🧠 Saving preference: ${input?.rule || ''}`;
