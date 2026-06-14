@@ -45,22 +45,34 @@
 
   function injectCss() {
     var s = document.createElement('style');
+    // Palette-neutral: every color reads a theme CSS variable and falls back to
+    // the original navy + teal-mint, so the palette inherits whichever internal
+    // skin a page sets (Telltale, teal-mint glass, etc.) with zero hard-coding.
     s.textContent = [
-      '#rcp-ov{position:fixed;inset:0;z-index:99999;display:none;align-items:flex-start;justify-content:center;background:rgba(3,6,17,0.62);backdrop-filter:blur(6px);padding-top:14vh;font-family:Inter,system-ui,-apple-system,sans-serif}',
+      '#rcp-ov{' +
+        '--cp-accent:var(--accent,#2dd4bf);' +
+        '--cp-accent2:var(--accent-bright,var(--accent,#5eead4));' +
+        '--cp-accent-soft:var(--accent-glow,rgba(45,212,191,0.14));' +
+        '--cp-line:var(--line,rgba(45,212,191,0.22));' +
+        '--cp-surface:var(--glass,var(--surface-1,rgba(6,16,31,0.96)));' +
+        '--cp-ink:var(--ink,#e6f1f4);' +
+        '--cp-ink-dim:var(--ink-dim,rgba(190,214,222,0.5));' +
+        '--cp-scrim:var(--scrim,rgba(3,6,17,0.62));' +
+        'position:fixed;inset:0;z-index:99999;display:none;align-items:flex-start;justify-content:center;background:var(--cp-scrim);backdrop-filter:blur(6px);padding-top:14vh;font-family:var(--font-sans,Inter,system-ui,-apple-system,sans-serif)}',
       '#rcp-ov.on{display:flex}',
-      '#rcp{width:min(620px,calc(100vw - 32px));background:rgba(6,16,31,0.96);border:1px solid rgba(45,212,191,0.32);border-radius:16px;box-shadow:0 24px 70px rgba(0,0,0,0.6),0 0 40px rgba(45,212,191,0.14);overflow:hidden;animation:rcpin .16s cubic-bezier(.2,.8,.3,1)}',
+      '#rcp{width:min(620px,calc(100vw - 32px));background:var(--cp-surface);border:1px solid var(--cp-line);border-radius:16px;box-shadow:0 24px 70px rgba(0,0,0,0.6),0 0 40px var(--cp-accent-soft);overflow:hidden;animation:rcpin .16s cubic-bezier(.2,.8,.3,1)}',
       '@keyframes rcpin{from{opacity:0;transform:translateY(-8px) scale(.98)}to{opacity:1;transform:none}}',
-      '#rcp-in{width:100%;box-sizing:border-box;background:transparent;border:none;outline:none;color:#e6f1f4;font:inherit;font-size:1.12em;padding:18px 20px;border-bottom:1px solid rgba(45,212,191,0.16)}',
-      '#rcp-in::placeholder{color:rgba(190,214,222,0.45)}',
+      '#rcp-in{width:100%;box-sizing:border-box;background:transparent;border:none;outline:none;color:var(--cp-ink);font:inherit;font-size:1.12em;padding:18px 20px;border-bottom:1px solid var(--cp-line)}',
+      '#rcp-in::placeholder{color:var(--cp-ink-dim)}',
       '#rcp-list{max-height:46vh;overflow-y:auto;padding:6px}',
-      '.rcp-item{display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:10px;cursor:pointer;color:#cfe3e7}',
-      '.rcp-item .ic{width:22px;height:22px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;color:#2dd4bf}',
+      '.rcp-item{display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:10px;cursor:pointer;color:var(--cp-ink)}',
+      '.rcp-item .ic{width:22px;height:22px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;color:var(--cp-accent)}',
       '.rcp-item .lb{flex:1;font-size:0.98em}',
-      '.rcp-item .ht{font-size:0.72em;color:rgba(190,214,222,0.5);text-transform:uppercase;letter-spacing:1px}',
-      '.rcp-item.sel{background:rgba(45,212,191,0.14);color:#fff}',
-      '.rcp-item.sel .ht{color:#5eead4}',
-      '#rcp-foot{padding:8px 16px;border-top:1px solid rgba(45,212,191,0.12);font-size:0.72em;color:rgba(190,214,222,0.5);display:flex;gap:16px}',
-      '#rcp-foot b{color:#5eead4;font-weight:700}'
+      '.rcp-item .ht{font-size:0.72em;color:var(--cp-ink-dim);text-transform:uppercase;letter-spacing:1px}',
+      '.rcp-item.sel{background:var(--cp-accent-soft);color:var(--cp-ink)}',
+      '.rcp-item.sel .ht{color:var(--cp-accent2)}',
+      '#rcp-foot{padding:8px 16px;border-top:1px solid var(--cp-line);font-size:0.72em;color:var(--cp-ink-dim);display:flex;gap:16px}',
+      '#rcp-foot b{color:var(--cp-accent2);font-weight:700}'
     ].join('');
     document.head.appendChild(s);
   }
