@@ -1658,6 +1658,23 @@ h1,h2,h3{font-family:'Montserrat',sans-serif;letter-spacing:-0.02em;text-wrap:ba
     } catch (fbqErr) {
       console.warn('[ie-v3] fbq Lead failed', fbqErr && fbqErr.message);
     }
+    // Enhanced Conversions for Leads (Part B3): hash-match this lead's contact
+    // info to the Google ad click. gtag hashes email/phone (SHA-256) in the
+    // browser before anything leaves it. Set BEFORE the conversion events below
+    // so both the config-driven lead_ie conversion and the hardcoded one pick it
+    // up. Guarded so a blocked/missing gtag never breaks the form. No-op for the
+    // ad-match until Enhanced Conversions is enabled on the Ads action (Part A3).
+    try {
+      if (typeof gtag === 'function' && (state.email || state.phone)) {
+        const ecDigits = (state.phone || '').replace(/\D/g, '');
+        gtag('set', 'user_data', {
+          ...(state.email ? { email: state.email.trim() } : {}),
+          ...(ecDigits.length >= 10 ? { phone_number: '+1' + ecDigits.slice(-10) } : {})
+        });
+      }
+    } catch (ecErr) {
+      console.warn('[ie-v3] gtag user_data (enhanced conversions) failed', ecErr && ecErr.message);
+    }
     // Google Ads conversion (no-op until the account's IDs land in env).
     try { window.ryConversion && ryConversion('lead_ie', { transaction_id: metaEventId }); } catch (e) {}
 
