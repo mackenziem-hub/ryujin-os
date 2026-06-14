@@ -1,0 +1,262 @@
+<!doctype html>
+<!--
+PROGRESS ROOMS - the visibility OUTPUT leg (Mac's "visibility lifeline").
+A live room per builder desk + an auto deck card per completed task, at the
+UltraSlide glass quality bar. Mounts as a builders-hall artifact (?embed=1).
+
+Data: GET /api/fleet -> desks{ machine,lane,task,status,progress,queue,lastTool,
+ageMs,stale, recent[] }. Live current state renders now; the recent[] (completed-task
+decks) is supplied by the hub fleet poster (server.js) reading each desk inbox -
+graceful empty until that poster restart lands. Fails open to a seed state signed
+out / offline. No JS errors, polls every 15s, pauses when hidden.
+
+DESIGN SELF-REVIEW GATE
+(a) Thumb-stop: glass rooms on an aurora depth field, live status leds, progress fills.
+(b) AI/skim entry: one room per desk, status colour-coded; a completed task is one
+    skimmable deck card (what shipped + why + when), tap to expand the full slide.
+(c) Core read <10s: status pill + current task per room read at a glance; gold = waiting.
+(d) Generated asset: Higgsfield MCP not on session = SKILL MISSING; CSS depth backdrop
+    stands in (no missing-asset 404); foreman can add a plate later.
+Collision gate: auto-fit room grid + flat cards; verified no overflow at 1920 / 375 / embed.
+Reduced-motion collapses the drift. Contrast >=4.5:1 via ink scrims on glass.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#060912">
+<title>Builders Progress Rooms</title>
+<link rel="icon" href="/apple-touch-icon.png">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --void:#060912; --ink:#0a0f1e; --text:#eef2fb; --dim:#aab4cf; --faint:#6b7591;
+  --gold:#f5b942; --green:#4fd690; --cyan:#59b8e8; --red:#ef6363;
+  --glass:rgba(16,22,42,0.55); --glass-edge:rgba(170,200,255,0.16);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{min-height:100%}
+body{background:var(--void);color:var(--text);font-family:'Inter',system-ui,-apple-system,sans-serif;
+  font-size:16px;-webkit-font-smoothing:antialiased;min-height:100vh}
+#depth{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none;
+  background:
+    radial-gradient(40% 38% at 20% 28%,rgba(89,184,232,0.14),transparent 70%),
+    radial-gradient(46% 44% at 82% 72%,rgba(245,185,66,0.11),transparent 72%),
+    radial-gradient(60% 55% at 50% 46%,rgba(20,28,54,0.55),transparent 75%),
+    linear-gradient(160deg,#0a1124 0%,#060912 60%,#04060e 100%);
+  animation:bokeh 64s ease-in-out infinite alternate}
+@keyframes bokeh{from{transform:scale(1.02) translate(0.5%,0.3%)}to{transform:scale(1.06) translate(-0.5%,-0.4%)}}
+
+#wrap{position:relative;z-index:1;max-width:1320px;margin:0 auto;padding:28px 32px 56px}
+
+header.top{display:flex;align-items:center;gap:18px;margin-bottom:24px;flex-wrap:wrap}
+h1{font-size:22px;font-weight:750;letter-spacing:-0.01em}
+h1 small{display:block;font-size:12.5px;font-weight:500;color:var(--faint);letter-spacing:.04em;margin-top:3px}
+#status{display:flex;align-items:center;gap:10px;font-weight:600;letter-spacing:.08em;font-size:13px}
+#status .orb{width:13px;height:13px;border-radius:50%;flex:none;background:radial-gradient(circle at 35% 30%,#9df1c2,var(--green) 60%);box-shadow:0 0 14px rgba(79,214,144,.7);animation:hb 2.4s ease-in-out infinite}
+#status.attn .orb{background:radial-gradient(circle at 35% 30%,#ffe9b8,var(--gold) 60%);box-shadow:0 0 14px rgba(245,185,66,.7)}
+#status.cold .orb{background:var(--faint);box-shadow:none;animation:none}
+@keyframes hb{50%{box-shadow:0 0 5px rgba(79,214,144,.4)}}
+#clockbox{margin-left:auto;text-align:right;font-variant-numeric:tabular-nums;flex:none}
+#clock{font-size:19px;font-weight:200;letter-spacing:.08em}
+#stamp{font-size:11.5px;color:var(--faint);letter-spacing:.08em}
+
+#rooms{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:18px}
+.room{background:var(--glass);border:1px solid var(--glass-edge);border-radius:16px;backdrop-filter:blur(14px) saturate(1.2);
+  box-shadow:0 18px 50px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.06);
+  padding:18px 18px 16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.room.waiting{border-color:rgba(245,185,66,.5);box-shadow:0 18px 50px rgba(0,0,0,.5),0 0 40px rgba(245,185,66,.1)}
+.room.stale{opacity:.62}
+.r-head{display:flex;align-items:center;gap:12px;min-width:0}
+.badge{width:38px;height:38px;border-radius:11px;flex:none;display:flex;align-items:center;justify-content:center;
+  font-weight:800;font-size:17px;background:rgba(89,184,232,0.12);border:1px solid rgba(89,184,232,0.3);color:var(--cyan)}
+.r-head .who{min-width:0;flex:1}
+.r-head .lane{font-weight:700;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.r-head .machine{font-size:11.5px;color:var(--faint);letter-spacing:.04em}
+.pill{flex:none;display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.pill .led{width:7px;height:7px;border-radius:50%;flex:none}
+.pill.working{background:rgba(79,214,144,0.12);color:var(--green);border:1px solid rgba(79,214,144,.3)} .pill.working .led{background:var(--green);box-shadow:0 0 8px var(--green)}
+.pill.idle,.pill.done{background:rgba(107,117,145,0.12);color:var(--dim);border:1px solid rgba(107,117,145,.3)} .pill.idle .led,.pill.done .led{background:var(--faint)}
+.pill.waiting_on_mac{background:rgba(245,185,66,0.14);color:var(--gold);border:1px solid rgba(245,185,66,.4);animation:pp 1.6s ease-in-out infinite} .pill.waiting_on_mac .led{background:var(--gold);box-shadow:0 0 9px var(--gold)}
+@keyframes pp{50%{box-shadow:0 0 16px rgba(245,185,66,.3)}}
+.r-task{font-size:14px;line-height:1.4;color:var(--text)}
+.r-task .none{color:var(--faint)}
+.bar{height:6px;border-radius:999px;background:rgba(255,255,255,0.07);overflow:hidden}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green));border-radius:999px;transition:width .5s cubic-bezier(.16,1,.3,1)}
+.r-meta{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--faint);letter-spacing:.03em}
+.r-meta b{color:var(--dim);font-weight:600}
+.ships{border-top:1px solid rgba(255,255,255,0.07);padding-top:11px;display:flex;flex-direction:column;gap:8px}
+.ships .lbl{font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--faint);font-weight:700}
+.deckcard{text-align:left;width:100%;background:rgba(8,10,18,0.6);border:1px solid rgba(170,200,255,0.12);border-radius:10px;
+  padding:10px 12px;cursor:pointer;transition:border-color .15s,transform .15s;font-family:inherit;color:inherit}
+.deckcard:hover{border-color:rgba(89,184,232,0.45);transform:translateY(-1px)}
+.deckcard:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+.deckcard .dt{font-size:13px;font-weight:650;color:var(--text);line-height:1.3;display:flex;gap:8px;align-items:baseline}
+.deckcard .dt::before{content:'';width:7px;height:7px;border-radius:2px;background:var(--green);flex:none;margin-top:4px;box-shadow:0 0 8px var(--green)}
+.deckcard .dr{font-size:12px;color:var(--dim);line-height:1.4;margin-top:5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.deckcard .dw{font-size:10.5px;color:var(--faint);margin-top:6px;letter-spacing:.04em}
+.ships .empty{font-size:12px;color:var(--faint);line-height:1.4}
+
+/* expand modal: the full completed-task "slide" */
+#shroud{position:fixed;inset:0;z-index:100;background:rgba(6,9,18,0.7);backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center;padding:24px}
+#shroud.open{display:flex}
+.slidecard{background:linear-gradient(180deg,rgba(22,28,52,0.96),rgba(12,16,32,0.96));border:1px solid var(--glass-edge);
+  border-radius:18px;max-width:680px;width:100%;max-height:86vh;overflow:auto;padding:28px 30px;box-shadow:0 30px 80px rgba(0,0,0,.6)}
+.slidecard .kk{font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--green);font-weight:800;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.slidecard .kk::before{content:'';width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 12px var(--green)}
+.slidecard h2{font-size:22px;font-weight:750;line-height:1.2;letter-spacing:-.01em;text-wrap:balance;margin-bottom:8px}
+.slidecard .when{font-size:12.5px;color:var(--faint);margin-bottom:18px;letter-spacing:.04em}
+.slidecard .body{font-size:14.5px;line-height:1.6;color:var(--dim);white-space:pre-wrap;word-wrap:break-word}
+.slidecard .close{margin-top:22px;background:rgba(255,255,255,0.06);border:1px solid var(--glass-edge);color:var(--text);
+  border-radius:999px;padding:9px 20px;font:650 13px/1 'Inter',system-ui,sans-serif;cursor:pointer}
+.slidecard .close:hover{border-color:rgba(89,184,232,.5)}
+.slidecard .close:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+
+.note{grid-column:1/-1;background:var(--glass);border:1px dashed rgba(245,185,66,.4);border-radius:14px;padding:16px 20px;font-size:13px;color:var(--dim);line-height:1.5}
+.note b{color:var(--gold)}
+
+body.embed #wrap{padding:16px 16px 28px}
+body.embed header.top{margin-bottom:16px}
+
+@media (max-width:560px){
+  #wrap{padding:16px 14px 32px}
+  #rooms{grid-template-columns:1fr}
+  #clockbox{margin-left:0}
+}
+@media (prefers-reduced-motion:reduce){ *,*::before,*::after{animation:none !important;transition:none !important} }
+</style>
+</head>
+<body>
+<div id="depth"></div>
+<div id="wrap">
+  <header class="top">
+    <h1>Builders Progress Rooms<small id="sub">live desk activity and completed-task decks</small></h1>
+    <div id="status"><span class="orb"></span><span id="statusText">FLEET</span></div>
+    <div id="clockbox"><div id="clock">--:--:--</div><div id="stamp">connecting</div></div>
+  </header>
+  <div id="rooms"></div>
+</div>
+
+<div id="shroud" role="dialog" aria-modal="true" aria-label="Completed task">
+  <div class="slidecard">
+    <div class="kk">Shipped</div>
+    <h2 id="m-title"></h2>
+    <div class="when" id="m-when"></div>
+    <div class="body" id="m-body"></div>
+    <button class="close" id="m-close" type="button">Close</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  var EMBED = new URLSearchParams(location.search).get('embed') === '1';
+  if (EMBED) document.body.classList.add('embed');
+  function el(id){ return document.getElementById(id); }
+  function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  var LANES = { A:'Foreman', B:'PU / MIT', C:'Income / Builder', D:'Systems Audit', E:'Deep Research', F:'Creative / Brand', G:'Flagship UI' };
+
+  function tick(){ try{ el('clock').textContent = new Date().toLocaleTimeString('en-CA',{hour12:false}); }catch(e){} }
+  tick(); setInterval(tick, 1000);
+
+  function ago(ms){
+    if (ms == null) return 'no signal';
+    var s = Math.round(ms/1000);
+    if (s < 60) return s + 's ago';
+    if (s < 3600) return Math.round(s/60) + 'm ago';
+    return Math.round(s/3600) + 'h ago';
+  }
+  function setStatus(mode, text){ var s=el('status'); s.className=''; if(mode)s.classList.add(mode); el('statusText').textContent=text; }
+
+  var store = {}; // deskId -> recent[] for the modal
+
+  function roomHTML(id, d){
+    d = d || {};
+    var st = d.status || 'idle';
+    var lane = d.lane || LANES[id] || '';
+    var prog = Math.max(0, Math.min(100, Number(d.progress) || 0));
+    var recent = Array.isArray(d.recent) ? d.recent : [];
+    store[id] = recent;
+    var queue = Array.isArray(d.queue) ? d.queue.length : 0;
+    var ships = recent.length
+      ? recent.map(function(r, i){
+          return '<button class="deckcard" data-desk="' + esc(id) + '" data-i="' + i + '" type="button">' +
+            '<div class="dt">' + esc(r.title || 'task') + '</div>' +
+            (r.result ? '<div class="dr">' + esc(r.result) + '</div>' : '') +
+            '<div class="dw">' + (r.doneAt ? esc(new Date(r.doneAt).toLocaleString('en-CA',{hour12:false})) : 'shipped') + '</div>' +
+          '</button>';
+        }).join('')
+      : '<div class="empty">Completed-task decks appear here as this desk ships work.</div>';
+    return '<div class="room ' + esc(st==='waiting_on_mac'?'waiting':'') + (d.stale?' stale':'') + '">' +
+      '<div class="r-head"><div class="badge">' + esc(id) + '</div>' +
+        '<div class="who"><div class="lane">' + esc(lane) + '</div><div class="machine">' + esc(d.machine||'') + '</div></div>' +
+        '<span class="pill ' + esc(st) + '"><span class="led"></span>' + esc(st.replace(/_/g,' ')) + '</span></div>' +
+      '<div class="r-task">' + (d.task ? esc(d.task) : '<span class="none">no current task</span>') + '</div>' +
+      '<div class="bar"><i style="width:' + prog + '%"></i></div>' +
+      '<div class="r-meta"><span><b>' + queue + '</b> queued</span>' + (d.lastTool?'<span><b>tool</b> '+esc(d.lastTool)+'</span>':'') + '<span>' + ago(d.ageMs) + '</span></div>' +
+      '<div class="ships"><div class="lbl">Recent ships</div>' + ships + '</div>' +
+    '</div>';
+  }
+
+  function render(desks, note){
+    var ids = Object.keys(desks||{}).filter(function(k){ return k!=='Z'; }).sort();
+    var anyWait=false, anyWork=false;
+    var html = ids.map(function(id){
+      var d = desks[id]; var st=d&&d.status;
+      if(st==='waiting_on_mac')anyWait=true; if(st==='working')anyWork=true;
+      return roomHTML(id, d);
+    }).join('');
+    if (note) html += '<div class="note">' + note + '</div>';
+    el('rooms').innerHTML = html || '<div class="note">No desks reporting yet.</div>';
+    if (anyWait) setStatus('attn','FLEET · a desk is waiting on you');
+    else if (anyWork) setStatus('','FLEET GREEN · ' + ids.length + ' desks live');
+    else setStatus('cold','FLEET · all desks idle');
+    wireCards();
+  }
+
+  function wireCards(){
+    document.querySelectorAll('.deckcard').forEach(function(b){
+      if (b.dataset.wired) return; b.dataset.wired='1';
+      b.addEventListener('click', function(){
+        var r = (store[b.dataset.desk]||[])[+b.dataset.i]; if(!r) return;
+        el('m-title').textContent = r.title || 'Completed task';
+        el('m-when').textContent = r.doneAt ? new Date(r.doneAt).toLocaleString('en-CA',{hour12:false}) : '';
+        el('m-body').textContent = r.result || '';
+        el('shroud').classList.add('open');
+      });
+    });
+  }
+  el('m-close').addEventListener('click', function(){ el('shroud').classList.remove('open'); });
+  el('shroud').addEventListener('click', function(e){ if(e.target===el('shroud')) el('shroud').classList.remove('open'); });
+  document.addEventListener('keydown', function(e){ if(e.key==='Escape') el('shroud').classList.remove('open'); });
+
+  function seed(){
+    setStatus('cold','FLEET');
+    el('stamp').textContent = EMBED ? 'sign in for live data' : 'sign in to the Builder Room';
+    var demo = {};
+    ['A','B','C','D','E','F','G'].forEach(function(id){ demo[id] = { lane:LANES[id], status:'idle', progress:0, queue:[], recent:[] }; });
+    render(demo, 'Sign in to the Builder Room for live desk activity. Each desk shows what it is doing now; completed tasks become <b>skimmable deck cards</b> here.');
+  }
+
+  var loading=false;
+  function load(){
+    if (loading || document.hidden) return; loading=true;
+    fetch('/api/fleet', { headers:{accept:'application/json'}, credentials:'same-origin' })
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(f){
+        if (f && f.desks && Object.keys(f.desks).length){
+          var hasRecent = Object.keys(f.desks).some(function(k){ return Array.isArray(f.desks[k].recent) && f.desks[k].recent.length; });
+          render(f.desks, hasRecent ? '' : 'Live desk activity is shown. <b>Completed-task decks</b> populate once the hub fleet poster restart lands (it now pushes each desk recent ships).');
+          el('stamp').textContent = 'LIVE · ' + new Date(f.updatedAt||Date.now()).toLocaleTimeString('en-CA',{hour12:false}).slice(0,5);
+        } else { seed(); }
+      })
+      .catch(function(){ seed(); })
+      .then(function(){ loading=false; });
+  }
+
+  seed(); load(); setInterval(load, 15000);
+  document.addEventListener('visibilitychange', function(){ if(!document.hidden) load(); });
+})();
+</script>
+</body>
+</html>
