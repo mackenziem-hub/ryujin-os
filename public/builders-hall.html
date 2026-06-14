@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en" data-skin="ryujin">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#030611">
+<title>Ryujin OS · Builders Hall</title>
+<link rel="icon" href="/apple-touch-icon.png">
+<!-- Auth gate: tokenless users bounce to /login before any logic runs -->
+<script src="/assets/auth-guard.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@500;600;700;800&family=Share+Tech+Mono&family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/vendor/gridstack.min.css">
+<link rel="stylesheet" href="/assets/artifact-shell.css">
+<style>
+/* Shell-specific layout (the component library lives in artifact-shell.css) */
+.topbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  padding:12px 18px;background:linear-gradient(180deg,rgba(6,10,20,0.92) 64%,transparent);
+  border-bottom:1px solid var(--line-soft);backdrop-filter:blur(14px);}
+.back-btn{display:inline-flex;align-items:center;gap:9px;font-weight:700;font-size:0.92rem;
+  color:#fff;background:linear-gradient(180deg,var(--accent),var(--accent-deep));
+  border:1px solid rgba(255,255,255,0.18);border-radius:var(--radius-sm);padding:11px 18px;cursor:pointer;
+  box-shadow:0 6px 20px var(--accent-glow);transition:transform .16s,box-shadow .16s;}
+:root[data-skin="8bit"] .back-btn{color:#1a1300;}
+.back-btn:hover{transform:translateY(-1px);}
+.back-btn svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;}
+.brand{display:flex;flex-direction:column;line-height:1.15;}
+.brand .nm{font-family:var(--font-display);font-size:0.8rem;font-weight:800;letter-spacing:2.2px;}
+:root[data-skin="8bit"] .brand .nm{font-size:0.62rem;}
+.brand .nm .dim{color:var(--ink-dim);font-weight:500;}
+.brand .sub{font-family:var(--font-mono);font-size:0.6rem;color:var(--ink-dim);letter-spacing:1.5px;margin-top:2px;}
+.tb-spacer{flex:1;}
+.skin-switch{display:inline-flex;border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden;}
+.skin-switch button{font-family:var(--font-mono);font-size:0.68rem;letter-spacing:0.6px;color:var(--ink-mid);
+  background:rgba(0,0,0,0.25);border:0;padding:9px 11px;cursor:pointer;transition:color .14s,background .14s;min-height:40px;}
+.skin-switch button + button{border-left:1px solid var(--line-soft);}
+.skin-switch button[aria-pressed="true"]{color:#fff;background:var(--accent-glow);}
+.save-meta{font-family:var(--font-mono);font-size:0.64rem;color:var(--ink-dim);letter-spacing:1px;display:flex;align-items:center;gap:6px;min-width:74px;}
+.save-meta .dot{width:7px;height:7px;border-radius:50%;background:var(--ink-dim);}
+.save-meta.saved .dot{background:var(--ok);box-shadow:0 0 6px var(--ok);}
+.save-meta.saving .dot{background:var(--warn);box-shadow:0 0 6px var(--warn);}
+.save-meta.err .dot{background:var(--no);box-shadow:0 0 6px var(--no);}
+
+.stage{position:relative;z-index:2;padding:14px 14px 80px;min-height:calc(100vh - 70px);}
+.grid-stack{max-width:1500px;margin:0 auto;}
+
+/* Banner for the flagged indigenous skin */
+.skin-banner{max-width:1500px;margin:0 auto 12px;display:none;align-items:center;gap:10px;
+  padding:11px 15px;border:1px solid var(--warn);border-radius:var(--radius-sm);
+  background:rgba(245,177,58,0.12);color:var(--ink);font-size:0.84rem;}
+:root[data-skin="indigenous"] .skin-banner{display:flex;}
+.skin-banner b{color:var(--warn);}
+
+/* Add-artifact dock (native dialog so it escapes the grid stacking context) */
+dialog.dock{padding:0;border:0;background:transparent;max-width:none;}
+dialog.dock::backdrop{background:rgba(3,6,17,0.7);backdrop-filter:blur(5px);}
+.dock-panel{width:min(520px,94vw);background:var(--glass);backdrop-filter:blur(var(--glass-blur));
+  border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,0.55);}
+.dock-head{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line-soft);}
+.dock-head h3{font-family:var(--font-display);font-size:0.92rem;letter-spacing:1px;}
+.dock-list{max-height:60vh;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:8px;}
+.dock-item{display:flex;align-items:center;gap:12px;padding:11px 13px;border:1px solid var(--line-soft);
+  border-radius:var(--radius-sm);background:rgba(0,0,0,0.2);cursor:pointer;transition:border-color .14s,background .14s;}
+.dock-item:hover{border-color:var(--accent);background:var(--accent-glow);}
+.dock-item .di-ttl{font-weight:700;font-size:0.9rem;}
+.dock-item .di-url{font-family:var(--font-mono);font-size:0.66rem;color:var(--ink-dim);}
+.dock-item[aria-disabled="true"]{opacity:0.5;cursor:default;}
+.dock-item .di-on{margin-left:auto;font-family:var(--font-mono);font-size:0.62rem;color:var(--ok);letter-spacing:1px;}
+.dock-empty{padding:22px;text-align:center;color:var(--ink-dim);}
+
+.shell-state{max-width:1500px;margin:40px auto;text-align:center;color:var(--ink-mid);}
+.shell-state .spinner{width:30px;height:30px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--accent);margin:0 auto 14px;animation:spin .8s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.shell-state.err{color:var(--no);}
+
+@media (max-width:640px){
+  .brand .sub{display:none;}
+  .skin-switch button{padding:9px 8px;font-size:0.62rem;}
+}
+</style>
+</head>
+<body>
+
+<div class="bg-ambient"></div>
+<div class="bg-grid"></div>
+
+<div class="topbar">
+  <button class="back-btn" id="backBtn" type="button">
+    <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg> Back to Admin
+  </button>
+  <div class="brand">
+    <div class="nm">RYUJIN <span class="dim">· BUILDERS HALL</span></div>
+    <div class="sub">ARTIFACT WORKSPACE</div>
+  </div>
+  <div class="tb-spacer"></div>
+  <div class="skin-switch" id="skinSwitch" role="group" aria-label="Skin">
+    <button type="button" data-skin="ryujin" aria-pressed="true">Ryujin</button>
+    <button type="button" data-skin="8bit" aria-pressed="false">8-bit</button>
+    <button type="button" data-skin="indigenous" aria-pressed="false">Indigenous</button>
+  </div>
+  <button class="btn" id="addBtn" type="button">
+    <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    Add artifact
+  </button>
+  <div class="save-meta" id="saveMeta"><span class="dot"></span><span id="saveTxt">loading</span></div>
+</div>
+
+<div class="stage">
+  <div class="skin-banner">
+    <b>Indigenous skin: placeholder.</b> This skin is awaiting Mac's design direction (motifs, palette, provenance). It currently mirrors the Ryujin layout. Nothing here is a real design choice yet.
+  </div>
+  <div id="shellState" class="shell-state"><div class="spinner"></div>Loading your workspace&hellip;</div>
+  <div class="grid-stack" id="grid" hidden></div>
+</div>
+
+<dialog class="dock" id="dock" aria-label="Add an artifact">
+  <div class="dock-panel">
+    <div class="dock-head">
+      <h3>Add an artifact</h3>
+      <div class="tb-spacer"></div>
+      <button class="ictl" id="dockClose" type="button" aria-label="Close">
+        <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="dock-list" id="dockList"></div>
+  </div>
+</dialog>
+
+<script src="/assets/vendor/gridstack-all.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  var TENANT = window.RYUJIN_TENANT_SLUG || 'plus-ultra';
+  var BASE_COLUMN = 12;
+  var SKINS = ['ryujin','8bit','indigenous'];
+
+  // The artifact registry. Each former page mounts here as an artifact. Geometry
+  // defaults are in grid cells (BASE_COLUMN-wide grid). def:true = on the canvas
+  // by default for a first-time user. Pages that support ?embed=1 suppress their
+  // own chrome when mounted; others mount with their native chrome (still works).
+  var REGISTRY = [
+    { id:'mockups-review', title:'Mockups Review', url:'/mockups-review.html?embed=1', w:7, h:6, def:true },
+    { id:'agent-ops',      title:'Agent Den',      url:'/agent-ops.html?embed=1',      w:5, h:6, def:true },
+    { id:'builder-room',   title:'Builder Room',   url:'/builder-room.html',           w:6, h:5 },
+    { id:'inbox',          title:'Inbox',          url:'/inbox.html',                  w:6, h:5 },
+    { id:'admin-activity', title:'Activity Log',   url:'/admin-activity.html',         w:6, h:5 },
+    { id:'decks',          title:'Decks',          url:'/decks.html',                  w:6, h:5 }
+  ];
+  var REG = {};
+  REGISTRY.forEach(function(a){ REG[a.id] = a; });
+
+  var grid = null;
+  var loaded = false; // gate persistence until the initial load finishes
+
+  function el(id){ return document.getElementById(id); }
+  function token(){
+    try { return localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token') || ''; }
+    catch(e){ return ''; }
+  }
+  function authHeaders(extra){
+    var h = extra || {}; h['x-tenant-id'] = TENANT;
+    var t = token(); if (t) h['Authorization'] = 'Bearer ' + t;
+    return h;
+  }
+  function esc(s){
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+      return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
+    });
+  }
+
+  // ── Navigation ──
+  function goBack(){
+    try { if (window.parent !== window && window.parent.exitSectionOverlay){ window.parent.exitSectionOverlay(); return; } } catch(e){}
+    window.location.href = '/administration.html';
+  }
+  el('backBtn').addEventListener('click', goBack);
+
+  // ── Artifact markup ──
+  function artifactHTML(a){
+    return '' +
+      '<div class="artifact" data-aid="' + esc(a.id) + '">' +
+        '<div class="artifact-head">' +
+          '<span class="artifact-dot"></span>' +
+          '<span class="artifact-title">' + esc(a.title) + '</span>' +
+          '<span class="artifact-controls">' +
+            '<button class="ictl" data-act="open" title="Open full" aria-label="Open full"><svg viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14L21 3"/><path d="M21 14v5a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h5"/></svg></button>' +
+            '<button class="ictl" data-act="remove" title="Remove from workspace" aria-label="Remove"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>' +
+          '</span>' +
+        '</div>' +
+        '<div class="artifact-body">' +
+          '<iframe src="' + esc(a.url) + '" title="' + esc(a.title) + '" loading="lazy" referrerpolicy="same-origin"></iframe>' +
+        '</div>' +
+      '</div>';
+  }
+
+  function addArtifact(a, pos){
+    if (!a) return;
+    var opts = { w:a.w, h:a.h, id:a.id, content: artifactHTML(a) };
+    if (pos && typeof pos.x === 'number'){ opts.x = pos.x; opts.y = pos.y; if (pos.w) opts.w = pos.w; if (pos.h) opts.h = pos.h; }
+    else { opts.autoPosition = true; }
+    grid.addWidget(opts);
+  }
+
+  function currentIds(){
+    return grid.engine.nodes.map(function(n){ return n.id; }).filter(Boolean);
+  }
+
+  // ── Persistence ──
+  var saveTimer = null;
+  function setSaveState(cls, txt){ var m = el('saveMeta'); m.className = 'save-meta ' + cls; el('saveTxt').textContent = txt; }
+  function scheduleSave(){
+    if (!loaded) return;
+    setSaveState('saving','saving');
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveNow, 600);
+  }
+  function saveNow(){
+    // Only persist the full-width arrangement; gridstack reflows narrow screens
+    // to fewer columns for DISPLAY and we must not store that as canonical.
+    if (grid.getColumn() !== BASE_COLUMN){ setSaveState('saved','responsive'); return; }
+    var items = grid.save(false).map(function(n){ return { id:n.id, x:n.x, y:n.y, w:n.w, h:n.h }; });
+    fetch('/api/artifact-layout', {
+      method:'POST', headers: authHeaders({ 'Content-Type':'application/json' }),
+      body: JSON.stringify({ layouts:{ lg: items }, skin: document.documentElement.getAttribute('data-skin') })
+    }).then(function(r){
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      setSaveState('saved','saved');
+    }).catch(function(){ setSaveState('err','unsaved'); });
+  }
+
+  // ── Skins ──
+  function applySkin(skin, persist){
+    if (SKINS.indexOf(skin) < 0) skin = 'ryujin';
+    document.documentElement.setAttribute('data-skin', skin);
+    Array.prototype.forEach.call(el('skinSwitch').querySelectorAll('button'), function(b){
+      b.setAttribute('aria-pressed', b.getAttribute('data-skin') === skin);
+    });
+    if (persist) scheduleSave();
+  }
+  el('skinSwitch').addEventListener('click', function(e){
+    var b = e.target.closest('button[data-skin]'); if (!b) return;
+    applySkin(b.getAttribute('data-skin'), true);
+  });
+
+  // ── Add-artifact dock ──
+  var dock = el('dock');
+  function renderDock(){
+    var on = {}; currentIds().forEach(function(id){ on[id] = true; });
+    var rows = REGISTRY.map(function(a){
+      var isOn = on[a.id] === true;
+      return '<div class="dock-item" data-add="' + esc(a.id) + '" aria-disabled="' + isOn + '">' +
+        '<div><div class="di-ttl">' + esc(a.title) + '</div><div class="di-url">' + esc(a.url) + '</div></div>' +
+        (isOn ? '<span class="di-on">ON CANVAS</span>' : '') +
+      '</div>';
+    }).join('');
+    el('dockList').innerHTML = rows || '<div class="dock-empty">No artifacts registered.</div>';
+  }
+  el('addBtn').addEventListener('click', function(){ renderDock(); if (dock.showModal) dock.showModal(); else dock.setAttribute('open',''); });
+  el('dockClose').addEventListener('click', function(){ if (dock.close) dock.close(); else dock.removeAttribute('open'); });
+  dock.addEventListener('click', function(e){
+    if (e.target === dock){ if (dock.close) dock.close(); return; }
+    var row = e.target.closest('[data-add]'); if (!row) return;
+    if (row.getAttribute('aria-disabled') === 'true') return;
+    addArtifact(REG[row.getAttribute('data-add')]);
+    renderDock();
+  });
+  dock.addEventListener('cancel', function(e){ e.preventDefault(); if (dock.close) dock.close(); });
+
+  // ── Grid control delegation (open-full / remove) ──
+  function wireGridControls(){
+    el('grid').addEventListener('click', function(e){
+      var btn = e.target.closest('.ictl[data-act]'); if (!btn) return;
+      var art = btn.closest('.artifact'); if (!art) return;
+      var id = art.getAttribute('data-aid'); var a = REG[id];
+      var act = btn.getAttribute('data-act');
+      if (act === 'open' && a){ window.open(a.url.split('?')[0], '_blank', 'noopener'); }
+      else if (act === 'remove'){
+        var item = art.closest('.grid-stack-item');
+        if (item){ grid.removeWidget(item); scheduleSave(); }
+      }
+    });
+  }
+
+  // ── Boot ──
+  function initGrid(savedSkin){
+    // gridstack v11 renders widget `content` as escaped text by default (XSS
+    // guard). Our content is built in-code with esc() on every dynamic value, so
+    // inject it as HTML via the render callback to get the artifact chrome.
+    try { GridStack.renderCB = function(el, w){ el.innerHTML = w.content || ''; }; } catch(e){}
+    grid = GridStack.init({
+      column: BASE_COLUMN,
+      cellHeight: 92,
+      margin: 8,
+      float: false,                       // compaction = no gaps, packs up
+      draggable: { handle: '.artifact-head' },
+      resizable: { handles: 'e,se,s,sw,w' },
+      columnOpts: { breakpointForWindow: true, breakpoints: [ { w:768, c:1 }, { w:1200, c:6 } ] },
+      animate: !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    }, '#grid');
+
+    grid.on('change added removed resizestop dragstop', function(){ scheduleSave(); });
+    wireGridControls();
+    if (savedSkin) applySkin(savedSkin, false);
+  }
+
+  function mountLayout(saved){
+    var placed = {};
+    // 1) Saved items first, in their saved geometry, registry-reconciled.
+    if (saved && saved.layouts && Array.isArray(saved.layouts.lg)){
+      saved.layouts.lg.forEach(function(it){
+        var a = REG[it.id]; if (!a || placed[it.id]) return;
+        addArtifact(a, { x:it.x, y:it.y, w:it.w, h:it.h }); placed[it.id] = true;
+      });
+    }
+    // 2) First-time / new default artifacts not in the saved set.
+    if (!saved || !saved.layouts || !Array.isArray(saved.layouts.lg) || !saved.layouts.lg.length){
+      REGISTRY.forEach(function(a){ if (a.def && !placed[a.id]){ addArtifact(a); placed[a.id] = true; } });
+    }
+  }
+
+  function boot(){
+    fetch('/api/artifact-layout', { headers: authHeaders(), cache:'no-store' })
+      .then(function(r){ if (r.status === 401) throw new Error('auth'); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function(res){
+        var saved = res && res.layout ? res.layout : null;
+        el('shellState').style.display = 'none';
+        el('grid').hidden = false;
+        initGrid(saved && saved.skin);
+        mountLayout(saved);
+        loaded = true;
+        setSaveState('saved', saved ? 'saved' : 'new');
+      })
+      .catch(function(e){
+        if (e && e.message === 'auth'){
+          el('shellState').className = 'shell-state err';
+          el('shellState').innerHTML = 'Session needs a refresh. Reload to sign back in.';
+          return;
+        }
+        // Layout API unreachable: still give a usable workspace from defaults.
+        el('shellState').style.display = 'none';
+        el('grid').hidden = false;
+        initGrid(null);
+        mountLayout(null);
+        loaded = true;
+        setSaveState('err', 'offline');
+      });
+  }
+
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape' && !dock.open){ goBack(); }
+  });
+
+  boot();
+})();
+</script>
+
+</body>
+</html>
