@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#030611">
+<title>The Bridge · Ryujin Live Command Hub</title>
+<link rel="icon" href="/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Orbitron:wght@600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#030611; --bg-2:#060d1c; --ink:#eef3fb; --body:#cfdaf0; --muted:#8ea4c6;
+  --cyan:#22d3ee; --cyan-soft:#67e8f9; --violet:#7c3aed; --violet-soft:#a78bfa;
+  --green:#4ade80; --amber:#f59e0b; --red:#f87171;
+  --line:rgba(120,160,220,0.14); --line-2:rgba(120,160,220,0.26);
+  --glass:rgba(10,20,40,0.55); --glass-2:rgba(12,24,46,0.7);
+  --z-base:1; --z-sticky:50; --z-toast:80; --z-modal:90;
+  --shadow:0 18px 48px -16px rgba(0,0,0,0.7);
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--body);line-height:1.55;-webkit-font-smoothing:antialiased;min-height:100vh;overflow-x:hidden}
+
+/* animated backdrop */
+.bg-fx{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none}
+.bg-fx .blob{position:absolute;border-radius:50%;filter:blur(80px);opacity:0.5;will-change:transform}
+.bg-fx .b1{width:46vw;height:46vw;left:-8vw;top:-12vw;background:radial-gradient(circle,rgba(34,211,238,0.34),transparent 68%);animation:drift1 26s ease-in-out infinite}
+.bg-fx .b2{width:40vw;height:40vw;right:-10vw;top:8vh;background:radial-gradient(circle,rgba(124,58,237,0.32),transparent 66%);animation:drift2 32s ease-in-out infinite}
+.bg-fx .b3{width:38vw;height:38vw;left:30vw;bottom:-16vw;background:radial-gradient(circle,rgba(74,222,128,0.14),transparent 70%);animation:drift1 38s ease-in-out infinite reverse}
+.bg-fx .grid{position:absolute;inset:0;background-image:linear-gradient(rgba(120,160,220,0.05) 1px,transparent 1px),linear-gradient(90deg,rgba(120,160,220,0.05) 1px,transparent 1px);background-size:56px 56px;mask-image:radial-gradient(ellipse at 50% 0%,#000 30%,transparent 80%)}
+@keyframes drift1{0%,100%{transform:translate(0,0)}50%{transform:translate(6vw,5vh)}}
+@keyframes drift2{0%,100%{transform:translate(0,0)}50%{transform:translate(-5vw,4vh)}}
+
+.wrap{position:relative;z-index:var(--z-base);max-width:1340px;margin:0 auto;padding:0 22px 80px}
+
+/* topbar */
+.topbar{position:sticky;top:0;z-index:var(--z-sticky);display:flex;align-items:center;justify-content:space-between;gap:18px;padding:16px 22px;margin:0 -22px 26px;background:linear-gradient(180deg,rgba(3,6,17,0.92),rgba(3,6,17,0.66));backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+.mark{display:flex;align-items:center;gap:13px;min-width:0}
+.mark .glyph{width:38px;height:38px;border-radius:11px;background:linear-gradient(150deg,rgba(34,211,238,0.22),rgba(124,58,237,0.22));border:1px solid var(--line-2);display:grid;place-items:center;flex:0 0 auto;box-shadow:inset 0 0 18px rgba(34,211,238,0.18)}
+.mark .glyph svg{width:21px;height:21px;stroke:var(--cyan-soft);fill:none;stroke-width:1.7}
+.mark .txt h1{font-family:'Orbitron',sans-serif;font-size:1.12rem;font-weight:800;letter-spacing:3px;color:var(--ink);line-height:1}
+.mark .txt p{font-size:0.68rem;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-top:4px;font-weight:600}
+.live{display:flex;align-items:center;gap:14px;flex:0 0 auto}
+.pulse{display:inline-flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;font-size:0.74rem;color:var(--green);background:rgba(74,222,128,0.1);border:1px solid rgba(74,222,128,0.34);padding:6px 12px;border-radius:999px}
+.pulse .dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 0 rgba(74,222,128,0.6);animation:beat 2.2s ease-out infinite}
+.pulse.off{color:var(--amber);background:rgba(245,158,11,0.1);border-color:rgba(245,158,11,0.34)}
+.pulse.off .dot{background:var(--amber);animation:none}
+@keyframes beat{0%{box-shadow:0 0 0 0 rgba(74,222,128,0.55)}70%{box-shadow:0 0 0 9px rgba(74,222,128,0)}100%{box-shadow:0 0 0 0 rgba(74,222,128,0)}}
+.btn-ghost{font-family:'JetBrains Mono',monospace;font-size:0.74rem;color:var(--body);background:rgba(34,211,238,0.07);border:1px solid var(--line-2);padding:7px 13px;border-radius:9px;cursor:pointer;transition:background .2s,border-color .2s}
+.btn-ghost:hover{background:rgba(34,211,238,0.16);border-color:var(--cyan)}
+
+/* vitals strip */
+.vitals{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:26px}
+.vital{display:flex;align-items:baseline;gap:9px;background:var(--glass);border:1px solid var(--line);border-radius:12px;padding:11px 16px;backdrop-filter:blur(10px)}
+.vital .k{font-size:0.64rem;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted);font-weight:700}
+.vital .v{font-family:'JetBrains Mono',monospace;font-size:1.02rem;color:var(--ink);font-weight:700}
+.vital .v.good{color:var(--green)}.vital .v.warn{color:var(--amber)}.vital .v.bad{color:var(--red)}.vital .v.cy{color:var(--cyan-soft)}
+
+/* layout */
+.cols{display:grid;grid-template-columns:1.15fr 0.85fr;gap:22px;align-items:start}
+@media(max-width:1000px){.cols{grid-template-columns:1fr}}
+.panel{background:var(--glass);border:1px solid var(--line);border-radius:20px;padding:22px 22px 24px;backdrop-filter:blur(16px) saturate(120%);box-shadow:var(--shadow);margin-bottom:22px}
+.panel-h{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
+.panel-h h2{font-family:'Orbitron',sans-serif;font-size:0.96rem;font-weight:800;letter-spacing:2px;color:var(--ink);display:flex;align-items:center;gap:10px}
+.panel-h h2 .ic{width:22px;height:22px;stroke:var(--cyan-soft);fill:none;stroke-width:1.8}
+.count{font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:var(--cyan-soft);background:rgba(34,211,238,0.12);border:1px solid rgba(34,211,238,0.3);padding:3px 10px;border-radius:999px}
+
+/* decision cards */
+.dec{background:var(--glass-2);border:1px solid var(--line-2);border-radius:15px;padding:16px 17px;margin-bottom:13px;transition:border-color .2s,transform .2s}
+.dec:hover{border-color:rgba(34,211,238,0.4)}
+.dec .lead{display:flex;gap:11px;align-items:flex-start;margin-bottom:13px}
+.dec .tag{flex:0 0 auto;font-family:'JetBrains Mono',monospace;font-size:0.6rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:4px 8px;border-radius:6px;margin-top:2px}
+.tag.mac{color:var(--amber);background:rgba(245,158,11,0.13);border:1px solid rgba(245,158,11,0.34)}
+.tag.pr{color:var(--violet-soft);background:rgba(124,58,237,0.14);border:1px solid rgba(124,58,237,0.36)}
+.dec .body{font-size:0.92rem;color:var(--body);line-height:1.5}
+.dec .acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:13px}
+.chip{font-family:'Inter',sans-serif;font-size:0.78rem;font-weight:600;padding:7px 13px;border-radius:8px;cursor:pointer;border:1px solid var(--line-2);background:rgba(255,255,255,0.03);color:var(--body);transition:all .16s}
+.chip:hover{transform:translateY(-1px)}
+.chip.ok{color:var(--green);border-color:rgba(74,222,128,0.4)}.chip.ok:hover{background:rgba(74,222,128,0.16)}
+.chip.no{color:var(--red);border-color:rgba(248,113,113,0.4)}.chip.no:hover{background:rgba(248,113,113,0.16)}
+.chip.mid{color:var(--cyan-soft);border-color:rgba(34,211,238,0.4)}.chip.mid:hover{background:rgba(34,211,238,0.16)}
+.dec .compose{display:flex;gap:8px;margin-top:11px}
+.dec input.note,.composer input,.composer textarea,.composer select{font-family:'Inter',sans-serif;font-size:0.85rem;background:rgba(3,8,18,0.7);border:1px solid var(--line-2);border-radius:9px;color:var(--ink);padding:9px 12px}
+.dec input.note{flex:1;min-width:0}
+.dec input.note::placeholder,.composer textarea::placeholder,.composer input::placeholder{color:var(--muted)}
+.send{font-family:'Inter',sans-serif;font-weight:700;font-size:0.82rem;color:#03121a;background:linear-gradient(135deg,var(--cyan),var(--cyan-soft));border:none;border-radius:9px;padding:9px 16px;cursor:pointer;transition:filter .16s,transform .16s;white-space:nowrap}
+.send:hover{filter:brightness(1.08);transform:translateY(-1px)}
+.send:disabled{opacity:.5;cursor:default;transform:none}
+
+/* composer */
+.composer{display:flex;flex-direction:column;gap:10px}
+.composer .row{display:flex;gap:10px}
+.composer select{flex:0 0 auto}
+.composer textarea{flex:1;resize:vertical;min-height:62px;line-height:1.5}
+@media(max-width:520px){.composer .row{flex-direction:column}}
+
+/* desk cards */
+.desks{display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));gap:13px}
+.desk{background:var(--glass-2);border:1px solid var(--line);border-radius:15px;padding:15px 16px;transition:border-color .2s,transform .2s;animation:rise .5s cubic-bezier(.2,.7,.2,1) both}
+.desk:hover{transform:translateY(-2px);border-color:var(--line-2)}
+.desk .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.desk .id{display:flex;align-items:center;gap:9px}
+.desk .id .badge{font-family:'Orbitron',sans-serif;font-weight:800;font-size:0.78rem;width:30px;height:30px;border-radius:8px;display:grid;place-items:center;background:rgba(34,211,238,0.12);border:1px solid var(--line-2);color:var(--cyan-soft)}
+.desk .id .lane{font-size:0.78rem;font-weight:700;color:var(--ink);letter-spacing:.3px}
+.desk .id .mac{font-size:0.62rem;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:1px}
+.st{display:inline-flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:0.64rem;font-weight:700;text-transform:uppercase;letter-spacing:.6px;padding:4px 9px;border-radius:999px}
+.st .d{width:7px;height:7px;border-radius:50%}
+.st.working{color:var(--green);background:rgba(74,222,128,0.1)}.st.working .d{background:var(--green);animation:beat 2s ease-out infinite}
+.st.idle{color:var(--muted);background:rgba(142,164,198,0.1)}.st.idle .d{background:var(--muted)}
+.st.done{color:var(--cyan-soft);background:rgba(34,211,238,0.1)}.st.done .d{background:var(--cyan)}
+.st.stale{color:var(--amber);background:rgba(245,158,11,0.1)}.st.stale .d{background:var(--amber)}
+.desk .task{font-size:0.81rem;color:var(--body);line-height:1.48;max-height:4.6em;overflow:hidden;margin-bottom:10px}
+.desk .meta{display:flex;align-items:center;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:0.66rem;color:var(--muted)}
+.bar{height:5px;border-radius:3px;background:rgba(255,255,255,0.06);overflow:hidden;margin:8px 0}
+.bar i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,var(--cyan),var(--violet))}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+
+/* brain loops */
+.loop{display:flex;align-items:center;gap:13px;padding:13px 0;border-bottom:1px solid var(--line)}
+.loop:last-child{border-bottom:none}
+.loop .ring{flex:0 0 auto;width:42px;height:42px;border-radius:11px;display:grid;place-items:center;border:1px solid var(--line-2);background:rgba(124,58,237,0.1)}
+.loop .ring svg{width:20px;height:20px;stroke:var(--violet-soft);fill:none;stroke-width:1.8}
+.loop .info{flex:1;min-width:0}
+.loop .info .nm{font-family:'Orbitron',sans-serif;font-size:0.8rem;font-weight:700;color:var(--ink);letter-spacing:.5px}
+.loop .info .ds{font-size:0.76rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.loop .age{font-family:'JetBrains Mono',monospace;font-size:0.66rem;flex:0 0 auto}
+
+/* artifacts */
+.arts{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:13px}
+.art{display:block;text-decoration:none;border-radius:14px;overflow:hidden;border:1px solid var(--line);background:var(--glass-2);transition:transform .2s,border-color .2s}
+.art:hover{transform:translateY(-3px);border-color:var(--cyan)}
+.art .thumb{height:92px;background:linear-gradient(135deg,rgba(34,211,238,0.18),rgba(124,58,237,0.2));position:relative;overflow:hidden}
+.art .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.art .thumb .ph{position:absolute;inset:0;display:grid;place-items:center;font-family:'Orbitron',sans-serif;font-weight:800;color:rgba(238,243,251,0.6);font-size:1.2rem;letter-spacing:2px}
+.art .cap{padding:11px 13px}
+.art .cap .t{font-size:0.84rem;font-weight:700;color:var(--ink)}
+.art .cap .d{font-size:0.72rem;color:var(--muted);margin-top:2px}
+.art .cap .badge{display:inline-block;font-family:'JetBrains Mono',monospace;font-size:0.58rem;letter-spacing:.8px;text-transform:uppercase;color:var(--green);margin-top:7px}
+
+.empty{text-align:center;padding:26px 16px;color:var(--muted);font-size:0.88rem}
+.empty .big{font-family:'Orbitron',sans-serif;color:var(--green);font-size:1rem;letter-spacing:1px;margin-bottom:6px}
+
+/* connect overlay */
+.overlay{position:fixed;inset:0;z-index:var(--z-modal);display:none;place-items:center;background:rgba(3,6,17,0.82);backdrop-filter:blur(8px);padding:22px}
+.overlay.on{display:grid}
+.card-connect{max-width:430px;width:100%;background:var(--glass-2);border:1px solid var(--line-2);border-radius:18px;padding:26px;box-shadow:var(--shadow)}
+.card-connect h3{font-family:'Orbitron',sans-serif;font-size:1rem;letter-spacing:1.5px;color:var(--ink);margin-bottom:8px}
+.card-connect p{font-size:0.85rem;color:var(--body);margin-bottom:16px}
+.card-connect input{width:100%;font-family:'JetBrains Mono',monospace;font-size:0.8rem;background:rgba(3,8,18,0.8);border:1px solid var(--line-2);border-radius:10px;color:var(--ink);padding:11px 13px;margin-bottom:13px}
+
+/* toast */
+.toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%) translateY(20px);z-index:var(--z-toast);background:var(--glass-2);border:1px solid var(--line-2);border-radius:12px;padding:13px 20px;font-size:0.86rem;color:var(--ink);box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;backdrop-filter:blur(12px);display:flex;align-items:center;gap:10px}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.ok{border-color:rgba(74,222,128,0.5)}.toast.bad{border-color:rgba(248,113,113,0.5)}
+
+footer{text-align:center;padding:38px 20px 10px;color:var(--muted);font-size:0.78rem}
+footer .b{font-family:'Orbitron',sans-serif;color:var(--body);letter-spacing:2px;font-weight:700;margin-bottom:6px}
+footer .i{font-style:italic;opacity:.8}
+
+@media (prefers-reduced-motion: reduce){
+  .bg-fx .blob{animation:none}
+  .desk{animation:none}
+  .pulse .dot,.st.working .d{animation:none}
+  *{transition:none!important}
+}
+</style>
+</head>
+<body>
+<div class="bg-fx" aria-hidden="true">
+  <div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>
+  <div class="grid"></div>
+</div>
+
+<header class="topbar">
+  <div class="mark">
+    <div class="glyph"><svg viewBox="0 0 24 24"><path d="M3 12h4l2-7 4 14 2-7h6"/></svg></div>
+    <div class="txt"><h1>THE BRIDGE</h1><p>Ryujin Live Command Hub</p></div>
+  </div>
+  <div class="live">
+    <span id="pulse" class="pulse off"><span class="dot"></span><span id="pulseTxt">connecting</span></span>
+    <button class="btn-ghost" id="refreshBtn" title="Refresh now">&#8635; refresh</button>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="vitals" id="vitals">
+    <div class="vital"><span class="k">Desks</span><span class="v cy" id="vDesks">--</span></div>
+    <div class="vital"><span class="k">Working</span><span class="v good" id="vWorking">--</span></div>
+    <div class="vital"><span class="k">Needs You</span><span class="v warn" id="vNeeds">--</span></div>
+    <div class="vital"><span class="k">Ship HEAD</span><span class="v" id="vShip">--</span></div>
+    <div class="vital"><span class="k">Signed MTD</span><span class="v" id="vRev">--</span></div>
+    <div class="vital"><span class="k">Leads / wk</span><span class="v" id="vLeads">--</span></div>
+  </div>
+
+  <div class="cols">
+    <div class="main-col">
+
+      <section class="panel" id="needsPanel">
+        <div class="panel-h">
+          <h2><svg class="ic" viewBox="0 0 24 24" fill="none"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg> Needs Your Call</h2>
+          <span class="count" id="needsCount">0</span>
+        </div>
+        <div id="needsList"></div>
+
+        <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--line)">
+          <h2 style="font-family:'Orbitron';font-size:0.8rem;letter-spacing:1.5px;color:var(--cyan-soft);margin-bottom:11px">SEND A DIRECTIVE</h2>
+          <div class="composer">
+            <div class="row">
+              <select id="cTarget" aria-label="Route to">
+                <option value="A">Foreman (route it)</option>
+                <option value="OP">Operator (sense it)</option>
+                <option value="B">Desk B</option>
+                <option value="C">Desk C</option>
+                <option value="D">Desk D</option>
+                <option value="E">Desk E</option>
+                <option value="F">Desk F · Media</option>
+                <option value="G">Desk G</option>
+              </select>
+              <select id="cKind" aria-label="Priority">
+                <option value="P1">Normal</option>
+                <option value="P0">Urgent</option>
+              </select>
+            </div>
+            <textarea id="cText" placeholder="Type a decision or directive... it posts straight to the fleet bus."></textarea>
+            <div class="row" style="justify-content:flex-end"><button class="send" id="cSend">Send to fleet &rarr;</button></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-h">
+          <h2><svg class="ic" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg> Live Workstreams</h2>
+          <span class="count" id="deskCount">0 desks</span>
+        </div>
+        <div class="desks" id="deskGrid"></div>
+      </section>
+
+    </div>
+
+    <div class="side-col">
+
+      <section class="panel">
+        <div class="panel-h">
+          <h2><svg class="ic" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2m0-14-2 2M7 17l-2 2"/></svg> Self-Learning Loops</h2>
+        </div>
+        <div id="loops"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-h">
+          <h2><svg class="ic" viewBox="0 0 24 24" fill="none"><path d="M4 19.5V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14.5M4 19.5 8 16h12M4 19.5A1.5 1.5 0 0 0 5.5 21H20"/></svg> Artifacts &amp; Reviews</h2>
+        </div>
+        <div class="arts" id="arts"></div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="card-connect">
+    <h3>CONNECT THE BRIDGE</h3>
+    <p>Paste your Ryujin service token to read live fleet state and send directives. It is stored only in this browser.</p>
+    <input id="keyInput" type="password" placeholder="Bearer token" autocomplete="off">
+    <button class="send" id="keySave" style="width:100%">Connect &rarr;</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<footer>
+  <div class="b">RYUJIN <span style="color:var(--cyan-soft)">THE BRIDGE</span></div>
+  <div class="i">Smart systems designed for you, by you.</div>
+</footer>
+
+<script>
+(function(){
+  'use strict';
+  var TENANT = window.RYUJIN_TENANT_SLUG || 'plus-ultra';
+  var POLL_MS = 20000;
+  var handled = new Set(JSON.parse(localStorage.getItem('bridge_handled') || '[]'));
+  var lastOk = 0, timer = null;
+
+  function token(){ try { return localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token') || ''; } catch(e){ return ''; } }
+  function authHeaders(){ var h = { 'x-tenant-id': TENANT }; var t = token(); if (t) h.Authorization = 'Bearer ' + t; return h; }
+  function $(id){ return document.getElementById(id); }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+
+  function rel(iso){
+    if(!iso) return '--';
+    var t = typeof iso === 'number' ? iso : Date.parse(iso);
+    if(isNaN(t)) return '--';
+    var s = Math.max(0,(Date.now()-t)/1000);
+    if(s<60) return Math.floor(s)+'s ago';
+    if(s<3600) return Math.floor(s/60)+'m ago';
+    if(s<86400) return Math.floor(s/3600)+'h ago';
+    return Math.floor(s/86400)+'d ago';
+  }
+  function ageColor(iso, warnMin, badMin){
+    var t = typeof iso==='number'?iso:Date.parse(iso); if(isNaN(t)) return 'var(--muted)';
+    var m=(Date.now()-t)/60000; return m>badMin?'var(--red)':m>warnMin?'var(--amber)':'var(--green)';
+  }
+
+  function toast(msg, kind){
+    var el=$('toast'); el.textContent=msg; el.className='toast on '+(kind||'');
+    clearTimeout(el._t); el._t=setTimeout(function(){ el.className='toast '+(kind||''); }, 3200);
+  }
+
+  function setPulse(ok){
+    var p=$('pulse');
+    if(ok){ p.className='pulse'; $('pulseTxt').textContent='live · '+rel(lastOk); }
+    else { p.className='pulse off'; $('pulseTxt').textContent='reconnecting'; }
+  }
+
+  async function getJSON(url){
+    var r = await fetch(url, { headers: authHeaders(), cache:'no-store' });
+    if(r.status===401||r.status===403){ var e=new Error('auth'); e.auth=true; throw e; }
+    if(!r.ok) throw new Error('http '+r.status);
+    return r.json();
+  }
+
+  // ---- decision / directive POST (the write-back that closes the loop) ----
+  async function sendOrder(deskId, prompt, priority, title){
+    var target = deskId==='OP' ? 'A' : deskId; // operator items route through foreman desk
+    var body = { action:'order.create', deskId: target, order: {
+      title: (title||'Mac directive via Bridge').slice(0,180),
+      prompt: prompt,
+      issuedBy: 'mac-bridge',
+      priority: priority==='P0'?'P0':'P1'
+    }};
+    var r = await fetch('/api/fleet', { method:'POST', headers: Object.assign({'Content-Type':'application/json'}, authHeaders()), body: JSON.stringify(body) });
+    if(r.status===401||r.status===403){ openConnect(); throw new Error('auth'); }
+    if(!r.ok){ var t=await r.text().catch(function(){return '';}); throw new Error(t||('http '+r.status)); }
+    return r.json();
+  }
+
+  // ---- renderers ----
+  function renderDesks(desks){
+    var grid=$('deskGrid'); var ids=Object.keys(desks||{});
+    // sort: working first, then by recency
+    ids.sort(function(a,b){
+      var da=desks[a],db=desks[b];
+      var rank={working:0,done:1,idle:2};
+      var ra=rank[da.status]==null?3:rank[da.status], rb=rank[db.status]==null?3:rank[db.status];
+      if(ra!==rb) return ra-rb;
+      return (Date.parse(db.receivedAt)||0)-(Date.parse(da.receivedAt)||0);
+    });
+    $('deskCount').textContent = ids.length+' desk'+(ids.length===1?'':'s');
+    var working = ids.filter(function(i){return desks[i].status==='working' && !desks[i].stale;}).length;
+    $('vWorking').textContent = working;
+    $('vDesks').textContent = ids.length;
+    if(!ids.length){ grid.innerHTML='<div class="empty">No desks reporting. The fleet bus is quiet.</div>'; return; }
+    grid.innerHTML = ids.map(function(id,i){
+      var d=desks[id];
+      var stale = d.stale;
+      var stCls = stale ? 'stale' : (d.status||'idle');
+      var stTxt = stale ? 'stale' : (d.status||'idle');
+      var lane = d.lane || 'desk';
+      var task = d.task || (d.queue && d.queue.length ? d.queue[0] : 'idle, awaiting orders');
+      var prog = (typeof d.progress==='number' && d.progress>0) ? '<div class="bar"><i style="width:'+Math.min(100,d.progress)+'%"></i></div>' : '';
+      var q = (d.queue && d.queue.length) ? (d.queue.length+' queued') : 'queue clear';
+      return '<div class="desk" style="animation-delay:'+(i*40)+'ms">'+
+        '<div class="top"><div class="id"><span class="badge">'+esc(id)+'</span>'+
+          '<div><div class="lane">'+esc(lane)+'</div><div class="mac">'+esc(d.machine||'')+'</div></div></div>'+
+          '<span class="st '+stCls+'"><span class="d"></span>'+esc(stTxt)+'</span></div>'+
+        '<div class="task">'+esc(task)+'</div>'+prog+
+        '<div class="meta"><span>'+esc(q)+'</span><span>'+rel(d.receivedAt)+'</span></div>'+
+      '</div>';
+    }).join('');
+  }
+
+  function decCard(item){
+    var id = item.id;
+    if(handled.has(id)) return '';
+    return '<div class="dec" data-id="'+esc(id)+'">'+
+      '<div class="lead"><span class="tag '+esc(item.tagCls||'mac')+'">'+esc(item.tag||'mac')+'</span>'+
+        '<div class="body">'+esc(item.text)+'</div></div>'+
+      '<div class="acts">'+
+        '<button class="chip ok" data-act="approve">Approve</button>'+
+        '<button class="chip no" data-act="reject">Reject</button>'+
+        '<button class="chip mid" data-act="defer">Need info</button>'+
+      '</div>'+
+      '<div class="compose"><input class="note" placeholder="add a note or counter-directive (optional)"><button class="send" data-act="note">Send &rarr;</button></div>'+
+    '</div>';
+  }
+
+  function renderNeeds(items){
+    var list=$('needsList');
+    var open = items.filter(function(it){return !handled.has(it.id);});
+    $('needsCount').textContent = open.length;
+    $('vNeeds').textContent = open.length;
+    $('vNeeds').className = 'v '+(open.length? 'warn':'good');
+    if(!open.length){ list.innerHTML='<div class="empty"><div class="big">All clear</div>Nothing waiting on your call right now.</div>'; return; }
+    list.innerHTML = open.map(decCard).join('');
+    // wire each card
+    Array.prototype.forEach.call(list.querySelectorAll('.dec'), function(card){
+      var id=card.getAttribute('data-id');
+      var item=items.filter(function(x){return x.id===id;})[0]||{};
+      card.querySelectorAll('[data-act]').forEach(function(btn){
+        btn.addEventListener('click', async function(){
+          var act=btn.getAttribute('data-act');
+          var note=card.querySelector('.note').value.trim();
+          var verb = act==='approve'?'APPROVED':act==='reject'?'REJECTED':act==='defer'?'NEEDS INFO':'NOTE';
+          var prompt='MAC '+verb+' (via Bridge): '+item.text + (note? ('\n\nNote: '+note):'');
+          btn.disabled=true;
+          try{
+            await sendOrder('A', prompt, 'P1', 'Mac decision: '+verb);
+            handled.add(id); localStorage.setItem('bridge_handled', JSON.stringify([].slice.call(handled)));
+            card.style.opacity='0.4'; card.style.transform='scale(0.98)';
+            toast(verb.charAt(0)+verb.slice(1).toLowerCase()+' sent to the fleet', 'ok');
+            setTimeout(load, 600);
+          }catch(e){ btn.disabled=false; toast('Send failed: '+(e.message||'error'), 'bad'); }
+        });
+      });
+    });
+  }
+
+  function renderLoops(bus){
+    var sit = bus.situation || {};
+    var adv = bus.advice || {};
+    var foreman = (bus.desks && (bus.desks.A || bus.desks.Z)) || {};
+    var sitTxt = sit.headline || sit.situation || sit.text || (typeof sit==='string'?sit:'') || 'no situation posted';
+    var advTxt = adv.verdict || adv.advice || adv.text || (typeof adv==='string'?adv:'') || 'no advice posted';
+    var loops = [
+      { nm:'OPERATOR', role:'senses the field', ds: String(sitTxt).slice(0,90), iso: sit.updatedAt, warn:40, bad:90, link:null },
+      { nm:'ORACLE', role:'magnifies + judges', ds: String(advTxt).slice(0,90), iso: adv.updatedAt, warn:60, bad:150, link:null },
+      { nm:'FOREMAN', role:'dispatches + ships', ds: String(foreman.task||'idle').slice(0,90), iso: foreman.receivedAt, warn:30, bad:60, link:null }
+    ];
+    $('loops').innerHTML = loops.map(function(l){
+      return '<div class="loop"><div class="ring"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>'+
+        '<div class="info"><div class="nm">'+esc(l.nm)+'</div><div class="ds">'+esc(l.role)+' &middot; '+esc(l.ds)+'</div></div>'+
+        '<div class="age" style="color:'+ageColor(l.iso,l.warn,l.bad)+'">'+rel(l.iso)+'</div></div>';
+    }).join('');
+  }
+
+  var ARTIFACTS = [
+    { t:'Today\'s Work Review', d:'Honest ground-truth audit', href:'/deck-todays-work-jun14.html', img:null, badge:'deck · live' },
+    { t:'Deck Library', d:'Every strategy + recap deck', href:'/decks.html', img:null, badge:'index · live' },
+    { t:'Mockups Review', d:'21 design mockups, decided', href:'/mockups-review.html', img:'/deck-assets/overnight-jun14/brand-hub-3.jpeg', badge:'mockups · live' },
+    { t:'Brand Hub', d:'The picked brand direction', href:'/brand-hub.html', img:'/deck-assets/overnight-jun14/brand-hub-3.jpeg', badge:'page · live' },
+    { t:'Progress Rooms', d:'Per-task build progress', href:'/progress-rooms.html', img:null, badge:'page · live' },
+    { t:'Builders Hall', d:'The artifact canvas', href:'/builders-hall.html', img:null, badge:'page · live' }
+  ];
+  function renderArts(){
+    $('arts').innerHTML = ARTIFACTS.map(function(a){
+      var thumb = a.img ? '<img src="'+a.img+'" alt="" loading="lazy" onerror="this.style.display=\'none\'">' : '<div class="ph">'+esc(a.t.split(' ')[0])+'</div>';
+      return '<a class="art" href="'+a.href+'"><div class="thumb">'+thumb+'</div>'+
+        '<div class="cap"><div class="t">'+esc(a.t)+'</div><div class="d">'+esc(a.d)+'</div><span class="badge">'+esc(a.badge)+'</span></div></a>';
+    }).join('');
+  }
+
+  // build the "Needs You" list from live data
+  function buildNeeds(bus, snap){
+    var out=[], seen={};
+    function push(text, tag, tagCls){
+      text=String(text||'').trim(); if(!text||text.length<6) return;
+      var id='n_'+text.slice(0,60).replace(/[^a-z0-9]/gi,'').toLowerCase();
+      if(seen[id]) return; seen[id]=1;
+      out.push({ id:id, text:text.slice(0,360), tag:tag||'mac', tagCls:tagCls||'mac' });
+    }
+    // foreman desk A queue = the curated MAC items
+    var A = bus.desks && bus.desks.A;
+    if(A && A.queue) A.queue.forEach(function(q){ push(q,'mac','mac'); });
+    // snapshot blockedOnMac if present
+    try{
+      var bm = snap && snap.sections && snap.sections.fleet && snap.sections.fleet.blockedOnMac;
+      if(Array.isArray(bm)) bm.forEach(function(x){ push(typeof x==='string'?x:(x.text||x.title),'mac','mac'); });
+    }catch(e){}
+    return out;
+  }
+
+  function renderVitals(bus, snap){
+    // ship head from foreman task or deployLock
+    var head='--';
+    try{ var m=snap&&snap.metrics; }catch(e){}
+    try{
+      var rev = snap && (snap.metrics && snap.metrics.signed && snap.metrics.signed.mtd);
+      if(rev && rev.value!=null) $('vRev').textContent='$'+Number(rev.value).toLocaleString();
+      var leads = snap && snap.sections && snap.sections.leads && snap.sections.leads.thisWeek;
+      if(leads!=null){ $('vLeads').textContent=leads; $('vLeads').className='v '+(leads<=1?'warn':'good'); }
+    }catch(e){}
+    $('vShip').textContent = (bus.deployLock && bus.deployLock.holder) ? ('lock:'+bus.deployLock.holder) : 'clear';
+  }
+
+  async function load(){
+    if(!token()){ openConnect(); return; }
+    try{
+      var bus = await getJSON('/api/fleet?bus=1');
+      lastOk = Date.now(); setPulse(true);
+      var snap = null;
+      try{ snap = await getJSON('/api/snapshot'); }catch(e){ /* snapshot optional */ }
+      renderDesks(bus.desks||{});
+      renderNeeds(buildNeeds(bus, snap));
+      renderLoops(bus);
+      renderVitals(bus, snap);
+    }catch(e){
+      if(e.auth){ openConnect(); return; }
+      setPulse(false);
+    }
+  }
+
+  // connect overlay
+  function openConnect(){ $('overlay').classList.add('on'); setPulse(false); }
+  function closeConnect(){ $('overlay').classList.remove('on'); }
+  $('keySave').addEventListener('click', function(){
+    var v=$('keyInput').value.trim(); if(!v){ return; }
+    try{ localStorage.setItem('ryujin_token', v); }catch(e){}
+    closeConnect(); load();
+  });
+  $('keyInput').addEventListener('keydown', function(e){ if(e.key==='Enter') $('keySave').click(); });
+
+  // composer
+  $('cSend').addEventListener('click', async function(){
+    var text=$('cText').value.trim(); if(!text){ toast('Type a directive first','bad'); return; }
+    var target=$('cTarget').value, kind=$('cKind').value;
+    this.disabled=true;
+    try{
+      await sendOrder(target, text, kind, 'Mac directive via Bridge');
+      $('cText').value=''; toast('Directive sent to '+(target==='OP'?'Operator':'desk '+target), 'ok');
+      setTimeout(load, 600);
+    }catch(e){ toast('Send failed: '+(e.message||'error'),'bad'); }
+    this.disabled=false;
+  });
+
+  $('refreshBtn').addEventListener('click', load);
+  renderArts();
+  load();
+  timer = setInterval(load, POLL_MS);
+  document.addEventListener('visibilitychange', function(){ if(!document.hidden) load(); });
+})();
+</script>
+</body>
+</html>
