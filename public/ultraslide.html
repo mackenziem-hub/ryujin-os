@@ -1,0 +1,415 @@
+<!doctype html>
+<!--
+ULTRASLIDE - in-Ryujin live-feed Command Bridge (ultradeck-3, Mac-approved pick).
+Skinned to _brain/hub/mockup-ultradeck-3.html (COMMAND BRIDGE, glass depth layers).
+Live-wired: desk dock + FLEET status + IN FLIGHT from /api/fleet; NEEDS YOU + SHIPPED
+from /api/snapshot sections.fleet. Fails open to the seeded snapshot when signed out or
+offline (never blank, never console-errors). ?embed=1 mounts it as a builders-hall artifact.
+
+DESIGN SELF-REVIEW GATE
+(a) Thumb-stop: the glass depth-field bridge with three panes at different Z drifting on
+    parallax. Glass is purposeful (Mac's one glass direction), not default chrome.
+(b) AI entry: the bottom AI command bar IS the navigation (AI-dock north star); links to
+    the cockpit standalone, suppressed in embed (the hall provides chat).
+(c) Core action <10s: NEEDS YOU is centered, nearest, gold-lit; one APPROVE per row.
+(d) Generated asset: assets/ultradeck-bridge.png (Higgsfield) as the parallax backdrop.
+    Higgsfield MCP not on this session = SKILL MISSING; a CSS bokeh/depth backdrop stands in
+    and the img hides gracefully until the foreman drops the real plate.
+Collision gate: below 960px AND in narrow embed tiles the 3D/absolute panes flatten to a
+    clean vertical stack (NEEDS YOU first), zero overlap at 375 and in small artifacts.
+Reduced-motion collapses all float/parallax. Contrast kept >=4.5:1 via ink scrims on glass.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#060912">
+<title>UltraSlide - Command Bridge</title>
+<link rel="icon" href="/apple-touch-icon.png">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --void:#060912; --ink:#0a0f1e; --text:#eef2fb; --dim:#aab4cf; --faint:#6b7591;
+  --gold:#f5b942; --gold-deep:#c98f1d; --green:#4fd690; --cyan:#59b8e8; --red:#ef6363;
+  --glass:rgba(16,22,42,0.55); --glass-edge:rgba(170,200,255,0.16);
+  --z-dock:50; --z-sticky:40; --z-near:30; --z-mid:20; --z-far:10;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{background:var(--void);color:var(--text);overflow:hidden;
+  font-family:'Inter',system-ui,-apple-system,sans-serif;font-size:16px;-webkit-font-smoothing:antialiased}
+
+/* depth backdrop: real plate when present, CSS bokeh/aurora fallback always underneath */
+#depth{position:fixed;inset:0;z-index:0;overflow:hidden;
+  background:
+    radial-gradient(40% 38% at 22% 32%,rgba(89,184,232,0.16),transparent 70%),
+    radial-gradient(46% 44% at 78% 66%,rgba(245,185,66,0.13),transparent 72%),
+    radial-gradient(60% 55% at 50% 48%,rgba(20,28,54,0.6),transparent 75%),
+    linear-gradient(160deg,#0a1124 0%,#060912 60%,#04060e 100%);
+  animation:bokeh 64s ease-in-out infinite alternate}
+#depth img{width:100%;height:100%;object-fit:cover;filter:brightness(0.9);animation:parallax 60s ease-in-out infinite alternate}
+#depth::after{content:'';position:absolute;inset:0;background:radial-gradient(120% 90% at 50% 42%,transparent 30%,rgba(6,9,18,0.78) 100%)}
+@keyframes parallax{from{transform:scale(1.04) translate(0.8%,0.4%)}to{transform:scale(1.08) translate(-0.8%,-0.6%)}}
+@keyframes bokeh{from{transform:scale(1.02) translate(0.6%,0.3%)}to{transform:scale(1.06) translate(-0.6%,-0.5%)}}
+
+#scene{position:relative;z-index:1;height:100%;perspective:1400px;display:grid;
+  grid-template-rows:64px 1fr 92px;padding:0 40px}
+
+/* top chrome */
+#chrome{display:flex;align-items:center;gap:18px;min-width:0}
+.back{display:inline-flex;align-items:center;gap:7px;padding:8px 14px;border-radius:999px;
+  background:var(--glass);border:1px solid var(--glass-edge);backdrop-filter:blur(10px);
+  color:var(--dim);font-size:13px;font-weight:600;text-decoration:none;flex:none;transition:border-color .2s,color .2s}
+.back:hover{border-color:rgba(170,200,255,0.4);color:var(--text)}
+.back:focus-visible{outline:2px solid var(--cyan);outline-offset:3px}
+#status{display:flex;align-items:center;gap:11px;font-weight:600;letter-spacing:.1em;font-size:13.5px;min-width:0}
+#status .orb{width:14px;height:14px;border-radius:50%;flex:none;
+  background:radial-gradient(circle at 35% 30%,#9df1c2,var(--green) 60%);box-shadow:0 0 16px rgba(79,214,144,.7);animation:heartbeat 2.4s ease-in-out infinite}
+#status.attn .orb{background:radial-gradient(circle at 35% 30%,#ffe9b8,var(--gold) 60%);box-shadow:0 0 16px rgba(245,185,66,.7)}
+#status.cold .orb{background:var(--faint);box-shadow:none;animation:none}
+@keyframes heartbeat{50%{box-shadow:0 0 6px rgba(79,214,144,.45)}}
+#status small{color:var(--faint);font-weight:400;letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#clockbox{margin-left:auto;text-align:right;font-variant-numeric:tabular-nums;flex:none}
+#clock{font-size:21px;font-weight:200;letter-spacing:.08em}
+#stamp{font-size:12px;color:var(--faint);letter-spacing:.1em}
+
+#deskdock{display:flex;gap:7px;flex-wrap:wrap;min-width:0}
+.chip{display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:999px;
+  background:var(--glass);border:1px solid var(--glass-edge);backdrop-filter:blur(10px);
+  font-size:12.5px;color:var(--dim);cursor:default;transition:border-color .2s;white-space:nowrap}
+.chip:hover{border-color:rgba(170,200,255,0.4)}
+.chip b{color:var(--text);font-size:14px}
+.chip .led{width:7px;height:7px;border-radius:50%;flex:none}
+.chip[data-s="working"] .led{background:var(--green);box-shadow:0 0 8px var(--green)}
+.chip[data-s="idle"] .led,.chip[data-s="done"] .led{background:var(--faint)}
+.chip[data-s="waiting_on_mac"]{border-color:var(--gold);background:rgba(60,44,10,0.5);color:var(--gold);animation:chippulse 1.6s ease-in-out infinite}
+.chip[data-s="waiting_on_mac"] .led{background:var(--gold);box-shadow:0 0 10px var(--gold)}
+.chip.stale{opacity:.5}
+@keyframes chippulse{50%{box-shadow:0 0 18px rgba(245,185,66,.35)}}
+
+/* floating panes */
+#panes{position:relative;min-height:0;transform-style:preserve-3d}
+.pane{position:absolute;border-radius:14px;background:var(--glass);
+  border:1px solid var(--glass-edge);backdrop-filter:blur(14px) saturate(1.2);
+  box-shadow:0 24px 70px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.07);
+  display:flex;flex-direction:column;overflow:hidden}
+.pane h2{font-size:12px;font-weight:700;letter-spacing:.22em;padding:14px 20px 10px;color:var(--dim)}
+.pane ul{padding:0 20px 16px;overflow-y:auto;overflow-x:hidden}
+.pane li{list-style:none;font-size:14.5px;line-height:1.35;color:var(--dim);margin-bottom:8px;padding-left:18px;position:relative}
+
+#shipped{left:0;top:4%;width:30%;height:86%;z-index:var(--z-far);
+  transform:translateZ(-220px) rotateY(7deg);animation:float1 14s ease-in-out infinite alternate,arrive1 1s cubic-bezier(.16,1,.3,1) both .2s}
+#shipped h2{color:var(--green)}
+#shipped li::before{content:'+';position:absolute;left:0;color:var(--green);font-weight:700}
+@keyframes float1{to{transform:translateZ(-220px) rotateY(7deg) translateY(-12px)}}
+@keyframes arrive1{from{opacity:0;transform:translateZ(-420px) rotateY(7deg)}}
+
+#flight{right:0;top:4%;width:30%;height:86%;z-index:var(--z-far);
+  transform:translateZ(-220px) rotateY(-7deg);animation:float2 16s ease-in-out infinite alternate,arrive2 1s cubic-bezier(.16,1,.3,1) both .3s}
+#flight h2{color:var(--cyan)}
+#flight li::before{content:'\203a';position:absolute;left:0;color:var(--cyan);font-weight:700}
+@keyframes float2{to{transform:translateZ(-220px) rotateY(-7deg) translateY(10px)}}
+@keyframes arrive2{from{opacity:0;transform:translateZ(-420px) rotateY(-7deg)}}
+
+#needs{left:50%;top:50%;width:38%;height:auto;max-height:96%;margin-left:-19%;z-index:var(--z-near);--lift:translateY(-50%);
+  background:rgba(22,19,8,0.62);border:1px solid rgba(245,185,66,.55);
+  box-shadow:0 34px 90px rgba(0,0,0,.65),0 0 60px rgba(245,185,66,.14),inset 0 1px 0 rgba(255,228,160,.12);
+  transform:var(--lift) translateZ(60px);animation:float3 12s ease-in-out infinite alternate,arrive3 .9s cubic-bezier(.16,1,.3,1) both}
+@keyframes float3{to{transform:var(--lift) translateZ(60px) translateY(-8px)}}
+@keyframes arrive3{from{opacity:0;transform:var(--lift) translateZ(-160px) scale(.92)}}
+#needs header{padding:20px 24px 6px}
+#needs h1{font-size:24px;font-weight:650;letter-spacing:-.01em;color:var(--text);text-wrap:balance;line-height:1.2}
+#needs h1 b{color:var(--gold);font-weight:750}
+#needs .why{font-size:13px;color:var(--faint);margin-top:5px;letter-spacing:.05em}
+#needs .list{flex:1;padding:12px 16px 16px;display:flex;flex-direction:column;gap:10px;min-height:0;overflow-y:auto}
+.ask{background:rgba(8,10,18,0.72);border:1px solid rgba(245,185,66,.28);border-radius:10px;
+  padding:13px 15px;display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center;transition:border-color .2s}
+.ask:hover{border-color:rgba(245,185,66,.6)}
+.ask .what{font-size:15.5px;line-height:1.3;color:var(--text)}
+.ask .what small{display:block;color:var(--faint);font-size:12.5px;margin-top:3px}
+.approve{position:relative;width:92px;height:40px;border-radius:999px;border:1.5px solid var(--gold);
+  background:transparent;color:var(--gold);font:650 12px/1 'Inter',system-ui,sans-serif;letter-spacing:.12em;
+  cursor:pointer;overflow:hidden;transition:color .2s;flex:none}
+.approve::before{content:'';position:absolute;inset:0;background:var(--gold);transform:scaleX(0);transform-origin:left;transition:transform .35s cubic-bezier(.16,1,.3,1)}
+.approve span{position:relative;z-index:1}
+.approve:hover{color:var(--ink)} .approve:hover::before{transform:scaleX(1)}
+.approve:focus-visible{outline:2px solid var(--gold);outline-offset:3px}
+.ask.done{border-color:rgba(79,214,144,.5)}
+.ask.done .what{opacity:.6}
+.ask.done .approve{border-color:var(--green);color:var(--green);pointer-events:none}
+.ask.done .approve::before{display:none}
+.ask .queued{display:none;font-size:11.5px;letter-spacing:.1em;color:var(--green);font-weight:700;text-align:center}
+.ask.done .queued{display:block;animation:qrise .4s cubic-bezier(.16,1,.3,1)}
+@keyframes qrise{from{opacity:0;transform:translateY(6px)}}
+.pane .empty{color:var(--faint);font-size:13.5px;padding:2px 0 14px}
+
+/* AI command bar (the dock IS navigation) */
+#aibar{z-index:var(--z-dock);display:flex;align-items:center;gap:14px;align-self:center;justify-self:center;
+  width:min(760px,86%);margin-bottom:18px;padding:13px 20px;border-radius:999px;
+  background:rgba(12,16,30,0.78);border:1px solid rgba(245,185,66,.45);backdrop-filter:blur(18px);
+  box-shadow:0 18px 50px rgba(0,0,0,.6),0 0 36px rgba(245,185,66,.12);cursor:pointer;text-decoration:none}
+#aibar:focus-visible{outline:2px solid var(--gold);outline-offset:3px}
+#aibar .orb{width:26px;height:26px;flex:none;border-radius:50%;
+  background:radial-gradient(circle at 34% 30%,#ffe9b8,var(--gold) 55%,var(--gold-deep) 95%);
+  box-shadow:0 0 18px rgba(245,185,66,.55);animation:heartbeat 3s ease-in-out infinite}
+#aibar .ph{color:var(--dim);font-size:15.5px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#aibar .ph b{color:var(--text);font-weight:600}
+#aibar kbd{font:600 11px/1 'Inter',system-ui,sans-serif;color:var(--faint);border:1px solid var(--glass-edge);border-radius:5px;padding:4px 7px;letter-spacing:.06em;flex:none}
+
+/* sticky */
+.sticky{position:fixed;z-index:var(--z-sticky);top:12%;left:7%;width:205px;padding:13px 14px 26px;
+  background:linear-gradient(168deg,#ffe27a,#f7c948);color:#3a2c05;border-radius:2px;
+  font-family:'Inter',system-ui,sans-serif;font-size:14px;line-height:1.3;font-weight:600;
+  box-shadow:4px 8px 22px rgba(0,0,0,.55);transform:rotate(2deg);cursor:grab}
+.sticky::before{content:'';position:absolute;top:-8px;left:50%;transform:translateX(-50%);width:60px;height:15px;background:rgba(255,255,255,0.4)}
+.sticky .meta{position:absolute;bottom:6px;left:14px;font-size:10.5px;opacity:.6}
+
+/* ---- collision-safe flatten: narrow viewport OR embed tile ---- */
+/* The flat layout drops 3D + absolute positioning so panes never overlap. */
+@media (max-width:960px){
+  html,body{overflow:auto;height:auto}
+  #scene{display:block;height:auto;min-height:100vh;perspective:none;padding:16px 16px 28px}
+  #chrome{flex-wrap:wrap;gap:12px;height:auto;margin-bottom:14px}
+  #clockbox{margin-left:0}
+  #panes{transform-style:flat;display:flex;flex-direction:column;gap:14px}
+  .pane{position:static;width:auto !important;height:auto !important;max-height:none !important;
+    transform:none !important;animation:none !important;margin:0 !important}
+  #needs{order:-1}
+  .pane ul{max-height:none}
+  #aibar{position:static;width:auto;max-width:100%;margin:16px 0 0}
+  .sticky{position:static;width:auto;transform:none;margin:14px 0 0}
+  .sticky::before{display:none}
+}
+body.embed,html:has(body.embed){overflow:auto;height:auto}
+body.embed #depth{position:fixed}
+body.embed .back,body.embed #aibar,body.embed .sticky{display:none}
+body.embed #scene{padding:14px 16px 18px}
+/* In embed mode always use the flat, collision-safe stack (artifact tiles are small) */
+body.embed #scene{display:block;height:auto;min-height:100%;perspective:none}
+body.embed #chrome{flex-wrap:wrap;gap:10px;height:auto;margin-bottom:12px}
+body.embed #clockbox{margin-left:0}
+body.embed #panes{transform-style:flat;display:flex;flex-direction:column;gap:12px}
+body.embed .pane{position:static;width:auto !important;height:auto !important;max-height:none !important;transform:none !important;animation:none !important;margin:0 !important}
+body.embed #needs{order:-1}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none !important;transition:none !important}
+  #shipped,#flight{transform:translateZ(-220px)} #needs{transform:var(--lift) translateZ(60px)}
+}
+</style>
+</head>
+<body>
+<!-- Backdrop is CSS-only (bokeh/aurora depth field) so there is never a missing-asset 404.
+     FOREMAN: to use the Higgsfield plate, add to #depth in the stylesheet:
+       background-image: url(/assets/ultradeck-bridge.png), <the existing gradients>; background-size: cover; -->
+<div id="depth"></div>
+
+<div id="scene">
+
+  <header id="chrome">
+    <a class="back" href="/builders-hall.html" title="Back to the Builder Room">&larr; Hall</a>
+    <div id="status"><span class="orb"></span><span id="statusText">FLEET</span> <small id="statusSub">connecting to the bridge</small></div>
+    <div id="deskdock" aria-label="Desk states"></div>
+    <div id="clockbox"><div id="clock">--:--:--</div><div id="stamp">LIVE FEED</div></div>
+  </header>
+
+  <main id="panes">
+    <section class="pane" id="shipped" aria-label="Shipped">
+      <h2 id="shippedH">SHIPPED</h2>
+      <ul id="shippedList"><li>Loading the record...</li></ul>
+    </section>
+
+    <section class="pane" id="needs" aria-label="Needs you">
+      <header>
+        <h1 id="needsH">Reading the board</h1>
+        <div class="why">APPROVE QUEUES IT TO THE FOREMAN. NOTHING SENDS WITHOUT YOU.</div>
+      </header>
+      <div class="list" id="needsList"></div>
+    </section>
+
+    <section class="pane" id="flight" aria-label="In flight">
+      <h2 id="flightH">IN FLIGHT</h2>
+      <ul id="flightList"><li>Loading active work...</li></ul>
+    </section>
+  </main>
+
+  <a id="aibar" href="/cockpit.html" title="Open the AI cockpit">
+    <div class="orb"></div>
+    <div class="ph"><b>Ask the bridge</b> &nbsp;brief me &middot; what shipped &middot; what needs me &middot; dispatch a desk</div>
+    <kbd>OPEN</kbd>
+  </a>
+</div>
+
+<div class="sticky" id="note1">Live command bridge. Approve queues to the foreman; reads refresh every 15s.
+  <div class="meta">RYUJIN &middot; UltraSlide</div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var EMBED = new URLSearchParams(location.search).get('embed') === '1';
+  if (EMBED) document.body.classList.add('embed');
+
+  function el(id){ return document.getElementById(id); }
+  function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  /* clock */
+  function tick(){ try{ el('clock').textContent = new Date().toLocaleTimeString('en-CA',{hour12:false}); }catch(e){} }
+  tick(); setInterval(tick, 1000);
+
+  /* ---- seeded fallback so the bridge is never blank (signed out / offline) ---- */
+  function seed(){
+    setStatus('cold', 'FLEET', EMBED ? 'sign in for live data' : 'sign in to the Builder Room for live data');
+    renderDesks(null);
+    el('shippedH').textContent = 'SHIPPED';
+    el('shippedList').innerHTML = '<li class="empty">Recent ships appear here once the bridge connects.</li>';
+    el('flightH').textContent = 'IN FLIGHT';
+    el('flightList').innerHTML = '<li class="empty">Active desk work appears here once the bridge connects.</li>';
+    el('needsH').innerHTML = 'The bridge is <b>standing by</b>';
+    el('needsList').innerHTML = '<div class="ask"><div class="what">Sign in to the Builder Room<small>Live desks, decisions, and ships load with your session.</small></div><div><a class="approve" href="/builders-hall.html" style="display:flex;align-items:center;justify-content:center;text-decoration:none"><span>OPEN</span></a></div></div>';
+  }
+
+  function setStatus(mode, text, sub){
+    var s = el('status'); s.className = ''; if (mode) s.classList.add(mode);
+    el('statusText').textContent = text; el('statusSub').textContent = sub || '';
+  }
+
+  function deskLabel(d, id){
+    var lane = d && (d.lane || d.role); var t = d && d.task;
+    return '<span class="led"></span><b>' + esc(id) + '</b> ' + esc((lane || t || '').toString().toLowerCase().slice(0,14));
+  }
+
+  function renderDesks(desks){
+    var dock = el('deskdock');
+    if (!desks){ dock.innerHTML = ''; return; }
+    var ids = Object.keys(desks).filter(function(k){ return k !== 'Z'; }).sort();
+    var anyWaiting = false, anyWorking = false;
+    dock.innerHTML = ids.map(function(id){
+      var d = desks[id] || {}; var st = (d.status || 'idle');
+      if (st === 'waiting_on_mac') anyWaiting = true;
+      if (st === 'working') anyWorking = true;
+      var stale = d.stale ? ' stale' : '';
+      return '<span class="chip' + stale + '" data-s="' + esc(st) + '" title="' + esc(d.task || st) + '">' + deskLabel(d, id) + (st==='waiting_on_mac'?' !':'') + '</span>';
+    }).join('');
+    if (anyWaiting) setStatus('attn', 'FLEET', 'a desk is waiting on you');
+    else if (anyWorking) setStatus('', 'FLEET GREEN', ids.length + ' desks live');
+    else setStatus('cold', 'FLEET', 'all desks idle');
+    return desks;
+  }
+
+  function asArray(v){ return Array.isArray(v) ? v : (v == null ? [] : [v]); }
+  function lineText(x){
+    if (x == null) return '';
+    if (typeof x === 'string') return x;
+    return x.text || x.title || x.item || x.label || x.what || x.summary || JSON.stringify(x);
+  }
+
+  function renderShipped(list){
+    var arr = asArray(list).map(lineText).filter(Boolean).slice(0,8);
+    el('shippedH').textContent = 'SHIPPED' + (arr.length ? ' · ' + arr.length : '');
+    el('shippedList').innerHTML = arr.length
+      ? arr.map(function(t){ return '<li>' + esc(t) + '</li>'; }).join('')
+      : '<li class="empty">No ships recorded in this window.</li>';
+  }
+
+  function renderFlight(list){
+    var arr = asArray(list).map(lineText).filter(Boolean).slice(0,8);
+    el('flightH').textContent = 'IN FLIGHT' + (arr.length ? ' · ' + arr.length : '');
+    el('flightList').innerHTML = arr.length
+      ? arr.map(function(t){ return '<li>' + esc(t) + '</li>'; }).join('')
+      : '<li class="empty">No active desk work right now.</li>';
+  }
+
+  function renderNeeds(list){
+    var arr = asArray(list).map(function(x){
+      if (x && typeof x === 'object') return { what: lineText(x), why: x.why || x.detail || x.context || '' };
+      return { what: lineText(x), why: '' };
+    }).filter(function(a){ return a.what; });
+    var h = el('needsH');
+    h.innerHTML = arr.length === 0 ? 'All clear. <b>Nothing waiting on you.</b>'
+      : (arr.length === 1 ? 'One call is <b>waiting on you</b>' : arr.length + ' calls are <b>waiting on you</b>');
+    el('needsList').innerHTML = arr.length === 0
+      ? '<div class="ask"><div class="what">The board is clear<small>The fleet has built itself to the edge of what it can do without you.</small></div></div>'
+      : arr.map(function(a){
+          return '<div class="ask"><div class="what">' + esc(a.what) + (a.why ? '<small>' + esc(a.why) + '</small>' : '') +
+            '</div><div><button class="approve" type="button"><span>APPROVE</span></button><div class="queued">QUEUED</div></div></div>';
+        }).join('');
+    wireApprove();
+  }
+
+  function wireApprove(){
+    document.querySelectorAll('.approve').forEach(function(btn){
+      if (btn.tagName === 'A' || btn.dataset.wired) return;
+      btn.dataset.wired = '1';
+      btn.addEventListener('click', function(){
+        var ask = btn.closest('.ask'); if (ask) ask.classList.add('done');
+        var left = document.querySelectorAll('#needsList .ask:not(.done)').length;
+        var h = el('needsH');
+        h.innerHTML = left === 0 ? 'All clear. <b>Nothing waiting on you.</b>'
+          : (left === 1 ? 'One call is <b>waiting on you</b>' : left + ' calls are <b>waiting on you</b>');
+        var q = ask && ask.querySelector('.queued');
+        if (q) q.textContent = 'QUEUED ' + new Date().toLocaleTimeString('en-CA',{hour12:false}).slice(0,5) + 'Z';
+        // NOTE: client-side confirm only for v1. A fleet write-back channel
+        // (approval -> foreman) does not exist on /api/fleet yet; flagged as a follow-up.
+      });
+    });
+  }
+
+  /* ---- live load (fail-open) ---- */
+  var loading = false;
+  function load(){
+    if (loading || document.hidden) return;
+    loading = true;
+    var fleetOk = false;
+    fetch('/api/fleet', { headers:{ 'accept':'application/json' }, credentials:'same-origin' })
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(f){
+        if (f && f.desks && Object.keys(f.desks).length){
+          fleetOk = true;
+          var desks = renderDesks(f.desks);
+          // IN FLIGHT derived reliably from working desks
+          var flight = Object.keys(desks).filter(function(k){ return k!=='Z'; }).map(function(k){
+            var d = desks[k]; return (d.status==='working' && d.task) ? (k + ': ' + d.task) : null;
+          }).filter(Boolean);
+          renderFlight(flight);
+          if (f.stamp || f.updatedAt) el('stamp').textContent = 'LIVE · ' + new Date(f.updatedAt||Date.now()).toLocaleTimeString('en-CA',{hour12:false}).slice(0,5);
+        }
+        return fetch('/api/snapshot', { headers:{ 'accept':'application/json' }, credentials:'same-origin' });
+      })
+      .then(function(r){ return (r && r.ok) ? r.json() : null; })
+      .then(function(snap){
+        var fleet = snap && (snap.sections && snap.sections.fleet || snap.fleet);
+        if (fleet){
+          renderNeeds(fleet.blockedOnMac || fleet.needsYou || []);
+          renderShipped(fleet.shipped || fleet.shippedToday || fleet.recent || []);
+          if (!fleetOk && fleet.desks) renderDesks(fleet.desks);
+        } else if (!fleetOk){
+          seed();
+        } else {
+          // fleet desks live but no snapshot fleet section: keep desks, honest empties
+          renderNeeds([]); renderShipped([]);
+        }
+      })
+      .catch(function(){ if (!fleetOk) seed(); })
+      .then(function(){ loading = false; });
+  }
+
+  seed();        // paint immediately, never blank
+  load();        // then hydrate
+  setInterval(load, 15000);
+  document.addEventListener('visibilitychange', function(){ if (!document.hidden) load(); });
+
+  /* draggable sticky (standalone only) */
+  var note = el('note1');
+  if (note && !EMBED){
+    note.addEventListener('pointerdown', function(e){
+      var sx=e.clientX, sy=e.clientY, r=note.getBoundingClientRect();
+      function mv(ev){ note.style.left=(r.left+(ev.clientX-sx))+'px'; note.style.top=(r.top+(ev.clientY-sy))+'px'; }
+      function up(){ removeEventListener('pointermove',mv); removeEventListener('pointerup',up); }
+      addEventListener('pointermove',mv); addEventListener('pointerup',up);
+    });
+  }
+})();
+</script>
+</body>
+</html>
