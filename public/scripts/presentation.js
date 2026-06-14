@@ -364,7 +364,7 @@
     '  .present-btn { width: 34px; height: 34px; font-size: 1.1em; }',
     '  .present-counter { padding: 0 8px; min-width: 50px; font-size: 0.78em; }',
     '  .present-hint { display: none; }',
-    '  body.present-mode .slide { padding: 32px 18px; }',
+    '  body.present-mode .slide { padding: 66px 18px 84px; }',
     '}',
     '@media (prefers-reduced-motion: reduce) {',
     '  body.present-mode .slide { transition: opacity 0.15s; transform: none !important; }',
