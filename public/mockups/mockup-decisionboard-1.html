@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TRIAGE — Decision Board mockup 1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#07080c; --ink2:#0c0e14; --paperwhite:#f2f1ec; --dim:#b9b6ac; --faint:#8d8a81;
+  --gold:#e8a93c; --gold-hot:#ffc95e; --green:#59c98a; --red:#e05656; --blue:#6aa7d8;
+  --hairline:rgba(242,241,236,.12); --panel:rgba(13,15,21,.78);
+  --lane-A:#e05656;--lane-B:#e8893c;--lane-C:#6aa7d8;--lane-D:#59c98a;--lane-E:#a98ce0;--lane-F:#e08cb4;--lane-G:#5fd6c8;
+  --serif:'Lexend',system-ui,sans-serif; --mono:'Atkinson Hyperlegible','Inter',sans-serif; --ui:'Inter',system-ui,sans-serif;
+  --z-bar:40; --z-toast:70;
+}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%}
+body{
+  font-family:var(--ui); color:var(--paperwhite); background:var(--ink);
+  -webkit-font-smoothing:antialiased; overflow:hidden;
+}
+/* animated bg: slow gold aurora drift over ink */
+body::before{
+  content:''; position:fixed; inset:-20%; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(40% 50% at 18% 22%, rgba(232,169,60,.10), transparent 70%),
+    radial-gradient(45% 55% at 82% 78%, rgba(106,167,216,.08), transparent 70%),
+    radial-gradient(35% 40% at 60% 10%, rgba(169,140,224,.07), transparent 70%);
+  animation:drift 34s ease-in-out infinite alternate;
+}
+@keyframes drift{ to{ transform:translate3d(2.5%,-2%,0) scale(1.08); } }
+.grain{position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.035;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");}
+
+.app{position:relative;z-index:2;height:100%;display:flex;flex-direction:column}
+
+/* ---- top terminal bar: stay aware of all desks while you triage ---- */
+.bar{
+  display:flex;align-items:center;gap:18px;padding:11px 20px;
+  background:linear-gradient(180deg,rgba(7,8,12,.95),rgba(7,8,12,.6));
+  border-bottom:1px solid var(--hairline); backdrop-filter:blur(8px); z-index:var(--z-bar);
+}
+.brand{font-family:var(--serif);font-size:19px;letter-spacing:.01em}
+.brand b{color:var(--gold)}
+.verdict{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--green);
+  border:1px solid rgba(89,201,138,.4);padding:4px 9px;border-radius:999px}
+.desks{display:flex;gap:7px;margin-left:auto}
+.dchip{position:relative;width:30px;height:30px;border-radius:7px;display:grid;place-items:center;
+  font-weight:700;font-size:13px;background:rgba(255,255,255,.03);border:1px solid var(--hairline);cursor:default}
+.dchip .lamp{position:absolute;top:-3px;right:-3px;width:8px;height:8px;border-radius:50%}
+.dchip[data-st="working"] .lamp{background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse 2.6s ease-in-out infinite}
+.dchip[data-st="idle"] .lamp{background:var(--faint)}
+.dchip[data-st="dark"] .lamp{background:rgba(141,138,129,.4)}
+.dchip:hover .tip{opacity:1;transform:translateY(0)}
+.tip{position:absolute;top:38px;right:0;width:240px;background:var(--ink2);border:1px solid var(--hairline);
+  border-radius:8px;padding:9px 11px;font-size:11.5px;line-height:1.5;color:var(--dim);opacity:0;transform:translateY(-4px);
+  transition:.16s;pointer-events:none;z-index:var(--z-bar);box-shadow:0 18px 40px rgba(0,0,0,.5)}
+.tip b{color:var(--paperwhite);display:block;margin-bottom:2px;letter-spacing:.04em}
+.clock{font-size:12px;color:var(--faint);letter-spacing:.08em}
+@keyframes pulse{50%{box-shadow:0 0 2px currentColor}}
+
+/* ---- main: master list + detail ---- */
+.main{flex:1;display:grid;grid-template-columns:minmax(330px,400px) 1fr;min-height:0}
+.list{border-right:1px solid var(--hairline);overflow-y:auto;background:rgba(7,8,12,.4)}
+.list-head{position:sticky;top:0;padding:16px 20px 11px;background:linear-gradient(180deg,var(--ink),rgba(7,8,12,.7));
+  backdrop-filter:blur(6px);display:flex;align-items:baseline;justify-content:space-between;z-index:5}
+.list-head h1{font-family:var(--serif);font-size:25px;font-weight:600;letter-spacing:-.01em}
+.list-head .count{font-size:12px;color:var(--faint);letter-spacing:.1em}
+.list-head .count b{color:var(--gold-hot)}
+
+.row{display:flex;gap:12px;padding:14px 20px;border-bottom:1px solid rgba(242,241,236,.06);cursor:pointer;
+  transition:background .15s;position:relative}
+.row:hover{background:rgba(255,255,255,.025)}
+.row.sel{background:rgba(232,169,60,.10);box-shadow:inset 0 0 0 1px rgba(232,169,60,.32)}
+.row.handled{opacity:.4}
+.row.handled .ask{text-decoration:line-through}
+.pri{flex:none;width:34px;height:22px;border-radius:5px;display:grid;place-items:center;
+  font-size:10.5px;font-weight:700;letter-spacing:.04em;margin-top:1px}
+.pri.P0{background:rgba(224,86,86,.16);color:#ff8a8a;border:1px solid rgba(224,86,86,.45)}
+.pri.P1{background:rgba(232,169,60,.14);color:var(--gold-hot);border:1px solid rgba(232,169,60,.4)}
+.pri.P2{background:rgba(141,138,129,.12);color:var(--dim);border:1px solid var(--hairline)}
+.row-body{min-width:0;flex:1}
+.ask{font-family:var(--serif);font-size:15px;line-height:1.32;color:var(--paperwhite);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.meta{display:flex;gap:8px;align-items:center;margin-top:7px;font-size:11px;color:var(--faint)}
+.lane{font-weight:700;letter-spacing:.08em}
+.due{color:#ff8a8a}
+
+/* detail pane */
+.detail{overflow-y:auto;padding:40px 46px;position:relative}
+.detail-inner{max-width:640px}
+.dpri{display:inline-flex;align-items:center;gap:9px;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
+.dpri .dot{width:9px;height:9px;border-radius:50%}
+.detail h2{font-family:var(--serif);font-size:34px;font-weight:600;line-height:1.14;letter-spacing:-.015em;
+  margin:18px 0 0;text-wrap:balance}
+.ctx{margin-top:22px;font-size:14px;line-height:1.7;color:var(--dim);font-family:var(--mono)}
+.ctx .k{color:var(--faint);text-transform:uppercase;font-size:11px;letter-spacing:.14em;display:block;margin:20px 0 6px}
+.owner{display:flex;align-items:center;gap:11px;margin-top:24px;padding:13px 15px;background:rgba(255,255,255,.025);
+  border:1px solid var(--hairline);border-radius:11px}
+.owner .mono{width:34px;height:34px;border-radius:8px;display:grid;place-items:center;font-weight:700}
+.owner small{color:var(--faint);display:block;font-size:11px;letter-spacing:.08em}
+.actions{display:flex;gap:11px;margin-top:30px;flex-wrap:wrap}
+.btn{font-family:var(--mono);font-weight:700;font-size:12px;letter-spacing:.12em;text-transform:uppercase;
+  padding:13px 20px;border-radius:8px;cursor:pointer;border:1px solid transparent;transition:.16s}
+.btn.go{background:var(--gold);color:var(--ink);border-color:var(--gold)}
+.btn.go:hover{background:var(--gold-hot);box-shadow:0 8px 24px rgba(232,169,60,.3)}
+.btn.sec{background:transparent;color:var(--paperwhite);border-color:var(--hairline)}
+.btn.sec:hover{border-color:var(--paperwhite)}
+.btn:focus-visible{outline:2px solid var(--gold-hot);outline-offset:2px}
+.kbd{margin-top:34px;font-size:11px;color:var(--faint);letter-spacing:.05em;line-height:2}
+.kbd key{display:inline-block;min-width:18px;text-align:center;padding:2px 6px;border:1px solid var(--hairline);
+  border-radius:4px;color:var(--dim);margin:0 2px;font-size:10px}
+.empty{height:100%;display:grid;place-items:center;text-align:center;color:var(--faint)}
+.empty .big{font-family:var(--serif);font-size:40px;color:var(--green);margin-bottom:10px}
+
+/* activity ticker */
+.ticker{border-top:1px solid var(--hairline);background:rgba(7,8,12,.7);backdrop-filter:blur(6px);
+  display:flex;align-items:center;gap:14px;padding:9px 20px;font-size:12px;overflow:hidden;white-space:nowrap}
+.ticker .tlabel{flex:none;font-size:10px;letter-spacing:.18em;color:var(--faint);text-transform:uppercase}
+.ticker .stream{flex:1;overflow:hidden;color:var(--dim)}
+.ticker .stream span{margin-right:30px}
+.ticker .stream b{color:var(--green)}
+
+.toast{position:fixed;bottom:60px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink2);
+  border:1px solid var(--panel-edge,rgba(232,169,60,.5));border-radius:10px;padding:12px 20px;font-size:13px;
+  opacity:0;transition:.25s;z-index:var(--z-toast);box-shadow:0 20px 50px rgba(0,0,0,.6)}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+@media (prefers-reduced-motion:reduce){ body::before{animation:none} .dchip[data-st] .lamp{animation:none} }
+@media (max-width:820px){ .main{grid-template-columns:1fr} .list{display:none} .list.mobile-show{display:block} }
+</style>
+</head>
+<body>
+<div class="grain"></div>
+<div class="app">
+  <header class="bar">
+    <div class="brand">THE <b>TRIAGE</b></div>
+    <div class="verdict" id="verdict">FLEET —</div>
+    <div class="desks" id="desks"></div>
+    <div class="clock" id="clock">--:--</div>
+  </header>
+
+  <div class="main">
+    <aside class="list">
+      <div class="list-head">
+        <h1>Needs you</h1>
+        <div class="count"><b id="openCount">0</b> open · <span id="doneCount">0</span> cleared</div>
+      </div>
+      <div id="rows"></div>
+    </aside>
+    <section class="detail" id="detail"></section>
+  </div>
+
+  <footer class="ticker">
+    <span class="tlabel">Shipped</span>
+    <div class="stream" id="stream"></div>
+  </footer>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const PRANK={P0:0,P1:1,P2:2};
+let DATA=null, decisions=[], sel=0;
+const handled=new Set(JSON.parse(localStorage.getItem('triage_handled')||'[]'));
+
+const $=s=>document.querySelector(s);
+function clock(){const d=new Date();$('#clock').textContent=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');}
+setInterval(clock,1000);clock();
+
+function laneColor(l){return getComputedStyle(document.documentElement).getPropertyValue('--lane-'+(l||'A').toUpperCase())||'#e8a93c';}
+function deskStatus(d){ if(d.status==='working')return'working'; if(d.live===false)return'dark'; return d.status==='idle'?'idle':'working'; }
+
+async function load(){
+  try{
+    const r=await fetch('/FLEET_DECK_DATA.json',{cache:'no-store'});
+    DATA=await r.json();
+  }catch(e){ DATA={blockedOnMac:[],desks:{},shippedToday:[],healthVerdict:'?'}; }
+  render();
+}
+function render(){
+  // verdict
+  const v=$('#verdict'); v.textContent='FLEET '+(DATA.healthVerdict||'—');
+  // desks
+  const desks=DATA.desks||{};
+  $('#desks').innerHTML=Object.keys(desks).map(id=>{
+    const d=desks[id], st=deskStatus(d);
+    return `<div class="dchip" data-st="${st}" style="color:${laneColor(id)}">
+      ${id}<span class="lamp"></span>
+      <div class="tip"><b>${id} · ${(d.lane||'').replace(/</g,'&lt;')}</b>${(d.task||'idle').replace(/</g,'&lt;')}</div></div>`;
+  }).join('');
+  // decisions
+  decisions=(DATA.blockedOnMac||[]).slice().sort((a,b)=>(PRANK[a.priority]??9)-(PRANK[b.priority]??9));
+  const open=decisions.filter(d=>!handled.has(key(d)));
+  $('#openCount').textContent=open.length;
+  $('#doneCount').textContent=decisions.filter(d=>handled.has(key(d))).length;
+  $('#rows').innerHTML=decisions.map((d,i)=>{
+    const h=handled.has(key(d));
+    return `<div class="row ${i===sel?'sel':''} ${h?'handled':''}" data-i="${i}" onclick="pick(${i})">
+      <div class="pri ${d.priority}">${d.priority}</div>
+      <div class="row-body"><div class="ask">${esc(d.item)}</div>
+        <div class="meta"><span class="lane" style="color:${laneColor(d.lane)}">LANE ${(d.lane||'?')}</span>
+        ${d.due?`<span class="due">· due ${esc(d.due)}</span>`:''}${h?'<span>· cleared</span>':''}</div></div>
+    </div>`;
+  }).join('');
+  detail();
+  // ticker
+  $('#stream').innerHTML=(DATA.shippedToday||[]).map(s=>`<span><b>${esc(s.by)}·${esc(s.when)}</b> ${esc(trim(s.what,90))}</span>`).join('');
+}
+function detail(){
+  if(!decisions.length){ $('#detail').innerHTML='<div class="empty"><div><div class="big">All clear.</div>Nothing needs your call right now. The terminals keep building.</div></div>'; return; }
+  const d=decisions[sel]; const h=handled.has(key(d));
+  const desk=(DATA.desks||{})[(d.lane||'').toUpperCase()];
+  const rv=resolveUrl(d);
+  $('#detail').innerHTML=`<div class="detail-inner">
+    <div class="dpri"><span class="dot" style="background:${d.priority==='P0'?'#ff8a8a':d.priority==='P1'?'var(--gold-hot)':'var(--faint)'}"></span>${d.priority} decision · lane ${d.lane||'?'}${d.due?' · due '+esc(d.due):''}</div>
+    <h2>${esc(d.item)}</h2>
+    <div class="ctx">
+      <span class="k">Why it is on your desk</span>
+      This is a decision only you can make: it needs money, a sign-off, or a judgment the fleet cannot make for you. ${d.priority==='P0'?'It is the highest priority on the board.':''}
+      ${desk?`<span class="k">The lane waiting on it</span>${esc(desk.lane||'')} — currently: ${esc(desk.task||'idle')}.`:''}
+    </div>
+    ${desk?`<div class="owner"><div class="mono" style="background:${laneColor(d.lane)}22;color:${laneColor(d.lane)}">${(d.lane||'?')}</div>
+      <div><b>Lane ${d.lane}</b><small>${esc(desk.lane||'')}</small></div></div>`:''}
+    <div class="actions">
+      <button class="btn go" onclick="openPage()" title="${esc(rv.url)}">${esc(rv.label)} &#8599;</button>
+      <button class="btn sec" onclick="act('approve')">Approve</button>
+      <button class="btn sec" onclick="act('respond')">Respond…</button>
+      <button class="btn sec" onclick="act('defer')">${h?'Reopen':'Defer'}</button>
+    </div>
+    <div class="kbd"><key>O</key> open page · <key>A</key> approve · <key>J</key><key>K</key> move · <key>R</key> respond · <key>D</key> defer</div>
+  </div>`;
+}
+function pick(i){sel=Math.max(0,Math.min(decisions.length-1,i));render();}
+function key(d){return (d.priority||'')+'|'+(d.item||'').slice(0,40);}
+function esc(s){return String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function trim(s,n){s=String(s||'');return s.length>n?s.slice(0,n)+'…':s;}
+function act(a){
+  const d=decisions[sel]; if(!d)return;
+  if(a==='defer'){ if(handled.has(key(d)))handled.delete(key(d)); else handled.add(key(d)); save(); render(); return; }
+  if(a==='approve'){ handled.add(key(d)); save(); toast('Approved · '+trim(d.item,40)+'  (mockup: would post to foreman)'); next(); }
+  if(a==='respond'){ toast('Respond composer would open here  (mockup)'); }
+}
+function next(){ const openIdx=decisions.findIndex((d,i)=>i>sel&&!handled.has(key(d))); sel=openIdx>=0?openIdx:sel; render(); }
+function save(){localStorage.setItem('triage_handled',JSON.stringify([...handled]));}
+
+// Map a decision to the page Mac needs to act on it. Opens in HIS Chrome
+// (default profile = bookmarks + signed-in sessions) on the second monitor.
+// A foreman-set d.openUrl always wins; otherwise resolve by keyword.
+function resolveUrl(d){
+  if(d.openUrl&&/^https?:\/\//.test(d.openUrl))return{url:d.openUrl,label:'Open page'};
+  const t=(d.item||'').toLowerCase();
+  const M=[
+    [/edgewater|paysheet|pay sheet|payroll/,'https://ryujin-os.vercel.app/admin.html#crew','Open Crew Ops'],
+    [/invoice.?chase|collected|receivable|\bar\b|chase drafts|drafts? (ready )?(to )?send/,'https://mail.google.com/mail/u/0/#drafts','Open Gmail drafts'],
+    [/aphl|wo#?\s?92520|lakeside/,'https://drive.google.com/drive/folders/1E3PZk6Pmxa0fvRCC1tb1XypXvDp6GSRy','Open APHL invoices'],
+    [/brand.?hub|brand mockup|inbox mockup|mockup pick/,'http://localhost:4848/mockup-brand-hub-1.html','Open brand mockups'],
+    [/family.?hub|family/,'https://family-hub-mu-ten.vercel.app','Open family hub'],
+    [/voice console|voice/,'http://localhost:4848/ryujin-voice.html','Open voice console'],
+    [/meta|access.?token/,'https://business.facebook.com/settings','Open Meta settings'],
+    [/codex|openai|quota/,'https://platform.openai.com/account/billing','Open OpenAI billing'],
+    [/revive|pricing basis/,'https://ryujin-os.vercel.app/revive-estimator.html','Open Revive estimator'],
+    [/\bpromo\b/,'https://mail.google.com/mail/u/0/#drafts','Open Gmail drafts'],
+    [/dna|business model|arms.?dealer|ambassador/,'http://localhost:4848/deck-decisions.html','Open decisions deck'],
+    [/cmd.?k|ai.?layer|next.?build|pgvector|semantic memory/,'http://localhost:4848/fleet-deck.html','Open fleet deck'],
+  ];
+  for(const [re,url,label] of M){ if(re.test(t))return{url,label}; }
+  return{url:'http://localhost:4848/fleet-deck.html',label:'Open fleet deck'};
+}
+let _key=null;
+async function hubKey(){
+  if(_key)return _key;
+  try{const r=await fetch('/api/hubkey');if(r.ok){_key=(await r.json()).key;return _key;}}catch(e){}
+  _key=localStorage.getItem('hubKey')||prompt('Dispatch key (shown in the hub server console):')||'';
+  if(_key)localStorage.setItem('hubKey',_key);
+  return _key;
+}
+async function openPage(){
+  const d=decisions[sel];if(!d)return;
+  const {url}=resolveUrl(d);
+  try{
+    const r=await fetch('/api/open',{method:'POST',headers:{'Content-Type':'application/json','x-hub-key':await hubKey()},body:JSON.stringify({url})});
+    if(r.ok)toast('Opening on your second monitor → '+url.replace(/^https?:\/\//,'').slice(0,48));
+    else if(r.status===401){_key=null;toast('Key rejected — tap Open again to re-enter it');}
+    else toast('Open failed ('+r.status+')');
+  }catch(e){ window.open(url,'_blank'); toast('Hub unreachable, opened here instead'); }
+}
+let tt;function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('show'),2600);}
+addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;
+  if(e.key==='j'||e.key==='ArrowDown'){pick(sel+1);e.preventDefault();}
+  if(e.key==='k'||e.key==='ArrowUp'){pick(sel-1);e.preventDefault();}
+  if(e.key==='a')act('approve'); if(e.key==='r')act('respond'); if(e.key==='d')act('defer'); if(e.key==='o')openPage();
+});
+load(); setInterval(load,15000);
+</script>
+</body>
+</html>

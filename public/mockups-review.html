@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#030611">
+<title>Ryujin OS · Mockups Review</title>
+<link rel="icon" href="/apple-touch-icon.png">
+<!-- Auth gate: tokenless users bounce to /login before any logic runs -->
+<script src="/assets/auth-guard.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@500;600;700;800&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#030611; --bg-2:#060a14;
+  --panel:rgba(14,22,40,0.78); --panel-solid:#0b1322;
+  --line:rgba(74,158,255,0.24); --line-soft:rgba(74,158,255,0.12);
+  --ink:#e6ecf6; --ink-mid:rgba(198,214,240,0.74); --ink-dim:rgba(160,190,230,0.5);
+  --accent:#4a9eff; --accent-deep:#2563eb; --accent-glow:rgba(74,158,255,0.4);
+  /* Verdict signal language, kept distinct from the blue action accent. */
+  --ok:#4ade80; --ok-bg:rgba(74,222,128,0.12); --ok-line:rgba(74,222,128,0.45);
+  --warn:#f5b13a; --warn-bg:rgba(245,177,58,0.12); --warn-line:rgba(245,177,58,0.45);
+  --no:#f87171; --no-bg:rgba(248,113,113,0.12); --no-line:rgba(248,113,113,0.45);
+  --z-sticky:20; --z-backdrop:80; --z-modal:90; --z-toast:100;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{min-height:100%}
+body{
+  font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var(--ink);
+  line-height:1.45; position:relative; min-height:100vh; overflow-x:hidden;
+}
+.bg-ambient{position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(ellipse at 28% 16%,rgba(74,158,255,0.12) 0%,transparent 55%),
+    radial-gradient(ellipse at 74% 88%,rgba(124,58,237,0.09) 0%,transparent 55%),
+    linear-gradient(180deg,var(--bg-2) 0%,var(--bg) 100%);}
+.bg-grid{position:fixed;inset:0;z-index:1;pointer-events:none;
+  background-image:linear-gradient(rgba(74,158,255,0.035) 1px,transparent 1px),linear-gradient(90deg,rgba(74,158,255,0.035) 1px,transparent 1px);
+  background-size:62px 62px;
+  mask-image:radial-gradient(ellipse at center,#000 30%,transparent 86%);
+  -webkit-mask-image:radial-gradient(ellipse at center,#000 30%,transparent 86%);}
+
+/* Topbar */
+.topbar{position:sticky;top:0;z-index:var(--z-sticky);display:flex;align-items:center;gap:14px;
+  padding:14px 20px;background:linear-gradient(180deg,rgba(6,10,20,0.92) 62%,transparent);
+  border-bottom:1px solid var(--line-soft);backdrop-filter:blur(14px);}
+.back-btn{display:inline-flex;align-items:center;gap:9px;font-weight:700;font-size:0.92rem;
+  color:#fff;background:linear-gradient(180deg,var(--accent),var(--accent-deep));
+  border:1px solid rgba(255,255,255,0.18);border-radius:11px;padding:11px 18px;cursor:pointer;
+  box-shadow:0 6px 20px var(--accent-glow);transition:transform .16s cubic-bezier(.22,1,.36,1),box-shadow .16s;}
+.back-btn:hover{transform:translateY(-1px);box-shadow:0 9px 26px var(--accent-glow);}
+.back-btn:active{transform:translateY(1px);}
+.back-btn svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;}
+.brand{display:flex;flex-direction:column;line-height:1.15;margin-left:2px;}
+.brand .nm{font-family:'Orbitron',sans-serif;font-size:0.8rem;font-weight:800;letter-spacing:2.4px;}
+.brand .nm .dim{color:var(--ink-dim);font-weight:500;}
+.brand .sub{font-family:'Share Tech Mono',monospace;font-size:0.62rem;color:var(--ink-dim);letter-spacing:1.6px;margin-top:2px;}
+.tb-spacer{flex:1;}
+.tb-meta{font-family:'Share Tech Mono',monospace;font-size:0.66rem;color:var(--ink-dim);letter-spacing:1.4px;display:flex;align-items:center;gap:7px;}
+.tb-meta .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 7px var(--ok);}
+
+.wrap{position:relative;z-index:2;max-width:1280px;margin:0 auto;padding:26px 20px 90px;}
+
+/* Page head */
+.head{margin-bottom:22px;}
+.head h1{font-family:'Orbitron',sans-serif;font-size:clamp(1.5rem,3.4vw,2.2rem);font-weight:800;letter-spacing:0.5px;text-wrap:balance;}
+.head p{color:var(--ink-mid);max-width:70ch;margin-top:8px;font-size:0.96rem;}
+
+/* Toolbar */
+.toolbar{position:sticky;top:73px;z-index:calc(var(--z-sticky) - 1);
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:18px 0 24px;padding:12px 14px;
+  background:var(--panel);border:1px solid var(--line);border-radius:14px;backdrop-filter:blur(18px);}
+.filters{display:flex;gap:6px;flex-wrap:wrap;}
+.chip{font-family:'Share Tech Mono',monospace;font-size:0.72rem;letter-spacing:0.6px;
+  color:var(--ink-mid);background:rgba(6,10,20,0.55);border:1px solid var(--line-soft);
+  border-radius:9px;padding:8px 12px;cursor:pointer;transition:all .14s;display:inline-flex;align-items:center;gap:7px;min-height:38px;}
+.chip:hover{border-color:var(--line);color:var(--ink);}
+.chip[aria-pressed="true"]{color:#fff;border-color:var(--accent);background:rgba(74,158,255,0.14);box-shadow:0 0 0 1px var(--accent-glow) inset;}
+.chip .ct{font-weight:700;color:var(--ink);background:rgba(255,255,255,0.08);border-radius:6px;padding:0 6px;min-width:20px;text-align:center;}
+.chip .ct.ok{color:var(--ok);} .chip .ct.warn{color:var(--warn);} .chip .ct.no{color:var(--no);}
+.tb-grow{flex:1;}
+.btn{font-weight:700;font-size:0.86rem;border-radius:10px;padding:10px 16px;cursor:pointer;
+  border:1px solid var(--line);background:rgba(6,10,20,0.55);color:var(--ink);transition:all .14s;min-height:40px;display:inline-flex;align-items:center;gap:8px;}
+.btn:hover{border-color:var(--accent);color:#fff;}
+.btn.primary{background:linear-gradient(180deg,var(--accent),var(--accent-deep));border-color:transparent;color:#fff;box-shadow:0 5px 16px var(--accent-glow);}
+.btn.primary:hover{transform:translateY(-1px);box-shadow:0 8px 22px var(--accent-glow);}
+.btn:disabled{opacity:0.45;cursor:not-allowed;transform:none;box-shadow:none;}
+.btn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;}
+
+/* Group */
+.group{margin-bottom:34px;}
+.group-head{display:flex;align-items:baseline;gap:12px;margin-bottom:14px;padding-bottom:9px;border-bottom:1px solid var(--line-soft);}
+.group-head h2{font-family:'Orbitron',sans-serif;font-size:1.02rem;font-weight:700;letter-spacing:1px;}
+.group-head .blurb{color:var(--ink-dim);font-size:0.82rem;}
+.group-head .gcount{margin-left:auto;font-family:'Share Tech Mono',monospace;font-size:0.7rem;color:var(--ink-dim);}
+
+/* Cards grid */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:18px;}
+.card{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:15px;overflow:hidden;
+  display:flex;flex-direction:column;transition:border-color .16s,transform .16s,box-shadow .16s;backdrop-filter:blur(10px);}
+.card:hover{transform:translateY(-2px);box-shadow:0 16px 40px rgba(0,0,0,0.4);}
+.card[data-selected="true"]{box-shadow:0 0 0 2px var(--accent),0 16px 40px rgba(0,0,0,0.45);border-color:var(--accent);}
+.card[data-verdict="approved"]{border-top:0;}
+.preview{position:relative;height:178px;background:#05080f;border-bottom:1px solid var(--line-soft);overflow:hidden;}
+.preview .frame-scale{position:absolute;top:0;left:0;width:1280px;height:800px;transform:scale(0.2266);transform-origin:top left;border:0;pointer-events:none;background:#05080f;}
+.preview .sheen{position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,transparent 60%,rgba(3,6,17,0.55));}
+.preview .open-ov{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .16s;cursor:pointer;background:rgba(3,6,17,0.4);}
+.preview:hover .open-ov{opacity:1;}
+.open-ov span{font-weight:700;font-size:0.8rem;color:#fff;border:1px solid rgba(255,255,255,0.35);border-radius:9px;padding:8px 14px;background:rgba(10,18,34,0.7);backdrop-filter:blur(4px);}
+.vbadge{position:absolute;top:10px;right:10px;font-family:'Share Tech Mono',monospace;font-size:0.62rem;letter-spacing:1px;
+  text-transform:uppercase;padding:4px 9px;border-radius:999px;border:1px solid var(--line-soft);background:rgba(6,10,20,0.78);color:var(--ink-dim);}
+.vbadge.approved{color:var(--ok);border-color:var(--ok-line);background:var(--ok-bg);}
+.vbadge.disapproved{color:var(--warn);border-color:var(--warn-line);background:var(--warn-bg);}
+.vbadge.rejected{color:var(--no);border-color:var(--no-line);background:var(--no-bg);}
+.selbox{position:absolute;top:10px;left:10px;width:26px;height:26px;border-radius:7px;border:1.5px solid rgba(255,255,255,0.4);
+  background:rgba(6,10,20,0.78);display:none;align-items:center;justify-content:center;cursor:pointer;z-index:3;}
+.selecting .selbox{display:flex;}
+.selbox svg{width:15px;height:15px;stroke:#fff;fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;opacity:0;}
+.card[data-selected="true"] .selbox{background:var(--accent);border-color:var(--accent);}
+.card[data-selected="true"] .selbox svg{opacity:1;}
+.card-body{padding:13px 14px 14px;display:flex;flex-direction:column;gap:3px;flex:1;}
+.card-body .ttl{font-weight:700;font-size:0.96rem;letter-spacing:0.2px;}
+.card-body .grp{font-family:'Share Tech Mono',monospace;font-size:0.66rem;color:var(--ink-dim);letter-spacing:1px;}
+.actions{display:flex;gap:7px;margin-top:11px;}
+.va{flex:1;font-weight:700;font-size:0.74rem;letter-spacing:0.3px;border-radius:9px;padding:9px 4px;cursor:pointer;
+  border:1px solid var(--line-soft);background:rgba(6,10,20,0.5);color:var(--ink-mid);transition:all .13s;min-height:40px;}
+.va:hover{color:#fff;border-color:var(--ink-dim);}
+.va.ok[aria-pressed="true"]{color:#06210f;background:var(--ok);border-color:var(--ok);}
+.va.warn[aria-pressed="true"]{color:#241803;background:var(--warn);border-color:var(--warn);}
+.va.no[aria-pressed="true"]{color:#2a0808;background:var(--no);border-color:var(--no);}
+.va.ok:hover{border-color:var(--ok-line);} .va.warn:hover{border-color:var(--warn-line);} .va.no:hover{border-color:var(--no-line);}
+
+/* States */
+.state{padding:60px 20px;text-align:center;color:var(--ink-mid);}
+.state.err{color:var(--no);}
+.spinner{width:30px;height:30px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--accent);margin:0 auto 16px;animation:spin .8s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+/* Toast */
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);z-index:var(--z-toast);
+  background:var(--panel-solid);border:1px solid var(--line);border-radius:11px;padding:11px 18px;font-size:0.86rem;
+  color:var(--ink);box-shadow:0 12px 36px rgba(0,0,0,0.5);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s cubic-bezier(.22,1,.36,1);}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+.toast.err{border-color:var(--no-line);}
+
+/* Stepper dialog */
+dialog.stepper{padding:0;border:0;background:transparent;max-width:none;max-height:none;width:100vw;height:100vh;}
+dialog.stepper::backdrop{background:rgba(3,6,17,0.82);backdrop-filter:blur(6px);}
+.step-shell{position:fixed;inset:0;z-index:var(--z-modal);display:flex;flex-direction:column;}
+.step-bar{display:flex;align-items:center;gap:14px;padding:13px 18px;background:rgba(6,10,20,0.92);border-bottom:1px solid var(--line);backdrop-filter:blur(12px);}
+.step-bar .st-ttl{font-weight:700;font-size:1rem;}
+.step-bar .st-grp{font-family:'Share Tech Mono',monospace;font-size:0.66rem;color:var(--ink-dim);letter-spacing:1px;}
+.step-bar .st-prog{font-family:'Share Tech Mono',monospace;font-size:0.74rem;color:var(--accent);letter-spacing:1px;}
+.step-bar .sp{flex:1;}
+.icon-btn{width:40px;height:40px;border-radius:10px;border:1px solid var(--line);background:rgba(6,10,20,0.6);color:var(--ink-mid);
+  cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .14s;}
+.icon-btn:hover{color:#fff;border-color:var(--accent);}
+.icon-btn:disabled{opacity:0.35;cursor:not-allowed;}
+.icon-btn svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2.3;stroke-linecap:round;stroke-linejoin:round;}
+.step-stage{flex:1;position:relative;background:#05080f;overflow:hidden;}
+.step-stage iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#05080f;}
+.step-foot{display:flex;align-items:center;gap:10px;padding:13px 18px;background:rgba(6,10,20,0.92);border-top:1px solid var(--line);backdrop-filter:blur(12px);}
+.step-foot .hint{font-family:'Share Tech Mono',monospace;font-size:0.66rem;color:var(--ink-dim);letter-spacing:0.8px;margin-right:auto;}
+.step-foot .va{flex:0 0 auto;min-width:128px;}
+
+@media (max-width:640px){
+  .toolbar{top:69px;}
+  .step-foot{flex-wrap:wrap;}
+  .step-foot .hint{order:-1;width:100%;margin-bottom:4px;}
+  .step-foot .va{flex:1;min-width:0;}
+  .brand .sub{display:none;}
+}
+@media (prefers-reduced-motion:reduce){
+  *{transition:none !important;animation-duration:0.001ms !important;animation-iteration-count:1 !important;}
+  .card:hover,.btn.primary:hover,.back-btn:hover{transform:none;}
+}
+</style>
+</head>
+<body>
+
+<div class="bg-ambient"></div>
+<div class="bg-grid"></div>
+
+<div class="topbar">
+  <button class="back-btn" id="backBtn" type="button">
+    <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg> Back to Admin
+  </button>
+  <div class="brand">
+    <div class="nm">RYUJIN <span class="dim">· MOCKUPS</span></div>
+    <div class="sub">REVIEW &amp; APPROVAL</div>
+  </div>
+  <div class="tb-spacer"></div>
+  <div class="tb-meta"><span class="dot"></span><span id="tbMeta">loading</span></div>
+</div>
+
+<div class="wrap">
+
+  <div class="head">
+    <h1>Mockups Review</h1>
+    <p>Every prepared mockup in one place. Toggle the ones you want, hit Start to step through them, and mark each Approve, Disapprove, or Reject. Verdicts save to the server, so they hold across machines and the fleet can read them.</p>
+  </div>
+
+  <div class="toolbar" id="toolbar" hidden>
+    <div class="filters" id="filters" role="group" aria-label="Filter by verdict"></div>
+    <div class="tb-grow"></div>
+    <button class="btn" id="selectToggle" type="button">
+      <svg viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+      Multi-select
+    </button>
+    <button class="btn" id="selectAll" type="button" hidden>Select all</button>
+    <button class="btn primary" id="startBtn" type="button">
+      <svg viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+      Start review
+    </button>
+  </div>
+
+  <div id="gallery">
+    <div class="state"><div class="spinner"></div>Loading mockups and saved verdicts&hellip;</div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<dialog class="stepper" id="stepper" aria-label="Mockup review stepper">
+  <div class="step-shell">
+    <div class="step-bar">
+      <div>
+        <div class="st-ttl" id="stTitle">Mockup</div>
+        <div class="st-grp" id="stGroup">group</div>
+      </div>
+      <div class="sp"></div>
+      <div class="st-prog" id="stProg">1 / 1</div>
+      <button class="icon-btn" id="stClose" type="button" title="Close (Esc)" aria-label="Close">
+        <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="step-stage">
+      <iframe id="stFrame" title="Mockup preview" sandbox="allow-scripts allow-same-origin allow-popups allow-forms"></iframe>
+    </div>
+    <div class="step-foot">
+      <span class="hint">A approve · D disapprove · R reject · &larr; &rarr; move · Esc close</span>
+      <button class="icon-btn" id="stPrev" type="button" title="Previous" aria-label="Previous">
+        <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <button class="va ok" id="stApprove" type="button">Approve</button>
+      <button class="va warn" id="stDisapprove" type="button">Disapprove</button>
+      <button class="va no" id="stReject" type="button">Reject</button>
+      <button class="icon-btn" id="stNext" type="button" title="Next" aria-label="Next">
+        <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+    </div>
+  </div>
+</dialog>
+
+<script>
+(function(){
+  'use strict';
+
+  var TENANT = window.RYUJIN_TENANT_SLUG || 'plus-ultra';
+  var VERDICTS = ['approved','disapproved','rejected'];
+  var FILTERS = [
+    { key:'all', label:'All' },
+    { key:'pending', label:'Pending' },
+    { key:'approved', label:'Approved', cls:'ok' },
+    { key:'disapproved', label:'Disapproved', cls:'warn' },
+    { key:'rejected', label:'Rejected', cls:'no' }
+  ];
+
+  var state = {
+    items: [],            // flat list: {id, title, group, groupLabel, file, verdict}
+    verdicts: {},         // id -> verdict
+    selected: {},         // id -> true
+    selecting: false,
+    filter: 'all',
+    stepIds: [],          // ids currently in the stepper
+    stepPos: 0
+  };
+
+  function token(){
+    try { return localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token') || ''; }
+    catch(e){ return ''; }
+  }
+  function authHeaders(extra){
+    var h = extra || {};
+    h['x-tenant-id'] = TENANT;
+    var t = token();
+    if (t) h['Authorization'] = 'Bearer ' + t;
+    return h;
+  }
+  function esc(s){
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+      return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
+    });
+  }
+  function el(id){ return document.getElementById(id); }
+
+  var toastTimer = null;
+  function toast(msg, isErr){
+    var t = el('toast');
+    t.textContent = msg;
+    t.className = 'toast show' + (isErr ? ' err' : '');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ t.className = 'toast' + (isErr ? ' err' : ''); }, 2600);
+  }
+
+  // ── Navigation ──
+  function goBack(){
+    try {
+      if (window.parent !== window && window.parent.exitSectionOverlay) { window.parent.exitSectionOverlay(); return; }
+    } catch(e){}
+    window.location.href = '/administration.html';
+  }
+  el('backBtn').addEventListener('click', goBack);
+
+  // ── Data load ──
+  function loadAll(){
+    Promise.all([
+      fetch('/assets/mockup-registry.json', { cache:'no-store' }).then(function(r){ if(!r.ok) throw new Error('registry HTTP '+r.status); return r.json(); }),
+      fetch('/api/mockup-verdicts', { headers: authHeaders(), cache:'no-store' })
+        .then(function(r){ if(r.status===401) throw new Error('auth'); if(!r.ok) throw new Error('verdicts HTTP '+r.status); return r.json(); })
+        .catch(function(e){ if(e && e.message==='auth') throw e; return { verdicts: [] }; })
+    ]).then(function(res){
+      var reg = res[0], vres = res[1];
+      (vres.verdicts || []).forEach(function(v){ if (v && v.mockup_id) state.verdicts[v.mockup_id] = v.verdict; });
+      state.items = [];
+      (reg.groups || []).forEach(function(g){
+        (g.mockups || []).forEach(function(m){
+          state.items.push({ id:m.id, title:m.title, group:g.key, groupLabel:g.label, blurb:g.blurb, file:m.file,
+            verdict: state.verdicts[m.id] || 'pending' });
+        });
+      });
+      render();
+      el('toolbar').hidden = false;
+      el('tbMeta').textContent = state.items.length + ' mockups';
+    }).catch(function(e){
+      var msg = (e && e.message === 'auth')
+        ? 'Session needs a refresh. Reload to sign back in.'
+        : 'Could not load (' + esc(e && e.message || 'error') + ').';
+      el('gallery').innerHTML = '<div class="state err">' + msg + '</div>';
+    });
+  }
+
+  // ── Counts ──
+  function counts(){
+    var c = { all: state.items.length, pending:0, approved:0, disapproved:0, rejected:0 };
+    state.items.forEach(function(it){ c[it.verdict] = (c[it.verdict]||0) + 1; });
+    return c;
+  }
+
+  function renderFilters(){
+    var c = counts();
+    el('filters').innerHTML = FILTERS.map(function(f){
+      var n = c[f.key] != null ? c[f.key] : 0;
+      return '<button class="chip" type="button" data-filter="' + f.key + '" aria-pressed="' + (state.filter===f.key) + '">' +
+        esc(f.label) + ' <span class="ct ' + (f.cls||'') + '">' + n + '</span></button>';
+    }).join('');
+    Array.prototype.forEach.call(el('filters').querySelectorAll('[data-filter]'), function(btn){
+      btn.addEventListener('click', function(){ state.filter = btn.getAttribute('data-filter'); render(); });
+    });
+  }
+
+  // ── Card ──
+  var SCALE = (290 / 1280).toFixed(4); // preview width / virtual width
+  function cardHTML(it){
+    var sel = state.selected[it.id] === true;
+    return '<div class="card" data-id="' + esc(it.id) + '" data-verdict="' + esc(it.verdict) + '" data-selected="' + sel + '">' +
+      '<button class="selbox" type="button" aria-label="Select" data-act="sel"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></button>' +
+      '<div class="preview" data-act="open">' +
+        '<iframe class="frame-scale" src="' + esc(it.file) + '" title="' + esc(it.title) + ' preview" loading="lazy" sandbox="allow-scripts allow-same-origin" tabindex="-1" aria-hidden="true"></iframe>' +
+        '<div class="sheen"></div>' +
+        '<div class="open-ov"><span>Open full</span></div>' +
+        (it.verdict !== 'pending' ? '<div class="vbadge ' + it.verdict + '">' + it.verdict + '</div>' : '<div class="vbadge">pending</div>') +
+      '</div>' +
+      '<div class="card-body">' +
+        '<div class="ttl">' + esc(it.title) + '</div>' +
+        '<div class="grp">' + esc(it.groupLabel) + '</div>' +
+        '<div class="actions">' +
+          '<button class="va ok" type="button" data-act="v" data-v="approved" aria-pressed="' + (it.verdict==='approved') + '">Approve</button>' +
+          '<button class="va warn" type="button" data-act="v" data-v="disapproved" aria-pressed="' + (it.verdict==='disapproved') + '">Disapprove</button>' +
+          '<button class="va no" type="button" data-act="v" data-v="rejected" aria-pressed="' + (it.verdict==='rejected') + '">Reject</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function render(){
+    renderFilters();
+    var gal = el('gallery');
+    var groups = {};
+    var order = [];
+    state.items.forEach(function(it){
+      if (state.filter !== 'all' && it.verdict !== state.filter) return;
+      if (!groups[it.group]){ groups[it.group] = { label: it.groupLabel, blurb: it.blurb, items: [] }; order.push(it.group); }
+      groups[it.group].items.push(it);
+    });
+    if (!order.length){
+      gal.innerHTML = '<div class="state">Nothing matches this filter.</div>';
+      syncSelectingClass();
+      return;
+    }
+    gal.innerHTML = order.map(function(gk){
+      var g = groups[gk];
+      return '<section class="group">' +
+        '<div class="group-head"><h2>' + esc(g.label) + '</h2><span class="blurb">' + esc(g.blurb||'') + '</span>' +
+          '<span class="gcount">' + g.items.length + '</span></div>' +
+        '<div class="cards">' + g.items.map(cardHTML).join('') + '</div>' +
+      '</section>';
+    }).join('');
+    wireCards();
+    syncSelectingClass();
+  }
+
+  function syncSelectingClass(){
+    document.body.classList.toggle('selecting', state.selecting);
+  }
+
+  function wireCards(){
+    Array.prototype.forEach.call(document.querySelectorAll('.card'), function(card){
+      var id = card.getAttribute('data-id');
+      card.addEventListener('click', function(e){
+        var actEl = e.target.closest('[data-act]');
+        var act = actEl ? actEl.getAttribute('data-act') : null;
+        if (act === 'v'){ e.stopPropagation(); setVerdict(id, actEl.getAttribute('data-v')); return; }
+        if (act === 'sel'){ e.stopPropagation(); toggleSelect(id); return; }
+        if (state.selecting){ toggleSelect(id); return; }
+        if (act === 'open'){ openStepper([id]); }
+      });
+    });
+  }
+
+  function toggleSelect(id){
+    if (state.selected[id]) delete state.selected[id]; else state.selected[id] = true;
+    var card = document.querySelector('.card[data-id="' + cssEsc(id) + '"]');
+    if (card) card.setAttribute('data-selected', state.selected[id] === true);
+  }
+  function cssEsc(s){ return String(s).replace(/["\\]/g, '\\$&'); }
+
+  // ── Verdicts ──
+  function setVerdict(id, verdict){
+    var prev = state.verdicts[id] || 'pending';
+    if (prev === verdict){ return; } // no-op; keep it simple, re-click does not toggle off
+    state.verdicts[id] = verdict;
+    var item = findItem(id);
+    if (item) item.verdict = verdict;
+    // Optimistic UI: update just this card + the filter counts.
+    patchCard(id);
+    renderFilters();
+    fetch('/api/mockup-verdicts', {
+      method:'POST', headers: authHeaders({ 'Content-Type':'application/json' }),
+      body: JSON.stringify({ mockup_id:id, verdict:verdict })
+    }).then(function(r){
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      toast('Saved: ' + verdict);
+    }).catch(function(){
+      state.verdicts[id] = prev; if (item) item.verdict = prev;
+      patchCard(id); renderFilters();
+      toast('Save failed, reverted', true);
+    });
+    syncStepperVerdict(id);
+  }
+
+  function findItem(id){ for (var i=0;i<state.items.length;i++){ if (state.items[i].id===id) return state.items[i]; } return null; }
+
+  function patchCard(id){
+    var item = findItem(id); if (!item) return;
+    var card = document.querySelector('.card[data-id="' + cssEsc(id) + '"]');
+    if (!card){ return; }
+    // If a verdict filter is active and this card no longer matches, drop it.
+    if (state.filter !== 'all' && item.verdict !== state.filter){ render(); return; }
+    card.setAttribute('data-verdict', item.verdict);
+    var badge = card.querySelector('.vbadge');
+    if (badge){ badge.className = 'vbadge' + (item.verdict!=='pending' ? ' ' + item.verdict : ''); badge.textContent = item.verdict; }
+    Array.prototype.forEach.call(card.querySelectorAll('.va[data-v]'), function(b){
+      b.setAttribute('aria-pressed', b.getAttribute('data-v') === item.verdict);
+    });
+  }
+
+  // ── Toolbar actions ──
+  el('selectToggle').addEventListener('click', function(){
+    state.selecting = !state.selecting;
+    el('selectAll').hidden = !state.selecting;
+    el('selectToggle').setAttribute('aria-pressed', state.selecting);
+    if (!state.selecting) state.selected = {};
+    render();
+  });
+  el('selectAll').addEventListener('click', function(){
+    var visible = visibleItems();
+    var allSel = visible.every(function(it){ return state.selected[it.id]; });
+    visible.forEach(function(it){ if (allSel) delete state.selected[it.id]; else state.selected[it.id] = true; });
+    render();
+  });
+  el('startBtn').addEventListener('click', function(){
+    var ids = Object.keys(state.selected);
+    if (!ids.length){
+      // No explicit selection: review everything currently visible.
+      ids = visibleItems().map(function(it){ return it.id; });
+    } else {
+      // Keep registry order.
+      ids = state.items.filter(function(it){ return state.selected[it.id]; }).map(function(it){ return it.id; });
+    }
+    if (!ids.length){ toast('Nothing to review'); return; }
+    openStepper(ids);
+  });
+
+  function visibleItems(){
+    return state.items.filter(function(it){ return state.filter === 'all' || it.verdict === state.filter; });
+  }
+
+  // ── Stepper ──
+  var dlg = el('stepper');
+  function openStepper(ids){
+    state.stepIds = ids.slice();
+    state.stepPos = 0;
+    if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open','');
+    showStep();
+  }
+  function closeStepper(){
+    if (typeof dlg.close === 'function') dlg.close(); else dlg.removeAttribute('open');
+    el('stFrame').src = 'about:blank';
+  }
+  function showStep(){
+    var id = state.stepIds[state.stepPos];
+    var item = findItem(id);
+    if (!item){ closeStepper(); return; }
+    el('stTitle').textContent = item.title;
+    el('stGroup').textContent = item.groupLabel;
+    el('stProg').textContent = (state.stepPos + 1) + ' / ' + state.stepIds.length;
+    el('stFrame').src = item.file;
+    el('stPrev').disabled = state.stepPos === 0;
+    el('stNext').disabled = state.stepPos === state.stepIds.length - 1;
+    syncStepperVerdict(id);
+  }
+  function syncStepperVerdict(id){
+    if (!dlg.open) return;
+    if (state.stepIds[state.stepPos] !== id) return;
+    var v = state.verdicts[id] || 'pending';
+    el('stApprove').setAttribute('aria-pressed', v === 'approved');
+    el('stDisapprove').setAttribute('aria-pressed', v === 'disapproved');
+    el('stReject').setAttribute('aria-pressed', v === 'rejected');
+  }
+  function stepMove(d){
+    var n = state.stepPos + d;
+    if (n < 0 || n >= state.stepIds.length) return;
+    state.stepPos = n; showStep();
+  }
+  function stepVerdict(v){
+    var id = state.stepIds[state.stepPos];
+    setVerdict(id, v);
+    // Advance to the next undecided-friendly step if not at the end.
+    if (state.stepPos < state.stepIds.length - 1) setTimeout(function(){ stepMove(1); }, 180);
+  }
+  el('stClose').addEventListener('click', closeStepper);
+  el('stPrev').addEventListener('click', function(){ stepMove(-1); });
+  el('stNext').addEventListener('click', function(){ stepMove(1); });
+  el('stApprove').addEventListener('click', function(){ stepVerdict('approved'); });
+  el('stDisapprove').addEventListener('click', function(){ stepVerdict('disapproved'); });
+  el('stReject').addEventListener('click', function(){ stepVerdict('rejected'); });
+  dlg.addEventListener('cancel', function(e){ e.preventDefault(); closeStepper(); });
+  dlg.addEventListener('click', function(e){ if (e.target === dlg) closeStepper(); });
+
+  // ── Keyboard ──
+  document.addEventListener('keydown', function(e){
+    if (dlg.open){
+      var k = e.key.toLowerCase();
+      if (k === 'arrowright'){ stepMove(1); }
+      else if (k === 'arrowleft'){ stepMove(-1); }
+      else if (k === 'a'){ stepVerdict('approved'); }
+      else if (k === 'd'){ stepVerdict('disapproved'); }
+      else if (k === 'r'){ stepVerdict('rejected'); }
+      return;
+    }
+    if (e.key === 'Escape'){ goBack(); }
+  });
+
+  loadAll();
+})();
+</script>
+
+</body>
+</html>
