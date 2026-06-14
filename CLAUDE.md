@@ -187,5 +187,5 @@ Full contract: `docs/MARKETING_CLIPS_API.md`.
 10. **No em dashes anywhere** — body, subjects, chat output, internal docs, code comments. AI tell. *(See `feedback_no_em_dashes`.)*
 
 ### Files that DO NOT live in this repo
-- Secrets / `.env` — pulled by Vercel from its dashboard. Never commit.
-- Customer-facing copy that uses Jewels' visual rules — those pages (`proposal-client.html`, `photos-share.html`) follow cream + royal-blue branding. Internal portals (`portal-mobile.html`, `command-center.html`, `admin.html`) follow the Grok teal-mint mockup. Mixing the two is an instant tell. *(See `feedback_jewels_visual_rules` + `feedback_grok_mockup_internal_portals`.)*
+- Secrets / `.env`: pulled by Vercel from its dashboard. Never commit.
+- Customer-facing copy that uses Jewels' visual rules — those pages (`proposal-client.html`, `photos-share.html`) follow cream + royal-blue branding. Internal portals (`portal-mobile.html`, `command-center.html`, `admin.html`) follow the canonical sci-fi Telltale token layer (`assets/ryujin-telltale.css`) as of 2026-06-14: Telltale replaces the prior Grok teal-mint internal standard (Mac decision; migration in progress per `_brain/hub/P6_TOKEN_MIGRATION_PATTERN_2026-06-14.md`). Mixing internal and customer-facing styles is an instant tell. *(See `feedback_jewels_visual_rules` + `feedback_grok_mockup_internal_portals`.)*
