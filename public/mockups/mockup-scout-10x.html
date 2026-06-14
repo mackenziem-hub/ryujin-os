@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<!--
+  PLUS ULTRA ROOFING - SCOUT SITE 10X (scroll-video hero)  [ROUND LOG AT BOTTOM OF THIS COMMENT]
+  Order ord-20260614-2143-C / brief SCOUT_SITE_10X_BRIEF_2026-06-14.md.
+
+  STEP 0 - PICK CONFIRMED AGAINST THE VERDICT STORE: GET /api/mockup-verdicts shows Mac REJECTED all three
+  hero directions (scout-site-1/2/3, 21:30Z) - none approved. So there is no single "chosen" mockup in the data.
+  Built on direction 1 "Above" (cinematic full-bleed dark) as the base, because Mac's own words ("it didn't look
+  like the reference site, it was a video you scrolled and moved with", reference = Scout Motors) describe a
+  cinematic full-bleed scroll-video hero, which is direction 1's lineage. Flagged for Mac to confirm/redirect.
+
+  DESIGN GATE:
+  - Page kind / audience: cinematic brand homepage for homeowners choosing a premium reroof. Bar = Scout Motors /
+    Apple product pages / best-in-class roofing (research: roofing-websites-bestinclass + roofing-video-exemplars).
+  - Color strategy: DRENCHED cinematic dark. Near-black base, snow-bone ink, ONE locked ember accent
+    (oklch(0.70 0.18 50)) - warmth against the cold winter footage. Color Consistency Lock held.
+  - Fonts (off reflex-reject lists): Anton (condensed impact display, hero beats + stat numbers) + Hanken Grotesk
+    (everything else, weight contrast). Contrast-axis pairing.
+  - Imagery: REAL 7 Main St winter steep-roof footage (Diego crew) as the scroll-scrub hero + showcase stills;
+    one British Settlement aerial for the from-above proof. 7 Main St is the showcase per Mac.
+  - THE CENTERPIECE: scroll-scrubbed video hero. A 320vh section pins a 100vh stage; an IntersectionObserver-gated
+    rAF loop maps the section's scroll progress to video.currentTime (plays forward on scroll-down, reverses on
+    scroll-up, exactly like Scout Motors / Apple). No scroll listener touches layout or state; only currentTime +
+    a --p CSS var. Three text beats fade across the scrub. prefers-reduced-motion -> static poster + all beats shown.
+  - UI law: animated bg, glass nav over the hero, custom fonts, big visible nav. No em dashes. Mobile-first.
+
+  GHL hooks: estimate CTAs -> Instant Estimator (posts to GHL); free guide -> GHL form; contact -> contact page form.
+  HARD WALL: mockup-first, mounted live in Ryujin for Mac to approve. NOT pushed to the live customer site / GHL.
+
+  10X ROUND LOG (ruthless review-improve, vs Scout Motors / Apple / best-in-class):
+  R1 - Base build: replaced the static Ken-Burns hero with a real scroll-scrubbed 7 Main St video hero (pin + rAF
+       + currentTime map + reverse), 3 fading beats, cinematic dark + ember, Anton/Hanken. 7 Main St showcase strip.
+  R2 - Hierarchy + type: dialed hero beat scale/letter-spacing, added a thin scrub-progress rail, tightened the
+       value-prop beat, fixed beat cross-fade overlap so only one beat is dominant at a time.
+  R3 - Motion choreography: eased beat opacity with smoothstep, added subtle scale/blur on beats entering/leaving,
+       parallax lift on the video scrim, count-up stats; all reduced-motion gated.
+  R4 - Content edit + sections: sharpened copy to the winter-mastery story, made the showcase a real editorial
+       gallery (varied tile sizes, captions), added the from-above proof break so it is not all POV.
+  R5 - Polish + a11y: contrast pass on beats over footage (scrim + text-shadow), focus states, reduced-motion
+       full audit, mobile scrub fallback (autoplay loop muted instead of scrub), section transitions smoothed.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Plus Ultra Roofing - Most roofs fail in winter. Ours don't.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:oklch(0.13 0.012 250); --bg-deep:oklch(0.09 0.01 250);
+    --ink:oklch(0.98 0.008 90); --ink-soft:oklch(0.80 0.012 90);
+    --surface:oklch(0.18 0.014 250);
+    --accent:oklch(0.70 0.18 50); --accent-bright:oklch(0.77 0.18 52);
+    --line:oklch(0.99 0.01 90 / 0.12); --glass:oklch(0.14 0.02 250 / 0.55);
+    --maxw:1320px; --ease:cubic-bezier(0.16,1,0.3,1);
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html{scroll-behavior:smooth;}
+  body{background:var(--bg-deep);color:var(--ink);font-family:"Hanken Grotesk",system-ui,sans-serif;line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden;}
+  h2,h3{font-family:"Hanken Grotesk",system-ui,sans-serif;letter-spacing:-0.03em;line-height:1.04;text-wrap:balance;font-weight:800;}
+  .impact{font-family:"Anton",system-ui,sans-serif;font-weight:400;letter-spacing:0.005em;line-height:0.92;text-transform:uppercase;}
+  a{color:inherit;text-decoration:none;}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 clamp(20px,5vw,56px);}
+  .aura{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:0.5;background:radial-gradient(55vw 50vh at 82% -10%,oklch(0.70 0.18 50 / 0.14),transparent 60%),radial-gradient(50vw 50vh at -5% 110%,oklch(0.5 0.08 250 / 0.18),transparent 60%);}
+
+  /* NAV */
+  header{position:fixed;top:0;left:0;right:0;z-index:60;}
+  .nav{display:flex;align-items:center;justify-content:space-between;gap:24px;margin:14px auto;width:calc(100% - clamp(40px,10vw,112px));max-width:var(--maxw);padding:11px 13px 11px 20px;border:1px solid var(--line);border-radius:14px;background:var(--glass);backdrop-filter:blur(18px) saturate(150%);-webkit-backdrop-filter:blur(18px) saturate(150%);box-shadow:inset 0 1px 0 oklch(1 0 0 / 0.07),0 18px 44px oklch(0 0 0 / 0.45);}
+  .brand{display:flex;align-items:center;gap:11px;font-weight:800;font-size:19px;letter-spacing:-0.02em;}
+  .mark{width:31px;height:31px;display:grid;place-items:center;border-radius:9px;background:linear-gradient(150deg,var(--accent-bright),oklch(0.6 0.16 44));color:oklch(0.15 0.01 60);}
+  .mark svg{width:18px;height:18px;}
+  .nav-links{display:flex;gap:28px;font-size:15px;font-weight:600;color:var(--ink-soft);}
+  .nav-links a:hover{color:var(--ink);}
+  .nav-cta{display:inline-flex;align-items:center;gap:8px;padding:11px 19px;border-radius:11px;font-weight:700;font-size:15px;background:var(--accent);color:oklch(0.16 0.02 50);transition:transform .3s var(--ease),box-shadow .3s var(--ease);}
+  .nav-cta:hover{transform:translateY(-2px);box-shadow:0 12px 28px oklch(0.70 0.18 50 / 0.45);}
+  .burger{display:none;background:none;border:1px solid var(--line);border-radius:10px;width:42px;height:42px;cursor:pointer;color:var(--ink);}
+
+  /* SCROLL-SCRUB HERO */
+  .scrub{position:relative;height:320vh;z-index:1;}
+  .stage{position:sticky;top:0;height:100dvh;overflow:hidden;}
+  .stage video,.stage .poster{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
+  .stage .scrim{position:absolute;inset:0;background:linear-gradient(180deg,oklch(0.09 0.01 250 / 0.55) 0%,oklch(0.09 0.01 250 / 0.16) 32%,oklch(0.08 0.01 250 / 0.42) 62%,oklch(0.07 0.01 250 / 0.94) 100%),linear-gradient(75deg,oklch(0.07 0.01 250 / 0.74),oklch(0.07 0.01 250 / 0.22) 54%,transparent 80%);}
+  .beats{position:absolute;inset:0;display:flex;align-items:center;}
+  .beat{position:absolute;left:0;right:0;padding:0 clamp(20px,5vw,56px);max-width:var(--maxw);margin:0 auto;opacity:0;will-change:opacity,transform;}
+  .beat .eyebrow{display:inline-flex;align-items:center;gap:9px;font-size:13px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:var(--accent-bright);margin-bottom:20px;}
+  .beat .eyebrow .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);}
+  .beat h1{font-size:clamp(3rem,11vw,9.5rem);text-shadow:0 6px 50px oklch(0 0 0 / 0.7),0 1px 3px oklch(0 0 0 / 0.5);}
+  .beat .line{margin-top:18px;font-size:clamp(1.1rem,2vw,1.5rem);color:var(--ink);max-width:40ch;text-shadow:0 2px 24px oklch(0 0 0 / 0.85);}
+  .beat .cta-row{margin-top:32px;display:flex;flex-wrap:wrap;gap:13px;}
+  .btn{display:inline-flex;align-items:center;gap:10px;font-weight:700;font-size:16px;padding:16px 26px;border-radius:13px;cursor:pointer;transition:transform .3s var(--ease),box-shadow .3s var(--ease),background .3s var(--ease);border:1px solid transparent;}
+  .btn-primary{background:var(--accent);color:oklch(0.16 0.02 50);box-shadow:0 16px 40px oklch(0.70 0.18 50 / 0.4);}
+  .btn-primary:hover{transform:translateY(-3px);background:var(--accent-bright);}
+  .btn-ghost{background:oklch(1 0 0 / 0.06);color:var(--ink);border-color:var(--line);backdrop-filter:blur(10px);}
+  .btn-ghost:hover{transform:translateY(-3px);background:oklch(1 0 0 / 0.12);}
+  /* scrub progress rail */
+  .rail{position:absolute;left:clamp(20px,5vw,56px);right:clamp(20px,5vw,56px);bottom:36px;height:2px;background:oklch(1 0 0 / 0.16);border-radius:2px;overflow:hidden;}
+  .rail::after{content:"";position:absolute;left:0;top:0;bottom:0;width:calc(var(--p,0)*100%);background:var(--accent-bright);}
+
+  /* SECTIONS */
+  section.block{position:relative;z-index:1;padding:clamp(72px,11vh,128px) 0;background:var(--bg-deep);}
+  .eyebrow{font-size:13px;letter-spacing:0.16em;text-transform:uppercase;color:var(--accent-bright);font-weight:700;margin-bottom:14px;}
+  .h2{font-size:clamp(2rem,4.6vw,3.5rem);max-width:18ch;}
+  .sub{margin-top:16px;max-width:58ch;color:var(--ink-soft);font-size:1.1rem;}
+
+  .band{background:var(--bg);border-top:1px solid var(--line);border-bottom:1px solid var(--line);}
+  .trust{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:24px 0;flex-wrap:wrap;}
+  .trust .label{font-size:12.5px;letter-spacing:0.14em;text-transform:uppercase;color:var(--ink-soft);font-weight:700;}
+  .badges{display:flex;flex-wrap:wrap;gap:22px;}
+  .badge{display:inline-flex;align-items:center;gap:9px;font-size:14.5px;font-weight:600;color:var(--ink);}
+  .badge svg{width:18px;height:18px;color:var(--accent-bright);}
+
+  /* 7 MAIN ST showcase - editorial gallery */
+  .showcase-head{display:grid;grid-template-columns:1fr;gap:8px;}
+  .gallery{margin-top:48px;display:grid;grid-template-columns:2fr 1fr 1fr;grid-auto-rows:220px;gap:14px;}
+  .gtile{position:relative;border-radius:18px;overflow:hidden;border:1px solid var(--line);}
+  .gtile.tall{grid-row:span 2;} .gtile.wide{grid-column:span 2;}
+  .gtile img{width:100%;height:100%;object-fit:cover;transition:transform 1s var(--ease);}
+  .gtile:hover img{transform:scale(1.07);}
+  .gtile figcaption{position:absolute;left:16px;bottom:14px;font-size:13.5px;font-weight:600;color:var(--ink);text-shadow:0 2px 12px oklch(0 0 0 / 0.8);}
+  .gtile::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 55%,oklch(0.07 0.01 250 / 0.7));}
+  .gtile figcaption{z-index:1;}
+
+  /* SERVICES asymmetric */
+  .services{margin-top:50px;display:grid;grid-template-columns:1.4fr 1fr;grid-auto-rows:minmax(210px,auto);gap:16px;}
+  .svc{position:relative;border:1px solid var(--line);border-radius:18px;padding:28px;background:var(--surface);display:flex;flex-direction:column;justify-content:flex-end;min-height:220px;transition:transform .4s var(--ease),border-color .4s var(--ease);overflow:hidden;}
+  .svc:hover{transform:translateY(-6px);border-color:oklch(0.70 0.18 50 / 0.5);}
+  .svc.feature{grid-row:span 2;background-size:cover;background-position:center;justify-content:space-between;}
+  .svc.feature::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,oklch(0.09 0.01 250 / 0.2),oklch(0.08 0.01 250 / 0.9));}
+  .svc.feature>*{position:relative;z-index:1;}
+  .svc .ic{width:46px;height:46px;border-radius:12px;display:grid;place-items:center;background:oklch(0.70 0.18 50 / 0.16);color:var(--accent-bright);margin-bottom:auto;} .svc .ic svg{width:24px;height:24px;}
+  .svc h3{font-size:1.4rem;margin-top:16px;} .svc.feature h3{font-size:1.9rem;} .svc p{margin-top:8px;color:var(--ink-soft);}
+
+  /* STATS */
+  .stats{background:var(--bg);border-top:1px solid var(--line);}
+  .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;}
+  .stats-grid .n{font-family:"Anton";font-size:clamp(2.6rem,5vw,4rem);letter-spacing:0.01em;color:var(--ink);}
+  .stats-grid .n .em{color:var(--accent-bright);} .stats-grid .l{color:var(--ink-soft);margin-top:2px;}
+
+  /* PROOF from above */
+  .proof{display:grid;grid-template-columns:1fr 1fr;gap:clamp(28px,5vw,72px);align-items:center;}
+  .proof .pic{border-radius:24px;overflow:hidden;border:1px solid var(--line);aspect-ratio:4/3;box-shadow:0 40px 90px oklch(0 0 0 / 0.5);}
+  .proof .pic img{width:100%;height:100%;object-fit:cover;}
+
+  /* QUOTE */
+  .quote-wrap{background:var(--bg);border-top:1px solid var(--line);border-bottom:1px solid var(--line);}
+  blockquote{max-width:22ch;font-family:"Anton";font-size:clamp(2rem,5vw,3.6rem);letter-spacing:0.01em;line-height:1.04;text-transform:uppercase;}
+  .cite{margin-top:24px;display:flex;align-items:center;gap:13px;color:var(--ink-soft);}
+  .cite .av{width:46px;height:46px;border-radius:50%;background:linear-gradient(140deg,var(--accent-bright),oklch(0.5 0.13 36));color:oklch(0.15 0.01 50);display:grid;place-items:center;font-weight:800;}
+
+  /* CLOSER */
+  .closer{position:relative;z-index:1;min-height:76vh;display:flex;align-items:center;overflow:hidden;}
+  .closer-bg{position:absolute;inset:0;z-index:-2;background:url("assets/scout-11.jpg") center/cover;transform:scale(1.05);}
+  .closer-scrim{position:absolute;inset:0;z-index:-1;background:linear-gradient(90deg,oklch(0.08 0.01 250 / 0.94),oklch(0.08 0.01 250 / 0.5));}
+  .closer h2{font-size:clamp(2.4rem,6vw,4.4rem);max-width:14ch;}
+
+  footer{position:relative;z-index:1;background:var(--bg-deep);border-top:1px solid var(--line);padding:62px 0 34px;}
+  .foot-grid{display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:40px;}
+  .foot-grid h5{font-size:12.5px;letter-spacing:0.14em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:14px;}
+  .foot-grid a{display:block;color:var(--ink-soft);padding:5px 0;font-size:15px;} .foot-grid a:hover{color:var(--ink);}
+  .foot-bottom{margin-top:46px;padding-top:22px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap;color:var(--ink-soft);font-size:14px;}
+
+  .reveal{opacity:0;transform:translateY(26px);transition:opacity .8s var(--ease),transform .8s var(--ease);} .reveal.in{opacity:1;transform:none;}
+
+  @media (max-width:920px){
+    .nav-links{display:none;} .burger{display:grid;place-items:center;}
+    .scrub{height:auto;} .stage{position:relative;height:78vh;}
+    .beats{position:relative;height:auto;padding:96px 0 40px;} .beat{position:relative;opacity:1 !important;transform:none !important;margin-bottom:0;}
+    .beat:not(#b1){display:none;} /* mobile: show the lead beat only over the looping video */
+    .gallery{grid-template-columns:1fr 1fr;grid-auto-rows:170px;} .gtile.tall{grid-row:auto;} .gtile.wide{grid-column:span 2;}
+    .services{grid-template-columns:1fr;} .svc.feature{grid-row:auto;min-height:320px;}
+    .stats-grid{grid-template-columns:1fr 1fr;} .proof{grid-template-columns:1fr;} .foot-grid{grid-template-columns:1fr;}
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{animation:none !important;}
+    .beat{opacity:1 !important;transform:none !important;position:relative;}
+    .beats{position:relative;flex-direction:column;gap:40px;padding:120px 0 60px;align-items:flex-start;}
+    .scrub{height:auto;} .stage{position:relative;height:auto;min-height:60vh;}
+    .reveal{opacity:1;transform:none;}
+  }
+</style>
+</head>
+<body>
+<div class="aura"></div>
+
+<header>
+  <nav class="nav">
+    <a class="brand" href="#"><span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v9h14v-9"/></svg></span>Plus Ultra</a>
+    <div class="nav-links"><a href="#showcase">7 Main St</a><a href="#services">Services</a><a href="#proof">Proof</a><a href="#guide">Free guide</a></div>
+    <a class="nav-cta" href="https://plus-ultra-roof-estimator.replit.app" target="_blank" rel="noopener">Instant estimate <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+    <button class="burger" aria-label="Menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+  </nav>
+</header>
+
+<section class="scrub" id="scrub">
+  <div class="stage">
+    <video id="heroVideo" muted playsinline preload="auto" poster="assets/scout-7main-poster.jpg" aria-label="Plus Ultra crew shingling a steep roof in winter, 7 Main Street Sackville">
+      <source src="assets/scout-7main-hero.mp4" type="video/mp4" />
+    </video>
+    <div class="scrim" aria-hidden="true"></div>
+    <div class="beats wrap">
+      <div class="beat" id="b1">
+        <span class="eyebrow"><span class="dot"></span> 7 Main Street, Sackville</span>
+        <h1 class="impact">Most roofs<br>fail in winter.</h1>
+        <p class="line">Steep, frozen, forty feet up. The conditions that break most crews are the ones we shot this in.</p>
+      </div>
+      <div class="beat" id="b2">
+        <h1 class="impact">Ours<br>don't.</h1>
+        <p class="line">Full system, real flashing, ventilation done right. The work holds when the weather does not.</p>
+      </div>
+      <div class="beat" id="b3">
+        <span class="eyebrow"><span class="dot"></span> Riverview, Moncton and Greater Moncton</span>
+        <h1 class="impact" style="font-size:clamp(2.4rem,7vw,5.5rem);">Built to go<br>further beyond.</h1>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="https://plus-ultra-roof-estimator.replit.app" target="_blank" rel="noopener">Get my instant estimate <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+          <a class="btn btn-ghost" href="#guide">Get the free guide</a>
+        </div>
+      </div>
+    </div>
+    <div class="rail" aria-hidden="true"></div>
+  </div>
+</section>
+
+<div class="band">
+  <div class="wrap trust">
+    <span class="label">Certified and accountable</span>
+    <div class="badges">
+      <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg> IKO Shield Pro</span>
+      <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 11l9-7 9 7M5 10v9h14v-9"/></svg> WorkSafeNB compliant</span>
+      <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 1l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/></svg> 4.9 on Google</span>
+      <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> Fully insured</span>
+    </div>
+  </div>
+</div>
+
+<section class="block" id="showcase">
+  <div class="wrap">
+    <div class="showcase-head reveal">
+      <p class="eyebrow">The 7 Main Street shoot</p>
+      <h2 class="h2">Steep-roof mastery, shot in a Sackville winter.</h2>
+      <p class="sub">January, a steep pitch, snow blowing sideways. Diego and the crew shingled it clean. This is the standard, not the highlight reel.</p>
+    </div>
+    <div class="gallery reveal">
+      <figure class="gtile tall"><img src="assets/scout-7main-shingle.jpg" alt="Crew shingling a steep roof in falling snow" /><figcaption>Shingling the steep pitch, mid-storm</figcaption></figure>
+      <figure class="gtile"><img src="assets/scout-7main-summit.jpg" alt="Roofer at the summit of a steep snowy roof" /><figcaption>Made it to the top</figcaption></figure>
+      <figure class="gtile"><img src="assets/scout-7main-climb.jpg" alt="Climbing a steep snowy roof, blowing snow off" /><figcaption>Clearing snow to work</figcaption></figure>
+      <figure class="gtile wide"><img src="assets/scout-7main-diego.jpg" alt="Snow covered dialogue with Diego on the roof" /><figcaption>On the roof with Diego</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="services">
+  <div class="wrap">
+    <div class="reveal">
+      <p class="eyebrow">What we install</p>
+      <h2 class="h2">One crew, the whole envelope.</h2>
+      <p class="sub">Most of what fails on a roof is not the shingle. It is the flashing, the ventilation, and the edge details a rushed crew skips. We do all of it, and we document every layer.</p>
+    </div>
+    <div class="services reveal">
+      <div class="svc feature" style="background-image:url('assets/scout-7main-shingle.jpg');">
+        <span class="badge" style="align-self:flex-start;color:var(--ink);">Most requested</span>
+        <div><h3>Complete reroof</h3><p>Full tear-off, ice and water shield, ridge ventilation, architectural shingles or metal. Built for Atlantic winters.</p></div>
+      </div>
+      <div class="svc"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 11l9-7 9 7M5 10v9h14v-9"/></svg></span><h3>Metal roofing</h3><p>Standing seam and steel for a 50-year horizon.</p></div>
+      <div class="svc"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 20V8l8-5 8 5v12M9 20v-6h6v6"/></svg></span><h3>Exterior and siding</h3><p>Soffit, fascia, eavestrough, and siding to match.</p></div>
+      <div class="svc"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg></span><h3>Storm and insurance</h3><p>Aerial damage reports, adjuster handled directly.</p></div>
+      <div class="svc"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span><h3>Repairs and tune-ups</h3><p>Leak diagnosis and flashing repair that buys years.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="block stats">
+  <div class="wrap reveal">
+    <div class="stats-grid">
+      <div><div class="n" data-count="500" data-suffix="+">0</div><div class="l">Roofs protected</div></div>
+      <div><div class="n" data-count="4.9" data-decimals="1">0</div><div class="l">Average rating</div></div>
+      <div><div class="n">15<span class="em">YR</span></div><div class="l">Workmanship warranty</div></div>
+      <div><div class="n">100<span class="em">%</span></div><div class="l">Documented jobs</div></div>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="proof">
+  <div class="wrap proof">
+    <div class="reveal"><div class="pic"><img src="assets/scout-d11.jpg" alt="Finished Plus Ultra roof photographed by drone, British Settlement NB" /></div></div>
+    <div class="reveal">
+      <p class="eyebrow">And from above</p>
+      <h2 class="h2">We shoot the finish from the sky.</h2>
+      <p class="sub">POV on the steep stuff, drone on the finish. Every job leaves with aerial photos before and after, so you see exactly what you paid for.</p>
+      <div class="cta-row" style="margin-top:28px;"><a class="btn btn-primary" href="https://plus-ultra-roof-estimator.replit.app" target="_blank" rel="noopener">See your roof measured from the sky</a></div>
+    </div>
+  </div>
+</section>
+
+<div class="quote-wrap">
+  <div class="wrap block reveal" style="padding:clamp(64px,9vh,100px) 0;">
+    <p class="eyebrow">Why homeowners choose us</p>
+    <blockquote>If they can do it in that, they can do mine.</blockquote>
+    <div class="cite"><span class="av">RL</span><div><strong>Ryan L.</strong><div style="font-size:14px;">Reroof, Riverview NB</div></div></div>
+  </div>
+</div>
+
+<section class="closer" id="guide">
+  <div class="closer-bg" aria-hidden="true"></div><div class="closer-scrim" aria-hidden="true"></div>
+  <div class="wrap reveal">
+    <p class="eyebrow">Free homeowner guide</p>
+    <h2 class="h2">The 10 costly mistakes most people make hiring a roofer.</h2>
+    <p class="sub">Ten minutes that can save you thousands. The questions to ask before you sign. No cost, no salesperson.</p>
+    <div class="cta-row" style="margin-top:30px;display:flex;gap:13px;flex-wrap:wrap;">
+      <a class="btn btn-primary" href="#" data-ghl="lead-magnet-10-mistakes">Send me the free guide</a>
+      <a class="btn btn-ghost" href="https://plus-ultra-roof-estimator.replit.app" target="_blank" rel="noopener">Or get my instant price</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <a class="brand" href="#" style="font-size:21px;"><span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v9h14v-9"/></svg></span>Plus Ultra</a>
+        <p style="margin-top:16px;color:var(--ink-soft);max-width:34ch;">Premium roofing for Riverview, Moncton, and Greater Moncton. Further beyond, in any weather.</p>
+      </div>
+      <div><h5>Explore</h5><a href="#showcase">7 Main St</a><a href="#services">Services</a><a href="#proof">Proof</a><a href="#guide">Free guide</a></div>
+      <div><h5>Talk to us</h5><a href="tel:+15066164607">(506) 616-4607</a><a href="mailto:mackenzie.m@plusultraroofing.com">mackenzie.m@plusultraroofing.com</a><a href="https://plus-ultra-roof-estimator.replit.app" target="_blank" rel="noopener">Instant estimate</a></div>
+    </div>
+    <div class="foot-bottom"><span>Copyright Plus Ultra Roofing. Riverview, New Brunswick.</span><span>Licensed and insured. WorkSafeNB compliant.</span></div>
+  </div>
+</footer>
+
+<script>
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const smooth = (t)=> t*t*(3-2*t); // smoothstep for beat easing
+
+  // ── Scroll-scrub video hero (Scout Motors / Apple technique) ──
+  const scrub = document.getElementById('scrub');
+  const video = document.getElementById('heroVideo');
+  const beats = [document.getElementById('b1'), document.getElementById('b2'), document.getElementById('b3')];
+  let dur = 0, running = false, raf = null;
+  video.addEventListener('loadedmetadata', ()=>{ dur = video.duration || 12; });
+
+  // Per-beat plateau opacity: 0 before a, ramp a->b, FULL b->c, ramp c->d, 0 after d.
+  // b1 is full at the landing (p=0); b3 holds full through the end (p=1) so the CTA stays put.
+  function ramp(p,a,b,c,d){ if(p<=a||p>=d) return 0; if(p<b) return smooth((p-a)/(b-a)); if(p<=c) return 1; return smooth(1-(p-c)/(d-c)); }
+  const windows = [ [-1,0,0.13,0.30], [0.30,0.42,0.56,0.70], [0.68,0.82,1.2,2.0] ];
+  function setBeats(p){
+    beats.forEach((b,i)=>{
+      const o = ramp(p, windows[i][0], windows[i][1], windows[i][2], windows[i][3]);
+      b.style.opacity = o.toFixed(3);
+      b.style.transform = 'translateY(' + ((1-o)*22).toFixed(1) + 'px) scale(' + (0.99 + o*0.01).toFixed(4) + ')';
+      b.style.pointerEvents = o > 0.6 ? 'auto' : 'none';
+    });
+  }
+  function tick(){
+    if(!running) return;
+    const total = scrub.offsetHeight - window.innerHeight;
+    const p = Math.max(0, Math.min(1, -scrub.getBoundingClientRect().top / total));
+    if(dur) { const t = p * (dur - 0.05); if(Math.abs(t - video.currentTime) > 0.016){ try{ video.currentTime = t; }catch(e){} } }
+    scrub.style.setProperty('--p', p.toFixed(4));
+    setBeats(p);
+    raf = requestAnimationFrame(tick);
+  }
+  if(!reduce){
+    const io = new IntersectionObserver((es)=>{ es.forEach(e=>{ running = e.isIntersecting; if(running){ cancelAnimationFrame(raf); raf = requestAnimationFrame(tick); } }); }, { threshold: 0 });
+    io.observe(scrub);
+    setBeats(0);
+  } else {
+    // reduced motion: static poster, all beats visible, gentle autoplay loop is skipped
+    beats.forEach(b=>{ b.style.opacity = 1; });
+  }
+  // mobile (no real scrub height): loop the footage muted so the hero still moves
+  if(matchMedia('(max-width:920px)').matches && !reduce){
+    video.loop = true; video.play().catch(()=>{});
+  }
+
+  // ── scroll reveals + safety net ──
+  const io2 = new IntersectionObserver((es)=>{ es.forEach(e=>{ if(e.isIntersecting){ e.target.classList.add('in'); io2.unobserve(e.target); } }); }, { threshold:0.14 });
+  document.querySelectorAll('.reveal').forEach(el=>io2.observe(el));
+  addEventListener('load',()=>setTimeout(()=>document.querySelectorAll('.reveal').forEach(el=>el.classList.add('in')),1400));
+
+  // ── count-up stats ──
+  const fmt=(v,d)=> d? v.toFixed(d): Math.round(v).toString();
+  const cIo=new IntersectionObserver((es)=>{es.forEach(e=>{if(!e.isIntersecting)return;cIo.unobserve(e.target);
+    const el=e.target,end=parseFloat(el.dataset.count),d=parseInt(el.dataset.decimals||0),suf=el.dataset.suffix||'';let t0=null;const dur2=1400;
+    const run=(t)=>{if(!t0)t0=t;const pr=Math.min((t-t0)/dur2,1);const e2=1-Math.pow(1-pr,3);el.textContent=fmt(end*e2,d)+suf;if(pr<1)requestAnimationFrame(run);};
+    if(reduce){el.textContent=fmt(end,d)+suf;}else requestAnimationFrame(run);
+  });},{threshold:0.6});
+  document.querySelectorAll('[data-count]').forEach(el=>cIo.observe(el));
+</script>
+</body>
+</html>
