@@ -4,135 +4,178 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Ryujin OS · Inbox</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=optional" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/assets/ryujin-perf.css">
 <script src="/assets/ryujin-perf.js"></script>
 <style>
+/* ══════════════════════════════════════════════════════════════════
+   INBOX = "THE WIRE" (mockup-inbox-2, desk G; Mac-approved 2026-06-14).
+   One chronological wire: each event is the customer inbound (left) with
+   Ryujin's draft docked under it (right), actionable inline. The data +
+   actions are the live inbox's (loadQueue / send / saveDraft / dismiss /
+   armConfirm / watches), unchanged. This is a re-skin of the VIEW only.
+   ══════════════════════════════════════════════════════════════════ */
+:root{
+  --ink:#04070f; --panel:rgba(12,19,34,0.9); --well:rgba(6,11,22,0.7);
+  --text:#e6ecf6; --dim:#9fb0cc; --faint:#5d6b85;
+  --teal:#2dd4bf; --teal-dim:rgba(45,212,191,0.35); --teal-bg:rgba(45,212,191,0.09);
+  --red:#f87171; --amber:#fbbf24; --green:#34d399;
+  --hairline:rgba(159,176,204,0.15);
+  --t-2:11px; --t-1:13px; --t0:15.5px; --t1:19px; --t2:24px;
+  --disp:'Outfit',sans-serif; --sans:'Inter',system-ui,sans-serif; --mono:'Share Tech Mono',monospace;
+  --z-bar:30; --z-toast:50;
+}
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{height:100%;width:100%}
-body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;overflow:auto;position:relative;min-height:100vh}
+html,body{width:100%}
+body{background:var(--ink);color:var(--text);font:var(--t0)/1.5 var(--sans);min-height:100dvh;position:relative;
+  background-image:radial-gradient(ellipse 80% 40% at 80% -5%,rgba(45,212,191,0.07),transparent)}
+button{font:inherit;cursor:pointer}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
 
-.bg-ambient{position:fixed;inset:0;z-index:0;background:radial-gradient(ellipse at 30% 20%,rgba(34,211,238,0.10) 0%,transparent 55%),radial-gradient(ellipse at 70% 85%,rgba(251,146,60,0.08) 0%,transparent 55%),linear-gradient(180deg,#060a14 0%,#030611 100%)}
-.bg-grid{position:fixed;inset:0;z-index:1;pointer-events:none;background-image:linear-gradient(rgba(34,211,238,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(34,211,238,0.03) 1px,transparent 1px);background-size:60px 60px;mask-image:radial-gradient(ellipse at center,black 35%,transparent 85%);-webkit-mask-image:radial-gradient(ellipse at center,black 35%,transparent 85%)}
+/* ── masthead ── */
+#mast{position:sticky;top:0;z-index:var(--z-bar);background:rgba(4,7,15,0.93);border-bottom:1px solid var(--hairline);
+  backdrop-filter:blur(14px);padding:13px 16px;display:flex;align-items:center;gap:12px}
+#mast .back{width:38px;height:38px;border-radius:10px;background:#fff;border:0;display:grid;place-items:center;flex:none;cursor:pointer;
+  box-shadow:0 4px 14px rgba(255,255,255,0.18);transition:transform .18s}
+#mast .back:hover{transform:translateX(-2px)}
+#mast .back svg{width:18px;height:18px;stroke:#04070f;fill:none;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
+#mast h1{font:800 var(--t1) var(--disp);letter-spacing:0.02em}
+#mast h1 span{color:var(--teal)}
+#mast .sync{margin-left:auto;font:var(--t-2) var(--mono);color:var(--faint);letter-spacing:0.12em;white-space:nowrap}
+#mast .scan{padding:9px 14px;border-radius:999px;background:var(--teal-bg);border:1px solid var(--teal-dim);
+  color:var(--teal);font:700 var(--t-2) var(--disp);letter-spacing:0.12em;text-transform:uppercase}
+#mast .scan:hover{background:rgba(45,212,191,0.16)}
+#mast .scan[disabled]{opacity:0.5;cursor:wait}
 
-.topbar{position:fixed;top:10px;left:12px;right:12px;height:52px;display:flex;align-items:center;gap:12px;background:rgba(14,22,40,0.78);border:1px solid rgba(34,211,238,0.24);border-radius:14px;padding:0 14px;backdrop-filter:blur(20px);z-index:20;overflow:hidden}
-.topbar::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,#22d3ee,#fb923c,transparent);opacity:0.5}
-.topbar,.topbar *{font-family:'Inter',system-ui,sans-serif}
-.topbar .brand-name,.topbar .tb-btn{font-family:'Orbitron',sans-serif}
-.topbar .tb-stat,.topbar .tb-stat *,.topbar .tb-sync,.topbar .tb-sync *{font-family:'Share Tech Mono',monospace}
-.back-btn{width:40px;height:40px;border-radius:10px;background:#fff;color:#030611;border:0;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(255,255,255,0.18);transition:transform 0.18s,box-shadow 0.18s}
-.back-btn:hover{transform:translateX(-2px);box-shadow:0 6px 18px rgba(255,255,255,0.28)}
-.back-btn svg{width:20px;height:20px;stroke:#030611;fill:none;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
-.brand{display:flex;align-items:center;gap:10px}
-.brand-mark{width:30px;height:30px;border-radius:7px;background:radial-gradient(circle at 35% 30%,rgba(220,240,255,0.35),rgba(34,211,238,0.28) 40%,rgba(5,15,25,0.85));box-shadow:0 0 14px rgba(34,211,238,0.4)}
-.brand-name{font-family:'Orbitron',sans-serif;font-size:0.78em;font-weight:800;letter-spacing:2.5px}
-.brand-name .dim{color:rgba(160,190,230,0.62);font-weight:500;letter-spacing:2px;margin-left:8px}
-.tb-spacer{flex:1}
-.tb-stat{display:flex;align-items:center;gap:6px;font-family:'Share Tech Mono',monospace;font-size:0.68em;color:rgba(160,190,230,0.62);letter-spacing:1px}
-.tb-stat .dot{width:6px;height:6px;border-radius:50%;background:#4ade80;box-shadow:0 0 6px #4ade80;animation:pulse 2s infinite}
-/* Tagline, not tabs: the old TRIAGE · DRAFT · APPROVE read as navigation and
-   solicited taps (Walk 1 item 4). Lowercase, lower contrast, explicit
-   non-interactive cursor, so it reads as a status line beside the live dot. */
-.tb-tagline{color:rgba(160,190,230,0.42);letter-spacing:0.6px;cursor:default;user-select:none}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
-.tb-btn{padding:7px 12px;border-radius:9px;background:rgba(34,211,238,0.12);border:1px solid rgba(34,211,238,0.36);color:#22d3ee;font-family:'Orbitron',sans-serif;font-size:0.62em;letter-spacing:2px;text-transform:uppercase;cursor:pointer;transition:all 0.18s}
-.tb-btn:hover{background:rgba(34,211,238,0.22);border-color:rgba(34,211,238,0.6);color:#fff}
-.tb-btn[disabled]{opacity:0.4;cursor:wait}
-.tb-sync{font-family:'Share Tech Mono',monospace;font-size:0.7em;color:rgba(160,190,230,0.5);letter-spacing:1.5px;margin-right:8px}
+#wire{max-width:680px;margin:0 auto;padding:20px 14px 70px}
 
-.stage{position:relative;z-index:5;padding:82px 18px 22px 18px;max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+/* ── the agent's opening line ── */
+#opening{font:600 var(--t2)/1.3 var(--disp);text-wrap:balance;padding:4px 2px 6px;letter-spacing:-0.01em;
+  animation:rise .5s cubic-bezier(0.16,1,0.3,1) both}
+#opening b{color:var(--teal)}
+#opening small{display:block;font:var(--t-2) var(--mono);color:var(--faint);margin-top:8px;letter-spacing:0.1em;font-weight:400}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 
-.glass{position:relative;background:linear-gradient(180deg,rgba(14,22,40,0.92),rgba(8,14,28,0.92));border:1px solid rgba(34,211,238,0.22);border-radius:14px;backdrop-filter:blur(18px);overflow:hidden}
-.glass::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(34,211,238,0.55),rgba(251,146,60,0.4),transparent);opacity:0.6}
+#find{margin:16px 0 6px}
+#find input{width:100%;background:var(--well);border:1px solid var(--hairline);border-radius:999px;
+  padding:11px 18px;color:var(--text);font:var(--t-1) var(--sans)}
+#find input::placeholder{color:var(--faint)}
+#find input:focus{border-color:var(--teal-dim);outline:none}
 
-.kpi-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
-.kpi{padding:14px 16px 16px}
-.kpi .lbl{font-family:'Orbitron',sans-serif;font-size:0.62em;letter-spacing:2px;color:rgba(160,190,230,0.72);text-transform:uppercase}
-.kpi .val{font-family:'Share Tech Mono',monospace;font-size:2.1em;font-weight:700;color:#fff;margin-top:6px;line-height:1.05}
-.kpi .sub{font-size:0.72em;color:rgba(160,190,230,0.62);margin-top:4px}
-.kpi.accent-red{border-color:rgba(239,68,68,0.4)} .kpi.accent-red .val{color:#f87171}
-.kpi.accent-cyan{border-color:rgba(34,211,238,0.32)} .kpi.accent-cyan .val{color:#22d3ee}
-.kpi.accent-green{border-color:rgba(16,185,129,0.32)} .kpi.accent-green .val{color:#10b981}
+/* ── the spine + events ── */
+#queueBody{position:relative;padding-left:26px;margin-top:14px}
+#queueBody.has-spine::before{content:'';position:absolute;left:8px;top:6px;bottom:6px;width:2px;
+  background:linear-gradient(180deg,var(--teal-dim),rgba(159,176,204,0.12))}
+.tmark{position:relative;font:var(--t-2) var(--mono);color:var(--faint);letter-spacing:0.14em;margin:6px 0 14px}
+.tmark::before{content:'';position:absolute;left:-22px;top:3px;width:10px;height:10px;border-radius:50%;
+  background:var(--ink);border:2px solid var(--faint)}
 
-.panel{padding:18px 20px 16px}
-.panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
-.panel h2{font-family:'Orbitron',sans-serif;font-size:0.82em;font-weight:700;letter-spacing:2.5px;color:rgba(160,190,230,0.92);text-transform:uppercase}
-.panel-action{font-family:'Share Tech Mono',monospace;font-size:0.75em;letter-spacing:1px;color:rgba(160,190,230,0.5);cursor:pointer;user-select:none;transition:color 0.18s}
-.panel-action:hover{color:#22d3ee}
+.event{position:relative;margin-bottom:18px;animation:rise .5s cubic-bezier(0.16,1,0.3,1) both}
+.event::before{content:'';position:absolute;left:-22px;top:14px;width:10px;height:10px;border-radius:50%;background:var(--faint)}
+.event.urgent::before{background:var(--red);box-shadow:0 0 10px var(--red);animation:lamp 2.6s ease-in-out infinite}
+.event.lead::before{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+@keyframes lamp{50%{box-shadow:0 0 2px currentColor}}
 
-.card{background:rgba(6,10,20,0.55);border:1px solid rgba(34,211,238,0.18);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;margin-bottom:14px;transition:border-color 0.18s,box-shadow 0.18s}
-.card:hover{border-color:rgba(34,211,238,0.42)}
-.card.notify{border-color:rgba(239,68,68,0.5);box-shadow:0 0 0 1px rgba(239,68,68,0.18)}
-.card .body{padding:14px 16px 13px;display:flex;flex-direction:column;gap:11px}
-.card .head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.card .who{font-weight:800;font-size:1em;color:#fff}
-.card .summary{font-size:0.9em;color:rgba(208,218,240,0.92);line-height:1.4}
-.card .inbound{background:rgba(3,8,18,0.55);border:1px solid rgba(34,211,238,0.14);border-left:3px solid rgba(34,211,238,0.5);border-radius:8px;padding:9px 11px;font-size:0.86em;color:rgba(208,218,240,0.82);line-height:1.4;max-height:140px;overflow:auto;white-space:pre-wrap}
-.card .lbl-draft{font-family:'Orbitron',sans-serif;font-size:0.56em;letter-spacing:2px;color:rgba(160,190,230,0.6);text-transform:uppercase}
-.card textarea{width:100%;min-height:84px;background:rgba(3,8,18,0.65);border:1px solid rgba(34,211,238,0.22);border-radius:8px;padding:9px 10px;color:#e6ecf6;font-family:'Inter',system-ui,sans-serif;font-size:0.9em;line-height:1.45;resize:vertical}
-.card textarea:focus{outline:none;border-color:rgba(34,211,238,0.6);background:rgba(3,8,18,0.85)}
-.card .actions{display:flex;flex-wrap:wrap;gap:7px}
+.meta{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin-bottom:7px}
+.meta .who{font:700 var(--t0) var(--disp)}
+.meta .ago{margin-left:auto;font:var(--t-2) var(--mono);color:var(--faint);white-space:nowrap}
 
-.pill{font-family:'Share Tech Mono',monospace;font-size:0.6em;padding:3px 8px;border-radius:6px;letter-spacing:0.6px;text-transform:uppercase;white-space:nowrap}
-.pill-channel{background:rgba(34,211,238,0.14);color:#5fd5e8;border:1px solid rgba(34,211,238,0.34)}
-.pill-cat{background:rgba(160,190,230,0.12);color:rgba(190,210,240,0.85);border:1px solid rgba(160,190,230,0.28)}
-.pill-notify{background:rgba(239,68,68,0.2);color:#f87171;border:1px solid rgba(239,68,68,0.5)}
-.pill-emergency{background:rgba(239,68,68,0.2);color:#f87171;border:1px solid rgba(239,68,68,0.5)}
-.pill-high{background:rgba(251,191,36,0.18);color:#fbbf24;border:1px solid rgba(251,191,36,0.46)}
-.pill-window-warn{background:rgba(251,146,60,0.16);color:#fb923c;border:1px solid rgba(251,146,60,0.44)}
-.pill-window-closed{background:rgba(239,68,68,0.18);color:#f87171;border:1px solid rgba(239,68,68,0.46)}
-.tb-meta{flex:1;text-align:right;font-family:'Share Tech Mono',monospace;font-size:0.7em;color:rgba(160,190,230,0.6)}
+/* pills (live classes, wire styling) */
+.pill{font:var(--t-2) var(--mono);padding:2px 8px;border-radius:6px;border:1px solid var(--hairline);color:var(--dim);
+  letter-spacing:0.04em;text-transform:lowercase;white-space:nowrap}
+.pill-channel{color:var(--teal);border-color:var(--teal-dim);background:var(--teal-bg)}
+.pill-cat{color:var(--dim)}
+.pill-notify,.pill-emergency,.pill-window-closed{color:var(--red);border-color:rgba(248,113,113,0.4);background:rgba(248,113,113,0.1)}
+.pill-high,.pill-window-warn{color:var(--amber);border-color:rgba(251,191,36,0.4);background:rgba(251,191,36,0.08)}
 
-.btn{font-family:'Orbitron',sans-serif;font-size:0.62em;letter-spacing:2px;padding:8px 12px;border-radius:8px;cursor:pointer;border:1px solid transparent;text-transform:uppercase;font-weight:700;transition:all 0.18s;flex:1;min-width:90px}
-.btn-send{background:rgba(16,185,129,0.18);color:#10b981;border-color:rgba(16,185,129,0.42)}
-.btn-send:hover{background:rgba(16,185,129,0.32);color:#fff;border-color:rgba(16,185,129,0.7)}
-.btn-save{background:rgba(251,191,36,0.14);color:#fbbf24;border-color:rgba(251,191,36,0.4)}
-.btn-save:hover{background:rgba(251,191,36,0.28);color:#fff;border-color:rgba(251,191,36,0.7)}
-.btn-dismiss{background:rgba(160,190,230,0.1);color:rgba(190,210,240,0.85);border-color:rgba(160,190,230,0.3)}
-/* Armed two-step confirm: gold = needs-you per the locked signal language.
-   The state change IS the motion (150ms); Escape or 4s reverts. */
-.btn-arm{background:rgba(253,204,2,0.14)!important;color:#fdcc02!important;border-color:rgba(253,204,2,0.55)!important;transition:background 0.15s,color 0.15s,border-color 0.15s}
+/* inbound: left-anchored */
+.inbound{background:var(--panel);border:1px solid var(--hairline);border-radius:14px 14px 14px 4px;
+  padding:12px 14px;color:var(--dim);font-size:var(--t-1);line-height:1.55;max-width:58ch;white-space:pre-wrap;
+  max-height:200px;overflow:auto}
+.summary{font-size:var(--t-1);color:var(--faint);margin-bottom:6px;font-style:italic}
+
+/* the draft: right-anchored, teal-edged, the actionable object */
+.draft{margin:8px 0 0 auto;max-width:58ch;background:rgba(8,20,22,0.85);border:1px solid var(--teal-dim);
+  border-radius:14px 14px 4px 14px;padding:12px 14px}
+.draft .dl{font:var(--t-2) var(--mono);color:var(--teal);letter-spacing:0.12em;text-transform:uppercase;
+  margin-bottom:8px;display:flex;justify-content:space-between;gap:8px}
+.draft .dl span{color:var(--faint);text-transform:none;letter-spacing:0.02em}
+.draft textarea{width:100%;min-height:74px;background:rgba(4,10,14,0.6);border:1px solid var(--hairline);border-radius:9px;
+  padding:9px 11px;color:var(--text);font:var(--t-1)/1.55 var(--sans);resize:vertical}
+.draft textarea:focus{outline:none;border-color:var(--teal-dim);background:rgba(45,212,191,0.05)}
+.verbs{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+
+/* verbs = the live .btn buttons, wire-styled. Live JS sets .btn-arm on the
+   two-step send/dismiss confirm; that override stays loud. */
+.btn{flex:1;min-width:96px;padding:11px 12px;border-radius:9px;border:1px solid var(--hairline);background:transparent;
+  color:var(--dim);font:700 var(--t-2) var(--disp);letter-spacing:0.1em;text-transform:uppercase;text-align:center;
+  text-decoration:none;display:inline-flex;align-items:center;justify-content:center;transition:all .18s}
+.btn:hover{color:var(--text);border-color:var(--dim)}
+.btn:active{transform:scale(0.98)}
+.btn-send{background:rgba(52,211,153,0.13);border-color:rgba(52,211,153,0.42);color:var(--green);flex:1.5}
+.btn-send:hover{background:rgba(52,211,153,0.25);color:#fff}
+.btn-save{color:var(--amber);border-color:rgba(251,191,36,0.3)}
+.btn-save:hover{color:#fff;border-color:rgba(251,191,36,0.6)}
+.btn-arm{background:rgba(253,204,2,0.16)!important;color:#fdcc02!important;border-color:rgba(253,204,2,0.6)!important;transition:all .15s}
 .btn-arm:focus-visible{outline:2px solid rgba(253,204,2,0.8);outline-offset:2px}
+.btn[disabled]{opacity:0.5;cursor:wait}
 @media (prefers-reduced-motion: reduce){.btn-arm{transition:none}}
-.btn-dismiss:hover{background:rgba(160,190,230,0.2);color:#fff}
-.btn[disabled]{opacity:0.45;cursor:wait}
 
-.list{display:flex;flex-direction:column;gap:8px}
-.hrow{display:grid;grid-template-columns:1fr auto;gap:12px;padding:10px 12px;background:rgba(6,10,20,0.45);border:1px solid rgba(34,211,238,0.12);border-radius:9px;align-items:center}
-.hrow .ht{font-size:0.86em;color:rgba(208,218,240,0.82);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.hrow .hm{font-family:'Share Tech Mono',monospace;font-size:0.66em;color:rgba(160,190,230,0.55);white-space:nowrap}
-.hstatus-sent{color:#10b981}
-.hstatus-dismissed{color:rgba(160,190,230,0.55)}
+/* quiet event (needs_reply false) */
+.quiet{display:flex;gap:10px;align-items:center;background:var(--well);border:1px dashed var(--hairline);
+  border-radius:12px;padding:10px 14px;color:var(--faint);font-size:var(--t-1)}
+.quiet b{color:var(--dim);font-weight:600}
 
-.watch-hint{font-size:0.78em;color:rgba(160,190,230,0.6);line-height:1.45;margin-bottom:12px}
-.watch-form{display:grid;grid-template-columns:1fr 1.2fr 1.2fr 84px auto;gap:8px;margin-top:12px}
-.watch-form input{background:rgba(3,8,18,0.65);border:1px solid rgba(34,211,238,0.22);border-radius:8px;padding:9px 10px;color:#e6ecf6;font-family:'Inter',system-ui,sans-serif;font-size:0.84em;min-width:0}
-.watch-form input:focus{outline:none;border-color:rgba(34,211,238,0.6);background:rgba(3,8,18,0.85)}
-.panel-head-right{display:flex;align-items:center;gap:12px;min-width:0}
-#queueFilter{background:rgba(3,8,18,0.65);border:1px solid rgba(34,211,238,0.22);border-radius:8px;padding:8px 12px;color:#e6ecf6;font-family:'Inter',system-ui,sans-serif;font-size:0.84em;width:220px;max-width:48vw}
-#queueFilter:focus{outline:none;border-color:rgba(34,211,238,0.6);background:rgba(3,8,18,0.85)}
-#queueFilter::placeholder{color:rgba(160,190,230,0.4)}
-.watch-form .btn{flex:0 0 auto;min-width:110px}
-.wexpired{opacity:0.45}
-.wbtn{flex:0 0 auto;min-width:0;padding:7px 10px}
-.lead-form{grid-template-columns:1.6fr auto 84px auto}
-.lead-check{display:flex;align-items:center;gap:7px;font-size:0.8em;color:rgba(200,220,245,0.85);white-space:nowrap;cursor:pointer}
-.lead-check input{width:16px;height:16px;accent-color:#22d3ee;flex:0 0 auto}
+/* overnight fold (recently handled) */
+#fold{margin-top:20px}
+#fold>button{width:100%;text-align:left;background:none;border:none;color:var(--faint);
+  font:var(--t-2) var(--mono);letter-spacing:0.14em;padding:10px 0;border-top:1px solid var(--hairline);cursor:pointer}
+#fold>button:hover{color:var(--teal)}
+#fold .rows{display:none;padding-bottom:4px}
+#fold.open .rows{display:block}
+.hrow{display:flex;justify-content:space-between;gap:10px;padding:8px 0;font-size:var(--t-1);color:var(--dim);
+  border-bottom:1px solid rgba(159,176,204,0.07)}
+.hrow .ht{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.hrow .hm{font:var(--t-2) var(--mono);color:var(--faint);white-space:nowrap}
+.hstatus-sent{color:var(--green)}
+.hrow.wexpired{opacity:0.45}
 
-.empty{padding:30px 14px;text-align:center;font-family:'Share Tech Mono',monospace;font-size:0.85em;letter-spacing:1px;color:rgba(160,190,230,0.5)}
-.loading{padding:18px 14px;text-align:center;font-family:'Share Tech Mono',monospace;font-size:0.78em;color:rgba(160,190,230,0.55);letter-spacing:1.5px}
+/* settings (watches + lead alerts): not part of the wire, kept reachable in a
+   collapsible fold so nothing regresses. */
+#settings{margin-top:18px}
+#settings>summary{list-style:none;cursor:pointer;color:var(--faint);font:var(--t-2) var(--mono);letter-spacing:0.14em;
+  padding:10px 0;border-top:1px solid var(--hairline)}
+#settings>summary::-webkit-details-marker{display:none}
+#settings>summary:hover{color:var(--teal)}
+.set-block{padding:12px 0 4px}
+.set-block h2{font:700 var(--t-1) var(--disp);letter-spacing:0.04em;margin-bottom:4px}
+.set-hint{font-size:var(--t-2);color:var(--faint);line-height:1.5;margin-bottom:10px}
+.set-form{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.set-form input{flex:1;min-width:130px;background:var(--well);border:1px solid var(--hairline);border-radius:8px;
+  padding:9px 11px;color:var(--text);font:var(--t-1) var(--sans)}
+.set-form input:focus{outline:none;border-color:var(--teal-dim)}
+.set-form input[type=number]{flex:0 0 90px}
+.lead-check{display:flex;align-items:center;gap:7px;font-size:var(--t-2);color:var(--dim);white-space:nowrap}
+.lead-check input{flex:0 0 auto;width:16px;height:16px;accent-color:var(--teal)}
+.wbtn{flex:0 0 auto;min-width:0;padding:8px 12px}
 
-#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);padding:12px 20px;background:rgba(14,22,40,0.95);border:1px solid rgba(34,211,238,0.4);border-radius:10px;font-family:'Share Tech Mono',monospace;font-size:0.82em;color:#22d3ee;letter-spacing:0.5px;z-index:50;opacity:0;pointer-events:none;transition:opacity 0.2s,transform 0.2s;backdrop-filter:blur(10px)}
-#toast.show{opacity:1;transform:translateX(-50%) translateY(-6px)}
-#toast.err{border-color:rgba(239,68,68,0.5);color:#ef4444}
+.empty{padding:26px 8px;text-align:center;font:var(--t-1) var(--mono);letter-spacing:0.06em;color:var(--faint)}
+.loading{padding:18px 8px;text-align:center;font:var(--t-2) var(--mono);color:var(--faint);letter-spacing:0.12em}
+.panel-action{color:var(--faint);font:var(--t-2) var(--mono);letter-spacing:0.1em;cursor:pointer}
+.panel-action:hover{color:var(--teal)}
 
-@media (max-width:720px){
-  .kpi-row{grid-template-columns:1fr 1fr 1fr;gap:8px}
-  .kpi .val{font-size:1.6em}
-  .stage{padding:74px 10px 18px 10px}
-  .watch-form{grid-template-columns:1fr 1fr}
-  .watch-form .btn{grid-column:1 / -1}
-  .lead-form{grid-template-columns:1fr 1fr}
+#toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);padding:11px 18px;background:rgba(11,19,34,0.97);
+  border:1px solid var(--teal-dim);border-radius:10px;font:var(--t-1) var(--mono);color:var(--teal);z-index:var(--z-toast);
+  opacity:0;pointer-events:none;transition:opacity .2s;max-width:92vw;text-align:center}
+#toast.show{opacity:1}
+#toast.err{border-color:rgba(248,113,113,0.5);color:var(--red)}
+
+/* ── embedded as an artifact in the Builders Hall shell (?embed=1) ── */
+body.embed #mast{display:none}
+body.embed #wire{padding-top:14px}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important}
 }
 </style>
 <script src="/assets/auth-guard.js"></script>
@@ -141,86 +184,54 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
 </head>
 <body>
 
-<div class="bg-ambient"></div>
-<div class="bg-grid"></div>
+<header id="mast">
+  <button class="back" onclick="goBackToMainHub()" aria-label="Back" title="Back"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
+  <h1>THE <span>WIRE</span></h1>
+  <span class="sync" id="lastSync">SYNC · idle</span>
+  <button class="scan" id="runBtn" onclick="fireScan()">Scan Now</button>
+</header>
 
-<div class="topbar">
-  <button class="back-btn" onclick="goBackToMainHub()" aria-label="Back" title="Back"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
-  <div class="brand"><div class="brand-mark"></div><div class="brand-name">RYUJIN <span class="dim">× INBOX</span></div></div>
-  <div class="tb-stat tb-tagline"><div class="dot"></div><span>drafts prepped for your approval</span></div>
-  <div class="tb-spacer"></div>
-  <div class="tb-sync" id="lastSync">SYNC · idle</div>
-  <button class="tb-btn" id="runBtn" onclick="fireScan()">Scan Now</button>
-</div>
+<main id="wire">
 
-<div class="stage">
+  <p id="opening">Reading the wire&hellip;</p>
 
-  <div class="kpi-row">
-    <div class="kpi glass accent-red">
-      <div class="lbl">Needs you now</div>
-      <div class="val" id="kpiNotify">—</div>
-      <div class="sub">active leak / active lead</div>
-    </div>
-    <div class="kpi glass accent-cyan">
-      <div class="lbl">In queue</div>
-      <div class="val" id="kpiQueue">—</div>
-      <div class="sub">awaiting review</div>
-    </div>
-    <div class="kpi glass accent-green">
-      <div class="lbl">Handled · 7d</div>
-      <div class="val" id="kpiHandled">—</div>
-      <div class="sub" id="kpiLastRun">last scan: —</div>
-    </div>
+  <div id="find"><input id="queueFilter" type="search" placeholder="Find a customer on the wire..." maxlength="80" autocomplete="off" aria-label="Find a customer"></div>
+
+  <div id="queueBody"><div class="loading">Loading the wire...</div></div>
+
+  <div id="fold">
+    <button type="button" onclick="this.parentElement.classList.toggle('open')" id="foldToggle">&#9656; ALREADY HANDLED &middot; 7 DAYS</button>
+    <div class="rows" id="handledBody"><div class="loading">Loading...</div></div>
   </div>
 
-  <div class="glass panel">
-    <div class="panel-head">
-      <h2>Review queue</h2>
-      <div class="panel-head-right">
-        <input id="queueFilter" type="search" placeholder="Find a customer..." maxlength="80" autocomplete="off">
-        <div class="panel-action" onclick="loadQueue(true)">Refresh</div>
+  <details id="settings">
+    <summary>&#9656; WATCHES &amp; LEAD ALERTS</summary>
+    <div class="set-block">
+      <h2>Watches <span class="panel-action" onclick="loadWatches(true)">Refresh</span></h2>
+      <div class="set-hint">Always ping me when these people get back to me. Contact name watches GHL threads (SMS / FB / IG); email watches Gmail by exact address. Watches expire so the list never rots (blank the days field for a permanent one).</div>
+      <div id="watchBody"><div class="loading">Loading watches...</div></div>
+      <div class="set-form">
+        <input id="wName" placeholder="Contact name (GHL)" maxlength="80">
+        <input id="wEmail" placeholder="Email address (Gmail)" maxlength="160">
+        <input id="wNote" placeholder="Note (what for)" maxlength="160">
+        <input id="wDays" type="number" min="1" max="365" value="14" title="Days until this watch expires. Blank = never.">
+        <button class="btn btn-send wbtn" onclick="addWatch(this)">Add watch</button>
       </div>
     </div>
-    <div id="queueBody"><div class="loading">Loading inbox...</div></div>
-  </div>
-
-  <div class="glass panel">
-    <div class="panel-head"><h2>Recently handled</h2><div class="panel-action" onclick="loadQueue(true)">Refresh</div></div>
-    <div id="handledBody"><div class="loading">Loading...</div></div>
-  </div>
-
-  <div class="glass panel">
-    <div class="panel-head">
-      <h2>Watches</h2>
-      <div class="panel-action" onclick="loadWatches(true)">Refresh</div>
+    <div class="set-block">
+      <h2>Lead alerts <span class="panel-action" onclick="loadWatches(true)">Refresh</span></h2>
+      <div class="set-hint">Where lead-event emails land, whether every lead pings (not just clear buying intent), and how many quiet days before a lead is flagged as going cold.</div>
+      <div id="leadAlertBody"><div class="loading">Loading...</div></div>
+      <div class="set-form">
+        <input id="nEmail" type="email" placeholder="Notify email" maxlength="160" title="Where lead-event emails and the inbox digest land.">
+        <label class="lead-check" title="When on, every lead-category message pings, not just present-intent ones."><input id="nAllLeads" type="checkbox"> Ping me for every lead</label>
+        <input id="nColdDays" type="number" min="1" max="60" placeholder="Cold days" title="Days with no pipeline movement before a lead is flagged going cold.">
+        <button class="btn btn-send wbtn" onclick="saveLeadAlerts(this)">Save</button>
+      </div>
     </div>
-    <div class="watch-hint">Always ping me when these people get back to me. Contact name watches GHL threads (SMS / FB / IG); email watches Gmail by exact address. Watches expire so the list never rots (blank the days field for a permanent one).</div>
-    <div id="watchBody"><div class="loading">Loading watches...</div></div>
-    <div class="watch-form">
-      <input id="wName" placeholder="Contact name (GHL)" maxlength="80">
-      <input id="wEmail" placeholder="Email address (Gmail)" maxlength="160">
-      <input id="wNote" placeholder="Note (what for)" maxlength="160">
-      <input id="wDays" type="number" min="1" max="365" value="14" title="Days until this watch expires. Blank = never.">
-      <button class="btn btn-send" onclick="addWatch(this)">Add watch</button>
-    </div>
-  </div>
+  </details>
 
-  <div class="glass panel">
-    <div class="panel-head">
-      <h2>Lead alerts</h2>
-      <div class="panel-action" onclick="loadWatches(true)">Refresh</div>
-    </div>
-    <div class="watch-hint">Where lead-event emails land, whether every lead pings (not just clear buying intent), and how many quiet days before a lead is flagged as going cold.</div>
-    <div id="leadAlertBody"><div class="loading">Loading...</div></div>
-    <div class="watch-form lead-form">
-      <input id="nEmail" type="email" placeholder="Notify email" maxlength="160" title="Where lead-event emails and the inbox digest land.">
-      <label class="lead-check" title="When on, every lead-category message pings, not just present-intent ones."><input id="nAllLeads" type="checkbox"> Ping me for every lead</label>
-      <input id="nColdDays" type="number" min="1" max="60" placeholder="Cold days" title="Days with no pipeline movement before a lead is flagged going cold.">
-      <button class="btn btn-send" onclick="saveLeadAlerts(this)">Save</button>
-    </div>
-  </div>
-
-</div>
+</main>
 
 <div id="toast"></div>
 
@@ -234,6 +245,11 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
   let state = { needs_review: [], recent_handled: [], counts: {}, last_run: null };
   let inflight = false;
   let queueFilterText = '';
+
+  // Mounted as an artifact in the Builders Hall shell: ?embed=1 drops the
+  // masthead (the shell frames it). Standalone is unaffected.
+  const EMBED = /[?&]embed=1\b/.test(location.search);
+  if (EMBED) document.body.classList.add('embed');
 
   function authHeaders(extra){
     const h = Object.assign({ 'x-tenant-id': TENANT_SLUG }, extra || {});
@@ -249,6 +265,11 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
     const day = d.toLocaleDateString('en-CA', { weekday: 'short', month: 'short', day: 'numeric' });
     const time = d.toLocaleTimeString('en-CA', { hour: 'numeric', minute: '2-digit', hour12: true });
     return day + ' · ' + time;
+  }
+  function fmtTimeShort(iso){
+    if (!iso) return '';
+    try { return new Date(iso).toLocaleTimeString('en-CA', { hour: 'numeric', minute: '2-digit', hour12: true }); }
+    catch(e){ return ''; }
   }
   function fmtSyncTime(){
     return 'SYNC · ' + new Date().toLocaleTimeString('en-CA', { hour: 'numeric', minute: '2-digit', hour12: false });
@@ -268,13 +289,6 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
   }
 
   // Expired/invalid session: a real signed-out state instead of a dead end.
-  // Fallback path only; the normal route is RyujinAuth.clearAndRedirect below
-  // (the documented auth-guard contract: wipe the stale token, bounce to
-  // login.html?next=<here> so Mac lands straight back after signing in).
-  // Signed-out state: the door render itself is the SHARED partial in
-  // auth-guard.js (RyujinAuth.sessionEnded, one implementation fleet-wide);
-  // this wrapper only adds the page-specific bits (disable Scan Now, quiet
-  // the handled section).
   function renderSignedOut(){
     const btn = document.getElementById('runBtn');
     if (btn) { btn.disabled = true; btn.textContent = 'Signed out'; btn.title = 'Sign in to scan'; }
@@ -283,7 +297,6 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
     if (window.RyujinAuth && typeof window.RyujinAuth.sessionEnded === 'function') {
       window.RyujinAuth.sessionEnded(document.getElementById('queueBody'));
     } else {
-      // Guard missing entirely (should not happen): plain redirect.
       window.location.href = '/login.html?next=' + encodeURIComponent(window.location.pathname);
     }
   }
@@ -317,15 +330,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
       document.getElementById('lastSync').textContent = fmtSyncTime();
     } catch(e){
       console.error('inbox load failed:', e);
-      // 401 already rendered the signed-out door; do not paint over it.
       if (e.message === 'sign_in_required') return;
       if (showSpinner) {
         document.getElementById('queueBody').innerHTML =
-          '<div class="empty">Could not load inbox: ' + escapeHtml(e.message) + '</div>';
-        // Same treatment for Recently handled: without this it sits on
-        // "Loading..." forever in any failure state (Walk 1 item 5), leaving
-        // stalled indistinguishable from broken. Its panel head now carries
-        // the same Refresh action the Review queue has.
+          '<div class="empty">Could not load the wire: ' + escapeHtml(e.message) + '</div>';
         document.getElementById('handledBody').innerHTML =
           '<div class="empty">Could not load: ' + escapeHtml(e.message) + '</div>';
         toast('Failed to load: ' + e.message, true);
@@ -354,7 +362,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
     if (it.channel !== 'email' || !it.contact_name) return '';
     const q = encodeURIComponent('from:(' + it.contact_name + ') OR ' + it.contact_name);
     const url = 'https://mail.google.com/mail/u/0/#search/' + q;
-    return `<a class="btn btn-send" style="text-decoration:none;display:flex;align-items:center;justify-content:center" href="${url}" target="_blank" rel="noopener">Open in Gmail</a>`;
+    return `<a class="btn btn-send" href="${url}" target="_blank" rel="noopener">Open in Gmail</a>`;
   }
 
   // The third (primary) action. When the agent flagged no reply needed, offer a
@@ -363,7 +371,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
   function primaryAction(it){
     if (it.needs_reply === false) {
       const extra = it.channel === 'email' ? gmailLink(it) : '';
-      return `<button class="btn btn-dismiss" onclick="dismiss('${it.id}', this)">Mark handled (no reply)</button>` + extra;
+      return `<button class="btn btn-dismiss" onclick="dismiss('${it.id}', this)">Mark handled</button>` + extra;
     }
     if (['sms','facebook','instagram','whatsapp'].includes(it.channel)) {
       return `<button class="btn btn-send" onclick="send('${it.id}', this)">Approve &amp; Send</button>`;
@@ -380,78 +388,88 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
   // /messages.html instead of an Approve and Send box. Deep-link to the thread.
   function subThreadLink(it){
     const href = it.ref_id ? `/messages.html?thread=${encodeURIComponent(it.ref_id)}` : '/messages.html';
-    return `<a class="btn btn-send" style="text-decoration:none;display:flex;align-items:center;justify-content:center" href="${href}" target="_blank" rel="noopener">View thread</a>`;
+    return `<a class="btn btn-send" href="${href}" target="_blank" rel="noopener">View thread</a>`;
+  }
+
+  function metaRow(it){
+    return `<div class="meta">
+      <span class="who">${escapeHtml(it.contact_name)}</span>
+      <span class="pill pill-channel">${escapeHtml(it.channel_label || it.channel || '')}</span>
+      ${it.category ? `<span class="pill pill-cat">${escapeHtml(it.category)}</span>` : ''}
+      ${urgencyPill(it.urgency)}
+      ${it.notify ? `<span class="pill pill-notify">${escapeHtml(it.notify_reason || 'needs you now')}</span>` : ''}
+      ${windowPill(it.window)}
+      <span class="ago">${fmtTimeShort(it.last_message_at)}</span>
+    </div>`;
   }
 
   function renderSubCard(it){
-    return `
-      <div class="card" data-id="${it.id}">
-        <div class="body">
-          <div class="head">
-            <span class="who">${escapeHtml(it.contact_name)}</span>
-            <span class="pill pill-channel">${escapeHtml(it.channel_label || 'Sub portal')}</span>
-            <span class="pill pill-cat">${escapeHtml(it.category || 'sub')}</span>
-            ${urgencyPill(it.urgency)}
-            <span class="tb-meta">${fmtDate(it.last_message_at)}</span>
-          </div>
-          <div class="summary">${escapeHtml(it.summary || '')}</div>
-          <div class="inbound">${escapeHtml(it.last_message_body || '(no message body)')}</div>
-          <div class="actions">
-            ${subThreadLink(it)}
-            <button class="btn btn-dismiss" onclick="dismiss('${it.id}', this)">Dismiss</button>
-          </div>
+    return `<article class="event card${it.urgency === 'emergency' || it.urgency === 'high' ? ' urgent' : ''}" data-id="${it.id}">
+      ${metaRow(it)}
+      ${it.summary ? `<div class="summary">${escapeHtml(it.summary)}</div>` : ''}
+      <div class="inbound">${escapeHtml(it.last_message_body || '(no message body)')}</div>
+      <div class="draft">
+        <div class="dl">Sub thread <span>replies live in messages</span></div>
+        <div class="verbs">
+          ${subThreadLink(it)}
+          <button class="btn btn-dismiss" onclick="dismiss('${it.id}', this)">Dismiss</button>
         </div>
-      </div>`;
+      </div>
+    </article>`;
   }
 
   function renderCard(it){
     if (it.source === 'sub_portal') return renderSubCard(it);
-    const notifyPill = it.notify
-      ? '<span class="pill pill-notify">' + escapeHtml(it.notify_reason || 'needs you now') + '</span>'
-      : '';
-    return `
-      <div class="card ${it.notify ? 'notify' : ''}" data-id="${it.id}">
-        <div class="body">
-          <div class="head">
-            <span class="who">${escapeHtml(it.contact_name)}</span>
-            <span class="pill pill-channel">${escapeHtml(it.channel_label || it.channel)}</span>
-            <span class="pill pill-cat">${escapeHtml(it.category || 'other')}</span>
-            ${urgencyPill(it.urgency)}
-            ${notifyPill}
-            ${windowPill(it.window)}
-            <span class="tb-meta">${fmtDate(it.last_message_at)}</span>
-          </div>
-          <div class="summary">${escapeHtml(it.summary || '')}</div>
-          <div class="inbound">${escapeHtml(it.last_message_body || '(no message body)')}</div>
-          <div class="lbl-draft">Suggested reply (edit before sending)</div>
-          <textarea id="draft-${it.id}" placeholder="${it.needs_reply ? 'Draft a reply...' : 'Agent flagged no reply needed. Write one here if you want to respond.'}">${escapeHtml(it.draft_reply || '')}</textarea>
-          <div class="actions">
-            <button class="btn btn-save" onclick="saveDraft('${it.id}', this)">Save draft</button>
-            ${it.needs_reply === false ? '' : `<button class="btn btn-dismiss" onclick="dismiss('${it.id}', this)">Dismiss</button>`}
-            ${primaryAction(it)}
-          </div>
+    // needs_reply === false with no draft = a quiet event (nothing needed).
+    if (it.needs_reply === false && !(it.draft_reply || '').trim()) {
+      return `<article class="event card" data-id="${it.id}">
+        ${metaRow(it)}
+        <div class="inbound">${escapeHtml(it.last_message_body || '(no message body)')}</div>
+        <div class="quiet">
+          <span><b>Nothing needed.</b> Ryujin flagged no reply.</span>
+          <div class="verbs" style="flex:0 0 auto;margin:0">${primaryAction(it)}</div>
         </div>
-      </div>`;
+      </article>`;
+    }
+    const lead = it.category === 'lead' || it.notify_reason === 'active lead';
+    return `<article class="event card${it.notify ? ' urgent' : (lead ? ' lead' : '')}" data-id="${it.id}">
+      ${metaRow(it)}
+      ${it.summary ? `<div class="summary">${escapeHtml(it.summary)}</div>` : ''}
+      <div class="inbound">${escapeHtml(it.last_message_body || '(no message body)')}</div>
+      <div class="draft">
+        <div class="dl">Ryujin drafted <span>${it.needs_reply === false ? 'optional reply' : 'tap to edit before sending'}</span></div>
+        <textarea id="draft-${it.id}" spellcheck="false" placeholder="${it.needs_reply ? 'Draft a reply...' : 'Agent flagged no reply needed. Write one here if you want to respond.'}">${escapeHtml(it.draft_reply || '')}</textarea>
+        <div class="verbs">
+          <button class="btn btn-save" onclick="saveDraft('${it.id}', this)">Save draft</button>
+          ${it.needs_reply === false ? '' : `<button class="btn btn-dismiss" onclick="dismiss('${it.id}', this)">Dismiss</button>`}
+          ${primaryAction(it)}
+        </div>
+      </div>
+    </article>`;
   }
 
   function render(){
     const c = state.counts || {};
-    document.getElementById('kpiNotify').textContent = c.notify || 0;
-    document.getElementById('kpiQueue').textContent = c.needs_review || 0;
-    document.getElementById('kpiHandled').textContent = c.handled_last_7d || 0;
+    const notify = c.notify || 0, queue = c.needs_review || 0, handled = c.handled_last_7d || 0;
     const lr = state.last_run;
-    document.getElementById('kpiLastRun').textContent =
-      'last scan: ' + (lr && lr.started_at ? fmtDate(lr.started_at) : 'never');
+    const scanTxt = lr && lr.started_at ? fmtDate(lr.started_at) : 'never';
 
     // Notify items first, then most-recent message.
     let items = (state.needs_review || []).slice().sort((a, b) => {
       if (!!b.notify !== !!a.notify) return (b.notify ? 1 : 0) - (a.notify ? 1 : 0);
       return new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0);
     });
-    // Client-side find (Walk 1 item 2): match name, summary, or message body
-    // so "did the agent draft something for Richard?" is one keystroke, not a
-    // 68-card scroll. The input lives OUTSIDE queueBody so the 45s poll
-    // re-render never steals focus or wipes the query.
+
+    // The agent's opening line (built from the live counts, not a table).
+    const op = document.getElementById('opening');
+    if (queue === 0) {
+      op.innerHTML = `The wire is clear. Nothing waiting on you.<small>LAST SCAN ${escapeHtml(scanTxt).toUpperCase()} · ${handled} HANDLED THIS WEEK</small>`;
+    } else {
+      op.innerHTML = `Ryujin read the wire. <b>${queue}</b> ${queue === 1 ? 'message needs' : 'messages need'} you${notify ? `, <b>${notify}</b> right now` : ''}.<small>LAST SCAN ${escapeHtml(scanTxt).toUpperCase()} · ${handled} HANDLED THIS WEEK · DRAFTS PREPPED FOR YOUR APPROVAL</small>`;
+    }
+
+    // Client-side find: match name, summary, or message body. The input lives
+    // OUTSIDE queueBody so the 45s poll re-render never steals focus.
     const totalCount = items.length;
     const f = (queueFilterText || '').trim().toLowerCase();
     if (f) {
@@ -461,20 +479,23 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
         (it.last_message_body || '').toLowerCase().includes(f)
       );
     }
+
     const qb = document.getElementById('queueBody');
     // Preserve any in-progress draft text (plus focus + caret) across this
     // re-render so the background poll cannot wipe what the operator is typing.
-    // (Review fix 2026-05-29.)
     const liveDrafts = {}; let focusedDraft = null, caretA = 0, caretB = 0;
     qb.querySelectorAll('textarea[id^="draft-"]').forEach(t => {
       liveDrafts[t.id] = t.value;
       if (document.activeElement === t) { focusedDraft = t.id; caretA = t.selectionStart; caretB = t.selectionEnd; }
     });
+
+    qb.classList.toggle('has-spine', items.length > 0);
     qb.innerHTML = items.length
-      ? items.map(renderCard).join('')
+      ? '<div class="tmark">ON THE WIRE</div>' + items.map(renderCard).join('')
       : (f
-          ? '<div class="empty">No items match "' + escapeHtml(f) + '" (' + totalCount + ' in the queue). <span class="panel-action" style="display:inline" onclick="clearQueueFilter()">Clear</span></div>'
-          : '<div class="empty">Inbox is clear. Nothing waiting on you.</div>');
+          ? '<div class="empty">No one on the wire matches "' + escapeHtml(f) + '" (' + totalCount + ' total). <span class="panel-action" style="display:inline" onclick="clearQueueFilter()">Clear</span></div>'
+          : '<div class="empty">The wire is clear. Nothing waiting on you.</div>');
+
     Object.keys(liveDrafts).forEach(id => {
       const t = document.getElementById(id);
       if (t && liveDrafts[id] != null && liveDrafts[id] !== t.value) t.value = liveDrafts[id];
@@ -482,13 +503,15 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
     if (focusedDraft) { const t = document.getElementById(focusedDraft); if (t) { t.focus(); try { t.setSelectionRange(caretA, caretB); } catch (e) {} } }
 
     const hb = document.getElementById('handledBody');
-    const handled = state.recent_handled || [];
-    hb.innerHTML = handled.length
-      ? '<div class="list">' + handled.map(h => `
+    const hbList = state.recent_handled || [];
+    const ft = document.getElementById('foldToggle');
+    if (ft) ft.innerHTML = (document.getElementById('fold').classList.contains('open') ? '&#9662;' : '&#9656;') + ' ALREADY HANDLED &middot; ' + hbList.length;
+    hb.innerHTML = hbList.length
+      ? hbList.map(h => `
           <div class="hrow">
-            <div class="ht">${escapeHtml(h.contact_name)} · ${escapeHtml(h.summary || h.last_message_body || '')}</div>
-            <div class="hm hstatus-${h.status}">${h.status === 'sent' ? 'sent' : 'dismissed'} · ${fmtDate(h.sent_at || h.last_message_at)}</div>
-          </div>`).join('') + '</div>'
+            <div class="ht">${escapeHtml(h.contact_name)} &middot; ${escapeHtml(h.summary || h.last_message_body || '')}</div>
+            <div class="hm hstatus-${h.status}">${h.status === 'sent' ? 'sent' : 'dismissed'} &middot; ${fmtTimeShort(h.sent_at || h.last_message_at)}</div>
+          </div>`).join('')
       : '<div class="empty">Nothing handled in the last 7 days.</div>';
   }
 
@@ -616,22 +639,20 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
         w.note ? escapeHtml(w.note) : '',
         w.expires_at ? (expired ? 'EXPIRED' : 'until ' + fmtDate(w.expires_at)) : 'no expiry',
       ].filter(Boolean).join(' · ');
-      rows.push(`<div class="hrow${expired ? ' wexpired' : ''}"><div><div class="ht">${what}</div><div class="hm">${meta}</div></div><button class="btn btn-dismiss wbtn" onclick="removeWatch(${i}, this)">Remove</button></div>`);
+      rows.push(`<div class="hrow${expired ? ' wexpired' : ''}"><div class="ht"><div>${what}</div><div class="hm">${meta}</div></div><button class="btn btn-dismiss wbtn" onclick="removeWatch(${i}, this)">Remove</button></div>`);
     });
     legacy.forEach((raw, i) => {
       const e = (raw && typeof raw === 'object') ? raw : { match: raw };
       const meta = [e.note ? escapeHtml(String(e.note)) : '', 'legacy list · GHL only · no expiry'].filter(Boolean).join(' · ');
-      rows.push(`<div class="hrow"><div><div class="ht">${escapeHtml(String(e.match || ''))}</div><div class="hm">${meta}</div></div><button class="btn btn-dismiss wbtn" onclick="removeLegacyWatch(${i}, this)">Remove</button></div>`);
+      rows.push(`<div class="hrow"><div class="ht"><div>${escapeHtml(String(e.match || ''))}</div><div class="hm">${meta}</div></div><button class="btn btn-dismiss wbtn" onclick="removeLegacyWatch(${i}, this)">Remove</button></div>`);
     });
     body.innerHTML = rows.length
-      ? '<div class="list">' + rows.join('') + '</div>'
+      ? rows.join('')
       : '<div class="empty">No watches. Add one below; their next reply pings your phone.</div>';
     renderLeadAlerts();
   }
 
-  // ── Lead-alert config (notify_email / notify_all_leads / cold_lead_days).
-  // Defaults mirror lib/inboxWatches.js leadNotifyConfig so a blank config still
-  // shows the live behavior. Stored in the same inbox_config jsonb. ──
+  // ── Lead-alert config (notify_email / notify_all_leads / cold_lead_days). ──
   const LEAD_ALERT_DEFAULTS = { notify_email: 'mackenzie.m@plusultraroofing.com', notify_all_leads: true, cold_lead_days: 4 };
 
   function renderLeadAlerts(){
@@ -659,7 +680,6 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
     const allLeads = !!document.getElementById('nAllLeads').checked;
     const daysRaw = parseInt(document.getElementById('nColdDays').value, 10);
     const delta = {
-      // Blank email clears the key -> falls back to the default owner address.
       notify_email: email || null,
       notify_all_leads: allLeads,
       cold_lead_days: (Number.isFinite(daysRaw) && daysRaw > 0) ? daysRaw : null,
