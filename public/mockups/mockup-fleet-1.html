@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FLEET TRACKING 1 of 3: GUILD BOARD (8-bit)</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+<style>
+  :root{ --bg:#070716; --wall:#14143c; --panel:#1a1a4a; --ink:#05050f;
+    --parch:#e8e0c8; --parch-dim:#a8a08c; --gold:#f8b800; --green:#58d854; --green-d:#00a844; --red:#f83800; }
+  *{margin:0;box-sizing:border-box}
+  body{font-family:'VT323',monospace;background:radial-gradient(120% 90% at 50% 0%,#161642,var(--bg) 60%,#040410);
+    color:var(--parch);min-height:100vh;padding:20px;image-rendering:pixelated;letter-spacing:0.5px}
+  .px{font-family:'Press Start 2P',monospace}
+  h1{font-size:13px;color:var(--gold);text-shadow:2px 2px 0 var(--ink);margin-bottom:4px}
+  .sub{font-size:18px;color:var(--parch-dim);margin-bottom:18px}
+  .bar{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+  .kpi{border:3px solid var(--ink);background:var(--panel);box-shadow:0 4px 0 rgba(0,0,0,.3);padding:8px 12px}
+  .kpi .n{font-size:26px;color:var(--gold)} .kpi .l{font-size:14px;color:var(--parch-dim)}
+  .btn{font-family:'Press Start 2P',monospace;font-size:10px;color:var(--ink);background:var(--gold);
+    border:3px solid var(--ink);box-shadow:0 4px 0 var(--ink);padding:10px 14px;cursor:pointer;margin-left:auto}
+  .btn:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ink)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+  .desk{position:relative;border:3px solid var(--ink);background:rgba(20,20,60,.92);
+    box-shadow:0 0 0 3px var(--panel),0 6px 0 rgba(0,0,0,.35);padding:12px}
+  .desk .top{display:flex;align-items:center;gap:8px}
+  .badge{width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-family:'Press Start 2P',monospace;
+    font-size:11px;color:var(--ink);background:var(--gold);border:3px solid var(--ink)}
+  .lane{font-size:17px;color:var(--gold);text-transform:uppercase;line-height:1.1}
+  .machine{font-size:14px;color:var(--parch-dim)}
+  .led{width:11px;height:11px;border:2px solid var(--ink);margin-left:auto}
+  .led.working{background:var(--green);animation:blink 1s steps(2) infinite}
+  .led.idle{background:#3a3a5e} .led.blocked{background:var(--gold)} .led.done{background:var(--green-d)}
+  @keyframes blink{50%{background:var(--green-d)}}
+  .task{font-size:16px;margin-top:8px;min-height:38px;line-height:1.25}
+  .pbar{height:12px;border:2px solid var(--ink);background:rgba(10,10,36,.85);margin-top:8px;overflow:hidden}
+  .pbar i{display:block;height:100%;background:linear-gradient(90deg,var(--green-d),var(--green))}
+  .foot{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:14px;color:var(--parch-dim)}
+  .rm{margin-left:auto;color:var(--red);background:none;border:2px solid var(--ink);font-family:'VT323',monospace;
+    font-size:15px;padding:0 8px;cursor:pointer}
+  .note{margin-top:18px;font-size:15px;color:var(--parch-dim);text-align:center}
+</style>
+</head>
+<body>
+  <h1 class="px">&#9876; FLEET TRACKING &mdash; GUILD BOARD</h1>
+  <div class="sub">8-bit variant 1 of 3 &middot; desks are dynamic, add or retire any time</div>
+  <div class="bar">
+    <div class="kpi"><div class="n" id="kWork">0</div><div class="l">WORKING</div></div>
+    <div class="kpi"><div class="n" id="kBlock">0</div><div class="l">NEEDS MAC</div></div>
+    <div class="kpi"><div class="n" id="kTotal">0</div><div class="l">DESKS</div></div>
+    <button class="btn" id="add">+ ADD DESK</button>
+  </div>
+  <div class="grid" id="grid"></div>
+  <div class="note">Mockup. The count is not fixed: hit ADD DESK or the x on a card. Status: green=working, gold=needs Mac, grey=idle.</div>
+<script>
+(function(){
+  var LANES=['SALES','OPS','COMMS','RESEARCH','CREATIVE','AUDIT','INFRA','PASSIVE'];
+  var TASKS=['Drafting the Monday call stack','Reconciling pay sheets','Triaging the inbox','Deep-researching exemplars','Cutting the drone reel','AI-layer benchmark rerun','Rotating oversized artifacts','Building the income lane'];
+  var ST=['working','working','idle','blocked','done'];
+  var desks=[], n=0;
+  function rnd(a){return a[Math.floor(Math.random()*a.length)];}
+  function seed(){ for(var i=0;i<5;i++) addDesk(); }
+  function addDesk(){
+    var id=String.fromCharCode(65+(n%8)); n++;
+    desks.push({ id:id, lane:rnd(LANES), machine:rnd(['HAL','Mind Palace']), task:rnd(TASKS),
+      st:rnd(ST), prog:Math.floor(Math.random()*100) });
+    render();
+  }
+  function removeDesk(i){ desks.splice(i,1); render(); }
+  function render(){
+    var g=document.getElementById('grid'); g.innerHTML='';
+    var work=0,block=0;
+    desks.forEach(function(d,i){
+      if(d.st==='working')work++; if(d.st==='blocked')block++;
+      var el=document.createElement('div'); el.className='desk';
+      el.innerHTML='<div class="top"><div class="badge">'+d.id+'</div><div><div class="lane">'+d.lane+'</div>'+
+        '<div class="machine">'+d.machine+'</div></div><div class="led '+d.st+'"></div></div>'+
+        '<div class="task">'+d.task+'</div>'+
+        '<div class="pbar"><i style="width:'+d.prog+'%"></i></div>'+
+        '<div class="foot"><span>'+d.prog+'%</span><span>'+d.st.toUpperCase()+'</span>'+
+        '<button class="rm" title="Retire desk">x</button></div>';
+      el.querySelector('.rm').onclick=function(){removeDesk(i);};
+      g.appendChild(el);
+    });
+    document.getElementById('kWork').textContent=work;
+    document.getElementById('kBlock').textContent=block;
+    document.getElementById('kTotal').textContent=desks.length;
+  }
+  document.getElementById('add').onclick=addDesk;
+  seed();
+})();
+</script>
+</body>
+</html>
