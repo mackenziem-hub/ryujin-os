@@ -4,7 +4,7 @@
 
 brand
 
-> Scope: this file governs CUSTOMER-FACING Plus Ultra surfaces (instant-estimator.html, proposal-client.html, photos-share.html, landing pages). Internal portals (portal-mobile, command-center, admin) follow the Grok teal-mint system instead and are out of scope here. Mixing the two registers is an instant tell.
+> Scope: this file governs CUSTOMER-FACING Plus Ultra surfaces (instant-estimator.html, proposal-client.html, photos-share.html, landing pages). Internal portals (portal-mobile, command-center, admin) follow the canonical sci-fi Telltale token layer (assets/ryujin-telltale.css) as of 2026-06-14 (Telltale replaces the prior teal-mint internal standard) and are out of scope here. Mixing the two registers is an instant tell.
 
 ## Users
 
@@ -23,7 +23,7 @@ Confident, transparent, premium-trade. Plus Ultra is the contractor that shows y
 - Generic AI landing-page grammar: uppercase tracked eyebrow kickers above every section, hero-metric templates, identical icon-card grids, gradient text.
 - Typical roofing lead-gen sites: stock handshake photos, red "FREE QUOTE!!!" urgency, walls of trust badges.
 - SaaS-cream minimalism: the cream palette here is the Jewels brand standard, not a default. It must read deliberate (committed navy moments, one gold action color), never like an unstyled warm-neutral template.
-- Internal-portal teal-mint aesthetics leaking onto customer pages.
+- Internal-portal sci-fi Telltale aesthetics leaking onto customer pages.
 
 ## Design Principles
 

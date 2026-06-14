@@ -1,6 +1,6 @@
 # Design
 
-Visual system for Plus Ultra customer-facing pages (the Jewels cream + royal-blue brand). Source tokens live in proposal-client.html and instant-estimator.html; this file is the contract they follow. Internal portals (Grok teal-mint) are a separate system.
+Visual system for Plus Ultra customer-facing pages (the Jewels cream + royal-blue brand). Source tokens live in proposal-client.html and instant-estimator.html; this file is the contract they follow. Internal portals (sci-fi Telltale, assets/ryujin-telltale.css) are a separate system.
 
 ## Theme
 
