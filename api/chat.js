@@ -956,6 +956,98 @@ async function fetchSnapshot() {
   }
 }
 
+// ── Cockpit <-> intent-ledger seal (STAR-#1: the cockpit-disconnect fix) ──
+// Mac's decisions must reach the fleet reliably, not only when he says "log it".
+// recordDirectiveEntry() is the shared WRITE leg (the record_directive tool AND
+// the automatic post-turn recorder both call it); fetchDecisionState() is the
+// READ leg (what Mac has already decided + what is already in motion, digested
+// and injected every turn so Ryujin stops re-asking or re-surfacing closed
+// items). Both record/READ intent only; nothing here executes or sends.
+const _LEDGER_HDRS = () => ({ 'x-tenant-id': 'plus-ultra', ...((process.env.RYUJIN_SERVICE_TOKEN || '').trim() ? { Authorization: `Bearer ${(process.env.RYUJIN_SERVICE_TOKEN || '').trim()}` } : {}) });
+const _SNAP_URL = 'https://ryujin-os.vercel.app/api/snapshot';
+
+async function recordDirectiveEntry(verbatim, summary, source) {
+  verbatim = String(verbatim || '').slice(0, 4000).trim();
+  summary = String(summary || '').slice(0, 300).trim();
+  if (!verbatim && !summary) throw new Error('record_directive needs the directive text');
+  const hdrs = _LEDGER_HDRS();
+  let items = [];
+  try {
+    const cur = await fetch(_SNAP_URL, { headers: hdrs });
+    if (cur.ok) { const s = await cur.json(); items = (s && s.sections && s.sections.directives && Array.isArray(s.sections.directives.items)) ? s.sections.directives.items : []; }
+  } catch (e) { /* start fresh if the read fails */ }
+  // Dedupe: the model tool AND the auto-recorder can both fire on one turn, and
+  // a turn can echo the previous one. Skip a near-identical recent entry so the
+  // ledger does not fill with the same decision.
+  const norm = t => String(t || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const vN = norm(verbatim), sN = norm(summary);
+  const dup = items.slice(-25).some(it => (vN && norm(it.verbatim) === vN) || (sN && sN.length > 8 && norm(it.summary) === sN));
+  if (dup) return { recorded: false, reason: 'duplicate', queueDepth: items.length };
+  // Read-modify-write on directives.items: two concurrent writers can clobber
+  // (lost update). Pre-existing behavior (the tool inlined the same GET/POST);
+  // acceptable for a single-operator cockpit, capped at 50. Revisit if the bus
+  // ever does an atomic directives append.
+  const entry = { id: 'dir-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), verbatim, summary, status: 'received', source: source || 'cockpit', recordedAt: new Date().toISOString() };
+  items.push(entry);
+  if (items.length > 50) items = items.slice(-50);
+  const resp = await fetch(_SNAP_URL, { method: 'POST', headers: { ...hdrs, 'Content-Type': 'application/json' }, body: JSON.stringify({ directives: { _note: 'Directives Mac gave Ryujin in the cockpit. The Operator reads these every pass and relays them into the fleet (Intent Ledger).', items, updatedAt: new Date().toISOString() } }) });
+  if (!resp.ok) throw new Error(`Recording directive returned ${resp.status}`);
+  return { recorded: true, id: entry.id, queueDepth: items.length };
+}
+
+let _decisionStateCache = { text: '', expires: 0 };
+async function fetchDecisionState() {
+  if (Date.now() < _decisionStateCache.expires && _decisionStateCache.text) return _decisionStateCache.text;
+  let s = null;
+  try { const r = await fetch(_SNAP_URL, { headers: _LEDGER_HDRS() }); if (r.ok) { const j = await r.json(); s = j && j.sections; } } catch (e) { /* fall through to the last good digest */ }
+  if (!s) return _decisionStateCache.text || '';
+  const fleet = s.fleet || {};
+  const dir = (s.directives && Array.isArray(s.directives.items)) ? s.directives.items : [];
+  const blocked = Array.isArray(fleet.blockedOnMac) ? fleet.blockedOnMac : [];
+  // SETTLED_CALLS lives in a hub file; surfaced here only if the hub poster has
+  // mirrored it into the snapshot (Oracle upgrade). Read whatever shape is present.
+  const settledRaw = s.settledCalls || fleet.settledCalls || null;
+  const situation = String(fleet.situation || s.situation || '').trim();
+  const advice = String(fleet.advice || s.advice || '').trim();
+  const lines = [];
+  if (dir.length) {
+    lines.push('RECORDED DIRECTIVES (Mac already gave these; build on them, do not re-ask or re-pitch):');
+    dir.slice(-8).forEach(d => lines.push('- [' + (d.status || 'received') + '] ' + String(d.summary || d.verbatim || '').slice(0, 160)));
+  }
+  if (blocked.length) {
+    lines.push('OPEN DECISIONS BLOCKED ON MAC (surface only if relevant to what he just asked):');
+    blocked.slice(0, 8).forEach(b => lines.push('- ' + (b.priority ? b.priority + ' ' : '') + String(b.item || '').slice(0, 140)));
+  }
+  if (settledRaw) {
+    const arr = Array.isArray(settledRaw) ? settledRaw : (Array.isArray(settledRaw.items) ? settledRaw.items : []);
+    if (arr.length) { lines.push('SETTLED CALLS (already decided; do NOT re-open or re-surface unless Mac reopens them):'); arr.slice(-10).forEach(x => lines.push('- ' + String((x && (x.item || x.summary)) || x).slice(0, 140))); }
+  }
+  if (situation) lines.push('LATEST SITUATION: ' + situation.slice(0, 400));
+  if (advice) lines.push('LATEST ADVICE: ' + advice.slice(0, 400));
+  const text = lines.length
+    ? '\n\n---\n\n# DECISION STATE (read before answering)\nThis is what Mac has already decided and what is already in motion. Treat recorded directives and settled calls as CLOSED: build on them, never re-ask or re-pitch them. Only raise an open blocked-on-Mac decision if it is relevant to his current message.\n' + lines.join('\n')
+    : '';
+  _decisionStateCache = { text, expires: Date.now() + 30_000 };
+  return text;
+}
+
+// WRITE-leg classifier: a silent Haiku pass that decides whether Mac's latest
+// message carried a consequential decision worth recording. Returns
+// {decision, verbatim, summary}. Cheap, fail-open (any error = no decision).
+async function classifyDecision(apiKey, macMessage) {
+  const msg = String(macMessage || '').trim();
+  if (!apiKey || msg.length < 12) return { decision: false };
+  const sys = 'You are a silent classifier inside an operator cockpit. Decide if the OPERATOR\'S latest message contains a consequential DIRECTIVE or DECISION the business should record: a pick or choice, a go-ahead or approval, a priority call, a scope change, a correction of course, a new standing instruction, or a committed plan. Greetings, questions, status checks, thinking out loud, and chit-chat are NOT decisions. Reply with ONLY a compact JSON object and nothing else: {"decision":true,"verbatim":"<the decision in the operator\'s own words, trimmed>","summary":"<=120 char neutral summary"} or {"decision":false}.';
+  try {
+    const r = await callClaude(apiKey, sys, [{ role: 'user', content: 'OPERATOR MESSAGE:\n' + msg.slice(0, 2000) }], false, 'low');
+    const txt = ((r && r.content) || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
+    const m = txt.match(/\{[\s\S]*\}/);
+    if (!m) return { decision: false };
+    const j = JSON.parse(m[0]);
+    return { decision: !!j.decision, verbatim: String(j.verbatim || msg), summary: String(j.summary || '') };
+  } catch (e) { return { decision: false }; }
+}
+
 // Preference injection — load Mackenzie's saved behavioral preferences
 async function fetchPreferences() {
   try {
@@ -2618,21 +2710,12 @@ async function executeTool(name, input, attachments = [], conversationId = null)
     }
 
     if (name === 'record_directive') {
-      const verbatim = String(input.verbatim || '').slice(0, 4000).trim();
-      const summary = String(input.summary || '').slice(0, 300).trim();
-      if (!verbatim && !summary) throw new Error('record_directive needs the directive text');
-      const hdrs = { 'x-tenant-id': 'plus-ultra', ...((process.env.RYUJIN_SERVICE_TOKEN || '').trim() ? { Authorization: `Bearer ${(process.env.RYUJIN_SERVICE_TOKEN || '').trim()}` } : {}) };
-      let items = [];
-      try {
-        const cur = await fetch('https://ryujin-os.vercel.app/api/snapshot', { headers: hdrs });
-        if (cur.ok) { const s = await cur.json(); items = (s && s.sections && s.sections.directives && Array.isArray(s.sections.directives.items)) ? s.sections.directives.items : []; }
-      } catch (e) { /* start fresh if the read fails */ }
-      const entry = { id: 'dir-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), verbatim, summary, status: 'received', recordedAt: new Date().toISOString() };
-      items.push(entry);
-      if (items.length > 50) items = items.slice(-50);
-      const resp = await fetch('https://ryujin-os.vercel.app/api/snapshot', { method: 'POST', headers: { ...hdrs, 'Content-Type': 'application/json' }, body: JSON.stringify({ directives: { _note: 'Directives Mac gave Ryujin in the cockpit. The Operator reads these every pass and relays them into the fleet (Intent Ledger).', items, updatedAt: new Date().toISOString() } }) });
-      if (!resp.ok) throw new Error(`Recording directive returned ${resp.status}`);
-      return { recorded: true, id: entry.id, queueDepth: items.length, note: 'Logged to the fleet Intent Ledger. The Operator picks it up on its next pass.' };
+      // Shared WRITE leg (also used by the automatic post-turn recorder).
+      const rec = await recordDirectiveEntry(input.verbatim, input.summary, 'cockpit-tool');
+      if (rec.recorded === false && rec.reason === 'duplicate') {
+        return { recorded: true, deduped: true, queueDepth: rec.queueDepth, note: 'Already in the Intent Ledger this session (deduped).' };
+      }
+      return { recorded: true, id: rec.id, queueDepth: rec.queueDepth, note: 'Logged to the fleet Intent Ledger. The Operator picks it up on its next pass.' };
     }
 
     if (name === 'add_contact_note') {
@@ -4887,14 +4970,17 @@ You are now Mackenzie's game development and product specialist.
 
   // Build system prompt — snapshot + memory + preferences + docs index are the data sources
   // Docs index is role-filtered (Phase 5.4)
-  const [snapshotContext, memoryContext, preferencesContext, factsContext, docsContext] = await Promise.all([
+  const [snapshotContext, memoryContext, preferencesContext, factsContext, docsContext, decisionState] = await Promise.all([
     fetchSnapshot(),
     fetchMemoryContext(),
     fetchPreferences(),
     // Facts carry supplier quotes/rates/deal terms: owner/admin context only,
     // same boundary as the save_memory/delete_memory tools.
     (userRole === 'owner' || userRole === 'admin') ? fetchFacts() : Promise.resolve(''),
-    fetchDocsIndex(userRole)
+    fetchDocsIndex(userRole),
+    // READ leg (STAR-#1): what Mac has already decided + what is in motion, so
+    // the cockpit stops re-surfacing closed items. Owner/admin only.
+    (userRole === 'owner' || userRole === 'admin') ? fetchDecisionState() : Promise.resolve('')
   ]);
   let liveDataBlock = '';
   if (liveData) {
@@ -4929,6 +5015,9 @@ You are now Mackenzie's game development and product specialist.
   const systemPrompt = [
     { type: 'text', text: stableCached, cache_control: { type: 'ephemeral' } },
     ...(snapshotBlock ? [{ type: 'text', text: snapshotBlock, cache_control: { type: 'ephemeral' } }] : []),
+    // Decision-state digest (READ leg) is per-request + uncached: it changes the
+    // moment Mac records a new directive mid-session, so it must never be cached.
+    ...(decisionState ? [{ type: 'text', text: decisionState }] : []),
     ...(perRequest    ? [{ type: 'text', text: perRequest }] : []),
   ];
 
@@ -5119,6 +5208,28 @@ You are now Mackenzie's game development and product specialist.
       });
     } catch (e) {
       console.error('Conversation persist failed:', e.message);
+    }
+
+    // WRITE leg (STAR-#1): seal the Mac -> intent-ledger gap. If Mac made a
+    // consequential decision this turn and the model did not already log it via
+    // record_directive, record it automatically so it reaches the fleet. Records
+    // intent only (Mac stays sole sign-off on every outbound/irreversible act);
+    // owner/admin only; fail-open so it never blocks or breaks the turn.
+    try {
+      const isMac = (userRole === 'owner' || userRole === 'admin');
+      // Coupling: the record_directive tool returns recorded:true even on a
+      // dedup, so this guard correctly suppresses a redundant auto-record when
+      // the model already logged this turn. Keep that return shape if editing it.
+      const alreadyLogged = toolActions.some(t => t.tool === 'record_directive' && t.result && t.result.recorded);
+      if (isMac && !alreadyLogged && message && String(message).trim().length >= 12) {
+        const cls = await classifyDecision(apiKey, message);
+        if (cls && cls.decision) {
+          const rec = await recordDirectiveEntry(cls.verbatim, cls.summary, 'cockpit-auto');
+          if (rec && rec.recorded) sse({ directive_logged: { id: rec.id, summary: String(cls.summary || cls.verbatim || '').slice(0, 100) } });
+        }
+      }
+    } catch (e) {
+      console.error('auto-record (WRITE leg) failed:', e.message);
     }
 
     sse({ done: true, conversation_id: finalConversationId, stop_reason: response.stop_reason || null, tool_rounds: rounds });
