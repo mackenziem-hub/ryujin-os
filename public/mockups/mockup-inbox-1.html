@@ -1,0 +1,332 @@
+<!doctype html>
+<!--
+INBOX REDESIGN MOCKUP 1 of 3: "OPERATOR QUEUE" (desk G, ord-20260612-2336-G)
+Direction: EVOLUTIONARY. The current single-column stack, elevated craft, with
+the Walk 1 item 3 bulk-triage lane DESIGNED IN: rows land COLLAPSED (one line:
+who / type chip / age / urgency), tap expands to the full draft card; a type
+chip rail filters; checkboxes + a sticky bulk bar make "dismiss the 4 spam
+rows" one motion instead of four confirms. Keeps the Grok teal internal
+language but tightens it: Inter only (Orbitron retired to the wordmark),
+1.2 type ratio, tabular-nums, one accent.
+
+CONTEMPORARY REFERENCES (direction 1):
+- Linear triage queue: collapsed one-line issues, expand in place, keyboard-first
+- Superhuman: split-second triage cadence, status line not dashboard tiles
+- Stripe Radar review queue: risk pills + dense rows that expand to evidence
+- Gmail bulk select: checkbox + sticky action bar grammar everyone knows
+- Things 3: collapsed row -> inline expansion without route change
+
+CURRENT-TRUTH PARITY (mocked from origin/main inbox.html, #406/#408/#410):
+tagline status line (not tabs), find-a-customer filter OUTSIDE the re-render,
+needs_reply=false -> Mark handled, email -> Open in Gmail, sub_portal -> View
+thread, window/urgency/notify pills, recently-handled rows + error state,
+watches summarized (one row + manage link, not the full form at 6am).
+
+DESIGN SELF-REVIEW GATE
+(a) Thumb-stop or templated? A triage LEDGER, not a card dashboard: the three
+    KPI tiles are gone (hero-metric ban), replaced by one spoken status line.
+    Rows are collapsed evidence lines that expand; no identical-card field.
+(b) 6am phone test (375): rows are 56px thumb targets, the bulk bar is
+    bottom-fixed in thumb reach, expand is tap anywhere on the row, send is
+    the widest button. Mobile IS the layout; desktop just gets wider gutters.
+(c) Core action under 10s? The two notify rows are pinned first with red
+    lamps; tap row 1, the draft is focused, APPROVE AND SEND is one tap + one
+    confirm. Bulk-dismissing junk: chips -> Other -> select all -> dismiss.
+(d) Bans respected: no side-stripes (inbound quote uses a full hairline box),
+    no gradient text, no KPI tiles, glass kept to the two fixed bars only.
+    Status always color + word/count. Calm motion: 0.2s expansions, one
+    stagger on first paint, full prefers-reduced-motion fallback.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Crect width=%2716%27 height=%2716%27 fill=%27%23050a16%27/%3E%3Ccircle cx=%278%27 cy=%278%27 r=%274%27 fill=%27%2322d3ee%27/%3E%3C/svg%3E">
+<title>INBOX MOCKUP 1 — Operator Queue</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#050a16; --surface:rgba(13,21,38,0.92); --surface2:rgba(7,12,24,0.6);
+  --text:#e4eaf4; --dim:#9fb0cc; --faint:#64748f;
+  --teal:#22d3ee; --teal-dim:rgba(34,211,238,0.32); --teal-bg:rgba(34,211,238,0.10);
+  --red:#f87171; --amber:#fbbf24; --green:#34d399;
+  --hairline:rgba(159,176,204,0.16);
+  /* 1.2 ratio on 16: 11.1 / 13.3 / 16 / 19.2 / 23 / 27.6 */
+  --t-2:11.1px; --t-1:13.3px; --t0:16px; --t1:19.2px; --t2:23px; --t3:27.6px;
+  --sans:'Inter',system-ui,sans-serif; --mono:'Share Tech Mono',monospace;
+  --z-bar:30; --z-bulk:40; --z-toast:50;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--ink);color:var(--text);font:var(--t0)/1.5 var(--sans);min-height:100dvh;
+  background-image:radial-gradient(ellipse 90% 50% at 50% -10%,rgba(34,211,238,0.08),transparent)}
+button{font:inherit;cursor:pointer}
+
+/* ---------- top bar: brand + status line, no tabs ---------- */
+#bar{position:sticky;top:0;z-index:var(--z-bar);display:flex;align-items:center;gap:12px;
+  padding:13px 16px;background:rgba(5,10,22,0.92);border-bottom:1px solid var(--hairline);
+  backdrop-filter:blur(14px)}
+#bar .back{width:38px;height:38px;border-radius:10px;background:#fff;border:0;display:grid;place-items:center;flex:none;transition:transform .18s}
+#bar .back:hover{transform:translateX(-2px)}
+#bar .back svg{width:18px;height:18px;stroke:#050a16;fill:none;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
+#bar .word{font-weight:800;letter-spacing:0.18em;font-size:var(--t-1)}
+#bar .word span{color:var(--faint);font-weight:500;margin-left:7px;letter-spacing:0.12em}
+#bar .sync{margin-left:auto;font:var(--t-2) var(--mono);color:var(--faint);letter-spacing:0.08em}
+#bar .scan{padding:9px 14px;border-radius:9px;background:var(--teal-bg);border:1px solid var(--teal-dim);
+  color:var(--teal);font-weight:700;font-size:var(--t-2);letter-spacing:0.14em;transition:all .18s}
+#bar .scan:hover{background:rgba(34,211,238,0.2);color:#fff}
+#bar .scan:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+
+#page{max-width:780px;margin:0 auto;padding:18px 14px 110px}
+
+/* ---------- the status sentence (replaces the KPI tile row) ---------- */
+#status{font-size:var(--t1);font-weight:600;line-height:1.45;text-wrap:balance;padding:6px 2px 2px;
+  animation:rise .5s cubic-bezier(0.16,1,0.3,1) both}
+#status b.red{color:var(--red)} #status b.teal{color:var(--teal)} #status b.green{color:var(--green)}
+#status small{display:block;font:var(--t-2) var(--mono);color:var(--faint);margin-top:6px;letter-spacing:0.08em;font-weight:400}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* ---------- chip rail: triage by type, the bulk lane's first half ---------- */
+#chips{display:flex;gap:8px;overflow-x:auto;padding:14px 2px 4px;scrollbar-width:none}
+#chips::-webkit-scrollbar{display:none}
+.chip{flex:none;padding:8px 14px;border-radius:999px;background:var(--surface2);border:1px solid var(--hairline);
+  color:var(--dim);font-size:var(--t-1);font-weight:600;transition:all .18s;display:flex;gap:7px;align-items:center}
+.chip b{color:var(--faint);font-weight:700;font-variant-numeric:tabular-nums}
+.chip:hover{border-color:var(--dim);color:var(--text)}
+.chip.on{background:var(--teal-bg);border-color:var(--teal-dim);color:var(--teal)}
+.chip.on b{color:var(--teal)}
+
+/* ---------- find (lives outside the list per #408) ---------- */
+#find{margin:10px 2px 14px}
+#find input{width:100%;background:var(--surface2);border:1px solid var(--hairline);border-radius:10px;
+  padding:11px 14px;color:var(--text);font:var(--t-1) var(--sans)}
+#find input::placeholder{color:var(--faint)}
+#find input:focus{border-color:var(--teal-dim);outline:none}
+
+/* ---------- the queue: collapsed rows that expand ---------- */
+#queue{display:flex;flex-direction:column;gap:8px}
+.row{background:var(--surface);border:1px solid var(--hairline);border-radius:12px;overflow:hidden;
+  transition:border-color .2s;animation:rise .5s cubic-bezier(0.16,1,0.3,1) both}
+.row:nth-child(2){animation-delay:.05s}.row:nth-child(3){animation-delay:.1s}
+.row:nth-child(4){animation-delay:.15s}.row:nth-child(5){animation-delay:.2s}.row:nth-child(6){animation-delay:.25s}
+.row.notify{border-color:rgba(248,113,113,0.45)}
+.row.open{border-color:var(--teal-dim)}
+.rowhead{display:grid;grid-template-columns:auto auto 1fr auto;gap:10px;align-items:center;
+  min-height:56px;padding:10px 14px;cursor:pointer;user-select:none}
+.rowhead:hover{background:rgba(255,255,255,0.02)}
+.rowhead input[type=checkbox]{width:18px;height:18px;accent-color:#22d3ee;flex:none}
+.lamp{width:9px;height:9px;border-radius:50%;background:var(--faint);flex:none}
+.lamp.red{background:var(--red);box-shadow:0 0 9px var(--red);animation:lamp 2.6s ease-in-out infinite}
+.lamp.amber{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+@keyframes lamp{50%{box-shadow:0 0 2px currentColor}}
+.rowmain{min-width:0}
+.rowmain .who{font-weight:700;font-size:var(--t0);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.rowmain .gist{color:var(--dim);font-size:var(--t-1);margin-top:2px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical}
+.row.open .rowmain .gist{display:none}
+.pill{font:var(--t-2) var(--mono);padding:2px 8px;border-radius:6px;letter-spacing:0.04em;white-space:nowrap}
+.pill.cat{background:rgba(159,176,204,0.12);color:var(--dim);border:1px solid var(--hairline)}
+.pill.urgent{background:rgba(248,113,113,0.16);color:var(--red);border:1px solid rgba(248,113,113,0.4)}
+.pill.warn{background:rgba(251,191,36,0.14);color:var(--amber);border:1px solid rgba(251,191,36,0.4)}
+.rowside{text-align:right}
+.rowside .ago{font:var(--t-2) var(--mono);color:var(--faint);white-space:nowrap}
+.rowside .ch{font-size:var(--t-2);color:var(--faint);margin-top:2px}
+
+/* expanded body */
+.rowbody{display:none;border-top:1px solid var(--hairline);padding:14px;animation:rise .25s ease-out}
+.row.open .rowbody{display:block}
+.inbound{background:var(--surface2);border:1px solid var(--hairline);border-radius:9px;padding:10px 12px;
+  color:var(--dim);font-size:var(--t-1);line-height:1.5;white-space:pre-wrap;max-width:65ch}
+.draftlbl{font:var(--t-2) var(--mono);color:var(--faint);letter-spacing:0.14em;text-transform:uppercase;margin:13px 0 6px}
+textarea{width:100%;min-height:88px;background:var(--surface2);border:1px solid var(--hairline);border-radius:9px;
+  padding:11px 12px;color:var(--text);font:var(--t-1)/1.5 var(--sans);resize:vertical}
+textarea:focus{outline:none;border-color:var(--teal-dim)}
+.acts{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.btn{flex:1;min-width:110px;padding:12px 14px;border-radius:9px;border:1px solid var(--hairline);
+  background:var(--surface2);color:var(--dim);font-weight:700;font-size:var(--t-2);letter-spacing:0.1em;
+  text-transform:uppercase;transition:all .18s;text-align:center;text-decoration:none}
+.btn:hover{color:var(--text);border-color:var(--dim)}
+.btn.send{flex:2;background:rgba(52,211,153,0.14);border-color:rgba(52,211,153,0.42);color:var(--green)}
+.btn.send:hover{background:rgba(52,211,153,0.26);color:#fff}
+.btn:active{transform:scale(0.98)}
+
+/* ---------- bulk bar: second half of the triage lane ---------- */
+#bulk{position:fixed;left:50%;bottom:18px;transform:translate(-50%,80px);z-index:var(--z-bulk);
+  display:flex;align-items:center;gap:12px;background:rgba(10,17,32,0.97);border:1px solid var(--teal-dim);
+  border-radius:999px;padding:10px 12px 10px 20px;box-shadow:0 16px 44px rgba(0,0,0,0.6);
+  transition:transform .25s cubic-bezier(0.16,1,0.3,1);backdrop-filter:blur(12px)}
+#bulk.on{transform:translate(-50%,0)}
+#bulk .n{font-weight:800;font-variant-numeric:tabular-nums}
+#bulk .n span{color:var(--dim);font-weight:500;font-size:var(--t-1)}
+#bulk button{padding:10px 16px;border-radius:999px;border:1px solid var(--hairline);background:transparent;
+  color:var(--dim);font-weight:700;font-size:var(--t-2);letter-spacing:0.1em;transition:all .18s}
+#bulk button:hover{color:#fff;border-color:#fff}
+#bulk button.danger{border-color:rgba(248,113,113,0.5);color:var(--red)}
+#bulk button.danger:hover{background:rgba(248,113,113,0.15);color:#fff}
+
+/* ---------- handled + watches, quiet below the fold ---------- */
+.section{margin-top:26px}
+.section h2{font-size:var(--t-1);font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:var(--faint);
+  padding-bottom:9px;border-bottom:1px solid var(--hairline);margin-bottom:10px;display:flex;justify-content:space-between;align-items:baseline}
+.section h2 a{color:var(--faint);font-weight:600;font-size:var(--t-2);letter-spacing:0.06em;text-decoration:none;text-transform:none}
+.section h2 a:hover{color:var(--teal)}
+.hrow{display:flex;justify-content:space-between;gap:12px;padding:9px 2px;border-bottom:1px solid rgba(159,176,204,0.08);font-size:var(--t-1)}
+.hrow .t{color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hrow .m{font:var(--t-2) var(--mono);color:var(--faint);white-space:nowrap}
+.hrow .m.sent{color:var(--green)}
+
+#toast{position:fixed;bottom:88px;left:50%;transform:translateX(-50%);padding:11px 18px;background:rgba(10,17,32,0.97);
+  border:1px solid var(--teal-dim);border-radius:10px;font:var(--t-1) var(--mono);color:var(--teal);z-index:var(--z-toast);
+  opacity:0;pointer-events:none;transition:opacity .2s}
+#toast.show{opacity:1}
+
+@media (min-width:700px){
+  #page{padding-top:26px}
+  .rowhead{padding:12px 18px}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+
+<header id="bar">
+  <button class="back" aria-label="Back"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
+  <div class="word">RYUJIN<span>INBOX</span></div>
+  <div class="sync">SYNC 5:42</div>
+  <button class="scan">SCAN NOW</button>
+</header>
+
+<main id="page">
+
+  <p id="status">Morning. <b class="red">2 need you now</b>, <b class="teal">5 waiting</b>, the agent handled the rest. <b class="green">47 closed this week.</b>
+  <small>last scan Fri Jun 12 · 5:38 AM · drafts prepped for your approval</small></p>
+
+  <nav id="chips" aria-label="Filter by type">
+    <button class="chip on">All <b>5</b></button>
+    <button class="chip">Leaks <b>1</b></button>
+    <button class="chip">Estimates <b>2</b></button>
+    <button class="chip">Invoices <b>1</b></button>
+    <button class="chip">Subs <b>1</b></button>
+  </nav>
+
+  <div id="find"><input type="search" placeholder="Find a customer..." aria-label="Find a customer"></div>
+
+  <section id="queue" aria-label="Review queue"></section>
+
+  <section class="section">
+    <h2>Recently handled <a href="#">refresh</a></h2>
+    <div class="hrow"><div class="t">Patricia Vautour · asked for the warranty PDF, agent sent it</div><div class="m sent">sent · Thu 9:12 PM</div></div>
+    <div class="hrow"><div class="t">Kevin Bourgeois · price shopper, no fit</div><div class="m">dismissed · Thu 6:48 PM</div></div>
+    <div class="hrow"><div class="t">Lise Thibodeau · rescheduled the site visit to Tuesday</div><div class="m sent">sent · Thu 4:31 PM</div></div>
+  </section>
+
+  <section class="section">
+    <h2>Watches <a href="#">manage 3</a></h2>
+    <div class="hrow"><div class="t">Azeem (QXO) · skylight price + ETA</div><div class="m">until Jun 25</div></div>
+  </section>
+
+</main>
+
+<div id="bulk" role="toolbar" aria-label="Bulk actions">
+  <div class="n"><span>selected</span> 0</div>
+  <button class="danger">DISMISS</button>
+  <button>MARK HANDLED</button>
+  <button data-x>✕</button>
+</div>
+
+<div id="toast"></div>
+
+<script>
+(function(){
+  /* realistic data in the live /api/inbox shape (needs_review fields) */
+  const items=[
+    {id:'q2',contact_name:'Gary Melanson',channel:'facebook',channel_label:'FB',category:'leak',urgency:'emergency',
+     notify:true,notify_reason:'active leak',window:{applies:true,closed:false,hours_left:3},
+     summary:'Water coming in around the chimney after last night’s rain, towels down in the attic.',
+     last_message_body:'Hi, we have water dripping around the chimney since about 4am. I put towels down but its still coming. How fast can someone look at it??',
+     last_message_at:'5:04 AM',draft_reply:'Morning Gary, sorry you woke up to that. I can have someone up on the roof for an emergency assessment today. I will text you a window within the hour. If it is actively dripping, the towels are right, and if you can, slide anything electronic out from under it.',needs_reply:true},
+    {id:'q1',contact_name:'Danielle Cormier',channel:'sms',channel_label:'SMS',category:'estimate',urgency:'high',
+     notify:true,notify_reason:'active lead',window:{applies:true,closed:false,hours_left:5},
+     summary:'Wants the install moved up to this month, asking if Saturday works for the deck clear.',
+     last_message_body:'Hey just wondering if you guys could actually do it this month after all? My brother in law can help clear the deck Saturday if that changes anything',
+     last_message_at:'11:47 PM',draft_reply:'Hi Danielle, good news, we can make this month work. Saturday is fine for clearing the deck, the crew will not need it until the Monday after. I will lock your dates in this morning and send the confirmation.',needs_reply:true},
+    {id:'q3',contact_name:'Mélanie Bourque',channel:'email',channel_label:'EMAIL',category:'invoice',urgency:'normal',
+     notify:false,window:{applies:false},
+     summary:'Asking whether the final invoice includes the gutter guards discussed on site.',
+     last_message_body:'Hi, quick question before I pay, does the final amount include the gutter guards we talked about when Marc was here? Thanks, Mélanie',
+     last_message_at:'9:21 PM',draft_reply:'Hi Mélanie, yes, the gutter guards are in there as their own line, third from the bottom. Nothing else was added. Thanks for checking before paying, appreciate it.',needs_reply:true},
+    {id:'q4',contact_name:'Trevor Steeves',channel:'sms',channel_label:'SMS',category:'scheduling',urgency:'normal',
+     notify:false,window:{applies:false},
+     summary:'Confirmed Thursday works. Agent flags no reply needed.',
+     last_message_body:'Thursday works great, see you then 👍',
+     last_message_at:'8:02 PM',draft_reply:'',needs_reply:false},
+    {id:'q5',contact_name:'John Stirling',source:'sub_portal',channel_label:'SUB PORTAL',category:'measurements',urgency:'normal',
+     notify:false,window:{applies:false},
+     summary:'Asking which downspouts are in scope on the Rte 530 gutter sheet.',
+     last_message_body:'On the measurement sheet for 224, am I doing all the downspouts or just the two marked ones on the back?',
+     last_message_at:'7:44 PM',needs_reply:true,ref_id:'thread-224'}
+  ];
+  const host=document.getElementById('queue');
+  const esc=t=>{const d=document.createElement('div');d.textContent=t==null?'':t;return d.innerHTML};
+
+  function actions(it){
+    if(it.source==='sub_portal')
+      return '<a class="btn send" href="#">VIEW THREAD</a><button class="btn">DISMISS</button>';
+    if(it.needs_reply===false)
+      return '<button class="btn send">MARK HANDLED (NO REPLY)</button>';
+    if(it.channel==='email')
+      return '<button class="btn">SAVE DRAFT</button><a class="btn send" href="#">OPEN IN GMAIL</a>';
+    return '<button class="btn">SAVE DRAFT</button><button class="btn">DISMISS</button><button class="btn send">APPROVE &amp; SEND</button>';
+  }
+  host.innerHTML=items.map(it=>{
+    const lamp=it.notify?(it.urgency==='emergency'?'red':'amber'):'';
+    return '<article class="row'+(it.notify?' notify':'')+'" data-id="'+it.id+'">'
+      +'<div class="rowhead">'
+      +'<input type="checkbox" aria-label="select '+esc(it.contact_name)+'" onclick="event.stopPropagation()">'
+      +'<span class="lamp '+lamp+'"></span>'
+      +'<div class="rowmain"><div class="who">'+esc(it.contact_name)
+      +' <span class="pill cat">'+esc(it.category)+'</span>'
+      +(it.urgency==='emergency'?' <span class="pill urgent">emergency</span>':'')
+      +(it.window&&it.window.applies&&it.window.hours_left<=6?' <span class="pill warn">'+it.window.hours_left+'h to reply</span>':'')
+      +'</div><div class="gist">'+esc(it.summary)+'</div></div>'
+      +'<div class="rowside"><div class="ago">'+esc(it.last_message_at)+'</div><div class="ch">'+esc(it.channel_label)+'</div></div>'
+      +'</div>'
+      +'<div class="rowbody">'
+      +'<div class="inbound">'+esc(it.last_message_body)+'</div>'
+      +(it.source==='sub_portal'?'':(it.needs_reply===false
+        ?'<div class="draftlbl">Agent flagged no reply needed</div>'
+        :'<div class="draftlbl">Suggested reply (edit before sending)</div><textarea>'+esc(it.draft_reply)+'</textarea>'))
+      +'<div class="acts">'+actions(it)+'</div>'
+      +'</div></article>';
+  }).join('');
+
+  /* expand/collapse */
+  host.addEventListener('click',e=>{
+    if(e.target.closest('.rowbody')||e.target.tagName==='INPUT')return;
+    const row=e.target.closest('.row');if(!row)return;
+    const was=row.classList.contains('open');
+    host.querySelectorAll('.row.open').forEach(r=>r.classList.remove('open'));
+    if(!was)row.classList.add('open');
+  });
+
+  /* bulk bar */
+  const bulk=document.getElementById('bulk');
+  function syncBulk(){
+    const n=host.querySelectorAll('input:checked').length;
+    bulk.querySelector('.n').innerHTML='<span>selected</span> '+n;
+    bulk.classList.toggle('on',n>0);
+  }
+  host.addEventListener('change',syncBulk);
+  bulk.querySelector('[data-x]').onclick=()=>{host.querySelectorAll('input:checked').forEach(c=>c.checked=false);syncBulk()};
+
+  /* mock action toasts */
+  const toast=t=>{const el=document.getElementById('toast');el.textContent=t;el.classList.add('show');
+    clearTimeout(toast._t);toast._t=setTimeout(()=>el.classList.remove('show'),2200)};
+  document.addEventListener('click',e=>{
+    const b=e.target.closest('.btn,#bulk button:not([data-x]),.scan');
+    if(b){e.preventDefault();toast('Mockup: "'+b.textContent.trim()+'" wired to PUT /api/inbox in the build')}
+  });
+})();
+</script>
+</body>
+</html>

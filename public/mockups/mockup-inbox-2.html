@@ -1,0 +1,331 @@
+<!doctype html>
+<!--
+INBOX REDESIGN MOCKUP 2 of 3: "THE WIRE" (desk G, ord-20260612-2336-G)
+Direction: COMMAND-STREAM. The inbox as one chronological wire: each event is
+the customer's inbound on the left of a time spine and the agent's draft
+docked under it on the right, ghosted until you act. Triage is a GESTURE:
+on the phone, swipe a draft right to approve (with the confirm), swipe the
+event left to dismiss; on desktop the same verbs surface on hover and j/k +
+a/d drive it from the keyboard. The agent reads as a presence ("while you
+slept...") rather than a table of rows.
+
+CONTEMPORARY REFERENCES (direction 2):
+- iMessage / WhatsApp: inbound-left outbound-right grammar nobody has to learn
+- Tinder deck physics: drag-threshold commit with color telegraphing the verb
+- Telegram channel digests: a dated spine grouping a night's events
+- Superhuman: triage cadence as keystrokes, one item in focus at a time
+- Arc browser: playful-but-disciplined motion on structural elements
+
+CURRENT-TRUTH PARITY: tagline as the wire's masthead line, find filter outside
+the stream re-render, needs_reply=false -> a quiet "nothing needed" event with
+one-tap mark handled, email -> Open in Gmail verb, sub_portal -> View thread,
+urgency/window pills on the spine, recently handled collapses into the spine's
+"already handled overnight" fold, 401 -> sign-in bounce per #406.
+
+DESIGN SELF-REVIEW GATE
+(a) Thumb-stop or templated? A conversation wire with drag physics, not a list
+    or card grid. The spine + paired-bubble structure photographs unlike any
+    admin queue. Identical-card ban respected: every event's body differs by
+    kind (draft pair / quiet notice / sub thread).
+(b) 6am phone test (375): the wire IS a phone pattern. Swipes are the primary
+    verbs (asymmetric risk: approve commits only after the confirm sheet,
+    dismiss is instant + undoable via toast). Drafts editable inline on tap.
+(c) Core action under 10s? Newest urgent event sits at top with a red spine
+    node; its draft is pre-staged. One swipe + one confirm = sent.
+(d) Bans respected: no side-stripe accents (bubbles are full hairline boxes),
+    no KPI tiles, no gradient text, glass only on the fixed masthead. Spine
+    nodes signal color + label. Motion: drag follows the finger 1:1,
+    entrances stagger once, full prefers-reduced-motion fallback (gestures
+    fall back to visible buttons, which are always present anyway).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Crect width=%2716%27 height=%2716%27 fill=%27%23050a16%27/%3E%3Ccircle cx=%278%27 cy=%278%27 r=%274%27 fill=%27%2322d3ee%27/%3E%3C/svg%3E">
+<title>INBOX MOCKUP 2 — The Wire</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#04070f; --panel:rgba(12,19,34,0.9); --well:rgba(6,11,22,0.7);
+  --text:#e6ecf6; --dim:#9fb0cc; --faint:#5d6b85;
+  --teal:#2dd4bf; --teal-dim:rgba(45,212,191,0.35); --teal-bg:rgba(45,212,191,0.09);
+  --red:#f87171; --amber:#fbbf24; --green:#34d399;
+  --hairline:rgba(159,176,204,0.15);
+  --t-2:11px; --t-1:13px; --t0:15.5px; --t1:19px; --t2:24px;
+  --disp:'Outfit',sans-serif; --sans:'Inter',system-ui,sans-serif; --mono:'Share Tech Mono',monospace;
+  --z-bar:30; --z-sheet:40; --z-toast:50;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--ink);color:var(--text);font:var(--t0)/1.5 var(--sans);min-height:100dvh;
+  background-image:radial-gradient(ellipse 80% 40% at 80% -5%,rgba(45,212,191,0.07),transparent)}
+button{font:inherit;cursor:pointer}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+
+/* ---------- masthead ---------- */
+#mast{position:sticky;top:0;z-index:var(--z-bar);background:rgba(4,7,15,0.93);border-bottom:1px solid var(--hairline);
+  backdrop-filter:blur(14px);padding:13px 16px;display:flex;align-items:center;gap:12px}
+#mast .back{width:38px;height:38px;border-radius:10px;background:#fff;border:0;display:grid;place-items:center;flex:none}
+#mast .back svg{width:18px;height:18px;stroke:#04070f;fill:none;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
+#mast h1{font:800 var(--t1) var(--disp);letter-spacing:0.02em}
+#mast h1 span{color:var(--teal)}
+#mast .scan{margin-left:auto;padding:9px 14px;border-radius:999px;background:var(--teal-bg);
+  border:1px solid var(--teal-dim);color:var(--teal);font:700 var(--t-2) var(--disp);letter-spacing:0.12em}
+
+#wire{max-width:680px;margin:0 auto;padding:20px 14px 60px}
+
+/* ---------- the agent's opening line ---------- */
+#opening{font:600 var(--t2)/1.3 var(--disp);text-wrap:balance;padding:4px 2px 6px;letter-spacing:-0.01em;
+  animation:rise .5s cubic-bezier(0.16,1,0.3,1) both}
+#opening b{color:var(--teal)}
+#opening small{display:block;font:var(--t-2) var(--mono);color:var(--faint);margin-top:8px;letter-spacing:0.1em;font-weight:400}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+
+#find{margin:16px 0 6px}
+#find input{width:100%;background:var(--well);border:1px solid var(--hairline);border-radius:999px;
+  padding:11px 18px;color:var(--text);font:var(--t-1) var(--sans)}
+#find input::placeholder{color:var(--faint)}
+#find input:focus{border-color:var(--teal-dim);outline:none}
+
+/* ---------- the spine + events ---------- */
+#stream{position:relative;padding-left:26px;margin-top:14px}
+#stream::before{content:'';position:absolute;left:8px;top:6px;bottom:0;width:2px;
+  background:linear-gradient(180deg,var(--teal-dim),rgba(159,176,204,0.12))}
+.tmark{position:relative;font:var(--t-2) var(--mono);color:var(--faint);letter-spacing:0.14em;margin:22px 0 12px}
+.tmark::before{content:'';position:absolute;left:-22px;top:4px;width:10px;height:10px;border-radius:50%;
+  background:var(--ink);border:2px solid var(--faint)}
+.event{position:relative;margin-bottom:18px;animation:rise .5s cubic-bezier(0.16,1,0.3,1) both}
+.event:nth-of-type(3){animation-delay:.06s}.event:nth-of-type(4){animation-delay:.12s}
+.event:nth-of-type(6){animation-delay:.18s}.event:nth-of-type(7){animation-delay:.24s}
+.event::before{content:'';position:absolute;left:-22px;top:14px;width:10px;height:10px;border-radius:50%;
+  background:var(--faint)}
+.event.urgent::before{background:var(--red);box-shadow:0 0 10px var(--red);animation:lamp 2.6s ease-in-out infinite}
+.event.lead::before{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+@keyframes lamp{50%{box-shadow:0 0 2px currentColor}}
+
+.meta{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin-bottom:7px}
+.meta .who{font:700 var(--t0) var(--disp)}
+.meta .pill{font:var(--t-2) var(--mono);padding:2px 8px;border-radius:6px;border:1px solid var(--hairline);color:var(--dim)}
+.meta .pill.red{border-color:rgba(248,113,113,0.4);color:var(--red);background:rgba(248,113,113,0.1)}
+.meta .pill.amber{border-color:rgba(251,191,36,0.4);color:var(--amber);background:rgba(251,191,36,0.08)}
+.meta .ago{margin-left:auto;font:var(--t-2) var(--mono);color:var(--faint)}
+
+/* inbound: left-anchored */
+.inbound{position:relative;background:var(--panel);border:1px solid var(--hairline);border-radius:14px 14px 14px 4px;
+  padding:12px 14px;color:var(--dim);font-size:var(--t-1);line-height:1.55;max-width:56ch;touch-action:pan-y;
+  transition:transform .2s, opacity .2s}
+/* the agent's draft: right-anchored, teal-edged, the actionable object */
+.draft{position:relative;margin:8px 0 0 auto;max-width:56ch;background:rgba(8,20,22,0.85);
+  border:1px solid var(--teal-dim);border-radius:14px 14px 4px 14px;padding:12px 14px;touch-action:pan-y;
+  transition:transform .2s, opacity .2s}
+.draft .dl{font:var(--t-2) var(--mono);color:var(--teal);letter-spacing:0.14em;text-transform:uppercase;margin-bottom:6px;display:flex;justify-content:space-between;gap:8px}
+.draft .dl span{color:var(--faint);text-transform:none;letter-spacing:0.02em}
+.draft [contenteditable]{font-size:var(--t-1);line-height:1.55;color:var(--text);outline:none;border-radius:6px}
+.draft [contenteditable]:focus{background:rgba(45,212,191,0.06)}
+.verbs{display:flex;gap:8px;margin-top:10px}
+.verb{flex:1;padding:11px 12px;border-radius:9px;border:1px solid var(--hairline);background:transparent;
+  color:var(--dim);font:700 var(--t-2) var(--disp);letter-spacing:0.12em;text-transform:uppercase;text-align:center;text-decoration:none;transition:all .18s}
+.verb:hover{color:var(--text);border-color:var(--dim)}
+.verb:active{transform:scale(0.98)}
+.verb.go{background:rgba(52,211,153,0.13);border-color:rgba(52,211,153,0.42);color:var(--green);flex:1.6}
+.verb.go:hover{background:rgba(52,211,153,0.25);color:#fff}
+/* swipe hint backplates */
+.swipewrap{position:relative}
+.swipewrap .plate{position:absolute;inset:0;border-radius:14px;display:flex;align-items:center;
+  font:700 var(--t-2) var(--disp);letter-spacing:0.16em;opacity:0;transition:opacity .15s;pointer-events:none}
+.plate.ok{background:rgba(52,211,153,0.16);color:var(--green);justify-content:flex-start;padding-left:18px}
+.plate.no{background:rgba(248,113,113,0.14);color:var(--red);justify-content:flex-end;padding-right:18px}
+
+/* quiet event (needs_reply false) */
+.quiet{display:flex;gap:10px;align-items:center;background:var(--well);border:1px dashed var(--hairline);
+  border-radius:12px;padding:10px 14px;color:var(--faint);font-size:var(--t-1)}
+.quiet b{color:var(--dim);font-weight:600}
+.quiet button{margin-left:auto;flex:none;padding:8px 12px;border-radius:8px;border:1px solid var(--hairline);
+  background:transparent;color:var(--dim);font:700 var(--t-2) var(--disp);letter-spacing:0.1em}
+.quiet button:hover{color:var(--text);border-color:var(--dim)}
+
+/* overnight fold (recently handled) */
+#fold{margin-top:8px}
+#fold>button{width:100%;text-align:left;background:none;border:none;color:var(--faint);
+  font:var(--t-2) var(--mono);letter-spacing:0.14em;padding:10px 0;border-top:1px solid var(--hairline)}
+#fold>button:hover{color:var(--teal)}
+#fold .rows{display:none}
+#fold.open .rows{display:block}
+#fold .hrow{display:flex;justify-content:space-between;gap:10px;padding:7px 0;font-size:var(--t-1);color:var(--dim);border-bottom:1px solid rgba(159,176,204,0.07)}
+#fold .hrow span{font:var(--t-2) var(--mono);color:var(--faint);white-space:nowrap}
+#fold .hrow span.sent{color:var(--green)}
+
+/* confirm sheet (asymmetric risk on send) */
+#sheet{position:fixed;inset:0;z-index:var(--z-sheet);display:none;align-items:flex-end;justify-content:center;
+  background:rgba(2,4,9,0.6)}
+#sheet.on{display:flex}
+#sheet .card{width:min(560px,100%);background:#0b1322;border:1px solid var(--teal-dim);border-radius:18px 18px 0 0;
+  padding:20px 18px calc(18px + env(safe-area-inset-bottom));animation:up .25s cubic-bezier(0.16,1,0.3,1)}
+@keyframes up{from{transform:translateY(40px);opacity:0}to{transform:none;opacity:1}}
+#sheet h2{font:700 var(--t1) var(--disp);margin-bottom:6px}
+#sheet p{color:var(--dim);font-size:var(--t-1);margin-bottom:16px}
+#sheet .verbs .verb{padding:14px}
+
+#toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);padding:11px 18px;background:rgba(11,19,34,0.97);
+  border:1px solid var(--teal-dim);border-radius:10px;font:var(--t-1) var(--mono);color:var(--teal);z-index:var(--z-toast);
+  opacity:0;pointer-events:none;transition:opacity .2s;max-width:92vw;text-align:center}
+#toast.show{opacity:1}
+
+@media (min-width:700px){
+  #stream{padding-left:34px}
+  #stream::before{left:12px}
+  .tmark::before{left:-26px}
+  .event::before{left:-26px}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+
+<header id="mast">
+  <button class="back" aria-label="Back"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
+  <h1>THE <span>WIRE</span></h1>
+  <button class="scan">SCAN NOW</button>
+</header>
+
+<main id="wire">
+
+  <p id="opening">While you slept I read <b>14 messages</b>. Nine needed nothing. These <b>5</b> are yours.
+  <small>FRI JUN 12 · LAST SCAN 5:38 AM · DRAFTS PREPPED FOR YOUR APPROVAL</small></p>
+
+  <div id="find"><input type="search" placeholder="Find a customer on the wire..." aria-label="Find a customer"></div>
+
+  <div id="stream">
+
+    <div class="tmark">THIS MORNING</div>
+
+    <article class="event urgent">
+      <div class="meta"><span class="who">Gary Melanson</span><span class="pill red">active leak</span><span class="pill">FB</span><span class="ago">5:04 AM</span></div>
+      <div class="swipewrap"><div class="plate no">DISMISS</div>
+        <div class="inbound" data-swipe="dismiss">Hi, we have water dripping around the chimney since about 4am. I put towels down but its still coming. How fast can someone look at it??</div>
+      </div>
+      <div class="swipewrap"><div class="plate ok">APPROVE</div>
+        <div class="draft" data-swipe="send">
+          <div class="dl">Ryujin drafted <span>3h left in reply window · tap to edit</span></div>
+          <div contenteditable="true" spellcheck="false">Morning Gary, sorry you woke up to that. I can have someone up for an emergency assessment today. I will text you a window within the hour. Towels are right, and slide anything electronic out from under the drip if you can.</div>
+          <div class="verbs"><button class="verb">DISMISS</button><button class="verb go" data-confirm>APPROVE &amp; SEND</button></div>
+        </div>
+      </div>
+    </article>
+
+    <div class="tmark">OVERNIGHT</div>
+
+    <article class="event lead">
+      <div class="meta"><span class="who">Danielle Cormier</span><span class="pill amber">active lead</span><span class="pill">SMS</span><span class="ago">11:47 PM</span></div>
+      <div class="swipewrap"><div class="plate no">DISMISS</div>
+        <div class="inbound" data-swipe="dismiss">Hey just wondering if you guys could actually do it this month after all? My brother in law can help clear the deck Saturday if that changes anything</div>
+      </div>
+      <div class="swipewrap"><div class="plate ok">APPROVE</div>
+        <div class="draft" data-swipe="send">
+          <div class="dl">Ryujin drafted <span>tap to edit</span></div>
+          <div contenteditable="true" spellcheck="false">Hi Danielle, good news, we can make this month work. Saturday is fine for clearing the deck, the crew will not need it until the Monday after. I will lock your dates in this morning and send the confirmation.</div>
+          <div class="verbs"><button class="verb">DISMISS</button><button class="verb go" data-confirm>APPROVE &amp; SEND</button></div>
+        </div>
+      </div>
+    </article>
+
+    <article class="event">
+      <div class="meta"><span class="who">Mélanie Bourque</span><span class="pill">invoice</span><span class="pill">EMAIL</span><span class="ago">9:21 PM</span></div>
+      <div class="inbound">Hi, quick question before I pay, does the final amount include the gutter guards we talked about when Marc was here? Thanks, Mélanie</div>
+      <div class="draft">
+        <div class="dl">Ryujin drafted <span>email goes out from Gmail</span></div>
+        <div contenteditable="true" spellcheck="false">Hi Mélanie, yes, the gutter guards are in there as their own line, third from the bottom. Nothing else was added. Thanks for checking before paying.</div>
+        <div class="verbs"><button class="verb">SAVE DRAFT</button><a class="verb go" href="#">OPEN IN GMAIL</a></div>
+      </div>
+    </article>
+
+    <article class="event">
+      <div class="meta"><span class="who">Trevor Steeves</span><span class="pill">scheduling</span><span class="pill">SMS</span><span class="ago">8:02 PM</span></div>
+      <div class="quiet"><span>"Thursday works great, see you then 👍" · <b>nothing needed</b>, Ryujin flagged no reply.</span><button>MARK HANDLED</button></div>
+    </article>
+
+    <article class="event">
+      <div class="meta"><span class="who">John Stirling</span><span class="pill">sub portal</span><span class="pill">measurements</span><span class="ago">7:44 PM</span></div>
+      <div class="inbound">On the measurement sheet for 224, am I doing all the downspouts or just the two marked ones on the back?</div>
+      <div class="draft">
+        <div class="dl">Sub thread <span>replies live in messages</span></div>
+        <div class="verbs"><button class="verb">DISMISS</button><a class="verb go" href="#">VIEW THREAD</a></div>
+      </div>
+    </article>
+
+    <div id="fold">
+      <button onclick="this.parentElement.classList.toggle('open')">▸ ALREADY HANDLED OVERNIGHT · 3</button>
+      <div class="rows">
+        <div class="hrow">Patricia Vautour · warranty PDF sent by the agent<span class="sent">sent 9:12 PM</span></div>
+        <div class="hrow">Kevin Bourgeois · price shopper, no fit<span>dismissed 6:48 PM</span></div>
+        <div class="hrow">Lise Thibodeau · site visit moved to Tuesday<span class="sent">sent 4:31 PM</span></div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<div id="sheet" role="dialog" aria-label="Confirm send">
+  <div class="card">
+    <h2>Send to Gary Melanson?</h2>
+    <p>SMS goes out from the business line the moment you confirm. This is the one that actually sends.</p>
+    <div class="verbs"><button class="verb" data-close>BACK</button><button class="verb go" data-sent>SEND IT</button></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+(function(){
+  const toast=t=>{const el=document.getElementById('toast');el.textContent=t;el.classList.add('show');
+    clearTimeout(toast._t);toast._t=setTimeout(()=>el.classList.remove('show'),2400)};
+  const sheet=document.getElementById('sheet');
+  const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* drag-to-act: follows the pointer 1:1, commits past 38% width.
+     Approve commit OPENS THE CONFIRM SHEET (asymmetric risk); dismiss commits
+     straight to an undo toast. Buttons do the same verbs, so the gesture is
+     an accelerator, never the only path. */
+  document.querySelectorAll('[data-swipe]').forEach(el=>{
+    if(reduced)return;
+    let x0=null,dx=0;
+    const plate=el.parentElement.querySelector(el.dataset.swipe==='send'?'.plate.ok':'.plate.no');
+    el.addEventListener('pointerdown',e=>{
+      if(e.target.closest('[contenteditable],button,a'))return;
+      x0=e.clientX;el.setPointerCapture(e.pointerId);el.style.transition='none';
+    });
+    el.addEventListener('pointermove',e=>{
+      if(x0===null)return;dx=e.clientX-x0;
+      if(el.dataset.swipe==='send')dx=Math.max(0,dx);else dx=Math.min(0,dx);
+      el.style.transform='translateX('+dx+'px)';
+      if(plate)plate.style.opacity=Math.min(1,Math.abs(dx)/90);
+    });
+    function release(){
+      if(x0===null)return;
+      const commit=Math.abs(dx)>el.offsetWidth*0.38;
+      el.style.transition='';
+      if(commit&&el.dataset.swipe==='send'){el.style.transform='';if(plate)plate.style.opacity=0;sheet.classList.add('on')}
+      else if(commit){el.style.transform='translateX('+(dx<0?'-110%':'110%')+')';el.style.opacity='0';
+        toast('Dismissed. Undo is in the build.');setTimeout(()=>{el.style.transform='';el.style.opacity=''},1600)}
+      else{el.style.transform='';if(plate)plate.style.opacity=0}
+      x0=null;dx=0;
+    }
+    el.addEventListener('pointerup',release);
+    el.addEventListener('pointercancel',release);
+  });
+
+  document.addEventListener('click',e=>{
+    if(e.target.closest('[data-confirm]')){e.preventDefault();sheet.classList.add('on');return}
+    if(e.target.closest('[data-close]')){sheet.classList.remove('on');return}
+    if(e.target.closest('[data-sent]')){sheet.classList.remove('on');toast('Sent. (Mockup: PUT /api/inbox action=send)');return}
+    if(e.target===sheet){sheet.classList.remove('on');return}
+    const v=e.target.closest('.verb,.quiet button,.scan');
+    if(v&&!v.dataset.confirm){e.preventDefault();toast('Mockup: "'+v.textContent.trim()+'" wired to the live API in the build')}
+  });
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')sheet.classList.remove('on')});
+})();
+</script>
+</body>
+</html>
