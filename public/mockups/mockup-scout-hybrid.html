@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<!--
+  PLUS ULTRA ROOFING - SCOUT-GRADE SITE PROTOTYPE
+  HOMEPAGE - the HYBRID: mockup-2 structure + palette (forest/clay, conversion-forward split)
+  fused with mockup-3's roof-in-3D scan hero (tilt + traced roof + measured-area readout),
+  recolored into the one locked clay accent so the palette stays consistent.
+
+  DESIGN GATE (per order ord-20260614-2137-C):
+  - Page kind / audience: marketing homepage for Atlantic Canada homeowners choosing a premium reroof.
+  - Aesthetic lane / reference: Scout Motors / Filson-premium, rugged-but-refined. Forest carries the brand;
+    the scan-hero asset does double duty (premium AND it shows the satellite-measure differentiator).
+  - Color strategy: COMMITTED. Deep forest brand + bone page + ONE locked clay accent (oklch(0.62 0.17 45)).
+    The scan reticle uses the SAME clay, no second accent (Color Consistency Lock). Light theme locked.
+  - Fonts (off the reflex-reject lists): Archivo (display) + Figtree (body), consistent across all 4 pages.
+  - Imagery: REAL British Settlement 4K drone aerials.
+  - Motion: pointer 3D tilt (transform only, no scroll listener), SVG roof-outline line-draw, area count-up,
+    split-panel enters, scroll reveals. All gated behind prefers-reduced-motion.
+  - UI law: animated bg, purposeful glass on the hero readout, custom fonts, big visible nav. No em dashes. Mobile-first single column.
+
+  SITE MAP (self-contained hub prototype): this homepage + mockup-scout-services.html + mockup-scout-about.html + mockup-scout-contact.html.
+
+  GHL BACKEND HOOKS (kept for the eventual live build):
+  - Every "instant estimate" CTA -> Instant Estimator app (plus-ultra-roof-estimator.replit.app), which posts the lead to GHL.
+  - "Free guide" CTA (data-ghl) -> GHL form for the 10 Costly Mistakes magnet.
+  - Contact form (on mockup-scout-contact.html) -> GHL inbound webhook / Automator workflow.
+  - Production: responsive/optimized hero stills (<picture> + AVIF/WebP); these source JPGs are 4K.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Plus Ultra Roofing - A roof you can stand behind</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800;900&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bone:oklch(0.96 0.012 95); --bone-2:oklch(0.93 0.014 95);
+    --ink:oklch(0.24 0.02 155); --ink-soft:oklch(0.44 0.02 155);
+    --forest:oklch(0.30 0.05 155); --forest-deep:oklch(0.21 0.04 155);
+    --accent:oklch(0.62 0.17 45); --accent-bright:oklch(0.68 0.18 47);
+    --line:oklch(0.24 0.02 155 / 0.14); --line-light:oklch(1 0 0 / 0.16);
+    --maxw:1340px; --r:20px; --ease:cubic-bezier(0.16,1,0.3,1);
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html{scroll-behavior:smooth;}
+  body{background:var(--bone);color:var(--ink);font-family:"Figtree",system-ui,sans-serif;line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden;}
+  h1,h2,h3,h4{font-family:"Archivo",system-ui,sans-serif;line-height:1.02;letter-spacing:-0.03em;text-wrap:balance;}
+  a{color:inherit;text-decoration:none;}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 clamp(20px,5vw,56px);}
+  .aura{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:0.7;background:radial-gradient(50vw 40vh at 92% 8%,oklch(0.62 0.17 45 / 0.08),transparent 60%);}
+
+  /* NAV */
+  header{position:sticky;top:0;z-index:50;background:oklch(0.96 0.012 95 / 0.82);backdrop-filter:blur(16px) saturate(140%);border-bottom:1px solid var(--line);}
+  .nav{display:flex;align-items:center;justify-content:space-between;gap:24px;height:74px;}
+  .brand{display:flex;align-items:center;gap:11px;font-family:"Archivo";font-weight:900;font-size:20px;letter-spacing:-0.03em;color:var(--forest-deep);}
+  .mark{width:32px;height:32px;display:grid;place-items:center;border-radius:9px;background:var(--forest);color:var(--bone);}
+  .mark svg{width:19px;height:19px;}
+  .nav-links{display:flex;gap:30px;font-weight:600;font-size:15px;color:var(--ink-soft);}
+  .nav-links a{position:relative;padding:4px 0;}
+  .nav-links a.active,.nav-links a:hover{color:var(--forest);}
+  .nav-links a.active::after{content:"";position:absolute;left:0;bottom:-2px;width:100%;height:2px;background:var(--accent);}
+  .nav-cta{display:inline-flex;align-items:center;gap:8px;padding:11px 20px;border-radius:11px;font-weight:700;font-size:15px;background:var(--forest-deep);color:var(--bone);transition:transform .3s var(--ease),background .3s var(--ease);}
+  .nav-cta:hover{transform:translateY(-2px);background:var(--forest);}
+  .burger{display:none;background:none;border:1px solid var(--line);border-radius:10px;width:42px;height:42px;cursor:pointer;color:var(--ink);}
+
+  /* HERO split + scan */
+  .hero{position:relative;z-index:1;display:grid;grid-template-columns:1.02fr 0.98fr;min-height:calc(100dvh - 74px);}
+  .hero-left{background:var(--forest-deep);color:var(--bone);display:flex;flex-direction:column;justify-content:center;padding:clamp(40px,6vw,88px);position:relative;overflow:hidden;}
+  .hero-left::after{content:"";position:absolute;right:-30%;top:-25%;width:80%;height:80%;border-radius:50%;background:radial-gradient(circle,oklch(0.62 0.17 45 / 0.16),transparent 70%);}
+  .hl{position:relative;z-index:1;}
+  .kicker{display:inline-flex;align-items:center;gap:9px;font-weight:600;font-size:13.5px;color:oklch(0.85 0.02 95);border:1px solid var(--line-light);padding:7px 14px;border-radius:999px;margin-bottom:26px;}
+  .kicker .pulse{width:7px;height:7px;border-radius:50%;background:var(--accent-bright);box-shadow:0 0 0 0 oklch(0.68 0.18 47 / 0.6);animation:pulse 2.2s infinite;}
+  @keyframes pulse{70%{box-shadow:0 0 0 8px transparent;}100%{box-shadow:0 0 0 0 transparent;}}
+  h1.title{font-size:clamp(2.7rem,5.6vw,4.9rem);font-weight:800;}
+  h1.title .clay{color:var(--accent-bright);}
+  .lede{margin-top:22px;max-width:46ch;color:oklch(0.86 0.015 95);font-size:clamp(1.05rem,1.4vw,1.24rem);}
+  .cta-row{margin-top:36px;display:flex;flex-wrap:wrap;gap:13px;}
+  .btn{display:inline-flex;align-items:center;gap:10px;font-weight:700;font-size:16px;padding:16px 26px;border-radius:13px;cursor:pointer;transition:transform .3s var(--ease),box-shadow .3s var(--ease),background .3s var(--ease);border:1px solid transparent;}
+  .btn-primary{background:var(--accent);color:oklch(0.18 0.02 50);box-shadow:0 14px 34px oklch(0.62 0.17 45 / 0.4);}
+  .btn-primary:hover{transform:translateY(-3px);background:var(--accent-bright);}
+  .btn-line{background:transparent;color:var(--bone);border-color:var(--line-light);}
+  .btn-line:hover{transform:translateY(-3px);background:oklch(1 0 0 / 0.07);}
+  .chips{margin-top:38px;display:flex;flex-wrap:wrap;gap:10px;}
+  .chip{display:inline-flex;align-items:center;gap:8px;font-size:13.5px;font-weight:500;color:oklch(0.85 0.02 95);border:1px solid var(--line-light);border-radius:999px;padding:8px 14px;}
+  .chip svg{width:15px;height:15px;color:var(--accent-bright);}
+
+  /* scan hero asset */
+  .hero-right{position:relative;background:var(--forest);display:flex;align-items:center;justify-content:center;padding:clamp(24px,3vw,48px);overflow:hidden;}
+  .stage{perspective:1500px;width:100%;}
+  .tilt{position:relative;border-radius:22px;transform-style:preserve-3d;transform:rotateX(var(--rx,6deg)) rotateY(var(--ry,-8deg));transition:transform .25s var(--ease);}
+  .tilt .photo{position:relative;border-radius:22px;overflow:hidden;border:1px solid var(--line-light);box-shadow:0 50px 90px oklch(0.12 0.03 155 / 0.6);aspect-ratio:4/3;}
+  .tilt .photo img{width:100%;height:100%;object-fit:cover;display:block;}
+  .overlay{position:absolute;inset:0;transform:translateZ(46px);pointer-events:none;}
+  .overlay svg{width:100%;height:100%;display:block;overflow:visible;}
+  .roofline{fill:oklch(0.68 0.18 47 / 0.12);stroke:var(--accent-bright);stroke-width:2.5;stroke-linejoin:round;stroke-dasharray:1400;stroke-dashoffset:1400;animation:draw 2.6s var(--ease) 0.5s forwards;filter:drop-shadow(0 0 6px oklch(0.68 0.18 47 / 0.7));}
+  @keyframes draw{to{stroke-dashoffset:0;}}
+  .vtx{fill:var(--accent-bright);opacity:0;animation:vtx 0.4s var(--ease) forwards;}
+  @keyframes vtx{to{opacity:1;}}
+  .scanline{stroke:var(--accent-bright);stroke-width:1.5;opacity:0.55;animation:scan 3.6s var(--ease) infinite;}
+  @keyframes scan{0%{transform:translateY(0);opacity:0;}10%{opacity:0.7;}90%{opacity:0.7;}100%{transform:translateY(100%);opacity:0;}}
+  .readout{position:absolute;right:16px;top:16px;transform:translateZ(64px);display:flex;flex-direction:column;gap:8px;}
+  .pill{background:oklch(0.21 0.04 155 / 0.62);border:1px solid var(--line-light);backdrop-filter:blur(14px);border-radius:12px;padding:10px 14px;min-width:140px;box-shadow:0 14px 30px oklch(0.12 0.03 155 / 0.5);color:var(--bone);}
+  .pill .k{font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:oklch(0.85 0.02 95);}
+  .pill .v{font-family:"Archivo";font-weight:800;font-size:1.25rem;color:var(--accent-bright);}
+  .addr{position:absolute;left:16px;bottom:16px;transform:translateZ(54px);display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:var(--bone);background:oklch(0.21 0.04 155 / 0.62);border:1px solid var(--line-light);backdrop-filter:blur(12px);padding:9px 13px;border-radius:11px;}
+  .addr svg{width:14px;height:14px;color:var(--accent-bright);}
+
+  /* TRUST band */
+  .band{border-bottom:1px solid var(--line);background:var(--bone-2);}
+  .trust{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:24px 0;flex-wrap:wrap;}
+  .trust .label{font-size:12.5px;letter-spacing:0.14em;text-transform:uppercase;color:var(--ink-soft);font-weight:700;}
+  .badges{display:flex;flex-wrap:wrap;gap:22px;}
+  .badge{display:inline-flex;align-items:center;gap:9px;font-size:14.5px;font-weight:600;color:var(--forest);}
+  .badge svg{width:18px;height:18px;}
+
+  section.block{position:relative;z-index:1;padding:clamp(72px,11vh,124px) 0;}
+  .eyebrow{font-size:12.5px;letter-spacing:0.16em;text-transform:uppercase;color:var(--accent);font-weight:800;margin-bottom:14px;}
+  .h2{font-size:clamp(2rem,4.4vw,3.3rem);font-weight:800;max-width:18ch;}
+  .sub{margin-top:16px;max-width:58ch;color:var(--ink-soft);font-size:1.1rem;}
+
+  /* SERVICES preview: hairline rows */
+  .svc-grid{display:grid;grid-template-columns:0.8fr 1.2fr;gap:clamp(28px,5vw,64px);margin-top:18px;align-items:start;}
+  .svc-stick{position:sticky;top:110px;}
+  .rows{display:flex;flex-direction:column;}
+  .row{display:grid;grid-template-columns:auto 1fr auto;gap:22px;align-items:center;padding:24px 0;border-top:1px solid var(--line);transition:padding-left .35s var(--ease);}
+  .row:last-child{border-bottom:1px solid var(--line);}
+  .row:hover{padding-left:10px;}
+  .row .thumb{width:84px;height:62px;border-radius:12px;object-fit:cover;}
+  .row h4{font-size:1.25rem;font-weight:700;}
+  .row p{color:var(--ink-soft);font-size:0.97rem;margin-top:3px;max-width:46ch;}
+  .row .go{width:42px;height:42px;border-radius:50%;border:1px solid var(--line);display:grid;place-items:center;color:var(--forest);transition:background .3s var(--ease),color .3s var(--ease);flex-shrink:0;}
+  .row:hover .go{background:var(--forest);color:var(--bone);}
+
+  /* STATS forest */
+  .stats{background:var(--forest-deep);color:var(--bone);}
+  .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;}
+  .stats-grid .n{font-family:"Archivo";font-weight:800;font-size:clamp(2.2rem,4vw,3.4rem);letter-spacing:-0.03em;}
+  .stats-grid .n .clay{color:var(--accent-bright);}
+  .stats-grid .l{color:oklch(0.85 0.02 95);margin-top:4px;}
+
+  /* PROCESS */
+  .proc{display:grid;grid-template-columns:1fr 1fr;gap:clamp(28px,5vw,72px);align-items:center;}
+  .photo-card{border-radius:24px;overflow:hidden;border:1px solid var(--line);aspect-ratio:5/4;box-shadow:0 30px 70px oklch(0.2 0.04 155 / 0.25);}
+  .photo-card img{width:100%;height:100%;object-fit:cover;transform:scale(1.02);transition:transform 1.1s var(--ease);}
+  .photo-card:hover img{transform:scale(1.08);}
+  .steps{display:flex;flex-direction:column;gap:4px;margin-top:26px;}
+  .step{display:grid;grid-template-columns:auto 1fr;gap:18px;padding:18px 0;border-top:1px solid var(--line);}
+  .step:last-child{border-bottom:1px solid var(--line);}
+  .step .num{font-family:"Archivo";font-weight:900;font-size:1.2rem;color:var(--accent);}
+  .step h4{font-size:1.1rem;} .step p{color:var(--ink-soft);margin-top:3px;}
+
+  /* TESTIMONIAL */
+  .tquote{background:var(--bone-2);border-top:1px solid var(--line);border-bottom:1px solid var(--line);}
+  blockquote{max-width:22ch;font-family:"Archivo";font-weight:700;font-size:clamp(1.7rem,4vw,2.9rem);letter-spacing:-0.03em;line-height:1.12;color:var(--forest-deep);}
+  .cite{margin-top:24px;display:flex;align-items:center;gap:13px;color:var(--ink-soft);}
+  .cite .av{width:46px;height:46px;border-radius:50%;background:var(--forest);color:var(--bone);display:grid;place-items:center;font-weight:700;}
+
+  /* CLOSER */
+  .closer-inner{position:relative;background:var(--forest-deep);border-radius:28px;overflow:hidden;padding:clamp(40px,6vw,80px);display:grid;grid-template-columns:1.2fr 1fr;gap:40px;align-items:center;color:var(--bone);}
+  .closer-inner::before{content:"";position:absolute;inset:0;background:url("assets/scout-09.jpg") right center/cover;opacity:0.32;}
+  .closer-inner>*{position:relative;z-index:1;}
+  .closer-inner h2{font-size:clamp(2rem,4.6vw,3.4rem);font-weight:800;max-width:16ch;}
+
+  /* FOOTER */
+  footer{position:relative;z-index:1;background:var(--forest-deep);color:var(--bone);padding:64px 0 34px;}
+  .foot-grid{display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:40px;}
+  .foot-grid h5{font-size:12.5px;letter-spacing:0.14em;text-transform:uppercase;color:oklch(0.8 0.02 95);margin-bottom:14px;}
+  .foot-grid a{display:block;color:oklch(0.86 0.015 95);padding:5px 0;font-size:15px;}
+  .foot-grid a:hover{color:var(--bone);}
+  .foot-bottom{margin-top:46px;padding-top:22px;border-top:1px solid var(--line-light);display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap;color:oklch(0.78 0.02 95);font-size:14px;}
+
+  .reveal{opacity:0;transform:translateY(26px);transition:opacity .8s var(--ease),transform .8s var(--ease);}
+  .reveal.in{opacity:1;transform:none;}
+  .slide-l{opacity:0;transform:translateX(-28px);transition:opacity .9s var(--ease),transform .9s var(--ease);}
+  .slide-r{opacity:0;transform:translateX(28px);transition:opacity .9s var(--ease),transform .9s var(--ease);}
+  .slide-l.in,.slide-r.in{opacity:1;transform:none;}
+
+  @media (max-width:980px){
+    .hero{grid-template-columns:1fr;} .hero-right{min-height:56vh;} .tilt{transform:none !important;} .stage{perspective:none;}
+    .svc-grid{grid-template-columns:1fr;} .svc-stick{position:static;}
+    .stats-grid{grid-template-columns:1fr 1fr;} .proc{grid-template-columns:1fr;} .closer-inner{grid-template-columns:1fr;} .foot-grid{grid-template-columns:1fr;}
+    .nav-links{display:none;} .burger{display:grid;place-items:center;}
+  }
+  @media (prefers-reduced-motion: reduce){*{animation:none !important;transition:none !important;} .roofline{stroke-dashoffset:0;} .vtx{opacity:1;} .tilt{transform:none;} .reveal,.slide-l,.slide-r{opacity:1;transform:none;}}
+</style>
+</head>
+<body>
+<div class="aura"></div>
+
+<header>
+  <div class="wrap nav">
+    <a class="brand" href="mockup-scout-hybrid.html"><span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v9h14v-9"/></svg></span>Plus Ultra</a>
+    <nav class="nav-links">
+      <a class="active" href="mockup-scout-hybrid.html">Home</a>
+      <a href="mockup-scout-services.html">Services</a>
+      <a href="mockup-scout-about.html">About</a>
+      <a href="mockup-scout-contact.html">Contact</a>
+    </nav>
+    <a class="nav-cta" href="https://plus-ultra-roof-estimator.replit.app" target="_blank" rel="noopener">Instant estimate <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+    <button class="burger" aria-label="Menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="hero-left">
+    <div class="hl slide-l in">
+      <span class="kicker"><span class="pulse"></span> Satellite measured, no ladder, no sales visit</span>
+      <h1 class="title">A roof you can <span class="clay">stand behind.</span></h1>
+      <p class="lede">We measure your roof from the sky, hand you a real fixed price in minutes, then install premium and photograph the work from the air. Premium roofing for Riverview, Moncton, and Greater Moncton.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="https://plus-ultra-roof-estimator.replit.app" target="_blank" rel="noopener">Get my instant estimate <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+        <a class="btn btn-line" href="mockup-scout-contact.html#guide">Get the free guide</a>
+      </div>
+      <div class="chips">
+        <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 6L9 17l-5-5"/></svg> Fixed price, no upsell</span>
+        <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 6L9 17l-5-5"/></svg> Aerial photos included</span>
+        <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 6L9 17l-5-5"/></svg> 15-year workmanship warranty</span>
+      </div>
+    </div>
+  </div>
+  <div class="hero-right slide-r in">
+    <div class="stage">
+      <div class="tilt" id="tilt">
+        <div class="photo"><img src="assets/scout-d10.jpg" alt="Overhead drone view of a home in British Settlement, New Brunswick with a measurement overlay traced on the roof" /></div>
+        <div class="overlay" aria-hidden="true">
+          <svg viewBox="0 0 800 600" preserveAspectRatio="none">
+            <polygon class="roofline" points="170,250 410,150 640,250 640,430 410,470 170,430" />
+            <circle class="vtx" style="animation-delay:1.3s" cx="170" cy="250" r="6"/><circle class="vtx" style="animation-delay:1.6s" cx="410" cy="150" r="6"/><circle class="vtx" style="animation-delay:1.9s" cx="640" cy="250" r="6"/><circle class="vtx" style="animation-delay:2.2s" cx="640" cy="430" r="6"/><circle class="vtx" style="animation-delay:2.5s" cx="410" cy="470" r="6"/><circle class="vtx" style="animation-delay:2.8s" cx="170" cy="430" r="6"/>
+            <line class="scanline" x1="120" y1="120" x2="680" y2="120"/>
+          </svg>
+        </div>
+        <div class="readout">
+          <div class="pill"><div class="k">Measured area</div><div class="v"><span data-count="2840" data-suffix=" sq ft">0</span></div></div>
+          <div class="pill"><div class="k">Pitch</div><div class="v">7 / 12</div></div>
+        </div>
+        <span class="addr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 10c0 7-9 12-9 12s-9-5-9-12a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg> 33 British Settlement Rd, NB</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="band">
+  <div class="wrap trust">
+    <span class="label">Certified and accountable</span>
+    <div class="badges">
+      <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg> IKO Shield Pro</span>
+      <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 11l9-7 9 7M5 10v9h14v-9"/></svg> WorkSafeNB compliant</span>
+      <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 1l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/></svg> 4.9 on Google</span>
+      <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> Fully insured</span>
+    </div>
+  </div>
+</div>
+
+<section class="block">
+  <div class="wrap svc-grid">
+    <div class="svc-stick reveal">
+      <p class="eyebrow">What we install</p>
+      <h2 class="h2">The whole envelope, by one crew.</h2>
+      <p class="sub">The shingle is the easy part. The flashing, ventilation, and edge details are where roofs live or fail. We own all of it, and we document it from the air.</p>
+      <div class="cta-row"><a class="btn btn-primary" href="mockup-scout-services.html" style="margin-top:8px;">See all services</a></div>
+    </div>
+    <div class="rows reveal">
+      <a class="row" href="mockup-scout-services.html#asphalt">
+        <img class="thumb" src="assets/scout-10.jpg" alt="Asphalt reroof from above" />
+        <div><h4>Complete asphalt reroof</h4><p>Full tear-off, ice and water shield, ridge ventilation, architectural shingles.</p></div>
+        <span class="go"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+      </a>
+      <a class="row" href="mockup-scout-services.html#metal">
+        <img class="thumb" src="assets/scout-12.jpg" alt="Metal roof from above" />
+        <div><h4>Metal roofing</h4><p>Standing seam and steel built for Atlantic winters and a 50-year horizon.</p></div>
+        <span class="go"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+      </a>
+      <a class="row" href="mockup-scout-services.html#exterior">
+        <img class="thumb" src="assets/scout-d12.jpg" alt="Home exterior from above" />
+        <div><h4>Exterior and siding</h4><p>Soffit, fascia, eavestrough, and siding so the whole exterior matches.</p></div>
+        <span class="go"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+      </a>
+      <a class="row" href="mockup-scout-services.html#storm">
+        <img class="thumb" src="assets/scout-d13.jpg" alt="Storm damage assessment from above" />
+        <div><h4>Storm and insurance work</h4><p>We document damage from the air and work directly with your adjuster.</p></div>
+        <span class="go"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<section class="block stats">
+  <div class="wrap reveal">
+    <div class="stats-grid">
+      <div><div class="n">500<span class="clay">+</span></div><div class="l">Roofs protected across Greater Moncton</div></div>
+      <div><div class="n">4.9<span class="clay">/5</span></div><div class="l">Average homeowner rating</div></div>
+      <div><div class="n">15<span class="clay">yr</span></div><div class="l">Workmanship warranty in writing</div></div>
+      <div><div class="n">100<span class="clay">%</span></div><div class="l">Jobs documented from the air</div></div>
+    </div>
+  </div>
+</section>
+
+<section class="block">
+  <div class="wrap proc">
+    <div class="reveal"><div class="photo-card"><img src="assets/scout-d09.jpg" alt="Drone view of a completed Plus Ultra roof at British Settlement, clean ridge lines and flashing" /></div></div>
+    <div class="reveal">
+      <p class="eyebrow">How it works</p>
+      <h2 class="h2">From your address to a price in minutes.</h2>
+      <div class="steps">
+        <div class="step"><span class="num">1</span><div><h4>Measure from the sky</h4><p>Enter your address. We measure your roof from satellite imagery, no ladder and no waiting.</p></div></div>
+        <div class="step"><span class="num">2</span><div><h4>See a fixed price</h4><p>A real range on the spot, not a ballpark built to book a sales visit to your door.</p></div></div>
+        <div class="step"><span class="num">3</span><div><h4>We install and photograph</h4><p>One vetted crew, the full envelope, aerial photos before and after so you see what you paid for.</p></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="tquote">
+  <div class="wrap block reveal" style="padding-top:clamp(64px,9vh,100px);padding-bottom:clamp(64px,9vh,100px);">
+    <blockquote>I had a price before anyone set foot on my property. That sold me.</blockquote>
+    <div class="cite"><span class="av">RL</span><div><strong>Ryan L.</strong><div style="font-size:14px;">Reroof, Riverview NB</div></div></div>
+  </div>
+</div>
+
+<section class="block">
+  <div class="wrap">
+    <div class="closer-inner reveal">
+      <div>
+        <p class="eyebrow" style="color:var(--accent-bright);">Free homeowner guide</p>
+        <h2>The 10 costly mistakes most people make hiring a roofer.</h2>
+        <p class="lede" style="color:oklch(0.88 0.015 95);">Ten minutes that can save you thousands. The exact questions to ask before you sign anything. No cost, no salesperson.</p>
+      </div>
+      <div class="cta-row" style="flex-direction:column;align-items:stretch;">
+        <a class="btn btn-primary" href="mockup-scout-contact.html#guide" data-ghl="lead-magnet-10-mistakes" style="justify-content:center;">Send me the free guide</a>
+        <a class="btn btn-line" href="https://plus-ultra-roof-estimator.replit.app" target="_blank" rel="noopener" style="justify-content:center;">Or get my instant price</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <a class="brand" href="mockup-scout-hybrid.html" style="color:var(--bone);font-size:22px;"><span class="mark" style="background:var(--accent);color:oklch(0.18 0.02 50);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v9h14v-9"/></svg></span>Plus Ultra</a>
+        <p style="margin-top:16px;color:oklch(0.86 0.015 95);max-width:34ch;">Premium roofing for Riverview, Moncton, and Greater Moncton. Measured from above, built to go further beyond.</p>
+      </div>
+      <div><h5>Explore</h5><a href="mockup-scout-services.html">Services</a><a href="mockup-scout-about.html">About and proof</a><a href="mockup-scout-contact.html">Contact</a><a href="mockup-scout-contact.html#guide">Free guide</a></div>
+      <div><h5>Talk to us</h5><a href="tel:+15066164607">(506) 616-4607</a><a href="mailto:mackenzie.m@plusultraroofing.com">mackenzie.m@plusultraroofing.com</a><a href="https://plus-ultra-roof-estimator.replit.app" target="_blank" rel="noopener">Instant estimate</a></div>
+    </div>
+    <div class="foot-bottom"><span>Copyright Plus Ultra Roofing. Riverview, New Brunswick.</span><span>Licensed and insured. WorkSafeNB compliant.</span></div>
+  </div>
+</footer>
+
+<script>
+  const io=new IntersectionObserver((es)=>{es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}});},{threshold:0.15});
+  document.querySelectorAll('.reveal,.slide-l,.slide-r').forEach(el=>io.observe(el));
+  // Safety net: never let a reveal section ship blank (headless render, hidden tab, no-scroll preview).
+  addEventListener('load',()=>setTimeout(()=>document.querySelectorAll('.reveal,.slide-l,.slide-r').forEach(el=>el.classList.add('in')),1400));
+
+  const cIo=new IntersectionObserver((es)=>{es.forEach(e=>{if(!e.isIntersecting)return;cIo.unobserve(e.target);
+    const el=e.target,end=parseFloat(el.dataset.count),suf=el.dataset.suffix||'';let t0=null;const dur=1600;
+    const run=(t)=>{if(!t0)t0=t;const p=Math.min((t-t0)/dur,1);const e2=1-Math.pow(1-p,3);el.textContent=Math.round(end*e2).toLocaleString()+suf;if(p<1)requestAnimationFrame(run);};
+    if(matchMedia('(prefers-reduced-motion: reduce)').matches){el.textContent=Math.round(end).toLocaleString()+suf;}else requestAnimationFrame(run);
+  });},{threshold:0.5});
+  document.querySelectorAll('[data-count]').forEach(el=>cIo.observe(el));
+
+  const tilt=document.getElementById('tilt');
+  if(tilt && !matchMedia('(prefers-reduced-motion: reduce)').matches && matchMedia('(min-width: 981px)').matches){
+    const stage=tilt.parentElement;let raf=null,tx=-8,ty=6;
+    stage.addEventListener('pointermove',(e)=>{const r=stage.getBoundingClientRect();const px=(e.clientX-r.left)/r.width-0.5,py=(e.clientY-r.top)/r.height-0.5;tx=px*15;ty=-py*13;
+      if(!raf)raf=requestAnimationFrame(()=>{tilt.style.setProperty('--ry',tx.toFixed(2)+'deg');tilt.style.setProperty('--rx',ty.toFixed(2)+'deg');raf=null;});});
+    stage.addEventListener('pointerleave',()=>{tilt.style.setProperty('--ry','-8deg');tilt.style.setProperty('--rx','6deg');});
+  }
+</script>
+</body>
+</html>
