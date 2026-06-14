@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#08090e">
+<title>Ryujin OS · Decision Board</title>
+<link rel="icon" href="/apple-touch-icon.png">
+<!-- Auth gate: tokenless users bounce to /login before any logic runs -->
+<script src="/assets/auth-guard.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ══════════════════════════════════════════════════════════════════
+   DECISION BOARD = "THE BRIEF" (mockup-decisionboard-3, Mac-approved
+   2026-06-14). Ported from the hub triage prototype into a real Ryujin
+   page: same fleet decision-queue data, now read from the authenticated
+   /api/snapshot sections.fleet (the hub poster writes the same shape
+   there) instead of the hub-local FLEET_DECK_DATA.json + /api/open.
+   ══════════════════════════════════════════════════════════════════ */
+:root{
+  --ink:#08090e; --ink2:#0d0f16; --paperwhite:#f4f3ee; --dim:#bdbab0; --faint:#8b887f;
+  --gold:#e8a93c; --gold-hot:#ffc95e; --green:#59c98a; --red:#e05656; --blue:#6aa7d8;
+  --hairline:rgba(244,243,238,.11); --panel:rgba(14,16,23,.78);
+  --lane-A:#e05656;--lane-B:#e8893c;--lane-C:#6aa7d8;--lane-D:#59c98a;--lane-E:#a98ce0;--lane-F:#e08cb4;--lane-G:#5fd6c8;
+  --serif:'Fraunces',Georgia,serif; --sans:'Inter',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0}
+body{font-family:var(--sans);color:var(--paperwhite);background:var(--ink);-webkit-font-smoothing:antialiased;min-height:100dvh}
+body::before{content:'';position:fixed;inset:-30%;z-index:0;pointer-events:none;
+  background:radial-gradient(40% 44% at 50% 0%,rgba(232,169,60,.10),transparent 68%),
+   radial-gradient(50% 50% at 80% 100%,rgba(106,167,216,.06),transparent 70%);
+  animation:breathe 30s ease-in-out infinite alternate}
+@keyframes breathe{to{transform:translateY(2%) scale(1.05)}}
+button{font:inherit;cursor:pointer}
+button:focus-visible,a:focus-visible{outline:2px solid var(--gold-hot);outline-offset:2px}
+
+.page{position:relative;z-index:2;max-width:620px;margin:0 auto;padding:20px 20px 80px}
+
+/* masthead */
+.mast{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+.mast .back{width:38px;height:38px;border-radius:10px;background:var(--paperwhite);border:0;display:grid;place-items:center;flex:none;
+  box-shadow:0 4px 14px rgba(0,0,0,.35);transition:transform .18s}
+.mast .back:hover{transform:translateX(-2px)}
+.mast .back svg{width:18px;height:18px;stroke:var(--ink);fill:none;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
+.mast .name{font-family:var(--serif);font-style:italic;font-size:21px;font-weight:500}
+.mast .name b{font-style:normal;color:var(--gold);font-weight:600}
+.health{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;text-transform:uppercase}
+.health .lamp{width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green);animation:beat 2.6s ease-in-out infinite}
+.health.GREEN{color:var(--green)} .health.AMBER,.health.DRIFTING{color:var(--gold-hot)} .health.RED{color:var(--red)}
+.health.AMBER .lamp,.health.DRIFTING .lamp{background:var(--gold-hot);box-shadow:0 0 10px var(--gold-hot)}
+.health.RED .lamp{background:var(--red);box-shadow:0 0 10px var(--red)}
+@keyframes beat{50%{opacity:.6}}
+.dateline{font-size:12px;color:var(--faint);margin-bottom:26px;letter-spacing:.02em}
+
+.eyebrow{font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--faint);margin:34px 0 13px}
+.eyebrow.first{margin-top:6px}
+
+/* hero decision */
+.hero{background:var(--panel);border:1px solid var(--hairline);border-radius:18px;padding:24px 22px;backdrop-filter:blur(8px);position:relative;overflow:hidden}
+.hero.p0{background:linear-gradient(150deg,rgba(224,86,86,.13),rgba(14,16,23,.82))}
+.hero-pri{display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase}
+.hero-pri .d{width:8px;height:8px;border-radius:50%}
+.hero-pri.P0{color:#ff9a9a} .hero-pri.P1{color:var(--gold-hot)} .hero-pri.P2{color:var(--dim)}
+.hero h1{font-family:var(--serif);font-size:clamp(25px,6vw,34px);font-weight:600;line-height:1.16;letter-spacing:-.015em;margin:13px 0 0;text-wrap:balance}
+.hero .lanetag{margin-top:15px;font-size:12.5px;color:var(--dim);line-height:1.5}
+.hero .lanetag b{color:var(--paperwhite)}
+.hero-act{display:flex;gap:10px;margin-top:22px;flex-wrap:wrap}
+.b{font-family:var(--sans);font-weight:600;font-size:13px;letter-spacing:.02em;padding:13px 22px;border-radius:11px;cursor:pointer;border:1px solid transparent;transition:.16s}
+.b.go{background:var(--gold);color:var(--ink)}
+.b.go:hover{background:var(--gold-hot);box-shadow:0 10px 26px rgba(232,169,60,.3)}
+.b.sec{background:transparent;color:var(--paperwhite);border-color:var(--hairline)}
+.b.sec:hover{border-color:var(--paperwhite)}
+
+/* also-waiting list */
+.also{display:flex;flex-direction:column;gap:9px}
+.alt{display:flex;align-items:center;gap:13px;padding:14px 16px;background:rgba(255,255,255,.022);border:1px solid var(--hairline);border-radius:13px;cursor:pointer;transition:.15s}
+.alt:hover{background:rgba(255,255,255,.045)}
+.alt.handled{opacity:.42}.alt.handled .alt-txt{text-decoration:line-through}
+.alt .tag{font-family:var(--sans);font-size:10px;font-weight:700;letter-spacing:.04em;padding:4px 8px;border-radius:6px;flex:none}
+.alt .tag.P1{background:rgba(232,169,60,.15);color:var(--gold-hot)}.alt .tag.P2{background:rgba(139,136,127,.13);color:var(--dim)}.alt .tag.P0{background:rgba(224,86,86,.18);color:#ff9a9a}
+.alt-txt{flex:1;font-size:14px;line-height:1.35}
+.alt-lane{font-size:11px;font-weight:700;flex:none}
+.alt .chk{flex:none;width:24px;height:24px;border-radius:7px;border:1px solid var(--hairline);display:grid;place-items:center;font-size:12px;color:var(--faint)}
+.alt:hover .chk{border-color:var(--gold);color:var(--gold)}
+
+/* since you last looked */
+.digest{background:rgba(255,255,255,.018);border:1px solid var(--hairline);border-radius:16px;padding:20px 22px}
+.digest .line{display:flex;gap:13px;padding:9px 0;border-bottom:1px solid rgba(244,243,238,.06)}
+.digest .line:last-child{border:0}
+.digest .w{font-family:var(--sans);font-size:11px;color:var(--faint);flex:none;width:42px;padding-top:2px;font-variant-numeric:tabular-nums}
+.digest .by{flex:none;width:16px;text-align:center;font-weight:700;font-size:12px}
+.digest .txt{font-size:13px;line-height:1.5;color:var(--dim)}
+.summary{font-family:var(--serif);font-style:italic;font-size:15px;line-height:1.5;color:var(--dim);margin-bottom:16px;text-wrap:pretty}
+
+/* terminals strip */
+.terms{display:flex;gap:10px;overflow-x:auto;padding:4px 2px 10px;scroll-snap-type:x mandatory}
+.tchip{flex:none;width:150px;scroll-snap-align:start;background:var(--panel);border:1px solid var(--hairline);border-radius:13px;padding:13px;backdrop-filter:blur(6px)}
+.tchip-top{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.tchip .mb{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;font-weight:700;font-size:12px;font-family:var(--serif)}
+.tchip .lamp2{width:8px;height:8px;border-radius:50%;margin-left:auto}
+.tchip .lamp2.working{background:var(--green);box-shadow:0 0 8px var(--green);animation:beat 2.6s ease-in-out infinite}
+.tchip .lamp2.idle{background:var(--faint)}.tchip .lamp2.dark{background:rgba(139,136,127,.4)}
+.tchip .lane{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);font-weight:600}
+.tchip .tk{font-size:11.5px;line-height:1.4;color:var(--dim);margin-top:3px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;min-height:48px}
+
+.state{padding:40px 10px;text-align:center;color:var(--faint);font-size:13px}
+.state.err{color:var(--red)}
+
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(16px);background:var(--ink2);border:1px solid rgba(232,169,60,.5);
+  border-radius:11px;padding:12px 20px;font-size:13px;opacity:0;transition:.25s;z-index:70;box-shadow:0 18px 44px rgba(0,0,0,.6);max-width:90vw}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* embedded as an artifact in the Builders Hall shell */
+body.embed .mast,body.embed .dateline{display:none}
+body.embed .page{padding-top:14px}
+
+@media (prefers-reduced-motion:reduce){body::before,.lamp,.lamp2{animation:none}}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="mast">
+    <button class="back" onclick="goBackToMainHub()" aria-label="Back" title="Back"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
+    <div class="name">The <b>Brief</b></div>
+    <div class="health GREEN" id="health"><span class="lamp"></span><span id="hverdict">—</span></div>
+  </div>
+  <div class="dateline" id="dateline">—</div>
+
+  <div class="eyebrow first">The one thing</div>
+  <div id="hero"><div class="state">Reading the fleet&hellip;</div></div>
+
+  <div class="eyebrow" id="alsoHead" style="display:none">Also waiting on you</div>
+  <div class="also" id="also"></div>
+
+  <div class="eyebrow">Since you last looked</div>
+  <div class="digest" id="digest"></div>
+
+  <div class="eyebrow">Terminals</div>
+  <div class="terms" id="terms"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  'use strict';
+  const TENANT = window.RYUJIN_TENANT_SLUG || 'plus-ultra';
+  const PRANK = { P0:0, P1:1, P2:2 };
+  let DATA = null, decisions = [];
+  const handled = new Set(JSON.parse(localStorage.getItem('decisionboard_handled') || '[]'));
+  const EMBED = /[?&]embed=1\b/.test(location.search);
+  if (EMBED) document.body.classList.add('embed');
+
+  const $ = s => document.querySelector(s);
+  function token(){ try { return localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token') || ''; } catch(e){ return ''; } }
+  function authHeaders(){ const h = { 'x-tenant-id': TENANT }; const t = token(); if (t) h.Authorization = 'Bearer ' + t; return h; }
+  const lc = l => getComputedStyle(document.documentElement).getPropertyValue('--lane-' + (l || 'A').toUpperCase()) || '#888';
+  const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  const key = d => (d.priority || '') + '|' + (d.item || '').slice(0, 40);
+  const dstat = d => d.status === 'working' ? 'working' : (d.live === false ? 'dark' : (d.status || 'idle'));
+  const trim = (s, n) => { s = String(s || ''); return s.length > n ? s.slice(0, n) + '…' : s; };
+
+  function dateline(){
+    const d = new Date();
+    const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const mo = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    $('#dateline').textContent = days[d.getDay()] + ', ' + mo[d.getMonth()] + ' ' + d.getDate() + ' · ' +
+      String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0') + ' AT';
+  }
+  setInterval(dateline, 1000); dateline();
+
+  let tt; function toast(m){ const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(tt); tt = setTimeout(() => t.classList.remove('show'), 2600); }
+
+  async function load(){
+    let snap = null;
+    try {
+      const r = await fetch('/api/snapshot', { headers: authHeaders(), cache: 'no-store' });
+      if (r.status === 401) {
+        if (window.RyujinAuth && window.RyujinAuth.clearAndRedirect) { window.RyujinAuth.clearAndRedirect(); return; }
+        window.location.href = '/login.html?next=' + encodeURIComponent(location.pathname); return;
+      }
+      if (r.ok) snap = await r.json();
+    } catch(e){ /* fall through to the empty board */ }
+    DATA = (snap && snap.sections && snap.sections.fleet)
+      ? snap.sections.fleet
+      : { blockedOnMac: [], desks: {}, shippedToday: [], healthVerdict: '?', _empty: true };
+    render();
+  }
+
+  function render(){
+    const v = (DATA.healthVerdict || 'GREEN').toUpperCase();
+    $('#health').className = 'health ' + v; $('#hverdict').textContent = v;
+
+    decisions = (DATA.blockedOnMac || []).slice().sort((a, b) => (PRANK[a.priority] ?? 9) - (PRANK[b.priority] ?? 9));
+    const open = decisions.filter(d => !handled.has(key(d)));
+    const hero = open[0];
+
+    if (hero) {
+      const desk = (DATA.desks || {})[(hero.lane || '').toUpperCase()];
+      $('#hero').innerHTML = `<div class="hero ${hero.priority === 'P0' ? 'p0' : ''}">
+        <div class="hero-pri ${hero.priority}"><span class="d" style="background:currentColor"></span>${esc(hero.priority || 'P1')} · the highest call on your desk${hero.due ? ' · due ' + esc(hero.due) : ''}</div>
+        <h1>${esc(hero.item)}</h1>
+        ${desk ? `<div class="lanetag">Lane <b>${esc(hero.lane)}</b> is on it — <b>${esc(desk.lane || '')}</b>, currently ${esc(desk.task || 'idle')}.</div>` : ''}
+        <div class="hero-act">
+          <button class="b go" onclick="window.__db.act('${key(hero).replace(/'/g, "\\'")}','approve')">Mark decided</button>
+          <button class="b sec" onclick="window.__db.act('${key(hero).replace(/'/g, "\\'")}','defer')">Not now</button>
+        </div></div>`;
+    } else {
+      const msg = DATA._empty
+        ? 'Fleet state is momentarily unavailable. The local hub may need a restart.'
+        : 'Every decision is cleared. The terminals keep building, you keep moving.';
+      $('#hero').innerHTML = `<div class="hero"><div class="hero-pri P2"><span class="d" style="background:var(--green)"></span>${DATA._empty ? 'No fleet data' : 'All clear'}</div>
+        <h1>${DATA._empty ? 'Nothing to show yet.' : 'Nothing needs your call.'}</h1><div class="lanetag">${msg}</div></div>`;
+    }
+
+    const rest = open.slice(1).concat(decisions.filter(d => handled.has(key(d))));
+    $('#alsoHead').style.display = rest.length ? 'block' : 'none';
+    $('#also').innerHTML = rest.map(d => { const h = handled.has(key(d));
+      return `<div class="alt ${h ? 'handled' : ''}" onclick="window.__db.act('${key(d).replace(/'/g, "\\'")}','defer')">
+        <span class="tag ${d.priority}">${esc(d.priority || 'P2')}</span>
+        <span class="alt-txt">${esc(d.item)}</span>
+        <span class="alt-lane" style="color:${lc(d.lane)}">${esc(d.lane || '')}</span>
+        <span class="chk">${h ? '↺' : '✓'}</span></div>`; }).join('');
+
+    const ships = (DATA.shippedToday || []).slice(0, 6);
+    $('#digest').innerHTML = `<div class="summary">${esc(DATA.healthOneLine || 'The fleet is steady.')}</div>` +
+      (ships.length
+        ? ships.map(s => `<div class="line"><div class="w">${esc(s.when)}</div><div class="by" style="color:${lc(s.by)}">${esc(s.by)}</div><div class="txt">${esc(trim(s.what, 150))}</div></div>`).join('')
+        : '<div class="line"><div class="txt" style="color:var(--faint)">Nothing logged shipped yet today.</div></div>');
+
+    const desks = DATA.desks || {};
+    const ids = Object.keys(desks);
+    $('#terms').innerHTML = ids.length
+      ? ids.map(id => { const d = desks[id], st = dstat(d);
+          return `<div class="tchip"><div class="tchip-top"><div class="mb" style="background:${lc(id)}22;color:${lc(id)}">${esc(id)}</div>
+            <div><div class="lane" style="color:${lc(id)}">${esc((d.lane || '').split('(')[0]).slice(0, 16)}</div></div><div class="lamp2 ${st}"></div></div>
+            <div class="tk">${esc(d.task || 'idle')}</div></div>`; }).join('')
+      : '<div class="state" style="padding:14px">No desks reporting.</div>';
+  }
+
+  // Decisions are marked decided/deferred LOCALLY (per-browser), like the
+  // approved mockup. Nothing sends or executes from here (DRAFT-only rule):
+  // wiring "Mark decided" to a real fleet write-back (POST /api/fleet
+  // order.update or the Intent Ledger) is a follow-up.
+  function act(k, a){
+    const d = decisions.find(x => key(x) === k); if (!d) return;
+    if (a === 'defer') { handled.has(k) ? handled.delete(k) : handled.add(k); }
+    else { handled.add(k); toast('Marked decided · ' + trim(d.item || '', 40)); }
+    localStorage.setItem('decisionboard_handled', JSON.stringify([...handled]));
+    render();
+  }
+  window.__db = { act };
+
+  if (typeof window.goBackToMainHub !== 'function') {
+    window.goBackToMainHub = function(){
+      try { if (window.parent !== window && window.parent.exitSectionOverlay) { window.parent.exitSectionOverlay(); return; } } catch(e){}
+      window.location.href = '/administration.html';
+    };
+  }
+
+  load(); setInterval(load, 30000);
+})();
+</script>
+</body>
+</html>
