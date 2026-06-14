@@ -432,6 +432,33 @@
     }
   }
 
+  /* Cross-machine mirror (WS-6). The deck_notes sync above is the deck's own
+     cross-device store (portal-session-scoped, Supabase). The fleet (Operator /
+     Oracle / desks) reads with the service token, not a portal session, so it
+     cannot read deck_notes. We additionally mirror user notes to the Blob-backed
+     /api/deck-suggestions, which the fleet CAN read cross-machine with the same
+     service token it uses for /api/fleet. Fire-and-forget, fail-open: a mirror
+     failure never affects the deck's own behavior or the deck_notes sync. */
+  function fleetMirrorUpsert(slideId, note) {
+    if (!AUTH_TOKEN || !note || SEEDED[note.author]) return;
+    fetch('/api/deck-suggestions', {
+      method: 'POST',
+      headers: syncHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        deck_id: DECK_ID, slide_id: slideId,
+        client_note_id: note.id, author: note.author || 'mac', text: note.text
+      })
+    }).catch(function () {});
+  }
+
+  function fleetMirrorDelete(noteId) {
+    if (!AUTH_TOKEN || !noteId) return;
+    fetch('/api/deck-suggestions?deck=' + encodeURIComponent(DECK_ID) + '&note=' + encodeURIComponent(noteId), {
+      method: 'DELETE',
+      headers: syncHeaders()
+    }).catch(function () {});
+  }
+
   function serverUpsertNote(slideId, note) {
     if (!AUTH_TOKEN || !note || SEEDED[note.author]) return;
     var sentText = note.text;
@@ -443,6 +470,7 @@
         client_note_id: note.id, author: note.author || 'mac', text: sentText
       })
     }).then(function (r) { if (r && r.ok) markNoteClean(slideId, note.id, sentText); }).catch(function () {});
+    fleetMirrorUpsert(slideId, note);
   }
 
   function serverDeleteNote(noteId) {
@@ -451,6 +479,7 @@
       method: 'DELETE',
       headers: syncHeaders()
     }).catch(function () {});
+    fleetMirrorDelete(noteId);
   }
 
   /* Pull server notes into localStorage, then push any local-only notes up
