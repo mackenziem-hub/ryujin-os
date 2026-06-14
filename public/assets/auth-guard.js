@@ -95,4 +95,22 @@
     authErrorHtml,
     sessionEnded
   });
+
+  // ── Fleet-wide Cmd-K command palette ──────────────────────────
+  // This script is the operator-page marker (every authed internal page
+  // includes it; client-facing renderers do not), so loading the palette
+  // here mounts Cmd-K across the whole operator app with no per-page edits
+  // and never bleeds onto a client-facing page. Only reached when a token is
+  // present (signed-out users were redirected above). command-palette.js
+  // self-guards against double-load, so pages that include it directly still
+  // work. Non-critical chrome: any failure is swallowed.
+  try {
+    if (!window.__ryujinPaletteInjected) {
+      window.__ryujinPaletteInjected = true;
+      var cpScript = document.createElement('script');
+      cpScript.src = '/assets/command-palette.js';
+      cpScript.defer = true;
+      (document.head || document.documentElement).appendChild(cpScript);
+    }
+  } catch (e) { /* palette is non-critical */ }
 })();
