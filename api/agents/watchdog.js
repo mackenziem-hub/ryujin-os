@@ -97,6 +97,8 @@ const TIER1_SENDERS = [
   'darcy', 'diego', 'pavignette',
   // CRM / lead sources
   'leadconnector', 'highlevel', 'gohighlevel',
+  // Watched customers (immediate ping on reply, by owner request)
+  'cohni.omega@gmail.com', // Concepcion Omega, 200 Lonsdale (est #38), awaiting shingle-color confirmation
 ];
 
 const TIER1_SUBJECTS = [
