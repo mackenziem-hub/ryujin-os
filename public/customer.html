@@ -84,7 +84,17 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
 .tl-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--cyan)}
 .tl-time{color:var(--text-dim);font-family:'Share Tech Mono',monospace;font-size:0.85em}
 
-@media(max-width:768px){.main{padding:12px}.hq-title h1{font-size:1.3em}}
+/* Pillar tabs: OVERVIEW + the nested CRM Follow-up artifact merged into the Customer pillar */
+.cust-tabs{display:flex;gap:8px;margin:0 0 16px}
+.ctab{position:relative;display:inline-flex;align-items:center;height:34px;padding:0 18px;border-radius:9px;font-family:'Orbitron',monospace;font-size:0.7em;font-weight:700;letter-spacing:1.6px;text-transform:uppercase;color:var(--text-dim);background:var(--glass);border:1px solid var(--glass-border);cursor:pointer;transition:all 0.18s}
+.ctab:hover{color:var(--text);border-color:var(--glass-border-hi)}
+.ctab.active{color:var(--cyan);background:linear-gradient(135deg,rgba(34,211,238,0.14),rgba(124,58,237,0.06));border-color:var(--glass-border-hi);box-shadow:0 0 16px rgba(34,211,238,0.12)}
+.ctab.active::after{content:'';position:absolute;left:14px;right:14px;bottom:-1px;height:2px;background:linear-gradient(90deg,transparent,var(--cyan),transparent)}
+#tab-crm{display:none}
+#tab-crm.show{display:block}
+#tab-crm iframe{width:100%;height:calc(100vh - 150px);min-height:520px;border:1px solid var(--glass-border);border-radius:var(--radius);background:var(--bg);display:block}
+body.crm-open #tab-overview{display:none}
+@media(max-width:768px){.main{padding:12px}.hq-title h1{font-size:1.3em}#tab-crm iframe{height:calc(100vh - 130px)}}
 </style>
 <script src="/assets/panel-hero.js" defer></script>
 <script src="/assets/portal-auth-client.js"></script>
@@ -124,6 +134,12 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
 
   <div id="banner-slot"></div>
 
+  <div class="cust-tabs">
+    <button class="ctab active" data-tab="overview" onclick="showCustTab('overview')">OVERVIEW</button>
+    <button class="ctab" data-tab="crm" data-artifact-id="crm" onclick="showCustTab('crm')">CRM FOLLOW-UP</button>
+  </div>
+
+  <div id="tab-overview">
   <div class="layer-grid">
     <a class="layer-card" href="/customer-admin.html"><div class="layer-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 11-14 0 7 7 0 0114 0z"/></svg></div><div class="layer-name">Admin</div><div class="layer-desc">Review cadence, referral rate, GHL sync.</div></a>
     <a class="layer-card" href="/admin-agents.html?focus=customer"><div class="layer-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0116 0v2"/></svg></div><div class="layer-name">Agent</div><div class="layer-desc">Customer agent's latest scan & history.</div></a>
@@ -164,7 +180,35 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg) url('/assets/
     <span class="count-pill" id="tlCount">—</span>
   </div>
   <div class="timeline" id="timelineList"></div>
+  </div><!-- /#tab-overview -->
+
+  <div id="tab-crm"><iframe id="crm-frame" title="CRM follow-up" loading="lazy"></iframe></div>
 </main>
+
+<script>
+// Nested CRM Follow-up artifact merged into the Customer pillar (Option B). OVERVIEW
+// is the native customer panel; the CRM tab embeds the live follow-up board and
+// clears its unread "!" (which also drops the rolled-up marker on the Customer pillar).
+function showCustTab(tab) {
+  document.querySelectorAll('.ctab').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === tab); });
+  var crm = document.getElementById('tab-crm');
+  var frame = document.getElementById('crm-frame');
+  if (tab === 'crm') {
+    if (frame.dataset.loaded !== '1') { frame.src = '/crm.html?embed=1'; frame.dataset.loaded = '1'; }
+    document.body.classList.add('crm-open');
+    crm.classList.add('show');
+    try { if (window.RyujinUnread) window.RyujinUnread.markSeen('crm'); } catch (e) { /* badge optional */ }
+  } else {
+    document.body.classList.remove('crm-open');
+    crm.classList.remove('show');
+  }
+}
+(function () {
+  var h = (location.hash || '').replace('#', '');
+  var q = new URLSearchParams(location.search).get('tab');
+  if ((q || h) === 'crm') document.addEventListener('DOMContentLoaded', function () { showCustTab('crm'); });
+})();
+</script>
 
 <script>
 const TENANT = window.RYUJIN_TENANT_SLUG;

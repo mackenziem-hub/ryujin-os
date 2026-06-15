@@ -29,6 +29,16 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
 .tb-icon:hover{color:#a78bfa;border-color:rgba(124,58,237,0.5);background:rgba(124,58,237,0.08)}
 .tb-icon svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 #subhub-stage{position:absolute;inset:0;width:100%;height:100%}
+body.artifact-open #subhub-stage{display:none}
+/* Pillar tabs: SYSTEMS launcher + nested artifacts (Ad Activity, SEO) merged into the Marketing pillar */
+.pillar-tabs{position:fixed;top:70px;left:12px;right:12px;height:40px;display:flex;align-items:center;gap:8px;z-index:19}
+.ptab{position:relative;display:inline-flex;align-items:center;height:32px;padding:0 16px;border-radius:9px;font-family:'Orbitron',sans-serif;font-size:0.66em;font-weight:700;letter-spacing:1.6px;color:rgba(160,190,230,0.66);background:rgba(14,22,40,0.72);border:1px solid rgba(124,58,237,0.22);cursor:pointer;transition:all 0.18s;backdrop-filter:blur(14px)}
+.ptab:hover{color:#c9b8ff;border-color:rgba(124,58,237,0.45)}
+.ptab.active{color:#fff;background:linear-gradient(135deg,rgba(124,58,237,0.32),rgba(124,58,237,0.12));border-color:rgba(167,139,250,0.6);box-shadow:0 0 16px rgba(124,58,237,0.32)}
+.ptab.active::after{content:'';position:absolute;left:14px;right:14px;bottom:-1px;height:2px;background:linear-gradient(90deg,transparent,#a78bfa,transparent)}
+#artifact-stage{position:fixed;top:118px;left:12px;right:12px;bottom:12px;z-index:14;border:1px solid rgba(124,58,237,0.24);border-radius:14px;overflow:hidden;background:#030611;display:none}
+#artifact-stage.show{display:block}
+#artifact-stage iframe{width:100%;height:100%;border:0;display:block}
 </style>
 </head>
 <body>
@@ -44,7 +54,46 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
   <div style="font-family:'Share Tech Mono',monospace;font-size:0.7em;color:rgba(160,190,230,0.5);letter-spacing:1.5px">ADS · LEADS · CREATIVES</div>
 </div>
 
+<div class="pillar-tabs">
+  <button class="ptab active" data-tab="systems" onclick="showPillarTab('systems')">SYSTEMS</button>
+  <button class="ptab" data-tab="ad-activity" data-artifact-id="ad-activity" onclick="showPillarTab('ad-activity')">AD ACTIVITY</button>
+  <button class="ptab" data-tab="seo" data-artifact-id="seo-scoreboard" onclick="showPillarTab('seo')">SEO SCOREBOARD</button>
+</div>
+
 <div id="subhub-stage"></div>
+<div id="artifact-stage"><iframe id="artifact-frame" title="Marketing artifact" loading="lazy"></iframe></div>
+
+<script>
+// Nested-artifact tabs merged into the Marketing pillar (Option B). SYSTEMS is the
+// native sub-hub launcher; the other tabs embed a live artifact and clear its
+// unread "!" (which also drops the rolled-up marker on the Marketing pillar).
+const PILLAR_ARTIFACTS = {
+  'ad-activity': { url: 'ad-activity.html?embed=1', id: 'ad-activity' },
+  'seo':         { url: 'seo-scoreboard.html?embed=1', id: 'seo-scoreboard' }
+};
+function showPillarTab(tab) {
+  document.querySelectorAll('.ptab').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === tab); });
+  var stage = document.getElementById('artifact-stage');
+  var frame = document.getElementById('artifact-frame');
+  if (tab === 'systems' || !PILLAR_ARTIFACTS[tab]) {
+    document.body.classList.remove('artifact-open');
+    stage.classList.remove('show');
+    return;
+  }
+  var a = PILLAR_ARTIFACTS[tab];
+  if (frame.dataset.loaded !== a.url) { frame.src = a.url; frame.dataset.loaded = a.url; }
+  document.body.classList.add('artifact-open');
+  stage.classList.add('show');
+  try { if (window.RyujinUnread) window.RyujinUnread.markSeen(a.id); } catch (e) { /* badge optional */ }
+}
+// Deep-link support: marketing.html#ad-activity or ?tab=seo opens that tab.
+(function () {
+  var hash = (location.hash || '').replace('#', '');
+  var qtab = new URLSearchParams(location.search).get('tab');
+  var want = qtab || hash;
+  if (want && PILLAR_ARTIFACTS[want]) document.addEventListener('DOMContentLoaded', function () { showPillarTab(want); });
+})();
+</script>
 
 <script src="assets/ryujin-search.js"></script>
 <script src="assets/cockpit-launcher.js"></script>

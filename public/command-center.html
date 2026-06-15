@@ -498,6 +498,16 @@ body:active { cursor: grabbing; }
   overflow: hidden;
   pointer-events: auto !important;
 }
+/* The pillar clips its iframe corners (overflow:hidden), so the rolled-up unread
+   "!" badge must sit just inside the top-right rather than at the default -7px
+   negative inset where it would be cropped. Bigger hit-size on the pillar scale. */
+.holo-panel.preview > .rj-unread,
+.holo-panel.preview > .rj-unread-grp {
+  top: 12px;
+  right: 12px;
+  transform-origin: center;
+  scale: 1.5;
+}
 .holo-panel.preview:hover .panel-header {
   background: rgba(34,211,238,0.14);
   border-bottom-color: rgba(34,211,238,0.35);
@@ -2527,7 +2537,7 @@ if (RY_EMBEDDED) {
     </div>`;
   document.body.appendChild(guard);
 } else if (window.__RY_8BIT__) {
-  // 8-bit: hide WebGL/CSS3D layers, render a static 9-tile pillar grid.
+  // 8-bit: hide WebGL/CSS3D layers, render the static 8-pillar grid.
   const cssC = document.getElementById('css3d-container'); if (cssC) cssC.style.display = 'none';
   const bgC = document.getElementById('bg-canvas'); if (bgC) bgC.style.display = 'none';
   const orb = document.getElementById('sentinel-orb'); if (orb) orb.style.display = 'none';
@@ -2599,10 +2609,9 @@ const LOW_PERF = LITE_FORCED || (
 // ──────────────────────────────────────────
 // CONFIG
 // ──────────────────────────────────────────
-const PANEL_COUNT = 8;
-// ORBIT_RADIUS chosen so the chord between adjacent panels matches the
-// 6-panel layout's spacing (2·R·sin(π/N) ≈ 820). At N=8 with 360px panels
-// the chord is ~918, comfortable breathing room with no overlap.
+// PANEL_COUNT is derived from panels.length where the array is declared below
+// (drift-proof). At the canonical 8 pillars the chord between adjacent 720px
+// preview panels is ~918 on ORBIT_RADIUS 1200: comfortable, no overlap.
 const ORBIT_RADIUS = 1200;
 const ORBIT_Y_VARIANCE = 30;
 const CAMERA_START = { x: 0, y: 160, z: 950 };
@@ -2837,19 +2846,25 @@ bgScene.add(particles);
 // PANEL HTML CONTENT
 // ──────────────────────────────────────────
 
+// The clean 8 business-function pillars. The Jun-15 batch jammed three artifact
+// panels (ad-activity/seo/crm) into this ring and grew it to 11 without bumping
+// PANEL_COUNT, which collided pillars at shared angles (finance landed on top of
+// marketing). Per Mac's Option B call those artifacts now NEST inside their parent
+// pillar as tabs (ad-activity + seo under Marketing; crm under Customer); the
+// `children` ids drive the rolled-up unread "!" badge on the parent panel.
 const panels = [
   { id: 'dashboard',  title: 'HQ / DASHBOARD', url: 'dashboard-v2.html?embed=1',  badge: '<span class="panel-badge badge-live">LIVE</span>' },
-  { id: 'marketing',  title: 'MARKETING',      url: 'marketing.html?embed=1',     badge: '<span class="panel-badge badge-live">LIVE</span>' },
-  { id: 'ad-activity', aid: 'ad-activity', title: 'AD ACTIVITY',   url: 'ad-activity.html?embed=1',    badge: '<span class="panel-badge badge-live">NEW</span>' },
-  { id: 'seo',        aid: 'seo-scoreboard', title: 'SEO SCOREBOARD', url: 'seo-scoreboard.html',         badge: '<span class="panel-badge badge-live">NEW</span>' },
+  { id: 'marketing',  title: 'MARKETING',      url: 'marketing.html?embed=1',     badge: '<span class="panel-badge badge-live">LIVE</span>', children: ['ad-activity', 'seo-scoreboard'] },
   { id: 'sales',      title: 'SALES',          url: 'sales-cockpit.html?embed=1', badge: '<span class="panel-badge badge-live">LIVE</span>' },
   { id: 'production', title: 'PRODUCTION',     url: 'production.html?embed=1',    badge: '<span class="panel-badge badge-live">LIVE</span>' },
   { id: 'service',    title: 'SERVICE',        url: 'service.html?embed=1',       badge: '<span class="panel-badge badge-live">LIVE</span>' },
-  { id: 'customer',   title: 'CUSTOMER / CRM', url: 'customer.html?embed=1',      badge: '<span class="panel-badge badge-live">LIVE</span>' },
-  { id: 'crm',        aid: 'crm', title: 'CRM FOLLOW-UP',  url: 'crm.html',                   badge: '<span class="panel-badge badge-live">NEW</span>' },
+  { id: 'customer',   title: 'CUSTOMER / CRM', url: 'customer.html?embed=1',      badge: '<span class="panel-badge badge-live">LIVE</span>', children: ['crm'] },
   { id: 'finance',    title: 'FINANCE',        url: 'finance.html?embed=1',       badge: '<span class="panel-badge badge-live">LIVE</span>' },
   { id: 'admin',      title: 'ADMINISTRATION', url: 'administration.html?embed=1',badge: '<span class="panel-badge badge-online">v3.1</span>' },
 ];
+// Derived, never hard-coded, so adding or removing a pillar can never again drift
+// the orbit geometry or the keyboard/gamepad cycling out of sync with the array.
+const PANEL_COUNT = panels.length;
 
 function gauge(val, max, label) {
   const pct = val / max;
@@ -2902,6 +2917,20 @@ panels.forEach((p, i) => {
   el.dataset.panelIndex = String(i);
   // Wire the fleet-wide unread "!" badge to artifact panels (see assets/unread-badge.js).
   if (p.aid) el.dataset.artifactId = p.aid;
+  // Roll nested-artifact freshness up to the parent pillar: mark the panel as an
+  // artifact group and drop one hidden sensor per child id. unread-badge.js counts
+  // unseen sensors and paints a "!" count bubble on the pillar, so Marketing lights
+  // up when Ad Activity or SEO has new data and Customer/CRM lights up for new CRM
+  // items. Opening the nested tab clears its id, which drops the pillar count.
+  if (p.children && p.children.length) {
+    el.dataset.artifactGroup = p.id;
+    p.children.forEach(function (cid) {
+      var sensor = document.createElement('span');
+      sensor.dataset.artifactId = cid;
+      sensor.style.display = 'none';
+      el.appendChild(sensor);
+    });
+  }
 
   // Create CSS3D object
   const obj = new CSS3DObject(el);
