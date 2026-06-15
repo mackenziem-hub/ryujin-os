@@ -778,7 +778,10 @@ export default async function handler(req, res) {
             direction: m.direction,
             type: m.messageType || m.type,
             status: m.status,
-            dateAdded: m.dateAdded
+            dateAdded: m.dateAdded,
+            // TYPE_ACTIVITY_* entries ("Opportunity updated" etc.) are system events,
+            // NOT a real human touch. Flag them so context resolution can strip them.
+            isActivity: /^TYPE_ACTIVITY/i.test(m.messageType || m.type || '')
           }));
         } catch (msgErr) {
           messages = [{ error: 'Could not fetch messages', detail: msgErr.message }];
@@ -799,10 +802,30 @@ export default async function handler(req, res) {
       const detailContact = enrichContact(contactData, true);
       detailContact.notes = contactNotes;
 
+      // Honest context summary (the no-customer-without-context spine): strip the
+      // TYPE_ACTIVITY_* system events and report the last REAL human touch + what they
+      // last said, or flag plainly when there is no real conversation on file.
+      const chan = (t) => t ? String(t).replace(/^TYPE_/, '').replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) : 'message';
+      const ageOf = (iso) => { if (!iso) return null; const t = Date.parse(iso); return Number.isFinite(t) ? Math.floor((Date.now() - t) / 86400000) : null; };
+      const realMsgs = messages.filter(m => !m.isActivity && m.body && String(m.body).trim());
+      const byNewest = realMsgs.slice().sort((a, b) => String(b.dateAdded || '').localeCompare(String(a.dateAdded || '')));
+      const lastReal = byNewest[0] || null;
+      const lastInbound = byNewest.find(m => m.direction === 'inbound') || null;
+      const lastOutbound = byNewest.find(m => m.direction === 'outbound') || null;
+      const context = {
+        realMessageCount: realMsgs.length,
+        activityCount: messages.length - realMsgs.length,
+        noRealConversation: realMsgs.length === 0,
+        lastTouch: lastReal ? { who: lastReal.direction === 'inbound' ? 'them' : 'us', direction: lastReal.direction, channel: chan(lastReal.type), dateAdded: lastReal.dateAdded, ageDays: ageOf(lastReal.dateAdded), preview: String(lastReal.body || '').slice(0, 160) } : null,
+        lastAsk: lastInbound ? { body: String(lastInbound.body || '').slice(0, 240), channel: chan(lastInbound.type), dateAdded: lastInbound.dateAdded, ageDays: ageOf(lastInbound.dateAdded) } : null,
+        lastOutreach: lastOutbound ? { channel: chan(lastOutbound.type), preview: String(lastOutbound.body || '').slice(0, 160), dateAdded: lastOutbound.dateAdded, ageDays: ageOf(lastOutbound.dateAdded) } : null
+      };
+
       return res.json({
         mode: 'contact-detail',
         contact: detailContact,
         opportunities,
+        context,
         conversation: {
           total: messages.length,
           messages

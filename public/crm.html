@@ -133,6 +133,11 @@ html.rj-embed body{min-height:auto}
 .deep{font-size:0.82em;color:var(--rj-ink-mid)}
 .msg{font-size:0.82em;padding:9px 11px;border:1px solid var(--rj-line);border-radius:9px;background:var(--rj-surface-2);color:var(--rj-ink-mid)}
 .msg.in{border-left:0;background:rgba(74,158,255,0.06)}
+.ctx{border:1px solid var(--rj-line);border-left:3px solid var(--rj-accent);border-radius:9px;background:var(--rj-surface-2);padding:9px 11px;margin-bottom:7px;font-size:0.82em;color:var(--rj-ink-mid);line-height:1.42}
+.ctx b{color:var(--rj-ink)}
+.ctx.warn{border-left-color:var(--rj-warn,#f5b13a);background:rgba(245,177,58,0.06)}
+.ctx.ask{border-left-color:var(--rj-ok,#46d68a)}
+.ctx-prev{margin-top:4px;color:var(--rj-ink-dim);font-style:italic;overflow-wrap:anywhere}
 
 /* toast */
 .toast{position:fixed;top:18px;right:18px;z-index:var(--rj-z-toast,2000);display:flex;align-items:center;gap:10px;background:var(--rj-surface-2);border:1px solid var(--rj-line-strong);border-radius:10px;padding:11px 15px;box-shadow:var(--rj-shadow-md);font-size:0.82em;color:var(--rj-ink);opacity:0;transform:translateY(-8px);transition:opacity var(--rj-dur),transform var(--rj-dur)}
@@ -299,7 +304,7 @@ html.rj-embed body{min-height:auto}
         +(portalsHtml?'<div class="field"><span class="lbl">Reach + drill down</span><div class="portals">'+portalsHtml+'</div></div>':'')
         +'<div class="field"><span class="lbl">Proposals · '+money(c.totalProposalValue)+' total</span>'+propsHtml+'</div>'
         +draftHtml
-        +'<div class="field"><span class="lbl">Conversation + notes</span><div id="deepWrap"><button class="btn" id="loadDeep" type="button">Load conversation + notes</button></div></div>'
+        +'<div class="field"><span class="lbl">Context &middot; last touch + what they asked</span><div id="deepWrap"><div class="msg">Loading context from GHL...</div></div></div>'
       +'</div>';
     scrim.classList.add('open');
     $('#closeSnap').addEventListener('click',closeSnapshot);
@@ -308,24 +313,43 @@ html.rj-embed body{min-height:auto}
       if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(v).then(function(){toast('Draft copied. Send it yourself.');},function(){toast('Copy failed, select + copy manually.');});
       else toast('Select the text to copy.');
     });
-    $('#loadDeep').addEventListener('click',function(){ loadDeep(c); });
+    loadDeep(c); // auto-load context on open: never surface a customer without it
   }
   function closeSnapshot(){scrim.classList.remove('open');}
 
-  // lazy-load the deep contact detail (notes + conversation) on demand
+  // Auto-load the deep contact detail on snapshot open and lead with the honest context
+  // summary (last REAL human touch + what they last asked), then notes + real messages.
+  // System TYPE_ACTIVITY_* events are stripped server-side; if there is no real
+  // conversation we say so plainly rather than implying contact happened.
   function loadDeep(c){
-    var wrap=$('#deepWrap'); wrap.innerHTML='<div class="msg">Loading from GHL...</div>';
+    var wrap=$('#deepWrap'); if(!wrap) return;
+    wrap.innerHTML='<div class="msg">Loading context from GHL...</div>';
     var id=c.id && String(c.id).length>6 ? c.id : null;
     var url='/api/ghl?mode=contact-detail&'+(id?('id='+encodeURIComponent(id)):('q='+encodeURIComponent(c.name)));
     fetch(url,{headers:tHeaders()}).then(function(r){return r.ok?r.json():null;}).then(function(d){
-      if(!d){wrap.innerHTML='<div class="msg err">Could not load detail.</div>';return;}
+      if(!d){wrap.innerHTML='<div class="msg err">Could not load context.</div>';return;}
+      var ctx=d.context||{};
       var notes=(d.contact&&d.contact.notes)||[];
       var msgs=(d.conversation&&d.conversation.messages)||[];
       var html='';
-      if(notes.length){html+='<div class="lbl" style="margin-bottom:6px">Notes</div>'+notes.slice(0,5).map(function(n){return '<div class="msg">'+esc((n.body||'').slice(0,400))+'</div>';}).join('');}
-      if(msgs.length){html+='<div class="lbl" style="margin:10px 0 6px">Last messages</div>'+msgs.slice(-6).map(function(m){return '<div class="msg '+(m.direction==='inbound'?'in':'')+'">'+esc((m.body||'').slice(0,300))+'</div>';}).join('');}
+      if(ctx.noRealConversation){
+        html+='<div class="ctx warn"><b>No real conversation on file.</b> '+(ctx.activityCount||0)+' system activity events only (opp updates), no SMS / email / call logged here. Treat the stage as pipeline-only until you confirm contact.</div>';
+      }else{
+        if(ctx.lastTouch){
+          var lt=ctx.lastTouch;
+          html+='<div class="ctx"><b>Last touch:</b> '+(lt.who==='them'?'they reached out':'we reached out')+' &middot; '+esc(lt.channel||'message')+' &middot; '+ageLabel(lt.ageDays)+(lt.preview?'<div class="ctx-prev">'+esc(lt.preview)+'</div>':'')+'</div>';
+        }
+        if(ctx.lastAsk){
+          html+='<div class="ctx ask"><b>They last asked / said</b> ('+ageLabel(ctx.lastAsk.ageDays)+'):<div class="ctx-prev">'+esc(ctx.lastAsk.body)+'</div></div>';
+        }else{
+          html+='<div class="ctx"><b>They last asked / said:</b> nothing inbound on file. Every logged touch was outbound from us.</div>';
+        }
+      }
+      if(notes.length){html+='<div class="lbl" style="margin:10px 0 6px">Notes</div>'+notes.slice(0,5).map(function(n){return '<div class="msg">'+esc((n.body||'').slice(0,400))+'</div>';}).join('');}
+      var realMsgs=msgs.filter(function(m){return !m.isActivity && m.body && String(m.body).trim();});
+      if(realMsgs.length){html+='<div class="lbl" style="margin:10px 0 6px">Recent messages</div>'+realMsgs.slice(0,6).map(function(m){return '<div class="msg '+(m.direction==='inbound'?'in':'')+'">'+esc((m.body||'').slice(0,300))+'</div>';}).join('');}
       wrap.innerHTML=html||'<div class="msg">No notes or conversation on file.</div>';
-    }).catch(function(){wrap.innerHTML='<div class="msg err">Detail fetch failed.</div>';});
+    }).catch(function(){wrap.innerHTML='<div class="msg err">Context fetch failed.</div>';});
   }
 
   // ── events ──
