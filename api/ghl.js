@@ -6,17 +6,25 @@ const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim(
 const LOCATION_ID = 'aHotOUdq9D8m3JPrRz9n';
 const GHL_VERSION = '2021-07-28';
 
-// PIPELINE_NAMES + PIPELINE_STAGES last verified against live GHL on 2026-05-09.
-// Source: GET /opportunities/pipelines?locationId=aHotOUdq9D8m3JPrRz9n
-// When chat brain hallucinates a pipeline name, re-pull and replace these maps.
+// PIPELINE_NAMES + PIPELINE_STAGES re-verified against live GHL on 2026-06-15.
+// Source: GET /opportunities/pipelines?locationId=aHotOUdq9D8m3JPrRz9n (mode=stages).
+// Live API is the source of truth; the prior 2026-05-09 map was missing 4 whole
+// pipelines (Hiring, Recruiting, Operations was present, Revive Rejuvenation) and
+// had a hand-stubbed Internal Pipeline whose stage IDs resolved to wrong names
+// (d2c91d4c was labelled 'Proposal Sent' but is really 'Follow Up Text Sent';
+// e7ea3e84 was 'Closed' but is 'Client Responded'). When the chat brain
+// hallucinates a pipeline/stage name, re-pull and replace these maps.
 
 const PIPELINE_NAMES = {
   'OF6SJPdnmQS7KcgRffrb': '10 CM Pipeline',
   'jTAc7D9RMHBb3Gzb5bQz': "Darcy's Pipeline",
+  'Kn9x4OuSdLZRdEPDhcf5': 'Hiring Pipeline',
   'eJm8vgBePJStA1QdZqmA': 'Instant Estimator',
   's78IPqC050pvYTGUDvFe': 'Internal Pipeline',
   'zpBXZwtiHHNQQKJoEIIU': 'Operations Pipeline',
+  '1xCcKvSynQ1vb1FCKH13': 'Recruiting Pipeline',
   'MLroVluZOjTsbvs1rrkC': 'Repair Pipeline',
+  'PwZ2WtgZZuuQ2UWKaMtP': 'Revive Rejuvenation Pipeline',
   'nJqJ681y17CWjkCRzVhH': 'Voice AI'
 };
 
@@ -50,21 +58,43 @@ const PIPELINE_STAGES = {
   'aabfe851-86ff-461d-88d3-b6cbad34de56': 'Contract Signed',
   'ee8bf132-4d11-4943-bb67-1b979fe7f64d': 'DND/ Out of Town',
   '4ff006c7-5eda-40b9-b0ee-239134487b80': 'Lost',
+  // Hiring Pipeline
+  '5590eea2-2ff1-4499-9ffb-c4cb3025f55e': 'New Applicant',
+  'f8cf264c-b96d-4e1e-b5d3-cb0b7825378a': 'Phone Screen Booked',
+  '31c4418e-fa8a-4001-a8db-11c43491340f': 'Interview',
+  '00013df2-6f39-42fc-be32-9faef673759c': 'Trial Day',
+  '9c9d73db-7d2a-425b-a7b5-aa0789aeda69': 'Offer',
+  '735d0668-8eab-47aa-89fb-9792a287049a': 'Hired',
+  'ea93a201-aba1-4c40-9a1e-ea471f5b63e1': 'Not a Fit',
   // Instant Estimator
   '1e82765c-2ef2-4810-bcbf-9d6a926dba7b': 'New IE Submission',
   '201128e6-98a0-4aef-8c81-e8226ca11135': 'Personal Video Sent',
-  '1a33335e-ae57-4c4e-984b-ccd0678ff14a': 'Day 1 Bump',
-  '2abe3fa1-7fa2-4732-9204-04b219a03ec1': 'Day 3 Bump',
+  '3f86ad5a-6515-42c1-9dd2-ab47db8619da': 'Follow Up 1',
+  'c57ed297-da41-44ea-aac8-731aeff46416': 'Follow Up 2',
+  '1c749b02-2bbb-40e3-837e-92e74989aa40': 'Follow Up 3',
+  'e56cc6af-b1d3-42a5-b1a5-e39cc47f14fe': 'Follow Up 4',
+  '867ff167-6f39-4a97-a5cf-dde0b4d7e3b0': 'Follow Up 5',
+  '6ab8cc69-dddd-4432-b9d9-6bb7df4ee9f6': 'Client Responded',
   'e0248e36-84b9-44f9-af57-9fff54039915': 'Inspection Booked',
+  '4f4dc4bf-c2b0-48e9-a921-0c40436c2df1': 'Inspection Completed',
   '5cef659b-c45c-410b-ac9e-2defda447b64': 'Quote Ready',
   'eeb9dd8d-7127-416c-aa11-a2d5a7d2e2d1': 'Day 14 Check-in',
   '496b9e21-3d00-48d1-8fbf-9e83123af3ee': 'Day 21 Lost',
   'bd7eff09-04c5-41eb-9fb2-edf0c2374780': 'DND',
+  '2a5b6252-0551-4433-a9fe-ee94358d2f47': 'Nurture Started',
+  '70b551ea-0578-405a-b82c-8c5b0e912c37': 'Qualified',
+  '32c45d0b-33fe-43b6-be74-a0988a803778': 'Nurture Stalled',
   // Internal Pipeline
   'f0823692-8a3a-4512-a780-ad7739edd7cc': 'New Lead',
-  '13584262-7832-4c17-b17c-26df8d7659f0': 'Contacted',
-  'd2c91d4c-3fb6-46be-98cd-1465e5f75213': 'Proposal Sent',
-  'e7ea3e84-8e88-4451-be28-ed0291a23bdf': 'Closed',
+  'a645cca6-b900-486e-b2b3-3d11d28828f6': 'Text Sent- Awaiting Response',
+  'd2c91d4c-3fb6-46be-98cd-1465e5f75213': 'Follow Up Text Sent',
+  'e7ea3e84-8e88-4451-be28-ed0291a23bdf': 'Client Responded',
+  '14ddb9bf-13fb-47db-af8e-2642f5bd2fa0': 'Unresponsive',
+  'dc61e703-0c7f-4e38-bcc3-f7e1658637f9': 'Inspection Scheduled',
+  'e59f1ae5-0f59-4e91-ab25-c0696b407b49': 'Quote Sent',
+  'd9c77919-a7b2-468a-bc97-b0a5f94e5c6c': 'Contract Signed',
+  '61e5b1ce-f277-4052-be52-37a7414933b0': 'DND/ Out of Town',
+  'bc4147ca-10f8-42d3-9e99-cc3ab449484d': 'Lost',
   // Operations Pipeline
   'b8be34e8-5d97-4718-9708-44641de04b94': 'Contract Signed',
   '4f0a5be4-5b79-47c2-a24f-cd283f289c17': 'Deposit Invoice Sent',
@@ -78,6 +108,16 @@ const PIPELINE_STAGES = {
   '0077a593-2548-42d9-ac66-7f46f795bc79': 'Representative Check In',
   'be8b806a-d850-494a-a90b-14656b198bf7': 'Invoice Ready',
   '2c956db9-4f30-4b09-abd6-7a98cb030eb6': 'Paid In Full',
+  // Recruiting Pipeline
+  '576457f2-95ce-426c-8858-ffe7f7862528': 'New Applicant',
+  '9a61211f-6ffe-4a5e-a388-263923754c34': 'Qualified to Call',
+  'a58fa27c-7e44-424c-949e-097ed8bf246a': 'Contacted',
+  '1fcb864f-445e-4895-b340-5d37530812fc': 'Interview Requested',
+  '866ba359-3092-481d-a529-9c8f2fe0b139': 'Interview Scheduled',
+  'ea5dcc55-2ab6-4d73-8b88-eac8fbcd7bfd': 'Trial / Working Interview',
+  '71aa6485-fc19-44bb-875f-46daf0d87bbe': 'Offer Made',
+  '3be6c4be-97ff-423c-bb7f-588f7222e8c3': 'Hired',
+  '83c36163-552d-4c27-a408-5c1e587d517e': 'Not a Fit',
   // Repair Pipeline
   '1f6a7d30-a537-4bac-9725-aceedaae5c2a': 'Repair Requested',
   '3e4e1a9b-8b74-4b97-801a-1547f3c5a0d9': 'Repair Confirmed',
@@ -85,10 +125,27 @@ const PIPELINE_STAGES = {
   '4f2ad3be-d3ac-4394-ad19-e210e9a7c2a7': 'Repair Complete',
   'e68789b9-cfcb-4019-8863-7fc71520cf97': 'Invoice Sent',
   '2cd5c35f-64a3-4d26-aa1a-4609f691e795': 'Invoice Paid',
+  // Revive Rejuvenation Pipeline
+  'b7754ce6-ef21-4b20-a837-43765fef315c': 'PDF Downloaded',
+  '9179e827-cfd4-454e-a435-ba792d396a1a': 'Follow Up 1',
+  '4e93b3dc-e05e-41fa-8f4a-bd48e1f59a11': 'Follow Up 2',
+  '53452242-4bda-4ab1-b51e-6c25db92d9ae': 'Follow Up 3',
+  '9e32b0de-506a-4846-aef8-b9d63710118f': 'Follow Up 4',
+  '080e6efe-7585-4daf-92d4-01841c3b4462': 'Follow Up 5',
+  '8310770d-31dc-4247-bd05-31afcafc6bd3': 'Spray Feasibility Booked',
+  '3a7aeb5c-a962-4cb5-9a36-85df7c46ebba': 'Client Responded',
+  'fccc2db8-ca51-488b-999a-88b00e657f97': 'May Not Qualify',
+  'b72f0e06-1995-43d5-bb7e-a310ce3ec4cf': 'DND Stopped',
+  'a0ea877b-f22f-4e87-947b-4feb906facca': 'Lost - Reactivation Eligible',
   // Voice AI
   'a94b67a4-174d-4004-b122-8d2ae646fa41': 'Customer Called',
   '25022415-6343-49b2-bae3-6140711bd8f3': 'Telemarketers',
-  'f17181c8-ef31-4c35-8ee4-efac41161b75': 'Quote Requested'
+  'f17181c8-ef31-4c35-8ee4-efac41161b75': 'Quote Requested',
+  // Legacy stage IDs (renamed/removed in GHL but may still be referenced by old
+  // opportunities; kept so they resolve to a name instead of a raw UUID)
+  '1a33335e-ae57-4c4e-984b-ccd0678ff14a': 'Day 1 Bump',
+  '2abe3fa1-7fa2-4732-9204-04b219a03ec1': 'Day 3 Bump',
+  '13584262-7832-4c17-b17c-26df8d7659f0': 'Contacted'
 };
 
 async function ghlFetch(path, params = {}, options = {}) {
