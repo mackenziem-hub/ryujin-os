@@ -1,0 +1,3664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#060a14">
+<title>Ryujin OS — Command Center</title>
+<script>
+// Boot-time UI mode detector. Runs before any other script so the Three.js
+// module + perf-lite CSS can branch on these flags from line 1 of paint.
+(function(){
+  try {
+    var m = localStorage.getItem('ry_ui_mode');
+    if (m === '8bit') {
+      window.location.replace('/game.html');
+      return;
+    } else if (m === 'agent') {
+      document.documentElement.classList.add('mode-agent');
+      window.__RY_AGENT__ = true;
+    }
+  } catch(e){}
+})();
+</script>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700&family=Share+Tech+Mono&display=optional" rel="stylesheet">
+<link rel="stylesheet" href="/assets/ryujin-perf.css">
+<script src="/assets/ryujin-perf.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background:
+    radial-gradient(ellipse 120% 85% at 50% -15%, rgba(74,158,255,0.07), transparent 60%),
+    radial-gradient(ellipse 110% 90% at 82% 115%, rgba(124,58,237,0.08), transparent 55%),
+    radial-gradient(ellipse at center, #061222 0%, #030814 55%, #010307 100%);
+  color: #d0daf0;
+  font-family: 'Inter', system-ui, sans-serif;
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+  cursor: grab;
+}
+body:active { cursor: grabbing; }
+
+/* Opening cutscene flash — white/cyan pulse on entry. Composited layer
+   (transform/opacity only) so it doesn't fight WebGL init for the main thread. */
+#entry-flash {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(220,240,255,0.85) 0%, rgba(74,158,255,0.45) 35%, rgba(3,6,17,0) 75%);
+  opacity: 0;
+  will-change: transform, opacity;
+  transform: translateZ(0);
+  contain: strict;
+}
+#entry-flash.fire { animation: entryFlash 2.4s cubic-bezier(.2,.7,.3,1) forwards; }
+@keyframes entryFlash {
+  0%   { opacity: 0; transform: translateZ(0) scale(0.3); }
+  12%  { opacity: 1; transform: translateZ(0) scale(1.05); }
+  35%  { opacity: 0.7; transform: translateZ(0) scale(1.2); }
+  70%  { opacity: 0.15; transform: translateZ(0) scale(1.35); }
+  100% { opacity: 0; transform: translateZ(0) scale(1.4); }
+}
+
+/* Opening command-center wordmark — appears, holds, fades.
+   Using transform:scale(X) instead of letter-spacing for the expand-in
+   effect — letter-spacing animates layout (reflow every frame), scale
+   animates on the compositor (no main-thread cost). Removes the jank. */
+#entry-mark {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 401;
+  pointer-events: none;
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 900;
+  font-size: clamp(1.1em, 3vw, 1.8em);
+  letter-spacing: 10px;
+  color: #4a9eff;
+  text-shadow: 0 0 30px rgba(74,158,255,0.8), 0 0 60px rgba(74,158,255,0.4);
+  opacity: 0;
+  text-align: center;
+  white-space: nowrap;
+  will-change: transform, opacity;
+}
+#entry-mark.fire { animation: entryMark 2.8s cubic-bezier(.2,.7,.3,1) forwards; }
+#entry-mark .sub {
+  display: block;
+  font-size: 0.55em;
+  letter-spacing: 6px;
+  color: rgba(200,220,255,0.6);
+  margin-top: 8px;
+  font-weight: 600;
+}
+@keyframes entryMark {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(1.5); }
+  25%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  75%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.15); }
+}
+
+/* WebGL background canvas (deep-space starfield) */
+#bg-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  background: transparent;
+  pointer-events: none;
+}
+
+/* CSS3D container */
+#css3d-container {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+}
+
+/* Holographic pillar-name labels: screen-space, projected above each panel
+   every frame so they stay a constant, legible size from any zoom distance.
+   pointer-events:none so they never intercept a panel click. */
+#pillar-labels {
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  overflow: hidden;
+}
+.pillar-label {
+  position: absolute;
+  top: 0; left: 0;
+  font-family: 'Orbitron', 'Share Tech Mono', monospace;
+  font-size: 0.72em;
+  font-weight: 800;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #dff7ff;
+  padding: 5px 14px;
+  background: linear-gradient(180deg, rgba(8,20,38,0.82), rgba(6,14,28,0.6));
+  border: 1px solid rgba(74,158,255,0.42);
+  border-radius: 8px;
+  text-shadow: 0 0 10px rgba(74,158,255,0.7);
+  box-shadow: 0 0 18px rgba(74,158,255,0.22), inset 0 0 12px rgba(74,158,255,0.06);
+  backdrop-filter: blur(4px);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  will-change: transform, opacity;
+}
+/* Stem connecting the floating label down to its panel */
+.pillar-label::after {
+  content: '';
+  position: absolute;
+  left: 50%; bottom: -11px;
+  width: 1px; height: 11px;
+  transform: translateX(-50%);
+  background: linear-gradient(180deg, rgba(74,158,255,0.7), transparent);
+}
+
+/* HUD overlay — must be above CSS3D layer (z-index 1) */
+.hud {
+  position: fixed;
+  z-index: 200;
+  pointer-events: none;
+}
+.hud-top {
+  top: 0; left: 0; right: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 24px 32px;
+}
+.hud-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.hud-logo-mark {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: radial-gradient(circle at 35% 30%, rgba(74,158,255,0.4) 0%, rgba(6,10,20,0.9) 70%);
+  border: 1px solid rgba(74,158,255,0.3);
+  box-shadow: 0 0 20px rgba(74,158,255,0.3), 0 0 40px rgba(74,158,255,0.1);
+}
+.hud-title {
+  font-family: 'Orbitron', monospace;
+  font-size: 0.85em;
+  font-weight: 700;
+  letter-spacing: 3px;
+  background: linear-gradient(135deg, #e0e6f0 30%, #4a9eff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.hud-subtitle {
+  font-size: 0.75em;
+  color: rgba(160,190,230,0.7);
+  letter-spacing: 2px;
+  margin-top: 2px;
+}
+.hud-status {
+  text-align: right;
+}
+.hud-time {
+  font-family: 'Orbitron', monospace;
+  font-size: 0.75em;
+  color: #4a9eff;
+  letter-spacing: 2px;
+  text-shadow: 0 0 20px rgba(74,158,255,0.4);
+}
+.hud-date {
+  font-size: 0.75em;
+  color: rgba(160,190,230,0.7);
+  margin-top: 2px;
+}
+
+.hud-bottom {
+  bottom: 0; left: 0; right: 0;
+  display: flex;
+  justify-content: center;
+  padding: 24px 32px;
+}
+.hud-nav {
+  display: flex;
+  gap: 4px;
+  pointer-events: auto;
+  background: rgba(6,10,20,0.8);
+  border: 1px solid rgba(74,158,255,0.12);
+  border-radius: 16px;
+  padding: 6px 8px;
+  backdrop-filter: blur(12px);
+}
+.hud-nav-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 18px;
+  border: none;
+  background: none;
+  color: rgba(160,190,230,0.7);
+  cursor: pointer;
+  border-radius: 12px;
+  transition: all 0.3s;
+  font-family: 'Inter', sans-serif;
+}
+.hud-nav-btn:hover {
+  background: rgba(74,158,255,0.06);
+  color: #d0daf0;
+}
+.hud-nav-btn.active {
+  background: rgba(74,158,255,0.1);
+  color: #4a9eff;
+}
+.hud-nav-btn svg {
+  width: 20px;
+  height: 20px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.hud-nav-btn span {
+  font-size: 0.75em;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+
+/* Back button (shown when zoomed in) */
+.back-btn {
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 300;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 28px;
+  background: rgba(6,10,20,0.9);
+  border: 1px solid rgba(74,158,255,0.3);
+  border-radius: 12px;
+  color: #4a9eff;
+  font-family: 'Orbitron', monospace;
+  font-size: 0.75em;
+  font-weight: 600;
+  letter-spacing: 2px;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 0 30px rgba(74,158,255,0.15);
+  transition: all 0.3s;
+}
+.back-btn:hover {
+  border-color: rgba(74,158,255,0.5);
+  box-shadow: 0 0 40px rgba(74,158,255,0.25);
+}
+.back-btn svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Skin label */
+.skin-label {
+  position: fixed;
+  bottom: 80px;
+  right: 32px;
+  z-index: 300;
+  font-family: 'Orbitron', monospace;
+  font-size: 0.75em;
+  letter-spacing: 3px;
+  color: rgba(74,158,255,0.2);
+  text-transform: uppercase;
+}
+
+/* Gamepad HUD */
+.gamepad-indicator {
+  position: fixed;
+  bottom: 80px;
+  left: 32px;
+  z-index: 300;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: rgba(6,10,20,0.8);
+  border: 1px solid rgba(74,222,128,0.2);
+  border-radius: 10px;
+  backdrop-filter: blur(8px);
+}
+.gamepad-indicator.connected {
+  display: flex;
+}
+.gamepad-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 8px rgba(74,222,128,0.6);
+  animation: gpPulse 2s infinite;
+}
+@keyframes gpPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.gamepad-text {
+  font-family: 'Orbitron', monospace;
+  font-size: 0.75em;
+  letter-spacing: 2px;
+  color: rgba(74,222,128,0.7);
+  text-transform: uppercase;
+}
+
+/* Panel selection highlight (gamepad) */
+.holo-panel.gp-selected {
+  border-color: rgba(74,158,255,0.6) !important;
+  box-shadow: 0 0 50px rgba(74,158,255,0.25), 0 0 100px rgba(74,158,255,0.08), inset 0 0 30px rgba(74,158,255,0.05) !important;
+}
+.holo-panel.gp-selected::before {
+  opacity: 1 !important;
+  height: 3px !important;
+  filter: drop-shadow(0 0 6px rgba(74,158,255,0.8));
+}
+
+/* Gamepad button hints */
+.gp-hints {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 300;
+  display: none;
+  gap: 16px;
+  align-items: center;
+  padding: 8px 16px;
+  background: rgba(6,10,20,0.8);
+  border: 1px solid rgba(74,158,255,0.1);
+  border-radius: 10px;
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+.gp-hints.show { display: flex; }
+.gp-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75em;
+  color: rgba(160,190,230,0.7);
+}
+.gp-btn-icon {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Orbitron', monospace;
+  font-size: 0.75em;
+  font-weight: 800;
+}
+.gp-btn-a {
+  background: rgba(74,222,128,0.15);
+  color: #4ade80;
+  border: 1px solid rgba(74,222,128,0.3);
+}
+.gp-btn-b {
+  background: rgba(248,113,113,0.15);
+  color: #f87171;
+  border: 1px solid rgba(248,113,113,0.3);
+}
+.gp-btn-lb, .gp-btn-rb {
+  border-radius: 6px;
+  width: auto;
+  padding: 2px 8px;
+  background: rgba(74,158,255,0.1);
+  color: #4a9eff;
+  border: 1px solid rgba(74,158,255,0.2);
+  font-family: 'Orbitron', monospace;
+  font-size: 0.75em;
+  font-weight: 600;
+}
+.gp-btn-stick {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  background: rgba(160,190,230,0.08);
+  border: 1px solid rgba(160,190,230,0.2);
+  display: flex; align-items: center; justify-content: center;
+}
+.gp-btn-stick svg {
+  width: 14px; height: 14px;
+  stroke: rgba(160,190,230,0.7);
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+/* Panel styles (applied to CSS3D elements) */
+.holo-panel {
+  width: 360px;
+  padding: 24px;
+  background: rgba(8,16,32,0.88);
+  border: 1px solid rgba(74,158,255,0.22);
+  border-radius: 16px;
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: border-color 0.3s, box-shadow 0.3s, transform 0.3s;
+  font-family: 'Inter', system-ui, sans-serif;
+  color: #d0daf0;
+  user-select: none;
+}
+.holo-panel:hover {
+  border-color: rgba(74,158,255,0.75);
+  box-shadow: 0 0 50px rgba(74,158,255,0.35), 0 0 110px rgba(74,158,255,0.15), inset 0 0 40px rgba(74,158,255,0.05);
+  transform: scale(1.02);
+}
+.holo-panel:hover::before {
+  opacity: 1 !important;
+  box-shadow: 0 0 18px #4a9eff;
+}
+/* Top glow line */
+.holo-panel::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent 5%, #4a9eff 30%, #7c3aed 70%, transparent 95%);
+  opacity: 0.7;
+  border-radius: 16px 16px 0 0;
+}
+/* Bottom corner bracket */
+.holo-panel::after {
+  content: '';
+  position: absolute;
+  bottom: -1px; right: -1px;
+  width: 24px; height: 24px;
+  border-bottom: 2px solid rgba(74,158,255,0.3);
+  border-right: 2px solid rgba(74,158,255,0.3);
+  border-radius: 0 0 16px 0;
+}
+
+/* Tall panel variant */
+.holo-panel.tall {
+  height: 320px;
+}
+.holo-panel.wide {
+  width: 440px;
+}
+
+/* Preview panel variant (iframe inside) */
+.holo-panel.preview {
+  width: 720px;
+  height: 460px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  pointer-events: auto !important;
+}
+/* The pillar clips its iframe corners (overflow:hidden), so the rolled-up unread
+   "!" badge must sit just inside the top-right rather than at the default -7px
+   negative inset where it would be cropped. Bigger hit-size on the pillar scale. */
+.holo-panel.preview > .rj-unread,
+.holo-panel.preview > .rj-unread-grp {
+  top: 12px;
+  right: 12px;
+  transform-origin: center;
+  scale: 1.5;
+}
+.holo-panel.preview:hover .panel-header {
+  background: rgba(74,158,255,0.14);
+  border-bottom-color: rgba(74,158,255,0.35);
+}
+.holo-panel.preview:hover .panel-title { color: #4a9eff; }
+.holo-panel.preview:hover .panel-click-shield::before {
+  content: 'CLICK TO ENTER';
+  position: absolute;
+  bottom: 18px; left: 0; right: 0;
+  text-align: center;
+  font-family: 'Orbitron', monospace;
+  font-size: 1em; font-weight: 800;
+  color: #4a9eff;
+  letter-spacing: 4px;
+  text-shadow: 0 0 22px rgba(74,158,255,0.9), 0 0 44px rgba(74,158,255,0.5);
+  padding: 10px 20px;
+  pointer-events: none;
+}
+.holo-panel.preview.focused {
+  border-color: rgba(74,158,255,0.9);
+  box-shadow: 0 0 80px rgba(74,158,255,0.5), 0 0 160px rgba(74,158,255,0.25);
+}
+.holo-panel.preview.focused .panel-click-shield::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 2px solid rgba(74,158,255,0.4);
+  border-radius: 14px;
+  box-shadow: inset 0 0 30px rgba(74,158,255,0.1);
+  animation: focusedPulse 1.8s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes focusedPulse {
+  0%, 100% { border-color: rgba(74,158,255,0.4); }
+  50% { border-color: rgba(74,158,255,0.85); }
+}
+.holo-panel.preview .panel-header {
+  padding: 10px 14px;
+  margin: 0;
+  border-bottom: 1px solid rgba(74,158,255,0.1);
+  background: rgba(6,10,20,0.85);
+  z-index: 3;
+  position: relative;
+  flex-shrink: 0;
+}
+.panel-preview {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  background: #030611;
+}
+.panel-frame {
+  position: absolute;
+  top: 0; left: 0;
+  width: 1440px;
+  height: 870px;
+  border: 0;
+  transform: scale(0.5);
+  transform-origin: 0 0;
+  pointer-events: none;
+  image-rendering: high-quality;
+}
+/* Pre-hydration placeholder: shown until the panel's iframe gets a real src.
+   Native loading=lazy can't defer iframes inside a CSS3D transform container,
+   so panels boot cold and hydrate when the camera actually looks at them. */
+.panel-standby {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.75em;
+  letter-spacing: 2.5px;
+  color: rgba(74,158,255,0.4);
+  background: radial-gradient(ellipse at center, rgba(74,158,255,0.06), transparent 70%);
+  z-index: 2;
+  pointer-events: none;
+}
+/* Click shield so pointer events always hit the panel, never the iframe */
+.panel-click-shield {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  cursor: pointer;
+  background: transparent;
+  pointer-events: auto;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(74,158,255,0.08);
+}
+.panel-title {
+  font-family: 'Orbitron', monospace;
+  font-size: 0.75em;
+  font-weight: 600;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: rgba(160,190,230,0.6);
+}
+.panel-badge {
+  font-family: 'Orbitron', monospace;
+  font-size: 0.75em;
+  padding: 3px 10px;
+  border-radius: 6px;
+  letter-spacing: 1px;
+  font-weight: 600;
+}
+.badge-live {
+  background: rgba(74,158,255,0.1);
+  color: #4a9eff;
+  border: 1px solid rgba(74,158,255,0.2);
+}
+.badge-online {
+  background: rgba(74,222,128,0.1);
+  color: #4ade80;
+  border: 1px solid rgba(74,222,128,0.2);
+}
+.badge-alert {
+  background: rgba(248,113,113,0.1);
+  color: #f87171;
+  border: 1px solid rgba(248,113,113,0.2);
+}
+
+.mega-num {
+  font-family: 'Orbitron', monospace;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -1px;
+}
+.mega-num.hero {
+  font-size: 3.2em;
+  text-shadow: 0 0 40px currentColor, 0 0 80px currentColor;
+  filter: drop-shadow(0 0 8px currentColor);
+}
+.mega-num.md {
+  font-size: 2.2em;
+  text-shadow: 0 0 30px currentColor;
+}
+.mega-num.sm {
+  font-size: 1.6em;
+}
+.cyan { color: #4a9eff; }
+.green { color: #4ade80; }
+.blue { color: #4a9eff; }
+.purple { color: #7c3aed; }
+.orange { color: #fb923c; }
+
+.mega-label {
+  font-size: 0.75em;
+  color: rgba(160,190,230,0.45);
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  margin-top: 6px;
+}
+
+/* Progress bar */
+.prog-wrap { margin-top: 12px; }
+.prog-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72em;
+  margin-bottom: 4px;
+}
+.prog-label .dim { color: rgba(160,190,230,0.7); }
+.prog-label .val {
+  font-family: 'Orbitron', monospace;
+  font-weight: 600;
+}
+.prog-bar {
+  height: 6px;
+  background: rgba(74,158,255,0.06);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.prog-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 1.5s ease;
+}
+.prog-fill.cyan-fill {
+  background: linear-gradient(90deg, #0891b2, #4a9eff);
+  box-shadow: 0 0 12px rgba(74,158,255,0.5);
+}
+.prog-fill.green-fill {
+  background: linear-gradient(90deg, #16a34a, #4ade80);
+  box-shadow: 0 0 12px rgba(74,222,128,0.5);
+}
+.prog-fill.purple-fill {
+  background: linear-gradient(90deg, #6d28d9, #7c3aed);
+  box-shadow: 0 0 12px rgba(124,58,237,0.5);
+}
+
+/* Orb */
+.orb-3d {
+  width: 48px; height: 48px; border-radius: 50%; flex-shrink: 0;
+  background: radial-gradient(circle at 35% 30%, rgba(200,230,255,0.3) 0%, rgba(74,158,255,0.2) 30%, rgba(10,20,40,0.6) 70%, rgba(6,10,20,0.85) 100%);
+  box-shadow: 0 0 20px rgba(74,158,255,0.25), inset 0 -4px 10px rgba(0,0,0,0.3), inset 0 2px 6px rgba(200,230,255,0.1);
+}
+.orb-3d.purple-orb {
+  background: radial-gradient(circle at 35% 30%, rgba(220,200,255,0.25) 0%, rgba(167,139,250,0.2) 30%, rgba(20,10,40,0.6) 70%, rgba(6,10,20,0.85) 100%);
+  box-shadow: 0 0 20px rgba(167,139,250,0.2), inset 0 -4px 10px rgba(0,0,0,0.3);
+}
+.orb-3d.green-orb {
+  background: radial-gradient(circle at 35% 30%, rgba(200,255,220,0.25) 0%, rgba(74,222,128,0.2) 30%, rgba(10,30,20,0.6) 70%, rgba(6,10,20,0.85) 100%);
+  box-shadow: 0 0 20px rgba(74,222,128,0.2), inset 0 -4px 10px rgba(0,0,0,0.3);
+}
+
+/* Stat row */
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75em;
+  padding: 4px 0;
+}
+.stat-row .dim { color: rgba(160,190,230,0.45); }
+
+/* Gauge */
+.gauge-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.gauge-ring { position: relative; width: 80px; height: 80px; }
+.gauge-ring svg { width: 80px; height: 80px; transform: rotate(-90deg); }
+.gauge-ring circle { fill: none; stroke-width: 5; stroke-linecap: round; }
+.gauge-ring .track { stroke: rgba(74,158,255,0.06); }
+.gauge-ring .fill-ring { stroke: #4a9eff; filter: drop-shadow(0 0 8px rgba(74,158,255,0.5)); }
+.gauge-val {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Orbitron', monospace;
+  font-size: 1.2em; font-weight: 800;
+  color: #4a9eff;
+  text-shadow: 0 0 20px rgba(74,158,255,0.4);
+}
+.gauge-lbl {
+  font-family: 'Orbitron', monospace;
+  font-size: 0.75em; font-weight: 600;
+  letter-spacing: 2px; text-transform: uppercase;
+  color: rgba(160,190,230,0.45);
+  margin-top: 6px;
+}
+
+/* Ticket row */
+.ticket-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(74,158,255,0.04);
+  font-size: 0.78em;
+}
+.ticket-dot {
+  width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+}
+.ticket-dot.active { background: #4ade80; box-shadow: 0 0 6px rgba(74,222,128,0.5); }
+.ticket-dot.urgent { background: #f87171; box-shadow: 0 0 6px rgba(248,113,113,0.5); }
+.ticket-dot.open { background: #4a9eff; box-shadow: 0 0 6px rgba(74,158,255,0.4); }
+.ticket-name { font-weight: 600; color: #d0daf0; }
+.ticket-meta { font-size: 0.82em; color: rgba(160,190,230,0.7); margin-top: 1px; }
+
+/* Chart placeholder */
+.mini-chart-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 50px;
+  margin-top: 10px;
+}
+.chart-bar {
+  flex: 1;
+  border-radius: 2px 2px 0 0;
+  min-height: 4px;
+  transition: height 1s ease;
+}
+
+/* Funnel viz */
+.funnel-stage {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+}
+.funnel-icon {
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+}
+.funnel-icon svg {
+  width: 16px; height: 16px;
+  stroke: currentColor; fill: none;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+.funnel-val {
+  font-family: 'Orbitron', monospace;
+  font-size: 1.1em; font-weight: 700;
+}
+.funnel-lbl { font-size: 0.75em; color: rgba(160,190,230,0.7); }
+
+/* Scan line animation for panels */
+@keyframes scanline {
+  0% { top: -2px; }
+  100% { top: 100%; }
+}
+.holo-panel .scanline {
+  position: absolute;
+  left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(74,158,255,0.15), transparent);
+  animation: scanline 4s linear infinite;
+  pointer-events: none;
+}
+
+/* Instruction text */
+.instruction {
+  position: fixed;
+  bottom: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 300;
+  font-family: 'Orbitron', monospace;
+  font-size: 0.75em;
+  color: rgba(74,158,255,0.3);
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  pointer-events: none;
+  transition: opacity 1s;
+}
+
+/* Enter button (shown when a panel is focused) */
+.enter-btn {
+  position: fixed;
+  bottom: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 310;
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 32px;
+  background: linear-gradient(135deg, rgba(74,158,255,0.2), rgba(124,58,237,0.15));
+  border: 1px solid rgba(74,158,255,0.5);
+  border-radius: 12px;
+  color: #4a9eff;
+  font-family: 'Orbitron', monospace;
+  font-weight: 800;
+  font-size: 0.82em;
+  letter-spacing: 3px;
+  cursor: pointer;
+  box-shadow: 0 0 30px rgba(74,158,255,0.3), 0 0 60px rgba(74,158,255,0.15);
+  transition: all 0.25s;
+  backdrop-filter: blur(12px);
+  animation: enterPulse 2s ease-in-out infinite;
+}
+.enter-btn:hover {
+  background: linear-gradient(135deg, rgba(74,158,255,0.35), rgba(124,58,237,0.25));
+  box-shadow: 0 0 50px rgba(74,158,255,0.5), 0 0 100px rgba(74,158,255,0.25);
+  transform: translateX(-50%) translateY(-2px);
+}
+.enter-btn.show { display: flex; }
+.enter-btn svg {
+  width: 16px; height: 16px;
+  stroke: currentColor; fill: none;
+  stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round;
+}
+@keyframes enterPulse {
+  0%, 100% { box-shadow: 0 0 30px rgba(74,158,255,0.3), 0 0 60px rgba(74,158,255,0.15); }
+  50% { box-shadow: 0 0 45px rgba(74,158,255,0.5), 0 0 90px rgba(74,158,255,0.25); }
+}
+
+/* Section fade handoff */
+#sectionFade {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.7s;
+}
+#sectionFade.on {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Input mode lock — gamepad takes over cursor/mouse when active */
+body.gp-mode { cursor: none !important; }
+body.gp-mode * { cursor: none !important; }
+.input-mode-indicator {
+  position: fixed;
+  top: 24px; right: 24px;
+  z-index: 250;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: rgba(6,10,20,0.85);
+  border: 1px solid rgba(74,158,255,0.2);
+  border-radius: 8px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.75em;
+  color: rgba(74,158,255,0.7);
+  letter-spacing: 1px;
+  backdrop-filter: blur(10px);
+  pointer-events: none;
+  transition: opacity 0.35s;
+  opacity: 0;
+  transform: translateY(60px);  /* hidden under status on hud-top */
+}
+.input-mode-indicator.show { opacity: 1; }
+.input-mode-indicator .mode-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: #4a9eff;
+  box-shadow: 0 0 8px #4a9eff;
+}
+
+/* Section overlay — full-size iframe with HUD */
+#sectionOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(3, 6, 17, 0.98);
+  display: none;
+  flex-direction: column;
+  opacity: 0;
+  transform: scale(1.045);
+  transform-origin: center center;
+  transition: opacity 0.45s ease-out, transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+  backdrop-filter: blur(6px);
+}
+#sectionOverlay.on {
+  display: flex;
+  opacity: 1;
+  transform: scale(1);
+}
+#sectionHud {
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  background: rgba(3, 6, 17, 0.92);
+  border-bottom: 1px solid rgba(74,158,255,0.18);
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
+}
+#sectionHud::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #4a9eff, #7c3aed, transparent);
+  opacity: 0.55;
+}
+.section-back {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  background: rgba(74,158,255,0.08);
+  border: 1px solid rgba(74,158,255,0.25);
+  border-radius: 8px;
+  color: #4a9eff;
+  font-family: 'Orbitron', monospace;
+  font-size: 0.75em;
+  font-weight: 700;
+  letter-spacing: 2px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.section-back:hover {
+  background: rgba(74,158,255,0.15);
+  box-shadow: 0 0 14px rgba(74,158,255,0.25);
+}
+.section-back svg {
+  width: 14px; height: 14px;
+  stroke: currentColor; fill: none;
+  stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.section-title {
+  font-family: 'Orbitron', monospace;
+  font-size: 0.78em;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: #e0e6f0;
+  text-shadow: 0 0 12px rgba(74,158,255,0.3);
+}
+.section-fs {
+  width: 34px; height: 34px;
+  background: rgba(6,10,20,0.8);
+  border: 1px solid rgba(74,158,255,0.2);
+  border-radius: 8px;
+  color: rgba(160,190,230,0.7);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.2s;
+}
+.section-fs:hover {
+  color: #4a9eff;
+  border-color: rgba(74,158,255,0.4);
+  box-shadow: 0 0 12px rgba(74,158,255,0.2);
+}
+.section-fs svg {
+  width: 16px; height: 16px;
+  stroke: currentColor; fill: none;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+#sectionFrame {
+  flex: 1;
+  border: 0;
+  width: 100%;
+  background: #030611;
+  pointer-events: auto !important;
+}
+/* When overlay is open, force cursor visible even if gamepad lock was on */
+#sectionOverlay.on, #sectionOverlay.on * { cursor: auto !important; }
+
+/* ── Settings gear + modal ───────────────────────────────────────── */
+.hud-icon-btn {
+  pointer-events: auto;
+  width: 38px; height: 38px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(6,10,20,0.7);
+  border: 1px solid rgba(74,158,255,0.25);
+  border-radius: 10px;
+  color: rgba(160,190,230,0.6);
+  cursor: pointer;
+  margin-left: 14px;
+  transition: all 0.2s;
+}
+.hud-icon-btn:hover { color: #4a9eff; border-color: rgba(74,158,255,0.55); box-shadow: 0 0 14px rgba(74,158,255,0.25); }
+.hud-icon-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.hud-top-right { display: flex; align-items: flex-start; gap: 4px; pointer-events: auto; }
+
+.hud-avatar {
+  pointer-events: auto;
+  width: 38px; height: 38px;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, rgba(124,58,237,0.4), rgba(74,158,255,0.4));
+  border: 1px solid rgba(124,58,237,0.5);
+  border-radius: 50%;
+  color: #e0e6f0;
+  font-family: 'Orbitron', monospace;
+  font-size: 0.75em;
+  font-weight: 700;
+  letter-spacing: 1px;
+  cursor: pointer;
+  margin-left: 14px;
+  position: relative;
+  transition: all 0.2s;
+}
+.hud-avatar:hover { border-color: rgba(124,58,237,0.9); box-shadow: 0 0 16px rgba(124,58,237,0.35); transform: scale(1.05); }
+.hud-avatar .avatar-badge {
+  position: absolute; top: -4px; right: -4px;
+  min-width: 16px; height: 16px;
+  padding: 0 4px;
+  background: #f87171;
+  border: 2px solid #060a14;
+  border-radius: 8px;
+  color: #fff;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.75em;
+  font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 6px rgba(248,113,113,0.6);
+}
+
+/* ── Workspace drawer (slide-in from right) ─────────────────────── */
+#workspaceBackdrop {
+  position: fixed; inset: 0; z-index: 8500;
+  background: rgba(2,4,12,0.55);
+  backdrop-filter: blur(4px);
+}
+#workspaceDrawer {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  z-index: 8600;
+  width: min(540px, 96vw);
+  background: linear-gradient(180deg, rgba(10,16,32,0.98), rgba(6,10,20,0.98));
+  border-left: 1px solid rgba(124,58,237,0.4);
+  box-shadow: -20px 0 60px rgba(0,0,0,0.5);
+  display: flex; flex-direction: column;
+  font-family: 'Inter', system-ui, sans-serif;
+  color: #d0daf0;
+  transform: translateX(100%);
+  transition: transform 0.25s ease-out;
+}
+#workspaceDrawer.open { transform: translateX(0); }
+
+.ws-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 22px;
+  border-bottom: 1px solid rgba(124,58,237,0.2);
+  background: rgba(6,10,20,0.7);
+}
+.ws-user { display: flex; align-items: center; gap: 12px; }
+.ws-avatar-big {
+  width: 44px; height: 44px;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, rgba(124,58,237,0.5), rgba(74,158,255,0.5));
+  border: 1px solid rgba(124,58,237,0.6);
+  border-radius: 50%;
+  font-family: 'Orbitron', monospace;
+  font-size: 0.85em;
+  font-weight: 700;
+  color: #fff;
+}
+.ws-name { font-family: 'Orbitron', monospace; font-size: 0.85em; font-weight: 700; letter-spacing: 1.5px; color: #e0e6f0; }
+.ws-role { font-size: 0.75em; color: rgba(160,190,230,0.7); letter-spacing: 1.5px; text-transform: uppercase; margin-top: 2px; }
+.ws-close {
+  width: 32px; height: 32px;
+  background: none; border: 1px solid rgba(160,190,230,0.2);
+  border-radius: 8px;
+  color: rgba(160,190,230,0.6);
+  font-size: 1.3em; line-height: 1; cursor: pointer;
+}
+.ws-close:hover { color: #f87171; border-color: rgba(248,113,113,0.5); }
+
+.ws-tabs { display: flex; border-bottom: 1px solid rgba(124,58,237,0.18); background: rgba(6,10,20,0.5); }
+.ws-tab {
+  flex: 1;
+  padding: 14px 8px;
+  background: none; border: 0;
+  color: rgba(160,190,230,0.7);
+  font-family: 'Orbitron', monospace;
+  font-size: 0.75em;
+  font-weight: 600;
+  letter-spacing: 2px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  position: relative;
+  transition: all 0.15s;
+}
+.ws-tab:hover { color: #d0daf0; }
+.ws-tab.active { color: #c4b5fd; border-bottom-color: #7c3aed; background: rgba(124,58,237,0.06); }
+.ws-tab .pill {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  background: rgba(248,113,113,0.18);
+  border: 1px solid rgba(248,113,113,0.4);
+  border-radius: 8px;
+  color: #f87171;
+  font-size: 0.85em;
+  letter-spacing: 0;
+}
+
+.ws-body { flex: 1; min-height: 0; overflow: hidden; position: relative; }
+.ws-pane { position: absolute; inset: 0; display: none; overflow-y: auto; padding: 18px 22px; }
+.ws-pane.active { display: block; }
+.ws-pane.no-pad { padding: 0; }
+.ws-pane iframe { width: 100%; height: 100%; border: 0; background: #030611; }
+
+.ws-empty { padding: 40px 20px; text-align: center; color: rgba(160,190,230,0.45); font-size: 0.85em; }
+.ws-loading { padding: 30px; text-align: center; color: rgba(74,158,255,0.55); font-family: 'Share Tech Mono', monospace; font-size: 0.8em; letter-spacing: 1.5px; }
+
+.ws-task-list { display: flex; flex-direction: column; gap: 8px; }
+.ws-task {
+  padding: 12px 14px;
+  background: rgba(6,10,20,0.55);
+  border: 1px solid rgba(124,58,237,0.18);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.ws-task:hover { border-color: rgba(124,58,237,0.5); }
+.ws-task .t-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.ws-task .t-title { font-size: 0.85em; font-weight: 600; color: #e0e6f0; line-height: 1.3; }
+.ws-task .t-meta { font-size: 0.75em; color: rgba(160,190,230,0.7); margin-top: 4px; display: flex; gap: 10px; }
+.ws-task .t-prio { padding: 2px 8px; border-radius: 6px; font-size: 0.75em; letter-spacing: 1px; font-family: 'Orbitron', monospace; font-weight: 700; flex-shrink: 0; }
+.ws-task .t-prio.urgent { background: rgba(248,113,113,0.15); color: #f87171; border: 1px solid rgba(248,113,113,0.4); }
+.ws-task .t-prio.high { background: rgba(251,146,60,0.15); color: #fb923c; border: 1px solid rgba(251,146,60,0.4); }
+.ws-task .t-prio.medium { background: rgba(74,158,255,0.12); color: #4a9eff; border: 1px solid rgba(74,158,255,0.35); }
+.ws-task .t-prio.low { background: rgba(160,190,230,0.08); color: rgba(160,190,230,0.6); border: 1px solid rgba(160,190,230,0.2); }
+.ws-task .t-prio.overdue { background: rgba(248,113,113,0.25); color: #fca5a5; }
+.ws-task .t-kind { padding: 1px 6px; border-radius: 4px; font-size: 0.95em; letter-spacing: 0.5px; font-weight: 700; font-family: 'Orbitron', monospace; }
+.ws-task .t-kind.sales { background: rgba(74,158,255,0.12); color: #4a9eff; border: 1px solid rgba(74,158,255,0.35); }
+.ws-task .t-kind.ops   { background: rgba(160,190,230,0.10); color: rgba(200,220,240,0.85); border: 1px solid rgba(160,190,230,0.25); }
+.ws-task .t-kind.stage { background: rgba(124,58,237,0.15); color: #c4b5fd; border: 1px solid rgba(124,58,237,0.45); }
+.ws-task .t-sub { font-size: 0.75em; color: rgba(160,190,230,0.45); margin-top: 2px; line-height: 1.25; }
+
+.ws-section-head {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 12px;
+}
+.ws-section-title { font-family: 'Orbitron', monospace; font-size: 0.75em; font-weight: 700; letter-spacing: 2.5px; color: #c4b5fd; }
+.ws-action-btn {
+  padding: 8px 14px;
+  background: rgba(124,58,237,0.12);
+  border: 1px solid rgba(124,58,237,0.4);
+  border-radius: 8px;
+  color: #c4b5fd;
+  font-family: 'Orbitron', monospace;
+  font-size: 0.75em;
+  letter-spacing: 1.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.ws-action-btn:hover { background: rgba(124,58,237,0.25); color: #fff; }
+
+.ws-account-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(124,58,237,0.1);
+  font-size: 0.82em;
+}
+.ws-account-row .lbl { color: rgba(160,190,230,0.7); font-family: 'Share Tech Mono', monospace; font-size: 0.85em; letter-spacing: 1px; text-transform: uppercase; }
+.ws-account-row .val { color: #d0daf0; font-weight: 500; }
+.ws-logout {
+  width: 100%;
+  margin-top: 22px;
+  padding: 12px;
+  background: rgba(248,113,113,0.1);
+  border: 1px solid rgba(248,113,113,0.4);
+  border-radius: 10px;
+  color: #f87171;
+  font-family: 'Orbitron', monospace;
+  font-size: 0.75em;
+  letter-spacing: 2px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.ws-logout:hover { background: rgba(248,113,113,0.2); color: #fff; }
+
+.ws-cal-event {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px;
+  background: rgba(6,10,20,0.55);
+  border: 1px solid rgba(74,158,255,0.18);
+  border-radius: 10px;
+  margin-bottom: 8px;
+}
+.ws-cal-time { font-family: 'Orbitron', monospace; font-size: 0.8em; color: #4a9eff; flex-shrink: 0; min-width: 70px; }
+.ws-cal-title { font-size: 0.85em; color: #e0e6f0; }
+
+html.mode-8bit #workspaceDrawer { background: #060a14; box-shadow: -4px 0 0 rgba(124,58,237,0.4); }
+html.mode-8bit #workspaceBackdrop { backdrop-filter: none; }
+
+/* Inline new-task form (workspace drawer) */
+.ws-action-btn.ghost { background: transparent; border-color: rgba(160,190,230,0.2); color: rgba(160,190,230,0.6); }
+.ws-action-btn.ghost:hover { color: #f87171; border-color: rgba(248,113,113,0.4); background: rgba(248,113,113,0.08); }
+#wsNewTaskForm {
+  margin-bottom: 14px;
+  padding: 14px;
+  background: rgba(124,58,237,0.06);
+  border: 1px solid rgba(124,58,237,0.3);
+  border-radius: 10px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+#wsNewTaskForm input[type="text"], #wsNewTaskForm input[type="date"], #wsNewTaskForm select {
+  width: 100%;
+  padding: 10px 12px;
+  background: rgba(6,10,20,0.6);
+  border: 1px solid rgba(124,58,237,0.25);
+  border-radius: 8px;
+  color: #e0e6f0;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 0.85em;
+  outline: none;
+}
+#wsNewTaskForm input[type="text"]:focus, #wsNewTaskForm input[type="date"]:focus, #wsNewTaskForm select:focus {
+  border-color: rgba(124,58,237,0.7);
+  box-shadow: 0 0 12px rgba(124,58,237,0.18);
+}
+#wsNewTaskForm input[type="text"]#ntTitle {
+  font-size: 0.95em;
+  font-weight: 500;
+}
+#wsNewTaskForm select {
+  appearance: none; -webkit-appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, rgba(160,190,230,0.7) 50%), linear-gradient(135deg, rgba(160,190,230,0.7) 50%, transparent 50%);
+  background-position: calc(100% - 18px) center, calc(100% - 13px) center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 30px;
+}
+.nt-row { display: flex; gap: 8px; }
+.nt-row label {
+  flex: 1;
+  display: flex; flex-direction: column; gap: 4px;
+  font-family: 'Orbitron', monospace;
+  font-size: 0.75em;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: rgba(160,190,230,0.7);
+}
+.nt-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.nt-error {
+  padding: 8px 12px;
+  background: rgba(248,113,113,0.1);
+  border: 1px solid rgba(248,113,113,0.4);
+  border-radius: 8px;
+  color: #fca5a5;
+  font-size: 0.78em;
+}
+
+#settingsBackdrop {
+  position: fixed; inset: 0; z-index: 9000;
+  background: rgba(2,4,12,0.7);
+  backdrop-filter: blur(6px);
+}
+#settingsModal {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  z-index: 9001;
+  width: min(440px, 92vw);
+  background: linear-gradient(155deg, rgba(10,16,32,0.96), rgba(6,10,20,0.96));
+  border: 1px solid rgba(74,158,255,0.35);
+  border-radius: 16px;
+  box-shadow: 0 0 60px rgba(74,158,255,0.25), inset 0 0 30px rgba(74,158,255,0.04);
+  font-family: 'Inter', system-ui, sans-serif;
+  color: #d0daf0;
+  overflow: hidden;
+}
+#settingsModal header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px;
+  font-family: 'Orbitron', monospace;
+  font-size: 0.78em; font-weight: 700; letter-spacing: 3px;
+  color: #4a9eff;
+  border-bottom: 1px solid rgba(74,158,255,0.15);
+  background: rgba(6,10,20,0.6);
+}
+#settingsModal .x-close {
+  background: none; border: 0; color: rgba(160,190,230,0.6);
+  font-size: 1.6em; line-height: 1; cursor: pointer; padding: 0 4px;
+}
+#settingsModal .x-close:hover { color: #4a9eff; }
+#settingsModal .setting-block { padding: 18px 20px; border-bottom: 1px solid rgba(74,158,255,0.08); }
+#settingsModal .setting-block:last-of-type { border-bottom: 0; }
+#settingsModal label.block-label {
+  display: block;
+  font-family: 'Orbitron', monospace;
+  font-size: 0.75em; letter-spacing: 2.5px; text-transform: uppercase;
+  color: rgba(160,190,230,0.7); margin-bottom: 12px;
+}
+#settingsModal .mode-picker { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+#settingsModal .mode-picker button {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 14px 6px;
+  background: rgba(6,10,20,0.6);
+  border: 1px solid rgba(74,158,255,0.18);
+  border-radius: 10px;
+  color: rgba(200,220,255,0.7);
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: 'Orbitron', monospace;
+}
+#settingsModal .mode-picker button:hover { border-color: rgba(74,158,255,0.5); color: #d0daf0; }
+#settingsModal .mode-picker button.active {
+  background: rgba(74,158,255,0.12);
+  border-color: rgba(74,158,255,0.6);
+  color: #4a9eff;
+  box-shadow: 0 0 18px rgba(74,158,255,0.18);
+}
+#settingsModal .mode-picker button strong { font-size: 0.8em; letter-spacing: 1.5px; font-weight: 700; }
+#settingsModal .mode-picker button span { font-size: 0.75em; letter-spacing: 1px; color: rgba(160,190,230,0.7); font-weight: 400; }
+#settingsModal .hint { margin-top: 10px; font-size: 0.75em; color: rgba(160,190,230,0.45); line-height: 1.4; }
+#settingsModal .row-btn {
+  display: flex; justify-content: space-between; align-items: center;
+  width: 100%;
+  padding: 10px 12px;
+  margin-top: 6px;
+  background: rgba(6,10,20,0.45);
+  border: 1px solid rgba(74,158,255,0.12);
+  border-radius: 8px;
+  color: #d0daf0;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 0.78em;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+#settingsModal .row-btn:hover { border-color: rgba(74,158,255,0.4); color: #4a9eff; }
+#settingsModal .row-btn .v { font-family: 'Orbitron', monospace; font-size: 0.85em; color: #4a9eff; letter-spacing: 1.5px; }
+#settingsModal footer {
+  padding: 12px 20px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.75em;
+  color: rgba(160,190,230,0.35);
+  text-align: center;
+  letter-spacing: 1.5px;
+  border-top: 1px solid rgba(74,158,255,0.06);
+}
+#settingsToast {
+  position: fixed; top: 24px; left: 50%; transform: translateX(-50%);
+  z-index: 9002;
+  padding: 10px 22px;
+  background: rgba(74,158,255,0.15);
+  border: 1px solid rgba(74,158,255,0.5);
+  border-radius: 8px;
+  color: #4a9eff;
+  font-family: 'Orbitron', monospace;
+  font-size: 0.75em;
+  letter-spacing: 2px;
+}
+
+/* ── 8-bit static fallback grid ──────────────────────────────────── */
+#panel-grid-8bit {
+  position: fixed; inset: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-auto-rows: 1fr;
+  gap: 18px;
+  padding: 100px 32px 90px;
+  z-index: 5;
+  overflow-y: auto;
+}
+#panel-grid-8bit .grid-tile {
+  display: flex; flex-direction: column; justify-content: space-between;
+  padding: 28px;
+  background: rgba(8,16,32,0.85);
+  border: 1px solid rgba(74,158,255,0.4);
+  border-radius: 12px;
+  color: #d0daf0;
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  min-height: 140px;
+}
+#panel-grid-8bit .grid-tile:hover { border-color: #4a9eff; background: rgba(74,158,255,0.08); }
+#panel-grid-8bit .t-title {
+  font-family: 'Orbitron', monospace;
+  font-size: 1.05em; font-weight: 700; letter-spacing: 2px;
+  color: #4a9eff;
+}
+#panel-grid-8bit .t-go {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.78em; letter-spacing: 1.5px;
+  color: rgba(160,190,230,0.6);
+}
+
+/* ── Agent mode: full-screen orb + chat ──────────────────────────── */
+html.mode-agent body { background: radial-gradient(ellipse at 50% 30%, rgba(74,158,255,0.06) 0%, #020408 60%); }
+html.mode-agent #sentinel-orb {
+  width: min(360px, 32vw) !important;
+  height: min(360px, 32vw) !important;
+  top: 30% !important;
+}
+#agent-chat-mount {
+  position: fixed;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: min(820px, 94vw);
+  height: 56vh;
+  z-index: 6;
+  display: flex; flex-direction: column;
+  pointer-events: auto;
+}
+#agentChatTarget { flex: 1; min-height: 0; position: relative; }
+html.mode-agent .hud-bottom,
+html.mode-agent .skin-label,
+html.mode-agent .gp-hints,
+html.mode-agent .gamepad-indicator,
+html.mode-agent .instruction { display: none !important; }
+
+/* ── 8-bit visual accents (typography + flat panel chrome) ───────── */
+html.mode-8bit .hud-title,
+html.mode-8bit .hud-time,
+html.mode-8bit #panel-grid-8bit .t-title {
+  font-family: 'Share Tech Mono', ui-monospace, Menlo, monospace !important;
+  letter-spacing: 1.5px !important;
+  text-shadow: none !important;
+  background: none !important;
+  -webkit-text-fill-color: #4a9eff !important;
+  color: #4a9eff !important;
+}
+html.mode-8bit .hud-logo-mark { box-shadow: 0 0 0 1px #4a9eff inset; background: #060a14; }
+html.mode-8bit #panel-grid-8bit .grid-tile { box-shadow: none; }
+html.mode-8bit .skin-label,
+html.mode-8bit .instruction,
+html.mode-8bit .gp-hints,
+html.mode-8bit .gamepad-indicator,
+html.mode-8bit .hud-bottom { display: none !important; }
+</style>
+  <script>
+    // Opt-in v2 cockpit redirect. Toggled from Settings → Other →
+    // "Try new cockpit (beta)". Default OFF: localStorage value is
+    // null/undefined → no redirect, classic cockpit renders.
+    // The v2 cockpit has a "← Classic" link that clears the flag,
+    // so flipping back is one click.
+    try {
+      if (localStorage.getItem('ryujin_cockpit_version') === 'v2') {
+        window.location.replace('/v2/command-center.html');
+      }
+    } catch (e) { /* no localStorage = no redirect, safe default */ }
+  </script>
+  <script src="/assets/auth-guard.js"></script>
+  <script src="/assets/ryujin-nav.js" defer></script>
+</head>
+<body>
+
+<!-- Opening cutscene flash + wordmark -->
+<div id="entry-flash"></div>
+<div id="entry-mark"><div>RYUJIN</div><span class="sub">COMMAND CENTER ONLINE</span></div>
+
+<!-- WebGL background -->
+<canvas id="bg-canvas"></canvas>
+
+<!-- Ryujin Sentinel orb — center-stage agent-state indicator.
+     v1: idle default; window.setSentinelState('listening'|'speaking'|'thinking'|'alert')
+     swaps the video. Dispatch `ryujin:agent-state` CustomEvent {detail:{state}} from
+     anywhere (incl. embedded pillar iframes via window.parent) to drive it. -->
+<div id="sentinel-orb" data-state="idle">
+  <video id="sentinel-video" autoplay loop muted playsinline preload="auto" src="/assets/orbs/idle.mp4"></video>
+</div>
+<style>
+#sentinel-orb{position:fixed;left:50%;top:50%;width:min(280px,22vw);height:min(280px,22vw);transform:translate(-50%,-50%);z-index:2;pointer-events:none;border-radius:50%;overflow:hidden;filter:drop-shadow(0 0 40px rgba(45,212,191,0.35));opacity:0.88;transition:filter 0.4s, opacity 0.4s}
+#sentinel-orb[data-state="alert"]{filter:drop-shadow(0 0 48px rgba(248,113,113,0.50));opacity:1}
+#sentinel-orb[data-state="listening"]{opacity:1}
+#sentinel-video{width:100%;height:100%;object-fit:cover;display:block;mix-blend-mode:screen}
+
+/* Bug-sweep P4 (2026-04-24): respect prefers-reduced-motion.
+   Accessibility + helps integrated-GPU laptops (per feedback_laptop_lag).
+   The 40+ CSS animations/transitions/keyframes across the page were
+   unaffected by the JS LOW_PERF flag, so disable them globally when the
+   user (or OS) signals reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+</style>
+<script>
+// In 8-bit mode the orb video is suppressed (poster/empty src) and state changes are no-ops.
+window.setSentinelState=function(state){if(window.__RY_8BIT__)return;const v=document.getElementById('sentinel-video');const o=document.getElementById('sentinel-orb');if(!v||!o||o.dataset.state===state)return;if(!['idle','listening','speaking','thinking','alert'].includes(state))return;v.src='/assets/orbs/'+state+'.mp4';o.dataset.state=state;};
+window.addEventListener('ryujin:agent-state',e=>{if(e.detail?.state)window.setSentinelState(e.detail.state);});
+window.addEventListener('message',e=>{if(e.data?.type==='ryujin:agent-state'&&e.data.state)window.setSentinelState(e.data.state);});
+// 8-bit: strip the orb video entirely — no decode, no bandwidth.
+if(window.__RY_8BIT__){var _v=document.getElementById('sentinel-video');if(_v){_v.removeAttribute('autoplay');_v.removeAttribute('src');try{_v.load();}catch(e){}}}
+</script>
+
+<!-- CSS3D panels rendered here -->
+<div id="css3d-container"></div>
+
+<!-- HUD overlay -->
+<div class="hud hud-top">
+  <div class="hud-logo">
+    <div class="hud-logo-mark"></div>
+    <div>
+      <div class="hud-title">RYUJIN OS</div>
+      <div class="hud-subtitle">COMMAND CENTER v3.1</div>
+    </div>
+  </div>
+  <div class="hud-top-right">
+    <div class="hud-status">
+      <div class="hud-time" id="hudTime"></div>
+      <div class="hud-date" id="hudDate"></div>
+    </div>
+    <button id="btnOpenAI" type="button" title="Open Ryujin AI - the full-screen chat cockpit (A)" aria-label="Open Ryujin AI"
+      style="display:inline-flex;align-items:center;gap:9px;font-family:'Orbitron',monospace;font-size:0.74em;font-weight:800;letter-spacing:2px;color:#04121a;background:linear-gradient(160deg,#5eead4,#2dd4bf 45%,#0ea5e9);border:1px solid rgba(94,234,212,0.7);border-radius:11px;padding:10px 16px;cursor:pointer;box-shadow:0 0 22px rgba(45,212,191,0.5),0 4px 14px rgba(0,0,0,0.4);transition:transform .12s,box-shadow .12s">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+      OPEN RYUJIN AI
+    </button>
+    <button class="hud-avatar" id="btnWorkspace" title="My Workspace — messages, tasks, calendar (W)" aria-label="My Workspace">
+      <span id="avatarInitials">··</span>
+      <span class="avatar-badge" id="avatarBadge" hidden></span>
+    </button>
+    <button class="hud-icon-btn" id="btnSettings" title="Ryujin Settings (S)" aria-label="Settings">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+    </button>
+  </div>
+</div>
+
+<button class="back-btn" id="backBtn">
+  <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+  BACK
+</button>
+
+<div class="instruction" id="instruction">DRAG TO ORBIT · SCROLL TO ZOOM · CLICK PANEL TO ENTER · RIGHT-CLICK TO BACK</div>
+
+<div class="skin-label">SKIN: RYUJIN DEFAULT</div>
+
+<!-- Gamepad indicator -->
+<div class="gamepad-indicator" id="gamepadIndicator">
+  <div class="gamepad-dot"></div>
+  <div class="gamepad-text">Controller</div>
+</div>
+
+<!-- Gamepad button hints -->
+<div class="gp-hints" id="gpHints">
+  <div class="gp-hint"><div class="gp-btn-stick"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="6"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></div> Orbit</div>
+  <div class="gp-hint"><div class="gp-btn-lb">LB</div><div class="gp-btn-rb">RB</div> Cycle</div>
+  <div class="gp-hint"><div class="gp-btn-icon gp-btn-a">A</div> Select</div>
+  <div class="gp-hint"><div class="gp-btn-icon gp-btn-b">B</div> Back</div>
+</div>
+
+<div class="hud hud-bottom">
+  <div class="hud-nav">
+    <button class="hud-nav-btn active" id="btnOverview">
+      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      <span>Overview</span>
+    </button>
+    <button class="hud-nav-btn" id="btnClassic">
+      <svg viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+      <span>Classic</span>
+    </button>
+    <button class="hud-nav-btn" id="btnSpin">
+      <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+      <span>Auto-Spin</span>
+    </button>
+    <button class="hud-nav-btn" id="btnFullscreen">
+      <svg viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 00-2 2v3M21 8V5a2 2 0 00-2-2h-3M3 16v3a2 2 0 002 2h3M16 21h3a2 2 0 002-2v-3"/></svg>
+      <span>Fullscreen</span>
+    </button>
+    <button class="hud-nav-btn" id="btnTutorials" title="Turn guided-tour popups on/off across Ryujin">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <span id="btnTutorialsLabel">Tutorials: ON</span>
+    </button>
+    <button class="hud-nav-btn" id="btnInboxAgent" title="Pause/resume the inbox triage agent. Anyone signed in can flip it. ON means the agent scans GHL every 20 min and drafts replies; OFF means it skips every run until flipped back.">
+      <svg viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+      <span id="btnInboxAgentLabel">Inbox Agent: …</span>
+    </button>
+    <button class="hud-nav-btn" id="btnChat" title="Show or hide the Ryujin chat fab on every page">
+      <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+      <span id="btnChatLabel">Chat: ON</span>
+    </button>
+    <a class="hud-nav-btn" id="btnFiles" href="/admin.html#documents" target="_blank" rel="noopener" title="Open Files (documents, proposals, partnership decks)" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px">
+      <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
+      <span>Files</span>
+    </a>
+    <a class="hud-nav-btn" id="btnMobile" href="/portal-mobile.html" title="Open the mobile portal (Schedule · Jobs · Photos)" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px">
+      <svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+      <span>Mobile</span>
+    </a>
+    <a class="hud-nav-btn" id="btnCalendar" href="/calendar.html" title="7-day calendar: installs, inspections, service, Google Cal" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px">
+      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      <span>Calendar</span>
+    </a>
+  </div>
+</div>
+<script>
+// OPEN RYUJIN AI - jump to the full-screen chat cockpit. Open in the top window
+// since command-center can host pages in iframes (the launcher does the same).
+(function(){
+  const b = document.getElementById('btnOpenAI');
+  if (!b) return;
+  const open = () => { try { (window.top || window).location.href = '/cockpit.html'; } catch(e){ window.location.href = '/cockpit.html'; } };
+  b.addEventListener('click', open);
+  b.addEventListener('mouseenter', () => { b.style.transform = 'translateY(-1px)'; b.style.boxShadow = '0 0 30px rgba(45,212,191,0.7),0 6px 18px rgba(0,0,0,0.45)'; });
+  b.addEventListener('mouseleave', () => { b.style.transform = ''; b.style.boxShadow = '0 0 22px rgba(45,212,191,0.5),0 4px 14px rgba(0,0,0,0.4)'; });
+  document.addEventListener('keydown', (e) => {
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (e.key === 'a' || e.key === 'A') { e.preventDefault(); open(); }
+  });
+})();
+</script>
+
+<script>
+(function(){
+  const KEY = 'ry_suppress_tutorials';
+  const btn = document.getElementById('btnTutorials');
+  const lbl = document.getElementById('btnTutorialsLabel');
+  function read(){ try { return localStorage.getItem(KEY) === '1'; } catch(e){ return false; } }
+  function render(){
+    const off = read();
+    if (lbl) lbl.textContent = off ? 'Tutorials: OFF' : 'Tutorials: ON';
+    if (btn) btn.classList.toggle('active', !off);
+  }
+  if (btn) btn.addEventListener('click', () => {
+    const now = read();
+    try {
+      if (now) { localStorage.removeItem(KEY); localStorage.removeItem('ry_suppress_proposal_gate'); }
+      else { localStorage.setItem(KEY, '1'); localStorage.setItem('ry_suppress_proposal_gate', '1'); }
+    } catch(e){}
+    render();
+  });
+  render();
+})();
+(function(){
+  const CKEY = 'ry_chat_off';
+  const cbtn = document.getElementById('btnChat');
+  const clbl = document.getElementById('btnChatLabel');
+  function read(){ try { return localStorage.getItem(CKEY) === '1'; } catch(e){ return false; } }
+  function render(){
+    const off = read();
+    if (clbl) clbl.textContent = off ? 'Chat: OFF' : 'Chat: ON';
+    if (cbtn) cbtn.classList.toggle('active', !off);
+  }
+  if (cbtn) cbtn.addEventListener('click', () => {
+    const off = read();
+    if (off) {
+      // Re-enable: clear flag + ask the chat widget to mount immediately.
+      try { localStorage.removeItem(CKEY); } catch(e){}
+      if (window.Ryujin && typeof window.Ryujin.enable === 'function') window.Ryujin.enable();
+    } else {
+      try { localStorage.setItem(CKEY, '1'); } catch(e){}
+      if (window.Ryujin && typeof window.Ryujin.disable === 'function') window.Ryujin.disable();
+    }
+    render();
+  });
+  render();
+})();
+(function(){
+  // Inbox Agent toggle. Backed by tenant_settings.inbox_agent_enabled so it
+  // affects every signed-in user (Mac + Cat see the same state). Anyone in a
+  // privileged role can flip it. The cron at /api/agents/inbox checks this
+  // column at run-time and early-returns when false.
+  const btn = document.getElementById('btnInboxAgent');
+  const lbl = document.getElementById('btnInboxAgentLabel');
+  if (!btn || !lbl) return;
+  let state = null; // unknown until first GET
+  let inflight = false;
+
+  function render() {
+    if (state === null) {
+      lbl.textContent = 'Inbox Agent: …';
+      btn.classList.remove('active');
+      btn.style.opacity = '0.6';
+      return;
+    }
+    lbl.textContent = state ? 'Inbox Agent: ON' : 'Inbox Agent: OFF';
+    btn.classList.toggle('active', !!state);
+    btn.style.opacity = '1';
+  }
+
+  async function load() {
+    try {
+      const headers = (window.RyujinAuth && window.RyujinAuth.headers) ? window.RyujinAuth.headers() : {};
+      const r = await fetch('/api/settings', { headers: { 'x-tenant-id': 'plus-ultra', ...headers } });
+      if (!r.ok) { state = null; render(); return; }
+      const d = await r.json();
+      state = d.inbox_agent_enabled !== false;
+      render();
+    } catch (e) {
+      state = null; render();
+    }
+  }
+
+  btn.addEventListener('click', async () => {
+    if (inflight || state === null) return;
+    inflight = true;
+    const next = !state;
+    btn.style.opacity = '0.6';
+    try {
+      const headers = (window.RyujinAuth && window.RyujinAuth.headers) ? window.RyujinAuth.headers() : {};
+      const r = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'x-tenant-id': 'plus-ultra', ...headers },
+        body: JSON.stringify({ inbox_agent_enabled: next })
+      });
+      if (r.ok) {
+        state = next;
+      } else if (r.status === 401) {
+        alert('Sign in expired. Open /login.html to flip the toggle.');
+      } else if (r.status === 403) {
+        alert('You need admin role to flip this toggle.');
+      } else {
+        alert('Toggle failed: HTTP ' + r.status);
+      }
+    } catch (e) {
+      alert('Toggle failed: ' + e.message);
+    } finally {
+      inflight = false;
+      render();
+    }
+  });
+
+  render();
+  load();
+})();
+</script>
+
+<!-- Fade-out for section handoff -->
+<div id="sectionFade"></div>
+
+<!-- Input mode indicator -->
+<div class="input-mode-indicator" id="inputMode">
+  <div class="mode-dot"></div>
+  <span id="inputModeLabel">MOUSE</span>
+</div>
+
+<!-- Section overlay (real page loaded in iframe) -->
+<div id="sectionOverlay">
+  <div id="sectionHud">
+    <button class="section-back" id="sectionBack">
+      <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+      BACK TO HUB
+    </button>
+    <div class="section-title" id="sectionTitle">DASHBOARD</div>
+    <button class="section-fs" id="sectionFs" title="Fullscreen">
+      <svg viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 00-2 2v3M21 8V5a2 2 0 00-2-2h-3M3 16v3a2 2 0 002 2h3M16 21h3a2 2 0 002-2v-3"/></svg>
+    </button>
+  </div>
+  <iframe id="sectionFrame" src=""></iframe>
+</div>
+
+<!-- Ryujin Settings modal -->
+<div id="settingsBackdrop" hidden></div>
+<div id="settingsModal" hidden role="dialog" aria-label="Ryujin Settings">
+  <header>RYUJIN SETTINGS<button class="x-close" id="btnSettingsClose" aria-label="Close">&times;</button></header>
+  <section class="setting-block">
+    <label class="block-label">Interface mode</label>
+    <div class="mode-picker" role="radiogroup" id="modePicker">
+      <button data-mode="agent"><strong>AGENT</strong><span>chat + orb</span></button>
+      <button data-mode="normal"><strong>NORMAL</strong><span>full cockpit</span></button>
+      <button data-mode="8bit"><strong>8-BIT</strong><span>low power</span></button>
+    </div>
+    <p class="hint">Switching modes reloads the page so the cockpit rebuilds cleanly. 8-bit skips Three.js entirely — best for laptop battery.</p>
+  </section>
+  <section class="setting-block">
+    <label class="block-label">Other</label>
+    <button class="row-btn" id="btnTglChat">Chat FAB <span class="v" id="vChat">ON</span></button>
+    <button class="row-btn" id="btnTglTutor">Tutorial popups <span class="v" id="vTutor">ON</span></button>
+    <button class="row-btn" id="btnTglV2Cockpit" title="Beta: a Mi'kmaq-themed cockpit with Graph / Canvas / River views and a persistent agent dock. Default off — flip on to try it; the new cockpit has a one-click link back here.">New cockpit (beta) <span class="v" id="vV2Cockpit">OFF</span></button>
+    <button class="row-btn" id="btnResetOnboard">Reset onboarding <span class="v">›</span></button>
+  </section>
+  <footer>v3.1 · RYUJIN OS</footer>
+</div>
+
+<script>
+(function(){
+  const KEY = 'ry_ui_mode';
+  const CKEY = 'ry_chat_off';
+  const TKEY = 'ry_suppress_tutorials';
+  const VKEY = 'ryujin_cockpit_version';
+  const $ = (id) => document.getElementById(id);
+  const backdrop = $('settingsBackdrop');
+  const modal = $('settingsModal');
+  const picker = $('modePicker');
+  const btnOpen = $('btnSettings');
+  const btnClose = $('btnSettingsClose');
+
+  function currentMode(){
+    try { return localStorage.getItem(KEY) || 'normal'; } catch(e){ return 'normal'; }
+  }
+  function refreshPicker(){
+    const cur = currentMode();
+    picker.querySelectorAll('button').forEach(b => {
+      b.classList.toggle('active', b.dataset.mode === cur);
+    });
+    $('vChat').textContent = (localStorage.getItem(CKEY) === '1') ? 'OFF' : 'ON';
+    $('vTutor').textContent = (localStorage.getItem(TKEY) === '1') ? 'OFF' : 'ON';
+    $('vV2Cockpit').textContent = (localStorage.getItem(VKEY) === 'v2') ? 'ON' : 'OFF';
+  }
+  function open(){ backdrop.hidden = false; modal.hidden = false; refreshPicker(); }
+  function close(){ backdrop.hidden = true; modal.hidden = true; }
+
+  function toast(msg){
+    const t = document.createElement('div');
+    t.id = 'settingsToast';
+    t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 1200);
+  }
+
+  // Apply agent <-> normal in place; 8-bit transitions reload.
+  function applyAgent(){
+    document.documentElement.classList.add('mode-agent');
+    document.documentElement.classList.remove('mode-8bit');
+    document.documentElement.classList.remove('perf-lite');
+    window.__RY_AGENT__ = true;
+    window.__RY_8BIT__ = false;
+    // Reload — Three.js was instantiated and CSS3D scene is mounted; cleanest
+    // teardown is a reload since Three init isn't designed to be idempotent.
+    toast('Switching to AGENT…');
+    setTimeout(() => location.reload(), 400);
+  }
+  function applyNormal(){
+    document.documentElement.classList.remove('mode-agent');
+    document.documentElement.classList.remove('mode-8bit');
+    document.documentElement.classList.remove('perf-lite');
+    window.__RY_AGENT__ = false;
+    window.__RY_8BIT__ = false;
+    toast('Switching to NORMAL…');
+    setTimeout(() => location.reload(), 400);
+  }
+  function apply8bit(){
+    toast('Switching to 8-BIT…');
+    setTimeout(() => location.reload(), 400);
+  }
+
+  function pickMode(mode){
+    const prev = currentMode();
+    if (mode === prev) { close(); return; }
+    try { localStorage.setItem(KEY, mode === 'normal' ? '' : mode); } catch(e){}
+    if (mode === 'normal') { try { localStorage.removeItem(KEY); } catch(e){} }
+    refreshPicker();
+    close();
+    if (mode === '8bit' || prev === '8bit') return apply8bit();
+    if (mode === 'agent') return applyAgent();
+    if (mode === 'normal') return applyNormal();
+  }
+
+  if (btnOpen) btnOpen.addEventListener('click', open);
+  if (btnClose) btnClose.addEventListener('click', close);
+  if (backdrop) backdrop.addEventListener('click', close);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !modal.hidden) close();
+    if ((e.key === 's' || e.key === 'S') && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA' && !e.target.isContentEditable && !e.metaKey && !e.ctrlKey) {
+      if (modal.hidden) open(); else close();
+    }
+  });
+  picker.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-mode]');
+    if (b) pickMode(b.dataset.mode);
+  });
+  $('btnTglChat').addEventListener('click', () => {
+    const off = localStorage.getItem(CKEY) === '1';
+    if (off) { localStorage.removeItem(CKEY); window.Ryujin?.enable?.(); }
+    else { localStorage.setItem(CKEY, '1'); window.Ryujin?.disable?.(); }
+    refreshPicker();
+  });
+  $('btnTglTutor').addEventListener('click', () => {
+    const off = localStorage.getItem(TKEY) === '1';
+    if (off) { localStorage.removeItem(TKEY); localStorage.removeItem('ry_suppress_proposal_gate'); }
+    else { localStorage.setItem(TKEY, '1'); localStorage.setItem('ry_suppress_proposal_gate', '1'); }
+    refreshPicker();
+  });
+  $('btnTglV2Cockpit').addEventListener('click', () => {
+    const on = localStorage.getItem(VKEY) === 'v2';
+    if (on) {
+      // Currently on, turn it off. Just clear the flag and stay here.
+      localStorage.removeItem(VKEY);
+      refreshPicker();
+      toast('Beta cockpit OFF');
+    } else {
+      // Flip on and navigate immediately so the user lands on the new cockpit.
+      localStorage.setItem(VKEY, 'v2');
+      refreshPicker();
+      toast('Loading new cockpit…');
+      setTimeout(() => { location.href = '/v2/command-center.html'; }, 400);
+    }
+  });
+  $('btnResetOnboard').addEventListener('click', () => {
+    try {
+      localStorage.removeItem('ry_onboarding_done');
+      localStorage.removeItem('ry_firstrun_hub');
+      sessionStorage.removeItem('ry_boot_seen');
+    } catch(e){}
+    toast('Reloading…');
+    setTimeout(() => location.reload(), 400);
+  });
+
+  // Expose for keyboard / external triggers
+  window.RyujinSettings = { open, close, mode: currentMode };
+})();
+</script>
+
+<!-- My Workspace drawer (slide-in from right) -->
+<div id="workspaceBackdrop" hidden></div>
+<div id="workspaceDrawer" role="dialog" aria-label="My Workspace">
+  <div class="ws-header">
+    <div class="ws-user">
+      <div class="ws-avatar-big" id="wsAvatarBig">··</div>
+      <div>
+        <div class="ws-name" id="wsName">Loading…</div>
+        <div class="ws-role" id="wsRole">—</div>
+      </div>
+    </div>
+    <button class="ws-close" id="wsClose" aria-label="Close">&times;</button>
+  </div>
+  <div class="ws-tabs" role="tablist">
+    <button class="ws-tab active" data-tab="messages">Messages<span class="pill" id="tabBadgeMsgs" hidden>0</span></button>
+    <button class="ws-tab" data-tab="tasks">Tasks<span class="pill" id="tabBadgeTasks" hidden>0</span></button>
+    <button class="ws-tab" data-tab="calendar">Calendar</button>
+    <button class="ws-tab" data-tab="account">Account</button>
+  </div>
+  <div class="ws-body">
+    <div class="ws-pane active no-pad" data-pane="messages">
+      <iframe id="wsMessagesFrame" src="about:blank" loading="lazy"></iframe>
+    </div>
+    <div class="ws-pane" data-pane="tasks">
+      <div class="ws-section-head">
+        <div class="ws-section-title">MY OPEN TASKS</div>
+        <div style="display:flex;gap:6px">
+          <button class="ws-action-btn" id="wsViewKanban" title="Open the full Crew Ops kanban">KANBAN ↗</button>
+          <button class="ws-action-btn" id="wsNewTask">+ NEW</button>
+        </div>
+      </div>
+      <form id="wsNewTaskForm" hidden>
+        <input type="text" id="ntTitle" placeholder="What needs doing?" required maxlength="160">
+        <div class="nt-row">
+          <label>Assign to
+            <select id="ntAssignee"><option value="">Loading…</option></select>
+          </label>
+          <label>Priority
+            <select id="ntPriority">
+              <option value="low">Low</option>
+              <option value="medium" selected>Medium</option>
+              <option value="high">High</option>
+              <option value="urgent">Urgent</option>
+            </select>
+          </label>
+        </div>
+        <div class="nt-row">
+          <label>Due
+            <input type="date" id="ntDue">
+          </label>
+          <label style="flex:2">Note (optional)
+            <input type="text" id="ntNote" placeholder="extra context — visible on the ticket" maxlength="240">
+          </label>
+        </div>
+        <div class="nt-actions">
+          <button type="button" class="ws-action-btn ghost" id="ntCancel">CANCEL</button>
+          <button type="submit" class="ws-action-btn" id="ntSubmit">CREATE TASK</button>
+        </div>
+        <div id="ntError" class="nt-error" hidden></div>
+      </form>
+      <div id="wsTaskList" class="ws-task-list"><div class="ws-loading">Loading tasks…</div></div>
+    </div>
+    <div class="ws-pane" data-pane="calendar">
+      <div class="ws-section-head">
+        <div class="ws-section-title">TODAY · NEXT 24H</div>
+        <a class="ws-action-btn" href="https://calendar.google.com" target="_blank" rel="noopener" style="text-decoration:none">OPEN GCAL ↗</a>
+      </div>
+      <div id="wsCalList"><div class="ws-loading">Loading calendar…</div></div>
+    </div>
+    <div class="ws-pane" data-pane="account">
+      <div id="wsAccountFields"><div class="ws-loading">Loading account…</div></div>
+      <button class="ws-logout" id="wsLogout">SIGN OUT</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const $ = (id) => document.getElementById(id);
+  const drawer = $('workspaceDrawer');
+  const backdrop = $('workspaceBackdrop');
+  const btnOpen = $('btnWorkspace');
+  const btnClose = $('wsClose');
+  const tabs = drawer.querySelectorAll('.ws-tab');
+  const panes = drawer.querySelectorAll('.ws-pane');
+  let me = null;
+  let loaded = { messages: false, tasks: false, calendar: false, account: false };
+
+  function initials(name){
+    if (!name) return '··';
+    return name.trim().split(/\s+/).slice(0,2).map(p => p[0]?.toUpperCase() || '').join('') || '··';
+  }
+
+  async function loadMe(){
+    if (me) return me;
+    try {
+      const token = localStorage.getItem('ryujin_token');
+      const r = await fetch('/api/me', { headers: token ? { 'Authorization': 'Bearer ' + token } : {} });
+      if (r.ok) me = await r.json();
+    } catch(e){}
+    if (!me) me = { name: 'Mackenzie Mazerolle', role: 'owner', email: '', user_id: null };
+    const init = initials(me.name);
+    $('avatarInitials').textContent = init;
+    $('wsAvatarBig').textContent = init;
+    $('wsName').textContent = me.name || '—';
+    $('wsRole').textContent = (me.role || '—').toUpperCase();
+    return me;
+  }
+
+  function fmtDate(iso){
+    if (!iso) return '';
+    const d = new Date(iso);
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const dKey = new Date(d).setHours(0,0,0,0);
+    const dayDiff = Math.round((dKey - today) / 86400000);
+    if (dayDiff < 0) return Math.abs(dayDiff) + 'd overdue';
+    if (dayDiff === 0) return 'today';
+    if (dayDiff === 1) return 'tomorrow';
+    if (dayDiff < 7) return d.toLocaleDateString('en-CA', { weekday: 'short' });
+    return d.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' });
+  }
+
+  async function loadTasks(){
+    const list = $('wsTaskList');
+    list.innerHTML = '<div class="ws-loading">Loading tasks…</div>';
+    try {
+      await loadMe();
+      const token = localStorage.getItem('ryujin_token');
+      const wsHeaders = Object.assign({ 'x-tenant-id': 'plus-ultra' }, token ? { 'Authorization': 'Bearer ' + token } : {});
+
+      // Parallel: workorders (cockpit-honest source, real active jobs) + snapshot (GHL salesTasks)
+      // + pipeline-suggestions (Production Pipeline Agent output awaiting resolve)
+      const [woRes, snap, psRes] = await Promise.all([
+        fetch('/api/workorders?limit=100', { headers: wsHeaders }).then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch('/api/snapshot', { cache: 'no-store', headers: wsHeaders }).then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch('/api/pipeline-suggestions?status=pending&limit=20', { headers: wsHeaders })
+          .then(r => r.ok ? r.json() : null).catch(() => null)
+      ]);
+
+      const wos = Array.isArray(woRes) ? woRes : ((woRes && (woRes.workorders || woRes.data)) || []);
+      const myToken = (me.name || '').split(' ')[0].toLowerCase();
+      const isPrivileged = me.is_admin || me.role === 'owner' || me.role === 'admin';
+      const rxTix = wos
+        .filter(w => !w.completed_at && (w.status || '').toLowerCase() !== 'cancelled')
+        .filter(w => isPrivileged || !myToken || (w.sub_crew_lead || '').toLowerCase().includes(myToken))
+        .map(w => ({
+          _kind: 'ops',
+          id: w.id,
+          title: w.customer_name
+            ? (w.customer_name + ' (' + (w.address || ('WO-' + w.wo_number)) + ')')
+            : (w.address || ('WO-' + w.wo_number)),
+          priority: w.priority || 'medium',
+          due: w.start_date || null,
+          link: '/admin.html#crew'
+        }));
+
+      const meFirst = (me.name || '').toLowerCase().split(/\s+/)[0];
+      const salesRaw = (snap && snap.sections && snap.sections.salesTasks && snap.sections.salesTasks.tasks) || [];
+      const sales = salesRaw
+        .filter(t => meFirst && (t.assignedTo || '').toLowerCase().includes(meFirst))
+        .map(t => ({
+          _kind: 'sales',
+          id: t.id || t.contactId || '',
+          title: (t.title || 'Untitled') + (t.contact ? ' · ' + t.contact : ''),
+          priority: t.overdue ? 'overdue' : 'high',
+          due: t.dueDate || null,
+          link: t.contactId
+            ? ('https://app.gohighlevel.com/v2/location/aHotOUdq9D8m3JPrRz9n/contacts/detail/' + encodeURIComponent(t.contactId))
+            : '/admin.html#crew'
+        }));
+
+      // Pipeline suggestions (admin/owner only). Endpoint returns 401 otherwise, which
+      // the catch above turns into null, so non-admins simply see no STAGE rows.
+      // The endpoint ignores ?limit= and returns up to 200 rows, so clamp client-side
+      // to keep the drawer scannable when there is a large pending backlog.
+      const PS_LIMIT = 20;
+      const psRaw = (psRes && Array.isArray(psRes.suggestions))
+        ? psRes.suggestions.slice(0, PS_LIMIT)
+        : [];
+      const stage = psRaw.map(s => {
+        const jf = s.job_folder || {};
+        return {
+          _kind: 'stage',
+          id: s.id,
+          customer: jf.customer_name || '',
+          address: jf.address || '',
+          currentStage: jf.current_stage || s.previous_stage || 'unknown',
+          suggestedStage: s.suggested_stage || 'unknown',
+          due: null,
+          link: '/admin-pipeline.html#suggestion-' + encodeURIComponent(s.id)
+        };
+      });
+
+      const all = [...stage, ...rxTix, ...sales];
+      const today = new Date(); today.setHours(0,0,0,0);
+
+      if (!all.length) {
+        list.innerHTML = '<div class="ws-empty">No open tasks. Nice.</div>';
+        $('tabBadgeTasks').hidden = true;
+        return;
+      }
+
+      // Sort: STAGE first (agent output awaiting human resolve = highest priority),
+      // then overdue SALES, then SALES by due asc, then OPS.
+      const kindRank = (k) => k === 'stage' ? 0 : k === 'sales' ? 1 : 2;
+      const sorted = all.slice().sort((a,b) => {
+        const ar = kindRank(a._kind);
+        const br = kindRank(b._kind);
+        if (ar !== br) return ar - br;
+        const aOd = a.due && new Date(a.due).setHours(0,0,0,0) < today.getTime();
+        const bOd = b.due && new Date(b.due).setHours(0,0,0,0) < today.getTime();
+        if (aOd !== bOd) return aOd ? -1 : 1;
+        const ad = a.due ? new Date(a.due).getTime() : Infinity;
+        const bd = b.due ? new Date(b.due).getTime() : Infinity;
+        return ad - bd;
+      });
+
+      const overdue = sorted.filter(t => t.due && new Date(t.due).setHours(0,0,0,0) < today.getTime()).length;
+      const badge = $('tabBadgeTasks');
+      badge.textContent = sorted.length + (overdue ? ' · ' + overdue + ' OD' : '');
+      badge.hidden = false;
+
+      list.innerHTML = '';
+      sorted.forEach(t => {
+        const isOverdue = t.due && new Date(t.due).setHours(0,0,0,0) < today.getTime();
+        const prio = (isOverdue ? 'overdue' : (t.priority || (t._kind === 'stage' ? 'high' : 'medium'))).toLowerCase();
+
+        const row = document.createElement('div');
+        row.className = 'ws-task';
+        row.dataset.link = t.link || '/admin.html#crew';
+
+        const tRow = document.createElement('div'); tRow.className = 't-row';
+        const left = document.createElement('div');
+
+        const titleEl = document.createElement('div');
+        titleEl.className = 't-title';
+        if (t._kind === 'stage') {
+          titleEl.textContent = (t.customer || t.address || 'Job') + ' → ' + t.suggestedStage;
+        } else {
+          titleEl.textContent = t.title;
+        }
+        left.appendChild(titleEl);
+
+        if (t._kind === 'stage') {
+          const subParts = [];
+          if (t.address && t.address !== t.customer) subParts.push(t.address);
+          subParts.push('from ' + t.currentStage);
+          const subEl = document.createElement('div');
+          subEl.className = 't-sub';
+          subEl.textContent = subParts.join(' · ');
+          left.appendChild(subEl);
+        }
+
+        const metaEl = document.createElement('div'); metaEl.className = 't-meta';
+        if (t.due) {
+          const dueEl = document.createElement('span');
+          dueEl.textContent = fmtDate(t.due);
+          metaEl.appendChild(dueEl);
+        }
+        const kindEl = document.createElement('span');
+        kindEl.className = 't-kind ' + t._kind;
+        kindEl.textContent = t._kind === 'sales' ? 'SALES' : t._kind === 'stage' ? 'STAGE' : 'OPS';
+        metaEl.appendChild(kindEl);
+        left.appendChild(metaEl);
+
+        const prioEl = document.createElement('div'); prioEl.className = 't-prio ' + prio; prioEl.textContent = prio.toUpperCase();
+        tRow.appendChild(left); tRow.appendChild(prioEl);
+        row.appendChild(tRow);
+        list.appendChild(row);
+      });
+
+      list.querySelectorAll('.ws-task').forEach(el => {
+        el.addEventListener('click', () => {
+          const link = el.dataset.link || '/admin.html#crew';
+          const isPipeline = link.indexOf('/admin-pipeline.html') === 0;
+          if (/^https?:\/\//i.test(link) || isPipeline) {
+            window.open(link, '_blank', 'noopener,noreferrer');
+          } else {
+            window.location.href = link;
+          }
+        });
+      });
+    } catch(e) {
+      list.innerHTML = '<div class="ws-empty">Couldn\'t load tasks.<br><span style="font-size:0.8em;opacity:0.6">' + (e.message || e) + '</span></div>';
+    }
+  }
+
+  async function loadCalendar(){
+    const list = $('wsCalList');
+    list.innerHTML = '<div class="ws-loading">Loading…</div>';
+    try {
+      const r = await fetch('/api/snapshot', { cache: 'no-store', headers: { 'x-tenant-id': 'plus-ultra', 'Authorization': 'Bearer ' + (localStorage.getItem('ryujin_token') || '') } });
+      if (!r.ok) throw new Error('snapshot ' + r.status);
+      const snap = await r.json();
+      const events = snap?.briefing_morning?.calendar?.events
+                   || snap?.briefing_morning?.todayEvents
+                   || snap?.calendar?.events
+                   || [];
+      if (!events.length) {
+        list.innerHTML = '<div class="ws-empty">No events surfaced for today.<br><span style="font-size:0.8em;opacity:0.6">Open Google Calendar above for the full view.</span></div>';
+        return;
+      }
+      list.innerHTML = events.slice(0, 10).map(ev => {
+        const t = ev.start || ev.time || '';
+        const title = ev.summary || ev.title || ev.name || 'Untitled';
+        return `<div class="ws-cal-event"><div class="ws-cal-time">${t}</div><div class="ws-cal-title">${title.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'})[c])}</div></div>`;
+      }).join('');
+    } catch(e) {
+      list.innerHTML = '<div class="ws-empty">Calendar bridge not yet wired.<br><a href="https://calendar.google.com" target="_blank" style="color:#4a9eff">Open Google Calendar ↗</a></div>';
+    }
+  }
+
+  async function loadAccount(){
+    await loadMe();
+    const wrap = $('wsAccountFields');
+    const rows = [
+      ['Name', me.name || '—'],
+      ['Email', me.email || '—'],
+      ['Role', (me.role || '—').toUpperCase()],
+      ['User ID', me.user_id ? me.user_id.slice(0, 8) + '…' : '—'],
+      ['Tenant', me.tenant_id || 'plus-ultra'],
+    ];
+    wrap.innerHTML = rows.map(([l, v]) =>
+      `<div class="ws-account-row"><span class="lbl">${l}</span><span class="val">${v}</span></div>`
+    ).join('');
+  }
+
+  function loadMessages(){
+    const f = $('wsMessagesFrame');
+    if (f.src === 'about:blank' || !f.src.includes('messages.html')) {
+      f.src = '/messages.html';
+    }
+  }
+
+  function activateTab(name){
+    tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+    panes.forEach(p => p.classList.toggle('active', p.dataset.pane === name));
+    if (name === 'messages' && !loaded.messages) { loadMessages(); loaded.messages = true; }
+    if (name === 'tasks') { loadTasks(); loaded.tasks = true; }
+    if (name === 'calendar') { loadCalendar(); loaded.calendar = true; }
+    if (name === 'account') { loadAccount(); loaded.account = true; }
+  }
+
+  function open(){
+    backdrop.hidden = false;
+    drawer.classList.add('open');
+    loadMe().then(() => {
+      // Default to Messages on first open; preload it.
+      if (!loaded.messages) { loadMessages(); loaded.messages = true; }
+    });
+  }
+  function close(){
+    backdrop.hidden = true;
+    drawer.classList.remove('open');
+  }
+
+  if (btnOpen) btnOpen.addEventListener('click', open);
+  if (btnClose) btnClose.addEventListener('click', close);
+  if (backdrop) backdrop.addEventListener('click', close);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && drawer.classList.contains('open')) { close(); return; }
+    if ((e.key === 'w' || e.key === 'W') && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA' && !e.target.isContentEditable && !e.metaKey && !e.ctrlKey) {
+      drawer.classList.contains('open') ? close() : open();
+    }
+  });
+  tabs.forEach(t => t.addEventListener('click', () => activateTab(t.dataset.tab)));
+  // ── Inline task creation ──────────────────────────────────
+  let usersCache = null;
+  async function loadUsers(){
+    if (usersCache) return usersCache;
+    try {
+      const token = localStorage.getItem('ryujin_token');
+      const r = await fetch('/api/users', {
+        headers: Object.assign({ 'x-tenant-id': 'plus-ultra' }, token ? { 'Authorization': 'Bearer ' + token } : {})
+      });
+      if (!r.ok) throw new Error('users ' + r.status);
+      const data = await r.json();
+      usersCache = (data.users || []).filter(u => u.active !== false);
+    } catch(e) { usersCache = []; }
+    return usersCache;
+  }
+
+  async function showNewTaskForm(){
+    const form = $('wsNewTaskForm');
+    const list = $('wsTaskList');
+    form.hidden = false;
+    list.style.display = 'none';
+    $('ntError').hidden = true;
+    $('ntTitle').value = '';
+    $('ntNote').value = '';
+    $('ntDue').value = '';
+    $('ntPriority').value = 'medium';
+    await loadMe();
+    const users = await loadUsers();
+    const sel = $('ntAssignee');
+    const myId = me?.user_id || '';
+    const opts = ['<option value="">— Unassigned —</option>'];
+    if (myId) opts.push(`<option value="${myId}">${escAttr(me.name || 'Me')} (me)</option>`);
+    for (const u of users) {
+      if (u.id === myId) continue;
+      opts.push(`<option value="${u.id}">${escAttr(u.name || u.email || u.id)}</option>`);
+    }
+    sel.innerHTML = opts.join('');
+    sel.value = myId || '';
+    setTimeout(() => $('ntTitle').focus(), 50);
+  }
+  function hideNewTaskForm(){
+    $('wsNewTaskForm').hidden = true;
+    $('wsTaskList').style.display = '';
+  }
+  function escAttr(s){ return String(s).replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'})[c]); }
+
+  $('wsNewTask').addEventListener('click', showNewTaskForm);
+  $('wsViewKanban').addEventListener('click', () => { window.location.href = '/admin.html#crew'; });
+  $('ntCancel').addEventListener('click', hideNewTaskForm);
+
+  $('wsNewTaskForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const title = $('ntTitle').value.trim();
+    if (!title) return;
+    const submit = $('ntSubmit');
+    submit.disabled = true;
+    submit.textContent = 'CREATING…';
+    $('ntError').hidden = true;
+    try {
+      const token = localStorage.getItem('ryujin_token');
+      const headers = { 'Content-Type': 'application/json', 'x-tenant-id': 'plus-ultra' };
+      if (token) headers['Authorization'] = 'Bearer ' + token;
+      const note = $('ntNote').value.trim();
+      const body = {
+        title,
+        assigned_to: $('ntAssignee').value || null,
+        priority: $('ntPriority').value || 'medium',
+        due_date: $('ntDue').value || null,
+        description: note || null
+      };
+      const r = await fetch('/api/tickets', { method: 'POST', headers, body: JSON.stringify(body) });
+      if (!r.ok) {
+        const txt = await r.text();
+        throw new Error('Create failed (' + r.status + '): ' + txt.slice(0, 120));
+      }
+      hideNewTaskForm();
+      // Refresh task list to show the new one (or assigned-to-someone-else stays out)
+      loadTasks();
+    } catch(err) {
+      $('ntError').textContent = err.message || String(err);
+      $('ntError').hidden = false;
+    } finally {
+      submit.disabled = false;
+      submit.textContent = 'CREATE TASK';
+    }
+  });
+  $('wsLogout').addEventListener('click', () => {
+    if (!confirm('Sign out?')) return;
+    try {
+      localStorage.removeItem('ryujin_token');
+      sessionStorage.removeItem('ry_boot_seen');
+    } catch(e){}
+    window.location.href = '/login.html';
+  });
+
+  // Eager-load identity on page load so the avatar shows initials immediately.
+  loadMe();
+
+  window.RyujinWorkspace = { open, close, activateTab };
+})();
+</script>
+
+<!-- Auth guard + first-run onboarding + per-session boot cinematic -->
+<script>
+(function(){
+  try {
+    const params = new URLSearchParams(location.search);
+    const isIframe = window.parent !== window;
+    const isLocal = location.protocol === 'file:';
+    const bootSkipParam = params.has('skip-onboarding');
+
+    // Iframes and local dev always skip guards except onboarding for local
+    if (isIframe || isLocal) {
+      if (!localStorage.getItem('ry_onboarding_done') && !isIframe && !bootSkipParam) {
+        window.location.href = 'onboarding.html';
+      }
+      return;
+    }
+
+    // Deployed, top-frame: require login
+    const token = localStorage.getItem('ryujin_token');
+    if (!token) { window.location.href = '/login.html'; return; }
+
+    // Logged in but never onboarded → onboarding first
+    if (!localStorage.getItem('ry_onboarding_done')) {
+      window.location.href = 'onboarding.html';
+      return;
+    }
+
+    // Play the boot cinematic once per browser session
+    if (!bootSkipParam && !sessionStorage.getItem('ry_boot_seen')) {
+      window.location.href = 'boot.html';
+    }
+  } catch(e){}
+})();
+</script>
+
+<script src="assets/ryujin-search.js"></script>
+<script src="assets/ryujin-tutor.js"></script>
+<script>
+RyujinTutor.register('command-center', [
+  { target: '#css3d-container', title: 'The 3D Command Hub', body: 'You\u2019re standing inside the ring. <b>6 floating screens</b> orbit around you \u2014 one for each sector of your business. Drag with your mouse to look around, scroll to zoom.', position: 'bottom' },
+  { target: '.holo-panel', title: 'Click a panel to enter', body: 'The panel flies in and the sector opens. <b>Right-click</b> or <b>Esc</b> to back out any time. The system never gets lost.', position: 'right' },
+  { target: '.hud-nav', title: 'Mode switchers', body: '<b>Overview</b> resets the camera. <b>Classic</b> is the legacy dashboard. <b>Auto-Spin</b> rotates the scene. <b>Fullscreen</b> goes edge-to-edge.', position: 'top' },
+  { target: '.gp-hints', title: 'Xbox controller works', body: 'Plug in a controller and the hints on the right light up. <b>A</b> selects, <b>B</b> backs out, <b>bumpers</b> cycle panels. Built for couch-mode operations.', position: 'left' },
+  { target: '__center__', title: 'That\u2019s the tour.', body: 'Every sector has its own tutorial \u2014 click the star icon in any top bar. You can reset all tutorials from <b>Admin \u2192 Overview</b>. Now go pick a sector.', position: 'top' }
+]);
+
+// First-run experience: after camera settles, auto-run tour + demo a zoom cycle
+(function firstRunDemo(){
+  try { if (localStorage.getItem('ry_firstrun_hub')) return; } catch(e){}
+  setTimeout(() => {
+    RyujinTutor.start('command-center');
+    // After the tutorial ends, trigger a quick demo: orbit to a panel, zoom in, zoom out
+    const origEnd = RyujinTutor.end;
+    RyujinTutor.end = function(skipped){
+      origEnd(skipped);
+      RyujinTutor.end = origEnd;
+      try { localStorage.setItem('ry_firstrun_hub', '1'); } catch(e){}
+      if (skipped) return;
+      // Demo camera movement: rotate 30deg, then back
+      setTimeout(() => {
+        if (typeof controls !== 'undefined') {
+          controls.autoRotate = true;
+          controls.autoRotateSpeed = 2;
+          setTimeout(() => { controls.autoRotate = false; }, 3500);
+        }
+      }, 400);
+    };
+  }, 2000);
+})();
+// Tutorial is available via ? key — don't auto-start (its backdrop was blocking clicks on load)
+// RyujinTutor.auto('command-center');
+</script>
+
+<!-- Three.js from CDN -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS3DRenderer, CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
+
+// Self-embed guard: /command-center.html is a valid navigation target in the
+// page catalog, so a page running inside one of the orbital iframes can route
+// back here. Booting WebGL + 8 live iframes inside an iframe would recurse the
+// whole scene, so any embedded load gets a flat escape hatch and nothing else.
+const RY_EMBEDDED = (() => { try { return window.self !== window.top; } catch (e) { return true; } })();
+
+// 8-bit + agent modes never instantiate Three.js. Both render flat alternatives.
+if (RY_EMBEDDED) {
+  const cssC = document.getElementById('css3d-container'); if (cssC) cssC.style.display = 'none';
+  const bgC = document.getElementById('bg-canvas'); if (bgC) bgC.style.display = 'none';
+  const orb = document.getElementById('sentinel-orb'); if (orb) orb.style.display = 'none';
+  const guard = document.createElement('div');
+  guard.id = 'embed-guard';
+  guard.style.cssText = 'position:fixed;inset:0;z-index:5000;display:flex;align-items:center;justify-content:center;background:#060a14';
+  guard.innerHTML = `
+    <div style="text-align:center;max-width:440px;padding:30px 34px;border:1px solid rgba(74,158,255,0.3);border-radius:14px;background:rgba(10,16,30,0.92);box-shadow:0 0 40px rgba(74,158,255,0.08)">
+      <div style="font-family:'Orbitron',monospace;font-size:0.9em;letter-spacing:3px;color:#4a9eff;margin-bottom:10px">COMMAND CENTER</div>
+      <div style="font-family:'Share Tech Mono',monospace;font-size:0.78em;line-height:1.7;color:rgba(200,220,255,0.6);margin-bottom:18px">The 3D hub does not run inside another page, it would embed itself recursively. Open it full screen instead.</div>
+      <a href="/command-center.html" target="_top" style="display:inline-block;font-family:'Orbitron',monospace;font-size:0.72em;letter-spacing:2px;padding:9px 18px;border-radius:9px;border:1px solid rgba(74,158,255,0.5);color:#4a9eff;text-decoration:none;background:rgba(74,158,255,0.08)">OPEN FULL SCREEN &rsaquo;</a>
+    </div>`;
+  document.body.appendChild(guard);
+} else if (window.__RY_8BIT__) {
+  // 8-bit: hide WebGL/CSS3D layers, render the static 8-pillar grid.
+  const cssC = document.getElementById('css3d-container'); if (cssC) cssC.style.display = 'none';
+  const bgC = document.getElementById('bg-canvas'); if (bgC) bgC.style.display = 'none';
+  const orb = document.getElementById('sentinel-orb'); if (orb) orb.style.display = 'none';
+  const panels = [
+    { id:'dashboard',  title:'HQ / DASHBOARD', url:'dashboard-v2.html'    },
+    { id:'marketing',  title:'MARKETING',      url:'marketing.html'       },
+    { id:'sales',      title:'SALES',          url:'sales-cockpit.html'   },
+    { id:'production', title:'PRODUCTION',     url:'production.html'      },
+    { id:'service',    title:'SERVICE',        url:'service.html'         },
+    { id:'customer',   title:'CUSTOMER / CRM', url:'customer.html'        },
+    { id:'finance',    title:'FINANCE',        url:'finance.html'         },
+    { id:'admin',      title:'ADMINISTRATION', url:'administration.html'  },
+  ];
+  const grid = document.createElement('div');
+  grid.id = 'panel-grid-8bit';
+  grid.innerHTML = panels.map(p =>
+    `<a class="grid-tile" href="${p.url}"><div class="t-title">${p.title}</div><div class="t-go">OPEN ›</div></a>`
+  ).join('');
+  document.body.appendChild(grid);
+} else if (window.__RY_AGENT__) {
+  // Agent: hide cockpit, scale orb, mount full-screen chat brain via Ryujin.init when ready.
+  const cssC = document.getElementById('css3d-container'); if (cssC) cssC.style.display = 'none';
+  const bgC = document.getElementById('bg-canvas'); if (bgC) bgC.style.display = 'none';
+  const mount = document.createElement('div');
+  mount.id = 'agent-chat-mount';
+  mount.innerHTML = '<div id="agentChatTarget"></div>';
+  document.body.appendChild(mount);
+  let tries = 0;
+  const tryInit = () => {
+    if (window.Ryujin && typeof window.Ryujin.init === 'function') {
+      try { window.Ryujin.init({ sector: 'GLOBAL', embedTarget: '#agentChatTarget', autoOpen: true }); } catch(e){}
+    } else if (++tries < 60) {
+      setTimeout(tryInit, 100);
+    }
+  };
+  tryInit();
+} else {
+
+// ── Perf mode: auto-detect low-end + manual override per-machine ──
+// Force via URL: ?lite=1 (on) or ?lite=0 (off). Persists to localStorage, so do it once per machine.
+(function syncLiteFlag(){
+  const p = new URLSearchParams(location.search);
+  if (!p.has('lite')) return;
+  if (p.get('lite') === '0') localStorage.removeItem('ry_cc_lite');
+  else localStorage.setItem('ry_cc_lite', '1');
+})();
+const LITE_FORCED = localStorage.getItem('ry_cc_lite') === '1';
+const LOW_PERF = LITE_FORCED || (
+  window.innerWidth < 900 ||
+  (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) ||
+  (navigator.connection && (navigator.connection.saveData || /2g/.test(navigator.connection.effectiveType || '')))
+);
+
+// Small HUD indicator + click-to-toggle (bottom-left, subtle)
+(function liteToggle(){
+  const btn = document.createElement('button');
+  btn.textContent = LITE_FORCED ? 'LITE · ON' : (LOW_PERF ? 'LITE · AUTO' : 'LITE · OFF');
+  btn.title = 'Toggle Lite mode (reduces lag on low-end GPUs) — reloads the page';
+  btn.style.cssText = 'position:fixed;left:12px;bottom:12px;z-index:100;padding:6px 10px;background:rgba(6,10,20,0.72);border:1px solid rgba(74,158,255,0.35);border-radius:8px;font-family:"Share Tech Mono",monospace;font-size: 0.75em;letter-spacing:1.5px;color:' + (LOW_PERF ? '#4a9eff' : 'rgba(200,220,255,0.4)') + ';cursor:pointer;backdrop-filter:blur(8px)';
+  btn.onclick = () => {
+    const next = LITE_FORCED ? '0' : '1';
+    const u = new URL(location.href);
+    u.searchParams.set('lite', next);
+    location.href = u.toString();
+  };
+  document.body.appendChild(btn);
+})();
+
+// ──────────────────────────────────────────
+// CONFIG
+// ──────────────────────────────────────────
+// PANEL_COUNT is derived from panels.length where the array is declared below
+// (drift-proof). At the canonical 8 pillars the chord between adjacent 720px
+// preview panels is ~918 on ORBIT_RADIUS 1200: comfortable, no overlap.
+const ORBIT_RADIUS = 1200;
+const ORBIT_Y_VARIANCE = 30;
+const CAMERA_START = { x: 0, y: 160, z: 950 };
+// Focus/browse stop: panel ~fills the frame but stays bordered (down from 760, which parked you in the "near" zone).
+const ZOOM_DISTANCE = 470;
+// Click-to-enter dive: plunge until the panel face overflows the viewport, then crossfade to the live page.
+// Kept above controls.minDistance (220) so OrbitControls never clamps it back out.
+const ENTER_DISTANCE = 250;
+const COLORS = {
+  cyan: 0x22d3ee,
+  purple: 0x7c3aed,
+  blue: 0x4a9eff,
+  green: 0x4ade80,
+  bg: 0x020408,
+};
+
+// ──────────────────────────────────────────
+// STATE
+// ──────────────────────────────────────────
+let focusedPanel = null;
+let isAnimating = false;
+const panelObjects = [];
+const panelData = [];
+const clock = new THREE.Clock();
+
+// ──────────────────────────────────────────
+// SCENES & RENDERERS
+// ──────────────────────────────────────────
+
+// WebGL scene (background effects)
+const bgCanvas = document.getElementById('bg-canvas');
+const bgRenderer = new THREE.WebGLRenderer({ canvas: bgCanvas, antialias: !LOW_PERF, alpha: true, powerPreference: LOW_PERF ? 'low-power' : 'default' });
+bgRenderer.setSize(window.innerWidth, window.innerHeight);
+bgRenderer.setPixelRatio(Math.min(window.devicePixelRatio, LOW_PERF ? 1 : 1.5));
+const bgScene = new THREE.Scene();
+
+// CSS3D scene (panels)
+const cssRenderer = new CSS3DRenderer();
+cssRenderer.setSize(window.innerWidth, window.innerHeight);
+cssRenderer.domElement.style.position = 'fixed';
+cssRenderer.domElement.style.top = '0';
+cssRenderer.domElement.style.left = '0';
+cssRenderer.domElement.style.pointerEvents = 'auto';
+document.getElementById('css3d-container').appendChild(cssRenderer.domElement);
+
+// Shared camera
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 1, 10000);
+camera.position.set(CAMERA_START.x, CAMERA_START.y, CAMERA_START.z);
+
+// Controls
+const controls = new OrbitControls(camera, cssRenderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.rotateSpeed = -0.4;
+controls.enableZoom = false;  // we handle wheel ourselves for snap-zoom
+// Cap camera radius so you stay INSIDE the orbit ring (panel fronts always face you)
+controls.minDistance = 220;
+controls.maxDistance = 1200;
+controls.enablePan = false;
+controls.autoRotate = !LOW_PERF;
+controls.autoRotateSpeed = 0.3;
+controls.target.set(0, 0, 0);
+
+// ──────────────────────────────────────────
+// BACKGROUND: STARFIELD + PARTICLES
+// ──────────────────────────────────────────
+
+// Stars — scaled down on low-perf devices (mobile, reduced-motion, save-data)
+const starCount = LOW_PERF ? 400 : 2000;
+const starGeo = new THREE.BufferGeometry();
+const starPos = new Float32Array(starCount * 3);
+const starSizes = new Float32Array(starCount);
+for (let i = 0; i < starCount; i++) {
+  starPos[i*3]   = (Math.random() - 0.5) * 8000;
+  starPos[i*3+1] = (Math.random() - 0.5) * 8000;
+  starPos[i*3+2] = (Math.random() - 0.5) * 8000;
+  starSizes[i]   = Math.random() * 2 + 0.5;
+}
+starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+starGeo.setAttribute('size', new THREE.BufferAttribute(starSizes, 1));
+
+const starMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uTime: { value: 0 },
+    uColor: { value: new THREE.Color(0x88bbff) },
+  },
+  vertexShader: `
+    attribute float size;
+    uniform float uTime;
+    varying float vAlpha;
+    void main() {
+      vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+      gl_PointSize = size * (400.0 / -mvPos.z);
+      gl_Position = projectionMatrix * mvPos;
+      vAlpha = 0.3 + 0.7 * sin(uTime * 0.5 + position.x * 0.01 + position.y * 0.01);
+    }
+  `,
+  fragmentShader: `
+    uniform vec3 uColor;
+    varying float vAlpha;
+    void main() {
+      float d = length(gl_PointCoord - vec2(0.5));
+      if (d > 0.5) discard;
+      float glow = 1.0 - smoothstep(0.0, 0.5, d);
+      gl_FragColor = vec4(uColor, glow * vAlpha * 0.7);
+    }
+  `,
+  transparent: true,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending,
+});
+bgScene.add(new THREE.Points(starGeo, starMat));
+
+// Orbital ring (decorative)
+function createGlowRing(radius, color, opacity) {
+  const ringGeo = new THREE.RingGeometry(radius - 1.5, radius + 1.5, 128);
+  const ringMat = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.rotation.x = -Math.PI / 2;
+  return ring;
+}
+
+const mainRing = createGlowRing(ORBIT_RADIUS, COLORS.cyan, 0.1);
+bgScene.add(mainRing);
+const innerRing = createGlowRing(ORBIT_RADIUS - 30, COLORS.purple, 0.05);
+bgScene.add(innerRing);
+const outerRing = createGlowRing(ORBIT_RADIUS + 30, COLORS.cyan, 0.04);
+bgScene.add(outerRing);
+
+// Central core orb
+const coreGeo = new THREE.SphereGeometry(60, 32, 32);
+const coreMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uTime: { value: 0 },
+    uColor1: { value: new THREE.Color(0x22d3ee) },
+    uColor2: { value: new THREE.Color(0x7c3aed) },
+  },
+  vertexShader: `
+    varying vec3 vNormal;
+    varying vec3 vPosition;
+    void main() {
+      vNormal = normalize(normalMatrix * normal);
+      vPosition = position;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform float uTime;
+    uniform vec3 uColor1;
+    uniform vec3 uColor2;
+    varying vec3 vNormal;
+    varying vec3 vPosition;
+    void main() {
+      float fresnel = pow(1.0 - abs(dot(vNormal, vec3(0.0, 0.0, 1.0))), 2.5);
+      vec3 col = mix(uColor1, uColor2, sin(vPosition.y * 0.03 + uTime * 0.5) * 0.5 + 0.5);
+      gl_FragColor = vec4(col, fresnel * 0.6);
+    }
+  `,
+  transparent: true,
+  side: THREE.FrontSide,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+});
+const coreOrb = new THREE.Mesh(coreGeo, coreMat);
+bgScene.add(coreOrb);
+
+// Core glow sprite
+const glowTex = generateGlowTexture();
+const glowSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+  map: glowTex,
+  color: 0x22d3ee,
+  transparent: true,
+  opacity: 0.3,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+}));
+glowSprite.scale.set(300, 300, 1);
+bgScene.add(glowSprite);
+
+function generateGlowTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128; canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.3, 'rgba(255,255,255,0.4)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 128, 128);
+  const tex = new THREE.CanvasTexture(canvas);
+  return tex;
+}
+
+// Floating particles around ring
+const particleCount = 300;
+const particleGeo = new THREE.BufferGeometry();
+const particlePos = new Float32Array(particleCount * 3);
+const particleAngles = new Float32Array(particleCount);
+const particleRadii = new Float32Array(particleCount);
+const particleYs = new Float32Array(particleCount);
+const particleSpeeds = new Float32Array(particleCount);
+for (let i = 0; i < particleCount; i++) {
+  particleAngles[i] = Math.random() * Math.PI * 2;
+  particleRadii[i] = ORBIT_RADIUS + (Math.random() - 0.5) * 160;
+  particleYs[i] = (Math.random() - 0.5) * 200;
+  particleSpeeds[i] = 0.0003 + Math.random() * 0.001;
+  particlePos[i*3]   = Math.cos(particleAngles[i]) * particleRadii[i];
+  particlePos[i*3+1] = particleYs[i];
+  particlePos[i*3+2] = Math.sin(particleAngles[i]) * particleRadii[i];
+}
+particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePos, 3));
+
+const particleMat = new THREE.PointsMaterial({
+  color: 0x22d3ee,
+  size: 3,
+  transparent: true,
+  opacity: 0.4,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+});
+const particles = new THREE.Points(particleGeo, particleMat);
+bgScene.add(particles);
+
+// ──────────────────────────────────────────
+// PANEL HTML CONTENT
+// ──────────────────────────────────────────
+
+// The clean 8 business-function pillars. The Jun-15 batch jammed three artifact
+// panels (ad-activity/seo/crm) into this ring and grew it to 11 without bumping
+// PANEL_COUNT, which collided pillars at shared angles (finance landed on top of
+// marketing). Per Mac's Option B call those artifacts now NEST inside their parent
+// pillar as tabs (ad-activity + seo under Marketing; crm under Customer); the
+// `children` ids drive the rolled-up unread "!" badge on the parent panel.
+const panels = [
+  { id: 'dashboard',  title: 'HQ / DASHBOARD', url: 'dashboard-v2.html?embed=1',  badge: '<span class="panel-badge badge-live">LIVE</span>' },
+  { id: 'marketing',  title: 'MARKETING',      url: 'marketing.html?embed=1',     badge: '<span class="panel-badge badge-live">LIVE</span>', children: ['ad-activity', 'seo-scoreboard'] },
+  { id: 'sales',      title: 'SALES',          url: 'sales-cockpit.html?embed=1', badge: '<span class="panel-badge badge-live">LIVE</span>' },
+  { id: 'production', title: 'PRODUCTION',     url: 'production.html?embed=1',    badge: '<span class="panel-badge badge-live">LIVE</span>' },
+  { id: 'service',    title: 'SERVICE',        url: 'service.html?embed=1',       badge: '<span class="panel-badge badge-live">LIVE</span>' },
+  { id: 'customer',   title: 'CUSTOMER / CRM', url: 'customer.html?embed=1',      badge: '<span class="panel-badge badge-live">LIVE</span>', children: ['crm'] },
+  { id: 'finance',    title: 'FINANCE',        url: 'finance.html?embed=1',       badge: '<span class="panel-badge badge-live">LIVE</span>' },
+  { id: 'admin',      title: 'ADMINISTRATION', url: 'administration.html?embed=1',badge: '<span class="panel-badge badge-online">v3.1</span>' },
+];
+// Derived, never hard-coded, so adding or removing a pillar can never again drift
+// the orbit geometry or the keyboard/gamepad cycling out of sync with the array.
+const PANEL_COUNT = panels.length;
+
+function gauge(val, max, label) {
+  const pct = val / max;
+  const circumference = 2 * Math.PI * 32;
+  const offset = circumference * (1 - pct);
+  return `<div class="gauge-wrap">
+    <div class="gauge-ring">
+      <svg viewBox="0 0 80 80"><circle class="track" cx="40" cy="40" r="32"/><circle class="fill-ring" cx="40" cy="40" r="32" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}"/></svg>
+      <div class="gauge-val">${val}</div>
+    </div>
+    <div class="gauge-lbl">${label}</div>
+  </div>`;
+}
+
+// ──────────────────────────────────────────
+// CREATE CSS3D PANELS IN ORBITAL LAYOUT
+// ──────────────────────────────────────────
+
+const cssScene = new THREE.Scene();
+
+// Place dashboard (i=0) directly in the camera's forward view (on -Z axis beyond origin)
+const ANGLE_OFFSET = -Math.PI / 2;
+
+// Holographic pillar-name layer: screen-space labels that float above each panel.
+const pillarLabelLayer = document.createElement('div');
+pillarLabelLayer.id = 'pillar-labels';
+document.body.appendChild(pillarLabelLayer);
+
+panels.forEach((p, i) => {
+  const angle = (i / PANEL_COUNT) * Math.PI * 2 + ANGLE_OFFSET;
+  const yOffset = Math.sin(angle * 2) * ORBIT_Y_VARIANCE;
+
+  // Create DOM element
+  const el = document.createElement('div');
+  el.className = `holo-panel preview`;
+  el.innerHTML = `
+    <div class="scanline"></div>
+    <div class="panel-header">
+      <div class="panel-title">${p.title}</div>
+      ${p.badge}
+    </div>
+    <div class="panel-preview">
+      <iframe class="panel-frame" data-src="${p.url}" scrolling="no" tabindex="-1"></iframe>
+      <div class="panel-standby">STANDBY &middot; LOADS ON APPROACH</div>
+      <div class="panel-click-shield"></div>
+    </div>
+  `;
+  // Panel click is handled by the global capture-phase listener below (panelPointerDown/Up).
+  // We just stash the index on the element for lookup.
+  el.dataset.panelIndex = String(i);
+  // Wire the fleet-wide unread "!" badge to artifact panels (see assets/unread-badge.js).
+  if (p.aid) el.dataset.artifactId = p.aid;
+  // Roll nested-artifact freshness up to the parent pillar: mark the panel as an
+  // artifact group and drop one hidden sensor per child id. unread-badge.js counts
+  // unseen sensors and paints a "!" count bubble on the pillar, so Marketing lights
+  // up when Ad Activity or SEO has new data and Customer/CRM lights up for new CRM
+  // items. Opening the nested tab clears its id, which drops the pillar count.
+  if (p.children && p.children.length) {
+    el.dataset.artifactGroup = p.id;
+    p.children.forEach(function (cid) {
+      var sensor = document.createElement('span');
+      sensor.dataset.artifactId = cid;
+      sensor.style.display = 'none';
+      el.appendChild(sensor);
+    });
+  }
+
+  // Create CSS3D object
+  const obj = new CSS3DObject(el);
+  obj.position.set(
+    Math.cos(angle) * ORBIT_RADIUS,
+    yOffset,
+    Math.sin(angle) * ORBIT_RADIUS
+  );
+  // Face center
+  obj.lookAt(0, yOffset * 0.3, 0);
+  obj.scale.set(1, 1, 1);
+
+  cssScene.add(obj);
+  panelObjects.push(obj);
+
+  // Floating holographic name tag for this pillar (positioned each frame in updatePillarLabels).
+  const label = document.createElement('div');
+  label.className = 'pillar-label';
+  label.textContent = p.title;
+  pillarLabelLayer.appendChild(label);
+
+  panelData.push({ angle, yOffset, element: el, label, hydrated: false });
+});
+
+// ──────────────────────────────────────────
+// LAZY PANEL HYDRATION
+// Native loading="lazy" cannot defer iframes inside a CSS3DRenderer transform
+// container (the browser treats them as in-viewport), and every embedded page
+// fires its own /api/snapshot fetch + poll on boot. So panels start with only
+// a data-src and get a real src the first time the camera actually looks at
+// them, or immediately on explicit focus / zoom / dive / gamepad select.
+// ──────────────────────────────────────────
+function hydratePanel(index) {
+  const pd = panelData[index];
+  if (!pd || pd.hydrated) return;
+  pd.hydrated = true;
+  const frame = pd.element.querySelector('.panel-frame');
+  if (frame && !frame.src) frame.src = frame.dataset.src;
+  const standby = pd.element.querySelector('.panel-standby');
+  if (standby) standby.remove();
+}
+
+const _lazyCamDir = new THREE.Vector3();
+const _lazyToPanel = new THREE.Vector3();
+let _lazyNextCheck = 0;
+// Checked at 2Hz from the render loop. dot > 0.92 is roughly a 23 degree cone
+// around the view center, so a panel hydrates as the camera swings onto it.
+function lazyHydrateVisible(elapsed) {
+  if (elapsed < _lazyNextCheck) return;
+  _lazyNextCheck = elapsed + 0.5;
+  if (document.hidden) return;
+  camera.getWorldDirection(_lazyCamDir);
+  for (let i = 0; i < panelData.length; i++) {
+    if (panelData[i].hydrated) continue;
+    _lazyToPanel.copy(panelObjects[i].position).sub(camera.position).normalize();
+    if (_lazyCamDir.dot(_lazyToPanel) > 0.92) hydratePanel(i);
+  }
+}
+
+// ──────────────────────────────────────────
+// CAMERA ANIMATION
+// ──────────────────────────────────────────
+
+const animState = {
+  from: new THREE.Vector3(),
+  to: new THREE.Vector3(),
+  fromTarget: new THREE.Vector3(),
+  toTarget: new THREE.Vector3(),
+  progress: 0,
+  duration: 1.2,
+  active: false,
+  onComplete: null,
+};
+
+function animateCamera(toPos, toTarget, duration, onComplete) {
+  animState.from.copy(camera.position);
+  animState.to.copy(toPos);
+  animState.fromTarget.copy(controls.target);
+  animState.toTarget.copy(toTarget);
+  animState.progress = 0;
+  animState.duration = duration || 1.2;
+  animState.active = true;
+  animState.onComplete = onComplete || null;
+  isAnimating = true;
+  controls.enabled = false;
+}
+
+function easeInOutCubic(t) {
+  return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3) / 2;
+}
+
+function updateCameraAnimation(dt) {
+  if (!animState.active) return;
+  animState.progress += dt / animState.duration;
+  if (animState.progress >= 1) {
+    animState.progress = 1;
+    animState.active = false;
+    isAnimating = false;
+    controls.enabled = true;
+    if (animState.onComplete) animState.onComplete();
+  }
+  const t = easeInOutCubic(animState.progress);
+  camera.position.lerpVectors(animState.from, animState.to, t);
+  controls.target.lerpVectors(animState.fromTarget, animState.toTarget, t);
+}
+
+function zoomToPanel(index, onComplete) {
+  if (isAnimating) return;
+  hydratePanel(index);
+  const obj = panelObjects[index];
+  const panelPos = obj.position.clone();
+  const dir = panelPos.clone().normalize();
+  const camPos = panelPos.clone().sub(dir.clone().multiplyScalar(ZOOM_DISTANCE));
+  camPos.y = panelPos.y + 20;
+
+  focusedPanel = index;
+  controls.autoRotate = false;
+  panelData.forEach((pd, i) => pd.element.classList.toggle('focused', i === index));
+
+  animateCamera(camPos, panelPos, 0.7, () => {
+    document.getElementById('instruction').style.opacity = '0';
+    if (onComplete) onComplete();
+  });
+}
+
+// Single-click / scroll-in on a panel: one continuous plunge from the ring,
+// through the panel face, into the full live page. No mid-stop, no popup. The
+// camera dives until the panel overflows the viewport while the overlay
+// crossfades in over the tail of the dive, so the panel dissolves into the page.
+function flyAndEnter(index){
+  if (isAnimating) return;
+  hydratePanel(index);
+  const obj = panelObjects[index];
+  const panelPos = obj.position.clone();
+  const dir = panelPos.clone().normalize();
+  const camPos = panelPos.clone().sub(dir.clone().multiplyScalar(ENTER_DISTANCE));
+  camPos.y = panelPos.y + 14;
+
+  focusedPanel = index;
+  controls.autoRotate = false;
+  panelData.forEach((pd, i) => pd.element.classList.toggle('focused', i === index));
+  document.getElementById('instruction').style.opacity = '0';
+
+  const DIVE = 0.85; // seconds
+  animateCamera(camPos, panelPos, DIVE);
+  // Start the full-page crossfade partway through the dive so the 0.45s overlay
+  // fade lands right as the camera bottoms out, so the two motions overlap.
+  clearTimeout(flyAndEnter._t);
+  flyAndEnter._t = setTimeout(() => enterFocusedPanel(), DIVE * 1000 * 0.45);
+}
+
+function zoomOut() {
+  if (isAnimating) return;
+  focusedPanel = null;
+  zoomLevelIdx = 2; // reset snap-zoom state to MID (idx 2 in 4-level array)
+  document.getElementById('backBtn').style.display = 'none';
+  panelData.forEach(pd => pd.element.classList.remove('focused'));
+
+  const target = new THREE.Vector3(0, 0, 0);
+  const camPos = new THREE.Vector3(CAMERA_START.x, CAMERA_START.y, CAMERA_START.z);
+
+  animateCamera(camPos, target, 1.0, () => {
+    document.getElementById('instruction').style.opacity = '1';
+  });
+}
+
+function enterFocusedPanel() {
+  if (focusedPanel === null) return;
+  const panel = panels[focusedPanel];
+  if (!panel || !panel.url) return;
+  const overlay = document.getElementById('sectionOverlay');
+  const frame = document.getElementById('sectionFrame');
+  const title = document.getElementById('sectionTitle');
+  // Strip the ?embed=1 flag cleanly so the iframe loads the full interactive page
+  frame.src = panel.url.split('?')[0];
+  title.textContent = panel.title;
+  // Two-step: lay it out first, force a reflow, THEN flip .on so the opacity +
+  // scale transition actually fires (a single-frame display:none -> flex can't transition).
+  overlay.style.display = 'flex';
+  void overlay.offsetWidth;
+  overlay.classList.add('on');
+}
+window.enterFocusedPanel = enterFocusedPanel;
+
+function exitSectionOverlay() {
+  const overlay = document.getElementById('sectionOverlay');
+  const frame = document.getElementById('sectionFrame');
+  overlay.classList.remove('on');
+  // Unload + drop the inline display after the fade so the hidden overlay stops capturing clicks.
+  setTimeout(() => { frame.src = ''; overlay.style.display = ''; }, 450);
+  // Reset focused panel state so next click works without needing to back all the way out
+  if (focusedPanel !== null) {
+    setTimeout(zoomOut, 200);
+  }
+}
+window.exitSectionOverlay = exitSectionOverlay;
+
+function toggleFullscreen(){
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(() => {});
+  } else {
+    document.exitFullscreen().catch(() => {});
+  }
+}
+window.toggleFullscreen = toggleFullscreen;
+window.zoomOut = zoomOut;
+
+function resetCamera() {
+  zoomOut();
+}
+window.resetCamera = resetCamera;
+
+function toggleAutoRotate() {
+  controls.autoRotate = !controls.autoRotate;
+}
+window.toggleAutoRotate = toggleAutoRotate;
+
+// ──────────────────────────────────────────
+// BUILD STAMP — visible in bottom-left so you can confirm the right version loaded
+// ──────────────────────────────────────────
+(function buildStamp(){
+  const b = document.createElement('div');
+  b.textContent = 'BUILD v3.4 · GRID SUB-HUB · ' + new Date().toISOString().slice(0,10);
+  b.style.cssText = 'position:fixed;bottom:10px;left:12px;z-index:300;font-family:"Share Tech Mono",monospace;font-size: 0.75em;letter-spacing:1.5px;color:rgba(74,158,255,0.42);pointer-events:none;padding:4px 9px;background:rgba(6,10,20,0.35);border:1px solid rgba(74,158,255,0.15);border-radius:6px';
+  document.body.appendChild(b);
+})();
+
+// ──────────────────────────────────────────
+// OPENING CUTSCENE — plays once per session, skipped on repeats + low-perf devices.
+//
+// Bails on perf-lite too (was only checking LOW_PERF / ry_cc_lite, missed the
+// auto-detected ry_perf_lite flag), and waits two RAFs before firing so the
+// first WebGL frame has already rendered. That eliminates the jank where the
+// CSS keyframes started while shaders were still compiling.
+// ──────────────────────────────────────────
+(function openingCutscene(){
+  const flash = document.getElementById('entry-flash');
+  const mark = document.getElementById('entry-mark');
+  if (!flash || !mark) return;
+  const seen = sessionStorage.getItem('ry_cc_cutscene_seen');
+  const perfLite = document.documentElement.classList.contains('perf-lite');
+  if (seen || LOW_PERF || perfLite) {
+    // Skip entirely — tear down now so nothing stays on screen or intercepts clicks
+    flash.remove(); mark.remove();
+    return;
+  }
+  sessionStorage.setItem('ry_cc_cutscene_seen', '1');
+  // Defer one extra frame so the WebGL renderer has shipped its first frame
+  // before we start animating — keeps the cutscene off the contended path.
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      flash.classList.add('fire');
+      mark.classList.add('fire');
+    });
+  });
+  setTimeout(() => { flash.remove(); mark.remove(); }, 3000);
+})();
+
+// ──────────────────────────────────────────
+// ZOOM — 3 snap levels (close / mid / far)
+// ──────────────────────────────────────────
+// All inside the orbit ring. Index 0 = ULTRA (immersive), increasing idx = FARTHER out
+const ZOOM_LEVELS = [180, 410, 730, 1140];
+const ZOOM_LABELS = ['ULTRA', 'CLOSE', 'MID', 'FAR'];
+let zoomLevelIdx = 2; // start at mid
+let zoomCooldown = 0;
+
+function snapZoom(dir) {
+  if (performance.now() < zoomCooldown) return;
+  // If a panel is already focused, scrolling OUT unfocuses + returns to MID zoom
+  if (focusedPanel !== null) {
+    if (dir > 0) { zoomOut(); zoomCooldown = performance.now() + 380; }
+    return;
+  }
+  const prev = zoomLevelIdx;
+  // Entering a panel is click-only: the wheel only changes the overview zoom
+  // level, it never auto-selects or opens a panel.
+  zoomLevelIdx = Math.max(0, Math.min(ZOOM_LEVELS.length - 1, zoomLevelIdx + dir));
+  if (zoomLevelIdx === prev) return;
+  zoomCooldown = performance.now() + 380;
+  const spherical = new THREE.Spherical().setFromVector3(camera.position);
+  spherical.radius = ZOOM_LEVELS[zoomLevelIdx];
+  const newPos = new THREE.Vector3().setFromSpherical(spherical);
+  animateCamera(newPos, controls.target.clone(), 0.45);
+  showZoomLabel();
+}
+
+function showZoomLabel(){
+  let el = document.getElementById('zoomLabel');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'zoomLabel';
+    el.style.cssText = 'position:fixed;top:24px;left:50%;transform:translateX(-50%);z-index:250;font-family:Orbitron,sans-serif;font-size:0.72em;font-weight:800;letter-spacing:5px;color:#4a9eff;background:rgba(6,10,20,0.85);border:1px solid rgba(74,158,255,0.35);padding:6px 20px;border-radius:9px;backdrop-filter:blur(10px);pointer-events:none;opacity:0;transition:opacity 0.35s;box-shadow:0 0 20px rgba(74,158,255,0.2)';
+    document.body.appendChild(el);
+  }
+  el.textContent = 'VIEW · ' + ZOOM_LABELS[zoomLevelIdx];
+  el.style.opacity = '1';
+  clearTimeout(showZoomLabel._t);
+  showZoomLabel._t = setTimeout(() => { el.style.opacity = '0'; }, 1100);
+}
+
+window.addEventListener('wheel', (e) => {
+  if (document.getElementById('sectionOverlay').classList.contains('on')) return;
+  e.preventDefault();
+  // wheel UP (deltaY<0) = zoom IN (smaller idx = closer). wheel DOWN = zoom OUT.
+  snapZoom(e.deltaY > 0 ? 1 : -1);
+}, { passive: false });
+
+// ──────────────────────────────────────────
+// RIGHT-CLICK = BACK (layered exit)
+// ──────────────────────────────────────────
+window.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  const overlayOpen = document.getElementById('sectionOverlay').classList.contains('on');
+  if (overlayOpen) exitSectionOverlay();
+  else if (focusedPanel !== null) zoomOut();
+  else { zoomLevelIdx = 2; resetCamera(); }
+});
+
+// ──────────────────────────────────────────
+// PANEL CLICK — LET OrbitControls handle drag; we only fire on clean click (no drag)
+// ──────────────────────────────────────────
+let _panelDown = null;
+let _panelDownX = 0, _panelDownY = 0;
+
+// DO NOT stop propagation at pointerdown — OrbitControls needs it to start orbit.
+window.addEventListener('pointerdown', (e) => {
+  const panel = e.target.closest && e.target.closest('.holo-panel');
+  if (!panel) { _panelDown = null; return; }
+  _panelDown = panel;
+  _panelDownX = e.clientX;
+  _panelDownY = e.clientY;
+}, true);
+
+// At pointerup: if pointer didn't move (it was a click), enter the panel.
+// If it moved (it was a drag), do nothing — OrbitControls already rotated the scene.
+window.addEventListener('pointerup', (e) => {
+  if (!_panelDown) return;
+  const panel = _panelDown;
+  _panelDown = null;
+  const dx = Math.abs(e.clientX - _panelDownX);
+  const dy = Math.abs(e.clientY - _panelDownY);
+  const isClick = dx < 6 && dy < 6;
+  const idx = parseInt(panel.dataset.panelIndex, 10);
+  // Diagnostic: opt-in via localStorage.ry_panel_click_debug = '1' (off by default).
+  // Mac uses this when a panel feels un-clickable to see which gate dropped the click.
+  if (localStorage.getItem('ry_panel_click_debug') === '1') {
+    console.log('[panel-click]', {
+      panelIdx: isNaN(idx) ? null : idx,
+      title: panel.querySelector('.panel-title')?.textContent || null,
+      dx, dy, isClick,
+      focusedPanel, isAnimating
+    });
+  }
+  if (isClick && !isNaN(idx)) {
+    // Already focused on this panel: skip the redundant fly-to-self animation
+    // and open the section immediately (mirrors gamepad A-button logic).
+    if (focusedPanel === idx) enterFocusedPanel();
+    else flyAndEnter(idx);
+  }
+}, true);
+
+// Cancel panel click if pointer leaves window during press (user dragged hard + released offscreen)
+window.addEventListener('pointercancel', () => { _panelDown = null; }, true);
+
+// Keyboard: Escape/Back = exit, Enter = open, F = fullscreen, Arrows = snap rotate, +/- = zoom
+document.addEventListener('keydown', (e) => {
+  // Don't hijack keys when the user is typing in a form field or contentEditable.
+  // Without this, typing H/F/arrows/+/- in the cockpit chat box or any input
+  // triggers tutor/fullscreen/camera-rotate and corrupts what the user is typing.
+  const t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+  const overlayOpen = document.getElementById('sectionOverlay').classList.contains('on');
+  if (e.key === 'Escape') {
+    if (overlayOpen) exitSectionOverlay();
+    else if (focusedPanel !== null) zoomOut();
+    else resetCamera();
+  } else if (e.key === 'Enter' && focusedPanel !== null && !overlayOpen) {
+    enterFocusedPanel();
+  } else if (e.key === 'f' || e.key === 'F') {
+    if (!e.ctrlKey && !e.metaKey) toggleFullscreen();
+  } else if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && !overlayOpen) {
+    e.preventDefault();
+    const dir = e.key === 'ArrowRight' ? 1 : -1;
+    if (focusedPanel !== null) {
+      const next = (focusedPanel + dir + PANEL_COUNT) % PANEL_COUNT;
+      gpSelectedIndex = next;
+      zoomToPanel(next);
+    } else {
+      gpSelectedIndex = (gpSelectedIndex + dir + PANEL_COUNT) % PANEL_COUNT;
+      gpOrbitToPanel(gpSelectedIndex);
+    }
+  } else if ((e.key === '?' || e.key === 'h' || e.key === 'H') && !overlayOpen) {
+    e.preventDefault();
+    if (window.RyujinTutor) RyujinTutor.start('command-center');
+  } else if ((e.key === '+' || e.key === '=') && !overlayOpen) {
+    snapZoom(-1);
+  } else if ((e.key === '-' || e.key === '_') && !overlayOpen) {
+    snapZoom(1);
+  }
+});
+
+// Wire up HUD buttons from inside module scope
+document.getElementById('backBtn').addEventListener('click', () => zoomOut());
+document.getElementById('btnOverview').addEventListener('click', () => resetCamera());
+document.getElementById('btnClassic').addEventListener('click', () => { window.location.href = 'admin.html'; });
+document.getElementById('btnSpin').addEventListener('click', () => toggleAutoRotate());
+document.getElementById('btnFullscreen').addEventListener('click', () => toggleFullscreen());
+document.getElementById('sectionBack').addEventListener('click', () => exitSectionOverlay());
+document.getElementById('sectionFs').addEventListener('click', () => toggleFullscreen());
+
+// ──────────────────────────────────────────
+// HUD CLOCK
+// ──────────────────────────────────────────
+function updateHUD() {
+  const now = new Date();
+  document.getElementById('hudTime').textContent =
+    now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+  document.getElementById('hudDate').textContent =
+    now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+}
+updateHUD();
+setInterval(updateHUD, 1000);
+
+// ──────────────────────────────────────────
+// GAMEPAD SUPPORT
+// ──────────────────────────────────────────
+
+let gamepadConnected = false;
+let gpSelectedIndex = 0;
+let gpBumperCooldown = 0;
+let gpButtonCooldown = { a: 0, b: 0 };
+const GP_DEADZONE = 0.2;
+const GP_BUMPER_DELAY = 0.25;
+const GP_BUTTON_DELAY = 0.3;
+
+function gpHighlightPanel(index) {
+  panelData.forEach((pd, i) => {
+    pd.element.classList.toggle('gp-selected', i === index);
+  });
+}
+
+function gpOrbitToPanel(index) {
+  if (isAnimating || focusedPanel !== null) return;
+  hydratePanel(index);
+  gpSelectedIndex = index;
+  gpHighlightPanel(index);
+
+  const obj = panelObjects[index];
+  const panelPos = obj.position.clone();
+  const dir = panelPos.clone().normalize();
+  const camPos = dir.clone().multiplyScalar(1100);
+  camPos.y = panelPos.y + 120;
+
+  controls.autoRotate = false;
+  animateCamera(camPos, new THREE.Vector3(0, 0, 0), 0.6);
+}
+
+window.addEventListener('gamepadconnected', (e) => {
+  gamepadConnected = true;
+  document.getElementById('gamepadIndicator').classList.add('connected');
+  document.getElementById('gpHints').classList.add('show');
+  document.getElementById('instruction').style.opacity = '0';
+  gpHighlightPanel(gpSelectedIndex);
+  console.log(`Gamepad connected: ${e.gamepad.id}`);
+});
+
+// ──────────────────────────────────────────
+// INPUT MODE SNAP LOCK (mouse vs gamepad)
+// ──────────────────────────────────────────
+let inputMode = 'mouse';
+const inputModeEl = document.getElementById('inputMode');
+const inputModeLabel = document.getElementById('inputModeLabel');
+
+function setInputMode(mode) {
+  if (inputMode === mode) return;
+  inputMode = mode;
+  if (mode === 'gamepad') {
+    document.body.classList.add('gp-mode');
+    controls.enableRotate = false;
+    controls.enableZoom = false;
+    inputModeLabel.textContent = 'CONTROLLER';
+  } else {
+    document.body.classList.remove('gp-mode');
+    controls.enableRotate = true;
+    controls.enableZoom = true;
+    inputModeLabel.textContent = 'MOUSE';
+    // ensure no gamepad-highlighted panel stays active visually
+    if (focusedPanel === null) panelData.forEach(pd => pd.element.classList.remove('gp-selected'));
+  }
+  inputModeEl.classList.add('show');
+  clearTimeout(setInputMode._t);
+  setInputMode._t = setTimeout(() => inputModeEl.classList.remove('show'), 1800);
+}
+
+// Mouse activity → mouse mode
+let _lastMouseMove = 0;
+document.addEventListener('mousemove', (e) => {
+  const now = performance.now();
+  // Debounce and require real movement to avoid phantom events
+  if (now - _lastMouseMove < 50) return;
+  _lastMouseMove = now;
+  setInputMode('mouse');
+});
+document.addEventListener('mousedown', () => setInputMode('mouse'));
+document.addEventListener('wheel', () => setInputMode('mouse'), {passive:true});
+
+window.addEventListener('gamepaddisconnected', () => {
+  gamepadConnected = false;
+  document.getElementById('gamepadIndicator').classList.remove('connected');
+  document.getElementById('gpHints').classList.remove('show');
+  panelData.forEach(pd => pd.element.classList.remove('gp-selected'));
+});
+
+function processGamepad(dt) {
+  if (!gamepadConnected) return;
+  const gp = navigator.getGamepads()[0];
+  if (!gp) return;
+
+  gpBumperCooldown = Math.max(0, gpBumperCooldown - dt);
+  gpButtonCooldown.a = Math.max(0, gpButtonCooldown.a - dt);
+  gpButtonCooldown.b = Math.max(0, gpButtonCooldown.b - dt);
+
+  // Detect real gamepad activity → lock into gamepad mode
+  const lxRaw = Math.abs(gp.axes[0]) > GP_DEADZONE;
+  const lyRaw = Math.abs(gp.axes[1]) > GP_DEADZONE;
+  const ryRaw = Math.abs(gp.axes[3]) > GP_DEADZONE;
+  const anyBtn = gp.buttons.some(b => b && b.pressed);
+  if (lxRaw || lyRaw || ryRaw || anyBtn) setInputMode('gamepad');
+
+  // ── LEFT STICK: Orbit (intuitive: left=left, up=up) ──
+  const lx = Math.abs(gp.axes[0]) > GP_DEADZONE ? gp.axes[0] : 0;
+  const ly = Math.abs(gp.axes[1]) > GP_DEADZONE ? gp.axes[1] : 0;
+
+  if ((lx || ly) && !isAnimating && focusedPanel === null) {
+    const spherical = new THREE.Spherical().setFromVector3(camera.position);
+    // Natural mapping: stick right → look right (scene pans left); stick up → look up
+    spherical.theta -= lx * dt * 1.5;
+    spherical.phi = THREE.MathUtils.clamp(
+      spherical.phi - ly * dt * 1.0,
+      0.3, Math.PI - 0.3
+    );
+    camera.position.setFromSpherical(spherical);
+    controls.update();
+  }
+
+  // ── RIGHT STICK: Zoom (up = zoom in, down = zoom out) ──
+  const ry = Math.abs(gp.axes[3]) > GP_DEADZONE ? gp.axes[3] : 0;
+  if (ry && !isAnimating && focusedPanel === null) {
+    const spherical = new THREE.Spherical().setFromVector3(camera.position);
+    spherical.radius = THREE.MathUtils.clamp(
+      spherical.radius + ry * dt * 800,
+      controls.minDistance,
+      controls.maxDistance
+    );
+    camera.position.setFromSpherical(spherical);
+    controls.update();
+  }
+
+  // ── LB/RB: Cycle panels ──
+  if (gpBumperCooldown <= 0) {
+    if (gp.buttons[5].pressed) {
+      gpBumperCooldown = GP_BUMPER_DELAY;
+      gpSelectedIndex = (gpSelectedIndex + 1) % PANEL_COUNT;
+      focusedPanel !== null ? zoomToPanel(gpSelectedIndex) : gpOrbitToPanel(gpSelectedIndex);
+    } else if (gp.buttons[4].pressed) {
+      gpBumperCooldown = GP_BUMPER_DELAY;
+      gpSelectedIndex = (gpSelectedIndex - 1 + PANEL_COUNT) % PANEL_COUNT;
+      focusedPanel !== null ? zoomToPanel(gpSelectedIndex) : gpOrbitToPanel(gpSelectedIndex);
+    }
+  }
+
+  // ── A: Select/Enter (first A focuses, second A opens section) ──
+  if (gp.buttons[0].pressed && gpButtonCooldown.a <= 0) {
+    gpButtonCooldown.a = GP_BUTTON_DELAY;
+    if (focusedPanel === null) zoomToPanel(gpSelectedIndex);
+    else enterFocusedPanel();
+  }
+
+  // ── B: Back (overlay → hub → overview) ──
+  if (gp.buttons[1].pressed && gpButtonCooldown.b <= 0) {
+    gpButtonCooldown.b = GP_BUTTON_DELAY;
+    const overlayOpen = document.getElementById('sectionOverlay').classList.contains('on');
+    if (overlayOpen) {
+      exitSectionOverlay();
+    } else if (focusedPanel !== null) {
+      zoomOut();
+      setTimeout(() => gpHighlightPanel(gpSelectedIndex), 100);
+    }
+  }
+
+  // ── D-pad: Also cycle ──
+  if (gpBumperCooldown <= 0) {
+    if (gp.buttons[15]?.pressed || gp.buttons[13]?.pressed) {
+      gpBumperCooldown = GP_BUMPER_DELAY;
+      gpSelectedIndex = (gpSelectedIndex + 1) % PANEL_COUNT;
+      focusedPanel !== null ? zoomToPanel(gpSelectedIndex) : gpOrbitToPanel(gpSelectedIndex);
+    } else if (gp.buttons[14]?.pressed || gp.buttons[12]?.pressed) {
+      gpBumperCooldown = GP_BUMPER_DELAY;
+      gpSelectedIndex = (gpSelectedIndex - 1 + PANEL_COUNT) % PANEL_COUNT;
+      focusedPanel !== null ? zoomToPanel(gpSelectedIndex) : gpOrbitToPanel(gpSelectedIndex);
+    }
+  }
+
+  // ── Y: Toggle auto-rotate ──
+  if (gp.buttons[3]?.pressed) controls.autoRotate = !controls.autoRotate;
+
+  // ── Start: Reset to overview ──
+  if (gp.buttons[9]?.pressed) {
+    resetCamera();
+    setTimeout(() => gpHighlightPanel(gpSelectedIndex), 100);
+  }
+}
+
+// ──────────────────────────────────────────
+// ANIMATE
+// ──────────────────────────────────────────
+// Project each pillar's name to screen space and park it just above the panel.
+// Screen-space keeps the text crisp and constant-size (legible from afar); it
+// hides when a panel is focused/open or when the panel falls behind the camera.
+const _pillarV = new THREE.Vector3();
+function updatePillarLabels() {
+  const hideAll = focusedPanel !== null ||
+    document.getElementById('sectionOverlay').classList.contains('on');
+  for (let i = 0; i < panelData.length; i++) {
+    const label = panelData[i].label;
+    if (!label) continue;
+    if (hideAll) { label.style.opacity = '0'; continue; }
+    const pos = panelObjects[i].position;
+    _pillarV.set(pos.x, pos.y + 285, pos.z).project(camera);
+    // z >= 1 is behind the camera / beyond far; large x|y is off-screen.
+    if (_pillarV.z >= 1 || Math.abs(_pillarV.x) > 1.35 || Math.abs(_pillarV.y) > 1.35) {
+      label.style.opacity = '0';
+      continue;
+    }
+    const x = (_pillarV.x * 0.5 + 0.5) * window.innerWidth;
+    const y = (-_pillarV.y * 0.5 + 0.5) * window.innerHeight;
+    label.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) translate(-50%, -100%)`;
+    label.style.opacity = '1';
+  }
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+  const elapsed = clock.getElapsedTime();
+
+  // Update camera animation
+  updateCameraAnimation(dt);
+  controls.update();
+
+  // Position the holographic pillar labels in screen space
+  updatePillarLabels();
+
+  // Hydrate panel iframes the camera is actually looking at (throttled inside)
+  lazyHydrateVisible(elapsed);
+
+  // Animate background
+  starMat.uniforms.uTime.value = elapsed;
+  coreMat.uniforms.uTime.value = elapsed;
+
+  // Rotate core orb
+  coreOrb.rotation.y = elapsed * 0.15;
+  coreOrb.rotation.x = Math.sin(elapsed * 0.1) * 0.1;
+
+  // Pulse glow
+  glowSprite.material.opacity = 0.2 + Math.sin(elapsed * 0.8) * 0.08;
+
+  // Animate ring rotation
+  innerRing.rotation.z = elapsed * 0.02;
+  outerRing.rotation.z = -elapsed * 0.01;
+
+  // Animate particles
+  const positions = particles.geometry.attributes.position.array;
+  for (let i = 0; i < particleCount; i++) {
+    particleAngles[i] += particleSpeeds[i];
+    positions[i*3]   = Math.cos(particleAngles[i]) * particleRadii[i];
+    positions[i*3+1] = particleYs[i] + Math.sin(elapsed * 0.5 + i) * 15;
+    positions[i*3+2] = Math.sin(particleAngles[i]) * particleRadii[i];
+  }
+  particles.geometry.attributes.position.needsUpdate = true;
+
+  // Gentle panel bob
+  panelObjects.forEach((obj, i) => {
+    const pd = panelData[i];
+    obj.position.y = pd.yOffset + Math.sin(elapsed * 0.4 + i * 0.8) * 8;
+  });
+
+  // Gamepad
+  processGamepad(dt);
+
+  // Render both layers
+  bgRenderer.render(bgScene, camera);
+  cssRenderer.render(cssScene, camera);
+}
+
+animate();
+
+// ──────────────────────────────────────────
+// RESIZE
+// ──────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  bgRenderer.setSize(window.innerWidth, window.innerHeight);
+  cssRenderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// Fade instruction after 6 seconds
+setTimeout(() => {
+  const inst = document.getElementById('instruction');
+  if (inst) inst.style.opacity = '0';
+}, 6000);
+
+}  // end else (Three.js path — skipped in __RY_8BIT__ / __RY_AGENT__)
+</script>
+
+<script src="assets/ryujin-mode.js"></script>
+<script src="assets/ryujin-tenant.js"></script>
+<script src="assets/ryujin-persist.js"></script>
+<script src="assets/ryujin-api.js"></script>
+<script src="assets/ryujin-scenario.js"></script>
+<script src="assets/ryujin-xp.js"></script>
+<script src="assets/ryujin-mode-badge.js"></script>
+
+<script src="assets/ryujin-chat.js"></script>
+<script src="/assets/quick-create.js" defer></script>
+<script src="/assets/needs-you-now.js" defer></script>
+<script src="/assets/jarvis-dock.js" defer></script>
+</body>
+</html>
