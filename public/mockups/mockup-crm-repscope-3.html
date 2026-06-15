@@ -1,0 +1,1134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Command Rail — Follow-up Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Orbitron:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --rj-bg:#030611; --rj-bg-2:#060b16; --rj-surface:#0a1120; --rj-surface-2:#0e1727; --rj-surface-sunken:#050811;
+    --rj-glass:rgba(14,22,40,0.62); --rj-glass-blur:16px; --rj-glass-edge:rgba(150,190,255,0.50); --rj-glass-inner:rgba(120,170,255,0.10);
+    --rj-ink:#e9eefa; --rj-ink-mid:rgba(202,216,242,0.82); --rj-ink-dim:rgba(165,190,226,0.62);
+    --rj-accent:#4a9eff; --rj-accent-bright:#7ab6ff; --rj-accent-deep:#2563eb; --rj-accent-glow:rgba(74,158,255,0.40); --rj-on-accent:#061021;
+    --rj-line:rgba(122,162,222,0.16); --rj-line-strong:rgba(122,162,222,0.30); --rj-bracket:rgba(74,158,255,0.55);
+    --rj-ok:#46d68a; --rj-warn:#f5b13a; --rj-danger:#f8746e;
+    --rj-attention:#f5b13a; --rj-attention-glow:rgba(245,177,58,0.32);
+    --rj-font-ui:'Inter',system-ui,sans-serif; --rj-font-display:'Orbitron','Inter',sans-serif; --rj-font-mono:'Share Tech Mono',monospace;
+    --rj-radius-sm:8px; --rj-radius:12px; --rj-radius-lg:16px; --rj-radius-pill:999px;
+
+    /* per-rep identity pips */
+    --pip-mackenzie:#4a9eff;
+    --pip-darcy:#a78bfa;
+    --pip-diego:#46d68a;
+    --pip-none:rgba(165,190,226,0.45);
+
+    --z-base:1; --z-sticky:20; --z-rail:30; --z-toast:60;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;}
+  body{
+    font-family:var(--rj-font-ui);
+    color:var(--rj-ink);
+    background:var(--rj-bg);
+    font-size:14px;
+    line-height:1.45;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+    overflow:hidden;
+  }
+  body::before{
+    content:"";
+    position:fixed; inset:0; z-index:0; pointer-events:none;
+    background:
+      radial-gradient(1100px 700px at 78% -8%, rgba(37,99,235,0.14), transparent 60%),
+      radial-gradient(900px 600px at 8% 108%, rgba(74,158,255,0.09), transparent 55%),
+      linear-gradient(180deg, var(--rj-bg) 0%, var(--rj-bg-2) 100%);
+  }
+  /* faint scanline grid texture */
+  body::after{
+    content:"";
+    position:fixed; inset:0; z-index:0; pointer-events:none; opacity:0.4;
+    background-image:linear-gradient(rgba(122,162,222,0.035) 1px, transparent 1px);
+    background-size:100% 38px;
+    mask-image:linear-gradient(180deg, transparent, #000 18%, #000 82%, transparent);
+  }
+
+  .mono{font-family:var(--rj-font-mono); font-variant-numeric:tabular-nums; letter-spacing:0.02em;}
+  .num{font-family:var(--rj-font-mono); font-variant-numeric:tabular-nums;}
+
+  .app{
+    position:relative; z-index:var(--z-base);
+    height:100vh;
+    display:grid;
+    grid-template-rows:auto 1fr;
+  }
+
+  /* ====================== TOP BAR ====================== */
+  .topbar{
+    display:flex; align-items:center; gap:18px;
+    padding:14px 22px;
+    border-bottom:1px solid var(--rj-line);
+    background:linear-gradient(180deg, rgba(10,17,32,0.86), rgba(6,11,22,0.72));
+    backdrop-filter:blur(var(--rj-glass-blur));
+    position:relative; z-index:var(--z-sticky);
+  }
+  .brand{display:flex; align-items:center; gap:13px; min-width:0;}
+  .brand-mark{
+    width:34px; height:34px; flex:none; border-radius:9px; position:relative;
+    background:linear-gradient(150deg, rgba(74,158,255,0.30), rgba(37,99,235,0.10));
+    border:1px solid var(--rj-glass-edge);
+    box-shadow:inset 0 0 14px var(--rj-glass-inner), 0 0 16px rgba(74,158,255,0.16);
+    display:grid; place-items:center;
+  }
+  .brand-mark::before{
+    content:""; width:13px; height:13px; border:2px solid var(--rj-accent-bright); border-radius:3px;
+    transform:rotate(45deg); box-shadow:0 0 9px var(--rj-accent-glow);
+  }
+  .brand-text{display:flex; flex-direction:column; line-height:1.15; min-width:0;}
+  .brand-title{
+    font-family:var(--rj-font-display); font-weight:700; font-size:15px; letter-spacing:0.10em;
+    text-transform:uppercase; color:var(--rj-ink);
+  }
+  .brand-sub{font-size:11px; color:var(--rj-ink-dim); letter-spacing:0.06em;}
+
+  .scope-readout{
+    margin-left:6px; padding:6px 14px; border-radius:var(--rj-radius-pill);
+    border:1px solid var(--rj-line-strong);
+    background:rgba(74,158,255,0.07);
+    display:flex; align-items:center; gap:9px; min-width:0;
+  }
+  .scope-readout .pip{width:9px; height:9px; border-radius:50%; flex:none; box-shadow:0 0 8px currentColor;}
+  .scope-label{font-size:11px; color:var(--rj-ink-dim); letter-spacing:0.05em; white-space:nowrap;}
+  .scope-name{
+    font-family:var(--rj-font-display); font-size:12.5px; font-weight:600; letter-spacing:0.04em;
+    color:var(--rj-ink); white-space:nowrap;
+  }
+
+  .topbar-spacer{flex:1 1 auto;}
+
+  .preview-badge{
+    display:inline-flex; align-items:center; gap:8px;
+    padding:6px 13px; border-radius:var(--rj-radius-pill);
+    font-size:10.5px; letter-spacing:0.14em; text-transform:uppercase; font-weight:600;
+    color:var(--rj-attention);
+    background:var(--rj-attention-glow);
+    border:1px solid rgba(245,177,58,0.45);
+  }
+  .preview-badge .dot{width:7px; height:7px; border-radius:50%; background:var(--rj-attention); animation:pulse 2.6s ease-in-out infinite;}
+  @keyframes pulse{0%,100%{opacity:1;} 50%{opacity:0.35;}}
+
+  /* ====================== BODY GRID ====================== */
+  .body{
+    display:grid;
+    grid-template-columns:272px 1fr;
+    min-height:0;
+  }
+
+  /* ====================== LEFT RAIL ====================== */
+  .rail{
+    position:relative; z-index:var(--z-rail);
+    border-right:1px solid var(--rj-line);
+    background:linear-gradient(180deg, rgba(10,17,32,0.55), rgba(5,8,17,0.55));
+    backdrop-filter:blur(10px);
+    padding:18px 16px;
+    overflow-y:auto;
+    display:flex; flex-direction:column; gap:22px;
+  }
+  .rail::-webkit-scrollbar{width:8px;}
+  .rail::-webkit-scrollbar-thumb{background:var(--rj-line-strong); border-radius:99px;}
+
+  .rail-group-label{
+    font-family:var(--rj-font-display); font-size:10.5px; font-weight:600;
+    letter-spacing:0.16em; text-transform:uppercase; color:var(--rj-ink-dim);
+    display:flex; align-items:center; gap:8px; margin-bottom:11px;
+  }
+  .rail-group-label::after{content:""; flex:1; height:1px; background:var(--rj-line);}
+
+  /* rep radio segments */
+  .reps{display:flex; flex-direction:column; gap:6px;}
+  .rep-opt{
+    display:flex; align-items:center; gap:11px;
+    padding:9px 11px; border-radius:var(--rj-radius);
+    border:1px solid var(--rj-line);
+    background:rgba(14,23,39,0.5);
+    cursor:pointer; user-select:none;
+    transition:border-color .18s ease, background .18s ease, transform .12s ease;
+  }
+  .rep-opt:hover{border-color:var(--rj-line-strong); background:rgba(20,32,54,0.7);}
+  .rep-opt:active{transform:translateY(1px);}
+  .rep-opt .radio{
+    width:15px; height:15px; flex:none; border-radius:50%;
+    border:1.5px solid var(--rj-line-strong); position:relative; transition:border-color .18s ease;
+  }
+  .rep-opt[aria-checked="true"]{
+    border-color:var(--rj-accent);
+    background:linear-gradient(120deg, rgba(74,158,255,0.18), rgba(37,99,235,0.06));
+    box-shadow:0 0 0 1px var(--rj-accent-glow), inset 0 0 16px rgba(74,158,255,0.08);
+  }
+  .rep-opt[aria-checked="true"] .radio{border-color:var(--rj-accent-bright);}
+  .rep-opt[aria-checked="true"] .radio::after{
+    content:""; position:absolute; inset:3px; border-radius:50%;
+    background:var(--rj-accent-bright); box-shadow:0 0 8px var(--rj-accent-glow);
+  }
+  .rep-pip{width:9px; height:9px; border-radius:50%; flex:none; box-shadow:0 0 7px currentColor;}
+  .rep-name{flex:1 1 auto; font-size:13px; font-weight:500; color:var(--rj-ink);}
+  .rep-opt[aria-checked="true"] .rep-name{font-weight:600;}
+  .rep-meta{display:flex; align-items:baseline; gap:7px; flex:none;}
+  .rep-count{font-family:var(--rj-font-mono); font-size:13px; color:var(--rj-ink); font-variant-numeric:tabular-nums;}
+  .rep-opt[aria-checked="true"] .rep-count{color:var(--rj-accent-bright);}
+  .rep-you{
+    font-size:9px; letter-spacing:0.1em; text-transform:uppercase; font-weight:700;
+    color:var(--rj-on-accent); background:var(--rj-accent-bright);
+    padding:1px 5px; border-radius:4px; line-height:1.4;
+  }
+
+  /* preset toggles */
+  .presets{display:flex; flex-direction:column; gap:6px;}
+  .preset-opt{
+    display:flex; align-items:center; gap:10px;
+    padding:11px 12px; border-radius:var(--rj-radius);
+    border:1px solid var(--rj-line);
+    background:rgba(14,23,39,0.5);
+    cursor:pointer; text-align:left;
+    transition:border-color .18s ease, background .18s ease, transform .12s ease;
+  }
+  .preset-opt:hover{border-color:var(--rj-line-strong); background:rgba(20,32,54,0.7);}
+  .preset-opt:active{transform:translateY(1px);}
+  .preset-opt[aria-pressed="true"]{
+    border-color:var(--rj-accent);
+    background:linear-gradient(120deg, rgba(74,158,255,0.16), rgba(37,99,235,0.05));
+    box-shadow:0 0 0 1px var(--rj-accent-glow);
+  }
+  .preset-icon{
+    width:26px; height:26px; flex:none; border-radius:7px; display:grid; place-items:center;
+    border:1px solid var(--rj-line-strong); background:var(--rj-surface-sunken);
+    color:var(--rj-ink-dim);
+  }
+  .preset-opt[aria-pressed="true"] .preset-icon{color:var(--rj-accent-bright); border-color:var(--rj-bracket);}
+  .preset-icon svg{width:14px; height:14px;}
+  .preset-body{flex:1 1 auto; min-width:0;}
+  .preset-name{font-size:12.5px; font-weight:600; color:var(--rj-ink); letter-spacing:0.02em;}
+  .preset-desc{font-size:10.5px; color:var(--rj-ink-dim);}
+  .preset-count{
+    font-family:var(--rj-font-mono); font-size:13px; flex:none;
+    color:var(--rj-ink-mid); font-variant-numeric:tabular-nums;
+  }
+  .preset-opt[aria-pressed="true"] .preset-count{color:var(--rj-accent-bright);}
+
+  /* rail footer eligibility legend */
+  .legend{
+    margin-top:auto; padding-top:14px; border-top:1px solid var(--rj-line);
+    display:flex; flex-direction:column; gap:8px;
+  }
+  .legend-row{display:flex; align-items:center; gap:9px; font-size:11px; color:var(--rj-ink-dim);}
+  .legend-row .swatch{width:11px; height:11px; border-radius:3px; flex:none;}
+  .legend-note{font-size:10.5px; color:var(--rj-ink-dim); line-height:1.5;}
+
+  /* ====================== RIGHT PANE ====================== */
+  .pane{display:flex; flex-direction:column; min-width:0; min-height:0;}
+
+  .pane-head{
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+    padding:14px 22px;
+    border-bottom:1px solid var(--rj-line);
+    background:rgba(6,11,22,0.4);
+  }
+  .pane-title{display:flex; align-items:baseline; gap:10px; min-width:0;}
+  .pane-title h1{
+    margin:0; font-family:var(--rj-font-display); font-weight:600; font-size:15px;
+    letter-spacing:0.05em; text-transform:uppercase; color:var(--rj-ink); white-space:nowrap;
+  }
+  .pane-title .count-pill{
+    font-family:var(--rj-font-mono); font-size:12px; color:var(--rj-accent-bright);
+    padding:2px 9px; border-radius:var(--rj-radius-pill);
+    background:rgba(74,158,255,0.10); border:1px solid var(--rj-bracket);
+    font-variant-numeric:tabular-nums;
+  }
+  .pane-head-spacer{flex:1 1 auto;}
+  .pane-meta{display:flex; align-items:center; gap:16px; font-size:11px; color:var(--rj-ink-dim);}
+  .pane-meta b{font-family:var(--rj-font-mono); color:var(--rj-ink-mid); font-weight:400;}
+
+  .sort-hint{
+    display:flex; align-items:center; gap:7px; font-size:10.5px; letter-spacing:0.04em;
+    color:var(--rj-ink-dim);
+  }
+  .sort-hint kbd{
+    font-family:var(--rj-font-mono); font-size:10px; padding:1px 6px; border-radius:5px;
+    border:1px solid var(--rj-line-strong); background:var(--rj-surface-sunken); color:var(--rj-ink-mid);
+  }
+
+  /* column header strip */
+  .col-head{
+    display:grid;
+    grid-template-columns:18px minmax(180px,1.4fr) 132px minmax(150px,1.2fr) 96px 112px 130px;
+    gap:14px; align-items:center;
+    padding:8px 22px;
+    border-bottom:1px solid var(--rj-line);
+    font-family:var(--rj-font-display); font-size:9.5px; letter-spacing:0.13em; text-transform:uppercase;
+    color:var(--rj-ink-dim);
+    background:rgba(5,8,17,0.5);
+  }
+  .col-head .ta-right{text-align:right;}
+
+  .list{flex:1 1 auto; overflow-y:auto; padding:8px 14px 40px; min-height:0;}
+  .list::-webkit-scrollbar{width:10px;}
+  .list::-webkit-scrollbar-thumb{background:var(--rj-line-strong); border-radius:99px;}
+  .list::-webkit-scrollbar-track{background:transparent;}
+
+  /* ====================== ROW ====================== */
+  .row{
+    display:grid;
+    grid-template-columns:18px minmax(180px,1.4fr) 132px minmax(150px,1.2fr) 96px 112px 130px;
+    gap:14px; align-items:center;
+    padding:13px 8px;
+    border-radius:var(--rj-radius);
+    border:1px solid transparent;
+    border-bottom:1px solid var(--rj-line);
+    cursor:pointer; position:relative;
+    transition:background .15s ease, border-color .15s ease, transform .1s ease;
+  }
+  .row:hover{background:rgba(20,32,54,0.55); border-color:var(--rj-line); border-bottom-color:var(--rj-line-strong);}
+  .row.is-active{
+    background:linear-gradient(110deg, rgba(74,158,255,0.10), rgba(20,32,54,0.6));
+    border-color:var(--rj-bracket);
+    box-shadow:0 0 0 1px var(--rj-accent-glow), 0 6px 22px rgba(2,6,17,0.5);
+  }
+  /* active row left bracket (full-height bracket, not a side-stripe accent) */
+  .row.is-active::before{
+    content:""; position:absolute; left:-1px; top:8px; bottom:8px; width:3px; border-radius:99px;
+    background:var(--rj-accent-bright); box-shadow:0 0 10px var(--rj-accent-glow);
+  }
+  .row.de-emph{opacity:0.46; filter:saturate(0.55);}
+  .row.de-emph:hover{opacity:0.72;}
+
+  .c-pip{display:flex; justify-content:center;}
+  .owner-pip{
+    width:11px; height:11px; border-radius:50%; position:relative;
+    box-shadow:0 0 8px currentColor;
+  }
+  .owner-pip.no-owner{box-shadow:none; border:1.5px dashed var(--pip-none); background:transparent;}
+
+  .c-name{min-width:0; display:flex; flex-direction:column; gap:2px;}
+  .name-line{display:flex; align-items:center; gap:8px; min-width:0;}
+  .cust-name{
+    font-size:13.5px; font-weight:600; color:var(--rj-ink);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .row.de-emph .cust-name{color:var(--rj-ink-mid);}
+  .owner-tag{
+    font-size:9.5px; letter-spacing:0.05em; color:var(--rj-ink-dim);
+    padding:1px 6px; border-radius:5px; border:1px solid var(--rj-line); flex:none;
+    white-space:nowrap;
+  }
+  .cust-addr{
+    font-size:11px; color:var(--rj-ink-dim);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+
+  /* status pill */
+  .c-status{display:flex;}
+  .status-pill{
+    display:inline-flex; align-items:center; gap:6px;
+    padding:4px 10px; border-radius:var(--rj-radius-pill);
+    font-size:10.5px; font-weight:600; letter-spacing:0.02em; white-space:nowrap;
+    border:1px solid; max-width:100%;
+  }
+  .status-pill .sdot{width:6px; height:6px; border-radius:50%; flex:none;}
+  .status-pill .stage-txt{overflow:hidden; text-overflow:ellipsis;}
+  .status-open{color:var(--rj-ok); border-color:rgba(70,214,138,0.4); background:rgba(70,214,138,0.10);}
+  .status-open .sdot{background:var(--rj-ok); box-shadow:0 0 6px rgba(70,214,138,0.6);}
+  .status-lost{color:var(--rj-danger); border-color:rgba(248,116,110,0.4); background:rgba(248,116,110,0.10);}
+  .status-lost .sdot{background:var(--rj-danger);}
+
+  /* last touch */
+  .c-touch{min-width:0; display:flex; flex-direction:column; gap:2px;}
+  .touch-line{display:flex; align-items:center; gap:7px; min-width:0;}
+  .touch-icon{width:14px; height:14px; flex:none; color:var(--rj-ink-mid);}
+  .touch-icon svg{width:14px; height:14px; display:block;}
+  .touch-icon.is-auto{color:var(--rj-warn);}
+  .touch-icon.is-inbound{color:var(--rj-ok);}
+  .touch-who{font-size:12px; color:var(--rj-ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .touch-who b{font-weight:600;}
+  .touch-sub{
+    font-size:10.5px; color:var(--rj-ink-dim);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .touch-age{font-family:var(--rj-font-mono); font-size:11px; flex:none; font-variant-numeric:tabular-nums;}
+  .age-fresh{color:var(--rj-ok);} .age-warm{color:var(--rj-ink-mid);} .age-cold{color:var(--rj-warn);} .age-na{color:var(--rj-ink-dim);}
+  .auto-flag{
+    font-size:8.5px; letter-spacing:0.08em; text-transform:uppercase; font-weight:700;
+    color:var(--rj-warn); border:1px solid rgba(245,177,58,0.4); background:rgba(245,177,58,0.10);
+    padding:0 4px; border-radius:4px; flex:none;
+  }
+
+  /* what sent chip */
+  .c-sent{display:flex;}
+  .sent-chip{
+    display:inline-flex; align-items:center; gap:6px;
+    padding:3px 9px; border-radius:var(--rj-radius-sm); font-size:10.5px; font-weight:500; white-space:nowrap;
+    border:1px solid var(--rj-line-strong); background:var(--rj-surface-sunken); color:var(--rj-ink-mid);
+  }
+  .sent-chip.quote-out{color:var(--rj-accent-bright); border-color:var(--rj-bracket); background:rgba(74,158,255,0.08);}
+  .sent-chip.quote-out .cdot{background:var(--rj-accent-bright);}
+  .sent-chip.no-quote{color:var(--rj-ink-dim);}
+  .sent-chip.no-quote .cdot{background:var(--rj-ink-dim);}
+  .sent-chip .cdot{width:5px; height:5px; border-radius:50%; flex:none;}
+
+  /* value */
+  .c-value{text-align:right;}
+  .val-amt{font-family:var(--rj-font-mono); font-size:13.5px; color:var(--rj-ink); font-variant-numeric:tabular-nums; font-weight:400;}
+  .val-amt.is-zero{color:var(--rj-ink-dim);}
+  .val-sub{font-size:9.5px; color:var(--rj-ink-dim); letter-spacing:0.03em;}
+
+  /* score */
+  .c-score{display:flex; flex-direction:column; gap:5px;}
+  .score-top{display:flex; align-items:baseline; justify-content:space-between; gap:6px;}
+  .score-num{font-family:var(--rj-font-mono); font-size:14px; font-variant-numeric:tabular-nums; color:var(--rj-ink);}
+  .score-num.zero{color:var(--rj-ink-dim); font-size:11px;}
+  .score-lbl{font-size:8.5px; letter-spacing:0.1em; text-transform:uppercase; color:var(--rj-ink-dim);}
+  .score-track{height:5px; border-radius:99px; background:var(--rj-surface-sunken); overflow:hidden; border:1px solid var(--rj-line);}
+  .score-fill{height:100%; border-radius:99px; transition:width .4s cubic-bezier(.22,1,.36,1);}
+  .score-fill.hi{background:linear-gradient(90deg,var(--rj-accent),var(--rj-accent-bright)); box-shadow:0 0 8px var(--rj-accent-glow);}
+  .score-fill.mid{background:linear-gradient(90deg,#3a7bd0,#5aa0e6);}
+  .score-fill.lo{background:linear-gradient(90deg,rgba(122,162,222,0.4),rgba(122,162,222,0.6));}
+
+  /* action */
+  .c-action{display:flex; justify-content:flex-end;}
+  .draft-btn{
+    display:inline-flex; align-items:center; gap:7px;
+    padding:7px 12px; border-radius:var(--rj-radius-sm);
+    font-family:var(--rj-font-ui); font-size:11.5px; font-weight:600; letter-spacing:0.02em;
+    color:var(--rj-accent-bright); cursor:pointer; white-space:nowrap;
+    border:1px solid var(--rj-bracket); background:rgba(74,158,255,0.08);
+    transition:background .16s ease, border-color .16s ease, transform .1s ease, color .16s ease;
+  }
+  .draft-btn svg{width:13px; height:13px;}
+  .draft-btn:hover{background:rgba(74,158,255,0.18); border-color:var(--rj-accent); color:var(--rj-ink);}
+  .draft-btn:active{transform:translateY(1px);}
+  .draft-btn:disabled{opacity:0.4; cursor:not-allowed; color:var(--rj-ink-dim); border-color:var(--rj-line);}
+
+  /* empty state */
+  .empty{
+    padding:60px 22px; text-align:center; color:var(--rj-ink-dim);
+    display:flex; flex-direction:column; align-items:center; gap:12px;
+  }
+  .empty svg{width:42px; height:42px; opacity:0.4;}
+  .empty h3{margin:0; font-family:var(--rj-font-display); font-size:14px; letter-spacing:0.06em; color:var(--rj-ink-mid); font-weight:600;}
+  .empty p{margin:0; font-size:12.5px; max-width:42ch;}
+
+  /* ====================== DETAIL DRAWER ====================== */
+  .scrim{
+    position:fixed; inset:0; z-index:40; background:rgba(2,5,14,0.62); backdrop-filter:blur(3px);
+    opacity:0; pointer-events:none; transition:opacity .26s ease;
+  }
+  .scrim.open{opacity:1; pointer-events:auto;}
+  .drawer{
+    position:fixed; top:0; right:0; bottom:0; width:min(440px,94vw); z-index:41;
+    background:linear-gradient(180deg, rgba(12,20,37,0.96), rgba(6,11,22,0.97));
+    border-left:1px solid var(--rj-glass-edge);
+    box-shadow:-24px 0 60px rgba(2,6,17,0.6);
+    backdrop-filter:blur(var(--rj-glass-blur));
+    transform:translateX(102%); transition:transform .32s cubic-bezier(.22,1,.36,1);
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  .drawer.open{transform:translateX(0);}
+  .drawer-head{
+    display:flex; align-items:flex-start; gap:12px; padding:20px 22px 16px;
+    border-bottom:1px solid var(--rj-line);
+  }
+  .drawer-head .owner-pip{margin-top:5px;}
+  .drawer-head .dh-main{flex:1 1 auto; min-width:0;}
+  .drawer-head h2{margin:0 0 3px; font-family:var(--rj-font-display); font-size:17px; letter-spacing:0.03em; color:var(--rj-ink);}
+  .drawer-head .dh-addr{font-size:12px; color:var(--rj-ink-dim);}
+  .drawer-close{
+    flex:none; width:30px; height:30px; border-radius:8px; cursor:pointer;
+    border:1px solid var(--rj-line-strong); background:var(--rj-surface-sunken); color:var(--rj-ink-mid);
+    display:grid; place-items:center; transition:border-color .15s, color .15s;
+  }
+  .drawer-close:hover{border-color:var(--rj-bracket); color:var(--rj-ink);}
+  .drawer-close svg{width:15px; height:15px;}
+
+  .drawer-body{flex:1 1 auto; overflow-y:auto; padding:18px 22px 22px; display:flex; flex-direction:column; gap:18px;}
+  .drawer-body::-webkit-scrollbar{width:8px;}
+  .drawer-body::-webkit-scrollbar-thumb{background:var(--rj-line-strong); border-radius:99px;}
+
+  .ctx-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+  .ctx-cell{
+    padding:11px 13px; border-radius:var(--rj-radius); border:1px solid var(--rj-line);
+    background:rgba(10,17,32,0.55);
+  }
+  .ctx-cell.full{grid-column:1 / -1;}
+  .ctx-k{font-family:var(--rj-font-display); font-size:9px; letter-spacing:0.13em; text-transform:uppercase; color:var(--rj-ink-dim); margin-bottom:5px;}
+  .ctx-v{font-size:13px; color:var(--rj-ink); line-height:1.4;}
+  .ctx-v.mono{font-size:14px;}
+  .ctx-v small{color:var(--rj-ink-dim); font-size:11px;}
+
+  .quote-line{
+    display:flex; align-items:flex-start; gap:9px; font-size:13px; color:var(--rj-ink); line-height:1.5;
+  }
+  .quote-line .q-mark{
+    font-family:var(--rj-font-display); color:var(--rj-bracket); font-size:22px; line-height:1; flex:none; margin-top:-2px;
+  }
+  .reasons{display:flex; flex-wrap:wrap; gap:7px;}
+  .reason{
+    font-size:11px; padding:4px 10px; border-radius:var(--rj-radius-pill);
+    border:1px solid var(--rj-line-strong); background:rgba(74,158,255,0.05); color:var(--rj-ink-mid);
+  }
+
+  .drawer-foot{
+    padding:16px 22px; border-top:1px solid var(--rj-line);
+    display:flex; flex-direction:column; gap:9px;
+    background:rgba(5,8,17,0.5);
+  }
+  .draft-btn.lg{justify-content:center; padding:12px; font-size:13px;}
+  .foot-note{font-size:10.5px; color:var(--rj-ink-dim); text-align:center; letter-spacing:0.02em;}
+
+  /* draft modal */
+  .draft-modal-scrim{
+    position:fixed; inset:0; z-index:50; background:rgba(2,5,14,0.7); backdrop-filter:blur(4px);
+    display:grid; place-items:center; padding:24px;
+    opacity:0; pointer-events:none; transition:opacity .2s ease;
+  }
+  .draft-modal-scrim.open{opacity:1; pointer-events:auto;}
+  .draft-modal{
+    width:min(560px,96vw); max-height:86vh; display:flex; flex-direction:column;
+    border-radius:var(--rj-radius-lg); border:1px solid var(--rj-glass-edge);
+    background:linear-gradient(180deg, rgba(14,23,39,0.98), rgba(8,13,25,0.98));
+    box-shadow:0 30px 80px rgba(2,6,17,0.7), inset 0 0 30px var(--rj-glass-inner);
+    transform:scale(.96) translateY(8px); transition:transform .22s cubic-bezier(.22,1,.36,1);
+    overflow:hidden;
+  }
+  .draft-modal-scrim.open .draft-modal{transform:scale(1) translateY(0);}
+  .dm-head{display:flex; align-items:center; gap:11px; padding:18px 20px 14px; border-bottom:1px solid var(--rj-line);}
+  .dm-head h3{margin:0; font-family:var(--rj-font-display); font-size:14px; letter-spacing:0.05em; color:var(--rj-ink); flex:1 1 auto;}
+  .dm-tag{font-size:9.5px; letter-spacing:0.1em; text-transform:uppercase; color:var(--rj-attention); border:1px solid rgba(245,177,58,0.4); background:var(--rj-attention-glow); padding:3px 8px; border-radius:6px; font-weight:700;}
+  .dm-body{padding:16px 20px; overflow-y:auto;}
+  .dm-meta{font-size:11.5px; color:var(--rj-ink-dim); margin-bottom:11px;}
+  .dm-meta b{color:var(--rj-ink-mid); font-weight:600;}
+  .dm-draft{
+    font-family:var(--rj-font-ui); font-size:13px; line-height:1.6; color:var(--rj-ink-mid);
+    background:var(--rj-surface-sunken); border:1px solid var(--rj-line); border-radius:var(--rj-radius);
+    padding:15px 16px; white-space:pre-wrap; max-height:300px; overflow-y:auto;
+  }
+  .dm-foot{display:flex; align-items:center; gap:10px; padding:14px 20px; border-top:1px solid var(--rj-line);}
+  .dm-foot .spacer{flex:1;}
+  .btn-ghost{
+    padding:9px 15px; border-radius:var(--rj-radius-sm); font-size:12px; font-weight:500; cursor:pointer;
+    border:1px solid var(--rj-line-strong); background:transparent; color:var(--rj-ink-mid);
+    transition:border-color .15s, color .15s;
+  }
+  .btn-ghost:hover{border-color:var(--rj-bracket); color:var(--rj-ink);}
+  .btn-copy{
+    display:inline-flex; align-items:center; gap:8px;
+    padding:9px 16px; border-radius:var(--rj-radius-sm); font-size:12.5px; font-weight:600; cursor:pointer;
+    border:1px solid var(--rj-accent); background:linear-gradient(120deg,var(--rj-accent-deep),var(--rj-accent));
+    color:var(--rj-ink); transition:filter .15s, transform .1s;
+  }
+  .btn-copy svg{width:14px; height:14px;}
+  .btn-copy:hover{filter:brightness(1.12);}
+  .btn-copy:active{transform:translateY(1px);}
+
+  /* toast */
+  .toast{
+    position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(20px); z-index:var(--z-toast);
+    padding:11px 18px; border-radius:var(--rj-radius-pill);
+    background:rgba(10,17,32,0.95); border:1px solid var(--rj-ok); color:var(--rj-ink);
+    font-size:12.5px; font-weight:500; display:flex; align-items:center; gap:9px;
+    box-shadow:0 12px 40px rgba(2,6,17,0.6); opacity:0; pointer-events:none;
+    transition:opacity .24s ease, transform .24s cubic-bezier(.22,1,.36,1);
+  }
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+  .toast svg{width:15px; height:15px; color:var(--rj-ok);}
+
+  /* row entrance stagger */
+  @keyframes rowIn{from{opacity:0; transform:translateY(7px);} to{opacity:1; transform:translateY(0);}}
+  .row{animation:rowIn .34s cubic-bezier(.22,1,.36,1) both;}
+
+  /* ====================== RESPONSIVE ====================== */
+  @media (max-width:1080px){
+    .col-head, .row{grid-template-columns:16px minmax(150px,1.3fr) 116px minmax(120px,1fr) 84px 96px 64px;}
+    .draft-btn span{display:none;}
+    .draft-btn{padding:8px;}
+  }
+  @media (max-width:840px){
+    .body{grid-template-columns:1fr; overflow-y:auto;}
+    .rail{
+      grid-row:auto; border-right:none; border-bottom:1px solid var(--rj-line);
+      flex-direction:row; flex-wrap:wrap; gap:16px; overflow:visible;
+    }
+    .rail > div{flex:1 1 220px;}
+    .legend{flex-basis:100%; margin-top:0;}
+    .col-head{display:none;}
+    .row{
+      grid-template-columns:14px 1fr auto; gap:10px; row-gap:8px;
+      grid-template-areas:"pip name status" "pip touch touch" "pip sent valscore" "pip action action";
+      padding:14px 10px;
+    }
+    .c-pip{grid-area:pip; align-self:start; padding-top:3px;}
+    .c-name{grid-area:name;}
+    .c-status{grid-area:status; justify-self:end;}
+    .c-touch{grid-area:touch;}
+    .c-sent{grid-area:sent;}
+    .c-value{grid-area:valscore; text-align:right; justify-self:end;}
+    .c-score{display:none;}
+    .c-action{grid-area:action; justify-content:flex-start;}
+    .draft-btn span{display:inline;}
+    .draft-btn{padding:7px 12px;}
+  }
+
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none !important; transition-duration:.001ms !important;}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ===== TOP BAR ===== -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <div class="brand-text">
+        <span class="brand-title">Command Rail</span>
+        <span class="brand-sub">Follow-up Board</span>
+      </div>
+    </div>
+    <div class="scope-readout">
+      <span class="pip" id="scopePip" style="color:var(--pip-mackenzie)"></span>
+      <span class="scope-label">Working book of</span>
+      <span class="scope-name" id="scopeName">Mackenzie</span>
+    </div>
+    <div class="topbar-spacer"></div>
+    <span class="preview-badge"><span class="dot"></span>Design Preview · Sample Data</span>
+  </header>
+
+  <div class="body">
+
+    <!-- ===== LEFT RAIL ===== -->
+    <aside class="rail">
+      <div>
+        <div class="rail-group-label">Rep</div>
+        <div class="reps" id="repList" role="radiogroup" aria-label="Filter by rep"></div>
+      </div>
+
+      <div>
+        <div class="rail-group-label">View</div>
+        <div class="presets" id="presetList"></div>
+      </div>
+
+      <div class="legend">
+        <div class="legend-row"><span class="swatch" style="background:var(--rj-ok)"></span> Open and eligible to work</div>
+        <div class="legend-row"><span class="swatch" style="background:var(--rj-warn)"></span> Auto form-fire, not a human touch</div>
+        <div class="legend-row"><span class="swatch" style="background:rgba(165,190,226,0.3)"></span> Lost or no contact, off the presets</div>
+        <p class="legend-note">Lost and unlinked records are greyed and dropped from Top-20 and Warm-50. No customer shows without status, owner, last real touch, and value.</p>
+      </div>
+    </aside>
+
+    <!-- ===== RIGHT PANE ===== -->
+    <section class="pane">
+      <div class="pane-head">
+        <div class="pane-title">
+          <h1 id="paneTitle">Top 20 Follow-ups</h1>
+          <span class="count-pill" id="paneCount">0</span>
+        </div>
+        <div class="pane-head-spacer"></div>
+        <div class="pane-meta">
+          <span>open value <b id="metaValue">$0</b></span>
+          <span class="sort-hint">sorted by score <kbd>&uarr;&darr;</kbd> nav</span>
+        </div>
+      </div>
+
+      <div class="col-head">
+        <span></span>
+        <span>Customer · Address</span>
+        <span>Status · Stage</span>
+        <span>Last real touch</span>
+        <span class="ta-right">Value</span>
+        <span>Score</span>
+        <span class="ta-right">Action</span>
+      </div>
+
+      <div class="list" id="list"></div>
+    </section>
+  </div>
+</div>
+
+<!-- ===== DETAIL DRAWER ===== -->
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" aria-hidden="true" aria-label="Customer detail">
+  <div class="drawer-head">
+    <span class="owner-pip" id="dwPip"></span>
+    <div class="dh-main">
+      <h2 id="dwName">&mdash;</h2>
+      <div class="dh-addr" id="dwAddr">&mdash;</div>
+    </div>
+    <button class="drawer-close" id="dwClose" aria-label="Close detail">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </div>
+  <div class="drawer-body" id="dwBody"></div>
+  <div class="drawer-foot">
+    <button class="draft-btn lg" id="dwDraft">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h4l11-11a2 2 0 0 0-3-3L5 17v3z"/><path d="M13 6l3 3"/></svg>
+      Draft follow-up
+    </button>
+    <p class="foot-note">Copy only. Nothing sends. Mac reads, edits, and presses send himself.</p>
+  </div>
+</aside>
+
+<!-- ===== DRAFT MODAL ===== -->
+<div class="draft-modal-scrim" id="dmScrim">
+  <div class="draft-modal" role="dialog" aria-modal="true" aria-label="Draft follow-up">
+    <div class="dm-head">
+      <h3 id="dmTitle">Draft follow-up</h3>
+      <span class="dm-tag">Draft only</span>
+    </div>
+    <div class="dm-body">
+      <div class="dm-meta" id="dmMeta"></div>
+      <div class="dm-draft" id="dmDraft"></div>
+    </div>
+    <div class="dm-foot">
+      <span class="foot-note" style="text-align:left">Voice-aligned starting point. Edit before you send.</span>
+      <div class="spacer"></div>
+      <button class="btn-ghost" id="dmClose">Close</button>
+      <button class="btn-copy" id="dmCopy">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+        Copy draft
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TOAST ===== -->
+<div class="toast" id="toast">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>
+  <span id="toastMsg">Draft copied</span>
+</div>
+
+<script>
+"use strict";
+
+/* ============ BAKED SAMPLE DATA (DESIGN PREVIEW, not live) ============ */
+const CUSTOMERS = [
+  { name:'Ablak Properties', address:'42 Robinson St, Moncton', rep:'Mackenzie', status:'open', stage:'Quote Sent', value:76400, lastTouchDays:3, lastTouch:{who:'Mackenzie', dir:'outbound', kind:'call', summary:'walked the Platinum scope, sending revised number'}, lastAsk:'can you split it into two phases?', proposalState:'quote-out', score:94, reasons:['high value ($76k)','warm, mid-close','quote is out'], preset:['top20','warm50'] },
+  { name:'Montina Cormier', address:'8 Henderson, Dieppe', rep:'Mackenzie', status:'open', stage:'New Lead', value:0, lastTouchDays:0, lastTouch:{who:'system', dir:'auto', kind:'form', summary:'IE submission, no human reply yet'}, lastAsk:'submitted the instant estimate', proposalState:'no-quote', score:71, reasons:['fresh inbound today','needs first human touch'], preset:['top20'] },
+  { name:'Greg Allen', address:'210  Portage, Riverview', rep:'Mackenzie', status:'open', stage:'Follow Up 1', value:18900, lastTouchDays:11, lastTouch:{who:'Mackenzie', dir:'outbound', kind:'sms', summary:'left a follow-up text, no reply'}, lastAsk:'thinking about timing for spring', proposalState:'quote-out', score:62, reasons:['quote is out','cooling 11d'], preset:['top20','warm50'] },
+  { name:'Priya Nadeau', address:'77 Cameron, Moncton', rep:'Mackenzie', status:'open', stage:'Client Responded', value:24050, lastTouchDays:1, lastTouch:{who:'Priya', dir:'inbound', kind:'email', summary:'asked about financing options'}, lastAsk:'do you offer monthly payments?', proposalState:'quote-out', score:88, reasons:['just replied','asked to buy (financing)','$24k'], preset:['top20','warm50'] },
+  { name:'Chris Goguen', address:'715 Rt 11, Cocagne', rep:'Darcy', status:'open', stage:'Quote Sent', value:30075, lastTouchDays:56, lastTouch:{who:'Darcy', dir:'outbound', kind:'email', summary:'sent the proposal, no reply since'}, lastAsk:'wanted metal vs shingle compared', proposalState:'quote-out', score:76, reasons:['high value ($30k)','cooling 56d','quote is out'], preset:['top20','warm50'] },
+  { name:'Sharon Boudreau', address:'19 Lockhart, Moncton', rep:'Darcy', status:'open', stage:'Quote Sent', value:20750, lastTouchDays:39, lastTouch:{who:'Darcy', dir:'outbound', kind:'call', summary:'voicemail, quote still out'}, lastAsk:'needs to talk to her husband', proposalState:'quote-out', score:90, reasons:['$21k','quiet 39d, prime to nudge','quote is out'], preset:['top20','warm50'] },
+  { name:'Robert Partridge', address:'76 Charlotte, Moncton', rep:'Darcy', status:'lost', stage:'Lost', value:44370, lastTouchDays:120, lastTouch:{who:'Darcy', dir:'outbound', kind:'note', summary:'went with a competitor'}, lastAsk:'price was the blocker', proposalState:'quote-out', score:0, reasons:['LOST, excluded from follow-up'], preset:[] },
+  { name:'Lena Vautour', address:'33 Pine Glen, Riverview', rep:'Diego', status:'open', stage:'Inspection Scheduled', value:0, lastTouchDays:2, lastTouch:{who:'Diego', dir:'outbound', kind:'sms', summary:'confirmed Thursday inspection'}, lastAsk:'booked the inspection', proposalState:'no-quote', score:55, reasons:['inspection booked, pre-quote'], preset:['warm50'] },
+  { name:'[Native estimate]', address:'(no contact captured)', rep:null, status:'open', stage:'Ryujin estimate', value:0, lastTouchDays:null, lastTouch:{who:'system', dir:'auto', kind:'estimate', summary:'self-serve estimate, never linked to a contact'}, lastAsk:null, proposalState:'no-quote', score:0, reasons:['no contact, not a real lead'], preset:[] }
+];
+
+/* ============ CONFIG ============ */
+const REPS = ['Mackenzie','Darcy','Diego'];
+const REP_PIP = { Mackenzie:'var(--pip-mackenzie)', Darcy:'var(--pip-darcy)', Diego:'var(--pip-diego)' };
+
+const PRESETS = {
+  top20:    { title:'Top 20 Follow-ups', desc:'Highest score first', count:'Top 20' },
+  warm50:   { title:'Warm 50', desc:'Quoted, 360-day window', count:'Warm' },
+  activity: { title:'Recent Activity', desc:'Last touch, newest first', count:'Activity' }
+};
+
+/* ============ ICONS ============ */
+const ICON = {
+  call:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3-8.6A2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.6a2 2 0 0 1-.5 2.1L8.1 9.5a16 16 0 0 0 6 6l1.1-1.1a2 2 0 0 1 2.1-.5c.8.3 1.7.5 2.6.6a2 2 0 0 1 1.7 2z"/></svg>',
+  sms:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4L3 21l1.1-3.3A8.4 8.4 0 1 1 21 11.5z"/></svg>',
+  email:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>',
+  form:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>',
+  note:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 4h14v16l-4-3H5z"/></svg>',
+  estimate:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3h6l4 4v14H5V3z"/><path d="M8 12h8M8 16h8"/></svg>'
+};
+
+/* ============ STATE ============ */
+let state = { rep:'Mackenzie', preset:'top20', activeName:null };
+
+/* ============ HELPERS ============ */
+const $ = s => document.querySelector(s);
+const fmtMoney = n => n > 0 ? '$' + n.toLocaleString('en-CA') : '$0';
+const isEligible = c => c.status === 'open' && c.rep !== null;            // honest eligibility gate
+const isHumanTouch = lt => lt && lt.dir !== 'auto';
+
+function ageClass(d){
+  if(d === null) return 'age-na';
+  if(d <= 2) return 'age-fresh';
+  if(d <= 14) return 'age-warm';
+  return 'age-cold';
+}
+function ageText(d){
+  if(d === null) return 'no touch';
+  if(d === 0) return 'today';
+  if(d === 1) return '1d ago';
+  return d + 'd ago';
+}
+function scoreTier(s){ return s >= 80 ? 'hi' : s >= 55 ? 'mid' : 'lo'; }
+function dirVerb(lt){
+  if(!lt) return '';
+  if(lt.dir === 'auto') return 'auto';
+  if(lt.dir === 'inbound') return 'replied via';
+  return 'sent';
+}
+
+/* ============ FILTER + SORT PIPELINE ============ */
+function compute(){
+  let rows = CUSTOMERS.slice();
+
+  // rep filter
+  if(state.rep !== 'All') rows = rows.filter(c => c.rep === state.rep);
+
+  // preset eligibility + membership
+  if(state.preset === 'top20'){
+    rows = rows.filter(c => isEligible(c) && c.preset.includes('top20'));
+    rows.sort((a,b) => b.score - a.score);
+  } else if(state.preset === 'warm50'){
+    rows = rows.filter(c => isEligible(c) && c.preset.includes('warm50'));
+    rows.sort((a,b) => b.score - a.score);
+  } else { // activity: everything, but ineligible sinks to bottom and greys out
+    rows.sort((a,b) => {
+      const ea = isEligible(a) ? 0 : 1, eb = isEligible(b) ? 0 : 1;
+      if(ea !== eb) return ea - eb;
+      const da = a.lastTouchDays === null ? 9999 : a.lastTouchDays;
+      const db = b.lastTouchDays === null ? 9999 : b.lastTouchDays;
+      return da - db;
+    });
+  }
+  return rows;
+}
+
+/* ============ COUNTS (per rep + per preset, eligibility-honest) ============ */
+function repCount(rep){
+  return CUSTOMERS.filter(c => (rep === 'All' || c.rep === rep) && isEligible(c)).length;
+}
+function presetCount(preset){
+  let pool = CUSTOMERS.filter(c => state.rep === 'All' || c.rep === state.rep);
+  if(preset === 'activity') return pool.length;
+  return pool.filter(c => isEligible(c) && c.preset.includes(preset)).length;
+}
+
+/* ============ RENDER RAIL ============ */
+function renderRail(){
+  // reps
+  const repHtml = ['All', ...REPS].map(rep => {
+    const checked = state.rep === rep;
+    const isYou = rep === 'Mackenzie';
+    const pip = rep === 'All' ? 'var(--rj-ink-dim)' : REP_PIP[rep];
+    const count = repCount(rep);
+    return `<div class="rep-opt" role="radio" tabindex="0" aria-checked="${checked}" data-rep="${rep}">
+      <span class="radio"></span>
+      ${rep === 'All' ? '<span class="rep-pip" style="background:transparent;border:1.5px solid var(--rj-line-strong);box-shadow:none"></span>'
+        : `<span class="rep-pip" style="color:${pip};background:${pip}"></span>`}
+      <span class="rep-name">${rep}${isYou ? ' <span class="rep-you">you</span>' : ''}</span>
+      <span class="rep-meta"><span class="rep-count">${count}</span></span>
+    </div>`;
+  }).join('');
+  $('#repList').innerHTML = repHtml;
+
+  // presets
+  const presetIcons = {
+    top20:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l5-5 4 4 8-8"/><path d="M21 8v5h-5"/></svg>',
+    warm50:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3c2 3 4 4.5 4 8a4 4 0 0 1-8 0c0-2 1-3 2-4-.5 2 1 3 2 3"/></svg>',
+    activity:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>'
+  };
+  const presetHtml = Object.keys(PRESETS).map(key => {
+    const p = PRESETS[key];
+    const pressed = state.preset === key;
+    return `<button class="preset-opt" aria-pressed="${pressed}" data-preset="${key}">
+      <span class="preset-icon">${presetIcons[key]}</span>
+      <span class="preset-body">
+        <span class="preset-name">${p.title}</span>
+        <span class="preset-desc">${p.desc}</span>
+      </span>
+      <span class="preset-count">${presetCount(key)}</span>
+    </button>`;
+  }).join('');
+  $('#presetList').innerHTML = presetHtml;
+
+  // scope readout
+  const sn = state.rep === 'All' ? 'All reps' : state.rep + (state.rep === 'Mackenzie' ? ' (you)' : '');
+  $('#scopeName').textContent = sn;
+  $('#scopePip').style.color = state.rep === 'All' ? 'var(--rj-ink-dim)' : REP_PIP[state.rep];
+}
+
+/* ============ RENDER LIST ============ */
+function renderList(){
+  const rows = compute();
+  const total = rows.reduce((s,c) => s + (isEligible(c) ? c.value : 0), 0);
+
+  $('#paneTitle').textContent = PRESETS[state.preset].title + (state.rep !== 'All' ? ' · ' + (state.rep === 'Mackenzie' ? 'Mackenzie' : state.rep) : '');
+  $('#paneCount').textContent = rows.length;
+  $('#metaValue').textContent = fmtMoney(total);
+
+  const list = $('#list');
+  if(rows.length === 0){
+    list.innerHTML = `<div class="empty">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      <h3>Nothing in this view</h3>
+      <p>No eligible records for ${state.rep === 'All' ? 'this' : state.rep + "'s"} book under ${PRESETS[state.preset].title}. Switch rep or preset.</p>
+    </div>`;
+    return;
+  }
+
+  list.innerHTML = rows.map((c, i) => {
+    const eligible = isEligible(c);
+    const human = isHumanTouch(c.lastTouch);
+    const lt = c.lastTouch;
+    const ownerPip = c.rep ? REP_PIP[c.rep] : 'var(--pip-none)';
+    const active = state.activeName === c.name ? ' is-active' : '';
+    const deemph = eligible ? '' : ' de-emph';
+
+    const statusPill = c.status === 'lost'
+      ? `<span class="status-pill status-lost"><span class="sdot"></span><span class="stage-txt">Lost</span></span>`
+      : `<span class="status-pill status-open"><span class="sdot"></span><span class="stage-txt">${c.stage}</span></span>`;
+
+    const touchIconClass = lt.dir === 'auto' ? 'is-auto' : (lt.dir === 'inbound' ? 'is-inbound' : '');
+    const whoLabel = lt.who === 'system' ? 'System' : lt.who;
+    const touchWho = `<b>${whoLabel}</b> ${dirVerb(lt)} ${lt.kind}`;
+    const autoFlag = lt.dir === 'auto' ? '<span class="auto-flag">auto</span>' : '';
+
+    const sentChip = c.proposalState === 'quote-out'
+      ? `<span class="sent-chip quote-out"><span class="cdot"></span>Quote out</span>`
+      : `<span class="sent-chip no-quote"><span class="cdot"></span>$0 · no quote</span>`;
+
+    const valHtml = c.value > 0
+      ? `<div class="val-amt">${fmtMoney(c.value)}</div><div class="val-sub">${c.proposalState === 'quote-out' ? 'quoted' : 'est.'}</div>`
+      : `<div class="val-amt is-zero">$0</div><div class="val-sub">no quote</div>`;
+
+    const scoreHtml = c.score > 0
+      ? `<div class="score-top"><span class="score-num">${c.score}</span><span class="score-lbl">scr</span></div>
+         <div class="score-track"><div class="score-fill ${scoreTier(c.score)}" style="width:${c.score}%"></div></div>`
+      : `<div class="score-top"><span class="score-num zero">no score</span></div>
+         <div class="score-track"><div class="score-fill lo" style="width:0%"></div></div>`;
+
+    const canDraft = eligible && c.rep !== null;
+    const draftBtn = `<button class="draft-btn" data-draft="${c.name}" ${canDraft ? '' : 'disabled'} title="${canDraft ? 'Draft a follow-up (copy only)' : 'Not eligible to work'}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h4l11-11a2 2 0 0 0-3-3L5 17v3z"/><path d="M13 6l3 3"/></svg>
+        <span>Draft</span>
+      </button>`;
+
+    const ownerTag = c.rep ? `<span class="owner-tag">${c.rep}</span>` : `<span class="owner-tag" style="color:var(--rj-warn);border-color:rgba(245,177,58,0.3)">unowned</span>`;
+
+    return `<div class="row${active}${deemph}" data-name="${c.name}" tabindex="0" style="animation-delay:${Math.min(i*32,260)}ms">
+      <div class="c-pip"><span class="owner-pip ${c.rep ? '' : 'no-owner'}" style="${c.rep ? 'color:'+ownerPip+';background:'+ownerPip : ''}"></span></div>
+      <div class="c-name">
+        <div class="name-line"><span class="cust-name">${c.name}</span>${ownerTag}</div>
+        <div class="cust-addr">${c.address.replace(/\s+/g,' ')}</div>
+      </div>
+      <div class="c-status">${statusPill}</div>
+      <div class="c-touch">
+        <div class="touch-line">
+          <span class="touch-icon ${touchIconClass}">${ICON[lt.kind] || ICON.note}</span>
+          <span class="touch-who">${touchWho}</span>
+          ${autoFlag}
+          <span class="touch-age ${ageClass(c.lastTouchDays)}">${ageText(c.lastTouchDays)}</span>
+        </div>
+        <div class="touch-sub">${lt.summary}</div>
+      </div>
+      <div class="c-value">${valHtml}</div>
+      <div class="c-score">${scoreHtml}</div>
+      <div class="c-action">${draftBtn}</div>
+    </div>`;
+  }).join('');
+}
+
+/* ============ DRAWER ============ */
+function openDrawer(name){
+  const c = CUSTOMERS.find(x => x.name === name);
+  if(!c) return;
+  state.activeName = name;
+  renderList();
+
+  $('#dwName').textContent = c.name;
+  $('#dwAddr').textContent = c.address.replace(/\s+/g,' ');
+  $('#dwPip').className = 'owner-pip' + (c.rep ? '' : ' no-owner');
+  $('#dwPip').style.cssText = c.rep ? `color:${REP_PIP[c.rep]};background:${REP_PIP[c.rep]}` : '';
+
+  const lt = c.lastTouch;
+  const human = isHumanTouch(lt);
+  const whoLabel = lt.who === 'system' ? 'System' : lt.who;
+  const eligible = isEligible(c);
+
+  const statusV = c.status === 'lost'
+    ? '<span style="color:var(--rj-danger);font-weight:600">Lost</span>'
+    : `<span style="color:var(--rj-ok);font-weight:600">Open</span> <small>· ${c.stage}</small>`;
+
+  $('#dwBody').innerHTML = `
+    <div class="ctx-grid">
+      <div class="ctx-cell">
+        <div class="ctx-k">Status</div>
+        <div class="ctx-v">${statusV}</div>
+      </div>
+      <div class="ctx-cell">
+        <div class="ctx-k">Owner</div>
+        <div class="ctx-v">${c.rep ? c.rep + (c.rep === 'Mackenzie' ? ' (you)' : '') : '<span style="color:var(--rj-warn)">Unowned</span>'}</div>
+      </div>
+      <div class="ctx-cell">
+        <div class="ctx-k">Value</div>
+        <div class="ctx-v mono">${c.value > 0 ? fmtMoney(c.value) : '<span style="color:var(--rj-ink-dim)">$0</span>'}</div>
+      </div>
+      <div class="ctx-cell">
+        <div class="ctx-k">What was sent</div>
+        <div class="ctx-v">${c.proposalState === 'quote-out' ? '<span style="color:var(--rj-accent-bright)">Quote is out</span>' : '<span style="color:var(--rj-ink-dim)">No quote yet</span>'}</div>
+      </div>
+      <div class="ctx-cell full">
+        <div class="ctx-k">Last real human touch</div>
+        <div class="ctx-v">
+          ${human
+            ? `<b>${whoLabel}</b> ${lt.dir === 'inbound' ? 'replied' : 'reached out'} by ${lt.kind}, ${ageText(c.lastTouchDays)}.`
+            : `<span style="color:var(--rj-warn)">No human touch yet.</span> Last event was an automated ${lt.kind} ${c.lastTouchDays !== null ? ageText(c.lastTouchDays) : ''}.`}
+          <br><small>${lt.summary}</small>
+        </div>
+      </div>
+      <div class="ctx-cell full">
+        <div class="ctx-k">What they last asked</div>
+        ${c.lastAsk
+          ? `<div class="quote-line"><span class="q-mark">&ldquo;</span><span>${c.lastAsk}</span></div>`
+          : '<div class="ctx-v" style="color:var(--rj-ink-dim)">Nothing asked yet.</div>'}
+      </div>
+      <div class="ctx-cell full">
+        <div class="ctx-k">Why it surfaced</div>
+        <div class="reasons">${c.reasons.map(r => `<span class="reason">${r}</span>`).join('')}</div>
+      </div>
+    </div>`;
+
+  const draftBtn = $('#dwDraft');
+  draftBtn.disabled = !(eligible && c.rep !== null);
+  draftBtn.onclick = () => openDraft(c.name);
+
+  $('#drawer').classList.add('open');
+  $('#drawer').setAttribute('aria-hidden','false');
+  $('#scrim').classList.add('open');
+}
+function closeDrawer(){
+  $('#drawer').classList.remove('open');
+  $('#drawer').setAttribute('aria-hidden','true');
+  $('#scrim').classList.remove('open');
+  state.activeName = null;
+  renderList();
+}
+
+/* ============ DRAFT (copy only, voice-aligned, never sends) ============ */
+function buildDraft(c){
+  const first = c.name.split(' ')[0].replace(/[\[\]]/g,'');
+  const lt = c.lastTouch;
+
+  // No human touch yet => first-touch opener
+  if(!isHumanTouch(lt)){
+    return `Hi ${first},\n\nThanks for sending that over through our instant estimate. I want to get you a real number, not a guess, so I have a couple quick questions about the roof before I lock it in.\n\nWhat is the best time today or tomorrow for a 10 minute call? I will keep it short.\n\nMackenzie\nPlus Ultra Roofing\n(506) 616-4607`;
+  }
+
+  // They asked something specific => answer-forward
+  if(c.lastAsk && lt.dir === 'inbound'){
+    return `Hi ${first},\n\nGood question on "${c.lastAsk.toLowerCase()}". Short answer is yes, we can work that out, and I would rather walk you through the options than send a wall of text.\n\nDo you have 10 minutes this week for a quick call? I will lay out exactly how it works so there are no surprises.\n\nMackenzie\nPlus Ultra Roofing\n(506) 616-4607`;
+  }
+
+  // Quote is out, gone quiet => nudge
+  if(c.proposalState === 'quote-out'){
+    const quiet = c.lastTouchDays;
+    return `Hi ${first},\n\nCircling back on the roof at ${c.address.split(',')[0].replace(/\s+/g,' ')}. Your quote is still good and the number has not changed.\n\nLast we talked, you mentioned "${(c.lastAsk||'').toLowerCase()}". Happy to sort that out so you can make the call with everything in front of you. Want me to give you a ring this week?\n\nMackenzie\nPlus Ultra Roofing\n(506) 616-4607`;
+  }
+
+  // Pre-quote
+  return `Hi ${first},\n\nFollowing up on where we are with the roof. Next step on my side is getting you a firm number. When works for a quick call so I can wrap that up?\n\nMackenzie\nPlus Ultra Roofing\n(506) 616-4607`;
+}
+
+let draftCustomer = null;
+function openDraft(name){
+  const c = CUSTOMERS.find(x => x.name === name);
+  if(!c || !isEligible(c) || !c.rep) return;
+  draftCustomer = c;
+  const text = buildDraft(c);
+  const channel = c.lastTouch.kind === 'sms' ? 'text' : (c.lastTouch.kind === 'call' ? 'call recap email' : 'email');
+  $('#dmTitle').textContent = 'Draft for ' + c.name;
+  $('#dmMeta').innerHTML = `Owner <b>${c.rep}</b> · suggested channel <b>${channel}</b> · ${c.proposalState === 'quote-out' ? 'quote already out' : 'no quote yet'}`;
+  $('#dmDraft').textContent = text;
+  $('#dmScrim').classList.add('open');
+}
+function closeDraft(){ $('#dmScrim').classList.remove('open'); }
+
+function copyDraft(){
+  const text = $('#dmDraft').textContent;
+  const done = () => { showToast('Draft copied. Nothing sent.'); closeDraft(); };
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(done).catch(() => { fallbackCopy(text); done(); });
+  } else { fallbackCopy(text); done(); }
+}
+function fallbackCopy(text){
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try{ document.execCommand('copy'); }catch(e){}
+  document.body.removeChild(ta);
+}
+
+/* ============ TOAST ============ */
+let toastTimer = null;
+function showToast(msg){
+  $('#toastMsg').textContent = msg;
+  const t = $('#toast');
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2400);
+}
+
+/* ============ EVENTS ============ */
+function setRep(rep){ state.rep = rep; state.activeName = null; renderRail(); renderList(); }
+function setPreset(p){ state.preset = p; state.activeName = null; renderRail(); renderList(); }
+
+document.addEventListener('click', e => {
+  const repOpt = e.target.closest('[data-rep]');
+  if(repOpt){ setRep(repOpt.dataset.rep); return; }
+
+  const presetOpt = e.target.closest('[data-preset]');
+  if(presetOpt){ setPreset(presetOpt.dataset.preset); return; }
+
+  const draftEl = e.target.closest('[data-draft]');
+  if(draftEl && !draftEl.disabled){ e.stopPropagation(); openDraft(draftEl.dataset.draft); return; }
+
+  const row = e.target.closest('.row');
+  if(row){ openDrawer(row.dataset.name); return; }
+});
+
+// keyboard: rep radios + row navigation + escape
+document.addEventListener('keydown', e => {
+  // close layers on Escape
+  if(e.key === 'Escape'){
+    if($('#dmScrim').classList.contains('open')) return closeDraft();
+    if($('#drawer').classList.contains('open')) return closeDrawer();
+  }
+  // rep radio keyboard
+  const repOpt = e.target.closest && e.target.closest('[data-rep]');
+  if(repOpt && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); setRep(repOpt.dataset.rep); return; }
+
+  // row open with Enter
+  const row = e.target.closest && e.target.closest('.row');
+  if(row && e.key === 'Enter'){ openDrawer(row.dataset.name); return; }
+
+  // arrow nav across rows (cockpit feel)
+  if((e.key === 'ArrowDown' || e.key === 'ArrowUp')){
+    const rows = Array.from(document.querySelectorAll('.row'));
+    if(!rows.length) return;
+    const cur = document.activeElement.closest ? document.activeElement.closest('.row') : null;
+    let idx = cur ? rows.indexOf(cur) : -1;
+    e.preventDefault();
+    idx = e.key === 'ArrowDown' ? Math.min(idx+1, rows.length-1) : Math.max(idx-1, 0);
+    rows[idx].focus();
+  }
+});
+
+$('#dwClose').addEventListener('click', closeDrawer);
+$('#scrim').addEventListener('click', closeDrawer);
+$('#dmClose').addEventListener('click', closeDraft);
+$('#dmCopy').addEventListener('click', copyDraft);
+$('#dmScrim').addEventListener('click', e => { if(e.target === $('#dmScrim')) closeDraft(); });
+
+/* ============ INIT ============ */
+renderRail();
+renderList();
+</script>
+</body>
+</html>
