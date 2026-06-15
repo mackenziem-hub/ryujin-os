@@ -399,15 +399,37 @@ async function handler(req, res) {
       }
     }
 
-    // Optional: add a context note with metadata when contact created
-    if (contactId && metadata && Object.keys(metadata).length > 0) {
-      try {
-        const noteBody = `Inbound from ${source || 'unknown'}\n\n${JSON.stringify(metadata, null, 2).slice(0, 4000)}`;
-        await ghlFetch(`/contacts/${contactId}/notes`, {}, {
-          method: 'POST',
-          body: { body: noteBody }
-        });
-      } catch { /* note failure is non-blocking */ }
+    // Context note on the GHL contact: estimator metadata + ad attribution.
+    // The attribution (channel/campaign/ad) is already persisted to the leads
+    // table and Meta CAPI, but mirroring it onto the GHL contact is what makes
+    // "which ad drove this lead" visible in GHL, where the team reads contacts.
+    // Without this the contact shows attributionSource undefined and the source
+    // is unknowable from GHL alone. Best-effort: a note failure never blocks.
+    if (contactId) {
+      const noteParts = [];
+      if (metadata && Object.keys(metadata).length > 0) {
+        noteParts.push(`Inbound from ${source || 'unknown'}\n\n${JSON.stringify(metadata, null, 2).slice(0, 4000)}`);
+      }
+      if (attr.utm_source || attr.utm_campaign || attr.fbclid || attr.gclid) {
+        const attrLines = [
+          `Ad attribution (channel: ${adChannel})`,
+          attr.utm_source ? `  source: ${attr.utm_source}` : null,
+          attr.utm_medium ? `  medium: ${attr.utm_medium}` : null,
+          attr.utm_campaign ? `  campaign: ${attr.utm_campaign}` : null,
+          attr.utm_content ? `  ad/content: ${attr.utm_content}` : null,
+          attr.utm_term ? `  term: ${attr.utm_term}` : null,
+          attr.landing_url ? `  landing: ${String(attr.landing_url).slice(0, 300)}` : null
+        ].filter(Boolean).join('\n');
+        noteParts.push(attrLines);
+      }
+      if (noteParts.length) {
+        try {
+          await ghlFetch(`/contacts/${contactId}/notes`, {}, {
+            method: 'POST',
+            body: { body: noteParts.join('\n\n').slice(0, 4500) }
+          });
+        } catch { /* note failure is non-blocking */ }
+      }
     }
 
     if (!contactId) {
