@@ -30,7 +30,7 @@
     '/admin-pricing.html', '/generator.html', '/decks.html', '/instant-estimator.html',
     '/admin-advanced.html', '/sales-advanced.html', '/marketing-advanced.html',
     '/finance-advanced.html', '/production-advanced.html', '/service-advanced.html',
-    '/customer-advanced.html'
+    '/customer-advanced.html', '/crm.html'
   ];
   var PATH_SET = {};
   for (var i = 0; i < PATHS.length; i++) PATH_SET[PATHS[i]] = true;
