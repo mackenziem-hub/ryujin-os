@@ -113,4 +113,31 @@
       (document.head || document.documentElement).appendChild(cpScript);
     }
   } catch (e) { /* palette is non-critical */ }
+
+  // ── Fleet-wide unread "!" RPG badge ───────────────────────────
+  // Same operator-page-marker logic as the palette: loading the badge here
+  // lights up every nav item / tile / artifact across the whole operator app
+  // when its content changed since this user last opened it, with no per-page
+  // edits, and never on a client-facing page. The registry loads first (the
+  // badge reads window.RYUJIN_ARTIFACTS); both self-guard against double-load.
+  // Non-critical chrome: any failure is swallowed.
+  try {
+    if (!window.__ryujinUnreadInjected) {
+      window.__ryujinUnreadInjected = true;
+      var ubScript = document.createElement('script');
+      ubScript.src = '/assets/unread-badge.js';
+      ubScript.defer = true;
+      var mountBadge = function () {
+        (document.head || document.documentElement).appendChild(ubScript);
+      };
+      var regScript = document.createElement('script');
+      regScript.src = '/assets/artifact-registry.js';
+      regScript.defer = true;
+      // mount the badge after the registry resolves either way: even without the
+      // static map it still works off self-declared data-updated-at pages.
+      regScript.addEventListener('load', mountBadge);
+      regScript.addEventListener('error', mountBadge);
+      (document.head || document.documentElement).appendChild(regScript);
+    }
+  } catch (e) { /* unread badge is non-critical */ }
 })();
