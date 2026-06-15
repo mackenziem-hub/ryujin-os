@@ -69,7 +69,9 @@ async function pageAll(path, baseParams, cap) {
     if (startAfter) params.startAfter = startAfter;
     if (startAfterId) params.startAfterId = startAfterId;
     let data;
-    try { data = await ghlFetch(path, params); }
+    // lib/ghl.js ghlFetch takes params under a `query` key, not flat. Passing
+    // the flat object dropped locationId entirely and GHL 400'd -> empty book.
+    try { data = await ghlFetch(path, { query: params }); }
     catch (e) { break; }
     const key = path.includes('opportunities') ? 'opportunities' : 'contacts';
     const page = data[key] || [];
@@ -87,7 +89,7 @@ async function pageAll(path, baseParams, cap) {
 async function loadStageMaps() {
   const pipelines = {}, stages = {};
   try {
-    const data = await ghlFetch('/opportunities/pipelines', { locationId: LOCATION_ID });
+    const data = await ghlFetch('/opportunities/pipelines', { query: { locationId: LOCATION_ID } });
     for (const p of (data.pipelines || [])) {
       pipelines[p.id] = p.name;
       for (const s of (p.stages || [])) stages[s.id] = s.name;
@@ -213,7 +215,7 @@ export default async function handler(req, res) {
       pageAll('/contacts/', { locationId: LOCATION_ID }, 2000),
       loadStageMaps(),
       tenantId ? loadNativeProposals(tenantId) : Promise.resolve([]),
-      ghlFetch(`/locations/${LOCATION_ID}/tasks`, { isLocation: 'true' }).catch(() => ({ tasks: [] }))
+      ghlFetch(`/locations/${LOCATION_ID}/tasks`, { query: { isLocation: 'true' } }).catch(() => ({ tasks: [] }))
     ]);
 
     // Contacts with an OPEN task (skip double-chasing).
