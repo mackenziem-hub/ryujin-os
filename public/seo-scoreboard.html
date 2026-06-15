@@ -1,0 +1,726 @@
+<!doctype html>
+<!--
+  seo-scoreboard.html - Plus Ultra Roofing SEO standing + improvement scoreboard.
+  Ryujin artifact (ord-20260615-1141-D, Mac Jun-15 artifact batch #4). Desk D / HAL.
+
+  WHAT: a living, game-like SEO scoreboard. NOT a static report.
+    Zone 1 = current-state tiles (rankings, GBP/reviews, content, citations, technical, rebuild)
+             that expand into a depth panel on click.
+    Zone 2 = a prioritized, DRAGGABLE action queue (the 6 SEO levers) as Telltale
+             choice-prompt cards with inline consequence lines, filter presets that FLIP
+             re-layout instantly, per-card status that writes a real audit log, and a
+             "logged this" toast.
+
+  DESIGN BAR: the sci-fi Telltale bar (_brain/research/2026-06-14-telltale-ui-design-bar.md)
+    + the game-like artifact doctrine (memory feedback_game_like_app_artifact_design_bar).
+    One emissive gold accent on near-black. Hairline strokes + corner brackets. Mono scoped
+    to data only. A central JARVIS presence ring carrying ONE real metric (the composite SEO
+    health score, computed from the tiles, formula shown on click). Calm-at-rest, expressive
+    on event. Composite-only motion (transform/opacity + the gauge dash), full reduced-motion
+    fallback, pause-when-hidden. impeccable invoked before markup; absolute bans honored
+    (no side-stripe borders, no gradient text, glass contained, no hero-metric cliche, no
+    uppercase eyebrows).
+
+  DATA: SEO_AUDIT_2026-06-12.md + SEO_VERIFY_2026-06-13.md + SEO_FIRST_PAGE_STRATEGY_2026-06-14.md
+    (Marketing/). Provenance honored: live numbers (GBP Insights, Search Console positions,
+    exact PU review count) are NOT yet pulled and are flagged, never faked.
+
+  MOUNT: self-contained, no build step, no network except Google Fonts. Embed-aware: ?embed=1
+    suppresses the top chrome so it mounts in builders-hall.html as a gridstack artifact.
+    Emits an updatedAt hook (window.__artifactMeta + <meta>) so E's fleet unread-badge
+    (assets/unread-badge.js via auth-guard.js) lights the yellow "!" when content changes.
+
+  No em dashes anywhere (house rule).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Auth gate: tokenless users bounce to /login before any artifact logic runs -->
+<script src="/assets/auth-guard.js"></script>
+<title>SEO Scoreboard - Plus Ultra Roofing</title>
+<meta name="description" content="Living SEO scoreboard for Plus Ultra Roofing: current-state tiles plus a prioritized improvement action queue.">
+<meta name="theme-color" content="#07090e">
+<meta name="artifact-updated-at" content="2026-06-15T11:56:59Z">
+<meta name="artifact-id" content="seo-scoreboard">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Sora:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* near-black surfaces */
+  --void:#07090e; --void-2:#0b0e15; --surface:#0f131c; --surface-2:#151a26; --surface-3:#1b2130;
+  /* single emissive brand accent (gold-on-black, the Deus Ex / JARVIS move) */
+  --gold:#ffc14d; --gold-deep:#c8861f; --gold-soft:rgba(255,193,77,.12); --gold-line:rgba(255,193,77,.38);
+  /* functional status colors (Dead Space color-coding; always paired with a text label) */
+  --good:#5ad98a; --watch:#ffb000; --bad:#ff6f61; --plan:#86a8ff;
+  --good-soft:rgba(90,217,138,.13); --watch-soft:rgba(255,176,0,.13); --bad-soft:rgba(255,111,97,.13); --plan-soft:rgba(134,168,255,.13);
+  /* ink ramp (contrast verified against --surface) */
+  --ink:#eef1f7; --dim:#b3bccb; --faint:#7c8698;
+  --hair:rgba(255,255,255,.08); --hair-bright:rgba(255,255,255,.16);
+  /* type */
+  --disp:"Chakra Petch",system-ui,sans-serif;
+  --sans:"Sora","Segoe UI",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"Cascadia Code",monospace;
+  /* semantic z-scale */
+  --z-bg:0; --z-base:1; --z-sticky:20; --z-dock:40; --z-overlay:80; --z-dialog:90; --z-toast:100;
+  --ease:cubic-bezier(.16,1,.3,1);
+  --radius:14px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  background:var(--void);color:var(--ink);
+  font-family:var(--sans);font-size:16px;line-height:1.6;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+  min-height:100vh;overflow-x:hidden;
+}
+a{color:inherit;text-decoration:none}
+button{font-family:inherit;color:inherit;cursor:pointer;background:none;border:none}
+:focus-visible{outline:2px solid var(--gold);outline-offset:3px;border-radius:6px}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+/* ---------- animated background (composited, contained, reduced-motion safe) ---------- */
+.bg{position:fixed;inset:0;z-index:var(--z-bg);pointer-events:none;overflow:hidden;contain:strict}
+.bg .grid{position:absolute;inset:-2px;
+  background-image:linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);
+  background-size:48px 48px;mask-image:radial-gradient(120% 90% at 50% 0%,#000 35%,transparent 78%)}
+.bg .glow-a{position:absolute;top:-22vh;left:50%;width:120vw;height:80vh;transform:translateX(-50%);
+  background:radial-gradient(60% 60% at 50% 50%,rgba(255,193,77,.10),transparent 70%);
+  animation:drift 26s var(--ease) infinite alternate}
+.bg .glow-b{position:absolute;bottom:-30vh;right:-10vw;width:70vw;height:70vh;
+  background:radial-gradient(55% 55% at 50% 50%,rgba(134,168,255,.07),transparent 70%);
+  animation:drift2 32s var(--ease) infinite alternate}
+@keyframes drift{from{transform:translateX(-50%) translateY(0)}to{transform:translateX(-50%) translateY(22px)}}
+@keyframes drift2{from{transform:translate(0,0)}to{transform:translate(-28px,-20px)}}
+
+/* ---------- layout ---------- */
+.wrap{position:relative;z-index:var(--z-base);max-width:1240px;margin:0 auto;padding:0 clamp(16px,4vw,40px)}
+
+/* top chrome (suppressed in embed) */
+.topbar{position:sticky;top:0;z-index:var(--z-sticky);background:linear-gradient(180deg,rgba(7,9,14,.92),rgba(7,9,14,.55) 70%,transparent);backdrop-filter:blur(6px);border-bottom:1px solid var(--hair)}
+body.embed .topbar{display:none}
+.topbar .row{display:flex;align-items:center;gap:16px;height:60px}
+.back{display:inline-flex;align-items:center;gap:9px;font-weight:600;font-size:15px;color:#fff;
+  background:rgba(255,255,255,.06);border:1px solid var(--hair-bright);border-radius:10px;padding:9px 16px;transition:transform .15s var(--ease),background .2s}
+.back:hover{transform:translateX(-2px);background:rgba(255,255,255,.12)}
+.back svg{width:16px;height:16px}
+.topbar .id{font-family:var(--mono);font-size:11px;color:var(--faint);letter-spacing:.04em;margin-left:auto}
+
+/* ---------- hero: presence ring + headline stats ---------- */
+.hero{display:grid;grid-template-columns:auto 1fr;gap:clamp(20px,4vw,52px);align-items:center;padding:clamp(28px,5vw,52px) 0 clamp(20px,3vw,32px)}
+.ring{position:relative;width:188px;height:188px;flex:none;cursor:pointer}
+.ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ring .track{fill:none;stroke:rgba(255,255,255,.07);stroke-width:10}
+.ring .arc{fill:none;stroke:var(--gold);stroke-width:10;stroke-linecap:round;
+  filter:drop-shadow(0 0 8px rgba(255,193,77,.5));
+  stroke-dasharray:534;stroke-dashoffset:534;transition:stroke-dashoffset 1.5s var(--ease)}
+.ring .core{position:absolute;inset:0;display:grid;place-content:center;text-align:center}
+.ring .score{font-family:var(--disp);font-weight:700;font-size:52px;line-height:1;color:#fff;letter-spacing:-.02em}
+.ring .score sub{font-size:18px;color:var(--faint);font-weight:500;vertical-align:baseline}
+.ring .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.18em;color:var(--gold);margin-top:6px}
+.ring .pulse{position:absolute;inset:26px;border-radius:50%;border:1px solid var(--gold-line);
+  animation:breathe 4.5s ease-in-out infinite;pointer-events:none}
+@keyframes breathe{0%,100%{transform:scale(1);opacity:.5}50%{transform:scale(1.05);opacity:.9}}
+
+.herotext h1{font-family:var(--disp);font-weight:700;font-size:clamp(26px,4vw,40px);line-height:1.05;letter-spacing:-.02em;text-wrap:balance}
+.herotext .sub{color:var(--dim);margin-top:10px;max-width:60ch}
+.herotext .verdict{display:inline-flex;align-items:center;gap:8px;margin-top:14px;font-size:13.5px;color:var(--gold);font-weight:600;
+  background:var(--gold-soft);border:1px solid var(--gold-line);border-radius:999px;padding:6px 14px}
+.kpis{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
+.kpi{background:var(--surface);border:1px solid var(--hair);border-radius:12px;padding:11px 15px;min-width:140px}
+.kpi b{font-family:var(--mono);font-size:19px;display:block;line-height:1.2}
+.kpi span{font-size:11.5px;color:var(--faint);text-transform:none}
+
+/* ---------- section title card (Telltale episode-card device, used sparingly) ---------- */
+.sect{padding:clamp(22px,3vw,36px) 0 14px}
+.titlecard{display:flex;align-items:center;gap:14px;margin-bottom:18px}
+.titlecard .bracket{font-family:var(--mono);color:var(--gold);font-size:13px;letter-spacing:.1em}
+.titlecard h2{font-family:var(--disp);font-weight:600;font-size:clamp(15px,2vw,18px);letter-spacing:.16em;text-transform:uppercase}
+.titlecard .line{flex:1;height:1px;background:linear-gradient(90deg,var(--gold-line),transparent)}
+.titlecard .note{font-size:12px;color:var(--faint)}
+
+/* ---------- current-state tiles ---------- */
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(252px,1fr));gap:14px}
+.tile{position:relative;background:var(--surface);border:1px solid var(--hair);border-radius:var(--radius);padding:18px 18px 16px;
+  text-align:left;width:100%;overflow:hidden;transition:transform .2s var(--ease),border-color .2s,background .2s}
+.tile::before,.tile::after{content:"";position:absolute;width:13px;height:13px;border:1px solid var(--gold-line);opacity:0;transition:opacity .2s}
+.tile::before{top:9px;left:9px;border-right:0;border-bottom:0}
+.tile::after{bottom:9px;right:9px;border-left:0;border-top:0}
+.tile:hover{transform:translateY(-3px);border-color:var(--hair-bright);background:var(--surface-2)}
+.tile:hover::before,.tile:hover::after{opacity:1}
+.tile .top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.tile .name{font-family:var(--disp);font-weight:600;font-size:13.5px;letter-spacing:.04em}
+.pip{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.08em;
+  padding:4px 9px;border-radius:999px;text-transform:uppercase;white-space:nowrap}
+.pip i{width:7px;height:7px;border-radius:50%;display:block}
+.pip.good{color:var(--good);background:var(--good-soft)} .pip.good i{background:var(--good);box-shadow:0 0 7px var(--good)}
+.pip.watch{color:var(--watch);background:var(--watch-soft)} .pip.watch i{background:var(--watch);box-shadow:0 0 7px var(--watch)}
+.pip.bad{color:var(--bad);background:var(--bad-soft)} .pip.bad i{background:var(--bad);box-shadow:0 0 7px var(--bad)}
+.pip.plan{color:var(--plan);background:var(--plan-soft)} .pip.plan i{background:var(--plan);box-shadow:0 0 7px var(--plan)}
+.tile .metric{font-family:var(--mono);font-size:15px;color:#fff;line-height:1.35;margin-bottom:6px}
+.tile .hint{font-size:12.5px;color:var(--dim)}
+.tile .more{display:inline-flex;align-items:center;gap:5px;margin-top:13px;font-size:11.5px;color:var(--gold);font-weight:600}
+.tile .meter{position:absolute;left:0;bottom:0;height:3px;background:var(--gold);opacity:.55;transition:width .8s var(--ease)}
+
+/* ---------- action queue ---------- */
+.qbar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;align-items:center}
+.chip{font-family:var(--mono);font-size:11.5px;letter-spacing:.04em;color:var(--dim);
+  border:1px solid var(--hair);background:var(--surface);border-radius:999px;padding:7px 14px;transition:color .18s,border-color .18s,background .18s}
+.chip:hover{color:var(--ink);border-color:var(--hair-bright)}
+.chip[aria-pressed="true"]{color:var(--void);background:var(--gold);border-color:var(--gold);font-weight:700}
+.qbar .count{font-family:var(--mono);font-size:11px;color:var(--faint);margin-left:auto}
+
+.cards{list-style:none;display:flex;flex-direction:column;gap:12px}
+.card{position:relative;background:var(--surface);border:1px solid var(--hair);border-radius:var(--radius);
+  padding:16px 18px 16px 16px;display:grid;grid-template-columns:auto 1fr auto;gap:14px;align-items:start;
+  transition:border-color .2s,background .2s,box-shadow .2s,opacity .25s}
+.card:hover{border-color:var(--hair-bright);background:var(--surface-2)}
+.card.dragging{opacity:.35}
+.card.drop-target{border-color:var(--gold-line);box-shadow:0 0 0 1px var(--gold-line) inset}
+.card.done{opacity:.62}
+.card .rank{font-family:var(--disp);font-weight:700;font-size:22px;color:var(--gold);min-width:34px;text-align:center;line-height:1.3}
+.card .rank small{display:block;font-family:var(--mono);font-size:8.5px;color:var(--faint);letter-spacing:.12em;font-weight:400;margin-top:2px}
+.card .grip{position:absolute;top:14px;left:50%;transform:translateX(-50%);color:var(--faint);font-size:11px;cursor:grab;user-select:none;display:none}
+.card .body h3{font-family:var(--disp);font-weight:600;font-size:16px;letter-spacing:.01em;margin-bottom:4px}
+.card .conseq{font-size:13.5px;color:var(--dim);line-height:1.5;max-width:72ch}
+.card .conseq b{color:var(--ink);font-weight:600}
+.card .meta{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px}
+.tag{font-family:var(--mono);font-size:10.5px;letter-spacing:.03em;color:var(--dim);background:rgba(255,255,255,.04);border:1px solid var(--hair);border-radius:7px;padding:3px 8px}
+.tag b{color:var(--ink);font-weight:600}
+.tag.lift{color:var(--gold);border-color:var(--gold-line);background:var(--gold-soft)}
+.card .side{display:flex;flex-direction:column;gap:8px;align-items:flex-end;min-width:118px}
+.owner{font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--faint);text-transform:uppercase}
+.statusbtn{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.05em;border-radius:8px;padding:6px 11px;border:1px solid var(--hair-bright);white-space:nowrap;transition:transform .14s var(--ease),background .2s,color .2s}
+.statusbtn:hover{transform:translateY(-1px)}
+.statusbtn[data-s="queued"]{color:var(--dim)}
+.statusbtn[data-s="active"]{color:var(--watch);border-color:var(--watch);background:var(--watch-soft)}
+.statusbtn[data-s="done"]{color:var(--good);border-color:var(--good);background:var(--good-soft)}
+.movebtns{display:flex;gap:5px}
+.movebtns button{font-family:var(--mono);font-size:12px;color:var(--dim);border:1px solid var(--hair);border-radius:7px;width:28px;height:24px;line-height:1;transition:color .15s,border-color .15s}
+.movebtns button:hover:not(:disabled){color:var(--gold);border-color:var(--gold-line)}
+.movebtns button:disabled{opacity:.3;cursor:default}
+
+/* audit drawer */
+.audit{margin-top:18px;border:1px solid var(--hair);border-radius:12px;background:var(--surface);overflow:hidden}
+.audit summary{list-style:none;cursor:pointer;padding:12px 16px;display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:12px;letter-spacing:.04em;color:var(--dim)}
+.audit summary::-webkit-details-marker{display:none}
+.audit summary b{color:var(--ink)} .audit summary .n{margin-left:auto;color:var(--gold)}
+.audit .log{border-top:1px solid var(--hair);max-height:240px;overflow:auto}
+.audit .entry{display:flex;gap:12px;padding:9px 16px;font-size:12.5px;border-bottom:1px solid var(--hair)}
+.audit .entry:last-child{border-bottom:0}
+.audit .entry time{font-family:var(--mono);font-size:10.5px;color:var(--faint);white-space:nowrap;padding-top:2px}
+.audit .empty{padding:16px;color:var(--faint);font-size:12.5px}
+
+footer{padding:30px 0 48px;color:var(--faint);font-size:12px;line-height:1.7}
+footer .prov{font-family:var(--mono);font-size:11px}
+footer b{color:var(--dim);font-weight:600}
+
+/* ---------- expand dialog (depth) ---------- */
+.scrim{position:fixed;inset:0;z-index:var(--z-overlay);background:rgba(4,6,10,.72);backdrop-filter:blur(3px);opacity:0;pointer-events:none;transition:opacity .25s}
+.scrim.open{opacity:1;pointer-events:auto}
+.sheet{position:fixed;z-index:var(--z-dialog);left:50%;top:50%;width:min(620px,92vw);max-height:86vh;overflow:auto;
+  transform:translate(-50%,-50%) translateZ(0) scale(.94);opacity:0;pointer-events:none;
+  background:var(--surface);border:1px solid var(--hair-bright);border-radius:18px;padding:24px;
+  box-shadow:0 30px 90px rgba(0,0,0,.6),0 0 0 1px var(--gold-line);transition:transform .3s var(--ease),opacity .25s}
+.sheet.open{transform:translate(-50%,-50%) scale(1);opacity:1;pointer-events:auto}
+.sheet .x{position:absolute;top:16px;right:16px;width:34px;height:34px;border-radius:9px;border:1px solid var(--hair-bright);color:var(--dim);font-size:16px}
+.sheet .x:hover{color:#fff;border-color:#fff}
+.sheet .shead{display:flex;align-items:center;gap:12px;margin-bottom:6px;padding-right:40px}
+.sheet h3{font-family:var(--disp);font-weight:700;font-size:21px;letter-spacing:-.01em}
+.sheet .smetric{font-family:var(--mono);color:#fff;font-size:15px;margin:10px 0 16px}
+.sheet h4{font-family:var(--mono);font-size:11px;letter-spacing:.1em;color:var(--gold);text-transform:uppercase;margin:18px 0 8px}
+.sheet ul{list-style:none;display:flex;flex-direction:column;gap:9px}
+.sheet li{display:grid;grid-template-columns:auto 1fr;gap:10px;font-size:14px;color:var(--dim);line-height:1.5}
+.sheet li b{color:var(--ink);font-weight:600}
+.sheet li .dot{color:var(--gold);font-family:var(--mono)}
+.sheet .links{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.sheet .links a{font-family:var(--mono);font-size:11.5px;color:var(--gold);border:1px solid var(--gold-line);background:var(--gold-soft);border-radius:8px;padding:6px 11px}
+
+/* ---------- toast ---------- */
+.toast{position:fixed;z-index:var(--z-toast);right:20px;bottom:20px;display:flex;flex-direction:column;gap:10px;align-items:flex-end;pointer-events:none}
+.t{display:flex;align-items:center;gap:10px;background:var(--surface-2);border:1px solid var(--gold-line);border-radius:11px;
+  padding:11px 15px;box-shadow:0 14px 40px rgba(0,0,0,.5);max-width:340px;
+  transform:translateX(20px);opacity:0;transition:transform .3s var(--ease),opacity .3s}
+.t.in{transform:none;opacity:1}
+.t .mk{color:var(--gold);font-family:var(--disp);font-weight:700;font-size:15px;flex:none}
+.t .tx{font-size:13px;color:var(--ink)} .t .tx span{color:var(--faint);display:block;font-size:11px;font-family:var(--mono)}
+
+@media (max-width:720px){
+  .hero{grid-template-columns:1fr;justify-items:start;text-align:left}
+  .ring{width:150px;height:150px}
+  .card{grid-template-columns:auto 1fr;gap:12px}
+  .card .side{grid-column:1/-1;flex-direction:row;align-items:center;justify-content:flex-start;flex-wrap:wrap;min-width:0;margin-top:4px}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
+  .ring .arc{transition:none}
+  .bg .glow-a,.bg .glow-b,.ring .pulse{animation:none}
+}
+</style>
+</head>
+<body>
+<div class="bg" aria-hidden="true"><div class="grid"></div><div class="glow-a"></div><div class="glow-b"></div></div>
+
+<header class="topbar">
+  <div class="wrap row">
+    <button class="back" id="backBtn" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+      Back
+    </button>
+    <span class="id mono">RYUJIN // SEO-SCOREBOARD // PLUS ULTRA ROOFING</span>
+  </div>
+</header>
+
+<main class="wrap">
+  <!-- hero: JARVIS presence ring + headline -->
+  <section class="hero">
+    <div class="ring" id="ring" role="button" tabindex="0" aria-label="Overall SEO health score, click for the formula">
+      <svg viewBox="0 0 200 200"><circle class="track" cx="100" cy="100" r="85"/><circle class="arc" id="arc" cx="100" cy="100" r="85"/></svg>
+      <div class="pulse"></div>
+      <div class="core"><div class="score" id="scoreNum">0<sub>/100</sub></div><div class="lbl">SEO HEALTH</div></div>
+    </div>
+    <div class="herotext">
+      <h1>Plus Ultra Roofing is built on SEO foundation, gated by execution.</h1>
+      <p class="sub">The April consolidation did the hard part: indexed, branded number one, schema and money pages drafted. What caps page one now is the plumbing, the review engine, and orphaned pages. This board scores where it stands and what to do next, ranked by speed to payoff.</p>
+      <span class="verdict" id="verdict">Loading verdict</span>
+      <div class="kpis">
+        <div class="kpi"><b style="color:var(--good)">#1</b><span>Branded "plus ultra roofing moncton"</span></div>
+        <div class="kpi"><b style="color:var(--bad)">~0</b><span>PU reviews vs Roof Edge ~166</span></div>
+        <div class="kpi"><b style="color:var(--bad)">0 / 6+</b><span>Money pages live (drafts ready)</span></div>
+        <div class="kpi"><b style="color:var(--watch)">not top 10</b><span>Competitive money terms</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- current state -->
+  <section class="sect">
+    <div class="titlecard"><span class="bracket">[ 01 ]</span><h2>Current State</h2><span class="line"></span><span class="note">click a tile to cut in</span></div>
+    <div class="tiles" id="tiles"></div>
+  </section>
+
+  <!-- action queue -->
+  <section class="sect">
+    <div class="titlecard"><span class="bracket">[ 02 ]</span><h2>Action Queue</h2><span class="line"></span><span class="note">drag to reprioritize</span></div>
+    <div class="qbar" id="qbar" role="group" aria-label="Filter presets"></div>
+    <ol class="cards" id="cards"></ol>
+
+    <details class="audit" id="auditWrap">
+      <summary>Action log <b>&nbsp;(logged this)</b><span class="n mono" id="auditCount">0</span></summary>
+      <div class="log" id="auditLog"></div>
+    </details>
+  </section>
+
+  <footer>
+    <p class="prov">SOURCES: SEO_AUDIT_2026-06-12 &middot; SEO_VERIFY_2026-06-13 &middot; SEO_FIRST_PAGE_STRATEGY_2026-06-14 (Marketing/)</p>
+    <p style="margin-top:8px"><b>Honesty flag:</b> live numbers (GBP Insights, Search Console positions, exact PU review count) are not yet pulled. Competitor review counts are approximate. Anything unmeasured is labeled, never faked. Run /pulse plus a Search Console pull to replace the flags.</p>
+  </footer>
+</main>
+
+<!-- expand dialog -->
+<div class="scrim" id="scrim"></div>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+  <button class="x" id="sheetX" aria-label="Close">&times;</button>
+  <div class="shead"><span class="pip" id="sheetPip"><i></i><span></span></span></div>
+  <h3 id="sheetTitle">Tile</h3>
+  <div class="smetric mono" id="sheetMetric"></div>
+  <div id="sheetBody"></div>
+</div>
+
+<div class="toast" id="toast" aria-live="polite"></div>
+
+<script>
+(function(){
+  "use strict";
+  var EMBED = /[?&]embed=1\b/.test(location.search);
+  if (EMBED) document.body.classList.add("embed");
+  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---------------- data: current-state tiles ---------------- */
+  // score 0-100 + weight feed the composite SEO health metric (function-first ring).
+  var TILES = [
+    { id:"rank", name:"Rankings", status:"watch", score:55, weight:15,
+      metric:"Branded #1, competitive not top 10",
+      hint:"Indexed since April, two months into a 3 to 6 month climb.",
+      detail:[
+        ["Branded","\"plus ultra roofing moncton\" ranks #1. Profile is healthy."],
+        ["Competitive","\"roofing moncton nb\", \"roofing riverview nb\", \"roofer near moncton\" are not in the top 10."],
+        ["Read","Indexed-but-not-ranking after 2 months is normal, not failure. Competitive local terms take 3 to 6 months of compounding."],
+        ["Two clocks","Map pack moves in weeks (reviews). Organic blue links move in months (pages plus content)."]
+      ],
+      links:[["Search Console","https://search.google.com/search-console"]] },
+
+    { id:"gbp", name:"GBP & Reviews", status:"bad", score:25, weight:25,
+      metric:"Reviews ~0 vs Roof Edge ~166",
+      hint:"Map pack is where the calls are. Review velocity is the biggest lever you control.",
+      detail:[
+        ["Profile","GBP is claimed (schema hasMap CID confirmed)."],
+        ["The gap","Plus Ultra has so few reviews that no star rating surfaces in search at all. Roof Edge ~166, Artisan ~117."],
+        ["Lever","Review count plus recency is the strongest map-pack input and it is nearly free. This is the single fastest path to page one."],
+        ["Unmeasured","GBP Insights (calls, direction requests, discovery) not yet pulled. Flagged."]
+      ],
+      links:[["Google Business Profile","https://business.google.com"]] },
+
+    { id:"content", name:"Content & Pages", status:"bad", score:20, weight:20,
+      metric:"0 of 6+ money pages live",
+      hint:"Effectively a one-page site to Google. Drafts are already written.",
+      detail:[
+        ["Live pages","Home, service, about-us, contact-us, reviews. That is it."],
+        ["Missing","Service and city money pages: bare slugs (/roof-replacement, /metal-roofing) all redirect to the homepage. No blog."],
+        ["Already drafted","3 location-page drafts (Moncton, Riverview, Dieppe) plus 5 blog drafts sit paste-ready in Marketing/Documents."],
+        ["Discrepancy","April record claims 6 /moncton-nb/ pages were built. June crawl finds zero. Settle whether they were lost in a GHL rebuild before drafting fresh."]
+      ] },
+
+    { id:"cite", name:"Citations & Backlinks", status:"watch", score:45, weight:10,
+      metric:"Absent from 4 key directories",
+      hint:"NAP now single-number on-page. Link profile is thin.",
+      detail:[
+        ["Have","BBB A+ (accredited Aug 2024), ProvenExpert, Facebook, TechDirectory."],
+        ["Absent","Yelp CA, ThreeBestRated, GAF directory, TrustedPros. These own the \"best roofing moncton\" SERP, and competitors appear on all of them."],
+        ["Fixed","NAP phone conflict resolved on-page (single 506-616-4607). Confirm BBB and JSON-LD telephone also read the same number."],
+        ["Links","Earn a handful of real local links: suppliers, associations, the 100% Human / Mac-authority angle."]
+      ] },
+
+    { id:"tech", name:"Technical / Plumbing", status:"bad", score:30, weight:20,
+      metric:"Sitemap broken, www 301 unconfirmed",
+      hint:"The site's words are fine. Its plumbing is what is broken.",
+      detail:[
+        ["Sitemap","Apex sitemap lists 10 stale URLs (lastmod 2025-07-10), all redirect to the homepage. The www sitemap is an empty urlset. Net: Google's map of the site has zero real content URLs."],
+        ["robots.txt","Apex robots.txt is empty (0 bytes), no Sitemap line."],
+        ["Canonical host","Apex does not 301 to www (both serve 200). Force one host. Confirm in GHL domain settings."],
+        ["Schema","RoofingContractor JSON-LD exists but is buried in the builder JS payload, missing streetAddress, aggregateRating, sameAs."],
+        ["Already fixed","ryujin-os robots.txt is fixed (was a 404). Internal operator surfaces no longer crawlable."]
+      ] },
+
+    { id:"rebuild", name:"Site Rebuild / Roadmap", status:"plan", score:50, weight:10,
+      metric:"GHL now, Vercel in-house planned",
+      hint:"Keep the GHL backend, rebuild the marketing surface in-house.",
+      detail:[
+        ["Today","The PU marketing site is on GHL / Automator. We cannot push code there, so every fix names who executes (mostly Cat in GHL)."],
+        ["Planned","A Scout-grade in-house Vercel marketing site is the planned replacement, GHL kept as the backend."],
+        ["Estimators","The two estimators rank-build for vercel.app, not the brand. Point estimate.plusultraroofing.com at the project and canonicalize there to earn \"instant roof estimate moncton\"."],
+        ["Decision","The estimator subdomain is a Mac call. Until then they are fine as ad landers."]
+      ] }
+  ];
+
+  /* ---------------- data: action queue (Telltale choice prompts) ---------------- */
+  // default order = speed-to-payoff (the strategy brief's ranking).
+  var ACTIONS = [
+    { id:"reviews", title:"Turn on the review engine + GBP velocity", owner:"Cat / Mac", effort:"Low", impact:"Highest", time:"Live wk 1", lift:"Map pack in 4-8 wks", tags:["reviews","quickwin"],
+      conseq:"Wire post-job review requests (the 3 templates exist) to fire on every closed job, post real job photos to GBP weekly. <b>Do it and the map pack moves in 4 to 8 weeks. Skip it and Roof Edge's 166 reviews keep you off the map for every \"roofer near me\" search.</b>" },
+
+    { id:"unorphan", title:"Un-orphan and sharpen the 6 money pages", owner:"Cat / Mac", effort:"Low-Med", impact:"Med-High", time:"1-2 wks", lift:"Fastest organic lever", tags:["content","quickwin"],
+      conseq:"Add the existing service pages to the nav and homepage body, rewrite each H1 to carry the query (\"Roof Replacement in Moncton, NB\", not a tagline), confirm unique titles plus schema. <b>Fixing already-built assets beats building new ones.</b>" },
+
+    { id:"numbers", title:"Settle the page regression + pull the real numbers", owner:"Mac / Cat", effort:"Low", impact:"Unblocks all", time:"This week", lift:"Steers everything", tags:["quickwin"],
+      conseq:"Probe /moncton-nb/roof-repair etc to settle whether April's 6 pages vanished in a GHL rebuild (recover before redrafting). Pull GBP Insights, Search Console positions, and competitor review counts (/pulse). <b>Everything past week one should be steered by data, not assumption.</b>" },
+
+    { id:"tech", title:"Fix the technical plumbing", owner:"Cat in GHL + Mac", effort:"Low", impact:"Removes ceiling", time:"1-2 wks", lift:"Frees crawl budget", tags:["technical","quickwin"],
+      conseq:"Regenerate the sitemap to list the real www pages, add a robots.txt Sitemap line, force the apex to 301 to www, resolve the duplicate-canonical flag. <b>Low effort, runs in parallel, and removes the ceiling that is wasting crawl budget and splitting signals.</b>" },
+
+    { id:"geo", title:"Build geo pages: Riverview, Dieppe, Salisbury", owner:"Content lane + Cat", effort:"Med", impact:"Med", time:"Wks 2-6", lift:"New local queries", tags:["content"],
+      conseq:"One genuine location page per geo for the top services, real local copy and LocalBusiness schema, not spun duplicates. <b>Riverview is home base and has no page. Opens \"roofing Riverview\" type queries Moncton-only pages cannot win.</b>" },
+
+    { id:"citations", title:"Build citations + NAP consistency + links", owner:"Cat", effort:"Med", impact:"Med", time:"Wks 2-8", lift:"Lifts pack + organic", tags:["technical"],
+      conseq:"Submit NAP-consistent listings to Yelp, ThreeBestRated, GAF, TrustedPros (you are absent from all four), HomeStars, 411.ca, YellowPages. Earn a few real local links. <b>These directories own the \"best roofing moncton\" SERP.</b>" },
+
+    { id:"blog", title:"Publish the content / topical authority layer", owner:"Content lane", effort:"Med-High", impact:"Med (compounds)", time:"Months 2-6", lift:"Holds page one", tags:["content"],
+      conseq:"Publish the 5 written blog drafts (metal vs asphalt in NB winters, ice-dam prevention, repair vs replace), each linking to its money page. <b>This is what eventually makes the service pages authoritative enough to hold page one, not a quick win.</b>" },
+
+    { id:"vercel", title:"Plan the in-house Vercel site + estimator subdomain", owner:"Mac decision", effort:"Med", impact:"Brand equity", time:"Roadmap", lift:"Owns the brand SERP", tags:["technical"],
+      conseq:"Scout-grade in-house build, GHL kept as the backend. Point estimate.plusultraroofing.com at the estimators and canonicalize there. <b>The estimators stop rank-building for vercel.app and start earning \"instant roof estimate moncton\" for Plus Ultra.</b>" }
+  ];
+
+  var PRESETS = [
+    { id:"all", label:"All", test:function(){ return true; } },
+    { id:"week", label:"This week", test:function(a){ return ["reviews","unorphan","numbers","tech"].indexOf(a.id)>=0; } },
+    { id:"quick", label:"Quick wins", test:function(a){ return a.tags.indexOf("quickwin")>=0; } },
+    { id:"lift", label:"Highest lift", test:function(a){ return ["reviews","unorphan"].indexOf(a.id)>=0; } },
+    { id:"cat", label:"Cat", test:function(a){ return /Cat/.test(a.owner); } },
+    { id:"mac", label:"Mac", test:function(a){ return /Mac/.test(a.owner); } }
+  ];
+
+  /* ---------------- state ---------------- */
+  var LS = {
+    order:"ry_seo_order_v1", status:"ry_seo_status_v1", audit:"ry_seo_audit_v1", seen:"ry_seo_seen_v1"
+  };
+  function read(k,d){ try{ var v=localStorage.getItem(k); return v?JSON.parse(v):d; }catch(e){ return d; } }
+  function write(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
+
+  var order = read(LS.order, ACTIONS.map(function(a){return a.id;}));
+  // reconcile order vs current ACTIONS (new actions appended, removed dropped)
+  order = order.filter(function(id){ return ACTIONS.some(function(a){return a.id===id;}); });
+  ACTIONS.forEach(function(a){ if(order.indexOf(a.id)<0) order.push(a.id); });
+  var statusMap = read(LS.status, {});
+  var auditLog = read(LS.audit, []);
+  var activePreset = "all";
+
+  function byId(id){ for(var i=0;i<ACTIONS.length;i++){ if(ACTIONS[i].id===id) return ACTIONS[i]; } return null; }
+  function tileById(id){ for(var i=0;i<TILES.length;i++){ if(TILES[i].id===id) return TILES[i]; } return null; }
+
+  /* ---------------- composite health metric (function-first ring) ---------------- */
+  function computeHealth(){
+    var sw=0, w=0;
+    TILES.forEach(function(t){ sw += t.score*t.weight; w += t.weight; });
+    return Math.round(sw/w);
+  }
+  var HEALTH = computeHealth();
+  function verdictFor(n){
+    if(n>=70) return "Strong. Defend the lead.";
+    if(n>=50) return "Climbing. Keep compounding.";
+    if(n>=35) return "Foundation built. Plumbing and reviews are the gap.";
+    return "Foundation at risk. Fix the basics first.";
+  }
+
+  /* ---------------- render: hero ring ---------------- */
+  function renderRing(){
+    var arc = document.getElementById("arc");
+    var r = 85, circ = 2*Math.PI*r;
+    arc.style.strokeDasharray = circ;
+    var target = circ*(1 - HEALTH/100);
+    // arc color follows the health band but stays within the gold-on-near-black identity at mid range
+    if(HEALTH<35) arc.style.stroke="var(--bad)";
+    else if(HEALTH<50) arc.style.stroke="var(--gold)";
+    else arc.style.stroke="var(--good)";
+    document.getElementById("verdict").textContent = verdictFor(HEALTH);
+    if(reduce){
+      arc.style.transition="none"; arc.style.strokeDashoffset=target;
+      document.getElementById("scoreNum").innerHTML = HEALTH+"<sub>/100</sub>";
+    } else {
+      requestAnimationFrame(function(){ arc.style.strokeDashoffset=target; });
+      // count up
+      var n=0, step=Math.max(1,Math.round(HEALTH/28)), el=document.getElementById("scoreNum");
+      var t=setInterval(function(){ n+=step; if(n>=HEALTH){ n=HEALTH; clearInterval(t); } el.innerHTML=n+"<sub>/100</sub>"; },45);
+    }
+  }
+
+  /* ---------------- render: tiles ---------------- */
+  var PIPLABEL = { good:"Strong", watch:"Watch", bad:"Action", plan:"Planned" };
+  function renderTiles(){
+    var host = document.getElementById("tiles");
+    host.innerHTML="";
+    TILES.forEach(function(t){
+      var b=document.createElement("button");
+      b.className="tile"; b.type="button"; b.setAttribute("aria-haspopup","dialog");
+      b.innerHTML =
+        '<div class="top"><span class="name">'+t.name+'</span>'+
+          '<span class="pip '+t.status+'"><i></i>'+PIPLABEL[t.status]+'</span></div>'+
+        '<div class="metric">'+t.metric+'</div>'+
+        '<div class="hint">'+t.hint+'</div>'+
+        '<span class="more">Cut in <span aria-hidden="true">&rarr;</span></span>'+
+        '<span class="meter" style="width:'+t.score+'%"></span>';
+      b.addEventListener("click", function(){ openSheet(t); });
+      host.appendChild(b);
+    });
+  }
+
+  /* ---------------- expand dialog ---------------- */
+  var scrim=document.getElementById("scrim"), sheet=document.getElementById("sheet"), lastFocus=null;
+  function openSheet(t){
+    lastFocus=document.activeElement;
+    document.getElementById("sheetTitle").textContent=t.name;
+    document.getElementById("sheetMetric").textContent=t.metric;
+    var pip=document.getElementById("sheetPip");
+    pip.className="pip "+t.status; pip.querySelector("span").textContent=PIPLABEL[t.status];
+    var body=document.getElementById("sheetBody");
+    var html='<h4>The detail</h4><ul>';
+    t.detail.forEach(function(d){ html+='<li><b>'+d[0]+'</b><span>'+d[1]+'</span></li>'; });
+    html+='</ul>';
+    if(t.links && t.links.length){
+      html+='<h4>Open</h4><div class="links">';
+      t.links.forEach(function(l){ html+='<a href="'+l[1]+'" target="_blank" rel="noopener">'+l[0]+' ↗</a>'; });
+      html+='</div>';
+    }
+    body.innerHTML=html;
+    scrim.classList.add("open"); sheet.classList.add("open");
+    document.getElementById("sheetX").focus();
+  }
+  function closeSheet(){
+    scrim.classList.remove("open"); sheet.classList.remove("open");
+    if(lastFocus && lastFocus.focus) lastFocus.focus();
+  }
+  scrim.addEventListener("click", closeSheet);
+  document.getElementById("sheetX").addEventListener("click", closeSheet);
+  document.addEventListener("keydown", function(e){ if(e.key==="Escape" && sheet.classList.contains("open")) closeSheet(); });
+
+  // ring opens its own formula sheet
+  function openRingSheet(){
+    var t={ name:"SEO Health Score", status: HEALTH<35?"bad":(HEALTH<50?"watch":"good"),
+      metric:HEALTH+" / 100  (weighted composite)",
+      detail: TILES.map(function(x){ return [x.name, x.score+"/100 at "+x.weight+"% weight"]; })
+        .concat([["Formula","Weighted average of the six tile scores. Each tile score reflects how close that lever is to page-one ready."]]),
+      links:[] };
+    openSheet(t);
+  }
+  document.getElementById("ring").addEventListener("click", openRingSheet);
+  document.getElementById("ring").addEventListener("keydown", function(e){ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); openRingSheet(); } });
+
+  /* ---------------- toast + audit ---------------- */
+  function nowStamp(){ var d=new Date(); function p(n){return (n<10?"0":"")+n;} return p(d.getHours())+":"+p(d.getMinutes()); }
+  function logIt(text, sub){
+    var entry={ t:text, at:new Date().toISOString(), label:nowStamp() };
+    auditLog.unshift(entry); auditLog=auditLog.slice(0,80); write(LS.audit, auditLog);
+    renderAudit();
+    // toast
+    var host=document.getElementById("toast");
+    var el=document.createElement("div"); el.className="t";
+    el.innerHTML='<span class="mk">!</span><div class="tx">'+text+(sub?'<span>'+sub+'</span>':'')+'</div>';
+    host.appendChild(el);
+    requestAnimationFrame(function(){ el.classList.add("in"); });
+    setTimeout(function(){ el.classList.remove("in"); setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); },350); }, 2600);
+  }
+  function renderAudit(){
+    document.getElementById("auditCount").textContent=auditLog.length;
+    var log=document.getElementById("auditLog");
+    if(!auditLog.length){ log.innerHTML='<div class="empty">No actions logged yet. Reprioritize or set a status and it lands here, on the record.</div>'; return; }
+    log.innerHTML="";
+    auditLog.forEach(function(e){
+      var row=document.createElement("div"); row.className="entry";
+      row.innerHTML='<time>'+e.label+'</time><span>'+e.t+'</span>';
+      log.appendChild(row);
+    });
+  }
+
+  /* ---------------- render: action cards with FLIP ---------------- */
+  var STATUS_CYCLE=["queued","active","done"];
+  var STATUS_LABEL={ queued:"Queued", active:"In progress", done:"Done" };
+  var cardsHost=document.getElementById("cards");
+
+  function visibleOrder(){
+    var preset=PRESETS.filter(function(p){return p.id===activePreset;})[0]||PRESETS[0];
+    return order.filter(function(id){ return preset.test(byId(id)); });
+  }
+
+  function captureRects(){
+    var m={}; Array.prototype.forEach.call(cardsHost.children,function(li){ m[li.dataset.id]=li.getBoundingClientRect(); }); return m;
+  }
+  function playFlip(prev){
+    if(reduce) return;
+    Array.prototype.forEach.call(cardsHost.children,function(li){
+      var p=prev[li.dataset.id]; if(!p) return;
+      var n=li.getBoundingClientRect(); var dx=p.left-n.left, dy=p.top-n.top;
+      if(!dx && !dy) return;
+      li.style.transition="none"; li.style.transform="translate("+dx+"px,"+dy+"px)";
+      requestAnimationFrame(function(){
+        li.style.transition="transform .42s var(--ease)"; li.style.transform="";
+      });
+    });
+  }
+
+  function renderCards(prevRects){
+    var ids=visibleOrder();
+    cardsHost.innerHTML="";
+    ids.forEach(function(id, idx){
+      var a=byId(id); var st=statusMap[id]||"queued";
+      var li=document.createElement("li");
+      li.className="card"+(st==="done"?" done":""); li.dataset.id=id; li.setAttribute("draggable","true");
+      var tagsHtml=
+        '<span class="tag"><b>Owner</b> '+a.owner+'</span>'+
+        '<span class="tag"><b>Effort</b> '+a.effort+'</span>'+
+        '<span class="tag"><b>Impact</b> '+a.impact+'</span>'+
+        '<span class="tag"><b>Time</b> '+a.time+'</span>'+
+        '<span class="tag lift">'+a.lift+'</span>';
+      li.innerHTML=
+        '<div class="rank">'+(idx+1)+'<small>PRIORITY</small></div>'+
+        '<div class="body"><h3>'+a.title+'</h3>'+
+          '<p class="conseq">'+a.conseq+'</p>'+
+          '<div class="meta">'+tagsHtml+'</div></div>'+
+        '<div class="side">'+
+          '<span class="owner">'+a.owner+'</span>'+
+          '<button class="statusbtn" data-s="'+st+'" type="button">'+STATUS_LABEL[st]+'</button>'+
+          '<div class="movebtns"><button class="up" type="button" aria-label="Move up" '+(idx===0?"disabled":"")+'>&uarr;</button>'+
+            '<button class="down" type="button" aria-label="Move down" '+(idx===ids.length-1?"disabled":"")+'>&darr;</button></div>'+
+        '</div>';
+      cardsHost.appendChild(li);
+    });
+    document.getElementById("qcount") && (document.getElementById("qcount").textContent=ids.length+" of "+ACTIONS.length);
+    wireCards();
+    if(prevRects) playFlip(prevRects);
+  }
+
+  function moveInGlobalOrder(id, dir){
+    // operate on the full order, but move past hidden items so the visible reorder is intuitive
+    var vis=visibleOrder(); var vi=vis.indexOf(id);
+    var swapWith=vis[vi+dir]; if(!swapWith) return;
+    var gi=order.indexOf(id), gj=order.indexOf(swapWith);
+    order.splice(gi,1); order.splice(order.indexOf(swapWith)+(dir>0?1:0),0,id);
+    write(LS.order, order);
+  }
+
+  function wireCards(){
+    Array.prototype.forEach.call(cardsHost.children,function(li){
+      var id=li.dataset.id, a=byId(id);
+      li.querySelector(".statusbtn").addEventListener("click",function(e){
+        e.stopPropagation();
+        var cur=statusMap[id]||"queued"; var nx=STATUS_CYCLE[(STATUS_CYCLE.indexOf(cur)+1)%3];
+        statusMap[id]=nx; write(LS.status,statusMap);
+        var prev=captureRects(); renderCards(prev);
+        logIt("Status: "+a.title.slice(0,42)+(a.title.length>42?"...":""), "set to "+STATUS_LABEL[nx]);
+      });
+      li.querySelector(".up").addEventListener("click",function(e){ e.stopPropagation(); var p=captureRects(); moveInGlobalOrder(id,-1); renderCards(p); logIt("Reprioritized: "+a.title.slice(0,38), "moved up"); });
+      li.querySelector(".down").addEventListener("click",function(e){ e.stopPropagation(); var p=captureRects(); moveInGlobalOrder(id,1); renderCards(p); logIt("Reprioritized: "+a.title.slice(0,38), "moved down"); });
+      // drag
+      li.addEventListener("dragstart",function(e){ li.classList.add("dragging"); e.dataTransfer.effectAllowed="move"; try{e.dataTransfer.setData("text/plain",id);}catch(_){} });
+      li.addEventListener("dragend",function(){ li.classList.remove("dragging"); Array.prototype.forEach.call(cardsHost.children,function(x){x.classList.remove("drop-target");}); });
+      li.addEventListener("dragover",function(e){ e.preventDefault(); e.dataTransfer.dropEffect="move"; li.classList.add("drop-target"); });
+      li.addEventListener("dragleave",function(){ li.classList.remove("drop-target"); });
+      li.addEventListener("drop",function(e){
+        e.preventDefault(); li.classList.remove("drop-target");
+        var dragId; try{dragId=e.dataTransfer.getData("text/plain");}catch(_){}
+        if(!dragId || dragId===id) return;
+        var prev=captureRects();
+        var gi=order.indexOf(dragId); order.splice(gi,1);
+        order.splice(order.indexOf(id),0,dragId); write(LS.order,order);
+        renderCards(prev);
+        logIt("Reprioritized: "+byId(dragId).title.slice(0,34), "dropped above "+a.title.slice(0,22));
+      });
+    });
+  }
+
+  /* ---------------- presets ---------------- */
+  function renderPresets(){
+    var bar=document.getElementById("qbar"); bar.innerHTML="";
+    PRESETS.forEach(function(p){
+      var b=document.createElement("button"); b.className="chip"; b.type="button";
+      b.textContent=p.label; b.setAttribute("aria-pressed", p.id===activePreset?"true":"false");
+      b.addEventListener("click",function(){
+        if(activePreset===p.id) return;
+        activePreset=p.id;
+        Array.prototype.forEach.call(bar.children,function(c){c.setAttribute("aria-pressed","false");});
+        b.setAttribute("aria-pressed","true");
+        var prev=captureRects(); renderCards(prev);
+      });
+      bar.appendChild(b);
+    });
+    var c=document.createElement("span"); c.className="count mono"; c.id="qcount"; bar.appendChild(c);
+  }
+
+  /* ---------------- back button ---------------- */
+  document.getElementById("backBtn").addEventListener("click",function(){
+    if(document.referrer && /builders-hall/.test(document.referrer)){ history.back(); }
+    else { window.location.href="/builders-hall.html"; }
+  });
+
+  /* ---------------- unread-badge hook (E's fleet badge reads this) ---------------- */
+  var UPDATED="2026-06-15T11:56:59Z";
+  window.__artifactMeta = { id:"seo-scoreboard", title:"SEO Scoreboard", updatedAt:UPDATED };
+  try{ // self-clear when opened standalone (badge file may not be mounted on the hub)
+    var seen=read(LS.seen,null);
+    if(!seen || seen<UPDATED) write(LS.seen, UPDATED);
+  }catch(e){}
+
+  /* ---------------- pause bg motion when hidden (good citizen) ---------------- */
+  document.addEventListener("visibilitychange",function(){
+    document.querySelectorAll(".glow-a,.glow-b,.ring .pulse").forEach(function(el){
+      el.style.animationPlayState = document.hidden ? "paused":"running";
+    });
+  });
+
+  /* ---------------- boot ---------------- */
+  renderRing(); renderTiles(); renderPresets(); renderCards(null); renderAudit();
+})();
+</script>
+<script src="/assets/ryujin-nav.js" defer></script>
+<script src="/assets/command-palette.js" defer></script>
+</body>
+</html>

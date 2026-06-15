@@ -1,0 +1,744 @@
+<!doctype html>
+<html lang="en" data-rj="telltale" data-artifact-id="ad-activity" data-updated-at="2026-06-15T12:05:00Z">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ad Activity · Ryujin</title>
+<link rel="icon" href="data:,">
+<!-- Auth gate: tokenless users bounce to /login before any artifact logic runs -->
+<script src="/assets/auth-guard.js"></script>
+
+<!--
+  Ryujin artifact · Ad Activity report (Meta + Google channel health)
+  Built desk C ord-20260615-1141-C, 2026-06-15. Telltale internal design bar.
+  Self-contained: tokens inlined so it renders standalone AND when mounted in Ryujin.
+  Data: baked from the verified live snapshot (metaAds section, enriched 10:40Z Jun 15).
+  Wire to live: replace window.__AD_DATA__ with a fetch('/api/snapshot') -> sections.metaAds
+  when mounted same-origin in the authenticated ryujin-os shell (see ENDPOINT SPEC in result).
+  ?embed=1 -> drops the standalone top bar for iframe mounting. No em dashes anywhere.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Orbitron:wght@600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+/* ===========================================================================
+ * Canonical Telltale token layer (inlined from /assets/ryujin-telltale.css so
+ * the artifact is self-contained; values kept in sync with the deployed file).
+ * ======================================================================== */
+:root{
+  --rj-bg:#030611; --rj-bg-2:#060b16; --rj-surface:#0a1120; --rj-surface-2:#0e1727; --rj-surface-sunken:#050811;
+  --rj-glass:rgba(14,22,40,0.62); --rj-glass-blur:16px; --rj-glass-edge:rgba(150,190,255,0.50); --rj-glass-inner:rgba(120,170,255,0.10);
+  --rj-ink:#e9eefa; --rj-ink-mid:rgba(202,216,242,0.82); --rj-ink-dim:rgba(165,190,226,0.62);
+  --rj-accent:#4a9eff; --rj-accent-bright:#7ab6ff; --rj-accent-deep:#2563eb; --rj-accent-glow:rgba(74,158,255,0.40); --rj-on-accent:#061021;
+  --rj-line:rgba(122,162,222,0.16); --rj-line-strong:rgba(122,162,222,0.30); --rj-bracket:rgba(74,158,255,0.55);
+  --rj-ok:#46d68a; --rj-warn:#f5b13a; --rj-danger:#f8746e; --rj-info:var(--rj-accent);
+  --rj-attention:#f5b13a; --rj-attention-glow:rgba(245,177,58,0.32);
+  --rj-ok-glow:rgba(70,214,138,0.28); --rj-danger-glow:rgba(248,116,110,0.28);
+  --rj-font-ui:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --rj-font-display:'Orbitron','Inter',sans-serif;
+  --rj-font-mono:'Share Tech Mono',ui-monospace,'JetBrains Mono',monospace;
+  --rj-text-xs:0.75rem; --rj-text-sm:0.8125rem; --rj-text-base:0.9375rem; --rj-text-lg:1.0625rem;
+  --rj-text-xl:1.25rem; --rj-text-2xl:1.5rem; --rj-text-3xl:1.875rem;
+  --rj-tracking-caps:0.10em;
+  --rj-space-1:4px; --rj-space-2:8px; --rj-space-3:12px; --rj-space-4:16px; --rj-space-5:20px;
+  --rj-space-6:24px; --rj-space-8:32px; --rj-space-10:40px; --rj-space-12:48px; --rj-space-16:64px;
+  --rj-radius-sm:8px; --rj-radius:12px; --rj-radius-lg:16px; --rj-radius-pill:999px;
+  --rj-shadow-sm:0 1px 2px rgba(0,0,0,0.40);
+  --rj-shadow-md:0 8px 24px rgba(0,0,0,0.45),inset 0 1px 0 var(--rj-glass-inner);
+  --rj-shadow-lg:0 18px 48px rgba(0,0,0,0.50);
+  --rj-dur-fast:120ms; --rj-dur:200ms; --rj-dur-slow:320ms;
+  --rj-ease-out:cubic-bezier(0.22,1,0.36,1);
+  --rj-z-base:1; --rj-z-sticky:10; --rj-z-overlay:100; --rj-z-toast:2000;
+  --rj-focus:0 0 0 3px var(--rj-accent-glow);
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0}
+body{
+  min-height:100vh; background:var(--rj-bg); color:var(--rj-ink);
+  font-family:var(--rj-font-ui); font-size:var(--rj-text-base); line-height:1.5;
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+}
+/* Ambient field: calm at rest, static (no autoplay motion behind data). */
+body::before{
+  content:""; position:fixed; inset:0; z-index:-1; pointer-events:none;
+  background:
+    radial-gradient(ellipse at 22% 10%,rgba(74,158,255,0.10) 0%,transparent 56%),
+    radial-gradient(ellipse at 82% 92%,rgba(124,58,237,0.07) 0%,transparent 58%),
+    linear-gradient(180deg,var(--rj-bg-2) 0%,var(--rj-bg) 100%);
+}
+::selection{background:var(--rj-accent-glow); color:#fff}
+:focus-visible{outline:none; box-shadow:var(--rj-focus); border-radius:var(--rj-radius-sm)}
+.rj-data{font-family:var(--rj-font-mono); font-variant-numeric:tabular-nums; letter-spacing:0.01em}
+
+/* ---- standalone top bar (hidden in ?embed=1) ---------------------------- */
+.topbar{
+  display:flex; align-items:center; gap:var(--rj-space-3);
+  padding:var(--rj-space-3) var(--rj-space-6);
+  border-bottom:1px solid var(--rj-line);
+  background:linear-gradient(180deg,rgba(10,17,32,0.9),rgba(6,11,22,0.6));
+  position:sticky; top:0; z-index:var(--rj-z-sticky); backdrop-filter:blur(10px);
+}
+[data-embed] .topbar{display:none}
+.topbar .home{font:600 var(--rj-text-sm)/1 var(--rj-font-display); color:var(--rj-ink-mid); text-decoration:none; letter-spacing:0.08em; text-transform:uppercase}
+.topbar .home:hover{color:var(--rj-accent-bright)}
+.topbar .crumb{color:var(--rj-ink-dim); font-size:var(--rj-text-sm)}
+
+/* ---- shell -------------------------------------------------------------- */
+.wrap{max-width:1320px; margin:0 auto; padding:var(--rj-space-8) var(--rj-space-6) var(--rj-space-16)}
+[data-embed] .wrap{padding-top:var(--rj-space-5)}
+
+/* masthead: title + the JARVIS presence ring */
+.masthead{display:grid; grid-template-columns:1fr auto; gap:var(--rj-space-6); align-items:center; margin-bottom:var(--rj-space-6)}
+.title-block h1{
+  margin:0; font-family:var(--rj-font-display); font-weight:700;
+  font-size:clamp(1.6rem,3.4vw,2.6rem); letter-spacing:0.02em; line-height:1.05; text-wrap:balance;
+}
+.title-block h1 .accent{color:var(--rj-accent-bright)}
+.title-block .sub{margin-top:var(--rj-space-2); color:var(--rj-ink-mid); font-size:var(--rj-text-sm); max-width:60ch}
+.title-block .sub .rj-data{color:var(--rj-ink)}
+
+/* presence ring: carries ONE real metric (live CPL), breathes to signal feed online */
+.presence{display:flex; align-items:center; gap:var(--rj-space-4)}
+.ring{
+  --sz:104px; width:var(--sz); height:var(--sz); position:relative; flex:none;
+  display:grid; place-items:center; border-radius:50%;
+}
+.ring svg{position:absolute; inset:0; width:100%; height:100%; transform:rotate(-90deg)}
+.ring .track{fill:none; stroke:var(--rj-line-strong); stroke-width:5}
+.ring .arc{fill:none; stroke:url(#ringgrad); stroke-width:5; stroke-linecap:round;
+  filter:drop-shadow(0 0 6px var(--rj-accent-glow)); transition:stroke-dashoffset var(--rj-dur-slow) var(--rj-ease-out)}
+.ring .core{
+  position:absolute; inset:14px; border-radius:50%;
+  background:radial-gradient(circle at 50% 38%,rgba(74,158,255,0.22),rgba(8,14,28,0.9) 72%);
+  box-shadow:inset 0 0 18px rgba(74,158,255,0.18); display:grid; place-items:center; text-align:center;
+  animation:breathe 4.2s var(--rj-ease-out) infinite;
+}
+@keyframes breathe{0%,100%{box-shadow:inset 0 0 16px rgba(74,158,255,0.14)} 50%{box-shadow:inset 0 0 26px rgba(74,158,255,0.30)}}
+.ring .core .v{font-family:var(--rj-font-mono); font-size:1.15rem; color:var(--rj-ink); line-height:1}
+.ring .core .k{font-size:0.6rem; letter-spacing:var(--rj-tracking-caps); text-transform:uppercase; color:var(--rj-ink-dim); margin-top:3px}
+.presence .meta{font-size:var(--rj-text-xs); color:var(--rj-ink-dim); line-height:1.5}
+.presence .meta b{display:block; color:var(--rj-ok); font-weight:600; font-size:var(--rj-text-sm)}
+.presence .meta .rj-data{color:var(--rj-ink-mid)}
+
+/* ---- health strip (honest feed + channel health) ----------------------- */
+.health{
+  display:flex; flex-wrap:wrap; gap:var(--rj-space-2); align-items:center;
+  margin-bottom:var(--rj-space-6); padding:var(--rj-space-3) var(--rj-space-4);
+  border:1px solid var(--rj-line); border-radius:var(--rj-radius); background:var(--rj-surface-sunken);
+}
+.chip{
+  display:inline-flex; align-items:center; gap:var(--rj-space-2);
+  padding:6px var(--rj-space-3); border-radius:var(--rj-radius-pill);
+  font-size:var(--rj-text-xs); font-weight:500; border:1px solid transparent; white-space:nowrap;
+}
+.chip .dot{width:8px; height:8px; border-radius:50%; flex:none}
+.chip.ok{color:var(--rj-ok); background:rgba(70,214,138,0.08); border-color:rgba(70,214,138,0.28)}
+.chip.ok .dot{background:var(--rj-ok); box-shadow:0 0 8px var(--rj-ok-glow); animation:pulseDot 2.4s ease-in-out infinite}
+.chip.warn{color:var(--rj-warn); background:rgba(245,177,58,0.07); border-color:rgba(245,177,58,0.26)}
+.chip.warn .dot{background:var(--rj-warn)}
+.chip.warn button,.chip.ok button{all:unset; cursor:pointer; text-decoration:underline; text-underline-offset:2px; opacity:0.8}
+.chip.warn button:hover{opacity:1}
+@keyframes pulseDot{0%,100%{opacity:1} 50%{opacity:0.4}}
+
+/* ---- window toggle (Telltale choice control) --------------------------- */
+.controls{display:flex; flex-wrap:wrap; gap:var(--rj-space-4); align-items:center; justify-content:space-between; margin-bottom:var(--rj-space-5)}
+.seg{
+  position:relative; display:inline-flex; padding:4px; gap:2px;
+  background:var(--rj-surface-sunken); border:1px solid var(--rj-line-strong); border-radius:var(--rj-radius-pill);
+}
+.seg .ind{position:absolute; top:4px; bottom:4px; border-radius:var(--rj-radius-pill);
+  background:linear-gradient(180deg,var(--rj-accent),var(--rj-accent-deep)); box-shadow:0 4px 16px var(--rj-accent-glow);
+  transition:left var(--rj-dur) var(--rj-ease-out),width var(--rj-dur) var(--rj-ease-out); z-index:0}
+.seg button{
+  all:unset; position:relative; z-index:1; cursor:pointer; padding:8px var(--rj-space-4);
+  font:600 var(--rj-text-sm)/1 var(--rj-font-ui); color:var(--rj-ink-mid); border-radius:var(--rj-radius-pill);
+  transition:color var(--rj-dur) var(--rj-ease-out); display:inline-flex; align-items:center; gap:6px;
+}
+.seg button[aria-pressed="true"]{color:var(--rj-on-accent)}
+.seg button .est{font-size:0.62rem; opacity:0.75; font-weight:500}
+.window-note{font-size:var(--rj-text-xs); color:var(--rj-ink-dim); max-width:46ch}
+.window-note.est{color:var(--rj-warn)}
+
+/* ---- KPI tiles --------------------------------------------------------- */
+.kpis{display:grid; grid-template-columns:repeat(4,1fr); gap:var(--rj-space-4); margin-bottom:var(--rj-space-6)}
+.tile{
+  position:relative; padding:var(--rj-space-5); border-radius:var(--rj-radius);
+  background:var(--rj-surface); border:1px solid var(--rj-line); box-shadow:var(--rj-shadow-sm);
+  overflow:hidden; transition:border-color var(--rj-dur) var(--rj-ease-out),transform var(--rj-dur) var(--rj-ease-out)}
+.tile:hover{border-color:var(--rj-line-strong); transform:translateY(-2px)}
+.tile .k{font-size:var(--rj-text-xs); letter-spacing:var(--rj-tracking-caps); text-transform:uppercase; color:var(--rj-ink-dim)}
+.tile .v{font-family:var(--rj-font-mono); font-variant-numeric:tabular-nums; font-size:clamp(1.7rem,2.6vw,2.3rem); line-height:1.05; margin-top:var(--rj-space-3); color:var(--rj-ink)}
+.tile .v .unit{font-size:0.6em; color:var(--rj-ink-mid); margin-right:2px}
+.tile .foot{margin-top:var(--rj-space-3); display:flex; align-items:center; gap:var(--rj-space-2); font-size:var(--rj-text-xs); color:var(--rj-ink-dim)}
+.delta{display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:var(--rj-radius-pill); font-family:var(--rj-font-mono); font-size:0.7rem}
+.delta.good{color:var(--rj-ok); background:rgba(70,214,138,0.1)}
+.delta.bad{color:var(--rj-danger); background:rgba(248,116,110,0.1)}
+.delta.flat{color:var(--rj-ink-dim); background:rgba(122,162,222,0.08)}
+/* sparkbar at tile base: real datum (window impressions share), not decoration */
+.tile .spark{position:absolute; left:0; right:0; bottom:0; height:3px; background:var(--rj-line)}
+.tile .spark i{position:absolute; left:0; top:0; bottom:0; background:linear-gradient(90deg,var(--rj-accent-deep),var(--rj-accent-bright)); transition:width var(--rj-dur-slow) var(--rj-ease-out)}
+.tile.attn{border-color:rgba(245,177,58,0.4)}
+.tile.attn .v{color:var(--rj-warn)}
+
+/* corner brackets on focus tiles (bar #3) */
+.bracket{position:relative}
+.bracket::before,.bracket::after{content:""; position:absolute; width:12px; height:12px; pointer-events:none; border:1.5px solid var(--rj-bracket)}
+.bracket::before{top:6px; left:6px; border-right:0; border-bottom:0}
+.bracket::after{bottom:6px; right:6px; border-left:0; border-top:0}
+
+/* ---- section frame ----------------------------------------------------- */
+.section{margin-bottom:var(--rj-space-8)}
+.section > h2{
+  display:flex; align-items:center; gap:var(--rj-space-3); margin:0 0 var(--rj-space-4);
+  font-family:var(--rj-font-display); font-weight:600; font-size:var(--rj-text-lg); letter-spacing:0.04em;
+}
+.section > h2 .count{font-family:var(--rj-font-mono); font-size:var(--rj-text-sm); color:var(--rj-ink-dim); font-weight:400}
+.section > h2::after{content:""; flex:1; height:1px; background:linear-gradient(90deg,var(--rj-line-strong),transparent)}
+
+/* ---- active campaign cards (poppable, draggable, FLIP-sortable) -------- */
+.cards{display:grid; grid-template-columns:repeat(auto-fit,minmax(360px,1fr)); gap:var(--rj-space-4)}
+.camp{
+  position:relative; border-radius:var(--rj-radius); background:var(--rj-surface);
+  border:1px solid var(--rj-line); box-shadow:var(--rj-shadow-md); overflow:hidden;
+  transition:border-color var(--rj-dur) var(--rj-ease-out),box-shadow var(--rj-dur) var(--rj-ease-out);
+}
+.camp.dragging{opacity:0.5; cursor:grabbing}
+.camp:hover{border-color:var(--rj-line-strong)}
+.camp .hd{display:flex; align-items:flex-start; gap:var(--rj-space-3); padding:var(--rj-space-4); cursor:pointer}
+.camp .grip{flex:none; width:18px; color:var(--rj-ink-dim); cursor:grab; margin-top:2px; line-height:1; letter-spacing:-2px}
+.camp .hd .nm{flex:1; min-width:0}
+.camp .hd .nm .t{font-weight:600; font-size:var(--rj-text-base); line-height:1.25}
+.camp .hd .nm .id{font-family:var(--rj-font-mono); font-size:0.66rem; color:var(--rj-ink-dim); margin-top:3px}
+.camp .badge{font-size:0.62rem; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; padding:3px 8px; border-radius:var(--rj-radius-pill); white-space:nowrap}
+.camp .badge.active{color:var(--rj-ok); background:rgba(70,214,138,0.12); border:1px solid rgba(70,214,138,0.3)}
+.camp .badge.learn{color:var(--rj-warn); background:rgba(245,177,58,0.1); border:1px solid rgba(245,177,58,0.28)}
+.camp .quick{display:flex; gap:var(--rj-space-5); padding:0 var(--rj-space-4) var(--rj-space-4); flex-wrap:wrap}
+.camp .quick .q{display:flex; flex-direction:column; gap:2px}
+.camp .quick .q .ql{font-size:0.64rem; letter-spacing:0.06em; text-transform:uppercase; color:var(--rj-ink-dim)}
+.camp .quick .q .qv{font-family:var(--rj-font-mono); font-variant-numeric:tabular-nums; font-size:var(--rj-text-lg); color:var(--rj-ink)}
+.camp .chev{margin-left:auto; align-self:center; color:var(--rj-ink-dim); transition:transform var(--rj-dur) var(--rj-ease-out)}
+.camp[aria-expanded="true"] .chev{transform:rotate(180deg)}
+.camp .detail{display:grid; grid-template-rows:0fr; transition:grid-template-rows var(--rj-dur-slow) var(--rj-ease-out)}
+.camp[aria-expanded="true"] .detail{grid-template-rows:1fr}
+.camp .detail > div{overflow:hidden}
+.camp .detail .grid{
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(96px,1fr)); gap:var(--rj-space-3);
+  padding:var(--rj-space-4); border-top:1px solid var(--rj-line); background:var(--rj-surface-sunken);
+}
+.camp .detail .cell .cl{font-size:0.62rem; letter-spacing:0.05em; text-transform:uppercase; color:var(--rj-ink-dim)}
+.camp .detail .cell .cv{font-family:var(--rj-font-mono); font-variant-numeric:tabular-nums; font-size:var(--rj-text-base); color:var(--rj-ink); margin-top:3px}
+.camp .detail .nb{padding:0 var(--rj-space-4) var(--rj-space-4); font-size:var(--rj-text-xs); color:var(--rj-ink-mid); background:var(--rj-surface-sunken); line-height:1.55}
+.camp .detail .nb b{color:var(--rj-accent-bright); font-weight:600}
+
+/* ---- two-column lower grid --------------------------------------------- */
+.lower{display:grid; grid-template-columns:1.3fr 1fr; gap:var(--rj-space-6); align-items:start}
+.panel{padding:var(--rj-space-5); border-radius:var(--rj-radius); background:var(--rj-surface); border:1px solid var(--rj-line); box-shadow:var(--rj-shadow-sm)}
+.panel h3{margin:0 0 var(--rj-space-4); font-family:var(--rj-font-display); font-weight:600; font-size:var(--rj-text-base); letter-spacing:0.03em}
+.panel .note{font-size:var(--rj-text-xs); color:var(--rj-ink-dim); margin:-8px 0 var(--rj-space-4)}
+
+/* top-performers ranked rows */
+.rank{display:flex; flex-direction:column; gap:var(--rj-space-2)}
+.rank .row{display:grid; grid-template-columns:auto 1fr auto; gap:var(--rj-space-3); align-items:center; padding:var(--rj-space-2) var(--rj-space-3); border-radius:var(--rj-radius-sm); background:var(--rj-surface-sunken)}
+.rank .row .pos{font-family:var(--rj-font-mono); font-size:var(--rj-text-sm); color:var(--rj-accent); width:1.4em}
+.rank .row .nm{font-size:var(--rj-text-sm); color:var(--rj-ink-mid); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.rank .row .cpl{font-family:var(--rj-font-mono); font-variant-numeric:tabular-nums; color:var(--rj-ok); font-size:var(--rj-text-sm)}
+.rank .row .bar{grid-column:1 / -1; height:3px; background:var(--rj-line); border-radius:2px; overflow:hidden}
+.rank .row .bar i{display:block; height:100%; background:linear-gradient(90deg,var(--rj-ok),#2fae6e)}
+
+/* alerts empty state */
+.alerts-empty{display:flex; align-items:center; gap:var(--rj-space-3); padding:var(--rj-space-5); color:var(--rj-ink-mid); font-size:var(--rj-text-sm)}
+.alerts-empty .ic{width:38px; height:38px; flex:none; border-radius:50%; display:grid; place-items:center; background:rgba(70,214,138,0.1); color:var(--rj-ok); border:1px solid rgba(70,214,138,0.25)}
+
+/* cross-channel google card */
+.gcard{display:flex; flex-direction:column; gap:var(--rj-space-3)}
+.gcard .head{display:flex; align-items:center; gap:var(--rj-space-2)}
+.gcard .head .tag{font-size:0.62rem; letter-spacing:0.06em; text-transform:uppercase; padding:3px 8px; border-radius:var(--rj-radius-pill); color:var(--rj-danger); background:rgba(248,116,110,0.1); border:1px solid rgba(248,116,110,0.28)}
+.gcard p{margin:0; font-size:var(--rj-text-sm); color:var(--rj-ink-mid); line-height:1.55}
+.gcard p b{color:var(--rj-ink)}
+.gcard .stat{display:flex; gap:var(--rj-space-5)}
+.gcard .stat .s .sv{font-family:var(--rj-font-mono); font-size:var(--rj-text-lg); color:var(--rj-ink)}
+.gcard .stat .s .sl{font-size:0.64rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--rj-ink-dim)}
+
+/* paused drawer */
+.drawer{margin-top:var(--rj-space-4)}
+.drawer > summary{cursor:pointer; list-style:none; display:flex; align-items:center; gap:var(--rj-space-2); padding:var(--rj-space-3) var(--rj-space-4); border:1px solid var(--rj-line); border-radius:var(--rj-radius-sm); background:var(--rj-surface); font-size:var(--rj-text-sm); color:var(--rj-ink-mid)}
+.drawer > summary::-webkit-details-marker{display:none}
+.drawer > summary:hover{border-color:var(--rj-line-strong)}
+.drawer > summary .tw{margin-left:auto; font-family:var(--rj-font-mono); color:var(--rj-ink-dim); font-size:var(--rj-text-xs)}
+.drawer .paused-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:var(--rj-space-2); padding:var(--rj-space-3) 0}
+.drawer .pz{display:flex; justify-content:space-between; gap:var(--rj-space-3); padding:var(--rj-space-2) var(--rj-space-3); border-radius:var(--rj-radius-sm); background:var(--rj-surface-sunken); font-size:var(--rj-text-xs)}
+.drawer .pz .pn{color:var(--rj-ink-mid); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.drawer .pz .pv{font-family:var(--rj-font-mono); color:var(--rj-ink-dim); flex:none}
+
+/* footer stamp */
+.stamp{margin-top:var(--rj-space-8); padding-top:var(--rj-space-4); border-top:1px solid var(--rj-line); font-size:var(--rj-text-xs); color:var(--rj-ink-dim); display:flex; flex-wrap:wrap; gap:var(--rj-space-4); justify-content:space-between}
+.stamp .rj-data{color:var(--rj-ink-mid)}
+
+/* logged-this toast (the Telltale "X will remember that" steal, honest) */
+.toast{
+  position:fixed; right:var(--rj-space-6); bottom:var(--rj-space-6); z-index:var(--rj-z-toast);
+  padding:var(--rj-space-3) var(--rj-space-4); border-radius:var(--rj-radius-sm);
+  background:var(--rj-surface-2); border:1px solid var(--rj-line-strong); box-shadow:var(--rj-shadow-lg);
+  font-size:var(--rj-text-sm); color:var(--rj-ink-mid); display:flex; align-items:center; gap:var(--rj-space-2);
+  opacity:0; transform:translateY(8px); pointer-events:none; transition:opacity var(--rj-dur) var(--rj-ease-out),transform var(--rj-dur) var(--rj-ease-out);
+}
+.toast.show{opacity:1; transform:translateY(0)}
+.toast .ic{color:var(--rj-accent)}
+
+/* unread badge hook: the fleet-wide component (E) mounts onto [data-artifact-id];
+   this is a graceful standalone fallback marker styled to match the RPG '!' spec. */
+.newdot{position:absolute; top:-6px; right:-6px; width:16px; height:16px; border-radius:50%;
+  background:var(--rj-attention); color:#3a2600; font:700 11px/16px var(--rj-font-ui); text-align:center;
+  box-shadow:0 0 10px var(--rj-attention-glow); animation:pulseDot 2s ease-in-out infinite}
+
+/* ---- responsive -------------------------------------------------------- */
+@media(max-width:1080px){
+  .kpis{grid-template-columns:repeat(2,1fr)}
+  .lower{grid-template-columns:1fr}
+}
+@media(max-width:680px){
+  .wrap{padding:var(--rj-space-5) var(--rj-space-4) var(--rj-space-12)}
+  .masthead{grid-template-columns:1fr; gap:var(--rj-space-4)}
+  .presence{order:-1}
+  .controls{flex-direction:column; align-items:flex-start; gap:var(--rj-space-3)}
+  .cards{grid-template-columns:1fr}
+  .camp .quick{gap:var(--rj-space-4)}
+  .toast{left:var(--rj-space-4); right:var(--rj-space-4); bottom:var(--rj-space-4)}
+}
+@media(max-width:380px){ .kpis{grid-template-columns:1fr} }
+
+/* ---- reduced motion (not optional) ------------------------------------- */
+@media(prefers-reduced-motion:reduce){
+  *{transition:none !important; animation:none !important}
+  .ring .core{animation:none}
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <a class="home" href="/">Ryujin</a>
+  <span class="crumb">/ Artifacts / Ad Activity</span>
+</header>
+
+<main class="wrap" role="main">
+
+  <!-- masthead + presence ring -->
+  <div class="masthead">
+    <div class="title-block">
+      <h1>Ad <span class="accent">Activity</span></h1>
+      <p class="sub">Meta paid performance, live channel health, and the Google gap. Feed pulled
+        <span class="rj-data" id="enrichedStamp">10:40Z</span>. Toggle the window to re-rank in place.</p>
+    </div>
+    <div class="presence" aria-hidden="true">
+      <div class="ring">
+        <svg viewBox="0 0 104 104">
+          <defs><linearGradient id="ringgrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#7ab6ff"/><stop offset="1" stop-color="#2563eb"/>
+          </linearGradient></defs>
+          <circle class="track" cx="52" cy="52" r="46"/>
+          <circle class="arc" id="ringArc" cx="52" cy="52" r="46"/>
+        </svg>
+        <div class="core"><div class="v" id="ringVal">$0</div><div class="k">live cpl</div></div>
+      </div>
+      <div class="meta">
+        <b>Feed live</b>
+        <span>Meta Graph v21.0</span><br>
+        snapshot <span class="rj-data" id="snapStamp">11:49Z</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- honest health strip -->
+  <div class="health" id="health">
+    <span class="chip ok"><span class="dot"></span> Meta feed live</span>
+    <span class="chip ok"><span class="dot"></span> Meta token valid to ~Aug 11
+      <button type="button" data-info="tokenWarning">why</button></span>
+    <span class="chip warn"><span class="dot"></span> Daily ads-check cron dark
+      <button type="button" data-info="cron">why</button></span>
+    <span class="chip warn"><span class="dot"></span> Google Ads conversion tracking off
+      <button type="button" data-info="google">why</button></span>
+  </div>
+
+  <!-- window controls -->
+  <div class="controls">
+    <div class="seg" role="group" aria-label="Reporting window">
+      <span class="ind" id="segInd"></span>
+      <button type="button" data-win="7d" aria-pressed="true">Last 7 days</button>
+      <button type="button" data-win="24h" aria-pressed="false">Last 24h <span class="est">est</span></button>
+    </div>
+    <p class="window-note" id="winNote">Real windowed pull from the Meta insights feed.</p>
+  </div>
+
+  <!-- KPI tiles -->
+  <section class="kpis" id="kpis" aria-label="Window totals"></section>
+
+  <!-- active campaigns -->
+  <section class="section">
+    <h2>Active campaigns <span class="count" id="activeCount"></span></h2>
+    <div class="cards" id="cards"></div>
+  </section>
+
+  <!-- lower grid: top performers + alerts/google -->
+  <div class="lower">
+    <div class="panel">
+      <h3>Best cost-per-lead (lifetime)</h3>
+      <p class="note">Historical retarget winners, not current spend. The benchmark the live campaigns are pacing against.</p>
+      <div class="rank" id="rank"></div>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:var(--rj-space-6)">
+      <div class="panel">
+        <h3>Alerts</h3>
+        <div class="alerts-empty">
+          <span class="ic" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          </span>
+          <div>No active alerts. Spend, frequency, and CPL all inside guardrails on the 2 live campaigns.</div>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>Google channel</h3>
+        <div class="gcard">
+          <div class="head"><span class="tag">Half-blind</span></div>
+          <p><b>Conversion tracking is not activated.</b> Roughly $464 ran in the last 30 days with
+            <b>0 conversions tracked</b>. The gtag code is staged (PR #461); activation is Mac's ~20-minute
+            Google Ads UI step, no dev token needed.</p>
+          <div class="stat">
+            <div class="s"><div class="sv rj-data">~$464</div><div class="sl">30d spend</div></div>
+            <div class="s"><div class="sv rj-data">0</div><div class="sl">tracked conv</div></div>
+            <div class="s"><div class="sv rj-data">60d+</div><div class="sl">blind</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- paused drawer -->
+  <details class="drawer section">
+    <summary>Paused campaign tail
+      <span class="tw" id="pausedTw"></span>
+    </summary>
+    <div class="paused-grid" id="pausedGrid"></div>
+  </details>
+
+  <div class="stamp">
+    <span>Source <span class="rj-data">Live Meta Graph API v21.0</span> · enriched <span class="rj-data" id="enrichedFull"></span></span>
+    <span>Artifact <span class="rj-data">ad-activity</span> · desk C · built for Mac's review</span>
+  </div>
+
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite"><span class="ic">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="3"/></svg>
+</span><span id="toastMsg"></span></div>
+
+<script>
+/* ===========================================================================
+ * DATA  (baked from the verified live snapshot, sections.metaAds, 2026-06-15)
+ * To wire live when mounted same-origin in ryujin-os: replace this block with
+ *   const snap = await (await fetch('/api/snapshot',{credentials:'include'})).json();
+ *   const M = snap.sections.metaAds;  // then map fields below.
+ * See ENDPOINT SPEC in the desk result. Standalone falls back to this object.
+ * ======================================================================== */
+const AD = {
+  source:"Live Meta Graph API v21.0",
+  snapshotUpdatedAt:"2026-06-15T11:49:40.641Z",
+  enrichedAt:"2026-06-15T10:40:07.159Z",
+  lifetime:{campaigns:50, spend:10845.67, leads:923, avgCPL:11.75},
+  active:[
+    {name:"PU - Revive - Rejuvenation v3", id:"120245893340240601", status:"learn",
+     spend:66.06, impressions:4158, reach:2146, frequency:1.94, cpm:15.89, results:4, clicks:145, dailyBudget:null,
+     spend7d:61.38, leads7d:4, impr7d:3936,
+     note:"6 ads in the LEARNING phase. No daily budget cap set. CPL is provisional until the learning phase exits."},
+    {name:"(May) Instant Estimator Leads Campaign", id:"120244802461010601", status:"active",
+     spend:389.92, impressions:29940, reach:14317, frequency:2.09, cpm:13.02, results:26, clicks:449, dailyBudget:25,
+     spend7d:158.51, leads7d:15, impr7d:12153,
+     note:"The workhorse. $25/day cap, frequency 2.1 is healthy. 26 lifetime pixel leads at the lowest live CPM."}
+  ],
+  topPerformers:[
+    {name:"Happy Holidays Campaign", cpl:0.40, spend:27.31, leads:68},
+    {name:"Vaulted Ceiling (Retarget) Leads Campaign", cpl:0.51, spend:86.76, leads:170},
+    {name:"Roof Ready (Retarget) Leads Campaign", cpl:0.52, spend:87.04, leads:169},
+    {name:"Mantle Above... (Retarget) Leads Campaign", cpl:0.83, spend:74.29, leads:90},
+    {name:"Charles- Leads Funnel Campaign", cpl:1.03, spend:78.05, leads:76}
+  ],
+  paused:[
+    {name:"we've been getting- awareness", spend:727.36},
+    {name:"if it's been 20 years- bookings", spend:394.48},
+    {name:"10CM V3 Leads", spend:297.21},
+    {name:"Hey Moncton Homeowners- IE Leads", spend:266.42},
+    {name:"REJUV_v1_OpusMay", spend:223.68},
+    {name:"Rejuvenation Campaign", spend:192.29},
+    {name:"Rejuvenation Campaign - Copy", spend:165.19},
+    {name:"Summer Evergreen", spend:157.20},
+    {name:"Awareness - Spring 2026", spend:157.47},
+    {name:"Summer Retarget", spend:136.99},
+    {name:"Irving Quote Leads", spend:92.23},
+    {name:"Wreak Havok Inspections", spend:64.98},
+    {name:"IE June Leads", spend:61.39},
+    {name:"Storm Check Retarget", spend:51.33},
+    {name:"Foreman Hiring (Funnel)", spend:16.49}
+  ],
+  alerts:[],
+  health:{
+    feedLive:true,
+    tokenWarningResolved:true,
+    tokenValidUntil:"~2026-08-11",
+    cronDark:true,
+    googleAdsUntracked:true
+  }
+};
+
+/* ---- helpers ----------------------------------------------------------- */
+const $=(s,r=document)=>r.querySelector(s);
+const $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const money=(n,d=0)=>'$'+Number(n).toLocaleString('en-CA',{minimumFractionDigits:d,maximumFractionDigits:d});
+const num=n=>Number(n).toLocaleString('en-CA');
+const reduce=matchMedia('(prefers-reduced-motion:reduce)').matches;
+function hm(iso){const d=new Date(iso); return String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0')+'Z';}
+
+if(new URLSearchParams(location.search).get('embed')==='1') document.body.setAttribute('data-embed','');
+
+/* derive windows */
+const sum=(a,f)=>a.reduce((s,x)=>s+(f(x)||0),0);
+const W={
+  '7d':{
+    spend:sum(AD.active,c=>c.spend7d),
+    leads:sum(AD.active,c=>c.leads7d),
+    impr:sum(AD.active,c=>c.impr7d),
+    label:'Last 7 days',
+    note:'Real windowed pull from the Meta insights feed.',
+    est:false
+  }
+};
+W['7d'].cpl = W['7d'].leads? W['7d'].spend/W['7d'].leads : 0;
+W['24h']={
+  spend:W['7d'].spend/7, leads:W['7d'].leads/7, impr:W['7d'].impr/7,
+  cpl:W['7d'].cpl,
+  label:'Last 24h',
+  note:'Derived daily run-rate (7d divided by 7). A true 24h window needs a date_preset:yesterday enrichment, not yet wired.',
+  est:true
+};
+
+/* ---- render KPI tiles -------------------------------------------------- */
+const lifeCPL = AD.lifetime.avgCPL;
+function tileDelta(cpl){
+  if(!cpl) return '<span class="delta flat">no leads</span>';
+  const diff = ((cpl - lifeCPL)/lifeCPL)*100;
+  const good = diff <= 0;
+  const arrow = good? 'down' : 'up';
+  return `<span class="delta ${good?'good':'bad'}">${good?'&#9660;':'&#9650;'} ${Math.abs(diff).toFixed(0)}% vs life CPL</span>`;
+}
+function renderKpis(win){
+  const w=W[win];
+  const totalImprBase = W['7d'].impr || 1;
+  const kpis=[
+    {k:'Spend', v:money(w.spend,2), foot:`${w.est?'run-rate':'7-day'} paid`, share:Math.min(100,(w.spend/(W['7d'].spend||1))*100)},
+    {k:'Leads', v:w.est? w.leads.toFixed(1) : num(Math.round(w.leads)), foot:`${w.est?'~ per day':'pixel leads, 7d'}`, share:Math.min(100,(w.leads/(W['7d'].leads||1))*100)},
+    {k:'Cost / lead', v:w.cpl?money(w.cpl,2):'n/a', foot:tileDelta(w.cpl), share:Math.max(8,100-(w.cpl/ (lifeCPL*1.6))*100), attn:w.cpl>lifeCPL},
+    {k:'Active campaigns', v:String(AD.active.length), foot:`${AD.lifetime.campaigns} total in account`, share:(AD.active.length/AD.lifetime.campaigns)*100}
+  ];
+  const host=$('#kpis');
+  host.innerHTML = kpis.map(t=>`
+    <div class="tile bracket ${t.attn?'attn':''}">
+      <div class="k">${t.k}</div>
+      <div class="v" data-v="${t.v}">${t.v}</div>
+      <div class="foot">${t.foot}</div>
+      <div class="spark"><i style="width:${t.share}%"></i></div>
+    </div>`).join('');
+}
+
+/* ---- render active cards ----------------------------------------------- */
+let order=AD.active.map((_,i)=>i);
+function cplOf(c){return c.results? c.spend/c.results : null;}
+function renderCards(){
+  const host=$('#cards');
+  $('#activeCount').textContent=`${AD.active.length} live · ${AD.lifetime.campaigns - AD.active.length} paused`;
+  host.innerHTML = order.map(i=>{
+    const c=AD.active[i];
+    const cpl=cplOf(c);
+    const badge = c.status==='learn'
+      ? '<span class="badge learn">Learning</span>'
+      : '<span class="badge active">Active</span>';
+    return `
+    <article class="camp" data-i="${i}" aria-expanded="false">
+      <div class="hd" role="button" tabindex="0">
+        <span class="grip" title="Drag to reorder" aria-hidden="true">&#8942;&#8942;</span>
+        <div class="nm"><div class="t">${c.name}</div><div class="id">id ${c.id}</div></div>
+        ${badge}
+        <span class="chev" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </span>
+      </div>
+      <div class="quick">
+        <div class="q"><span class="ql">Spend 7d</span><span class="qv">${money(c.spend7d,0)}</span></div>
+        <div class="q"><span class="ql">Leads 7d</span><span class="qv">${c.leads7d}</span></div>
+        <div class="q"><span class="ql">CPL</span><span class="qv">${cpl?money(cpl,2):'n/a'}</span></div>
+        <div class="q"><span class="ql">Daily cap</span><span class="qv">${c.dailyBudget?money(c.dailyBudget,0):'none'}</span></div>
+      </div>
+      <div class="detail"><div>
+        <div class="grid">
+          <div class="cell"><div class="cl">Impressions</div><div class="cv">${num(c.impressions)}</div></div>
+          <div class="cell"><div class="cl">Reach</div><div class="cv">${num(c.reach)}</div></div>
+          <div class="cell"><div class="cl">Frequency</div><div class="cv">${c.frequency.toFixed(2)}</div></div>
+          <div class="cell"><div class="cl">CPM</div><div class="cv">${money(c.cpm,2)}</div></div>
+          <div class="cell"><div class="cl">Clicks</div><div class="cv">${num(c.clicks)}</div></div>
+          <div class="cell"><div class="cl">Results</div><div class="cv">${c.results}</div></div>
+        </div>
+        <div class="nb"><b>Read:</b> ${c.note}</div>
+      </div></div>
+    </article>`;
+  }).join('');
+  bindCards();
+}
+
+/* expand + keyboard + drag-reorder with FLIP */
+function bindCards(){
+  $$('.camp').forEach(card=>{
+    const hd=$('.hd',card);
+    hd.addEventListener('click',e=>{ if(e.target.closest('.grip'))return; toggle(card); });
+    hd.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){e.preventDefault(); toggle(card);} });
+    card.draggable=true;
+    card.addEventListener('dragstart',e=>{ card.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; });
+    card.addEventListener('dragend',()=>{ card.classList.remove('dragging'); commitOrder(); });
+  });
+  const host=$('#cards');
+  host.ondragover=e=>{
+    e.preventDefault();
+    const dragging=$('.dragging',host); if(!dragging)return;
+    const after=[...host.querySelectorAll('.camp:not(.dragging)')].find(c=>{
+      const r=c.getBoundingClientRect(); return e.clientY < r.top + r.height/2;
+    });
+    if(after) host.insertBefore(dragging,after); else host.appendChild(dragging);
+  };
+}
+function toggle(card){
+  const open=card.getAttribute('aria-expanded')==='true';
+  card.setAttribute('aria-expanded', open?'false':'true');
+}
+function commitOrder(){
+  order=$$('.camp').map(c=>+c.dataset.i);
+  flash('Reordered. Layout saved for this session.');
+}
+
+/* ---- top performers ---------------------------------------------------- */
+function renderRank(){
+  const max=Math.max(...AD.topPerformers.map(p=>p.cpl));
+  $('#rank').innerHTML=AD.topPerformers.map((p,i)=>`
+    <div class="row">
+      <span class="pos">${String(i+1).padStart(2,'0')}</span>
+      <span class="nm" title="${p.name}">${p.name}</span>
+      <span class="cpl">${money(p.cpl,2)} · ${p.leads} leads</span>
+      <span class="bar"><i style="width:${(p.cpl/max)*100}%"></i></span>
+    </div>`).join('');
+}
+
+/* ---- paused tail ------------------------------------------------------- */
+function renderPaused(){
+  const total=AD.paused.reduce((s,p)=>s+p.spend,0);
+  $('#pausedTw').textContent=`${AD.lifetime.campaigns - AD.active.length} paused · ${money(total,0)} lifetime`;
+  $('#pausedGrid').innerHTML=AD.paused.map(p=>`
+    <div class="pz"><span class="pn" title="${p.name}">${p.name}</span><span class="pv">${money(p.spend,0)}</span></div>`).join('');
+}
+
+/* ---- presence ring + count-up ------------------------------------------ */
+const R=46, C2=2*Math.PI*R;
+$('#ringArc').style.strokeDasharray=C2;
+function setRing(cpl){
+  // arc fills inversely to CPL vs a $20 ceiling (lower CPL = fuller, better)
+  const frac=Math.max(0.06,Math.min(1, 1-(cpl/20)));
+  $('#ringArc').style.strokeDashoffset=C2*(1-frac);
+  countUp($('#ringVal'), cpl, v=>money(v,2));
+}
+function countUp(el,target,fmt){
+  if(reduce){el.textContent=fmt(target);return;}
+  const start=parseFloat((el.dataset.cur||'0'))||0, t0=performance.now(), dur=480;
+  function step(t){
+    const p=Math.min(1,(t-t0)/dur), e=1-Math.pow(1-p,3), v=start+(target-start)*e;
+    el.textContent=fmt(v); if(p<1)requestAnimationFrame(step); else el.dataset.cur=target;
+  }
+  requestAnimationFrame(step);
+}
+
+/* ---- window toggle (FLIP the KPI tiles) -------------------------------- */
+let curWin='7d';
+function setWindow(win,user){
+  curWin=win;
+  $$('.seg button').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.win===win)));
+  moveInd();
+  const note=$('#winNote'); note.textContent=W[win].note; note.classList.toggle('est',W[win].est);
+  // FLIP: capture, re-render, play
+  const host=$('#kpis'); const first=[...host.children].map(c=>c.getBoundingClientRect());
+  renderKpis(win);
+  if(!reduce){
+    const last=[...host.children].map(c=>c.getBoundingClientRect());
+    [...host.children].forEach((c,i)=>{
+      const dx=(first[i]?.left||last[i].left)-last[i].left, dy=(first[i]?.top||last[i].top)-last[i].top;
+      c.animate([{transform:`translate(${dx}px,${dy}px) scale(0.98)`,opacity:0.4},{transform:'none',opacity:1}],
+        {duration:320,easing:'cubic-bezier(0.22,1,0.36,1)',delay:i*40});
+    });
+  }
+  if(user) flash(`Window set to ${W[win].label}${W[win].est?' (run-rate estimate)':''}. Logged.`);
+}
+function moveInd(){
+  const active=$('.seg button[aria-pressed="true"]'), ind=$('#segInd'), seg=$('.seg');
+  const r=active.getBoundingClientRect(), sr=seg.getBoundingClientRect();
+  ind.style.left=(r.left-sr.left)+'px'; ind.style.width=r.width+'px';
+}
+
+/* ---- health "why" popovers (as toasts, honest copy) -------------------- */
+const WHY={
+  tokenWarning:"Resolved. The old Jun-11 field predicted a Jun-14 expiry, but Mac regenerated the token Jun 12 (good to ~Aug 11). This artifact checked the live snapshot directly at 12:00Z and tokenWarning now reads null, so the false alarm is cleared. Showing it as healthy, not a warning.",
+  cron:"The scheduled daily ads-check cron is blocked from reaching graph.facebook.com (network egress), so the automated email verdict is dark. This artifact reads the Vercel enrichment path instead, which IS current, so the data here is unaffected.",
+  google:"Google Ads conversion tracking was never wired, so ~$464 of recent spend shows 0 tracked conversions. The gtag code is staged (PR #461). Activation is Mac's ~20-min Google Ads UI step. No dev token needed."
+};
+$('#health').addEventListener('click',e=>{
+  const b=e.target.closest('button[data-info]'); if(!b)return;
+  flash(WHY[b.dataset.info], 6200);
+});
+
+/* ---- toast ------------------------------------------------------------- */
+let toastT;
+function flash(msg,ms=3200){
+  const t=$('#toast'); $('#toastMsg').textContent=msg; t.classList.add('show');
+  clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),ms);
+}
+
+/* ---- unread badge fallback (until E's fleet component mounts) ----------- */
+function unreadFallback(){
+  // The fleet-wide unread-badge component keys off [data-artifact-id]+[data-updated-at].
+  // If it has not mounted (standalone open), show a local RPG '!' once per new updatedAt.
+  if(window.__rjUnreadMounted) return;
+  try{
+    const id=document.documentElement.dataset.artifactId, up=document.documentElement.dataset.updatedAt;
+    const seen=localStorage.getItem('rj-seen-'+id);
+    if(seen!==up){
+      const tb=$('.title-block h1'); if(tb){ tb.style.position='relative';
+        const d=document.createElement('span'); d.className='newdot'; d.textContent='!'; d.title='Updated since you last opened';
+        tb.appendChild(d);
+        const clear=()=>{localStorage.setItem('rj-seen-'+id,up); d.remove(); window.removeEventListener('pointerdown',clear);};
+        window.addEventListener('pointerdown',clear,{once:true});
+      }
+    }
+  }catch(e){}
+}
+
+/* ---- boot -------------------------------------------------------------- */
+function boot(){
+  $('#enrichedStamp').textContent=hm(AD.enrichedAt);
+  $('#snapStamp').textContent=hm(AD.snapshotUpdatedAt);
+  $('#enrichedFull').textContent=AD.enrichedAt.replace('T',' ').slice(0,16)+'Z';
+  renderKpis('7d'); renderCards(); renderRank(); renderPaused();
+  setRing(W['7d'].cpl);
+  requestAnimationFrame(moveInd);
+  $$('.seg button').forEach(b=>b.addEventListener('click',()=>setWindow(b.dataset.win,true)));
+  addEventListener('resize',moveInd);
+  unreadFallback();
+}
+boot();
+</script>
+<script src="/assets/ryujin-nav.js" defer></script>
+<script src="/assets/command-palette.js" defer></script>
+</body>
+</html>
