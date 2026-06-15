@@ -47,6 +47,17 @@ html.rj-embed body{min-height:auto}
 .preset:hover{color:var(--rj-accent-bright);border-color:var(--rj-accent)}
 .preset.active{color:var(--rj-on-accent);background:linear-gradient(180deg,var(--rj-accent),var(--rj-accent-deep));border-color:transparent;box-shadow:0 4px 16px var(--rj-accent-glow)}
 .preset .n{font-family:var(--rj-font-mono);font-size:0.86em;opacity:0.85;margin-left:5px}
+/* Rep filter (the "whose book" lens) - defaults to You (Mackenzie). Darcy/Diego are a toggle. */
+.repseg{display:inline-flex;align-items:center;gap:3px;padding:3px;background:var(--rj-surface-sunken,#050811);border:1px solid var(--rj-line);border-radius:999px}
+.repseg-label{font:700 0.6em var(--rj-font-mono,monospace);letter-spacing:0.16em;text-transform:uppercase;color:var(--rj-ink-dim)}
+.rep{display:inline-flex;align-items:center;gap:6px;font:600 0.74em var(--rj-font-ui);color:var(--rj-ink-mid);background:transparent;border:0;border-radius:999px;padding:6px 12px;cursor:pointer;transition:color var(--rj-dur) var(--rj-ease-out),background var(--rj-dur)}
+.rep:hover{color:var(--rj-accent-bright)}
+.rep.active{color:var(--rj-ink);background:linear-gradient(180deg,rgba(74,158,255,0.22),rgba(37,99,235,0.12));box-shadow:inset 0 0 0 1px var(--rj-glass-edge,rgba(150,190,255,0.5))}
+.rep .pip{width:8px;height:8px;border-radius:50%;background:var(--rj-ink-dim)}
+.rep .pip.mac{background:#4a9eff;box-shadow:0 0 6px rgba(74,158,255,0.7)}
+.rep .pip.darcy{background:#46d68a;box-shadow:0 0 6px rgba(70,214,138,0.7)}
+.rep .pip.diego{background:#c08bff;box-shadow:0 0 6px rgba(192,139,255,0.7)}
+.rep .n{font-family:var(--rj-font-mono);font-size:0.84em;opacity:0.7;margin-left:1px}
 .sep{width:1px;align-self:stretch;background:var(--rj-line);margin:2px 4px}
 .search{flex:1;min-width:180px;display:flex;align-items:center;gap:8px;background:var(--rj-surface-sunken);border:1px solid var(--rj-line);border-radius:10px;padding:0 12px}
 .search input{flex:1;background:transparent;border:none;outline:none;color:var(--rj-ink);font:500 0.86em var(--rj-font-ui);padding:9px 0}
@@ -122,6 +133,11 @@ html.rj-embed body{min-height:auto}
 .deep{font-size:0.82em;color:var(--rj-ink-mid)}
 .msg{font-size:0.82em;padding:9px 11px;border:1px solid var(--rj-line);border-radius:9px;background:var(--rj-surface-2);color:var(--rj-ink-mid)}
 .msg.in{border-left:0;background:rgba(74,158,255,0.06)}
+.ctx{border:1px solid var(--rj-line);border-left:3px solid var(--rj-accent);border-radius:9px;background:var(--rj-surface-2);padding:9px 11px;margin-bottom:7px;font-size:0.82em;color:var(--rj-ink-mid);line-height:1.42}
+.ctx b{color:var(--rj-ink)}
+.ctx.warn{border-left-color:var(--rj-warn,#f5b13a);background:rgba(245,177,58,0.06)}
+.ctx.ask{border-left-color:var(--rj-ok,#46d68a)}
+.ctx-prev{margin-top:4px;color:var(--rj-ink-dim);font-style:italic;overflow-wrap:anywhere}
 
 /* toast */
 .toast{position:fixed;top:18px;right:18px;z-index:var(--rj-z-toast,2000);display:flex;align-items:center;gap:10px;background:var(--rj-surface-2);border:1px solid var(--rj-line-strong);border-radius:10px;padding:11px 15px;box-shadow:var(--rj-shadow-md);font-size:0.82em;color:var(--rj-ink);opacity:0;transform:translateY(-8px);transition:opacity var(--rj-dur),transform var(--rj-dur)}
@@ -142,6 +158,14 @@ html.rj-embed body{min-height:auto}
 </header>
 
 <div class="controls" id="controls">
+  <span class="repseg-label">Book</span>
+  <div class="repseg" id="repseg">
+    <button class="rep active" data-rep="Mackenzie" type="button"><span class="pip mac"></span>You<span class="n" id="r-mac">--</span></button>
+    <button class="rep" data-rep="Darcy" type="button"><span class="pip darcy"></span>Darcy<span class="n" id="r-darcy">--</span></button>
+    <button class="rep" data-rep="Diego" type="button"><span class="pip diego"></span>Diego<span class="n" id="r-diego">--</span></button>
+    <button class="rep" data-rep="all" type="button">All<span class="n" id="r-all">--</span></button>
+  </div>
+  <div class="sep"></div>
   <button class="preset active" data-preset="top20" type="button">Top 20 follow-up<span class="n" id="c-top20">--</span></button>
   <button class="preset" data-preset="warm50" type="button">Warm 360d<span class="n" id="c-warm50">--</span></button>
   <button class="preset" data-preset="act7" type="button">Activity 7d<span class="n" id="c-act7">--</span></button>
@@ -168,7 +192,7 @@ html.rj-embed body{min-height:auto}
   var TENANT = window.RYUJIN_TENANT_SLUG || 'plus-ultra';
   var $=function(s){return document.querySelector(s);};
   var canvas=$('#canvas'), state=$('#state'), scrim=$('#scrim'), snapshot=$('#snapshot');
-  var DATA=[], view=[], preset='top20', query='', minValIdx=0;
+  var DATA=[], view=[], preset='top20', query='', minValIdx=0, repFilter='Mackenzie';
   var MINVALS=[0,5000,10000,18000], MINLABELS=['any','$5k','$10k','$18k'];
 
   function authHeaders(){var h={};try{var t=localStorage.getItem('ryujin_token')||sessionStorage.getItem('ryujin_token');if(t)h.Authorization='Bearer '+t;}catch(e){}return h;}
@@ -180,12 +204,24 @@ html.rj-embed body{min-height:auto}
 
   function toast(t){var el=$('#toast');$('#toastText').textContent=t;el.classList.add('show');clearTimeout(toast._t);toast._t=setTimeout(function(){el.classList.remove('show');},2400);}
 
+  // Preset count chips reflect the SELECTED book (rep), so the numbers match what shows
+  // (e.g. with You selected, "Top 20" shows how many of YOUR follow-ups are top-ranked).
+  function updateCounts(){
+    var pool=DATA.filter(function(c){return repFilter==='all'||(c.rep||'')===repFilter;});
+    $('#c-top20').textContent=pool.filter(function(c){return c.isTop20;}).length;
+    $('#c-warm50').textContent=pool.filter(function(c){return c.isWarm360;}).length;
+    $('#c-act7').textContent=pool.filter(function(c){return c.activity7d;}).length;
+    $('#c-act24').textContent=pool.filter(function(c){return c.activity24h;}).length;
+    $('#c-all').textContent=pool.length;
+  }
+
   // ── filter logic (runs client-side; the dataset is one payload) ──
   function applyFilter(){
     var minV=MINVALS[minValIdx];
     var q=query.trim().toLowerCase();
     view=DATA.filter(function(c){
       if(minV && (c.totalProposalValue||0) < minV) return false;
+      if(repFilter!=='all' && (c.rep||'')!==repFilter) return false;
       if(preset==='top20' && !c.isTop20) return false;
       if(preset==='warm50' && !c.isWarm360) return false;
       if(preset==='act7' && !c.activity7d) return false;
@@ -215,7 +251,7 @@ html.rj-embed body{min-height:auto}
   }
 
   function render(){
-    if(!view.length){canvas.innerHTML='<div class="state">No customers match this view. Try another preset or clear the search.</div>';return;}
+    if(!view.length){canvas.innerHTML='<div class="state">No customers in this book + preset. Try another book (You / Darcy / Diego / All), another preset, or clear the search.</div>';return;}
     canvas.innerHTML=view.map(function(c,i){
       var stageDot=c.isWarm360?'warm':(c.activity7d?'fresh':(c.stage?'':'dead'));
       var rank=(preset==='top20'&&c.isTop20)?('<span class="rank">#'+(i+1)+' · '+c.followupScore+'</span>'):'';
@@ -268,7 +304,7 @@ html.rj-embed body{min-height:auto}
         +(portalsHtml?'<div class="field"><span class="lbl">Reach + drill down</span><div class="portals">'+portalsHtml+'</div></div>':'')
         +'<div class="field"><span class="lbl">Proposals · '+money(c.totalProposalValue)+' total</span>'+propsHtml+'</div>'
         +draftHtml
-        +'<div class="field"><span class="lbl">Conversation + notes</span><div id="deepWrap"><button class="btn" id="loadDeep" type="button">Load conversation + notes</button></div></div>'
+        +'<div class="field"><span class="lbl">Context &middot; last touch + what they asked</span><div id="deepWrap"><div class="msg">Loading context from GHL...</div></div></div>'
       +'</div>';
     scrim.classList.add('open');
     $('#closeSnap').addEventListener('click',closeSnapshot);
@@ -277,24 +313,43 @@ html.rj-embed body{min-height:auto}
       if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(v).then(function(){toast('Draft copied. Send it yourself.');},function(){toast('Copy failed, select + copy manually.');});
       else toast('Select the text to copy.');
     });
-    $('#loadDeep').addEventListener('click',function(){ loadDeep(c); });
+    loadDeep(c); // auto-load context on open: never surface a customer without it
   }
   function closeSnapshot(){scrim.classList.remove('open');}
 
-  // lazy-load the deep contact detail (notes + conversation) on demand
+  // Auto-load the deep contact detail on snapshot open and lead with the honest context
+  // summary (last REAL human touch + what they last asked), then notes + real messages.
+  // System TYPE_ACTIVITY_* events are stripped server-side; if there is no real
+  // conversation we say so plainly rather than implying contact happened.
   function loadDeep(c){
-    var wrap=$('#deepWrap'); wrap.innerHTML='<div class="msg">Loading from GHL...</div>';
+    var wrap=$('#deepWrap'); if(!wrap) return;
+    wrap.innerHTML='<div class="msg">Loading context from GHL...</div>';
     var id=c.id && String(c.id).length>6 ? c.id : null;
     var url='/api/ghl?mode=contact-detail&'+(id?('id='+encodeURIComponent(id)):('q='+encodeURIComponent(c.name)));
     fetch(url,{headers:tHeaders()}).then(function(r){return r.ok?r.json():null;}).then(function(d){
-      if(!d){wrap.innerHTML='<div class="msg err">Could not load detail.</div>';return;}
+      if(!d){wrap.innerHTML='<div class="msg err">Could not load context.</div>';return;}
+      var ctx=d.context||{};
       var notes=(d.contact&&d.contact.notes)||[];
       var msgs=(d.conversation&&d.conversation.messages)||[];
       var html='';
-      if(notes.length){html+='<div class="lbl" style="margin-bottom:6px">Notes</div>'+notes.slice(0,5).map(function(n){return '<div class="msg">'+esc((n.body||'').slice(0,400))+'</div>';}).join('');}
-      if(msgs.length){html+='<div class="lbl" style="margin:10px 0 6px">Last messages</div>'+msgs.slice(-6).map(function(m){return '<div class="msg '+(m.direction==='inbound'?'in':'')+'">'+esc((m.body||'').slice(0,300))+'</div>';}).join('');}
+      if(ctx.noRealConversation){
+        html+='<div class="ctx warn"><b>No real conversation on file.</b> '+(ctx.activityCount||0)+' system activity events only (opp updates), no SMS / email / call logged here. Treat the stage as pipeline-only until you confirm contact.</div>';
+      }else{
+        if(ctx.lastTouch){
+          var lt=ctx.lastTouch;
+          html+='<div class="ctx"><b>Last touch:</b> '+(lt.who==='them'?'they reached out':'we reached out')+' &middot; '+esc(lt.channel||'message')+' &middot; '+ageLabel(lt.ageDays)+(lt.preview?'<div class="ctx-prev">'+esc(lt.preview)+'</div>':'')+'</div>';
+        }
+        if(ctx.lastAsk){
+          html+='<div class="ctx ask"><b>They last asked / said</b> ('+ageLabel(ctx.lastAsk.ageDays)+'):<div class="ctx-prev">'+esc(ctx.lastAsk.body)+'</div></div>';
+        }else{
+          html+='<div class="ctx"><b>They last asked / said:</b> nothing inbound on file. Every logged touch was outbound from us.</div>';
+        }
+      }
+      if(notes.length){html+='<div class="lbl" style="margin:10px 0 6px">Notes</div>'+notes.slice(0,5).map(function(n){return '<div class="msg">'+esc((n.body||'').slice(0,400))+'</div>';}).join('');}
+      var realMsgs=msgs.filter(function(m){return !m.isActivity && m.body && String(m.body).trim();});
+      if(realMsgs.length){html+='<div class="lbl" style="margin:10px 0 6px">Recent messages</div>'+realMsgs.slice(0,6).map(function(m){return '<div class="msg '+(m.direction==='inbound'?'in':'')+'">'+esc((m.body||'').slice(0,300))+'</div>';}).join('');}
       wrap.innerHTML=html||'<div class="msg">No notes or conversation on file.</div>';
-    }).catch(function(){wrap.innerHTML='<div class="msg err">Detail fetch failed.</div>';});
+    }).catch(function(){wrap.innerHTML='<div class="msg err">Context fetch failed.</div>';});
   }
 
   // ── events ──
@@ -305,6 +360,12 @@ html.rj-embed body{min-height:auto}
     btn.addEventListener('click',function(){
       document.querySelector('.preset.active').classList.remove('active');
       btn.classList.add('active'); preset=btn.dataset.preset; applyFilter(); flipRender();
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('.rep'),function(btn){
+    btn.addEventListener('click',function(){
+      var cur=document.querySelector('.rep.active'); if(cur)cur.classList.remove('active');
+      btn.classList.add('active'); repFilter=btn.dataset.rep; updateCounts(); applyFilter(); flipRender();
     });
   });
   $('#q').addEventListener('input',function(){query=this.value;applyFilter();flipRender();});
@@ -319,10 +380,9 @@ html.rj-embed body{min-height:auto}
     if(!d)return;
     DATA=d.customers||[];
     var ct=d.counts||{};
-    $('#c-top20').textContent=ct.top20||0; $('#c-warm50').textContent=ct.warm50||0;
-    $('#c-act7').textContent=ct.activity7d||0; $('#c-act24').textContent=ct.activity24h||0; $('#c-all').textContent=ct.customers||DATA.length;
+    (function(){var rc={Mackenzie:0,Darcy:0,Diego:0};DATA.forEach(function(c){if(rc[c.rep]!=null)rc[c.rep]++;});$('#r-mac').textContent=rc.Mackenzie;$('#r-darcy').textContent=rc.Darcy;$('#r-diego').textContent=rc.Diego;$('#r-all').textContent=DATA.length;})();
     $('#meta').textContent=(ct.contacts||0)+' contacts · '+(ct.opportunities||0)+' opps · '+(ct.nativeProposals||0)+' Ryujin';
-    applyFilter(); render();
+    updateCounts(); applyFilter(); render();
   }).catch(function(err){
     state.className='state err'; state.textContent='Could not load the book: '+err.message;
     canvas.innerHTML=''; canvas.appendChild(state);
