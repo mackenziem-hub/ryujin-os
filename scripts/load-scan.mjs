@@ -74,18 +74,127 @@ if (tenantId) {
   } catch (e) { fail('pending_approvals', e); console.log(`\n[FAIL] pending_approvals: ${out.sources.pending_approvals.error}`); }
 }
 
-// 3) Live in-flight estimates (hot-deal proxy: touched in last 14d, not closed)
+// 3) Open in-flight estimates (hot-deal proxy: touched in last 14d, NOT YET WON).
+// NOTE: `accepted` is deliberately EXCLUDED. Won deals never advance to a
+// completed/closed state (nothing writes back on install), so accepted rows
+// linger forever and a 2026-06-07 bulk import re-stamped updated_at on a pile
+// of old WON jobs — both made finished work masquerade as hot pipeline. Open
+// pipeline = draft/sent only. Real deal stage for accepted/closing deals lives
+// in GHL, not this column (estimate proposal_status/status lag reality).
 if (tenantId) {
   try {
     const since = new Date(Date.now() - 14 * 864e5).toISOString();
-    const est = await rest(`estimates?tenant_id=eq.${tenantId}&updated_at=gte.${since}&status=in.(draft,sent,accepted)&select=estimate_number,status,proposal_status,selected_package,final_accepted_total,updated_at,customers(full_name,address)&order=updated_at.desc&limit=25`);
+    const est = await rest(`estimates?tenant_id=eq.${tenantId}&updated_at=gte.${since}&status=in.(draft,sent)&select=estimate_number,status,proposal_status,selected_package,final_accepted_total,updated_at,customers(full_name,address)&order=updated_at.desc&limit=25`);
     ok('hot_estimates', { count: est.length, items: est });
-    console.log(`\n## In-flight estimates (touched <14d, not closed): ${est.length}`);
+    console.log(`\n## Quotes being built in Ryujin (draft/sent estimates, touched <14d — NOT deal-stage; see GHL hot pipeline below): ${est.length}`);
     for (const e of est.slice(0, 12)) {
       const c = e.customers || {};
       console.log(`  #${e.estimate_number} ${(c.full_name || '?')} — ${e.selected_package || '-'} ${e.final_accepted_total ? '$' + e.final_accepted_total : ''} [${e.status}] ${String(e.updated_at).slice(0, 10)}`);
     }
   } catch (e) { fail('hot_estimates', e); console.log(`\n[FAIL] hot_estimates: ${out.sources.hot_estimates.error}`); }
+}
+
+// 3c) GHL HOT PIPELINE — the REAL deal-stage truth (replaces the estimate `status`
+// column as the hot-deal source; that column never advances on proposal-sent /
+// meeting-booked / install, so it lied — see feedback_estimate_status_lags_ghl_truth).
+// Reads live opportunities by pipeline STAGE via /api/ghl (GHL creds are prod-only,
+// so it goes through the app with the service token). Self-sufficient on stage names:
+// it pulls mode=stages for a FRESH id->name map and resolves any stage the app's
+// (stale) hardcoded map left as a raw UUID, so map drift can't blind the scan.
+//
+// EXCLUSIONS (hard rules):
+//  - Darcy's Pipeline — tainted / off-limits (feedback_no_outreach_to_darcys_clients,
+//    project_darcy_split_2026-06). Never surface Darcy's opps as Mac's hot deals.
+//  - Hiring / Recruiting — HR, not sales.
+//  - Operations — post-sale job execution (won jobs in production), not deals to close.
+//
+// Stage classification is keyword-based (robust to map staleness): closing-zone =
+// quote/proposal/inspection/responded/repair/feasibility/called. dead = lost/dnd/
+// unresponsive/etc. won = contract-signed/deposit/invoice/paid/completed. nurture =
+// new/follow-up/bump/video/check-in/text-sent/pdf. Only OPEN status, included pipelines.
+if (SVC) {
+  try {
+    const EXCLUDE_PIPELINES = new Set(["Darcy's Pipeline", 'Hiring Pipeline', 'Recruiting Pipeline', 'Operations Pipeline']);
+    // Fresh stage id -> name map (the app's hardcoded map is stale; this backfills it).
+    const stageMap = {};
+    try {
+      const sr = await fetch(`${APP}/api/ghl?mode=stages`, { headers: { Authorization: `Bearer ${SVC}`, 'x-tenant-id': TENANT } });
+      if (sr.ok) {
+        const sj = await sr.json();
+        for (const p of (sj.pipelines || [])) for (const s of (p.stages || [])) stageMap[s.id] = s.name;
+      }
+    } catch { /* non-fatal: fall back to whatever names mode=pipeline returns */ }
+
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-/i;
+    const classify = (raw) => {
+      const n = String(raw || '').toLowerCase();
+      if (/lost|dnd|unresponsive|not a fit|telemarketer|may not qualify|\bclosed\b|stalled|abandoned/.test(n)) return 'dead';
+      if (/contract signed|deposit|invoice|paid|bundles|pre job|job in progress|representative check|completed|repair complete/.test(n)) return 'won';
+      if (/quote|proposal|inspection|feasibility|responded|called|repair (requested|confirmed|assigned)|qualified\b/.test(n) && !/qualified to call/.test(n)) return 'closing';
+      if (/new |follow up|bump|video sent|check-in|nurture|text sent|pdf|awaiting|day \d/.test(n)) return 'nurture';
+      return 'other';
+    };
+
+    // monetaryValue backfill: ~74% of GHL opps carry value=0. Pull a $ from the
+    // matching estimate — by ghl_opportunity_id first (exact but sparse: few links
+    // exist), then by normalized first+last name (fuzzy, flagged ~approx). Estimate
+    // value = final_accepted_total or the selected tier's pre-tax total, which
+    // matches GHL's own monetaryValue convention (verified: El Rody est 18075 == opp 18075).
+    const firstLast = (s) => { const w = String(s || '').toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean); return w.length >= 2 ? `${w[0]} ${w[w.length - 1]}` : (w[0] || ''); };
+    const estById = {}, estByName = {};
+    if (tenantId) {
+      try {
+        const ests = await rest(`estimates?tenant_id=eq.${tenantId}&status=neq.cancelled&select=ghl_opportunity_id,selected_package,final_accepted_total,calculated_packages,customers(full_name)&limit=1000`);
+        for (const e of ests) {
+          const cp = e.calculated_packages || {};
+          const tier = cp[e.selected_package || 'platinum'] || cp.platinum || cp.gold || {};
+          const v = e.final_accepted_total || tier.total || (tier.summary && tier.summary.sellingPrice) || 0;
+          if (!v) continue;
+          if (e.ghl_opportunity_id) estById[e.ghl_opportunity_id] = v;
+          const nm = firstLast((e.customers || {}).full_name);
+          if (nm && v > (estByName[nm] || 0)) estByName[nm] = v;
+        }
+      } catch { /* non-fatal: opps keep their native (often 0) value */ }
+    }
+
+    const r = await fetch(`${APP}/api/ghl?mode=pipeline&limit=500`, { headers: { Authorization: `Bearer ${SVC}`, 'x-tenant-id': TENANT } });
+    if (!r.ok) throw new Error(`/api/ghl pipeline ${r.status}: ${(await r.text()).slice(0, 120)}`);
+    const j = await r.json();
+    const opps = (j.opportunities || [])
+      .filter(o => o.status === 'open' && !EXCLUDE_PIPELINES.has(o.pipeline))
+      .map(o => {
+        const stageName = UUID_RE.test(o.stage) ? (stageMap[o.stage] || o.stage) : o.stage;
+        let value = o.value || 0, valueSrc = value ? 'ghl' : null;
+        if (!value && estById[o.id]) { value = estById[o.id]; valueSrc = 'est-id'; }
+        if (!value && estByName[firstLast(o.name)]) { value = estByName[firstLast(o.name)]; valueSrc = 'est-name'; }
+        return { name: o.name, value, valueSrc, pipeline: o.pipeline, stage: stageName, bucket: classify(stageName), lastChange: o.lastStatusChange };
+      });
+    const counts = opps.reduce((m, o) => (m[o.bucket] = (m[o.bucket] || 0) + 1, m), {});
+    const ageD = (t) => t ? Math.round((Date.now() - new Date(t)) / 864e5) + 'd' : '?';
+    const fmt = (o) => `${o.valueSrc === 'est-name' ? '~$' : '$'}${o.value.toLocaleString()}`; // ~ = inferred by name
+    const closing = opps.filter(o => o.bucket === 'closing').sort((a, b) => b.value - a.value);
+    // WARM: a real quote $ exists but the opp is parked OFF a closing stage (nurture/other) —
+    // e.g. a $30K quote sitting in 'New Lead' or 'Follow Up Text Sent'. These would otherwise
+    // be invisible; surface them so high-value quoted deals don't rot in a follow-up bucket.
+    const warm = opps.filter(o => (o.bucket === 'nurture' || o.bucket === 'other') && o.value > 0).sort((a, b) => b.value - a.value);
+    const closingValue = closing.reduce((s, o) => s + o.value, 0);
+    const valued = closing.filter(o => o.value > 0).length;
+    ok('ghl_hot_pipeline', {
+      closingCount: closing.length, closingValue: Math.round(closingValue), closingValued: valued, buckets: counts,
+      top: closing.slice(0, 12).map(o => ({ name: o.name, value: o.value, valueSrc: o.valueSrc, pipeline: o.pipeline, stage: o.stage, ageDays: o.lastChange ? Math.round((Date.now() - new Date(o.lastChange)) / 864e5) : null })),
+      warm: warm.slice(0, 8).map(o => ({ name: o.name, value: o.value, valueSrc: o.valueSrc, pipeline: o.pipeline, stage: o.stage }))
+    });
+    console.log(`\n## GHL hot pipeline (REAL deal stage, Darcy/HR/Ops excluded): ${closing.length} closing-zone · $${Math.round(closingValue).toLocaleString()} (${valued} with a $ value)`);
+    for (const o of closing.slice(0, 12)) console.log(`  ${fmt(o)} [${o.pipeline} / ${o.stage}] ${o.name} · ${ageD(o.lastChange)} in stage`);
+    if (!closing.length) console.log('  (no open closing-zone deals)');
+    if (warm.length) {
+      console.log(`  -- warm: real quote $ but parked off a closing stage (chase these) --`);
+      for (const o of warm.slice(0, 8)) console.log(`  ${fmt(o)} [${o.pipeline} / ${o.stage}] ${o.name} · ${ageD(o.lastChange)} in stage`);
+    }
+    console.log(`  other open (not surfaced): nurture ${counts.nurture || 0} · won/in-prod ${counts.won || 0} · dead ${counts.dead || 0} · unclassified ${counts.other || 0}  ($ ~ = inferred by name match)`);
+  } catch (e) { fail('ghl_hot_pipeline', e); console.log(`\n[FAIL] ghl_hot_pipeline: ${out.sources.ghl_hot_pipeline.error}`); }
+} else {
+  out.sources.ghl_hot_pipeline = { status: 'skipped', error: 'no RYUJIN_SERVICE_TOKEN' };
 }
 
 // 3b) Finance snapshot (audit blind spot: surface AR / payables / collected on every load).
