@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ryujin · Drill Spine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* ground -> presence -> veil -> panel -> active -> bubble -> input */
+  --z-ground:0; --z-presence:10; --z-veil:20; --z-panel:30; --z-active:40; --z-bubble:50; --z-input:60;
+
+  --bg:#060709;
+  --bg-2:#0a0c10;
+  --ink:#f3f5f8;
+  --ink-2:rgba(243,245,248,0.62);
+  --ink-3:rgba(243,245,248,0.34);
+  --hair:rgba(255,255,255,0.10);
+  --hair-2:rgba(255,255,255,0.055);
+  --glass:rgba(20,24,31,0.62);
+  --glass-deep:rgba(14,17,22,0.74);
+
+  --accent:#4a9eff;
+  --ok:#46d68a;
+  --warn:#f5b13a;
+  --danger:#f8746e;
+
+  --ease:cubic-bezier(.16,1,.3,1);
+  --fast:.34s; --med:.52s; --slow:.74s;
+  --r:16px; --r-sm:10px;
+  --mono:"JetBrains Mono",ui-monospace,monospace;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:"Inter",system-ui,sans-serif;
+  background:var(--bg);
+  color:var(--ink);
+  -webkit-font-smoothing:antialiased;
+  overflow:hidden;
+  letter-spacing:-0.006em;
+}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1,"zero" 1}
+
+/* ---------- ambient ground ---------- */
+.room{position:fixed;inset:0;z-index:var(--z-ground);overflow:hidden}
+.room::before{
+  content:"";position:absolute;inset:-20%;
+  background:
+    radial-gradient(60% 50% at 18% 12%, rgba(74,158,255,0.10), transparent 70%),
+    radial-gradient(50% 55% at 88% 88%, rgba(74,158,255,0.055), transparent 72%),
+    radial-gradient(40% 40% at 60% 50%, rgba(70,214,138,0.03), transparent 70%);
+  filter:blur(14px);
+  animation:drift 30s var(--ease) infinite alternate;
+}
+@keyframes drift{from{transform:translate3d(-2%,-1%,0) scale(1.02)}to{transform:translate3d(2%,2%,0) scale(1.05)}}
+.grain{position:fixed;inset:0;z-index:var(--z-ground);opacity:0.035;pointer-events:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+
+/* ---------- shell chrome ---------- */
+.topbar{
+  position:fixed;top:0;left:0;right:0;height:54px;z-index:var(--z-veil);
+  display:flex;align-items:center;gap:18px;padding:0 22px;
+  border-bottom:1px solid var(--hair-2);
+  backdrop-filter:blur(8px);
+}
+.brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:14px;letter-spacing:0.01em}
+.brand .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px var(--accent);animation:pulse 3.4s var(--ease) infinite}
+@keyframes pulse{0%,100%{opacity:.55;transform:scale(.92)}50%{opacity:1;transform:scale(1.08)}}
+.brand small{color:var(--ink-3);font-weight:400}
+.preview-mark{
+  margin-left:auto;font-family:var(--mono);font-size:10.5px;letter-spacing:0.14em;
+  color:var(--ink-3);border:1px solid var(--hair-2);border-radius:999px;padding:5px 11px;
+}
+.acct{font-family:var(--mono);font-size:11px;color:var(--ink-2)}
+
+/* ---------- breadcrumb (HISTORY, spatial + reversible) ---------- */
+.crumb-wrap{
+  position:fixed;top:54px;left:0;right:0;height:46px;z-index:var(--z-veil);
+  display:flex;align-items:center;gap:2px;padding:0 22px;
+  border-bottom:1px solid var(--hair-2);overflow-x:auto;scrollbar-width:none;
+}
+.crumb-wrap::-webkit-scrollbar{display:none}
+.crumb{
+  display:flex;align-items:center;gap:7px;flex:0 0 auto;
+  padding:6px 12px 6px 11px;border-radius:999px;cursor:pointer;
+  color:var(--ink-2);font-size:12.5px;font-weight:500;
+  border:1px solid transparent;background:transparent;
+  transition:color var(--fast) var(--ease),background var(--fast) var(--ease),border-color var(--fast) var(--ease);
+  white-space:nowrap;
+}
+.crumb:hover{color:var(--ink);background:rgba(255,255,255,0.04)}
+.crumb.here{color:var(--ink);background:rgba(74,158,255,0.10);border-color:rgba(74,158,255,0.24)}
+.crumb .ix{font-family:var(--mono);font-size:10px;color:var(--ink-3)}
+.crumb.here .ix{color:var(--accent)}
+.crumb-sep{flex:0 0 auto;color:var(--ink-3);font-size:11px;opacity:.6;padding:0 1px}
+.crumb-back{
+  flex:0 0 auto;margin-right:6px;width:30px;height:30px;border-radius:50%;
+  display:grid;place-items:center;cursor:pointer;color:var(--ink-2);
+  border:1px solid var(--hair);background:var(--glass);
+  transition:all var(--fast) var(--ease);
+}
+.crumb-back:hover{color:var(--ink);border-color:var(--accent);transform:translateX(-2px)}
+.crumb-back[disabled]{opacity:.28;pointer-events:none}
+
+/* ---------- spine (Miller columns) ---------- */
+.spine{
+  position:fixed;top:100px;bottom:0;left:0;right:0;z-index:var(--z-panel);
+  display:flex;align-items:stretch;gap:0;
+  padding:22px 0 26px 22px;
+  overflow-x:auto;overflow-y:hidden;scroll-behavior:smooth;
+  scrollbar-width:none;
+  perspective:1800px;
+}
+.spine::-webkit-scrollbar{display:none}
+
+.col{
+  flex:0 0 auto;
+  height:100%;
+  margin-right:18px;
+  border-radius:var(--r);
+  border:1px solid var(--hair);
+  background:var(--glass);
+  backdrop-filter:blur(20px) saturate(1.2);
+  box-shadow:0 1px 0 rgba(255,255,255,0.05) inset,
+             0 24px 60px -28px rgba(0,0,0,0.9),
+             0 6px 18px -12px rgba(0,0,0,0.7);
+  display:flex;flex-direction:column;
+  transform-origin:left center;
+  transition:width var(--med) var(--ease),
+             opacity var(--med) var(--ease),
+             filter var(--med) var(--ease),
+             transform var(--med) var(--ease),
+             margin var(--med) var(--ease),
+             border-color var(--fast) var(--ease);
+  position:relative;
+  overflow:hidden;
+}
+/* fisheye: receded columns compress + dim + recede in z */
+.col[data-state="far"]{
+  width:74px;opacity:.5;filter:saturate(.6) brightness(.82);
+  transform:scale(.965) translateZ(-60px);cursor:pointer;
+}
+.col[data-state="far"]:hover{opacity:.74;filter:saturate(.85) brightness(.95);transform:scale(.98) translateZ(-20px)}
+.col[data-state="near"]{
+  width:300px;opacity:.86;filter:saturate(.9) brightness(.96);
+  transform:scale(.99) translateZ(-22px);cursor:pointer;
+}
+.col[data-state="near"]:hover{opacity:1;filter:none;transform:scale(1) translateZ(0)}
+.col[data-state="focus"]{width:430px;opacity:1;filter:none;transform:none}
+.col[data-state="focus"].wide{width:540px}
+
+/* collapsed (far) rail label */
+.col-rail{
+  position:absolute;inset:0;display:none;flex-direction:column;
+  align-items:center;justify-content:flex-start;gap:14px;padding:16px 0;
+}
+.col[data-state="far"] .col-rail{display:flex}
+.col[data-state="far"] .col-body,.col[data-state="far"] .col-head{opacity:0;pointer-events:none}
+.rail-glyph{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;
+  border:1px solid var(--hair);font-size:14px;color:var(--ink-2);background:rgba(255,255,255,0.03)}
+.rail-title{writing-mode:vertical-rl;transform:rotate(180deg);font-size:12px;font-weight:600;
+  color:var(--ink-2);letter-spacing:0.02em;margin-top:4px}
+.rail-tag{writing-mode:vertical-rl;transform:rotate(180deg);font-family:var(--mono);font-size:10px;color:var(--ink-3);margin-top:auto;margin-bottom:4px}
+
+.col-head{
+  flex:0 0 auto;padding:18px 20px 14px;border-bottom:1px solid var(--hair-2);
+  transition:opacity var(--fast) var(--ease);
+}
+.col-kicker{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+.col-glyph{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;
+  font-size:13px;border:1px solid var(--hair);background:rgba(255,255,255,0.03);color:var(--ink-2)}
+.col-name{font-size:13.5px;font-weight:600}
+.col-sub{font-size:11.5px;color:var(--ink-3);margin-top:1px}
+/* provenance chip */
+.prov{
+  display:inline-flex;align-items:center;gap:6px;margin-left:auto;
+  font-family:var(--mono);font-size:10px;color:var(--ink-3);
+  border:1px solid var(--hair-2);border-radius:999px;padding:4px 9px;
+}
+.prov .live{width:6px;height:6px;border-radius:50%;background:var(--ok);box-shadow:0 0 7px var(--ok)}
+
+.col-body{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;padding:14px 16px 18px;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.14) transparent;transition:opacity var(--fast) var(--ease)}
+.col-body::-webkit-scrollbar{width:8px}
+.col-body::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.12);border-radius:99px;border:2px solid transparent;background-clip:content-box}
+
+/* ---------- ANSWER-FIRST block ---------- */
+.answer{padding:2px 4px 4px}
+.answer-line{font-size:14px;line-height:1.5;color:var(--ink);font-weight:500}
+.answer-line .num{font-family:var(--mono);font-weight:600}
+.answer-frame{font-size:11.5px;color:var(--ink-3);margin-top:7px;line-height:1.5}
+.answer-frame b{color:var(--ink-2);font-weight:500}
+
+/* Hick toggle: window chips, mutually exclusive, equal weight */
+.chips{display:flex;gap:6px;margin:15px 0 4px}
+.chip{
+  flex:1;text-align:center;cursor:pointer;
+  font-family:var(--mono);font-size:11px;color:var(--ink-2);
+  padding:7px 0;border-radius:8px;border:1px solid var(--hair-2);
+  background:rgba(255,255,255,0.02);
+  transition:all var(--fast) var(--ease);user-select:none;
+}
+.chip:hover{color:var(--ink);border-color:var(--hair)}
+.chip.on{color:var(--ink);background:rgba(74,158,255,0.12);border-color:rgba(74,158,255,0.32)}
+.chips-cap{font-size:10.5px;color:var(--ink-3);margin-top:7px;letter-spacing:0.01em}
+
+/* hero number with length-encoded delta */
+.hero{margin-top:18px;padding:16px 16px 15px;border:1px solid var(--hair-2);border-radius:var(--r-sm);background:rgba(255,255,255,0.018)}
+.hero-label{font-size:11px;color:var(--ink-3);letter-spacing:0.02em;text-transform:none}
+.hero-row{display:flex;align-items:flex-end;gap:11px;margin-top:5px}
+.hero-num{font-family:var(--mono);font-size:33px;font-weight:600;line-height:1;letter-spacing:-0.02em}
+.hero-delta{display:flex;align-items:center;gap:4px;font-family:var(--mono);font-size:12px;font-weight:500;padding-bottom:4px}
+.hero-delta.up{color:var(--ok)} .hero-delta.down{color:var(--danger)} .hero-delta.flat{color:var(--ink-3)}
+
+/* sparkline: prior baseline drawn so delta reads as LENGTH; one hue valence pop */
+.spark{margin-top:14px;height:46px;width:100%;position:relative}
+.spark svg{width:100%;height:100%;overflow:visible}
+.spark .base{stroke:rgba(255,255,255,0.16);stroke-width:1;stroke-dasharray:3 4}
+.spark .line{fill:none;stroke:var(--accent);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;
+  stroke-dasharray:var(--len);stroke-dashoffset:var(--len);animation:draw 1s var(--ease) forwards .15s}
+@keyframes draw{to{stroke-dashoffset:0}}
+.spark .endpt{fill:var(--accent)}
+.spark .lab{font-family:var(--mono);font-size:9px;fill:var(--ink-3)}
+
+/* ---------- rows / small-multiples (RELATE-able, drillable) ---------- */
+.rows{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+.section-cap{font-size:10.5px;color:var(--ink-3);letter-spacing:0.06em;text-transform:uppercase;margin:18px 2px 9px}
+.row{
+  display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px;
+  padding:11px 12px;border-radius:var(--r-sm);cursor:pointer;
+  border:1px solid var(--hair-2);background:rgba(255,255,255,0.02);
+  transition:all var(--fast) var(--ease);position:relative;
+}
+.row:hover{background:rgba(255,255,255,0.05);border-color:var(--hair);transform:translateX(2px)}
+.row.active-trail{border-color:rgba(74,158,255,0.4);background:rgba(74,158,255,0.07)}
+.row-main{min-width:0}
+.row-title{font-size:13px;font-weight:500;display:flex;align-items:center;gap:7px}
+.row-sub{font-size:11px;color:var(--ink-3);margin-top:3px;font-family:var(--mono)}
+.row-figs{display:flex;align-items:center;gap:12px;flex:0 0 auto}
+.fig{text-align:right}
+.fig .v{font-family:var(--mono);font-size:13px;font-weight:500}
+.fig .k{font-size:9.5px;color:var(--ink-3);margin-top:2px;letter-spacing:0.02em}
+/* scented door: drill chevron signifies this row opens a column */
+.door{
+  flex:0 0 auto;width:22px;height:22px;border-radius:6px;display:grid;place-items:center;
+  color:var(--ink-3);transition:all var(--fast) var(--ease);
+}
+.row:hover .door{color:var(--accent);background:rgba(74,158,255,0.12);transform:translateX(2px)}
+
+/* mini bar small-multiple inside a row (position/length, not color, for magnitude) */
+.mbar{height:4px;border-radius:99px;background:rgba(255,255,255,0.08);margin-top:8px;overflow:hidden}
+.mbar i{display:block;height:100%;border-radius:99px;background:var(--accent);
+  transform:scaleX(var(--p));transform-origin:left;transition:transform var(--slow) var(--ease)}
+
+/* ONE preattentive pop: status dot. Most rows neutral; the single signal glows. */
+.sig{width:7px;height:7px;border-radius:50%;flex:0 0 auto;background:var(--ink-3)}
+.sig.warn{background:var(--warn);box-shadow:0 0 9px var(--warn)}
+.sig.danger{background:var(--danger);box-shadow:0 0 10px var(--danger)}
+.sig.ok{background:var(--ok)}
+.pill{font-family:var(--mono);font-size:9.5px;padding:2px 7px;border-radius:99px;border:1px solid var(--hair-2);color:var(--ink-3)}
+.pill.warn{color:var(--warn);border-color:rgba(245,177,58,0.3);background:rgba(245,177,58,0.08)}
+.pill.danger{color:var(--danger);border-color:rgba(248,116,110,0.3);background:rgba(248,116,110,0.08)}
+
+/* ---------- RELATE strip ("connected to") ---------- */
+.relate{margin-top:20px;padding-top:16px;border-top:1px solid var(--hair-2)}
+.relate-cap{font-size:10.5px;color:var(--ink-3);letter-spacing:0.06em;text-transform:uppercase;margin-bottom:10px;display:flex;align-items:center;gap:7px}
+.relate-cap svg{opacity:.6}
+.relate-row{display:flex;gap:8px;flex-wrap:wrap}
+.rel{
+  display:inline-flex;align-items:center;gap:7px;cursor:pointer;
+  font-size:11.5px;color:var(--ink-2);padding:7px 11px;border-radius:99px;
+  border:1px solid var(--hair-2);background:rgba(255,255,255,0.02);
+  transition:all var(--fast) var(--ease);
+}
+.rel:hover{color:var(--ink);border-color:rgba(74,158,255,0.34);background:rgba(74,158,255,0.07);transform:translateY(-1px)}
+.rel .rk{font-family:var(--mono);font-size:9.5px;color:var(--ink-3)}
+.rel svg{opacity:.5}
+
+/* ---------- detail / record column ---------- */
+.detail-hero{padding:6px 4px 2px}
+.detail-name{font-size:18px;font-weight:600;letter-spacing:-0.01em}
+.detail-meta{font-size:11.5px;color:var(--ink-3);margin-top:4px;font-family:var(--mono)}
+.kv{display:flex;flex-direction:column;gap:1px;margin-top:18px}
+.kv-row{display:flex;justify-content:space-between;align-items:baseline;padding:11px 2px;border-bottom:1px solid var(--hair-2)}
+.kv-row:last-child{border-bottom:0}
+.kv-k{font-size:12px;color:var(--ink-2)}
+.kv-v{font-family:var(--mono);font-size:12.5px;font-weight:500}
+.note{margin-top:18px;padding:13px 14px;border-radius:var(--r-sm);border:1px solid var(--hair-2);background:rgba(255,255,255,0.02);font-size:12px;line-height:1.55;color:var(--ink-2)}
+.note b{color:var(--ink);font-weight:600}
+.draft-tag{display:inline-flex;align-items:center;gap:6px;margin-bottom:9px;font-family:var(--mono);font-size:9.5px;letter-spacing:0.08em;color:var(--warn);border:1px solid rgba(245,177,58,0.28);background:rgba(245,177,58,0.07);border-radius:99px;padding:3px 9px}
+
+.actions{display:flex;gap:8px;margin-top:18px}
+.btn{flex:1;text-align:center;cursor:pointer;font-size:12px;font-weight:500;padding:10px 0;border-radius:9px;border:1px solid var(--hair);background:rgba(255,255,255,0.03);color:var(--ink-2);transition:all var(--fast) var(--ease)}
+.btn:hover{color:var(--ink);border-color:var(--hair);background:rgba(255,255,255,0.06)}
+.btn.pri{color:#06121f;background:var(--accent);border-color:var(--accent);font-weight:600}
+.btn.pri:hover{filter:brightness(1.08)}
+
+/* ---------- magic-move flyer (shared-element transition) ---------- */
+.flyer{
+  position:fixed;z-index:var(--z-bubble);pointer-events:none;border-radius:var(--r-sm);
+  border:1px solid rgba(74,158,255,0.4);background:var(--glass-deep);
+  backdrop-filter:blur(12px);box-shadow:0 20px 50px -16px rgba(0,0,0,0.8),0 0 0 1px rgba(74,158,255,0.18);
+  opacity:0;transform-origin:top left;
+}
+
+/* ---------- presence (anchored luminous AI) ---------- */
+.presence{
+  position:fixed;left:22px;bottom:22px;z-index:var(--z-presence);
+  display:flex;align-items:center;gap:12px;
+  padding:11px 16px 11px 13px;border-radius:999px;
+  border:1px solid var(--hair);background:var(--glass);backdrop-filter:blur(16px);
+  box-shadow:0 14px 36px -18px rgba(0,0,0,0.9);max-width:min(540px,calc(100vw - 44px));
+  transition:box-shadow var(--med) var(--ease),border-color var(--med) var(--ease);
+}
+.presence.speaking{border-color:rgba(74,158,255,0.34);box-shadow:0 14px 36px -16px rgba(0,0,0,0.9),0 0 24px -6px rgba(74,158,255,0.3)}
+.orb{position:relative;width:30px;height:30px;flex:0 0 auto}
+.orb i{position:absolute;inset:0;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,#bcdcff,var(--accent) 55%,#1f5fb0 100%);
+  box-shadow:0 0 16px rgba(74,158,255,0.6);animation:breathe 4.6s var(--ease) infinite}
+.orb b{position:absolute;inset:-6px;border-radius:50%;border:1px solid rgba(74,158,255,0.3);
+  animation:halo 4.6s var(--ease) infinite}
+.presence.speaking .orb i{animation-duration:1.6s}
+@keyframes breathe{0%,100%{transform:scale(.9);filter:brightness(.92)}50%{transform:scale(1.04);filter:brightness(1.12)}}
+@keyframes halo{0%,100%{transform:scale(.92);opacity:.3}50%{transform:scale(1.12);opacity:.7}}
+.say{font-size:12.5px;color:var(--ink-2);line-height:1.45}
+.say b{color:var(--ink);font-weight:500}
+
+.hint{position:fixed;right:22px;bottom:24px;z-index:var(--z-presence);font-family:var(--mono);font-size:10.5px;color:var(--ink-3);text-align:right;line-height:1.7}
+.hint kbd{font-family:var(--mono);border:1px solid var(--hair-2);border-radius:5px;padding:1px 6px;color:var(--ink-2)}
+
+/* entrance */
+.col-enter{animation:colin var(--med) var(--ease) both}
+@keyframes colin{from{opacity:0;transform:translateX(-22px) scale(.97)}to{opacity:1;transform:none}}
+.stagger>*{animation:fadeup .5s var(--ease) both}
+.stagger>*:nth-child(1){animation-delay:.04s}
+.stagger>*:nth-child(2){animation-delay:.09s}
+.stagger>*:nth-child(3){animation-delay:.14s}
+.stagger>*:nth-child(4){animation-delay:.19s}
+.stagger>*:nth-child(5){animation-delay:.24s}
+.stagger>*:nth-child(6){animation-delay:.29s}
+.stagger>*:nth-child(7){animation-delay:.34s}
+@keyframes fadeup{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.001s!important;transition-duration:.06s!important}
+  .room::before{animation:none}
+  .spark .line{stroke-dashoffset:0!important}
+}
+@media (max-width:720px){
+  .col[data-state="focus"]{width:84vw} .col[data-state="focus"].wide{width:88vw}
+  .col[data-state="near"]{width:56px} .hint{display:none}
+}
+</style>
+</head>
+<body>
+<div class="room"></div>
+<div class="grain"></div>
+
+<header class="topbar">
+  <div class="brand"><span class="dot"></span>Ryujin <small>· operator shell</small></div>
+  <span class="preview-mark">DESIGN PREVIEW</span>
+  <span class="acct">plus-ultra · 2026-06-15</span>
+</header>
+
+<nav class="crumb-wrap" id="crumbs">
+  <button class="crumb-back" id="back" title="Out (Backspace)" aria-label="Go back one level">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+  </button>
+  <!-- crumbs injected -->
+</nav>
+
+<main class="spine" id="spine"><!-- columns injected --></main>
+
+<div class="presence" id="presence">
+  <div class="orb"><b></b><i></i></div>
+  <div class="say" id="say"><b>Overview.</b> Pick a tile or ask a question. I will open it to the right and keep the path behind you.</div>
+</div>
+
+<div class="hint">
+  drill: <kbd>click</kbd> a row &nbsp;·&nbsp; out: <kbd>Backspace</kbd> &nbsp;·&nbsp; jump: <kbd>crumb</kbd>
+</div>
+
+<script>
+/* ============================================================
+   DRILL SPINE -  Miller-column navigator
+   Each level is a node. The stack is the path (HISTORY).
+   Opening a node keeps prior levels as compressed context (fisheye).
+   ============================================================ */
+
+const fmtUSD = n => "$" + n.toLocaleString("en-US");
+
+/* ---- baked Plus Ultra data tree ---- */
+const ROOT = {
+  id:"root", glyph:"◆", name:"Plus Ultra OS", sub:"command center",
+  render: renderRoot
+};
+
+/* level 1 tiles -> each is a node */
+const tiles = {
+  ads:    { id:"ads",    glyph:"◎", name:"Ad Spend",   sub:"meta · google", crumb:"Ads" },
+  sales:  { id:"sales",  glyph:"$", name:"Signed",     sub:"mtd · ytd",     crumb:"Signed" },
+  follow: { id:"follow", glyph:"⟁", name:"Follow-up",  sub:"quiet quotes",  crumb:"Follow-up" },
+  cash:   { id:"cash",   glyph:"≈", name:"Cashflow",   sub:"collected",     crumb:"Cashflow" }
+};
+
+/* campaigns under ads -> nodes, each drills to its lead stream */
+const campaigns = {
+  ie_may:  { id:"ie_may", crumb:"Instant Estimator", glyph:"◎",
+    name:"May · Instant Estimator", sub:"meta · prospecting",
+    spend:389.92, leads:26, cpl:15.00, status:"ok", baseCpl:18.40,
+    leadList:["ie1","ie2","ie3","ie4"] },
+  revive:  { id:"revive", crumb:"Revive v3", glyph:"◎",
+    name:"Revive v3", sub:"meta · retarget",
+    spend:66.00, leads:4, cpl:16.50, status:"warn", baseCpl:11.69,
+    leadList:["rv1","rv2"] },
+};
+
+/* leads under a campaign -> terminal records */
+const leads = {
+  ie1:{ crumb:"Sharon", glyph:"◐", name:"Sharon", addr:"quote out · quiet 39d", value:20750, status:"warn",
+        rep:"Mac", stage:"Quoted", src:"Instant Estimator", phone:"(506) 616-4607", quiet:39,
+        note:"Quote out 39 days, no reply. Largest quiet quote on the board, tied with Jean Gauvin at the same number. Warm re-touch drafted, not sent." },
+  ie2:{ crumb:"Jean Gauvin", glyph:"◐", name:"Jean Gauvin", addr:"quote out · quiet 31d", value:20750, status:"warn",
+        rep:"Mac", stage:"Quoted", src:"Instant Estimator", phone:"(506) 616-4607", quiet:31,
+        note:"Second of the twin 20,750 quotes. Same scope tier. Pair these two in the Monday closer pack." },
+  ie3:{ crumb:"Lee Baxter", glyph:"◐", name:"Lee Baxter", addr:"quote out · quiet 22d", value:16250, status:"ok",
+        rep:"Mac", stage:"Quoted", src:"Instant Estimator", phone:"(506) 616-4607", quiet:22,
+        note:"Mid-tier reroof. Inside the 30-day window, lower priority than the twins above." },
+  ie4:{ crumb:"New inbound", glyph:"○", name:"New inbound (1)", addr:"this week · unqualified", value:0, status:"ok",
+        rep:"unassigned", stage:"New", src:"Instant Estimator", phone:"pending", quiet:2,
+        note:"One fresh lead this week off the May set. Qualify first, then route to the phone-close pilot." },
+  rv1:{ crumb:"Retarget A", glyph:"○", name:"Retarget lead A", addr:"viewed estimate · no booking", value:0, status:"ok",
+        rep:"unassigned", stage:"New", src:"Revive v3", phone:"pending", quiet:5,
+        note:"Saw the instant estimate, did not book. Retarget audience is thin, CPL drifting up." },
+  rv2:{ crumb:"Retarget B", glyph:"○", name:"Retarget lead B", addr:"clicked · bounced", value:0, status:"ok",
+        rep:"unassigned", stage:"New", src:"Revive v3", phone:"pending", quiet:7,
+        note:"Low intent. Revive v3 efficiency is the watch item, not this single lead." },
+};
+
+/* ---- spine state ---- */
+const spine = document.getElementById("spine");
+const crumbWrap = document.getElementById("crumbs");
+const backBtn = document.getElementById("back");
+const presence = document.getElementById("presence");
+const sayEl = document.getElementById("say");
+
+let stack = [];   // array of node objects, index = depth
+let adsWindow = "lifetime";
+
+function speak(html){
+  sayEl.innerHTML = html;
+  presence.classList.add("speaking");
+  clearTimeout(speak._t);
+  speak._t = setTimeout(()=>presence.classList.remove("speaking"), 1600);
+}
+
+/* assign focus/near/far states for fisheye */
+function applyStates(){
+  const cols = [...spine.querySelectorAll(".col")];
+  const last = cols.length - 1;
+  cols.forEach((c,i)=>{
+    if(i===last) c.dataset.state = "focus";
+    else if(i===last-1) c.dataset.state = "near";
+    else c.dataset.state = "far";
+  });
+}
+
+/* breadcrumb (HISTORY) -  reversible, jumpable */
+function renderCrumbs(){
+  [...crumbWrap.querySelectorAll(".crumb,.crumb-sep")].forEach(n=>n.remove());
+  const path = [ROOT, ...stack];
+  path.forEach((node,i)=>{
+    const c = document.createElement("button");
+    c.className = "crumb" + (i===path.length-1 ? " here" : "");
+    c.innerHTML = `<span class="ix">${i===0?"·":i}</span>${node.crumb||node.name}`;
+    c.onclick = ()=>jumpTo(i);
+    crumbWrap.appendChild(c);
+    if(i<path.length-1){
+      const s = document.createElement("span"); s.className="crumb-sep"; s.textContent="›";
+      crumbWrap.appendChild(s);
+    }
+  });
+  backBtn.disabled = stack.length === 0;
+  crumbWrap.scrollLeft = crumbWrap.scrollWidth;
+}
+
+/* jump = truncate stack to depth i (0 = root only) */
+function jumpTo(i){
+  if(i===0){ stack = []; }
+  else { stack = stack.slice(0, i); }
+  rebuild();
+  speak(stack.length===0
+    ? `<b>Back to overview.</b> The path is cleared. Drill again whenever.`
+    : `<b>Jumped back.</b> Holding ${stack[stack.length-1].crumb||stack[stack.length-1].name} in focus, deeper steps dropped.`);
+}
+
+function goBack(){
+  if(stack.length===0) return;
+  const left = stack[stack.length-1];
+  stack.pop();
+  rebuild();
+  speak(stack.length===0
+    ? `<b>Out to overview.</b> ${left.crumb||left.name} folded back into the tiles.`
+    : `<b>Stepped out.</b> ${left.crumb||left.name} receded. ${stack[stack.length-1].crumb} back in focus.`);
+}
+
+/* push a node onto the stack with a magic-move shared-element transition */
+function drill(node, originEl){
+  if(stack.find(n=>n.id===node.id) ) return;
+  flyFromOrigin(originEl, ()=>{
+    stack.push(node);
+    rebuild(true);
+  });
+}
+
+/* magic-move: clone origin rect -> animate to where the new column header lands */
+function flyFromOrigin(originEl, done){
+  if(!originEl || window.matchMedia("(prefers-reduced-motion: reduce)").matches){ done(); return; }
+  const r = originEl.getBoundingClientRect();
+  const fly = document.createElement("div");
+  fly.className = "flyer";
+  fly.style.left = r.left+"px"; fly.style.top = r.top+"px";
+  fly.style.width = r.width+"px"; fly.style.height = r.height+"px";
+  document.body.appendChild(fly);
+  done(); // build the real column underneath
+  requestAnimationFrame(()=>{
+    const newCol = spine.querySelector(".col[data-state='focus']");
+    if(!newCol){ fly.remove(); return; }
+    const t = newCol.getBoundingClientRect();
+    fly.style.transition = "all .52s cubic-bezier(.16,1,.3,1)";
+    fly.style.opacity = "1";
+    requestAnimationFrame(()=>{
+      fly.style.left=t.left+"px"; fly.style.top=t.top+"px";
+      fly.style.width=t.width+"px"; fly.style.height=Math.min(t.height,360)+"px";
+      fly.style.opacity="0";
+    });
+    setTimeout(()=>fly.remove(), 560);
+  });
+}
+
+/* ---- column factory ---- */
+function makeCol(node, isNew){
+  const col = document.createElement("section");
+  col.className = "col" + (isNew ? " col-enter" : "");
+  col.dataset.id = node.id;
+  if(node.wide) col.classList.add("wide");
+
+  // rail (shown when far)
+  const rail = document.createElement("div");
+  rail.className = "col-rail";
+  rail.innerHTML = `<div class="rail-glyph">${node.glyph||"◇"}</div>
+                    <div class="rail-title">${node.crumb||node.name}</div>`;
+  col.appendChild(rail);
+  rail.parentElement.onclick = null;
+
+  // head
+  const head = document.createElement("div");
+  head.className="col-head";
+  head.innerHTML = `<div class="col-kicker">
+      <div class="col-glyph">${node.glyph||"◇"}</div>
+      <div><div class="col-name">${node.name}</div><div class="col-sub">${node.sub||""}</div></div>
+      ${node.prov!==false?`<span class="prov"><span class="live"></span>${node.provText||"snapshot · live"}</span>`:""}
+    </div>`;
+  col.appendChild(head);
+
+  // body
+  const body = document.createElement("div");
+  body.className="col-body";
+  col.appendChild(body);
+  node.render(body, col);
+
+  // clicking a receded column re-focuses it (drops deeper)
+  col.addEventListener("click",(e)=>{
+    if(col.dataset.state==="focus") return;
+    const idx = [...spine.children].indexOf(col);
+    jumpTo(idx); // idx 0 = root
+    e.stopPropagation();
+  });
+  return col;
+}
+
+function rebuild(animateLast){
+  spine.innerHTML = "";
+  const nodes = [ROOT, ...stack];
+  nodes.forEach((n,i)=>{
+    spine.appendChild(makeCol(n, animateLast && i===nodes.length-1));
+  });
+  applyStates();
+  renderCrumbs();
+  requestAnimationFrame(()=> spine.scrollLeft = spine.scrollWidth);
+}
+
+/* ============================================================
+   RENDERERS
+   ============================================================ */
+
+function tile(node, originSetup){
+  // builds a clickable tile row
+  return node;
+}
+
+function renderRoot(body){
+  body.classList.add("stagger");
+
+  // ANSWER FIRST: value + direction, not a dashboard
+  const a = document.createElement("div");
+  a.className="answer";
+  a.innerHTML = `
+    <div class="answer-line"><span class="num">${fmtUSD(33264)}</span> signed this month, <span class="num">${fmtUSD(199843)}</span> in proposals out.</div>
+    <div class="answer-frame">The live attention item is one quiet quote, not the numbers. <b>Drill a tile to elaborate.</b></div>`;
+  body.appendChild(a);
+
+  // 4-chunk ceiling: exactly four tiles, each a scented door
+  const cap = document.createElement("div"); cap.className="section-cap"; cap.textContent="Four surfaces";
+  body.appendChild(cap);
+
+  const tileDefs = [
+    { node:tiles.ads,    figV:fmtUSD(10523), figK:"lifetime", sub:"923 leads · $11.69 CPL", sig:"" },
+    { node:tiles.sales,  figV:fmtUSD(33264), figK:"signed mtd", sub:fmtUSD(275464)+" YTD", sig:"ok" },
+    { node:tiles.follow, figV:"39d",         figK:"top quiet", sub:"Sharon · "+fmtUSD(20750), sig:"warn" },
+    { node:tiles.cash,   figV:fmtUSD(12235), figK:"collected 30d", sub:fmtUSD(155918)+" / 90d", sig:"" },
+  ];
+
+  const rows = document.createElement("div"); rows.className="rows";
+  tileDefs.forEach(t=>{
+    const r = document.createElement("div"); r.className="row";
+    r.innerHTML = `
+      <div class="row-main">
+        <div class="row-title"><span class="sig ${t.sig}"></span>${t.node.name}</div>
+        <div class="row-sub">${t.sub}</div>
+      </div>
+      <div class="row-figs">
+        <div class="fig"><div class="v">${t.figV}</div><div class="k">${t.figK}</div></div>
+        <div class="door"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>
+      </div>`;
+    r.onclick = (e)=>{ e.stopPropagation(); drill(t.node, r);
+      speak(`<b>Opened ${t.node.crumb}.</b> Prior view stays as context on the left.`); };
+    rows.appendChild(r);
+  });
+  body.appendChild(rows);
+
+  speak(`<b>Overview.</b> One signal is glowing: a 39-day quiet quote. Everything else is calm.`);
+}
+
+/* ---- ADS report (flagship drill pattern) ---- */
+const adsByWindow = {
+  "24h":     { spend:21.4,   leads:1,  cpl:21.40, base:15.0, label:"last 24h", series:[14,16,12,18,21,19,21.4] },
+  "7d":      { spend:142.1,  leads:9,  cpl:15.79, base:18.4, label:"last 7 days", series:[19,18,17,16,15,16,15.8] },
+  "month":   { spend:455.92, leads:30, cpl:15.20, base:18.4, label:"this month", series:[18,17,16,16,15,15,15.2] },
+  "lifetime":{ spend:10523,  leads:923,cpl:11.69, base:11.69,label:"lifetime", series:[14,13,12,12,11.8,11.7,11.69] },
+};
+
+function renderAds(body, col){
+  const w = adsByWindow[adsWindow];
+
+  // answer-first + echoed framing + provenance is in the head chip
+  const a = document.createElement("div"); a.className="answer";
+  const cplDir = w.cpl <= w.base ? "down" : "up";
+  a.innerHTML = `
+    <div class="answer-line">CPL is <span class="num">$${w.cpl.toFixed(2)}</span> ${w.label}, ${cplDir==="down"?"under":"over"} the <span class="num">$${w.base.toFixed(2)}</span> baseline.</div>
+    <div class="answer-frame">Echoing your framing: <b>cost per lead by window</b>. Two campaigns live.</div>`;
+  body.appendChild(a);
+
+  // Hick toggle: 4 window chips RE-BIND this same panel in place (no new column)
+  const chips = document.createElement("div"); chips.className="chips";
+  ["24h","7d","month","lifetime"].forEach(k=>{
+    const c = document.createElement("div");
+    c.className="chip"+(k===adsWindow?" on":"");
+    c.textContent = k;
+    c.onclick = (e)=>{ e.stopPropagation(); adsWindow=k; rebindAds(col);
+      speak(`<b>${k}.</b> Same panel, rebound. No new column.`); };
+    chips.appendChild(c);
+  });
+  body.appendChild(chips);
+  const cc = document.createElement("div"); cc.className="chips-cap"; cc.textContent="Window rebinds this panel in place.";
+  body.appendChild(cc);
+
+  // hero number + length-encoded delta sparkline (prior baseline drawn)
+  const deltaPct = ((w.cpl - w.base)/w.base*100);
+  const hero = document.createElement("div"); hero.className="hero";
+  hero.innerHTML = `
+    <div class="hero-label">Cost per lead · ${w.label}</div>
+    <div class="hero-row">
+      <div class="hero-num">$${w.cpl.toFixed(2)}</div>
+      <div class="hero-delta ${cplDir==='down'?'down':(deltaPct===0?'flat':'up')}">
+        ${cplDir==='down'?'▼':(deltaPct===0?'■':'▲')} ${Math.abs(deltaPct).toFixed(1)}% vs base
+      </div>
+    </div>
+    ${sparkSVG(w.series, w.base)}`;
+  body.appendChild(hero);
+
+  // per-row small-multiples (RELATE-able rows, drillable into Miller columns)
+  const cap = document.createElement("div"); cap.className="section-cap"; cap.textContent="Live campaigns · drill a row";
+  body.appendChild(cap);
+
+  const rows = document.createElement("div"); rows.className="rows";
+  Object.values(campaigns).forEach(cm=>{
+    const inTrail = stack.find(n=>n.id===cm.id);
+    const r = document.createElement("div"); r.className="row"+(inTrail?" active-trail":"");
+    const eff = (cm.cpl/cm.baseCpl); // length encoding, capped
+    const p = Math.max(.12, Math.min(1, 1 - (eff-0.6)));
+    const cplPill = cm.status==="warn"
+      ? `<span class="pill warn">$${cm.cpl.toFixed(2)} CPL</span>`
+      : `<span class="pill">$${cm.cpl.toFixed(2)} CPL</span>`;
+    r.innerHTML = `
+      <div class="row-main">
+        <div class="row-title"><span class="sig ${cm.status==='warn'?'warn':''}"></span>${cm.name}</div>
+        <div class="row-sub">${cm.sub} · ${fmtUSD(cm.spend)} · ${cm.leads} leads</div>
+        <div class="mbar"><i style="--p:${p}"></i></div>
+      </div>
+      <div class="row-figs">
+        <div class="fig"><div class="v">${cm.leads}</div><div class="k">leads</div></div>
+        ${cplPill}
+        <div class="door"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>
+      </div>`;
+    r.onclick = (e)=>{ e.stopPropagation();
+      const node = { ...cm, render:(b,c)=>renderCampaign(b,c,cm), wide:false };
+      drill(node, r);
+      speak(`<b>${cm.crumb}.</b> Spend, efficiency, and its lead stream. Ads panel held as context.`); };
+    rows.appendChild(r);
+  });
+  body.appendChild(rows);
+
+  // RELATE strip -  the usually-forgotten verb
+  relateStrip(body, [
+    { k:"→", label:"Follow-up board", node:tiles.follow, why:"where the leads land" },
+    { k:"≈", label:"Cashflow 30d", node:tiles.cash, why:"what they convert to" },
+  ]);
+}
+
+function rebindAds(col){
+  // re-render in place: smooth, no new column (the report pattern)
+  const body = col.querySelector(".col-body");
+  body.style.opacity="0";
+  setTimeout(()=>{ body.innerHTML=""; body.classList.add("stagger"); renderAds(body,col); body.style.opacity="1"; }, 150);
+  body.style.transition="opacity .15s linear";
+}
+
+function sparkSVG(series, base){
+  const W=300,H=44,pad=4;
+  const min=Math.min(...series,base), max=Math.max(...series,base);
+  const range=(max-min)||1;
+  const x=i=> pad + i*((W-pad*2)/(series.length-1));
+  const y=v=> H-pad - ((v-min)/range)*(H-pad*2);
+  let d="";
+  series.forEach((v,i)=> d += (i?"L":"M")+x(i).toFixed(1)+" "+y(v).toFixed(1)+" ");
+  const baseY = y(base).toFixed(1);
+  const lastX=x(series.length-1), lastY=y(series[series.length-1]);
+  // path length for draw animation
+  const len = Math.round(series.reduce((acc,v,i)=> i? acc+Math.hypot(x(i)-x(i-1), y(v)-y(series[i-1])):0,0)) + 20;
+  return `<div class="spark"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+    <line class="base" x1="0" y1="${baseY}" x2="${W}" y2="${baseY}"/>
+    <text class="lab" x="2" y="${(+baseY)-4}">baseline $${base.toFixed(2)}</text>
+    <path class="line" style="--len:${len}" d="${d}"/>
+    <circle class="endpt" cx="${lastX.toFixed(1)}" cy="${lastY.toFixed(1)}" r="3"/>
+  </svg></div>`;
+}
+
+/* ---- CAMPAIGN column (level 3) ---- */
+function renderCampaign(body, col, cm){
+  body.classList.add("stagger");
+
+  const a = document.createElement("div"); a.className="answer";
+  a.innerHTML = `
+    <div class="answer-line"><span class="num">$${cm.cpl.toFixed(2)}</span> CPL on ${cm.leads} leads, ${cm.status==='warn'?'<span class="num">drifting up</span>':'<span class="num">healthy</span>'}.</div>
+    <div class="answer-frame">${cm.status==='warn'?'<b>Efficiency is the watch item.</b> Retarget pool is thin.':'<b>Best performer.</b> Cheapest qualified leads on the account.'}</div>`;
+  body.appendChild(a);
+
+  // key facts, <=4 chunk
+  const kv = document.createElement("div"); kv.className="kv";
+  kv.innerHTML = `
+    <div class="kv-row"><span class="kv-k">Spend</span><span class="kv-v">${fmtUSD(cm.spend)}</span></div>
+    <div class="kv-row"><span class="kv-k">Leads</span><span class="kv-v">${cm.leads}</span></div>
+    <div class="kv-row"><span class="kv-k">CPL</span><span class="kv-v" style="color:${cm.status==='warn'?'var(--warn)':'var(--ink)'}">$${cm.cpl.toFixed(2)}</span></div>
+    <div class="kv-row"><span class="kv-k">vs account base</span><span class="kv-v">$${cm.baseCpl.toFixed(2)}</span></div>`;
+  body.appendChild(kv);
+
+  // lead stream -  drill deeper into Miller column
+  const cap = document.createElement("div"); cap.className="section-cap"; cap.textContent="Lead stream · drill a record";
+  body.appendChild(cap);
+  const rows = document.createElement("div"); rows.className="rows";
+  cm.leadList.forEach(lid=>{
+    const ld = leads[lid];
+    const inTrail = stack.find(n=>n.id==="lead:"+lid);
+    const r = document.createElement("div"); r.className="row"+(inTrail?" active-trail":"");
+    const valTxt = ld.value ? fmtUSD(ld.value) : "unqual";
+    r.innerHTML = `
+      <div class="row-main">
+        <div class="row-title"><span class="sig ${ld.status==='warn'?'warn':''}"></span>${ld.name}</div>
+        <div class="row-sub">${ld.addr}</div>
+      </div>
+      <div class="row-figs">
+        <div class="fig"><div class="v">${valTxt}</div><div class="k">${ld.stage.toLowerCase()}</div></div>
+        <div class="door"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>
+      </div>`;
+    r.onclick = (e)=>{ e.stopPropagation();
+      const node = { id:"lead:"+lid, crumb:ld.crumb, glyph:ld.glyph, name:ld.name,
+        sub:ld.src, provText:"GHL · contact", wide:false, render:(b,c)=>renderLead(b,c,ld) };
+      drill(node, r);
+      speak(`<b>${ld.name}.</b> Record level. Campaign and ads panel both held behind you.`); };
+    rows.appendChild(r);
+  });
+  body.appendChild(rows);
+
+  relateStrip(body, [
+    { k:"◎", label:"All ads", node:tiles.ads, why:"back to the account" },
+    { k:"⟁", label:"Follow-up board", node:tiles.follow, why:"quiet quotes" },
+  ]);
+}
+
+/* ---- LEAD record (terminal level 4) ---- */
+function renderLead(body, col, ld){
+  body.classList.add("stagger");
+
+  const hero = document.createElement("div"); hero.className="detail-hero";
+  hero.innerHTML = `
+    <div class="detail-name">${ld.name}</div>
+    <div class="detail-meta">${ld.src} · ${ld.stage} · ${ld.quiet}d quiet</div>`;
+  body.appendChild(hero);
+
+  if(ld.status==="warn"){
+    const a = document.createElement("div"); a.className="answer"; a.style.marginTop="14px";
+    a.innerHTML = `<div class="answer-line"><span class="sig warn" style="display:inline-block;margin-right:6px;vertical-align:middle"></span><span class="num">${fmtUSD(ld.value)}</span> quote, quiet <span class="num">${ld.quiet} days</span>.</div>
+      <div class="answer-frame"><b>Re-touch is the move.</b> Draft only, you press send.</div>`;
+    body.appendChild(a);
+  }
+
+  const kv = document.createElement("div"); kv.className="kv";
+  kv.innerHTML = `
+    <div class="kv-row"><span class="kv-k">Quote value</span><span class="kv-v">${ld.value?fmtUSD(ld.value):" - "}</span></div>
+    <div class="kv-row"><span class="kv-k">Stage</span><span class="kv-v">${ld.stage}</span></div>
+    <div class="kv-row"><span class="kv-k">Rep</span><span class="kv-v">${ld.rep}</span></div>
+    <div class="kv-row"><span class="kv-k">Contact line</span><span class="kv-v">${ld.phone}</span></div>`;
+  body.appendChild(kv);
+
+  const note = document.createElement("div"); note.className="note";
+  note.innerHTML = `<span class="draft-tag">DRAFT ONLY</span><br>${ld.note}`;
+  body.appendChild(note);
+
+  const acts = document.createElement("div"); acts.className="actions";
+  acts.innerHTML = `<div class="btn">Open in GHL</div><div class="btn pri">Draft re-touch</div>`;
+  acts.querySelector(".pri").onclick=(e)=>{ e.stopPropagation();
+    speak(`<b>Drafting.</b> Voice-skill loaded. I will surface it for your read, never send.`); };
+  body.appendChild(acts);
+
+  // RELATE: sibling quiet quote on the board
+  relateStrip(body, [
+    { k:"⟁", label:"Follow-up board", node:tiles.follow, why:"the other quiet quotes" },
+    { k:"◎", label:"Source campaign", node:tiles.ads, why:"where this came from" },
+  ]);
+}
+
+/* ---- FOLLOW-UP, SALES, CASH (so RELATE + every tile lands somewhere real) ---- */
+tiles.follow.render = function(body){
+  body.classList.add("stagger");
+  const a=document.createElement("div"); a.className="answer";
+  a.innerHTML=`<div class="answer-line"><span class="num">${fmtUSD(20750)}</span> top quiet quote, <span class="num">39 days</span> silent.</div>
+    <div class="answer-frame"><b>14 sales tasks overdue</b> sit under this. One job 6 days late.</div>`;
+  body.appendChild(a);
+  const cap=document.createElement("div"); cap.className="section-cap"; cap.textContent="Quiet quotes · drill a record";
+  body.appendChild(cap);
+  const rows=document.createElement("div"); rows.className="rows";
+  [["ie1",39,"warn"],["ie2",31,""],["ie3",22,""]].forEach(([lid,q,s])=>{
+    const ld=leads[lid];
+    const r=document.createElement("div"); r.className="row";
+    r.innerHTML=`<div class="row-main"><div class="row-title"><span class="sig ${s}"></span>${ld.name}</div>
+      <div class="row-sub">quote out · quiet ${q}d</div></div>
+      <div class="row-figs"><div class="fig"><div class="v">${fmtUSD(ld.value)}</div><div class="k">quoted</div></div>
+      <div class="door"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div></div>`;
+    r.onclick=(e)=>{ e.stopPropagation();
+      const node={ id:"lead:"+lid, crumb:ld.crumb, glyph:ld.glyph, name:ld.name, sub:ld.src,
+        provText:"GHL · contact", render:(b,c)=>renderLead(b,c,ld) };
+      drill(node,r); speak(`<b>${ld.name}.</b> The board stays in context.`); };
+    rows.appendChild(r);
+  });
+  // overdue job -  the single danger pop on this surface
+  const j=document.createElement("div"); j.className="row";
+  j.innerHTML=`<div class="row-main"><div class="row-title"><span class="sig danger"></span>18 Lawson · Kierstad</div>
+    <div class="row-sub mono">crew: Diego · scheduled job</div></div>
+    <div class="row-figs"><span class="pill danger">6d late</span></div>`;
+  rows.appendChild(j);
+  body.appendChild(rows);
+  relateStrip(body,[{k:"$",label:"Signed MTD",node:tiles.sales,why:"what closes"},{k:"◎",label:"Ad source",node:tiles.ads,why:"where leads start"}]);
+};
+
+tiles.sales.render = function(body){
+  body.classList.add("stagger");
+  const a=document.createElement("div"); a.className="answer";
+  a.innerHTML=`<div class="answer-line"><span class="num">${fmtUSD(33264)}</span> signed this month, <span class="num">${fmtUSD(275464)}</span> YTD.</div>
+    <div class="answer-frame">Pipeline behind it: <b>${fmtUSD(199843)} in 13 proposals out</b>.</div>`;
+  body.appendChild(a);
+  const hero=document.createElement("div"); hero.className="hero";
+  hero.innerHTML=`<div class="hero-label">Signed · month to date</div>
+    <div class="hero-row"><div class="hero-num">${fmtUSD(33264)}</div>
+    <div class="hero-delta up">▲ pacing</div></div>
+    ${sparkSVG([12000,18000,21000,24000,28000,31000,33264], 28000)}`;
+  body.appendChild(hero);
+  const cap=document.createElement("div"); cap.className="section-cap"; cap.textContent="Open proposals";
+  body.appendChild(cap);
+  const rows=document.createElement("div"); rows.className="rows";
+  [["Sharon",20750,"warn"],["Jean Gauvin",20750,""],["Lee Baxter",16250,""]].forEach(([n,v,s])=>{
+    const r=document.createElement("div"); r.className="row";
+    const lid = n==="Sharon"?"ie1":n==="Jean Gauvin"?"ie2":"ie3";
+    r.innerHTML=`<div class="row-main"><div class="row-title"><span class="sig ${s}"></span>${n}</div>
+      <div class="row-sub">proposal out</div></div>
+      <div class="row-figs"><div class="fig"><div class="v">${fmtUSD(v)}</div><div class="k">quoted</div></div>
+      <div class="door"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div></div>`;
+    r.onclick=(e)=>{ e.stopPropagation(); const ld=leads[lid];
+      drill({ id:"lead:"+lid, crumb:ld.crumb, glyph:ld.glyph, name:ld.name, sub:ld.src, provText:"GHL · contact", render:(b,c)=>renderLead(b,c,ld) }, r);
+      speak(`<b>${n}.</b> Record open, signed view held behind.`); };
+    rows.appendChild(r);
+  });
+  body.appendChild(rows);
+  relateStrip(body,[{k:"⟁",label:"Follow-up",node:tiles.follow,why:"quiet ones"},{k:"≈",label:"Cashflow",node:tiles.cash,why:"collected"}]);
+};
+
+tiles.cash.render = function(body){
+  body.classList.add("stagger");
+  const a=document.createElement("div"); a.className="answer";
+  a.innerHTML=`<div class="answer-line"><span class="num">${fmtUSD(12235)}</span> collected in 30 days, <span class="num">${fmtUSD(155918)}</span> over 90.</div>
+    <div class="answer-frame"><b>${fmtUSD(29160)} outstanding is neutral</b>: deposit-paid work in progress, not a chase.</div>`;
+  body.appendChild(a);
+  const hero=document.createElement("div"); hero.className="hero";
+  hero.innerHTML=`<div class="hero-label">Collected · trailing 90 days</div>
+    <div class="hero-row"><div class="hero-num">${fmtUSD(155918)}</div><div class="hero-delta flat">■ steady</div></div>
+    ${sparkSVG([40000,72000,95000,118000,138000,150000,155918], 138000)}`;
+  body.appendChild(hero);
+  const cap=document.createElement("div"); cap.className="section-cap"; cap.textContent="By window";
+  body.appendChild(cap);
+  const rows=document.createElement("div"); rows.className="rows";
+  [["30 days",12235,.18],["90 days",155918,1],["Outstanding (WIP)",29160,.34]].forEach(([k,v,p])=>{
+    const r=document.createElement("div"); r.className="row"; r.style.cursor="default";
+    r.innerHTML=`<div class="row-main"><div class="row-title"><span class="sig"></span>${k}</div>
+      <div class="mbar"><i style="--p:${p}"></i></div></div>
+      <div class="row-figs"><div class="fig"><div class="v">${fmtUSD(v)}</div><div class="k">collected</div></div></div>`;
+    rows.appendChild(r);
+  });
+  body.appendChild(rows);
+  relateStrip(body,[{k:"$",label:"Signed MTD",node:tiles.sales,why:"what feeds this"}]);
+};
+
+/* RELATE strip helper */
+function relateStrip(body, items){
+  const wrap=document.createElement("div"); wrap.className="relate";
+  wrap.innerHTML=`<div class="relate-cap">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8 11l8-4M8 13l8 4"/></svg>
+    Connected to</div>`;
+  const row=document.createElement("div"); row.className="relate-row";
+  items.forEach(it=>{
+    const b=document.createElement("button"); b.className="rel";
+    b.innerHTML=`<span class="rk">${it.k}</span>${it.label}
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M17 7H8M17 7v9"/></svg>`;
+    b.title = it.why;
+    b.onclick=(e)=>{ e.stopPropagation();
+      // relate jumps laterally: reset to root then open the related node
+      stack = [];
+      const node = it.node;
+      stack.push(node);
+      rebuild(true);
+      speak(`<b>Related → ${node.crumb}.</b> ${it.why}. New path from here.`); };
+    row.appendChild(b);
+  });
+  wrap.appendChild(row);
+  body.appendChild(wrap);
+}
+
+/* ---- keyboard: reversible out ---- */
+document.addEventListener("keydown",(e)=>{
+  if(e.key==="Backspace" && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)){ e.preventDefault(); goBack(); }
+  if(e.key==="Escape"){ jumpTo(0); }
+});
+backBtn.onclick = goBack;
+
+/* boot */
+rebuild();
+/* auto-demo the magic-move + drill on first paint after a beat */
+setTimeout(()=>{ if(stack.length===0){ presence.classList.add("speaking"); setTimeout(()=>presence.classList.remove("speaking"),1500);} }, 700);
+</script>
+</body>
+</html>

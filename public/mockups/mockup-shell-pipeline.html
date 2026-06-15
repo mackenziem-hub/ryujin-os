@@ -1,0 +1,1338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ryujin -  Pipeline Drill</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* ground / ink */
+    --ground: #060709;
+    --ground-2: #0a0c10;
+    --ink: #f3f5f8;
+    --ink-2: rgba(243,245,248,0.62);
+    --ink-3: rgba(243,245,248,0.38);
+    --ink-4: rgba(243,245,248,0.18);
+
+    /* one cool-blue accent */
+    --accent: #4a9eff;
+    --accent-dim: rgba(74,158,255,0.16);
+    --accent-edge: rgba(74,158,255,0.42);
+
+    /* valence pops only */
+    --ok: #46d68a;
+    --warn: #f5b13a;
+    --danger: #f8746e;
+
+    /* glass material */
+    --glass: rgba(20,24,31,0.62);
+    --glass-2: rgba(24,29,37,0.74);
+    --hair: rgba(255,255,255,0.10);
+    --hair-soft: rgba(255,255,255,0.06);
+    --hair-strong: rgba(255,255,255,0.16);
+
+    /* semantic z-scale: ground < presence < veil < panel < active < bubble < input */
+    --z-ground: 0;
+    --z-presence: 10;
+    --z-veil: 20;
+    --z-panel: 30;
+    --z-active: 40;
+    --z-bubble: 50;
+    --z-input: 60;
+
+    --ease: cubic-bezier(.16,1,.3,1);
+    --col-w: 332px;
+
+    --shadow-panel: 0 1px 0 rgba(255,255,255,0.04) inset, 0 24px 60px -20px rgba(0,0,0,0.7), 0 8px 22px -12px rgba(0,0,0,0.6);
+    --shadow-soft: 0 14px 40px -20px rgba(0,0,0,0.65);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body { height: 100%; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow: hidden;
+    font-size: 14px;
+    line-height: 1.4;
+  }
+
+  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+
+  /* ============ ambient ground ============ */
+  .ambient {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-ground);
+    pointer-events: none;
+    background:
+      radial-gradient(1200px 760px at 18% -8%, rgba(74,158,255,0.07), transparent 60%),
+      radial-gradient(900px 620px at 96% 110%, rgba(74,158,255,0.05), transparent 55%),
+      var(--ground);
+  }
+  .ambient::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(rgba(255,255,255,0.015) 1px, transparent 1px);
+    background-size: 3px 3px;
+    opacity: 0.5;
+  }
+
+  /* ============ shell scaffold ============ */
+  .shell {
+    position: relative;
+    z-index: var(--z-presence);
+    height: 100vh;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+  }
+
+  /* top bar */
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px 26px;
+    border-bottom: 1px solid var(--hair-soft);
+  }
+  .glyph {
+    width: 30px; height: 30px;
+    border-radius: 9px;
+    display: grid; place-items: center;
+    background: linear-gradient(150deg, rgba(74,158,255,0.30), rgba(74,158,255,0.08));
+    border: 1px solid var(--accent-edge);
+    box-shadow: 0 0 22px -6px rgba(74,158,255,0.6);
+    flex: 0 0 auto;
+  }
+  .glyph span { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 14px 2px rgba(74,158,255,0.85); }
+  .wordmark { font-weight: 600; letter-spacing: -0.01em; font-size: 14px; }
+  .wordmark b { color: var(--accent); font-weight: 600; }
+  .topbar .sub { color: var(--ink-3); font-size: 12px; }
+
+  .preview-tag {
+    margin-left: auto;
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    color: var(--ink-3);
+    border: 1px solid var(--hair);
+    border-radius: 999px;
+    padding: 5px 11px;
+    background: var(--glass);
+  }
+
+  /* ============ breadcrumb ============ */
+  .breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 12px 26px;
+    flex-wrap: wrap;
+  }
+  .crumb {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    color: var(--ink-2);
+    background: var(--glass);
+    border: 1px solid var(--hair-soft);
+    border-radius: 8px;
+    padding: 5px 11px;
+    cursor: pointer;
+    transition: color 0.3s var(--ease), border-color 0.3s var(--ease), background 0.3s var(--ease), transform 0.3s var(--ease);
+    white-space: nowrap;
+  }
+  .crumb:hover { color: var(--ink); border-color: var(--hair); }
+  .crumb.is-head {
+    color: var(--ink);
+    border-color: var(--accent-edge);
+    background: var(--accent-dim);
+  }
+  .crumb .dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: 0.6; }
+  .crumb-sep { color: var(--ink-4); font-size: 13px; }
+  .crumb-back {
+    margin-left: 8px;
+    font-size: 11.5px;
+    color: var(--ink-3);
+    border: 1px solid var(--hair-soft);
+    border-radius: 8px;
+    padding: 5px 10px 5px 9px;
+    background: transparent;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    transition: color 0.3s var(--ease), border-color 0.3s var(--ease), opacity 0.3s var(--ease);
+  }
+  .crumb-back:hover { color: var(--ink); border-color: var(--hair); }
+  .crumb-back[hidden] { display: none; }
+
+  /* ============ columns rail (Miller) ============ */
+  .rail {
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 4px 26px 24px;
+    scroll-behavior: smooth;
+  }
+  .rail::-webkit-scrollbar { height: 9px; }
+  .rail::-webkit-scrollbar-thumb { background: var(--hair); border-radius: 9px; }
+  .rail::-webkit-scrollbar-track { background: transparent; }
+
+  .columns {
+    display: flex;
+    gap: 16px;
+    align-items: stretch;
+    height: 100%;
+    min-height: 0;
+  }
+
+  .column {
+    flex: 0 0 var(--col-w);
+    width: var(--col-w);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+  }
+  .column.is-board { flex: 0 0 392px; width: 392px; }
+
+  /* shared panel material */
+  .panel {
+    position: relative;
+    background: var(--glass);
+    border: 1px solid var(--hair);
+    border-radius: 16px;
+    box-shadow: var(--shadow-panel);
+    -webkit-backdrop-filter: blur(18px) saturate(1.2);
+    backdrop-filter: blur(18px) saturate(1.2);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
+  }
+  .column.is-context .panel {
+    background: var(--glass);
+    opacity: 0.86;
+  }
+  .column.is-active .panel {
+    border-color: var(--hair-strong);
+    box-shadow: var(--shadow-panel), 0 0 0 1px rgba(74,158,255,0.10), 0 0 50px -22px rgba(74,158,255,0.55);
+  }
+
+  .panel-head {
+    padding: 16px 18px 12px;
+    border-bottom: 1px solid var(--hair-soft);
+    flex: 0 0 auto;
+  }
+  .panel-kicker {
+    font-size: 11px;
+    color: var(--ink-3);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .panel-title { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+  .panel-body { padding: 14px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+  .panel-body::-webkit-scrollbar { width: 8px; }
+  .panel-body::-webkit-scrollbar-thumb { background: var(--hair); border-radius: 8px; }
+
+  /* provenance chip */
+  .prov {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10.5px;
+    color: var(--ink-3);
+    border: 1px solid var(--hair-soft);
+    border-radius: 999px;
+    padding: 3px 8px;
+  }
+  .prov .live { width: 5px; height: 5px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 8px 1px rgba(70,214,138,0.7); }
+
+  /* ============ ANSWER-FIRST block ============ */
+  .answer {
+    padding: 16px 26px 6px;
+  }
+  .answer-card {
+    position: relative;
+    background: var(--glass-2);
+    border: 1px solid var(--hair);
+    border-radius: 16px;
+    box-shadow: var(--shadow-soft);
+    -webkit-backdrop-filter: blur(20px) saturate(1.2);
+    backdrop-filter: blur(20px) saturate(1.2);
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+  /* the luminous presence anchor */
+  .presence {
+    flex: 0 0 auto;
+    width: 38px; height: 38px;
+    border-radius: 50%;
+    position: relative;
+    display: grid; place-items: center;
+  }
+  .presence .core {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 38% 34%, #cfe6ff, var(--accent) 60%, rgba(74,158,255,0.2));
+    box-shadow: 0 0 18px 3px rgba(74,158,255,0.65);
+    animation: breathe 4.4s var(--ease) infinite;
+  }
+  .presence .ring {
+    position: absolute; inset: 0;
+    border-radius: 50%;
+    border: 1px solid rgba(74,158,255,0.30);
+    animation: pulse-ring 4.4s var(--ease) infinite;
+  }
+  @keyframes breathe {
+    0%,100% { transform: scale(1); box-shadow: 0 0 18px 3px rgba(74,158,255,0.55); }
+    50% { transform: scale(1.16); box-shadow: 0 0 26px 5px rgba(74,158,255,0.8); }
+  }
+  @keyframes pulse-ring {
+    0% { transform: scale(0.7); opacity: 0.7; }
+    70%,100% { transform: scale(1.45); opacity: 0; }
+  }
+  .presence.is-speaking .core { animation-duration: 1.7s; }
+
+  .answer-text { flex: 1 1 auto; min-width: 0; }
+  .answer-line { font-size: 17px; font-weight: 500; letter-spacing: -0.01em; line-height: 1.35; }
+  .answer-line b { font-weight: 600; }
+  .answer-line .num { color: var(--ink); }
+  .answer-line .hot { color: var(--warn); }
+  .answer-sub { margin-top: 5px; font-size: 12.5px; color: var(--ink-2); display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .answer-sub .div { width: 1px; height: 11px; background: var(--hair); }
+
+  .scent-btn {
+    flex: 0 0 auto;
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    color: var(--ink);
+    background: var(--accent-dim);
+    border: 1px solid var(--accent-edge);
+    border-radius: 10px;
+    padding: 9px 14px;
+    cursor: pointer;
+    transition: background 0.3s var(--ease), transform 0.3s var(--ease), box-shadow 0.3s var(--ease);
+    white-space: nowrap;
+  }
+  .scent-btn:hover { background: rgba(74,158,255,0.24); box-shadow: 0 0 26px -8px rgba(74,158,255,0.7); }
+  .scent-btn:active { transform: translateY(1px); }
+  .scent-btn .chev { transition: transform 0.4s var(--ease); }
+  .scent-btn.is-open .chev { transform: rotate(90deg); }
+
+  /* ============ stage tiles (overview, <=4 chunks) ============ */
+  .stage-tiles {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 11px;
+  }
+  .tile {
+    position: relative;
+    text-align: left;
+    background: rgba(255,255,255,0.018);
+    border: 1px solid var(--hair-soft);
+    border-radius: 13px;
+    padding: 13px 15px;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+    overflow: hidden;
+    transition: border-color 0.35s var(--ease), background 0.35s var(--ease), transform 0.35s var(--ease), box-shadow 0.35s var(--ease);
+  }
+  .tile:hover { border-color: var(--hair); background: rgba(255,255,255,0.04); transform: translateY(-1px); }
+  .tile.is-selected {
+    border-color: var(--accent-edge);
+    background: var(--accent-dim);
+    box-shadow: 0 0 0 1px rgba(74,158,255,0.12), 0 0 34px -14px rgba(74,158,255,0.55);
+  }
+  .tile-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .tile-name { font-size: 13.5px; font-weight: 600; }
+  .tile-count { font-size: 11px; color: var(--ink-3); }
+  .tile-value { margin-top: 9px; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+  .tile-meta { margin-top: 3px; font-size: 11.5px; color: var(--ink-2); }
+
+  /* ONE preattentive pop -  single hue/luminance spike on the stuck stage */
+  .tile.is-hot {
+    border-color: rgba(245,177,58,0.5);
+    background: linear-gradient(180deg, rgba(245,177,58,0.10), rgba(245,177,58,0.03));
+  }
+  .tile.is-hot .tile-name { color: var(--warn); }
+  .hot-flag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 10px;
+    font-size: 11px;
+    color: var(--warn);
+    font-weight: 500;
+  }
+  .hot-flag .bead {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--warn);
+    box-shadow: 0 0 10px 1px rgba(245,177,58,0.85);
+    animation: bead 2.6s var(--ease) infinite;
+  }
+  @keyframes bead {
+    0%,100% { opacity: 1; }
+    50% { opacity: 0.45; }
+  }
+
+  /* ============ deal list (zoom/filter result) ============ */
+  .filter-note {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11.5px;
+    color: var(--ink-2);
+    margin-bottom: 12px;
+  }
+  .filter-note .pill {
+    color: var(--warn);
+    border: 1px solid rgba(245,177,58,0.4);
+    background: rgba(245,177,58,0.08);
+    border-radius: 999px;
+    padding: 3px 9px;
+    font-weight: 500;
+  }
+
+  .deal-row {
+    width: 100%;
+    text-align: left;
+    background: rgba(255,255,255,0.018);
+    border: 1px solid var(--hair-soft);
+    border-radius: 12px;
+    padding: 12px 14px;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 9px;
+    transition: border-color 0.3s var(--ease), background 0.3s var(--ease), transform 0.3s var(--ease);
+  }
+  .deal-row:hover { border-color: var(--hair); background: rgba(255,255,255,0.04); transform: translateX(2px); }
+  .deal-row.is-active {
+    border-color: var(--accent-edge);
+    background: var(--accent-dim);
+  }
+  .deal-av {
+    flex: 0 0 auto;
+    width: 32px; height: 32px;
+    border-radius: 9px;
+    display: grid; place-items: center;
+    font-size: 12px; font-weight: 600;
+    color: var(--ink);
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--hair-soft);
+  }
+  .deal-main { flex: 1 1 auto; min-width: 0; }
+  .deal-name { font-size: 13.5px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .deal-meta { font-size: 11.5px; color: var(--ink-2); margin-top: 2px; }
+  .deal-val { flex: 0 0 auto; text-align: right; }
+  .deal-amount { font-size: 14px; font-weight: 600; }
+  .deal-age { font-size: 11px; color: var(--ink-3); margin-top: 2px; }
+  .deal-age.is-stale { color: var(--warn); }
+
+  /* stale dot -  the row-level preattentive carry-through */
+  .stale-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 8px 1px rgba(245,177,58,0.7); flex: 0 0 auto; }
+
+  /* ============ deal detail column ============ */
+  .detail-hero {
+    padding: 4px 2px 14px;
+    border-bottom: 1px solid var(--hair-soft);
+    margin-bottom: 14px;
+  }
+  .detail-name { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+  .detail-addr { font-size: 12px; color: var(--ink-2); margin-top: 3px; }
+  .detail-verdict {
+    margin-top: 12px;
+    font-size: 13px;
+    color: var(--ink);
+    background: rgba(245,177,58,0.08);
+    border: 1px solid rgba(245,177,58,0.32);
+    border-radius: 11px;
+    padding: 11px 13px;
+    line-height: 1.5;
+  }
+  .detail-verdict b { color: var(--warn); }
+
+  /* hero number with length-encoded delta sparkline */
+  .metric-block { padding: 14px 2px; border-bottom: 1px solid var(--hair-soft); margin-bottom: 14px; }
+  .metric-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; }
+  .metric-num { font-size: 30px; font-weight: 600; letter-spacing: -0.02em; }
+  .metric-label { font-size: 11.5px; color: var(--ink-3); margin-top: 3px; }
+
+  .spark {
+    flex: 0 0 auto;
+    width: 132px;
+  }
+  .spark svg { display: block; width: 100%; height: 48px; overflow: visible; }
+  .spark-cap { font-size: 10.5px; color: var(--ink-3); margin-top: 4px; text-align: right; }
+  .spark-cap b { color: var(--warn); }
+
+  /* RELATE strip */
+  .section-label {
+    font-size: 11px;
+    color: var(--ink-3);
+    letter-spacing: 0.02em;
+    margin: 0 2px 9px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-label .line { flex: 1 1 auto; height: 1px; background: var(--hair-soft); }
+
+  .relate-strip { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+  .relate-item {
+    width: 100%;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    background: rgba(255,255,255,0.018);
+    border: 1px solid var(--hair-soft);
+    border-radius: 11px;
+    padding: 10px 12px;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+    transition: border-color 0.3s var(--ease), background 0.3s var(--ease), transform 0.3s var(--ease);
+  }
+  .relate-item:hover { border-color: var(--hair); background: rgba(255,255,255,0.04); transform: translateX(2px); }
+  .relate-ic {
+    flex: 0 0 auto;
+    width: 26px; height: 26px;
+    border-radius: 8px;
+    display: grid; place-items: center;
+    background: rgba(74,158,255,0.10);
+    border: 1px solid var(--accent-edge);
+    color: var(--accent);
+    font-size: 13px;
+  }
+  .relate-main { flex: 1 1 auto; min-width: 0; }
+  .relate-name { font-size: 12.5px; font-weight: 500; }
+  .relate-sub { font-size: 11px; color: var(--ink-3); margin-top: 1px; }
+  .relate-go { color: var(--ink-3); font-size: 14px; }
+
+  /* HISTORY rows */
+  .hist { display: flex; flex-direction: column; gap: 0; margin-bottom: 8px; }
+  .hist-row {
+    display: flex;
+    gap: 12px;
+    padding: 9px 2px 9px 0;
+    position: relative;
+  }
+  .hist-rail { flex: 0 0 auto; width: 14px; display: flex; flex-direction: column; align-items: center; }
+  .hist-node { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-4); margin-top: 4px; flex: 0 0 auto; }
+  .hist-row:first-child .hist-node { background: var(--accent); box-shadow: 0 0 9px 1px rgba(74,158,255,0.7); }
+  .hist-line { flex: 1 1 auto; width: 1px; background: var(--hair-soft); margin: 3px 0; }
+  .hist-row:last-child .hist-line { display: none; }
+  .hist-body { flex: 1 1 auto; }
+  .hist-when { font-size: 10.5px; color: var(--ink-3); }
+  .hist-what { font-size: 12.5px; margin-top: 1px; }
+  .hist-what b { font-weight: 600; }
+
+  /* actions */
+  .actions { display: flex; gap: 9px; margin-top: 6px; }
+  .act {
+    flex: 1 1 0;
+    text-align: center;
+    font-size: 12.5px;
+    border-radius: 11px;
+    padding: 11px 10px;
+    cursor: pointer;
+    font: inherit;
+    transition: background 0.3s var(--ease), border-color 0.3s var(--ease), transform 0.3s var(--ease), box-shadow 0.3s var(--ease);
+  }
+  .act.primary {
+    color: var(--ink);
+    background: var(--accent-dim);
+    border: 1px solid var(--accent-edge);
+    font-weight: 500;
+  }
+  .act.primary:hover { background: rgba(74,158,255,0.24); box-shadow: 0 0 26px -10px rgba(74,158,255,0.7); }
+  .act.ghost {
+    color: var(--ink-2);
+    background: transparent;
+    border: 1px solid var(--hair);
+  }
+  .act.ghost:hover { color: var(--ink); border-color: var(--hair-strong); }
+  .act:active { transform: translateY(1px); }
+
+  .draft-note {
+    margin-top: 12px;
+    font-size: 11px;
+    color: var(--ink-3);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .draft-note .lock { color: var(--warn); }
+
+  /* ============ window chips (Hick toggle) ============ */
+  .chips {
+    display: inline-flex;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--hair-soft);
+    border-radius: 10px;
+    padding: 3px;
+    gap: 2px;
+  }
+  .chip {
+    font-size: 11.5px;
+    color: var(--ink-3);
+    border: none;
+    background: transparent;
+    border-radius: 8px;
+    padding: 5px 10px;
+    cursor: pointer;
+    font: inherit;
+    transition: color 0.25s var(--ease), background 0.25s var(--ease);
+  }
+  .chip:hover { color: var(--ink-2); }
+  .chip.is-on { color: var(--ink); background: rgba(74,158,255,0.18); box-shadow: inset 0 0 0 1px var(--accent-edge); }
+
+  /* small multiples in the metric panel */
+  .sm-table { width: 100%; border-collapse: collapse; }
+  .sm-table td { padding: 7px 2px; border-bottom: 1px solid var(--hair-soft); font-size: 12px; }
+  .sm-table tr:last-child td { border-bottom: none; }
+  .sm-label { color: var(--ink-2); }
+  .sm-bar-cell { width: 90px; }
+  .sm-bar-track { height: 6px; border-radius: 6px; background: rgba(255,255,255,0.05); position: relative; overflow: hidden; }
+  .sm-bar-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 6px; background: var(--accent); opacity: 0.7; transition: width 0.7s var(--ease); }
+  .sm-bar-fill.warn { background: var(--warn); }
+  .sm-val { text-align: right; color: var(--ink); width: 64px; }
+
+  /* ============ enter transitions (magic-move) ============ */
+  .column { animation: col-in 0.5s var(--ease) both; }
+  @keyframes col-in {
+    from { opacity: 0; transform: translateX(26px) scale(0.985); }
+    to { opacity: 1; transform: none; }
+  }
+  .column.is-leaving { animation: col-out 0.32s var(--ease) both; }
+  @keyframes col-out {
+    to { opacity: 0; transform: translateX(20px) scale(0.985); }
+  }
+
+  /* footer presence line */
+  .footbar {
+    padding: 11px 26px;
+    border-top: 1px solid var(--hair-soft);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 11.5px;
+    color: var(--ink-3);
+  }
+  .footbar .key {
+    border: 1px solid var(--hair);
+    border-radius: 6px;
+    padding: 1px 6px;
+    color: var(--ink-2);
+    font-size: 10.5px;
+  }
+  .footbar .spacer { flex: 1 1 auto; }
+
+  .empty-hint {
+    color: var(--ink-3);
+    font-size: 12px;
+    text-align: center;
+    padding: 26px 14px;
+    line-height: 1.6;
+  }
+
+  @media (max-width: 720px) {
+    .answer-card { flex-wrap: wrap; }
+    .scent-btn { width: 100%; justify-content: center; }
+    .column, .column.is-board { flex-basis: 86vw; width: 86vw; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
+    .presence .ring { display: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="ambient"></div>
+
+  <div class="shell">
+    <!-- top bar -->
+    <header class="topbar">
+      <div class="glyph"><span></span></div>
+      <div>
+        <div class="wordmark"><b>Ryujin</b> Pipeline</div>
+      </div>
+      <div class="sub mono">plus-ultra</div>
+      <div class="preview-tag mono">DESIGN PREVIEW</div>
+    </header>
+
+    <!-- main flow -->
+    <div style="display:grid; grid-template-rows:auto auto 1fr; min-height:0;">
+
+      <!-- ANSWER FIRST -->
+      <section class="answer">
+        <div class="answer-card">
+          <div class="presence" id="presence">
+            <div class="ring"></div>
+            <div class="core"></div>
+          </div>
+          <div class="answer-text">
+            <div class="answer-line" id="answerLine">
+              <b><span class="num mono">$199,843</span> in proposals out across <span class="num mono">13</span> deals.</b>
+              <span class="hot">One stage is stuck.</span>
+            </div>
+            <div class="answer-sub">
+              <span><span class="mono">$33,264</span> signed MTD</span>
+              <span class="div"></span>
+              <span><span class="mono">6</span> open leads</span>
+              <span class="div"></span>
+              <span class="prov"><span class="live"></span> live · 6:41 AM AT</span>
+            </div>
+          </div>
+          <button class="scent-btn" id="scentBtn" aria-expanded="false">
+            <span id="scentLabel">Show the board</span>
+            <span class="chev">›</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- breadcrumb -->
+      <nav class="breadcrumb" id="breadcrumb" aria-label="drill path"></nav>
+
+      <!-- columns -->
+      <div class="rail" id="rail">
+        <div class="columns" id="columns"></div>
+      </div>
+    </div>
+
+    <!-- footer -->
+    <footer class="footbar">
+      <span>Overview → filter → deal · focus stays as context</span>
+      <span class="spacer"></span>
+      <span><span class="key">Esc</span> step back</span>
+      <span class="prov"><span class="live"></span> snapshot fresh</span>
+    </footer>
+  </div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   Baked Plus Ultra data -  real deals, real numbers
+   ============================================================ */
+const STAGES = [
+  {
+    id: "new", name: "New leads", count: 6, value: 0,
+    meta: "1 this week · 5 ageing", hot: false,
+    valueLabel: "unpriced",
+  },
+  {
+    id: "estimate", name: "Estimating", count: 4, value: 41250,
+    meta: "aerial measured, pricing in flight", hot: false,
+    valueLabel: "in pipeline",
+  },
+  {
+    id: "proposal", name: "Proposal out", count: 13, value: 199843,
+    meta: "sent, awaiting decision", hot: true,
+    hotReason: "3 quiet 30d+",
+    valueLabel: "proposals out",
+  },
+  {
+    id: "signed", name: "Signed MTD", count: 4, value: 33264,
+    meta: "deposit-paid, scheduled", hot: false,
+    valueLabel: "signed this month",
+  },
+];
+
+const DEALS = {
+  proposal: [
+    {
+      id: "sharon", name: "Sharon", initials: "SH",
+      address: "42 Killam Dr, Moncton", amount: 20750, age: 39, stale: true,
+      verdict: "Quote out <b>39 days</b>, no reply since the send. Biggest quiet deal in the pipeline. Worth a warm nudge before it cools.",
+      tier: "Platinum reroof · CertainTeed Landmark Pro",
+      relate: [
+        { ic: "◷", name: "Proposal #PU-1184", sub: "Sent May 7 · viewed twice", to: "proposal" },
+        { ic: "◇", name: "Estimate $20,750", sub: "Aerial 28.4 sq · 2024 imagery", to: "estimate" },
+        { ic: "✉", name: "3 emails · 1 SMS", sub: "Last inbound May 9", to: "comms" },
+      ],
+      history: [
+        { when: "39d ago · May 7", what: "<b>Proposal sent</b> -  $20,750, Platinum tier" },
+        { when: "37d ago · May 9", what: "Opened proposal link (2nd view)" },
+        { when: "37d ago · May 9", what: "Replied: \"talking it over with my husband\"" },
+        { when: "today", what: "<b>No follow-up logged</b> -  30d past last touch" },
+      ],
+      spark: [11,12,12,14,14,16,17,19,20,20.75], baseIdx: 6,
+    },
+    {
+      id: "jean", name: "Jean Gauvin", initials: "JG",
+      address: "118 Pinewood Rd, Dieppe", amount: 20750, age: 22, stale: false,
+      verdict: "Quote out <b>22 days</b>. Opened twice this week, no reply yet. Still warm, no nudge needed before day 30.",
+      tier: "Platinum reroof · CertainTeed Landmark Pro",
+      relate: [
+        { ic: "◷", name: "Proposal #PU-1191", sub: "Sent May 24 · viewed 3x", to: "proposal" },
+        { ic: "◇", name: "Estimate $20,750", sub: "Aerial 28.1 sq · 2024 imagery", to: "estimate" },
+        { ic: "✉", name: "2 emails", sub: "Last inbound May 31", to: "comms" },
+      ],
+      history: [
+        { when: "22d ago · May 24", what: "<b>Proposal sent</b> -  $20,750" },
+        { when: "12d ago · Jun 3", what: "Opened proposal link (3rd view)" },
+        { when: "today", what: "Warm -  inside the 30d window" },
+      ],
+      spark: [10,11,13,14,16,17,18,19,20,20.75], baseIdx: 5,
+    },
+    {
+      id: "lee", name: "Lee Baxter", initials: "LB",
+      address: "7 Lakeshore Cres, Riverview", amount: 16250, age: 18, stale: false,
+      verdict: "Quote out <b>18 days</b>. Gold tier, asked about financing on the last call. Live and progressing.",
+      tier: "Gold reroof · CertainTeed Landmark",
+      relate: [
+        { ic: "◷", name: "Proposal #PU-1196", sub: "Sent May 28 · viewed 1x", to: "proposal" },
+        { ic: "◇", name: "Estimate $16,250", sub: "Aerial 22.6 sq · 2024 imagery", to: "estimate" },
+        { ic: "✉", name: "4 emails · 2 calls", sub: "Last inbound Jun 6", to: "comms" },
+      ],
+      history: [
+        { when: "18d ago · May 28", what: "<b>Proposal sent</b> -  $16,250, Gold tier" },
+        { when: "9d ago · Jun 6", what: "Call: asked about financing options" },
+        { when: "today", what: "Warm -  awaiting financing answer" },
+      ],
+      spark: [9,10,11,12,13,14,15,15.5,16,16.25], baseIdx: 5,
+    },
+  ],
+};
+
+/* drill state -  a stack of columns. Each frame is one Miller column. */
+let stack = [];        // [{type, ...}]
+let boardOpen = false; // scented-door toggle
+
+const $columns = document.getElementById("columns");
+const $crumbs = document.getElementById("breadcrumb");
+const $rail = document.getElementById("rail");
+const $scent = document.getElementById("scentBtn");
+const $scentLabel = document.getElementById("scentLabel");
+const $presence = document.getElementById("presence");
+
+const fmt = n => "$" + n.toLocaleString("en-US");
+
+/* presence brightens subtly when "speaking" (a new column resolves) */
+function speak() {
+  $presence.classList.add("is-speaking");
+  clearTimeout(speak._t);
+  speak._t = setTimeout(() => $presence.classList.remove("is-speaking"), 1700);
+}
+
+/* ============================================================
+   Render the breadcrumb (spatial, reversible HISTORY of the path)
+   ============================================================ */
+function renderCrumbs() {
+  const frames = [];
+  frames.push({ label: "Pipeline", depth: -1, glyph: true });
+  stack.forEach((f, i) => {
+    if (f.type === "stage") frames.push({ label: f.stage.name, depth: i });
+    else if (f.type === "deal") frames.push({ label: f.deal.name, depth: i });
+    else if (f.type === "report") frames.push({ label: f.title, depth: i });
+  });
+
+  $crumbs.innerHTML = "";
+  frames.forEach((fr, idx) => {
+    if (idx > 0) {
+      const sep = document.createElement("span");
+      sep.className = "crumb-sep";
+      sep.textContent = "›";
+      $crumbs.appendChild(sep);
+    }
+    const c = document.createElement("button");
+    c.className = "crumb" + (idx === frames.length - 1 ? " is-head" : "");
+    c.innerHTML = (fr.glyph ? '<span class="dot"></span>' : "") + fr.label;
+    c.addEventListener("click", () => popTo(fr.depth));
+    $crumbs.appendChild(c);
+  });
+
+  if (stack.length > 0) {
+    const back = document.createElement("button");
+    back.className = "crumb-back";
+    back.innerHTML = "‹ back";
+    back.addEventListener("click", () => popTo(stack.length - 2));
+    $crumbs.appendChild(back);
+  }
+}
+
+/* pop the stack back to a given depth (reversible -  depth never strands you) */
+function popTo(depth) {
+  if (depth < -1) depth = -1;
+  while (stack.length > depth + 1) {
+    const last = $columns.lastElementChild;
+    if (last && !last.classList.contains("col-board")) {
+      last.classList.add("is-leaving");
+      const dead = last;
+      setTimeout(() => { if (dead.parentNode) dead.remove(); }, 300);
+    }
+    stack.pop();
+  }
+  render();
+}
+
+/* ============================================================
+   Build a single column DOM node by frame type
+   ============================================================ */
+function buildBoard() {
+  const col = document.createElement("div");
+  col.className = "column is-board col-board";
+  const selectedStage = stack.find(f => f.type === "stage");
+
+  const tilesHtml = STAGES.map(s => {
+    const sel = selectedStage && selectedStage.stage.id === s.id;
+    const valTxt = s.value > 0 ? fmt(s.value) : " - ";
+    return `
+      <button class="tile${s.hot ? " is-hot" : ""}${sel ? " is-selected" : ""}" data-stage="${s.id}">
+        <div class="tile-top">
+          <span class="tile-name">${s.name}</span>
+          <span class="tile-count mono">${s.count} ${s.count === 1 ? "deal" : "deals"}</span>
+        </div>
+        <div class="tile-value mono">${valTxt}</div>
+        <div class="tile-meta">${s.meta}</div>
+        ${s.hot ? `<div class="hot-flag"><span class="bead"></span>${s.hotReason}</div>` : ""}
+      </button>`;
+  }).join("");
+
+  col.innerHTML = `
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-kicker">
+          <span>Overview</span>
+          <span class="prov" style="margin-left:auto;"><span class="live"></span> 4 stages</span>
+        </div>
+        <div class="panel-title">Pipeline board</div>
+      </div>
+      <div class="panel-body">
+        <div class="stage-tiles">${tilesHtml}</div>
+      </div>
+    </div>`;
+
+  col.querySelectorAll(".tile").forEach(t => {
+    t.addEventListener("click", () => openStage(t.dataset.stage));
+  });
+  return col;
+}
+
+function buildStageColumn(frame, isActive) {
+  const stage = frame.stage;
+  const deals = DEALS[stage.id] || [];
+  const col = document.createElement("div");
+  col.className = "column " + (isActive ? "is-active" : "is-context");
+
+  let listHtml;
+  if (deals.length) {
+    listHtml = deals.map(d => `
+      <button class="deal-row" data-deal="${d.id}">
+        <span class="deal-av">${d.initials}</span>
+        <span class="deal-main">
+          <span class="deal-name">${d.name}${d.stale ? '<span class="stale-dot" title="quiet 30d+"></span>' : ""}</span>
+          <span class="deal-meta">${d.address}</span>
+        </span>
+        <span class="deal-val">
+          <span class="deal-amount mono">${fmt(d.amount)}</span>
+          <span class="deal-age mono${d.stale ? " is-stale" : ""}">${d.age}d quiet</span>
+        </span>
+      </button>`).join("");
+  } else {
+    listHtml = `<div class="empty-hint">No deals surfaced in this stage for the current window. Stage rolls up <span class="mono">${stage.count}</span> ${stage.count === 1 ? "deal" : "deals"} worth <span class="mono">${stage.value ? fmt(stage.value) : " - "}</span>.</div>`;
+  }
+
+  const filterNote = stage.hot
+    ? `<div class="filter-note">Filtered to <b style="color:var(--ink)">${stage.name}</b> <span class="pill">${stage.hotReason}</span></div>`
+    : `<div class="filter-note">Filtered to <b style="color:var(--ink)">${stage.name}</b> · ${stage.count} ${stage.count === 1 ? "deal" : "deals"}</div>`;
+
+  col.innerHTML = `
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-kicker">
+          <span>Zoom · filter</span>
+          <span class="prov" style="margin-left:auto;"><span class="live"></span> ${stage.value ? fmt(stage.value) : " - "}</span>
+        </div>
+        <div class="panel-title">${stage.name}</div>
+      </div>
+      <div class="panel-body">
+        ${filterNote}
+        ${listHtml}
+      </div>
+    </div>`;
+
+  col.querySelectorAll(".deal-row").forEach(r => {
+    r.addEventListener("click", () => {
+      col.querySelectorAll(".deal-row").forEach(x => x.classList.remove("is-active"));
+      r.classList.add("is-active");
+      openDeal(stage.id, r.dataset.deal);
+    });
+  });
+  return col;
+}
+
+/* delta sparkline: prior baseline drawn flat so the delta reads as LENGTH; one hue pop on valence */
+function sparkSvg(series, baseIdx, valence) {
+  const W = 132, H = 48, pad = 4;
+  const min = Math.min(...series), max = Math.max(...series);
+  const range = (max - min) || 1;
+  const x = i => pad + (i / (series.length - 1)) * (W - pad * 2);
+  const y = v => H - pad - ((v - min) / range) * (H - pad * 2);
+  const pts = series.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const baseVal = series[baseIdx];
+  const by = y(baseVal).toFixed(1);
+  const hue = valence === "warn" ? "var(--warn)" : valence === "ok" ? "var(--ok)" : "var(--accent)";
+  const lastX = x(series.length - 1).toFixed(1);
+  const lastY = y(series[series.length - 1]).toFixed(1);
+  return `
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+      <line x1="${pad}" y1="${by}" x2="${W - pad}" y2="${by}" stroke="rgba(255,255,255,0.16)" stroke-width="1" stroke-dasharray="3 3"/>
+      <polyline points="${pts}" fill="none" stroke="${hue}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.92"/>
+      <circle cx="${lastX}" cy="${lastY}" r="2.6" fill="${hue}"/>
+    </svg>`;
+}
+
+function buildDealColumn(frame, isActive) {
+  const d = frame.deal;
+  const col = document.createElement("div");
+  col.className = "column " + (isActive ? "is-active" : "is-context");
+
+  const valence = d.stale ? "warn" : "accent";
+  const relateHtml = d.relate.map(r => `
+    <button class="relate-item" data-relate="${r.to}">
+      <span class="relate-ic">${r.ic}</span>
+      <span class="relate-main">
+        <span class="relate-name">${r.name}</span>
+        <span class="relate-sub">${r.sub}</span>
+      </span>
+      <span class="relate-go">›</span>
+    </button>`).join("");
+
+  const histHtml = d.history.map(h => `
+    <div class="hist-row">
+      <div class="hist-rail"><div class="hist-node"></div><div class="hist-line"></div></div>
+      <div class="hist-body">
+        <div class="hist-when mono">${h.when}</div>
+        <div class="hist-what">${h.what}</div>
+      </div>
+    </div>`).join("");
+
+  col.innerHTML = `
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-kicker">
+          <span>Details on demand</span>
+          <span class="prov" style="margin-left:auto;"><span class="live"></span> GHL + Estimator</span>
+        </div>
+        <div class="panel-title">${d.name}</div>
+      </div>
+      <div class="panel-body">
+        <div class="detail-hero">
+          <div class="detail-name">${d.name}</div>
+          <div class="detail-addr">${d.address} · ${d.tier}</div>
+          <div class="detail-verdict">${d.verdict}</div>
+        </div>
+
+        <div class="metric-block">
+          <div class="metric-row">
+            <div>
+              <div class="metric-num mono">${fmt(d.amount)}</div>
+              <div class="metric-label">quote value · open</div>
+            </div>
+            <div class="spark">
+              ${sparkSvg(d.spark, d.baseIdx, valence)}
+              <div class="spark-cap mono">since send <b>+${d.age}d</b></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-label">Connected to <span class="line"></span></div>
+        <div class="relate-strip">${relateHtml}</div>
+
+        <div class="section-label">History <span class="line"></span></div>
+        <div class="hist">${histHtml}</div>
+
+        <div class="actions">
+          <button class="act primary" data-act="draft">Draft a nudge</button>
+          <button class="act ghost" data-act="call">Log a call</button>
+        </div>
+        <div class="draft-note"><span class="lock">●</span> Draft only. Copy, never auto-send. Mac presses send.</div>
+      </div>
+    </div>`;
+
+  col.querySelectorAll(".relate-item").forEach(r => {
+    r.addEventListener("click", () => openReport(d, r.dataset.relate));
+  });
+  col.querySelectorAll(".act").forEach(a => {
+    a.addEventListener("click", () => {
+      const act = a.dataset.act;
+      a.textContent = act === "draft" ? "Drafting…" : "Logged ✓";
+      a.style.color = "var(--ink)";
+      setTimeout(() => {
+        if (act === "draft") openReport(d, "draft");
+        else a.textContent = "Log a call";
+      }, 650);
+    });
+  });
+  return col;
+}
+
+/* report column = the ads-flagship report pattern, reachable via RELATE.
+   window chips re-bind the SAME panel in place (no new column). */
+const REPORT_WINDOWS = {
+  proposal: {
+    title: "Proposal activity",
+    windows: {
+      "24h": { hero: "0", label: "opens today", delta: -1, deltaTxt: "none today", valence: "warn",
+        rows: [["Link opens", 0, 0, "warn"], ["Email replies", 0, 0, "warn"], ["Site visits", 0, 0, "warn"]] },
+      "7d": { hero: "0", label: "opens this week", delta: -2, deltaTxt: "down from 2", valence: "warn",
+        rows: [["Link opens", 0, 0, "warn"], ["Email replies", 0, 0, "warn"], ["Site visits", 1, 25, "accent"]] },
+      "30d": { hero: "2", label: "opens (lifetime)", delta: 2, deltaTxt: "2 early, then quiet", valence: "warn",
+        rows: [["Link opens", 2, 50, "accent"], ["Email replies", 1, 25, "accent"], ["Site visits", 4, 100, "accent"]] },
+      "life": { hero: "2", label: "opens (lifetime)", delta: 2, deltaTxt: "all in first 48h", valence: "warn",
+        rows: [["Link opens", 2, 50, "accent"], ["Email replies", 1, 25, "accent"], ["Site visits", 4, 100, "accent"]] },
+    },
+  },
+};
+
+function buildReportColumn(frame, isActive) {
+  const col = document.createElement("div");
+  col.className = "column " + (isActive ? "is-active" : "is-context");
+  const d = frame.deal;
+
+  if (frame.kind === "draft") {
+    col.innerHTML = `
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-kicker"><span>Draft · not sent</span><span class="prov" style="margin-left:auto;"><span class="live" style="background:var(--warn);box-shadow:0 0 8px 1px rgba(245,177,58,.7)"></span> voice-skill loaded</span></div>
+          <div class="panel-title">Nudge to ${d.name}</div>
+        </div>
+        <div class="panel-body">
+          <div class="detail-verdict" style="background:rgba(74,158,255,0.06);border-color:var(--accent-edge);">A warm re-touch on the ${fmt(d.amount)} quote, ${d.age} days out. Direct, no pressure, no softeners.</div>
+          <div style="margin-top:14px;font-size:13px;line-height:1.65;color:var(--ink-2);background:rgba(255,255,255,0.02);border:1px solid var(--hair-soft);border-radius:12px;padding:14px;">
+            Hi ${d.name},<br><br>
+            Following up on the roof proposal we sent over. The ${fmt(d.amount)} number holds through the end of the month, materials locked at today's pricing.<br><br>
+            If it helps to walk through the scope or the workmanship warranty again, I can do a quick call this week. Either way, no rush on my end.<br><br>
+            Mackenzie<br>
+            Plus Ultra Roofing · (506) 616-4607
+          </div>
+          <div class="actions" style="margin-top:14px;">
+            <button class="act primary" data-copy="1">Copy draft</button>
+            <button class="act ghost" data-act="back2">Back to deal</button>
+          </div>
+          <div class="draft-note"><span class="lock">●</span> Draft only. Recipient + key line + edits before it goes anywhere.</div>
+        </div>
+      </div>`;
+    col.querySelector('[data-copy]').addEventListener("click", e => {
+      e.target.textContent = "Copied ✓"; setTimeout(() => e.target.textContent = "Copy draft", 1400);
+    });
+    col.querySelector('[data-act="back2"]').addEventListener("click", () => popTo(stack.length - 2));
+    return col;
+  }
+
+  const spec = REPORT_WINDOWS[frame.kind] || REPORT_WINDOWS.proposal;
+  const win = frame.window || "7d";
+  const data = spec.windows[win];
+
+  const chipsHtml = Object.keys(spec.windows).map(w => {
+    const lbl = w === "life" ? "lifetime" : w;
+    return `<button class="chip${w === win ? " is-on" : ""}" data-win="${w}">${lbl}</button>`;
+  }).join("");
+
+  const rowsHtml = data.rows.map(([label, val, pct, val2]) => `
+    <tr>
+      <td class="sm-label">${label}</td>
+      <td class="sm-bar-cell"><div class="sm-bar-track"><div class="sm-bar-fill ${val2 === "warn" ? "warn" : ""}" style="width:${pct}%"></div></div></td>
+      <td class="sm-val mono">${val}</td>
+    </tr>`).join("");
+
+  const valColor = data.valence === "warn" ? "var(--warn)" : "var(--ok)";
+
+  col.innerHTML = `
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-kicker"><span>${spec.title}</span><span class="prov" style="margin-left:auto;"><span class="live"></span> GHL tracking</span></div>
+        <div class="panel-title">${d.name} · engagement</div>
+      </div>
+      <div class="panel-body">
+        <div class="filter-note" style="margin-bottom:14px;">
+          <span>Window</span>
+          <span class="chips" style="margin-left:auto;">${chipsHtml}</span>
+        </div>
+
+        <div class="metric-block">
+          <div class="metric-row">
+            <div>
+              <div class="metric-num mono" style="color:${valColor}">${data.hero}</div>
+              <div class="metric-label">${data.label}</div>
+            </div>
+            <div class="spark">
+              ${sparkSvg([2,2,1,1,0,0,0,0,0,0], 0, data.valence)}
+              <div class="spark-cap mono">${data.deltaTxt}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-label">By channel <span class="line"></span></div>
+        <table class="sm-table">${rowsHtml}</table>
+
+        <div class="detail-verdict" style="margin-top:16px;">Signal: <b>gone cold</b>. ${data.hero === "0" ? "Nothing in this window" : "Early interest, then silence"}. The nudge is the move.</div>
+
+        <div class="actions" style="margin-top:14px;">
+          <button class="act primary" data-act="draft2">Draft a nudge</button>
+          <button class="act ghost" data-act="back3">Back to deal</button>
+        </div>
+      </div>
+    </div>`;
+
+  col.querySelectorAll(".chip").forEach(c => {
+    c.addEventListener("click", () => {
+      frame.window = c.dataset.win;
+      rebindReport(col, frame);
+    });
+  });
+  col.querySelector('[data-act="draft2"]').addEventListener("click", () => openReport(d, "draft"));
+  col.querySelector('[data-act="back3"]').addEventListener("click", () => popTo(stack.length - 2));
+  return col;
+}
+
+/* re-bind the report panel content in place when a window chip flips (no new column) */
+function rebindReport(col, frame) {
+  const spec = REPORT_WINDOWS[frame.kind] || REPORT_WINDOWS.proposal;
+  const data = spec.windows[frame.window];
+  const body = col.querySelector(".panel-body");
+  body.querySelectorAll(".chip").forEach(c => c.classList.toggle("is-on", c.dataset.win === frame.window));
+  const valColor = data.valence === "warn" ? "var(--warn)" : "var(--ok)";
+  const heroNum = body.querySelector(".metric-num");
+  heroNum.style.color = valColor;
+  heroNum.textContent = data.hero;
+  body.querySelector(".metric-label").textContent = data.label;
+  body.querySelector(".spark-cap").textContent = data.deltaTxt;
+  const rows = body.querySelectorAll(".sm-table tr");
+  data.rows.forEach((r, i) => {
+    if (!rows[i]) return;
+    rows[i].querySelector(".sm-val").textContent = r[1];
+    const fill = rows[i].querySelector(".sm-bar-fill");
+    fill.classList.toggle("warn", r[3] === "warn");
+    fill.style.width = r[2] + "%";
+  });
+  speak();
+}
+
+/* ============================================================
+   Drill actions -  push frames, render
+   ============================================================ */
+function openStage(stageId) {
+  const stage = STAGES.find(s => s.id === stageId);
+  if (!stage) return;
+  const existing = stack.findIndex(f => f.type === "stage");
+  if (existing >= 0) { popTo(existing - 1); }
+  if (!boardOpen) toggleBoard(true);
+  stack.push({ type: "stage", stage });
+  render();
+  scrollEnd();
+}
+
+function openDeal(stageId, dealId) {
+  const stage = STAGES.find(s => s.id === stageId);
+  const deal = (DEALS[stageId] || []).find(d => d.id === dealId);
+  if (!deal) return;
+  const stageDepth = stack.findIndex(f => f.type === "stage");
+  if (stack.length > stageDepth + 1) popTo(stageDepth);
+  stack.push({ type: "deal", deal });
+  render();
+  scrollEnd();
+}
+
+function openReport(deal, kind) {
+  const dealDepth = [...stack].reverse().findIndex(f => f.type === "deal");
+  const idx = dealDepth >= 0 ? stack.length - 1 - dealDepth : stack.length - 1;
+  if (stack.length > idx + 1) popTo(idx);
+  const isDraft = kind === "draft";
+  stack.push({ type: "report", kind, deal, title: isDraft ? "Draft" : "Activity", window: "7d" });
+  render();
+  scrollEnd();
+}
+
+/* the scented door: collapse/expand the board column */
+function toggleBoard(force) {
+  boardOpen = (typeof force === "boolean") ? force : !boardOpen;
+  $scent.classList.toggle("is-open", boardOpen);
+  $scent.setAttribute("aria-expanded", String(boardOpen));
+  $scentLabel.textContent = boardOpen ? "Hide the board" : "Show the board";
+  if (!boardOpen) { stack = []; }
+  render();
+  if (boardOpen) scrollEnd();
+}
+
+function scrollEnd() {
+  requestAnimationFrame(() => { $rail.scrollLeft = $rail.scrollWidth; });
+}
+
+/* ============================================================
+   Master render -  board (context) + the drill stack as columns
+   ============================================================ */
+function render() {
+  const activeDepth = stack.length - 1;
+
+  $columns.innerHTML = "";
+
+  if (boardOpen) {
+    const board = buildBoard();
+    $columns.appendChild(board);
+  }
+
+  stack.forEach((f, i) => {
+    const isActive = i === activeDepth;
+    let col;
+    if (f.type === "stage") col = buildStageColumn(f, isActive);
+    else if (f.type === "deal") col = buildDealColumn(f, isActive);
+    else if (f.type === "report") col = buildReportColumn(f, isActive);
+    if (col) $columns.appendChild(col);
+  });
+
+  const dealFrame = stack.find(f => f.type === "deal");
+  if (dealFrame) {
+    const stageCol = $columns.querySelectorAll(".column")[boardOpen ? 1 : 0];
+    if (stageCol) {
+      const row = stageCol.querySelector(`.deal-row[data-deal="${dealFrame.deal.id}"]`);
+      if (row) row.classList.add("is-active");
+    }
+  }
+
+  renderCrumbs();
+  speak();
+}
+
+/* scented-door button */
+$scent.addEventListener("click", () => toggleBoard());
+
+/* Esc = step back (reversible) */
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") {
+    if (stack.length > 0) popTo(stack.length - 2);
+    else if (boardOpen) toggleBoard(false);
+  }
+});
+
+/* initial paint -  answer only, board behind the scented door */
+renderCrumbs();
+</script>
+</body>
+</html>

@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ryujin · Relate</title>
+<style>
+  @font-face { font-family:'InterFallback'; src:local('Inter'); }
+  :root{
+    /* ground + ink */
+    --ground:#060709;
+    --ground-2:#0a0c10;
+    --ink:#f3f5f8;
+    --ink-dim:#aeb6c2;
+    --ink-faint:#6f7782;
+    /* one accent */
+    --accent:#4a9eff;
+    --accent-soft:rgba(74,158,255,0.14);
+    /* valence pops (only on deltas / status) */
+    --ok:#46d68a;
+    --warn:#f5b13a;
+    --danger:#f8746e;
+    /* glass material */
+    --glass:rgba(20,24,31,0.62);
+    --glass-solid:rgba(22,27,35,0.86);
+    --edge:rgba(255,255,255,0.10);
+    --edge-soft:rgba(255,255,255,0.06);
+    --baseline:rgba(255,255,255,0.22);
+    /* semantic z-scale: ground<presence<veil<panel<active<bubble<input */
+    --z-ground:0; --z-presence:5; --z-veil:10; --z-panel:20; --z-active:30; --z-bubble:40; --z-input:50;
+    /* motion */
+    --ease:cubic-bezier(.16,1,.3,1);
+    --mono:'JetBrains Mono','SFMono-Regular',ui-monospace,monospace;
+    --sans:'Inter','InterFallback',system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:var(--sans);
+    background:var(--ground);
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+    overflow:hidden;
+    line-height:1.5;
+    letter-spacing:-0.01em;
+  }
+  /* ambient ground: faint vignette + a single slow light from the presence */
+  .room{
+    position:fixed; inset:0; z-index:var(--z-ground);
+    background:
+      radial-gradient(1200px 800px at 50% -10%, rgba(74,158,255,0.05), transparent 60%),
+      radial-gradient(900px 700px at 78% 120%, rgba(74,158,255,0.04), transparent 55%),
+      var(--ground);
+  }
+  .grain{
+    position:fixed; inset:0; z-index:var(--z-ground); pointer-events:none; opacity:.5;
+    background-image:radial-gradient(rgba(255,255,255,0.015) 1px, transparent 1px);
+    background-size:3px 3px;
+  }
+
+  .stage{
+    position:relative; z-index:var(--z-veil);
+    height:100%; max-width:1180px; margin:0 auto;
+    padding:34px 30px 26px;
+    display:flex; flex-direction:column;
+    overflow:hidden;
+  }
+
+  /* ---- top bar: minimal shell ---- */
+  .topbar{display:flex; align-items:center; gap:14px; margin-bottom:26px; flex:none}
+  .presence{
+    position:relative; width:30px; height:30px; flex:none;
+    border-radius:50%;
+    background:radial-gradient(circle at 38% 34%, #cfe4ff, var(--accent) 58%, #1c5fb0 100%);
+    box-shadow:0 0 0 1px rgba(255,255,255,0.18), 0 0 22px rgba(74,158,255,0.55);
+    z-index:var(--z-presence);
+    animation:breathe 5.5s var(--ease) infinite;
+  }
+  .presence.speaking{animation:speak 1.6s var(--ease) infinite}
+  @keyframes breathe{0%,100%{box-shadow:0 0 0 1px rgba(255,255,255,0.18),0 0 20px rgba(74,158,255,0.40)}50%{box-shadow:0 0 0 1px rgba(255,255,255,0.22),0 0 30px rgba(74,158,255,0.62)}}
+  @keyframes speak{0%,100%{transform:scale(1);box-shadow:0 0 0 1px rgba(255,255,255,0.22),0 0 24px rgba(74,158,255,0.55)}50%{transform:scale(1.08);box-shadow:0 0 0 1px rgba(255,255,255,0.30),0 0 40px rgba(74,158,255,0.85)}}
+  .wordmark{font-size:13px; letter-spacing:0.02em; color:var(--ink-dim); font-weight:500}
+  .wordmark b{color:var(--ink); font-weight:600}
+  .preview-tag{
+    margin-left:auto; font-family:var(--mono); font-size:9.5px; letter-spacing:0.18em;
+    color:var(--ink-faint); border:1px solid var(--edge-soft); border-radius:5px;
+    padding:4px 8px; text-transform:uppercase;
+  }
+
+  /* ---- conversation column ---- */
+  .convo{flex:1; min-height:0; display:flex; flex-direction:column; justify-content:flex-end; gap:18px; overflow:hidden}
+
+  .ask{
+    align-self:flex-start; max-width:78%;
+    font-size:15px; color:var(--ink-dim);
+    display:flex; gap:11px; align-items:baseline;
+  }
+  .ask .q{color:var(--ink); font-weight:450}
+  .ask .caret{font-family:var(--mono); color:var(--accent); font-size:13px}
+
+  /* P1 ANSWER FIRST */
+  .answer{
+    align-self:flex-start; max-width:680px;
+    animation:rise .6s var(--ease) both;
+  }
+  .verdict{
+    font-size:21px; font-weight:550; letter-spacing:-0.02em; color:var(--ink);
+    text-wrap:balance; line-height:1.34;
+  }
+  .verdict .num{font-family:var(--mono); font-variant-numeric:tabular-nums; font-weight:600}
+  .verdict .up{color:var(--ok)}
+  .verdict .down{color:var(--danger)}
+  .verdict .flat{color:var(--accent)}
+  .provenance{
+    margin-top:11px; display:flex; align-items:center; gap:9px; flex-wrap:wrap;
+    font-family:var(--mono); font-size:10.5px; letter-spacing:0.02em; color:var(--ink-faint);
+  }
+  .chip-prov{
+    display:inline-flex; align-items:center; gap:6px;
+    border:1px solid var(--edge-soft); border-radius:20px; padding:3px 9px;
+  }
+  .chip-prov .dot{width:5px; height:5px; border-radius:50%; background:var(--ok); box-shadow:0 0 7px var(--ok)}
+
+  /* P4 scented door */
+  .door{
+    margin-top:16px; display:inline-flex; align-items:center; gap:10px;
+    background:var(--accent-soft); color:var(--accent);
+    border:1px solid rgba(74,158,255,0.28); border-radius:10px;
+    padding:9px 14px; font-size:13px; font-weight:500; cursor:pointer;
+    font-family:var(--sans); letter-spacing:-0.01em;
+    transition:background .35s var(--ease), transform .35s var(--ease), border-color .35s var(--ease);
+  }
+  .door:hover{background:rgba(74,158,255,0.20); transform:translateY(-1px); border-color:rgba(74,158,255,0.45)}
+  .door .hint{color:var(--ink-faint); font-size:11px; font-family:var(--mono)}
+  .door .glyph{font-family:var(--mono); transition:transform .4s var(--ease)}
+  .door.open .glyph{transform:rotate(90deg)}
+
+  /* ---- the relate panel scaffold ---- */
+  .relate{
+    margin-top:4px;
+    display:grid; grid-template-rows:0fr;
+    transition:grid-template-rows .55s var(--ease);
+  }
+  .relate.open{grid-template-rows:1fr}
+  .relate-inner{overflow:hidden; min-height:0}
+  .relate-pad{padding-top:18px}
+
+  /* P7 Hick toggle: window chips re-bind in place */
+  .controls{
+    display:flex; align-items:center; gap:14px; margin-bottom:14px; flex-wrap:wrap;
+  }
+  .chipgroup{display:inline-flex; background:var(--glass); border:1px solid var(--edge-soft); border-radius:10px; padding:3px; backdrop-filter:blur(8px)}
+  .chip{
+    font-family:var(--mono); font-size:11px; letter-spacing:0.02em; color:var(--ink-dim);
+    border:none; background:transparent; cursor:pointer; padding:6px 12px; border-radius:7px;
+    transition:color .3s var(--ease), background .3s var(--ease);
+  }
+  .chip[aria-selected="true"]{background:var(--accent-soft); color:var(--accent)}
+  .chip:hover:not([aria-selected="true"]){color:var(--ink)}
+  .relate-label{font-family:var(--mono); font-size:10.5px; letter-spacing:0.04em; color:var(--ink-faint); text-transform:uppercase}
+
+  /* shared baseline accent runs through both panels */
+  .compare{
+    position:relative;
+    display:grid; grid-template-columns:1fr auto 1fr; gap:0; align-items:stretch;
+  }
+  .panel{
+    position:relative; z-index:var(--z-panel);
+    background:var(--glass-solid);
+    border:1px solid var(--edge);
+    backdrop-filter:blur(16px) saturate(1.1);
+    box-shadow:0 1px 0 rgba(255,255,255,0.05) inset, 0 18px 44px rgba(0,0,0,0.5), 0 2px 10px rgba(0,0,0,0.4);
+    padding:18px 18px 16px;
+  }
+  .panel.left{border-radius:14px 0 0 14px; border-right:none}
+  .panel.right{border-radius:0 14px 14px 0; border-left:none}
+  .panel-head{display:flex; align-items:baseline; justify-content:space-between; margin-bottom:14px}
+  .panel-title{font-size:12.5px; color:var(--ink-dim); font-weight:500; letter-spacing:0.01em}
+  .panel-sub{font-family:var(--mono); font-size:9.5px; color:var(--ink-faint); letter-spacing:0.02em}
+  .panel.right .panel-title{color:var(--ink)}
+
+  /* center seam carries the delta + shared baseline marker */
+  .seam{
+    position:relative; z-index:var(--z-active); width:104px;
+    display:flex; flex-direction:column; align-items:center; justify-content:flex-start;
+    padding-top:46px;
+  }
+  .seam::before{
+    content:''; position:absolute; top:0; bottom:0; left:50%; width:1px;
+    background:linear-gradient(180deg, transparent, var(--edge) 12%, var(--edge) 88%, transparent);
+    transform:translateX(-50%);
+  }
+  .delta-pill{
+    font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:13px; font-weight:600;
+    padding:6px 11px; border-radius:9px; letter-spacing:0.01em;
+    background:var(--glass-solid); border:1px solid var(--edge);
+    box-shadow:0 6px 18px rgba(0,0,0,0.5);
+    white-space:nowrap;
+  }
+  .delta-pill.down{color:var(--ok); border-color:rgba(70,214,138,0.3)}   /* spend down = good */
+  .delta-pill.up{color:var(--danger); border-color:rgba(248,116,110,0.3)}
+  .delta-cap{margin-top:8px; font-family:var(--mono); font-size:9px; color:var(--ink-faint); letter-spacing:0.04em; text-transform:uppercase}
+
+  /* P6 hero number + length-encoded delta */
+  .hero{display:flex; align-items:baseline; gap:8px; margin-bottom:4px}
+  .hero .big{font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:30px; font-weight:600; letter-spacing:-0.02em}
+  .hero .unit{font-family:var(--mono); font-size:11px; color:var(--ink-faint)}
+  .hero-meta{font-family:var(--mono); font-size:10px; color:var(--ink-faint); margin-bottom:14px; letter-spacing:0.02em}
+
+  /* bars: position+length encode magnitude, shared baseline */
+  .bars{position:relative; margin:6px 0 4px}
+  .baseline-mark{
+    position:absolute; top:-3px; bottom:-3px; width:2px; background:var(--baseline);
+    z-index:2;
+  }
+  .baseline-mark::after{
+    content:'mean'; position:absolute; top:-15px; left:50%; transform:translateX(-50%);
+    font-family:var(--mono); font-size:8px; color:var(--ink-faint); letter-spacing:0.06em;
+  }
+  .row{
+    display:grid; grid-template-columns:88px 1fr; gap:10px; align-items:center;
+    padding:7px 0; cursor:pointer; border-radius:8px;
+    transition:background .25s var(--ease);
+  }
+  .row:hover{background:rgba(255,255,255,0.03)}
+  .row.active-row{background:var(--accent-soft)}
+  .row-label{font-size:11px; color:var(--ink-dim); display:flex; align-items:center; gap:6px; min-width:0}
+  .row-label .name{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .track{position:relative; height:18px}
+  .bar{
+    position:absolute; top:3px; height:12px; border-radius:3px;
+    background:rgba(255,255,255,0.16);
+    transition:width .6s var(--ease), left .6s var(--ease), background .3s var(--ease);
+  }
+  .panel.right .bar{background:rgba(74,158,255,0.32)}
+  .barval{
+    position:absolute; top:1px; font-family:var(--mono); font-variant-numeric:tabular-nums;
+    font-size:9.5px; color:var(--ink-dim); line-height:16px;
+  }
+  /* P5 the ONE preattentive pop: the campaign over CPL target */
+  .row.flag .bar{background:var(--danger)!important; box-shadow:0 0 12px rgba(248,116,110,0.55)}
+  .row.flag .row-label .name{color:var(--danger)}
+  .row.flag .barval{color:var(--danger)}
+  .flag-dot{width:5px; height:5px; border-radius:50%; background:var(--danger); box-shadow:0 0 8px var(--danger); flex:none}
+
+  .panel-foot{margin-top:12px; padding-top:11px; border-top:1px solid var(--edge-soft); display:flex; justify-content:space-between; align-items:center}
+  .panel-foot .lab{font-family:var(--mono); font-size:9.5px; color:var(--ink-faint); letter-spacing:0.03em}
+  .panel-foot .v{font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:11px; color:var(--ink-dim)}
+
+  /* P3 RELATE strip: "connected to" */
+  .relate-strip{
+    margin-top:15px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    font-family:var(--mono); font-size:10px; color:var(--ink-faint); letter-spacing:0.02em;
+  }
+  .relate-strip .tag{
+    border:1px solid var(--edge-soft); border-radius:18px; padding:4px 10px; color:var(--ink-dim);
+    cursor:pointer; transition:border-color .3s var(--ease), color .3s var(--ease);
+  }
+  .relate-strip .tag:hover{border-color:var(--accent); color:var(--accent)}
+
+  /* ---- Miller column (drill) ---- */
+  .miller{
+    position:fixed; top:0; right:0; bottom:0; width:min(420px, 88vw);
+    background:var(--glass-solid); border-left:1px solid var(--edge);
+    backdrop-filter:blur(22px) saturate(1.1);
+    box-shadow:-26px 0 60px rgba(0,0,0,0.6);
+    z-index:var(--z-bubble);
+    transform:translateX(100%);
+    transition:transform .5s var(--ease);
+    padding:26px 24px; display:flex; flex-direction:column;
+  }
+  .miller.open{transform:translateX(0)}
+  .miller-veil{
+    position:fixed; inset:0; background:rgba(3,4,6,0.42); z-index:var(--z-active);
+    opacity:0; pointer-events:none; transition:opacity .5s var(--ease);
+    backdrop-filter:blur(1px);
+  }
+  .miller-veil.open{opacity:1; pointer-events:auto}
+
+  /* P3 spatial breadcrumb (reversible) */
+  .breadcrumb{display:flex; align-items:center; gap:7px; font-family:var(--mono); font-size:10px; color:var(--ink-faint); margin-bottom:20px; flex-wrap:wrap}
+  .breadcrumb .crumb{cursor:pointer; color:var(--ink-dim); transition:color .25s var(--ease)}
+  .breadcrumb .crumb:hover{color:var(--accent)}
+  .breadcrumb .sep{opacity:.5}
+  .breadcrumb .here{color:var(--ink)}
+
+  .mtitle{font-size:17px; font-weight:560; letter-spacing:-0.02em; margin-bottom:3px}
+  .msub{font-family:var(--mono); font-size:10.5px; color:var(--ink-faint); margin-bottom:18px; letter-spacing:0.02em}
+  .mstat{display:flex; justify-content:space-between; align-items:baseline; padding:11px 0; border-bottom:1px solid var(--edge-soft)}
+  .mstat .k{font-size:12px; color:var(--ink-dim)}
+  .mstat .vv{font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:13px; color:var(--ink); font-weight:500}
+  .mstat .vv.bad{color:var(--danger)}
+  .mstat .vv.good{color:var(--ok)}
+  .mflag{
+    margin-top:18px; padding:13px 14px; border-radius:11px;
+    background:rgba(248,116,110,0.08); border:1px solid rgba(248,116,110,0.26);
+    font-size:12.5px; color:var(--ink); line-height:1.5;
+  }
+  .mflag b{color:var(--danger)}
+  .mwin{display:inline-flex; background:transparent; gap:4px; margin:16px 0 6px}
+  .mwin .chip{font-size:10px; padding:5px 10px}
+  .mclose{
+    margin-top:auto; align-self:flex-start;
+    background:transparent; border:1px solid var(--edge); color:var(--ink-dim);
+    border-radius:9px; padding:9px 15px; font-size:12px; font-family:var(--sans); cursor:pointer;
+    display:inline-flex; align-items:center; gap:8px;
+    transition:border-color .3s var(--ease), color .3s var(--ease);
+  }
+  .mclose:hover{border-color:var(--accent); color:var(--accent)}
+  .draft-note{margin-top:14px; font-family:var(--mono); font-size:9.5px; color:var(--ink-faint); letter-spacing:0.03em}
+
+  /* ---- input (lowest visual, highest z so it floats) ---- */
+  .inputbar{
+    flex:none; margin-top:22px; position:relative; z-index:var(--z-input);
+    display:flex; align-items:center; gap:12px;
+    background:var(--glass); border:1px solid var(--edge); border-radius:14px;
+    padding:12px 16px; backdrop-filter:blur(14px);
+    box-shadow:0 10px 30px rgba(0,0,0,0.4);
+  }
+  .inputbar input{
+    flex:1; background:transparent; border:none; outline:none;
+    color:var(--ink); font-family:var(--sans); font-size:14px; letter-spacing:-0.01em;
+  }
+  .inputbar input::placeholder{color:var(--ink-faint)}
+  .inputbar .send{
+    width:30px; height:30px; border-radius:8px; border:1px solid var(--edge-soft);
+    background:var(--accent-soft); color:var(--accent); cursor:pointer; font-size:14px;
+    display:grid; place-items:center; transition:background .3s var(--ease);
+  }
+  .inputbar .send:hover{background:rgba(74,158,255,0.24)}
+
+  @keyframes rise{from{opacity:0; transform:translateY(10px)}to{opacity:1; transform:translateY(0)}}
+  .stagger{animation:rise .55s var(--ease) both}
+
+  @media (max-width:720px){
+    .stage{padding:22px 16px 18px}
+    .compare{grid-template-columns:1fr}
+    .seam{width:100%; flex-direction:row; gap:10px; padding:10px 0; justify-content:center}
+    .seam::before{top:50%; left:0; right:0; bottom:auto; width:100%; height:1px; transform:translateY(-50%)}
+    .panel.left{border-radius:14px 14px 0 0; border-right:1px solid var(--edge); border-bottom:none}
+    .panel.right{border-radius:0 0 14px 14px; border-left:1px solid var(--edge); border-top:none}
+    .verdict{font-size:18px}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none!important; transition-duration:.001ms!important}
+  }
+</style>
+</head>
+<body>
+  <div class="room"></div>
+  <div class="grain"></div>
+
+  <main class="stage">
+    <div class="topbar">
+      <div class="presence" id="presence"></div>
+      <div class="wordmark"><b>Ryujin</b> · Relate</div>
+      <div class="preview-tag">Design Preview</div>
+    </div>
+
+    <section class="convo">
+      <div class="ask">
+        <span class="caret">&rsaquo;</span>
+        <span class="q">How is ad spend tracking this month vs last?</span>
+      </div>
+
+      <!-- P1 ANSWER FIRST: value + direction, no dashboard -->
+      <div class="answer">
+        <div class="verdict">
+          Spend is <span class="num down">down 18%</span> and lead cost <span class="num down">improved to $11.69</span>.
+          One campaign breached its CPL target.
+        </div>
+
+        <div class="provenance">
+          <span class="chip-prov"><span class="dot"></span>2 campaigns live</span>
+          <span class="chip-prov">Meta + IE feed</span>
+          <span>synced 6 min ago</span>
+        </div>
+
+        <button class="door" id="door" aria-expanded="false" aria-controls="relate">
+          <span class="glyph">&rsaquo;</span>
+          Lay them side by side
+          <span class="hint">this month vs last · per campaign</span>
+        </button>
+
+        <!-- P3 RELATE the two panels -->
+        <div class="relate" id="relate">
+          <div class="relate-inner">
+            <div class="relate-pad">
+
+              <div class="controls">
+                <div class="chipgroup" role="tablist" aria-label="Window">
+                  <button class="chip" role="tab" aria-selected="false" data-win="24h">24h</button>
+                  <button class="chip" role="tab" aria-selected="true" data-win="month">month</button>
+                  <button class="chip" role="tab" aria-selected="false" data-win="90d">90d</button>
+                  <button class="chip" role="tab" aria-selected="false" data-win="life">lifetime</button>
+                </div>
+                <span class="relate-label" id="winlabel">re-binds both panels in place</span>
+              </div>
+
+              <div class="compare">
+                <!-- LEFT: last period -->
+                <div class="panel left">
+                  <div class="panel-head">
+                    <span class="panel-title" id="lt">Last month</span>
+                    <span class="panel-sub" id="ls">Apr 1 &ndash; Apr 30</span>
+                  </div>
+                  <div class="hero">
+                    <span class="big" id="lbig">$2,847</span>
+                    <span class="unit">spend</span>
+                  </div>
+                  <div class="hero-meta" id="lmeta">31 leads · $14.26 CPL</div>
+
+                  <div class="bars" id="lbars"></div>
+
+                  <div class="panel-foot">
+                    <span class="lab">blended CPL</span>
+                    <span class="v" id="lfoot">$14.26</span>
+                  </div>
+                </div>
+
+                <!-- center seam: delta + shared baseline -->
+                <div class="seam">
+                  <div class="delta-pill down" id="deltapill">&minus;18%</div>
+                  <div class="delta-cap" id="deltacap">spend</div>
+                </div>
+
+                <!-- RIGHT: this period -->
+                <div class="panel right">
+                  <div class="panel-head">
+                    <span class="panel-title" id="rt">This month</span>
+                    <span class="panel-sub" id="rs">May 1 &ndash; today</span>
+                  </div>
+                  <div class="hero">
+                    <span class="big" id="rbig">$2,334</span>
+                    <span class="unit">spend</span>
+                  </div>
+                  <div class="hero-meta" id="rmeta">200 leads · $11.69 CPL</div>
+
+                  <div class="bars" id="rbars"></div>
+
+                  <div class="panel-foot">
+                    <span class="lab">blended CPL</span>
+                    <span class="v" id="rfoot">$11.69</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="relate-strip">
+                <span>connected to</span>
+                <span class="tag" data-rel="6 leads · 1 this week">6 leads in pipeline</span>
+                <span class="tag" data-rel="$199,843 across 13 proposals">$199,843 proposals out</span>
+                <span class="tag" data-rel="$33,264 signed MTD">$33,264 signed MTD</span>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="inputbar">
+      <input type="text" placeholder="Ask Ryujin to relate, drill, or re-frame&hellip;" aria-label="Ask Ryujin" id="askbox">
+      <button class="send" aria-label="Send">&rsaquo;</button>
+    </div>
+  </main>
+
+  <!-- Miller column drill -->
+  <div class="miller-veil" id="veil"></div>
+  <aside class="miller" id="miller" aria-hidden="true">
+    <div class="breadcrumb" id="crumb">
+      <span class="crumb" data-pop="0">Relate</span>
+      <span class="sep">&rsaquo;</span>
+      <span class="here" id="crumbhere">campaign</span>
+    </div>
+    <div class="mtitle" id="mtitle">Campaign</div>
+    <div class="msub" id="msub"></div>
+    <div id="mbody"></div>
+    <button class="mclose" id="mclose">&lsaquo; Back to compare</button>
+    <div class="draft-note">Draft view · no actions sent · Mac signs off</div>
+  </aside>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---- baked Plus Ultra data: per campaign, per window ----
+  // valence: spend DOWN is good (ok), UP is bad (danger). cpl over target = the single flag.
+  const DATA = {
+    "month": {
+      lt:{title:"Last month", sub:"Apr 1 - Apr 30", spend:"$2,847", meta:"31 leads · $14.26 CPL", foot:"$14.26"},
+      rt:{title:"This month", sub:"May 1 - today", spend:"$2,334", meta:"200 leads · $11.69 CPL", foot:"$11.69"},
+      delta:"−18%", deltaDir:"down", deltaCap:"spend",
+      max:430,
+      rows:[
+        {name:"Instant Estimator", last:389.92, cur:412.40, lastV:"$390", curV:"$412", flag:false,
+         detail:{cpl:"$15.00", target:"$18.00", leads:"26 leads", trend:"steady", note:"Best blended CPL of the two live campaigns. Holding under target with no creative fatigue yet."}},
+        {name:"Revive v3", last:118.00, cur:66.00, lastV:"$118", curV:"$66", flag:false,
+         detail:{cpl:"$16.50", target:"$20.00", leads:"4 leads", trend:"thin volume", note:"Throttled spend this month. Low absolute volume so CPL reads noisy; under target but watch sample size."}},
+        {name:"Summer Retarget", last:341.00, cur:402.00, lastV:"$341", curV:"$402", flag:true,
+         detail:{cpl:"$28.40", target:"$18.00", leads:"14 leads", trend:"learning-stuck", note:"Breached its CPL target. Stuck in LEARNING on an engagement audience. Spend climbed while leads stalled."}}
+      ]
+    },
+    "24h": {
+      lt:{title:"Yesterday", sub:"prev 24h", spend:"$94", meta:"3 leads · $31.33 CPL", foot:"$31.33"},
+      rt:{title:"Today", sub:"last 24h", spend:"$78", meta:"2 leads · $39.00 CPL", foot:"$39.00"},
+      delta:"−17%", deltaDir:"down", deltaCap:"spend",
+      max:60,
+      rows:[
+        {name:"Instant Estimator", last:52, cur:48, lastV:"$52", curV:"$48", flag:false,
+         detail:{cpl:"$24.00", target:"$18.00", leads:"2 leads", trend:"daily noise", note:"Single-day CPL is noisy on low volume. Month view is the honest read."}},
+        {name:"Revive v3", last:14, cur:9, lastV:"$14", curV:"$9", flag:false,
+         detail:{cpl:" - ", target:"$20.00", leads:"0 leads", trend:"no fills", note:"No leads in the window. Too thin to judge in 24h."}},
+        {name:"Summer Retarget", last:28, cur:21, lastV:"$28", curV:"$21", flag:true,
+         detail:{cpl:"$21.00", target:"$18.00", leads:"1 lead", trend:"learning-stuck", note:"Still over target even on the calmer day. The structural issue is the audience, not the day."}}
+      ]
+    },
+    "90d": {
+      lt:{title:"Prior 90d", sub:"Nov - Jan", spend:"$8,910", meta:"312 leads · $28.55 CPL", foot:"$28.55"},
+      rt:{title:"Last 90d", sub:"Feb - today", spend:"$10,523", meta:"611 leads · $17.22 CPL", foot:"$17.22"},
+      delta:"+18%", deltaDir:"up", deltaCap:"spend",
+      max:5200,
+      rows:[
+        {name:"Instant Estimator", last:3120, cur:4980, lastV:"$3,120", curV:"$4,980", flag:false,
+         detail:{cpl:"$16.20", target:"$18.00", leads:"307 leads", trend:"scaling", note:"Scaled spend and held CPL under target across the quarter. The workhorse."}},
+        {name:"Revive v3", last:2410, cur:1880, lastV:"$2,410", curV:"$1,880", flag:false,
+         detail:{cpl:"$19.10", target:"$20.00", leads:"98 leads", trend:"tapering", note:"Deliberately tapered. Near target, lower priority."}},
+        {name:"Summer Retarget", last:3380, cur:3663, lastV:"$3,380", curV:"$3,663", flag:true,
+         detail:{cpl:"$26.90", target:"$18.00", leads:"136 leads", trend:"learning-stuck", note:"The 90d view confirms it: chronically over target. This is the campaign to restructure or pause."}}
+      ]
+    },
+    "life": {
+      lt:{title:"First half", sub:"launch - H1", spend:"$4,402", meta:"398 leads · $11.06 CPL", foot:"$11.06"},
+      rt:{title:"Second half", sub:"H2 - today", spend:"$6,121", meta:"525 leads · $11.66 CPL", foot:"$11.66"},
+      delta:"+39%", deltaDir:"up", deltaCap:"spend",
+      max:3400,
+      rows:[
+        {name:"Instant Estimator", last:1980, cur:3210, lastV:"$1,980", curV:"$3,210", flag:false,
+         detail:{cpl:"$15.40", target:"$18.00", leads:"419 leads", trend:"compounding", note:"Lifetime $10,523 spend / 923 leads / $11.69 blended. IE carries the program."}},
+        {name:"Revive v3", last:1240, cur:1010, lastV:"$1,240", curV:"$1,010", flag:false,
+         detail:{cpl:"$18.20", target:"$20.00", leads:"212 leads", trend:"steady", note:"Consistent secondary line. Near target across lifetime."}},
+        {name:"Summer Retarget", last:1182, cur:1901, lastV:"$1,182", curV:"$1,901", flag:true,
+         detail:{cpl:"$24.10", target:"$18.00", leads:"292 leads", trend:"learning-stuck", note:"Lifetime over target. Most-improvable line in the whole account."}}
+      ]
+    }
+  };
+
+  const $ = (s,r=document)=>r.querySelector(s);
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const presence = $("#presence");
+  const door = $("#door");
+  const relate = $("#relate");
+  let isOpen = false;
+
+  function pulse(){
+    presence.classList.add("speaking");
+    setTimeout(()=>presence.classList.remove("speaking"), 1700);
+  }
+
+  // ---- render the two panels for a window ----
+  function renderBars(containerId, side, win){
+    const d = DATA[win];
+    const box = $("#"+containerId);
+    box.innerHTML = "";
+    // shared baseline: the mean of all 6 values (both panels) -> positioned identically in both
+    const all = d.rows.flatMap(r=>[r.last, r.cur]);
+    const mean = all.reduce((a,b)=>a+b,0)/all.length;
+    const max = d.max;
+    const meanPct = (mean/max)*100;
+
+    const baseMark = document.createElement("div");
+    baseMark.className = "baseline-mark";
+    baseMark.style.left = meanPct + "%";
+    box.appendChild(baseMark);
+
+    d.rows.forEach((r,i)=>{
+      const val = side==="left" ? r.last : r.cur;
+      const valLabel = side==="left" ? r.lastV : r.curV;
+      const pct = (val/max)*100;
+      const row = document.createElement("div");
+      row.className = "row" + (r.flag ? " flag":"");
+      row.dataset.idx = i;
+      row.dataset.win = win;
+      row.innerHTML =
+        '<div class="row-label">' + (r.flag?'<span class="flag-dot"></span>':'') +
+          '<span class="name">'+r.name+'</span></div>' +
+        '<div class="track"><div class="bar" style="left:0;width:0"></div>' +
+          '<div class="barval" style="left:'+pct+'%">'+valLabel+'</div></div>';
+      box.appendChild(row);
+      // animate length in (position+length encoding)
+      const bar = row.querySelector(".bar");
+      requestAnimationFrame(()=>{
+        setTimeout(()=>{ bar.style.width = pct + "%"; }, reduce?0:60*i);
+      });
+      row.addEventListener("click", ()=>openDrill(win, i));
+    });
+  }
+
+  function bindWindow(win){
+    const d = DATA[win];
+    $("#lt").textContent = d.lt.title; $("#ls").textContent = d.lt.sub;
+    $("#lbig").textContent = d.lt.spend; $("#lmeta").textContent = d.lt.meta; $("#lfoot").textContent = d.lt.foot;
+    $("#rt").textContent = d.rt.title; $("#rs").textContent = d.rt.sub;
+    $("#rbig").textContent = d.rt.spend; $("#rmeta").textContent = d.rt.meta; $("#rfoot").textContent = d.rt.foot;
+    const pill = $("#deltapill");
+    pill.textContent = d.delta;
+    pill.className = "delta-pill " + d.deltaDir;
+    $("#deltacap").textContent = d.deltaCap;
+    renderBars("lbars","left",win);
+    renderBars("rbars","right",win);
+  }
+
+  // ---- scented door: P4 progressive disclosure ----
+  door.addEventListener("click", ()=>{
+    isOpen = !isOpen;
+    door.classList.toggle("open", isOpen);
+    door.setAttribute("aria-expanded", String(isOpen));
+    relate.classList.toggle("open", isOpen);
+    if(isOpen){ pulse(); bindWindow("month"); }
+  });
+
+  // ---- Hick toggle: re-bind in place, no new panel ----
+  document.querySelectorAll(".chipgroup .chip").forEach(chip=>{
+    chip.addEventListener("click", ()=>{
+      document.querySelectorAll(".chipgroup .chip").forEach(c=>c.setAttribute("aria-selected","false"));
+      chip.setAttribute("aria-selected","true");
+      const win = chip.dataset.win;
+      $("#winlabel").textContent = "re-bound · " + chip.textContent + " window";
+      pulse();
+      bindWindow(win);
+    });
+  });
+
+  // ---- Miller column drill (focus + context) ----
+  const miller = $("#miller");
+  const veil = $("#veil");
+
+  function openDrill(win, idx){
+    const r = DATA[win].rows[idx];
+    // mark active row context in both panels
+    document.querySelectorAll(".row").forEach(el=>{
+      el.classList.toggle("active-row",
+        el.dataset.win===win && el.dataset.idx===String(idx));
+    });
+    $("#crumbhere").textContent = r.name;
+    $("#mtitle").textContent = r.name;
+    $("#msub").textContent = win.toUpperCase() + " window · " + r.detail.leads;
+
+    const overTarget = r.flag;
+    let body =
+      '<div class="mstat"><span class="k">Spend last</span><span class="vv">'+r.lastV+'</span></div>' +
+      '<div class="mstat"><span class="k">Spend now</span><span class="vv">'+r.curV+'</span></div>' +
+      '<div class="mstat"><span class="k">Cost per lead</span><span class="vv '+(overTarget?'bad':'good')+'">'+r.detail.cpl+'</span></div>' +
+      '<div class="mstat"><span class="k">CPL target</span><span class="vv">'+r.detail.target+'</span></div>' +
+      '<div class="mstat"><span class="k">Status</span><span class="vv">'+r.detail.trend+'</span></div>';
+    if(overTarget){
+      body += '<div class="mflag"><b>Over target.</b> '+r.detail.note+'</div>';
+    } else {
+      body += '<div class="mflag" style="background:rgba(74,158,255,0.07);border-color:rgba(74,158,255,0.22)">'+r.detail.note+'</div>';
+    }
+    $("#mbody").innerHTML = body;
+
+    miller.classList.add("open");
+    veil.classList.add("open");
+    miller.setAttribute("aria-hidden","false");
+    pulse();
+  }
+
+  function closeDrill(){
+    miller.classList.remove("open");
+    veil.classList.remove("open");
+    miller.setAttribute("aria-hidden","true");
+    document.querySelectorAll(".row").forEach(el=>el.classList.remove("active-row"));
+  }
+
+  $("#mclose").addEventListener("click", closeDrill);
+  veil.addEventListener("click", closeDrill);
+  $("#crumb").addEventListener("click", (e)=>{
+    if(e.target.dataset.pop==="0") closeDrill();
+  });
+  document.addEventListener("keydown", e=>{ if(e.key==="Escape") closeDrill(); });
+
+  // relate strip -> reframe acknowledgement on the presence
+  document.querySelectorAll(".relate-strip .tag").forEach(t=>{
+    t.addEventListener("click", ()=>{
+      pulse();
+      $("#askbox").placeholder = "Relate to: " + t.dataset.rel + "  (draft view)";
+    });
+  });
+
+  // input is illustrative only
+  $(".send").addEventListener("click", pulse);
+  $("#askbox").addEventListener("keydown", e=>{ if(e.key==="Enter") pulse(); });
+
+  // gentle first breath
+  setTimeout(pulse, 600);
+})();
+</script>
+</body>
+</html>

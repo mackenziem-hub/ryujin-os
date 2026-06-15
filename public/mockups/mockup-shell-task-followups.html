@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ryujin -  Draft follow-ups to top 5</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    /* ground -> presence -> veil -> panel -> active -> bubble -> input */
+    --z-ground: 0;
+    --z-presence: 10;
+    --z-veil: 20;
+    --z-panel: 30;
+    --z-active: 40;
+    --z-bubble: 50;
+    --z-input: 60;
+
+    --bg-0:#060709;
+    --bg-1:#0a0c10;
+    --ink:#f3f5f8;
+    --ink-soft:rgba(243,245,248,0.62);
+    --ink-faint:rgba(243,245,248,0.38);
+    --ink-ghost:rgba(243,245,248,0.16);
+
+    --accent:#4a9eff;
+    --ok:#46d68a;
+    --warn:#f5b13a;
+    --danger:#f8746e;
+
+    --glass:rgba(20,24,31,0.62);
+    --glass-solid:rgba(22,27,35,0.92);
+    --edge:rgba(255,255,255,0.10);
+    --edge-soft:rgba(255,255,255,0.055);
+
+    --ease:cubic-bezier(.16,1,.3,1);
+    --mono:'JetBrains Mono',ui-monospace,monospace;
+    --sans:'Inter',system-ui,sans-serif;
+
+    --shadow-panel:0 1px 0 rgba(255,255,255,0.04) inset, 0 24px 60px -20px rgba(0,0,0,0.7), 0 4px 14px -6px rgba(0,0,0,0.5);
+    --shadow-bubble:0 1px 0 rgba(255,255,255,0.06) inset, 0 30px 80px -24px rgba(0,0,0,0.8);
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:var(--sans);
+    background:var(--bg-0);
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+    overflow:hidden;
+    font-size:15px;
+    line-height:1.5;
+    letter-spacing:-0.005em;
+  }
+  .tnum{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:0}
+
+  /* ambient ground */
+  .room{
+    position:fixed;inset:0;
+    z-index:var(--z-ground);
+    overflow:hidden;
+  }
+  .room::before{
+    content:"";position:absolute;inset:-20%;
+    background:
+      radial-gradient(120% 90% at 50% 8%, rgba(74,158,255,0.10), transparent 55%),
+      radial-gradient(80% 70% at 84% 96%, rgba(74,158,255,0.05), transparent 60%);
+    animation:drift 28s var(--ease) infinite alternate;
+  }
+  .room::after{
+    content:"";position:absolute;inset:0;
+    background-image:radial-gradient(rgba(255,255,255,0.018) 1px, transparent 1px);
+    background-size:42px 42px;
+    mask-image:radial-gradient(120% 90% at 50% 30%, #000 30%, transparent 78%);
+  }
+  @keyframes drift{
+    from{transform:translate3d(-1.5%,-1%,0) scale(1.02)}
+    to{transform:translate3d(1.5%,1%,0) scale(1.06)}
+  }
+
+  .stage{
+    position:relative;z-index:var(--z-veil);
+    height:100%;
+    display:grid;
+    grid-template-rows:auto 1fr auto;
+    max-width:1320px;
+    margin:0 auto;
+    padding:22px 28px 26px;
+  }
+
+  /* ---- top bar : minimal shell ---- */
+  .bar{
+    display:flex;align-items:center;gap:14px;
+    padding-bottom:18px;
+  }
+  .glyph{
+    width:26px;height:26px;border-radius:8px;
+    background:linear-gradient(160deg,rgba(74,158,255,0.9),rgba(74,158,255,0.4));
+    box-shadow:0 0 22px -2px rgba(74,158,255,0.6), 0 1px 0 rgba(255,255,255,0.25) inset;
+    position:relative;flex:none;
+  }
+  .glyph::after{content:"";position:absolute;inset:6px;border-radius:4px;background:var(--bg-0);opacity:.55}
+  .wordmark{font-weight:600;font-size:14px;letter-spacing:.02em}
+  .wordmark span{color:var(--ink-faint);font-weight:500}
+  .bar .spacer{flex:1}
+  .stat-strip{display:flex;gap:0;align-items:stretch}
+  .stat-strip .st{
+    padding:2px 16px;border-left:1px solid var(--edge-soft);
+    display:flex;flex-direction:column;gap:1px;
+  }
+  .stat-strip .st:first-child{border-left:0}
+  .stat-strip .lab{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint)}
+  .stat-strip .val{font-size:13px;font-weight:500}
+  .badge-draft{
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;
+    color:var(--warn);
+    border:1px solid rgba(245,177,58,0.36);
+    background:rgba(245,177,58,0.08);
+    padding:4px 9px;border-radius:7px;
+    display:inline-flex;align-items:center;gap:6px;
+  }
+  .badge-draft::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--warn);box-shadow:0 0 8px var(--warn)}
+
+  .preview-mark{
+    position:fixed;bottom:14px;left:50%;transform:translateX(-50%);
+    z-index:var(--z-input);
+    font-family:var(--mono);font-size:9.5px;letter-spacing:.22em;
+    color:var(--ink-faint);text-transform:uppercase;
+    pointer-events:none;opacity:.7;
+  }
+
+  /* ---- conversation column + presence ---- */
+  .canvas{
+    position:relative;
+    display:grid;
+    grid-template-columns:1fr;
+    overflow:hidden;
+    border-radius:18px;
+  }
+  .columns{
+    position:absolute;inset:0;
+    display:flex;gap:18px;
+    padding:4px;
+    overflow-x:auto;overflow-y:hidden;
+    scroll-behavior:smooth;
+    scrollbar-width:thin;
+    scrollbar-color:var(--edge) transparent;
+  }
+  .columns::-webkit-scrollbar{height:8px}
+  .columns::-webkit-scrollbar-thumb{background:var(--edge);border-radius:8px}
+
+  .col{
+    flex:0 0 560px;
+    max-width:560px;
+    height:100%;
+    overflow-y:auto;
+    overflow-x:hidden;
+    padding:6px 14px 30px 6px;
+    scrollbar-width:thin;
+    scrollbar-color:var(--edge-soft) transparent;
+  }
+  .col::-webkit-scrollbar{width:7px}
+  .col::-webkit-scrollbar-thumb{background:var(--edge-soft);border-radius:8px}
+  .col.detail{flex:0 0 520px;max-width:520px}
+  .col.detail.enter{animation:colIn .5s var(--ease) both}
+  @keyframes colIn{from{opacity:0;transform:translateX(26px) scale(.985)}to{opacity:1;transform:none}}
+
+  /* presence orb anchored bottom-left of conversation */
+  .presence{
+    display:flex;gap:13px;align-items:flex-start;margin:2px 0 18px;
+  }
+  .orb{
+    width:34px;height:34px;flex:none;border-radius:50%;
+    position:relative;margin-top:2px;
+    background:radial-gradient(circle at 38% 32%, rgba(74,158,255,0.95), rgba(74,158,255,0.18) 70%);
+    box-shadow:0 0 0 1px rgba(74,158,255,0.25), 0 0 24px -2px rgba(74,158,255,0.5);
+    z-index:var(--z-presence);
+  }
+  .orb::before{
+    content:"";position:absolute;inset:-6px;border-radius:50%;
+    border:1px solid rgba(74,158,255,0.22);
+    animation:halo 3.4s var(--ease) infinite;
+  }
+  @keyframes halo{0%{transform:scale(1);opacity:.6}70%{transform:scale(1.5);opacity:0}100%{opacity:0}}
+  .orb.speaking{animation:speak 1.4s var(--ease) infinite}
+  @keyframes speak{0%,100%{box-shadow:0 0 0 1px rgba(74,158,255,0.25),0 0 24px -2px rgba(74,158,255,0.5)}50%{box-shadow:0 0 0 1px rgba(74,158,255,0.5),0 0 34px 0 rgba(74,158,255,0.75)}}
+
+  /* the spoken answer-first line */
+  .said{flex:1;min-width:0}
+  .you-line{
+    display:flex;gap:13px;align-items:flex-start;margin:6px 0 22px;
+  }
+  .you-av{
+    width:34px;height:34px;flex:none;border-radius:50%;
+    background:var(--glass);border:1px solid var(--edge);
+    display:grid;place-items:center;font-size:12px;color:var(--ink-soft);font-weight:600;
+  }
+  .prompt-txt{
+    flex:1;padding-top:6px;color:var(--ink);font-size:15.5px;
+  }
+  .prompt-txt .q{font-weight:500}
+
+  .answer{
+    font-size:15.5px;line-height:1.55;color:var(--ink);
+  }
+  .answer .lead{font-weight:500}
+  .answer .echo{
+    margin-top:9px;color:var(--ink-soft);font-size:13.5px;
+    display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;
+  }
+  .prov{
+    font-family:var(--mono);font-size:11px;color:var(--ink-faint);
+    border:1px solid var(--edge-soft);border-radius:6px;padding:2px 7px;
+    display:inline-flex;gap:6px;align-items:center;
+  }
+  .prov b{color:var(--accent);font-weight:500}
+
+  /* ---- streaming plan : latency as progress ---- */
+  .plan{
+    margin:16px 0 6px;
+    padding:14px 16px;
+    background:var(--glass);
+    border:1px solid var(--edge);
+    border-radius:14px;
+    backdrop-filter:blur(18px) saturate(1.2);
+    -webkit-backdrop-filter:blur(18px) saturate(1.2);
+    box-shadow:var(--shadow-panel);
+  }
+  .plan .ptitle{
+    font-family:var(--mono);font-size:11px;letter-spacing:.04em;
+    color:var(--ink-faint);text-transform:uppercase;margin-bottom:11px;
+    display:flex;align-items:center;gap:8px;
+  }
+  .plan .ptitle .pct{color:var(--accent);margin-left:auto;font-weight:600}
+  .step{
+    display:flex;gap:11px;align-items:center;
+    padding:5px 0;font-size:13.5px;color:var(--ink-faint);
+    opacity:.4;transform:translateY(2px);
+    transition:opacity .4s var(--ease), color .4s var(--ease), transform .4s var(--ease);
+  }
+  .step .dot{
+    width:15px;height:15px;flex:none;border-radius:50%;
+    border:1.5px solid var(--ink-ghost);position:relative;
+    transition:border-color .3s var(--ease);
+  }
+  .step.run{opacity:1;color:var(--ink);transform:none}
+  .step.run .dot{border-color:var(--accent)}
+  .step.run .dot::after{
+    content:"";position:absolute;inset:1.5px;border-radius:50%;
+    border:1.5px solid transparent;border-top-color:var(--accent);
+    animation:spin .7s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .step.done{opacity:1;color:var(--ink-soft)}
+  .step.done .dot{border-color:var(--ok);background:rgba(70,214,138,0.12)}
+  .step.done .dot::after{
+    content:"";position:absolute;inset:0;border-radius:50%;
+    background:no-repeat center/9px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M1.5 5.2 4 7.5 8.5 2.5' fill='none' stroke='%2346d68a' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  }
+  .step .meta{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--ink-faint)}
+
+  /* ---- ranked list / draft cards ---- */
+  .cards-head{
+    display:flex;align-items:baseline;gap:10px;margin:24px 0 12px;
+    opacity:0;transform:translateY(8px);
+  }
+  .cards-head.in{animation:rise .5s var(--ease) .05s both}
+  .cards-head h2{font-size:14px;font-weight:600;letter-spacing:.01em}
+  .cards-head .sub{font-size:12.5px;color:var(--ink-faint)}
+  @keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+  .stack{display:flex;flex-direction:column;gap:11px}
+  .card{
+    position:relative;
+    background:var(--glass-solid);
+    border:1px solid var(--edge);
+    border-radius:14px;
+    padding:15px 16px 14px;
+    backdrop-filter:blur(20px) saturate(1.3);
+    -webkit-backdrop-filter:blur(20px) saturate(1.3);
+    box-shadow:var(--shadow-panel);
+    cursor:pointer;
+    opacity:0;transform:translateY(14px) scale(.985);
+    transition:transform .42s var(--ease), border-color .25s var(--ease), box-shadow .35s var(--ease);
+  }
+  .card.in{animation:cardIn .55s var(--ease) both}
+  @keyframes cardIn{
+    0%{opacity:0;transform:translateY(16px) scale(.97);filter:blur(6px)}
+    60%{filter:blur(0)}
+    100%{opacity:1;transform:none;filter:blur(0)}
+  }
+  .card:hover{border-color:rgba(255,255,255,0.20);box-shadow:var(--shadow-bubble);transform:translateY(-2px)}
+  .card.active{border-color:rgba(74,158,255,0.5);box-shadow:0 0 0 1px rgba(74,158,255,0.3),var(--shadow-bubble)}
+  .card.approved{border-color:rgba(70,214,138,0.4)}
+
+  .card .row1{display:flex;align-items:center;gap:11px}
+  .rank{
+    font-family:var(--mono);font-size:12px;font-weight:600;color:var(--ink-faint);
+    width:22px;flex:none;
+  }
+  .who{font-weight:600;font-size:15px}
+  .amt{
+    font-family:var(--mono);font-variant-numeric:tabular-nums;
+    font-size:13.5px;color:var(--ink-soft);margin-left:auto;font-weight:500;
+  }
+  /* ONE preattentive pop : the cold-lead luminance/hue spike, single channel */
+  .pop{
+    font-family:var(--mono);font-size:11px;font-weight:500;
+    color:var(--warn);
+    background:rgba(245,177,58,0.10);
+    border:1px solid rgba(245,177,58,0.30);
+    padding:2px 7px;border-radius:6px;flex:none;
+  }
+  .pop.hot{color:var(--danger);background:rgba(248,116,110,0.10);border-color:rgba(248,116,110,0.32)}
+  .quiet-days{color:var(--ink-faint);font-family:var(--mono);font-size:11px}
+
+  .draft-line{
+    margin-top:10px;font-size:13.5px;color:var(--ink-soft);line-height:1.5;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+  }
+  .draft-line .gen{color:var(--ink-faint)}
+  /* shimmer while a draft is being written */
+  .writing{
+    height:13px;border-radius:5px;margin-top:6px;
+    background:linear-gradient(100deg,rgba(255,255,255,0.04) 30%,rgba(74,158,255,0.16) 50%,rgba(255,255,255,0.04) 70%);
+    background-size:220% 100%;animation:sweep 1.25s linear infinite;
+  }
+  .writing.w2{width:78%}
+  @keyframes sweep{from{background-position:140% 0}to{background-position:-40% 0}}
+
+  .card .row2{
+    display:flex;align-items:center;gap:8px;margin-top:13px;
+    padding-top:12px;border-top:1px solid var(--edge-soft);
+  }
+  .btn{
+    font-family:var(--sans);font-size:12.5px;font-weight:500;
+    border:1px solid var(--edge);background:rgba(255,255,255,0.03);
+    color:var(--ink-soft);border-radius:9px;padding:7px 13px;cursor:pointer;
+    transition:all .22s var(--ease);
+    display:inline-flex;align-items:center;gap:7px;
+  }
+  .btn:hover{color:var(--ink);border-color:rgba(255,255,255,0.22);background:rgba(255,255,255,0.06)}
+  .btn.approve{color:var(--ok);border-color:rgba(70,214,138,0.3)}
+  .btn.approve:hover{background:rgba(70,214,138,0.1);border-color:rgba(70,214,138,0.5)}
+  .btn.copy{color:var(--accent);border-color:rgba(74,158,255,0.32)}
+  .btn.copy:hover{background:rgba(74,158,255,0.10);border-color:rgba(74,158,255,0.55)}
+  /* scented door : signifies its own drillability */
+  .door{margin-left:auto;color:var(--ink-faint);font-size:12px;display:inline-flex;align-items:center;gap:6px;transition:color .2s var(--ease)}
+  .card:hover .door{color:var(--accent)}
+  .door svg{transition:transform .3s var(--ease)}
+  .card:hover .door svg{transform:translateX(3px)}
+  .approved-tag{
+    color:var(--ok);font-size:12px;font-weight:500;display:none;align-items:center;gap:6px;
+  }
+  .card.approved .approved-tag{display:inline-flex}
+  .card.approved .btn.approve{display:none}
+
+  /* ---- detail Miller column ---- */
+  .crumbs{
+    display:flex;align-items:center;gap:7px;
+    font-size:12px;color:var(--ink-faint);margin-bottom:14px;flex-wrap:wrap;
+  }
+  .crumbs .crumb{
+    cursor:pointer;padding:3px 9px;border-radius:7px;
+    border:1px solid transparent;transition:all .2s var(--ease);
+  }
+  .crumbs .crumb:hover{background:rgba(255,255,255,0.05);color:var(--ink)}
+  .crumbs .crumb.here{color:var(--ink);border-color:var(--edge-soft);background:rgba(255,255,255,0.04)}
+  .crumbs .sep{color:var(--ink-ghost)}
+
+  .dpanel{
+    background:var(--glass-solid);
+    border:1px solid var(--edge);
+    border-radius:16px;
+    box-shadow:var(--shadow-bubble);
+    backdrop-filter:blur(22px) saturate(1.3);
+    -webkit-backdrop-filter:blur(22px) saturate(1.3);
+    overflow:hidden;
+  }
+  .dhead{padding:18px 18px 14px;border-bottom:1px solid var(--edge-soft)}
+  .dhead .dwho{display:flex;align-items:center;gap:10px}
+  .dhead .dwho h3{font-size:18px;font-weight:600}
+  .dhead .dwho .pop{margin-left:auto}
+  .dmeta{
+    display:grid;grid-template-columns:repeat(4,1fr);gap:1px;
+    margin-top:14px;border:1px solid var(--edge-soft);border-radius:10px;overflow:hidden;
+    background:var(--edge-soft);
+  }
+  .dmeta .m{background:var(--glass-solid);padding:9px 11px;display:flex;flex-direction:column;gap:2px}
+  .dmeta .ml{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint)}
+  .dmeta .mv{font-family:var(--mono);font-size:13.5px;font-weight:500}
+  .dmeta .mv.warnv{color:var(--warn)}
+
+  .dbody{padding:16px 18px 6px}
+  .dsection-lab{
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--ink-faint);margin:4px 0 9px;display:flex;align-items:center;gap:8px;
+  }
+  .dsection-lab .hint{color:var(--ink-ghost);text-transform:none;letter-spacing:0;font-family:var(--sans);font-size:11px;margin-left:auto}
+
+  .draft-editor{
+    background:rgba(0,0,0,0.28);
+    border:1px solid var(--edge-soft);
+    border-radius:11px;padding:14px;
+    font-size:14px;line-height:1.62;color:var(--ink);
+    white-space:pre-wrap;
+    outline:none;
+    transition:border-color .2s var(--ease);
+    min-height:160px;
+  }
+  .draft-editor:focus{border-color:rgba(74,158,255,0.5)}
+  .draft-editor[contenteditable="true"]{cursor:text}
+
+  /* HISTORY : reversible mini timeline */
+  .timeline{display:flex;flex-direction:column;gap:0;margin:2px 0 6px}
+  .tl{
+    display:flex;gap:11px;font-size:12.5px;position:relative;padding:0 0 13px 4px;
+  }
+  .tl::before{content:"";position:absolute;left:8.5px;top:14px;bottom:-2px;width:1px;background:var(--edge-soft)}
+  .tl:last-child::before{display:none}
+  .tl .tdot{width:9px;height:9px;border-radius:50%;flex:none;margin-top:4px;background:var(--ink-ghost);z-index:1}
+  .tl.now .tdot{background:var(--accent);box-shadow:0 0 8px var(--accent)}
+  .tl .td{font-family:var(--mono);color:var(--ink-faint);flex:none;width:54px;font-size:11px}
+  .tl .tx{color:var(--ink-soft)}
+
+  /* RELATE : connected-to strip */
+  .relate{display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 8px}
+  .rchip{
+    font-size:12px;color:var(--ink-soft);
+    border:1px solid var(--edge-soft);background:rgba(255,255,255,0.025);
+    border-radius:9px;padding:7px 11px;cursor:pointer;
+    transition:all .2s var(--ease);display:inline-flex;align-items:center;gap:8px;
+  }
+  .rchip:hover{border-color:rgba(74,158,255,0.4);color:var(--ink);background:rgba(74,158,255,0.06)}
+  .rchip .rv{font-family:var(--mono);font-size:11px;color:var(--ink-faint)}
+
+  .dfoot{
+    padding:14px 18px;border-top:1px solid var(--edge-soft);
+    display:flex;align-items:center;gap:9px;
+    background:rgba(0,0,0,0.18);
+  }
+  .dfoot .draftnote{font-size:11.5px;color:var(--warn);display:flex;align-items:center;gap:7px;margin-right:auto}
+  .dfoot .draftnote svg{flex:none}
+
+  /* ---- composer dock ---- */
+  .dock{
+    margin-top:18px;
+    display:flex;align-items:center;gap:12px;
+    background:var(--glass);
+    border:1px solid var(--edge);
+    border-radius:15px;
+    padding:11px 11px 11px 18px;
+    backdrop-filter:blur(20px);
+    -webkit-backdrop-filter:blur(20px);
+    box-shadow:var(--shadow-panel);
+    z-index:var(--z-input);
+  }
+  .dock .field{flex:1;color:var(--ink-faint);font-size:14px}
+  .dock .field b{color:var(--ink);font-weight:400}
+  /* Hick toggle : few, mutually exclusive, equally weighted */
+  .seg{display:flex;background:rgba(0,0,0,0.3);border:1px solid var(--edge-soft);border-radius:10px;padding:3px}
+  .seg button{
+    font-family:var(--mono);font-size:11.5px;color:var(--ink-faint);
+    background:transparent;border:0;padding:6px 12px;border-radius:7px;cursor:pointer;
+    transition:all .25s var(--ease);
+  }
+  .seg button.on{background:rgba(74,158,255,0.16);color:var(--accent)}
+  .seg button:hover:not(.on){color:var(--ink-soft)}
+  .send{
+    width:38px;height:38px;flex:none;border-radius:11px;border:0;cursor:pointer;
+    background:linear-gradient(160deg,rgba(74,158,255,0.95),rgba(74,158,255,0.6));
+    box-shadow:0 0 18px -2px rgba(74,158,255,0.6),0 1px 0 rgba(255,255,255,0.3) inset;
+    display:grid;place-items:center;transition:transform .2s var(--ease);
+  }
+  .send:hover{transform:scale(1.06)}
+
+  /* toast */
+  .toast{
+    position:fixed;bottom:54px;left:50%;transform:translate(-50%,20px);
+    z-index:var(--z-input);
+    background:var(--glass-solid);border:1px solid var(--edge);
+    border-radius:11px;padding:11px 16px;font-size:13px;
+    box-shadow:var(--shadow-bubble);backdrop-filter:blur(20px);
+    display:flex;align-items:center;gap:9px;
+    opacity:0;pointer-events:none;transition:all .4s var(--ease);
+  }
+  .toast.show{opacity:1;transform:translate(-50%,0)}
+  .toast svg{flex:none}
+
+  @media (max-width:980px){
+    .col{flex:0 0 86vw;max-width:86vw}
+    .col.detail{flex:0 0 86vw;max-width:86vw}
+    .stat-strip .st:nth-child(n+3){display:none}
+    .dmeta{grid-template-columns:repeat(2,1fr)}
+  }
+
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none !important;transition-duration:.01ms !important}
+    .room::before{animation:none}
+    .step.run .dot::after{animation:none;border-top-color:var(--accent);border-color:var(--accent) transparent transparent transparent}
+    .writing{animation:none;background:rgba(74,158,255,0.10)}
+    .card,.cards-head{opacity:1 !important;transform:none !important;filter:none !important}
+    .col.detail.enter{animation:none}
+    .columns{scroll-behavior:auto}
+  }
+</style>
+</head>
+<body>
+  <div class="room" aria-hidden="true"></div>
+
+  <main class="stage">
+    <!-- minimal shell top bar -->
+    <header class="bar">
+      <div class="glyph"></div>
+      <div class="wordmark">Ryujin <span>/ follow-ups</span></div>
+      <div class="spacer"></div>
+      <div class="stat-strip" aria-label="company snapshot">
+        <div class="st"><div class="lab">Signed MTD</div><div class="val tnum">$33,264</div></div>
+        <div class="st"><div class="lab">Proposals out</div><div class="val tnum">$199,843</div></div>
+        <div class="st"><div class="lab">Leads / wk</div><div class="val tnum">1</div></div>
+      </div>
+      <span class="badge-draft" style="margin-left:14px">DRAFT MODE</span>
+    </header>
+
+    <!-- conversation + drill columns -->
+    <section class="canvas">
+      <div class="columns" id="columns">
+
+        <!-- ROOT COLUMN : the conversation -->
+        <div class="col" id="rootCol">
+
+          <div class="you-line">
+            <div class="you-av">M</div>
+            <div class="prompt-txt"><span class="q">draft follow-ups to my top 5</span></div>
+          </div>
+
+          <div class="presence">
+            <div class="orb speaking" id="orb"></div>
+            <div class="said">
+              <div class="answer">
+                <span class="lead" id="answerLead">On it.</span>
+                <div class="echo" id="echoLine" style="display:none">
+                  <span>Reading "top 5" as your highest-value follow-up leads that have gone quiet, ranked by quote value.</span>
+                  <span class="prov">source <b>GHL pipeline + Estimator</b> · live</span>
+                </div>
+              </div>
+
+              <!-- streaming plan -->
+              <div class="plan" id="plan" style="display:none">
+                <div class="ptitle">plan <span class="pct tnum" id="pct">0%</span></div>
+                <div class="step" data-step="0"><span class="dot"></span><span>Ranking leads by open quote value</span><span class="meta tnum">13 open</span></div>
+                <div class="step" data-step="1"><span class="dot"></span><span>Pulling last touch + days quiet per lead</span><span class="meta tnum">GHL</span></div>
+                <div class="step" data-step="2"><span class="dot"></span><span>Loading your voice profile + deal context</span><span class="meta tnum">voice-skill</span></div>
+                <div class="step" data-step="3"><span class="dot"></span><span>Drafting 5 follow-ups</span><span class="meta tnum" id="draftCount">0 / 5</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ranked draft cards -->
+          <div class="cards-head" id="cardsHead">
+            <h2>5 drafts ready</h2>
+            <span class="sub">ranked by open quote value · tap any to edit, copy never sends</span>
+          </div>
+
+          <div class="stack" id="stack"></div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- composer dock with Hick toggle -->
+    <footer class="dock">
+      <div class="field"><b>Reply or refine</b> &nbsp;·&nbsp; try "make Sharon's warmer" or "draft #6 next"</div>
+      <div class="seg" role="group" aria-label="tone">
+        <button class="on" data-tone="match">match my voice</button>
+        <button data-tone="warm">warmer</button>
+        <button data-tone="short">shorter</button>
+      </div>
+      <button class="send" aria-label="send" title="send">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8h11M9 4l4 4-4 4" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </footer>
+  </main>
+
+  <div class="preview-mark">DESIGN PREVIEW</div>
+
+  <div class="toast" id="toast">
+    <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M2.5 7.8 6 11l6.5-7.5" stroke="#46d68a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span id="toastMsg">Copied to clipboard. Nothing was sent.</span>
+  </div>
+
+<script>
+(function(){
+  "use strict";
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ---- baked Plus Ultra data : the real top 5 ---- */
+  const LEADS = [
+    {
+      id:'sharon', rank:1, who:'Sharon', amount:'$20,750', amountNum:20750,
+      quiet:39, pop:'cold 39d', hot:true,
+      last:'Proposal emailed', lastDate:'May 7',
+      stage:'Quote out', address:'Hillsborough Rd, Riverview', rep:'Mackenzie',
+      relate:[ ['Same quote tier · Jean Gauvin','$20,750'], ['Same crew window · Kierstad job','18 Lawson'] ],
+      timeline:[
+        ['Mar 29','First call, asphalt reroof, 28 sq'],
+        ['Apr 18','On-site measure + drone capture'],
+        ['May 7','Proposal emailed: $20,750 fixed'],
+        ['today','39 days quiet, no reply']
+      ],
+      draft:`Hi Sharon,
+
+Following up on the reroof proposal I sent over on May 7. The $20,750 is a fixed price, all materials and labour in, no surprises after the fact.
+
+Crews are booking into July now, so I wanted to check where your head is at before that window fills. Happy to walk through anything in the scope or talk through the colour choice whenever works for you.
+
+Just let me know.
+
+Mackenzie
+Plus Ultra Roofing
+(506) 616-4607`
+    },
+    {
+      id:'jean', rank:2, who:'Jean Gauvin', amount:'$20,750', amountNum:20750,
+      quiet:24, pop:'cold 24d', hot:false,
+      last:'Proposal emailed', lastDate:'May 22',
+      stage:'Quote out', address:'Coverdale Rd, Riverview', rep:'Mackenzie',
+      relate:[ ['Same quote tier · Sharon','$20,750'], ['Referred by · Lee Baxter','warm'] ],
+      timeline:[
+        ['Apr 30','Referral from Lee Baxter'],
+        ['May 12','Measure + scope confirmed'],
+        ['May 22','Proposal emailed: $20,750 fixed'],
+        ['today','24 days quiet']
+      ],
+      draft:`Hi Jean,
+
+Circling back on the roof proposal from May 22. The $20,750 covers everything top to bottom at a fixed price, and the workmanship warranty is in there too.
+
+If there is anything holding you up, tell me straight and I will sort it. Otherwise I would love to get you on the calendar before the summer slots are gone.
+
+Mackenzie
+Plus Ultra Roofing
+(506) 616-4607`
+    },
+    {
+      id:'lee', rank:3, who:'Lee Baxter', amount:'$16,250', amountNum:16250,
+      quiet:18, pop:'cold 18d', hot:false,
+      last:'Proposal emailed', lastDate:'May 28',
+      stage:'Quote out', address:'Pine Glen Rd, Riverview', rep:'Mackenzie',
+      relate:[ ['Referred · Jean Gauvin','$20,750'], ['Smaller scope tier','16 sq'] ],
+      timeline:[
+        ['May 9','Inbound from website'],
+        ['May 20','On-site measure'],
+        ['May 28','Proposal emailed: $16,250 fixed'],
+        ['today','18 days quiet']
+      ],
+      draft:`Hi Lee,
+
+Just making sure the proposal I sent on May 28 landed alright. The $16,250 is the fixed all-in number, nothing gets added once we start.
+
+Thanks again for the referral over to Jean, that meant a lot. When you get a minute, let me know if you want to lock a date or if you have questions on the scope.
+
+Mackenzie
+Plus Ultra Roofing
+(506) 616-4607`
+    },
+    {
+      id:'kierstad', rank:4, who:'Kierstad', amount:'$14,900', amountNum:14900,
+      quiet:6, pop:'job 6d late', hot:true,
+      last:'Crew started', lastDate:'Jun 9',
+      stage:'In production', address:'18 Lawson Ave', rep:'Diego',
+      relate:[ ['Crew · Diego','18 Lawson'], ['Same window · Sharon','quote out'] ],
+      timeline:[
+        ['May 24','Signed: $14,900'],
+        ['Jun 3','Material ordered'],
+        ['Jun 9','Crew started, weather delay'],
+        ['today','6 days behind schedule']
+      ],
+      draft:`Hi there,
+
+Quick update on 18 Lawson. The rain pushed us back a few days, so we are running about six days behind the original finish. The crew is back on it and we are pacing to wrap by end of next week.
+
+I will send a photo once the south slope is closed in. Nothing is changing on the price, this is just a timing note so you are not in the dark.
+
+Mackenzie
+Plus Ultra Roofing
+(506) 616-4607`
+    },
+    {
+      id:'montina', rank:5, who:'Montina', amount:'$9,950', amountNum:9950,
+      quiet:3, pop:'new lead', hot:false,
+      last:'Instant Estimator', lastDate:'Jun 12',
+      stage:'New lead', address:'Elmwood Dr, Moncton', rep:'unassigned',
+      relate:[ ['Source · Instant Estimator','$15 CPL'], ['Range estimate','$9.9K-24K'] ],
+      timeline:[
+        ['Jun 12','Submitted via Instant Estimator'],
+        ['Jun 12','Auto range: $9,950 - $24,050'],
+        ['today','3 days, no human touch']
+      ],
+      draft:`Hi Montina,
+
+Thanks for running your roof through our Instant Estimator. The range it gave you ($9,950 to $24,050) is wide on purpose, since it is working off satellite, and the real number lands once I see it up close.
+
+I can do a quick measure this week and turn it into a fixed price with no obligation. What does your Thursday or Friday look like?
+
+Mackenzie
+Plus Ultra Roofing
+(506) 616-4607`
+    }
+  ];
+
+  const $ = (s,r)=> (r||document).querySelector(s);
+  const $$ = (s,r)=> Array.prototype.slice.call((r||document).querySelectorAll(s));
+  const wait = (ms)=> new Promise(r=> setTimeout(r, reduce ? Math.min(ms,60) : ms));
+
+  const orb = $('#orb');
+  const stack = $('#stack');
+  const columns = $('#columns');
+
+  /* ---- run the streamed action ---- */
+  async function run(){
+    await wait(reduce?60:520);
+    $('#answerLead').textContent = 'Pulling your 5 highest-value quiet leads now.';
+    await wait(reduce?40:260);
+    $('#echoLine').style.display = 'flex';
+    await wait(reduce?40:340);
+
+    const plan = $('#plan');
+    plan.style.display = 'block';
+    const steps = $$('.step', plan);
+    const pct = $('#pct');
+    const durations = [reduce?60:820, reduce?60:760, reduce?60:640, reduce?60:1400];
+
+    for(let i=0;i<steps.length;i++){
+      steps[i].classList.add('run');
+      // animate pct toward the milestone
+      animatePct(pct, i*25, (i+1)*25, durations[i]);
+      if(i===3){ await draftPhase(steps[i]); }
+      else { await wait(durations[i]); }
+      steps[i].classList.remove('run');
+      steps[i].classList.add('done');
+    }
+    pct.textContent = '100%';
+
+    orb.classList.remove('speaking');
+    $('#answerLead').textContent = '5 drafts ready. All copy-only, nothing sends until you press it.';
+    $('#cardsHead').classList.add('in');
+  }
+
+  function animatePct(el, from, to, dur){
+    if(reduce){ el.textContent = to+'%'; return; }
+    const start = performance.now();
+    function tick(now){
+      const t = Math.min((now-start)/dur, 1);
+      const e = 1-Math.pow(1-t,3);
+      el.textContent = Math.round(from + (to-from)*e) + '%';
+      if(t<1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }
+
+  /* draft phase : cards appear as skeletons, then resolve one by one */
+  async function draftPhase(stepEl){
+    const dc = $('#draftCount');
+    // lay down all 5 as writing skeletons
+    LEADS.forEach((lead, i)=> stack.appendChild(makeCard(lead, true)));
+    $$('.card', stack).forEach((c,i)=> setTimeout(()=> c.classList.add('in'), reduce?0:i*70));
+    await wait(reduce?60:520);
+
+    for(let i=0;i<LEADS.length;i++){
+      await wait(reduce?40:380);
+      resolveCard(i);
+      dc.textContent = (i+1)+' / 5';
+    }
+    await wait(reduce?40:220);
+  }
+
+  function makeCard(lead, writing){
+    const el = document.createElement('div');
+    el.className = 'card';
+    el.dataset.id = lead.id;
+    const popClass = lead.hot ? 'pop hot' : 'pop';
+    el.innerHTML = `
+      <div class="row1">
+        <span class="rank tnum">#${lead.rank}</span>
+        <span class="who">${lead.who}</span>
+        <span class="${popClass}">${lead.pop}</span>
+        <span class="amt tnum">${lead.amount}</span>
+      </div>
+      <div class="bodyslot">
+        <div class="writing"></div>
+        <div class="writing w2"></div>
+      </div>
+      <div class="row2" style="display:none">
+        <button class="btn approve" data-act="approve">
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2 6.8 5 9.5 11 2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Approve
+        </button>
+        <button class="btn copy" data-act="copy">
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><rect x="3.2" y="3.2" width="6.6" height="6.6" rx="1.4" stroke="currentColor" stroke-width="1.3"/><path d="M2.2 8.2V2.4a1 1 0 0 1 1-1H8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+          Copy
+        </button>
+        <span class="approved-tag">
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2 6.8 5 9.5 11 2.5" stroke="#46d68a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Approved, ready to copy
+        </span>
+        <span class="door" data-act="open">
+          edit &amp; context
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M4 2.5 8.5 6.5 4 10.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+      </div>`;
+    return el;
+  }
+
+  function resolveCard(i){
+    const lead = LEADS[i];
+    const card = $$('.card', stack)[i];
+    const slot = $('.bodyslot', card);
+    const firstLine = lead.draft.split('\n').filter(Boolean).slice(1,3).join(' ');
+    slot.innerHTML = `<div class="draft-line">${escapeHtml(firstLine)}</div>`;
+    $('.row2', card).style.display = 'flex';
+    // bind
+    card.addEventListener('click', (e)=>{
+      const act = e.target.closest('[data-act]');
+      if(act){
+        const a = act.dataset.act;
+        if(a==='approve'){ e.stopPropagation(); card.classList.add('approved'); poke('Approved. Still a draft, copy it when you are ready.'); return; }
+        if(a==='copy'){ e.stopPropagation(); copyDraft(lead); return; }
+      }
+      openDetail(lead, card);
+    });
+  }
+
+  function escapeHtml(s){return s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+  /* ---- detail Miller column : overview->zoom->details + relate + history ---- */
+  let detailCol = null;
+  function openDetail(lead, card){
+    $$('.card.active', stack).forEach(c=>c.classList.remove('active'));
+    card.classList.add('active');
+
+    if(detailCol) detailCol.remove();
+    detailCol = document.createElement('div');
+    detailCol.className = 'col detail enter';
+    detailCol.innerHTML = renderDetail(lead);
+    columns.appendChild(detailCol);
+
+    // scroll the column into view (focus + context : root stays visible)
+    requestAnimationFrame(()=>{
+      detailCol.scrollIntoView({behavior: reduce?'auto':'smooth', inline:'end', block:'nearest'});
+    });
+
+    bindDetail(lead, card);
+  }
+
+  function renderDetail(lead){
+    const popClass = lead.hot ? 'pop hot' : 'pop';
+    const meta = [
+      ['Open value', lead.amount, false],
+      ['Stage', lead.stage, false],
+      ['Days quiet', lead.quiet+'d', lead.hot],
+      ['Rep', lead.rep, false]
+    ].map(m=>`<div class="m"><div class="ml">${m[0]}</div><div class="mv ${m[2]?'warnv':''}">${m[1]}</div></div>`).join('');
+
+    const tl = lead.timeline.map((t,i)=>`
+      <div class="tl ${i===lead.timeline.length-1?'now':''}">
+        <span class="tdot"></span><span class="td">${t[0]}</span><span class="tx">${t[1]}</span>
+      </div>`).join('');
+
+    const rel = lead.relate.map(r=>`
+      <span class="rchip"><span>${r[0]}</span><span class="rv tnum">${r[1]}</span></span>`).join('');
+
+    return `
+      <div class="crumbs">
+        <span class="crumb" data-act="back">Top 5</span>
+        <span class="sep">/</span>
+        <span class="crumb here">#${lead.rank} ${lead.who}</span>
+        <span class="sep">/</span>
+        <span class="crumb here">Draft</span>
+      </div>
+      <div class="dpanel">
+        <div class="dhead">
+          <div class="dwho">
+            <h3>${lead.who}</h3>
+            <span class="${popClass}">${lead.pop}</span>
+          </div>
+          <div class="dmeta">${meta}</div>
+        </div>
+        <div class="dbody">
+          <div class="dsection-lab">The draft <span class="hint">click to edit</span></div>
+          <div class="draft-editor" contenteditable="true" spellcheck="false">${escapeHtml(lead.draft)}</div>
+
+          <div class="dsection-lab" style="margin-top:18px">History <span class="hint">${lead.stage.toLowerCase()} · ${lead.address}</span></div>
+          <div class="timeline">${tl}</div>
+
+          <div class="dsection-lab" style="margin-top:8px">Connected to</div>
+          <div class="relate">${rel}</div>
+        </div>
+        <div class="dfoot">
+          <span class="draftnote">
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><circle cx="6.5" cy="6.5" r="5" stroke="#f5b13a" stroke-width="1.2"/><path d="M6.5 3.6v3.4M6.5 9.1v.1" stroke="#f5b13a" stroke-width="1.3" stroke-linecap="round"/></svg>
+            Draft only. Ryujin never sends.
+          </span>
+          <button class="btn approve" data-act="approve">
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2 6.8 5 9.5 11 2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Approve
+          </button>
+          <button class="btn copy" data-act="copy">
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><rect x="3.2" y="3.2" width="6.6" height="6.6" rx="1.4" stroke="currentColor" stroke-width="1.3"/><path d="M2.2 8.2V2.4a1 1 0 0 1 1-1H8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+            Copy draft
+          </button>
+        </div>
+      </div>`;
+  }
+
+  function bindDetail(lead, card){
+    const editor = $('.draft-editor', detailCol);
+    $('[data-act="back"]', detailCol).addEventListener('click', closeDetail);
+    $$('.dfoot [data-act]', detailCol).forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const a = b.dataset.act;
+        // sync any edits back to the lead + card preview
+        lead.draft = editor.innerText;
+        const firstLine = lead.draft.split('\n').filter(Boolean).slice(1,3).join(' ');
+        const dl = $('.draft-line', card); if(dl) dl.textContent = firstLine;
+        if(a==='approve'){ card.classList.add('approved'); poke('Approved. Copy it when ready, Ryujin will not send.'); }
+        if(a==='copy'){ copyDraft(lead); }
+      });
+    });
+    // relate chips drill sideways to the connected lead if it is one of the 5
+    $$('.rchip', detailCol).forEach(chip=>{
+      chip.addEventListener('click', ()=>{
+        const txt = chip.textContent.toLowerCase();
+        const match = LEADS.find(l=> txt.includes(l.who.toLowerCase().split(' ')[0]));
+        if(match){
+          const mc = $$('.card', stack).find ? null : null;
+          const target = $$('.card', stack).filter(c=>c.dataset.id===match.id)[0];
+          if(target){ openDetail(match, target); }
+        } else { poke('That thread is outside your top 5.'); }
+      });
+    });
+    editor.addEventListener('input', ()=>{ lead.draft = editor.innerText; });
+  }
+
+  function closeDetail(){
+    if(!detailCol) return;
+    $$('.card.active', stack).forEach(c=>c.classList.remove('active'));
+    const dc = detailCol; detailCol = null;
+    if(reduce){ dc.remove(); return; }
+    dc.style.transition = 'opacity .3s var(--ease), transform .3s var(--ease)';
+    dc.style.opacity = '0';
+    dc.style.transform = 'translateX(22px) scale(.985)';
+    $('#rootCol').scrollIntoView({behavior:'smooth', inline:'start'});
+    setTimeout(()=>dc.remove(), 320);
+  }
+
+  /* ---- copy (never send) ---- */
+  function copyDraft(lead){
+    const text = lead.draft;
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(()=> poke('Copied '+lead.who+"'s draft. Nothing was sent.")).catch(()=> poke('Copied (fallback). Nothing was sent.'));
+    } else {
+      const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();
+      try{document.execCommand('copy');}catch(e){}
+      ta.remove();
+      poke('Copied '+lead.who+"'s draft. Nothing was sent.");
+    }
+  }
+
+  let toastT=null;
+  function poke(msg){
+    const t=$('#toast');
+    $('#toastMsg').textContent=msg;
+    t.classList.add('show');
+    clearTimeout(toastT);
+    toastT=setTimeout(()=>t.classList.remove('show'), 2600);
+  }
+
+  /* tone toggle (Hick) : mutually exclusive */
+  $$('.seg button').forEach(b=> b.addEventListener('click', ()=>{
+    $$('.seg button').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');
+    poke('Tone set to "'+b.textContent+'". Re-run a refine to apply.');
+  }));
+
+  run();
+})();
+</script>
+</body>
+</html>
