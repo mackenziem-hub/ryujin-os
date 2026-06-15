@@ -362,6 +362,16 @@ async function handler(req, res) {
       : null;
     if (automatorTag) tags.push(automatorTag);
 
+    // High-intent branch: the "Text me my proposal" CTA re-POSTs the same
+    // contact with metadata.wants_proposal. Stamp a distinct tag so the
+    // Automator nurture can branch on it (skip the "want a quote?" ask) and
+    // move the opportunity to the Proposal Requested stage. Previously this
+    // signal lived only in a contact note, invisible to the tag-triggered
+    // workflow. On the proposal re-POST the contact is deduped and
+    // syncExistingContact adds this tag to the existing contact via the
+    // additive /tags endpoint, firing GHL's tag-added trigger.
+    if ((metadata || {}).wants_proposal) tags.push('ie-proposal-requested');
+
     // Estimator values -> GHL custom fields, written at creation (see map above).
     const estimatorCustomFields = buildEstimatorCustomFields(body.estimator);
 
