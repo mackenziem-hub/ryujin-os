@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Customer 360 · Ryujin OS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --ground: #060709;
+    --ground-2: #0a0c10;
+    --ink: #f3f5f8;
+    --ink-soft: rgba(243, 245, 248, 0.72);
+    --ink-mute: rgba(243, 245, 248, 0.46);
+    --ink-faint: rgba(243, 245, 248, 0.30);
+    --accent: #4a9eff;
+    --accent-soft: rgba(74, 158, 255, 0.16);
+    --accent-line: rgba(74, 158, 255, 0.38);
+    --ok: #46d68a;
+    --warn: #f5b13a;
+    --danger: #f8746e;
+    --glass: rgba(20, 24, 31, 0.62);
+    --glass-2: rgba(26, 31, 39, 0.66);
+    --edge: rgba(255, 255, 255, 0.10);
+    --edge-soft: rgba(255, 255, 255, 0.055);
+    --blur: 22px;
+    --z-ground: 0;
+    --z-presence: 10;
+    --z-veil: 20;
+    --z-panel: 30;
+    --z-active: 40;
+    --z-bubble: 50;
+    --z-input: 60;
+    --ease: cubic-bezier(.16, 1, .3, 1);
+    --col-w: 366px;
+    --shadow-panel: 0 1px 0 rgba(255,255,255,0.04) inset,
+                    0 24px 60px -28px rgba(0,0,0,0.86),
+                    0 8px 24px -16px rgba(0,0,0,0.7);
+    font-synthesis: none;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow: hidden;
+  }
+  .room {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-ground);
+    background:
+      radial-gradient(1100px 700px at 18% -8%, rgba(74,158,255,0.07), transparent 60%),
+      radial-gradient(900px 760px at 100% 110%, rgba(74,158,255,0.045), transparent 58%),
+      linear-gradient(180deg, var(--ground-2), var(--ground) 64%);
+  }
+  .room::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    opacity: 0.025;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    mix-blend-mode: overlay;
+    pointer-events: none;
+  }
+  .mono { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
+  .stage {
+    position: relative;
+    z-index: var(--z-presence);
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+  .topbar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 24px;
+  }
+  .glyph {
+    width: 30px; height: 30px;
+    border-radius: 9px;
+    display: grid; place-items: center;
+    background: var(--accent-soft);
+    border: 1px solid var(--accent-line);
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 15px;
+  }
+  .topbar .where { font-size: 13px; color: var(--ink-mute); letter-spacing: 0.01em; }
+  .topbar .where b { color: var(--ink-soft); font-weight: 600; }
+  .preview-mark {
+    margin-left: auto;
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    color: var(--ink-faint);
+    border: 1px solid var(--edge-soft);
+    border-radius: 999px;
+    padding: 5px 11px;
+  }
+  .canvas {
+    flex: 1 1 auto;
+    position: relative;
+    min-height: 0;
+    display: flex;
+    align-items: stretch;
+  }
+  .presence {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    transition: opacity .5s var(--ease), transform .5s var(--ease), filter .5s var(--ease);
+    z-index: var(--z-presence);
+  }
+  .presence.pushed {
+    opacity: 0;
+    transform: scale(.985);
+    filter: blur(2px);
+    pointer-events: none;
+  }
+  .orb {
+    width: 13px; height: 13px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 0 rgba(74,158,255,0.5), 0 0 28px 6px rgba(74,158,255,0.45);
+    margin-bottom: 26px;
+    animation: breathe 5.4s var(--ease) infinite;
+  }
+  @keyframes breathe {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(74,158,255,0.0), 0 0 22px 4px rgba(74,158,255,0.36); transform: scale(1); }
+    50% { box-shadow: 0 0 0 7px rgba(74,158,255,0.0), 0 0 34px 9px rgba(74,158,255,0.52); transform: scale(1.12); }
+  }
+  .answer { max-width: 660px; text-align: center; }
+  .answer .lead {
+    font-size: clamp(22px, 3.4vw, 32px);
+    line-height: 1.28;
+    font-weight: 600;
+    letter-spacing: -0.018em;
+    text-wrap: balance;
+  }
+  .answer .lead .val { color: var(--ink); }
+  .answer .lead .flag { color: var(--warn); white-space: nowrap; }
+  .answer .dir {
+    margin-top: 16px;
+    font-size: 15px;
+    color: var(--ink-soft);
+    line-height: 1.55;
+    text-wrap: pretty;
+  }
+  .answer .dir b { color: var(--ink); font-weight: 600; }
+  .door-row { margin-top: 30px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .door {
+    appearance: none;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--ink);
+    background: var(--glass);
+    border: 1px solid var(--edge);
+    border-radius: 12px;
+    padding: 11px 18px 11px 16px;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    backdrop-filter: blur(var(--blur));
+    -webkit-backdrop-filter: blur(var(--blur));
+    transition: border-color .28s var(--ease), background .28s var(--ease), transform .28s var(--ease);
+  }
+  .door:hover { border-color: var(--accent-line); background: var(--glass-2); transform: translateY(-1px); }
+  .door .cue { color: var(--accent); font-size: 13px; }
+  .door.ghost { color: var(--ink-soft); }
+  .door.ghost:hover { color: var(--ink); }
+  .door .scent { color: var(--ink-mute); font-size: 12px; font-weight: 400; }
+  .crumbs {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    z-index: var(--z-veil);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 14px 24px 12px;
+    flex-wrap: wrap;
+    opacity: 0;
+    transform: translateY(-6px);
+    transition: opacity .4s var(--ease), transform .4s var(--ease);
+    pointer-events: none;
+  }
+  .crumbs.show { opacity: 1; transform: none; pointer-events: auto; }
+  .crumb {
+    appearance: none; cursor: pointer; font-family: inherit;
+    font-size: 12.5px; color: var(--ink-mute);
+    background: transparent; border: 0;
+    padding: 5px 9px; border-radius: 8px;
+    display: inline-flex; align-items: center; gap: 7px;
+    transition: color .2s var(--ease), background .2s var(--ease);
+    max-width: 220px;
+  }
+  .crumb .lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .crumb:hover { color: var(--ink); background: var(--edge-soft); }
+  .crumb.current { color: var(--ink); cursor: default; }
+  .crumb.current:hover { background: transparent; }
+  .crumb .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--ink-faint); flex: 0 0 auto; }
+  .crumb.current .dot { background: var(--accent); box-shadow: 0 0 10px 1px rgba(74,158,255,0.55); }
+  .sep { color: var(--ink-faint); font-size: 11px; user-select: none; }
+  .crumbs .back { margin-left: auto; color: var(--ink-soft); }
+  .crumbs .back:hover { color: var(--ink); }
+  .columns {
+    position: absolute;
+    inset: 52px 0 0 0;
+    z-index: var(--z-panel);
+    display: flex;
+    gap: 16px;
+    padding: 6px 24px 24px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-behavior: smooth;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.14) transparent;
+  }
+  .columns::-webkit-scrollbar { height: 9px; }
+  .columns::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 99px; }
+  .columns::-webkit-scrollbar-track { background: transparent; }
+  .col {
+    flex: 0 0 var(--col-w);
+    width: var(--col-w);
+    height: 100%;
+    background: var(--glass);
+    border: 1px solid var(--edge);
+    border-radius: 18px;
+    backdrop-filter: blur(var(--blur)) saturate(1.2);
+    -webkit-backdrop-filter: blur(var(--blur)) saturate(1.2);
+    box-shadow: var(--shadow-panel);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transform-origin: left center;
+    animation: colIn .42s var(--ease) both;
+  }
+  @keyframes colIn {
+    from { opacity: 0; transform: translateX(22px) scale(.985); }
+    to { opacity: 1; transform: none; }
+  }
+  .col.context { opacity: 0.92; }
+  .col.context.deep { opacity: 0.8; }
+  .col-head {
+    flex: 0 0 auto;
+    padding: 16px 18px 13px;
+    border-bottom: 1px solid var(--edge-soft);
+  }
+  .col-kicker {
+    font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 8px;
+  }
+  .col-title { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+  .col-sub { font-size: 12.5px; color: var(--ink-mute); margin-top: 3px; }
+  .col-body {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 14px 16px 18px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.12) transparent;
+  }
+  .col-body::-webkit-scrollbar { width: 8px; }
+  .col-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.10); border-radius: 99px; }
+  .vitals {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--edge-soft);
+    border: 1px solid var(--edge-soft);
+    border-radius: 13px;
+    overflow: hidden;
+    margin-bottom: 18px;
+  }
+  .vital { background: rgba(255,255,255,0.018); padding: 13px 14px; }
+  .vital .k { font-size: 10.5px; letter-spacing: 0.13em; text-transform: uppercase; color: var(--ink-faint); }
+  .vital .v { font-size: 19px; font-weight: 600; margin-top: 6px; letter-spacing: -0.01em; }
+  .vital .v.mono { font-size: 18px; }
+  .vital .meta { font-size: 11.5px; color: var(--ink-mute); margin-top: 3px; }
+  .vital.pop .v { color: var(--warn); }
+  .vital.pop .meta { color: var(--warn); }
+  .pulse-dot {
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--warn);
+    margin-right: 6px;
+    box-shadow: 0 0 9px 1px rgba(245,177,58,0.6);
+    animation: warnpulse 2.6s var(--ease) infinite;
+    vertical-align: middle;
+  }
+  @keyframes warnpulse {
+    0%, 100% { opacity: 0.55; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.22); }
+  }
+  .chunks { display: flex; flex-direction: column; gap: 9px; }
+  .chunk {
+    appearance: none; cursor: pointer; text-align: left; width: 100%;
+    font-family: inherit; color: var(--ink);
+    background: rgba(255,255,255,0.022);
+    border: 1px solid var(--edge-soft);
+    border-radius: 13px;
+    padding: 14px 15px;
+    display: flex; align-items: center; gap: 13px;
+    transition: border-color .26s var(--ease), background .26s var(--ease), transform .26s var(--ease);
+  }
+  .chunk:hover { border-color: var(--accent-line); background: rgba(74,158,255,0.05); transform: translateX(2px); }
+  .chunk .ic {
+    flex: 0 0 auto; width: 34px; height: 34px; border-radius: 10px;
+    display: grid; place-items: center;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--edge-soft);
+    color: var(--ink-soft);
+  }
+  .chunk .ic svg { width: 17px; height: 17px; }
+  .chunk .mid { flex: 1 1 auto; min-width: 0; }
+  .chunk .lbl { font-size: 14.5px; font-weight: 600; }
+  .chunk .preview { font-size: 12px; color: var(--ink-mute); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chunk .count { font-size: 11px; color: var(--ink-faint); font-family: 'JetBrains Mono', monospace; }
+  .chunk .chev { flex: 0 0 auto; color: var(--ink-faint); transition: transform .26s var(--ease), color .26s var(--ease); }
+  .chunk:hover .chev { color: var(--accent); transform: translateX(3px); }
+  .chunk.active { border-color: var(--accent-line); background: rgba(74,158,255,0.07); }
+  .chunk.active .chev { color: var(--accent); transform: translateX(3px); }
+  .relate { margin-top: 20px; }
+  .relate-head {
+    font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--ink-faint); margin-bottom: 11px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .relate-head .line { flex: 1 1 auto; height: 1px; background: var(--edge-soft); }
+  .relate-grid { display: flex; flex-direction: column; gap: 8px; }
+  .rel {
+    appearance: none; cursor: pointer; text-align: left; width: 100%;
+    font-family: inherit; color: var(--ink);
+    background: transparent;
+    border: 1px solid var(--edge-soft);
+    border-radius: 11px;
+    padding: 11px 13px;
+    display: flex; align-items: center; gap: 11px;
+    transition: border-color .24s var(--ease), background .24s var(--ease), transform .24s var(--ease);
+  }
+  .rel:hover { border-color: var(--accent-line); background: rgba(74,158,255,0.045); transform: translateX(2px); }
+  .rel .tag {
+    flex: 0 0 auto; font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--ink-mute);
+    border: 1px solid var(--edge-soft); border-radius: 6px;
+    padding: 4px 7px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .rel .mid { flex: 1 1 auto; min-width: 0; }
+  .rel .t { font-size: 13.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rel .s { font-size: 11.5px; color: var(--ink-mute); margin-top: 1px; }
+  .rel .chev { color: var(--ink-faint); transition: transform .24s var(--ease), color .24s var(--ease); }
+  .rel:hover .chev { color: var(--accent); transform: translateX(3px); }
+  .field {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    padding: 12px 2px;
+    border-bottom: 1px solid var(--edge-soft);
+  }
+  .field:last-child { border-bottom: 0; }
+  .field .fk { font-size: 13px; color: var(--ink-mute); }
+  .field .fv { font-size: 13.5px; font-weight: 500; text-align: right; }
+  .field .fv.mono { font-size: 13px; }
+  .stale {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 10.5px; color: var(--warn);
+    font-family: 'JetBrains Mono', monospace;
+    margin-left: 8px;
+    border: 1px solid rgba(245,177,58,0.28);
+    background: rgba(245,177,58,0.07);
+    border-radius: 6px;
+    padding: 2px 6px;
+    cursor: help;
+  }
+  .stale .d { width: 5px; height: 5px; border-radius: 50%; background: var(--warn); }
+  .src-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 10px; color: var(--ink-faint);
+    font-family: 'JetBrains Mono', monospace;
+    border: 1px solid var(--edge-soft);
+    border-radius: 6px; padding: 2px 6px; margin-left: 8px;
+  }
+  .provenance {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 11px; color: var(--ink-mute);
+    font-family: 'JetBrains Mono', monospace;
+    margin-top: 14px;
+  }
+  .provenance .d { width: 5px; height: 5px; border-radius: 50%; background: var(--ok); }
+  .chips {
+    display: inline-flex; gap: 2px; padding: 3px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--edge-soft);
+    border-radius: 11px;
+    margin: 4px 0 16px;
+  }
+  .chip {
+    appearance: none; cursor: pointer; font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px; color: var(--ink-mute);
+    background: transparent; border: 0; border-radius: 8px;
+    padding: 6px 11px;
+    transition: color .2s var(--ease), background .2s var(--ease);
+  }
+  .chip:hover { color: var(--ink-soft); }
+  .chip.on { color: var(--ink); background: rgba(74,158,255,0.16); box-shadow: inset 0 0 0 1px var(--accent-line); }
+  .timeline { position: relative; padding-left: 22px; margin-top: 6px; }
+  .timeline::before {
+    content: ""; position: absolute; left: 5px; top: 4px; bottom: 4px;
+    width: 1px; background: var(--edge);
+  }
+  .tl { position: relative; padding: 0 0 18px 4px; }
+  .tl:last-child { padding-bottom: 2px; }
+  .tl .node {
+    position: absolute; left: -21px; top: 3px;
+    width: 11px; height: 11px; border-radius: 50%;
+    background: var(--ground-2);
+    border: 1.5px solid var(--ink-faint);
+  }
+  .tl.now .node { border-color: var(--warn); background: rgba(245,177,58,0.18); box-shadow: 0 0 10px 1px rgba(245,177,58,0.4); }
+  .tl.key .node { border-color: var(--accent); background: rgba(74,158,255,0.2); }
+  .tl .when { font-size: 11px; color: var(--ink-faint); font-family: 'JetBrains Mono', monospace; }
+  .tl .what { font-size: 13.5px; font-weight: 500; margin-top: 2px; }
+  .tl .who { font-size: 11.5px; color: var(--ink-mute); margin-top: 1px; }
+  .tl.now .what { color: var(--warn); }
+  .empty { color: var(--ink-mute); font-size: 13px; text-align: center; padding: 30px 14px; }
+  .draftbar {
+    margin-top: 16px;
+    border: 1px dashed rgba(74,158,255,0.4);
+    background: rgba(74,158,255,0.05);
+    border-radius: 12px;
+    padding: 13px 14px;
+  }
+  .draftbar .dh { font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); margin-bottom: 7px; }
+  .draftbar p { font-size: 13px; color: var(--ink-soft); line-height: 1.5; }
+  .draftbar .note { font-size: 11px; color: var(--ink-mute); margin-top: 9px; }
+  .hint {
+    display: none;
+    align-items: center; gap: 12px;
+    margin-left: 16px;
+    font-size: 11px; color: var(--ink-faint);
+    transition: opacity .4s var(--ease);
+  }
+  .hint.show { display: inline-flex; }
+  .hint kbd {
+    font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
+    background: rgba(255,255,255,0.06); border: 1px solid var(--edge-soft);
+    border-radius: 5px; padding: 2px 6px; color: var(--ink-soft);
+  }
+  @media (max-width: 760px) {
+    :root { --col-w: calc(100vw - 48px); }
+    .answer .lead { font-size: 22px; }
+    .hint { display: none !important; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
+    .orb { animation: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="room" aria-hidden="true"></div>
+  <div class="stage">
+    <header class="topbar">
+      <div class="glyph" aria-hidden="true">龍</div>
+      <div class="where">Ryujin OS <b>· Customer 360</b></div>
+      <div class="hint" id="hint">
+        <span><kbd>&larr;</kbd> back</span>
+        <span><kbd>Esc</kbd> close</span>
+      </div>
+      <span class="preview-mark">DESIGN PREVIEW</span>
+    </header>
+    <div class="canvas">
+      <section class="presence" id="presence" aria-live="polite">
+        <div class="orb" aria-hidden="true"></div>
+        <div class="answer">
+          <p class="lead">
+            <span class="val">Sharon</span> sits at <span class="val mono">$20,750</span>, quote out,
+            <span class="flag"><span class="pulse-dot" aria-hidden="true"></span>quiet 39 days</span>.
+          </p>
+          <p class="dir">
+            It is your <b>top follow-up</b> and the oldest open quote in the bank.
+            Rep is <b>Darcy</b>. The thread has gone cold past your 7 day window.
+          </p>
+          <div class="door-row">
+            <button class="door" id="openRecord">
+              <span class="cue">&#10547;</span>
+              Open the record
+              <span class="scent">4 sections · 3 links</span>
+            </button>
+            <button class="door ghost" data-jump="history">
+              History
+              <span class="scent">why it stalled</span>
+            </button>
+            <button class="door ghost" data-jump="next">
+              Next action
+              <span class="scent">draft re-touch</span>
+            </button>
+          </div>
+        </div>
+      </section>
+      <nav class="crumbs" id="crumbs" aria-label="Drill path"></nav>
+      <div class="columns" id="columns" aria-label="Record columns"></div>
+    </div>
+  </div>
+<script>
+(() => {
+  "use strict";
+  const fmt = (n) => "$" + n.toLocaleString("en-US");
+  const REC = {
+    name: "Sharon Whitmore", short: "Sharon", value: 20750, stage: "Quote out", rep: "Darcy",
+    quietDays: 39, lastTouch: "May 7", nextAction: "Re-touch quote",
+    address: "44 Ridgeback Cres, Riverview", phone: "(506) 384-0192", email: "sharon.whitmore@gmail.com",
+    source: "Instant Estimator · May", package: "Platinum reroof · architectural asphalt",
+    squares: "31.5 sq", proposalId: "PRP-1184", estimateId: "EST-2207"
+  };
+  const icons = {
+    deal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 9.5 12 4l9 5.5M5 10.5V19h14v-8.5"/><path d="M9 19v-5h6v5"/></svg>',
+    contact: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6"/></svg>',
+    scope: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 4h11l3 3v13H5z"/><path d="M8 9h7M8 13h7M8 17h4"/></svg>',
+    next: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>',
+    hist: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 12a8 8 0 1 0 2.5-5.8M4 4v3h3"/><path d="M12 8v4l3 2"/></svg>'
+  };
+  const chev = '<svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>';
+  function colRoot() {
+    return {
+      key: "root", crumb: REC.short, kicker: "Customer record", title: REC.name, sub: REC.address,
+      render() {
+        return `
+          <div class="vitals">
+            <div class="vital"><div class="k">Who · Value</div><div class="v mono">${fmt(REC.value)}</div><div class="meta">${REC.package.split(" · ")[0]}</div></div>
+            <div class="vital"><div class="k">Stage</div><div class="v">${REC.stage}</div><div class="meta">rep ${REC.rep}</div></div>
+            <div class="vital"><div class="k">Last touch</div><div class="v mono">${REC.lastTouch}</div><div class="meta">quote emailed</div></div>
+            <div class="vital pop"><div class="k">Quiet</div><div class="v mono"><span class="pulse-dot" aria-hidden="true"></span>${REC.quietDays}d</div><div class="meta">past 7d window</div></div>
+          </div>
+          <div class="chunks">
+            ${chunkBtn("deal", "Deal &amp; quote", "Platinum reroof · " + fmt(REC.value), "PRP-1184")}
+            ${chunkBtn("contact", "Contact", REC.phone + " · email", "2 channels")}
+            ${chunkBtn("scope", "Scope &amp; property", REC.squares + " · architectural asphalt", "EST-2207")}
+            ${chunkBtn("next", "Next action", "Re-touch the quiet quote", "1 due")}
+          </div>
+          <div class="relate">
+            <div class="relate-head">Connected to <span class="line"></span></div>
+            <div class="relate-grid">
+              ${relBtn("rel-job", "JOB", "18 Lawson · Kierstad", "active · Diego crew · 6d late", true)}
+              ${relBtn("rel-deal", "DEAL", "Jean Gauvin", fmt(20750) + " · same package, quote out")}
+              ${relBtn("rel-thread", "THREAD", "May estimate request", "Instant Estimator · 4 messages")}
+            </div>
+          </div>
+          <button class="chunk" data-chunk="history" style="margin-top:18px">
+            <span class="ic">${icons.hist}</span>
+            <span class="mid"><span class="lbl">History</span><span class="preview">7 events · opened May 1 &middot; quiet since</span></span>
+            ${chev}
+          </button>
+          <div class="provenance"><span class="d"></span> snapshot · synced 06:03 AT today</div>
+        `;
+      }
+    };
+  }
+  function chunkBtn(key, lbl, preview, count) {
+    return `<button class="chunk" data-chunk="${key}"><span class="ic">${icons[key] || icons.deal}</span><span class="mid"><span class="lbl">${lbl}</span><span class="preview">${preview}</span></span><span class="count">${count}</span>${chev}</button>`;
+  }
+  function relBtn(key, tag, t, s, hot) {
+    return `<button class="rel" data-chunk="${key}"><span class="tag">${tag}</span><span class="mid"><span class="t">${t}${hot ? ' <span style="color:var(--warn)">&middot; late</span>' : ''}</span><span class="s">${s}</span></span>${chev}</button>`;
+  }
+  const DETAIL = {
+    deal: {
+      crumb: "Deal & quote", kicker: "Deal", title: "Platinum reroof", sub: "Proposal PRP-1184 · quote out",
+      body() {
+        return `
+          <div class="field"><span class="fk">Quote value</span><span class="fv mono">${fmt(20750)}</span></div>
+          <div class="field"><span class="fk">Package</span><span class="fv">Platinum · architectural asphalt</span></div>
+          <div class="field"><span class="fk">Sent</span><span class="fv mono">May 7 · 39d ago<span class="stale" title="Snapshot field, last refresh 06:03 AT">&deg; stale</span></span></div>
+          <div class="field"><span class="fk">Stage</span><span class="fv">Quote out · awaiting reply</span></div>
+          <div class="field"><span class="fk">Rep</span><span class="fv">Darcy</span></div>
+          <div class="field"><span class="fk">Proposal</span><span class="fv mono">PRP-1184 <span class="src-chip">GHL</span></span></div>
+          <div class="relate" style="margin-top:22px">
+            <div class="relate-head">Comparable open quotes <span class="line"></span></div>
+            <div class="relate-grid">
+              ${relBtn("rel-deal", "DEAL", "Jean Gauvin", fmt(20750) + " · same package")}
+              ${relBtn("rel-baxter", "DEAL", "Lee Baxter", fmt(16250) + " · quote out")}
+            </div>
+          </div>
+          <div class="provenance"><span class="d"></span> GHL opportunity · snapshot 06:03 AT</div>
+        `;
+      }
+    },
+    contact: {
+      crumb: "Contact", kicker: "Contact", title: REC.name, sub: "2 channels · GHL contact",
+      body() {
+        return `
+          <div class="field"><span class="fk">Phone</span><span class="fv mono">${REC.phone}</span></div>
+          <div class="field"><span class="fk">Email</span><span class="fv mono">${REC.email}</span></div>
+          <div class="field"><span class="fk">Address</span><span class="fv">${REC.address}</span></div>
+          <div class="field"><span class="fk">Source</span><span class="fv">${REC.source}</span></div>
+          <div class="field"><span class="fk">Best reach</span><span class="fv">Evening · replied 6pm prior</span></div>
+          <div class="field"><span class="fk">Consent</span><span class="fv">Email + SMS ok</span></div>
+          <div class="provenance"><span class="d"></span> GHL contact · snapshot 06:03 AT</div>
+        `;
+      }
+    },
+    scope: {
+      crumb: "Scope & property", kicker: "Scope", title: "Property & scope", sub: "Estimate EST-2207",
+      body() {
+        return `
+          <div class="field"><span class="fk">Roof area</span><span class="fv mono">${REC.squares}</span></div>
+          <div class="field"><span class="fk">Material</span><span class="fv">Architectural asphalt</span></div>
+          <div class="field"><span class="fk">Layers off</span><span class="fv mono">1 layer · tear-off</span></div>
+          <div class="field"><span class="fk">Pitch</span><span class="fv mono">7 / 12</span></div>
+          <div class="field"><span class="fk">Stories</span><span class="fv mono">2</span></div>
+          <div class="field"><span class="fk">Source data</span><span class="fv">EagleView via IE<span class="stale" title="Pulled at estimate time, not re-measured since">&deg; as-quoted</span></span></div>
+          <div class="provenance"><span class="d"></span> Estimator OS · EST-2207</div>
+        `;
+      }
+    },
+    next: {
+      crumb: "Next action", kicker: "Next action", title: "Re-touch the quiet quote", sub: "1 due · owner Darcy",
+      body() {
+        return `
+          <div class="field"><span class="fk">Why now</span><span class="fv" style="color:var(--warn)">39d silent · top follow-up</span></div>
+          <div class="field"><span class="fk">Owner</span><span class="fv">Darcy</span></div>
+          <div class="field"><span class="fk">Channel</span><span class="fv">Email · evening per consent</span></div>
+          <div class="field"><span class="fk">Quote still valid</span><span class="fv mono">yes · ${fmt(20750)}</span></div>
+          <div class="draftbar">
+            <div class="dh">Draft only · not sent</div>
+            <p>Hi Sharon, circling back on the Platinum reroof quote from May. Still happy to hold the ${fmt(20750)} number and walk you through it whenever works. Want me to pencil in a quick call this week?</p>
+            <div class="note">Copy to send yourself. Ryujin never sends on your behalf.</div>
+          </div>
+          <div class="provenance"><span class="d"></span> sales task · snapshot 06:03 AT</div>
+        `;
+      }
+    },
+    history: {
+      crumb: "History", kicker: "History", title: "Record timeline", sub: "7 events · reversible",
+      body() {
+        return `
+          <div class="chips" role="tablist" aria-label="Window">
+            <button class="chip" data-win="7d">7d</button>
+            <button class="chip" data-win="month">month</button>
+            <button class="chip on" data-win="all">all</button>
+          </div>
+          <div id="tl-mount"></div>
+          <div class="provenance"><span class="d"></span> GHL + Estimator events · snapshot 06:03 AT</div>
+        `;
+      }
+    },
+    "rel-job": {
+      crumb: "18 Lawson", kicker: "Connected job", title: "18 Lawson · Kierstad", sub: "Active · Diego crew",
+      body() {
+        return `
+          <div class="vitals" style="margin-bottom:16px">
+            <div class="vital"><div class="k">Stage</div><div class="v">In production</div><div class="meta">Diego crew</div></div>
+            <div class="vital pop"><div class="k">Schedule</div><div class="v mono"><span class="pulse-dot"></span>6d late</div><div class="meta">past target</div></div>
+          </div>
+          <div class="field"><span class="fk">Link</span><span class="fv">Sharon referred this job</span></div>
+          <div class="field"><span class="fk">Crew</span><span class="fv">Diego</span></div>
+          <div class="field"><span class="fk">Target close</span><span class="fv mono">slipped · 6d<span class="stale" title="Crew Ops kanban, snapshot 06:03 AT">&deg; check crew</span></span></div>
+          <div class="provenance"><span class="d"></span> Crew Ops · snapshot 06:03 AT</div>
+        `;
+      }
+    },
+    "rel-deal": {
+      crumb: "Jean Gauvin", kicker: "Connected deal", title: "Jean Gauvin", sub: fmt(20750) + " · quote out",
+      body() {
+        return `
+          <div class="field"><span class="fk">Value</span><span class="fv mono">${fmt(20750)}</span></div>
+          <div class="field"><span class="fk">Package</span><span class="fv">Platinum · same as Sharon</span></div>
+          <div class="field"><span class="fk">Stage</span><span class="fv">Quote out</span></div>
+          <div class="field"><span class="fk">Quiet</span><span class="fv mono">12d</span></div>
+          <div class="field"><span class="fk">Why linked</span><span class="fv">Same package &amp; value bracket</span></div>
+          <div class="provenance"><span class="d"></span> GHL opportunity · snapshot 06:03 AT</div>
+        `;
+      }
+    },
+    "rel-baxter": {
+      crumb: "Lee Baxter", kicker: "Connected deal", title: "Lee Baxter", sub: fmt(16250) + " · quote out",
+      body() {
+        return `
+          <div class="field"><span class="fk">Value</span><span class="fv mono">${fmt(16250)}</span></div>
+          <div class="field"><span class="fk">Stage</span><span class="fv">Quote out</span></div>
+          <div class="field"><span class="fk">Quiet</span><span class="fv mono">8d</span></div>
+          <div class="provenance"><span class="d"></span> GHL opportunity · snapshot 06:03 AT</div>
+        `;
+      }
+    },
+    "rel-thread": {
+      crumb: "May estimate", kicker: "Connected thread", title: "May estimate request", sub: "Instant Estimator · 4 messages",
+      body() {
+        return `
+          <div class="timeline">
+            <div class="tl key"><span class="node"></span><div class="when">May 1 · 09:14</div><div class="what">Submitted Instant Estimator</div><div class="who">44 Ridgeback Cres</div></div>
+            <div class="tl"><span class="node"></span><div class="when">May 1 · 09:31</div><div class="what">Auto estimate generated</div><div class="who">${fmt(20750)} · Platinum</div></div>
+            <div class="tl"><span class="node"></span><div class="when">May 7 · 14:02</div><div class="what">Darcy emailed full quote</div><div class="who">PRP-1184</div></div>
+            <div class="tl now"><span class="node"></span><div class="when">since</div><div class="what">No reply · 39d</div><div class="who">last inbound May 1</div></div>
+          </div>
+          <div class="provenance"><span class="d"></span> Instant Estimator + Gmail · snapshot 06:03 AT</div>
+        `;
+      }
+    }
+  };
+  const HISTORY = {
+    all: [
+      { now:false, key:true,  when:"May 1 · 09:14", what:"Opened · Instant Estimator", who:"44 Ridgeback Cres, Riverview" },
+      { now:false, key:false, when:"May 1 · 09:31", what:"Auto estimate generated", who:fmt(20750) + " · Platinum reroof" },
+      { now:false, key:false, when:"May 3 · 11:40", what:"Darcy assigned as rep", who:"GHL pipeline · Quoting" },
+      { now:false, key:true,  when:"May 7 · 14:02", what:"Quote emailed", who:"PRP-1184 · Darcy" },
+      { now:false, key:false, when:"May 7 · 14:05", what:"Stage &rarr; Quote out", who:"awaiting reply" },
+      { now:false, key:false, when:"May 12", what:"Follow-up task created", who:"7d window" },
+      { now:true,  key:false, when:"since May 7", what:"Quiet 39 days", who:"past follow-up window" }
+    ],
+    month: [
+      { now:false, key:true,  when:"May 7 · 14:02", what:"Quote emailed", who:"PRP-1184 · Darcy" },
+      { now:false, key:false, when:"May 7 · 14:05", what:"Stage &rarr; Quote out", who:"awaiting reply" },
+      { now:false, key:false, when:"May 12", what:"Follow-up task created", who:"7d window" },
+      { now:true,  key:false, when:"since May 7", what:"Quiet 39 days", who:"past follow-up window" }
+    ],
+    "7d": [
+      { now:true,  key:false, when:"now", what:"Quiet 39 days", who:"nothing logged in last 7d" }
+    ]
+  };
+  function renderTimeline(win) {
+    const data = HISTORY[win] || HISTORY.all;
+    if (!data.length) return `<div class="empty">No events in this window.</div>`;
+    return `<div class="timeline">` + data.map(e => `<div class="tl ${e.now ? 'now' : ''} ${e.key ? 'key' : ''}"><span class="node"></span><div class="when">${e.when}</div><div class="what">${e.what}</div><div class="who">${e.who}</div></div>`).join("") + `</div>`;
+  }
+  const colsEl = document.getElementById("columns");
+  const crumbsEl = document.getElementById("crumbs");
+  const presence = document.getElementById("presence");
+  const hint = document.getElementById("hint");
+  let stack = [];
+  function buildColEl(def, html) {
+    const el = document.createElement("section");
+    el.className = "col";
+    el.dataset.key = def.key;
+    el.innerHTML = `<div class="col-head"><div class="col-kicker">${def.kicker}</div><div class="col-title">${def.title}</div>${def.sub ? `<div class="col-sub">${def.sub}</div>` : ""}</div><div class="col-body">${html}</div>`;
+    return el;
+  }
+  function openRoot() {
+    presence.classList.add("pushed");
+    crumbsEl.classList.add("show");
+    hint.classList.add("show");
+    const def = colRoot();
+    stack = [{ key: "root", crumb: def.crumb }];
+    colsEl.innerHTML = "";
+    colsEl.appendChild(buildColEl(def, def.render()));
+    wireCol(colsEl.lastElementChild);
+    renderCrumbs();
+  }
+  function pushDetail(chunkKey, fromColEl) {
+    const def = DETAIL[chunkKey];
+    if (!def) return;
+    const fromKey = fromColEl.dataset.key;
+    const idx = stack.findIndex(s => s.key === fromKey);
+    if (idx >= 0) {
+      stack = stack.slice(0, idx + 1);
+      while (colsEl.children.length > idx + 1) colsEl.removeChild(colsEl.lastElementChild);
+    }
+    stack.push({ key: chunkKey, crumb: def.crumb });
+    const el = buildColEl({ key: chunkKey, kicker: def.kicker, title: def.title, sub: def.sub }, def.body());
+    colsEl.appendChild(el);
+    wireCol(el);
+    if (chunkKey === "history") {
+      const mount = el.querySelector("#tl-mount");
+      mount.innerHTML = renderTimeline("all");
+    }
+    applyContextDepth();
+    renderCrumbs();
+    requestAnimationFrame(() => { colsEl.scrollTo({ left: colsEl.scrollWidth, behavior: "smooth" }); });
+    markActive();
+  }
+  function markActive() {
+    colsEl.querySelectorAll(".chunk, .rel").forEach(b => b.classList.remove("active"));
+    for (let i = 0; i < stack.length - 1; i++) {
+      const colEl = colsEl.children[i];
+      const nextKey = stack[i + 1].key;
+      if (!colEl) continue;
+      const btn = colEl.querySelector(`[data-chunk="${nextKey}"]`);
+      if (btn) btn.classList.add("active");
+    }
+  }
+  function applyContextDepth() {
+    const kids = [...colsEl.children];
+    kids.forEach((el, i) => {
+      el.classList.remove("context", "deep");
+      const fromEnd = kids.length - 1 - i;
+      if (fromEnd === 1) el.classList.add("context");
+      else if (fromEnd >= 2) el.classList.add("context", "deep");
+    });
+  }
+  function renderCrumbs() {
+    const parts = stack.map((s, i) => {
+      const cur = i === stack.length - 1;
+      return `<button class="crumb ${cur ? "current" : ""}" data-idx="${i}" ${cur ? 'aria-current="page"' : ""}><span class="dot"></span><span class="lbl">${s.crumb}</span></button>` + (cur ? "" : `<span class="sep">&rsaquo;</span>`);
+    }).join("");
+    crumbsEl.innerHTML = `<button class="crumb" data-close="1"><span class="dot"></span><span class="lbl">Answer</span></button><span class="sep">&rsaquo;</span>` + parts + `<button class="crumb back" data-back="1">&larr; back</button>`;
+    crumbsEl.querySelectorAll("[data-idx]").forEach(b => { b.addEventListener("click", () => goToIndex(parseInt(b.dataset.idx, 10))); });
+    crumbsEl.querySelector("[data-close]").addEventListener("click", closeAll);
+    crumbsEl.querySelector("[data-back]").addEventListener("click", goBack);
+  }
+  function goToIndex(idx) {
+    if (idx >= stack.length - 1) return;
+    stack = stack.slice(0, idx + 1);
+    while (colsEl.children.length > idx + 1) colsEl.removeChild(colsEl.lastElementChild);
+    applyContextDepth();
+    markActive();
+    renderCrumbs();
+    colsEl.scrollTo({ left: colsEl.scrollWidth, behavior: "smooth" });
+  }
+  function goBack() {
+    if (stack.length <= 1) { closeAll(); return; }
+    goToIndex(stack.length - 2);
+  }
+  function closeAll() {
+    stack = [];
+    colsEl.innerHTML = "";
+    crumbsEl.classList.remove("show");
+    hint.classList.remove("show");
+    presence.classList.remove("pushed");
+  }
+  function wireCol(colEl) {
+    colEl.querySelectorAll("[data-chunk]").forEach(btn => {
+      btn.addEventListener("click", () => pushDetail(btn.dataset.chunk, colEl));
+    });
+    colEl.querySelectorAll(".chip[data-win]").forEach(chip => {
+      chip.addEventListener("click", () => {
+        colEl.querySelectorAll(".chip").forEach(c => c.classList.remove("on"));
+        chip.classList.add("on");
+        const mount = colEl.querySelector("#tl-mount");
+        if (mount) {
+          mount.style.opacity = "0";
+          setTimeout(() => {
+            mount.innerHTML = renderTimeline(chip.dataset.win);
+            mount.style.transition = "opacity .3s var(--ease)";
+            requestAnimationFrame(() => { mount.style.opacity = "1"; });
+          }, 120);
+        }
+      });
+    });
+  }
+  document.getElementById("openRecord").addEventListener("click", openRoot);
+  document.querySelectorAll("[data-jump]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      openRoot();
+      const target = btn.dataset.jump;
+      requestAnimationFrame(() => {
+        const rootEl = colsEl.firstElementChild;
+        pushDetail(target, rootEl);
+      });
+    });
+  });
+  document.addEventListener("keydown", (e) => {
+    if (stack.length === 0) return;
+    if (e.key === "Escape") closeAll();
+    else if (e.key === "ArrowLeft") goBack();
+  });
+})();
+</script>
+</body>
+</html>

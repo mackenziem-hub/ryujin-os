@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ryujin OS -  Your Day</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    /* ground -> presence -> veil -> panel -> active -> bubble -> input */
+    --z-ground: 0;
+    --z-presence: 10;
+    --z-veil: 20;
+    --z-panel: 30;
+    --z-active: 40;
+    --z-bubble: 50;
+    --z-input: 60;
+
+    --bg-0:#060709;
+    --bg-1:#0a0c10;
+    --glass: rgba(20,24,31,0.62);
+    --glass-strong: rgba(24,29,38,0.78);
+    --edge: rgba(255,255,255,0.10);
+    --edge-soft: rgba(255,255,255,0.055);
+    --edge-bright: rgba(255,255,255,0.18);
+
+    --ink:#f3f5f8;
+    --ink-2: rgba(243,245,248,0.66);
+    --ink-3: rgba(243,245,248,0.40);
+    --ink-4: rgba(243,245,248,0.24);
+
+    --accent:#4a9eff;
+    --accent-dim: rgba(74,158,255,0.16);
+    --ok:#46d68a;
+    --warn:#f5b13a;
+    --danger:#f8746e;
+
+    --ease: cubic-bezier(.16,1,.3,1);
+    --ease-fast: cubic-bezier(.22,1,.36,1);
+    --r-lg: 20px;
+    --r-md: 14px;
+    --r-sm: 10px;
+
+    --mono:'JetBrains Mono', ui-monospace, monospace;
+    --sans:'Inter', system-ui, sans-serif;
+  }
+
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    font-family:var(--sans);
+    background:var(--bg-0);
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+    overflow:hidden;
+    letter-spacing:-0.01em;
+  }
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1, "cv01" 1}
+  ::selection{background:rgba(74,158,255,0.30);color:#fff}
+
+  /* ===== ambient ground ===== */
+  .ground{
+    position:fixed; inset:0; z-index:var(--z-ground);
+    background:
+      radial-gradient(1100px 720px at 18% -8%, rgba(74,158,255,0.10), transparent 60%),
+      radial-gradient(900px 700px at 92% 108%, rgba(40,52,72,0.30), transparent 55%),
+      radial-gradient(700px 500px at 60% 50%, rgba(18,22,30,0.55), transparent 70%),
+      var(--bg-0);
+  }
+  .grain{
+    position:fixed; inset:0; z-index:var(--z-ground);
+    opacity:0.035; pointer-events:none; mix-blend-mode:screen;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  .stage{
+    position:relative; z-index:var(--z-panel);
+    height:100vh; display:flex; flex-direction:column;
+    padding:26px clamp(20px,3.4vw,52px) 22px;
+    max-width:1560px; margin:0 auto;
+  }
+
+  /* ===== header ===== */
+  header.top{display:flex; align-items:center; gap:18px; flex-shrink:0; padding-bottom:18px}
+  .brand{display:flex; align-items:center; gap:12px}
+  .glyph{
+    width:34px;height:34px;border-radius:10px;
+    background:linear-gradient(150deg, rgba(74,158,255,0.30), rgba(74,158,255,0.05));
+    border:1px solid var(--edge);
+    display:grid;place-items:center; position:relative;
+    box-shadow:0 6px 18px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.10);
+  }
+  .glyph::after{content:"";width:11px;height:11px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, #bcd9ff, var(--accent));
+    box-shadow:0 0 14px rgba(74,158,255,0.7);
+    animation:breathe 5.5s var(--ease) infinite;}
+  @keyframes breathe{0%,100%{opacity:.78;transform:scale(.92)}50%{opacity:1;transform:scale(1.06)}}
+  .brand h1{font-size:14.5px;font-weight:600;letter-spacing:-0.02em}
+  .brand .sub{font-size:11px;color:var(--ink-3); margin-top:1px; letter-spacing:0}
+  .top .spacer{flex:1}
+  .greet{font-size:13px;color:var(--ink-2)}
+  .greet b{color:var(--ink);font-weight:550}
+  .clock{font-size:12px;color:var(--ink-3)}
+  .preview-tag{
+    font-family:var(--mono);font-size:9.5px;letter-spacing:0.18em;color:var(--ink-3);
+    border:1px solid var(--edge-soft); border-radius:6px; padding:5px 9px;
+    text-transform:uppercase;
+  }
+
+  /* ===== presence + answer-first ===== */
+  .answerbar{
+    display:flex; align-items:stretch; gap:18px; flex-shrink:0;
+    background:var(--glass); border:1px solid var(--edge);
+    border-radius:var(--r-lg); padding:16px 18px 16px 16px;
+    backdrop-filter:blur(22px) saturate(1.2); -webkit-backdrop-filter:blur(22px) saturate(1.2);
+    box-shadow:0 18px 50px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.06);
+    z-index:var(--z-presence);
+    position:relative; overflow:hidden;
+  }
+  .answerbar::before{content:"";position:absolute;inset:0;
+    background:radial-gradient(420px 120px at 6% 0%, rgba(74,158,255,0.10), transparent 70%);pointer-events:none}
+  .presence{
+    display:flex; flex-direction:column; gap:9px; padding-right:18px;
+    border-right:1px solid var(--edge-soft); min-width:218px;
+  }
+  .orb-row{display:flex;align-items:center;gap:11px}
+  .orb{
+    width:30px;height:30px;border-radius:50%;flex-shrink:0;
+    background:radial-gradient(circle at 34% 30%, #cfe4ff, var(--accent) 62%, #1c4f8a);
+    box-shadow:0 0 0 1px rgba(74,158,255,0.30), 0 0 22px rgba(74,158,255,0.45);
+    animation:breathe 5s var(--ease) infinite;
+  }
+  .presence .ttl{font-size:12px;color:var(--ink-3);letter-spacing:0.01em}
+  .presence .verdict{font-size:13px;line-height:1.45;color:var(--ink);font-weight:500}
+  .presence .verdict b{color:var(--accent);font-weight:600}
+  .now-wrap{flex:1; display:flex; flex-direction:column; gap:9px; min-width:0}
+  .now-head{display:flex;align-items:center;gap:9px}
+  .now-head .lbl{font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
+  .now-head .count{font-family:var(--mono);font-size:10.5px;color:var(--ink-4);border:1px solid var(--edge-soft);border-radius:5px;padding:1px 6px}
+  .now-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+  @media(max-width:1100px){.now-grid{grid-template-columns:repeat(2,1fr)}}
+  .now-item{
+    text-align:left;background:rgba(255,255,255,0.022);border:1px solid var(--edge-soft);
+    border-radius:var(--r-sm); padding:9px 11px; cursor:pointer;
+    transition:transform .4s var(--ease), background .25s var(--ease), border-color .25s var(--ease);
+    display:flex;flex-direction:column;gap:4px; position:relative; overflow:hidden;
+  }
+  .now-item:hover{background:rgba(255,255,255,0.05);border-color:var(--edge);transform:translateY(-2px)}
+  .now-item:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+  .now-item .ni-top{display:flex;align-items:center;justify-content:space-between;gap:6px}
+  .now-item .ni-cat{font-size:10px;letter-spacing:0.05em;color:var(--ink-3);text-transform:uppercase}
+  .now-item .ni-val{font-family:var(--mono);font-size:13.5px;font-weight:600;color:var(--ink);line-height:1}
+  .now-item .ni-desc{font-size:11.5px;color:var(--ink-2);line-height:1.32}
+  .pip{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+  .pip.warn{background:var(--warn);box-shadow:0 0 9px rgba(245,177,58,0.8)}
+  .pip.danger{background:var(--danger);box-shadow:0 0 9px rgba(248,116,110,0.8)}
+  .pip.ok{background:var(--ok)}
+  .pip.accent{background:var(--accent)}
+
+  /* ===== board ===== */
+  .board-scroll{flex:1; min-height:0; margin-top:18px; position:relative}
+  .board{
+    display:grid; gap:16px; height:100%;
+    grid-template-columns:repeat(3,1fr);
+    grid-template-rows:1fr 1fr;
+    grid-template-areas:
+      "inbox    pipeline ads"
+      "crew     calendar ads";
+    transition:filter .55s var(--ease), opacity .55s var(--ease);
+  }
+  @media(max-width:980px){
+    .board{grid-template-columns:repeat(2,1fr);grid-template-rows:auto;grid-template-areas:"inbox pipeline" "ads crew" "calendar calendar";overflow-y:auto}
+  }
+  .board.dimmed{filter:saturate(.5) brightness(.62) blur(2px);opacity:.5;pointer-events:none}
+
+  .tile{
+    grid-area:var(--ga);
+    background:var(--glass); border:1px solid var(--edge);
+    border-radius:var(--r-lg); padding:16px 17px 14px;
+    backdrop-filter:blur(20px) saturate(1.15); -webkit-backdrop-filter:blur(20px) saturate(1.15);
+    box-shadow:0 16px 44px rgba(0,0,0,0.40), inset 0 1px 0 rgba(255,255,255,0.05);
+    display:flex; flex-direction:column; gap:11px; cursor:pointer;
+    position:relative; overflow:hidden; min-height:0;
+    transition:transform .5s var(--ease), box-shadow .5s var(--ease), border-color .35s var(--ease), background .35s var(--ease);
+  }
+  .tile[style*="ads"]{} /* ads spans both rows via area */
+  .tile:hover{transform:translateY(-3px);border-color:var(--edge-bright);box-shadow:0 26px 64px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.08)}
+  .tile:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 22px 60px rgba(0,0,0,0.5)}
+  /* fisheye expand-in-place */
+  .tile.fisheye{
+    transform:scale(1.045); z-index:var(--z-active);
+    border-color:var(--edge-bright);
+    box-shadow:0 40px 90px rgba(0,0,0,0.62), 0 0 0 1px rgba(74,158,255,0.18), inset 0 1px 0 rgba(255,255,255,0.09);
+    background:var(--glass-strong);
+    cursor:default;
+  }
+  .board.has-fisheye .tile:not(.fisheye){filter:saturate(.55) brightness(.66);transform:scale(.985)}
+
+  .tile-head{display:flex;align-items:flex-start;gap:10px}
+  .tk-icon{
+    width:30px;height:30px;border-radius:9px;flex-shrink:0;display:grid;place-items:center;
+    border:1px solid var(--edge-soft);
+    background:rgba(255,255,255,0.03);
+  }
+  .tk-icon svg{width:16px;height:16px;stroke:var(--ink-2);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+  .tile-titles{flex:1;min-width:0}
+  .tile-titles .nm{font-size:13px;font-weight:600;letter-spacing:-0.01em;display:flex;align-items:center;gap:7px}
+  .tile-titles .meta{font-size:10.5px;color:var(--ink-3);margin-top:2px;letter-spacing:0}
+  .bang{
+    width:18px;height:18px;border-radius:50%;flex-shrink:0;
+    display:grid;place-items:center;font-family:var(--mono);font-weight:700;font-size:12px;
+    background:var(--warn);color:#241a04;
+    box-shadow:0 0 0 3px rgba(245,177,58,0.18), 0 0 16px rgba(245,177,58,0.55);
+    animation:bangpulse 2.4s var(--ease) infinite;
+  }
+  @keyframes bangpulse{0%,100%{box-shadow:0 0 0 3px rgba(245,177,58,0.16),0 0 12px rgba(245,177,58,0.45)}50%{box-shadow:0 0 0 5px rgba(245,177,58,0.10),0 0 22px rgba(245,177,58,0.75)}}
+
+  .tile-answer{font-size:12.5px;color:var(--ink-2);line-height:1.42}
+  .tile-answer b{color:var(--ink);font-weight:600}
+  .tile-answer .hue-warn{color:var(--warn);font-weight:600}
+  .tile-answer .hue-danger{color:var(--danger);font-weight:600}
+  .tile-answer .hue-ok{color:var(--ok);font-weight:600}
+
+  .tile-figs{display:flex;gap:18px;flex-wrap:wrap;margin-top:1px}
+  .fig{display:flex;flex-direction:column;gap:2px}
+  .fig .v{font-family:var(--mono);font-size:17px;font-weight:600;line-height:1;letter-spacing:-0.01em}
+  .fig .k{font-size:10px;color:var(--ink-3);letter-spacing:0.02em}
+  .fig .v.warn{color:var(--warn)} .fig .v.danger{color:var(--danger)} .fig .v.ok{color:var(--ok)} .fig .v.accent{color:var(--accent)}
+
+  .scent{
+    margin-top:auto; display:flex;align-items:center;justify-content:space-between;gap:8px;
+    padding-top:10px; border-top:1px solid var(--edge-soft);
+    font-size:11px;color:var(--ink-3);
+  }
+  .scent .door{display:flex;align-items:center;gap:6px;color:var(--ink-2);font-weight:500}
+  .scent .door svg{width:13px;height:13px;stroke:var(--accent);fill:none;stroke-width:1.8;transition:transform .4s var(--ease)}
+  .tile:hover .scent .door svg{transform:translateX(3px)}
+
+  /* fisheye expanded body */
+  .tile-deep{
+    display:none; flex-direction:column; gap:9px; margin-top:2px;
+    max-height:0; overflow:hidden;
+  }
+  .tile.fisheye .tile-deep{display:flex; animation:deepin .5s var(--ease) both; max-height:none; overflow:auto}
+  .tile.fisheye .scent{border-top-color:var(--edge)}
+  @keyframes deepin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+  .tile.fisheye .tile-figs{display:none}
+  .tile.fisheye .tile-answer{display:none}
+
+  .deep-row{
+    display:flex;align-items:center;gap:10px;justify-content:space-between;
+    padding:8px 10px;border-radius:var(--r-sm);
+    background:rgba(255,255,255,0.022);border:1px solid var(--edge-soft);
+    cursor:pointer; transition:background .2s var(--ease),border-color .2s var(--ease),transform .3s var(--ease);
+  }
+  .deep-row:hover{background:rgba(255,255,255,0.055);border-color:var(--edge);transform:translateX(2px)}
+  .deep-row:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+  .dr-l{min-width:0}
+  .dr-l .t{font-size:12.5px;font-weight:550;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .dr-l .s{font-size:11px;color:var(--ink-3);margin-top:1px}
+  .dr-r{font-family:var(--mono);font-size:12px;color:var(--ink-2);flex-shrink:0;display:flex;align-items:center;gap:9px}
+  .tag{font-family:var(--mono);font-size:9.5px;padding:2px 6px;border-radius:5px;letter-spacing:0.02em}
+  .tag.warn{background:rgba(245,177,58,0.14);color:var(--warn)}
+  .tag.danger{background:rgba(248,116,110,0.14);color:var(--danger)}
+  .tag.ok{background:rgba(70,214,138,0.13);color:var(--ok)}
+  .tag.mute{background:rgba(255,255,255,0.05);color:var(--ink-3)}
+  .tag.accent{background:var(--accent-dim);color:var(--accent)}
+
+  /* ===== ADS report mini (inside fisheye) ===== */
+  .window-chips{display:flex;gap:6px;margin-top:2px}
+  .wchip{
+    font-family:var(--mono);font-size:10.5px;padding:4px 10px;border-radius:7px;cursor:pointer;
+    background:rgba(255,255,255,0.03);border:1px solid var(--edge-soft);color:var(--ink-3);
+    transition:all .25s var(--ease);
+  }
+  .wchip:hover{color:var(--ink-2);border-color:var(--edge)}
+  .wchip.on{background:var(--accent-dim);border-color:rgba(74,158,255,0.5);color:#cfe4ff}
+  .ads-hero{display:flex;align-items:flex-end;gap:16px;margin-top:4px}
+  .ads-hero .big{font-family:var(--mono);font-size:30px;font-weight:600;line-height:.95;letter-spacing:-0.02em;transition:opacity .35s var(--ease)}
+  .ads-hero .biglbl{font-size:11px;color:var(--ink-3);margin-top:5px}
+  .delta-spark{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;align-items:flex-end}
+  .delta-spark svg{width:100%;height:34px;display:block}
+  .delta-spark .dlt{font-family:var(--mono);font-size:11px}
+  .delta-spark .dlt.up{color:var(--ok)} .delta-spark .dlt.down{color:var(--danger)}
+
+  /* ===== Miller drill columns ===== */
+  .drill{
+    position:fixed; inset:0; z-index:var(--z-veil);
+    display:flex; justify-content:flex-end; pointer-events:none;
+    opacity:0; transition:opacity .4s var(--ease);
+  }
+  .drill.open{opacity:1;pointer-events:auto}
+  .drill-scrim{position:absolute;inset:0;background:rgba(3,4,6,0.55);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+  .miller{
+    position:relative; z-index:1; height:100%;
+    display:flex; align-items:stretch; gap:0;
+    padding:0; max-width:min(94vw, 1180px);
+  }
+  .mcol{
+    width:clamp(280px,30vw,380px); height:100%;
+    background:var(--glass-strong); border-left:1px solid var(--edge);
+    backdrop-filter:blur(28px) saturate(1.2); -webkit-backdrop-filter:blur(28px) saturate(1.2);
+    box-shadow:-30px 0 70px rgba(0,0,0,0.5);
+    display:flex;flex-direction:column;
+    transform:translateX(40px); opacity:0;
+    animation:colin .5s var(--ease) forwards;
+    overflow:hidden;
+  }
+  @keyframes colin{to{transform:translateX(0);opacity:1}}
+  .mcol.context{opacity:.62; filter:saturate(.7) brightness(.82)}
+  .mcol.context:hover{opacity:.92;filter:none}
+  .mcol-head{padding:16px 18px 13px;border-bottom:1px solid var(--edge-soft);flex-shrink:0}
+  .mcol-head .eyebrow{font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:var(--ink-3);display:flex;align-items:center;gap:7px}
+  .mcol-head .title{font-size:16px;font-weight:600;margin-top:6px;letter-spacing:-0.02em;text-wrap:balance}
+  .mcol-head .answer{font-size:12px;color:var(--ink-2);margin-top:6px;line-height:1.45}
+  .prov{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:9.5px;color:var(--ink-3);margin-top:9px;border:1px solid var(--edge-soft);border-radius:5px;padding:3px 7px}
+  .prov .dot{width:5px;height:5px;border-radius:50%;background:var(--ok);box-shadow:0 0 7px var(--ok)}
+  .mcol-body{flex:1;overflow-y:auto;padding:14px 16px 18px;display:flex;flex-direction:column;gap:8px}
+  .mcol-body::-webkit-scrollbar{width:7px}
+  .mcol-body::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.10);border-radius:7px}
+
+  .field{display:flex;flex-direction:column;gap:3px;padding:9px 11px;border-radius:var(--r-sm);background:rgba(255,255,255,0.02);border:1px solid var(--edge-soft)}
+  .field .fk{font-size:10px;letter-spacing:0.05em;text-transform:uppercase;color:var(--ink-3)}
+  .field .fv{font-size:13px;color:var(--ink);line-height:1.4}
+  .field .fv.mono{font-family:var(--mono)}
+
+  /* RELATE strip */
+  .relate{margin-top:4px;padding:11px 12px;border-radius:var(--r-md);background:rgba(74,158,255,0.05);border:1px solid rgba(74,158,255,0.18)}
+  .relate .rh{font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--accent);display:flex;align-items:center;gap:7px;margin-bottom:9px}
+  .relate .rh svg{width:13px;height:13px;stroke:var(--accent);fill:none;stroke-width:1.8}
+  .relate-chips{display:flex;flex-wrap:wrap;gap:7px}
+  .rel-chip{
+    display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--ink-2);
+    background:rgba(255,255,255,0.03);border:1px solid var(--edge-soft);border-radius:8px;padding:6px 10px;cursor:pointer;
+    transition:all .25s var(--ease);
+  }
+  .rel-chip:hover{border-color:rgba(74,158,255,0.5);color:var(--ink);background:rgba(74,158,255,0.08);transform:translateY(-1px)}
+  .rel-chip .ricon{width:6px;height:6px;border-radius:2px;background:var(--ink-3)}
+
+  .draft-note{
+    margin-top:6px;font-size:11px;color:var(--ink-3);background:rgba(245,177,58,0.08);
+    border:1px solid rgba(245,177,58,0.20);border-radius:var(--r-sm);padding:9px 11px;line-height:1.45
+  }
+  .draft-note b{color:var(--warn)}
+  .col-act{display:flex;gap:8px;margin-top:4px}
+  .btn{font-family:var(--sans);font-size:12px;font-weight:550;padding:8px 13px;border-radius:9px;cursor:pointer;border:1px solid var(--edge);background:rgba(255,255,255,0.04);color:var(--ink);transition:all .25s var(--ease)}
+  .btn:hover{background:rgba(255,255,255,0.09);border-color:var(--edge-bright)}
+  .btn.primary{background:var(--accent-dim);border-color:rgba(74,158,255,0.4);color:#cfe4ff}
+  .btn.primary:hover{background:rgba(74,158,255,0.26)}
+
+  /* breadcrumb */
+  .breadcrumb{
+    position:fixed; left:50%; transform:translateX(-50%);
+    bottom:18px; z-index:var(--z-bubble);
+    display:flex;align-items:center;gap:4px;
+    background:var(--glass-strong);border:1px solid var(--edge);border-radius:999px;
+    padding:7px 9px; backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+    box-shadow:0 18px 44px rgba(0,0,0,0.5);
+    opacity:0; pointer-events:none; transition:opacity .4s var(--ease), transform .4s var(--ease);
+  }
+  .breadcrumb.show{opacity:1;pointer-events:auto;transform:translateX(-50%) translateY(0)}
+  .breadcrumb:not(.show){transform:translateX(-50%) translateY(14px)}
+  .crumb{
+    font-size:11.5px;color:var(--ink-2);padding:5px 11px;border-radius:999px;cursor:pointer;
+    display:flex;align-items:center;gap:6px;white-space:nowrap;transition:all .25s var(--ease);
+    border:1px solid transparent;
+  }
+  .crumb:hover{background:rgba(255,255,255,0.06);color:var(--ink)}
+  .crumb.here{background:var(--accent-dim);color:#cfe4ff;border-color:rgba(74,158,255,0.3)}
+  .crumb .cdot{width:5px;height:5px;border-radius:50%;background:var(--ink-4)}
+  .crumb-sep{color:var(--ink-4);font-size:11px;padding:0 1px}
+  .crumb-home svg{width:13px;height:13px;stroke:var(--ink-2);fill:none;stroke-width:1.8}
+
+  .hint{
+    position:fixed;right:clamp(16px,3vw,40px);bottom:20px;z-index:var(--z-presence);
+    font-size:11px;color:var(--ink-4);font-family:var(--mono);letter-spacing:0.03em;
+    display:flex;align-items:center;gap:8px;
+  }
+  kbd{font-family:var(--mono);font-size:10px;background:rgba(255,255,255,0.05);border:1px solid var(--edge-soft);border-radius:5px;padding:2px 6px;color:var(--ink-3)}
+
+  @media (prefers-reduced-motion: reduce){
+    *{animation-duration:0.001ms !important;animation-iteration-count:1 !important;transition-duration:0.08s !important}
+    .glyph::after,.orb,.bang{animation:none}
+  }
+</style>
+</head>
+<body>
+  <div class="ground"></div>
+  <div class="grain"></div>
+
+  <div class="stage">
+    <!-- HEADER -->
+    <header class="top">
+      <div class="brand">
+        <div class="glyph"></div>
+        <div>
+          <h1>Ryujin OS</h1>
+          <div class="sub">Plus Ultra Roofing · operator</div>
+        </div>
+      </div>
+      <div class="spacer"></div>
+      <div style="text-align:right">
+        <div class="greet">Good morning, <b>Mac</b>. One channel needs you.</div>
+        <div class="clock mono" id="clock">Mon 15 Jun · 06:48 AT</div>
+      </div>
+      <div class="preview-tag">Design Preview</div>
+    </header>
+
+    <!-- ANSWER-FIRST BAR: presence + what matters now (4 items) -->
+    <section class="answerbar" aria-label="What matters now">
+      <div class="presence">
+        <div class="orb-row">
+          <div class="orb"></div>
+          <div class="ttl">Ryujin</div>
+        </div>
+        <div class="verdict">Calm board. <b>Inbox</b> is the only live signal. Two follow-ups are aging and one job is late.</div>
+      </div>
+      <div class="now-wrap">
+        <div class="now-head">
+          <span class="lbl">What matters now</span>
+          <span class="count mono">4 of 4</span>
+        </div>
+        <div class="now-grid">
+          <button class="now-item" data-jump="crew" data-record="kierstad">
+            <div class="ni-top"><span class="ni-cat">Crew · late</span><span class="pip danger"></span></div>
+            <div class="ni-val danger" style="color:var(--danger)">6d late</div>
+            <div class="ni-desc">Kierstad reroof, 18 Lawson (Diego)</div>
+          </button>
+          <button class="now-item" data-jump="pipeline" data-record="sharon">
+            <div class="ni-top"><span class="ni-cat">Follow-up · quiet</span><span class="pip warn"></span></div>
+            <div class="ni-val" style="color:var(--warn)">39d</div>
+            <div class="ni-desc">Sharon · $20,750 quote out, nudge</div>
+          </button>
+          <button class="now-item" data-jump="inbox" data-record="overdue">
+            <div class="ni-top"><span class="ni-cat">Tasks · overdue</span><span class="pip warn"></span></div>
+            <div class="ni-val mono" style="color:var(--warn)">14</div>
+            <div class="ni-desc">Sales tasks past due</div>
+          </button>
+          <button class="now-item" data-jump="pipeline" data-record="signed">
+            <div class="ni-top"><span class="ni-cat">Signed · MTD</span><span class="pip ok"></span></div>
+            <div class="ni-val mono ok" style="color:var(--ok)">$33,264</div>
+            <div class="ni-desc">$275,464 YTD · steady</div>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- BOARD : 5 surfaces, <=4-chunk reads, one preattentive pop -->
+    <div class="board-scroll">
+      <div class="board" id="board">
+
+        <!-- INBOX (the ONLY tile with the yellow bang) -->
+        <article class="tile" style="--ga:inbox" tabindex="0" data-tile="inbox" aria-label="Inbox surface">
+          <div class="tile-head">
+            <div class="tk-icon"><svg viewBox="0 0 24 24"><path d="M3 7l9 6 9-6"/><rect x="3" y="5" width="18" height="14" rx="2"/></svg></div>
+            <div class="tile-titles">
+              <div class="nm">Inbox <span class="bang" title="1 unread channel">!</span></div>
+              <div class="meta">tasks · messages · pings</div>
+            </div>
+          </div>
+          <div class="tile-answer"><b class="hue-warn">14</b> sales tasks overdue. <b>1</b> unread thread this morning. Everything else is read.</div>
+          <div class="tile-figs">
+            <div class="fig"><div class="v warn">14</div><div class="k">overdue</div></div>
+            <div class="fig"><div class="v">3</div><div class="k">due today</div></div>
+            <div class="fig"><div class="v accent">1</div><div class="k">unread</div></div>
+          </div>
+
+          <div class="tile-deep" aria-hidden="true">
+            <div class="deep-row" data-record="overdue" tabindex="0">
+              <div class="dr-l"><div class="t">Call Sharon re: $20,750 quote</div><div class="s">Sales · overdue 11d</div></div>
+              <div class="dr-r"><span class="tag warn">overdue</span></div>
+            </div>
+            <div class="deep-row" data-record="inboxnew" tabindex="0">
+              <div class="dr-l"><div class="t">Re: shingle color -  Lee Baxter</div><div class="s">Unread · 06:22 AT</div></div>
+              <div class="dr-r"><span class="tag accent">new</span></div>
+            </div>
+            <div class="deep-row" tabindex="0">
+              <div class="dr-l"><div class="t">Send Kierstad delay note</div><div class="s">Ops · due today</div></div>
+              <div class="dr-r"><span class="tag mute">today</span></div>
+            </div>
+            <div class="deep-row" tabindex="0">
+              <div class="dr-l"><div class="t">Confirm Jean Gauvin site visit</div><div class="s">Sales · overdue 4d</div></div>
+              <div class="dr-r"><span class="tag warn">overdue</span></div>
+            </div>
+          </div>
+
+          <div class="scent">
+            <span class="mono" id="inbox-scent">12 more tasks</span>
+            <span class="door">Elaborate <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>
+          </div>
+        </article>
+
+        <!-- PIPELINE -->
+        <article class="tile" style="--ga:pipeline" tabindex="0" data-tile="pipeline" aria-label="Pipeline surface">
+          <div class="tile-head">
+            <div class="tk-icon"><svg viewBox="0 0 24 24"><path d="M4 19V5M10 19v-7M16 19v-11M22 19H2"/></svg></div>
+            <div class="tile-titles">
+              <div class="nm">Pipeline</div>
+              <div class="meta">proposals · follow-ups · signed</div>
+            </div>
+          </div>
+          <div class="tile-answer"><b>$199,843</b> out across <b>13</b> proposals. Top three are quiet -  <span class="hue-warn">Sharon longest at 39d</span>.</div>
+          <div class="tile-figs">
+            <div class="fig"><div class="v">$199.8k</div><div class="k">out (13)</div></div>
+            <div class="fig"><div class="v ok">$33.3k</div><div class="k">signed MTD</div></div>
+            <div class="fig"><div class="v warn">3</div><div class="k">aging</div></div>
+          </div>
+
+          <div class="tile-deep" aria-hidden="true">
+            <div class="deep-row" data-record="sharon" tabindex="0">
+              <div class="dr-l"><div class="t">Sharon</div><div class="s">Quote out · quiet 39d</div></div>
+              <div class="dr-r"><span class="mono">$20,750</span><span class="tag warn">nudge</span></div>
+            </div>
+            <div class="deep-row" data-record="jean" tabindex="0">
+              <div class="dr-l"><div class="t">Jean Gauvin</div><div class="s">Quote out · quiet 22d</div></div>
+              <div class="dr-r"><span class="mono">$20,750</span><span class="tag mute">warm</span></div>
+            </div>
+            <div class="deep-row" data-record="lee" tabindex="0">
+              <div class="dr-l"><div class="t">Lee Baxter</div><div class="s">Quote out · replied today</div></div>
+              <div class="dr-r"><span class="mono">$16,250</span><span class="tag ok">hot</span></div>
+            </div>
+          </div>
+
+          <div class="scent">
+            <span class="mono">10 more proposals</span>
+            <span class="door">Elaborate <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>
+          </div>
+        </article>
+
+        <!-- ADS -  the report flagship, spans both rows -->
+        <article class="tile" style="--ga:ads" tabindex="0" data-tile="ads" aria-label="Ads surface">
+          <div class="tile-head">
+            <div class="tk-icon"><svg viewBox="0 0 24 24"><path d="M3 11l18-5v12L3 13zM3 11v2M9 13v5l3 1v-5"/></svg></div>
+            <div class="tile-titles">
+              <div class="nm">Ads</div>
+              <div class="meta">2 live campaigns · Meta</div>
+            </div>
+          </div>
+          <div class="tile-answer"><b>$11.69</b> blended CPL, <span class="hue-ok">holding</span>. <b>923</b> leads lifetime on <b>$10,523</b> spend.</div>
+          <div class="tile-figs">
+            <div class="fig"><div class="v">$11.69</div><div class="k">CPL blended</div></div>
+            <div class="fig"><div class="v">923</div><div class="k">leads · life</div></div>
+            <div class="fig"><div class="v accent">2</div><div class="k">live</div></div>
+          </div>
+
+          <!-- fisheye deep: full report pattern -->
+          <div class="tile-deep" aria-hidden="true">
+            <div style="font-size:11px;color:var(--ink-3);line-height:1.4">Cost per lead, <span id="ads-window-echo" class="mono" style="color:var(--ink-2)">last 30 days</span>. Source: Meta Ads API.
+              <span class="prov"><span class="dot"></span>live · synced 06:41</span>
+            </div>
+            <div class="window-chips" role="tablist" aria-label="Time window">
+              <button class="wchip" data-win="24h" role="tab">24h</button>
+              <button class="wchip on" data-win="30d" role="tab" aria-selected="true">month</button>
+              <button class="wchip" data-win="7d" role="tab">7d</button>
+              <button class="wchip" data-win="life" role="tab">lifetime</button>
+            </div>
+            <div class="ads-hero">
+              <div>
+                <div class="big" id="ads-big">$11.69</div>
+                <div class="biglbl" id="ads-biglbl">blended CPL · month</div>
+              </div>
+              <div class="delta-spark">
+                <svg id="ads-spark" viewBox="0 0 140 34" preserveAspectRatio="none" aria-hidden="true"></svg>
+                <div class="dlt up" id="ads-delta">▾ $1.10 vs prior</div>
+              </div>
+            </div>
+            <div class="deep-row" data-record="ad-ie" tabindex="0">
+              <div class="dr-l"><div class="t">May Instant Estimator</div><div class="s">26 leads · $389.92 spend</div></div>
+              <div class="dr-r"><span class="mono">$15.00</span><span class="tag ok">live</span></div>
+            </div>
+            <div class="deep-row" data-record="ad-revive" tabindex="0">
+              <div class="dr-l"><div class="t">Revive v3</div><div class="s">4 leads · $66.00 spend</div></div>
+              <div class="dr-r"><span class="mono">$16.50</span><span class="tag warn">thin</span></div>
+            </div>
+          </div>
+
+          <div class="scent">
+            <span class="mono">2 campaigns · drill a row</span>
+            <span class="door">Elaborate <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>
+          </div>
+        </article>
+
+        <!-- CREW -->
+        <article class="tile" style="--ga:crew" tabindex="0" data-tile="crew" aria-label="Crew surface">
+          <div class="tile-head">
+            <div class="tk-icon"><svg viewBox="0 0 24 24"><path d="M16 18v-1a4 4 0 00-8 0v1M12 11a3 3 0 100-6 3 3 0 000 6M20 18v-1a3 3 0 00-2.5-2.95"/></svg></div>
+            <div class="tile-titles">
+              <div class="nm">Crew</div>
+              <div class="meta">active jobs · scheduling</div>
+            </div>
+          </div>
+          <div class="tile-answer"><span class="hue-danger">1 job 6d late</span> (Kierstad). The rest are on schedule.</div>
+          <div class="tile-figs">
+            <div class="fig"><div class="v danger">6d</div><div class="k">late · Kierstad</div></div>
+            <div class="fig"><div class="v">4</div><div class="k">jobs active</div></div>
+            <div class="fig"><div class="v ok">3</div><div class="k">on time</div></div>
+          </div>
+
+          <div class="tile-deep" aria-hidden="true">
+            <div class="deep-row" data-record="kierstad" tabindex="0">
+              <div class="dr-l"><div class="t">Kierstad · 18 Lawson</div><div class="s">Diego · reroof</div></div>
+              <div class="dr-r"><span class="tag danger">6d late</span></div>
+            </div>
+            <div class="deep-row" tabindex="0">
+              <div class="dr-l"><div class="t">Pelletier · 7 Main St</div><div class="s">on schedule</div></div>
+              <div class="dr-r"><span class="tag ok">day 2</span></div>
+            </div>
+            <div class="deep-row" tabindex="0">
+              <div class="dr-l"><div class="t">Comeau · Coverdale Rd</div><div class="s">starts Wed</div></div>
+              <div class="dr-r"><span class="tag mute">queued</span></div>
+            </div>
+          </div>
+
+          <div class="scent">
+            <span class="mono">4 active jobs</span>
+            <span class="door">Elaborate <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>
+          </div>
+        </article>
+
+        <!-- CALENDAR -->
+        <article class="tile" style="--ga:calendar" tabindex="0" data-tile="calendar" aria-label="Calendar surface">
+          <div class="tile-head">
+            <div class="tk-icon"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg></div>
+            <div class="tile-titles">
+              <div class="nm">Calendar</div>
+              <div class="meta">today + next 24h</div>
+            </div>
+          </div>
+          <div class="tile-answer"><b>2</b> blocks today. Next: <b>Lee Baxter call</b> at <span class="mono">10:30</span>.</div>
+          <div class="tile-figs">
+            <div class="fig"><div class="v">2</div><div class="k">today</div></div>
+            <div class="fig"><div class="v">1</div><div class="k">tomorrow</div></div>
+            <div class="fig"><div class="v accent">10:30</div><div class="k">next</div></div>
+          </div>
+
+          <div class="tile-deep" aria-hidden="true">
+            <div class="deep-row" data-record="lee" tabindex="0">
+              <div class="dr-l"><div class="t">Lee Baxter -  quote call</div><div class="s">10:30-11:00 · phone</div></div>
+              <div class="dr-r"><span class="tag accent">soon</span></div>
+            </div>
+            <div class="deep-row" tabindex="0">
+              <div class="dr-l"><div class="t">Supplier -  IKO order</div><div class="s">14:00 · 20 min</div></div>
+              <div class="dr-r"><span class="tag mute">today</span></div>
+            </div>
+            <div class="deep-row" tabindex="0">
+              <div class="dr-l"><div class="t">Comeau site walk</div><div class="s">Tue 08:00</div></div>
+              <div class="dr-r"><span class="tag mute">tomorrow</span></div>
+            </div>
+          </div>
+
+          <div class="scent">
+            <span class="mono">no conflicts</span>
+            <span class="door">Elaborate <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>
+          </div>
+        </article>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- MILLER DRILL -->
+  <div class="drill" id="drill" aria-hidden="true">
+    <div class="drill-scrim" id="scrim"></div>
+    <div class="miller" id="miller"></div>
+  </div>
+
+  <!-- BREADCRUMB -->
+  <nav class="breadcrumb" id="breadcrumb" aria-label="Drill path"></nav>
+
+  <div class="hint"><span>fisheye-expand a tile · drill a row</span><kbd>Esc</kbd><span>back</span></div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ===== clock ===== */
+  function tick(){
+    var now=new Date();
+    var d=now.toLocaleDateString('en-CA',{weekday:'short',day:'numeric',month:'short'});
+    var t=now.toLocaleTimeString('en-CA',{hour:'2-digit',minute:'2-digit',hour12:false});
+    document.getElementById('clock').textContent=d+' · '+t+' AT';
+  }
+  tick(); setInterval(tick,30000);
+
+  var board=document.getElementById('board');
+  var tiles=Array.prototype.slice.call(document.querySelectorAll('.tile'));
+
+  /* ===== FISHEYE expand-in-place ===== */
+  function clearFisheye(){
+    board.classList.remove('has-fisheye');
+    tiles.forEach(function(t){
+      t.classList.remove('fisheye');
+      var deep=t.querySelector('.tile-deep'); if(deep) deep.setAttribute('aria-hidden','true');
+    });
+  }
+  function fisheye(tile){
+    if(tile.classList.contains('fisheye')){ clearFisheye(); return; }
+    clearFisheye();
+    board.classList.add('has-fisheye');
+    tile.classList.add('fisheye');
+    var deep=tile.querySelector('.tile-deep'); if(deep) deep.setAttribute('aria-hidden','false');
+    if(tile.dataset.tile==='ads') drawSpark();
+  }
+
+  tiles.forEach(function(tile){
+    tile.addEventListener('click', function(e){
+      if(e.target.closest('.deep-row')||e.target.closest('.wchip')) return;
+      fisheye(tile);
+    });
+    tile.addEventListener('keydown', function(e){
+      if(e.key==='Enter'||e.key===' '){ e.preventDefault(); fisheye(tile); }
+    });
+  });
+
+  /* ===== ADS report -  window chips RE-BIND in place ===== */
+  var adsData={
+    '24h':{cpl:'$13.40', lbl:'blended CPL · 24h', echo:'last 24 hours', delta:'▴ $1.71 vs prior', up:false, series:[10.2,11.1,12.0,11.6,12.8,13.4]},
+    '7d': {cpl:'$12.05', lbl:'blended CPL · 7d',  echo:'last 7 days',   delta:'▾ $0.40 vs prior', up:true,  series:[13.1,12.9,12.4,12.6,12.2,12.05]},
+    '30d':{cpl:'$11.69', lbl:'blended CPL · month',echo:'last 30 days', delta:'▾ $1.10 vs prior', up:true,  series:[12.8,12.9,12.4,12.0,11.8,11.69]},
+    'life':{cpl:'$11.41',lbl:'blended CPL · lifetime',echo:'all time',  delta:'923 leads total',  up:true,  series:[16.2,14.8,13.1,12.4,11.9,11.41]}
+  };
+  function drawSpark(){
+    var win=document.querySelector('.wchip.on'); var key=win?win.dataset.win:'30d';
+    var d=adsData[key];
+    var svg=document.getElementById('ads-spark');
+    if(!svg) return;
+    var s=d.series, n=s.length, W=140, H=34, pad=3;
+    var min=Math.min.apply(null,s), max=Math.max.apply(null,s), rng=(max-min)||1;
+    function X(i){return pad + i*((W-2*pad)/(n-1));}
+    function Y(v){return H-pad - ((v-min)/rng)*(H-2*pad);}
+    var path='', area='M'+X(0)+' '+H;
+    for(var i=0;i<n;i++){ path+=(i?'L':'M')+X(i).toFixed(1)+' '+Y(s[i]).toFixed(1)+' '; area+='L'+X(i).toFixed(1)+' '+Y(s[i]).toFixed(1)+' '; }
+    area+='L'+X(n-1)+' '+H+' Z';
+    /* baseline = prior value (first point) drawn so the delta reads as LENGTH */
+    var baseY=Y(s[0]);
+    var hue = d.up ? 'var(--ok)' : 'var(--danger)';
+    svg.innerHTML=
+      '<defs><linearGradient id="sg" x1="0" y1="0" x2="0" y2="1">'+
+      '<stop offset="0" stop-color="'+hue+'" stop-opacity="0.22"/>'+
+      '<stop offset="1" stop-color="'+hue+'" stop-opacity="0"/></linearGradient></defs>'+
+      '<line x1="'+pad+'" y1="'+baseY.toFixed(1)+'" x2="'+(W-pad)+'" y2="'+baseY.toFixed(1)+'" stroke="rgba(243,245,248,0.22)" stroke-width="1" stroke-dasharray="2 3"/>'+
+      '<path d="'+area+'" fill="url(#sg)"/>'+
+      '<path d="'+path+'" fill="none" stroke="'+hue+'" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'+
+      '<circle cx="'+X(n-1).toFixed(1)+'" cy="'+Y(s[n-1]).toFixed(1)+'" r="2.6" fill="'+hue+'"/>';
+  }
+  function bindWindow(key){
+    var d=adsData[key]; if(!d) return;
+    document.querySelectorAll('.wchip').forEach(function(c){
+      var on=c.dataset.win===key; c.classList.toggle('on',on);
+      if(on) c.setAttribute('aria-selected','true'); else c.removeAttribute('aria-selected');
+    });
+    var big=document.getElementById('ads-big');
+    big.style.opacity='0';
+    setTimeout(function(){
+      big.textContent=d.cpl; big.style.opacity='1';
+      document.getElementById('ads-biglbl').textContent=d.lbl;
+      document.getElementById('ads-window-echo').textContent=d.echo;
+      var dl=document.getElementById('ads-delta');
+      dl.textContent=d.delta; dl.className='dlt '+(d.up?'up':'down');
+      drawSpark();
+    },130);
+  }
+  document.querySelectorAll('.wchip').forEach(function(c){
+    c.addEventListener('click', function(e){ e.stopPropagation(); bindWindow(c.dataset.win); });
+  });
+
+  /* ===== MILLER DRILL data ===== */
+  var RECORDS={
+    sharon:{tile:'pipeline',eyebrow:'Pipeline · Follow-up',title:'Sharon',
+      answer:'Premium reroof quote out 39 days. Longest-quiet deal on the board. Warm, not cold -  one nudge is the move.',
+      prov:'GHL · synced 06:41',
+      fields:[['Quote value','$20,750','mono'],['Status','Quote out · quiet 39d',''],['Last touch','May 7 · email opened 2x',''],['Tier','Platinum reroof',''],['Sales rep','Mac',''] ],
+      relate:[['Jean Gauvin','sister deal · same $20,750','jean'],['18 Lawson crew slot','open after Kierstad','kierstad'],['Quote PDF','proposal #PU-2241','']],
+      draft:'Drafted a warm nudge in Mac\'s voice (no em dashes, King regards). Recipient: Sharon · key line: "wanted to make sure the quote landed and answer anything before the season fills." DRAFT only -  review then send.',
+      acts:[['Open draft nudge','primary'],['View quote',''],['Snooze 3d','']]
+    },
+    jean:{tile:'pipeline',eyebrow:'Pipeline · Follow-up',title:'Jean Gauvin',
+      answer:'Quote out 22 days, opened once. Same $20,750 ticket as Sharon. Still warm -  second in the nudge queue.',
+      prov:'GHL · synced 06:41',
+      fields:[['Quote value','$20,750','mono'],['Status','Quote out · quiet 22d',''],['Last touch','May 24 · viewed',''],['Tier','Platinum reroof',''] ],
+      relate:[['Sharon','sister deal · 39d','sharon'],['Lee Baxter','replied today · ahead of him','lee']],
+      draft:'No draft prepared yet -  Jean is second in the nudge queue behind Sharon.',
+      acts:[['Draft nudge','primary'],['View quote','']]
+    },
+    lee:{tile:'pipeline',eyebrow:'Pipeline · Hot',title:'Lee Baxter',
+      answer:'Replied this morning about shingle color. $16,250 quote, ready to move. Call booked 10:30 today.',
+      prov:'GHL + Calendar · 06:41',
+      fields:[['Quote value','$16,250','mono'],['Status','Quote out · replied',''],['Reply','06:22 -  "leaning charcoal"',''],['Call','Today 10:30-11:00',''] ],
+      relate:[['10:30 call','Calendar · today','cal'],['Inbox thread','Re: shingle color','inboxnew'],['Jean Gauvin','behind him in queue','jean']],
+      draft:'Drafted a short color-confirm reply (charcoal IKO Dynasty, ties to the 10:30 call). DRAFT only.',
+      acts:[['Open draft reply','primary'],['Prep call notes','']]
+    },
+    kierstad:{tile:'crew',eyebrow:'Crew · Active job',title:'Kierstad -  18 Lawson',
+      answer:'Reroof running 6 days late, crew lead Diego. The one schedule signal on the board. Customer note is overdue.',
+      prov:'Crew Ops · synced 06:30',
+      fields:[['Address','18 Lawson',''],['Crew lead','Diego',''],['Scope','Full reroof · asphalt',''],['Delay','6 days · weather + tear-off',''],['Customer note','Overdue · not sent','warn'] ],
+      relate:[['Delay note draft','Inbox · due today','overdue'],['Sharon slot','frees 18 Lawson crew','sharon'],['Pelletier 7 Main','same crew next','']],
+      draft:'Drafted a calm, factual delay note (no grovel, no unconfirmed date -  Richard Seyeau pattern). Recipient: Kierstad · key line: "weather pushed tear-off; here is the realistic restart window." DRAFT only.',
+      acts:[['Open draft note','primary'],['Message Diego',''],['Reschedule','']]
+    },
+    overdue:{tile:'inbox',eyebrow:'Inbox · Tasks',title:'14 overdue sales tasks',
+      answer:'Mostly follow-up calls and quote chases. Top one ties to Sharon. Two are ready-to-send drafts waiting on you.',
+      prov:'Action Board · 06:41',
+      fields:[['Overdue','14','mono'],['Oldest','Call Sharon · 11d','warn'],['Due today','3',''],['Has draft ready','2','accent'] ],
+      relate:[['Sharon','top overdue task','sharon'],['Jean Gauvin','site-visit confirm','jean'],['Kierstad note','due today','kierstad']],
+      draft:null,
+      acts:[['Open task list','primary'],['Bulk snooze','']]
+    },
+    inboxnew:{tile:'inbox',eyebrow:'Inbox · Unread',title:'Re: shingle color -  Lee Baxter',
+      answer:'The single unread thread. Lee is leaning charcoal and wants confirmation before the 10:30 call.',
+      prov:'Gmail · 06:22 AT',
+      fields:[['From','Lee Baxter',''],['Received','06:22 AT',''],['Body','"Leaning charcoal -  that work?"',''],['Linked deal','$16,250 quote','mono'] ],
+      relate:[['Lee Baxter','deal record','lee'],['10:30 call','Calendar','cal']],
+      draft:'Drafted a one-line confirm (charcoal IKO Dynasty, see you at 10:30). DRAFT only -  review then send.',
+      acts:[['Open draft reply','primary'],['Mark read','']]
+    },
+    signed:{tile:'pipeline',eyebrow:'Pipeline · Signed',title:'Signed this month',
+      answer:'$33,264 booked MTD, $275,464 YTD. Honest contract figure (not recentActivity). Pace is steady.',
+      prov:'Snapshot · metrics.signed.mtd',
+      fields:[['Signed MTD','$33,264','mono'],['Signed YTD','$275,464','mono'],['Collected 30d','$12,235',''],['Collected 90d','$155,918',''],['Outstanding','$29,160 · deposit-paid WIP','mute'] ],
+      relate:[['Outstanding','neutral · WIP not AR','']],
+      draft:null,
+      acts:[['View signed deals','primary']]
+    },
+    'ad-ie':{tile:'ads',eyebrow:'Ads · Campaign',title:'May Instant Estimator',
+      answer:'Workhorse. 26 leads at $15.00 each on $389.92 spend. Best CPL of the two live sets -  keep running.',
+      prov:'Meta Ads API · 06:41',
+      fields:[['Leads','26','mono'],['Spend','$389.92','mono'],['CPL','$15.00','mono'],['Status','Live · stable','ok'],['Objective','Instant Estimator funnel',''] ],
+      relate:[['Revive v3','other live set','ad-revive'],['Instant Estimator','landing funnel','']],
+      draft:null,
+      acts:[['Open in Meta','primary'],['Pause','']]
+    },
+    'ad-revive':{tile:'ads',eyebrow:'Ads · Campaign',title:'Revive v3',
+      answer:'Thin. 4 leads at $16.50 on $66 spend -  too little volume to read yet. Watch, do not scale.',
+      prov:'Meta Ads API · 06:41',
+      fields:[['Leads','4','mono'],['Spend','$66.00','mono'],['CPL','$16.50','mono'],['Status','Live · thin data','warn'] ],
+      relate:[['May Instant Estimator','better CPL','ad-ie']],
+      draft:null,
+      acts:[['Open in Meta','primary'],['Let it ride','']]
+    },
+    cal:{tile:'calendar',eyebrow:'Calendar · Today',title:'Lee Baxter -  quote call',
+      answer:'10:30-11:00, phone. Tied to the unread color reply. Your next hard block.',
+      prov:'Google Calendar · today',
+      fields:[['When','10:30-11:00 AT',''],['Type','Phone close',''],['Linked deal','$16,250 quote','mono'],['Prep','Confirm charcoal · review scope',''] ],
+      relate:[['Lee Baxter','deal record','lee'],['Unread reply','Re: shingle color','inboxnew']],
+      draft:null,
+      acts:[['Open event','primary'],['Add prep note','']]
+    }
+  };
+
+  /* ===== drill column stack with focus+context ===== */
+  var drill=document.getElementById('drill');
+  var miller=document.getElementById('miller');
+  var breadcrumb=document.getElementById('breadcrumb');
+  var stack=[];
+
+  function valenceClass(c){ return c==='warn'?'tag warn':c==='ok'?'tag ok':c==='danger'?'tag danger':c==='accent'?'tag accent':'tag mute'; }
+
+  function buildColumn(key){
+    var r=RECORDS[key]; if(!r) return null;
+    var col=document.createElement('div');
+    col.className='mcol';
+    var fieldsHtml=r.fields.map(function(f){
+      var cls='fv'+(f[2]==='mono'?' mono':'');
+      var extra = (f[2]==='warn')?' style="color:var(--warn)"':(f[2]==='mute')?' style="color:var(--ink-3)"':(f[2]==='accent')?' style="color:var(--accent)"':(f[2]==='ok')?' style="color:var(--ok)"':'';
+      return '<div class="field"><div class="fk">'+f[0]+'</div><div class="'+cls+'"'+extra+'>'+f[1]+'</div></div>';
+    }).join('');
+    var relHtml = r.relate && r.relate.length ? (
+      '<div class="relate"><div class="rh"><svg viewBox="0 0 24 24"><path d="M9 17H7a5 5 0 010-10h2M15 7h2a5 5 0 010 10h-2M8 12h8"/></svg>Connected to</div><div class="relate-chips">'+
+      r.relate.map(function(rc){
+        var jump = rc[2] ? ' data-jump-record="'+rc[2]+'"' : '';
+        return '<div class="rel-chip"'+jump+'><span class="ricon"></span><span>'+rc[0]+'<br><span style="color:var(--ink-3);font-size:10px">'+rc[1]+'</span></span></div>';
+      }).join('')+'</div></div>'
+    ) : '';
+    var draftHtml = r.draft ? '<div class="draft-note"><b>DRAFT ONLY</b> · '+r.draft+'</div>' : '';
+    var actsHtml = r.acts ? '<div class="col-act">'+r.acts.map(function(a){return '<button class="btn'+(a[1]==='primary'?' primary':'')+'">'+a[0]+'</button>';}).join('')+'</div>' : '';
+    col.innerHTML=
+      '<div class="mcol-head">'+
+        '<div class="eyebrow">'+r.eyebrow+'</div>'+
+        '<div class="title">'+r.title+'</div>'+
+        '<div class="answer">'+r.answer+'</div>'+
+        '<div class="prov"><span class="dot"></span>'+r.prov+'</div>'+
+      '</div>'+
+      '<div class="mcol-body">'+
+        fieldsHtml+
+        relHtml+
+        draftHtml+
+        actsHtml+
+      '</div>';
+    /* RELATE jumps -> push a sibling column (focus+context) */
+    col.querySelectorAll('[data-jump-record]').forEach(function(el){
+      el.addEventListener('click', function(ev){ ev.stopPropagation(); pushColumn(el.dataset.jumpRecord); });
+    });
+    return col;
+  }
+
+  function renderStack(){
+    miller.innerHTML='';
+    stack.forEach(function(key,i){
+      var col=buildColumn(key);
+      if(!col) return;
+      if(i<stack.length-1) col.classList.add('context'); /* prior stays as context */
+      col.style.animationDelay=(i*40)+'ms';
+      col.addEventListener('click', function(){ /* clicking a context col returns to it */
+        if(i<stack.length-1){ stack=stack.slice(0,i+1); renderStack(); renderCrumb(); }
+      });
+      miller.appendChild(col);
+    });
+    renderCrumb();
+  }
+
+  function renderCrumb(){
+    var html='<span class="crumb crumb-home" data-home="1"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7M5 10v10h14V10"/></svg>Your day</span>';
+    stack.forEach(function(key,i){
+      var r=RECORDS[key];
+      html+='<span class="crumb-sep">›</span>';
+      html+='<span class="crumb'+(i===stack.length-1?' here':'')+'" data-idx="'+i+'"><span class="cdot"></span>'+(r?r.title:key)+'</span>';
+    });
+    breadcrumb.innerHTML=html;
+    breadcrumb.querySelector('[data-home]').addEventListener('click', closeDrill);
+    breadcrumb.querySelectorAll('[data-idx]').forEach(function(el){
+      el.addEventListener('click', function(){
+        var idx=parseInt(el.dataset.idx,10);
+        stack=stack.slice(0,idx+1); renderStack();
+      });
+    });
+  }
+
+  function openDrill(key){
+    stack=[key];
+    drill.classList.add('open'); drill.setAttribute('aria-hidden','false');
+    breadcrumb.classList.add('show');
+    renderStack();
+  }
+  function pushColumn(key){
+    if(!RECORDS[key]) return;
+    if(stack[stack.length-1]===key) return;
+    stack.push(key); renderStack();
+    /* scroll newest into view */
+    setTimeout(function(){ miller.scrollLeft=miller.scrollWidth; },60);
+  }
+  function closeDrill(){
+    drill.classList.remove('open'); drill.setAttribute('aria-hidden','true');
+    breadcrumb.classList.remove('show');
+    stack=[];
+  }
+
+  /* row clicks (in fisheye tiles) open the drill */
+  document.querySelectorAll('.deep-row[data-record]').forEach(function(row){
+    row.addEventListener('click', function(e){ e.stopPropagation(); openDrill(row.dataset.record); });
+    row.addEventListener('keydown', function(e){ if(e.key==='Enter'){ openDrill(row.dataset.record); } });
+  });
+
+  /* "what matters now" items -> fisheye the surface AND open the record */
+  document.querySelectorAll('.now-item').forEach(function(it){
+    it.addEventListener('click', function(){
+      var rec=it.dataset.record;
+      if(rec && RECORDS[rec]){ openDrill(rec); }
+      else {
+        var tile=document.querySelector('[data-tile="'+it.dataset.jump+'"]');
+        if(tile) fisheye(tile);
+      }
+    });
+  });
+
+  document.getElementById('scrim').addEventListener('click', closeDrill);
+  document.addEventListener('keydown', function(e){
+    if(e.key==='Escape'){
+      if(drill.classList.contains('open')){
+        if(stack.length>1){ stack.pop(); renderStack(); }
+        else closeDrill();
+      } else if(board.classList.contains('has-fisheye')){
+        clearFisheye();
+      }
+    }
+  });
+
+})();
+</script>
+</body>
+</html>

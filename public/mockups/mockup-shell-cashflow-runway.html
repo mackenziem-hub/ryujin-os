@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ryujin OS · Cashflow Runway</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* ground + ink */
+    --ground: #060709;
+    --ground-2: #0a0c10;
+    --ink: #f3f5f8;
+    --ink-2: rgba(243,245,248,0.66);
+    --ink-3: rgba(243,245,248,0.40);
+    --ink-4: rgba(243,245,248,0.22);
+
+    /* one accent */
+    --accent: #4a9eff;
+    --accent-dim: rgba(74,158,255,0.18);
+
+    /* valence pops only */
+    --ok: #46d68a;
+    --warn: #f5b13a;
+    --danger: #f8746e;
+
+    /* glass material */
+    --glass: rgba(20,24,31,0.62);
+    --glass-2: rgba(26,31,40,0.74);
+    --edge: rgba(255,255,255,0.10);
+    --edge-soft: rgba(255,255,255,0.055);
+
+    /* semantic z-scale: ground < presence < veil < panel < active < bubble < input */
+    --z-ground: 0;
+    --z-presence: 10;
+    --z-veil: 20;
+    --z-panel: 30;
+    --z-active: 40;
+    --z-bubble: 50;
+    --z-input: 60;
+
+    --ease: cubic-bezier(.16,1,.3,1);
+    --radius: 18px;
+    --radius-sm: 11px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body { height: 100%; }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: var(--ground);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .mono { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
+
+  /* ambient field: calm dark room, the presence anchors at left */
+  .ambient {
+    position: fixed; inset: 0; z-index: var(--z-ground);
+    background:
+      radial-gradient(900px 700px at 16% 42%, rgba(74,158,255,0.10), transparent 62%),
+      radial-gradient(1100px 900px at 88% 90%, rgba(74,158,255,0.045), transparent 60%),
+      linear-gradient(180deg, var(--ground-2), var(--ground));
+  }
+  .ambient::after {
+    content: ""; position: absolute; inset: 0;
+    background-image: radial-gradient(rgba(255,255,255,0.018) 1px, transparent 1px);
+    background-size: 3px 3px; opacity: 0.6;
+  }
+
+  .preview-marker {
+    position: fixed; top: 16px; right: 18px; z-index: var(--z-input);
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.18em;
+    color: var(--ink-3); border: 1px solid var(--edge-soft);
+    padding: 5px 10px; border-radius: 999px; background: rgba(10,12,16,0.5);
+    backdrop-filter: blur(8px);
+  }
+
+  /* ---------- shell layout ---------- */
+  .shell {
+    position: relative; z-index: var(--z-presence);
+    height: 100vh; display: grid;
+    grid-template-columns: 84px 1fr;
+  }
+
+  /* presence rail */
+  .rail {
+    display: flex; flex-direction: column; align-items: center;
+    padding: 22px 0; gap: 26px;
+    border-right: 1px solid var(--edge-soft);
+  }
+  .orb {
+    position: relative; width: 40px; height: 40px; border-radius: 50%;
+    background: radial-gradient(circle at 38% 34%, #cfe4ff, var(--accent) 58%, #1f5ba8 100%);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.18), 0 0 26px rgba(74,158,255,0.55);
+    animation: breathe 5.4s var(--ease) infinite;
+  }
+  .orb.speaking { animation: speak 1.4s var(--ease) infinite; }
+  @keyframes breathe {
+    0%,100% { box-shadow: 0 0 0 1px rgba(255,255,255,0.18), 0 0 22px rgba(74,158,255,0.42); }
+    50% { box-shadow: 0 0 0 1px rgba(255,255,255,0.22), 0 0 34px rgba(74,158,255,0.68); }
+  }
+  @keyframes speak {
+    0%,100% { box-shadow: 0 0 0 1px rgba(255,255,255,0.22), 0 0 30px rgba(74,158,255,0.6); transform: scale(1); }
+    50% { box-shadow: 0 0 0 1px rgba(255,255,255,0.3), 0 0 46px rgba(74,158,255,0.85); transform: scale(1.04); }
+  }
+  .rail-label { writing-mode: vertical-rl; font-size: 10px; letter-spacing: 0.34em; color: var(--ink-3); text-transform: uppercase; margin-top: 6px; }
+  .rail-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-4); }
+  .rail-dot.live { background: var(--ok); box-shadow: 0 0 8px rgba(70,214,138,0.7); }
+  .rail-spacer { flex: 1; }
+
+  /* canvas: the conversation column scrolls; Miller columns flow right */
+  .canvas {
+    position: relative; overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+
+  .query {
+    padding: 26px 34px 14px; flex-shrink: 0;
+    border-bottom: 1px solid var(--edge-soft);
+  }
+  .query-line { display: flex; align-items: baseline; gap: 12px; }
+  .query-prompt { color: var(--accent); font-size: 13px; }
+  .query-text { font-size: 18px; font-weight: 500; color: var(--ink); letter-spacing: -0.01em; }
+  .query-echo { margin-top: 7px; font-size: 12.5px; color: var(--ink-3); }
+  .query-echo .prov {
+    display: inline-flex; align-items: center; gap: 5px; margin-left: 8px;
+    font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--ink-2);
+    border: 1px solid var(--edge-soft); border-radius: 999px; padding: 2px 8px;
+  }
+  .query-echo .prov::before { content:""; width: 5px; height: 5px; border-radius: 50%; background: var(--ok); }
+
+  /* the column track */
+  .track {
+    flex: 1; display: flex; gap: 18px; padding: 22px 34px 30px;
+    overflow-x: auto; overflow-y: hidden; align-items: stretch;
+    scroll-behavior: smooth;
+  }
+  .track::-webkit-scrollbar { height: 8px; }
+  .track::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 99px; }
+
+  .col {
+    flex-shrink: 0; width: 420px; max-width: 86vw;
+    display: flex; flex-direction: column;
+    background: var(--glass);
+    border: 1px solid var(--edge);
+    border-radius: var(--radius);
+    backdrop-filter: blur(22px) saturate(1.2);
+    -webkit-backdrop-filter: blur(22px) saturate(1.2);
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.06) inset,
+      0 18px 50px -22px rgba(0,0,0,0.8),
+      0 4px 14px -8px rgba(0,0,0,0.6);
+    overflow: hidden;
+    animation: colIn 0.5s var(--ease) both;
+  }
+  .col.context { opacity: 0.72; filter: saturate(0.85); }
+  .col.context:hover { opacity: 1; filter: none; }
+  @keyframes colIn {
+    from { opacity: 0; transform: translateX(26px) scale(0.985); }
+    to { opacity: 1; transform: none; }
+  }
+  .col.context { animation: none; }
+
+  .col-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px; border-bottom: 1px solid var(--edge-soft);
+    flex-shrink: 0;
+  }
+  .col-title { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3); }
+  .col-close {
+    width: 22px; height: 22px; border-radius: 7px; border: 1px solid var(--edge-soft);
+    background: transparent; color: var(--ink-3); cursor: pointer; font-size: 13px; line-height: 1;
+    display: grid; place-items: center; transition: all 0.22s var(--ease);
+  }
+  .col-close:hover { color: var(--ink); border-color: var(--edge); background: rgba(255,255,255,0.05); }
+
+  .col-body { padding: 20px 20px 22px; overflow-y: auto; flex: 1; }
+  .col-body::-webkit-scrollbar { width: 7px; }
+  .col-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.07); border-radius: 99px; }
+
+  /* ---------- answer-first hero ---------- */
+  .verdict { font-size: 12.5px; color: var(--ink-2); line-height: 1.55; margin-bottom: 18px; }
+  .verdict b { color: var(--ink); font-weight: 600; }
+
+  .hero {
+    display: flex; align-items: flex-end; gap: 14px; margin-bottom: 4px;
+  }
+  .hero-num { font-size: 56px; font-weight: 600; letter-spacing: -0.03em; line-height: 0.9; color: var(--ink); }
+  .hero-unit { font-size: 14px; color: var(--ink-3); margin-bottom: 8px; }
+  .hero-dir {
+    margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
+    font-family: 'JetBrains Mono', monospace; font-size: 13px; margin-bottom: 8px;
+    color: var(--ok);
+  }
+  .hero-dir .arrow { font-size: 15px; }
+  .hero-sub { font-size: 12px; color: var(--ink-3); margin: 10px 0 20px; }
+  .hero-sub .mono { color: var(--ink-2); }
+
+  /* sparkline: prior baseline drawn so delta reads as LENGTH */
+  .spark-wrap { margin: 4px 0 22px; }
+  .spark-cap { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--ink-3); margin-bottom: 7px; letter-spacing: 0.04em; }
+  svg.spark { width: 100%; height: 64px; display: block; }
+
+  /* chunked sections (<=4) */
+  .chunks { display: flex; flex-direction: column; gap: 10px; }
+  .chunk {
+    border: 1px solid var(--edge-soft); border-radius: var(--radius-sm);
+    background: rgba(255,255,255,0.018);
+    padding: 13px 14px; cursor: pointer;
+    transition: border-color 0.24s var(--ease), background 0.24s var(--ease), transform 0.24s var(--ease);
+    position: relative;
+  }
+  .chunk:hover { border-color: var(--edge); background: rgba(255,255,255,0.04); transform: translateY(-1px); }
+  .chunk:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .chunk-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .chunk-label { font-size: 12.5px; color: var(--ink-2); display: flex; align-items: center; gap: 8px; }
+  .chunk-val { font-size: 15px; font-weight: 500; color: var(--ink); }
+  .chunk-meta { font-size: 11px; color: var(--ink-3); margin-top: 7px; display: flex; align-items: center; gap: 8px; }
+  /* per-row small multiple */
+  svg.mini { height: 22px; width: 96px; display: block; }
+  .drill-cue { position: absolute; right: 12px; bottom: 11px; font-size: 10px; color: var(--ink-4); letter-spacing: 0.08em; opacity: 0; transition: opacity 0.24s var(--ease); }
+  .chunk:hover .drill-cue { opacity: 1; }
+
+  /* the single anomaly: ONE preattentive hue pop */
+  .chunk.anomaly { border-color: rgba(245,177,58,0.4); background: rgba(245,177,58,0.06); }
+  .chunk.anomaly:hover { border-color: rgba(245,177,58,0.6); background: rgba(245,177,58,0.10); }
+  .dot-warn { width: 7px; height: 7px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 9px rgba(245,177,58,0.7); flex-shrink: 0; }
+  .dot-mute { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-4); flex-shrink: 0; }
+  .tag-anom { font-family:'JetBrains Mono',monospace; font-size: 10px; color: var(--warn); border:1px solid rgba(245,177,58,0.35); border-radius: 999px; padding: 1px 7px; }
+
+  /* scented door: elaborate */
+  .door {
+    margin-top: 18px; width: 100%;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 13px 16px; border-radius: var(--radius-sm);
+    border: 1px dashed var(--edge); background: rgba(74,158,255,0.05);
+    color: var(--ink-2); cursor: pointer; font-family: inherit; font-size: 12.5px;
+    transition: all 0.24s var(--ease);
+  }
+  .door:hover { border-color: var(--accent); background: rgba(74,158,255,0.10); color: var(--ink); }
+  .door:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .door .door-hint { font-size: 11px; color: var(--ink-3); }
+  .door .chev { color: var(--accent); transition: transform 0.3s var(--ease); }
+  .door.open .chev { transform: rotate(90deg); }
+
+  /* window chips: re-bind in place (Hick) */
+  .chips { display: inline-flex; gap: 4px; padding: 3px; border-radius: 999px; background: rgba(255,255,255,0.04); border: 1px solid var(--edge-soft); }
+  .chip {
+    border: none; background: transparent; color: var(--ink-3); cursor: pointer;
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 4px 11px; border-radius: 999px;
+    transition: color 0.2s var(--ease), background 0.2s var(--ease);
+  }
+  .chip.active { background: rgba(74,158,255,0.16); color: var(--ink); }
+  .chip:hover:not(.active) { color: var(--ink-2); }
+  .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .col-head .chips { margin-left: auto; }
+
+  /* RELATE strip: connected-to */
+  .relate { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--edge-soft); }
+  .relate-cap { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-4); margin-bottom: 10px; }
+  .relate-row { display: flex; flex-wrap: wrap; gap: 7px; }
+  .rel-pill {
+    display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+    font-size: 11.5px; color: var(--ink-2); border: 1px solid var(--edge-soft);
+    border-radius: 999px; padding: 5px 11px 5px 9px; background: transparent;
+    font-family: inherit; transition: all 0.22s var(--ease);
+  }
+  .rel-pill:hover { border-color: var(--accent); color: var(--ink); background: rgba(74,158,255,0.07); }
+  .rel-pill:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .rel-pill .rel-arrow { color: var(--ink-4); }
+
+  /* detail rows in drilled columns */
+  .rec { padding: 12px 0; border-bottom: 1px solid var(--edge-soft); width: 100%; text-align: left; background: transparent; border-top: none; border-left: none; border-right: none; cursor: pointer; }
+  .rec:last-of-type { border-bottom: none; }
+  .rec[disabled] { cursor: default; }
+  .rec-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .rec-name { font-size: 13px; color: var(--ink); font-weight: 500; }
+  .rec-amt { font-size: 13.5px; color: var(--ink); }
+  .rec-amt.out { color: var(--ink-2); }
+  .rec-meta { font-size: 11px; color: var(--ink-3); margin-top: 5px; }
+  .rec-bar { margin-top: 8px; height: 6px; border-radius: 99px; background: rgba(255,255,255,0.05); overflow: hidden; }
+  .rec-bar > i { display: block; height: 100%; border-radius: 99px; background: var(--accent); }
+  .rec-bar > i.neutral { background: rgba(243,245,248,0.4); }
+  .rec-bar > i.warn { background: var(--warn); }
+  .rec-note { font-size: 11px; color: var(--ink-3); margin-top: 4px; font-style: italic; }
+
+  .col-foot { padding: 12px 18px; border-top: 1px solid var(--edge-soft); flex-shrink: 0; }
+  .draft-note { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--ink-3); }
+  .draft-note::before { content: "DRAFT"; font-family:'JetBrains Mono',monospace; font-size: 9px; letter-spacing: 0.12em; color: var(--warn); border: 1px solid rgba(245,177,58,0.3); border-radius: 4px; padding: 1px 5px; }
+
+  /* breadcrumb (HISTORY): reversible spatial path */
+  .crumbs {
+    flex-shrink: 0; display: flex; align-items: center; gap: 8px;
+    padding: 11px 34px; border-bottom: 1px solid var(--edge-soft);
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--ink-3);
+    overflow-x: auto; white-space: nowrap;
+  }
+  .crumb {
+    background: transparent; border: none; color: var(--ink-3); cursor: pointer;
+    font-family: inherit; font-size: 11px; padding: 2px 0; transition: color 0.2s var(--ease);
+  }
+  .crumb:hover { color: var(--ink); }
+  .crumb.current { color: var(--accent); }
+  .crumb-sep { color: var(--ink-4); }
+
+  /* the persistent input affordance */
+  .composer {
+    flex-shrink: 0; padding: 14px 34px 20px;
+    border-top: 1px solid var(--edge-soft);
+    display: flex; align-items: center; gap: 12px;
+  }
+  .composer .field {
+    flex: 1; display: flex; align-items: center; gap: 10px;
+    background: rgba(8,10,14,0.7); border: 1px solid var(--edge);
+    border-radius: 13px; padding: 11px 15px;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset;
+  }
+  .composer .field:focus-within { border-color: var(--accent); }
+  .composer .field input {
+    flex: 1; background: transparent; border: none; outline: none;
+    color: var(--ink); font-family: inherit; font-size: 13.5px;
+  }
+  .composer .field input::placeholder { color: var(--ink-3); }
+  .composer .send {
+    width: 40px; height: 40px; border-radius: 12px; border: 1px solid var(--edge);
+    background: var(--accent-dim); color: var(--accent); cursor: pointer;
+    display: grid; place-items: center; transition: all 0.22s var(--ease);
+  }
+  .composer .send:hover { background: rgba(74,158,255,0.3); }
+  .hint-row { display: flex; gap: 7px; padding: 0 34px 16px; flex-wrap: wrap; }
+  .hint-chip {
+    font-size: 11px; color: var(--ink-3); border: 1px solid var(--edge-soft);
+    border-radius: 999px; padding: 5px 11px; background: transparent; cursor: pointer;
+    font-family: inherit; transition: all 0.22s var(--ease);
+  }
+  .hint-chip:hover { border-color: var(--accent); color: var(--ink); }
+
+  .collapsed { display: none !important; }
+
+  @media (max-width: 720px) {
+    .shell { grid-template-columns: 56px 1fr; }
+    .rail-label { display: none; }
+    .col { width: 88vw; }
+    .hero-num { font-size: 46px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
+  }
+</style>
+</head>
+<body>
+<div class="ambient" aria-hidden="true"></div>
+<div class="preview-marker mono">DESIGN PREVIEW</div>
+
+<div class="shell">
+  <!-- presence rail -->
+  <aside class="rail">
+    <div class="orb" id="orb" title="Ryujin"></div>
+    <div class="rail-label">Ryujin</div>
+    <div class="rail-spacer"></div>
+    <div class="rail-dot live" title="snapshot live"></div>
+  </aside>
+
+  <!-- canvas -->
+  <main class="canvas">
+    <div class="query">
+      <div class="query-line">
+        <span class="query-prompt mono">&gt;</span>
+        <span class="query-text">what's our runway?</span>
+      </div>
+      <div class="query-echo">
+        Cash position, last 30 days.
+        <span class="prov mono">snapshot 06:03 AT</span>
+      </div>
+    </div>
+
+    <!-- breadcrumb / history -->
+    <nav class="crumbs" id="crumbs" aria-label="drill path"></nav>
+
+    <!-- Miller column track -->
+    <div class="track" id="track"></div>
+
+    <!-- composer -->
+    <div class="hint-row">
+      <button class="hint-chip" data-q="show me the outstanding">show me the outstanding</button>
+      <button class="hint-chip" data-q="why did out spike?">why did out spike?</button>
+      <button class="hint-chip" data-q="elaborate">elaborate</button>
+    </div>
+    <div class="composer">
+      <div class="field">
+        <span class="query-prompt mono">&gt;</span>
+        <input id="ask" type="text" placeholder="ask Ryujin, or drill a panel to the right" aria-label="ask">
+      </div>
+      <button class="send" id="send" aria-label="send">&rarr;</button>
+    </div>
+  </main>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const track = document.getElementById('track');
+  const crumbsEl = document.getElementById('crumbs');
+  const orb = document.getElementById('orb');
+
+  /* ---------- baked Plus Ultra data ---------- */
+  // window-bound figures for the same hero panel (chips re-bind in place)
+  const WINDOWS = {
+    '30d': {
+      collected: 12235, out: 21500, label: 'last 30 days',
+      // weekly in/out series, prior baseline first then current
+      inSeries:  [3100, 2480, 3920, 2735],
+      prior:     2600,            // prior weekly avg baseline
+      runwayWk: 9,                // weeks of runway at current burn
+      dirPct: +6, dirGood: true
+    },
+    '7d': {
+      collected: 2735, out: 4180, label: 'last 7 days',
+      inSeries: [620, 540, 880, 695],
+      prior: 720,
+      runwayWk: 9,
+      dirPct: -4, dirGood: false
+    },
+    '90d': {
+      collected: 155918, out: 132700, label: 'last 90 days',
+      inSeries: [38200, 41100, 35400, 41218],
+      prior: 36000,
+      runwayWk: 11,
+      dirPct: +12, dirGood: true
+    },
+    'YTD': {
+      collected: 275464, out: 241900, label: 'year to date',
+      inSeries: [62100, 71400, 68900, 73064],
+      prior: 60000,
+      runwayWk: 12,
+      dirPct: +18, dirGood: true
+    }
+  };
+
+  // the four chunks under the hero (<=4). One anomaly carries the single hue pop.
+  function chunksFor(win){
+    return [
+      { id:'collected', label:'Collected in',  val:'$'+fmt(WINDOWS[win].collected), meta: WINDOWS[win].label, spark: WINDOWS[win].inSeries, base: WINDOWS[win].prior, kind:'normal', drill:'collected' },
+      { id:'out',       label:'Cash out',      val:'$'+fmt(WINDOWS[win].out),       meta: 'sub pay + materials', spark:[WINDOWS[win].out*0.22, WINDOWS[win].out*0.26, WINDOWS[win].out*0.24, WINDOWS[win].out*0.28], base: WINDOWS[win].out*0.21, kind:'normal', drill:'out' },
+      { id:'outstanding', label:'Outstanding', val:'$29,160', meta:'deposit-paid WIP', spark:[7800,7800,7280,6280], base:7800, kind:'neutral', drill:'outstanding' },
+      { id:'signed',    label:'Signed (MTD)',  val:'$33,264', meta:'feeds next window', spark:[6200,8100,9400,9564], base:5800, kind:'normal', drill:'signed' }
+    ];
+  }
+
+  // drill datasets
+  const DRILL = {
+    out: {
+      title:'CASH OUT · BY CATEGORY',
+      verdict:'Three categories. <b>Sub pay</b> is the spike that moved the delta this window.',
+      rows:[
+        { name:'Subcontractor pay', amt:'$11,420', pct:53, kind:'warn', note:'APHL WO#92520 + DIY Gutters batch', anom:true, drill:'sub' },
+        { name:'Materials',         amt:'$6,180',  pct:29, kind:'plain' },
+        { name:'Ads + tools',       amt:'$2,140',  pct:10, kind:'plain' },
+        { name:'Admin / fees',      amt:'$1,760',  pct:8,  kind:'plain' }
+      ]
+    },
+    sub: {
+      title:'SUB PAY · LINE ITEMS',
+      verdict:'<b>APHL WO#92520</b> is a misbill flagged for Mac. Pull it and the spike normalizes.',
+      rows:[
+        { name:'APHL · WO#92520', amt:'$4,610', pct:40, kind:'warn', note:'misbill, flagged, do not pay as-is', anom:true },
+        { name:'DIY Gutters',     amt:'$2,892', pct:25, kind:'plain', note:'AP overdue' },
+        { name:'Kierstad crew (18 Lawson)', amt:'$2,418', pct:21, kind:'plain', note:'job 6d late · Diego' },
+        { name:'Misc trades',     amt:'$1,500', pct:14, kind:'plain' }
+      ]
+    },
+    collected: {
+      title:'COLLECTED · BY SOURCE',
+      verdict:'Deposits carry the window. Steady, no concentration risk.',
+      rows:[
+        { name:'New deposits (50%)', amt:'$7,420', pct:61, kind:'plain' },
+        { name:'Progress draws',     amt:'$3,180', pct:26, kind:'plain' },
+        { name:'Final payments',     amt:'$1,635', pct:13, kind:'plain' }
+      ]
+    },
+    outstanding: {
+      title:'OUTSTANDING · AGEING',
+      verdict:'All <b>deposit-paid WIP</b>. Neutral, not AR risk. Only Michael Pineau truly owes.',
+      rows:[
+        { name:'WIP < 30d',  amt:'$18,400', pct:63, kind:'neutral' },
+        { name:'WIP 30-60d', amt:'$7,520',  pct:26, kind:'neutral' },
+        { name:'Michael Pineau', amt:'$3,240', pct:11, kind:'plain', note:'only true receivable' }
+      ]
+    },
+    signed: {
+      title:'SIGNED MTD · DEALS',
+      verdict:'Pipeline behind it: <b>$199,843</b> proposals out across 13. Sharon is the quiet one.',
+      rows:[
+        { name:'Signed contracts (MTD)', amt:'$33,264', pct:100, kind:'plain', note:'flows to next collection window' },
+        { name:'Sharon · quote out',  amt:'$20,750', pct:62, kind:'warn', note:'quiet 39 days, top follow-up', anom:true },
+        { name:'Jean Gauvin · quote out', amt:'$20,750', pct:62, kind:'plain' },
+        { name:'Lee Baxter · quote out',  amt:'$16,250', pct:49, kind:'plain' }
+      ]
+    }
+  };
+
+  const RELATE = [
+    { label:'Pipeline · $199,843 out', q:'signed' },
+    { label:'14 sales tasks overdue', q:'tasks' },
+    { label:'Kierstad job 6d late', q:'sub' }
+  ];
+
+  function fmt(n){ return Math.round(n).toLocaleString('en-CA'); }
+
+  /* ---------- state: the column stack ---------- */
+  let stack = [];   // each: {key}
+  let curWin = '30d';
+
+  function speak(){
+    if(reduce) return;
+    orb.classList.add('speaking');
+    setTimeout(()=>orb.classList.remove('speaking'), 1400);
+  }
+
+  /* ---------- sparkline: prior baseline drawn so delta reads as LENGTH ---------- */
+  function sparkSVG(series, base, valence, w, h){
+    w = w||360; h = h||64;
+    const pad = 4;
+    const all = series.concat([base]);
+    const min = Math.min.apply(null, all), max = Math.max.apply(null, all);
+    const span = (max-min)||1;
+    const xStep = (w - pad*2) / (series.length-1);
+    const y = v => h - pad - ((v-min)/span)*(h - pad*2);
+    const pts = series.map((v,i)=>[pad + i*xStep, y(v)]);
+    const baseY = y(base);
+    const path = pts.map((p,i)=> (i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+    const area = path + ' L'+pts[pts.length-1][0].toFixed(1)+' '+(h-pad)+' L'+pts[0][0].toFixed(1)+' '+(h-pad)+' Z';
+    const last = pts[pts.length-1];
+    const col = valence==='good' ? 'var(--ok)' : valence==='warn' ? 'var(--warn)' : 'var(--accent)';
+    return `
+      <svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="trend vs prior baseline">
+        <line x1="${pad}" y1="${baseY.toFixed(1)}" x2="${w-pad}" y2="${baseY.toFixed(1)}" stroke="rgba(243,245,248,0.22)" stroke-width="1" stroke-dasharray="3 4"/>
+        <path d="${area}" fill="${col}" opacity="0.12"/>
+        <path d="${path}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+        <circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="3.4" fill="${col}"/>
+      </svg>`;
+  }
+
+  function miniSVG(series, base, valence){
+    return sparkSVG(series, base, valence, 96, 22);
+  }
+
+  /* ---------- render: hero column (answer-first) ---------- */
+  function heroCol(){
+    const w = WINDOWS[curWin];
+    const chunks = chunksFor(curWin);
+    const dirCol = w.dirGood ? 'var(--ok)' : 'var(--warn)';
+    const dirArrow = w.dirGood ? '&#8599;' : '&#8600;';
+    const valence = w.dirGood ? 'good' : 'warn';
+
+    const chunkHTML = chunks.map(c=>{
+      const isAnom = c.id==='out' && curWin==='30d';
+      return `
+        <button class="chunk ${isAnom?'anomaly':''}" data-drill="${c.drill}" data-key="hero">
+          <div class="chunk-top">
+            <span class="chunk-label">
+              <i class="${isAnom?'dot-warn':'dot-mute'}"></i>${c.label}
+              ${isAnom?'<span class="tag-anom mono">spike</span>':''}
+            </span>
+            <span class="chunk-val mono">${c.val}</span>
+          </div>
+          <div class="chunk-meta">
+            ${miniSVG(c.spark, c.base, isAnom?'warn':(c.id==='outstanding'?'neutral':'good'))}
+            <span>${c.meta}</span>
+          </div>
+          <span class="drill-cue mono">drill &rarr;</span>
+        </button>`;
+    }).join('');
+
+    return `
+      <section class="col hero-col" data-key="hero">
+        <div class="col-head">
+          <span class="col-title">Cash position</span>
+          <div class="chips" role="tablist" aria-label="window">
+            ${['7d','30d','90d','YTD'].map(k=>`<button class="chip ${k===curWin?'active':''}" data-win="${k}" role="tab" aria-selected="${k===curWin}">${k}</button>`).join('')}
+          </div>
+        </div>
+        <div class="col-body">
+          <p class="verdict">You have <b>~9 weeks</b> of runway at the current burn, and it is <b>holding</b>. Nothing here needs a decision today. One line wants a look.</p>
+
+          <div class="hero">
+            <span class="hero-num mono">${w.runwayWk}</span>
+            <span class="hero-unit">weeks<br>runway</span>
+            <span class="hero-dir mono" style="color:${dirCol}"><span class="arrow">${dirArrow}</span>${w.dirPct>0?'+':''}${w.dirPct}%</span>
+          </div>
+          <p class="hero-sub">Net positive <span class="mono">+$${fmt(w.collected - w.out > 0 ? w.collected - w.out : Math.abs(w.collected-w.out))}</span> ${w.collected-w.out>=0?'cash flow':'draw'} over ${w.label}.</p>
+
+          <div class="spark-wrap">
+            <div class="spark-cap"><span>weekly collected vs prior avg</span><span class="mono">prior $${fmt(w.prior)}/wk</span></div>
+            ${sparkSVG(w.inSeries, w.prior, valence)}
+          </div>
+
+          <div class="chunks">${chunkHTML}</div>
+
+          <button class="door" id="door">
+            <span>Elaborate. Full in/out ledger, ageing, and what moved</span>
+            <span class="door-hint">4 categories · 1 flagged</span>
+            <span class="chev">&rsaquo;</span>
+          </button>
+
+          <div class="relate collapsed" id="relateBlock">
+            <div class="relate-cap">Connected to</div>
+            <div class="relate-row">
+              ${RELATE.map(r=>`<button class="rel-pill" data-rel="${r.q}"><span class="rel-arrow">&rarr;</span>${r.label}</button>`).join('')}
+            </div>
+          </div>
+        </div>
+        <div class="col-foot"><div class="draft-note">numbers are read-only · any outbound is copy, not send</div></div>
+      </section>`;
+  }
+
+  /* ---------- render: a drilled detail column ---------- */
+  function drillCol(key){
+    const d = DRILL[key];
+    if(!d) return '';
+    const rows = d.rows.map(r=>{
+      const barClass = r.kind==='warn'?'warn':(r.kind==='neutral'?'neutral':'');
+      return `
+        <button class="rec" data-drill="${r.drill||''}" ${r.drill?'':'disabled'}>
+          <div class="rec-top">
+            <span class="rec-name">${r.anom?'<i class="dot-warn" style="display:inline-block;margin-right:7px"></i>':''}${r.name}</span>
+            <span class="rec-amt mono ${r.kind==='neutral'?'out':''}">${r.amt}</span>
+          </div>
+          <div class="rec-bar"><i class="${barClass}" style="width:${r.pct}%"></i></div>
+          ${r.note?`<div class="rec-note">${r.note}</div>`:''}
+        </button>`;
+    }).join('');
+    return `
+      <section class="col" data-key="${key}">
+        <div class="col-head">
+          <span class="col-title">${d.title}</span>
+          <button class="col-close" data-close="${key}" aria-label="close column">&times;</button>
+        </div>
+        <div class="col-body">
+          <p class="verdict">${d.verdict}</p>
+          ${rows}
+          <div class="relate">
+            <div class="relate-cap">Connected to</div>
+            <div class="relate-row">
+              ${RELATE.map(r=>`<button class="rel-pill" data-rel="${r.q}"><span class="rel-arrow">&rarr;</span>${r.label}</button>`).join('')}
+            </div>
+          </div>
+        </div>
+        <div class="col-foot"><div class="draft-note">read-only ledger view</div></div>
+      </section>`;
+  }
+
+  /* ---------- crumbs (HISTORY) ---------- */
+  function renderCrumbs(){
+    const parts = [{label:'runway', key:'hero'}].concat(
+      stack.filter(s=>s.key!=='hero').map(s=>({label: crumbLabel(s.key), key:s.key}))
+    );
+    crumbsEl.innerHTML = parts.map((p,i)=>{
+      const cur = i===parts.length-1;
+      return `<button class="crumb ${cur?'current':''}" data-crumb="${p.key}">${p.label}</button>`
+        + (cur?'':'<span class="crumb-sep">/</span>');
+    }).join('');
+  }
+  function crumbLabel(k){
+    return ({out:'cash out', sub:'sub pay', collected:'collected', outstanding:'outstanding', signed:'signed'})[k] || k;
+  }
+
+  /* ---------- render the whole track from stack ---------- */
+  function render(){
+    let html = heroCol();
+    stack.filter(s=>s.key!=='hero').forEach((s)=>{ html += drillCol(s.key); });
+    track.innerHTML = html;
+
+    const cols = Array.from(track.querySelectorAll('.col'));
+    cols.forEach((c,i)=>{ if(i < cols.length-1) c.classList.add('context'); });
+
+    renderCrumbs();
+    wire();
+    requestAnimationFrame(()=>{
+      const last = track.querySelector('.col:last-child');
+      if(last) last.scrollIntoView({behavior: reduce?'auto':'smooth', inline:'end', block:'nearest'});
+    });
+  }
+
+  /* ---------- open / close / navigate (focus + context, reversible) ---------- */
+  function openDrill(key){
+    if(!DRILL[key]) return;
+    const idx = stack.findIndex(s=>s.key===key);
+    if(idx !== -1){ stack = stack.slice(0, idx+1); }
+    else { stack.push({key}); }
+    speak();
+    render();
+  }
+  function closeFrom(key){
+    const idx = stack.findIndex(s=>s.key===key);
+    if(idx !== -1) stack = stack.slice(0, idx);
+    render();
+  }
+  function toCrumb(key){
+    if(key==='hero'){ stack = []; render(); return; }
+    const idx = stack.findIndex(s=>s.key===key);
+    if(idx !== -1) stack = stack.slice(0, idx+1);
+    render();
+  }
+
+  /* ---------- wire events (re-bound each render) ---------- */
+  function wire(){
+    // window chips re-bind hero IN PLACE
+    track.querySelectorAll('.chip[data-win]').forEach(b=>{
+      b.addEventListener('click', ()=>{ curWin = b.dataset.win; speak(); render(); });
+    });
+    // chunk + record drill
+    track.querySelectorAll('[data-drill]').forEach(el=>{
+      const k = el.getAttribute('data-drill');
+      if(!k) return;
+      el.addEventListener('click', (e)=>{ e.preventDefault(); openDrill(k); });
+    });
+    // scented door
+    const door = document.getElementById('door');
+    if(door){
+      door.addEventListener('click', ()=>{
+        const rel = document.getElementById('relateBlock');
+        const open = door.classList.toggle('open');
+        if(rel) rel.classList.toggle('collapsed', !open);
+        if(open) openDrill('out');
+        speak();
+      });
+    }
+    // close
+    track.querySelectorAll('[data-close]').forEach(b=>{
+      b.addEventListener('click', (e)=>{ e.stopPropagation(); closeFrom(b.dataset.close); });
+    });
+    // relate
+    track.querySelectorAll('[data-rel]').forEach(b=>{
+      b.addEventListener('click', ()=>{ if(DRILL[b.dataset.rel]) openDrill(b.dataset.rel); });
+    });
+    // crumbs
+    crumbsEl.querySelectorAll('[data-crumb]').forEach(b=>{
+      b.addEventListener('click', ()=> toCrumb(b.dataset.crumb));
+    });
+  }
+
+  /* ---------- composer: natural-language summons structure ---------- */
+  function ask(q){
+    q = (q||'').trim().toLowerCase();
+    if(!q) return;
+    speak();
+    if(q.includes('outstanding')) openDrill('outstanding');
+    else if(q.includes('spike') || q.includes('why')) openDrill('sub');
+    else if(q.includes('elaborate') || q.includes('out')) openDrill('out');
+    else if(q.includes('sign') || q.includes('pipeline') || q.includes('proposal')) openDrill('signed');
+    else if(q.includes('collect')) openDrill('collected');
+    else { stack = []; render(); }
+  }
+  document.getElementById('send').addEventListener('click', ()=>{
+    const inp = document.getElementById('ask'); ask(inp.value); inp.value='';
+  });
+  document.getElementById('ask').addEventListener('keydown', e=>{
+    if(e.key==='Enter'){ ask(e.target.value); e.target.value=''; }
+  });
+  document.querySelectorAll('.hint-chip').forEach(b=>{
+    b.addEventListener('click', ()=> ask(b.dataset.q));
+  });
+
+  // keyboard: Esc closes the deepest column (reversible)
+  document.addEventListener('keydown', e=>{
+    if(e.key==='Escape' && stack.length){ stack.pop(); render(); }
+  });
+
+  // first paint
+  render();
+  setTimeout(speak, 500);
+})();
+</script>
+</body>
+</html>

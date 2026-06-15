@@ -1,0 +1,1369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Ryujin · Ads Report</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    /* ground + ink */
+    --ground: #060709;
+    --ground-2: #0a0c10;
+    --ink: #f3f5f8;
+    --ink-2: rgba(243, 245, 248, 0.66);
+    --ink-3: rgba(243, 245, 248, 0.40);
+    --ink-4: rgba(243, 245, 248, 0.22);
+
+    /* one restrained accent */
+    --accent: #4a9eff;
+    --accent-soft: rgba(74, 158, 255, 0.14);
+
+    /* valence pops only */
+    --ok: #46d68a;
+    --warn: #f5b13a;
+    --danger: #f8746e;
+
+    /* glass material */
+    --glass: rgba(20, 24, 31, 0.62);
+    --glass-2: rgba(26, 31, 39, 0.72);
+    --edge: rgba(255, 255, 255, 0.10);
+    --edge-soft: rgba(255, 255, 255, 0.06);
+
+    /* semantic z-scale: ground<presence<veil<panel<active<bubble<input */
+    --z-ground: 0;
+    --z-presence: 10;
+    --z-veil: 20;
+    --z-panel: 30;
+    --z-active: 40;
+    --z-bubble: 50;
+    --z-input: 60;
+
+    --ease: cubic-bezier(.16, 1, .3, 1);
+    --ease-soft: cubic-bezier(.22, .61, .36, 1);
+    --radius: 18px;
+    --radius-sm: 12px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body { height: 100%; }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: var(--ground);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+    letter-spacing: -0.01em;
+    position: relative;
+  }
+
+  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
+
+  /* ===== AMBIENT GROUND ===== */
+  .ambient {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-ground);
+    background:
+      radial-gradient(120% 90% at 18% 8%, rgba(74, 158, 255, 0.10), transparent 55%),
+      radial-gradient(90% 80% at 88% 100%, rgba(74, 158, 255, 0.06), transparent 60%),
+      linear-gradient(180deg, var(--ground-2), var(--ground));
+  }
+  .ambient::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(rgba(255,255,255,0.025) 1px, transparent 1px);
+    background-size: 3px 3px;
+    opacity: 0.5;
+    mix-blend-mode: screen;
+  }
+
+  /* ===== DESIGN PREVIEW MARKER ===== */
+  .preview-marker {
+    position: fixed;
+    top: 16px;
+    right: 18px;
+    z-index: var(--z-input);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.22em;
+    color: var(--ink-3);
+    border: 1px solid var(--edge-soft);
+    padding: 5px 10px;
+    border-radius: 6px;
+    background: rgba(10, 12, 16, 0.5);
+    backdrop-filter: blur(6px);
+    pointer-events: none;
+    user-select: none;
+  }
+
+  /* ===== SHELL LAYOUT ===== */
+  .shell {
+    position: relative;
+    z-index: var(--z-presence);
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 0 28px;
+  }
+
+  /* ===== CONVERSATION HEADER (answer-first) ===== */
+  .convo {
+    flex: 0 0 auto;
+    padding: 30px 6px 18px;
+  }
+
+  .turn-user {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--ink-2);
+    font-size: 14.5px;
+    margin-bottom: 20px;
+    opacity: 0;
+    animation: rise 0.5s var(--ease) 0.05s forwards;
+  }
+  .turn-user .you {
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    color: var(--ink-4);
+    font-family: 'JetBrains Mono', monospace;
+    border: 1px solid var(--edge-soft);
+    border-radius: 5px;
+    padding: 3px 7px;
+  }
+  .turn-user .q { font-weight: 500; color: var(--ink); }
+
+  /* AI presence + answer */
+  .turn-ai {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    opacity: 0;
+    animation: rise 0.55s var(--ease) 0.18s forwards;
+  }
+
+  .presence {
+    flex: 0 0 auto;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    margin-top: 2px;
+    position: relative;
+    background: radial-gradient(circle at 35% 30%, #cfe4ff, var(--accent) 60%, #2f6fd6);
+    box-shadow:
+      0 0 0 1px rgba(74,158,255,0.4),
+      0 0 18px 2px rgba(74, 158, 255, 0.35),
+      0 0 40px 6px rgba(74, 158, 255, 0.12);
+    animation: breathe 4.5s ease-in-out infinite;
+  }
+  .presence::before {
+    content: "";
+    position: absolute;
+    inset: -5px;
+    border-radius: 50%;
+    border: 1px solid rgba(74,158,255,0.18);
+    animation: halo 4.5s ease-in-out infinite;
+  }
+  .presence.speaking {
+    box-shadow:
+      0 0 0 1px rgba(74,158,255,0.6),
+      0 0 26px 4px rgba(74, 158, 255, 0.55),
+      0 0 60px 10px rgba(74, 158, 255, 0.2);
+  }
+
+  .answer { flex: 1 1 auto; min-width: 0; }
+
+  .verdict {
+    font-size: 19px;
+    line-height: 1.5;
+    font-weight: 500;
+    letter-spacing: -0.015em;
+    color: var(--ink);
+    max-width: 64ch;
+  }
+  .verdict b { font-weight: 600; }
+  .verdict .num { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .verdict .pop-warn { color: var(--warn); }
+
+  .echo {
+    margin-top: 9px;
+    font-size: 12.5px;
+    color: var(--ink-3);
+    font-style: italic;
+    letter-spacing: 0;
+  }
+
+  .meta-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+  }
+
+  /* provenance chip */
+  .chip-prov {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.04em;
+    color: var(--ink-3);
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--edge-soft);
+    border-radius: 999px;
+    padding: 5px 11px 5px 9px;
+  }
+  .chip-prov .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--ok);
+    box-shadow: 0 0 6px 1px rgba(70, 214, 138, 0.6);
+  }
+
+  /* scented door - "elaborate" affordance */
+  .door {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border: 1px solid rgba(74,158,255,0.22);
+    border-radius: 999px;
+    padding: 6px 13px;
+    cursor: pointer;
+    transition: background 0.3s var(--ease), transform 0.3s var(--ease), opacity 0.3s var(--ease);
+  }
+  .door:hover { background: rgba(74,158,255,0.22); transform: translateY(-1px); }
+  .door .scent {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-3);
+  }
+  .door svg { transition: transform 0.3s var(--ease); }
+  .door.open svg { transform: rotate(90deg); }
+
+  /* ===== MILLER COLUMN STAGE ===== */
+  .stage-wrap {
+    flex: 1 1 auto;
+    min-height: 0;
+    position: relative;
+    margin: 4px 6px 26px;
+  }
+
+  .stage {
+    height: 100%;
+    display: flex;
+    gap: 18px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 6px;
+    scroll-behavior: smooth;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.12) transparent;
+  }
+  .stage::-webkit-scrollbar { height: 8px; }
+  .stage::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 99px; }
+  .stage::-webkit-scrollbar-track { background: transparent; }
+
+  /* base glass column */
+  .col {
+    flex: 0 0 auto;
+    height: 100%;
+    background: var(--glass);
+    border: 1px solid var(--edge);
+    border-radius: var(--radius);
+    backdrop-filter: blur(22px) saturate(1.2);
+    -webkit-backdrop-filter: blur(22px) saturate(1.2);
+    box-shadow:
+      0 1px 0 0 rgba(255,255,255,0.05) inset,
+      0 22px 60px -24px rgba(0,0,0,0.8),
+      0 4px 16px -8px rgba(0,0,0,0.6);
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* primary panel that re-binds in place */
+  #panelPrimary {
+    width: 560px;
+    z-index: var(--z-panel);
+  }
+
+  .col-detail {
+    width: 420px;
+    z-index: var(--z-active);
+    transform-origin: left center;
+    animation: columnIn 0.5s var(--ease) forwards;
+  }
+
+  .col-head {
+    flex: 0 0 auto;
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid var(--edge-soft);
+  }
+
+  .col-body {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 18px 24px 24px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.1) transparent;
+  }
+  .col-body::-webkit-scrollbar { width: 7px; }
+  .col-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 99px; }
+
+  .col-title {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--ink);
+    display: flex;
+    align-items: center;
+    gap: 9px;
+  }
+  .col-title .tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.14em;
+    color: var(--ink-4);
+    border: 1px solid var(--edge-soft);
+    border-radius: 5px;
+    padding: 3px 6px;
+    font-weight: 500;
+  }
+
+  /* ===== BREADCRUMB (HISTORY - reversible spatial) ===== */
+  .breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 14px;
+    font-size: 11px;
+    flex-wrap: wrap;
+    min-height: 22px;
+  }
+  .crumb {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.02em;
+    color: var(--ink-3);
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--edge-soft);
+    border-radius: 6px;
+    padding: 4px 9px;
+    cursor: pointer;
+    transition: color 0.25s var(--ease), border-color 0.25s var(--ease), background 0.25s var(--ease);
+    white-space: nowrap;
+  }
+  .crumb:hover { color: var(--ink); border-color: var(--edge); background: rgba(255,255,255,0.06); }
+  .crumb.current { color: var(--ink); border-color: rgba(74,158,255,0.3); background: var(--accent-soft); cursor: default; }
+  .crumb-sep { color: var(--ink-4); font-size: 11px; }
+
+  /* ===== HICK TOGGLE (window chips) ===== */
+  .windows {
+    display: inline-flex;
+    gap: 4px;
+    margin-top: 16px;
+    padding: 4px;
+    background: rgba(0,0,0,0.28);
+    border: 1px solid var(--edge-soft);
+    border-radius: 11px;
+    position: relative;
+  }
+  .win {
+    position: relative;
+    z-index: 2;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.03em;
+    font-weight: 500;
+    color: var(--ink-3);
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    padding: 7px 14px;
+    cursor: pointer;
+    transition: color 0.3s var(--ease);
+  }
+  .win.active { color: var(--ink); }
+  .win-slider {
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    z-index: 1;
+    background: var(--glass-2);
+    border: 1px solid var(--edge);
+    border-radius: 8px;
+    box-shadow: 0 4px 14px -6px rgba(0,0,0,0.7);
+    transition: transform 0.45s var(--ease), width 0.45s var(--ease);
+  }
+
+  /* ===== HERO NUMBER + DELTA ===== */
+  .hero {
+    margin: 22px 0 8px;
+  }
+  .hero-label {
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    font-weight: 500;
+    margin-bottom: 8px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .hero-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 52px;
+    line-height: 1;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    transition: opacity 0.3s var(--ease);
+  }
+  .hero-num .unit { font-size: 22px; color: var(--ink-3); font-weight: 500; }
+
+  .hero-sub {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 14px;
+  }
+
+  .delta {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 4px 9px;
+    border-radius: 7px;
+    border: 1px solid var(--edge-soft);
+    background: rgba(255,255,255,0.02);
+    transition: color 0.4s var(--ease), border-color 0.4s var(--ease), background 0.4s var(--ease);
+  }
+  /* valence pop - single hue channel */
+  .delta.up { color: var(--ok); border-color: rgba(70,214,138,0.22); background: rgba(70,214,138,0.07); }
+  .delta.down { color: var(--danger); border-color: rgba(248,116,110,0.22); background: rgba(248,116,110,0.07); }
+  .delta.flat { color: var(--ink-3); }
+  .delta .arrow { font-size: 11px; }
+
+  .hero-context {
+    font-size: 12.5px;
+    color: var(--ink-3);
+    line-height: 1.4;
+  }
+  .hero-context .mono { color: var(--ink-2); }
+
+  /* ===== SPARKLINE (length-encoded delta, prior baseline drawn) ===== */
+  .spark-wrap {
+    margin: 20px 0 4px;
+    position: relative;
+  }
+  .spark-cap {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 8px;
+  }
+  .spark-cap .lbl {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    color: var(--ink-3);
+    text-transform: uppercase;
+  }
+  .spark-cap .legend {
+    display: flex;
+    gap: 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    color: var(--ink-4);
+  }
+  .spark-cap .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .spark-cap .legend i { width: 14px; height: 0; border-top-width: 2px; border-top-style: solid; display: inline-block; }
+  .legend .now { border-color: var(--accent); }
+  .legend .prior { border-color: var(--ink-4); border-top-style: dashed; }
+
+  .spark-svg { width: 100%; height: 88px; display: block; overflow: visible; }
+  .spark-area { transition: opacity 0.5s var(--ease); }
+  .spark-now-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 5px rgba(74,158,255,0.4)); }
+  .spark-prior-line { fill: none; stroke: var(--ink-4); stroke-width: 1.5; stroke-dasharray: 3 3.5; stroke-linecap: round; }
+  .spark-endpt { fill: var(--accent); filter: drop-shadow(0 0 6px rgba(74,158,255,0.7)); }
+
+  .spark-axis {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--ink-4);
+    letter-spacing: 0.04em;
+  }
+
+  /* ===== PER-CAMPAIGN SMALL MULTIPLES (rows) ===== */
+  .rows-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 26px 0 4px;
+  }
+  .rows-head .lbl {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .rows-head .hint {
+    font-size: 10.5px;
+    color: var(--ink-4);
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .rows { list-style: none; margin-top: 8px; }
+
+  .camp-row {
+    display: grid;
+    grid-template-columns: 1fr 78px 56px 46px 14px;
+    align-items: center;
+    gap: 12px;
+    padding: 13px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: background 0.28s var(--ease), border-color 0.28s var(--ease), transform 0.28s var(--ease);
+    position: relative;
+  }
+  .camp-row + .camp-row { margin-top: 2px; }
+  .camp-row:hover {
+    background: rgba(255,255,255,0.035);
+    border-color: var(--edge-soft);
+  }
+  .camp-row.selected {
+    background: var(--accent-soft);
+    border-color: rgba(74,158,255,0.3);
+  }
+
+  .camp-name {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+  .camp-name .n {
+    font-size: 13.5px;
+    font-weight: 500;
+    color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .camp-name .s {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-3);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; }
+  .status-dot.live { background: var(--ok); box-shadow: 0 0 5px 1px rgba(70,214,138,0.5); }
+  .status-dot.paused { background: var(--ink-4); }
+
+  /* per-row small-multiple sparkline */
+  .row-spark { width: 78px; height: 26px; }
+  .row-spark path.line { fill: none; stroke: var(--ink-2); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .row-spark path.base { fill: none; stroke: var(--ink-4); stroke-width: 1; stroke-dasharray: 2 2.5; }
+
+  .row-cpl {
+    font-family: 'JetBrains Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink);
+    text-align: right;
+  }
+  .row-cpl .u { font-size: 9.5px; color: var(--ink-4); display: block; letter-spacing: 0.06em; margin-top: 2px; }
+
+  .row-leads {
+    font-family: 'JetBrains Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 13px;
+    color: var(--ink-2);
+    text-align: right;
+  }
+
+  .row-chev { color: var(--ink-4); transition: transform 0.28s var(--ease), color 0.28s var(--ease); }
+  .camp-row:hover .row-chev { color: var(--accent); transform: translateX(2px); }
+
+  /* ===== DETAIL COLUMN CONTENT ===== */
+  .detail-hero {
+    margin-bottom: 4px;
+  }
+  .detail-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 38px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    line-height: 1;
+  }
+  .detail-num .unit { font-size: 17px; color: var(--ink-3); }
+  .detail-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-2);
+    border: 1px solid var(--edge-soft);
+    border-radius: 7px;
+    padding: 5px 10px;
+  }
+
+  /* detail stat grid - <=4 chunk */
+  .stat-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin: 22px 0;
+  }
+  .stat {
+    background: rgba(255,255,255,0.025);
+    border: 1px solid var(--edge-soft);
+    border-radius: var(--radius-sm);
+    padding: 13px 14px;
+  }
+  .stat .k {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-bottom: 7px;
+  }
+  .stat .v {
+    font-family: 'JetBrains Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 19px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .stat .v .u { font-size: 11px; color: var(--ink-4); }
+
+  .section-lbl {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 22px 0 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-lbl::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--edge-soft);
+  }
+
+  /* detail bar chart - position/length encoding */
+  .barlist { display: flex; flex-direction: column; gap: 11px; }
+  .bar-item .bar-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 6px;
+  }
+  .bar-item .bar-k { font-size: 12px; color: var(--ink-2); }
+  .bar-item .bar-v {
+    font-family: 'JetBrains Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+    color: var(--ink);
+    font-weight: 500;
+  }
+  .bar-track {
+    height: 7px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    background: linear-gradient(90deg, rgba(74,158,255,0.55), var(--accent));
+    transform-origin: left;
+    transform: scaleX(0);
+    animation: barGrow 0.7s var(--ease) forwards;
+  }
+
+  /* ===== RELATE STRIP (Shneiderman "relate") ===== */
+  .relate {
+    margin-top: 6px;
+  }
+  .relate-list { display: flex; flex-direction: column; gap: 8px; }
+  .relate-item {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 11px 13px;
+    background: rgba(255,255,255,0.022);
+    border: 1px solid var(--edge-soft);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background 0.25s var(--ease), border-color 0.25s var(--ease), transform 0.25s var(--ease);
+  }
+  .relate-item:hover { background: rgba(74,158,255,0.07); border-color: rgba(74,158,255,0.22); transform: translateX(2px); }
+  .relate-icon {
+    flex: 0 0 auto;
+    width: 28px; height: 28px;
+    border-radius: 8px;
+    display: grid; place-items: center;
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .relate-body { flex: 1 1 auto; min-width: 0; }
+  .relate-body .rt { font-size: 12.5px; color: var(--ink); font-weight: 500; }
+  .relate-body .rs { font-size: 10.5px; color: var(--ink-3); font-family: 'JetBrains Mono', monospace; margin-top: 2px; }
+  .relate-link { color: var(--ink-4); }
+
+  /* ===== EMPTY HINT ON DETAIL ===== */
+  .detail-foot {
+    margin-top: 24px;
+    padding-top: 16px;
+    border-top: 1px solid var(--edge-soft);
+    font-size: 11px;
+    color: var(--ink-4);
+    line-height: 1.5;
+  }
+
+  /* collapsed panel state before "elaborate" */
+  #panelPrimary.dormant {
+    width: 560px;
+    opacity: 0.0;
+    pointer-events: none;
+    transform: translateY(8px) scale(0.99);
+  }
+  #panelPrimary {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    transition: opacity 0.5s var(--ease), transform 0.5s var(--ease);
+  }
+
+  .stage.collapsed { align-items: flex-start; }
+
+  /* ===== ANIMATIONS ===== */
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes columnIn {
+    from { opacity: 0; transform: translateX(-14px) scale(0.985); }
+    to { opacity: 1; transform: translateX(0) scale(1); }
+  }
+  @keyframes barGrow { to { transform: scaleX(var(--scale, 1)); } }
+  @keyframes breathe {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.06); }
+  }
+  @keyframes halo {
+    0%, 100% { opacity: 0.5; transform: scale(1); }
+    50% { opacity: 0.9; transform: scale(1.12); }
+  }
+  /* hue valence pop on window rebind */
+  @keyframes huePop {
+    0% { filter: none; }
+    35% { filter: drop-shadow(0 0 14px var(--popcolor)); }
+    100% { filter: none; }
+  }
+  .hero-num.popped { animation: numLift 0.55s var(--ease); }
+  @keyframes numLift {
+    0% { opacity: 0.2; transform: translateY(6px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+  .delta.poppulse { animation: deltaPulse 0.7s var(--ease); }
+  @keyframes deltaPulse {
+    0% { transform: scale(0.92); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+  }
+
+  /* ===== REDUCED MOTION ===== */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+    .turn-user, .turn-ai { opacity: 1; }
+    .bar-fill { transform: scaleX(var(--scale, 1)); }
+    .presence { animation: none; }
+  }
+
+  @media (max-width: 720px) {
+    .shell { padding: 0 14px; }
+    #panelPrimary { width: 86vw; }
+    .col-detail { width: 80vw; }
+    .hero-num { font-size: 42px; }
+    .verdict { font-size: 16.5px; }
+  }
+</style>
+</head>
+<body>
+  <div class="ambient"></div>
+  <div class="preview-marker">DESIGN PREVIEW</div>
+
+  <main class="shell">
+    <!-- ===== ANSWER-FIRST CONVERSATION ===== -->
+    <section class="convo" aria-label="conversation">
+      <div class="turn-user">
+        <span class="you">YOU</span>
+        <span class="q">how are ads?</span>
+      </div>
+
+      <div class="turn-ai">
+        <div class="presence speaking" id="presence" aria-hidden="true"></div>
+        <div class="answer">
+          <p class="verdict" id="verdict">
+            Steady. Over the last <b>7 days</b> you spent <span class="num">$84</span> and pulled <span class="num">6</span> leads at <span class="num">$13.94</span> CPL,
+            a touch above your <span class="num">$11.69</span> lifetime average. <b>Revive v3</b> is the one to watch. <span class="pop-warn">It is spending without converting.</span>
+          </p>
+          <p class="echo" id="echo">Reading "how are ads?" as your live spend, leads, and cost-per-lead across both active campaigns.</p>
+
+          <div class="meta-row">
+            <span class="chip-prov" title="Where this number comes from">
+              <span class="dot"></span>
+              Meta Ads API <span style="color:var(--ink-4)">·</span> synced 06:14 AT <span style="color:var(--ink-4)">·</span> live token
+            </span>
+            <button class="door" id="elaborate" aria-expanded="false" aria-controls="panelPrimary">
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M3 1.5L7.5 5.5L3 9.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Elaborate
+              <span class="scent">opens the report &middot; 2 campaigns</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== MILLER COLUMN STAGE ===== -->
+    <div class="stage-wrap">
+      <div class="stage collapsed" id="stage" role="region" aria-label="ads report panels">
+
+        <!-- PRIMARY PANEL - re-binds in place across windows -->
+        <section class="col dormant" id="panelPrimary" aria-label="ads overview">
+          <div class="col-head">
+            <div class="breadcrumb" id="breadcrumb" aria-label="history breadcrumb">
+              <span class="crumb current" data-depth="0">Ads</span>
+            </div>
+            <div class="col-title">
+              Ads overview
+              <span class="tag">REBINDS IN PLACE</span>
+            </div>
+
+            <!-- HICK TOGGLE -->
+            <div class="windows" role="tablist" aria-label="time window">
+              <div class="win-slider" id="winSlider"></div>
+              <button class="win" role="tab" data-win="24h">24h</button>
+              <button class="win active" role="tab" data-win="7d" aria-selected="true">7d</button>
+              <button class="win" role="tab" data-win="month">month</button>
+              <button class="win" role="tab" data-win="life">lifetime</button>
+            </div>
+          </div>
+
+          <div class="col-body">
+            <!-- HERO NUMBER + DELTA -->
+            <div class="hero">
+              <div class="hero-label" id="heroLabel">Spend &middot; last 7 days</div>
+              <div class="hero-num" id="heroNum"><span class="val">$84</span></div>
+              <div class="hero-sub">
+                <span class="delta down" id="heroDelta"><span class="arrow">&#9650;</span><span class="dval">+19%</span></span>
+                <span class="hero-context" id="heroCtx"><span class="mono">6</span> leads &middot; <span class="mono">$13.94</span> CPL vs <span class="mono">$11.69</span> prior</span>
+              </div>
+            </div>
+
+            <!-- SPARKLINE: length-encoded delta, prior baseline drawn -->
+            <div class="spark-wrap">
+              <div class="spark-cap">
+                <span class="lbl" id="sparkLbl">Daily spend &middot; this window vs prior</span>
+                <span class="legend">
+                  <span><i class="now"></i>now</span>
+                  <span><i class="prior"></i>prior</span>
+                </span>
+              </div>
+              <svg class="spark-svg" id="sparkSvg" viewBox="0 0 520 88" preserveAspectRatio="none" aria-label="spend trend"></svg>
+              <div class="spark-axis" id="sparkAxis">
+                <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+              </div>
+            </div>
+
+            <!-- PER-CAMPAIGN SMALL MULTIPLES -->
+            <div class="rows-head">
+              <span class="lbl">By campaign</span>
+              <span class="hint">drill &rarr;</span>
+            </div>
+            <ul class="rows" id="campRows"></ul>
+          </div>
+        </section>
+
+        <!-- DETAIL COLUMNS injected to the right -->
+      </div>
+    </div>
+  </main>
+
+<script>
+(() => {
+  "use strict";
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ===== BAKED PLUS ULTRA DATA ===== */
+  // Window-level rollups. delta sign drives valence pop. spark series = now vs prior baseline.
+  const WINDOWS = {
+    '24h': {
+      label: 'Spend · last 24h',
+      hero: '$12', heroVal: 12,
+      delta: -8, deltaLabel: '-8%', valence: 'up',           // lower spend day, neutral-good
+      leads: 1, cpl: '$11.80', priorCpl: '$11.69',
+      ctx: '<span class="mono">1</span> lead · <span class="mono">$11.80</span> CPL vs <span class="mono">$11.69</span> prior',
+      sparkLbl: 'Hourly spend · today vs yesterday',
+      axis: ['00','04','08','12','16','20',''],
+      now:   [0.2,0.1,0.3,0.7,0.9,0.6,0.5],
+      prior: [0.3,0.2,0.4,0.6,0.7,0.6,0.4]
+    },
+    '7d': {
+      label: 'Spend · last 7 days',
+      hero: '$84', heroVal: 84,
+      delta: 19, deltaLabel: '+19%', valence: 'down',         // CPL drifting up = bad valence
+      leads: 6, cpl: '$13.94', priorCpl: '$11.69',
+      ctx: '<span class="mono">6</span> leads · <span class="mono">$13.94</span> CPL vs <span class="mono">$11.69</span> prior',
+      sparkLbl: 'Daily spend · this week vs last',
+      axis: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
+      now:   [0.55,0.6,0.7,0.5,0.85,0.75,0.65],
+      prior: [0.5,0.45,0.55,0.5,0.6,0.55,0.5]
+    },
+    'month': {
+      label: 'Spend · this month',
+      hero: '$456', heroVal: 456,
+      delta: -4, deltaLabel: '-4%', valence: 'up',
+      leads: 30, cpl: '$15.20', priorCpl: '$11.69',
+      ctx: '<span class="mono">30</span> leads · <span class="mono">$15.20</span> CPL vs <span class="mono">$11.69</span> life',
+      sparkLbl: 'Weekly spend · this month vs last',
+      axis: ['W1','W2','W3','W4','','',''],
+      now:   [0.6,0.75,0.7,0.85,0,0,0],
+      prior: [0.7,0.65,0.7,0.6,0,0,0]
+    },
+    'life': {
+      label: 'Spend · lifetime',
+      hero: '$10,523', heroVal: 10523,
+      delta: 0, deltaLabel: 'baseline', valence: 'flat',
+      leads: 923, cpl: '$11.69', priorCpl: '$11.69',
+      ctx: '<span class="mono">923</span> leads · <span class="mono">$11.69</span> CPL all-time',
+      sparkLbl: 'Monthly spend · trailing year',
+      axis: ['J','A','S','O','N','D','J'],
+      now:   [0.4,0.5,0.55,0.7,0.65,0.8,0.6],
+      prior: [0.4,0.45,0.5,0.55,0.6,0.65,0.7]
+    }
+  };
+
+  // Per-campaign small multiples. spark = trailing trend, base = prior baseline.
+  const CAMPAIGNS = [
+    {
+      id: 'may-ie',
+      name: 'May Instant Estimator',
+      status: 'live',
+      cpl: '$15.00', cplVal: 15,
+      leads: 26,
+      spend: '$389.92',
+      reach: '8,420', impr: '21,160', ctr: '2.1%', freq: '2.51',
+      objective: 'Lead generation', placement: 'FB + IG feeds', daily: '$13/day',
+      spark: [0.4,0.55,0.5,0.7,0.6,0.8,0.72],
+      base:  [0.5,0.5,0.5,0.5,0.5,0.5,0.5],
+      breakdown: [
+        { k: 'Facebook feed', v: '14 leads', scale: 1.0 },
+        { k: 'Instagram feed', v: '9 leads', scale: 0.64 },
+        { k: 'Reels', v: '3 leads', scale: 0.21 }
+      ],
+      relate: [
+        { icon: 'L', t: 'Sharon · $20,750 quote out', s: 'quiet 39d · top follow-up', kind: 'lead' },
+        { icon: 'E', t: 'Instant Estimator funnel', s: 'reveal-then-capture · live', kind: 'funnel' },
+        { icon: '6', t: '6 open leads', s: '1 arrived this week', kind: 'pipe' }
+      ],
+      note: 'Healthy. CPL right at target, Facebook feed carrying it. No action needed.'
+    },
+    {
+      id: 'revive-v3',
+      name: 'Revive v3',
+      status: 'live',
+      flag: true,                                   // THE single preattentive pop
+      cpl: '$16.50', cplVal: 16.5,
+      leads: 4,
+      spend: '$66.00',
+      reach: '2,910', impr: '6,040', ctr: '1.2%', freq: '2.08',
+      objective: 'Lead generation', placement: 'FB feed', daily: '$10/day',
+      spark: [0.5,0.45,0.6,0.55,0.7,0.65,0.78],
+      base:  [0.4,0.4,0.4,0.4,0.4,0.4,0.4],
+      breakdown: [
+        { k: 'Facebook feed', v: '4 leads', scale: 1.0 },
+        { k: 'Instagram feed', v: '0 leads', scale: 0.02 },
+        { k: 'Reels', v: '0 leads', scale: 0.02 }
+      ],
+      relate: [
+        { icon: 'A', t: 'Spend climbing, leads flat', s: 'CPL +41% vs lifetime', kind: 'flag' },
+        { icon: 'J', t: 'Jean Gauvin · $20,750', s: 'also quiet · follow-up', kind: 'lead' },
+        { icon: 'M', t: 'Marketing · creative refresh', s: 'last asset swap 22d ago', kind: 'task' }
+      ],
+      note: 'Watch this one. Spend is rising while leads stay flat. CPL drifted to $16.50, 41% over lifetime. Consider a creative refresh or pause before it eats the month.'
+    }
+  ];
+
+  /* ===== SPARKLINE BUILDER (length-encoded) ===== */
+  function buildSpark(svg, now, prior, opts = {}) {
+    const W = 520, H = 88, pad = 6;
+    const n = now.length;
+    const max = Math.max(...now, ...prior, 0.0001);
+    const xAt = i => pad + (i / (n - 1)) * (W - pad * 2);
+    const yAt = v => H - pad - (v / max) * (H - pad * 2);
+    const toPath = arr => arr.map((v, i) => `${i === 0 ? 'M' : 'L'}${xAt(i).toFixed(1)} ${yAt(v).toFixed(1)}`).join(' ');
+
+    const priorPath = toPath(prior);
+    const nowPath = toPath(now);
+    const lastX = xAt(n - 1), lastY = yAt(now[n - 1]);
+
+    svg.innerHTML = `
+      <path class="spark-prior-line" d="${priorPath}" />
+      <path class="spark-now-line" d="${nowPath}" />
+      <circle class="spark-endpt" cx="${lastX.toFixed(1)}" cy="${lastY.toFixed(1)}" r="3.4" />
+    `;
+
+    if (!reduce && opts.animate) {
+      const nowLine = svg.querySelector('.spark-now-line');
+      const len = nowLine.getTotalLength();
+      nowLine.style.strokeDasharray = len;
+      nowLine.style.strokeDashoffset = len;
+      nowLine.getBoundingClientRect();
+      nowLine.style.transition = 'stroke-dashoffset 0.7s cubic-bezier(.16,1,.3,1)';
+      nowLine.style.strokeDashoffset = '0';
+      const ep = svg.querySelector('.spark-endpt');
+      ep.style.opacity = '0';
+      setTimeout(() => { ep.style.transition = 'opacity 0.3s ease'; ep.style.opacity = '1'; }, 560);
+    }
+  }
+
+  /* tiny per-row small-multiple */
+  function rowSparkSVG(spark, base) {
+    const W = 78, H = 26, pad = 3;
+    const n = spark.length;
+    const max = Math.max(...spark, ...base, 0.0001);
+    const xAt = i => pad + (i / (n - 1)) * (W - pad * 2);
+    const yAt = v => H - pad - (v / max) * (H - pad * 2);
+    const path = a => a.map((v, i) => `${i === 0 ? 'M' : 'L'}${xAt(i).toFixed(1)} ${yAt(v).toFixed(1)}`).join(' ');
+    return `<svg class="row-spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+      <path class="base" d="${path(base)}" />
+      <path class="line" d="${path(spark)}" />
+    </svg>`;
+  }
+
+  /* ===== STATE ===== */
+  let currentWin = '7d';
+  let openCampId = null;
+
+  const stage = document.getElementById('stage');
+  const panel = document.getElementById('panelPrimary');
+  const presence = document.getElementById('presence');
+  const breadcrumb = document.getElementById('breadcrumb');
+
+  /* ===== RENDER WINDOW (re-bind same panel in place) ===== */
+  function renderWindow(win, opts = {}) {
+    const d = WINDOWS[win];
+    currentWin = win;
+
+    document.getElementById('heroLabel').innerHTML = d.label;
+    const heroNum = document.getElementById('heroNum');
+    heroNum.innerHTML = `<span class="val">${d.hero}</span>`;
+    document.getElementById('heroCtx').innerHTML = d.ctx;
+    document.getElementById('sparkLbl').textContent = d.sparkLbl;
+
+    const axis = document.getElementById('sparkAxis');
+    axis.innerHTML = d.axis.map(a => `<span>${a}</span>`).join('');
+
+    // delta + valence pop (single hue channel)
+    const delta = document.getElementById('heroDelta');
+    delta.className = 'delta ' + d.valence;
+    const arrow = d.valence === 'up' ? '&#9660;' : d.valence === 'down' ? '&#9650;' : '&#8226;';
+    delta.innerHTML = `<span class="arrow">${arrow}</span><span class="dval">${d.deltaLabel}</span>`;
+
+    // sparkline
+    buildSpark(document.getElementById('sparkSvg'), d.now, d.prior, { animate: opts.animate });
+
+    // animate the hue pop on rebind
+    if (opts.animate && !reduce) {
+      heroNum.classList.remove('popped'); void heroNum.offsetWidth; heroNum.classList.add('popped');
+      delta.classList.remove('poppulse'); void delta.offsetWidth; delta.classList.add('poppulse');
+      const pop = d.valence === 'up' ? 'rgba(70,214,138,0.6)' : d.valence === 'down' ? 'rgba(248,116,110,0.6)' : 'rgba(74,158,255,0.5)';
+      const spark = document.getElementById('sparkSvg');
+      spark.style.setProperty('--popcolor', pop);
+      spark.style.animation = 'none'; void spark.offsetWidth;
+      spark.style.animation = 'huePop 0.7s var(--ease)';
+    }
+
+    // window chip slider
+    document.querySelectorAll('.win').forEach(b => {
+      const on = b.dataset.win === win;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    moveSlider();
+  }
+
+  function moveSlider() {
+    const active = document.querySelector('.win.active');
+    const slider = document.getElementById('winSlider');
+    if (!active) return;
+    slider.style.width = active.offsetWidth + 'px';
+    slider.style.transform = `translateX(${active.offsetLeft - 4}px)`;
+  }
+
+  /* ===== RENDER CAMPAIGN ROWS ===== */
+  function renderRows() {
+    const ul = document.getElementById('campRows');
+    ul.innerHTML = '';
+    CAMPAIGNS.forEach(c => {
+      const li = document.createElement('li');
+      li.className = 'camp-row' + (c.id === openCampId ? ' selected' : '');
+      li.tabIndex = 0;
+      li.setAttribute('role', 'button');
+      li.dataset.id = c.id;
+      // ONE preattentive pop: the flagged campaign's status text glows warn
+      const cplPop = c.flag ? ' style="color:var(--warn)"' : '';
+      li.innerHTML = `
+        <div class="camp-name">
+          <span class="n">${c.name}</span>
+          <span class="s">
+            <span class="status-dot ${c.status}"></span>
+            ${c.status === 'live' ? 'live' : 'paused'} · ${c.spend} · ${c.daily}
+          </span>
+        </div>
+        ${rowSparkSVG(c.spark, c.base)}
+        <div class="row-cpl"${cplPop}>${c.cpl}<span class="u">CPL</span></div>
+        <div class="row-leads">${c.leads}<span class="u" style="font-size:9px;color:var(--ink-4);display:block;margin-top:2px;letter-spacing:.06em">LEADS</span></div>
+        <svg class="row-chev" width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M4 2L8.5 6.5L4 11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      `;
+      li.addEventListener('click', () => drillCampaign(c.id));
+      li.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); drillCampaign(c.id); } });
+      ul.appendChild(li);
+    });
+  }
+
+  /* ===== DRILL into MILLER COLUMN (focus + context, magic-move) ===== */
+  function drillCampaign(id) {
+    const c = CAMPAIGNS.find(x => x.id === id);
+    if (!c) return;
+    openCampId = id;
+    renderRows();
+
+    // remove any existing detail col
+    const existing = document.getElementById('panelDetail');
+    if (existing) existing.remove();
+
+    const col = document.createElement('section');
+    col.className = 'col col-detail';
+    col.id = 'panelDetail';
+    col.setAttribute('aria-label', c.name + ' detail');
+
+    const statusTxt = c.status === 'live' ? 'Live · running' : 'Paused';
+    const flagBadge = c.flag
+      ? `<div class="detail-status" style="color:var(--warn);border-color:rgba(245,177,58,0.3);background:rgba(245,177,58,0.07)">
+           <span class="status-dot" style="background:var(--warn);box-shadow:0 0 5px 1px rgba(245,177,58,0.5)"></span>
+           Watch · CPL +41% vs lifetime
+         </div>`
+      : `<div class="detail-status">
+           <span class="status-dot ${c.status}"></span>${statusTxt}
+         </div>`;
+
+    col.innerHTML = `
+      <div class="col-head">
+        <div class="col-title">
+          ${c.name}
+          <span class="tag">CAMPAIGN</span>
+        </div>
+      </div>
+      <div class="col-body">
+        <div class="detail-hero">
+          <div class="detail-num">${c.cpl}<span class="unit"> CPL</span></div>
+          ${flagBadge}
+        </div>
+
+        <div class="stat-grid">
+          <div class="stat"><div class="k">Leads</div><div class="v">${c.leads}</div></div>
+          <div class="stat"><div class="k">Spend</div><div class="v">${c.spend}</div></div>
+          <div class="stat"><div class="k">Reach</div><div class="v">${c.reach}</div></div>
+          <div class="stat"><div class="k">CTR</div><div class="v">${c.ctr}</div></div>
+        </div>
+
+        <div class="section-lbl">Leads by placement</div>
+        <div class="barlist">
+          ${c.breakdown.map((b, i) => `
+            <div class="bar-item">
+              <div class="bar-top"><span class="bar-k">${b.k}</span><span class="bar-v">${b.v}</span></div>
+              <div class="bar-track"><div class="bar-fill" style="--scale:${b.scale};animation-delay:${0.1 + i * 0.08}s"></div></div>
+            </div>`).join('')}
+        </div>
+
+        <div class="section-lbl">Connected to</div>
+        <div class="relate">
+          <div class="relate-list">
+            ${c.relate.map(r => `
+              <div class="relate-item" role="button" tabindex="0">
+                <div class="relate-icon">${r.icon}</div>
+                <div class="relate-body"><div class="rt">${r.t}</div><div class="rs">${r.s}</div></div>
+                <svg class="relate-link" width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M4 2L8.5 6.5L4 11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </div>`).join('')}
+          </div>
+        </div>
+
+        <div class="detail-foot">
+          ${c.note}<br><br>
+          <span style="color:var(--ink-3)">Any change to budget or creative is a draft for your sign-off. Nothing is paused or edited from here.</span>
+        </div>
+      </div>
+    `;
+    stage.appendChild(col);
+
+    // breadcrumb: append depth-1 crumb (reversible history)
+    updateBreadcrumb(c.name);
+
+    // scroll to reveal detail, keep primary in context
+    requestAnimationFrame(() => {
+      col.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', inline: 'end', block: 'nearest' });
+    });
+
+    pulsePresence();
+  }
+
+  /* ===== BREADCRUMB (HISTORY, reversible) ===== */
+  function updateBreadcrumb(campName) {
+    breadcrumb.innerHTML = '';
+    const root = document.createElement('span');
+    root.className = 'crumb' + (campName ? '' : ' current');
+    root.textContent = 'Ads';
+    root.dataset.depth = '0';
+    root.addEventListener('click', () => closeDetail());
+    breadcrumb.appendChild(root);
+
+    if (campName) {
+      const sep = document.createElement('span');
+      sep.className = 'crumb-sep';
+      sep.textContent = '/';
+      breadcrumb.appendChild(sep);
+
+      const leaf = document.createElement('span');
+      leaf.className = 'crumb current';
+      leaf.textContent = campName;
+      leaf.dataset.depth = '1';
+      breadcrumb.appendChild(leaf);
+    }
+  }
+
+  function closeDetail() {
+    const existing = document.getElementById('panelDetail');
+    if (existing) {
+      if (reduce) { existing.remove(); }
+      else {
+        existing.style.transition = 'opacity 0.35s var(--ease), transform 0.35s var(--ease)';
+        existing.style.opacity = '0';
+        existing.style.transform = 'translateX(-14px) scale(0.985)';
+        setTimeout(() => existing.remove(), 340);
+      }
+    }
+    openCampId = null;
+    renderRows();
+    updateBreadcrumb(null);
+    requestAnimationFrame(() => panel.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', inline: 'start', block: 'nearest' }));
+  }
+
+  /* ===== PRESENCE PULSE ===== */
+  let pulseT;
+  function pulsePresence() {
+    presence.classList.add('speaking');
+    clearTimeout(pulseT);
+    pulseT = setTimeout(() => presence.classList.remove('speaking'), 1400);
+  }
+
+  /* ===== ELABORATE - scented door reveals the panel ===== */
+  let opened = false;
+  function openPanel() {
+    if (opened) return;
+    opened = true;
+    const door = document.getElementById('elaborate');
+    door.classList.add('open');
+    door.setAttribute('aria-expanded', 'true');
+    stage.classList.remove('collapsed');
+    panel.classList.remove('dormant');
+    renderWindow('7d', { animate: true });
+    renderRows();
+    moveSlider();
+    pulsePresence();
+    // collapse the door's scent once opened
+    door.querySelector('.scent').textContent = 'report open';
+  }
+
+  /* ===== WIRING ===== */
+  document.getElementById('elaborate').addEventListener('click', openPanel);
+
+  document.querySelectorAll('.win').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!opened) openPanel();
+      renderWindow(btn.dataset.win, { animate: true });
+      pulsePresence();
+    });
+  });
+
+  // keyboard: arrow keys cycle windows when panel focused
+  document.addEventListener('keydown', e => {
+    if (!opened) return;
+    if (e.key === 'Escape' && openCampId) { closeDetail(); return; }
+    const order = ['24h', '7d', 'month', 'life'];
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      const tag = (e.target.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea') return;
+      const i = order.indexOf(currentWin);
+      const ni = e.key === 'ArrowRight' ? Math.min(order.length - 1, i + 1) : Math.max(0, i - 1);
+      if (ni !== i) { renderWindow(order[ni], { animate: true }); pulsePresence(); }
+    }
+  });
+
+  window.addEventListener('resize', moveSlider);
+
+  // initial: panel dormant until "elaborate" (answer-first). Pre-render rows so first reveal is instant.
+  renderRows();
+  // settle presence after the intro
+  setTimeout(() => { if (!opened) presence.classList.remove('speaking'); }, 2200);
+})();
+</script>
+</body>
+</html>
