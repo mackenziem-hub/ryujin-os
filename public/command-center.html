@@ -2632,6 +2632,10 @@ const COLORS = {
 // STATE
 // ──────────────────────────────────────────
 let focusedPanel = null;
+// Paused while the opaque full-screen section overlay covers the 3D scene (the
+// dominant working state). Stops the WebGL + CSS3D + particle burn behind it; the
+// rAF keeps scheduling so resume is instant. Set in enter/exitSectionOverlay.
+let RENDER_PAUSED = false;
 let isAnimating = false;
 const panelObjects = [];
 const panelData = [];
@@ -3112,6 +3116,7 @@ function enterFocusedPanel() {
   overlay.style.display = 'flex';
   void overlay.offsetWidth;
   overlay.classList.add('on');
+  RENDER_PAUSED = true; // overlay is opaque + full-screen; stop rendering the scene behind it
 }
 window.enterFocusedPanel = enterFocusedPanel;
 
@@ -3119,6 +3124,7 @@ function exitSectionOverlay() {
   const overlay = document.getElementById('sectionOverlay');
   const frame = document.getElementById('sectionFrame');
   overlay.classList.remove('on');
+  RENDER_PAUSED = false; // resume rendering immediately so the fade-out + zoom-out animate
   // Unload + drop the inline display after the fade so the hidden overlay stops capturing clicks.
   setTimeout(() => { frame.src = ''; overlay.style.display = ''; }, 450);
   // Reset focused panel state so next click works without needing to back all the way out
@@ -3575,6 +3581,7 @@ function updatePillarLabels() {
 
 function animate() {
   requestAnimationFrame(animate);
+  if (RENDER_PAUSED) return; // section overlay is up; skip the scene work, keep the loop alive
   const dt = clock.getDelta();
   const elapsed = clock.getElapsedTime();
 

@@ -35,12 +35,24 @@ function repFromTags(tags) {
     const m = /^sales_owner:(\w+)/i.exec(String(t || ''));
     if (!m) continue;
     const k = m[1].toLowerCase();
-    if (k.startsWith('mack')) return 'Mackenzie';
+    if (k.startsWith('mac')) return 'Mackenzie'; // mac / mack / mackenzie all fold to one rep
     if (k === 'darcy') return 'Darcy';
     if (k === 'diego') return 'Diego';
     return m[1].charAt(0).toUpperCase() + m[1].slice(1);
   }
   return null;
+}
+
+// Test / demo records that should never count toward customer totals or the
+// activity feed (mirrors the scan-check-in test-pattern filter). Matches on name
+// substrings and email tells, not phone, so it does not catch real customers.
+const TEST_NAME_RE = /\btest(er)?\b|cat ?(test|livetest)|catherine test|june tester|fire smoke|smoke test/i;
+const TEST_EMAIL_RE = /@example\.com$|^testfire@|^catdummy123@|catherinezeta|@test\./i;
+function isTestRecord(rec) {
+  if (!rec) return false;
+  if (TEST_NAME_RE.test(String(rec.name || ''))) return true;
+  if (TEST_EMAIL_RE.test(String(rec.email || ''))) return true;
+  return false;
 }
 
 // Stage classification. We resolve stage NAMES live from /opportunities/pipelines
@@ -164,7 +176,7 @@ async function loadNativeProposals(tenantId) {
       const value = Number(e.total || e.grand_total || e.amount || e.price || 0) || 0;
       out.push({
         id: 'ryujin:' + e.id,
-        label: name || ('Estimate ' + e.id),
+        label: name || '[Native estimate]',
         value,
         status: e.status || 'sent',
         stage: e.status || 'Ryujin estimate',
@@ -321,8 +333,9 @@ export default async function handler(req, res) {
       rec.totalProposalValue += np.value || 0;
     }
 
-    // Score every customer + flag warm-360 + finalize.
-    const all = [...customers.values()];
+    // Score every customer + flag warm-360 + finalize. Drop test/demo records up
+    // front so they never reach scoring, the send-list, or any count (esp. activity7d).
+    const all = [...customers.values()].filter(rec => !isTestRecord(rec));
     for (const rec of all) {
       rec.lastTouchAgeDays = ageDays(rec.lastTouchAt);
       const stageName = rec.stage || '';
