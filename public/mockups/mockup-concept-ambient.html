@@ -1,0 +1,1519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Ryujin OS / Ambient</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  /* ============================================================
+     RYUJIN OS - AMBIENT
+     A luminous AI presence is the whole interface.
+     You ask. It answers, terse. You elaborate. Panels resolve in.
+     Drill: in, in, in - out.
+     ============================================================ */
+
+  :root {
+    /* Ground - near-black, faintly cool, not pure #000 */
+    --ground-0: #060709;
+    --ground-1: #0a0c10;
+    --ground-2: #0e1116;
+
+    /* Ink - high-contrast soft white, no pure white */
+    --ink:        #f3f5f8;
+    --ink-soft:   #c3c9d4;
+    --ink-mute:   #8b93a3;
+    --ink-faint:  #7d8493;   /* AA-safe for meta text: 5.0:1 on ground, 4.6:1 on glass */
+
+    /* One restrained cool-blue accent. Used sparingly. */
+    --accent:        #4a9eff;
+    --accent-soft:   #7bb8ff;
+    --accent-dim:    rgba(74, 158, 255, 0.5);
+    --accent-ghost:  rgba(74, 158, 255, 0.12);
+
+    /* Glass - clean frosted panels, crisp hairline edges */
+    --glass-fill:   rgba(20, 24, 31, 0.62);
+    --glass-fill-2: rgba(24, 29, 38, 0.74);
+    --glass-edge:   rgba(255, 255, 255, 0.10);
+    --glass-edge-2: rgba(255, 255, 255, 0.06);
+    --glass-inner:  rgba(255, 255, 255, 0.04);
+
+    /* Semantic z-scale - ground < presence < veil < panel < active-panel < bubble < input.
+       The veil dims everything beneath the panels, but never the panels, the
+       tethered bubble, or the ask line, which stay live above it. */
+    --z-ground:   0;
+    --z-presence: 10;
+    --z-veil:     15;
+    --z-panel:    20;
+    --z-active:   30;
+    --z-bubble:   40;
+    --z-input:    50;
+
+    /* Motion - premium ease-out, no bounce */
+    --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);    /* expo-ish */
+    --ease-out-q:  cubic-bezier(0.22, 1, 0.36, 1);   /* quint */
+    --ease-soft:   cubic-bezier(0.33, 1, 0.68, 1);   /* gentle */
+
+    --r-lg: 22px;
+    --r-md: 16px;
+    --r-sm: 11px;
+
+    --shadow-panel: 0 1px 0 rgba(255,255,255,0.05) inset,
+                    0 24px 60px -20px rgba(0,0,0,0.7),
+                    0 8px 24px -12px rgba(0,0,0,0.6);
+
+    color-scheme: dark;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: var(--ground-0);
+  }
+
+  body {
+    font-family: "Inter", system-ui, -apple-system, sans-serif;
+    color: var(--ink);
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    letter-spacing: -0.011em;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .mono {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-feature-settings: "tnum" 1, "zero" 1;
+    letter-spacing: -0.01em;
+  }
+
+  /* ============================================================
+     THE SPACE - a vast, near-empty dark room.
+     A single soft light gradient settles low, where the presence lives.
+     Brightens almost imperceptibly when the AI speaks.
+     ============================================================ */
+
+  .space {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-ground);
+    background:
+      radial-gradient(120% 90% at 50% 118%, rgba(74,158,255,0.05), transparent 55%),
+      radial-gradient(80% 60% at 50% 130%, rgba(74,158,255,0.06), transparent 60%),
+      radial-gradient(140% 120% at 50% -10%, var(--ground-2), var(--ground-0) 55%);
+    transition: filter 1.2s var(--ease-soft);
+  }
+
+  /* very faint vertical grain - depth, not texture */
+  .space::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(100% 100% at 50% 100%, transparent 60%, rgba(0,0,0,0.35));
+    pointer-events: none;
+  }
+
+  /* when speaking, the whole scene lifts by a hair */
+  body.is-speaking .space { filter: brightness(1.08); }
+
+  /* ============================================================
+     THE PRESENCE - a refined luminous ring, low and centered.
+     Restrained. Precise geometry. Brightens subtly when it speaks.
+     Can dock to the right.
+     ============================================================ */
+
+  .stage {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-presence);
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+  }
+
+  .presence {
+    position: absolute;
+    left: 50%;
+    bottom: 32vh;
+    transform: translate(-50%, 0);
+    width: 96px;
+    height: 96px;
+    pointer-events: auto;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent;
+    border: none;
+    padding: 0;
+    border-radius: 50%;
+    transition:
+      left 1.1s var(--ease-out),
+      bottom 1.1s var(--ease-out),
+      width 0.9s var(--ease-out),
+      height 0.9s var(--ease-out);
+    will-change: transform, left, bottom;
+  }
+
+  /* docked to the right while it keeps speaking */
+  body.is-docked .presence {
+    left: auto;
+    right: clamp(28px, 5vw, 64px);
+    bottom: 50vh;
+    width: 64px;
+    height: 64px;
+  }
+
+  /* the sheen ring - a perfect circle that clips its own square fill.
+     overflow:hidden + border-radius:50% guarantees no square bleed. */
+  .presence__ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    overflow: hidden;
+    opacity: 0.9;
+    transition: opacity 0.8s var(--ease-soft);
+  }
+  .presence__ring::before {
+    content: "";
+    position: absolute;
+    inset: -25%;
+    border-radius: 50%;
+    background:
+      conic-gradient(from 200deg,
+        transparent 0deg,
+        rgba(123,184,255,0.0) 40deg,
+        rgba(123,184,255,0.6) 150deg,
+        rgba(180,215,255,0.9) 215deg,
+        rgba(123,184,255,0.35) 300deg,
+        transparent 360deg);
+    animation: drift 16s linear infinite;
+  }
+  /* punch the centre out so only a soft annulus of sheen shows */
+  .presence__ring::after {
+    content: "";
+    position: absolute;
+    inset: 7%;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--ground-1) 56%, transparent 78%);
+  }
+
+  /* the thin precise rim - a true circle, no fill box at all */
+  .presence__rim {
+    position: absolute;
+    inset: 2%;
+    border-radius: 50%;
+    border: 1px solid rgba(160,200,255,0.32);
+    box-shadow:
+      0 0 0 0.5px rgba(74,158,255,0.12),
+      inset 0 0 14px rgba(74,158,255,0.10);
+    transition: border-color 0.8s var(--ease-soft), box-shadow 0.8s var(--ease-soft);
+  }
+
+  /* soft inner core - a quiet point of light */
+  .presence__core {
+    position: absolute;
+    inset: 26%;
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 42%,
+      rgba(228,240,255,0.95),
+      rgba(123,184,255,0.5) 48%,
+      rgba(74,158,255,0.10) 76%,
+      transparent);
+    filter: blur(0.5px);
+    opacity: 0.55;
+    transition: opacity 0.8s var(--ease-soft), transform 0.8s var(--ease-soft);
+  }
+
+  /* ambient halo - barely there at rest, truly circular */
+  .presence__halo {
+    position: absolute;
+    inset: -45%;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(74,158,255,0.20) 0%, rgba(74,158,255,0.06) 38%, transparent 62%);
+    opacity: 0.35;
+    filter: blur(10px);
+    transition: opacity 0.8s var(--ease-soft);
+    pointer-events: none;
+  }
+
+  .presence__breath {
+    position: absolute;
+    inset: 0;
+    animation: breath 7s var(--ease-soft) infinite;
+  }
+
+  @keyframes drift { to { transform: rotate(360deg); } }
+  @keyframes breath {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.03); }
+  }
+
+  /* SPEAKING: the presence glows softly - never flashy */
+  body.is-speaking .presence__ring { opacity: 1; }
+  body.is-speaking .presence__core { opacity: 1; transform: scale(1.05); }
+  body.is-speaking .presence__halo { opacity: 0.85; }
+  body.is-speaking .presence__rim  { border-color: rgba(180,210,255,0.5); box-shadow: 0 0 0 0.5px rgba(74,158,255,0.25), inset 0 0 18px rgba(74,158,255,0.18); }
+
+  /* thinking - the core dims and the sheen quickens a touch */
+  body.is-thinking .presence__core { opacity: 0.32; }
+  body.is-thinking .presence__ring::before { animation-duration: 7s; }
+  body.is-thinking .presence__ring { opacity: 1; }
+
+  .presence:hover .presence__halo { opacity: 0.6; }
+  .presence:focus-visible { outline: none; }
+  .presence:focus-visible .presence__halo { opacity: 0.75; }
+
+  /* ============================================================
+     THE BUBBLE - terse answer, clean glass, tethered to presence.
+     ============================================================ */
+
+  .bubble {
+    position: fixed;
+    z-index: var(--z-bubble);
+    max-width: min(34rem, 78vw);
+    padding: 18px 22px 16px;
+    border-radius: var(--r-md);
+    background: var(--glass-fill-2);
+    border: 1px solid var(--glass-edge);
+    box-shadow: var(--shadow-panel);
+    backdrop-filter: blur(26px) saturate(140%);
+    -webkit-backdrop-filter: blur(26px) saturate(140%);
+    /* centered above the resting presence by default */
+    left: 50%;
+    bottom: calc(32vh + 120px);
+    transform: translate(-50%, 8px);
+    opacity: 0;
+    pointer-events: none;
+    visibility: hidden;
+    transition:
+      opacity 0.55s var(--ease-out),
+      transform 0.55s var(--ease-out),
+      left 1.1s var(--ease-out),
+      bottom 1.1s var(--ease-out),
+      right 1.1s var(--ease-out);
+  }
+
+  .bubble.show {
+    opacity: 1;
+    transform: translate(-50%, 0);
+    pointer-events: auto;
+    visibility: visible;
+  }
+
+  /* docked bubble sits to the left of the right-side presence */
+  body.is-docked .bubble {
+    left: auto;
+    right: clamp(108px, calc(5vw + 80px), 144px);
+    bottom: calc(50vh - 18px);
+    transform: translate(0, 0);
+    max-width: min(28rem, 60vw);
+  }
+  body.is-docked .bubble.show { transform: translate(0, 0); }
+
+  .bubble__answer {
+    font-size: 1.18rem;
+    line-height: 1.42;
+    color: var(--ink);
+    letter-spacing: -0.018em;
+    margin: 0;
+    text-wrap: pretty;
+  }
+  .bubble__answer .num { color: var(--accent-soft); }
+
+  .bubble__foot {
+    margin-top: 13px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .elaborate {
+    appearance: none;
+    border: 1px solid var(--glass-edge);
+    background: rgba(74,158,255,0.08);
+    color: var(--accent-soft);
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 500;
+    letter-spacing: -0.005em;
+    padding: 7px 14px 7px 12px;
+    border-radius: 999px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    transition: background 0.3s var(--ease-soft), border-color 0.3s var(--ease-soft), transform 0.3s var(--ease-out);
+  }
+  .elaborate:hover { background: rgba(74,158,255,0.16); border-color: var(--accent-dim); transform: translateY(-1px); }
+  .elaborate:active { transform: translateY(0); }
+  .elaborate svg { width: 13px; height: 13px; opacity: 0.9; }
+  .elaborate:focus-visible { outline: 2px solid var(--accent-dim); outline-offset: 2px; }
+
+  .bubble__hint {
+    font-size: 0.74rem;
+    color: var(--ink-faint);
+    letter-spacing: 0.01em;
+  }
+
+  /* ============================================================
+     THE ASK - a single hairline line of light. The only chrome.
+     ============================================================ */
+
+  .ask {
+    position: fixed;
+    z-index: var(--z-input);
+    left: 50%;
+    bottom: clamp(34px, 7vh, 64px);
+    transform: translateX(-50%);
+    width: min(40rem, 86vw);
+    transition: opacity 0.5s var(--ease-soft);
+  }
+
+  .ask__field {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  /* the hairline */
+  .ask__line {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 1px;
+    background: linear-gradient(90deg,
+      transparent,
+      rgba(255,255,255,0.14) 12%,
+      rgba(255,255,255,0.22) 50%,
+      rgba(255,255,255,0.14) 88%,
+      transparent);
+    transition: background 0.4s var(--ease-soft);
+  }
+  .ask__field:focus-within .ask__line {
+    background: linear-gradient(90deg,
+      transparent,
+      rgba(74,158,255,0.35) 12%,
+      rgba(74,158,255,0.6) 50%,
+      rgba(74,158,255,0.35) 88%,
+      transparent);
+  }
+
+  .ask__input {
+    flex: 1;
+    appearance: none;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--ink);
+    font: inherit;
+    font-size: 1.06rem;
+    letter-spacing: -0.014em;
+    padding: 14px 2px 13px;
+  }
+  .ask__input::placeholder { color: var(--ink-faint); }
+
+  .ask__send {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--ink-mute);
+    cursor: pointer;
+    padding: 8px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    transition: color 0.3s var(--ease-soft), background 0.3s var(--ease-soft);
+  }
+  .ask__send:hover { color: var(--accent-soft); background: rgba(74,158,255,0.08); }
+  .ask__send:focus-visible { outline: 2px solid var(--accent-dim); outline-offset: 2px; }
+  .ask__send svg { width: 18px; height: 18px; }
+
+  /* suggested prompts - sparse chips, low key, above the line */
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 9px;
+    margin-bottom: 16px;
+    justify-content: center;
+    transition: opacity 0.6s var(--ease-soft), transform 0.6s var(--ease-out);
+  }
+  body.has-spoken .chips { opacity: 0; transform: translateY(6px); pointer-events: none; height: 0; margin: 0; overflow: hidden; }
+
+  .chip {
+    appearance: none;
+    font: inherit;
+    font-size: 0.84rem;
+    color: var(--ink-soft);
+    background: rgba(255,255,255,0.025);
+    border: 1px solid var(--glass-edge-2);
+    border-radius: 999px;
+    padding: 8px 15px;
+    cursor: pointer;
+    letter-spacing: -0.005em;
+    transition: color 0.3s var(--ease-soft), background 0.3s var(--ease-soft), border-color 0.3s var(--ease-soft), transform 0.3s var(--ease-out);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  .chip:hover { color: var(--ink); background: rgba(74,158,255,0.07); border-color: var(--accent-dim); transform: translateY(-1px); }
+  .chip:focus-visible { outline: 2px solid var(--accent-dim); outline-offset: 2px; }
+
+  /* ============================================================
+     PANELS - the IA. Floating, partially transparent, layered.
+     Drill deepens; prior panel recedes in z with depth.
+     ============================================================ */
+
+  .veil {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-veil);
+    background: rgba(3,4,6,0.5);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.6s var(--ease-soft);
+  }
+  body.panel-open .veil { opacity: 1; pointer-events: auto; }
+
+  .panels {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-panel);
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+  }
+
+  .panel {
+    position: absolute;
+    width: min(40rem, 90vw);
+    max-height: min(76vh, 660px);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    border-radius: var(--r-lg);
+    background: var(--glass-fill);
+    border: 1px solid var(--glass-edge);
+    box-shadow: var(--shadow-panel);
+    backdrop-filter: blur(34px) saturate(150%);
+    -webkit-backdrop-filter: blur(34px) saturate(150%);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(20px) scale(0.97);
+    transition:
+      opacity 0.6s var(--ease-out),
+      transform 0.6s var(--ease-out),
+      filter 0.6s var(--ease-soft);
+    will-change: transform, opacity;
+  }
+
+  .panel.active {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0) scale(1);
+    z-index: var(--z-active);
+  }
+
+  /* a panel that has been drilled past - recede in depth */
+  .panel.receded {
+    opacity: 0.32;
+    pointer-events: none;
+    transform: translateY(-22px) scale(0.93);
+    filter: blur(2px) saturate(0.7);
+    z-index: var(--z-panel);
+  }
+  .panel.receded-2 {
+    opacity: 0.16;
+    transform: translateY(-40px) scale(0.88);
+    filter: blur(4px) saturate(0.5);
+  }
+
+  .panel__head {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 22px 24px 18px;
+    border-bottom: 1px solid var(--glass-edge-2);
+  }
+  .panel__title-wrap { flex: 1; min-width: 0; }
+  .panel__kicker {
+    font-size: 0.72rem;
+    color: var(--ink-mute);
+    letter-spacing: 0.01em;
+    margin: 0 0 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .panel__kicker .dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 0 8px var(--accent-dim);
+  }
+  .panel__title {
+    font-size: 1.3rem;
+    font-weight: 600;
+    letter-spacing: -0.022em;
+    margin: 0;
+    color: var(--ink);
+    text-wrap: balance;
+  }
+
+  .panel__close {
+    appearance: none;
+    border: 1px solid var(--glass-edge-2);
+    background: rgba(255,255,255,0.03);
+    color: var(--ink-mute);
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: grid; place-items: center;
+    flex: none;
+    transition: color 0.3s var(--ease-soft), background 0.3s var(--ease-soft), transform 0.3s var(--ease-out);
+  }
+  .panel__close:hover { color: var(--ink); background: rgba(255,255,255,0.07); transform: scale(1.05); }
+  .panel__close:focus-visible { outline: 2px solid var(--accent-dim); outline-offset: 2px; }
+  .panel__close svg { width: 14px; height: 14px; }
+
+  .panel__body {
+    padding: 20px 24px 24px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .panel__body::-webkit-scrollbar { width: 8px; }
+  .panel__body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 8px; }
+
+  /* breadcrumb for the drill depth */
+  .crumb {
+    display: flex; align-items: center; gap: 7px;
+    font-size: 0.72rem; color: var(--ink-faint);
+    margin-bottom: 16px;
+  }
+  .crumb button {
+    appearance: none; background: none; border: none;
+    color: var(--ink-mute); font: inherit; font-size: inherit;
+    cursor: pointer; padding: 0;
+    transition: color 0.25s var(--ease-soft);
+  }
+  .crumb button:hover { color: var(--accent-soft); }
+  .crumb .sep { opacity: 0.5; }
+  .crumb .here { color: var(--ink-soft); }
+
+  /* ---- content primitives ---- */
+
+  .lede {
+    font-size: 0.96rem;
+    color: var(--ink-soft);
+    line-height: 1.55;
+    margin: 0 0 20px;
+    max-width: 60ch;
+  }
+
+  /* a quiet stat line - NOT a hero metric template */
+  .figure-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 28px 40px;
+    align-items: flex-end;
+    padding: 4px 0 22px;
+    border-bottom: 1px solid var(--glass-edge-2);
+    margin-bottom: 22px;
+  }
+  .figure {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .figure__val {
+    font-size: 1.7rem;
+    font-weight: 500;
+    letter-spacing: -0.03em;
+    color: var(--ink);
+    line-height: 1;
+  }
+  .figure__val.accent { color: var(--accent-soft); }
+  .figure__lbl {
+    font-size: 0.76rem;
+    color: var(--ink-mute);
+    letter-spacing: -0.003em;
+  }
+
+  /* rows - drillable */
+  .rows { display: flex; flex-direction: column; }
+  .section-h {
+    font-size: 0.78rem;
+    color: var(--ink-mute);
+    font-weight: 500;
+    margin: 4px 0 10px;
+    letter-spacing: -0.002em;
+  }
+  .row {
+    appearance: none;
+    text-align: left;
+    width: 100%;
+    background: transparent;
+    border: none;
+    border-radius: var(--r-sm);
+    padding: 13px 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font: inherit;
+    color: var(--ink);
+    transition: background 0.25s var(--ease-soft), transform 0.25s var(--ease-out);
+  }
+  .row:hover { background: rgba(255,255,255,0.04); }
+  .row:focus-visible { outline: 2px solid var(--accent-dim); outline-offset: -2px; }
+  .row.is-drillable:hover { transform: translateX(2px); }
+  .row + .row { border-top: 1px solid var(--glass-edge-2); }
+
+  .row__main { flex: 1; min-width: 0; }
+  .row__name { font-size: 0.98rem; font-weight: 500; letter-spacing: -0.012em; }
+  .row__sub  { font-size: 0.8rem; color: var(--ink-mute); margin-top: 2px; }
+  .row__val  { text-align: right; flex: none; }
+  .row__amt  { font-size: 0.98rem; color: var(--ink); }
+  .row__meta { font-size: 0.76rem; color: var(--ink-faint); margin-top: 2px; }
+  .row__chev {
+    color: var(--ink-faint);
+    flex: none;
+    transition: transform 0.25s var(--ease-out), color 0.25s var(--ease-soft);
+  }
+  .row:hover .row__chev { color: var(--accent-soft); transform: translateX(2px); }
+  .row__chev svg { width: 15px; height: 15px; display: block; }
+
+  /* status pip */
+  .pip {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 0.78rem; color: var(--ink-soft);
+  }
+  .pip::before {
+    content: ""; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 0 8px var(--accent-dim);
+  }
+  .pip.warm::before  { background: #ffb648; box-shadow: 0 0 8px rgba(255,182,72,0.5); }
+  .pip.live::before  { background: #57d98a; box-shadow: 0 0 8px rgba(87,217,138,0.5); }
+  .pip.cool::before  { background: var(--ink-faint); box-shadow: none; }
+
+  /* tiny meta pills row */
+  .meta-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1px;
+    background: var(--glass-edge-2);
+    border: 1px solid var(--glass-edge-2);
+    border-radius: var(--r-sm);
+    overflow: hidden;
+    margin: 18px 0;
+  }
+  .meta-cell {
+    background: rgba(255,255,255,0.012);
+    padding: 13px 15px;
+  }
+  .meta-cell .k { font-size: 0.72rem; color: var(--ink-mute); margin-bottom: 4px; }
+  .meta-cell .v { font-size: 0.92rem; color: var(--ink); font-weight: 450; }
+
+  /* timeline */
+  .timeline { margin: 6px 0 0; padding: 0; list-style: none; }
+  .timeline li {
+    position: relative;
+    padding: 0 0 16px 22px;
+    border-left: 1px solid var(--glass-edge);
+    margin-left: 4px;
+  }
+  .timeline li:last-child { border-left-color: transparent; padding-bottom: 0; }
+  .timeline li::before {
+    content: ""; position: absolute; left: -4px; top: 4px;
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--ink-faint);
+  }
+  .timeline li:first-child::before { background: var(--accent); box-shadow: 0 0 8px var(--accent-dim); }
+  .timeline .when { font-size: 0.74rem; color: var(--ink-faint); }
+  .timeline .what { font-size: 0.9rem; color: var(--ink-soft); margin-top: 2px; }
+
+  /* draft block - clearly marked, never sendable */
+  .draft {
+    margin-top: 20px;
+    border: 1px solid rgba(255,182,72,0.28);
+    background: rgba(255,182,72,0.04);
+    border-radius: var(--r-md);
+    overflow: hidden;
+  }
+  .draft__bar {
+    display: flex; align-items: center; gap: 9px;
+    padding: 10px 16px;
+    background: rgba(255,182,72,0.08);
+    border-bottom: 1px solid rgba(255,182,72,0.2);
+    font-size: 0.74rem;
+    color: #ffce8a;
+    letter-spacing: 0.04em;
+    font-weight: 500;
+  }
+  .draft__bar .badge {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.66rem;
+    border: 1px solid rgba(255,182,72,0.4);
+    border-radius: 4px;
+    padding: 2px 6px;
+    color: #ffce8a;
+    letter-spacing: 0.08em;
+  }
+  .draft__body {
+    padding: 16px 18px;
+    font-size: 0.9rem;
+    line-height: 1.6;
+    color: var(--ink-soft);
+    white-space: pre-wrap;
+  }
+  .draft__note {
+    padding: 0 18px 14px;
+    font-size: 0.74rem;
+    color: var(--ink-faint);
+  }
+
+  /* mini bars for ad campaigns */
+  .bar-line {
+    display: flex; align-items: center; gap: 12px;
+    padding: 11px 0;
+  }
+  .bar-line + .bar-line { border-top: 1px solid var(--glass-edge-2); }
+  .bar-line__name { width: 38%; font-size: 0.9rem; color: var(--ink-soft); }
+  .bar-track {
+    flex: 1; height: 6px; border-radius: 3px;
+    background: rgba(255,255,255,0.05);
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%; border-radius: 3px;
+    background: linear-gradient(90deg, var(--accent-dim), var(--accent));
+    width: 0;
+    transition: width 0.9s var(--ease-out);
+  }
+  .bar-line__val { width: 64px; text-align: right; font-size: 0.86rem; color: var(--ink); }
+
+  /* ============================================================
+     PREVIEW MARKER + WORDMARK
+     ============================================================ */
+  .marker {
+    position: fixed;
+    top: 22px; left: 24px;
+    z-index: 60;
+    display: flex; align-items: center; gap: 9px;
+    font-size: 0.7rem;
+    color: var(--ink-faint);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    pointer-events: none;
+    user-select: none;
+  }
+  .marker .glyph {
+    width: 18px; height: 18px;
+    display: grid; place-items: center;
+    border: 1px solid var(--glass-edge);
+    border-radius: 5px;
+    color: var(--accent-soft);
+    font-size: 0.7rem;
+  }
+
+  .wordmark {
+    position: fixed;
+    top: 22px; right: 24px;
+    z-index: 60;
+    font-size: 0.78rem;
+    color: var(--ink-mute);
+    letter-spacing: -0.01em;
+    pointer-events: none;
+    user-select: none;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .wordmark b { color: var(--ink-soft); font-weight: 600; }
+  .wordmark .pip-live { width:6px; height:6px; border-radius:50%; background: var(--accent); box-shadow: 0 0 8px var(--accent-dim); }
+
+  /* a single faint line just beneath the resting presence - the AI's
+     quiet self-introduction. fades the instant you ask. */
+  .seed-hint {
+    position: fixed;
+    left: 50%;
+    bottom: calc(32vh - 42px);
+    transform: translateX(-50%);
+    z-index: var(--z-presence);
+    font-size: 0.82rem;
+    color: var(--ink-faint);
+    letter-spacing: 0.005em;
+    text-align: center;
+    pointer-events: none;
+    max-width: 80vw;
+    transition: opacity 0.6s var(--ease-soft), transform 0.6s var(--ease-out);
+  }
+  body.has-spoken .seed-hint { opacity: 0; transform: translate(-50%, 6px); }
+
+  /* ============================================================
+     RESPONSIVE
+     ============================================================ */
+  @media (max-width: 560px) {
+    .presence { bottom: 34vh; width: 80px; height: 80px; }
+    body.is-docked .presence { right: 18px; bottom: 56vh; width: 54px; height: 54px; }
+    body.is-docked .bubble { right: 14px; bottom: auto; top: 38vh; left: 14px; max-width: none; transform: translateY(0); }
+    .bubble { bottom: calc(34vh + 96px); }
+    .bubble__answer { font-size: 1.06rem; }
+    .bubble__hint { display: none; }
+    .panel { width: 92vw; max-height: 80vh; }
+    .marker { top: 16px; left: 16px; }
+    .wordmark { top: 16px; right: 16px; }
+  }
+  @media (max-width: 560px) { .seed-hint { bottom: calc(34vh - 74px); font-size: 0.78rem; } }
+
+  /* ============================================================
+     REDUCED MOTION - crossfades / instant, no drift, no breath
+     ============================================================ */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.18s !important;
+      scroll-behavior: auto !important;
+    }
+    .presence__ring, .presence__breath { animation: none; }
+    .presence { transition: opacity 0.18s linear; }
+    .panel { transition: opacity 0.18s linear; transform: none !important; }
+    .panel.active { transform: none; }
+    .panel.receded, .panel.receded-2 { filter: none; }
+    .bubble { transition: opacity 0.18s linear; }
+    .space { transition: none; }
+  }
+</style>
+</head>
+<body>
+
+  <!-- THE SPACE -->
+  <div class="space" aria-hidden="true"></div>
+
+  <!-- markers -->
+  <div class="marker"><span class="glyph">◇</span> Design Preview</div>
+  <div class="wordmark"><span class="pip-live"></span> Ryujin <b>OS</b></div>
+
+  <!-- THE PRESENCE -->
+  <div class="stage" aria-hidden="false">
+    <button class="presence" id="presence" aria-label="Ryujin presence. Ask anything." title="Ask Ryujin">
+      <span class="presence__halo" aria-hidden="true"></span>
+      <span class="presence__breath" aria-hidden="true">
+        <span class="presence__ring" aria-hidden="true"></span>
+        <span class="presence__rim" aria-hidden="true"></span>
+        <span class="presence__core" aria-hidden="true"></span>
+      </span>
+    </button>
+  </div>
+
+  <p class="seed-hint" id="seedHint">Ask anything. I answer, then open exactly what you need.</p>
+
+  <!-- THE BUBBLE (terse answer, tethered) -->
+  <div class="bubble" id="bubble" role="status" aria-live="polite">
+    <p class="bubble__answer" id="answer"></p>
+    <div class="bubble__foot" id="bubbleFoot">
+      <button class="elaborate" id="elaborate" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg>
+        Elaborate
+      </button>
+      <span class="bubble__hint">or ask again</span>
+    </div>
+  </div>
+
+  <!-- PANELS -->
+  <div class="veil" id="veil"></div>
+  <div class="panels" id="panels" aria-live="polite"></div>
+
+  <!-- THE ASK -->
+  <div class="ask" id="ask">
+    <div class="chips" id="chips">
+      <button class="chip" data-q="how are sales?">How are sales?</button>
+      <button class="chip" data-q="who should I follow up with?">Who should I follow up with?</button>
+      <button class="chip" data-q="ad spend?">Ad spend?</button>
+      <button class="chip" data-q="what's my day?">What's my day?</button>
+      <button class="chip" data-q="cashflow?">Cashflow?</button>
+    </div>
+    <form class="ask__field" id="askForm" autocomplete="off">
+      <span class="ask__line" aria-hidden="true"></span>
+      <input class="ask__input" id="askInput" type="text" placeholder="Ask Ryujin anything" aria-label="Ask Ryujin" />
+      <button class="ask__send" type="submit" aria-label="Ask">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13"/><path d="m13 6 6 6-6 6"/></svg>
+      </button>
+    </form>
+  </div>
+
+
+<script>
+(function () {
+  "use strict";
+
+  var body = document.body;
+  var presence = document.getElementById("presence");
+  var bubble = document.getElementById("bubble");
+  var answerEl = document.getElementById("answer");
+  var bubbleFoot = document.getElementById("bubbleFoot");
+  var elaborateBtn = document.getElementById("elaborate");
+  var panels = document.getElementById("panels");
+  var veil = document.getElementById("veil");
+  var askForm = document.getElementById("askForm");
+  var askInput = document.getElementById("askInput");
+  var chips = document.getElementById("chips");
+
+  var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---------------------------------------------------------
+     BAKED PLUS ULTRA DATA + RESPONSES
+     Live snapshot + CRM + GHL, 2026-06-15.
+     --------------------------------------------------------- */
+  var KB = {
+    sales: {
+      answer: 'Signed <span class="num">$33,264</span> this month. <span class="num">$199,843</span> in proposals out across <span class="num">13</span>.',
+      panel: "sales"
+    },
+    followups: {
+      answer: 'Sharon first. <span class="num">$20,750</span>, quote out, quiet <span class="num">39</span> days. You are the closer.',
+      panel: "followups"
+    },
+    ads: {
+      answer: '<span class="num">$10,523</span> lifetime. <span class="num">$11.69</span> CPL, <span class="num">2</span> live campaigns.',
+      panel: "ads"
+    },
+    day: {
+      answer: '<span class="num">14</span> tasks open, <span class="num">14</span> overdue. Kierstad job <span class="num">6</span> days late.',
+      panel: "day"
+    },
+    cashflow: {
+      answer: 'Collected <span class="num">$12,235</span> in 30 days. <span class="num">$29,160</span> out, deposit-paid WIP.',
+      panel: "cashflow"
+    },
+    fallback: {
+      answer: 'I can pull sales, your follow-ups, ad spend, your day, or cashflow. Try one of the prompts.',
+      panel: null
+    }
+  };
+
+  function route(q) {
+    var s = (q || "").toLowerCase();
+    if (/(follow|follow-up|who should|nudge|chase|sharon|gauvin|baxter)/.test(s)) return KB.followups;
+    if (/(ad|spend|cpl|campaign|meta|google ads)/.test(s)) return KB.ads;
+    if (/(cashflow|cash flow|collect|outstanding|owed|ar\b|receivable)/.test(s)) return KB.cashflow;
+    if (/(my day|today|priorit|task|overdue|schedule|jobs)/.test(s)) return KB.day;
+    if (/(sale|signed|revenue|month|pipeline|proposal|backlog|ytd)/.test(s)) return KB.sales;
+    return KB.fallback;
+  }
+
+  /* ---------------------------------------------------------
+     PANEL CONTENT BUILDERS
+     Each returns an HTMLElement for a .panel
+     --------------------------------------------------------- */
+
+  function chev() {
+    return '<span class="row__chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></span>';
+  }
+
+  function makePanel(opts) {
+    var p = document.createElement("section");
+    p.className = "panel";
+    p.setAttribute("role", "dialog");
+    p.setAttribute("aria-modal", "false");
+    p.setAttribute("aria-label", opts.title);
+
+    var crumbHtml = "";
+    if (opts.crumbs && opts.crumbs.length) {
+      crumbHtml = '<nav class="crumb" aria-label="Drill path">';
+      for (var i = 0; i < opts.crumbs.length; i++) {
+        var c = opts.crumbs[i];
+        if (i === opts.crumbs.length - 1) {
+          crumbHtml += '<span class="here">' + c.label + '</span>';
+        } else {
+          crumbHtml += '<button data-pop="' + (opts.crumbs.length - 1 - i) + '">' + c.label + '</button><span class="sep">/</span>';
+        }
+      }
+      crumbHtml += '</nav>';
+    }
+
+    p.innerHTML =
+      '<header class="panel__head">' +
+        '<div class="panel__title-wrap">' +
+          '<p class="panel__kicker"><span class="dot"></span>' + opts.kicker + '</p>' +
+          '<h2 class="panel__title">' + opts.title + '</h2>' +
+        '</div>' +
+        '<button class="panel__close" aria-label="Close panel (Esc)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6 18 18"/><path d="M18 6 6 18"/></svg></button>' +
+      '</header>' +
+      '<div class="panel__body">' + crumbHtml + opts.body + '</div>';
+
+    return p;
+  }
+
+  /* ---- SALES panel (depth 0) ---- */
+  function panelSales() {
+    var rows = [
+      { name: "Sharon", sub: "Quote sent · rep Darcy · quiet 39 days", amt: "$20,750", meta: "hot", key: "sharon" },
+      { name: "Jean Gauvin", sub: "Quote sent · rep Darcy · quiet 39 days", amt: "$20,750", meta: "hot", key: "gauvin" },
+      { name: "Lee Baxter", sub: "Quote sent · rep Darcy · quiet 42 days", amt: "$16,250", meta: "warm", key: "baxter" }
+    ];
+    var rowsHtml = '<div class="rows">';
+    rows.forEach(function (r) {
+      var pipCls = r.meta === "hot" ? "warm" : (r.meta === "warm" ? "" : "cool");
+      rowsHtml +=
+        '<button class="row is-drillable" data-drill="' + r.key + '">' +
+          '<div class="row__main">' +
+            '<div class="row__name">' + r.name + '</div>' +
+            '<div class="row__sub"><span class="pip ' + pipCls + '">' + r.sub + '</span></div>' +
+          '</div>' +
+          '<div class="row__val"><div class="row__amt mono">' + r.amt + '</div></div>' +
+          chev() +
+        '</button>';
+    });
+    rowsHtml += '</div>';
+
+    return makePanel({
+      kicker: "Sales · June",
+      title: "Pipeline",
+      crumbs: [{ label: "Pipeline" }],
+      body:
+        '<div class="figure-row">' +
+          '<div class="figure"><span class="figure__val accent mono">$33,264</span><span class="figure__lbl">Signed, June · 1 deal</span></div>' +
+          '<div class="figure"><span class="figure__val mono">$199,843</span><span class="figure__lbl">Proposals out · 13</span></div>' +
+          '<div class="figure"><span class="figure__val mono">$275,464</span><span class="figure__lbl">YTD · 17 deals</span></div>' +
+        '</div>' +
+        '<div class="meta-grid">' +
+          '<div class="meta-cell"><div class="k">Signed backlog</div><div class="v mono">$106,809 · 6 jobs</div></div>' +
+          '<div class="meta-cell"><div class="k">Collected, 30 days</div><div class="v mono">$12,235</div></div>' +
+          '<div class="meta-cell"><div class="k">Collected, 90 days</div><div class="v mono">$155,918</div></div>' +
+        '</div>' +
+        '<p class="section-h">Top follow-ups · drill into any one</p>' +
+        rowsHtml
+    });
+  }
+
+  /* ---- FOLLOW-UPS panel (depth 0, the "who should I follow up with" answer) ---- */
+  function panelFollowups() {
+    var rows = [
+      { name: "Sharon", sub: "Quote sent · rep Darcy · quiet 39 days · score 90", amt: "$20,750", meta: "hot", key: "sharon" },
+      { name: "Jean Gauvin", sub: "Quote sent · rep Darcy · quiet 39 days · score 90", amt: "$20,750", meta: "hot", key: "gauvin" },
+      { name: "Lee Baxter", sub: "Quote sent · rep Darcy · quiet 42 days · score 82", amt: "$16,250", meta: "warm", key: "baxter" }
+    ];
+    var rowsHtml = '<div class="rows">';
+    rows.forEach(function (r) {
+      var pipCls = r.meta === "hot" ? "warm" : (r.meta === "warm" ? "" : "cool");
+      rowsHtml +=
+        '<button class="row is-drillable" data-drill="' + r.key + '">' +
+          '<div class="row__main">' +
+            '<div class="row__name">' + r.name + '</div>' +
+            '<div class="row__sub"><span class="pip ' + pipCls + '">' + r.sub + '</span></div>' +
+          '</div>' +
+          '<div class="row__val"><div class="row__amt mono">' + r.amt + '</div></div>' +
+          chev() +
+        '</button>';
+    });
+    rowsHtml += '</div>';
+
+    return makePanel({
+      kicker: "Sales · follow-ups",
+      title: "Who to follow up with",
+      crumbs: [{ label: "Follow-ups" }],
+      body:
+        '<p class="lede">Three quotes out and quiet, all Darcy reps, all prime to nudge. You are the closer across the book. Start with Sharon, then Jean, then Lee.</p>' +
+        '<p class="section-h">Ranked by score · drill for the deal + draft</p>' +
+        rowsHtml
+    });
+  }
+
+  /* ---- SHARON deal record (depth 1, the #1 follow-up with the draft) ---- */
+  function panelSharon(crumbs) {
+    return makePanel({
+      kicker: "Follow-up · score 90",
+      title: "Sharon",
+      crumbs: crumbs || [{ label: "Sharon" }],
+      body:
+        '<p class="lede">Quote is out at $20,750 and has been quiet 39 days. High value, prime to nudge. Rep is Darcy, but you are closing this one.</p>' +
+        '<div class="meta-grid">' +
+          '<div class="meta-cell"><div class="k">Value</div><div class="v mono">$20,750</div></div>' +
+          '<div class="meta-cell"><div class="k">Stage</div><div class="v">Quote sent</div></div>' +
+          '<div class="meta-cell"><div class="k">Quiet</div><div class="v mono">39 days</div></div>' +
+          '<div class="meta-cell"><div class="k">Rep</div><div class="v">Darcy</div></div>' +
+        '</div>' +
+        '<p class="section-h">Why she is the #1</p>' +
+        '<ul class="timeline">' +
+          '<li><div class="when">score 90</div><div class="what">High value at $20,750, the top of the quiet book.</div></li>' +
+          '<li><div class="when">39 days quiet</div><div class="what">Prime window to nudge before the quote goes cold.</div></li>' +
+          '<li><div class="when">quote is out</div><div class="what">Number is already in front of her, no rework needed.</div></li>' +
+        '</ul>' +
+        '<div class="draft">' +
+          '<div class="draft__bar"><span class="badge">DRAFT</span> Follow-up note · not sent</div>' +
+          '<div class="draft__body">Hi Sharon,\n\nJust circling back on the roof quote we sent over. The number I gave you is the fixed price, no surprises on the back end.\n\nIf it helps, I can walk you through the scope and the warranty on a quick call this week. What works on your end?\n\nKing regards,\nMackenzie</div>' +
+          '<div class="draft__note">Voice-skill applied. Hold for Mac sign-off before sending.</div>' +
+        '</div>'
+    });
+  }
+
+  /* generic follow-up record for the other quiet quotes */
+  function panelFollowupDeal(key, crumbs) {
+    var data = {
+      gauvin: { title: "Jean Gauvin", value: "$20,750", quiet: "39 days", score: "90", note: "Quote out at $20,750, quiet 39 days. Rep Darcy. Same nudge window as Sharon, run it right after." },
+      baxter: { title: "Lee Baxter", value: "$16,250", quiet: "42 days", score: "82", note: "Quote out at $16,250, quiet 42 days, the longest of the three. Rep Darcy. Still warm but cooling, worth the third touch." }
+    }[key];
+    if (!data) return panelSharon(crumbs);
+    return makePanel({
+      kicker: "Follow-up · score " + data.score,
+      title: data.title,
+      crumbs: crumbs || [{ label: data.title }],
+      body:
+        '<p class="lede">' + data.note + '</p>' +
+        '<div class="meta-grid">' +
+          '<div class="meta-cell"><div class="k">Value</div><div class="v mono">' + data.value + '</div></div>' +
+          '<div class="meta-cell"><div class="k">Stage</div><div class="v">Quote sent</div></div>' +
+          '<div class="meta-cell"><div class="k">Quiet</div><div class="v mono">' + data.quiet + '</div></div>' +
+          '<div class="meta-cell"><div class="k">Rep</div><div class="v">Darcy</div></div>' +
+        '</div>' +
+        '<div class="draft">' +
+          '<div class="draft__bar"><span class="badge">DRAFT</span> Follow-up note · not sent</div>' +
+          '<div class="draft__body">Hi ' + data.title.split(" ")[0] + ',\n\nWanted to check the roof quote landed alright. The figure I sent is the fixed price, all in.\n\nHappy to walk you through the scope on a quick call this week if that is easier. What suits you?\n\nKing regards,\nMackenzie</div>' +
+          '<div class="draft__note">Voice-skill applied. Hold for Mac sign-off before sending.</div>' +
+        '</div>'
+    });
+  }
+
+  /* ---- ADS snapshot (depth 0) ---- */
+  function panelAds() {
+    return makePanel({
+      kicker: "Marketing · lifetime",
+      title: "Ad snapshot",
+      crumbs: [{ label: "Ad snapshot" }],
+      body:
+        '<div class="figure-row">' +
+          '<div class="figure"><span class="figure__val accent mono">$10,523</span><span class="figure__lbl">Lifetime spend</span></div>' +
+          '<div class="figure"><span class="figure__val mono">$11.69</span><span class="figure__lbl">Cost per lead</span></div>' +
+          '<div class="figure"><span class="figure__val mono">923</span><span class="figure__lbl">Leads · 50 campaigns</span></div>' +
+        '</div>' +
+        '<p class="section-h">Live campaigns · drill into either</p>' +
+        '<div class="rows">' +
+          '<button class="row is-drillable" data-drill="camp-ie">' +
+            '<div class="row__main"><div class="row__name">(May) Instant Estimator</div><div class="row__sub"><span class="pip live">Meta · running · $25/day cap</span></div></div>' +
+            '<div class="row__val"><div class="row__amt mono">~$15 CPL</div><div class="row__meta">$389.92 spent · 26 leads</div></div>' + chev() +
+          '</button>' +
+          '<button class="row is-drillable" data-drill="camp-revive">' +
+            '<div class="row__main"><div class="row__name">PU Revive Rejuvenation v3</div><div class="row__sub"><span class="pip warm">Meta · learning</span></div></div>' +
+            '<div class="row__val"><div class="row__amt mono">~$16.50 CPL</div><div class="row__meta">$66.06 spent · 4 leads</div></div>' + chev() +
+          '</button>' +
+        '</div>' +
+        '<p class="section-h" style="margin-top:22px">Spend split, live</p>' +
+        '<div>' +
+          '<div class="bar-line"><span class="bar-line__name">(May) Instant Estimator</span><span class="bar-track"><span class="bar-fill" data-w="86"></span></span><span class="bar-line__val mono">86%</span></div>' +
+          '<div class="bar-line"><span class="bar-line__name">PU Revive v3</span><span class="bar-track"><span class="bar-fill" data-w="14"></span></span><span class="bar-line__val mono">14%</span></div>' +
+        '</div>' +
+        '<p class="row__meta" style="margin-top:18px">Meta only. Google Ads conversion pixel still pending, so CPL counts Meta leads only.</p>'
+    });
+  }
+
+  function panelCampaign(key, crumbs) {
+    var data = {
+      "camp-ie":     { title: "(May) Instant Estimator", spend: "$389.92", cpl: "~$15", leads: "26", status: "Running", statusCls: "live", note: "The workhorse. $25/day cap. The IE-2 adset is the $7.99 CPL winner, the strongest in the account." },
+      "camp-revive": { title: "PU Revive Rejuvenation v3", spend: "$66.06", cpl: "~$16.50", leads: "4", status: "Learning", statusCls: "warm", note: "Rejuvenation play, still in learning. Early read, give it room before judging the CPL." }
+    }[key];
+    if (!data) return panelAds();
+    return makePanel({
+      kicker: "Campaign · Meta",
+      title: data.title,
+      crumbs: crumbs || [{ label: "Ad snapshot" }, { label: data.title }],
+      body:
+        '<p class="lede">' + data.note + '</p>' +
+        '<div class="meta-grid">' +
+          '<div class="meta-cell"><div class="k">Spend</div><div class="v mono">' + data.spend + '</div></div>' +
+          '<div class="meta-cell"><div class="k">CPL</div><div class="v mono">' + data.cpl + '</div></div>' +
+          '<div class="meta-cell"><div class="k">Leads</div><div class="v mono">' + data.leads + '</div></div>' +
+          '<div class="meta-cell"><div class="k">Status</div><div class="v"><span class="pip ' + data.statusCls + '">' + data.status + '</span></div></div>' +
+        '</div>'
+    });
+  }
+
+  /* ---- DAY / PRIORITIES panel (depth 0) ---- */
+  function panelDay() {
+    return makePanel({
+      kicker: "Today · priorities",
+      title: "What's my day",
+      crumbs: [{ label: "Today" }],
+      body:
+        '<div class="figure-row">' +
+          '<div class="figure"><span class="figure__val mono">14</span><span class="figure__lbl">Tasks open</span></div>' +
+          '<div class="figure"><span class="figure__val accent mono">14</span><span class="figure__lbl">Overdue</span></div>' +
+          '<div class="figure"><span class="figure__val mono">1</span><span class="figure__lbl">Job active today</span></div>' +
+        '</div>' +
+        '<p class="section-h">Jobs active today</p>' +
+        '<div class="rows">' +
+          '<button class="row" data-drill="">' +
+            '<div class="row__main"><div class="row__name">Kierstad · 18 Lawson</div><div class="row__sub"><span class="pip warm">Issued · assignee Diego · 6 days overdue</span></div></div>' +
+            '<div class="row__val"><div class="row__meta">needs a push</div></div>' +
+          '</button>' +
+        '</div>' +
+        '<p class="section-h" style="margin-top:22px">Open task load</p>' +
+        '<ul class="timeline">' +
+          '<li><div class="when">14 overdue</div><div class="what">GHL and Automator tasks, mostly Quote required follow-throughs.</div></li>' +
+          '<li><div class="when">14 open</div><div class="what">The full active task queue across the book today.</div></li>' +
+          '<li><div class="when">priority read</div><div class="what">Clear the three quiet quotes first, they are the biggest dollars on the board.</div></li>' +
+        '</ul>'
+    });
+  }
+
+  /* ---- CASHFLOW panel (depth 0) ---- */
+  function panelCashflow() {
+    return makePanel({
+      kicker: "Finance · collections",
+      title: "Cashflow",
+      crumbs: [{ label: "Cashflow" }],
+      body:
+        '<div class="figure-row">' +
+          '<div class="figure"><span class="figure__val accent mono">$12,235</span><span class="figure__lbl">Collected, 30 days</span></div>' +
+          '<div class="figure"><span class="figure__val mono">$155,918</span><span class="figure__lbl">Collected, 90 days</span></div>' +
+          '<div class="figure"><span class="figure__val mono">$0</span><span class="figure__lbl">Collected, 7 days</span></div>' +
+        '</div>' +
+        '<div class="meta-grid">' +
+          '<div class="meta-cell"><div class="k">Outstanding</div><div class="v mono">$29,160</div></div>' +
+          '<div class="meta-cell"><div class="k">Nature</div><div class="v">Deposit-paid WIP</div></div>' +
+          '<div class="meta-cell"><div class="k">Signed backlog</div><div class="v mono">$106,809 · 6 jobs</div></div>' +
+        '</div>' +
+        '<p class="lede" style="margin-top:4px">The $29,160 outstanding is mostly deposit-paid work in progress, not aged receivable. Nothing to chase. The quiet 7-day collection is timing, the backlog converts as jobs complete.</p>' +
+        '<ul class="timeline">' +
+          '<li><div class="when">last 30 days</div><div class="what">Collected $12,235 across recent jobs.</div></li>' +
+          '<li><div class="when">last 90 days</div><div class="what">Collected $155,918, the steady run-rate.</div></li>' +
+          '<li><div class="when">outstanding</div><div class="what">$29,160 still out, deposit-paid WIP, frame it neutral.</div></li>' +
+        '</ul>'
+    });
+  }
+
+  /* ---------------------------------------------------------
+     PANEL STACK MANAGEMENT - the drill
+     --------------------------------------------------------- */
+  var stack = []; // array of { el }
+  var lastQuery = null;
+
+  function animateBars(el) {
+    var fills = el.querySelectorAll(".bar-fill[data-w]");
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        fills.forEach(function (f) { f.style.width = f.getAttribute("data-w") + "%"; });
+      });
+    });
+  }
+
+  function restack() {
+    // newest = active; below it recede with increasing depth
+    for (var i = 0; i < stack.length; i++) {
+      var el = stack[i].el;
+      el.classList.remove("active", "receded", "receded-2");
+      var depthFromTop = stack.length - 1 - i;
+      if (depthFromTop === 0) el.classList.add("active");
+      else if (depthFromTop === 1) el.classList.add("receded");
+      else el.classList.add("receded-2");
+    }
+  }
+
+  function pushPanel(el) {
+    panels.appendChild(el);
+    stack.push({ el: el });
+    body.classList.add("panel-open");
+    restack();
+    animateBars(el);
+    // focus the close button of the new active panel for keyboard users
+    var close = el.querySelector(".panel__close");
+    if (close) setTimeout(function () { close.focus({ preventScroll: true }); }, reduceMotion ? 20 : 320);
+  }
+
+  function popPanel() {
+    if (!stack.length) return;
+    var top = stack.pop();
+    var el = top.el;
+    if (reduceMotion) {
+      el.remove();
+    } else {
+      el.classList.remove("active");
+      el.style.opacity = "0";
+      el.style.transform = "translateY(18px) scale(0.97)";
+      el.style.pointerEvents = "none";
+      var toRemove = el;
+      setTimeout(function () { toRemove.remove(); }, 480);
+    }
+    restack();
+    if (!stack.length) {
+      body.classList.remove("panel-open");
+    } else {
+      var newTopClose = stack[stack.length - 1].el.querySelector(".panel__close");
+      if (newTopClose) newTopClose.focus({ preventScroll: true });
+    }
+  }
+
+  function popTo(remaining) {
+    // pop until exactly `remaining` panels left
+    while (stack.length > remaining && stack.length > 0) {
+      var top = stack.pop();
+      top.el.remove();
+    }
+    restack();
+    if (!stack.length) body.classList.remove("panel-open");
+  }
+
+  function closeAll() {
+    while (stack.length) {
+      var top = stack.pop();
+      top.el.remove();
+    }
+    body.classList.remove("panel-open");
+    if (presence) presence.focus({ preventScroll: true });
+  }
+
+  /* open the root panel for the current answer */
+  function elaborateCurrent() {
+    if (!lastQuery || !lastQuery.panel) return;
+    closeAll();
+    var el;
+    if (lastQuery.panel === "sales") el = panelSales();
+    else if (lastQuery.panel === "followups") el = panelFollowups();
+    else if (lastQuery.panel === "ads") el = panelAds();
+    else if (lastQuery.panel === "day") el = panelDay();
+    else if (lastQuery.panel === "cashflow") el = panelCashflow();
+    if (el) pushPanel(el);
+  }
+
+  /* drill from a row into a deeper panel */
+  function drillInto(key) {
+    if (!key) return;
+    var crumbs = [];
+    // build the breadcrumb trail from the panels already in the stack
+    stack.forEach(function (s) {
+      var t = s.el.querySelector(".panel__title");
+      if (t) crumbs.push({ label: t.textContent });
+    });
+
+    var el;
+    if (key === "sharon") {
+      crumbs.push({ label: "Sharon" });
+      el = panelSharon(crumbs);
+    } else if (key === "gauvin" || key === "baxter") {
+      var titles = { gauvin: "Jean Gauvin", baxter: "Lee Baxter" };
+      crumbs.push({ label: titles[key] });
+      el = panelFollowupDeal(key, crumbs);
+    } else if (key === "camp-ie" || key === "camp-revive") {
+      var ctitles = { "camp-ie": "(May) Instant Estimator", "camp-revive": "PU Revive Rejuvenation v3" };
+      crumbs.push({ label: ctitles[key] });
+      el = panelCampaign(key, crumbs);
+    }
+    if (el) pushPanel(el);
+  }
+
+  /* ---------------------------------------------------------
+     SPEAK - the presence brightens, terse answer resolves in
+     --------------------------------------------------------- */
+  var speakTimer = null;
+
+  function speak(entry) {
+    lastQuery = entry;
+    body.classList.add("has-spoken");
+
+    // a brief thinking beat (the core dims, the sheen quickens), then it speaks
+    bubble.classList.remove("show");
+    body.classList.remove("is-speaking");
+    body.classList.add("is-thinking");
+
+    var thinkMs = reduceMotion ? 80 : 520;
+    clearTimeout(speakTimer);
+    speakTimer = setTimeout(function () {
+      body.classList.remove("is-thinking");
+      body.classList.add("is-speaking");
+
+      answerEl.innerHTML = entry.answer;
+      elaborateBtn.style.display = entry.panel ? "" : "none";
+      bubbleFoot.querySelector(".bubble__hint").textContent = entry.panel ? "or ask again" : "";
+
+      bubble.classList.add("show");
+    }, thinkMs);
+  }
+
+  function ask(q) {
+    var entry = route(q);
+    closeAll();
+    speak(entry);
+    askInput.value = "";
+  }
+
+  /* ---------------------------------------------------------
+     WIRING
+     --------------------------------------------------------- */
+  askForm.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var q = askInput.value.trim();
+    if (!q) return;
+    ask(q);
+  });
+
+  chips.addEventListener("click", function (e) {
+    var btn = e.target.closest(".chip");
+    if (!btn) return;
+    ask(btn.getAttribute("data-q"));
+  });
+
+  presence.addEventListener("click", function () {
+    // tapping the presence focuses the ask line - the AI is the navigation
+    if (stack.length) { closeAll(); return; }
+    askInput.focus();
+  });
+
+  elaborateBtn.addEventListener("click", function () {
+    elaborateCurrent();
+    // once the answer expands into a panel, the presence drifts to the right
+    // and the terse bubble retires - its content now lives in the panel.
+    body.classList.add("is-docked");
+    bubble.classList.remove("show");
+  });
+
+  // delegated panel interactions: drill, close, crumb-pop
+  panels.addEventListener("click", function (e) {
+    var closeBtn = e.target.closest(".panel__close");
+    if (closeBtn) { popPanel(); return; }
+
+    var crumbBtn = e.target.closest(".crumb button[data-pop]");
+    if (crumbBtn) {
+      var remaining = parseInt(crumbBtn.getAttribute("data-pop"), 10);
+      popTo(remaining);
+      return;
+    }
+
+    var row = e.target.closest(".row.is-drillable");
+    if (row) {
+      drillInto(row.getAttribute("data-drill"));
+      return;
+    }
+  });
+
+  veil.addEventListener("click", function () { closeAll(); body.classList.remove("is-docked"); });
+
+  // keyboard: Esc pops one level; if nothing open, undock; then dismiss bubble
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") {
+      if (stack.length) { popPanel(); if (!stack.length) body.classList.remove("is-docked"); }
+      else if (body.classList.contains("is-docked")) { body.classList.remove("is-docked"); }
+      else if (bubble.classList.contains("show")) { bubble.classList.remove("show"); body.classList.remove("is-speaking"); }
+    }
+    // "/" focuses the ask line, like a real operator instrument
+    if (e.key === "/" && document.activeElement !== askInput) {
+      e.preventDefault();
+      askInput.focus();
+    }
+  });
+
+  // when all panels close via other paths, return the presence home after a beat
+  var undockObserver = new MutationObserver(function () {
+    if (!body.classList.contains("panel-open") && body.classList.contains("is-docked")) {
+      setTimeout(function () {
+        if (!body.classList.contains("panel-open")) body.classList.remove("is-docked");
+      }, 400);
+    }
+  });
+  undockObserver.observe(body, { attributes: true, attributeFilter: ["class"] });
+
+})();
+</script>
+</body>
+</html>

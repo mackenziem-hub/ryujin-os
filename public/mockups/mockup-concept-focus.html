@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ryujin OS · Focus</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    /* ground < presence < panels < active-panel < bubble < input */
+    --z-ground: 0;
+    --z-presence: 10;
+    --z-panel: 20;
+    --z-panel-active: 30;
+    --z-bubble: 40;
+    --z-input: 50;
+    --z-marker: 60;
+
+    --ink:        #eef1f6;   /* soft high-contrast white ink */
+    --ink-soft:   #aeb6c4;   /* secondary */
+    --ink-faint:  #6a7180;   /* tertiary / placeholder, still >=4.5:1 on glass */
+    --accent:     #4a9eff;   /* the one restrained cool-blue */
+    --accent-dim: #2c5d99;
+
+    --ground:     #060709;   /* near-black ground */
+    --glass:      rgba(20,24,32,0.55);
+    --glass-edge: rgba(255,255,255,0.10);
+    --glass-edge-soft: rgba(255,255,255,0.055);
+
+    --ease: cubic-bezier(0.22,1,0.36,1);            /* ease-out-quint */
+    --ease-soft: cubic-bezier(0.16,1,0.30,1);        /* ease-out-expo-ish */
+
+    --r: 18px;
+    --pad: clamp(20px, 4vw, 44px);
+  }
+
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ height:100%; }
+
+  body{
+    font-family:'Inter', system-ui, -apple-system, sans-serif;
+    background: var(--ground);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow: hidden;
+    position: relative;
+    font-feature-settings: "cv11", "ss01";
+    letter-spacing: -0.011em;
+  }
+
+  /* Calm depth field: a single faint radial breath + the faintest grain. No game neon. */
+  .field{
+    position: fixed; inset: 0; z-index: var(--z-ground);
+    pointer-events: none;
+    background:
+      radial-gradient(120% 90% at 50% 40%, rgba(28,40,62,0.40) 0%, rgba(10,12,16,0) 55%),
+      radial-gradient(140% 120% at 50% 120%, rgba(74,158,255,0.05) 0%, rgba(6,7,9,0) 50%);
+    transition: background 900ms var(--ease);
+  }
+  .field.lit{
+    background:
+      radial-gradient(120% 90% at 72% 42%, rgba(38,58,92,0.50) 0%, rgba(10,12,16,0) 55%),
+      radial-gradient(140% 120% at 50% 120%, rgba(74,158,255,0.07) 0%, rgba(6,7,9,0) 50%);
+  }
+  .grain{
+    position: fixed; inset:0; z-index: var(--z-ground);
+    pointer-events:none; opacity:0.025; mix-blend-mode:screen;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* ---------- The AI presence : a refined ring of light ---------- */
+  .stage{ position: fixed; inset:0; z-index: var(--z-presence); }
+
+  .presence{
+    position: absolute;
+    top: 38%;
+    left: 50%;
+    width: 132px; height: 132px;
+    transform: translate(-50%,-50%);
+    transition: top 1100ms var(--ease), left 1100ms var(--ease), transform 1100ms var(--ease);
+    cursor: default;
+  }
+  .presence.right{
+    top: 50%;
+    left: calc(100% - 150px);
+  }
+
+  /* The ring itself - precise geometry, restrained luminosity */
+  .ring{
+    position:absolute; inset:0; border-radius:50%;
+    background:
+      radial-gradient(circle at 50% 50%, rgba(74,158,255,0.00) 56%, rgba(74,158,255,0.16) 60%, rgba(74,158,255,0.00) 72%);
+    box-shadow:
+      inset 0 0 0 1px rgba(255,255,255,0.06),
+      inset 0 0 24px rgba(74,158,255,0.10);
+  }
+  .ring::before{
+    content:""; position:absolute; inset:18%; border-radius:50%;
+    border: 1px solid rgba(255,255,255,0.10);
+    box-shadow: inset 0 0 16px rgba(74,158,255,0.08);
+  }
+  /* The core point - a quiet, dense center */
+  .core{
+    position:absolute; top:50%; left:50%;
+    width:7px; height:7px; border-radius:50%;
+    transform: translate(-50%,-50%);
+    background: #cfe2ff;
+    box-shadow:
+      0 0 0 1px rgba(74,158,255,0.30),
+      0 0 12px 2px rgba(74,158,255,0.35),
+      0 0 28px 6px rgba(74,158,255,0.16);
+    transition: box-shadow 600ms var(--ease), background 600ms var(--ease);
+  }
+  /* A single fine rotating arc - the only motion at rest, very slow */
+  .arc{
+    position:absolute; inset:6%; border-radius:50%;
+    border: 1px solid transparent;
+    border-top-color: rgba(74,158,255,0.22);
+    border-right-color: rgba(74,158,255,0.07);
+    animation: spin 14s linear infinite;
+  }
+  .arc.b{ inset:24%; border-top-color: rgba(255,255,255,0.10); animation-duration: 22s; animation-direction: reverse; }
+
+  /* gentle resting pulse on the field of the ring */
+  .halo{
+    position:absolute; inset:-30%; border-radius:50%;
+    background: radial-gradient(circle, rgba(74,158,255,0.10) 0%, rgba(74,158,255,0) 60%);
+    opacity:0.6;
+    animation: breathe 7s ease-in-out infinite;
+  }
+
+  /* speaking state - brightens subtly, NOT a flash */
+  .presence.speaking .core{
+    background:#eaf3ff;
+    box-shadow:
+      0 0 0 1px rgba(74,158,255,0.45),
+      0 0 16px 3px rgba(74,158,255,0.55),
+      0 0 40px 10px rgba(74,158,255,0.24);
+  }
+  .presence.speaking .halo{ opacity:0.95; animation-duration: 3.4s; }
+  .presence.speaking .arc{ animation-duration: 7s; }
+
+  @keyframes spin{ to{ transform: rotate(360deg); } }
+  @keyframes breathe{ 0%,100%{ transform:scale(1); opacity:0.5;} 50%{ transform:scale(1.06); opacity:0.8;} }
+
+  /* ---------- The terse answer bubble (tethered to presence) ---------- */
+  .bubble{
+    position: fixed;
+    z-index: var(--z-bubble);
+    max-width: 340px;
+    padding: 16px 18px 15px;
+    border-radius: 16px;
+    background: rgba(16,20,28,0.66);
+    border: 1px solid var(--glass-edge);
+    backdrop-filter: blur(22px) saturate(125%);
+    -webkit-backdrop-filter: blur(22px) saturate(125%);
+    box-shadow: 0 18px 50px -18px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.05);
+    opacity: 0; transform: translateY(8px) scale(0.985);
+    pointer-events: none;
+    transition: opacity 520ms var(--ease), transform 520ms var(--ease);
+  }
+  .bubble.show{ opacity:1; transform: translateY(0) scale(1); pointer-events:auto; }
+  .bubble .ans{
+    font-size: 15px; line-height: 1.5; color: var(--ink);
+    letter-spacing: -0.012em;
+  }
+  .bubble .ans b{ font-weight: 600; }
+  .bubble .ans .num{ font-family:'JetBrains Mono', ui-monospace, monospace; font-weight:500; letter-spacing:-0.01em; }
+  .bubble .elaborate{
+    margin-top: 12px;
+    display:inline-flex; align-items:center; gap:7px;
+    font-size: 12.5px; color: var(--accent);
+    background: none; border:0; cursor: pointer;
+    font-family:inherit; letter-spacing: 0.01em;
+    padding: 4px 0;
+    transition: color 220ms var(--ease), gap 280ms var(--ease);
+  }
+  .bubble .elaborate:hover{ color:#84bcff; gap: 10px; }
+  .bubble .elaborate svg{ width:13px; height:13px; }
+  /* little tether from bubble toward presence */
+  .bubble::after{
+    content:""; position:absolute; right:-7px; top: 28px;
+    width: 7px; height:1px;
+    background: linear-gradient(90deg, var(--glass-edge), transparent);
+  }
+
+  /* ---------- The ask line (rest-state minimal) ---------- */
+  .ask{
+    position: fixed;
+    left: 50%; bottom: 7vh;
+    transform: translateX(-50%);
+    z-index: var(--z-input);
+    width: min(560px, 86vw);
+    transition: opacity 600ms var(--ease), transform 700ms var(--ease);
+  }
+  .ask-field{
+    display:flex; align-items:center; gap: 12px;
+    padding: 14px 16px 14px 20px;
+    border-radius: 16px;
+    background: rgba(14,17,24,0.5);
+    border: 1px solid var(--glass-edge-soft);
+    backdrop-filter: blur(18px) saturate(120%);
+    -webkit-backdrop-filter: blur(18px) saturate(120%);
+    box-shadow: 0 14px 44px -22px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.04);
+    transition: border-color 300ms var(--ease), box-shadow 300ms var(--ease), background 300ms var(--ease);
+  }
+  .ask-field:focus-within{
+    border-color: rgba(74,158,255,0.42);
+    background: rgba(16,20,28,0.6);
+    box-shadow: 0 16px 48px -20px rgba(0,0,0,0.85), 0 0 0 1px rgba(74,158,255,0.10), inset 0 1px 0 rgba(255,255,255,0.05);
+  }
+  .ask-dot{
+    width:6px; height:6px; border-radius:50%; flex:0 0 auto;
+    background: var(--accent);
+    box-shadow: 0 0 8px rgba(74,158,255,0.55);
+    opacity:0.85;
+  }
+  .ask input{
+    flex:1; background:none; border:0; outline:0;
+    color: var(--ink); font-family: inherit; font-size: 15px;
+    letter-spacing: -0.011em;
+  }
+  .ask input::placeholder{ color: var(--ink-faint); }
+  .ask .key{
+    font-family:'JetBrains Mono', monospace; font-size: 11px;
+    color: var(--ink-faint); padding: 3px 7px; border-radius: 6px;
+    border: 1px solid var(--glass-edge-soft);
+    flex:0 0 auto;
+  }
+  .chips{
+    display:flex; gap: 8px; justify-content:center; flex-wrap:wrap;
+    margin-top: 14px;
+    transition: opacity 500ms var(--ease);
+  }
+  .chip{
+    font-size: 12.5px; color: var(--ink-soft);
+    background: rgba(255,255,255,0.025);
+    border: 1px solid var(--glass-edge-soft);
+    padding: 7px 13px; border-radius: 100px;
+    cursor:pointer; font-family:inherit; letter-spacing: -0.005em;
+    transition: color 220ms var(--ease), border-color 220ms var(--ease), background 220ms var(--ease), transform 220ms var(--ease);
+  }
+  .chip:hover{ color: var(--ink); border-color: rgba(74,158,255,0.3); background: rgba(74,158,255,0.05); transform: translateY(-1px); }
+
+  /* ---------- Floating glass panels (the IA) ---------- */
+  .panels{
+    position: fixed;
+    z-index: var(--z-panel);
+    top: 50%;
+    left: clamp(28px, 7vw, 120px);
+    transform: translateY(-50%);
+    width: min(520px, 60vw);
+    pointer-events: none;
+  }
+  .panel{
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    border-radius: 20px;
+    background: var(--glass);
+    border: 1px solid var(--glass-edge);
+    backdrop-filter: blur(30px) saturate(130%);
+    -webkit-backdrop-filter: blur(30px) saturate(130%);
+    box-shadow: 0 30px 80px -30px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.06);
+    padding: 24px 26px 26px;
+    opacity: 0;
+    transform: translateY(22px) scale(0.97);
+    transform-origin: 30% 50%;
+    transition:
+      opacity 560ms var(--ease),
+      transform 620ms var(--ease),
+      filter 560ms var(--ease);
+    pointer-events: none;
+    will-change: transform, opacity, filter;
+  }
+  .panel.in{ opacity:1; transform: translateY(0) scale(1); pointer-events:auto; }
+  /* a prior panel pushed back in z on drill-in: recede + dim + blur */
+  .panel.receded{
+    opacity: 0.4;
+    transform: translateY(-14px) translateX(-22px) scale(0.93);
+    filter: blur(2px) brightness(0.7);
+    pointer-events: none;
+  }
+  .panel.receded-2{
+    opacity: 0.16;
+    transform: translateY(-26px) translateX(-40px) scale(0.88);
+    filter: blur(4px) brightness(0.55);
+  }
+
+  .panel-head{
+    display:flex; align-items:flex-start; justify-content:space-between; gap:16px;
+    margin-bottom: 18px;
+  }
+  .panel-kicker{
+    font-size: 11px; color: var(--ink-faint); letter-spacing: 0.02em;
+    font-family:'JetBrains Mono', monospace; margin-bottom: 7px;
+    display:flex; align-items:center; gap:8px;
+  }
+  .panel-kicker .live{ width:5px; height:5px; border-radius:50%; background:var(--accent); box-shadow:0 0 6px var(--accent); }
+  .panel-title{ font-size: 21px; font-weight: 600; letter-spacing:-0.02em; line-height:1.15; }
+  .panel-sub{ font-size: 13px; color: var(--ink-soft); margin-top:6px; line-height:1.45; }
+
+  .panel-close{
+    flex:0 0 auto; width:30px; height:30px; border-radius:9px;
+    border:1px solid var(--glass-edge-soft); background:rgba(255,255,255,0.02);
+    color: var(--ink-soft); cursor:pointer; font-size:15px; line-height:1;
+    display:grid; place-items:center;
+    transition: color 200ms var(--ease), border-color 200ms var(--ease), background 200ms var(--ease);
+  }
+  .panel-close:hover{ color:var(--ink); border-color:var(--glass-edge); background:rgba(255,255,255,0.05); }
+
+  /* pipeline rows / record rows */
+  .rows{ display:flex; flex-direction:column; }
+  .row{
+    display:flex; align-items:center; gap: 14px;
+    padding: 13px 12px; margin: 0 -12px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background 200ms var(--ease), transform 200ms var(--ease);
+  }
+  .row:not(:last-child){ box-shadow: inset 0 -1px 0 rgba(255,255,255,0.045); }
+  .row:hover{ background: rgba(74,158,255,0.06); }
+  .row .r-name{ flex:1; min-width:0; }
+  .row .r-name .t{ font-size: 14px; font-weight: 500; letter-spacing:-0.01em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .row .r-name .s{ font-size: 12px; color: var(--ink-soft); margin-top:3px; }
+  .row .r-val{
+    font-family:'JetBrains Mono', monospace; font-size: 14px; font-weight: 500;
+    color: var(--ink); text-align:right; letter-spacing:-0.01em; flex:0 0 auto;
+  }
+  .row .r-stage{ flex:0 0 auto; }
+  .stage-pill{
+    font-size: 10.5px; padding: 3px 9px; border-radius: 100px;
+    font-family:'JetBrains Mono', monospace; letter-spacing:0.01em;
+    border:1px solid var(--glass-edge-soft); color: var(--ink-soft);
+    white-space:nowrap;
+  }
+  .stage-pill.hot{ color:#9cc9ff; border-color: rgba(74,158,255,0.35); background: rgba(74,158,255,0.07); }
+  .row .chev{ flex:0 0 auto; color: var(--ink-faint); opacity:0; transition: opacity 200ms var(--ease), transform 200ms var(--ease); }
+  .row:hover .chev{ opacity:0.8; transform: translateX(2px); }
+
+  /* stat strip - bespoke, not the hero-metric template */
+  .strip{
+    display:flex; gap: 0; margin: 4px -4px 20px;
+    border-radius: 14px; overflow:hidden;
+    border: 1px solid var(--glass-edge-soft);
+  }
+  .strip .cell{
+    flex:1; padding: 14px 16px;
+    background: rgba(255,255,255,0.018);
+  }
+  .strip .cell:not(:first-child){ box-shadow: inset 1px 0 0 rgba(255,255,255,0.045); }
+  .strip .cell .v{ font-family:'JetBrains Mono', monospace; font-size: 19px; font-weight:500; letter-spacing:-0.02em; }
+  .strip .cell .v.accent{ color: var(--accent); }
+  .strip .cell .l{ font-size: 11.5px; color: var(--ink-soft); margin-top: 5px; }
+
+  /* record detail block */
+  .detail-line{ display:flex; justify-content:space-between; gap:16px; padding:11px 0; font-size:13.5px; }
+  .detail-line:not(:last-child){ box-shadow: inset 0 -1px 0 rgba(255,255,255,0.045); }
+  .detail-line .k{ color: var(--ink-soft); }
+  .detail-line .v{ color: var(--ink); font-weight:500; text-align:right; }
+  .detail-line .v.mono{ font-family:'JetBrains Mono', monospace; font-weight:500; }
+
+  .draft{
+    margin-top: 20px; padding: 16px 18px; border-radius: 14px;
+    background: rgba(74,158,255,0.045);
+    border: 1px solid rgba(74,158,255,0.16);
+  }
+  .draft-tag{
+    display:inline-flex; align-items:center; gap:6px;
+    font-family:'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: 0.05em;
+    color: var(--accent); margin-bottom: 11px;
+  }
+  .draft-tag .d{ width:5px; height:5px; border-radius:50%; background:var(--accent); }
+  .draft p{ font-size: 13.5px; line-height: 1.6; color: var(--ink); letter-spacing:-0.008em; }
+  .draft .meta{ margin-top:12px; font-size: 11.5px; color: var(--ink-faint); }
+
+  /* tiny ad bars */
+  .barset{ margin-top: 4px; }
+  .bar-row{ display:flex; align-items:center; gap:14px; padding: 11px 0; }
+  .bar-row:not(:last-child){ box-shadow: inset 0 -1px 0 rgba(255,255,255,0.045); }
+  .bar-row .bl{ width: 118px; flex:0 0 auto; }
+  .bar-row .bl .t{ font-size:13px; font-weight:500; }
+  .bar-row .bl .s{ font-size:11px; color:var(--ink-soft); margin-top:2px; font-family:'JetBrains Mono',monospace; }
+  .bar-track{ flex:1; height:6px; border-radius:100px; background: rgba(255,255,255,0.05); overflow:hidden; }
+  .bar-fill{ height:100%; border-radius:100px; background: linear-gradient(90deg, var(--accent-dim), var(--accent)); width:0; transition: width 900ms var(--ease); }
+  .bar-row .bv{ font-family:'JetBrains Mono',monospace; font-size:13px; width:54px; text-align:right; flex:0 0 auto; }
+
+  /* drill hint */
+  .drill-hint{
+    margin-top: 18px; font-size: 11.5px; color: var(--ink-faint);
+    display:flex; align-items:center; gap: 14px;
+  }
+  .drill-hint kbd{
+    font-family:'JetBrains Mono', monospace; font-size:10.5px;
+    padding: 2px 6px; border-radius:5px; border:1px solid var(--glass-edge-soft); color:var(--ink-soft);
+  }
+
+  /* ---------- preview marker ---------- */
+  .marker{
+    position: fixed; top: 18px; left: 20px; z-index: var(--z-marker);
+    font-family:'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.18em;
+    color: var(--ink-faint);
+    display:flex; align-items:center; gap:9px;
+  }
+  .marker .d{ width:5px; height:5px; border-radius:50%; background:var(--accent); box-shadow:0 0 6px var(--accent); }
+  .wordmark{
+    position: fixed; top: 16px; right: 22px; z-index: var(--z-marker);
+    font-size: 12px; color: var(--ink-faint); letter-spacing: 0.04em;
+    display:flex; align-items:baseline; gap:7px;
+  }
+  .wordmark b{ color: var(--ink-soft); font-weight: 600; letter-spacing:-0.01em; }
+
+  /* breadcrumb of the drill (in/out trail), bottom-left, mono, minimal */
+  .trail{
+    position: fixed; left: clamp(28px,7vw,120px); bottom: 6vh; z-index: var(--z-panel-active);
+    font-family:'JetBrains Mono', monospace; font-size: 11px; color: var(--ink-faint);
+    display:flex; align-items:center; gap: 8px;
+    opacity:0; transform: translateY(6px);
+    transition: opacity 400ms var(--ease), transform 400ms var(--ease);
+    pointer-events:none;
+  }
+  .trail.show{ opacity:1; transform:translateY(0); }
+  .trail .seg{ color: var(--ink-soft); }
+  .trail .seg.cur{ color: var(--accent); }
+  .trail .arr{ opacity:0.4; }
+  .trail .out-btn{
+    pointer-events:auto; cursor:pointer; color:var(--ink-soft);
+    border:1px solid var(--glass-edge-soft); border-radius:7px; padding:3px 9px;
+    background:rgba(255,255,255,0.02); font-family:inherit; font-size:10.5px;
+    margin-left: 6px;
+    transition: color 200ms var(--ease), border-color 200ms var(--ease);
+  }
+  .trail .out-btn:hover{ color:var(--ink); border-color:var(--glass-edge); }
+
+  @media (max-width: 720px){
+    .presence.right{ left: 50%; top: 30%; transform: translate(-50%,-50%); }
+    .panels{ left: 16px; right:16px; width:auto; top:auto; bottom: 22vh; transform:none; }
+    .bubble{ max-width: 86vw; }
+    .trail{ left:16px; bottom: 14vh; }
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ animation: none !important; }
+    .presence, .panel, .bubble, .ask, .trail, .bar-fill{
+      transition-duration: 0.001ms !important;
+    }
+    .arc, .halo{ animation: none !important; }
+  }
+</style>
+</head>
+<body>
+
+  <div class="field" id="field"></div>
+  <div class="grain"></div>
+
+  <div class="marker"><span class="d"></span>DESIGN PREVIEW</div>
+  <div class="wordmark"><b>Ryujin OS</b> Focus</div>
+
+  <!-- The presence -->
+  <div class="stage">
+    <div class="presence" id="presence" aria-hidden="true">
+      <div class="halo"></div>
+      <div class="ring">
+        <div class="arc"></div>
+        <div class="arc b"></div>
+      </div>
+      <div class="core"></div>
+    </div>
+  </div>
+
+  <!-- The answer bubble (positioned by JS, tethered to presence) -->
+  <div class="bubble" id="bubble" role="status" aria-live="polite">
+    <div class="ans" id="ans"></div>
+    <button class="elaborate" id="elaborate" hidden>
+      Elaborate
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+    </button>
+  </div>
+
+  <!-- Floating glass panels -->
+  <div class="panels" id="panels"></div>
+
+  <!-- The drill trail -->
+  <div class="trail" id="trail"></div>
+
+  <!-- The ask line -->
+  <div class="ask" id="ask">
+    <form class="ask-field" id="askForm" autocomplete="off">
+      <span class="ask-dot"></span>
+      <input id="askInput" type="text" placeholder="Ask Ryujin" aria-label="Ask Ryujin" />
+      <span class="key">return</span>
+    </form>
+    <div class="chips" id="chips">
+      <button class="chip" data-q="how are sales?">How are sales?</button>
+      <button class="chip" data-q="show me ablak">Show me Ablak</button>
+      <button class="chip" data-q="ad spend?">Ad spend?</button>
+    </div>
+  </div>
+
+<script>
+(function(){
+  "use strict";
+
+  // -------- baked Plus Ultra sample data --------
+  const PIPELINE = [
+    { name:"Ablak Properties",   sub:"Reroof · quote out 3 days", val:"$76,400", stage:"Quote Sent", hot:true,
+      detail:{ person:"Yusuf Ablak", phone:"(506) 555-0190", last:"Quote delivered 3 days ago. No reply yet.",
+        draft:"Hi Yusuf, following up on the proposal we sent Tuesday. Happy to walk you through the envelope numbers on a quick call this week if that helps. The pricing holds through month end.",
+        meta:"DRAFT follow-up · sales rep Mackenzie · last touch 3d" } },
+    { name:"Montina Residence",  sub:"Asphalt · fresh inbound",   val:"$18,950", stage:"Qualifying", hot:true,
+      detail:{ person:"D. Montina", phone:"(506) 555-0142", last:"Instant Estimate submitted this morning.",
+        draft:"Hi, thanks for using our instant estimate. I have your roof at roughly 24 squares. Want me to lock a firm fixed price and a site walk?",
+        meta:"DRAFT first-touch · new lead · last touch 4h" } },
+    { name:"7 Main St",          sub:"Metal standing seam",       val:"$41,200", stage:"Proposal", hot:false,
+      detail:{ person:"Commercial", phone:"(506) 555-0177", last:"Proposal video sent, opened twice.",
+        draft:"Just confirming you had a chance to view the proposal walkthrough. Any questions on the standing seam spec before we hold a slot?",
+        meta:"DRAFT nudge · last touch 2d" } },
+    { name:"Poitras (IE lead)",  sub:"Range $9,950 - $24,050",    val:"$24,050", stage:"New", hot:false,
+      detail:{ person:"Poitras", phone:"(506) 555-0163", last:"Instant Estimate, no package selected yet.",
+        draft:"Saw your estimate come through. The range depends on which package you want. Want me to send the three side by side?",
+        meta:"DRAFT · last touch 1d" } },
+    { name:"Mark Lewis",         sub:"Reroof · in production",    val:"$28,900", stage:"WIP", hot:false,
+      detail:{ person:"Mark Lewis", phone:"(506) 555-0118", last:"Deposit paid. Crew scheduled.",
+        draft:"Quick heads up that your crew is confirmed for next week, weather pending. I will text the morning of.",
+        meta:"DRAFT update · WIP · last touch 6h" } }
+  ];
+
+  const ADS = [
+    { name:"IE Reveal Funnel", spend:"$6,240", cpl:"$10.40", pct:84, live:true },
+    { name:"Summer Reroof",    spend:"$4,605", cpl:"$13.80", pct:62, live:true },
+    { name:"10 Mistakes (LM)", spend:"$0",     cpl:"n/a",    pct:0,  live:false }
+  ];
+
+  // -------- the three flows --------
+  // answer text uses <b> for emphasis and <span class=num> for figures
+  const FLOWS = {
+    sales: {
+      match: ["how are sales","sales","pipeline","revenue","signed"],
+      answer: 'Signed <span class="num">$33,264</span> this month. <b>4 hot follow-ups</b> in play.',
+      panel: () => pipelinePanel()
+    },
+    ablak: {
+      match: ["ablak","show me ablak"],
+      answer: '<b>Ablak Properties.</b> <span class="num">$76,400</span>, quote out <span class="num">3 days</span>.',
+      panel: () => recordPanel(PIPELINE[0])
+    },
+    ads: {
+      match: ["ad spend","ads","spend","advertising","cpl","meta"],
+      answer: '<span class="num">$10,845</span> lifetime. <span class="num">$11.75</span> CPL, <b>2 live campaigns</b>.',
+      panel: () => adPanel()
+    }
+  };
+
+  function resolveFlow(q){
+    const s = (q||"").toLowerCase().trim();
+    let best=null, bestLen=0;
+    for(const key in FLOWS){
+      for(const m of FLOWS[key].match){
+        if(s.includes(m) && m.length>bestLen){ best=key; bestLen=m.length; }
+      }
+    }
+    return best ? FLOWS[best] : null;
+  }
+
+  // -------- elements --------
+  const field    = document.getElementById('field');
+  const presence = document.getElementById('presence');
+  const bubble   = document.getElementById('bubble');
+  const ansEl    = document.getElementById('ans');
+  const elabBtn  = document.getElementById('elaborate');
+  const panels   = document.getElementById('panels');
+  const trail    = document.getElementById('trail');
+  const ask      = document.getElementById('ask');
+  const askForm  = document.getElementById('askForm');
+  const askInput = document.getElementById('askInput');
+  const chips    = document.getElementById('chips');
+
+  let stack = [];        // panel drill stack {title, el}
+  let pendingPanel = null; // builder fn for the current answer's elaborate
+
+  // position the bubble next to the presence (left of it when presence is right)
+  function placeBubble(){
+    const r = presence.getBoundingClientRect();
+    const bw = bubble.offsetWidth || 320;
+    let left = r.left - bw - 22;
+    let top  = r.top + r.height/2 - 30;
+    if(left < 16){ // small screens: put it above the presence
+      left = Math.max(16, r.left + r.width/2 - bw/2);
+      top  = r.top - bubble.offsetHeight - 18;
+    }
+    bubble.style.left = Math.round(left) + 'px';
+    bubble.style.top  = Math.round(Math.max(16, top)) + 'px';
+  }
+
+  function speak(answerHTML, panelBuilder){
+    // presence glides right + brightens
+    presence.classList.add('right','speaking');
+    field.classList.add('lit');
+
+    ansEl.innerHTML = answerHTML;
+    pendingPanel = panelBuilder || null;
+    elabBtn.hidden = !pendingPanel;
+
+    // let the presence start gliding, then resolve the bubble in beside it
+    requestAnimationFrame(()=>{
+      // wait a touch so the bubble lands where the presence is heading
+      setTimeout(()=>{
+        placeBubble();
+        bubble.classList.add('show');
+      }, 260);
+    });
+
+    // ease the speaking glow back down to a calm lit state
+    clearTimeout(speak._t);
+    speak._t = setTimeout(()=> presence.classList.remove('speaking'), 2600);
+  }
+
+  // ---------- panel builders ----------
+  function el(html){
+    const d = document.createElement('div');
+    d.innerHTML = html.trim();
+    return d.firstElementChild;
+  }
+
+  function makePanel(inner){
+    const p = el(`<section class="panel">${inner}</section>`);
+    panels.appendChild(p);
+    return p;
+  }
+
+  function pipelinePanel(){
+    const rows = PIPELINE.map((d,i)=>`
+      <div class="row" data-idx="${i}" tabindex="0" role="button">
+        <div class="r-name">
+          <div class="t">${d.name}</div>
+          <div class="s">${d.sub}</div>
+        </div>
+        <div class="r-stage"><span class="stage-pill ${d.hot?'hot':''}">${d.stage}</span></div>
+        <div class="r-val">${d.val}</div>
+        <svg class="chev" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l4 4-4 4"/></svg>
+      </div>`).join('');
+
+    const p = makePanel(`
+      <div class="panel-head">
+        <div>
+          <div class="panel-kicker"><span class="live"></span>PIPELINE · LIVE</div>
+          <h2 class="panel-title">Active deals</h2>
+          <div class="panel-sub">Signed $33,264 this month across 5 open opportunities.</div>
+        </div>
+        <button class="panel-close" aria-label="Close">&#215;</button>
+      </div>
+      <div class="strip">
+        <div class="cell"><div class="v accent">$189K</div><div class="l">Open value</div></div>
+        <div class="cell"><div class="v">$33,264</div><div class="l">Signed MTD</div></div>
+        <div class="cell"><div class="v">4</div><div class="l">Hot follow-ups</div></div>
+      </div>
+      <div class="rows">${rows}</div>
+      <div class="drill-hint"><span>Click a deal to drill in</span><span><kbd>esc</kbd> to step out</span></div>
+    `);
+
+    p.querySelectorAll('.row').forEach(r=>{
+      const go = ()=> drillIn(()=> recordPanel(PIPELINE[+r.dataset.idx]), PIPELINE[+r.dataset.idx].name);
+      r.addEventListener('click', go);
+      r.addEventListener('keydown', e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); go(); }});
+    });
+    p.querySelector('.panel-close').addEventListener('click', closeAll);
+    return { el:p, title:"Pipeline" };
+  }
+
+  function recordPanel(d){
+    const det = d.detail;
+    const p = makePanel(`
+      <div class="panel-head">
+        <div>
+          <div class="panel-kicker"><span class="live"></span>CUSTOMER RECORD</div>
+          <h2 class="panel-title">${d.name}</h2>
+          <div class="panel-sub">${d.sub} · <span style="font-family:'JetBrains Mono',monospace">${d.val}</span></div>
+        </div>
+        <button class="panel-close" aria-label="Close">&#215;</button>
+      </div>
+
+      <div class="detail-line"><span class="k">Contact</span><span class="v">${det.person}</span></div>
+      <div class="detail-line"><span class="k">Phone</span><span class="v mono">${det.phone}</span></div>
+      <div class="detail-line"><span class="k">Stage</span><span class="v">${d.stage}</span></div>
+      <div class="detail-line"><span class="k">Last touch</span><span class="v">${det.last}</span></div>
+
+      <div class="draft">
+        <div class="draft-tag"><span class="d"></span>DRAFT · NOT SENT</div>
+        <p>${det.draft}</p>
+        <div class="meta">${det.meta}</div>
+      </div>
+
+      <div class="drill-hint"><span>This record is one level in</span><span><kbd>esc</kbd> to step out</span></div>
+    `);
+    p.querySelector('.panel-close').addEventListener('click', closeAll);
+    return { el:p, title:d.name };
+  }
+
+  function adPanel(){
+    const bars = ADS.map(a=>`
+      <div class="bar-row">
+        <div class="bl"><div class="t">${a.name}</div><div class="s">${a.live?'live · '+a.cpl+' CPL':'paused'}</div></div>
+        <div class="bar-track"><div class="bar-fill" data-pct="${a.pct}"></div></div>
+        <div class="bv">${a.spend}</div>
+      </div>`).join('');
+
+    const p = makePanel(`
+      <div class="panel-head">
+        <div>
+          <div class="panel-kicker"><span class="live"></span>AD SNAPSHOT · META</div>
+          <h2 class="panel-title">Spend &amp; cost per lead</h2>
+          <div class="panel-sub">$10,845 lifetime spend. Blended CPL $11.75.</div>
+        </div>
+        <button class="panel-close" aria-label="Close">&#215;</button>
+      </div>
+      <div class="strip">
+        <div class="cell"><div class="v">$10,845</div><div class="l">Lifetime spend</div></div>
+        <div class="cell"><div class="v accent">$11.75</div><div class="l">Blended CPL</div></div>
+        <div class="cell"><div class="v">2</div><div class="l">Live campaigns</div></div>
+      </div>
+      <div class="barset">${bars}</div>
+      <div class="drill-hint"><span>Conversion pixel wired Jun 14</span><span><kbd>esc</kbd> to step out</span></div>
+    `);
+    p.querySelector('.panel-close').addEventListener('click', closeAll);
+    requestAnimationFrame(()=> setTimeout(()=>{
+      p.querySelectorAll('.bar-fill').forEach(b=> b.style.width = b.dataset.pct + '%');
+    }, 180));
+    return { el:p, title:"Ad snapshot" };
+  }
+
+  // ---------- drill mechanics: in / out ----------
+  function applyDepth(){
+    // newest = active (front), prior ones recede in z
+    stack.forEach((entry, i)=>{
+      const depth = stack.length - 1 - i; // 0 = front
+      entry.el.classList.remove('in','receded','receded-2');
+      if(depth === 0){ entry.el.classList.add('in'); entry.el.style.zIndex = 30; }
+      else if(depth === 1){ entry.el.classList.add('receded'); entry.el.style.zIndex = 22; }
+      else { entry.el.classList.add('receded-2'); entry.el.style.zIndex = 21; }
+    });
+    renderTrail();
+  }
+
+  function openPanel(builder){
+    // first elaborate: bring panels in, dim the ask line
+    ask.style.opacity = '0.32';
+    const entry = builder();
+    stack = [entry];
+    void entry.el.offsetWidth; // force reflow then animate in
+    applyDepth();
+    requestAnimationFrame(()=> entry.el.classList.add('in'));
+  }
+
+  function drillIn(builder){
+    const entry = builder();
+    stack.push(entry);
+    void entry.el.offsetWidth;
+    applyDepth();
+    requestAnimationFrame(()=> entry.el.classList.add('in'));
+  }
+
+  function drillOut(){
+    if(stack.length <= 1){ closeAll(); return; }
+    const top = stack.pop();
+    top.el.classList.remove('in');
+    top.el.classList.add('receded'); // pop animation reverse
+    top.el.style.opacity = '0';
+    top.el.style.transform = 'translateY(22px) scale(0.97)';
+    setTimeout(()=> top.el.remove(), 560);
+    applyDepth();
+  }
+
+  function closeAll(){
+    stack.forEach(e=>{
+      e.el.classList.remove('in');
+      e.el.style.opacity='0';
+      e.el.style.transform='translateY(22px) scale(0.97)';
+      setTimeout(()=> e.el.remove(), 540);
+    });
+    stack = [];
+    ask.style.opacity = '1';
+    trail.classList.remove('show');
+  }
+
+  function renderTrail(){
+    if(stack.length === 0){ trail.classList.remove('show'); return; }
+    const segs = stack.map((e,i)=>{
+      const cur = i === stack.length-1;
+      return `<span class="seg ${cur?'cur':''}">${e.title}</span>${cur?'':'<span class="arr">&#8250;</span>'}`;
+    }).join('');
+    trail.innerHTML = segs + (stack.length>1 ? '<button class="out-btn" id="outBtn">step out</button>' : '<button class="out-btn" id="outBtn">close</button>');
+    trail.classList.add('show');
+    const ob = document.getElementById('outBtn');
+    if(ob) ob.addEventListener('click', drillOut);
+  }
+
+  // ---------- wiring ----------
+  function ask_(q){
+    const flow = resolveFlow(q);
+    askInput.value = '';
+    askInput.blur();
+    chips.style.opacity = '0';
+
+    if(!flow){
+      speak('I do not have that one wired in this preview. Try sales, Ablak, or ad spend.', null);
+      return;
+    }
+    // if panels are open, close them first for a clean answer
+    if(stack.length) closeAll();
+    speak(flow.answer, flow.panel);
+  }
+
+  askForm.addEventListener('submit', e=>{
+    e.preventDefault();
+    const v = askInput.value.trim();
+    if(v) ask_(v);
+  });
+
+  chips.addEventListener('click', e=>{
+    const c = e.target.closest('.chip');
+    if(c) ask_(c.dataset.q);
+  });
+
+  elabBtn.addEventListener('click', ()=>{
+    if(!pendingPanel) return;
+    openPanel(pendingPanel);
+  });
+
+  // Esc steps out one level (drill out), then clears bubble
+  document.addEventListener('keydown', e=>{
+    if(e.key === 'Escape'){
+      if(stack.length){ drillOut(); }
+      else if(bubble.classList.contains('show')){
+        bubble.classList.remove('show');
+        presence.classList.remove('right','speaking');
+        field.classList.remove('lit');
+        chips.style.opacity='1';
+      }
+    }
+  });
+
+  window.addEventListener('resize', ()=>{ if(bubble.classList.contains('show')) placeBubble(); });
+
+  // gentle first-load: settle the presence (no game intro)
+  presence.style.opacity = '0';
+  presence.style.transform = 'translate(-50%,-50%) scale(0.94)';
+  presence.style.transition = 'opacity 1200ms var(--ease), transform 1200ms var(--ease)';
+  requestAnimationFrame(()=> setTimeout(()=>{
+    presence.style.opacity='1';
+    presence.style.transform='translate(-50%,-50%) scale(1)';
+    setTimeout(()=>{
+      // restore the left/right transition after intro
+      presence.style.transition = '';
+    }, 1250);
+  }, 120));
+
+  // focus the ask line after the calm settles
+  setTimeout(()=> askInput.focus({preventScroll:true}), 900);
+})();
+</script>
+</body>
+</html>
