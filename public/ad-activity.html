@@ -441,7 +441,7 @@ body::before{
  *   const M = snap.sections.metaAds;  // then map fields below.
  * See ENDPOINT SPEC in the desk result. Standalone falls back to this object.
  * ======================================================================== */
-const AD = {
+const AD_FALLBACK = {
   source:"Live Meta Graph API v21.0",
   snapshotUpdatedAt:"2026-06-15T11:49:40.641Z",
   enrichedAt:"2026-06-15T10:40:07.159Z",
@@ -490,6 +490,50 @@ const AD = {
   }
 };
 
+// Live data: when mounted same-origin in ryujin-os we hydrate from
+// /api/snapshot.sections.metaAds; standalone or offline falls back to the baked
+// object above so the page never renders empty. AD is reassigned in boot().
+let AD = AD_FALLBACK;
+
+function tHeaders(){
+  var t=''; try{ t=localStorage.getItem('ryujin_token')||sessionStorage.getItem('ryujin_token')||''; }catch(e){}
+  var h={'x-tenant-id':'plus-ultra'}; if(t)h.Authorization='Bearer '+t; return h;
+}
+
+// Map the live metaAds section onto the shape this page renders. The 7d window
+// (spend7d/leads7d/impressions7d) lives in metaAds.last7d keyed by name, NOT on
+// the campaign objects, so we join by name. Status comes back UPPERCASE. CPL is
+// frequently null from Meta, so fall back to spend/results. The health card stays
+// hand-authored (googleAdsUntracked is not a snapshot field).
+function mapLive(M){
+  if(!M || !Array.isArray(M.activeCampaigns) || !M.activeCampaigns.length) return null;
+  var byName={}; (M.last7d||[]).forEach(function(r){ byName[r.name]=r; });
+  function statusOf(s){ s=String(s||'').toUpperCase(); return s==='ACTIVE'?'active':(s==='PAUSED'?'paused':'learn'); }
+  function cplOf(c){ return c.cpl!=null ? c.cpl : (c.results>0 ? Math.round((c.spend/c.results)*100)/100 : null); }
+  var active=M.activeCampaigns.map(function(c){
+    var s7=byName[c.name]||{};
+    return {
+      name:c.name, id:c.id, status:statusOf(c.status),
+      spend:c.spend, impressions:c.impressions, reach:c.reach, frequency:c.frequency, cpm:c.cpm,
+      results:c.results, clicks:c.clicks, dailyBudget:c.dailyBudget,
+      spend7d:s7.spend7d||0, leads7d:s7.leads7d||0, impr7d:s7.impressions7d||0,
+      cpl:cplOf(c), note:c.alert||''
+    };
+  });
+  var paused=(M.inactiveCampaigns||[]).map(function(c){ return {name:c.name, spend:c.spend||0}; }).sort(function(a,b){ return b.spend-a.spend; });
+  return {
+    source:M._source||'Live Meta Graph API',
+    snapshotUpdatedAt:M.enrichedAt||AD_FALLBACK.snapshotUpdatedAt,
+    enrichedAt:M.enrichedAt||AD_FALLBACK.enrichedAt,
+    lifetime:{ campaigns:M.totalCampaigns||0, spend:M.totalSpend||0, leads:M.totalAllLeads||0, avgCPL:M.avgCPL||0 },
+    active:active,
+    topPerformers:(M.topPerformers||[]).map(function(p){ return {name:p.name, cpl:p.cpl, spend:p.spend, leads:p.leads}; }),
+    paused:paused,
+    alerts:M.alerts||[],
+    health:AD_FALLBACK.health
+  };
+}
+
 /* ---- helpers ----------------------------------------------------------- */
 const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>[...r.querySelectorAll(s)];
@@ -502,27 +546,32 @@ if(new URLSearchParams(location.search).get('embed')==='1') document.body.setAtt
 
 /* derive windows */
 const sum=(a,f)=>a.reduce((s,x)=>s+(f(x)||0),0);
-const W={
-  '7d':{
-    spend:sum(AD.active,c=>c.spend7d),
-    leads:sum(AD.active,c=>c.leads7d),
-    impr:sum(AD.active,c=>c.impr7d),
-    label:'Last 7 days',
-    note:'Real windowed pull from the Meta insights feed.',
-    est:false
-  }
-};
-W['7d'].cpl = W['7d'].leads? W['7d'].spend/W['7d'].leads : 0;
-W['24h']={
-  spend:W['7d'].spend/7, leads:W['7d'].leads/7, impr:W['7d'].impr/7,
-  cpl:W['7d'].cpl,
-  label:'Last 24h',
-  note:'Derived daily run-rate (7d divided by 7). A true 24h window needs a date_preset:yesterday enrichment, not yet wired.',
-  est:true
-};
+// W (7d + derived 24h windows) and lifeCPL depend on AD, which is hydrated live
+// in boot(), so they are (re)derived there rather than at module-eval time.
+let W, lifeCPL;
+function deriveWindows(){
+  W={
+    '7d':{
+      spend:sum(AD.active,c=>c.spend7d),
+      leads:sum(AD.active,c=>c.leads7d),
+      impr:sum(AD.active,c=>c.impr7d),
+      label:'Last 7 days',
+      note:'Real windowed pull from the Meta insights feed.',
+      est:false
+    }
+  };
+  W['7d'].cpl = W['7d'].leads? W['7d'].spend/W['7d'].leads : 0;
+  W['24h']={
+    spend:W['7d'].spend/7, leads:W['7d'].leads/7, impr:W['7d'].impr/7,
+    cpl:W['7d'].cpl,
+    label:'Last 24h',
+    note:'Derived daily run-rate (7d divided by 7). A true 24h window needs a date_preset:yesterday enrichment, not yet wired.',
+    est:true
+  };
+  lifeCPL = AD.lifetime.avgCPL;
+}
 
 /* ---- render KPI tiles -------------------------------------------------- */
-const lifeCPL = AD.lifetime.avgCPL;
 function tileDelta(cpl){
   if(!cpl) return '<span class="delta flat">no leads</span>';
   const diff = ((cpl - lifeCPL)/lifeCPL)*100;
@@ -725,10 +774,21 @@ function unreadFallback(){
 }
 
 /* ---- boot -------------------------------------------------------------- */
-function boot(){
-  $('#enrichedStamp').textContent=hm(AD.enrichedAt);
+async function boot(){
+  // Hydrate from the live snapshot when mounted in ryujin-os; fall back to the
+  // baked object when standalone or offline so the page is never empty.
+  try{
+    const r=await fetch('/api/snapshot',{headers:tHeaders(),cache:'no-store'});
+    if(r.ok){ const snap=await r.json(); const live=mapLive((snap.sections||snap||{}).metaAds); if(live) AD=live; }
+  }catch(e){ /* standalone or offline -> baked fallback */ }
+  deriveWindows();
+  order=AD.active.map((_,i)=>i);
+  // Stale-data guard: flag if the Meta feed has not refreshed in over 6h.
+  let stale=false;
+  try{ stale=(Date.now()-new Date(AD.enrichedAt).getTime())>6*3600*1000; }catch(e){}
+  $('#enrichedStamp').textContent=hm(AD.enrichedAt)+(stale?' · STALE':'');
   $('#snapStamp').textContent=hm(AD.snapshotUpdatedAt);
-  $('#enrichedFull').textContent=AD.enrichedAt.replace('T',' ').slice(0,16)+'Z';
+  $('#enrichedFull').textContent=AD.enrichedAt.replace('T',' ').slice(0,16)+'Z'+(stale?' (stale >6h)':'');
   renderKpis('7d'); renderCards(); renderRank(); renderPaused();
   setRing(W['7d'].cpl);
   requestAnimationFrame(moveInd);
