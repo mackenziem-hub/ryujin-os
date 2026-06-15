@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ryujin Deck Shell - Press-O Depth Dive</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root{
+  --rj-bg:#030611; --rj-bg-2:#060b16; --rj-surface:#0a1120; --rj-surface-2:#0e1727;
+  --rj-glass:rgba(14,22,40,0.62); --rj-glass-edge:rgba(150,190,255,0.50); --rj-glass-inner:rgba(120,170,255,0.10);
+  --rj-ink:#e9eefa; --rj-ink-mid:rgba(202,216,242,0.82); --rj-ink-dim:rgba(165,190,226,0.62);
+  --rj-accent:#4a9eff; --rj-accent-bright:#7ab6ff; --rj-accent-deep:#2563eb; --rj-accent-glow:rgba(74,158,255,0.40);
+  --rj-ok:#46d68a; --rj-warn:#f5b13a; --rj-danger:#f8746e;
+  --font-display:'Orbitron',sans-serif; --font-ui:'Inter',sans-serif; --font-mono:'Share Tech Mono',monospace;
+  --ease-out-expo:cubic-bezier(0.16,1,0.3,1);
+  --ease-out-quint:cubic-bezier(0.22,1,0.36,1);
+  --z-stage:10; --z-chrome:40; --z-grid:60; --z-marker:80; --z-toast:90;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{
+  font-family:var(--font-ui);
+  background:var(--rj-bg);
+  color:var(--rj-ink);
+  overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+  position:relative;
+}
+
+/* ============ AMBIENT BACKDROP ============ */
+.ambient{position:fixed;inset:0;z-index:0;overflow:hidden;background:
+  radial-gradient(120% 90% at 20% -10%, rgba(37,99,235,0.18), transparent 55%),
+  radial-gradient(100% 80% at 90% 110%, rgba(74,158,255,0.14), transparent 50%),
+  linear-gradient(160deg, var(--rj-bg) 0%, var(--rj-bg-2) 60%, #02040c 100%);
+}
+.ambient::before{content:"";position:absolute;inset:-20%;
+  background:
+    radial-gradient(closest-side at 30% 40%, rgba(74,158,255,0.10), transparent),
+    radial-gradient(closest-side at 75% 65%, rgba(122,182,255,0.08), transparent);
+  filter:blur(40px);
+  animation:drift 24s ease-in-out infinite alternate;
+}
+@keyframes drift{0%{transform:translate3d(-3%,-2%,0) scale(1)}100%{transform:translate3d(4%,3%,0) scale(1.08)}}
+.grid-lines{position:fixed;inset:0;z-index:1;pointer-events:none;opacity:0.35;
+  background-image:
+    linear-gradient(rgba(120,170,255,0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(120,170,255,0.05) 1px, transparent 1px);
+  background-size:64px 64px;
+  mask-image:radial-gradient(120% 100% at 50% 0%, #000 30%, transparent 80%);
+}
+.stars{position:fixed;inset:0;z-index:1;pointer-events:none}
+.stars i{position:absolute;width:2px;height:2px;border-radius:50%;background:var(--rj-accent-bright);opacity:0.5;animation:twinkle 4s ease-in-out infinite}
+@keyframes twinkle{0%,100%{opacity:0.15}50%{opacity:0.7}}
+
+/* ============ TOP CHROME ============ */
+.chrome{position:fixed;top:0;left:0;right:0;z-index:var(--z-chrome);
+  display:flex;align-items:center;gap:18px;
+  padding:16px 26px;
+  background:linear-gradient(180deg, rgba(6,11,22,0.85), rgba(6,11,22,0));
+}
+.brand{display:flex;align-items:center;gap:13px}
+.glyph{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;
+  background:linear-gradient(150deg, var(--rj-surface-2), var(--rj-surface));
+  border:1px solid var(--rj-glass-edge);
+  box-shadow:0 0 22px var(--rj-accent-glow), inset 0 0 14px rgba(74,158,255,0.18);
+  position:relative;overflow:hidden;
+}
+.glyph svg{width:22px;height:22px}
+.glyph::after{content:"";position:absolute;inset:0;background:linear-gradient(120deg,transparent 30%,rgba(122,182,255,0.5) 50%,transparent 70%);
+  transform:translateX(-120%);animation:sheen 5s ease-in-out infinite}
+@keyframes sheen{0%,70%{transform:translateX(-120%)}85%,100%{transform:translateX(120%)}}
+.brand-text h1{font-family:var(--font-display);font-size:14px;font-weight:700;letter-spacing:0.14em;color:var(--rj-ink)}
+.brand-text p{font-size:10.5px;color:var(--rj-ink-dim);letter-spacing:0.22em;text-transform:uppercase;margin-top:2px}
+.deck-pill{margin-left:6px;display:flex;align-items:center;gap:9px;padding:7px 14px;border-radius:10px;
+  background:var(--rj-glass);border:1px solid var(--rj-glass-edge);backdrop-filter:blur(14px);
+  font-size:12px;color:var(--rj-ink-mid);box-shadow:inset 0 0 12px var(--rj-glass-inner)}
+.deck-pill b{color:var(--rj-ink);font-weight:600}
+.deck-pill .dot{width:7px;height:7px;border-radius:50%;background:var(--rj-ok);box-shadow:0 0 9px var(--rj-ok)}
+.chrome .spacer{flex:1}
+.tip{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--rj-ink-dim)}
+.kbd{font-family:var(--font-mono);font-size:12px;color:var(--rj-accent-bright);
+  padding:5px 10px;border-radius:8px;background:rgba(74,158,255,0.10);
+  border:1px solid rgba(74,158,255,0.32);box-shadow:0 0 14px rgba(74,158,255,0.18), inset 0 1px 0 rgba(255,255,255,0.08);
+  animation:kbdpulse 3.2s ease-in-out infinite}
+@keyframes kbdpulse{0%,100%{box-shadow:0 0 14px rgba(74,158,255,0.18), inset 0 1px 0 rgba(255,255,255,0.08)}50%{box-shadow:0 0 26px rgba(74,158,255,0.45), inset 0 1px 0 rgba(255,255,255,0.08)}}
+
+/* ============ PREVIEW MARKER ============ */
+.marker{position:fixed;top:18px;left:50%;transform:translateX(-50%);z-index:var(--z-marker);
+  display:flex;align-items:center;gap:9px;padding:6px 15px;border-radius:999px;
+  font-family:var(--font-mono);font-size:10.5px;letter-spacing:0.18em;text-transform:uppercase;
+  color:var(--rj-warn);background:rgba(245,177,58,0.08);border:1px solid rgba(245,177,58,0.34);
+  backdrop-filter:blur(10px);box-shadow:0 0 18px rgba(245,177,58,0.12)}
+.marker .pin{width:6px;height:6px;border-radius:50%;background:var(--rj-warn);box-shadow:0 0 8px var(--rj-warn);animation:twinkle 2s ease-in-out infinite}
+
+/* ============ STAGE (single slide) ============ */
+.scene{position:fixed;inset:0;z-index:var(--z-stage);
+  perspective:1700px;perspective-origin:50% 42%;
+  display:grid;place-items:center;}
+.stage{
+  width:min(1080px,90vw);aspect-ratio:16/9;
+  transform-style:preserve-3d;
+  transition:transform 0.85s var(--ease-out-expo), opacity 0.6s ease, filter 0.7s ease;
+  will-change:transform,opacity;
+}
+.scene.diving .stage{transform:translateZ(-1600px) rotateX(18deg);opacity:0;filter:blur(8px)}
+.slide{
+  position:absolute;inset:0;border-radius:22px;overflow:hidden;
+  background:linear-gradient(155deg, var(--rj-surface-2), var(--rj-surface) 70%, #070d1a);
+  border:1px solid var(--rj-glass-edge);
+  box-shadow:
+    0 50px 120px -30px rgba(0,0,0,0.85),
+    0 0 70px -10px var(--rj-accent-glow),
+    inset 0 1px 0 rgba(255,255,255,0.08),
+    inset 0 0 60px var(--rj-glass-inner);
+  opacity:0;transform:scale(0.985);
+  transition:opacity 0.55s var(--ease-out-quint), transform 0.55s var(--ease-out-quint);
+}
+.slide.show{opacity:1;transform:scale(1)}
+.slide::before{content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(80% 60% at 78% 12%, rgba(74,158,255,0.16), transparent 60%);}
+.slide-scan{position:absolute;inset:0;pointer-events:none;mix-blend-mode:screen;opacity:0.5;
+  background:linear-gradient(180deg, transparent 0%, rgba(122,182,255,0.07) 50%, transparent 100%);
+  background-size:100% 8px;height:200%;animation:scan 8s linear infinite}
+@keyframes scan{0%{transform:translateY(-50%)}100%{transform:translateY(0)}}
+
+/* slide inner content */
+.slide-body{position:relative;height:100%;padding:clamp(26px,4vw,52px);display:flex;flex-direction:column}
+.slide-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:auto}
+.slide-tag{font-family:var(--font-mono);font-size:12px;color:var(--rj-accent-bright);letter-spacing:0.16em;
+  display:flex;align-items:center;gap:10px}
+.slide-tag .num{padding:4px 9px;border-radius:7px;background:rgba(74,158,255,0.12);border:1px solid rgba(74,158,255,0.3)}
+.slide-rev{font-family:var(--font-mono);font-size:11px;color:var(--rj-ink-dim);letter-spacing:0.1em}
+.slide-eyebrow{font-family:var(--font-display);font-size:12px;font-weight:600;letter-spacing:0.32em;
+  text-transform:uppercase;color:var(--rj-accent);margin-bottom:18px}
+.slide h2{font-family:var(--font-display);font-weight:800;
+  font-size:clamp(30px,5vw,62px);line-height:1.02;letter-spacing:-0.02em;
+  text-wrap:balance;color:var(--rj-ink);max-width:18ch;
+  text-shadow:0 0 40px rgba(74,158,255,0.25)}
+.slide h2 .hl{color:var(--rj-accent-bright)}
+.slide-sub{font-size:clamp(15px,1.6vw,19px);color:var(--rj-ink-mid);max-width:54ch;margin-top:22px;line-height:1.55}
+.stat-row{display:flex;gap:clamp(20px,3vw,46px);margin-top:auto;padding-top:30px}
+.stat{position:relative}
+.stat .v{font-family:var(--font-mono);font-size:clamp(26px,3.4vw,42px);font-variant-numeric:tabular-nums;
+  color:var(--rj-ink);letter-spacing:0.01em;line-height:1}
+.stat .v.ok{color:var(--rj-ok)} .stat .v.warn{color:var(--rj-warn)}
+.stat .l{font-size:12px;color:var(--rj-ink-dim);text-transform:uppercase;letter-spacing:0.14em;margin-top:9px}
+.stat::after{content:"";position:absolute;left:0;top:-8px;width:30px;height:2px;border-radius:2px;
+  background:linear-gradient(90deg,var(--rj-accent),transparent)}
+
+/* slide controls bottom */
+.slide-foot{position:absolute;left:0;right:0;bottom:0;padding:18px clamp(26px,4vw,52px);
+  display:flex;align-items:center;justify-content:space-between;
+  background:linear-gradient(0deg, rgba(3,6,17,0.55), transparent)}
+.dots{display:flex;gap:7px;align-items:center}
+.dots i{width:7px;height:7px;border-radius:50%;background:rgba(165,190,226,0.28);transition:all 0.3s ease}
+.dots i.on{width:22px;border-radius:5px;background:var(--rj-accent);box-shadow:0 0 12px var(--rj-accent-glow)}
+.nav-btns{display:flex;gap:9px}
+.nav-btns button{font-family:var(--font-ui);font-size:13px;color:var(--rj-ink-mid);cursor:pointer;
+  padding:8px 14px;border-radius:9px;background:var(--rj-glass);border:1px solid var(--rj-glass-edge);
+  backdrop-filter:blur(10px);transition:all 0.25s var(--ease-out-quint)}
+.nav-btns button:hover{color:var(--rj-ink);border-color:var(--rj-accent);box-shadow:0 0 18px var(--rj-accent-glow);transform:translateY(-1px)}
+.nav-btns .prime{color:#031022;background:linear-gradient(150deg,var(--rj-accent-bright),var(--rj-accent-deep));
+  border-color:transparent;font-weight:600;box-shadow:0 0 22px var(--rj-accent-glow)}
+.nav-btns .prime:hover{color:#031022}
+
+/* ============ OVERVIEW GRID ============ */
+.overview{position:fixed;inset:0;z-index:var(--z-grid);
+  display:flex;flex-direction:column;
+  padding:78px clamp(22px,4vw,56px) 30px;
+  opacity:0;visibility:hidden;pointer-events:none;
+  perspective:1500px;perspective-origin:50% 40%;
+  transition:opacity 0.5s var(--ease-out-expo), visibility 0s linear 0.5s;
+}
+.overview.open{opacity:1;visibility:visible;pointer-events:auto;transition:opacity 0.6s var(--ease-out-expo)}
+.ov-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:22px;
+  transform:translateY(-16px);opacity:0;transition:all 0.5s var(--ease-out-expo) 0.1s}
+.overview.open .ov-head{transform:translateY(0);opacity:1}
+.ov-head h2{font-family:var(--font-display);font-weight:700;font-size:clamp(22px,3vw,34px);letter-spacing:0.03em}
+.ov-head h2 small{display:block;font-family:var(--font-mono);font-size:12px;color:var(--rj-accent-bright);
+  letter-spacing:0.2em;text-transform:uppercase;font-weight:400;margin-bottom:8px}
+.ov-meta{font-family:var(--font-mono);font-size:12px;color:var(--rj-ink-dim);text-align:right;letter-spacing:0.06em}
+.ov-meta b{color:var(--rj-accent-bright)}
+.ov-close{font-family:var(--font-mono);font-size:11px;color:var(--rj-ink-mid);cursor:pointer;
+  margin-top:9px;padding:6px 12px;border-radius:8px;background:rgba(74,158,255,0.08);
+  border:1px solid rgba(74,158,255,0.28);transition:all 0.2s ease;display:inline-flex;gap:7px;align-items:center}
+.ov-close:hover{color:var(--rj-ink);border-color:var(--rj-accent);box-shadow:0 0 14px var(--rj-accent-glow)}
+
+.tiles{flex:1;overflow-y:auto;overflow-x:hidden;
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;
+  padding:6px 6px 30px;transform-style:preserve-3d;align-content:start;
+  scrollbar-width:thin;scrollbar-color:rgba(74,158,255,0.4) transparent}
+.tiles::-webkit-scrollbar{width:9px}
+.tiles::-webkit-scrollbar-thumb{background:rgba(74,158,255,0.35);border-radius:9px}
+.tile{
+  position:relative;border-radius:14px;cursor:pointer;overflow:hidden;
+  aspect-ratio:16/10;
+  background:linear-gradient(155deg, var(--rj-surface-2), var(--rj-surface));
+  border:1px solid rgba(150,190,255,0.18);
+  box-shadow:0 22px 44px -22px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.05);
+  transform:translateZ(0) rotateX(8deg) translateY(28px) scale(0.94);
+  opacity:0;
+  transition:transform 0.5s var(--ease-out-quint), box-shadow 0.4s ease, border-color 0.3s ease, opacity 0.5s ease;
+  will-change:transform,opacity;
+}
+.overview.open .tile{transform:translateZ(0) rotateX(0) translateY(0) scale(1);opacity:1}
+.tile:hover{transform:translateZ(60px) rotateX(0) translateY(-4px) scale(1.02);
+  border-color:var(--rj-accent);box-shadow:0 34px 60px -20px rgba(0,0,0,0.9), 0 0 38px var(--rj-accent-glow)}
+.tile-inner{position:absolute;inset:0;padding:13px 14px;display:flex;flex-direction:column}
+.tile::before{content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(70% 60% at 80% 8%, rgba(74,158,255,0.14), transparent 60%)}
+.t-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:auto}
+.t-num{font-family:var(--font-mono);font-size:11px;color:var(--rj-accent-bright);
+  font-variant-numeric:tabular-nums;letter-spacing:0.05em}
+.t-status{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.t-status.ready{background:var(--rj-ok);box-shadow:0 0 8px var(--rj-ok)}
+.t-status.draft{background:var(--rj-warn);box-shadow:0 0 8px var(--rj-warn)}
+.t-status.flag{background:var(--rj-danger);box-shadow:0 0 8px var(--rj-danger)}
+.t-title{font-family:var(--font-display);font-size:12.5px;font-weight:600;line-height:1.18;
+  color:var(--rj-ink);letter-spacing:0.01em;text-wrap:balance}
+.t-deck{font-size:10.5px;color:var(--rj-ink-dim);margin-top:7px;letter-spacing:0.04em}
+.t-bar{margin-top:9px;height:3px;border-radius:3px;background:rgba(165,190,226,0.16);overflow:hidden}
+.t-bar span{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,var(--rj-accent-deep),var(--rj-accent-bright))}
+
+/* active tile glow */
+.tile.active{border-color:var(--rj-accent-bright)}
+.tile.active::after{content:"";position:absolute;inset:-1px;border-radius:14px;pointer-events:none;
+  border:1.5px solid var(--rj-accent-bright);
+  box-shadow:0 0 0 1px var(--rj-accent-bright), 0 0 34px var(--rj-accent-glow), inset 0 0 28px rgba(74,158,255,0.18);
+  animation:activepulse 2.4s ease-in-out infinite}
+@keyframes activepulse{0%,100%{box-shadow:0 0 0 1px var(--rj-accent-bright), 0 0 26px var(--rj-accent-glow), inset 0 0 22px rgba(74,158,255,0.14)}
+  50%{box-shadow:0 0 0 1px var(--rj-accent-bright), 0 0 50px var(--rj-accent-glow), inset 0 0 34px rgba(74,158,255,0.26)}}
+.tile.active .t-livetag{display:inline-flex}
+.t-livetag{display:none;align-items:center;gap:5px;position:absolute;bottom:11px;right:12px;
+  font-family:var(--font-mono);font-size:9px;letter-spacing:0.14em;text-transform:uppercase;
+  color:var(--rj-accent-bright);padding:3px 7px;border-radius:6px;
+  background:rgba(74,158,255,0.14);border:1px solid rgba(122,182,255,0.4)}
+.t-livetag i{width:5px;height:5px;border-radius:50%;background:var(--rj-accent-bright);box-shadow:0 0 7px var(--rj-accent-bright)}
+
+/* deck section labels inside grid */
+.deck-sep{grid-column:1/-1;display:flex;align-items:center;gap:14px;margin:14px 2px 2px;
+  opacity:0;transform:translateY(10px);transition:all 0.4s var(--ease-out-expo)}
+.overview.open .deck-sep{opacity:1;transform:translateY(0)}
+.deck-sep span{font-family:var(--font-mono);font-size:11px;letter-spacing:0.2em;text-transform:uppercase;color:var(--rj-ink-dim);white-space:nowrap}
+.deck-sep .ln{flex:1;height:1px;background:linear-gradient(90deg,rgba(120,170,255,0.28),transparent)}
+.deck-sep .cnt{font-family:var(--font-mono);font-size:10.5px;color:var(--rj-accent-bright)}
+
+/* dive-target highlight on selection */
+.tile.diving{z-index:5}
+.overview.diving .tile:not(.diving){opacity:0.25;filter:blur(3px);transform:scale(0.96);transition:all 0.45s ease}
+.overview.diving .tile.diving{transform:translateZ(900px) scale(1.4);opacity:0;
+  box-shadow:0 0 90px var(--rj-accent-glow);transition:transform 0.6s var(--ease-out-expo), opacity 0.6s ease}
+
+/* ============ TOAST ============ */
+.toast{position:fixed;bottom:24px;left:50%;transform:translate(-50%,20px);z-index:var(--z-toast);
+  padding:11px 18px;border-radius:11px;font-size:12.5px;color:var(--rj-ink-mid);
+  background:var(--rj-glass);border:1px solid var(--rj-glass-edge);backdrop-filter:blur(16px);
+  box-shadow:0 18px 40px -16px rgba(0,0,0,0.7), inset 0 0 14px var(--rj-glass-inner);
+  opacity:0;pointer-events:none;transition:all 0.4s var(--ease-out-expo);display:flex;align-items:center;gap:10px}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.toast .kbd{padding:3px 8px;font-size:11px}
+
+@media (max-width:680px){
+  .stat-row{flex-wrap:wrap;gap:18px}
+  .tip span{display:none}
+  .deck-pill{display:none}
+  .tiles{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+}
+
+/* ============ REDUCED MOTION ============ */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:opacity 0.25s linear, visibility 0s!important}
+  .ambient::before{animation:none}
+  .scene{perspective:none}
+  .overview{perspective:none}
+  .stage,.scene.diving .stage{transform:none!important;filter:none!important}
+  .tile,.overview.open .tile{transform:none!important}
+  .tile:hover{transform:none!important}
+  .overview.diving .tile.diving{transform:none!important;opacity:0}
+  .slide-scan{display:none}
+}
+</style>
+</head>
+<body>
+<div class="ambient"></div>
+<div class="grid-lines"></div>
+<div class="stars" id="stars"></div>
+
+<div class="marker"><span class="pin"></span>Design Preview - Sample Data</div>
+
+<header class="chrome">
+  <div class="brand">
+    <div class="glyph">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M12 2L3 7v10l9 5 9-5V7l-9-5z" stroke="#7ab6ff" stroke-width="1.4"/><path d="M12 7l-4.5 2.5v5L12 17l4.5-2.5v-5L12 7z" fill="rgba(74,158,255,0.35)" stroke="#4a9eff" stroke-width="1"/></svg>
+    </div>
+    <div class="brand-text"><h1>RYUJIN OS</h1><p>Deck Engine</p></div>
+  </div>
+  <div class="deck-pill"><span class="dot"></span><b id="deckName">Q3 Sales Strategy</b><span style="color:var(--rj-ink-dim)">&middot; Deck 04 / 18</span></div>
+  <div class="spacer"></div>
+  <div class="tip"><span>Slide overview</span><span class="kbd">O</span></div>
+</header>
+
+<!-- ===== SINGLE SLIDE STAGE ===== -->
+<div class="scene" id="scene">
+  <div class="stage" id="stage">
+    <article class="slide show" id="slide">
+      <div class="slide-scan"></div>
+      <div class="slide-body">
+        <div class="slide-top">
+          <div class="slide-tag"><span class="num" id="sNum">04 / 09</span><span id="sDeckTag">Q3 SALES STRATEGY</span></div>
+          <div class="slide-rev" id="sRev">rev 2026.06.15 &middot; Mazerolle</div>
+        </div>
+        <div class="slide-eyebrow" id="sEyebrow">PIPELINE OUTLOOK</div>
+        <h2 id="sTitle">Tier-1 pipeline is <span class="hl">$108K</span> warm and waiting on a Monday close</h2>
+        <p class="slide-sub" id="sSub">Ablak reroof leads the stack at seventy-six thousand, with Poitras and the Riverview inbound cluster behind it. Every deal is deposit-ready. The lever is one human closer working the phones, not another automation.</p>
+        <div class="stat-row" id="sStats">
+          <div class="stat"><div class="v">$108K</div><div class="l">Tier-1 warm</div></div>
+          <div class="stat"><div class="v ok">$76K</div><div class="l">Ablak reroof</div></div>
+          <div class="stat"><div class="v">14</div><div class="l">Open deals</div></div>
+          <div class="stat"><div class="v warn">3</div><div class="l">Need Mac call</div></div>
+        </div>
+      </div>
+      <div class="slide-foot">
+        <div class="dots" id="dots"></div>
+        <div class="nav-btns">
+          <button id="prevBtn">&larr; Prev</button>
+          <button id="gridBtn">Overview (O)</button>
+          <button class="prime" id="nextBtn">Next &rarr;</button>
+        </div>
+      </div>
+    </article>
+  </div>
+</div>
+
+<!-- ===== OVERVIEW GRID ===== -->
+<section class="overview" id="overview">
+  <div class="ov-head">
+    <h2><small>Slide Atlas</small><span id="ovTitle">Q3 Sales Strategy</span></h2>
+    <div class="ov-meta">
+      <div><b id="ovCount">9</b> slides &middot; <b id="ovActive">04</b> active</div>
+      <div class="ov-close" id="ovClose">&larr; Dive back in &middot; Esc</div>
+    </div>
+  </div>
+  <div class="tiles" id="tiles"></div>
+</section>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const REDUCE = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ---- 18 decks (deck lane). Each has a slide set; active deck is fully realised. ---- */
+const SLIDES = [
+  {ey:'PIPELINE OUTLOOK', t:'Tier-1 pipeline is <span class="hl">$108K</span> warm and waiting on a Monday close',
+   s:'Ablak reroof leads the stack at seventy-six thousand, with Poitras and the Riverview inbound cluster behind it. Every deal is deposit-ready. The lever is one human closer working the phones, not another automation.',
+   st:[['$108K','Tier-1 warm',''],['$76K','Ablak reroof','ok'],['14','Open deals',''],['3','Need Mac call','warn']]},
+  {ey:'THE NUMBERS', t:'Signed <span class="hl">$214K</span> month to date across eleven Moncton jobs',
+   s:'Asphalt reroofs are carrying volume while the metal line lifts average ticket. Riverview and Dieppe remain the densest lead corridors heading into Q3.',
+   st:[['$214K','Signed MTD','ok'],['11','Jobs closed',''],['$19.5K','Avg ticket',''],['38%','Metal mix','']]},
+  {ey:'THE BOTTLENECK', t:'Speed to lead is the <span class="hl">single</span> gap between quote and close',
+   s:'Instant Estimator drops a roof-in-3D quote in fifteen minutes. What is missing is the booked call inside the hour. The phone-sales model closes that loop.',
+   st:[['15min','Quote time','ok'],['4.2h','To first call','warn'],['80%','Model built',''],['1','Closer needed','warn']]},
+  {ey:'THE PLAY', t:'Instant estimate, video explainer, then a <span class="hl">phone</span> close at fifty percent down',
+   s:'Mirror the Kody Landals motion. Lead opts in, watches the explainer, books the twenty to thirty minute call. No Zoom, no friction, deposit on the call.',
+   st:[['3','Stage funnel',''],['50%','Deposit',''],['25min','Call window',''],['+18%','Close lift est','ok']]},
+  {ey:'TARGET', t:'Own the <span class="hl">Riverview</span> and Dieppe reroof corridor first',
+   s:'Tightest geography, highest density of aging asphalt roofs, shortest drive for the crew. Win the corridor, then radiate into greater Moncton.',
+   st:[['2','Beachhead zones',''],['1980s','Roof age peak',''],['22km','Crew radius',''],['#1','GBP rank goal','']]},
+  {ey:'PROOF', t:'The drone trove turns into a <span class="hl">Scout-grade</span> brand film',
+   s:'Four hundred and fifty gigabytes of aerial and GoPro footage feeds a roof-in-3D hero, social cuts, and a brand film. The media becomes the marketing.',
+   st:[['450GB','Raw footage',''],['719','Catalogued',''],['54','GoPro clips',''],['1','Hero reel','']]},
+  {ey:'THE ASK', t:'Hire one dedicated <span class="hl">closer</span> before the summer surge',
+   s:'Diego runs the phone close while Mac stays on Ablak and the high-tier accounts. The model is proven, the leads are warm, the only missing input is reps.',
+   st:[['1','Closer hire',''],['$5K','Ramp budget',''],['Jul','Start target',''],['3x','Capacity lift','ok']]},
+  {ey:'THE MOAT', t:'Ryujin runs the back office so the crew runs the <span class="hl">roofs</span>',
+   s:'Estimating, dispatch, pay sheets, lead routing, and the agent fleet all live in one operator console. Competitors quote on paper. We quote in 3D.',
+   st:[['7','Agent crons',''],['189','Surfaces',''],['100%','Deposit WIP','ok'],['0','Paper quotes','']]},
+  {ey:'NEXT 30 DAYS', t:'Close the warm stack, ship the funnel, <span class="hl">staff</span> the phones',
+   s:'Three moves before July. Convert the Monday close-pack, deploy the video-before-call funnel, and bring the closer on. Everything else is downstream.',
+   st:[['1','Monday close',''],['2','Funnel live',''],['3','Closer in',''],['Jul 1','Surge date','']]},
+];
+
+/* deck lane catalogue: 18 decks grouped by family. The active deck (idx 3) renders fully above. */
+const DECKS = [
+  {fam:'Strategy', name:'Plus Ultra Vision 2026', n:7, st:'ready'},
+  {fam:'Strategy', name:'Money Map', n:6, st:'ready'},
+  {fam:'Strategy', name:'Ryujin Sell-Readiness', n:8, st:'draft'},
+  {fam:'Strategy', name:'Q3 Sales Strategy', n:9, st:'ready', active:true},
+  {fam:'Sales', name:'Ablak Reroof Proposal', n:6, st:'ready'},
+  {fam:'Sales', name:'Poitras Estimate Walk', n:5, st:'draft'},
+  {fam:'Sales', name:'Diamond Tier Pitch', n:7, st:'ready'},
+  {fam:'Sales', name:'Phone-Sales Playbook', n:8, st:'ready'},
+  {fam:'Ops', name:'Crew Ops Board Tour', n:6, st:'ready'},
+  {fam:'Ops', name:'Material Order SOP', n:5, st:'flag'},
+  {fam:'Ops', name:'Pay Sheet Engine', n:6, st:'ready'},
+  {fam:'Ops', name:'Subcontractor Onboarding', n:7, st:'draft'},
+  {fam:'Marketing', name:'Scout-Grade Brand Film', n:6, st:'ready'},
+  {fam:'Marketing', name:'10 Costly Mistakes Magnet', n:5, st:'ready'},
+  {fam:'Marketing', name:'Drone Reel Storyboard', n:7, st:'draft'},
+  {fam:'Marketing', name:'Local Services Ads Plan', n:6, st:'flag'},
+  {fam:'Product', name:'Aetheria Launch Recap', n:8, st:'ready'},
+  {fam:'Product', name:'100% Human Authority Deck', n:7, st:'ready'},
+];
+const ACTIVE_DECK = DECKS.findIndex(d=>d.active);
+
+let cur = 3; // active slide index within the active deck
+const $ = s=>document.querySelector(s);
+
+/* ---- stars ---- */
+(function(){const w=$('#stars');for(let i=0;i<40;i++){const s=document.createElement('i');
+  s.style.left=Math.random()*100+'%';s.style.top=Math.random()*100+'%';
+  s.style.animationDelay=(Math.random()*4)+'s';s.style.opacity=(0.2+Math.random()*0.4);
+  s.style.transform=`scale(${0.5+Math.random()})`;w.appendChild(s);}})();
+
+/* ---- render single slide ---- */
+function renderSlide(i, animate=true){
+  const d = SLIDES[i];
+  const slide = $('#slide');
+  const apply = ()=>{
+    $('#sNum').textContent = String(i+1).padStart(2,'0')+' / '+SLIDES.length;
+    $('#sDeckTag').textContent = DECKS[ACTIVE_DECK].name.toUpperCase();
+    $('#sEyebrow').textContent = d.ey;
+    $('#sTitle').innerHTML = d.t;
+    $('#sSub').textContent = d.s;
+    $('#sStats').innerHTML = d.st.map(([v,l,c])=>`<div class="stat"><div class="v ${c}">${v}</div><div class="l">${l}</div></div>`).join('');
+    renderDots();
+    slide.classList.add('show');
+  };
+  if(animate && !REDUCE){
+    slide.classList.remove('show');
+    setTimeout(apply, 130);
+  } else apply();
+}
+function renderDots(){
+  $('#dots').innerHTML = SLIDES.map((_,i)=>`<i class="${i===cur?'on':''}"></i>`).join('');
+}
+function go(delta){
+  cur = (cur + delta + SLIDES.length) % SLIDES.length;
+  renderSlide(cur);
+}
+
+/* ---- build overview tiles (all decks, active deck's slides expanded inline as the live set) ---- */
+function buildTiles(){
+  const tiles = $('#tiles');
+  let html = '';
+  let lastFam = '';
+  DECKS.forEach((deck, di)=>{
+    if(deck.fam !== lastFam){
+      const cnt = DECKS.filter(x=>x.fam===deck.fam).length;
+      html += `<div class="deck-sep"><span>${deck.fam}</span><span class="cnt">${cnt} decks</span><div class="ln"></div></div>`;
+      lastFam = deck.fam;
+    }
+    const isActive = di === ACTIVE_DECK;
+    const slideTitle = isActive ? stripTags(SLIDES[cur].t) : deck.name;
+    const prog = isActive ? Math.round(((cur+1)/SLIDES.length)*100) : (deck.st==='ready'?100:deck.st==='draft'?55:30);
+    html += `<button class="tile ${isActive?'active':''}" data-deck="${di}" style="transition-delay:${REDUCE?0:Math.min(di*32,520)}ms">
+      <div class="tile-inner">
+        <div class="t-top">
+          <span class="t-num">D${String(di+1).padStart(2,'0')}${isActive?' &middot; S'+String(cur+1).padStart(2,'0'):''}</span>
+          <span class="t-status ${deck.st}"></span>
+        </div>
+        <div class="t-title">${slideTitle}</div>
+        <div class="t-deck">${deck.fam} &middot; ${deck.n} slides</div>
+        <div class="t-bar"><span style="width:${prog}%"></span></div>
+      </div>
+      <span class="t-livetag"><i></i>Live</span>
+    </button>`;
+  });
+  tiles.innerHTML = html;
+  tiles.querySelectorAll('.tile').forEach(t=>{
+    t.addEventListener('click', ()=>diveInto(parseInt(t.dataset.deck), t));
+  });
+}
+function stripTags(s){return s.replace(/<[^>]+>/g,'');}
+
+/* ---- HERO MOMENT: open overview (slide recedes on z) ---- */
+let gridOpen = false;
+function openGrid(){
+  if(gridOpen) return;
+  gridOpen = true;
+  buildTiles();
+  $('#ovTitle').textContent = DECKS[ACTIVE_DECK].name;
+  $('#ovCount').textContent = SLIDES.length;
+  $('#ovActive').textContent = String(cur+1).padStart(2,'0');
+  $('#scene').classList.add('diving');
+  requestAnimationFrame(()=>{
+    $('#overview').classList.add('open');
+    // bring active tile into view
+    setTimeout(()=>{const a=$('#tiles .tile.active'); if(a) a.scrollIntoView({block:'center',behavior:REDUCE?'auto':'smooth'});}, 60);
+  });
+}
+function closeGrid(){
+  if(!gridOpen) return;
+  gridOpen = false;
+  $('#overview').classList.remove('open','diving');
+  $('#scene').classList.remove('diving');
+}
+
+/* ---- depth dive into chosen tile ---- */
+function diveInto(deckIdx, tileEl){
+  const ov = $('#overview');
+  if(deckIdx === ACTIVE_DECK){
+    // dive back into the live deck
+    if(!REDUCE){
+      tileEl.classList.add('diving'); ov.classList.add('diving');
+    }
+    setTimeout(()=>{ closeGrid(); }, REDUCE?0:540);
+  } else {
+    // selecting a different deck: animate, then notify (sample shell loads only the active deck fully)
+    if(!REDUCE){ tileEl.classList.add('diving'); ov.classList.add('diving'); }
+    setTimeout(()=>{
+      closeGrid();
+      $('#deckName').textContent = DECKS[deckIdx].name;
+      showToast(`Loaded deck <b style="color:var(--rj-accent-bright)">${DECKS[deckIdx].name}</b> &middot; sample shell shows the Q3 set`);
+    }, REDUCE?0:560);
+  }
+}
+
+/* ---- toast ---- */
+let toastT;
+function showToast(html){
+  const t = $('#toast'); t.innerHTML = html;
+  t.classList.add('show'); clearTimeout(toastT);
+  toastT = setTimeout(()=>t.classList.remove('show'), 3400);
+}
+
+/* ---- wiring ---- */
+$('#nextBtn').addEventListener('click', ()=>go(1));
+$('#prevBtn').addEventListener('click', ()=>go(-1));
+$('#gridBtn').addEventListener('click', openGrid);
+$('#ovClose').addEventListener('click', closeGrid);
+
+document.addEventListener('keydown', e=>{
+  const k = e.key.toLowerCase();
+  if(k === 'o'){ e.preventDefault(); gridOpen ? closeGrid() : openGrid(); }
+  else if(k === 'escape' && gridOpen){ closeGrid(); }
+  else if(!gridOpen){
+    if(k === 'arrowright' || k === ' '){ e.preventDefault(); go(1); }
+    else if(k === 'arrowleft'){ go(-1); }
+  }
+});
+
+/* ---- init ---- */
+renderSlide(cur, false);
+renderDots();
+setTimeout(()=>showToast('Press <span class="kbd">O</span> to dive into the slide atlas'), 900);
+</script>
+</body>
+</html>

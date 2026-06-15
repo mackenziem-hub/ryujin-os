@@ -1,0 +1,1238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Ryujin Finance Cockpit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --rj-bg: #030611;
+    --rj-bg-2: #060b16;
+    --rj-surface: #0a1120;
+    --rj-surface-2: #0e1727;
+    --rj-glass: rgba(14, 22, 40, 0.62);
+    --rj-glass-edge: rgba(150, 190, 255, 0.50);
+    --rj-glass-inner: rgba(120, 170, 255, 0.10);
+    --rj-ink: #e9eefa;
+    --rj-ink-mid: rgba(202, 216, 242, 0.82);
+    --rj-ink-dim: rgba(165, 190, 226, 0.62);
+    --rj-accent: #4a9eff;
+    --rj-accent-bright: #7ab6ff;
+    --rj-accent-deep: #2563eb;
+    --rj-accent-glow: rgba(74, 158, 255, 0.40);
+    --rj-ok: #46d68a;
+    --rj-warn: #f5b13a;
+    --rj-danger: #f8746e;
+
+    --font-display: "Orbitron", sans-serif;
+    --font-ui: "Inter", system-ui, sans-serif;
+    --font-mono: "Share Tech Mono", ui-monospace, monospace;
+
+    --z-base: 1;
+    --z-tile: 10;
+    --z-tile-drag: 60;
+    --z-chrome: 80;
+    --z-hud: 90;
+    --z-overlay: 100;
+
+    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+    --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body { height: 100%; }
+
+  body {
+    font-family: var(--font-ui);
+    color: var(--rj-ink);
+    background: var(--rj-bg);
+    overflow-x: hidden;
+    min-height: 100vh;
+    position: relative;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* ---------- Atmosphere ---------- */
+  .sky {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(1200px 700px at 78% -8%, rgba(37, 99, 235, 0.28), transparent 60%),
+      radial-gradient(900px 600px at 12% 8%, rgba(74, 158, 255, 0.16), transparent 55%),
+      radial-gradient(1000px 800px at 50% 120%, rgba(20, 40, 80, 0.45), transparent 60%),
+      linear-gradient(180deg, var(--rj-bg) 0%, var(--rj-bg-2) 55%, #02040c 100%);
+  }
+  .grid-floor {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(rgba(74, 158, 255, 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(74, 158, 255, 0.05) 1px, transparent 1px);
+    background-size: 46px 46px;
+    mask-image: radial-gradient(1100px 700px at 50% 30%, #000 30%, transparent 80%);
+    -webkit-mask-image: radial-gradient(1100px 700px at 50% 30%, #000 30%, transparent 80%);
+  }
+  .scan {
+    position: fixed;
+    left: 0; right: 0;
+    height: 240px;
+    z-index: 0;
+    pointer-events: none;
+    background: linear-gradient(180deg, transparent, var(--rj-accent-glow) 50%, transparent);
+    opacity: 0.10;
+    filter: blur(6px);
+    animation: scanSweep 9s linear infinite;
+  }
+  @keyframes scanSweep {
+    0% { transform: translateY(-260px); }
+    100% { transform: translateY(100vh); }
+  }
+  .stars { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+  .star {
+    position: absolute;
+    width: 2px; height: 2px;
+    border-radius: 50%;
+    background: var(--rj-accent-bright);
+    opacity: 0.5;
+    animation: twinkle 4s ease-in-out infinite;
+  }
+  @keyframes twinkle {
+    0%, 100% { opacity: 0.12; transform: scale(0.8); }
+    50% { opacity: 0.7; transform: scale(1.3); }
+  }
+
+  /* ---------- Shell ---------- */
+  .shell {
+    position: relative;
+    z-index: var(--z-base);
+    max-width: 1480px;
+    margin: 0 auto;
+    padding: 26px clamp(16px, 3vw, 40px) 80px;
+  }
+
+  /* ---------- Top chrome ---------- */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    flex-wrap: wrap;
+    margin-bottom: 22px;
+    opacity: 0;
+    animation: dropIn 0.8s var(--ease-out-expo) 0.1s forwards;
+  }
+  @keyframes dropIn {
+    from { opacity: 0; transform: translateY(-18px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .crest {
+    width: 46px; height: 46px;
+    border-radius: 13px;
+    display: grid; place-items: center;
+    background:
+      radial-gradient(circle at 30% 25%, rgba(122, 182, 255, 0.55), transparent 60%),
+      linear-gradient(145deg, var(--rj-accent-deep), #0a1a3a);
+    border: 1px solid var(--rj-glass-edge);
+    box-shadow: 0 8px 24px rgba(37, 99, 235, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    position: relative;
+  }
+  .crest svg { width: 26px; height: 26px; }
+  .crest::after {
+    content: "";
+    position: absolute; inset: -2px;
+    border-radius: 15px;
+    box-shadow: 0 0 22px var(--rj-accent-glow);
+    animation: crestPulse 3.6s ease-in-out infinite;
+  }
+  @keyframes crestPulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+  .brand-text h1 {
+    font-family: var(--font-display);
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    line-height: 1;
+  }
+  .brand-text .sub {
+    font-size: 11px;
+    color: var(--rj-ink-dim);
+    letter-spacing: 0.26em;
+    text-transform: uppercase;
+    margin-top: 5px;
+  }
+  .topbar-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    height: 38px; padding: 0 15px;
+    border-radius: 11px;
+    background: var(--rj-glass);
+    border: 1px solid rgba(150, 190, 255, 0.22);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    font-size: 12.5px;
+    color: var(--rj-ink-mid);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  }
+  .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--rj-ok); box-shadow: 0 0 10px var(--rj-ok); animation: live 2.2s ease-in-out infinite; }
+  @keyframes live { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .pill b { color: var(--rj-ink); font-family: var(--font-mono); letter-spacing: 0.02em; }
+
+  .preview-flag {
+    display: inline-flex; align-items: center; gap: 8px;
+    height: 38px; padding: 0 14px;
+    border-radius: 11px;
+    background: rgba(245, 177, 58, 0.10);
+    border: 1px solid rgba(245, 177, 58, 0.42);
+    color: var(--rj-warn);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .preview-flag::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--rj-warn); box-shadow: 0 0 9px var(--rj-warn); }
+
+  /* ---------- Hero band ---------- */
+  .hero {
+    position: relative;
+    border-radius: 22px;
+    padding: clamp(22px, 3vw, 34px);
+    margin-bottom: 22px;
+    background: var(--rj-glass);
+    border: 1px solid rgba(150, 190, 255, 0.20);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    box-shadow:
+      0 30px 70px rgba(0, 0, 0, 0.55),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: 1.15fr 1fr;
+    gap: clamp(20px, 3vw, 40px);
+    opacity: 0;
+    animation: heroRise 1s var(--ease-out-expo) 0.22s forwards;
+  }
+  @keyframes heroRise {
+    from { opacity: 0; transform: translateY(26px) scale(0.985); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .hero::before {
+    content: "";
+    position: absolute; inset: 0;
+    background: radial-gradient(700px 300px at 88% 0%, rgba(74, 158, 255, 0.18), transparent 70%);
+    pointer-events: none;
+  }
+  .hero-left { position: relative; z-index: 2; }
+  .hero-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--rj-accent-bright);
+    letter-spacing: 0.1em;
+  }
+  .hero h2 {
+    font-family: var(--font-display);
+    font-size: clamp(26px, 3.4vw, 40px);
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    line-height: 1.04;
+    margin: 12px 0 6px;
+    text-wrap: balance;
+  }
+  .hero .lede {
+    color: var(--rj-ink-mid);
+    font-size: 14px;
+    max-width: 46ch;
+    line-height: 1.6;
+  }
+
+  /* runway gauge - the hero moment */
+  .runway {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+  }
+  .gauge-wrap { position: relative; width: 100%; max-width: 340px; }
+  .gauge { width: 100%; height: auto; display: block; overflow: visible; }
+  .gauge-readout {
+    position: absolute;
+    left: 50%;
+    bottom: 8px;
+    transform: translateX(-50%);
+    text-align: center;
+    pointer-events: none;
+  }
+  .gauge-readout .val {
+    font-family: var(--font-mono);
+    font-size: clamp(30px, 4vw, 42px);
+    line-height: 1;
+    color: var(--rj-ink);
+    letter-spacing: 0.01em;
+    text-shadow: 0 0 22px var(--rj-accent-glow);
+    transition: color 0.4s var(--ease-out-quint), text-shadow 0.4s var(--ease-out-quint);
+  }
+  .gauge-readout .unit {
+    display: block;
+    font-size: 11px;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--rj-ink-dim);
+    margin-top: 7px;
+  }
+
+  .burn-control { width: 100%; max-width: 360px; }
+  .burn-row { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
+  .burn-row .label { font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--rj-ink-dim); }
+  .burn-row .amount { font-family: var(--font-mono); font-size: 15px; color: var(--rj-accent-bright); }
+  .slider {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 8px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--rj-ok) 0%, var(--rj-warn) 55%, var(--rj-danger) 100%);
+    outline: none;
+    cursor: ew-resize;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6);
+  }
+  .slider::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #fff, var(--rj-accent-bright) 55%, var(--rj-accent-deep));
+    border: 2px solid rgba(255, 255, 255, 0.85);
+    box-shadow: 0 0 0 4px rgba(74, 158, 255, 0.22), 0 6px 16px rgba(0, 0, 0, 0.5);
+    cursor: ew-resize;
+    transition: transform 0.15s var(--spring);
+  }
+  .slider::-webkit-slider-thumb:active { transform: scale(1.18); }
+  .slider::-moz-range-thumb {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #fff, var(--rj-accent-bright) 55%, var(--rj-accent-deep));
+    border: 2px solid rgba(255, 255, 255, 0.85);
+    box-shadow: 0 0 0 4px rgba(74, 158, 255, 0.22), 0 6px 16px rgba(0, 0, 0, 0.5);
+    cursor: ew-resize;
+  }
+  .burn-hint { font-size: 11.5px; color: var(--rj-ink-dim); margin-top: 9px; text-align: center; line-height: 1.5; }
+  .burn-hint b { color: var(--rj-ink-mid); font-family: var(--font-mono); }
+
+  /* ---------- Toolbar ---------- */
+  .toolbar {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    margin-bottom: 18px;
+    opacity: 0;
+    animation: dropIn 0.7s var(--ease-out-expo) 0.5s forwards;
+  }
+  .toolbar .hint {
+    font-size: 12.5px;
+    color: var(--rj-ink-dim);
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .toolbar .hint kbd {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    background: rgba(150, 190, 255, 0.12);
+    border: 1px solid rgba(150, 190, 255, 0.25);
+    border-radius: 6px;
+    padding: 2px 7px;
+    color: var(--rj-ink-mid);
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    height: 38px; padding: 0 16px;
+    border-radius: 11px;
+    border: 1px solid rgba(150, 190, 255, 0.24);
+    background: var(--rj-glass);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    color: var(--rj-ink-mid);
+    font-family: var(--font-ui);
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: transform 0.18s var(--spring), border-color 0.2s, color 0.2s, box-shadow 0.2s;
+  }
+  .btn:hover { transform: translateY(-2px); border-color: var(--rj-accent); color: var(--rj-ink); box-shadow: 0 8px 22px rgba(37, 99, 235, 0.3); }
+  .btn:active { transform: translateY(0) scale(0.97); }
+  .btn svg { width: 15px; height: 15px; }
+  .toolbar .spacer { flex: 1; }
+
+  /* ---------- Board ---------- */
+  .board {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    grid-auto-rows: min-content;
+    align-items: start;
+    gap: 18px;
+  }
+
+  .tile {
+    position: relative;
+    border-radius: 20px;
+    background: var(--rj-glass);
+    border: 1px solid rgba(150, 190, 255, 0.18);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    box-shadow:
+      0 22px 50px rgba(0, 0, 0, 0.5),
+      0 2px 0 rgba(255, 255, 255, 0.04) inset,
+      0 0 0 1px rgba(0, 0, 0, 0.2);
+    padding: 18px 19px 19px;
+    z-index: var(--z-tile);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    will-change: transform;
+    transition: box-shadow 0.3s var(--ease-out-quint), border-color 0.3s;
+    opacity: 0;
+    transform: translateY(24px) scale(0.97);
+    animation: tileIn 0.75s var(--ease-out-expo) forwards;
+  }
+  @keyframes tileIn {
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .tile::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 20px;
+    background: linear-gradient(150deg, var(--rj-glass-inner), transparent 45%);
+    pointer-events: none;
+  }
+  .tile::after {
+    content: "";
+    position: absolute;
+    top: 0; left: 14px; right: 14px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--rj-glass-edge), transparent);
+    pointer-events: none;
+  }
+  .tile:hover { border-color: rgba(122, 182, 255, 0.4); box-shadow: 0 28px 64px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--rj-accent-glow) inset; }
+  .tile.dragging {
+    z-index: var(--z-tile-drag);
+    cursor: grabbing;
+    box-shadow: 0 40px 90px rgba(0, 0, 0, 0.7), 0 0 0 1px var(--rj-accent) inset, 0 0 40px var(--rj-accent-glow);
+    border-color: var(--rj-accent);
+    transition: none;
+  }
+  .tile.snapping { transition: transform 0.52s var(--spring); }
+  .tile.pulse { animation: tilePulse 0.6s var(--ease-out-quint); }
+  @keyframes tilePulse {
+    0% { box-shadow: 0 22px 50px rgba(0,0,0,0.5), 0 0 0 2px var(--rj-accent) inset, 0 0 36px var(--rj-accent-glow); }
+    100% { box-shadow: 0 22px 50px rgba(0,0,0,0.5); }
+  }
+
+  .tile-head {
+    display: flex; align-items: center; gap: 11px;
+    margin-bottom: 14px;
+    cursor: grab;
+    position: relative;
+    z-index: 2;
+  }
+  .tile-head:active { cursor: grabbing; }
+  .tile-ico {
+    width: 34px; height: 34px;
+    border-radius: 10px;
+    display: grid; place-items: center;
+    border: 1px solid rgba(150, 190, 255, 0.28);
+    background: linear-gradient(145deg, rgba(74, 158, 255, 0.16), rgba(10, 17, 32, 0.5));
+    flex-shrink: 0;
+  }
+  .tile-ico svg { width: 18px; height: 18px; }
+  .tile-title { flex: 1; min-width: 0; }
+  .tile-title .name {
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--rj-ink);
+  }
+  .tile-title .meta { font-size: 11px; color: var(--rj-ink-dim); margin-top: 3px; }
+  .grip {
+    display: flex; flex-direction: column; gap: 3px;
+    opacity: 0.4;
+    transition: opacity 0.2s;
+  }
+  .tile:hover .grip { opacity: 0.8; }
+  .grip span { display: block; width: 14px; height: 2px; border-radius: 2px; background: var(--rj-ink-mid); }
+
+  .tile-body { position: relative; z-index: 2; flex: 1; display: flex; flex-direction: column; }
+
+  .big-figure {
+    font-family: var(--font-mono);
+    font-size: clamp(26px, 3vw, 34px);
+    line-height: 1;
+    letter-spacing: 0.01em;
+    color: var(--rj-ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .figure-sub { font-size: 12px; color: var(--rj-ink-mid); margin-top: 8px; display: flex; align-items: center; gap: 7px; }
+  .trend { font-family: var(--font-mono); font-size: 11.5px; display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 999px; }
+  .trend.up { color: var(--rj-ok); background: rgba(70, 214, 138, 0.12); }
+  .trend.down { color: var(--rj-danger); background: rgba(248, 116, 110, 0.12); }
+  .trend.flat { color: var(--rj-ink-dim); background: rgba(165, 190, 226, 0.10); }
+
+  /* AR / AP aging bars */
+  .age-list { margin-top: 16px; display: flex; flex-direction: column; gap: 11px; }
+  .age-row { display: grid; grid-template-columns: 64px 1fr auto; align-items: center; gap: 11px; }
+  .age-row .bucket { font-family: var(--font-mono); font-size: 11px; color: var(--rj-ink-dim); }
+  .age-track { height: 9px; border-radius: 999px; background: rgba(150, 190, 255, 0.10); overflow: hidden; }
+  .age-fill { height: 100%; border-radius: 999px; width: 0; transition: width 1.1s var(--ease-out-expo); box-shadow: 0 0 12px currentColor; }
+  .age-row .amt { font-family: var(--font-mono); font-size: 12px; color: var(--rj-ink-mid); font-variant-numeric: tabular-nums; }
+
+  /* Payments stream */
+  .pay-list { margin-top: 8px; display: flex; flex-direction: column; }
+  .pay-row {
+    display: flex; align-items: center; gap: 11px;
+    padding: 10px 2px;
+    border-bottom: 1px solid rgba(150, 190, 255, 0.08);
+  }
+  .pay-row:last-child { border-bottom: none; }
+  .pay-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  .pay-info { flex: 1; min-width: 0; }
+  .pay-info .who { font-size: 12.5px; color: var(--rj-ink); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pay-info .when { font-size: 10.5px; color: var(--rj-ink-dim); margin-top: 2px; font-family: var(--font-mono); }
+  .pay-amt { font-family: var(--font-mono); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .pay-amt.in { color: var(--rj-ok); }
+  .pay-amt.out { color: var(--rj-danger); }
+
+  /* P&L bars */
+  .pl-grid { margin-top: 14px; display: flex; align-items: flex-end; gap: 8px; height: 110px; }
+  .pl-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 7px; height: 100%; justify-content: flex-end; }
+  .pl-bar { width: 100%; max-width: 30px; border-radius: 6px 6px 3px 3px; min-height: 4px; height: 0; transition: height 1.2s var(--ease-out-expo); position: relative; }
+  .pl-bar.rev { background: linear-gradient(180deg, var(--rj-accent-bright), var(--rj-accent-deep)); box-shadow: 0 0 16px rgba(74,158,255,0.4); }
+  .pl-bar.cost { background: linear-gradient(180deg, rgba(248,116,110,0.85), rgba(180,60,60,0.7)); }
+  .pl-bar.profit { background: linear-gradient(180deg, var(--rj-ok), #1f9e63); box-shadow: 0 0 16px rgba(70,214,138,0.4); }
+  .pl-col .pl-lab { font-family: var(--font-mono); font-size: 10px; color: var(--rj-ink-dim); letter-spacing: 0.04em; }
+  .pl-legend { display: flex; gap: 14px; margin-top: 13px; flex-wrap: wrap; }
+  .pl-legend span { font-size: 11px; color: var(--rj-ink-mid); display: inline-flex; align-items: center; gap: 6px; }
+  .pl-legend i { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+
+  /* Cashflow projection */
+  .flow-wrap { margin-top: 10px; position: relative; }
+  .flow-svg { width: 100%; height: auto; display: block; overflow: visible; }
+  .flow-legend { display: flex; justify-content: space-between; margin-top: 8px; font-size: 11px; color: var(--rj-ink-dim); font-family: var(--font-mono); }
+  .flow-foot { margin-top: 12px; font-size: 12px; color: var(--rj-ink-mid); line-height: 1.55; }
+  .flow-foot b { color: var(--rj-ink); font-family: var(--font-mono); }
+
+  /* Mini stat strip inside cashflow */
+  .ministats { display: flex; gap: 16px; margin-top: 12px; flex-wrap: wrap; }
+  .ministat { flex: 1; min-width: 88px; }
+  .ministat .v { font-family: var(--font-mono); font-size: 17px; color: var(--rj-ink); font-variant-numeric: tabular-nums; }
+  .ministat .k { font-size: 10px; color: var(--rj-ink-dim); letter-spacing: 0.14em; text-transform: uppercase; margin-top: 4px; }
+
+  /* drop placeholder */
+  .ghost {
+    border: 1.5px dashed rgba(122, 182, 255, 0.5);
+    border-radius: 20px;
+    background: rgba(74, 158, 255, 0.06);
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  /* footer note */
+  .foot {
+    margin-top: 28px;
+    text-align: center;
+    font-size: 11.5px;
+    color: var(--rj-ink-dim);
+    letter-spacing: 0.04em;
+  }
+  .foot b { color: var(--rj-ink-mid); }
+
+  /* toast */
+  .toast {
+    position: fixed;
+    bottom: 24px; left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    z-index: var(--z-overlay);
+    background: var(--rj-surface-2);
+    border: 1px solid var(--rj-accent);
+    border-radius: 12px;
+    padding: 12px 20px;
+    font-size: 13px;
+    color: var(--rj-ink);
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6), 0 0 24px var(--rj-accent-glow);
+    opacity: 0;
+    transition: transform 0.5s var(--spring), opacity 0.4s;
+    pointer-events: none;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+  /* responsive */
+  @media (max-width: 1080px) {
+    .hero { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 980px) {
+    .board { grid-template-columns: repeat(2, 1fr); }
+    .tile[style] { grid-column: span 1 !important; }
+    .toolbar .hint { display: none; }
+  }
+  @media (max-width: 600px) {
+    .board { grid-template-columns: 1fr; }
+    .tile[style] { grid-column: 1 / -1 !important; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
+    .topbar, .hero, .toolbar, .tile { opacity: 1 !important; transform: none !important; }
+    .scan { display: none; }
+    .age-fill, .pl-bar { transition: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="sky"></div>
+  <div class="grid-floor"></div>
+  <div class="scan"></div>
+  <div class="stars" id="stars"></div>
+
+  <main class="shell">
+    <!-- Top chrome -->
+    <header class="topbar">
+      <div class="brand">
+        <div class="crest" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M12 2L3 7v6c0 5 3.6 8.4 9 9 5.4-.6 9-4 9-9V7l-9-5z" stroke="#cfe2ff" stroke-width="1.4" fill="rgba(122,182,255,0.18)"/><path d="M8.5 12.5l2.4 2.4 4.6-5" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="brand-text">
+          <h1>FINANCE COCKPIT</h1>
+          <div class="sub">Ryujin OS &middot; Plus Ultra Roofing</div>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <span class="preview-flag">Design Preview &middot; Sample Data</span>
+        <span class="pill"><span class="dot"></span>Live ledger <b>synced 2m</b></span>
+        <span class="pill">Cash on hand <b>$184,920</b></span>
+      </div>
+    </header>
+
+    <!-- Hero: runway gauge -->
+    <section class="hero">
+      <div class="hero-left">
+        <div class="hero-eyebrow">// runway projection</div>
+        <h2>How long does the cash last.</h2>
+        <p class="lede">Drag the burn slider and the gauge sweeps from green to red in real time. The 90-day line below redraws toward zero so you see the cliff before you hit it. Every tile is a glass panel you can grab and rearrange into the cockpit that fits your morning.</p>
+
+        <div class="burn-control">
+          <div class="burn-row">
+            <span class="label">Monthly burn</span>
+            <span class="amount" id="burnAmt">$61,500</span>
+          </div>
+          <input class="slider" id="burn" type="range" min="28000" max="142000" value="61500" step="500" aria-label="Monthly burn rate" />
+          <p class="burn-hint">Cash on hand <b>$184,920</b> &middot; net AR inflow <b>+$96,400</b> over 60d</p>
+        </div>
+      </div>
+
+      <div class="runway">
+        <div class="gauge-wrap">
+          <svg class="gauge" viewBox="0 0 240 150" role="img" aria-label="Runway gauge">
+            <defs>
+              <linearGradient id="arc" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="#f8746e"/>
+                <stop offset="42%" stop-color="#f5b13a"/>
+                <stop offset="100%" stop-color="#46d68a"/>
+              </linearGradient>
+              <filter id="needleGlow" x="-60%" y="-60%" width="220%" height="220%">
+                <feGaussianBlur stdDeviation="3" result="b"/>
+                <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+            </defs>
+            <!-- track -->
+            <path d="M20 130 A100 100 0 0 1 220 130" fill="none" stroke="rgba(150,190,255,0.12)" stroke-width="16" stroke-linecap="round"/>
+            <!-- colored arc -->
+            <path id="gaugeArc" d="M20 130 A100 100 0 0 1 220 130" fill="none" stroke="url(#arc)" stroke-width="16" stroke-linecap="round" stroke-dasharray="314" stroke-dashoffset="314"/>
+            <!-- ticks -->
+            <g id="ticks" stroke="rgba(180,205,245,0.4)" stroke-width="2"></g>
+            <!-- needle -->
+            <g id="needle" filter="url(#needleGlow)" style="transform-origin:120px 130px;">
+              <line x1="120" y1="130" x2="120" y2="48" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+              <circle cx="120" cy="130" r="7" fill="#0e1727" stroke="#fff" stroke-width="2.5"/>
+            </g>
+          </svg>
+          <div class="gauge-readout">
+            <div class="val" id="runwayVal">3.0</div>
+            <span class="unit">months runway</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <span class="hint">Grab a tile by its header bar to rearrange &middot; <kbd>drag</kbd> any panel</span>
+      <span class="spacer"></span>
+      <button class="btn" id="shuffle">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M16 3h5v5M21 3l-7 7M8 21H3v-5M3 21l7-7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Auto-arrange
+      </button>
+      <button class="btn" id="reset">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M4 4v6h6M20 20v-6h-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 10a8 8 0 0 0-14.3-3.3L4 8M4 14a8 8 0 0 0 14.3 3.3L20 16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Reset layout
+      </button>
+    </div>
+
+    <!-- Board -->
+    <section class="board" id="board">
+
+      <!-- AR -->
+      <article class="tile" data-id="ar" style="grid-column: span 4;">
+        <div class="tile-head">
+          <div class="tile-ico"><svg viewBox="0 0 24 24" fill="none"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" stroke="#7ab6ff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <div class="tile-title"><div class="name">Accounts Receivable</div><div class="meta">Owed to Plus Ultra</div></div>
+          <div class="grip"><span></span><span></span><span></span></div>
+        </div>
+        <div class="tile-body">
+          <div class="big-figure" data-count="142880" data-prefix="$">$142,880</div>
+          <div class="figure-sub"><span class="trend up">&#9650; 8.4%</span> vs last month</div>
+          <div class="age-list">
+            <div class="age-row"><span class="bucket">0-30d</span><div class="age-track"><div class="age-fill" data-w="86" style="background:var(--rj-ok);color:var(--rj-ok)"></div></div><span class="amt">$98,400</span></div>
+            <div class="age-row"><span class="bucket">31-60d</span><div class="age-track"><div class="age-fill" data-w="42" style="background:var(--rj-warn);color:var(--rj-warn)"></div></div><span class="amt">$31,200</span></div>
+            <div class="age-row"><span class="bucket">61-90d</span><div class="age-track"><div class="age-fill" data-w="14" style="background:var(--rj-danger);color:var(--rj-danger)"></div></div><span class="amt">$9,830</span></div>
+            <div class="age-row"><span class="bucket">90+d</span><div class="age-track"><div class="age-fill" data-w="6" style="background:var(--rj-danger);color:var(--rj-danger)"></div></div><span class="amt">$3,450</span></div>
+          </div>
+        </div>
+      </article>
+
+      <!-- AP -->
+      <article class="tile" data-id="ap" style="grid-column: span 4;">
+        <div class="tile-head">
+          <div class="tile-ico"><svg viewBox="0 0 24 24" fill="none"><path d="M3 7h18v12H3zM3 11h18M7 15h4" stroke="#f8746e" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <div class="tile-title"><div class="name">Accounts Payable</div><div class="meta">Owed to subs + suppliers</div></div>
+          <div class="grip"><span></span><span></span><span></span></div>
+        </div>
+        <div class="tile-body">
+          <div class="big-figure" data-count="48715" data-prefix="$">$48,715</div>
+          <div class="figure-sub"><span class="trend down">&#9660; 3.1%</span> vs last month</div>
+          <div class="age-list">
+            <div class="age-row"><span class="bucket">Due now</span><div class="age-track"><div class="age-fill" data-w="60" style="background:var(--rj-danger);color:var(--rj-danger)"></div></div><span class="amt">$22,940</span></div>
+            <div class="age-row"><span class="bucket">7 days</span><div class="age-track"><div class="age-fill" data-w="38" style="background:var(--rj-warn);color:var(--rj-warn)"></div></div><span class="amt">$14,300</span></div>
+            <div class="age-row"><span class="bucket">14 days</span><div class="age-track"><div class="age-fill" data-w="22" style="background:var(--rj-accent);color:var(--rj-accent)"></div></div><span class="amt">$8,475</span></div>
+            <div class="age-row"><span class="bucket">30 days</span><div class="age-track"><div class="age-fill" data-w="9" style="background:var(--rj-ok);color:var(--rj-ok)"></div></div><span class="amt">$3,000</span></div>
+          </div>
+        </div>
+      </article>
+
+      <!-- Payments -->
+      <article class="tile" data-id="pay" style="grid-column: span 4;">
+        <div class="tile-head">
+          <div class="tile-ico"><svg viewBox="0 0 24 24" fill="none"><path d="M3 6h18v12H3zM3 10h18" stroke="#7ab6ff" stroke-width="1.7"/><circle cx="7.5" cy="14.5" r="1.4" fill="#7ab6ff"/></svg></div>
+          <div class="tile-title"><div class="name">Payment Stream</div><div class="meta">Cleared + scheduled</div></div>
+          <div class="grip"><span></span><span></span><span></span></div>
+        </div>
+        <div class="tile-body">
+          <div class="pay-list">
+            <div class="pay-row"><span class="pay-dot" style="background:var(--rj-ok);box-shadow:0 0 8px var(--rj-ok)"></span><div class="pay-info"><div class="who">Tremblay reroof &middot; Riverview</div><div class="when">CLEARED &middot; today</div></div><span class="pay-amt in">+$18,400</span></div>
+            <div class="pay-row"><span class="pay-dot" style="background:var(--rj-ok);box-shadow:0 0 8px var(--rj-ok)"></span><div class="pay-info"><div class="who">LeBlanc deposit &middot; Dieppe</div><div class="when">CLEARED &middot; today</div></div><span class="pay-amt in">+$7,250</span></div>
+            <div class="pay-row"><span class="pay-dot" style="background:var(--rj-danger);box-shadow:0 0 8px var(--rj-danger)"></span><div class="pay-info"><div class="who">IKO Building Products</div><div class="when">SCHEDULED &middot; Jun 18</div></div><span class="pay-amt out">-$11,920</span></div>
+            <div class="pay-row"><span class="pay-dot" style="background:var(--rj-danger);box-shadow:0 0 8px var(--rj-danger)"></span><div class="pay-info"><div class="who">Cormier crew payout</div><div class="when">SCHEDULED &middot; Jun 20</div></div><span class="pay-amt out">-$8,600</span></div>
+            <div class="pay-row"><span class="pay-dot" style="background:var(--rj-ok);box-shadow:0 0 8px var(--rj-ok)"></span><div class="pay-info"><div class="who">Gauvin final &middot; Moncton</div><div class="when">SCHEDULED &middot; Jun 22</div></div><span class="pay-amt in">+$24,050</span></div>
+          </div>
+        </div>
+      </article>
+
+      <!-- P&L -->
+      <article class="tile" data-id="pl" style="grid-column: span 5;">
+        <div class="tile-head">
+          <div class="tile-ico"><svg viewBox="0 0 24 24" fill="none"><path d="M4 20V4M4 20h16M8 16l4-5 3 3 5-7" stroke="#46d68a" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <div class="tile-title"><div class="name">Profit and Loss</div><div class="meta">Trailing 4 months</div></div>
+          <div class="grip"><span></span><span></span><span></span></div>
+        </div>
+        <div class="tile-body">
+          <div class="big-figure" data-count="71240" data-prefix="$">$71,240</div>
+          <div class="figure-sub">Net profit MTD &middot; <span class="trend up">&#9650; 12.6%</span> margin 24.8%</div>
+          <div class="pl-grid" id="plGrid">
+            <div class="pl-col"><div class="pl-bar rev" data-h="62"></div><div class="pl-bar cost" data-h="44"></div><div class="pl-bar profit" data-h="20"></div><span class="pl-lab">MAR</span></div>
+            <div class="pl-col"><div class="pl-bar rev" data-h="74"></div><div class="pl-bar cost" data-h="50"></div><div class="pl-bar profit" data-h="26"></div><span class="pl-lab">APR</span></div>
+            <div class="pl-col"><div class="pl-bar rev" data-h="88"></div><div class="pl-bar cost" data-h="58"></div><div class="pl-bar profit" data-h="32"></div><span class="pl-lab">MAY</span></div>
+            <div class="pl-col"><div class="pl-bar rev" data-h="100"></div><div class="pl-bar cost" data-h="66"></div><div class="pl-bar profit" data-h="36"></div><span class="pl-lab">JUN</span></div>
+          </div>
+          <div class="pl-legend">
+            <span><i style="background:var(--rj-accent-bright)"></i>Revenue</span>
+            <span><i style="background:var(--rj-danger)"></i>Cost</span>
+            <span><i style="background:var(--rj-ok)"></i>Profit</span>
+          </div>
+        </div>
+      </article>
+
+      <!-- Cashflow / projection -->
+      <article class="tile" data-id="flow" style="grid-column: span 7;">
+        <div class="tile-head">
+          <div class="tile-ico"><svg viewBox="0 0 24 24" fill="none"><path d="M3 17c3 0 3-9 6-9s3 6 6 6 3-6 6-6" stroke="#4a9eff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 21h18" stroke="#4a9eff" stroke-width="1.3" stroke-linecap="round"/></svg></div>
+          <div class="tile-title"><div class="name">90-Day Cashflow</div><div class="meta">Projection at current burn</div></div>
+          <div class="grip"><span></span><span></span><span></span></div>
+        </div>
+        <div class="tile-body">
+          <div class="flow-wrap">
+            <svg class="flow-svg" id="flowSvg" viewBox="0 0 460 170" role="img" aria-label="90 day cashflow projection">
+              <defs>
+                <linearGradient id="flowFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="rgba(74,158,255,0.32)"/>
+                  <stop offset="100%" stop-color="rgba(74,158,255,0)"/>
+                </linearGradient>
+                <linearGradient id="flowLine" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%" stop-color="#7ab6ff"/>
+                  <stop offset="70%" stop-color="#4a9eff"/>
+                  <stop offset="100%" stop-color="#f8746e"/>
+                </linearGradient>
+                <filter id="lineGlow" x="-20%" y="-40%" width="140%" height="180%">
+                  <feGaussianBlur stdDeviation="2.4" result="b"/>
+                  <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+                </filter>
+              </defs>
+              <!-- grid lines -->
+              <g stroke="rgba(150,190,255,0.10)" stroke-width="1">
+                <line x1="0" y1="20" x2="460" y2="20"/>
+                <line x1="0" y1="63" x2="460" y2="63"/>
+                <line x1="0" y1="106" x2="460" y2="106"/>
+                <line x1="0" y1="149" x2="460" y2="149"/>
+              </g>
+              <!-- zero line -->
+              <line id="zeroLine" x1="0" y1="149" x2="460" y2="149" stroke="rgba(248,116,110,0.55)" stroke-width="1.3" stroke-dasharray="5 5"/>
+              <text x="4" y="145" fill="rgba(248,116,110,0.7)" font-family="Share Tech Mono, monospace" font-size="10">ZERO</text>
+              <!-- area -->
+              <path id="flowArea" fill="url(#flowFill)" d="" opacity="0"/>
+              <!-- line -->
+              <path id="flowPath" fill="none" stroke="url(#flowLine)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" filter="url(#lineGlow)" d=""/>
+              <!-- end marker -->
+              <circle id="flowEnd" r="5" fill="#f8746e" stroke="#fff" stroke-width="2" opacity="0"/>
+            </svg>
+            <div class="flow-legend"><span>Today</span><span>+30d</span><span>+60d</span><span id="flowEndLab">+90d</span></div>
+          </div>
+          <div class="ministats">
+            <div class="ministat"><div class="v" id="msStart">$184.9K</div><div class="k">Today</div></div>
+            <div class="ministat"><div class="v" id="msLow" style="color:var(--rj-warn)">$31.4K</div><div class="k">90d low</div></div>
+            <div class="ministat"><div class="v" id="msNet" style="color:var(--rj-ok)">+$96.4K</div><div class="k">AR inflow</div></div>
+            <div class="ministat"><div class="v" id="msStatus" style="color:var(--rj-ok)">STABLE</div><div class="k">Status</div></div>
+          </div>
+          <p class="flow-foot" id="flowFoot">At <b>$61,500</b> monthly burn the line stays well above zero. Pull the slider past <b>$118K</b> and the curve bends into the red zone before day 90.</p>
+        </div>
+      </article>
+
+    </section>
+
+    <p class="foot">Ryujin OS Finance Cockpit &middot; <b>design preview built on representative sample data</b> &middot; not connected to live ledgers</p>
+  </main>
+
+  <div class="toast" id="toast">Layout saved to your cockpit</div>
+
+<script>
+(function () {
+  "use strict";
+  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---------- starfield ---------- */
+  (function () {
+    var host = document.getElementById("stars");
+    var n = reduce ? 0 : 38;
+    for (var i = 0; i < n; i++) {
+      var s = document.createElement("div");
+      s.className = "star";
+      s.style.left = (Math.random() * 100) + "%";
+      s.style.top = (Math.random() * 70) + "%";
+      s.style.animationDelay = (Math.random() * 4) + "s";
+      s.style.opacity = (0.2 + Math.random() * 0.5);
+      host.appendChild(s);
+    }
+  })();
+
+  /* ---------- count-up figures ---------- */
+  function animateCount(el) {
+    var target = parseFloat(el.getAttribute("data-count"));
+    var prefix = el.getAttribute("data-prefix") || "";
+    if (reduce) { el.textContent = prefix + target.toLocaleString("en-US"); return; }
+    var start = performance.now(), dur = 1400;
+    function step(now) {
+      var p = Math.min(1, (now - start) / dur);
+      var eased = 1 - Math.pow(1 - p, 4);
+      var v = Math.round(target * eased);
+      el.textContent = prefix + v.toLocaleString("en-US");
+      if (p < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  /* ---------- reveal-driven bar fills ---------- */
+  function fillBars() {
+    document.querySelectorAll(".age-fill").forEach(function (f) {
+      f.style.width = f.getAttribute("data-w") + "%";
+    });
+    document.querySelectorAll(".pl-bar").forEach(function (b) {
+      b.style.height = b.getAttribute("data-h") + "%";
+    });
+  }
+
+  /* ---------- runway gauge + cashflow ---------- */
+  var CASH = 184920;
+  var AR_INFLOW = 96400; // expected over the window
+  var burn = document.getElementById("burn");
+  var burnAmt = document.getElementById("burnAmt");
+  var needle = document.getElementById("needle");
+  var arc = document.getElementById("gaugeArc");
+  var runwayVal = document.getElementById("runwayVal");
+  var readout = document.querySelector(".gauge-readout .val");
+  var ARC_LEN = 314;
+  var MAX_MONTHS = 8; // gauge full-scale
+
+  // build ticks along the 180deg arc
+  (function () {
+    var g = document.getElementById("ticks");
+    for (var i = 0; i <= 8; i++) {
+      var ang = Math.PI - (i / 8) * Math.PI; // pi..0
+      var cx = 120, cy = 130, rOut = 100, rIn = 88;
+      var x1 = cx + Math.cos(ang) * rOut, y1 = cy - Math.sin(ang) * rOut;
+      var x2 = cx + Math.cos(ang) * rIn, y2 = cy - Math.sin(ang) * rIn;
+      var ln = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      ln.setAttribute("x1", x1.toFixed(1)); ln.setAttribute("y1", y1.toFixed(1));
+      ln.setAttribute("x2", x2.toFixed(1)); ln.setAttribute("y2", y2.toFixed(1));
+      g.appendChild(ln);
+    }
+  })();
+
+  function colorFor(months) {
+    if (months >= 4.5) return getCss("--rj-ok");
+    if (months >= 2.2) return getCss("--rj-warn");
+    return getCss("--rj-danger");
+  }
+  function getCss(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+
+  // flow svg refs
+  var flowPath = document.getElementById("flowPath");
+  var flowArea = document.getElementById("flowArea");
+  var flowEnd = document.getElementById("flowEnd");
+  var msLow = document.getElementById("msLow");
+  var msStatus = document.getElementById("msStatus");
+  var flowFoot = document.getElementById("flowFoot");
+
+  function fmtK(n) {
+    if (n <= 0) return "$0";
+    return "$" + (n / 1000).toFixed(1) + "K";
+  }
+
+  function buildFlowPoints(monthlyBurn) {
+    // 13 weekly points over ~90 days
+    var pts = [];
+    var W = 460, top = 14, bot = 149;
+    var weeks = 13;
+    // scale: top of chart = cash + some headroom
+    var headroom = Math.max(CASH * 1.15, CASH + AR_INFLOW);
+    var dailyBurn = monthlyBurn / 30;
+    var bal = CASH;
+    var inflowPerWeek = AR_INFLOW / 9; // front-loaded over first ~9 weeks
+    var low = CASH;
+    for (var w = 0; w <= weeks; w++) {
+      if (w > 0) {
+        bal -= dailyBurn * 7;
+        if (w <= 9) bal += inflowPerWeek;
+      }
+      low = Math.min(low, bal);
+      var x = (w / weeks) * W;
+      var y = bot - (Math.max(bal, -headroom * 0.1) / headroom) * (bot - top);
+      y = Math.max(top - 30, Math.min(bot + 20, y));
+      pts.push({ x: x, y: y, bal: bal });
+    }
+    return { pts: pts, low: low, bot: bot };
+  }
+
+  function smoothPath(pts) {
+    if (!pts.length) return "";
+    var d = "M" + pts[0].x.toFixed(1) + " " + pts[0].y.toFixed(1);
+    for (var i = 1; i < pts.length; i++) {
+      var p0 = pts[i - 1], p1 = pts[i];
+      var cx = (p0.x + p1.x) / 2;
+      d += " C" + cx.toFixed(1) + " " + p0.y.toFixed(1) + " " + cx.toFixed(1) + " " + p1.y.toFixed(1) + " " + p1.x.toFixed(1) + " " + p1.y.toFixed(1);
+    }
+    return d;
+  }
+
+  function drawFlow(monthlyBurn, animate) {
+    var res = buildFlowPoints(monthlyBurn);
+    var pts = res.pts;
+    var d = smoothPath(pts);
+    flowPath.setAttribute("d", d);
+    var last = pts[pts.length - 1];
+    var area = d + " L" + last.x.toFixed(1) + " " + res.bot + " L" + pts[0].x.toFixed(1) + " " + res.bot + " Z";
+    flowArea.setAttribute("d", area);
+    flowEnd.setAttribute("cx", last.x);
+    flowEnd.setAttribute("cy", last.y);
+    flowEnd.setAttribute("fill", last.bal <= res.low * 1.2 && last.bal < CASH * 0.4 ? getCss("--rj-danger") : getCss("--rj-accent"));
+
+    msLow.textContent = fmtK(res.low);
+    msLow.style.color = res.low < 25000 ? getCss("--rj-danger") : (res.low < 70000 ? getCss("--rj-warn") : getCss("--rj-ok"));
+
+    var statusTxt, statusColor;
+    if (res.low < 15000) { statusTxt = "CRITICAL"; statusColor = getCss("--rj-danger"); }
+    else if (res.low < 60000) { statusTxt = "TIGHT"; statusColor = getCss("--rj-warn"); }
+    else { statusTxt = "STABLE"; statusColor = getCss("--rj-ok"); }
+    msStatus.textContent = statusTxt;
+    msStatus.style.color = statusColor;
+
+    flowFoot.innerHTML = "At <b>$" + monthlyBurn.toLocaleString("en-US") +
+      "</b> monthly burn, the 90 day low lands at <b>" + fmtK(res.low) +
+      "</b>. " + (res.low < 60000
+        ? "The curve is bending toward the red zone. Tighten spend or pull AR forward."
+        : "The line holds clear of zero with room to spare.");
+
+    // draw-in animation for the line
+    if (animate && !reduce) {
+      var len = flowPath.getTotalLength();
+      flowPath.style.transition = "none";
+      flowPath.style.strokeDasharray = len;
+      flowPath.style.strokeDashoffset = len;
+      flowArea.style.transition = "none";
+      flowArea.style.opacity = "0";
+      flowEnd.style.transition = "none";
+      flowEnd.style.opacity = "0";
+      // force reflow
+      void flowPath.getBoundingClientRect();
+      flowPath.style.transition = "stroke-dashoffset 1.6s cubic-bezier(0.16,1,0.3,1)";
+      flowPath.style.strokeDashoffset = "0";
+      setTimeout(function () {
+        flowArea.style.transition = "opacity 0.6s ease";
+        flowArea.style.opacity = "1";
+        flowEnd.style.transition = "opacity 0.4s ease";
+        flowEnd.style.opacity = "1";
+      }, 900);
+    } else {
+      flowPath.style.strokeDasharray = "none";
+      flowPath.style.strokeDashoffset = "0";
+      flowArea.style.opacity = "1";
+      flowEnd.style.opacity = "1";
+    }
+  }
+
+  function updateRunway(animate) {
+    var monthlyBurn = parseInt(burn.value, 10);
+    burnAmt.textContent = "$" + monthlyBurn.toLocaleString("en-US");
+    // months runway, crediting near-term AR inflow against burn
+    var effectiveCash = CASH + AR_INFLOW * 0.5;
+    var months = effectiveCash / monthlyBurn;
+    var shown = Math.max(0, months);
+
+    var frac = Math.min(1, shown / MAX_MONTHS);
+    var offset = ARC_LEN - (ARC_LEN * frac);
+    arc.style.transition = animate ? "stroke-dashoffset 0.5s cubic-bezier(0.22,1,0.36,1)" : "none";
+    arc.style.strokeDashoffset = offset;
+
+    var deg = -90 + frac * 180; // -90 (left) .. +90 (right)
+    needle.style.transition = animate && !reduce ? "transform 0.5s cubic-bezier(0.34,1.56,0.64,1)" : "none";
+    needle.style.transform = "rotate(" + deg + "deg)";
+
+    var col = colorFor(shown);
+    readout.textContent = shown.toFixed(1);
+    readout.style.color = col;
+    readout.style.textShadow = "0 0 22px " + col + "66";
+
+    drawFlow(monthlyBurn, animate);
+  }
+
+  burn.addEventListener("input", function () { updateRunway(true); });
+
+  /* ---------- DRAG + FLIP ---------- */
+  var board = document.getElementById("board");
+  var tiles = Array.prototype.slice.call(board.querySelectorAll(".tile"));
+  var dragging = null, ghost = null, startX = 0, startY = 0, originX = 0, originY = 0;
+  var lastOver = null;
+
+  function recordPositions() {
+    var map = new Map();
+    tiles.forEach(function (t) { map.set(t, t.getBoundingClientRect()); });
+    return map;
+  }
+  function flip(prev) {
+    if (reduce) return;
+    tiles.forEach(function (t) {
+      if (t === dragging) return;
+      var before = prev.get(t);
+      if (!before) return;
+      var after = t.getBoundingClientRect();
+      var dx = before.left - after.left;
+      var dy = before.top - after.top;
+      if (dx || dy) {
+        t.classList.add("snapping");
+        t.style.transform = "translate(" + dx + "px," + dy + "px)";
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            t.style.transform = "";
+          });
+        });
+        t.addEventListener("transitionend", function te() {
+          t.classList.remove("snapping");
+          t.removeEventListener("transitionend", te);
+        });
+      }
+    });
+  }
+
+  function onHeadDown(e) {
+    var head = e.target.closest(".tile-head");
+    if (!head) return;
+    var tile = head.closest(".tile");
+    if (!tile) return;
+    e.preventDefault();
+    dragging = tile;
+    var pt = e.touches ? e.touches[0] : e;
+    var rect = tile.getBoundingClientRect();
+    startX = pt.clientX; startY = pt.clientY;
+    originX = rect.left; originY = rect.top;
+
+    // ghost placeholder occupies grid slot
+    ghost = document.createElement("div");
+    ghost.className = "ghost";
+    ghost.style.gridColumn = tile.style.gridColumn;
+    ghost.style.height = rect.height + "px";
+    board.insertBefore(ghost, tile);
+
+    var w = rect.width, h = rect.height;
+    tile.classList.add("dragging");
+    tile.style.position = "fixed";
+    tile.style.width = w + "px";
+    tile.style.height = h + "px";
+    tile.style.left = rect.left + "px";
+    tile.style.top = rect.top + "px";
+    tile.style.margin = "0";
+
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    document.addEventListener("touchmove", onMove, { passive: false });
+    document.addEventListener("touchend", onUp);
+  }
+
+  function onMove(e) {
+    if (!dragging) return;
+    e.preventDefault();
+    var pt = e.touches ? e.touches[0] : e;
+    var dx = pt.clientX - startX, dy = pt.clientY - startY;
+    dragging.style.left = (originX + dx) + "px";
+    dragging.style.top = (originY + dy) + "px";
+
+    // find tile under pointer
+    dragging.style.pointerEvents = "none";
+    var el = document.elementFromPoint(pt.clientX, pt.clientY);
+    dragging.style.pointerEvents = "";
+    var over = el ? el.closest(".tile") : null;
+    if (over && over !== dragging && over !== lastOver) {
+      lastOver = over;
+      var prev = recordPositions();
+      var overRect = over.getBoundingClientRect();
+      var after = (pt.clientY > overRect.top + overRect.height / 2) || (pt.clientX > overRect.left + overRect.width / 2);
+      // move ghost to new spot
+      if (after) {
+        board.insertBefore(ghost, over.nextSibling);
+      } else {
+        board.insertBefore(ghost, over);
+      }
+      flip(prev);
+    }
+  }
+
+  function onUp() {
+    if (!dragging) return;
+    document.removeEventListener("mousemove", onMove);
+    document.removeEventListener("mouseup", onUp);
+    document.removeEventListener("touchmove", onMove);
+    document.removeEventListener("touchend", onUp);
+
+    var prev = recordPositions();
+    // place tile where ghost is
+    board.insertBefore(dragging, ghost);
+    if (ghost && ghost.parentNode) ghost.parentNode.removeChild(ghost);
+    ghost = null;
+
+    var tile = dragging;
+    tile.classList.remove("dragging");
+    tile.style.position = "";
+    tile.style.width = "";
+    tile.style.height = "";
+    tile.style.left = "";
+    tile.style.top = "";
+    tile.style.margin = "";
+
+    // snap-flip the moved tile into place
+    if (!reduce) {
+      tile.classList.add("pulse");
+      setTimeout(function () { tile.classList.remove("pulse"); }, 650);
+    }
+    flip(prev);
+
+    tiles = Array.prototype.slice.call(board.querySelectorAll(".tile"));
+    dragging = null; lastOver = null;
+    showToast("Cockpit layout updated");
+  }
+
+  board.addEventListener("mousedown", onHeadDown);
+  board.addEventListener("touchstart", onHeadDown, { passive: false });
+
+  /* ---------- toolbar ---------- */
+  var defaultOrder = tiles.map(function (t) { return t.getAttribute("data-id"); });
+
+  function reorderTo(ids) {
+    var prev = recordPositions();
+    ids.forEach(function (id) {
+      var t = board.querySelector('.tile[data-id="' + id + '"]');
+      if (t) board.appendChild(t);
+    });
+    tiles = Array.prototype.slice.call(board.querySelectorAll(".tile"));
+    flip(prev);
+  }
+
+  document.getElementById("shuffle").addEventListener("click", function () {
+    var ids = tiles.map(function (t) { return t.getAttribute("data-id"); });
+    for (var i = ids.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var tmp = ids[i]; ids[i] = ids[j]; ids[j] = tmp;
+    }
+    reorderTo(ids);
+    showToast("Auto-arranged");
+  });
+  document.getElementById("reset").addEventListener("click", function () {
+    reorderTo(defaultOrder);
+    showToast("Layout reset");
+  });
+
+  /* ---------- toast ---------- */
+  var toast = document.getElementById("toast"), toastT;
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add("show");
+    clearTimeout(toastT);
+    toastT = setTimeout(function () { toast.classList.remove("show"); }, 1800);
+  }
+
+  /* ---------- staggered tile entrance + kick visuals ---------- */
+  tiles.forEach(function (t, i) {
+    t.style.animationDelay = (reduce ? 0 : 0.6 + i * 0.09) + "s";
+  });
+
+  function ignite() {
+    document.querySelectorAll(".big-figure").forEach(animateCount);
+    fillBars();
+    updateRunway(true);
+  }
+  if (reduce) {
+    ignite();
+  } else {
+    // wait for tiles to settle then ignite the data
+    setTimeout(ignite, 850);
+  }
+})();
+</script>
+</body>
+</html>

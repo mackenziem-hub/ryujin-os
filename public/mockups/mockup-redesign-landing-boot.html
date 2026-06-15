@@ -1,0 +1,540 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ryujin OS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;600;700;800;900&family=Inter:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --rj-bg:#030611; --rj-bg-2:#060b16; --rj-surface:#0a1120; --rj-surface-2:#0e1727;
+    --rj-glass:rgba(14,22,40,0.62); --rj-glass-edge:rgba(150,190,255,0.50); --rj-glass-inner:rgba(120,170,255,0.10);
+    --rj-ink:#e9eefa; --rj-ink-mid:rgba(202,216,242,0.82); --rj-ink-dim:rgba(165,190,226,0.62);
+    --rj-accent:#4a9eff; --rj-accent-bright:#7ab6ff; --rj-accent-deep:#2563eb; --rj-accent-glow:rgba(74,158,255,0.40);
+    --rj-ok:#46d68a; --rj-warn:#f5b13a; --rj-danger:#f8746e;
+
+    --font-display:'Orbitron',sans-serif;
+    --font-ui:'Inter',system-ui,sans-serif;
+    --font-mono:'Share Tech Mono',ui-monospace,monospace;
+
+    --z-bg:0; --z-content:10; --z-chrome:30; --z-splash:80;
+    --ease-out-quint:cubic-bezier(.22,1,.36,1);
+    --ease-out-expo:cubic-bezier(.16,1,.3,1);
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:var(--font-ui);
+    background:var(--rj-bg);
+    color:var(--rj-ink);
+    overflow-x:hidden;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+  .mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+  .num{font-family:var(--font-mono);font-variant-numeric:tabular-nums;letter-spacing:.02em}
+
+  /* ---------- ambient field (lives behind everything, persists through boot) ---------- */
+  .field{position:fixed;inset:0;z-index:var(--z-bg);pointer-events:none;overflow:hidden}
+  .field::before{
+    content:"";position:absolute;inset:-20%;
+    background:
+      radial-gradient(60% 50% at 22% 8%, rgba(37,99,235,.22), transparent 60%),
+      radial-gradient(50% 45% at 88% 92%, rgba(74,158,255,.16), transparent 62%),
+      radial-gradient(90% 70% at 50% 120%, rgba(8,16,34,.9), transparent 70%),
+      linear-gradient(180deg,var(--rj-bg) 0%, var(--rj-bg-2) 55%, #04070f 100%);
+  }
+  .grid-floor{
+    position:absolute;left:-25%;right:-25%;bottom:-10%;height:62%;
+    background-image:linear-gradient(rgba(74,158,255,.10) 1px,transparent 1px),
+                     linear-gradient(90deg,rgba(74,158,255,.10) 1px,transparent 1px);
+    background-size:54px 54px;
+    transform:perspective(620px) rotateX(68deg);
+    transform-origin:bottom center;
+    mask-image:linear-gradient(to top, rgba(0,0,0,.85), transparent 78%);
+    -webkit-mask-image:linear-gradient(to top, rgba(0,0,0,.85), transparent 78%);
+    animation:floor-drift 26s linear infinite;
+  }
+  @keyframes floor-drift{from{background-position:0 0}to{background-position:0 54px}}
+  #stars{position:absolute;inset:0;display:block}
+  .vign{position:absolute;inset:0;box-shadow:inset 0 0 240px 60px rgba(2,5,12,.85);pointer-events:none}
+
+  /* ---------- BOOT SPLASH ---------- */
+  .splash{
+    position:fixed;inset:0;z-index:var(--z-splash);
+    display:grid;place-items:center;
+    background:radial-gradient(70% 60% at 50% 46%, rgba(6,11,22,.35), rgba(3,6,17,.92) 78%);
+    transition:opacity 1.05s var(--ease-out-expo), visibility 1.05s;
+  }
+  .splash.gone{opacity:0;visibility:hidden}
+  .boot{position:relative;width:min(86vw,560px);display:grid;place-items:center;text-align:center}
+
+  /* the dragon orb */
+  .orb-wrap{position:relative;width:230px;height:230px;display:grid;place-items:center;
+    filter:drop-shadow(0 0 60px var(--rj-accent-glow));
+    animation:orb-rise 1.5s var(--ease-out-quint) both;}
+  @keyframes orb-rise{from{transform:translateY(26px) scale(.86);opacity:0}to{transform:none;opacity:1}}
+
+  .orb{
+    position:relative;width:172px;height:172px;border-radius:50%;
+    background:
+      radial-gradient(34% 30% at 36% 30%, #cfe4ff 0%, rgba(122,182,255,.7) 22%, transparent 55%),
+      radial-gradient(120% 120% at 50% 50%, #1c5fd6 0%, #14306e 46%, #0a1838 72%, #050c20 100%);
+    box-shadow:
+      inset 0 0 40px rgba(122,182,255,.45),
+      inset 0 -24px 60px rgba(3,8,22,.9),
+      0 0 0 1px rgba(150,190,255,.35);
+    overflow:hidden;
+    animation:orb-spin 16s linear infinite;
+  }
+  @keyframes orb-spin{from{filter:hue-rotate(0)}to{filter:hue-rotate(8deg)}}
+  /* swirling inner energy */
+  .orb::before{
+    content:"";position:absolute;inset:-30%;
+    background:conic-gradient(from 0deg, transparent 0deg, rgba(122,182,255,.0) 60deg, rgba(74,158,255,.55) 120deg, transparent 200deg, rgba(37,99,235,.45) 290deg, transparent 360deg);
+    animation:swirl 5.5s linear infinite;mix-blend-mode:screen;
+  }
+  @keyframes swirl{to{transform:rotate(360deg)}}
+  /* scanline sweep */
+  .orb::after{
+    content:"";position:absolute;left:0;right:0;height:36%;
+    background:linear-gradient(180deg, transparent, rgba(207,228,255,.5), transparent);
+    mix-blend-mode:screen;
+    animation:scan 2.6s var(--ease-out-quint) infinite;
+  }
+  @keyframes scan{0%{top:-40%}55%{top:108%}100%{top:108%}}
+
+  /* the four stars inside the orb (dragon-ball 4-star nod, abstracted) */
+  .stars4{position:absolute;inset:0;display:grid;place-items:center;z-index:2;
+    animation:stars-pulse 3.2s ease-in-out infinite}
+  @keyframes stars-pulse{0%,100%{filter:drop-shadow(0 0 6px rgba(207,228,255,.6))}50%{filter:drop-shadow(0 0 16px rgba(207,228,255,1))}}
+  .stars4 span{position:absolute;width:13px;height:13px;background:#eaf3ff;
+    clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%);}
+  .stars4 .s1{transform:translate(-22px,-22px)} .stars4 .s2{transform:translate(22px,-22px)}
+  .stars4 .s3{transform:translate(-22px,22px)} .stars4 .s4{transform:translate(22px,22px)}
+
+  /* ignition flash + crack */
+  .orb-flash{position:absolute;inset:-40%;border-radius:50%;background:radial-gradient(closest-side, rgba(207,228,255,.95), transparent 70%);opacity:0;pointer-events:none;z-index:3}
+  .boot.crack .orb-flash{animation:flash .9s var(--ease-out-expo) forwards}
+  @keyframes flash{0%{opacity:0;transform:scale(.4)}30%{opacity:1}100%{opacity:0;transform:scale(1.9)}}
+  .boot.crack .orb-wrap{animation:orb-burst .9s var(--ease-out-expo) forwards}
+  @keyframes orb-burst{0%{transform:none}40%{transform:scale(1.06)}100%{transform:scale(2.4);opacity:0;filter:blur(8px) drop-shadow(0 0 80px var(--rj-accent-glow))}}
+
+  /* boot wordmark + status */
+  .boot-mark{margin-top:30px;font-family:var(--font-display);font-weight:800;
+    font-size:clamp(2.2rem,8vw,3.4rem);letter-spacing:.34em;padding-left:.34em;
+    color:var(--rj-ink);text-shadow:0 0 24px var(--rj-accent-glow);
+    opacity:0;transform:translateY(10px);
+    animation:boot-mark-in 1s var(--ease-out-expo) .55s both;}
+  @keyframes boot-mark-in{to{opacity:1;transform:none}}
+  .boot.crack .boot-mark{animation:boot-mark-out .8s var(--ease-out-expo) forwards}
+  @keyframes boot-mark-out{to{opacity:0;transform:translateY(-8px) scale(1.04)}}
+
+  .boot-sub{margin-top:14px;font-family:var(--font-mono);font-size:.74rem;letter-spacing:.42em;
+    color:var(--rj-accent-bright);text-transform:uppercase;opacity:0;animation:fade-in .8s 1s both}
+  .boot-log{margin-top:26px;width:min(78vw,360px);text-align:left;font-family:var(--font-mono);
+    font-size:.72rem;color:var(--rj-ink-dim);min-height:5.4em;line-height:1.8}
+  .boot-log b{color:var(--rj-ok);font-weight:400}
+  .boot-bar{margin:22px auto 0;width:min(72vw,300px);height:2px;border-radius:2px;
+    background:rgba(74,158,255,.18);overflow:hidden}
+  .boot-bar i{display:block;height:100%;width:0;
+    background:linear-gradient(90deg,var(--rj-accent-deep),var(--rj-accent-bright));
+    box-shadow:0 0 12px var(--rj-accent-glow);animation:bar 3.6s var(--ease-out-quint) forwards}
+  @keyframes bar{to{width:100%}}
+  @keyframes fade-in{to{opacity:1}}
+
+  .skip{position:fixed;bottom:26px;right:26px;z-index:calc(var(--z-splash) + 1);
+    font-family:var(--font-mono);font-size:.7rem;letter-spacing:.18em;color:var(--rj-ink-dim);
+    background:rgba(10,17,32,.6);border:1px solid var(--rj-glass-edge);border-radius:999px;
+    padding:8px 16px;cursor:pointer;transition:.25s;backdrop-filter:blur(8px);text-transform:uppercase}
+  .skip:hover{color:var(--rj-ink);border-color:var(--rj-accent);box-shadow:0 0 18px var(--rj-accent-glow)}
+
+  /* ---------- LANDING (revealed beneath) ---------- */
+  .stage{position:relative;z-index:var(--z-content);opacity:0;transition:opacity .9s var(--ease-out-expo) .15s}
+  body.live .stage{opacity:1}
+
+  .preview-tag{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:var(--z-chrome);
+    font-family:var(--font-mono);font-size:.62rem;letter-spacing:.28em;text-transform:uppercase;
+    color:var(--rj-warn);background:rgba(245,177,58,.10);border:1px solid rgba(245,177,58,.4);
+    border-radius:999px;padding:5px 14px;white-space:nowrap;backdrop-filter:blur(6px)}
+
+  /* nav */
+  header.nav{position:fixed;top:0;left:0;right:0;z-index:var(--z-chrome);
+    display:flex;align-items:center;justify-content:space-between;
+    padding:18px clamp(18px,5vw,46px);
+    transform:translateY(-120%);transition:transform .8s var(--ease-out-expo) .35s}
+  body.live header.nav{transform:none}
+  .brand{display:flex;align-items:center;gap:12px}
+  .brand .seal{width:34px;height:34px;border-radius:50%;flex:0 0 auto;
+    background:radial-gradient(34% 30% at 36% 30%, #cfe4ff, transparent 55%),
+              radial-gradient(120% 120% at 50% 50%, #1c5fd6, #0a1838 75%);
+    box-shadow:inset 0 0 10px rgba(122,182,255,.5),0 0 0 1px rgba(150,190,255,.4),0 0 16px var(--rj-accent-glow);
+    position:relative;animation:seal-pulse 4s ease-in-out infinite}
+  @keyframes seal-pulse{0%,100%{box-shadow:inset 0 0 10px rgba(122,182,255,.5),0 0 0 1px rgba(150,190,255,.4),0 0 14px var(--rj-accent-glow)}50%{box-shadow:inset 0 0 12px rgba(122,182,255,.7),0 0 0 1px rgba(150,190,255,.6),0 0 26px var(--rj-accent-glow)}}
+  .brand .wm{font-family:var(--font-display);font-weight:800;letter-spacing:.26em;font-size:1.02rem;padding-left:.26em}
+  .brand small{display:block;font-family:var(--font-mono);font-size:.56rem;letter-spacing:.34em;color:var(--rj-ink-dim);margin-top:2px}
+  nav.links{display:flex;align-items:center;gap:8px}
+  nav.links a{font-size:.82rem;color:var(--rj-ink-mid);text-decoration:none;padding:8px 14px;border-radius:8px;transition:.22s}
+  nav.links a:hover{color:var(--rj-ink);background:rgba(74,158,255,.10)}
+  .enter{font-family:var(--font-mono);font-size:.74rem;letter-spacing:.16em;text-transform:uppercase;
+    color:#04101f;background:linear-gradient(120deg,var(--rj-accent-bright),var(--rj-accent));
+    border:none;border-radius:10px;padding:10px 18px;cursor:pointer;font-weight:600;
+    box-shadow:0 6px 22px var(--rj-accent-glow);transition:.25s var(--ease-out-quint)}
+  .enter:hover{transform:translateY(-2px);box-shadow:0 10px 32px var(--rj-accent-glow)}
+  @media(max-width:760px){nav.links a{display:none}}
+
+  /* hero */
+  .hero{min-height:100svh;display:grid;align-content:center;justify-items:center;
+    padding:120px clamp(18px,5vw,46px) 60px;text-align:center;gap:22px}
+  .live-pill{display:inline-flex;align-items:center;gap:10px;font-family:var(--font-mono);
+    font-size:.66rem;letter-spacing:.24em;text-transform:uppercase;color:var(--rj-ink-mid);
+    background:var(--rj-glass);border:1px solid var(--rj-glass-edge);border-radius:999px;
+    padding:7px 16px;backdrop-filter:blur(12px)}
+  .live-pill .dot{width:7px;height:7px;border-radius:50%;background:var(--rj-ok);
+    box-shadow:0 0 10px var(--rj-ok);animation:blink 2.2s ease-in-out infinite}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+
+  h1.title{font-family:var(--font-display);font-weight:900;line-height:.94;
+    font-size:clamp(2.8rem,11vw,6rem);letter-spacing:-0.01em;text-wrap:balance;
+    background:none;color:var(--rj-ink);text-shadow:0 0 50px rgba(74,158,255,.28);max-width:14ch}
+  h1.title .accent{color:var(--rj-accent-bright)}
+  .lede{max-width:54ch;font-size:clamp(1rem,2.4vw,1.18rem);line-height:1.6;color:var(--rj-ink-mid);text-wrap:pretty}
+  .cta-row{display:flex;flex-wrap:wrap;gap:14px;justify-content:center;margin-top:6px}
+  .btn{font-family:var(--font-ui);font-size:.92rem;font-weight:600;padding:14px 26px;border-radius:12px;
+    cursor:pointer;transition:.25s var(--ease-out-quint);text-decoration:none;display:inline-flex;align-items:center;gap:10px}
+  .btn.primary{color:#04101f;background:linear-gradient(120deg,var(--rj-accent-bright),var(--rj-accent));
+    border:1px solid rgba(150,190,255,.5);box-shadow:0 10px 34px var(--rj-accent-glow)}
+  .btn.primary:hover{transform:translateY(-3px);box-shadow:0 16px 46px var(--rj-accent-glow)}
+  .btn.ghost{color:var(--rj-ink);background:var(--rj-glass);border:1px solid var(--rj-glass-edge);backdrop-filter:blur(12px)}
+  .btn.ghost:hover{border-color:var(--rj-accent);background:rgba(74,158,255,.12)}
+
+  /* reveal helper (enhances already-visible content) */
+  .rise{opacity:0;transform:translateY(22px);transition:opacity .8s var(--ease-out-expo),transform .8s var(--ease-out-expo)}
+  body.live .rise{opacity:1;transform:none}
+  body.live .d1{transition-delay:.45s} body.live .d2{transition-delay:.58s}
+  body.live .d3{transition-delay:.7s} body.live .d4{transition-delay:.82s}
+  body.live .d5{transition-delay:.94s} body.live .d6{transition-delay:1.06s}
+
+  /* live status strip */
+  .strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;
+    width:min(960px,94vw);margin-top:18px;
+    background:var(--rj-glass-edge);border:1px solid var(--rj-glass-edge);border-radius:16px;overflow:hidden;
+    box-shadow:0 30px 80px rgba(2,6,18,.6)}
+  .stat{background:linear-gradient(180deg,var(--rj-surface-2),var(--rj-surface));padding:18px 18px 16px;text-align:left;position:relative}
+  .stat .k{font-family:var(--font-mono);font-size:.58rem;letter-spacing:.2em;text-transform:uppercase;color:var(--rj-ink-dim)}
+  .stat .v{font-family:var(--font-mono);font-size:1.5rem;color:var(--rj-ink);margin-top:8px;font-variant-numeric:tabular-nums}
+  .stat .v.up{color:var(--rj-ok)} .stat .v.acc{color:var(--rj-accent-bright)}
+  .stat .d{font-size:.72rem;color:var(--rj-ink-dim);margin-top:4px}
+
+  /* dock / operator surfaces */
+  .dock-wrap{width:min(1080px,94vw);margin:54px auto 30px;padding:0 clamp(8px,3vw,20px)}
+  .dock-head{display:flex;align-items:baseline;justify-content:space-between;gap:14px;margin-bottom:18px;flex-wrap:wrap}
+  .dock-head h2{font-family:var(--font-display);font-weight:700;font-size:1.05rem;letter-spacing:.14em;text-transform:uppercase}
+  .dock-head span{font-family:var(--font-mono);font-size:.7rem;color:var(--rj-ink-dim);letter-spacing:.12em}
+  .dock{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:16px}
+  .tile{position:relative;border-radius:16px;padding:20px;cursor:pointer;
+    background:var(--rj-glass);border:1px solid var(--rj-glass-edge);backdrop-filter:blur(16px);
+    box-shadow:0 20px 50px rgba(2,6,18,.45), inset 0 1px 0 var(--rj-glass-inner);
+    transition:transform .4s var(--ease-out-quint),box-shadow .4s,border-color .3s;overflow:hidden}
+  .tile::after{content:"";position:absolute;inset:0;border-radius:16px;pointer-events:none;
+    background:radial-gradient(420px 220px at var(--mx,30%) var(--my,0%), rgba(74,158,255,.16), transparent 60%);
+    opacity:0;transition:opacity .35s}
+  .tile:hover{transform:translateY(-6px);border-color:var(--rj-accent);
+    box-shadow:0 30px 70px rgba(8,20,48,.7),0 0 30px var(--rj-accent-glow),inset 0 1px 0 var(--rj-glass-inner)}
+  .tile:hover::after{opacity:1}
+  .tile .ic{width:40px;height:40px;border-radius:11px;display:grid;place-items:center;font-size:1.2rem;
+    background:linear-gradient(140deg,rgba(74,158,255,.22),rgba(37,99,235,.10));
+    border:1px solid var(--rj-glass-edge);margin-bottom:14px}
+  .tile h3{font-family:var(--font-display);font-weight:600;font-size:.96rem;letter-spacing:.04em}
+  .tile p{font-size:.82rem;color:var(--rj-ink-mid);margin-top:7px;line-height:1.5}
+  .tile .meta{margin-top:14px;display:flex;align-items:center;justify-content:space-between;
+    font-family:var(--font-mono);font-size:.66rem;color:var(--rj-ink-dim);letter-spacing:.08em}
+  .badge{display:inline-flex;align-items:center;gap:6px;color:var(--rj-ok)}
+  .badge.warn{color:var(--rj-warn)} .badge::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;box-shadow:0 0 8px currentColor}
+  .ex{position:absolute;top:14px;right:14px;width:18px;height:18px;border-radius:50%;
+    background:var(--rj-warn);color:#1a1304;font-family:var(--font-display);font-weight:900;font-size:.8rem;
+    display:grid;place-items:center;box-shadow:0 0 12px rgba(245,177,58,.7);
+    animation:ex-pop .5s var(--ease-out-quint) both}
+  @keyframes ex-pop{from{transform:scale(0)}to{transform:scale(1)}}
+
+  /* fleet rail */
+  .rail{width:min(1080px,94vw);margin:0 auto;padding:0 clamp(8px,3vw,20px) 70px}
+  .rail h2{font-family:var(--font-display);font-weight:700;font-size:1.05rem;letter-spacing:.14em;text-transform:uppercase;margin-bottom:16px}
+  .agents{display:flex;gap:12px;overflow-x:auto;padding:6px 2px 16px;scroll-snap-type:x mandatory}
+  .agents::-webkit-scrollbar{height:6px}
+  .agents::-webkit-scrollbar-thumb{background:rgba(74,158,255,.4);border-radius:6px}
+  .agent{flex:0 0 auto;scroll-snap-align:start;width:178px;border-radius:14px;padding:16px;
+    background:linear-gradient(180deg,var(--rj-surface-2),var(--rj-surface));
+    border:1px solid var(--rj-glass-edge);transition:.3s var(--ease-out-quint)}
+  .agent:hover{transform:translateY(-4px);border-color:var(--rj-accent);box-shadow:0 0 24px var(--rj-accent-glow)}
+  .agent .row{display:flex;align-items:center;justify-content:space-between}
+  .agent .nm{font-family:var(--font-display);font-weight:600;font-size:.92rem}
+  .agent .role{font-size:.74rem;color:var(--rj-ink-dim);margin-top:3px}
+  .agent .last{font-family:var(--font-mono);font-size:.64rem;color:var(--rj-ink-mid);margin-top:12px;letter-spacing:.06em}
+  .pulse{width:8px;height:8px;border-radius:50%;background:var(--rj-ok);box-shadow:0 0 10px var(--rj-ok);animation:blink 2s ease-in-out infinite}
+  .pulse.idle{background:var(--rj-ink-dim);box-shadow:none;animation:none}
+
+  footer{width:min(1080px,94vw);margin:0 auto;padding:26px clamp(8px,3vw,20px) 60px;
+    border-top:1px solid rgba(74,158,255,.14);display:flex;justify-content:space-between;flex-wrap:wrap;gap:14px;
+    font-family:var(--font-mono);font-size:.68rem;color:var(--rj-ink-dim);letter-spacing:.08em}
+  footer a{color:var(--rj-ink-mid);text-decoration:none}
+  footer a:hover{color:var(--rj-accent-bright)}
+
+  @media (prefers-reduced-motion: reduce){
+    *{animation-duration:.001ms !important;animation-iteration-count:1 !important;transition-duration:.001ms !important}
+    .grid-floor{animation:none}
+    .rise{opacity:1;transform:none}
+    .orb::before,.orb::after,.boot-bar i{animation:none}
+    .boot-bar i{width:100%}
+  }
+</style>
+</head>
+<body>
+  <div class="preview-tag">Design Preview - Sample Data</div>
+
+  <!-- ambient field persists behind boot + landing -->
+  <div class="field" aria-hidden="true">
+    <div class="grid-floor"></div>
+    <canvas id="stars"></canvas>
+    <div class="vign"></div>
+  </div>
+
+  <!-- BOOT SPLASH -->
+  <div class="splash" id="splash">
+    <div class="boot" id="boot">
+      <div class="orb-wrap">
+        <div class="orb">
+          <div class="stars4"><span class="s1"></span><span class="s2"></span><span class="s3"></span><span class="s4"></span></div>
+        </div>
+        <div class="orb-flash"></div>
+      </div>
+      <div class="boot-mark">RYUJIN</div>
+      <div class="boot-sub">Operating System</div>
+      <div class="boot-log mono" id="bootlog"></div>
+      <div class="boot-bar"><i></i></div>
+    </div>
+  </div>
+  <button class="skip" id="skip">Skip intro &rsaquo;</button>
+
+  <!-- LANDING -->
+  <div class="stage">
+    <header class="nav">
+      <div class="brand">
+        <div class="seal" aria-hidden="true"></div>
+        <div>
+          <div class="wm">RYUJIN</div>
+          <small>PLUS ULTRA OS</small>
+        </div>
+      </div>
+      <nav class="links">
+        <a href="#">Cockpit</a>
+        <a href="#">Fleet</a>
+        <a href="#">Pipeline</a>
+        <a href="#">Crew Ops</a>
+      </nav>
+      <button class="enter">Enter OS</button>
+    </header>
+
+    <section class="hero">
+      <span class="live-pill rise d1"><span class="dot"></span>Fleet online &middot; 7 crons armed</span>
+      <h1 class="title rise d2">The dragon<br>guards the <span class="accent">whole shop.</span></h1>
+      <p class="lede rise d3">One front door into every Plus Ultra surface. Sales pipeline, crew ops, estimator, the Z-Fighter agent fleet and the live snapshot, all behind one orb. Boot in, see everything, dispatch from anywhere.</p>
+      <div class="cta-row rise d4">
+        <a href="#" class="btn primary">Open Cockpit &rarr;</a>
+        <a href="#" class="btn ghost">View live snapshot</a>
+      </div>
+
+      <div class="strip rise d5">
+        <div class="stat"><div class="k">Signed MTD</div><div class="v up">$84,200</div><div class="d">4 contracts &middot; June</div></div>
+        <div class="stat"><div class="k">Pipeline open</div><div class="v acc">$312K</div><div class="d">18 live deals</div></div>
+        <div class="stat"><div class="k">Leads / 24h</div><div class="v">11</div><div class="d">2 hot &middot; Riverview</div></div>
+        <div class="stat"><div class="k">Crew on roof</div><div class="v">3</div><div class="d">Coverdale &middot; Salisbury</div></div>
+        <div class="stat"><div class="k">Snapshot</div><div class="v acc">06:03</div><div class="d">fresh &middot; AT</div></div>
+      </div>
+    </section>
+
+    <section class="dock-wrap rise d6">
+      <div class="dock-head">
+        <h2>Operator Surfaces</h2>
+        <span>9 mounted &middot; 2 with unread</span>
+      </div>
+      <div class="dock" id="dock">
+        <div class="tile" data-go="Cockpit">
+          <div class="ic">&#9673;</div>
+          <h3>Cockpit Bridge</h3>
+          <p>3-pane command console. Decisions write straight to the fleet ledger.</p>
+          <div class="meta"><span class="badge">live</span><span>updated 4m ago</span></div>
+        </div>
+        <div class="tile" data-go="Pipeline">
+          <div class="ex">!</div>
+          <div class="ic">&#9636;</div>
+          <h3>Sales Pipeline</h3>
+          <p>18 open opportunities, Ablak reroof at $76K leading the stack.</p>
+          <div class="meta"><span class="badge warn">2 moved</span><span>updated 12m ago</span></div>
+        </div>
+        <div class="tile" data-go="Crew Ops">
+          <div class="ic">&#9650;</div>
+          <h3>Crew Ops Board</h3>
+          <p>Kanban for active jobs. Coverdale tear-off in progress today.</p>
+          <div class="meta"><span class="badge">3 active</span><span>updated 1m ago</span></div>
+        </div>
+        <div class="tile" data-go="Estimator">
+          <div class="ic">&#9651;</div>
+          <h3>Estimator OS</h3>
+          <p>Satellite roof cover plus one-price quotes. Poitras draft pending.</p>
+          <div class="meta"><span class="badge">ready</span><span>updated 31m ago</span></div>
+        </div>
+        <div class="tile" data-go="CRM">
+          <div class="ex">!</div>
+          <div class="ic">&#9678;</div>
+          <h3>CRM &middot; 360</h3>
+          <p>Top-20 follow-up and warm-360 presets. Expandable customer bubbles.</p>
+          <div class="meta"><span class="badge warn">new leads</span><span>updated 6m ago</span></div>
+        </div>
+        <div class="tile" data-go="Snapshot">
+          <div class="ic">&#9711;</div>
+          <h3>Live Snapshot</h3>
+          <p>Single source of truth. Revenue, ads, crew and agents in one cache.</p>
+          <div class="meta"><span class="badge">06:03 fresh</span><span>auto &middot; daily</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="rail rise d6">
+      <h2>Z-Fighter Fleet</h2>
+      <div class="agents" id="agents">
+        <div class="agent"><div class="row"><div class="nm">Vegeta</div><span class="pulse"></span></div><div class="role">Sales watch</div><div class="last">ran 06:03 &middot; 11 leads scored</div></div>
+        <div class="agent"><div class="row"><div class="nm">Piccolo</div><span class="pulse"></span></div><div class="role">Ops</div><div class="last">ran 06:03 &middot; 3 jobs flagged</div></div>
+        <div class="agent"><div class="row"><div class="nm">Krillin</div><span class="pulse"></span></div><div class="role">Comms</div><div class="last">ran 06:03 &middot; inbox clean</div></div>
+        <div class="agent"><div class="row"><div class="nm">Gohan</div><span class="pulse"></span></div><div class="role">Game health</div><div class="last">ran 06:03 &middot; Aetheria green</div></div>
+        <div class="agent"><div class="row"><div class="nm">Trunks</div><span class="pulse idle"></span></div><div class="role">Infra</div><div class="last">next Mon 05:07</div></div>
+        <div class="agent"><div class="row"><div class="nm">Bulma</div><span class="pulse idle"></span></div><div class="role">Weekly KPIs</div><div class="last">next Mon 05:07</div></div>
+      </div>
+    </section>
+
+    <footer>
+      <span>RYUJIN OS &middot; Plus Ultra Roofing &middot; Riverview NB</span>
+      <span><a href="#">Snapshot</a> &middot; <a href="#">Agents</a> &middot; <a href="#">Status: all systems nominal</a></span>
+    </footer>
+  </div>
+
+<script>
+(function(){
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ---------- particle drift (persists through boot + landing) ---------- */
+  var canvas = document.getElementById('stars');
+  var ctx = canvas.getContext('2d');
+  var dots = [], raf = null, W=0, H=0, dpr = Math.min(window.devicePixelRatio||1, 2);
+  function size(){
+    W = canvas.clientWidth = window.innerWidth;
+    H = canvas.clientHeight = window.innerHeight;
+    canvas.width = W*dpr; canvas.height = H*dpr;
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  function seed(){
+    dots = [];
+    var n = Math.max(40, Math.min(120, Math.round(W*H/16000)));
+    for(var i=0;i<n;i++){
+      dots.push({
+        x:Math.random()*W, y:Math.random()*H,
+        r:Math.random()*1.6+0.4,
+        vy:-(Math.random()*0.22+0.05),
+        vx:(Math.random()-0.5)*0.12,
+        a:Math.random()*0.5+0.25,
+        tw:Math.random()*0.02+0.004
+      });
+    }
+  }
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    for(var i=0;i<dots.length;i++){
+      var d=dots[i];
+      d.y+=d.vy; d.x+=d.vx; d.a+=d.tw;
+      var al = 0.28 + Math.abs(Math.sin(d.a))*0.5;
+      if(d.y< -6){d.y=H+6; d.x=Math.random()*W;}
+      if(d.x< -6) d.x=W+6; if(d.x>W+6) d.x=-6;
+      ctx.beginPath();
+      ctx.arc(d.x,d.y,d.r,0,6.283);
+      ctx.fillStyle='rgba(74,158,255,'+al.toFixed(3)+')';
+      ctx.shadowBlur = d.r>1.2 ? 8 : 0;
+      ctx.shadowColor='rgba(122,182,255,0.8)';
+      ctx.fill();
+    }
+    ctx.shadowBlur=0;
+    raf = requestAnimationFrame(draw);
+  }
+  size(); seed();
+  if(reduce){ draw(); cancelAnimationFrame(raf); raf=null; } else { draw(); }
+  var rt;
+  window.addEventListener('resize', function(){ clearTimeout(rt); rt=setTimeout(function(){ size(); seed(); }, 160); });
+
+  /* ---------- boot sequence ---------- */
+  var splash = document.getElementById('splash');
+  var boot = document.getElementById('boot');
+  var skip = document.getElementById('skip');
+  var logEl = document.getElementById('bootlog');
+  var lines = [
+    'mounting snapshot cache ......... <b>ok</b>',
+    'arming Z-Fighter fleet .......... <b>6 agents</b>',
+    'linking GHL + estimator ......... <b>ok</b>',
+    'loading operator surfaces ....... <b>9 mounted</b>'
+  ];
+  var li = 0, timers = [];
+  function pushLog(){
+    if(li >= lines.length) return;
+    logEl.innerHTML += (li>0?'<br>':'') + lines[li];
+    li++;
+    if(li < lines.length) timers.push(setTimeout(pushLog, reduce?40:760));
+  }
+  function ignite(){
+    boot.classList.add('crack');
+    timers.push(setTimeout(reveal, reduce?60:760));
+  }
+  function reveal(){
+    splash.classList.add('gone');
+    document.body.classList.add('live');
+  }
+  function run(){
+    if(reduce){ logEl.innerHTML = lines.join('<br>'); reveal(); return; }
+    timers.push(setTimeout(pushLog, 700));
+    timers.push(setTimeout(ignite, 3850));
+  }
+  function skipNow(){
+    timers.forEach(clearTimeout); timers=[];
+    if(reduce){ reveal(); return; }
+    logEl.innerHTML = lines.join('<br>');
+    if(!boot.classList.contains('crack')) ignite();
+  }
+  skip.addEventListener('click', skipNow);
+  document.addEventListener('keydown', function(e){ if(e.key==='Escape'||e.key==='Enter') skipNow(); });
+  run();
+
+  /* ---------- tile cursor glow + click feedback ---------- */
+  document.querySelectorAll('.tile').forEach(function(t){
+    t.addEventListener('mousemove', function(e){
+      var r = t.getBoundingClientRect();
+      t.style.setProperty('--mx', ((e.clientX-r.left)/r.width*100)+'%');
+      t.style.setProperty('--my', ((e.clientY-r.top)/r.height*100)+'%');
+    });
+    t.addEventListener('click', function(){
+      var ex = t.querySelector('.ex'); if(ex) ex.remove();
+    });
+  });
+
+  /* ---------- subtle parallax on orb seal + hero (pointer) ---------- */
+  if(!reduce){
+    window.addEventListener('pointermove', function(e){
+      var dx = (e.clientX/window.innerWidth - .5);
+      var dy = (e.clientY/window.innerHeight - .5);
+      var floor = document.querySelector('.grid-floor');
+      if(floor) floor.style.transform = 'perspective(620px) rotateX(68deg) translateX('+(dx*-18)+'px)';
+    }, {passive:true});
+  }
+})();
+</script>
+</body>
+</html>
