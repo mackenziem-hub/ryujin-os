@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+  P6 HARD-PAGE RESTYLE MOCKUP 2 of 3 - command-center.html in the canonical sci-fi Telltale bar.
+  Desk F (CREATIVE/BRAND, Mind Palace) - ord-20260615-0003-F. MOCKUP-FIRST.
+  Self-contained CSS-3D scene (no Three.js, no API). Stands in for the live WebGL/CSS3D deck so Mac
+  judges the LOOK; the live page keeps its real Three.js spatial engine.
+
+  THE REAL RESTYLE APPROACH (this page is the hard one - 1476 inline style lines, no :root block):
+  Step 1, extract: the page already uses a coherent cyan(#22d3ee)+violet(#7c3aed) FUI language with
+    Orbitron. Lift every repeated literal into a :root token block at the top of the inline <style>:
+    --cc-accent, --cc-accent-2, --cc-bg, --cc-surface, --cc-ink, --cc-line, --cc-glow, motion + radius.
+  Step 2, repoint: map those local tokens onto the canonical --rj-* set (cyan -> --rj-accent #4a9eff,
+    keep violet as a secondary depth tint only). One edit then retunes the whole 3D deck.
+  Step 3, the components: the HUD top/bottom bars, the sentinel orb, and the panel frames adopt the
+    Telltale primitives (hairlines + corner brackets, mono-for-data on time/version, calm-at-rest orb).
+  Mode = MODE B for the chrome (real restyle), NOT a Mode-A token repoint. That is why it is mockup-first.
+
+  DESIGN SELF-REVIEW GATE
+  - Register: product (a spatial navigator; design serves wayfinding + the LIVE/blocked state read).
+  - Bar hits: one emissive accent on near-black (1); every panel glow = a real live department (2);
+    hairline panel frames + corner brackets on the focused panel (3); Share Tech Mono on time/version/
+    counts (4); calm sentinel ring at rest, alert only on a real event (5,6); restraint - the starfield
+    recedes, panels lead (10); contained glass on the HUD only (11); 120-300ms composited motion,
+    reduced-motion drops the float (12).
+  - Needs-You red line: each panel carries its live badge (LIVE / a count / NEEDS YOU gold) at full
+    contrast so the blocked department is readable from across the room without entering it.
+  - Firm wall: internal operator page only.
+-->
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#030611">
+<title>MOCKUP · Command Center · Telltale restyle</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;600;700;800;900&family=Inter:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root{
+  --rj-bg:#030611; --rj-bg-2:#060b16; --rj-surface:#0a1120; --rj-surface-2:#0e1727;
+  --rj-glass:rgba(14,22,40,0.62); --rj-glass-blur:16px; --rj-glass-inner:rgba(120,170,255,0.10);
+  --rj-ink:#e9eefa; --rj-ink-mid:rgba(202,216,242,0.82); --rj-ink-dim:rgba(165,190,226,0.62);
+  --rj-accent:#4a9eff; --rj-accent-bright:#7ab6ff; --rj-accent-deep:#2563eb; --rj-accent-glow:rgba(74,158,255,0.40); --rj-on-accent:#061021;
+  --rj-violet:rgba(124,58,237,0.30);
+  --rj-line:rgba(122,162,222,0.16); --rj-line-strong:rgba(122,162,222,0.30); --rj-bracket:rgba(74,158,255,0.55);
+  --rj-ok:#46d68a; --rj-attention:#f5b13a; --rj-attention-glow:rgba(245,177,58,0.32);
+  --rj-font-ui:'Inter',system-ui,sans-serif; --rj-font-display:'Orbitron',sans-serif; --rj-font-mono:'Share Tech Mono',ui-monospace,monospace;
+  --rj-radius:12px; --rj-radius-lg:16px;
+  --rj-dur:200ms; --rj-ease-out:cubic-bezier(0.22,1,0.36,1);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{font-family:var(--rj-font-ui);color:var(--rj-ink);overflow:hidden;
+  background:radial-gradient(ellipse 120% 85% at 50% -15%,rgba(74,158,255,0.08),transparent 60%),radial-gradient(ellipse 110% 90% at 82% 115%,var(--rj-violet),transparent 55%),radial-gradient(ellipse at center,#061021 0%,var(--rj-bg-2) 55%,#010307 100%)}
+.rj-data{font-family:var(--rj-font-mono);letter-spacing:0.02em;font-variant-numeric:tabular-nums}
+
+/* starfield (static, recedes; no autoplay parallax to respect motion bar) */
+.stars{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:0.5;
+  background-image:radial-gradient(1px 1px at 20% 30%,rgba(150,190,255,0.7),transparent),radial-gradient(1px 1px at 70% 60%,rgba(150,190,255,0.5),transparent),radial-gradient(1px 1px at 40% 80%,rgba(120,170,255,0.6),transparent),radial-gradient(1px 1px at 85% 25%,rgba(150,190,255,0.5),transparent),radial-gradient(1px 1px at 55% 15%,rgba(150,190,255,0.4),transparent),radial-gradient(2px 2px at 15% 70%,rgba(74,158,255,0.5),transparent);
+  background-size:480px 480px}
+
+.mock-ribbon{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:60;font:600 11px/1 var(--rj-font-mono);letter-spacing:1px;color:var(--rj-warn,#f5b13a);background:rgba(245,177,58,0.10);border:1px solid rgba(245,177,58,0.4);border-radius:999px;padding:6px 12px}
+
+/* ---- HUD top ---- */
+.hud-top{position:fixed;top:0;left:0;right:0;z-index:40;display:flex;align-items:center;justify-content:space-between;padding:16px 22px}
+.hud-logo{display:flex;align-items:center;gap:13px}
+.hud-logo-mark{width:38px;height:38px;border-radius:10px;background:linear-gradient(160deg,var(--rj-accent),var(--rj-accent-deep));box-shadow:0 0 22px var(--rj-accent-glow);position:relative}
+.hud-logo-mark::after{content:"";position:absolute;inset:8px;border:1.5px solid rgba(255,255,255,0.6);border-radius:4px;transform:rotate(45deg)}
+.hud-title{font-family:var(--rj-font-display);font-weight:800;letter-spacing:3px;font-size:0.92em}
+.hud-subtitle{font-family:var(--rj-font-mono);font-size:0.64em;letter-spacing:2px;color:var(--rj-ink-dim)}
+.hud-top-right{display:flex;align-items:center;gap:14px}
+.hud-status{text-align:right}
+.hud-time{font-family:var(--rj-font-mono);font-size:1.05em;color:var(--rj-ink);letter-spacing:1px}
+.hud-date{font-family:var(--rj-font-mono);font-size:0.62em;letter-spacing:1.5px;color:var(--rj-ink-dim)}
+.btn-ai{display:inline-flex;align-items:center;gap:9px;font-family:var(--rj-font-display);font-size:0.72em;font-weight:800;letter-spacing:2px;color:var(--rj-on-accent);background:linear-gradient(160deg,var(--rj-accent-bright),var(--rj-accent) 45%,var(--rj-accent-deep));border:none;border-radius:11px;padding:11px 17px;cursor:pointer;box-shadow:0 0 22px var(--rj-accent-glow);transition:transform var(--rj-dur)}
+.btn-ai:hover{transform:translateY(-1px)}
+.hud-icon{width:42px;height:42px;border-radius:11px;background:var(--rj-surface-2);border:1px solid var(--rj-line);color:var(--rj-ink-mid);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:border-color var(--rj-dur)}
+.hud-icon:hover{border-color:var(--rj-accent)}
+.hud-icon svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2}
+
+/* sentinel presence ring - calm at rest */
+.sentinel{position:fixed;left:50%;top:46%;transform:translate(-50%,-50%);z-index:1;width:200px;height:200px;pointer-events:none}
+.sentinel::before{content:"";position:absolute;inset:0;border-radius:50%;border:1.5px solid var(--rj-accent);opacity:0.4}
+.sentinel::after{content:"";position:absolute;inset:22px;border-radius:50%;border:1px dashed var(--rj-bracket);animation:spin 80s linear infinite}
+.sentinel .halo{position:absolute;inset:-6%;border-radius:50%;background:radial-gradient(circle,var(--rj-accent-glow) 0%,transparent 62%);animation:breathe 6s ease-in-out infinite;opacity:0.7}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes breathe{0%,100%{transform:scale(1);opacity:0.55}50%{transform:scale(1.05);opacity:0.8}}
+
+.instruction{position:fixed;left:50%;bottom:104px;transform:translateX(-50%);z-index:30;font-family:var(--rj-font-mono);font-size:0.66em;letter-spacing:2px;color:var(--rj-ink-dim);white-space:nowrap}
+
+/* ---- the spatial deck (CSS-3D stand-in for the Three.js panel ring) ---- */
+.scene{position:fixed;inset:0;z-index:5;display:flex;align-items:center;justify-content:center;perspective:1600px}
+.deck{position:relative;width:min(1180px,92vw);display:grid;grid-template-columns:repeat(4,1fr);gap:26px 30px;transform:rotateX(14deg);transform-style:preserve-3d}
+.panel{position:relative;background:var(--rj-glass);backdrop-filter:blur(var(--rj-glass-blur));-webkit-backdrop-filter:blur(var(--rj-glass-blur));border:1px solid var(--rj-line-strong);border-radius:var(--rj-radius-lg);padding:16px 16px 14px;box-shadow:0 18px 48px rgba(0,0,0,0.5),inset 0 1px 0 var(--rj-glass-inner);cursor:pointer;transition:transform var(--rj-dur) var(--rj-ease-out),border-color var(--rj-dur) var(--rj-ease-out),box-shadow var(--rj-dur) var(--rj-ease-out);contain:layout paint}
+.panel:hover{transform:translateZ(40px) translateY(-4px);border-color:var(--rj-accent);box-shadow:0 26px 60px rgba(0,0,0,0.55),0 0 28px var(--rj-accent-glow)}
+.panel::before,.panel::after{content:"";position:absolute;width:14px;height:14px;border:1.5px solid var(--rj-bracket);opacity:0;transition:opacity var(--rj-dur)}
+.panel::before{top:7px;left:7px;border-right:0;border-bottom:0}
+.panel::after{bottom:7px;right:7px;border-left:0;border-top:0}
+.panel:hover::before,.panel:hover::after{opacity:1}
+.p-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.p-title{font-family:var(--rj-font-display);font-weight:700;font-size:0.82em;letter-spacing:1.5px}
+.badge{font-family:var(--rj-font-mono);font-size:0.6em;letter-spacing:1px;padding:3px 7px;border-radius:5px;border:1px solid var(--rj-line-strong)}
+.badge.live{color:var(--rj-ok);border-color:rgba(70,214,138,0.4);background:rgba(70,214,138,0.10)}
+.badge.ver{color:var(--rj-accent-bright);border-color:var(--rj-line-strong)}
+.badge.need{color:var(--rj-attention);border-color:var(--rj-attention);background:rgba(245,177,58,0.12);box-shadow:0 0 12px var(--rj-attention-glow)}
+.p-preview{margin-top:11px;height:96px;border-radius:10px;border:1px solid var(--rj-line);background:linear-gradient(180deg,var(--rj-surface-2),var(--rj-surface));overflow:hidden;position:relative;display:flex;flex-direction:column;justify-content:flex-end;padding:10px}
+.p-spark{position:absolute;left:0;right:0;bottom:0;height:60%;background:linear-gradient(180deg,transparent,rgba(74,158,255,0.10));border-top:1px solid var(--rj-line)}
+.p-metric{position:relative;z-index:2;font-family:var(--rj-font-display);font-weight:800;font-size:1.5em;color:var(--rj-ink);line-height:1}
+.p-metric .u{font-family:var(--rj-font-mono);font-size:0.4em;color:var(--rj-ink-dim);letter-spacing:1px;margin-left:5px}
+.p-foot{margin-top:9px;font-size:0.72em;color:var(--rj-ink-mid)}
+
+/* ---- HUD bottom nav ---- */
+.hud-bottom{position:fixed;left:0;right:0;bottom:0;z-index:40;display:flex;justify-content:center;padding:18px}
+.hud-nav{display:flex;gap:6px;background:var(--rj-glass);backdrop-filter:blur(var(--rj-glass-blur));-webkit-backdrop-filter:blur(var(--rj-glass-blur));border:1px solid var(--rj-line-strong);border-radius:14px;padding:6px;box-shadow:0 10px 30px rgba(0,0,0,0.5)}
+.nav-btn{display:flex;flex-direction:column;align-items:center;gap:4px;font:600 0.64em var(--rj-font-ui);letter-spacing:0.5px;color:var(--rj-ink-dim);background:transparent;border:none;border-radius:10px;padding:9px 15px;cursor:pointer;transition:color var(--rj-dur),background var(--rj-dur)}
+.nav-btn svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2}
+.nav-btn:hover{color:var(--rj-ink)}
+.nav-btn.active{color:var(--rj-accent-bright);background:rgba(74,158,255,0.12)}
+
+.back-btn{position:fixed;top:78px;left:22px;z-index:40;display:inline-flex;align-items:center;gap:8px;font:700 0.74em var(--rj-font-ui);color:#fff;background:rgba(255,255,255,0.06);border:1px solid var(--rj-line-strong);border-radius:10px;padding:10px 15px;cursor:pointer;transition:border-color var(--rj-dur)}
+.back-btn:hover{border-color:var(--rj-accent)}
+.back-btn svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2.4}
+
+@media (max-width:980px){.deck{grid-template-columns:repeat(2,1fr);gap:18px;transform:none}.scene{align-items:flex-start;padding:118px 14px 116px;overflow-y:auto}}
+@media (max-width:600px){
+  .deck{grid-template-columns:1fr;width:100%}
+  .scene{padding:126px 14px 110px}
+  .hud-top{padding:14px 14px}
+  .hud-subtitle{display:none}
+  .btn-ai{padding:9px 12px;font-size:0.64em}
+  .back-btn{top:74px;left:14px}
+  .instruction{display:none}
+}
+@media (prefers-reduced-motion: reduce){*{animation:none !important;transition:none !important}.panel:hover{transform:none}}
+</style>
+</head>
+<body>
+<div class="stars"></div>
+<div class="mock-ribbon">MOCKUP · command-center.html · Telltale (real restyle, MODE B)</div>
+
+<div class="hud-top">
+  <div class="hud-logo">
+    <div class="hud-logo-mark"></div>
+    <div>
+      <div class="hud-title">RYUJIN OS</div>
+      <div class="hud-subtitle">COMMAND CENTER v3.1</div>
+    </div>
+  </div>
+  <div class="hud-top-right">
+    <div class="hud-status">
+      <div class="hud-time rj-data" id="hudTime">08:31:04</div>
+      <div class="hud-date rj-data">MON · 15 JUN 2026</div>
+    </div>
+    <button class="btn-ai" type="button">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+      OPEN RYUJIN AI
+    </button>
+    <button class="hud-icon" type="button" aria-label="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></button>
+  </div>
+</div>
+
+<button class="back-btn" type="button"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg> BACK</button>
+
+<div class="sentinel" aria-hidden="true"><div class="halo"></div></div>
+
+<div class="scene">
+  <div class="deck" id="deck"></div>
+</div>
+
+<div class="instruction">DRAG TO ORBIT · SCROLL TO ZOOM · CLICK PANEL TO ENTER · RIGHT-CLICK TO BACK</div>
+
+<div class="hud-bottom">
+  <div class="hud-nav">
+    <button class="nav-btn active" type="button"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span>Overview</span></button>
+    <button class="nav-btn" type="button"><svg viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg><span>Classic</span></button>
+    <button class="nav-btn" type="button"><svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg><span>Auto-Spin</span></button>
+    <button class="nav-btn" type="button"><svg viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 00-2 2v3M21 8V5a2 2 0 00-2-2h-3M3 16v3a2 2 0 002 2h3M16 21h3a2 2 0 002-2v-3"/></svg><span>Fullscreen</span></button>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  var panels=[
+    {t:'HQ / DASHBOARD',b:'live',badge:'LIVE',m:'$33.2K',u:'signed MTD',f:'Pipeline 91 deals · $229K'},
+    {t:'MARKETING',b:'need',badge:'NEEDS YOU',m:'$464',u:'30d blind',f:'Ads conversion gate open'},
+    {t:'SALES',b:'live',badge:'LIVE',m:'5',u:'warm leads',f:'Ablak first · ~$108K stack'},
+    {t:'PRODUCTION',b:'live',badge:'LIVE',m:'47',u:'work orders',f:'7 Main St media ready'},
+    {t:'SERVICE',b:'live',badge:'LIVE',m:'2',u:'open tickets',f:'No SLA breaches'},
+    {t:'CUSTOMER / CRM',b:'live',badge:'LIVE',m:'1,204',u:'contacts',f:'Top-20 follow-up queued'},
+    {t:'FINANCE',b:'live',badge:'LIVE',m:'$2.9K',u:'AP due',f:'DIY Gutters overdue'},
+    {t:'ADMINISTRATION',b:'ver',badge:'v3.1',m:'8',u:'sections',f:'All systems nominal'}
+  ];
+  document.getElementById('deck').innerHTML=panels.map(function(p){
+    return '<div class="panel">'
+      +'<div class="p-head"><div class="p-title">'+p.t+'</div><span class="badge '+p.b+'">'+p.badge+'</span></div>'
+      +'<div class="p-preview"><div class="p-spark"></div><div class="p-metric rj-data">'+p.m+'<span class="u">'+p.u+'</span></div></div>'
+      +'<div class="p-foot">'+p.f+'</div>'
+    +'</div>';
+  }).join('');
+
+  // live clock (mono data)
+  function tick(){var d=new Date(),p=function(n){return String(n).padStart(2,'0');};
+    document.getElementById('hudTime').textContent=p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());}
+  setInterval(tick,1000); tick();
+})();
+</script>
+</body>
+</html>
