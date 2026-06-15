@@ -26,6 +26,23 @@ const USER_NAMES = {
   '1hpihSwkZ5saFcNPXpMp': 'Diego'
 };
 
+// Rep attribution lives in TWO places, never the contact alone: the per-opportunity
+// assignedTo (GHL userId), and the estimate `tags` array as `sales_owner:<name>`
+// (the sales_owner COLUMN is null on most rows). Decode tags as the fallback.
+function repFromTags(tags) {
+  if (!Array.isArray(tags)) return null;
+  for (const t of tags) {
+    const m = /^sales_owner:(\w+)/i.exec(String(t || ''));
+    if (!m) continue;
+    const k = m[1].toLowerCase();
+    if (k.startsWith('mack')) return 'Mackenzie';
+    if (k === 'darcy') return 'Darcy';
+    if (k === 'diego') return 'Diego';
+    return m[1].charAt(0).toUpperCase() + m[1].slice(1);
+  }
+  return null;
+}
+
 // Stage classification. We resolve stage NAMES live from /opportunities/pipelines
 // (so a renamed stage never silently mis-scores), then bucket by name keywords.
 // "sent" = a live quote/proposal is out and awaiting the customer = follow-up territory.
@@ -152,7 +169,7 @@ async function loadNativeProposals(tenantId) {
         date: e.created_at || e.issued_date || null,
         source: 'ryujin',
         shareUrl: '/api/proposal?id=' + encodeURIComponent(e.id),
-        _email: email, _phone: phone, _name: norm(name)
+        _email: email, _phone: phone, _name: norm(name), _tags: e.tags || []
       });
     }
   } catch (e) { /* estimates shape unknown; skip */ }
@@ -216,7 +233,7 @@ export default async function handler(req, res) {
         email: c.email || null, phone: c.phone || null,
         address: c.address1 || null, city: c.city || null,
         source: c.source || null, dnd: c.dnd || false,
-        rep: USER_NAMES[c.assignedTo] || null,
+        rep: USER_NAMES[c.assignedTo] || repFromTags(c.tags) || null,
         tags: c.tags || [],
         stage: null, pipeline: null,
         lastTouchAt: c.lastActivity || c.dateAdded || null,
@@ -245,7 +262,12 @@ export default async function handler(req, res) {
         || (o.phone && byPhone.get(digits(o.phone)))
         || null;
       let rec;
-      if (contact) { rec = customerFromContact(contact); }
+      if (contact) {
+        rec = customerFromContact(contact);
+        // The owner lives on the opportunity, not the contact. Fill rep from the
+        // opp's assignedTo when the contact did not carry one (the common case).
+        if (!rec.rep) rec.rep = USER_NAMES[o.assignedTo] || null;
+      }
       else {
         // Orphan opp: synthesize a customer so nothing is lost.
         const key = 'o:' + (norm(o.email) || digits(o.phone) || o.id);
@@ -284,13 +306,15 @@ export default async function handler(req, res) {
         const key = 'r:' + (np._email || np._name || np.id);
         rec = customers.get(key) || {
           id: np.id, key, name: np.label, email: np._email || null, phone: null, address: null, city: null,
-          source: 'ryujin', dnd: false, rep: null, tags: [], stage: 'Ryujin proposal', pipeline: 'Ryujin',
+          source: 'ryujin', dnd: false, rep: repFromTags(np._tags) || null, tags: np._tags || [], stage: 'Ryujin proposal', pipeline: 'Ryujin',
           lastTouchAt: np.date, proposals: [], oppCount: 0, totalProposalValue: 0,
           followupScore: 0, followupReasons: [], isTop20: false, isWarm360: false,
           activity7d: false, activity24h: false, draftFollowup: null, hasOpenTask: false
         };
         customers.set(key, rec);
       }
+      // Estimate tags are an owner source too; fill rep if GHL did not set one.
+      if (!rec.rep) rec.rep = repFromTags(np._tags) || null;
       rec.proposals.push({ id: np.id, label: np.label, value: np.value, status: np.status, stage: np.stage, date: np.date, source: 'ryujin', shareUrl: np.shareUrl });
       rec.totalProposalValue += np.value || 0;
     }
