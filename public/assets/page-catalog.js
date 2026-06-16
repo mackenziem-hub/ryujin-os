@@ -16,6 +16,7 @@
   // Pathnames of every catalog page (navigate + advanced). Mirror of
   // lib/pageCatalog.js PAGES[].url, hash/query stripped.
   var PATHS = [
+    '/shell.html',
     '/cockpit.html', '/command-center.html', '/dashboard-v2.html', '/admin.html',
     '/calendar.html', '/production-calendar.html', '/production-schedule.html',
     '/production-jobs.html', '/job.html', '/production-workorders.html',

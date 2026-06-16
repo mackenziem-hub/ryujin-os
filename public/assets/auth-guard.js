@@ -140,4 +140,25 @@
       (document.head || document.documentElement).appendChild(regScript);
     }
   } catch (e) { /* unread badge is non-critical */ }
+
+  // ── Fleet-wide Ryujin Drive ("controlling computer") ──────────────
+  // Same operator-page-marker logic as the palette + badge: mounting the drive
+  // overlay here gives every operator page the AI presence that can take over and
+  // visibly drive the OS (cursor + step rail + real-page takeover), surviving
+  // navigations because it re-mounts on each destination. Self-guards against
+  // double-load. Firm wall lives in the overlay (pending_approval pauses, never
+  // auto-sends). Non-critical chrome: any failure is swallowed.
+  try {
+    if (!window.__ryujinDriveMounted) {
+      window.__ryujinDriveMounted = true;
+      var dCss = document.createElement('link');
+      dCss.rel = 'stylesheet';
+      dCss.href = '/assets/ryujin-drive.css';
+      (document.head || document.documentElement).appendChild(dCss);
+      var dScript = document.createElement('script');
+      dScript.src = '/assets/ryujin-drive.js';
+      dScript.defer = true;
+      (document.head || document.documentElement).appendChild(dScript);
+    }
+  } catch (e) { /* drive overlay is non-critical */ }
 })();
