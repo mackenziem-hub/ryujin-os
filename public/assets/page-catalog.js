@@ -23,7 +23,7 @@
     '/production-materials.html', '/production-paysheet.html', '/paysheet.html',
     '/production.html', '/customer-list.html', '/customer-profile.html',
     '/sales-customers.html', '/admin-quests.html', '/admin-overview.html',
-    '/sales.html', '/sales-pipeline.html', '/sales-proposals.html',
+    '/sales.html', '/sales-pipeline.html', '/sales-proposals.html', '/proposals.html',
     '/marketing.html', '/marketing-leads.html', '/ad-activity.html', '/seo-scoreboard.html', '/finance.html',
     '/finance-receivables.html', '/finance-payments.html', '/service.html',
     '/service-tickets.html', '/inbox.html', '/messages.html', '/approvals.html',

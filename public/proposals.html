@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ryujin OS · Proposal Book</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=optional" rel="stylesheet">
+<link rel="stylesheet" href="/assets/ryujin-perf.css">
+<script src="/assets/ryujin-perf.js"></script>
+<!-- Auth gate: tokenless users bounce to /login before any logic runs -->
+<script src="/assets/auth-guard.js"></script>
+<script src="/assets/ryujin-nav.js" defer></script>
+<style>
+/* ════════════════════════════════════════════════════════════════════
+   PROPOSAL BOOK (proposals.html) - the ONE unified pending-proposal index.
+   Joins Estimator OS + Ryujin-native + GHL into a single reviewable list via
+   /api/proposals-index. Deduped by customer + address, no-price stubs flagged,
+   source-store badged. The surface that ends "I cannot review my own proposals".
+   No em dashes.
+   ════════════════════════════════════════════════════════════════════ */
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;width:100%}
+body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;overflow-x:hidden;position:relative;min-height:100vh}
+.bg-ambient{position:fixed;inset:0;z-index:0;background:radial-gradient(ellipse at 30% 20%,rgba(34,211,238,0.12) 0%,transparent 55%),radial-gradient(ellipse at 70% 85%,rgba(124,58,237,0.08) 0%,transparent 55%),linear-gradient(180deg,#060a14 0%,#030611 100%)}
+.bg-grid{position:fixed;inset:0;z-index:1;pointer-events:none;background-image:linear-gradient(rgba(34,211,238,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(34,211,238,0.03) 1px,transparent 1px);background-size:60px 60px;mask-image:radial-gradient(ellipse at center,black 35%,transparent 85%);-webkit-mask-image:radial-gradient(ellipse at center,black 35%,transparent 85%)}
+
+.topbar{position:fixed;top:10px;left:12px;right:12px;height:52px;display:flex;align-items:center;gap:12px;background:rgba(14,22,40,0.78);border:1px solid rgba(34,211,238,0.22);border-radius:14px;padding:0 14px;backdrop-filter:blur(20px);z-index:20;overflow:hidden}
+.topbar::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,#22d3ee,#7c3aed,transparent);opacity:0.5}
+.brand{display:flex;align-items:center;gap:10px}
+.brand-mark{width:30px;height:30px;border-radius:7px;background:radial-gradient(circle at 35% 30%,rgba(200,240,255,0.3),rgba(34,211,238,0.22) 40%,rgba(5,15,30,0.8));box-shadow:0 0 14px rgba(34,211,238,0.35)}
+.brand-name{font-family:'Orbitron',sans-serif;font-size:0.78em;font-weight:800;letter-spacing:2.5px}
+.brand-name .dim{color:rgba(160,190,230,0.62);font-weight:500;letter-spacing:2px;margin-left:8px}
+.tb-spacer{flex:1}
+.btn-back{display:inline-flex;align-items:center;gap:8px;padding:9px 18px;background:#fff;border:1px solid #fff;border-radius:10px;color:#030611;font-family:'Orbitron',sans-serif;font-size:0.72em;font-weight:800;letter-spacing:1.5px;cursor:pointer;text-decoration:none;transition:all 0.2s}
+.btn-back:hover{background:rgba(255,255,255,0.85);box-shadow:0 0 14px rgba(255,255,255,0.35)}
+.btn-back svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2.6}
+.btn-refresh{display:inline-flex;align-items:center;gap:7px;padding:9px 14px;background:linear-gradient(135deg,rgba(34,211,238,0.22),rgba(124,58,237,0.14));border:1px solid rgba(34,211,238,0.5);border-radius:10px;color:#22d3ee;font-family:'Orbitron',sans-serif;font-size:0.68em;font-weight:800;letter-spacing:1.3px;cursor:pointer;transition:all 0.2s}
+.btn-refresh:hover{background:linear-gradient(135deg,rgba(34,211,238,0.35),rgba(124,58,237,0.2));box-shadow:0 0 20px rgba(34,211,238,0.3)}
+.btn-refresh svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2.2}
+
+.stage{position:relative;z-index:5;padding:80px 28px 70px;max-width:1240px;margin:0 auto}
+.hero{margin-bottom:18px}
+.hero .eyebrow{font-family:'Share Tech Mono',monospace;font-size:0.72em;color:#22d3ee;letter-spacing:3px;margin-bottom:6px}
+.hero h1{font-family:'Orbitron',sans-serif;font-size:2em;font-weight:900;letter-spacing:-0.5px;background:linear-gradient(135deg,#fff 30%,#22d3ee);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hero .sub{color:rgba(200,220,255,0.6);font-size:0.86em;margin-top:6px;max-width:680px;line-height:1.5}
+
+.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:18px}
+.stat{padding:14px 18px;background:rgba(14,22,40,0.55);border:1px solid rgba(34,211,238,0.14);border-radius:12px}
+.stat .lbl{font-family:'Share Tech Mono',monospace;font-size:0.62em;color:rgba(200,220,255,0.5);letter-spacing:1.4px;text-transform:uppercase}
+.stat .val{font-family:'Orbitron',sans-serif;font-size:1.45em;font-weight:900;color:#22d3ee;margin-top:4px}
+.stat.warn .val{color:#facc15}
+@media (max-width:760px){.stats{grid-template-columns:repeat(2,1fr)}}
+
+.controls{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
+.controls input{flex:1;min-width:220px;padding:11px 14px;background:rgba(6,10,20,0.55);border:1px solid rgba(34,211,238,0.18);border-radius:10px;color:#e0e6f0;font-family:'Inter',sans-serif;font-size:0.94em;outline:none;transition:all 0.2s}
+.controls input:focus{border-color:rgba(34,211,238,0.5);box-shadow:0 0 14px rgba(34,211,238,0.18)}
+.controls select{padding:11px 14px;background:rgba(6,10,20,0.55);border:1px solid rgba(34,211,238,0.18);border-radius:10px;color:#e0e6f0;font-family:'Share Tech Mono',monospace;font-size:0.78em;letter-spacing:1px;cursor:pointer;outline:none}
+
+.srcerr{margin-bottom:12px;padding:10px 14px;background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.3);border-radius:10px;color:#fca5a5;font-family:'Share Tech Mono',monospace;font-size:0.72em;letter-spacing:0.5px;display:none}
+
+.list{display:flex;flex-direction:column;gap:8px}
+.row{display:grid;grid-template-columns:2.2fr 120px 120px 150px 110px 56px;align-items:center;gap:14px;padding:14px 18px;background:rgba(14,22,40,0.55);border:1px solid rgba(34,211,238,0.12);border-radius:12px;transition:all 0.18s}
+.row:hover{border-color:rgba(34,211,238,0.4);background:rgba(14,22,40,0.78);transform:translateX(3px)}
+.row.head{background:transparent;border-color:transparent;color:rgba(200,220,255,0.5);font-family:'Share Tech Mono',monospace;font-size:0.62em;letter-spacing:2px;text-transform:uppercase;cursor:default;padding:6px 18px;margin-bottom:-4px}
+.row.head:hover{transform:none}
+.client-name{font-weight:700;font-size:1em;margin-bottom:2px}
+.client-meta{font-family:'Share Tech Mono',monospace;font-size:0.66em;color:rgba(200,220,255,0.5);letter-spacing:0.6px}
+.price{font-family:'Orbitron',sans-serif;font-weight:800;color:#22d3ee;font-size:1em}
+.price.none{color:#facc15;font-family:'Share Tech Mono',monospace;font-size:0.68em;font-weight:700;letter-spacing:1px}
+.date{font-family:'Share Tech Mono',monospace;font-size:0.7em;color:rgba(200,220,255,0.65)}
+.badge{display:inline-block;padding:3px 9px;font-family:'Share Tech Mono',monospace;font-size:0.6em;font-weight:700;letter-spacing:1.2px;border-radius:5px;white-space:nowrap}
+.stores{display:flex;flex-wrap:wrap;gap:4px}
+.sbadge{display:inline-block;padding:2px 7px;font-family:'Share Tech Mono',monospace;font-size:0.56em;font-weight:700;letter-spacing:0.8px;border-radius:5px;border:1px solid}
+.sbadge.est{color:#7dd3fc;border-color:rgba(125,211,252,0.4);background:rgba(125,211,252,0.08)}
+.sbadge.native{color:#c4b5fd;border-color:rgba(196,181,253,0.4);background:rgba(196,181,253,0.08)}
+.sbadge.ghl{color:#86efac;border-color:rgba(134,239,172,0.4);background:rgba(134,239,172,0.08)}
+.open-link{justify-self:end;display:inline-flex;width:36px;height:36px;align-items:center;justify-content:center;border-radius:9px;border:1px solid rgba(34,211,238,0.25);color:rgba(34,211,238,0.7);transition:all 0.18s}
+.open-link:hover{color:#22d3ee;border-color:rgba(34,211,238,0.6);background:rgba(34,211,238,0.1)}
+.open-link svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.open-none{justify-self:end;font-family:'Share Tech Mono',monospace;font-size:0.56em;color:rgba(200,220,255,0.35);letter-spacing:0.5px;text-align:right}
+
+@media (max-width:820px){
+  .row{grid-template-columns:1fr auto;gap:8px}
+  .row > div:nth-child(3),.row > div:nth-child(4),.row > div:nth-child(5){display:none}
+  .row.head{display:none}
+}
+.empty,.loading{text-align:center;padding:54px 20px;color:rgba(200,220,255,0.5);font-size:0.92em;line-height:1.6}
+.loading{font-family:'Share Tech Mono',monospace;font-size:0.8em;letter-spacing:1.5px}
+</style>
+</head>
+<body>
+<div class="bg-ambient"></div>
+<div class="bg-grid"></div>
+
+<div class="topbar">
+  <a class="btn-back" href="command-center.html" id="backBtn" data-ry-back data-ry-back-default="command-center.html"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg> HQ</a>
+  <div class="brand"><div class="brand-mark"></div><div class="brand-name">RYUJIN <span class="dim">· PROPOSAL BOOK</span></div></div>
+  <div class="tb-spacer"></div>
+  <button class="btn-refresh" id="refreshBtn" type="button"><svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> REFRESH</button>
+</div>
+
+<div class="stage">
+  <div class="hero">
+    <div class="eyebrow">SALES · ONE BOOK, ALL STORES</div>
+    <h1>Proposal Book</h1>
+    <div class="sub">Every pending proposal across Estimator OS, Ryujin-native, and the GHL pipeline, joined and deduped onto one page. No-price stubs are flagged for pricing.</div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="lbl">Pending</div><div class="val" id="sPending">-</div></div>
+    <div class="stat"><div class="lbl">Total (deduped)</div><div class="val" id="sTotal">-</div></div>
+    <div class="stat warn"><div class="lbl">No-price stubs</div><div class="val" id="sNoPrice">-</div></div>
+    <div class="stat"><div class="lbl">Pending value</div><div class="val" id="sValue">-</div></div>
+    <div class="stat"><div class="lbl">Stores</div><div class="val" id="sStores">-</div></div>
+  </div>
+
+  <div class="controls">
+    <input id="searchIn" type="text" placeholder="Search customer, address..." oninput="applyFilter()"/>
+    <select id="bucketIn" onchange="applyFilter()">
+      <option value="pending">Pending only</option>
+      <option value="all">All (incl closed/dead)</option>
+      <option value="draft">Drafts</option>
+      <option value="ready">Ready</option>
+      <option value="sent">Sent</option>
+      <option value="accepted">Accepted / signed</option>
+    </select>
+    <select id="storeIn" onchange="applyFilter()">
+      <option value="all">All stores</option>
+      <option value="Estimator OS">Estimator OS</option>
+      <option value="Ryujin-native">Ryujin-native</option>
+      <option value="GHL">GHL</option>
+    </select>
+    <select id="sortIn" onchange="applyFilter()">
+      <option value="new">Newest first</option>
+      <option value="value">Highest value</option>
+      <option value="client">Customer A-Z</option>
+    </select>
+  </div>
+
+  <div class="srcerr" id="srcErr"></div>
+
+  <div class="list" id="listHost"><div class="loading">LOADING PROPOSAL BOOK...</div></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const money = n => n ? '$' + (n>=10000 ? Math.round(n/1000)+'K' : n.toLocaleString()) : '-';
+
+const BUCKET_COLORS = {
+  draft:    { c:'#94a3b8', b:'rgba(148,163,184,0.14)' },
+  ready:    { c:'#38bdf8', b:'rgba(56,189,248,0.14)' },
+  sent:     { c:'#22d3ee', b:'rgba(34,211,238,0.14)' },
+  accepted: { c:'#4ade80', b:'rgba(74,222,128,0.14)' },
+  closed:   { c:'#64748b', b:'rgba(100,116,139,0.14)' },
+  dead:     { c:'#f87171', b:'rgba(248,113,113,0.14)' }
+};
+function statusBadge(p){
+  const m = BUCKET_COLORS[p.bucket] || BUCKET_COLORS.draft;
+  return `<span class="badge" style="background:${m.b};color:${m.c};border:1px solid ${m.c}33">${esc((p.status||p.bucket||'').toString().toUpperCase())}</span>`;
+}
+const STORE_CLASS = { 'Estimator OS':'est', 'Ryujin-native':'native', 'GHL':'ghl' };
+const STORE_SHORT = { 'Estimator OS':'EST OS', 'Ryujin-native':'NATIVE', 'GHL':'GHL' };
+function storeBadges(stores){
+  return '<div class="stores">' + (stores||[]).map(s => `<span class="sbadge ${STORE_CLASS[s]||''}">${esc(STORE_SHORT[s]||s)}</span>`).join('') + '</div>';
+}
+function relDate(iso){
+  if (!iso) return '-';
+  const d = new Date(iso); const diff = (Date.now() - d.getTime())/1000;
+  if (!isFinite(diff)) return '-';
+  if (diff < 3600) return Math.max(1,Math.round(diff/60)) + 'm';
+  if (diff < 86400) return Math.round(diff/3600) + 'h';
+  if (diff < 604800) return Math.round(diff/86400) + 'd';
+  return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+}
+function openCell(p){
+  if (p.openUrl) return `<a class="open-link" href="${esc(p.openUrl)}" target="_blank" rel="noopener" title="Open proposal"><svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>`;
+  return `<span class="open-none" title="No shareable link; open it in ${esc((p.stores||[]).join(' / '))}">in&nbsp;${esc(STORE_SHORT[(p.stores||[])[0]]||'store')}</span>`;
+}
+
+let DATA = { proposals: [], counts: {} };
+
+async function loadAll(){
+  $('listHost').innerHTML = '<div class="loading">LOADING PROPOSAL BOOK...</div>';
+  try {
+    const r = await fetch('/api/proposals-index', { headers: { 'x-tenant-id':'plus-ultra', ...window.RyujinAuth.headers() } });
+    if (r.status === 401){ location.href = '/login.html?next=' + encodeURIComponent(location.pathname); return; }
+    if (!r.ok){ $('listHost').innerHTML = '<div class="empty">Could not load the proposal book. HTTP ' + r.status + '.<br><br>Try Refresh.</div>'; return; }
+    DATA = await r.json();
+    if (!Array.isArray(DATA.proposals)){ $('listHost').innerHTML = '<div class="empty">Unexpected response from server.</div>'; return; }
+    renderStats();
+    const errs = DATA.sourceErrors || [];
+    const se = $('srcErr');
+    if (errs.length){ se.style.display='block'; se.textContent = 'Some stores degraded: ' + errs.join(' · '); } else { se.style.display='none'; }
+    applyFilter();
+  } catch(e){
+    $('listHost').innerHTML = '<div class="empty">Error loading proposal book: ' + esc(e.message) + '</div>';
+  }
+}
+
+function renderStats(){
+  const c = DATA.counts || {};
+  $('sPending').textContent = c.pending != null ? c.pending : '-';
+  $('sTotal').textContent = c.total != null ? c.total : '-';
+  $('sNoPrice').textContent = c.noPrice != null ? c.noPrice : '-';
+  const pval = (DATA.proposals||[]).filter(p => p.pending).reduce((s,p)=> s + (p.fromPrice||0), 0);
+  $('sValue').textContent = pval ? money(pval) : '-';
+  const stores = c.byStore || {};
+  $('sStores').textContent = Object.values(stores).filter(n=>n>0).length || '-';
+}
+
+function applyFilter(){
+  const q = ($('searchIn').value||'').toLowerCase();
+  const bucket = $('bucketIn').value;
+  const store = $('storeIn').value;
+  const sort = $('sortIn').value;
+  let list = (DATA.proposals||[]).slice();
+  if (bucket === 'pending') list = list.filter(p => p.pending);
+  else if (bucket !== 'all') list = list.filter(p => p.bucket === bucket);
+  if (store !== 'all') list = list.filter(p => (p.stores||[]).includes(store));
+  if (q) list = list.filter(p => ((p.customer||'') + ' ' + (p.address||'')).toLowerCase().includes(q));
+  if (sort === 'value') list.sort((a,b)=> (b.fromPrice||0)-(a.fromPrice||0));
+  else if (sort === 'client') list.sort((a,b)=> (a.customer||'').localeCompare(b.customer||''));
+  else list.sort((a,b)=> String(b.lastUpdated||'').localeCompare(String(a.lastUpdated||'')));
+  renderList(list);
+}
+
+function renderList(list){
+  const host = $('listHost');
+  if (!list.length){ host.innerHTML = '<div class="empty">No proposals match this view.</div>'; return; }
+  const head = `<div class="row head"><div>CUSTOMER</div><div>FROM PRICE</div><div>STATUS</div><div>SOURCE</div><div>UPDATED</div><div></div></div>`;
+  host.innerHTML = head + list.map(p => `
+    <div class="row">
+      <div>
+        <div class="client-name">${esc(p.customer)}</div>
+        <div class="client-meta">${p.address ? esc(p.address) : 'no address on file'}</div>
+      </div>
+      <div>${p.noPrice ? '<span class="price none">NO PRICE</span>' : '<span class="price">'+money(p.fromPrice)+'</span>'}</div>
+      <div>${statusBadge(p)}</div>
+      <div>${storeBadges(p.stores)}</div>
+      <div class="date">${esc(relDate(p.lastUpdated))}</div>
+      <div>${openCell(p)}</div>
+    </div>
+  `).join('');
+}
+
+$('refreshBtn').addEventListener('click', loadAll);
+$('backBtn').addEventListener('click', function(e){ e.preventDefault(); try{(window.top||window).location.href='/command-center.html';}catch(_){location.href='/command-center.html';} });
+document.addEventListener('keydown', e => { if (e.key === 'Escape'){ try{(window.top||window).location.href='/command-center.html';}catch(_){location.href='/command-center.html';} } });
+
+const _qp = new URLSearchParams(location.search).get('q');
+if (_qp){ const si = $('searchIn'); if (si) si.value = _qp; }
+loadAll();
+</script>
+
+<script src="assets/ryujin-mode.js"></script>
+<script src="assets/ryujin-tenant.js"></script>
+<script src="assets/ryujin-persist.js"></script>
+<script src="assets/cockpit-launcher.js"></script>
+</body>
+</html>
