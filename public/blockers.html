@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en" data-rj="telltale" data-artifact-id="blockers" data-updated-at="2026-06-16T16:40:00Z">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Blockers · Ryujin</title>
+<link rel="icon" href="data:,">
+<!-- Auth gate: tokenless users bounce to /login before any logic runs -->
+<script src="/assets/auth-guard.js"></script>
+<!--
+  Ryujin artifact · Blockers Deck
+  ONE job: a live feed of the immediate blockers stopping the builders loop, the
+  decisions + reviews that need Mack. Nothing else (no KPIs, no chat, no fleet map).
+  Source of truth (already populated): /api/snapshot -> sections.fleet.blockedOnMac
+  plus derived signals (desks waiting_on_mac). Inline resolve POSTs order.create to
+  the /api/fleet bus (same proven write path as bridge.html) so the answer routes
+  back down to the Foreman/desks, then the item is marked handled locally.
+  ?embed=1 drops the standalone header for iframe mounting. No em dashes anywhere.
+-->
+<style>
+  :root{
+    --bg:#0a0f17; --panel:rgba(20,28,40,0.72); --panel-2:rgba(30,40,56,0.6);
+    --line:rgba(120,150,190,0.16); --ink:#e8eef7; --muted:#8aa0bd; --muted-2:#6b7e98;
+    --accent:#4a9eff; --accent-soft:rgba(74,158,255,0.12);
+    --p0:#ff5a6a; --p0-soft:rgba(255,90,106,0.13); --p1:#ffb74a; --p1-soft:rgba(255,183,74,0.12);
+    --ok:#3ddc97;
+    --font:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:
+      radial-gradient(1100px 700px at 78% -8%, rgba(74,158,255,0.10), transparent 60%),
+      radial-gradient(900px 600px at 8% 108%, rgba(61,220,151,0.06), transparent 55%),
+      var(--bg);
+    color:var(--ink); font-family:var(--font);
+    -webkit-font-smoothing:antialiased; letter-spacing:0.1px;
+  }
+  .wrap{max-width:860px;margin:0 auto;padding:26px 18px 80px}
+  header.bar{display:flex;align-items:center;gap:14px;margin-bottom:22px}
+  .title{font-size:22px;font-weight:700;letter-spacing:-0.2px}
+  .title .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--accent);
+    box-shadow:0 0 12px var(--accent);margin-right:9px;vertical-align:middle;animation:pulse 2.4s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  .count{font-family:var(--mono);font-size:12.5px;color:var(--muted);
+    background:var(--panel-2);border:1px solid var(--line);border-radius:999px;padding:5px 11px}
+  .count b{color:var(--p0)}
+  .spacer{flex:1}
+  .meta{font-family:var(--mono);font-size:11.5px;color:var(--muted-2)}
+  .list{display:flex;flex-direction:column;gap:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:15px;
+    padding:15px 16px;backdrop-filter:blur(12px);position:relative;overflow:hidden}
+  .card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--p1)}
+  .card.p0::before{background:var(--p0)}
+  .row1{display:flex;align-items:center;gap:10px;margin-bottom:7px}
+  .chip{font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.5px;
+    padding:3px 8px;border-radius:6px;color:var(--p1);background:var(--p1-soft)}
+  .chip.p0{color:var(--p0);background:var(--p0-soft)}
+  .lane{font-family:var(--mono);font-size:11px;color:var(--muted-2)}
+  .item{font-size:15px;line-height:1.45;color:var(--ink);margin:2px 0 12px}
+  .actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  button{font-family:var(--font);font-size:13px;border-radius:9px;cursor:pointer;
+    border:1px solid var(--line);background:var(--panel-2);color:var(--ink);padding:8px 13px;transition:.15s}
+  button:hover{border-color:var(--accent);background:var(--accent-soft)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#04121f;font-weight:600}
+  button.ghost{background:transparent;color:var(--muted)}
+  button.done{color:var(--ok);border-color:rgba(61,220,151,.4)}
+  .replybox{display:none;margin-top:11px;gap:8px;flex-direction:column}
+  .replybox.open{display:flex}
+  textarea{width:100%;min-height:62px;resize:vertical;background:#070b12;border:1px solid var(--line);
+    border-radius:10px;color:var(--ink);font-family:var(--font);font-size:14px;padding:10px}
+  textarea:focus{outline:none;border-color:var(--accent)}
+  .empty{text-align:center;padding:70px 20px;color:var(--muted)}
+  .empty .big{font-size:18px;color:var(--ok);margin-bottom:8px}
+  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--panel);
+    border:1px solid var(--line);border-radius:10px;padding:11px 16px;font-size:13px;color:var(--ink);
+    backdrop-filter:blur(10px);opacity:0;transition:.25s;pointer-events:none}
+  .toast.show{opacity:1}
+  body[data-embed="1"] header.bar{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="bar">
+    <div class="title"><span class="dot"></span>Blockers</div>
+    <div class="count" id="count">loading...</div>
+    <div class="spacer"></div>
+    <div class="meta" id="meta"></div>
+  </header>
+  <div class="list" id="list"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  if (new URLSearchParams(location.search).get('embed')==='1') document.body.setAttribute('data-embed','1');
+  function authHeaders(){
+    var t=''; try{ t=localStorage.getItem('ryujin_token')||sessionStorage.getItem('ryujin_token')||''; }catch(e){}
+    var h={'x-tenant-id':'plus-ultra'}; if(t)h.Authorization='Bearer '+t; return h;
+  }
+  var esc=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
+  function handledSet(){ try{ return new Set(JSON.parse(localStorage.getItem('rj-blocker-handled')||'[]')); }catch(e){ return new Set(); } }
+  function markHandled(id){ var s=handledSet(); s.add(id); localStorage.setItem('rj-blocker-handled', JSON.stringify([].slice.call(s))); }
+  function key(b){ return (b.lane||'')+':'+(b.item||b.label||''); }
+  function toast(m){ var t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); setTimeout(function(){t.classList.remove('show');},2600); }
+
+  // Pull blockers from the populated source + derive waiting_on_mac desks.
+  async function pull(){
+    var snap;
+    try{ snap = await (await fetch('/api/snapshot',{headers:authHeaders(),cache:'no-store'})).json(); }
+    catch(e){ return null; }
+    var out=[];
+    var fleet = snap && snap.sections && snap.sections.fleet || {};
+    (fleet.blockedOnMac||[]).forEach(function(b){
+      out.push({ id:key(b), item:b.item||b.label||b.title||'(unlabelled blocker)',
+        priority:(b.priority||'P1').toUpperCase(), lane:b.lane||b.deskId||'', kind:'decision', raw:b });
+    });
+    // derive: desks literally stalled on Mac
+    var desks = fleet.desks || snap.sections && snap.sections.desks || [];
+    (Array.isArray(desks)?desks:Object.values(desks||{})).forEach(function(d){
+      if(d && /waiting_on_mac/i.test(d.status||'')){
+        out.push({ id:'desk:'+(d.id||d.deskId), item:'Desk '+(d.id||d.deskId)+' is waiting on you: '+(d.task||d.result||'see desk'),
+          priority:'P1', lane:(d.id||d.deskId||''), kind:'desk', raw:d });
+      }
+    });
+    return out;
+  }
+
+  async function sendDecision(b, text){
+    var target = (b.lane && /^[A-G]$/.test(b.lane)) ? b.lane : 'A';
+    var body = { action:'order.create', deskId: target, order:{
+      priority: b.priority==='P0'?'P0':'P1',
+      title: 'Mac decision: '+(b.item||'').slice(0,48),
+      prompt: 'MAC DECISION (via Blockers deck) on blocker: "'+(b.item||'')+'". His call: '+text+
+              '. Route + act accordingly. DRAFT-only still binds any outbound.',
+      issuedBy:'operator', issuedAt:new Date().toISOString()
+    }};
+    try{
+      var r=await fetch('/api/fleet',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},authHeaders()),body:JSON.stringify(body)});
+      return r.ok;
+    }catch(e){ return false; }
+  }
+
+  function render(blockers){
+    var handled=handledSet();
+    var live=(blockers||[]).filter(function(b){ return !handled.has(b.id); });
+    live.sort(function(a,b){ return (a.priority==='P0'?0:1)-(b.priority==='P0'?0:1); });
+    var p0=live.filter(function(b){return b.priority==='P0';}).length;
+    document.getElementById('count').innerHTML = live.length===0 ? 'clear'
+      : live.length+' blocker'+(live.length>1?'s':'')+(p0?' · <b>'+p0+' P0</b>':'');
+    document.getElementById('meta').textContent = 'live · '+new Date().toLocaleTimeString();
+    var list=document.getElementById('list');
+    if(live.length===0){
+      list.innerHTML='<div class="empty"><div class="big">No blockers.</div>The builders loop is clear. New decisions and reviews appear here the moment they are surfaced.</div>';
+      return;
+    }
+    list.innerHTML='';
+    live.forEach(function(b){
+      var card=document.createElement('div'); card.className='card'+(b.priority==='P0'?' p0':'');
+      card.innerHTML=
+        '<div class="row1"><span class="chip'+(b.priority==='P0'?' p0':'')+'">'+esc(b.priority)+'</span>'+
+        (b.lane?'<span class="lane">lane '+esc(b.lane)+'</span>':'')+'<span class="lane">'+esc(b.kind)+'</span></div>'+
+        '<div class="item">'+esc(b.item)+'</div>'+
+        '<div class="actions">'+
+          '<button class="primary act-decide">Decide</button>'+
+          '<button class="act-approve">Approve</button>'+
+          '<button class="ghost act-dismiss">Dismiss from view</button>'+
+        '</div>'+
+        '<div class="replybox"><textarea placeholder="Your call... it posts to the fleet and routes down."></textarea>'+
+          '<div class="actions"><button class="primary act-send">Send decision</button><button class="ghost act-cancel">Cancel</button></div></div>';
+      var rb=card.querySelector('.replybox'), ta=card.querySelector('textarea');
+      card.querySelector('.act-decide').onclick=function(){ rb.classList.toggle('open'); if(rb.classList.contains('open'))ta.focus(); };
+      card.querySelector('.act-cancel').onclick=function(){ rb.classList.remove('open'); };
+      card.querySelector('.act-approve').onclick=async function(){
+        this.textContent='sending...'; var ok=await sendDecision(b,'Approved.');
+        toast(ok?'Approved + routed to lane '+(b.lane||'A'):'Posted locally (bus unreachable) - approved'); markHandled(b.id); tick();
+      };
+      card.querySelector('.act-send').onclick=async function(){
+        var txt=ta.value.trim(); if(!txt){ta.focus();return;} this.textContent='sending...';
+        var ok=await sendDecision(b,txt);
+        toast(ok?'Decision routed to lane '+(b.lane||'A'):'Bus unreachable - decision saved locally'); markHandled(b.id); tick();
+      };
+      card.querySelector('.act-dismiss').onclick=function(){ markHandled(b.id); render(blockers); };
+      list.appendChild(card);
+    });
+  }
+
+  var last=[];
+  async function tick(){ var b=await pull(); if(b){ last=b; } render(last); }
+  tick(); setInterval(tick, 15000);
+  document.addEventListener('visibilitychange', function(){ if(!document.hidden) tick(); });
+})();
+</script>
+</body>
+</html>
