@@ -362,11 +362,22 @@ async function buildFreshSnapshot() {
         'instant estimator submission', 'inspection lead magnet form',
         'plus ultra roofing website form', 'active job canvassing',
         'darcy- door knocking', 'past customer',
+        // Live GHL source slugs. The IE/Revive embeds tag leads with these,
+        // NOT the old display names, so the prior whitelist silently dropped
+        // every real instant-estimator lead (the leadsThisWeek false zero).
+        'instant-estimator-v3', 'instant_estimator_v2', 'revive-estimator-v1',
+        'revive & rejuvenate', 'inspection and service booking calendar',
+        'website contact us form', 'facebook page', 'direct call',
+        // Substring of both '10 Costly Mistakes- PDF' and '10 Costly Mistakes Intake Form'.
+        '10 costly mistakes',
       ];
       const VALID_TAGS = [
         '10 costly mistakes', 'lead – 10 tips download',
         'appointment - confirmed', 'darcy- door knock',
         'quote_voiceai', 'incubator - start',
+        // Live lead tags carried by IE/Revive submissions.
+        'source:instant-estimator-v3', 'source:revive-estimator-v1',
+        'instant estimator submission', 'revive estimator submission',
       ];
       // NB + border area codes (506, 782 = NB; 902 = NS/PEI border towns)
       const LOCAL_AREA_CODES = ['506', '782', '902'];
@@ -381,17 +392,25 @@ async function buildFreshSnapshot() {
 
       const isRealSource = (c) => {
         const src = (c.source || '').toLowerCase().trim();
-        const tags = (c.tags || []).map(t => t.toLowerCase().trim());
+        const tags = (c.tags || []).map(t => (t || '').toLowerCase().trim());
         if (src && VALID_SOURCES.some(vs => src.includes(vs))) return true;
         if (tags.some(t => VALID_TAGS.some(vt => t.includes(vt)))) return true;
         return false;
       };
 
+      // Cat/dev test fires leak into the IE pipeline. Widening the source
+      // whitelist above pulls them in, so filter the obvious tests back out
+      // to keep the real lead count honest.
+      const TEST_NAME_RE = /^(tester|zz test|zz_test|test fire|test pixel|cat test|catherine test|test )/i;
       const isJunk = (c) => {
         const email = (c.email || '').toLowerCase();
         if (JUNK_EMAIL_PATTERNS.some(p => p.test(email))) return true;
+        if (/\+test(\d|@|$)|\+10cmtest/i.test(email)) return true;
         const name = (c.name || '').trim();
         if (name.length <= 1) return true;
+        if (TEST_NAME_RE.test(name)) return true;
+        const tags = (c.tags || []).map(t => (t || '').toLowerCase());
+        if (tags.some(t => t.includes('test_delete') || t === 'zz_test_delete_me')) return true;
         return false;
       };
 
