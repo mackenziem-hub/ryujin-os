@@ -939,6 +939,28 @@
   .gp__amt { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 0.85rem; color: var(--ink); }
   .gp__open { font-size: 0.68rem; letter-spacing: 0.04em; color: var(--accent-soft); border: 1px solid var(--glass-edge); border-radius: 7px; padding: 3px 9px; }
   .glance__hint { text-align: center; font-size: 0.78rem; color: var(--ink-faint); margin-top: 1px; }
+  /* NEEDS YOU - the live blockers/decisions banner on the resting monitor */
+  .glance__needs { width: 100%; display: flex; align-items: center; gap: 10px; padding: 11px 14px;
+    border-radius: 13px; cursor: pointer; text-align: left; font: inherit;
+    color: #ffd9a8; background: rgba(255,183,74,0.10); border: 1px solid rgba(255,183,74,0.34);
+    transition: background 0.15s, border-color 0.15s, transform 0.15s; }
+  .glance__needs:hover { background: rgba(255,183,74,0.16); transform: translateY(-1px); }
+  .glance__needs.p0 { color: #ffc2c9; background: rgba(255,90,106,0.12); border-color: rgba(255,90,106,0.4); }
+  .glance__needs-dot { width: 8px; height: 8px; border-radius: 50%; background: #ffb74a; box-shadow: 0 0 9px rgba(255,183,74,0.8); animation: pulse 2.4s infinite; }
+  .glance__needs.p0 .glance__needs-dot { background: #ff5a6a; box-shadow: 0 0 9px rgba(255,90,106,0.9); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .glance__needs-txt { flex: 1; font-size: 0.88rem; font-weight: 600; }
+  .glance__needs-go { font-size: 0.68rem; letter-spacing: 0.04em; text-transform: uppercase; border: 1px solid currentColor; border-radius: 7px; padding: 3px 9px; opacity: 0.85; }
+  /* PROPOSAL BOOK cta inside the proposals panel */
+  .book-cta { display: block; margin: 2px 0 14px; padding: 13px 15px; border-radius: 13px;
+    text-decoration: none; color: var(--ink); font-weight: 600; font-size: 0.92rem;
+    background: linear-gradient(180deg, rgba(74,158,255,0.16), rgba(74,158,255,0.07));
+    border: 1px solid rgba(74,158,255,0.4); transition: background 0.15s, transform 0.15s; }
+  .book-cta:hover { background: linear-gradient(180deg, rgba(74,158,255,0.24), rgba(74,158,255,0.1)); transform: translateY(-1px); }
+  .book-cta__sub { display: block; margin-top: 3px; font-weight: 400; font-size: 0.74rem; color: var(--ink-faint); }
+  /* Embedded feed (blockers) inside a shell panel */
+  .embed-frame { width: 100%; height: 60vh; min-height: 320px; border: 0; border-radius: 13px;
+    background: rgba(255,255,255,0.02); }
   /* HOME - return from a conversation back to the resting monitor */
   .home-btn {
     position: fixed; top: 21px; left: 50%; transform: translateX(-50%);
@@ -1005,6 +1027,7 @@
   <!-- THE ASK -->
   <div class="ask" id="ask">
     <div class="chips" id="chips">
+      <button class="chip" data-q="what needs me?">Needs you</button>
       <button class="chip" data-q="my proposals">My proposals</button>
       <button class="chip" data-q="how are sales?">How are sales?</button>
       <button class="chip" data-q="who should I follow up with?">Who should I follow up with?</button>
@@ -1115,6 +1138,10 @@
       answer: '<span class="num">13</span> live proposals, <span class="num">~$80k</span> in the close pile. Catherine Ablak first.',
       panel: "proposals"
     },
+    needsyou: {
+      answer: 'Here is what is waiting on you: the live blockers and decisions stopping the loop.',
+      panel: "needsyou"
+    },
     fallback: {
       answer: 'I can pull your proposals, sales, follow-ups, ad spend, your day, or cashflow. Try one of the prompts.',
       panel: null
@@ -1169,7 +1196,8 @@
       collected30: "$12,235", collected90: "$155,918", collected7: "$0",
       outstanding: "$29,160", signedBacklog: "$106,809", signedBacklogCount: "6"
     },
-    proposals: { all: [], drafts: [], closePile: [], draftValue: "", draftCount: "0" }
+    proposals: { all: [], drafts: [], closePile: [], draftValue: "", draftCount: "0" },
+    needsYou: { count: 0, p0: 0, items: [] }
   };
 
   /* ---------------------------------------------------------
@@ -1232,6 +1260,24 @@
         };
       });
     }
+
+    // ---- NEEDS YOU (live blockers + desks waiting on Mac) ----
+    // Same source + derivation as blockers.html pull(): the populated
+    // sections.fleet.blockedOnMac feed plus any desk literally stalled on Mac.
+    var fleet = sec.fleet || {};
+    var needs = [];
+    (fleet.blockedOnMac || []).forEach(function (b) {
+      needs.push({ item: b.item || b.label || b.title || "Blocker", priority: (b.priority || "P1").toUpperCase(), lane: b.lane || b.deskId || "" });
+    });
+    var fdesks = fleet.desks || sec.desks || [];
+    (Array.isArray(fdesks) ? fdesks : Object.keys(fdesks || {}).map(function (k) { return fdesks[k]; })).forEach(function (d) {
+      if (d && /waiting_on_mac/i.test(d.status || "")) {
+        needs.push({ item: "Desk " + (d.id || d.deskId) + ": " + (d.task || d.result || "waiting on you"), priority: "P1", lane: (d.id || d.deskId || "") });
+      }
+    });
+    LIVE.needsYou.items = needs;
+    LIVE.needsYou.count = needs.length;
+    LIVE.needsYou.p0 = needs.filter(function (n) { return n.priority === "P0"; }).length;
 
     // ---- DAY ----
     var tk = sec.tickets || {}, st = sec.salesTasks || {};
@@ -1385,9 +1431,19 @@
   function renderGlance() {
     if (!glanceEl) return;
     var s = LIVE.sales, pr = LIVE.proposals;
+    var n = LIVE.needsYou || { count: 0, p0: 0 };
+    var needsHtml = '';
+    if (n.count > 0) {
+      needsHtml = '<button class="glance__needs' + (n.p0 ? ' p0' : '') + '" type="button" aria-label="Open what needs you">'
+        + '<span class="glance__needs-dot"></span>'
+        + '<span class="glance__needs-txt">' + esc(String(n.count)) + ' waiting on you'
+        + (n.p0 ? ' · ' + esc(String(n.p0)) + ' P0' : '') + '</span>'
+        + '<span class="glance__needs-go">Open</span></button>';
+    }
     var html = ''
       + '<div class="glance__head"><span class="glance__title">What’s going on</span>'
       + '<span class="glance__sub">' + esc(freshnessEl ? freshnessEl.textContent : "Live") + '</span></div>'
+      + needsHtml
       + '<div class="glance__kpis">'
       +   '<div class="gk"><div class="v">' + esc(s.signedMtd) + '</div><div class="l">Signed, June</div></div>'
       +   '<div class="gk"><div class="v">' + esc(s.proposalsOut) + '</div><div class="l">Proposals out</div></div>'
@@ -1401,7 +1457,7 @@
         var addr = String(p.address || "").split(",")[0];
         html += '<a class="gp" href="/proposal-client.html?share=' + encodeURIComponent(p.share) + '" target="_blank" rel="noopener">'
           + '<span class="gp__name">' + esc(p.customer) + (addr ? ' <span class="gp__sub">' + esc(addr) + '</span>' : '') + '</span>'
-          + '<span class="gp__amt">' + (p.price ? esc(p.price) : "—") + '</span>'
+          + '<span class="gp__amt">' + (p.price ? esc(p.price) : "-") + '</span>'
           + '<span class="gp__open">Open</span>'
           + '</a>';
       });
@@ -1428,6 +1484,7 @@
      --------------------------------------------------------- */
   function route(q) {
     var s = (q || "").toLowerCase();
+    if (/(block|needs you|need me|needs me|waiting on|decision|approve|what needs)/.test(s)) return KB.needsyou;
     if (/(follow|follow-up|who should|nudge|chase|sharon|gauvin|baxter)/.test(s)) return KB.followups;
     if (/(ad|spend|cpl|campaign|meta|google ads)/.test(s)) return KB.ads;
     if (/(cashflow|cash flow|collect|outstanding|owed|ar\b|receivable)/.test(s)) return KB.cashflow;
@@ -1556,8 +1613,28 @@
           '<div class="figure"><span class="figure__val mono">' + esc(LIVE.sales.proposalsOut) + '</span><span class="figure__lbl">Out · ' + esc(LIVE.sales.proposalsOutCount) + '</span></div>' +
         '</div>' +
         '<p class="lede">Your active desk. Tap any one to open the client proposal page in a new tab.</p>' +
+        '<a class="book-cta" href="/proposals.html" target="_blank" rel="noopener">Open the full Proposal Book' +
+          '<span class="book-cta__sub">every pending proposal across Estimator OS, Ryujin-native + GHL, deduped on one page</span></a>' +
         '<p class="section-h">Drafts · newest first</p>' +
         rowsHtml
+    });
+  }
+
+  /* ---- NEEDS YOU panel (depth 0) ----
+     Folds the blockers / needs-you / decisions feed into the shell. Embeds the
+     proven blockers.html?embed=1 module so the inline Decide/Approve write-back
+     to /api/fleet is reused verbatim (one source of truth, no duplicate logic). */
+  function panelNeedsYou() {
+    var n = LIVE.needsYou || { count: 0, p0: 0, items: [] };
+    var sub = n.count === 0 ? "The builders loop is clear." :
+      (n.count + " waiting" + (n.p0 ? " · " + n.p0 + " P0" : "") + ". Decide or approve inline, it routes straight to the fleet.");
+    return makePanel({
+      kicker: "Fleet · needs you",
+      title: "What needs you",
+      crumbs: [{ label: "Needs you" }],
+      body:
+        '<p class="lede">' + esc(sub) + '</p>' +
+        '<iframe class="embed-frame" src="/blockers.html?embed=1" title="Blockers and decisions that need you" loading="lazy"></iframe>'
     });
   }
 
@@ -1870,6 +1947,7 @@
     else if (lastQuery.panel === "day") el = panelDay();
     else if (lastQuery.panel === "cashflow") el = panelCashflow();
     else if (lastQuery.panel === "proposals") el = panelProposals();
+    else if (lastQuery.panel === "needsyou") el = panelNeedsYou();
     if (el) pushPanel(el);
   }
 
@@ -2058,6 +2136,11 @@
     var btn = e.target.closest(".chip");
     if (!btn) return;
     ask(btn.getAttribute("data-q"));
+  });
+
+  // The glance "needs you" banner opens the blockers / decisions panel.
+  if (glanceEl) glanceEl.addEventListener("click", function (e) {
+    if (e.target.closest(".glance__needs")) { e.preventDefault(); ask("what needs me?"); }
   });
 
   presence.addEventListener("click", function () {
