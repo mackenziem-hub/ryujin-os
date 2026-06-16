@@ -121,18 +121,65 @@ async function loadEstimatorOS() {
   }
 }
 
-// ── Store 2: Ryujin-native custom_proposals (Supabase) ───────────────────────
+// ── Store 2: Ryujin-native proposals (Supabase) ──────────────────────────────
+// The real native proposal book lives in the `estimates` table (each row carries
+// a share_token + /proposal-client.html link), the SAME source the snapshot
+// nativeProposalStats() reads. An earlier cut read `custom_proposals`, which holds
+// a single legacy row, so the index under-counted native proposals 20-to-1. We now
+// read estimates (primary) and UNION the one legacy custom_proposals row so nothing
+// is lost; dedupe() collapses any overlap by customer + address. Filtered by the
+// session tenant for isolation (proven: the custom_proposals read on the same
+// tenant_id returns this tenant's rows). limit 300 = the whole book, not the
+// snapshot's recent-20 cap.
 async function loadNative(tenantId) {
   const out = [];
   if (!tenantId) return { rows: out };
+  let err = null;
+
+  // PRIMARY: estimates with a share_token (mirrors nativeProposalStats select).
+  // Test filter is name-only on purpose: the customers embed does not select
+  // email (matching the proven snapshot query), so adding it risks a column
+  // error that would regress native to zero. The name patterns catch test rows.
   try {
     const { data, error } = await supabaseAdmin
+      .from('estimates')
+      .select('estimate_number, share_token, status, proposal_mode, calculated_packages, created_at, updated_at, customer:customers(full_name, address, city)')
+      .eq('tenant_id', tenantId)
+      .neq('status', 'cancelled')
+      .order('updated_at', { ascending: false })
+      .limit(300);
+    if (error) err = 'native(estimates): ' + error.message;
+    for (const e of (data || [])) {
+      const cust = e.customer || {};
+      const name = cust.full_name || ('Proposal ' + (e.estimate_number || e.share_token));
+      if (isTestRecord(name)) continue;
+      const cp = e.calculated_packages || {};
+      const tier = cp.gold || cp.platinum || cp.diamond || null;
+      const fromPrice = tier ? (tier.total ?? tier.summary?.sellingPrice ?? null) : null;
+      const address = [cust.address, cust.city].filter(Boolean).join(', ');
+      out.push({
+        store: 'Ryujin-native',
+        customer: name,
+        address,
+        fromPrice: num(fromPrice) || null,
+        status: e.status || 'draft',
+        bucket: bucketFor(e.status),
+        lastUpdated: e.updated_at || e.created_at || null,
+        openUrl: e.share_token ? ('/proposal-client.html?share=' + encodeURIComponent(e.share_token)) : null,
+        ref: 'NP-' + (e.estimate_number || e.share_token),
+        _nameKey: norm(name), _addrKey: addrKey(address)
+      });
+    }
+  } catch (e) { err = 'native(estimates): ' + e.message; }
+
+  // UNION: keep the single legacy custom_proposals row (NP-330) so nothing is lost.
+  try {
+    const { data } = await supabaseAdmin
       .from('custom_proposals')
       .select('id, slug, customer_name, customer_email, address, total_incl_hst, status, issued_date, updated_at, tenant_id')
       .eq('tenant_id', tenantId)
       .order('issued_date', { ascending: false })
       .limit(300);
-    if (error) return { rows: out, error: 'native: ' + error.message };
     for (const p of (data || [])) {
       const name = p.customer_name || ('Proposal ' + (p.slug || p.id));
       if (isTestRecord(name, p.customer_email)) continue;
@@ -149,10 +196,9 @@ async function loadNative(tenantId) {
         _nameKey: norm(name), _addrKey: addrKey(p.address)
       });
     }
-    return { rows: out };
-  } catch (e) {
-    return { rows: out, error: 'native: ' + e.message };
-  }
+  } catch (e) { /* legacy custom_proposals optional */ }
+
+  return err ? { rows: out, error: err } : { rows: out };
 }
 
 // ── Store 3: GHL pipeline opportunities (+ contacts for address) ─────────────
