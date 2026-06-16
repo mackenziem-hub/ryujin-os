@@ -27,6 +27,7 @@ import { requireTenant } from '../lib/tenant.js';
 import { sendCAPIEvent } from '../lib/meta.js';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { notifyLeadEvent } from '../lib/leadNotify.js';
+import { buildLeadReplyDraft } from '../lib/leadReplyDraft.js';
 
 const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
 const LOCATION_ID = (process.env.GHL_LOCATION_ID || 'aHotOUdq9D8m3JPrRz9n').trim();
@@ -303,13 +304,29 @@ async function notifyOwner({ tenantId, contactId, source, name, email, phone, ad
     lines.push('');
   }
 
+  // Pre-draft the customer first-touch reply in Mac's voice so it is ready the
+  // instant the lead lands (the speed-to-lead lever). DRAFT ONLY: this composes
+  // text, it never sends (Mac is sole sign-off). The SMS rides the inbox row's
+  // draft_reply, one tap to edit + send; the fuller email draft is shown in the
+  // alert body for the record. Pure + synchronous, so it adds no latency.
+  const reply = buildLeadReplyDraft({
+    name: safeName, address: safeAddress, city: safeCity, estimator: est, deduped,
+  });
+  lines.push('Drafted first reply (ready in the inbox, nothing sends on its own):');
+  lines.push('  SMS:');
+  lines.push('    ' + reply.sms);
+  lines.push('  Email:');
+  lines.push('    Subject: ' + reply.email.subject);
+  reply.email.body.split('\n').forEach((l) => lines.push('    ' + l));
+  lines.push('');
+
   lines.push(`GHL contact: ${ghlUrl}`);
   lines.push('');
   lines.push('Ryujin OS');
 
   // Route through the unified spine: same email content, plus a durable
   // inbox_items ping so the lead lands on /inbox.html and rides the SMS
-  // digest. No direct SMS for a new lead (sms:false). Dedup on the GHL
+  // digest. No direct owner SMS for a new lead (sms:false). Dedup on the GHL
   // contact id so a retried POST for the same contact collapses to one ping.
   return notifyLeadEvent({
     tenantId,
@@ -323,6 +340,9 @@ async function notifyOwner({ tenantId, contactId, source, name, email, phone, ad
     // request is a DISTINCT notification, not deduped against the same contact's
     // original new-lead ping (the IE proposal lane re-POSTs the same contact).
     dedupeKey: (contactId || safeEmail || safePhone || subjectName) + (md.wants_proposal ? ':proposal' : ''),
+    // The SMS first-touch lands in the inbox row's draft_reply (one tap to edit
+    // + send). NEVER auto-sent. This is the speed-to-lead piece.
+    draftReply: reply.sms,
     sms: false,
   });
 }
