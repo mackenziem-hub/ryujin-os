@@ -226,7 +226,10 @@
     if (evt.text) { answerAcc += evt.text; presenceSay(answerAcc.trim()); }
     if (evt.tool_start) { addStep(evt.tool_start.id, evt.tool_start.label); nudgeCursor(); }
     if (evt.tool_end) {
-      if (evt.tool_end.status === "pending_approval" || evt.tool_end.code) {
+      // Only a genuine hold pauses the drive. chat.js also echoes `code` on the
+      // executed/ok path (e.g. approve_action success), so gate on status alone -
+      // keying on code would mislabel a sent action as "held, nothing sent".
+      if (evt.tool_end.status === "pending_approval") {
         pendingApproval = { code: evt.tool_end.code || null, label: lastStepLabel() };
         markStep(evt.tool_end.id, "pending_approval");
       } else {
@@ -286,13 +289,16 @@
     var raw;
     try { raw = sessionStorage.getItem(RESUME_KEY); } catch (e) { return; }
     if (!raw) return;
-    try { sessionStorage.removeItem(RESUME_KEY); } catch (e) {}
+    var clear = function () { try { sessionStorage.removeItem(RESUME_KEY); } catch (e) {} };
     var data;
-    try { data = JSON.parse(raw); } catch (e) { return; }
-    if (!data || (Date.now() - (data.ts || 0)) > RESUME_TTL) return;
+    try { data = JSON.parse(raw); } catch (e) { clear(); return; }
+    if (!data || (Date.now() - (data.ts || 0)) > RESUME_TTL) { clear(); return; }
     var here = location.pathname.replace(/\.html$/, "");
     var want = (data.url || "").split("?")[0].split("#")[0].replace(/\.html$/, "");
+    // Path mismatch: leave the payload for the real destination (TTL bounds staleness),
+    // so an intermediate redirect does not eat the landing.
     if (here !== want) return;
+    clear();
 
     build();
     setState("landing");
