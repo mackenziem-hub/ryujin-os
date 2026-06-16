@@ -908,6 +908,49 @@
     .bubble { transition: opacity 0.18s linear; }
     .space { transition: none; }
   }
+
+  /* ============================================================
+     GLANCE - the resting monitor. The shell at rest IS a live
+     dashboard, not a blank prompt. Fades when you ask.
+     ============================================================ */
+  .glance {
+    position: fixed; left: 50%; top: 12.5vh; transform: translateX(-50%);
+    z-index: var(--z-presence);
+    width: min(700px, 92vw);
+    display: flex; flex-direction: column; gap: 13px;
+    transition: opacity 0.5s var(--ease-soft), transform 0.5s var(--ease-out);
+  }
+  body.has-spoken .glance { opacity: 0; transform: translate(-50%, -10px); pointer-events: none; }
+  .glance__head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 0 2px; }
+  .glance__title { font-size: 0.72rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-faint); }
+  .glance__sub { font-size: 0.72rem; color: var(--ink-faint); }
+  .glance__kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .gk { background: rgba(255,255,255,0.035); border: 1px solid var(--glass-edge); border-radius: 13px; padding: 11px 13px; backdrop-filter: blur(10px); }
+  .gk .v { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-weight: 600; font-size: 1.12rem; color: var(--ink-soft); letter-spacing: -0.01em; }
+  .gk .l { font-size: 0.64rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-faint); margin-top: 4px; }
+  .gk.alarm .v { color: #ff6b76; }
+  .gk.good .v { color: var(--accent); }
+  .glance__pile { background: rgba(255,255,255,0.035); border: 1px solid var(--glass-edge); border-radius: 13px; overflow: hidden; backdrop-filter: blur(10px); }
+  .gp { display: flex; align-items: center; gap: 11px; padding: 10px 14px; border-top: 1px solid var(--glass-edge); transition: background 0.15s; color: inherit; text-decoration: none; }
+  .gp:first-child { border-top: none; }
+  .gp:hover { background: rgba(255,255,255,0.05); }
+  .gp__name { flex: 1; font-size: 0.9rem; color: var(--ink-soft); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gp__sub { color: var(--ink-faint); font-size: 0.78rem; }
+  .gp__amt { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 0.85rem; color: var(--ink); }
+  .gp__open { font-size: 0.68rem; letter-spacing: 0.04em; color: var(--accent-soft); border: 1px solid var(--glass-edge); border-radius: 7px; padding: 3px 9px; }
+  .glance__hint { text-align: center; font-size: 0.78rem; color: var(--ink-faint); margin-top: 1px; }
+  /* HOME - return from a conversation back to the resting monitor */
+  .home-btn {
+    position: fixed; top: 21px; left: 50%; transform: translateX(-50%);
+    z-index: 61; display: none; align-items: center; gap: 7px;
+    font-size: 0.72rem; letter-spacing: 0.04em; color: var(--ink-mute);
+    background: rgba(255,255,255,0.04); border: 1px solid var(--glass-edge);
+    border-radius: 999px; padding: 6px 13px; cursor: pointer; backdrop-filter: blur(8px);
+    transition: opacity 0.3s, background 0.15s;
+  }
+  body.has-spoken .home-btn { display: inline-flex; }
+  .home-btn:hover { background: rgba(255,255,255,0.10); color: var(--ink-soft); }
+  @media (max-width: 560px) { .glance { top: 9vh; width: 94vw; } .glance__kpis { grid-template-columns: repeat(2, 1fr); } }
 </style>
 </head>
 <body>
@@ -933,6 +976,10 @@
 
   <p class="seed-hint" id="seedHint">Ask anything. I answer, then open exactly what you need.</p>
 
+  <!-- THE GLANCE - the resting live monitor -->
+  <div class="glance" id="glance" aria-label="Live monitor"></div>
+  <button class="home-btn" id="homeBtn" type="button" aria-label="Back to the monitor">&#8962; Monitor</button>
+
   <!-- THE BUBBLE (terse answer, tethered) -->
   <div class="bubble" id="bubble" role="status" aria-live="polite">
     <p class="bubble__answer" id="answer"></p>
@@ -952,6 +999,7 @@
   <!-- THE ASK -->
   <div class="ask" id="ask">
     <div class="chips" id="chips">
+      <button class="chip" data-q="my proposals">My proposals</button>
       <button class="chip" data-q="how are sales?">How are sales?</button>
       <button class="chip" data-q="who should I follow up with?">Who should I follow up with?</button>
       <button class="chip" data-q="ad spend?">Ad spend?</button>
@@ -984,6 +1032,8 @@
   var askInput = document.getElementById("askInput");
   var chips = document.getElementById("chips");
   var freshnessEl = document.getElementById("freshness");
+  var glanceEl = document.getElementById("glance");
+  var homeBtn = document.getElementById("homeBtn");
 
   var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -1055,8 +1105,12 @@
       answer: 'Collected <span class="num">$12,235</span> in 30 days. <span class="num">$29,160</span> out, deposit-paid WIP.',
       panel: "cashflow"
     },
+    proposals: {
+      answer: '<span class="num">13</span> live proposals, <span class="num">~$80k</span> in the close pile. Catherine Ablak first.',
+      panel: "proposals"
+    },
     fallback: {
-      answer: 'I can pull sales, your follow-ups, ad spend, your day, or cashflow. Try one of the prompts.',
+      answer: 'I can pull your proposals, sales, follow-ups, ad spend, your day, or cashflow. Try one of the prompts.',
       panel: null
     }
   };
@@ -1108,7 +1162,8 @@
     cashflow: {
       collected30: "$12,235", collected90: "$155,918", collected7: "$0",
       outstanding: "$29,160", signedBacklog: "$106,809", signedBacklogCount: "6"
-    }
+    },
+    proposals: { all: [], drafts: [], closePile: [], draftValue: "", draftCount: "0" }
   };
 
   /* ---------------------------------------------------------
@@ -1196,6 +1251,35 @@
       if (cf.last90Days.totalOutstanding != null) LIVE.cashflow.outstanding = money(cf.last90Days.totalOutstanding) || LIVE.cashflow.outstanding;
     }
     if (cf.last7Days && cf.last7Days.collected != null) LIVE.cashflow.collected7 = money(cf.last7Days.collected) || LIVE.cashflow.collected7;
+
+    // ---- PROPOSALS (the desk: native estimates w/ share links) ----
+    var np = sec.nativeProposals || {};
+    if (Array.isArray(np.proposals) && np.proposals.length) {
+      var byNum = {};
+      np.proposals.forEach(function (p) {
+        if (p == null || p.number == null) return;
+        if (!byNum[p.number] || String(p.updatedAt || "") > String(byNum[p.number].updatedAt || "")) byNum[p.number] = p;
+      });
+      var rows = Object.keys(byNum).map(function (k) { return byNum[k]; })
+        .sort(function (a, b) { return String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")); });
+      LIVE.proposals.all = rows.map(function (p) {
+        return {
+          number: p.number,
+          customer: p.customer || "Customer",
+          address: p.address || "",
+          price: (typeof p.fromPrice === "number" && p.fromPrice > 0) ? money(p.fromPrice) : "",
+          priceNum: (typeof p.fromPrice === "number") ? p.fromPrice : 0,
+          status: p.status || "draft",
+          mode: p.mode || "",
+          share: p.shareToken || ("plus-ultra-" + p.number)
+        };
+      });
+      LIVE.proposals.drafts = LIVE.proposals.all.filter(function (p) { return p.status === "draft"; });
+      LIVE.proposals.closePile = LIVE.proposals.drafts.slice(0, 6);
+      LIVE.proposals.draftCount = String(LIVE.proposals.drafts.length);
+      var dv = LIVE.proposals.drafts.reduce(function (a, p) { return a + (p.priceNum || 0); }, 0);
+      LIVE.proposals.draftValue = money(dv) || "";
+    }
   }
 
   function applyCrm(crm) {
@@ -1245,6 +1329,14 @@
 
     KB.cashflow.answer = 'Collected <span class="num">' + esc(c.collected30) + '</span> in 30 days. '
       + '<span class="num">' + esc(c.outstanding) + '</span> out, deposit-paid WIP.';
+
+    var pr = LIVE.proposals;
+    if (pr && pr.drafts && pr.drafts.length) {
+      var topP = pr.closePile[0];
+      KB.proposals.answer = '<span class="num">' + esc(pr.draftCount) + '</span> live proposals, '
+        + '<span class="num">' + esc(pr.draftValue || "") + '</span> on the desk'
+        + (topP ? '. ' + esc(firstName(topP.customer)) + ' first.' : '.');
+    }
   }
 
   function loadLive() {
@@ -1269,6 +1361,7 @@
       var ok = res[0] || res[1];
       if (ok) stampNow(res[0] && res[1] ? "" : "partial");
       else setFreshness("Live · fallback data");
+      renderGlance();
     });
   }
 
@@ -1281,6 +1374,49 @@
   }
 
   /* ---------------------------------------------------------
+     THE GLANCE - render the resting live monitor from LIVE.
+     --------------------------------------------------------- */
+  function renderGlance() {
+    if (!glanceEl) return;
+    var s = LIVE.sales, pr = LIVE.proposals;
+    var html = ''
+      + '<div class="glance__head"><span class="glance__title">What’s going on</span>'
+      + '<span class="glance__sub">' + esc(freshnessEl ? freshnessEl.textContent : "Live") + '</span></div>'
+      + '<div class="glance__kpis">'
+      +   '<div class="gk"><div class="v">' + esc(s.signedMtd) + '</div><div class="l">Signed, June</div></div>'
+      +   '<div class="gk"><div class="v">' + esc(s.proposalsOut) + '</div><div class="l">Proposals out</div></div>'
+      +   '<div class="gk good"><div class="v">' + esc(pr.draftValue || s.proposalsOut) + '</div><div class="l">On the desk</div></div>'
+      +   '<div class="gk"><div class="v">' + esc(s.collected30 || "$0") + '</div><div class="l">Collected 30d</div></div>'
+      + '</div>';
+    var pile = (pr && pr.closePile && pr.closePile.length) ? pr.closePile.slice(0, 4) : [];
+    if (pile.length) {
+      html += '<div class="glance__pile">';
+      pile.forEach(function (p) {
+        var addr = String(p.address || "").split(",")[0];
+        html += '<a class="gp" href="/proposal-client.html?share=' + encodeURIComponent(p.share) + '" target="_blank" rel="noopener">'
+          + '<span class="gp__name">' + esc(p.customer) + (addr ? ' <span class="gp__sub">' + esc(addr) + '</span>' : '') + '</span>'
+          + '<span class="gp__amt">' + (p.price ? esc(p.price) : "—") + '</span>'
+          + '<span class="gp__open">Open</span>'
+          + '</a>';
+      });
+      html += '</div>';
+    }
+    html += '<div class="glance__hint">'
+      + (pr.draftCount && pr.draftCount !== "0" ? esc(pr.draftCount) + ' live proposals · ' : '')
+      + 'ask me anything below, or tap a proposal.</div>';
+    glanceEl.innerHTML = html;
+  }
+
+  /* return from a conversation back to the resting monitor */
+  function goHome() {
+    closeAll();
+    body.classList.remove("has-spoken", "is-speaking", "is-thinking");
+    if (bubble) bubble.classList.remove("show");
+    lastQuery = null;
+    renderGlance();
+  }
+
+  /* ---------------------------------------------------------
      ROUTING - keyword chips/typed prompts map to the 5 fast local
      flows. Anything else falls through to the live AI (chat SSE).
      --------------------------------------------------------- */
@@ -1290,7 +1426,8 @@
     if (/(ad|spend|cpl|campaign|meta|google ads)/.test(s)) return KB.ads;
     if (/(cashflow|cash flow|collect|outstanding|owed|ar\b|receivable)/.test(s)) return KB.cashflow;
     if (/(my day|today|priorit|task|overdue|schedule|jobs)/.test(s)) return KB.day;
-    if (/(sale|signed|revenue|month|pipeline|proposal|backlog|ytd)/.test(s)) return KB.sales;
+    if (/(propos|my desk|on my desk|close pile|quotes out|send a quote|quote sent|estimate)/.test(s)) return KB.proposals;
+    if (/(sale|signed|revenue|month|pipeline|backlog|ytd)/.test(s)) return KB.sales;
     return null; // no local match -> ask the live AI
   }
 
@@ -1374,6 +1511,46 @@
           '<div class="meta-cell"><div class="k">Collected, 90 days</div><div class="v mono">' + esc(s.collected90) + '</div></div>' +
         '</div>' +
         '<p class="section-h">Top follow-ups · drill into any one</p>' +
+        rowsHtml
+    });
+  }
+
+  /* ---- PROPOSALS panel (depth 0) - the desk, each opens the client page ---- */
+  function panelProposals() {
+    var pr = LIVE.proposals;
+    var rows = (pr && pr.drafts && pr.drafts.length) ? pr.drafts : [];
+    var rowsHtml = '<div class="rows">';
+    if (!rows.length) {
+      rowsHtml += '<p class="lede">No draft proposals on the desk right now.</p>';
+    } else {
+      rows.forEach(function (r) {
+        var sub = esc(r.address || r.mode || "Roof Only") + ' · #' + esc(String(r.number));
+        var amt = r.price ? esc(r.price) : 'price pending';
+        rowsHtml +=
+          '<a class="row is-drillable" href="/proposal-client.html?share=' + encodeURIComponent(r.share) + '" target="_blank" rel="noopener">' +
+            '<div class="row__main">' +
+              '<div class="row__name">' + esc(r.customer) + '</div>' +
+              '<div class="row__sub"><span class="pip">' + sub + '</span></div>' +
+            '</div>' +
+            '<div class="row__val"><div class="row__amt mono">' + amt + '</div></div>' +
+            chev() +
+          '</a>';
+      });
+    }
+    rowsHtml += '</div>';
+
+    return makePanel({
+      kicker: "Sales · proposals",
+      title: "On your desk",
+      crumbs: [{ label: "Proposals" }],
+      body:
+        '<div class="figure-row">' +
+          '<div class="figure"><span class="figure__val accent mono">' + esc(pr.draftCount || String(rows.length)) + '</span><span class="figure__lbl">Live proposals</span></div>' +
+          '<div class="figure"><span class="figure__val mono">' + esc(pr.draftValue || "n/a") + '</span><span class="figure__lbl">Draft value</span></div>' +
+          '<div class="figure"><span class="figure__val mono">' + esc(LIVE.sales.proposalsOut) + '</span><span class="figure__lbl">Out · ' + esc(LIVE.sales.proposalsOutCount) + '</span></div>' +
+        '</div>' +
+        '<p class="lede">Your active desk. Tap any one to open the client proposal page in a new tab.</p>' +
+        '<p class="section-h">Drafts · newest first</p>' +
         rowsHtml
     });
   }
@@ -1686,6 +1863,7 @@
     else if (lastQuery.panel === "ads") el = panelAds();
     else if (lastQuery.panel === "day") el = panelDay();
     else if (lastQuery.panel === "cashflow") el = panelCashflow();
+    else if (lastQuery.panel === "proposals") el = panelProposals();
     if (el) pushPanel(el);
   }
 
@@ -1942,6 +2120,7 @@
       if (stack.length) { popPanel(); if (!stack.length) body.classList.remove("is-docked"); }
       else if (body.classList.contains("is-docked")) { body.classList.remove("is-docked"); }
       else if (bubble.classList.contains("show")) { bubble.classList.remove("show"); body.classList.remove("is-speaking"); }
+      else if (body.classList.contains("has-spoken")) { goHome(); }
     }
     // "/" focuses the ask line, like a real operator instrument
     if (e.key === "/" && document.activeElement !== askInput) {
@@ -1960,10 +2139,15 @@
   });
   undockObserver.observe(body, { attributes: true, attributeFilter: ["class"] });
 
+  if (homeBtn) homeBtn.addEventListener("click", goHome);
+
   /* ---------------------------------------------------------
-     BOOT - pull live data once on load (read-only).
+     BOOT - render the resting monitor, pull live data, then keep
+     it fresh every 60s (read-only).
      --------------------------------------------------------- */
+  renderGlance();
   loadLive();
+  setInterval(loadLive, 60000);
 
 })();
 </script>
