@@ -665,10 +665,12 @@ async function buildFreshSnapshot() {
     'watchdog', 'heartbeat', 'tokenRefresh',
     'cashflow',
     // Same bug pattern as 2026-04-11 (watchdog wipe) - daily.js writes
-    // sections.agentReports.{daily,weekly}; without preservation the
+    // sections.agentReports (daily Z-fighters); without preservation the
     // hourly rebuild silently drops them and the morning briefing has
-    // no anime-agent context to pull from.
-    'agentReports', 'metaConfigAudit', 'tokenWarning',
+    // no anime-agent context to pull from. weekly.js (Trunks/Bulma) writes
+    // its OWN disjoint key agentReportsWeekly so daily's daily run cannot
+    // clobber it (shared-key clobber fix 2026-06-16).
+    'agentReports', 'agentReportsWeekly', 'metaConfigAudit', 'tokenWarning',
     // Inbox agent (migration 078) - every-20-min cron writes sections.inbox
     // with needsReview/notified/scanned counts + lastRun. Same wipe risk as
     // the others if omitted here.

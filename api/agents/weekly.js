@@ -35,19 +35,22 @@ export default async function handler(req, res) {
   console.log(`[Z Fighter Weekly] Complete in ${duration}ms — ${recommendations.length} recommendations`);
 
   // Persist reports to snapshot so audits can confirm each agent ran.
+  // OWN top-level key (NOT agentReports.weekly): the snapshot POST handler does a
+  // shallow per-section overwrite, and daily.js already owns agentReports. Sharing
+  // that key meant daily's 10:04 run wiped this weekly bucket within the hour every
+  // Monday (Trunks/Bulma output vanished). Disjoint keys is the documented rule in
+  // api/snapshot.js. agentReportsWeekly must be in that file's preserveKeys.
   try {
     await fetch(`${BASE_URL}/api/snapshot`, {
       method: 'POST',
       headers: snapshotHeaders(),
       body: JSON.stringify({
-        agentReports: {
-          weekly: {
-            lastRun: new Date().toISOString(),
-            durationMs: duration,
-            trunks,
-            bulma,
-            recommendations
-          }
+        agentReportsWeekly: {
+          lastRun: new Date().toISOString(),
+          durationMs: duration,
+          trunks,
+          bulma,
+          recommendations
         }
       })
     });
