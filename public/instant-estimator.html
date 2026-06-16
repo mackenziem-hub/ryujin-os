@@ -499,6 +499,8 @@ h1,h2,h3{font-family:'Montserrat',sans-serif;letter-spacing:-0.02em;text-wrap:ba
 .actions-head{text-align:center;font-family:'Montserrat',sans-serif;font-weight:800;font-size:0.78em;letter-spacing:1.8px;text-transform:uppercase;color:var(--ink-soft);margin:30px 0 4px}
 .actions-head .ah-sub{display:block;font-family:'Inter',sans-serif;font-weight:600;font-size:0.86em;letter-spacing:0;text-transform:none;color:var(--ink-mute);margin-top:4px}
 .cta-block.lane-book{margin-top:14px}
+.btn-book-toggle{width:100%;background:#fff;color:var(--pu-navy);border:1.5px solid var(--pu-navy);border-radius:12px;padding:15px;font-family:inherit;font-weight:800;font-size:0.98em;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:all 0.16s var(--ease)}
+.btn-book-toggle:hover{background:var(--pu-navy);color:#fff}
 
 .proposal-lane{margin:16px 0 4px;background:#fffdf7;border:1px solid var(--line);border-radius:18px;padding:24px 20px;text-align:center}
 .proposal-lane .pl-icon{width:48px;height:48px;border-radius:50%;background:var(--pu-navy);display:flex;align-items:center;justify-content:center;margin:0 auto 13px}
@@ -919,14 +921,17 @@ h1,h2,h3{font-family:'Montserrat',sans-serif;letter-spacing:-0.02em;text-wrap:ba
         <div class="pl-note" id="plNote">Personally prepared, usually within one business day.</div>
       </div>
 
-      <!-- LANE 2 · book an inspection (secondary) -->
+      <!-- LANE 2 · book an inspection (secondary, collapsed: calendar lazy-loads on tap) -->
       <div class="cta-block lane-book" id="bookCalendar">
         <h3>Book an Inspection</h3>
         <p>Prefer a visit first? Pick a time this week and we confirm by text.</p>
-        <div class="cal-embed">
-          <iframe src="https://link.automator.ai/widget/bookings/inspection-and-service-booking" title="Book your free 20-minute roof inspection" scrolling="no" style="width:100%;min-height:720px;border:none;overflow:hidden;background:#fff" id="ie_booking_widget"></iframe>
+        <button class="btn-book-toggle" id="btnBookToggle" type="button" aria-expanded="false" aria-controls="calWrap">Book an Inspection <span class="arrow">→</span></button>
+        <div id="calWrap" style="display:none">
+          <div class="cal-embed">
+            <iframe data-src="https://link.automator.ai/widget/bookings/inspection-and-service-booking" title="Book your free 20-minute roof inspection" scrolling="no" style="width:100%;min-height:720px;border:none;overflow:hidden;background:#fff" id="ie_booking_widget"></iframe>
+          </div>
+          <div class="cal-fallback">Calendar not loading? <a href="https://link.automator.ai/widget/bookings/inspection-and-service-booking" target="_blank" rel="noopener">Open the booking page</a> or call <a href="tel:+15066164607">(506) 616-4607</a>.</div>
         </div>
-        <div class="cal-fallback">Calendar not loading? <a href="https://link.automator.ai/widget/bookings/inspection-and-service-booking" target="_blank" rel="noopener">Open the booking page</a> or call <a href="tel:+15066164607">(506) 616-4607</a>.</div>
       </div>
       </div><!-- /#postLock -->
 
@@ -1253,7 +1258,9 @@ h1,h2,h3{font-family:'Montserrat',sans-serif;letter-spacing:-0.02em;text-wrap:ba
     const key = (address + '|' + city).toLowerCase().replace(/\s+/g, ' ').trim();
     if (lookupCache.has(key)) return lookupCache.get(key);
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 7000);
+    // 4.5s cap: long enough for a normal Solar hit, short enough that a weak-LTE
+    // homeowner falls through to the manual questions before bouncing.
+    const t = setTimeout(() => ctrl.abort(), 4500);
     try {
       const r = await fetch(API_ORIGIN + '/api/roof-lookup', {
         method:'POST',
@@ -1974,6 +1981,23 @@ h1,h2,h3{font-family:'Montserrat',sans-serif;letter-spacing:-0.02em;text-wrap:ba
           '<h3>On its way, ' + first + '</h3>' +
           '<p>Mackenzie will build your full quote, add a short personal video, and text it to you, usually within one business day.</p>';
       }
+    });
+  })();
+
+  // Book-an-inspection is collapsed by default. The 720px third-party calendar
+  // iframe loads only when the homeowner taps to book, so the quote-first result
+  // screen never carries a giant white box or a third-party load it may not use.
+  (function(){
+    const btn = document.getElementById('btnBookToggle');
+    const wrap = document.getElementById('calWrap');
+    const frame = document.getElementById('ie_booking_widget');
+    if (!btn || !wrap || !frame) return;
+    btn.addEventListener('click', () => {
+      if (!frame.src && frame.dataset.src) frame.src = frame.dataset.src;
+      wrap.style.display = '';
+      btn.setAttribute('aria-expanded', 'true');
+      btn.style.display = 'none';
+      if (wrap.scrollIntoView) wrap.scrollIntoView({ behavior:'smooth', block:'start' });
     });
   })();
 
