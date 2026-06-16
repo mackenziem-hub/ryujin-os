@@ -261,6 +261,132 @@ function enrichContact(c, includeNotes = false) {
   return base;
 }
 
+// ── Proposal-build data join (CRM warm-close unblock, ord-20260616-1402-D) ────
+// The CRM card needs the two inputs a proposal is built from: roof measurements
+// and the prior proposal numbers. Estimator OS holds both for digitized jobs;
+// the Instant Estimator holds a measurement plus an auto-estimate for web leads.
+// Matched to the GHL contact by email, then phone, then address, then name.
+// Fail-open: a source that is down just yields no match plus a data gap note,
+// never a hollow card pretending the data exists.
+const PROPOSAL_SOURCES = {
+  estimates: {
+    label: 'Estimator OS',
+    url: 'https://estimator-os.replit.app/api/estimates',
+    key: (process.env.ESTIMATOR_KEY || process.env.ESTIMATOR_OS_KEY || 'pu-estimator-2026').trim(),
+  },
+  leads: {
+    label: 'Instant Estimator',
+    url: 'https://plus-ultra-roof-estimator.replit.app/api/leads',
+    key: (process.env.INSTANT_EST_KEY || process.env.INSTANT_ESTIMATOR_KEY || 'pu-instantest-2026').trim(),
+  },
+};
+
+const digits10 = (p) => String(p || '').replace(/\D/g, '').slice(-10);
+const normAddr = (a) => String(a || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 24);
+
+async function fetchProposalSource(src) {
+  try {
+    const r = await fetch(src.url, { headers: { 'x-api-key': src.key } });
+    if (!r.ok) return null; // null = source unreachable (distinct from empty set)
+    const d = await r.json();
+    const arr = Array.isArray(d) ? d : (d.data || d.estimates || d.leads || []);
+    return Array.isArray(arr) ? arr : [];
+  } catch { return null; }
+}
+
+// Returns { roof, lastProposal, dataGaps } for a GHL contact. Nulls plus an
+// explicit gap note when a datum is genuinely not in a reachable source.
+async function joinProposalBuildData(contact) {
+  const email = String(contact.email || '').toLowerCase().trim();
+  const phone = digits10(contact.phone);
+  const name = String(contact.contactName || [contact.firstName, contact.lastName].filter(Boolean).join(' ')).toLowerCase().trim();
+  const addr = normAddr(contact.address1 || contact.address);
+  const gaps = [];
+  const num = (v) => (typeof v === 'number' && Number.isFinite(v)) ? v : null;
+
+  const [estimates, leads] = await Promise.all([
+    fetchProposalSource(PROPOSAL_SOURCES.estimates),
+    fetchProposalSource(PROPOSAL_SOURCES.leads),
+  ]);
+  if (estimates === null) gaps.push('Estimator OS was unreachable this request, so a digitized estimate could not be checked. Retry, or confirm the estimator-os API key.');
+  if (leads === null) gaps.push('Instant Estimator was unreachable this request, so a web auto-estimate could not be checked.');
+
+  const score = (cEmail, cPhone, cAddr, cName) => {
+    if (email && cEmail && String(cEmail).toLowerCase().trim() === email) return 4;
+    if (phone && cPhone && digits10(cPhone) === phone) return 3;
+    if (addr && cAddr && normAddr(cAddr) === addr) return 2;
+    if (name && cName && name.length > 4 && String(cName).toLowerCase().includes(name)) return 1;
+    return 0;
+  };
+
+  let est = null, estScore = 0;
+  for (const e of (estimates || [])) {
+    const c = e.customer || {};
+    const s = score(c.email, c.phone, c.address, c.fullName);
+    if (s > estScore) { estScore = s; est = e; }
+  }
+  let lead = null, leadScore = 0;
+  for (const l of (leads || [])) {
+    const c = l.customerInfo || {};
+    const s = score(c.email, c.phone, c.address, c.name);
+    if (s > leadScore) { leadScore = s; lead = l; }
+  }
+
+  let roof = null, lastProposal = null;
+  if (est) {
+    const rm = est.roofMeasurements || {};
+    const pricing = est.pricing || {};
+    const tier = est.selectedPackage || null;
+    const tierKey = tier ? String(tier).toLowerCase() : null;
+    // pricing[tier] is an object ({hardCost, multiplier, sellingPrice, ...}),
+    // so the customer-facing number is .sellingPrice, never the block itself.
+    const tierBlock = (tierKey && pricing[tierKey] && typeof pricing[tierKey] === 'object') ? pricing[tierKey] : null;
+    const tierSell = tierBlock ? num(tierBlock.sellingPrice) : null;
+    roof = {
+      squares: rm.roofAreaSq ?? null,
+      pitch: rm.roofPitch ?? null,
+      complexity: rm.complexity ?? null,
+      facets: { eavesLf: rm.eavesLf ?? null, rakesLf: rm.rakesLf ?? null, ridgeLf: rm.ridgeLf ?? null, valleysLf: rm.valleysLf ?? null, hipsLf: rm.hipsLf ?? null },
+      chimney: rm.chimneyType ?? null,
+      wasteFactor: rm.wasteFactor ?? null,
+      source: 'Estimator OS', sourceId: est.id, matchedBy: estScore,
+    };
+    lastProposal = {
+      tier,
+      total: num(est.finalAcceptedTotal) ?? tierSell ?? null,
+      status: est.proposalStatus || est.jobStatus || null,
+      date: est.publishedAt || est.updatedAt || est.createdAt || null,
+      url: est.proposalUrl || est.proposalPdfUrl || est.loomVideoUrl || null,
+      source: 'Estimator OS', sourceId: est.id,
+    };
+    if (estScore < 4) gaps.push('Estimator OS matched by ' + (estScore === 3 ? 'phone' : estScore === 2 ? 'address' : 'name') + ' not email, so confirm it is the same customer before quoting.');
+  } else if (lead) {
+    roof = {
+      squares: lead.roofSizeSq ?? null,
+      pitch: lead.pitch ?? null,
+      complexity: lead.complexity ?? null,
+      facets: null,
+      chimney: null,
+      source: 'Instant Estimator', sourceId: lead.id, matchedBy: leadScore,
+    };
+    lastProposal = {
+      tier: null,
+      total: num(lead.estimatedPrice),
+      status: lead.status || null,
+      date: lead.createdAt || null,
+      url: null,
+      source: 'Instant Estimator auto-estimate (web self-serve, not a sent proposal)', sourceId: lead.id,
+    };
+    gaps.push('Only an Instant Estimator auto-estimate matched, not a sent proposal. The actual sent-proposal tier and total, if one went out, may live in the contact notes or Automator.');
+  }
+
+  if (!roof && estimates !== null && leads !== null) {
+    gaps.push('No Estimator OS or Instant Estimator record matched this contact by email, phone, address, or name. Note: the Instant Estimator feed returns only its most recent ~50 leads (the Replit /api/leads endpoint ignores limit and email params), so an older web lead can exist but be out of reach until that endpoint gains a query. Otherwise the roof was likely measured offline via EagleView, or the proposal lives in Automator/Supabase. Pull an EagleView or read the contact notes.');
+  }
+
+  return { roof, lastProposal, dataGaps: gaps };
+}
+
 export default async function handler(req, res) {
   const allowed = ['GET', 'POST', 'PATCH', 'DELETE'];
   if (!allowed.includes(req.method)) {
@@ -821,11 +947,19 @@ export default async function handler(req, res) {
         lastOutreach: lastOutbound ? { channel: chan(lastOutbound.type), preview: String(lastOutbound.body || '').slice(0, 160), dateAdded: lastOutbound.dateAdded, ageDays: ageOf(lastOutbound.dateAdded) } : null
       };
 
+      // Join the proposal-build data (roof measurements + prior proposal) for
+      // this specific contact. The warm-close unblock (ord-20260616-1402-D):
+      // resolve a NAMED customer on demand, never a random sample.
+      const proposalBuild = await joinProposalBuildData(contactData).catch(() => ({ roof: null, lastProposal: null, dataGaps: ['Proposal-build data join failed this request.'] }));
+
       return res.json({
         mode: 'contact-detail',
         contact: detailContact,
         opportunities,
         context,
+        roof: proposalBuild.roof,
+        lastProposal: proposalBuild.lastProposal,
+        dataGaps: proposalBuild.dataGaps,
         conversation: {
           total: messages.length,
           messages
