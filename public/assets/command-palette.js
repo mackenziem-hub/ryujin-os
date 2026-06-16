@@ -31,6 +31,7 @@
         else go('/cockpit.html'); } }
   ];
   var NAV = [
+    { label: 'Ryujin', hint: 'AI shell', href: '/shell.html' },
     { label: 'Cockpit', hint: 'agent home', href: '/cockpit.html' },
     { label: 'Command Center', hint: '3D', href: '/command-center.html' },
     { label: 'Classic dashboard', hint: 'lite', href: '/classic.html' },
