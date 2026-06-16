@@ -44,6 +44,19 @@ export default async function handler(req, res) {
       if (d !== null && (d <= 3 || d === 7 || d === 14)) {
         await sendFallbackEmail(`META TOKEN expires in ${d} days`, `Generate a System User token in Meta Business Settings → System Users → (Shenron or Ryujin) → Generate Token, then update META_ACCESS_TOKEN in Vercel. System User tokens never expire.`);
       }
+    } else if (tokenStatus.valid) {
+      // Token is healthy again (14+ days to expiry). tokenWarning is sticky:
+      // it lives in snapshot preserveKeys and was only ever WRITTEN here, never
+      // cleared, so a recovered token left a frozen stale warning forever. That
+      // burned a false "ads went blind / token expired" alarm on 2026-06-15 (the
+      // Jun-11 warning predated Mac's Jun-12 regen but kept showing). Clear it on
+      // recovery so the snapshot self-heals. Guarded on .valid so a transient
+      // health-check error does not wipe a genuine pending warning.
+      await fetch(`${BASE_URL}/api/snapshot`, {
+        method: 'POST',
+        headers: snapshotHeaders(),
+        body: JSON.stringify({ tokenWarning: null })
+      });
     }
   } catch (e) {
     console.error(`[Z Fighter Daily] Token health check failed: ${e.message}`);
