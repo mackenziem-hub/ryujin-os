@@ -640,7 +640,10 @@ export default async function handler(req, res) {
       afterImage: afterPhoto?.url
         || (beforePhoto && cover && cover.id !== beforePhoto.id ? cover.url : null)
         || PU_DEFAULT_MEDIA.afterImage,
-      videoUrl: est.custom_prices?._video_visible === false ? null : resolveIntroVideo(rep, est.proposal_mode || 'shingle'),
+      // Per-job video wins (fallback-FIRST = zero regression): if a job-specific
+      // video is set on the estimate use it, else honor an explicit hide, else
+      // fall back to the rep intro video exactly as before.
+      videoUrl: est.custom_prices?._job_video_url || (est.custom_prices?._video_visible === false ? null : resolveIntroVideo(rep, est.proposal_mode || 'shingle')),
       // Commercial estimates show every inspection photo — no 8-photo cap.
       // For commercial, also skip the stock-gallery fallback (only show real on-site photos).
       gallery: (Array.isArray(est.tags) && est.tags.includes('commercial'))
