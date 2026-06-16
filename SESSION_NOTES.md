@@ -1,3 +1,22 @@
+# Session notes - 2026-06-16 - AI shell + "controlling computer" drive layer shipped as PR #495
+
+**What:** Built the AI shell front door + the real-OS-takeover drive layer, one branch (feat/ai-shell-controlling-computer), one PR #495, READY FOR DEPLOY. Mac merges + manual `vercel --prod` (auto-deploy still broken).
+
+**Key fact for future work:** the controlling-computer effect is a FRONTEND visualization of SSE events `api/chat.js` ALREADY emits - `tool_start {label}`, `navigate {url}` (catalog-validated path), `tool_end`, `pending_approval`. Do not rebuild this server-side. See `assets/ryujin-drive.js`.
+
+**Shipped:**
+- `assets/ryujin-shell-tokens.css` (new) = the canonical compare design bar; `assets/ryujin-telltale.css` reconciled to it (Orbitron + Share Tech Mono dropped for Inter + JetBrains Mono).
+- `public/shell.html` (new, from #488) = owner/admin front door; registered in lib/pageCatalog.js + assets/page-catalog.js + command-palette; login.html repointed.
+- `assets/ryujin-drive.js` + `.css` (new) = the drive overlay, mounted fleet-wide by `assets/auth-guard.js` (one injector block). `.rjd-*` classes, sessionStorage resume across real nav, fail-soft, firm-wall pause on pending_approval. Landmarks (`data-ryujin-landmark`) on crm/ad-activity/finance/sales-pipeline.
+- Repaint (partial): teal to blue on cockpit, admin-pipeline, annotate, builder-room ONLY.
+
+**Gotchas / decisions:**
+- Blind fleet color-swap is UNSAFE: admin.html uses teal as a categorical tile color; command-center's real accent is cyan #22d3ee not teal. Gate repaint by auth-guard inclusion + singular-brand-accent only. Rest deferred to a browser-verified pass.
+- Firm-wall approval detection must gate on `tool_end.status === "pending_approval"` ONLY - chat.js echoes `code` on the executed/ok path too.
+- node --check clean (incl. shell 999-line inline). Firm-wall grep: shell + drive only call GET snapshot / GET crm-proposals / POST chat. Self-review caught + fixed 3 issues. Codex skipped (quota gate down fleet-wide). NOT browser-tested live (static server cannot serve /api/chat) - post-deploy step.
+
+---
+
 # Session notes — 2026-05-24 evening — 4 in-house jobs staged + 3 hotfix PRs + paysheet hygiene cleared
 
 **What:** Mac walked the cockpit and surfaced the gap: pipeline data sat in GHL + Ryujin estimates + WORK_LOG but nothing turned "Mac says X signed" into a kanban card. Plus a 3-day photo-delete frustration. He delegated full execution ("you do everything, I'm handling installs") and I cleared 4 signed jobs end-to-end + shipped 3 hotfix PRs + cleared morning's stuck paysheets in one session.
