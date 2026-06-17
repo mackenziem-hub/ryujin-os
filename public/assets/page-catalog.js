@@ -17,7 +17,7 @@
   // lib/pageCatalog.js PAGES[].url, hash/query stripped.
   var PATHS = [
     '/shell.html',
-    '/cockpit.html', '/command-center.html', '/blockers.html', '/dashboard-v2.html', '/admin.html', '/media-index.html',
+    '/cockpit.html', '/command-center.html', '/blockers.html', '/builders-hall.html', '/dashboard-v2.html', '/admin.html', '/media-index.html',
     '/calendar.html', '/production-calendar.html', '/production-schedule.html',
     '/production-jobs.html', '/job.html', '/production-workorders.html',
     '/production-materials.html', '/production-paysheet.html', '/paysheet.html',
