@@ -211,6 +211,14 @@ async function loadNativeProposals(tenantId) {
   return out;
 }
 
+// 60s per-tenant cache of the full computed payload. This 3-store join takes
+// 15-22s and backs the shell front-door + crm.html, so repeat opens within the
+// TTL hit a warm serverless instance instead of re-paging GHL. Mirrors the
+// _idxCache pattern in api/proposals-index.js. Read-only review data, so a 60s
+// stale window is fine.
+const _crmCache = new Map();
+const CRM_TTL = 60000;
+
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed. GET only.' });
@@ -220,6 +228,12 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'sign_in_required', code: 'NO_SESSION' });
   }
   const tenantId = session.tenant_id || null;
+
+  const _ckey = tenantId || '__default';
+  const _cached = _crmCache.get(_ckey);
+  if (_cached && (Date.now() - _cached.at) < CRM_TTL) {
+    return res.json({ ..._cached.payload, cachedAgeMs: Date.now() - _cached.at });
+  }
 
   try {
     const [opps, contacts, maps, native, tasksData] = await Promise.all([
@@ -360,7 +374,7 @@ export default async function handler(req, res) {
     const customersOut = all.map(({ key, hasOpenTask, ...rest }) => rest)
       .sort((a, b) => (b.totalProposalValue || 0) - (a.totalProposalValue || 0));
 
-    return res.json({
+    const payload = {
       generatedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       counts: {
@@ -375,7 +389,9 @@ export default async function handler(req, res) {
         activity24h: customersOut.filter(c => c.activity24h).length
       },
       customers: customersOut
-    });
+    };
+    _crmCache.set(_ckey, { at: Date.now(), payload });
+    return res.json({ ...payload, cachedAgeMs: 0 });
   } catch (err) {
     return res.status(500).json({ error: err.message, timestamp: new Date().toISOString() });
   }
