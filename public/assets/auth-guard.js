@@ -177,4 +177,19 @@
       (document.head || document.documentElement).appendChild(pfScript);
     }
   } catch (e) { /* prefetch is non-critical */ }
+
+  // ── Fleet-wide global pillar nav ───────────────────────────────────
+  // The visible persistent "where am I / where can I go / how back" launcher
+  // (one small floating pill, collapsed by default) the audit found missing.
+  // Same operator-page-marker logic as the palette/badge/drive/prefetch; never
+  // on a client-facing page. Self-guards double-load. Non-critical: swallowed.
+  try {
+    if (!window.__ryujinGlobalNavInjected) {
+      window.__ryujinGlobalNavInjected = true;
+      var gnScript = document.createElement('script');
+      gnScript.src = '/assets/ryujin-globalnav.js';
+      gnScript.defer = true;
+      (document.head || document.documentElement).appendChild(gnScript);
+    }
+  } catch (e) { /* global nav is non-critical */ }
 })();
