@@ -44,11 +44,12 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
 .hero h1{font-family:'Orbitron',sans-serif;font-size:2em;font-weight:900;letter-spacing:-0.5px;background:linear-gradient(135deg,#fff 30%,#22d3ee);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
 .hero .sub{color:rgba(200,220,255,0.6);font-size:0.86em;margin-top:6px;max-width:680px;line-height:1.5}
 
-.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:18px}
+.stats{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:18px}
 .stat{padding:14px 18px;background:rgba(14,22,40,0.55);border:1px solid rgba(34,211,238,0.14);border-radius:12px}
 .stat .lbl{font-family:'Share Tech Mono',monospace;font-size:0.62em;color:rgba(200,220,255,0.5);letter-spacing:1.4px;text-transform:uppercase}
 .stat .val{font-family:'Orbitron',sans-serif;font-size:1.45em;font-weight:900;color:#22d3ee;margin-top:4px}
 .stat.warn .val{color:#facc15}
+.stale-pill{display:inline-block;margin-left:8px;padding:2px 7px;font-family:'Share Tech Mono',monospace;font-size:0.56em;font-weight:700;letter-spacing:0.8px;border-radius:5px;color:#facc15;background:rgba(250,204,21,0.12);border:1px solid rgba(250,204,21,0.4);vertical-align:middle}
 @media (max-width:760px){.stats{grid-template-columns:repeat(2,1fr)}}
 
 .controls{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
@@ -111,6 +112,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
     <div class="stat"><div class="lbl">Total (deduped)</div><div class="val" id="sTotal">-</div></div>
     <div class="stat warn"><div class="lbl">No-price stubs</div><div class="val" id="sNoPrice">-</div></div>
     <div class="stat"><div class="lbl">Pending value</div><div class="val" id="sValue">-</div></div>
+    <div class="stat warn"><div class="lbl">Stale 30d+ value</div><div class="val" id="sStale">-</div></div>
     <div class="stat"><div class="lbl">Stores</div><div class="val" id="sStores">-</div></div>
   </div>
 
@@ -131,6 +133,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
       <option value="GHL">GHL</option>
     </select>
     <select id="sortIn" onchange="applyFilter()">
+      <option value="followup">Follow-up queue (stale x value)</option>
       <option value="new">Newest first</option>
       <option value="value">Highest value</option>
       <option value="client">Customer A-Z</option>
@@ -205,6 +208,7 @@ function renderStats(){
   $('sNoPrice').textContent = c.noPrice != null ? c.noPrice : '-';
   const pval = (DATA.proposals||[]).filter(p => p.pending).reduce((s,p)=> s + (p.fromPrice||0), 0);
   $('sValue').textContent = pval ? money(pval) : '-';
+  $('sStale').textContent = c.staleValue ? money(c.staleValue) : (c.stale != null ? '0' : '-');
   const stores = c.byStore || {};
   $('sStores').textContent = Object.values(stores).filter(n=>n>0).length || '-';
 }
@@ -219,7 +223,8 @@ function applyFilter(){
   else if (bucket !== 'all') list = list.filter(p => p.bucket === bucket);
   if (store !== 'all') list = list.filter(p => (p.stores||[]).includes(store));
   if (q) list = list.filter(p => ((p.customer||'') + ' ' + (p.address||'')).toLowerCase().includes(q));
-  if (sort === 'value') list.sort((a,b)=> (b.fromPrice||0)-(a.fromPrice||0));
+  if (sort === 'followup') list.sort((a,b)=> (b.followUpScore||0)-(a.followUpScore||0));
+  else if (sort === 'value') list.sort((a,b)=> (b.fromPrice||0)-(a.fromPrice||0));
   else if (sort === 'client') list.sort((a,b)=> (a.customer||'').localeCompare(b.customer||''));
   else list.sort((a,b)=> String(b.lastUpdated||'').localeCompare(String(a.lastUpdated||'')));
   renderList(list);
@@ -232,7 +237,7 @@ function renderList(list){
   host.innerHTML = head + list.map(p => `
     <div class="row">
       <div>
-        <div class="client-name">${esc(p.customer)}</div>
+        <div class="client-name">${esc(p.customer)}${p.stale ? ' <span class="stale-pill">'+(p.daysSinceUpdate!=null?p.daysSinceUpdate+'d ':'')+'STALE</span>' : ''}</div>
         <div class="client-meta">${p.address ? esc(p.address) : 'no address on file'}</div>
       </div>
       <div>${p.noPrice ? '<span class="price none">NO PRICE</span>' : '<span class="price">'+money(p.fromPrice)+'</span>'}</div>
