@@ -699,6 +699,7 @@ h1,h2,h3{font-family:'Montserrat',sans-serif;letter-spacing:-0.02em;text-wrap:ba
             <input type="text" id="f_postal" placeholder="E1C 1A1" autocomplete="postal-code" />
           </div>
         </div>
+        <div class="error" id="formErr1"></div>
         <div class="step-actions">
           <span></span>
           <button class="btn" id="btnAddressNext">Continue <span class="arrow">→</span></button>
@@ -770,6 +771,7 @@ h1,h2,h3{font-family:'Montserrat',sans-serif;letter-spacing:-0.02em;text-wrap:ba
         <label>Or enter the exact square footage</label>
         <input type="number" id="f_sqft" min="500" max="20000" placeholder="e.g. 2,400" />
       </div>
+      <div class="error" id="formErr2"></div>
       <div class="step-actions">
         <button class="btn ghost" data-go="prev"><span class="arrow">←</span> Back</button>
         <button class="btn" data-go="next">Continue <span class="arrow">→</span></button>
@@ -847,6 +849,7 @@ h1,h2,h3{font-family:'Montserrat',sans-serif;letter-spacing:-0.02em;text-wrap:ba
           </button>
         </div>
       </div>
+      <div class="error" id="formErr3"></div>
       <div class="step-actions">
         <button class="btn ghost" data-go="prev"><span class="arrow">←</span> Back</button>
         <button class="btn gold lg" id="btnToResult">See my estimate <span class="arrow">→</span></button>
@@ -1436,21 +1439,25 @@ h1,h2,h3{font-family:'Montserrat',sans-serif;letter-spacing:-0.02em;text-wrap:ba
   }
 
   function validate(s){
-    const err = document.getElementById('formErr');
+    // Inline error in the current step (the markup carries formErr1/2/3), instead
+    // of a jarring browser alert(). Premium funnel, not a tech demo.
+    const err = document.getElementById('formErr' + s);
     if (err) { err.classList.remove('show'); err.textContent = ''; }
+    const fail = (msg) => {
+      if (err) { err.textContent = msg; err.classList.add('show'); }
+      else { alert(msg); }   // fallback only if the slot is somehow missing
+      return false;
+    };
     if (s === 1) {
-      if (!state.address || state.address.trim().length < 3) { alert('Please enter a street address.'); return false; }
-      if (!state.city || state.city.trim().length < 2) { alert('Please enter a city.'); return false; }
+      if (!state.address || state.address.trim().length < 3) return fail('Please enter a street address.');
+      if (!state.city || state.city.trim().length < 2) return fail('Please enter a city.');
     }
     if (s === 2) {
-      if (!state.sqft || state.sqft < 500 || state.sqft > 20000) {
-        alert('Pick a size or enter a square footage between 500 and 20,000.');
-        return false;
-      }
+      if (!state.sqft || state.sqft < 500 || state.sqft > 20000) return fail('Pick a size or enter a square footage between 500 and 20,000.');
     }
     if (s === 3) {
-      if (!state.pitch) { alert('Pick a roof pitch.'); return false; }
-      if (!state.complexity) { alert('Pick a complexity.'); return false; }
+      if (!state.pitch) return fail('Pick a roof pitch.');
+      if (!state.complexity) return fail('Pick a complexity.');
     }
     return true;
   }
@@ -1559,7 +1566,9 @@ h1,h2,h3{font-family:'Montserrat',sans-serif;letter-spacing:-0.02em;text-wrap:ba
       renderResult();
       showStep('result');
     } catch (ex) {
-      alert('We could not pull a quote right now. Please try again, or call us at (506) 616-4607.');
+      const err = document.getElementById('formErr3');
+      const msg = 'We could not pull a quote right now. Please try again, or call us at (506) 616-4607.';
+      if (err) { err.textContent = msg; err.classList.add('show'); } else { alert(msg); }
     } finally {
       btn.disabled = false;
       btn.innerHTML = originalHTML;
