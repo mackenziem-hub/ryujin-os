@@ -18,6 +18,8 @@
 import { resolveSession } from '../lib/portalAuth.js';
 import { ghlFetch } from '../lib/ghl.js';
 import { supabaseAdmin } from '../lib/supabase.js';
+import { getManualProposals } from '../lib/manualProposals.js';
+import { norm, num, addrKey, bucketFor, PENDING_BUCKETS, dedupe } from '../lib/proposalsDedupe.js';
 
 const LOCATION_ID = 'aHotOUdq9D8m3JPrRz9n';
 const ESTIMATOR_URL = 'https://estimator-os.replit.app/api/estimates';
@@ -33,30 +35,8 @@ function isTestRecord(name, email) {
   return false;
 }
 
-function norm(s) { return String(s || '').trim().toLowerCase().replace(/\s+/g, ' '); }
-
-// Normalize a street address for dedup: lowercase, collapse whitespace, drop
-// punctuation, and fold common street-type spellings (Drive/Dr, Street/St, ...)
-// so "125 Kelly Dr" and "125 Kelly Drive" collapse to the same key.
-const STREET_TYPES = [
-  [/\b(drive|dr)\b/g, 'dr'],
-  [/\b(street|st)\b/g, 'st'],
-  [/\b(avenue|ave|av)\b/g, 'ave'],
-  [/\b(road|rd)\b/g, 'rd'],
-  [/\b(court|crt|ct)\b/g, 'ct'],
-  [/\b(crescent|cres)\b/g, 'cres'],
-  [/\b(boulevard|blvd|blv)\b/g, 'blvd'],
-  [/\b(route|rte|rt)\b/g, 'rte'],
-  [/\b(lane|ln)\b/g, 'ln'],
-  [/\b(place|pl)\b/g, 'pl']
-];
-function addrKey(addr) {
-  let s = norm(addr).replace(/[.,#]/g, ' ').replace(/\s+/g, ' ').trim();
-  for (const [re, rep] of STREET_TYPES) s = s.replace(re, rep);
-  return s.replace(/\s+/g, ' ').trim();
-}
-
-function num(v) { const n = Number(v); return isFinite(n) && n > 0 ? n : 0; }
+// norm / num / addrKey live in lib/proposalsDedupe.js (pure, dependency-free,
+// unit-tested) and are imported above.
 
 // Lowest live "from" price across the Estimator OS package tiers. The pricing
 // object carries gold / platinum / diamond / economy each with a sellingPrice;
@@ -72,21 +52,7 @@ function estimatorFromPrice(e) {
   return lo || null;
 }
 
-// One normalized lifecycle bucket per row so the UI can default to "pending"
-// (everything still in front of Mac) and tuck closed / dead behind a toggle.
-// "accepted" stays pending on purpose: a signed proposal still awaiting work
-// (200 Lonsdale: signed, needs color + neighbor add-on) is exactly what Mac
-// asked to keep visible.
-function bucketFor(statusText) {
-  const s = norm(statusText);
-  if (/(lost|declined|rejected|cancelled|abandon|dnd|unresponsive|not a fit|junk|telemarketer|dead|expired|archived)/.test(s)) return 'dead';
-  if (/(complete|completed|paid|invoiced|in progress|in-progress|job in progress)/.test(s)) return 'closed';
-  if (/(accept|signed|deposit|contract signed|won)/.test(s)) return 'accepted';
-  if (/(published|sent|viewed|client responded|video sent|inspection completed)/.test(s)) return 'sent';
-  if (/(ready|proposal ready)/.test(s)) return 'ready';
-  return 'draft';
-}
-const PENDING_BUCKETS = new Set(['draft', 'ready', 'sent', 'accepted']);
+// bucketFor / PENDING_BUCKETS live in lib/proposalsDedupe.js and are imported above.
 
 // ── Store 1: Estimator OS (Replit) ──────────────────────────────────────────
 async function loadEstimatorOS() {
@@ -282,73 +248,35 @@ async function loadGHL() {
   }
 }
 
-// Merge rows that are the same physical proposal across stores into one entry.
-const BUCKET_RANK = { dead: 0, draft: 1, ready: 2, sent: 3, accepted: 4, closed: 5 };
-function mergeRows(group) {
-  const stores = [...new Set(group.map(r => r.store))];
-  let best = group[0];
-  for (const r of group) if ((BUCKET_RANK[r.bucket] ?? 1) > (BUCKET_RANK[best.bucket] ?? 1)) best = r;
-  const prices = group.map(r => num(r.fromPrice)).filter(Boolean);
-  const fromPrice = prices.length ? Math.max(...prices) : null;
-  const withLink = group.find(r => r.openUrl);
-  const withAddr = group.find(r => r.address);
-  const lastUpdated = group.map(r => r.lastUpdated).filter(Boolean).sort().slice(-1)[0] || null;
-  const pending = PENDING_BUCKETS.has(best.bucket);
-  // Follow-up signal: how long this pending quote has sat untouched, plus a
-  // value-weighted urgency score so the warm book can be worked highest-dollar
-  // x most-stale first. The default sort buries stale quotes (most-recent-first);
-  // ?sort=followup surfaces them. A pending quote 30+ days untouched is `stale`.
-  const daysSinceUpdate = lastUpdated
-    ? Math.max(0, Math.floor((Date.now() - new Date(lastUpdated).getTime()) / 86400000))
-    : null;
-  const stale = pending && daysSinceUpdate != null && daysSinceUpdate >= 30;
-  const followUpScore = pending ? Math.round((fromPrice || 0) * (daysSinceUpdate || 0)) : 0;
-  return {
-    customer: (withAddr || best).customer,
-    address: (withAddr || best).address || '',
-    fromPrice,
-    noPrice: !fromPrice,
-    status: best.status,
-    bucket: best.bucket,
-    pending,
-    lastUpdated,
-    daysSinceUpdate,
-    stale,
-    followUpScore,
-    stores,
-    openUrl: withLink ? withLink.openUrl : null,
-    sources: group.map(r => ({ store: r.store, ref: r.ref, status: r.status, fromPrice: r.fromPrice, openUrl: r.openUrl }))
-  };
+// ── Store 4: Manual entries (committed source) ───────────────────────────────
+// Signed deals that never landed in any of the three live stores in a reviewable
+// shape (200 Lonsdale: signed + complete, only a stuck native "sent" row + a
+// local PDF). Read from lib/manualProposals.js so a known deal renders in the
+// unified book. Each row carries _addrKey, so dedupe folds it onto the matching
+// store row and the manual "Signed" bucket wins the merge via BUCKET_RANK.
+function loadManual(tenantId) {
+  const out = [];
+  for (const m of getManualProposals(tenantId)) {
+    if (isTestRecord(m.customer)) continue;
+    out.push({
+      store: 'manual',
+      customer: m.customer || '(no name)',
+      address: m.address || '',
+      fromPrice: num(m.fromPrice) || null,
+      status: m.status || 'Signed',
+      bucket: bucketFor(m.status || 'signed'),
+      lastUpdated: m.lastUpdated || null,
+      openUrl: m.openUrl || null,
+      ref: m.ref || ('MAN-' + norm(m.address || m.customer)),
+      _nameKey: norm(m.customer), _addrKey: addrKey(m.address)
+    });
+  }
+  return { rows: out };
 }
 
-function dedupe(rows) {
-  const byName = new Map();
-  for (const r of rows) {
-    const k = r._nameKey || ('__' + r.store + (r.ref || ''));
-    if (!byName.has(k)) byName.set(k, []);
-    byName.get(k).push(r);
-  }
-  const out = [];
-  for (const group of byName.values()) {
-    const withAddr = group.filter(r => r._addrKey);
-    const noAddr = group.filter(r => !r._addrKey);
-    const addrGroups = new Map();
-    for (const r of withAddr) {
-      if (!addrGroups.has(r._addrKey)) addrGroups.set(r._addrKey, []);
-      addrGroups.get(r._addrKey).push(r);
-    }
-    // A no-address row (often a GHL opp or native proposal) folds into the only
-    // addressed deal for that customer; if the customer has multiple distinct
-    // addresses we cannot guess, so it stands on its own.
-    if (addrGroups.size === 1 && noAddr.length) {
-      [...addrGroups.values()][0].push(...noAddr);
-      noAddr.length = 0;
-    }
-    for (const g of addrGroups.values()) out.push(mergeRows(g));
-    for (const r of noAddr) out.push(mergeRows([r]));
-  }
-  return out;
-}
+// mergeRows / dedupe (ADDRESS-FIRST cross-store merge, including the PR #516
+// follow-up staleness fields) live in lib/proposalsDedupe.js and are imported
+// above.
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed. GET only.' });
@@ -358,8 +286,9 @@ export default async function handler(req, res) {
 
   try {
     const [est, native, ghl] = await Promise.all([loadEstimatorOS(), loadNative(tenantId), loadGHL()]);
-    const errors = [est.error, native.error, ghl.error].filter(Boolean);
-    const raw = [...est.rows, ...native.rows, ...ghl.rows];
+    const manual = loadManual(tenantId);
+    const errors = [est.error, native.error, ghl.error, manual.error].filter(Boolean);
+    const raw = [...est.rows, ...native.rows, ...ghl.rows, ...manual.rows];
     const merged = dedupe(raw);
 
     // Default sort: pending first, then most-recently-updated, then no-price
@@ -381,7 +310,7 @@ export default async function handler(req, res) {
       });
     }
 
-    const counts = { total: merged.length, pending: 0, byBucket: {}, byStore: { 'Estimator OS': est.rows.length, 'Ryujin-native': native.rows.length, 'GHL': ghl.rows.length }, noPrice: 0, stale: 0, staleValue: 0 };
+    const counts = { total: merged.length, pending: 0, byBucket: {}, byStore: { 'Estimator OS': est.rows.length, 'Ryujin-native': native.rows.length, 'GHL': ghl.rows.length, 'manual': manual.rows.length }, noPrice: 0, stale: 0, staleValue: 0 };
     for (const m of merged) {
       counts.byBucket[m.bucket] = (counts.byBucket[m.bucket] || 0) + 1;
       if (m.pending) counts.pending++;
