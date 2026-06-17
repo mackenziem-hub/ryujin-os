@@ -401,7 +401,9 @@ async function buildFreshSnapshot() {
       // Cat/dev test fires leak into the IE pipeline. Widening the source
       // whitelist above pulls them in, so filter the obvious tests back out
       // to keep the real lead count honest.
-      const TEST_NAME_RE = /^(tester|zz test|zz_test|test fire|test pixel|cat test|catherine test|test )/i;
+      // Word-boundary match: catches "Tester 20", "ZZ Test Pixel", "cowork test",
+      // "10cm test", "cat livetest ie" (the test word is not always leading).
+      const TEST_NAME_RE = /\b(test|tester|testing|livetest)\b/i;
       const isJunk = (c) => {
         const email = (c.email || '').toLowerCase();
         if (JUNK_EMAIL_PATTERNS.some(p => p.test(email))) return true;
