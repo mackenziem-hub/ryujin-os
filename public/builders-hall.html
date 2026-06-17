@@ -72,6 +72,33 @@ dialog.dock::backdrop{background:rgba(3,6,17,0.7);backdrop-filter:blur(5px);}
 @keyframes spin{to{transform:rotate(360deg);}}
 .shell-state.err{color:var(--no);}
 
+/* Overview band: the doctrine overview tier (NEEDS YOU + THE MACHINE) above the canvas */
+.hall-overview{max-width:1500px;margin:0 auto 14px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:12px;}
+@media (max-width:860px){.hall-overview{grid-template-columns:1fr;}}
+.ov-card{background:var(--glass);backdrop-filter:blur(var(--glass-blur));border:1px solid var(--line);border-radius:var(--radius);padding:13px 15px;}
+.ov-head{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+.ov-title{font-family:var(--font-display);font-size:0.74rem;font-weight:700;letter-spacing:1.6px;text-transform:uppercase;color:var(--ink-mid);}
+.ov-count{font-family:var(--font-mono);font-weight:800;font-size:0.9rem;min-width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;background:var(--warn);color:#1a1300;}
+.ov-needs.clear .ov-count{background:var(--ok);color:#04130b;}
+.ov-drill{margin-left:auto;font-family:var(--font-mono);font-size:0.66rem;letter-spacing:0.5px;color:var(--accent);text-decoration:none;white-space:nowrap;}
+.ov-drill:hover{text-decoration:underline;}
+.ov-fresh{margin-left:auto;font-family:var(--font-mono);font-size:0.62rem;color:var(--ink-dim);letter-spacing:0.5px;}
+.ov-fresh.stale{color:var(--warn);}
+.ov-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px;}
+.ov-list li{display:flex;align-items:center;gap:9px;font-size:0.82rem;color:var(--ink);}
+.ov-pri{font-family:var(--font-mono);font-size:0.58rem;font-weight:700;color:var(--warn);border:1px solid var(--warn);border-radius:4px;padding:1px 5px;flex-shrink:0;}
+.ov-what{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ov-lane{font-family:var(--font-mono);font-size:0.62rem;color:var(--ink-dim);flex-shrink:0;}
+.ov-empty{color:var(--ink-dim);font-size:0.8rem;}
+.ov-machine{display:flex;flex-wrap:wrap;gap:8px;}
+.ov-desk{display:flex;flex-direction:column;gap:1px;min-width:94px;padding:8px 10px;border-radius:var(--radius-sm);border:1px solid var(--line-soft);background:rgba(0,0,0,0.2);border-left:3px solid var(--ink-dim);}
+.ov-desk.ov-work{border-left-color:var(--ok);}
+.ov-desk.ov-needs{border-left-color:var(--warn);}
+.ov-desk.ov-idle{opacity:0.65;}
+.ov-dk{font-family:var(--font-mono);font-weight:800;font-size:0.78rem;}
+.ov-dl{font-size:0.64rem;color:var(--ink-mid);}
+.ov-dt{font-size:0.62rem;color:var(--ink-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px;}
+
 @media (max-width:640px){
   .brand .sub{display:none;}
   .skin-switch button{padding:9px 8px;font-size:0.62rem;}
@@ -105,6 +132,24 @@ dialog.dock::backdrop{background:rgba(3,6,17,0.7);backdrop-filter:blur(5px);}
 </div>
 
 <div class="stage">
+  <section class="hall-overview" id="hallOverview" hidden>
+    <div class="ov-card ov-needs">
+      <div class="ov-head">
+        <span class="ov-title">Needs you</span>
+        <span class="ov-count" id="ovNeedsCount">0</span>
+        <a class="ov-drill" href="/blockers.html">Review &amp; decide &rsaquo;</a>
+      </div>
+      <ul class="ov-list" id="ovNeedsList"></ul>
+    </div>
+    <div class="ov-card">
+      <div class="ov-head">
+        <span class="ov-title">The machine</span>
+        <span class="ov-fresh" id="ovFresh"></span>
+        <a class="ov-drill" href="/progress-rooms.html">Progress rooms &rsaquo;</a>
+      </div>
+      <div class="ov-machine" id="ovMachine"></div>
+    </div>
+  </section>
   <div class="skin-banner">
     <b>Indigenous skin: placeholder.</b> This skin is awaiting Mac's design direction (motifs, palette, provenance). It currently mirrors the Ryujin layout. Nothing here is a real design choice yet.
   </div>
@@ -367,7 +412,52 @@ dialog.dock::backdrop{background:rgba(3,6,17,0.7);backdrop-filter:blur(5px);}
     if (e.key === 'Escape' && !dock.open){ goBack(); }
   });
 
+  // ── Overview band: NEEDS YOU + THE MACHINE (the doctrine overview tier) ──
+  // Reuses the exact derive blockers.html uses: snapshot.sections.fleet.blockedOnMac
+  // plus desks waiting_on_mac. Read-only glance; drills to blockers / progress-rooms.
+  // Fails silent so a snapshot hiccup never touches the gridstack canvas below.
+  var LANES = { A:'Foreman', B:'PU / MIT', C:'Income / Builder', D:'Systems', E:'Research', F:'Creative', G:'Flagship UI' };
+  function ageMins(ts){ if (!ts) return null; var ms = Date.now() - new Date(ts).getTime(); return (isFinite(ms) && ms >= 0) ? Math.floor(ms/60000) : null; }
+  function ageLabel(m){ if (m == null) return null; if (m < 60) return m + 'm'; var h = Math.floor(m/60); return h < 48 ? h + 'h' : Math.floor(h/24) + 'd'; }
+  function deskState(status){ var s = String(status||'').toLowerCase(); if (/waiting_on_mac|blocked/.test(s)) return 'needs'; if (/work|active|build|run|live|busy/.test(s)) return 'work'; return 'idle'; }
+  function renderOverview(){
+    var band = el('hallOverview'); if (!band) return;
+    fetch('/api/snapshot', { headers: authHeaders(), cache:'no-store' })
+      .then(function(r){ if (!r.ok) throw new Error('snap'); return r.json(); })
+      .then(function(snap){
+        var fleet = (snap && snap.sections && snap.sections.fleet) || {};
+        var blocked = fleet.blockedOnMac || [];
+        var desks = fleet.desks || (snap.sections && snap.sections.desks) || [];
+        var blockedKeys = {}; blocked.forEach(function(b){ var k = String(b.lane||b.deskId||'').toUpperCase(); if (k) blockedKeys[k] = 1; });
+        var waiting = desks.filter(function(d){ return d && /waiting_on_mac/i.test(d.status||'') && !blockedKeys[String(d.id||d.deskId||'').toUpperCase()]; });
+        var needCount = blocked.length + waiting.length;
+        el('ovNeedsCount').textContent = needCount;
+        band.querySelector('.ov-needs').classList.toggle('clear', needCount === 0);
+        var rows = blocked.slice(0,4).map(function(b){
+          return '<li><span class="ov-pri">' + esc((b.priority||'P1').toUpperCase()) + '</span>' +
+            '<span class="ov-what">' + esc(b.item||b.label||b.what||'Decision needed') + '</span>' +
+            ((b.lane||b.deskId) ? '<span class="ov-lane">' + esc(b.lane||b.deskId) + '</span>' : '') + '</li>';
+        }).join('');
+        el('ovNeedsList').innerHTML = needCount
+          ? (rows || '<li class="ov-empty">' + waiting.length + ' desk(s) waiting on you</li>')
+          : '<li class="ov-empty">Nothing needs you. The fleet is clear.</li>';
+        el('ovMachine').innerHTML = desks.map(function(d){
+          var id = d.id||d.deskId||'?'; var st = deskState(d.status); var task = d.task||d.currentTask||d.note||'';
+          return '<div class="ov-desk ov-' + st + '"><span class="ov-dk">' + esc(id) + '</span>' +
+            '<span class="ov-dl">' + esc(LANES[id]||d.lane||'') + '</span>' +
+            (task ? '<span class="ov-dt">' + esc(String(task).slice(0,42)) + '</span>' : '') + '</div>';
+        }).join('') || '<div class="ov-empty">No desks reporting.</div>';
+        var m = ageMins(fleet.updatedAt || fleet.postedAt);
+        var chip = el('ovFresh');
+        chip.textContent = (m != null) ? ('as of ' + ageLabel(m) + ' ago') : 'freshness unknown';
+        chip.classList.toggle('stale', m == null || m > 30);
+        band.hidden = false;
+      })
+      .catch(function(){ /* snapshot unreachable: band stays hidden, canvas unaffected */ });
+  }
+
   boot();
+  renderOverview();
 })();
 </script>
 
