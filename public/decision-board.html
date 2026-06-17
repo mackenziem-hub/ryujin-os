@@ -105,6 +105,21 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--gold-hot);outline-o
 .tchip .lane{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);font-weight:600}
 .tchip .tk{font-size:11.5px;line-height:1.4;color:var(--dim);margin-top:3px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;min-height:48px}
 
+/* your numbers (glance) + your work (find-anything rail) */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(116px,1fr));gap:10px}
+.kpi{background:var(--panel);border:1px solid var(--hairline);border-radius:14px;padding:15px 16px;backdrop-filter:blur(8px)}
+.kpi .n{font-family:var(--serif);font-size:23px;font-weight:600;letter-spacing:-.01em;line-height:1;font-variant-numeric:tabular-nums}
+.kpi .l{font-size:11px;color:var(--faint);margin-top:7px;letter-spacing:.01em}
+.kpi.good .n{color:var(--green)}.kpi.warn .n{color:var(--gold-hot)}.kpi.bad .n{color:var(--red)}.kpi.cool .n{color:var(--blue)}
+.work{display:grid;grid-template-columns:repeat(auto-fit,minmax(184px,1fr));gap:10px}
+.wcard{display:block;text-decoration:none;color:inherit;background:rgba(255,255,255,.022);border:1px solid var(--hairline);border-radius:14px;padding:16px 16px 15px;transition:transform .16s,background .16s,border-color .16s;position:relative}
+.wcard:hover{background:rgba(255,255,255,.05);transform:translateY(-2px);border-color:rgba(244,243,238,.22)}
+.wcard .wt{font-family:var(--serif);font-size:16px;font-weight:600;line-height:1.2;padding-right:22px}
+.wcard .wd{font-size:12px;color:var(--dim);margin-top:6px;line-height:1.45}
+.wcard .arrow{position:absolute;top:15px;right:15px;color:var(--faint);font-size:15px;transition:transform .16s,color .16s}
+.wcard:hover .arrow{color:var(--gold);transform:translate(2px,-2px)}
+.wcard.flag{background:linear-gradient(150deg,rgba(232,169,60,.13),rgba(255,255,255,.02));border-color:rgba(232,169,60,.34)}
+.wcard .pill{display:inline-block;font-size:9.5px;font-weight:700;letter-spacing:.05em;padding:2px 7px;border-radius:6px;background:rgba(224,86,86,.2);color:#ff9a9a;margin-left:6px;vertical-align:middle}
 .state{padding:40px 10px;text-align:center;color:var(--faint);font-size:13px}
 .state.err{color:var(--red)}
 
@@ -124,15 +139,21 @@ body.embed .page{padding-top:14px}
   <div class="mast">
     <button class="back" onclick="goBackToMainHub()" aria-label="Back" title="Back"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
     <div class="name">The <b>Brief</b></div>
-    <div class="health GREEN" id="health"><span class="lamp"></span><span id="hverdict">—</span></div>
+    <div class="health GREEN" id="health"><span class="lamp"></span><span id="hverdict">-</span></div>
   </div>
-  <div class="dateline" id="dateline">—</div>
+  <div class="dateline" id="dateline">-</div>
 
   <div class="eyebrow first">The one thing</div>
   <div id="hero"><div class="state">Reading the fleet&hellip;</div></div>
 
   <div class="eyebrow" id="alsoHead" style="display:none">Also waiting on you</div>
   <div class="also" id="also"></div>
+
+  <div class="eyebrow">Your numbers</div>
+  <div class="kpis" id="kpis"></div>
+
+  <div class="eyebrow">Your work &middot; one tap to open</div>
+  <div class="work" id="work"></div>
 
   <div class="eyebrow">Since you last looked</div>
   <div class="digest" id="digest"></div>
@@ -147,7 +168,7 @@ body.embed .page{padding-top:14px}
   'use strict';
   const TENANT = window.RYUJIN_TENANT_SLUG || 'plus-ultra';
   const PRANK = { P0:0, P1:1, P2:2 };
-  let DATA = null, decisions = [];
+  let DATA = null, decisions = [], SECTIONS = {};
   const handled = new Set(JSON.parse(localStorage.getItem('decisionboard_handled') || '[]'));
   const EMBED = /[?&]embed=1\b/.test(location.search);
   if (EMBED) document.body.classList.add('embed');
@@ -182,6 +203,7 @@ body.embed .page{padding-top:14px}
       }
       if (r.ok) snap = await r.json();
     } catch(e){ /* fall through to the empty board */ }
+    SECTIONS = (snap && snap.sections) ? snap.sections : {};
     DATA = (snap && snap.sections && snap.sections.fleet)
       ? snap.sections.fleet
       : { blockedOnMac: [], desks: {}, shippedToday: [], healthVerdict: '?', _empty: true };
@@ -201,7 +223,7 @@ body.embed .page{padding-top:14px}
       $('#hero').innerHTML = `<div class="hero ${hero.priority === 'P0' ? 'p0' : ''}">
         <div class="hero-pri ${hero.priority}"><span class="d" style="background:currentColor"></span>${esc(hero.priority || 'P1')} · the highest call on your desk${hero.due ? ' · due ' + esc(hero.due) : ''}</div>
         <h1>${esc(hero.item)}</h1>
-        ${desk ? `<div class="lanetag">Lane <b>${esc(hero.lane)}</b> is on it — <b>${esc(desk.lane || '')}</b>, currently ${esc(desk.task || 'idle')}.</div>` : ''}
+        ${desk ? `<div class="lanetag">Lane <b>${esc(hero.lane)}</b> is on it - <b>${esc(desk.lane || '')}</b>, currently ${esc(desk.task || 'idle')}.</div>` : ''}
         <div class="hero-act">
           <button class="b go" onclick="window.__db.act('${key(hero).replace(/'/g, "\\'")}','approve')">Mark decided</button>
           <button class="b sec" onclick="window.__db.act('${key(hero).replace(/'/g, "\\'")}','defer')">Not now</button>
@@ -237,6 +259,40 @@ body.embed .page{padding-top:14px}
             <div><div class="lane" style="color:${lc(id)}">${esc((d.lane || '').split('(')[0]).slice(0, 16)}</div></div><div class="lamp2 ${st}"></div></div>
             <div class="tk">${esc(d.task || 'idle')}</div></div>`; }).join('')
       : '<div class="state" style="padding:14px">No desks reporting.</div>';
+    renderKpis();
+    renderWork();
+  }
+
+  function money(n){ n = Number(String(n).replace(/[^0-9.\-]/g, '')); if (!isFinite(n) || !n) return '$0'; return n >= 1000 ? '$' + Math.round(n/1000) + 'k' : '$' + Math.round(n); }
+  function pick(){ for (let i=0;i<arguments.length;i++){ const v = arguments[i]; if (v !== undefined && v !== null) return v; } return null; }
+  function renderKpis(){
+    const b = SECTIONS.briefing_morning || SECTIONS.briefing_afternoon || SECTIONS.briefing_evening || {};
+    const k = b.kpiScouter || {};
+    const leads = SECTIONS.leads || {}, rev = SECTIONS.revenue || {}, m = SECTIONS.metrics || {}, tix = SECTIONS.tickets || {};
+    const signed = pick(m.signed && m.signed.mtd, k.signedRevenue, rev.signedRevenue);
+    const out = pick(k.pendingRevenue, rev.pendingRevenue);
+    const lw = pick(leads.thisWeek);
+    const roi = pick(k.adROI);
+    const overdue = pick(tix.overdueCount, k.overdueTickets);
+    const cards = [
+      { n: signed != null ? money(signed) : '-', l: 'Signed this month', cls: 'good' },
+      { n: out != null ? money(out) : '-', l: 'Proposals out', cls: 'cool' },
+      { n: lw != null ? lw : '-', l: 'Leads this week', cls: lw > 0 ? 'good' : 'warn' },
+      { n: roi != null ? (String(roi).indexOf(':') >= 0 ? roi : roi + ':1') : '-', l: 'Ad return', cls: 'good' },
+      { n: overdue != null ? overdue : '-', l: 'Overdue jobs', cls: overdue > 0 ? 'bad' : 'good' }
+    ];
+    $('#kpis').innerHTML = cards.map(c => `<div class="kpi ${c.cls}"><div class="n">${esc(c.n)}</div><div class="l">${esc(c.l)}</div></div>`).join('');
+  }
+  const WORK = [
+    { t:'Diane Alward', d:'Her proposal, ready to review and send.', href:'/p/199-ch-frigault-afb06c', flag:true, pill:'SEND' },
+    { t:'Proposal Book', d:'Every proposal, ranked by follow-up. The stale warm book is here.', href:'/proposals.html' },
+    { t:'Ads Report', d:'Meta and Google performance, what to cut and scale.', href:'/ad-activity.html' },
+    { t:'Media Library', d:'719 clips and photos, indexed and searchable.', href:'/media-index.html' },
+    { t:'Customers', d:'Your whole book, every contact and stage.', href:'/crm.html' },
+    { t:'Talk to Ryujin', d:'Ask it anything, give it orders.', href:'/cockpit.html' }
+  ];
+  function renderWork(){
+    $('#work').innerHTML = WORK.map(w => `<a class="wcard ${w.flag ? 'flag' : ''}" href="${w.href}"><div class="wt">${esc(w.t)}${w.pill ? `<span class="pill">${esc(w.pill)}</span>` : ''}</div><div class="wd">${esc(w.d)}</div><span class="arrow">&rarr;</span></a>`).join('');
   }
 
   // Decisions are marked decided/deferred LOCALLY (per-browser), like the
