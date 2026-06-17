@@ -12,6 +12,7 @@ import { computeMetrics } from '../lib/metricsContract.js';
 import { resolveSession } from '../lib/portalAuth.js';
 import { requireCronOrOwner } from '../lib/cronAuth.js';
 import { snapshotHeaders } from '../lib/snapshotClient.js';
+import { isTestData } from '../lib/leadTestFilter.js';
 
 const SNAPSHOT_BLOB_KEY = 'ryujin-snapshot.json';
 const LEGACY_SNAPSHOT_BLOB_KEY = 'shenron-snapshot.json';
@@ -303,7 +304,10 @@ async function buildFreshSnapshot() {
     // Action Board Replit is no longer the source of truth — read directly from Supabase.
     nativeTicketStats(),
     tf('https://ryujin-os.vercel.app/api/ghl?mode=tasks').then(r => r.json()),
-    tf('https://ryujin-os.vercel.app/api/ghl?mode=contacts&limit=100').then(r => r.json()),
+    // limit=400 (paged server-side) so the leads KPI sees more than the newest
+    // 100 of ~1900 contacts. The 7-day thisWeek window lives well inside this,
+    // and the all-time marketing-lead total is far less under-counted.
+    tf('https://ryujin-os.vercel.app/api/ghl?mode=contacts&limit=400').then(r => r.json()),
     // Native estimates (Supabase) so the cockpit can surface instant-estimator
     // quotes that the legacy Estimator OS feed (sections.revenue) never sees.
     nativeProposalStats(),
@@ -356,10 +360,19 @@ async function buildFreshSnapshot() {
     }
     // Leads — tiered funnel: marketing leads → local → sales qualified → converted
     if (ghlContacts?.contacts) {
+      // Source whitelist. Live capture sources land as RAW SLUGS on c.source
+      // (e.g. "instant-estimator-v3", "revive-estimator-v1") AND as the
+      // human-readable label on a tag (e.g. "instant estimator submission").
+      // The old whitelist only carried the human-readable form, so every real
+      // Instant Estimator / Revive lead failed isRealSource and thisWeek
+      // collapsed to a false zero (Jun 16 2026 — reference_snapshot_lead_count_false_zero).
+      // Match BOTH the slug and the label, on either c.source or a tag.
       const VALID_SOURCES = [
-        '10 costly mistakes- pdf', '10 tips – pdf',
+        '10 costly mistakes', '10 tips',
         'contact us form', 'call direct', 'facebook direct',
-        'instant estimator submission', 'inspection lead magnet form',
+        'instant estimator submission', 'instant-estimator',
+        'revive estimator submission', 'revive-estimator',
+        'inspection lead magnet form',
         'plus ultra roofing website form', 'active job canvassing',
         'darcy- door knocking', 'past customer',
       ];
@@ -367,10 +380,14 @@ async function buildFreshSnapshot() {
         '10 costly mistakes', 'lead – 10 tips download',
         'appointment - confirmed', 'darcy- door knock',
         'quote_voiceai', 'incubator - start',
+        'instant estimator submission', 'revive estimator submission',
+        'source:instant-estimator', 'source:revive-estimator',
       ];
       // NB + border area codes (506, 782 = NB; 902 = NS/PEI border towns)
       const LOCAL_AREA_CODES = ['506', '782', '902'];
       const JUNK_EMAIL_PATTERNS = [/^.{20,}@/, /@xfavaj\.com/, /@tempmail/, /@guerrillamail/];
+      // isTestData (Cat's QA / smoke-test contacts) is the shared filter from
+      // lib/leadTestFilter.js so this KPI path and the lead view never disagree.
 
       const extractAreaCode = (phone) => {
         if (!phone) return null;
@@ -419,8 +436,8 @@ async function buildFreshSnapshot() {
       const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
       const allContacts = ghlContacts.contacts || [];
 
-      // Tier 1: Has a real source (not spam/bot entry)
-      const marketingLeads = allContacts.filter(c => isRealSource(c) && !isJunk(c));
+      // Tier 1: Has a real source (not spam/bot entry), excluding QA/test contacts
+      const marketingLeads = allContacts.filter(c => isRealSource(c) && !isJunk(c) && !isTestData(c));
       // Tier 2: Also in service area
       const localLeads = marketingLeads.filter(isLocal);
       const outOfArea = marketingLeads.filter(c => !isLocal(c));
@@ -462,7 +479,7 @@ async function buildFreshSnapshot() {
         outOfArea: outOfArea.length,
         outOfAreaThisWeek: outOfAreaThisWeek.length,
         marketingLeadsTotal: marketingLeads.length,
-        source: 'GHL (local + filtered)'
+        source: 'GHL (local + filtered, Cat-test excluded)'
       };
     }
   }

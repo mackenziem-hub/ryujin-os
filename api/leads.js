@@ -27,6 +27,7 @@ import { requireTenant } from '../lib/tenant.js';
 import { sendCAPIEvent } from '../lib/meta.js';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { notifyLeadEvent } from '../lib/leadNotify.js';
+import { isTestData } from '../lib/leadTestFilter.js';
 
 const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
 const LOCATION_ID = (process.env.GHL_LOCATION_ID || 'aHotOUdq9D8m3JPrRz9n').trim();
@@ -621,9 +622,40 @@ async function handler(req, res) {
     const source = req.query.source;
     const sinceDays = parseInt(req.query.since_days) || 30;
     try {
-      const data = await ghlFetch('/contacts/', { locationId: LOCATION_ID, limit: '100' });
       const cutoff = Date.now() - sinceDays * 86400000;
-      const contacts = (data?.contacts || []).map(c => ({
+      // GHL holds ~1900 contacts. A single flat limit:100 page silently dropped
+      // any real lead that fell outside that first page, so a busy week's leads
+      // vanished from the view. Page via meta.startAfter / startAfterId (same
+      // pattern as api/ghl.js) up to a bounded number of contacts, then filter
+      // by cutoff. We deliberately do NOT early-break on the cutoff: that would
+      // assume GHL returns contacts strictly newest-first, which is not a
+      // documented guarantee on the raw /contacts/ list. MAX_CONTACTS bounds the
+      // request cost (covers far more than any plausible since_days window).
+      const PAGE = 100;
+      const MAX_CONTACTS = 1000;
+      let raw = [];
+      let startAfter = null;
+      let startAfterId = null;
+      while (raw.length < MAX_CONTACTS) {
+        const params = { locationId: LOCATION_ID, limit: String(PAGE) };
+        if (startAfter) params.startAfter = startAfter;
+        if (startAfterId) params.startAfterId = startAfterId;
+        const data = await ghlFetch('/contacts/', params);
+        const page = data?.contacts || [];
+        if (!page.length) break;
+        raw.push(...page);
+        startAfter = data.meta?.startAfter || null;
+        startAfterId = data.meta?.startAfterId || null;
+        if (!startAfter && !startAfterId) break;
+        if (page.length < PAGE) break;
+      }
+
+      // Cat's QA / smoke-test contacts flow through the same IE form as real
+      // leads, so they must be dropped from the view + KPI counts. Shared filter
+      // from lib/leadTestFilter.js (matches the snapshot KPI path exactly). The
+      // raw GHL contact carries firstName/lastName/email/phone, which the filter
+      // reads directly.
+      const contacts = raw.filter(c => !isTestData(c)).map(c => ({
         id: c.id,
         firstName: c.firstName || '',
         lastName: c.lastName || '',
