@@ -1072,6 +1072,55 @@ h1,h2,h3{font-family:'Montserrat',sans-serif;letter-spacing:-0.02em;text-wrap:ba
     if (DISTANCE_BY_CITY[c] != null) return DISTANCE_BY_CITY[c];
     return 30;
   }
+
+  // Ad attribution: capture utm/fbclid/gclid from this page's URL, falling back
+  // to the ry_utm stash that landing.html sets. Rides along on both the partial
+  // (abandoned-address) ping and the final lead so the click ties to the
+  // eventual customer + proposal (closed loop). Shared by both so they agree.
+  function getAttribution(){
+    const keys = ['utm_source','utm_medium','utm_campaign','utm_content','utm_term','fbclid','gclid'];
+    const out = {};
+    try {
+      const p = new URLSearchParams(location.search);
+      keys.forEach(k => { if (p.has(k)) out[k] = p.get(k); });
+      if (!Object.keys(out).length) {
+        const raw = localStorage.getItem('ry_utm');
+        if (raw) { const s = JSON.parse(raw) || {}; keys.forEach(k => { if (s[k]) out[k] = s[k]; }); }
+      }
+      out.landing_url = location.href.slice(0, 500);
+      out.captured_at = new Date().toISOString();
+    } catch (e) {}
+    return out;
+  }
+
+  // Abandoned-address capture. Fires once per address as soon as step 1 is
+  // submitted (hit or miss on the measure), so a visitor who bounces before
+  // locking a price still leaves a retargetable record in the leads table.
+  // Fire-and-forget with keepalive so it survives a tab close; never blocks.
+  const loggedAddresses = new Set();
+  function logAbandonedAddress(measure){
+    const addr = (state.address || '').trim();
+    if (!addr) return;
+    const key = (addr + '|' + (state.city || '')).toLowerCase();
+    if (loggedAddresses.has(key)) return;
+    loggedAddresses.add(key);
+    try {
+      fetch(API_ORIGIN + '/api/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-tenant-id': TENANT },
+        keepalive: true,
+        body: JSON.stringify({
+          partial: true,
+          source: 'instant-estimator',
+          address: addr,
+          city: state.city || '',
+          postal: state.postal || (measure && measure.postal) || '',
+          measure: measure ? { sq: measure.sq, roofSqft: measure.roofSqft, pitchX12: measure.pitchX12, pitchBand: measure.pitchBand, imageryQuality: measure.imageryQuality } : null,
+          attribution: getAttribution()
+        })
+      }).catch(() => {});
+    } catch (e) {}
+  }
   // Resolve gold/platinum/diamond offer IDs by slug at page load. Cached for
   // the lifetime of the page; submit handler awaits this promise before
   // building the quote payload so a fast-filling user can't race past the
@@ -1351,6 +1400,7 @@ h1,h2,h3{font-family:'Montserrat',sans-serif;letter-spacing:-0.02em;text-wrap:ba
     startMeasurePanel();
     const t0 = Date.now();
     const hit = await roofLookup(state.address.trim(), state.city.trim());
+    logAbandonedAddress(hit);   // retargetable record now, before they can bounce
     // Anti-flash hold only: cached answers resolve instantly and a sub-300ms
     // scan flash reads broken. Real lookups run 1-4s untouched.
     const elapsed = Date.now() - t0;
@@ -1602,24 +1652,8 @@ h1,h2,h3{font-family:'Montserrat',sans-serif;letter-spacing:-0.02em;text-wrap:ba
     // the values ride along on the single contact-create (the Automator
     // follow-up fires on the tag at creation, so the fields must be present
     // then). Logged, never thrown, so a lead is never lost on a network hiccup.
-    // Ad attribution: capture utm/fbclid/gclid from this page's URL, falling
-    // back to the ry_utm stash that landing.html sets. Rides along on the lead
-    // so the click ties to the eventual customer + proposal (closed-loop).
-    const ryAttribution = (() => {
-      const keys = ['utm_source','utm_medium','utm_campaign','utm_content','utm_term','fbclid','gclid'];
-      const out = {};
-      try {
-        const p = new URLSearchParams(location.search);
-        keys.forEach(k => { if (p.has(k)) out[k] = p.get(k); });
-        if (!Object.keys(out).length) {
-          const raw = localStorage.getItem('ry_utm');
-          if (raw) { const s = JSON.parse(raw) || {}; keys.forEach(k => { if (s[k]) out[k] = s[k]; }); }
-        }
-        out.landing_url = location.href.slice(0, 500);
-        out.captured_at = new Date().toISOString();
-      } catch (e) {}
-      return out;
-    })();
+    // Ad attribution shared with the abandoned-address ping (see getAttribution).
+    const ryAttribution = getAttribution();
 
     const leadPayload = {
       source: 'instant-estimator-v3',
