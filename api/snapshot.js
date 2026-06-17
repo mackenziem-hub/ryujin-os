@@ -294,28 +294,65 @@ async function buildFreshSnapshot() {
 
   const _svcToken = (process.env.RYUJIN_SERVICE_TOKEN || '').trim();
   const _svcHeaders = { 'x-tenant-id': 'plus-ultra', ...(_svcToken ? { Authorization: `Bearer ${_svcToken}` } : {}) };
-  const tf = (url, opts = {}) => fetch(url, { ...opts, headers: { ..._svcHeaders, ...(opts.headers || {}) }, signal: AbortSignal.timeout(15000) });
-  const fetches = await Promise.allSettled([
-    tf('https://ryujin-os.vercel.app/api/lookup?mode=stats', { headers: snapshotHeaders() }).then(r => r.json()),
-    tf('https://ryujin-os.vercel.app/api/ghl').then(r => r.json()),
-    tf('https://ryujin-os.vercel.app/api/ghl?mode=pipeline').then(r => r.json()),
-    tf('https://ryujin-os.vercel.app/api/ghl?mode=conversations').then(r => r.json()),
-    // Tickets are now native to Ryujin (migrated from Action Board 2026-05-11).
-    // Action Board Replit is no longer the source of truth — read directly from Supabase.
-    nativeTicketStats(),
-    tf('https://ryujin-os.vercel.app/api/ghl?mode=tasks').then(r => r.json()),
-    // limit=400 (paged server-side) so the leads KPI sees more than the newest
-    // 100 of ~1900 contacts. The 7-day thisWeek window lives well inside this,
-    // and the all-time marketing-lead total is far less under-counted.
-    tf('https://ryujin-os.vercel.app/api/ghl?mode=contacts&limit=400').then(r => r.json()),
-    // Native estimates (Supabase) so the cockpit can surface instant-estimator
-    // quotes that the legacy Estimator OS feed (sections.revenue) never sees.
-    nativeProposalStats(),
-    // Canonical KPIs (metrics contract v1) — pages migrate to this section.
-    nativeMetrics(),
+  const tf = (url, opts = {}, timeoutMs = 15000) => fetch(url, { ...opts, headers: { ..._svcHeaders, ...(opts.headers || {}) }, signal: AbortSignal.timeout(timeoutMs) });
+
+  // Contacts feed the leads KPI. limit=400 makes the /api/ghl proxy paginate 4
+  // GHL pages (4 round-trips), so it is the single most failure-prone fetch in
+  // this batch. When it rejected inside the old shared allSettled, ghlContacts
+  // went null, the `if (ghlContacts?.contacts)` guard fell through, and the
+  // ENTIRE sections.leads block was never assigned, so the key VANISHED from the
+  // snapshot on an intermittent GHL hiccup (the #515 regression, P1 2026-06-17).
+  // Fetch it on its own with one retry and a limit=100 (single-page) fallback so
+  // a transient 4-page failure degrades to a smaller-but-real count instead of
+  // wiping the section.
+  //
+  // Latency budget: api/snapshot.js runs under vercel.json maxDuration 30s, and
+  // this function also runs 8 OTHER parallel fetches + Supabase reads in the same
+  // window. So the 3 attempts get a SHORTENED 8s per-attempt timeout (not the
+  // default 15s): 8+8+8 = 24s absolute worst case, under the 30s function budget
+  // with headroom, instead of 45s (which would FUNCTION_INVOCATION_TIMEOUT and
+  // skip the snapshot save entirely — the very outage this hardening prevents).
+  const CONTACTS_ATTEMPT_TIMEOUT_MS = 8000;
+  const fetchGhlContacts = async () => {
+    const attempts = [
+      'https://ryujin-os.vercel.app/api/ghl?mode=contacts&limit=400', // primary (4 pages)
+      'https://ryujin-os.vercel.app/api/ghl?mode=contacts&limit=400', // retry once
+      'https://ryujin-os.vercel.app/api/ghl?mode=contacts&limit=100', // fallback (1 page)
+    ];
+    let lastErr = null;
+    for (const url of attempts) {
+      try {
+        const data = await tf(url, {}, CONTACTS_ATTEMPT_TIMEOUT_MS).then(r => r.json());
+        if (data && Array.isArray(data.contacts)) return data;
+        lastErr = new Error('contacts payload missing .contacts array');
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    console.warn(`[snapshot] contacts fetch failed after retry+fallback: ${lastErr?.message || 'unknown'}`);
+    return null;
+  };
+
+  const [fetches, ghlContacts] = await Promise.all([
+    Promise.allSettled([
+      tf('https://ryujin-os.vercel.app/api/lookup?mode=stats', { headers: snapshotHeaders() }).then(r => r.json()),
+      tf('https://ryujin-os.vercel.app/api/ghl').then(r => r.json()),
+      tf('https://ryujin-os.vercel.app/api/ghl?mode=pipeline').then(r => r.json()),
+      tf('https://ryujin-os.vercel.app/api/ghl?mode=conversations').then(r => r.json()),
+      // Tickets are now native to Ryujin (migrated from Action Board 2026-05-11).
+      // Action Board Replit is no longer the source of truth — read directly from Supabase.
+      nativeTicketStats(),
+      tf('https://ryujin-os.vercel.app/api/ghl?mode=tasks').then(r => r.json()),
+      // Native estimates (Supabase) so the cockpit can surface instant-estimator
+      // quotes that the legacy Estimator OS feed (sections.revenue) never sees.
+      nativeProposalStats(),
+      // Canonical KPIs (metrics contract v1) — pages migrate to this section.
+      nativeMetrics(),
+    ]),
+    fetchGhlContacts(),
   ]);
 
-  const [stats, ghl, pipeline, conversations, tickets, ghlTasks, ghlContacts, nativeProposals, metrics] = fetches.map(f =>
+  const [stats, ghl, pipeline, conversations, tickets, ghlTasks, nativeProposals, metrics] = fetches.map(f =>
     f.status === 'fulfilled' ? f.value : null
   );
 
@@ -358,7 +395,16 @@ async function buildFreshSnapshot() {
         activeToday: (tickets.stats.activeToday || []).slice(0, 10)
       };
     }
-    // Leads — tiered funnel: marketing leads → local → sales qualified → converted
+  }
+
+  // Leads — tiered funnel: marketing leads → local → sales qualified → converted.
+  // This block lives OUTSIDE the `if (stats?.results)` guard above on purpose: it
+  // consumes only ghlContacts + pipeline, never stats/est. Nesting it under the
+  // stats guard meant an independent /api/lookup (stats) flake would skip the
+  // whole leads block and the section would vanish even when contacts fetched
+  // fine. Sibling placement + the else-fallback below guarantees sections.leads
+  // is ALWAYS assigned (the #515 regression fix, 2026-06-17).
+  {
     if (ghlContacts?.contacts) {
       // Source whitelist. Live capture sources land as RAW SLUGS on c.source
       // (e.g. "instant-estimator-v3", "revive-estimator-v1") AND as the
@@ -480,6 +526,26 @@ async function buildFreshSnapshot() {
         outOfAreaThisWeek: outOfAreaThisWeek.length,
         marketingLeadsTotal: marketingLeads.length,
         source: 'GHL (local + filtered, Cat-test excluded)'
+      };
+    } else {
+      // Defense in depth: even with the retry+fallback above, a total GHL
+      // outage can leave ghlContacts null. ALWAYS assign a structured, zeroed
+      // shape so sections.leads can never VANISH (the #515 regression). The
+      // preserveKeys pass below then carries the last-known-good leads section
+      // forward over this zeroed placeholder when a prior snapshot exists, so a
+      // transient outage shows stale-but-real numbers rather than a false zero.
+      snapshot.sections.leads = {
+        total: 0,
+        thisWeek: 0,
+        converted: 0,
+        quoted: 0,
+        conversionRate: 0,
+        quoteRate: 0,
+        outOfArea: 0,
+        outOfAreaThisWeek: 0,
+        marketingLeadsTotal: 0,
+        source: 'GHL contacts fetch failed (retry + limit=100 fallback exhausted)',
+        _stale: true
       };
     }
   }
@@ -711,6 +777,16 @@ async function buildFreshSnapshot() {
       if (existing.sections[key] && !snapshot.sections[key]) {
         snapshot.sections[key] = existing.sections[key];
       }
+    }
+    // Leads is special: the else-branch above ALWAYS writes a zeroed
+    // _stale placeholder on a contacts-fetch failure (so the key can never
+    // vanish), which means the generic "!snapshot.sections[key]" guard above
+    // would never replace it. When THIS rebuild produced only the stale
+    // placeholder and a prior real leads section exists, carry the
+    // last-known-good numbers forward instead of showing a false zero. A
+    // freshly computed (non-stale) leads section is left untouched.
+    if (snapshot.sections.leads?._stale && existing.sections.leads && !existing.sections.leads._stale) {
+      snapshot.sections.leads = existing.sections.leads;
     }
   }
 
