@@ -4724,7 +4724,10 @@ async function chatHandler(req, res) {
   const interactionMode = ['quick', 'speech', 'agent'].includes(requestedMode) ? requestedMode : 'quick';
   const effort = ['low', 'medium', 'high'].includes(requestedEffort) ? requestedEffort
     : (interactionMode === 'speech' ? 'low' : 'medium');
-  if (!message && attachments.length === 0) {
+  // The credit-free self-test (handled just after auth below) sends no message
+  // on purpose, so let ?selftest=1 / {selftest:true} through this gate.
+  const _isSelftest = (req.query && (req.query.selftest === '1' || req.query.selftest === 'true')) || (req.body && req.body.selftest === true);
+  if (!message && attachments.length === 0 && !_isSelftest) {
     return res.status(400).json({ error: 'No message provided' });
   }
 
