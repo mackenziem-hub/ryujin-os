@@ -14,6 +14,7 @@ import chromium from '@sparticuz/chromium';
 import puppeteer from 'puppeteer-core';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { generateContract } from '../lib/outputGenerators.js';
+import { calculateQuoteV3 } from '../lib/quoteEngineV3.js';
 import { DEFAULT_BRAND } from '../lib/brandDefaults.js';
 
 // Sourced from the shared platform default (white-label PR3); the contract
@@ -180,6 +181,83 @@ function buildContractHtml(contract, branding) {
 </html>`;
 }
 
+// A stored package is directly usable for the contract only when it carries a
+// summary object with a selling price AND a non-empty lineItems array. Native
+// proposals store only { total, warranty_years, ... } (the locked price) with no
+// summary/lineItems, so those fall through to a live recompute below.
+function packageHasContractInputs(pkg) {
+  return !!(
+    pkg &&
+    pkg.summary &&
+    typeof pkg.summary === 'object' &&
+    Number(pkg.summary.sellingPrice) > 0 &&
+    Array.isArray(pkg.lineItems) &&
+    pkg.lineItems.length > 0
+  );
+}
+
+// Reconstruct the engine measurement input from the estimate's own columns.
+// Mirrors api/breakdown-pdf.js so the recomputed line items match the breakdown
+// the customer already sees. Used only to derive scope + line items; the price
+// stays the locked total from calculated_packages / final_accepted_total.
+function measurementsFromEstimate(est) {
+  const m = {
+    squareFeet: est.roof_area_sqft || 0,
+    pitch: est.roof_pitch || '5/12',
+    complexity: est.complexity || 'medium',
+    distanceKM: est.distance_km || 0,
+    extraLayers: est.extra_layers || 0,
+    eavesLF: est.eaves_lf || 0,
+    rakesLF: est.rakes_lf || 0,
+    ridgesLF: est.ridges_lf || 0,
+    valleysLF: est.valleys_lf || 0,
+    hipsLF: est.hips_lf || 0,
+    wallsLF: est.walls_lf || 0,
+    pipes: est.pipes || 0,
+    vents: est.vents || 0,
+    chimneys: est.chimneys || 0,
+    chimneySize: est.chimney_size || 'small',
+    stories: est.stories || 1
+  };
+  if (Array.isArray(est.planes) && est.planes.length > 0) m.planes = est.planes;
+  return m;
+}
+
+// Re-run the quote engine for a single tier to produce { offer, summary, lineItems }
+// when the stored package lacks them. Returns null if the offer for this tier is
+// not found, the estimate has no real (included, costed) line items, or any DB /
+// engine call throws (network etc.). The caller turns null into a clean 409 so a
+// throw here can never surface as FUNCTION_INVOCATION_FAILED.
+async function recomputeTierQuote(est, tier) {
+  try {
+    const { data: offer } = await supabaseAdmin
+      .from('offers').select('id, slug, name, warranty_years, system')
+      .eq('tenant_id', est.tenant_id).eq('slug', tier).maybeSingle();
+    if (!offer) return null;
+
+    const quote = await calculateQuoteV3(supabaseAdmin, {
+      tenantId: est.tenant_id,
+      offerId: offer.id,
+      measurements: measurementsFromEstimate(est),
+      mode: 'advanced'
+    });
+
+    if (!quote || quote.error || !quote.summary || !Array.isArray(quote.lineItems)) {
+      return null;
+    }
+    // The engine always emits line items, marking zero-quantity ones included:false.
+    // Require at least one included, costed item so a truly-empty estimate falls
+    // through to the 409 instead of producing a blank-scope contract.
+    const usable = quote.lineItems.filter(li => li.included && li.total_cost > 0);
+    if (usable.length === 0) return null;
+
+    return quote;
+  } catch (e) {
+    console.error('[contract-pdf] recompute failed', e?.message);
+    return null;
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'GET') return res.status(405).json({ error: 'GET only' });
@@ -222,37 +300,86 @@ export default async function handler(req, res) {
   }
 
   const pkg = packages[tier];
-  if (!pkg.summary || !pkg.lineItems) {
-    return res.status(409).json({ error: 'Package missing summary or lineItems — re-run quote engine' });
+
+  // Build the quote inputs the contract generator needs ({ offer, summary, lineItems }).
+  // Happy path: the stored package already carries a usable summary + lineItems, use it
+  // verbatim (byte-stable for proposals that already worked). Self-heal: native proposals
+  // store only the locked price, so recompute scope + line items from the engine the same
+  // way api/breakdown-pdf.js does, then keep the locked price authoritative below.
+  let quoteOffer;
+  let quoteSummary;
+  let quoteLineItems;
+
+  if (packageHasContractInputs(pkg)) {
+    quoteOffer = pkg.offer || { name: tier.toUpperCase(), warranty_years: pkg.warranty_years || 0 };
+    quoteSummary = pkg.summary;
+    quoteLineItems = pkg.lineItems;
+  } else {
+    const recomputed = await recomputeTierQuote(est, tier);
+    if (!recomputed) {
+      return res.status(409).json({
+        error: `Cannot build a contract for the ${tier} package: the estimate has no stored line items and could not be recomputed (missing roof measurements or offer). Open the estimate in the quote engine and save it, then retry.`
+      });
+    }
+    quoteOffer = recomputed.offer;
+    quoteLineItems = recomputed.lineItems;
+    // Honor the locked customer-facing price from the stored package rather than the
+    // engine's freshly-derived sellingPrice (current rates can drift from the quote).
+    const lockedPrice = Number(pkg.total);
+    if (lockedPrice > 0) {
+      // Prefer the stored tax / total the customer already saw on the proposal +
+      // breakdown (chat.js writes pkg.tax = round(total*0.15) and pkg.totalWithTax).
+      // This makes the contract total identical to the quoted total by construction.
+      // Fall back to deriving the rate from the engine result only if those are absent.
+      let tax = Number(pkg.tax);
+      let totalWithTax = Number(pkg.totalWithTax);
+      if (!(tax > 0) || !(totalWithTax > 0)) {
+        const taxRate = recomputed.summary.totalWithTax > 0 && recomputed.summary.sellingPrice > 0
+          ? (recomputed.summary.totalWithTax - recomputed.summary.sellingPrice) / recomputed.summary.sellingPrice
+          : 0.15;
+        tax = Math.round(lockedPrice * taxRate * 100) / 100;
+        totalWithTax = Math.round((lockedPrice + tax) * 100) / 100;
+      }
+      quoteSummary = { ...recomputed.summary, sellingPrice: lockedPrice, tax, totalWithTax };
+    } else {
+      quoteSummary = recomputed.summary;
+    }
   }
 
+  // A signed/accepted final total overrides everything (negotiated price wins).
   if (est.final_accepted_total != null && Number(est.final_accepted_total) > 0) {
-    const taxRate = pkg.summary.totalWithTax > 0 && pkg.summary.sellingPrice > 0
-      ? (pkg.summary.totalWithTax - pkg.summary.sellingPrice) / pkg.summary.sellingPrice
+    const taxRate = quoteSummary.totalWithTax > 0 && quoteSummary.sellingPrice > 0
+      ? (quoteSummary.totalWithTax - quoteSummary.sellingPrice) / quoteSummary.sellingPrice
       : 0.15;
     const totalWithTax = Number(est.final_accepted_total);
     const sellingPrice = Math.round(totalWithTax / (1 + taxRate) * 100) / 100;
     const tax = Math.round((totalWithTax - sellingPrice) * 100) / 100;
-    pkg.summary = { ...pkg.summary, sellingPrice, totalWithTax, tax };
+    quoteSummary = { ...quoteSummary, sellingPrice, totalWithTax, tax };
   }
 
   const customerAddress = [est.customer?.address, est.customer?.city, est.customer?.province]
     .filter(Boolean).join(', ');
 
-  const contract = generateContract({
-    offer: pkg.offer || { name: tier.toUpperCase(), warranty_years: pkg.warranty_years || 0 },
-    summary: pkg.summary,
-    lineItems: pkg.lineItems
-  }, {
-    customerName: est.customer?.full_name || '',
-    propertyAddress: customerAddress,
-    branding,
-    depositPercent: 33,
-    paymentTerms: 'net_completion',
-    validDays: 30
-  });
-
-  const html = buildContractHtml(contract, branding);
+  let contract;
+  let html;
+  try {
+    contract = generateContract({
+      offer: quoteOffer,
+      summary: quoteSummary,
+      lineItems: quoteLineItems
+    }, {
+      customerName: est.customer?.full_name || '',
+      propertyAddress: customerAddress,
+      branding,
+      depositPercent: 33,
+      paymentTerms: 'net_completion',
+      validDays: 30
+    });
+    html = buildContractHtml(contract, branding);
+  } catch (genErr) {
+    console.error('[contract-pdf] contract build failed', genErr?.message);
+    return res.status(422).json({ error: 'Could not assemble the contract from this estimate', detail: genErr?.message || String(genErr) });
+  }
 
   const downloadName = String(req.query.download || '').trim()
     || `PU-Contract-${est.estimate_number || 'draft'}-${(est.customer?.full_name || 'customer').replace(/[^\w\-]+/g, '_').slice(0, 30)}.pdf`;
