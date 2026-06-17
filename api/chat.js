@@ -4737,6 +4737,50 @@ async function chatHandler(req, res) {
     return res.status(401).json({ error: 'sign_in_required', code: 'NO_SESSION' });
   }
 
+  // ── Brain self-test (credit-free): exercise the READ tools directly via
+  // executeTool. No Anthropic call, no writes, no auth bypass (this runs only
+  // after the same session gate as the rest of the endpoint, and the probe list
+  // is hardcoded so a caller cannot run arbitrary tools). Confirms the brain's
+  // tool functions work and the live data is fresh while the LLM orchestration
+  // is credit-walled. Trigger: POST /api/chat?selftest=1 (or body {selftest:true}).
+  if ((req.query && (req.query.selftest === '1' || req.query.selftest === 'true')) || (req.body && req.body.selftest === true)) {
+    const PROBES = [
+      { name: 'navigate', input: { url: '/cockpit.html' } },
+      { name: 'lookup_data', input: { mode: 'stats' } },
+      { name: 'get_fleet_status', input: {} },
+      { name: 'list_docs', input: {} }
+    ];
+    const results = [];
+    for (const p of PROBES) {
+      const t0 = Date.now();
+      try {
+        const out = await executeTool(p.name, p.input);
+        const failed = !!(out && out.error);
+        let sample = null;
+        try {
+          if (p.name === 'navigate') sample = out && out.navigate;
+          else if (p.name === 'get_fleet_status') sample = { desks: Array.isArray(out && out.desks) ? out.desks.length : undefined, updatedAt: out && out.updatedAt, blockedOnMac: Array.isArray(out && out.blockedOnMac) ? out.blockedOnMac.length : undefined };
+          else if (p.name === 'list_docs') sample = { count: out && out.count };
+          else { const s = JSON.stringify(out || {}); sample = s.length > 240 ? s.slice(0, 240) + '...' : s; }
+        } catch (e) { sample = null; }
+        results.push({ tool: p.name, ok: !failed, ms: Date.now() - t0, sample, error: failed ? out.error : null });
+      } catch (e) {
+        results.push({ tool: p.name, ok: false, ms: Date.now() - t0, sample: null, error: String((e && e.message) || e) });
+      }
+    }
+    const passed = results.filter(r => r.ok).length;
+    return res.status(200).json({
+      ok: passed === results.length,
+      mode: 'brain-selftest',
+      note: 'Read-only tool probes via executeTool. The LLM orchestration (credit-walled) is intentionally NOT exercised.',
+      passed,
+      total: results.length,
+      llmKeyConfigured: !!((process.env.ANTHROPIC_API_KEY || '').trim()),
+      results,
+      ranAt: new Date().toISOString()
+    });
+  }
+
   // Phase 5.1: resolve rich user context (persona/archetype/style). May be null for the
   // service token (resolveSession handles it, resolveUserContext doesn't), so fall back
   // to the session's role/name rather than the old public 'owner' default.
