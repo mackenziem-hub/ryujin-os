@@ -19,7 +19,7 @@
     '/shell.html',
     '/cockpit.html', '/command-center.html', '/blockers.html', '/builders-hall.html', '/dashboard-v2.html', '/admin.html', '/media-index.html',
     '/calendar.html', '/production-calendar.html', '/production-schedule.html',
-    '/production-jobs.html', '/job.html', '/production-workorders.html',
+    '/production-jobs.html', '/job.html', '/production-workorders.html', '/admin-job-log.html',
     '/production-materials.html', '/production-paysheet.html', '/paysheet.html',
     '/production.html', '/customer-list.html', '/customer-profile.html',
     '/sales-customers.html', '/admin-quests.html', '/admin-overview.html',
