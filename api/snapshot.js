@@ -398,7 +398,7 @@ async function buildFreshSnapshot() {
 
       const isRealSource = (c) => {
         const src = (c.source || '').toLowerCase().trim();
-        const tags = (c.tags || []).map(t => t.toLowerCase().trim());
+        const tags = (c.tags || []).map(t => (t || '').toLowerCase().trim());
         if (src && VALID_SOURCES.some(vs => src.includes(vs))) return true;
         if (tags.some(t => VALID_TAGS.some(vt => t.includes(vt)))) return true;
         return false;
