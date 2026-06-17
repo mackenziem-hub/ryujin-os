@@ -28,6 +28,7 @@ import { sendCAPIEvent } from '../lib/meta.js';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { notifyLeadEvent } from '../lib/leadNotify.js';
 import { isTestData } from '../lib/leadTestFilter.js';
+import { formatLeadNote } from '../lib/leadNote.js';
 
 const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
 const LOCATION_ID = (process.env.GHL_LOCATION_ID || 'aHotOUdq9D8m3JPrRz9n').trim();
@@ -419,7 +420,7 @@ async function handler(req, res) {
     if (contactId) {
       const noteParts = [];
       if (metadata && Object.keys(metadata).length > 0) {
-        noteParts.push(`Inbound from ${source || 'unknown'}\n\n${JSON.stringify(metadata, null, 2).slice(0, 4000)}`);
+        noteParts.push(formatLeadNote(source, metadata).slice(0, 4000));
       }
       if (attr.utm_source || attr.utm_campaign || attr.fbclid || attr.gclid) {
         const attrLines = [
