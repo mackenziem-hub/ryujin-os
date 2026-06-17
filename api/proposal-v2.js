@@ -762,6 +762,96 @@ function enrichProofPhotos(sections, est) {
   proof.content.afterImage = after.url;
 }
 
+// ── Stale-snapshot section auto-heal ─────────────────────────────────────────
+// A proposal frozen before its tenant's block library + template were seeded
+// gets stored with sections: []. The renderer then serves a price-only page
+// (no intro, scope, proof, reviews, guarantee) which reads as half a proposal.
+// rehydrateSectionsIfEmpty rebuilds the missing sections at render time from the
+// now-seeded template + blocks, resolving tokens against the instance's OWN
+// frozen variables so the copy matches what was sent. Pricing, branding, rep,
+// and customer stay frozen and untouched. Healthy snapshots (sections already
+// present) are never altered, and every failure path leaves sections as-is, so
+// the heal can only restore content, never degrade a working proposal.
+const DEFAULT_TEMPLATE_BY_SYSTEM = {
+  asphalt: 'asphalt-good-better-best',
+  metal: 'metal',
+  flat: 'flat-commercial',
+  exterior: 'configurator-shell',
+  shell: 'configurator-shell'
+};
+
+async function rehydrateSectionsIfEmpty(row, served) {
+  const current = Array.isArray(served.sections) ? served.sections : [];
+  if (current.length) return current;            // healthy snapshot, leave frozen
+  if (!row || !row.tenant_id) return current;
+
+  try {
+    // 1. Resolve the template that defined this proposal's ordered section keys.
+    let template = null;
+    if (row.template_id) {
+      const { data } = await supabaseAdmin
+        .from('proposal_templates')
+        .select('slug, sections')
+        .eq('id', row.template_id)
+        .maybeSingle();
+      template = data || null;
+    }
+    if (!template) {
+      // Older rows carry no template_id; fall back to the active template for
+      // the frozen system so the heal still applies.
+      const system = served?.products?.scope?.system || row?.pricing_snapshot?.scope?.system || 'asphalt';
+      const slug = DEFAULT_TEMPLATE_BY_SYSTEM[system] || DEFAULT_TEMPLATE_BY_SYSTEM.asphalt;
+      const { data } = await supabaseAdmin
+        .from('proposal_templates')
+        .select('slug, sections')
+        .eq('tenant_id', row.tenant_id)
+        .eq('slug', slug)
+        .maybeSingle();
+      template = data || null;
+    }
+    if (!template || !Array.isArray(template.sections) || !template.sections.length) return current;
+
+    // 2. Resolve against the instance's frozen variables so copy matches send time.
+    const vars = served.variables || row.variables || {};
+    const sections = await resolveSections(row.tenant_id, template.sections, vars, null);
+    if (!sections.length) return current;          // blocks still unseeded; do not degrade
+
+    // 3. Best-effort: swap in the estimate's real before/after photos.
+    if (row.estimate_id) {
+      try {
+        const { data: est } = await supabaseAdmin
+          .from('estimates')
+          .select('photos:estimate_photos(*)')
+          .eq('id', row.estimate_id)
+          .maybeSingle();
+        if (est) enrichProofPhotos(sections, est);
+      } catch { /* photos are optional */ }
+    }
+
+    // 4. Best-effort: persist so the same link is permanently repaired.
+    persistHealedSections(row, sections);
+    return sections;
+  } catch (e) {
+    console.error('[proposal-v2] section rehydrate failed:', e?.message);
+    return current;
+  }
+}
+
+// Write rehydrated sections back into the frozen row so the repair is permanent.
+// Repairs a corrupt (empty) snapshot to its intended content; never touches
+// pricing. Never blocks the response (mirrors trackInstanceView).
+function persistHealedSections(row, sections) {
+  const patch = { sections };
+  if (row.data_snapshot && typeof row.data_snapshot === 'object') {
+    patch.data_snapshot = { ...row.data_snapshot, sections };
+  }
+  supabaseAdmin
+    .from('proposal_instances')
+    .update(patch)
+    .eq('id', row.id)
+    .then(() => {}, () => {});
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // HANDLER
 // ════════════════════════════════════════════════════════════════════════════
@@ -876,6 +966,8 @@ async function renderInstance(instance, res) {
       snap.meta.status = row.status || snap.meta.status;
       snap.meta.instanceSlug = row.slug || snap.meta.instanceSlug;
     }
+    // Heal price-only snapshots frozen before the block library was seeded.
+    snap.sections = await rehydrateSectionsIfEmpty(row, snap);
     trackInstanceView(row);
     return res.json(snap);
   }
@@ -924,6 +1016,8 @@ async function renderInstance(instance, res) {
     products
   };
 
+  // Heal price-only instances frozen before the block library was seeded.
+  data.sections = await rehydrateSectionsIfEmpty(row, data);
   trackInstanceView(row);
   return res.json(data);
 }

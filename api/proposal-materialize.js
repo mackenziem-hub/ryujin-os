@@ -76,6 +76,16 @@ async function handler(req, res) {
       return res.status(403).json({ error: 'Estimate belongs to a different tenant' });
     }
 
+    // Integrity warning: the template asked for sections but none resolved, so
+    // this freeze would store a price-only proposal (the bug that left existing
+    // instances rendering half a page). Surface it loudly; renderInstance still
+    // auto-heals on view, but a clean send should never freeze empty.
+    if (Array.isArray(template?.sections) && template.sections.length
+        && Array.isArray(data.sections) && !data.sections.length) {
+      console.error('[proposal-materialize] freezing EMPTY sections for estimate',
+        estimateId, 'template', template.slug, '- check proposal_blocks seed for tenant', tenantId);
+    }
+
     // Explicit shaping (see header). Objects only; anything else is ignored.
     const isObj = v => v && typeof v === 'object' && !Array.isArray(v);
     if (isObj(body.productsOverride)) {
