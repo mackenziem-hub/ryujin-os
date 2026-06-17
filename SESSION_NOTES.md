@@ -1,3 +1,30 @@
+# Session notes — 2026-06-16 night (HAL, Oracle -> boris/operator) — warm-book follow-up layer PR #516 (+ leads #514, dup of #515)
+
+**What:** A second HAL session (Oracle then boris/operator loop). Net-new vs the desk-D #515 note below:
+- **#516 feat(proposals-index): warm-book follow-up layer.** Pure-additive on `api/proposals-index.js`: per-row `daysSinceUpdate` + `stale` (pending && 30d+) + `followUpScore` (value x staleness), `counts.stale`/`staleValue`, and a `?sort=followup` work-queue. Default response shape + default sort unchanged (proposals.html safe). Live-verified vs prod index: 90 stale pending = $1,107,814; top Brian Fergusson $45k/78d, Vraj Patel $32.7k/84d. Adversarial review CLEAN. Next increment: a "Follow-up Queue" toggle in proposals.html (needs deploy + browser-verify).
+- **#514 fix(snapshot): leads false-zero** = my version of the same fix the desk-D #515 below covers (whitelist missed `instant-estimator-v3`). #515 is the superset (also fixes the lead VIEW); keep #515, close #514.
+
+Branch: `feat/proposals-followup-staleness`. Full review: `_brain/hub/FULL_SYSTEMS_REVIEW_2026-06-16.md`. Deploy stayed Mac-gated.
+
+---
+
+# Session notes — 2026-06-16 evening (HAL desk D, boris) — lead false-zero fix PR #515 (dup of #514)
+
+**What:** Foreman P0 ord-20260616-2348-D, the #1 lever (snapshot leadsThisWeek false zero). Built boris-style on a fresh worktree off origin/main (d1919ba), branch fix/lead-falsezero-ghl-source.
+
+**Root cause (order hypothesis was WRONG):** not the stale Replit /api/leads table; the code already reads GHL. The bug: `api/snapshot.js isRealSource()` source whitelist matched only the label 'instant estimator submission', so the live GHL slug `instant-estimator-v3` (and `revive-estimator-v1`) failed `.includes()` and every real IE lead was dropped, collapsing leadsThisWeek to 0.
+
+**Fix (PR #515, READY FOR DEPLOY, +106/-8):**
+- `api/snapshot.js` expand VALID_SOURCES/VALID_TAGS to match slug AND label; apply shared isTestData to marketingLeads; contacts fetch limit 100 -> 400.
+- `lib/leadTestFilter.js` NEW: one shared `isTestData()` (word-boundary name tokens, exact last-10 phone, explicit test emails, +63), imported by both snapshot + leads view so they agree.
+- `api/leads.js` lead-view GET pages newest via meta.startAfter (no order-dependent early-break), excludes Cat-test.
+
+**Verify:** node --check green x3; unit 18 real / 12 test; read-only prod GHL hand-count leadsThisWeek 0 -> 9 (bar >=8). Codex account-blocked (ChatGPT account) so a fresh-context subagent reviewed x2 (4 P2s fixed, then clean).
+
+**DUPLICATE:** PR #514 (Mind-Palace, same mag-leadpipe-falsezero, snapshot-whitelist-only subset) shipped ~15 min earlier. #515 is the superset. Both edit the same whitelist = conflict. Keep #515, close #514. Worker did NOT deploy/merge; foreman ships + curl-verifies leadsThisWeek on prod.
+
+---
+
 # Session notes — 2026-05-24 evening — 4 in-house jobs staged + 3 hotfix PRs + paysheet hygiene cleared
 
 **What:** Mac walked the cockpit and surfaced the gap: pipeline data sat in GHL + Ryujin estimates + WORK_LOG but nothing turned "Mac says X signed" into a kanban card. Plus a 3-day photo-delete frustration. He delegated full execution ("you do everything, I'm handling installs") and I cleared 4 signed jobs end-to-end + shipped 3 hotfix PRs + cleared morning's stuck paysheets in one session.
