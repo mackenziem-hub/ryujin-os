@@ -350,6 +350,13 @@ function dedupe(rows) {
   return out;
 }
 
+// Short-TTL in-memory cache of the expensive join (3-store fetch + dedupe). A warm
+// serverless instance reuses module scope, so repeat loads + proposals.html polling
+// within the TTL skip the ~7s GHL-contacts paging + Estimator cold start. The book
+// is a read-only review surface (not transactional), so a 60s stale window is fine.
+const _idxCache = new Map();
+const IDX_TTL = 60000;
+
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed. GET only.' });
   const session = await resolveSession(req);
@@ -357,44 +364,53 @@ export default async function handler(req, res) {
   const tenantId = session.tenant_id || null;
 
   try {
-    const [est, native, ghl] = await Promise.all([loadEstimatorOS(), loadNative(tenantId), loadGHL()]);
-    const errors = [est.error, native.error, ghl.error].filter(Boolean);
-    const raw = [...est.rows, ...native.rows, ...ghl.rows];
-    const merged = dedupe(raw);
+    // Expensive part (3-store fetch + dedupe + counts) is cached per tenant for
+    // IDX_TTL; the sort is cheap and varies by ?sort so it runs per request.
+    const cacheKey = tenantId || '__default';
+    let entry = _idxCache.get(cacheKey);
+    if (!entry || (Date.now() - entry.at) >= IDX_TTL) {
+      const [est, native, ghl] = await Promise.all([loadEstimatorOS(), loadNative(tenantId), loadGHL()]);
+      const errors = [est.error, native.error, ghl.error].filter(Boolean);
+      const raw = [...est.rows, ...native.rows, ...ghl.rows];
+      const merged = dedupe(raw);
+      const counts = { total: merged.length, pending: 0, byBucket: {}, byStore: { 'Estimator OS': est.rows.length, 'Ryujin-native': native.rows.length, 'GHL': ghl.rows.length }, noPrice: 0, stale: 0, staleValue: 0 };
+      for (const m of merged) {
+        counts.byBucket[m.bucket] = (counts.byBucket[m.bucket] || 0) + 1;
+        if (m.pending) counts.pending++;
+        if (m.noPrice) counts.noPrice++;
+        if (m.stale) { counts.stale++; counts.staleValue += num(m.fromPrice); }
+      }
+      entry = { at: Date.now(), merged, counts, errors };
+      _idxCache.set(cacheKey, entry);
+    }
 
     // Default sort: pending first, then most-recently-updated, then no-price
     // stubs sink within their bucket so the actionable rows lead.
     // ?sort=followup = the warm-book work queue: stale + high-value pending
-    // quotes lead (followUpScore desc) so the book Mac should chase is on top
-    // instead of buried at the bottom. Non-pending rows still sink.
+    // quotes lead (followUpScore desc). Sort a COPY so the cached array is never
+    // mutated under a concurrent request.
     const sortMode = String(req.query?.sort || '').toLowerCase();
+    const proposals = entry.merged.slice();
     if (sortMode === 'followup') {
-      merged.sort((a, b) => {
+      proposals.sort((a, b) => {
         if (a.pending !== b.pending) return a.pending ? -1 : 1;
         return (b.followUpScore || 0) - (a.followUpScore || 0);
       });
     } else {
-      merged.sort((a, b) => {
+      proposals.sort((a, b) => {
         if (a.pending !== b.pending) return a.pending ? -1 : 1;
         const at = a.lastUpdated || '', bt = b.lastUpdated || '';
         return bt.localeCompare(at);
       });
     }
 
-    const counts = { total: merged.length, pending: 0, byBucket: {}, byStore: { 'Estimator OS': est.rows.length, 'Ryujin-native': native.rows.length, 'GHL': ghl.rows.length }, noPrice: 0, stale: 0, staleValue: 0 };
-    for (const m of merged) {
-      counts.byBucket[m.bucket] = (counts.byBucket[m.bucket] || 0) + 1;
-      if (m.pending) counts.pending++;
-      if (m.noPrice) counts.noPrice++;
-      if (m.stale) { counts.stale++; counts.staleValue += num(m.fromPrice); }
-    }
-
     return res.json({
       ok: true,
-      counts,
-      proposals: merged,
-      sourceErrors: errors,
-      generatedAt: new Date().toISOString()
+      counts: entry.counts,
+      proposals,
+      sourceErrors: entry.errors,
+      generatedAt: new Date(entry.at).toISOString(),
+      cachedAgeMs: Date.now() - entry.at
     });
   } catch (e) {
     return res.status(500).json({ error: 'proposals_index_failed', message: e.message });
