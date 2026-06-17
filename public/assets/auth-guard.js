@@ -161,4 +161,20 @@
       (document.head || document.documentElement).appendChild(dScript);
     }
   } catch (e) { /* drive overlay is non-critical */ }
+
+  // ── Fleet-wide navigation prefetch ─────────────────────────────────
+  // Same operator-page-marker logic as the palette/badge/drive: warms the next
+  // page in the HTTP cache on hover/idle so operator navigation feels instant
+  // (the warm-page foundation the Drive takeover rides on). Purely additive
+  // browser hints: no fetch interception, no data cache, no behavior change.
+  // Self-guards double-load. Non-critical chrome: any failure is swallowed.
+  try {
+    if (!window.__ryujinPrefetchInjected) {
+      window.__ryujinPrefetchInjected = true;
+      var pfScript = document.createElement('script');
+      pfScript.src = '/assets/ryujin-prefetch.js';
+      pfScript.defer = true;
+      (document.head || document.documentElement).appendChild(pfScript);
+    }
+  } catch (e) { /* prefetch is non-critical */ }
 })();
