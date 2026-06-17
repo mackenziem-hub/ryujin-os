@@ -293,6 +293,16 @@ function mergeRows(group) {
   const withLink = group.find(r => r.openUrl);
   const withAddr = group.find(r => r.address);
   const lastUpdated = group.map(r => r.lastUpdated).filter(Boolean).sort().slice(-1)[0] || null;
+  const pending = PENDING_BUCKETS.has(best.bucket);
+  // Follow-up signal: how long this pending quote has sat untouched, plus a
+  // value-weighted urgency score so the warm book can be worked highest-dollar
+  // x most-stale first. The default sort buries stale quotes (most-recent-first);
+  // ?sort=followup surfaces them. A pending quote 30+ days untouched is `stale`.
+  const daysSinceUpdate = lastUpdated
+    ? Math.max(0, Math.floor((Date.now() - new Date(lastUpdated).getTime()) / 86400000))
+    : null;
+  const stale = pending && daysSinceUpdate != null && daysSinceUpdate >= 30;
+  const followUpScore = pending ? Math.round((fromPrice || 0) * (daysSinceUpdate || 0)) : 0;
   return {
     customer: (withAddr || best).customer,
     address: (withAddr || best).address || '',
@@ -300,8 +310,11 @@ function mergeRows(group) {
     noPrice: !fromPrice,
     status: best.status,
     bucket: best.bucket,
-    pending: PENDING_BUCKETS.has(best.bucket),
+    pending,
     lastUpdated,
+    daysSinceUpdate,
+    stale,
+    followUpScore,
     stores,
     openUrl: withLink ? withLink.openUrl : null,
     sources: group.map(r => ({ store: r.store, ref: r.ref, status: r.status, fromPrice: r.fromPrice, openUrl: r.openUrl }))
@@ -349,19 +362,31 @@ export default async function handler(req, res) {
     const raw = [...est.rows, ...native.rows, ...ghl.rows];
     const merged = dedupe(raw);
 
-    // Sort: pending first, then most-recently-updated, then no-price stubs sink
-    // within their bucket so the actionable rows lead.
-    merged.sort((a, b) => {
-      if (a.pending !== b.pending) return a.pending ? -1 : 1;
-      const at = a.lastUpdated || '', bt = b.lastUpdated || '';
-      return bt.localeCompare(at);
-    });
+    // Default sort: pending first, then most-recently-updated, then no-price
+    // stubs sink within their bucket so the actionable rows lead.
+    // ?sort=followup = the warm-book work queue: stale + high-value pending
+    // quotes lead (followUpScore desc) so the book Mac should chase is on top
+    // instead of buried at the bottom. Non-pending rows still sink.
+    const sortMode = String(req.query?.sort || '').toLowerCase();
+    if (sortMode === 'followup') {
+      merged.sort((a, b) => {
+        if (a.pending !== b.pending) return a.pending ? -1 : 1;
+        return (b.followUpScore || 0) - (a.followUpScore || 0);
+      });
+    } else {
+      merged.sort((a, b) => {
+        if (a.pending !== b.pending) return a.pending ? -1 : 1;
+        const at = a.lastUpdated || '', bt = b.lastUpdated || '';
+        return bt.localeCompare(at);
+      });
+    }
 
-    const counts = { total: merged.length, pending: 0, byBucket: {}, byStore: { 'Estimator OS': est.rows.length, 'Ryujin-native': native.rows.length, 'GHL': ghl.rows.length }, noPrice: 0 };
+    const counts = { total: merged.length, pending: 0, byBucket: {}, byStore: { 'Estimator OS': est.rows.length, 'Ryujin-native': native.rows.length, 'GHL': ghl.rows.length }, noPrice: 0, stale: 0, staleValue: 0 };
     for (const m of merged) {
       counts.byBucket[m.bucket] = (counts.byBucket[m.bucket] || 0) + 1;
       if (m.pending) counts.pending++;
       if (m.noPrice) counts.noPrice++;
+      if (m.stale) { counts.stale++; counts.staleValue += num(m.fromPrice); }
     }
 
     return res.json({
