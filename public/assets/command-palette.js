@@ -107,7 +107,14 @@
     var q = (input.value || '').trim().toLowerCase();
     var base = pool().filter(function (it) { return !q || it.label.toLowerCase().indexOf(q) !== -1; });
     items = [];
-    if (q) items.push({ label: 'Ask Ryujin: "' + input.value.trim() + '"', hint: 'ask', run: function () { ask(input.value); } });
+    if (q) {
+      items.push({ label: 'Ask Ryujin: "' + input.value.trim() + '"', hint: 'ask', run: function () { ask(input.value); } });
+      // Entity jump: type a name, land in the CRM filtered to it (the /crm.html?q=
+      // sink reads q on boot). Turns Cmd-K from a page launcher into a "find
+      // anything" launcher. Ask stays the default (first/Enter) so behavior is
+      // unchanged; this is the explicit second option.
+      items.push({ label: 'Find customer: "' + input.value.trim() + '"', hint: 'crm', run: function () { go('/crm.html?q=' + encodeURIComponent(input.value.trim())); } });
+    }
     items = items.concat(base);
     sel = 0;
     list.innerHTML = '';
