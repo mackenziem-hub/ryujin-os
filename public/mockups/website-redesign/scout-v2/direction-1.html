@@ -1,0 +1,1262 @@
+<!DOCTYPE html>
+<!--
+  PLUS ULTRA ROOFING - Direction 1 "Cinematic Dark" (the Scout register)
+  Binding spec: _brain/hub/scout-v2/BUILD_SPEC.md
+
+  ART DIRECTION
+  - Near-black cinematic base (#0E1116) + one cool slate step. ONE warm ember accent (#F06A2A).
+  - ONE display grotesque (Archivo), used across weights with tight tracking. No second display face.
+  - Named transition motif = "THE CURTAIN": an ember-edged masked wipe. Used for the page-load intro
+    and every section reveal so the whole page reads as one cut piece of film.
+
+  THE HERO (fully realized, the star)
+  - A pinned, scroll-scrubbed, perfectly reversible old-roof -> new-roof transformation.
+  - Rendered 100% synthetically (SVG + CSS, one canvas for grain). ZERO external image/video assets.
+  - Wiring is exactly the spec's Lenis + GSAP ticker bridge; ScrollTrigger pin + scrub:0.5, end:'+=4000'.
+  - The scrub progress (p, 0..1) drives, in ribbons keyed to plane order top->bottom:
+      * the sky grading from cold pre-dawn to clear daylight (drone "light comes up")
+      * a slow drone descent (scene scale + vertical parallax)
+      * the worn roof lifting away shingle-course by shingle-course (clip wipe + lift + fade)
+      * the new architectural roof installing course-by-course underneath (clip reveal + settle)
+      * ridge cap + drip edge snapping in at the end
+      * a survey reticle that sweeps the roof and resolves to a measured-area readout
+  - 3 cross-fading text beats, only one dominant at a time, mapped to p windows.
+  - prefers-reduced-motion: collapse to finished state, show all beats. Mobile (<=920px): drop the pin,
+    static finished hero, never scrub.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Plus Ultra Roofing - Built to go further beyond</title>
+<meta name="description" content="Premium residential roofing in Riverview and Moncton, New Brunswick. Measured from the sky, fixed price up front, every install documented." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    /* TWO base colors + ONE accent. Nothing else carries brand. */
+    --bg:#0E1116;            /* near-black cinematic base */
+    --bg-2:#161B22;          /* cool slate step (the second base) */
+    --ink:#F4F1EA;           /* warm bone text */
+    --ink-dim:#9AA3AD;       /* muted slate text (>=4.5:1 on bg) */
+    --ink-faint:#5B6470;
+    --line:rgba(244,241,234,.10);
+    --line-2:rgba(244,241,234,.16);
+    --accent:#F06A2A;        /* the one ember accent */
+    --accent-hi:#FF8347;
+    --accent-deep:#B4471A;
+    --glass:rgba(14,17,22,.55);
+
+    --maxw:1340px;
+    --gutter:clamp(20px,5vw,60px);
+    /* easings */
+    --expo:cubic-bezier(0.16,1,0.3,1);   /* entrance / hover */
+    --smooth:cubic-bezier(0.65,0,0.35,1);
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html{ -webkit-text-size-adjust:100%; }
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:"Archivo",system-ui,-apple-system,sans-serif;
+    font-weight:500; line-height:1.65; letter-spacing:-0.002em;
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+    overflow-x:hidden;
+  }
+  body.is-locked{ overflow:hidden; }
+  a{ color:inherit; text-decoration:none; }
+  img,svg{ display:block; }
+  ::selection{ background:var(--accent); color:#150A04; }
+
+  h1,h2,h3,.display{
+    font-family:"Archivo",sans-serif; font-weight:800;
+    letter-spacing:-0.03em; line-height:1.02; text-wrap:balance;
+  }
+  .eyebrow{
+    font-size:clamp(12px,.85vw,13px); font-weight:700;
+    letter-spacing:.18em; text-transform:uppercase; color:var(--accent);
+    display:inline-flex; align-items:center; gap:10px;
+  }
+  .eyebrow::before{ content:""; width:22px; height:1.5px; background:var(--accent); display:inline-block; }
+  .wrap{ width:100%; max-width:var(--maxw); margin:0 auto; padding-inline:var(--gutter); }
+
+  /* z-index scale */
+  /* hero stage .1 / sticky nav 60 / curtain-intro 200 */
+
+  /* ============================ NAV ============================ */
+  header{ position:fixed; inset:0 0 auto 0; z-index:60; padding-top:clamp(14px,2vw,20px); pointer-events:none; }
+  .nav{
+    pointer-events:auto;
+    display:flex; align-items:center; justify-content:space-between; gap:24px;
+    width:min(calc(100% - clamp(28px,8vw,80px)), var(--maxw));
+    margin:0 auto; padding:11px 12px 11px 22px;
+    border:1px solid var(--line); border-radius:16px;
+    background:var(--glass); backdrop-filter:blur(16px) saturate(150%);
+    -webkit-backdrop-filter:blur(16px) saturate(150%);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.06), 0 14px 40px rgba(0,0,0,.5);
+    transition:transform .5s var(--expo), padding .5s var(--expo),
+               background .5s var(--expo), border-color .5s var(--expo),
+               box-shadow .5s var(--expo);
+    will-change:transform;
+  }
+  /* real scroll choreography: weighted shrink + lift, not scale(0.985) */
+  header.shrunk .nav{
+    transform:translateY(-3px);
+    padding-top:8px; padding-bottom:8px;
+    background:rgba(14,17,22,.82);
+    border-color:var(--line-2);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.07), 0 10px 30px rgba(0,0,0,.6);
+  }
+  .brand{ display:flex; align-items:center; gap:12px; font-weight:800; font-size:18px; letter-spacing:-0.02em; }
+  .brand .mark{ width:34px; height:34px; flex:none; }
+  .brand b{ font-weight:800; }
+  .brand span{ color:var(--ink-dim); font-weight:600; }
+  .nav-links{ display:flex; gap:30px; font-size:14.5px; font-weight:600; color:var(--ink-dim); }
+  .nav-links a{ position:relative; transition:color .3s var(--expo); }
+  .nav-links a::after{ content:""; position:absolute; left:0; bottom:-6px; height:1.5px; width:0; background:var(--accent); transition:width .35s var(--expo); }
+  .nav-links a:hover{ color:var(--ink); }
+  .nav-links a:hover::after{ width:100%; }
+  .nav-cta{
+    display:inline-flex; align-items:center; gap:9px; flex:none;
+    padding:11px 19px; border-radius:11px; font-weight:700; font-size:14.5px;
+    background:var(--accent); color:#150A04;
+    box-shadow:0 8px 22px rgba(240,106,42,.32);
+    transition:transform .3s var(--expo), box-shadow .3s var(--expo), background .3s var(--expo);
+  }
+  .nav-cta:hover{ transform:translateY(-3px); background:var(--accent-hi); box-shadow:0 14px 30px rgba(240,106,42,.45); }
+  .nav-cta svg{ width:15px; height:15px; }
+  .burger{ display:none; pointer-events:auto; width:44px; height:44px; border:1px solid var(--line-2); border-radius:11px; background:rgba(255,255,255,.04); color:var(--ink); cursor:pointer; }
+  .burger svg{ width:20px; height:20px; margin:auto; }
+
+  /* ============================ HERO ============================ */
+  .hero{ position:relative; height:100vh; z-index:1; overflow:hidden; background:var(--bg); }
+  .stage{ position:absolute; inset:0; }
+  .scene-svg{ position:absolute; inset:0; width:100%; height:100%; }
+  /* vignette + film grade over the scene */
+  .grade{
+    position:absolute; inset:0; pointer-events:none; z-index:3;
+    background:
+      radial-gradient(120% 80% at 50% 8%, transparent 40%, rgba(8,10,14,.5) 100%),
+      linear-gradient(180deg, rgba(8,10,14,.46) 0%, transparent 26%, transparent 52%, rgba(8,10,14,.78) 100%);
+    mix-blend-mode:multiply;
+  }
+  .grain{ position:absolute; inset:0; z-index:4; pointer-events:none; opacity:.06; mix-blend-mode:overlay; }
+
+  /* drone HUD reticle text readouts */
+  .hud{ position:absolute; inset:0; z-index:5; pointer-events:none; font-weight:600; color:var(--ink-dim); }
+  .hud .corner{ position:absolute; font-size:11px; letter-spacing:.14em; text-transform:uppercase; display:flex; align-items:center; gap:7px; opacity:.0; }
+  .hud .tl{ top:calc(var(--gutter) + 64px); left:var(--gutter); }
+  .hud .tr{ top:calc(var(--gutter) + 64px); right:var(--gutter); text-align:right; }
+  .hud .dot{ width:6px; height:6px; border-radius:50%; background:var(--accent); box-shadow:0 0 10px var(--accent); }
+  .hud .measure{
+    position:absolute; left:50%; bottom:clamp(120px,20vh,200px); transform:translateX(-50%);
+    display:flex; align-items:baseline; gap:12px; opacity:0;
+    padding:10px 18px; border:1px solid var(--line-2); border-radius:999px;
+    background:rgba(14,17,22,.5); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+  }
+  .hud .measure b{ font-family:"Archivo"; font-weight:800; font-size:20px; color:var(--ink); letter-spacing:-0.02em; }
+  .hud .measure span{ font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--accent); }
+
+  /* BEATS */
+  .beats{ position:absolute; inset:0; z-index:6; display:grid; align-items:end; }
+  .beat{
+    grid-area:1/1; align-self:end; justify-self:start;
+    width:100%; max-width:var(--maxw); margin:0 auto;
+    padding:0 var(--gutter) clamp(64px,12vh,128px);
+    opacity:0; will-change:opacity,transform;
+  }
+  .beat h1{
+    font-size:clamp(3rem,8vw,7rem); line-height:1.0; max-width:16ch;
+    text-shadow:0 8px 50px rgba(0,0,0,.6), 0 2px 6px rgba(0,0,0,.5);
+  }
+  .beat h1 .em{ color:var(--accent); }
+  .beat .sub{
+    margin-top:20px; max-width:46ch; font-size:clamp(1.05rem,1.5vw,1.28rem);
+    color:var(--ink); line-height:1.6; text-shadow:0 2px 18px rgba(0,0,0,.7);
+  }
+  .beat .kick{ margin-bottom:22px; }
+  .cta-row{ margin-top:36px; display:flex; flex-wrap:wrap; gap:14px; }
+  .btn{
+    display:inline-flex; align-items:center; gap:11px; cursor:pointer;
+    font-weight:700; font-size:15.5px; padding:16px 26px; border-radius:13px;
+    border:1px solid transparent; will-change:transform;
+    transition:transform .3s var(--expo), box-shadow .3s var(--expo), background .3s var(--expo), border-color .3s var(--expo);
+  }
+  .btn svg{ width:17px; height:17px; }
+  .btn-primary{ background:var(--accent); color:#150A04; box-shadow:0 16px 38px rgba(240,106,42,.4); }
+  .btn-primary:hover{ transform:translateY(-3px); background:var(--accent-hi); box-shadow:0 22px 48px rgba(240,106,42,.5); }
+  .btn-ghost{ background:rgba(244,241,234,.05); color:var(--ink); border-color:var(--line-2); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
+  .btn-ghost:hover{ transform:translateY(-3px); background:rgba(244,241,234,.1); border-color:rgba(244,241,234,.3); }
+
+  /* scrub progress rail */
+  .rail{ position:absolute; left:var(--gutter); right:var(--gutter); bottom:30px; z-index:6; height:2px; background:rgba(244,241,234,.14); border-radius:2px; overflow:hidden; }
+  .rail i{ position:absolute; inset:0 auto 0 0; width:calc(var(--p,0) * 100%); background:linear-gradient(90deg,var(--accent-deep),var(--accent-hi)); }
+  .scrollcue{ position:absolute; left:50%; bottom:46px; z-index:6; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; gap:8px; font-size:11px; letter-spacing:.2em; text-transform:uppercase; color:var(--ink-dim); transition:opacity .4s var(--expo); }
+  .scrollcue .mouse{ width:22px; height:34px; border:1.5px solid var(--line-2); border-radius:12px; position:relative; }
+  .scrollcue .mouse::after{ content:""; position:absolute; left:50%; top:7px; width:3px; height:6px; margin-left:-1.5px; border-radius:2px; background:var(--accent); animation:wheel 1.7s var(--expo) infinite; }
+  @keyframes wheel{ 0%{opacity:0;transform:translateY(-3px);} 35%{opacity:1;} 70%{opacity:1;transform:translateY(6px);} 100%{opacity:0;transform:translateY(9px);} }
+
+  /* ============================ THE CURTAIN (named motif) ============================ */
+  /* intro wipe on first load */
+  .curtain-intro{ position:fixed; inset:0; z-index:200; background:var(--bg); display:grid; place-items:center; }
+  .curtain-intro .panel{ position:absolute; inset:0; background:var(--bg); transform-origin:top; }
+  .curtain-intro .edge{ position:absolute; left:0; right:0; height:2px; background:linear-gradient(90deg,transparent,var(--accent),transparent); opacity:.9; box-shadow:0 0 24px var(--accent); }
+  .intro-mark{ position:relative; display:flex; flex-direction:column; align-items:center; gap:18px; }
+  .intro-mark svg{ width:64px; height:64px; }
+  .intro-mark .pu{ font-weight:800; letter-spacing:.42em; font-size:13px; text-transform:uppercase; color:var(--ink-dim); padding-left:.42em; overflow:hidden; }
+
+  /* reusable section reveal = the curtain wipe via clip-path */
+  .reveal{ opacity:0; }
+  .reveal.in{ opacity:1; }
+
+  /* ============================ SECTIONS ============================ */
+  section{ position:relative; z-index:2; }
+  .pad{ padding-block:clamp(86px,13vh,150px); }
+  .band{ background:var(--bg-2); border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+  .sec-head{ max-width:64ch; }
+  .sec-head h2{ font-size:clamp(2rem,4.5vw,3.4rem); margin-top:18px; }
+  .sec-head p{ margin-top:18px; max-width:60ch; color:var(--ink-dim); font-size:clamp(1.05rem,1.4vw,1.2rem); }
+
+  /* trust bar */
+  .trust{ display:flex; align-items:center; justify-content:space-between; gap:28px; flex-wrap:wrap; padding-block:26px; }
+  .trust .tlabel{ font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-faint); font-weight:700; }
+  .badges{ display:flex; flex-wrap:wrap; gap:clamp(20px,3vw,40px); }
+  .badge{ display:inline-flex; align-items:center; gap:10px; font-size:14.5px; font-weight:600; color:var(--ink); }
+  .badge svg{ width:18px; height:18px; color:var(--accent); flex:none; }
+
+  /* differentiator: measured from the sky */
+  .diff{ display:grid; grid-template-columns:1.05fr .95fr; gap:clamp(36px,5vw,72px); align-items:center; }
+  .diff .panel-art{
+    position:relative; aspect-ratio:4/3; border-radius:20px; overflow:hidden;
+    border:1px solid var(--line-2);
+    background:
+      radial-gradient(120% 120% at 70% 10%, rgba(240,106,42,.12), transparent 55%),
+      linear-gradient(180deg, #11161D, #0B0E13);
+  }
+  .diff svg{ position:absolute; inset:0; width:100%; height:100%; }
+  .readout{ position:absolute; left:18px; bottom:18px; padding:9px 15px; border-radius:11px; border:1px solid var(--line-2); background:rgba(14,17,22,.6); backdrop-filter:blur(8px); display:flex; gap:14px; align-items:baseline; }
+  .readout b{ font-weight:800; font-size:18px; letter-spacing:-0.02em; }
+  .readout span{ font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--accent); }
+  .diff ul{ list-style:none; margin-top:26px; display:grid; gap:14px; }
+  .diff li{ display:flex; gap:13px; align-items:flex-start; color:var(--ink-dim); font-size:1.05rem; }
+  .diff li svg{ width:20px; height:20px; color:var(--accent); flex:none; margin-top:3px; }
+  .diff li b{ color:var(--ink); font-weight:700; }
+
+  /* services asymmetric grid */
+  .services{ display:grid; grid-template-columns:1.4fr 1fr 1fr; grid-auto-rows:minmax(150px,auto); gap:16px; margin-top:52px; }
+  .svc{ position:relative; border:1px solid var(--line); border-radius:18px; padding:26px; background:linear-gradient(180deg, rgba(255,255,255,.02), transparent); overflow:hidden; transition:transform .4s var(--expo), border-color .4s var(--expo), background .4s var(--expo); }
+  .svc:hover{ transform:translateY(-3px); border-color:var(--line-2); background:linear-gradient(180deg, rgba(240,106,42,.06), transparent); }
+  .svc.feature{ grid-row:span 2; display:flex; flex-direction:column; justify-content:space-between; min-height:330px; background:linear-gradient(165deg, rgba(240,106,42,.1), rgba(255,255,255,.02) 45%, transparent); }
+  .svc h3{ font-size:1.32rem; margin-bottom:8px; }
+  .svc.feature h3{ font-size:clamp(1.6rem,2.4vw,2.2rem); }
+  .svc p{ color:var(--ink-dim); font-size:.98rem; }
+  .svc .ico{ width:38px; height:38px; border-radius:10px; display:grid; place-items:center; background:rgba(240,106,42,.12); color:var(--accent); margin-bottom:18px; }
+  .svc .ico svg{ width:20px; height:20px; }
+  .svc.feature .ico{ width:46px; height:46px; }
+
+  /* process steps */
+  .steps{ display:grid; grid-template-columns:repeat(3,1fr); gap:18px; margin-top:52px; counter-reset:step; }
+  .step{ border:1px solid var(--line); border-radius:18px; overflow:hidden; background:rgba(255,255,255,.015); }
+  .step .art{ aspect-ratio:16/10; position:relative; overflow:hidden; background:linear-gradient(160deg,#12171E,#0B0E13); }
+  .step .art svg{ position:absolute; inset:0; width:100%; height:100%; }
+  .step .body{ padding:24px; }
+  .step .n{ font-weight:800; font-size:13px; letter-spacing:.04em; color:var(--accent); }
+  .step h3{ font-size:1.25rem; margin:8px 0 8px; }
+  .step p{ color:var(--ink-dim); font-size:.98rem; }
+
+  /* proof carousel */
+  .proof{ margin-top:48px; }
+  .carousel{ display:flex; gap:18px; overflow-x:auto; scroll-snap-type:x mandatory; padding-bottom:10px; scrollbar-width:thin; scrollbar-color:var(--accent-deep) transparent; }
+  .carousel::-webkit-scrollbar{ height:6px; }
+  .carousel::-webkit-scrollbar-thumb{ background:var(--accent-deep); border-radius:3px; }
+  .slide{ scroll-snap-align:center; flex:0 0 min(82vw,720px); border:1px solid var(--line-2); border-radius:20px; overflow:hidden; background:#0B0E13; }
+  .slide .frame{ position:relative; aspect-ratio:16/9; overflow:hidden; }
+  .slide .frame svg{ position:absolute; inset:0; width:100%; height:100%; }
+  .slide .meta{ display:flex; align-items:center; justify-content:space-between; padding:18px 22px; }
+  .slide .meta .addr{ font-weight:700; font-size:1.05rem; }
+  .slide .meta .addr span{ display:block; color:var(--ink-dim); font-weight:500; font-size:.9rem; margin-top:2px; }
+  .slide .meta .num{ font-weight:800; color:var(--accent); font-size:13px; letter-spacing:.06em; }
+  .proof-nav{ display:flex; align-items:center; gap:14px; margin-top:22px; }
+  .proof-nav button{ width:46px; height:46px; border-radius:50%; border:1px solid var(--line-2); background:rgba(255,255,255,.03); color:var(--ink); cursor:pointer; display:grid; place-items:center; transition:background .3s var(--expo), border-color .3s var(--expo), transform .3s var(--expo); }
+  .proof-nav button:hover{ background:rgba(240,106,42,.14); border-color:var(--accent); transform:translateY(-2px); }
+  .proof-nav button svg{ width:18px; height:18px; }
+  .proof-count{ font-weight:700; font-size:14px; color:var(--ink-dim); letter-spacing:.04em; }
+  .proof-count b{ color:var(--ink); }
+
+  /* testimonial */
+  .quote-sec{ text-align:left; }
+  .quote-sec blockquote{ font-size:clamp(1.7rem,3.6vw,3rem); font-weight:700; line-height:1.18; letter-spacing:-0.025em; max-width:20ch; text-wrap:balance; }
+  .quote-sec blockquote .em{ color:var(--accent); }
+  .quote-sec .by{ margin-top:30px; display:flex; align-items:center; gap:14px; }
+  .quote-sec .av{ width:50px; height:50px; border-radius:50%; background:linear-gradient(150deg,var(--accent),var(--accent-deep)); display:grid; place-items:center; font-weight:800; color:#150A04; }
+  .quote-sec .who b{ display:block; font-weight:700; }
+  .quote-sec .who span{ color:var(--ink-dim); font-size:.92rem; }
+  .stars{ display:inline-flex; gap:3px; color:var(--accent); margin-bottom:18px; }
+  .stars svg{ width:18px; height:18px; }
+
+  /* closer */
+  .closer{ position:relative; overflow:hidden; text-align:center; }
+  .closer .glowbg{ position:absolute; inset:0; z-index:0; background:radial-gradient(70% 60% at 50% 12%, rgba(240,106,42,.18), transparent 60%); }
+  .closer .inner{ position:relative; z-index:1; max-width:780px; margin:0 auto; }
+  .closer h2{ font-size:clamp(2.2rem,5.5vw,4.2rem); }
+  .closer p{ margin:20px auto 0; max-width:54ch; color:var(--ink-dim); font-size:1.15rem; }
+  .closer .cta-row{ justify-content:center; }
+
+  /* footer */
+  footer{ background:#0A0D11; border-top:1px solid var(--line); padding-block:64px 40px; }
+  .foot-grid{ display:grid; grid-template-columns:1.6fr 1fr 1fr 1fr; gap:36px; }
+  .foot-grid h4{ font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-faint); margin-bottom:16px; }
+  .foot-grid a, .foot-grid p{ display:block; color:var(--ink-dim); font-size:.95rem; margin-bottom:10px; transition:color .3s var(--expo); }
+  .foot-grid a:hover{ color:var(--accent); }
+  .foot-brand .brand{ font-size:20px; margin-bottom:14px; }
+  .foot-brand .tag{ color:var(--ink-dim); max-width:30ch; font-size:.95rem; }
+  .foot-bottom{ margin-top:48px; padding-top:24px; border-top:1px solid var(--line); display:flex; justify-content:space-between; gap:18px; flex-wrap:wrap; color:var(--ink-faint); font-size:13px; }
+  .gobeyond{ color:var(--accent); font-weight:700; letter-spacing:.04em; }
+
+  /* ============================ RESPONSIVE ============================ */
+  @media (max-width:920px){
+    .nav-links{ display:none; }
+    .burger{ display:grid; place-items:center; }
+    .nav{ padding:10px 10px 10px 16px; }
+    .brand{ white-space:nowrap; font-size:16px; }
+    .brand .mark{ width:30px; height:30px; }
+    .nav-cta{ display:none; }   /* burger carries the menu on mobile */
+    .diff{ grid-template-columns:1fr; }
+    .services{ grid-template-columns:1fr 1fr; }
+    .svc.feature{ grid-column:1 / -1; grid-row:auto; min-height:auto; }
+    .steps{ grid-template-columns:1fr; }
+    .foot-grid{ grid-template-columns:1fr 1fr; }
+    .foot-brand{ grid-column:1 / -1; }
+    .rail, .scrollcue, .hud .corner, .hud .measure{ display:none; }
+    /* mobile hero = static finished state, NEVER pinned/scrubbed */
+    .hero{ height:auto; min-height:92vh; }
+    .beat{ position:relative; opacity:1 !important; transform:none !important; }
+    .beat.b1, .beat.b2{ display:none; }   /* show only the resolved beat */
+    .beats{ align-items:end; }
+  }
+  @media (max-width:560px){
+    .services{ grid-template-columns:1fr; }
+    .foot-grid{ grid-template-columns:1fr; }
+    .trust{ justify-content:flex-start; }
+  }
+
+  /* ============================ REDUCED MOTION ============================ */
+  @media (prefers-reduced-motion:reduce){
+    *{ animation:none !important; transition:none !important; scroll-behavior:auto !important; }
+    .curtain-intro{ display:none; }
+    .scrollcue, .rail{ display:none; }
+    /* all beats visible, stacked */
+    .beats{ position:relative; display:block; padding-top:120px; }
+    .beat{ position:relative; opacity:1 !important; transform:none !important; padding-bottom:48px; }
+    .reveal{ opacity:1 !important; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================ THE CURTAIN intro ============================ -->
+<div class="curtain-intro" id="introCurtain" aria-hidden="true">
+  <div class="intro-mark" id="introMark">
+    <svg viewBox="0 0 48 48" fill="none" aria-hidden="true">
+      <path d="M24 4 L44 19 L37 19 L37 44 L11 44 L11 19 L4 19 Z" fill="none" stroke="#F06A2A" stroke-width="2.4" stroke-linejoin="round"/>
+      <path d="M24 4 L44 19 L4 19 Z" fill="#F06A2A" fill-opacity="0.16"/>
+      <path d="M16 44 L16 30 L32 30 L32 44" stroke="#F06A2A" stroke-width="2.4" stroke-linejoin="round"/>
+    </svg>
+    <div class="pu">PLUS&nbsp;ULTRA</div>
+  </div>
+  <div class="edge" id="introEdge" style="top:50%"></div>
+  <div class="panel" id="introPanelTop" style="bottom:50%"></div>
+  <div class="panel" id="introPanelBot" style="top:50%"></div>
+</div>
+
+<!-- ============================ NAV ============================ -->
+<header id="hdr">
+  <nav class="nav" aria-label="Primary">
+    <a class="brand" href="#top" aria-label="Plus Ultra Roofing home">
+      <svg class="mark" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+        <path d="M24 4 L44 19 L37 19 L37 44 L11 44 L11 19 L4 19 Z" fill="none" stroke="#F06A2A" stroke-width="2.6" stroke-linejoin="round"/>
+        <path d="M24 4 L44 19 L4 19 Z" fill="#F06A2A" fill-opacity="0.2"/>
+        <path d="M16 44 L16 30 L32 30 L32 44" stroke="#F06A2A" stroke-width="2.6" stroke-linejoin="round"/>
+      </svg>
+      <span><b>Plus Ultra</b> Roofing</span>
+    </a>
+    <div class="nav-links">
+      <a href="#sky">Measured from the sky</a>
+      <a href="#services">Services</a>
+      <a href="#process">Process</a>
+      <a href="#proof">Proof</a>
+    </div>
+    <a class="nav-cta" href="#estimate">
+      Get my instant estimate
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+    </a>
+    <button class="burger" aria-label="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+  </nav>
+</header>
+
+<a id="top"></a>
+
+<!-- ============================ HERO (pinned scroll-scrub roof transform) ============================ -->
+<section class="hero" id="hero" aria-label="Roof transformation">
+  <div class="stage" id="stage">
+
+    <!-- THE SYNTHETIC SCENE: drone view of a gabled home, old roof above / new roof beneath -->
+    <svg class="scene-svg" id="scene" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <defs>
+        <!-- sky grades from pre-dawn cold to clear morning as p advances -->
+        <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0"   stop-color="#0B1018" id="skyTop"/>
+          <stop offset="0.55" stop-color="#141C28" id="skyMid"/>
+          <stop offset="1"   stop-color="#1B2230" id="skyBot"/>
+        </linearGradient>
+        <radialGradient id="sun" cx="0.5" cy="0.5" r="0.5">
+          <stop offset="0" stop-color="#FFD9A8"/>
+          <stop offset="0.4" stop-color="#F06A2A" stop-opacity="0.55"/>
+          <stop offset="1" stop-color="#F06A2A" stop-opacity="0"/>
+        </radialGradient>
+        <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#10161B"/>
+          <stop offset="1" stop-color="#0A0E12"/>
+        </linearGradient>
+        <linearGradient id="wall" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#E7E0D4"/>
+          <stop offset="1" stop-color="#C9C0B1"/>
+        </linearGradient>
+        <linearGradient id="wallShade" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#9C9486"/>
+          <stop offset="1" stop-color="#857D6F"/>
+        </linearGradient>
+        <!-- OLD roof: worn, faded, mossy 3-tab asphalt -->
+        <linearGradient id="oldRoof" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#4A4640"/>
+          <stop offset="1" stop-color="#33302B"/>
+        </linearGradient>
+        <linearGradient id="oldRoofR" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#3A3731"/>
+          <stop offset="1" stop-color="#26241F"/>
+        </linearGradient>
+        <!-- NEW roof: deep charcoal architectural shingle with subtle dimension -->
+        <linearGradient id="newRoof" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#2A3340"/>
+          <stop offset="1" stop-color="#1A212B"/>
+        </linearGradient>
+        <linearGradient id="newRoofR" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#222A35"/>
+          <stop offset="1" stop-color="#141A22"/>
+        </linearGradient>
+        <linearGradient id="sheen" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#5C6B7E" stop-opacity="0.0"/>
+          <stop offset="0.5" stop-color="#7E8EA3" stop-opacity="0.35"/>
+          <stop offset="1" stop-color="#5C6B7E" stop-opacity="0.0"/>
+        </linearGradient>
+
+        <!-- clip = the LEFT roof plane (a parallelogram) -->
+        <clipPath id="clipL"><polygon points="800,150 800,470 470,640 470,470"/></clipPath>
+        <!-- clip = the RIGHT roof plane -->
+        <clipPath id="clipR"><polygon points="800,150 1130,470 1130,640 800,470"/></clipPath>
+
+        <!-- reveal mask for the NEW roof: a horizontal band that drops top->bottom -->
+        <mask id="newMask">
+          <rect id="newMaskRect" x="0" y="150" width="1600" height="0" fill="#fff"/>
+        </mask>
+        <mask id="oldMask">
+          <rect x="0" y="0" width="1600" height="900" fill="#fff"/>
+          <rect id="oldMaskRect" x="0" y="150" width="1600" height="0" fill="#000"/>
+        </mask>
+
+        <filter id="soft"><feGaussianBlur stdDeviation="0.6"/></filter>
+      </defs>
+
+      <!-- SKY -->
+      <rect x="0" y="0" width="1600" height="900" fill="url(#sky)"/>
+      <!-- rising sun glow (opacity driven by p) -->
+      <circle id="sunGlow" cx="1230" cy="250" r="360" fill="url(#sun)" opacity="0"/>
+      <!-- faint stars that fade out as dawn comes -->
+      <g id="stars" fill="#AEB9C9">
+        <circle cx="180" cy="120" r="1.4"/><circle cx="340" cy="80" r="1"/><circle cx="520" cy="160" r="1.2"/>
+        <circle cx="900" cy="90" r="1"/><circle cx="1120" cy="150" r="1.3"/><circle cx="1350" cy="100" r="1"/>
+        <circle cx="640" cy="60" r="1"/><circle cx="1480" cy="200" r="1.2"/><circle cx="60" cy="220" r="1"/>
+      </g>
+
+      <!-- GROUND -->
+      <path d="M0,720 Q500,690 800,705 T1600,712 L1600,900 L0,900 Z" fill="url(#ground)"/>
+      <!-- soft cast shadow of the house -->
+      <ellipse cx="800" cy="742" rx="470" ry="40" fill="#05070A" opacity="0.55"/>
+
+      <!-- ===== HOUSE BODY ===== -->
+      <!-- right-side gable wall (shaded) -->
+      <polygon points="1130,470 1130,720 980,720 980,470" fill="url(#wallShade)"/>
+      <!-- front wall -->
+      <polygon points="470,470 980,470 980,720 470,720" fill="url(#wall)"/>
+      <!-- front gable triangle -->
+      <polygon points="470,470 725,318 980,470" fill="url(#wall)"/>
+      <polygon points="725,318 980,470 470,470" fill="#000" opacity="0.04"/>
+
+      <!-- windows -->
+      <g>
+        <rect x="545" y="535" width="92" height="120" rx="4" fill="#0E1B26"/>
+        <rect x="545" y="535" width="92" height="120" rx="4" fill="none" stroke="#EDE6DA" stroke-width="5"/>
+        <line x1="591" y1="535" x2="591" y2="655" stroke="#EDE6DA" stroke-width="3"/>
+        <line x1="545" y1="595" x2="637" y2="595" stroke="#EDE6DA" stroke-width="3"/>
+        <rect id="winGlow1" x="545" y="535" width="92" height="120" rx="4" fill="#F7C98A" opacity="0"/>
+
+        <rect x="812" y="535" width="92" height="120" rx="4" fill="#0E1B26"/>
+        <rect x="812" y="535" width="92" height="120" rx="4" fill="none" stroke="#EDE6DA" stroke-width="5"/>
+        <line x1="858" y1="535" x2="858" y2="655" stroke="#EDE6DA" stroke-width="3"/>
+        <line x1="812" y1="595" x2="904" y2="595" stroke="#EDE6DA" stroke-width="3"/>
+        <rect id="winGlow2" x="812" y="535" width="92" height="120" rx="4" fill="#F7C98A" opacity="0"/>
+      </g>
+      <!-- door -->
+      <rect x="690" y="560" width="74" height="160" rx="3" fill="#2A2722"/>
+      <rect x="690" y="560" width="74" height="160" rx="3" fill="none" stroke="#EDE6DA" stroke-width="4"/>
+      <circle cx="752" cy="645" r="3.5" fill="#F06A2A"/>
+
+      <!-- ===== ROOFS ===== -->
+      <!-- The NEW roof sits underneath, masked to reveal top->bottom. -->
+      <g mask="url(#newMask)">
+        <!-- left plane -->
+        <polygon points="800,150 800,470 470,640 470,470" fill="url(#newRoof)"/>
+        <!-- right plane -->
+        <polygon points="800,150 1130,470 1130,640 800,470" fill="url(#newRoofR)"/>
+        <!-- architectural shingle courses, left plane -->
+        <g clip-path="url(#clipL)" stroke="#0D1219" stroke-width="2.2" opacity="0.85">
+          <line x1="470" y1="500" x2="800" y2="330"/>
+          <line x1="470" y1="540" x2="800" y2="370"/>
+          <line x1="470" y1="580" x2="800" y2="410"/>
+          <line x1="470" y1="620" x2="800" y2="450"/>
+          <line x1="470" y1="470" x2="800" y2="290"/>
+        </g>
+        <!-- dimensional shadow blocks left -->
+        <g clip-path="url(#clipL)" fill="#0D1219" opacity="0.28">
+          <rect x="500" y="470" width="60" height="9" transform="rotate(-27 500 470)"/>
+          <rect x="600" y="430" width="60" height="9" transform="rotate(-27 600 430)"/>
+          <rect x="690" y="395" width="60" height="9" transform="rotate(-27 690 395)"/>
+        </g>
+        <g clip-path="url(#clipR)" stroke="#0A0F15" stroke-width="2.2" opacity="0.85">
+          <line x1="800" y1="330" x2="1130" y2="500"/>
+          <line x1="800" y1="370" x2="1130" y2="540"/>
+          <line x1="800" y1="410" x2="1130" y2="580"/>
+          <line x1="800" y1="450" x2="1130" y2="620"/>
+          <line x1="800" y1="290" x2="1130" y2="470"/>
+        </g>
+        <!-- sheen sweep on the new roof (premium) -->
+        <polygon points="800,150 800,470 470,640 470,470" fill="url(#sheen)" opacity="0.5"/>
+      </g>
+
+      <!-- ridge cap + drip edge that snap in at the very end -->
+      <g id="ridgeGroup" opacity="0">
+        <line x1="800" y1="150" x2="800" y2="470" stroke="#0A0F15" stroke-width="6" stroke-linecap="round"/>
+        <line x1="470" y1="470" x2="470" y2="640" stroke="#11161D" stroke-width="5"/>
+        <line x1="1130" y1="470" x2="1130" y2="640" stroke="#11161D" stroke-width="5"/>
+        <line x1="470" y1="640" x2="800" y2="470" stroke="#3B4654" stroke-width="4"/>
+        <line x1="1130" y1="640" x2="800" y2="470" stroke="#3B4654" stroke-width="4"/>
+      </g>
+
+      <!-- The OLD roof sits on top, masked to peel away top->bottom (oldMaskRect grows). -->
+      <g mask="url(#oldMask)" id="oldRoofGroup">
+        <polygon points="800,150 800,470 470,640 470,470" fill="url(#oldRoof)"/>
+        <polygon points="800,150 1130,470 1130,640 800,470" fill="url(#oldRoofR)"/>
+        <!-- worn 3-tab seams left -->
+        <g clip-path="url(#clipL)" stroke="#26241F" stroke-width="2">
+          <line x1="470" y1="490" x2="800" y2="320"/>
+          <line x1="470" y1="525" x2="800" y2="355"/>
+          <line x1="470" y1="560" x2="800" y2="390"/>
+          <line x1="470" y1="595" x2="800" y2="425"/>
+          <line x1="470" y1="630" x2="800" y2="460"/>
+        </g>
+        <!-- vertical tab breaks left -->
+        <g clip-path="url(#clipL)" stroke="#201E1A" stroke-width="1.4" opacity="0.7">
+          <line x1="560" y1="455" x2="560" y2="610"/>
+          <line x1="640" y1="430" x2="640" y2="585"/>
+          <line x1="720" y1="400" x2="720" y2="560"/>
+        </g>
+        <g clip-path="url(#clipR)" stroke="#1C1A16" stroke-width="2">
+          <line x1="800" y1="320" x2="1130" y2="490"/>
+          <line x1="800" y1="355" x2="1130" y2="525"/>
+          <line x1="800" y1="390" x2="1130" y2="560"/>
+          <line x1="800" y1="425" x2="1130" y2="595"/>
+          <line x1="800" y1="460" x2="1130" y2="630"/>
+        </g>
+        <!-- moss / water staining patches -->
+        <g opacity="0.5">
+          <ellipse cx="560" cy="560" rx="38" ry="16" fill="#4E5A3A" transform="rotate(-27 560 560)"/>
+          <ellipse cx="650" cy="520" rx="26" ry="12" fill="#54603F" transform="rotate(-27 650 520)"/>
+          <ellipse cx="960" cy="540" rx="34" ry="15" fill="#3F4A32" transform="rotate(27 960 540)"/>
+          <ellipse cx="880" cy="430" rx="20" ry="9" fill="#2E3A26" transform="rotate(27 880 430)"/>
+        </g>
+        <!-- a couple of curled / missing shingles for character -->
+        <path d="M700,500 l40,-21 l8,12 l-40,21 Z" fill="#1A1814"/>
+        <path d="M905,505 l36,19 l-7,12 l-36,-19 Z" fill="#161410"/>
+      </g>
+
+      <!-- flying debris during the peel (driven by p) -->
+      <g id="debris" opacity="0">
+        <rect x="640" y="360" width="26" height="9" rx="2" fill="#3A3731" transform="rotate(-18 640 360)"/>
+        <rect x="900" y="380" width="22" height="8" rx="2" fill="#33302B" transform="rotate(22 900 380)"/>
+        <rect x="780" y="300" width="18" height="7" rx="2" fill="#4A4640" transform="rotate(-8 780 300)"/>
+        <rect x="560" y="420" width="20" height="8" rx="2" fill="#2E2C27" transform="rotate(-30 560 420)"/>
+      </g>
+
+      <!-- SURVEY RETICLE: sweeps the roof, resolves to a measured outline at the end -->
+      <g id="reticle" opacity="0" stroke="#F06A2A" fill="none">
+        <polygon points="800,150 1130,470 800,470" stroke-width="2" stroke-dasharray="6 7" opacity="0.85"/>
+        <polygon points="800,150 470,470 800,470" stroke-width="2" stroke-dasharray="6 7" opacity="0.85"/>
+        <circle cx="800" cy="310" r="5" fill="#F06A2A" stroke="none"/>
+        <circle cx="635" cy="395" r="4" fill="#F06A2A" stroke="none"/>
+        <circle cx="965" cy="395" r="4" fill="#F06A2A" stroke="none"/>
+        <line x1="635" y1="395" x2="965" y2="395" stroke-width="1.4" stroke-dasharray="4 5"/>
+      </g>
+    </svg>
+
+    <div class="grade"></div>
+    <canvas class="grain" id="grain"></canvas>
+
+    <!-- drone HUD -->
+    <div class="hud" id="hud" aria-hidden="true">
+      <div class="corner tl" id="hudTL"><span class="dot"></span> SURVEY · RIVERVIEW NB</div>
+      <div class="corner tr" id="hudTR">PITCH 7/12 · CAPTURE LIVE</div>
+      <div class="measure" id="hudMeasure"><b>18.4&nbsp;SQ</b> <span>measured roof area</span></div>
+    </div>
+
+    <!-- BEATS -->
+    <div class="beats">
+      <div class="beat b1" data-beat="1">
+        <span class="eyebrow kick">Plus Ultra Roofing · Riverview &amp; Moncton</span>
+        <h1>Most roofs fail<br>in <span class="em">winter.</span></h1>
+        <p class="sub">Ice, wind, and forty freeze-thaw cycles a season find every shortcut a roofer ever took.</p>
+      </div>
+      <div class="beat b2" data-beat="2">
+        <span class="eyebrow kick">Old comes off. New goes on.</span>
+        <h1>Ours <span class="em">don't.</span></h1>
+        <p class="sub">We strip it to the deck, fix what the last crew hid, and install a system built for an Atlantic winter.</p>
+      </div>
+      <div class="beat b3" data-beat="3">
+        <span class="eyebrow kick">Measured from the sky · Fixed price · Documented</span>
+        <h1>Built to go<br>further <span class="em">beyond.</span></h1>
+        <p class="sub">A premium reroof, priced from a real aerial measurement, installed once, done right.</p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="#estimate">
+            Get my instant estimate
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+          <a class="btn btn-ghost" href="#sky">See how we measure</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="scrollcue" id="scrollcue"><span>Scroll to transform</span><div class="mouse"></div></div>
+    <div class="rail"><i></i></div>
+  </div>
+</section>
+
+<!-- ============================ TRUST BAR ============================ -->
+<section class="band reveal" data-reveal>
+  <div class="wrap trust">
+    <div class="tlabel">Trusted, certified, insured</div>
+    <div class="badges">
+      <div class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6l8-4z"/></svg> GAF &amp; IKO certified</div>
+      <div class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg> WorkSafeNB compliant</div>
+      <div class="badge"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.3 6.9.6-5.2 4.6 1.6 6.8L12 17.3 5.8 20.9l1.6-6.8L2.2 8.9l6.9-.6z"/></svg> 4.9 on Google</div>
+      <div class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-6 9 6v11a1 1 0 01-1 1H4a1 1 0 01-1-1z"/></svg> Fully insured</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ DIFFERENTIATOR ============================ -->
+<section class="pad reveal" id="sky" data-reveal>
+  <div class="wrap diff">
+    <div class="panel-art">
+      <svg viewBox="0 0 600 450" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+        <rect width="600" height="450" fill="url(#groundMap)"/>
+        <defs>
+          <linearGradient id="groundMap" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#121922"/><stop offset="1" stop-color="#0A0E13"/></linearGradient>
+        </defs>
+        <!-- traced roofline -->
+        <polygon points="300,90 470,210 410,330 190,330 130,210" fill="rgba(240,106,42,0.06)" stroke="#F06A2A" stroke-width="2.5" stroke-dasharray="7 6"/>
+        <line x1="300" y1="90" x2="300" y2="330" stroke="#F06A2A" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.7"/>
+        <line x1="130" y1="210" x2="470" y2="210" stroke="#F06A2A" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.7"/>
+        <circle cx="300" cy="90" r="5" fill="#F06A2A"/><circle cx="470" cy="210" r="5" fill="#F06A2A"/>
+        <circle cx="410" cy="330" r="5" fill="#F06A2A"/><circle cx="190" cy="330" r="5" fill="#F06A2A"/>
+        <circle cx="130" cy="210" r="5" fill="#F06A2A"/>
+        <text x="300" y="180" fill="#F4F1EA" font-family="Archivo" font-weight="800" font-size="26" text-anchor="middle">18.4 SQ</text>
+        <text x="300" y="205" fill="#9AA3AD" font-family="Archivo" font-weight="600" font-size="12" letter-spacing="2" text-anchor="middle">PITCH 7 / 12</text>
+      </svg>
+      <div class="readout"><b>18.4&nbsp;SQ</b> <span>satellite-measured</span></div>
+    </div>
+    <div>
+      <span class="eyebrow">The Plus Ultra difference</span>
+      <h2 class="sec-head" style="margin-top:18px">We measure your roof from the sky before we ever knock.</h2>
+      <ul>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg><span><b>No guesswork, no surprise change orders.</b> Aerial imagery gives us your real area, pitch, and facets down to the square.</span></li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg><span><b>A fixed price up front.</b> The number we send is the number you pay. Materials and labour locked before we start.</span></li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg><span><b>Every install documented.</b> Photos of the deck, the underlayment, and the finished system, sent to you.</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ SERVICES ============================ -->
+<section class="band pad reveal" id="services" data-reveal>
+  <div class="wrap">
+    <span class="eyebrow">What we install</span>
+    <h2 class="sec-head" style="margin-top:18px">A complete exterior, built to outlast the warranty.</h2>
+    <div class="services">
+      <div class="svc feature">
+        <div>
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-6 9 6v11a1 1 0 01-1 1H4a1 1 0 01-1-1z"/><path d="M9 21V12h6v9"/></svg></div>
+          <h3>Architectural shingle reroofs</h3>
+          <p>Full tear-off to the deck, ice-and-water at every vulnerable line, and a dimensional shingle system engineered for high-wind Maritime weather. The roof most homes here actually need.</p>
+        </div>
+        <a class="eyebrow" href="#estimate" style="margin-top:24px">Price my reroof &rarr;</a>
+      </div>
+      <div class="svc">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20l8-16 8 16"/><path d="M8 20l4-8 4 8"/></svg></div>
+        <h3>Standing-seam metal</h3>
+        <p>The fifty-year answer for steep, exposed, and statement roofs.</p>
+      </div>
+      <div class="svc">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></div>
+        <h3>Storm &amp; leak repair</h3>
+        <p>Fast diagnosis, a clear scope, and a fix that holds through the next system.</p>
+      </div>
+      <div class="svc">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18"/></svg></div>
+        <h3>Soffit, fascia &amp; eaves</h3>
+        <p>The trim and venting that keep the whole system breathing.</p>
+      </div>
+      <div class="svc">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M12 3v18"/><circle cx="12" cy="12" r="9"/></svg></div>
+        <h3>Ventilation &amp; ice-dam</h3>
+        <p>Engineered airflow that stops the ice dams winter builds.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ PROCESS ============================ -->
+<section class="pad reveal" id="process" data-reveal>
+  <div class="wrap">
+    <span class="eyebrow">How it goes</span>
+    <h2 class="sec-head" style="margin-top:18px">Three steps. No mystery.</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="art">
+          <svg viewBox="0 0 400 250" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+            <rect width="400" height="250" fill="#0C1117"/>
+            <polygon points="200,60 320,150 80,150" fill="none" stroke="#F06A2A" stroke-width="2" stroke-dasharray="6 6"/>
+            <circle cx="200" cy="60" r="4" fill="#F06A2A"/><circle cx="320" cy="150" r="4" fill="#F06A2A"/><circle cx="80" cy="150" r="4" fill="#F06A2A"/>
+            <circle cx="300" cy="70" r="22" fill="none" stroke="#3B4654" stroke-width="2"/>
+            <path d="M300 58 v24 M288 70 h24" stroke="#9AA3AD" stroke-width="1.5"/>
+          </svg>
+        </div>
+        <div class="body"><div class="n">Step 01</div><h3>Measure from the sky</h3><p>We pull aerial imagery and return your exact area, pitch, and facet count. No ladder required to get a real number.</p></div>
+      </div>
+      <div class="step">
+        <div class="art">
+          <svg viewBox="0 0 400 250" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+            <rect width="400" height="250" fill="#0C1117"/>
+            <rect x="120" y="55" width="160" height="140" rx="6" fill="#11171F" stroke="#3B4654" stroke-width="2"/>
+            <line x1="145" y1="90" x2="255" y2="90" stroke="#5B6470" stroke-width="3"/>
+            <line x1="145" y1="115" x2="235" y2="115" stroke="#5B6470" stroke-width="3"/>
+            <text x="200" y="165" fill="#F06A2A" font-family="Archivo" font-weight="800" font-size="26" text-anchor="middle">FIXED</text>
+          </svg>
+        </div>
+        <div class="body"><div class="n">Step 02</div><h3>Fixed price up front</h3><p>You get one clear number with the full scope behind it. The price we quote is the price you pay, locked before day one.</p></div>
+      </div>
+      <div class="step">
+        <div class="art">
+          <svg viewBox="0 0 400 250" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+            <rect width="400" height="250" fill="#0C1117"/>
+            <polygon points="200,55 310,135 310,185 200,105 90,185 90,135" fill="#222A35"/>
+            <polygon points="200,55 310,135 200,105 90,135" fill="#2A3340"/>
+            <line x1="90" y1="160" x2="200" y2="80" stroke="#0D1219" stroke-width="2"/>
+            <line x1="200" y1="80" x2="310" y2="160" stroke="#0D1219" stroke-width="2"/>
+            <circle cx="330" cy="80" r="14" fill="none" stroke="#F06A2A" stroke-width="2"/>
+            <path d="M324 80 l5 5 l8 -10" stroke="#F06A2A" stroke-width="2" fill="none"/>
+          </svg>
+        </div>
+        <div class="body"><div class="n">Step 03</div><h3>Install &amp; document</h3><p>Our crew strips, repairs, and installs in one clean run, then sends you photos of every layer from deck to ridge.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ PROOF CAROUSEL ============================ -->
+<section class="band pad reveal" id="proof" data-reveal>
+  <div class="wrap">
+    <span class="eyebrow">Proof from above</span>
+    <h2 class="sec-head" style="margin-top:18px">Real Riverview &amp; Moncton roofs, before and after.</h2>
+    <div class="proof">
+      <div class="carousel" id="carousel">
+        <!-- each slide = a synthetic before/after drone frame -->
+        <div class="slide">
+          <div class="frame">
+            <svg viewBox="0 0 800 450" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+              <rect width="800" height="450" fill="#0B0F14"/>
+              <polygon points="400,70 660,250 660,330 400,160" fill="#222A35"/>
+              <polygon points="400,70 140,250 140,330 400,160" fill="#2A3340"/>
+              <polygon points="400,160 660,330 400,400 140,330" fill="#1A212B"/>
+              <line x1="400" y1="70" x2="400" y2="160" stroke="#0A0F15" stroke-width="5"/>
+              <g stroke="#0D1219" stroke-width="2" opacity="0.7"><line x1="160" y1="270" x2="400" y2="105"/><line x1="180" y1="290" x2="400" y2="135"/></g>
+              <rect x="0" y="0" width="400" height="450" fill="#000" opacity="0.0"/>
+              <text x="40" y="420" fill="#F06A2A" font-family="Archivo" font-weight="800" font-size="18">AFTER</text>
+            </svg>
+          </div>
+          <div class="meta"><div class="addr">Coverdale Road<span>Architectural shingle reroof · 22.1 SQ</span></div><div class="num">01 / 05</div></div>
+        </div>
+        <div class="slide">
+          <div class="frame">
+            <svg viewBox="0 0 800 450" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+              <rect width="800" height="450" fill="#0B0F14"/>
+              <polygon points="400,70 660,250 660,330 400,160" fill="#3A3731"/>
+              <polygon points="400,70 140,250 140,330 400,160" fill="#4A4640"/>
+              <polygon points="400,160 660,330 400,400 140,330" fill="#33302B"/>
+              <ellipse cx="300" cy="250" rx="40" ry="16" fill="#4E5A3A" opacity="0.6" transform="rotate(-26 300 250)"/>
+              <text x="40" y="420" fill="#9AA3AD" font-family="Archivo" font-weight="800" font-size="18">BEFORE</text>
+            </svg>
+          </div>
+          <div class="meta"><div class="addr">Pine Glen<span>Full tear-off · failed 3-tab</span></div><div class="num">02 / 05</div></div>
+        </div>
+        <div class="slide">
+          <div class="frame">
+            <svg viewBox="0 0 800 450" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+              <rect width="800" height="450" fill="#0B0F14"/>
+              <polygon points="400,90 640,260 160,260" fill="#2A3340"/>
+              <polygon points="400,90 400,260 160,260" fill="#222A35"/>
+              <line x1="400" y1="90" x2="160" y2="260" stroke="#0D1219" stroke-width="3"/>
+              <line x1="400" y1="90" x2="640" y2="260" stroke="#0A0F15" stroke-width="3"/>
+              <rect x="300" y="290" width="200" height="110" fill="#C9C0B1"/>
+              <text x="40" y="420" fill="#F06A2A" font-family="Archivo" font-weight="800" font-size="18">AFTER</text>
+            </svg>
+          </div>
+          <div class="meta"><div class="addr">Royal Oaks<span>Metal accent + shingle · 18.4 SQ</span></div><div class="num">03 / 05</div></div>
+        </div>
+        <div class="slide">
+          <div class="frame">
+            <svg viewBox="0 0 800 450" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+              <rect width="800" height="450" fill="#0B0F14"/>
+              <polygon points="400,80 650,250 650,340 400,170" fill="#243a44"/>
+              <polygon points="400,80 150,250 150,340 400,170" fill="#2c4651"/>
+              <g stroke="#16242b" stroke-width="3"><line x1="200" y1="270" x2="400" y2="135"/><line x1="250" y1="300" x2="400" y2="170"/></g>
+              <text x="40" y="420" fill="#F06A2A" font-family="Archivo" font-weight="800" font-size="18">AFTER</text>
+            </svg>
+          </div>
+          <div class="meta"><div class="addr">Lakeville<span>Standing-seam metal · 25.0 SQ</span></div><div class="num">04 / 05</div></div>
+        </div>
+        <div class="slide">
+          <div class="frame">
+            <svg viewBox="0 0 800 450" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+              <rect width="800" height="450" fill="#0B0F14"/>
+              <polygon points="400,70 660,250 660,330 400,160" fill="#222A35"/>
+              <polygon points="400,70 140,250 140,330 400,160" fill="#2A3340"/>
+              <polygon points="400,160 660,330 400,400 140,330" fill="#1A212B"/>
+              <g stroke="#F06A2A" stroke-width="2" stroke-dasharray="6 6" fill="none"><polygon points="400,70 660,250 400,160"/></g>
+              <text x="40" y="420" fill="#F06A2A" font-family="Archivo" font-weight="800" font-size="18">DOCUMENTED</text>
+            </svg>
+          </div>
+          <div class="meta"><div class="addr">Riverview Heights<span>Reroof + full photo record</span></div><div class="num">05 / 05</div></div>
+        </div>
+      </div>
+      <div class="proof-nav">
+        <button id="prevBtn" aria-label="Previous"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></button>
+        <button id="nextBtn" aria-label="Next"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></button>
+        <div class="proof-count"><b id="proofIdx">01</b> / 05</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ TESTIMONIAL ============================ -->
+<section class="pad reveal quote-sec" data-reveal>
+  <div class="wrap">
+    <div class="stars">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.3 6.9.6-5.2 4.6 1.6 6.8L12 17.3 5.8 20.9l1.6-6.8L2.2 8.9l6.9-.6z"/></svg>
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.3 6.9.6-5.2 4.6 1.6 6.8L12 17.3 5.8 20.9l1.6-6.8L2.2 8.9l6.9-.6z"/></svg>
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.3 6.9.6-5.2 4.6 1.6 6.8L12 17.3 5.8 20.9l1.6-6.8L2.2 8.9l6.9-.6z"/></svg>
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.3 6.9.6-5.2 4.6 1.6 6.8L12 17.3 5.8 20.9l1.6-6.8L2.2 8.9l6.9-.6z"/></svg>
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.3 6.9.6-5.2 4.6 1.6 6.8L12 17.3 5.8 20.9l1.6-6.8L2.2 8.9l6.9-.6z"/></svg>
+    </div>
+    <blockquote>The quote was the price. The crew was clean. And they sent me <span class="em">photos of every layer</span> before the shingles went on.</blockquote>
+    <div class="by">
+      <div class="av">JM</div>
+      <div class="who"><b>Janet M.</b><span>Riverview, NB · Architectural shingle reroof</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ CLOSER ============================ -->
+<section class="band pad closer reveal" id="estimate" data-reveal>
+  <div class="glowbg"></div>
+  <div class="wrap inner">
+    <span class="eyebrow" style="justify-content:center">Go beyond a guess</span>
+    <h2 style="margin-top:20px">Know your roof before anyone climbs it.</h2>
+    <p>Get your instant estimate in under a minute, or grab the free guide to the ten costliest mistakes homeowners make on a reroof.</p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="#estimate">
+        Get my instant estimate
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </a>
+      <a class="btn btn-ghost" href="#">Get the 10 Costly Mistakes guide</a>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ FOOTER ============================ -->
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <a class="brand" href="#top">
+          <svg class="mark" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+            <path d="M24 4 L44 19 L37 19 L37 44 L11 44 L11 19 L4 19 Z" fill="none" stroke="#F06A2A" stroke-width="2.6" stroke-linejoin="round"/>
+            <path d="M24 4 L44 19 L4 19 Z" fill="#F06A2A" fill-opacity="0.2"/>
+            <path d="M16 44 L16 30 L32 30 L32 44" stroke="#F06A2A" stroke-width="2.6" stroke-linejoin="round"/>
+          </svg>
+          <span><b>Plus Ultra</b> Roofing</span>
+        </a>
+        <p class="tag">Premium residential roofing for Riverview, Moncton, and the greater Moncton area. <span class="gobeyond">Go Beyond.</span></p>
+      </div>
+      <div>
+        <h4>Services</h4>
+        <a href="#services">Shingle reroofs</a>
+        <a href="#services">Standing-seam metal</a>
+        <a href="#services">Storm &amp; leak repair</a>
+        <a href="#services">Soffit &amp; fascia</a>
+      </div>
+      <div>
+        <h4>Company</h4>
+        <a href="#sky">Measured from the sky</a>
+        <a href="#process">Our process</a>
+        <a href="#proof">Proof gallery</a>
+        <a href="#estimate">Instant estimate</a>
+      </div>
+      <div>
+        <h4>Contact</h4>
+        <a href="tel:+15066164607">(506) 616-4607</a>
+        <p>Riverview / Moncton, NB</p>
+        <a href="#estimate">Book an inspection</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <div>© 2026 Plus Ultra Roofing. All rights reserved.</div>
+      <div>GAF &amp; IKO certified · WorkSafeNB · Fully insured</div>
+    </div>
+  </div>
+</footer>
+
+<!-- ============================ SCRIPTS ============================ -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.min.js"></script>
+<script>
+(function(){
+  "use strict";
+  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var isMobile = window.matchMedia("(max-width: 920px)").matches;
+  var hasGSAP = (typeof window.gsap !== "undefined" && typeof window.ScrollTrigger !== "undefined");
+  if (hasGSAP) { gsap.registerPlugin(ScrollTrigger); }
+
+  /* ---------- helpers ---------- */
+  function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
+  function lerp(a,b,t){ return a+(b-a)*t; }
+  // smooth 0..1 window: returns 0 before s, 1 after e, smoothstep between
+  function win(p,s,e){ var t=clamp((p-s)/(e-s),0,1); return t*t*(3-2*t); }
+  function mix(c1,c2,t){
+    return "rgb("+Math.round(lerp(c1[0],c2[0],t))+","+Math.round(lerp(c1[1],c2[1],t))+","+Math.round(lerp(c1[2],c2[2],t))+")";
+  }
+
+  /* ---------- film grain on canvas (cheap, static-ish) ---------- */
+  (function(){
+    var cv = document.getElementById("grain");
+    if(!cv) return;
+    var dpr = Math.min(window.devicePixelRatio||1, 2);
+    function size(){ cv.width = Math.floor(cv.clientWidth*dpr); cv.height = Math.floor(cv.clientHeight*dpr); draw(); }
+    function draw(){
+      var ctx = cv.getContext("2d"); if(!ctx) return;
+      var w=cv.width, h=cv.height;
+      var img = ctx.createImageData(w,h);
+      var d = img.data;
+      for(var i=0;i<d.length;i+=4){
+        var v = (Math.random()*255)|0;
+        d[i]=d[i+1]=d[i+2]=v; d[i+3]=255;
+      }
+      ctx.putImageData(img,0,0);
+    }
+    size();
+    window.addEventListener("resize", size, {passive:true});
+  })();
+
+  /* ---------- SCENE refs ---------- */
+  var newMaskRect = document.getElementById("newMaskRect");
+  var oldMaskRect = document.getElementById("oldMaskRect");
+  var ridgeGroup  = document.getElementById("ridgeGroup");
+  var debris      = document.getElementById("debris");
+  var reticle     = document.getElementById("reticle");
+  var sunGlow     = document.getElementById("sunGlow");
+  var stars       = document.getElementById("stars");
+  var winGlow1    = document.getElementById("winGlow1");
+  var winGlow2    = document.getElementById("winGlow2");
+  var skyTop      = document.getElementById("skyTop");
+  var skyMid      = document.getElementById("skyMid");
+  var skyBot      = document.getElementById("skyBot");
+  var scene       = document.getElementById("scene");
+  var stage       = document.getElementById("stage");
+  var rail        = document.querySelector(".rail");
+  var scrollcue   = document.getElementById("scrollcue");
+  var hudTL = document.getElementById("hudTL"), hudTR = document.getElementById("hudTR"), hudMeasure = document.getElementById("hudMeasure");
+
+  var ROOF_TOP = 150, ROOF_BOT = 645, ROOF_H = ROOF_BOT - ROOF_TOP;
+
+  // sky color stops: cold pre-dawn -> clear morning
+  var skyT0=[11,16,24],  skyT1=[58,108,150];
+  var skyM0=[20,28,40],  skyM1=[110,150,180];
+  var skyB0=[27,34,48],  skyB1=[176,196,214];
+
+  /* ---------- the master render fn, driven by progress p (0..1) ---------- */
+  function render(p){
+    p = clamp(p,0,1);
+
+    // --- atmosphere: dawn comes up across the first ~70% ---
+    var dawn = win(p, 0.0, 0.72);
+    if(skyTop) skyTop.setAttribute("stop-color", mix(skyT0,skyT1,dawn));
+    if(skyMid) skyMid.setAttribute("stop-color", mix(skyM0,skyM1,dawn));
+    if(skyBot) skyBot.setAttribute("stop-color", mix(skyB0,skyB1,dawn));
+    if(sunGlow) sunGlow.setAttribute("opacity", (0.65*dawn).toFixed(3));
+    if(stars) stars.setAttribute("opacity", (0.7*(1-win(p,0.0,0.4))).toFixed(3));
+
+    // --- the OLD roof peels away top->bottom over p 0.08..0.55 ---
+    var peel = win(p, 0.08, 0.55);
+    if(oldMaskRect) oldMaskRect.setAttribute("height", (ROOF_H*peel).toFixed(1));
+
+    // --- the NEW roof installs course-by-course over p 0.30..0.82 ---
+    var build = win(p, 0.30, 0.82);
+    if(newMaskRect) newMaskRect.setAttribute("height", (ROOF_H*build).toFixed(1));
+
+    // --- debris flies during the active peel band ---
+    var dz = win(p,0.12,0.30) * (1 - win(p,0.42,0.6));
+    if(debris){
+      debris.setAttribute("opacity", (0.9*dz).toFixed(3));
+      var dy = -60*win(p,0.12,0.55);
+      debris.setAttribute("transform","translate("+(20*dz)+","+dy+")");
+    }
+
+    // --- ridge cap + drip edge snap in near the end ---
+    var ridge = win(p, 0.80, 0.92);
+    if(ridgeGroup) ridgeGroup.setAttribute("opacity", ridge.toFixed(3));
+
+    // --- windows warm up as the home "comes alive" ---
+    var warm = win(p, 0.84, 1.0);
+    if(winGlow1) winGlow1.setAttribute("opacity", (0.5*warm).toFixed(3));
+    if(winGlow2) winGlow2.setAttribute("opacity", (0.42*warm).toFixed(3));
+
+    // --- survey reticle: sweeps in during the build, resolves at the end ---
+    var ret = win(p, 0.6, 0.78) * (0.4 + 0.6*win(p,0.6,1.0));
+    if(reticle) reticle.setAttribute("opacity", clamp(ret,0,1).toFixed(3));
+
+    // --- drone descent: scene scales up slightly + lifts, like dropping toward the roof ---
+    if(scene){
+      var sc = lerp(1.08, 1.0, win(p,0,1));   // start a touch wider, settle
+      var ty = lerp(-22, 0, win(p,0,1));
+      scene.style.transform = "scale("+sc.toFixed(3)+") translateY("+ty.toFixed(1)+"px)";
+      scene.style.transformOrigin = "50% 42%";
+    }
+
+    // --- HUD reveals ---
+    if(hudTL) hudTL.style.opacity = win(p,0.04,0.18).toFixed(2);
+    if(hudTR) hudTR.style.opacity = win(p,0.04,0.18).toFixed(2);
+    if(hudMeasure) hudMeasure.style.opacity = win(p,0.82,0.97).toFixed(2);
+
+    // --- progress rail + scroll cue ---
+    if(rail) rail.style.setProperty("--p", p.toFixed(4));
+    if(scrollcue) scrollcue.style.opacity = (1 - win(p,0.0,0.12)).toFixed(2);
+  }
+
+  /* ---------- BEATS cross-fade (only one dominant at a time) ---------- */
+  var beats = [].slice.call(document.querySelectorAll(".beat"));
+  // windows per beat, with crossfade overlap; computed so exactly one peaks at a time
+  var beatWins = [ [0.02,0.30], [0.34,0.60], [0.66,1.0] ];
+  function renderBeats(p){
+    for(var i=0;i<beats.length;i++){
+      var w = beatWins[i];
+      var mid = (w[0]+w[1])/2, half=(w[1]-w[0])/2;
+      // triangle-ish fade: up to mid, hold, then for last beat stay up
+      var o;
+      if(i===beats.length-1){
+        o = win(p, w[0], w[0]+half*0.7); // last beat rises and stays
+      } else {
+        var rise = win(p, w[0], w[0]+half*0.55);
+        var fall = 1 - win(p, w[1]-half*0.55, w[1]);
+        o = Math.min(rise, fall);
+      }
+      var b = beats[i];
+      b.style.opacity = o.toFixed(3);
+      b.style.transform = "translateY("+ (1-o)*26 +"px)";
+      b.style.pointerEvents = o>0.6 ? "auto" : "none";
+    }
+  }
+
+  /* =========================================================
+     DESKTOP: Lenis + GSAP ScrollTrigger pin + scrub (the spec wiring)
+     ========================================================= */
+  function initScrub(){
+    var lenis = new Lenis({ lerp:0.1, smoothWheel:true });
+    lenis.on("scroll", ScrollTrigger.update);
+    gsap.ticker.add(function(t){ lenis.raf(t*1000); });
+    gsap.ticker.lagSmoothing(0);
+
+    var state = { p:0 };
+    ScrollTrigger.create({
+      trigger:".hero",
+      start:"top top",
+      end:"+=4000",
+      scrub:0.5,
+      pin:true,
+      pinSpacing:true,
+      onUpdate:function(self){
+        state.p = self.progress;
+      }
+    });
+
+    // rAF-gate the redraw; never mutate inside the raw scroll event
+    var lastP = -1;
+    gsap.ticker.add(function(){
+      if(state.p !== lastP){
+        lastP = state.p;
+        render(state.p);
+        renderBeats(state.p);
+      }
+    });
+
+    // initial paint
+    render(0); renderBeats(0);
+
+    // section reveal = the CURTAIN motif (clip-path wipe + fade), staggered, never gates visibility on JS-only
+    document.querySelectorAll("[data-reveal]").forEach(function(el){
+      gsap.set(el, { clipPath:"inset(0 0 100% 0)", opacity:0 });
+      ScrollTrigger.create({
+        trigger:el, start:"top 82%", once:true,
+        onEnter:function(){
+          gsap.to(el, { clipPath:"inset(0 0 0% 0)", opacity:1, duration:0.95, ease:"power3.out" });
+        }
+      });
+    });
+
+    // nav scroll choreography
+    var hdr = document.getElementById("hdr");
+    ScrollTrigger.create({ start:"top -40", end:99999,
+      onUpdate:function(self){
+        if(self.scroll() > 40) hdr.classList.add("shrunk"); else hdr.classList.remove("shrunk");
+      }
+    });
+
+    window.__lenis = lenis;
+  }
+
+  /* =========================================================
+     REDUCED MOTION or MOBILE: finished state, all beats, no scrub
+     ========================================================= */
+  function initStatic(){
+    render(1);                 // paint the finished roof
+    // beats: on mobile we show only the resolved beat (CSS hides b1/b2);
+    // on reduced-motion CSS stacks all beats visible. Make them all opaque/untransformed.
+    beats.forEach(function(b){ b.style.opacity="1"; b.style.transform="none"; b.style.pointerEvents="auto"; });
+    if(scrollcue) scrollcue.style.display="none";
+    // reveal sections immediately
+    document.querySelectorAll("[data-reveal]").forEach(function(el){ el.classList.add("in"); el.style.opacity="1"; el.style.clipPath="none"; });
+    var hdr=document.getElementById("hdr");
+    window.addEventListener("scroll", function(){
+      if(window.scrollY>40) hdr.classList.add("shrunk"); else hdr.classList.remove("shrunk");
+    }, {passive:true});
+  }
+
+  /* ---------- PROOF carousel ---------- */
+  (function(){
+    var car=document.getElementById("carousel");
+    if(!car) return;
+    var slides=[].slice.call(car.children);
+    var idxEl=document.getElementById("proofIdx");
+    function current(){
+      var c=car.scrollLeft + car.clientWidth/2, best=0, bd=1e9;
+      slides.forEach(function(s,i){ var sc=s.offsetLeft+s.offsetWidth/2; var d=Math.abs(sc-c); if(d<bd){bd=d;best=i;} });
+      return best;
+    }
+    function update(){ if(idxEl) idxEl.textContent=("0"+(current()+1)).slice(-2); }
+    function go(dir){
+      var i=clamp(current()+dir,0,slides.length-1);
+      var s=slides[i];
+      car.scrollTo({ left:s.offsetLeft - (car.clientWidth-s.offsetWidth)/2, behavior:"smooth" });
+    }
+    document.getElementById("prevBtn").addEventListener("click",function(){go(-1);});
+    document.getElementById("nextBtn").addEventListener("click",function(){go(1);});
+    car.addEventListener("scroll", function(){ window.requestAnimationFrame(update); }, {passive:true});
+    update();
+  })();
+
+  /* ---------- nav anchor smooth scroll via Lenis when present ---------- */
+  document.querySelectorAll('a[href^="#"]').forEach(function(a){
+    a.addEventListener("click", function(e){
+      var id=a.getAttribute("href"); if(id==="#"||id==="#top"){ /* allow top */ }
+      var t = id==="#top" ? document.body : document.querySelector(id);
+      if(!t) return;
+      e.preventDefault();
+      if(window.__lenis){ window.__lenis.scrollTo(t, { offset:-90, duration:1.1 }); }
+      else { t.scrollIntoView({ behavior: reduce?"auto":"smooth" }); }
+    });
+  });
+
+  /* =========================================================
+     THE CURTAIN intro wipe on first load
+     ========================================================= */
+  function playIntro(done){
+    var c=document.getElementById("introCurtain");
+    if(!c){ done&&done(); return; }
+    var top=document.getElementById("introPanelTop");
+    var bot=document.getElementById("introPanelBot");
+    var edge=document.getElementById("introEdge");
+    var mark=document.getElementById("introMark");
+    if(reduce || !hasGSAP){ c.style.display="none"; done&&done(); return; }
+    document.body.classList.add("is-locked");
+    var tl=gsap.timeline({ onComplete:function(){ c.style.display="none"; document.body.classList.remove("is-locked"); done&&done(); } });
+    tl.from(mark.querySelector("svg"), { scale:0.6, opacity:0, duration:0.6, ease:"power3.out" })
+      .from(mark.querySelector(".pu"), { width:0, opacity:0, duration:0.6, ease:"power3.out" }, "-=0.2")
+      .to(mark, { opacity:0, y:-10, duration:0.4, ease:"power2.in" }, "+=0.35")
+      .to(top, { yPercent:-100, duration:0.85, ease:"power4.inOut" }, "-=0.1")
+      .to(bot, { yPercent:100, duration:0.85, ease:"power4.inOut" }, "<")
+      .to(edge, { opacity:0, duration:0.4 }, "<0.2");
+  }
+
+  /* ---------- boot ---------- */
+  function boot(){
+    if(reduce || isMobile || !hasGSAP){
+      // ensure intro never traps the page
+      var c=document.getElementById("introCurtain"); if(c) c.style.display="none";
+      initStatic();
+      return;
+    }
+    playIntro(function(){
+      initScrub();
+      // refresh after fonts/layout settle
+      ScrollTrigger.refresh();
+    });
+    // safety: if intro somehow stalls, force-init after 2.5s
+    setTimeout(function(){
+      var c=document.getElementById("introCurtain");
+      if(c && c.style.display!=="none"){
+        c.style.display="none"; document.body.classList.remove("is-locked");
+        if(!window.__lenis) initScrub();
+      }
+    }, 2600);
+  }
+
+  if(document.readyState==="complete"){ boot(); }
+  else { window.addEventListener("load", boot); }
+
+  // keep ScrollTrigger honest on resize / orientation
+  window.addEventListener("resize", function(){
+    if(window.ScrollTrigger){ ScrollTrigger.refresh(); }
+  }, {passive:true});
+})();
+</script>
+</body>
+</html>
