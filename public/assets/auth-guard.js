@@ -96,6 +96,54 @@
     sessionEnded
   });
 
+  // ── Fleet-wide auth-header injector (security hardening, 2026-06-18) ──
+  // Operator pages historically called /api endpoints with only an
+  // x-tenant-id header and no session token, relying on the endpoint being
+  // open (requireTenant). As those endpoints move to the hard gate
+  // (requirePortalSessionAndTenant), every call needs the Bearer token.
+  // Rather than edit every fetch site, wrap fetch here: this script is the
+  // operator-page marker (it never loads on a client-facing page), so the
+  // wrapper is scoped to operator pages only. Purely additive and
+  // safe-by-construction: it only ADDS Authorization to same-origin /api
+  // requests that lack it, leaves the existing ...RyujinAuth.headers() calls
+  // untouched, passes Request-object inputs through unchanged, and on ANY
+  // error falls through to the original fetch with the original arguments.
+  try {
+    if (!window.__ryujinFetchAuthWrapped) {
+      window.__ryujinFetchAuthWrapped = true;
+      const _origFetch = window.fetch.bind(window);
+      window.fetch = function (input, init) {
+        try {
+          if (!token) return _origFetch(input, init);
+          const urlStr = (typeof input === 'string') ? input
+            : (typeof URL !== 'undefined' && input instanceof URL) ? input.href : null;
+          if (urlStr === null) return _origFetch(input, init); // Request object: leave alone
+          const u = new URL(urlStr, window.location.href);
+          if (u.origin !== window.location.origin || !u.pathname.startsWith('/api/')) {
+            return _origFetch(input, init);
+          }
+          const h = (init && init.headers) || null;
+          let hasAuth = false;
+          if (typeof Headers !== 'undefined' && h instanceof Headers) hasAuth = h.has('authorization');
+          else if (Array.isArray(h)) hasAuth = h.some((p) => String(p && p[0]).toLowerCase() === 'authorization');
+          else if (h && typeof h === 'object') hasAuth = Object.keys(h).some((k) => k.toLowerCase() === 'authorization');
+          if (hasAuth) return _origFetch(input, init);
+          const opts = Object.assign({}, init);
+          if (typeof Headers !== 'undefined' && h instanceof Headers) {
+            const nh = new Headers(h); nh.set('Authorization', 'Bearer ' + token); opts.headers = nh;
+          } else if (Array.isArray(h)) {
+            opts.headers = h.concat([['Authorization', 'Bearer ' + token]]);
+          } else {
+            opts.headers = Object.assign({}, h, { Authorization: 'Bearer ' + token });
+          }
+          return _origFetch(input, opts);
+        } catch (e) {
+          return _origFetch(input, init);
+        }
+      };
+    }
+  } catch (e) { /* fetch wrap is non-critical chrome; never block the page */ }
+
   // ── Fleet-wide Cmd-K command palette ──────────────────────────
   // This script is the operator-page marker (every authed internal page
   // includes it; client-facing renderers do not), so loading the palette

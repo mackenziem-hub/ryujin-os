@@ -4197,7 +4197,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
         const RYUJIN_BASE = (process.env.RYUJIN_BASE_URL || 'https://ryujin-os.vercel.app').trim();
         const resp = await fetch(`${RYUJIN_BASE}/api/paysheets?tenant=plus-ultra`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-tenant-id': 'plus-ultra' },
+          headers: { 'Content-Type': 'application/json', 'x-tenant-id': 'plus-ultra', ...((process.env.RYUJIN_SERVICE_TOKEN || '').trim() ? { Authorization: `Bearer ${(process.env.RYUJIN_SERVICE_TOKEN || '').trim()}` } : {}) },
           body: JSON.stringify(psRow)
         });
         if (!resp.ok) return { error: `Pay sheet create failed (HTTP ${resp.status}): ${(await resp.text()).slice(0, 300)}` };

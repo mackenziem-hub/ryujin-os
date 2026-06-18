@@ -26,7 +26,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { supabaseAdmin } from '../lib/supabase.js';
-import { requireTenant } from '../lib/tenant.js';
+import { requirePortalSessionAndTenant } from '../lib/portalAuth.js';
 
 async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -183,4 +183,4 @@ async function handler(req, res) {
   });
 }
 
-export default requireTenant(handler);
+export default requirePortalSessionAndTenant(handler);
