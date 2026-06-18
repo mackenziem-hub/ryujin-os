@@ -73,7 +73,14 @@ export default async function handler(req, res) {
     const materials = items.filter(li => li.category === 'materials');
     const matSubtotal = materials.reduce((s, l) => s + l.total_cost, 0);
 
-    const sell = lockedTier.total;
+    // calculated_packages comes in two shapes: older rows store the pre-tax
+    // selling price at lockedTier.total; newer engine output nests it under
+    // lockedTier.summary.sellingPrice (top-level total absent). Read both, else
+    // `sell` is undefined and every $ in the tier renders as $NaN (live on
+    // accepted estimate #30 / draft #29). Skip a tier we genuinely can't price
+    // rather than print a $NaN row.
+    const sell = Number(lockedTier.total ?? lockedTier.summary?.sellingPrice ?? 0);
+    if (!(sell > 0)) continue;
     const laborBudget = Math.max(0, sell - matSubtotal);
 
     // Site supervision + project management + workmanship-warranty backing are
