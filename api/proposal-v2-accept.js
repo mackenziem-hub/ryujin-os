@@ -194,8 +194,18 @@ export default async function handler(req, res) {
   const instanceSlug = String(body.instanceSlug || '').trim();
   const shareToken = String(body.shareToken || '').trim();
   const estimateId = String(body.estimateId || '').trim();
-  const selectedTier = body.selectedTier ? String(body.selectedTier).trim() : null;
-  const selectedAddons = Array.isArray(body.selectedAddons) ? body.selectedAddons : [];
+  // The proposal-v2.html renderer posts the chosen tier as `tierId` (+ a `tier`
+  // object) and the chosen add-ons as `addons` [{slug,label,price}]. Earlier
+  // callers used `selectedTier` / `selectedAddons`. Accept BOTH shapes, else a
+  // customer who picks Gold gets a Platinum/$0 contract and their add-ons are
+  // dropped from the signed total, the work order, and the Purchase event.
+  const selectedTier = body.selectedTier ? String(body.selectedTier).trim()
+    : body.tierId ? String(body.tierId).trim()
+    : (body.tier && body.tier.id) ? String(body.tier.id).trim()
+    : null;
+  const selectedAddons = Array.isArray(body.selectedAddons) ? body.selectedAddons
+    : Array.isArray(body.addons) ? body.addons
+    : [];
   const signature = typeof body.signature === 'string' ? body.signature : null;
   const acceptedName = body.acceptedName ? String(body.acceptedName).trim() : '';
   const now = new Date().toISOString();
