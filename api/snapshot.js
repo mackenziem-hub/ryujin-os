@@ -337,7 +337,11 @@ async function buildFreshSnapshot() {
     Promise.allSettled([
       tf('https://ryujin-os.vercel.app/api/lookup?mode=stats', { headers: snapshotHeaders() }).then(r => r.json()),
       tf('https://ryujin-os.vercel.app/api/ghl').then(r => r.json()),
-      tf('https://ryujin-os.vercel.app/api/ghl?mode=pipeline').then(r => r.json()),
+      // limit=1000 pages the full opportunity book. The default (100) capped the
+      // converted/quoted counts computed below: live 229 open opps were truncated
+      // to the newest 100, badly undercounting conversion (converted 2 vs 12,
+      // quoted 12 vs 33). The /api/ghl proxy paginates via startAfter for limit>100.
+      tf('https://ryujin-os.vercel.app/api/ghl?mode=pipeline&limit=1000').then(r => r.json()),
       tf('https://ryujin-os.vercel.app/api/ghl?mode=conversations').then(r => r.json()),
       // Tickets are now native to Ryujin (migrated from Action Board 2026-05-11).
       // Action Board Replit is no longer the source of truth — read directly from Supabase.
@@ -386,15 +390,21 @@ async function buildFreshSnapshot() {
         recentActivity
       };
     }
-    if (tickets?.stats) {
-      snapshot.sections.tickets = {
-        total: tickets.stats.totalTickets,
-        byStatus: tickets.stats.byStatus,
-        byAssignee: tickets.stats.byAssignee,
-        overdueCount: tickets.stats.overdueCount,
-        activeToday: (tickets.stats.activeToday || []).slice(0, 10)
-      };
-    }
+  }
+
+  // Tickets are native to Ryujin and come from their own fetch (nativeTicketStats),
+  // independent of the Estimator OS stats lookup. Built OUTSIDE the
+  // `if (stats?.results)` guard so a transient stats hiccup can't drop the whole
+  // tickets section (same class of fix as the leads block / #523). 'tickets' is
+  // also in preserveKeys below as a carry-forward backstop if its own fetch fails.
+  if (tickets?.stats) {
+    snapshot.sections.tickets = {
+      total: tickets.stats.totalTickets,
+      byStatus: tickets.stats.byStatus,
+      byAssignee: tickets.stats.byAssignee,
+      overdueCount: tickets.stats.overdueCount,
+      activeToday: (tickets.stats.activeToday || []).slice(0, 10)
+    };
   }
 
   // Leads — tiered funnel: marketing leads → local → sales qualified → converted.
@@ -765,6 +775,10 @@ async function buildFreshSnapshot() {
     // entry only matters when that compute fails (returns null), where it
     // carries the last good section forward instead of dropping it for an hour.
     'metrics',
+    // Tickets (nativeTicketStats) - rebuilt fresh each cycle and now built outside
+    // the Estimator-OS stats guard. This entry only matters when the tickets fetch
+    // itself returns null: carry the last-known-good section instead of dropping it.
+    'tickets',
     // Reconciliation agent (migration 082) - daily cron writes sections.reconcile
     // with the committed-revenue figures + open finding count. Same wipe risk.
     'reconcile',
