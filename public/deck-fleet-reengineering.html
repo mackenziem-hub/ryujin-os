@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0e1a35">
+<title>Builders Fleet · Operating Review and Re-Engineering</title>
+<link rel="icon" href="/apple-touch-icon.png">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --navy:#0e1a35; --navy-2:#1a2950; --navy-3:#243463;
+  --gold:#facc15; --gold-2:#fde047; --gold-soft:#fde68a;
+  --ink:#1a1f2e;
+  --green:#16a34a; --amber:#d97706; --red:#dc2626; --teal:#0d9488;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{scroll-behavior:smooth;scroll-padding-top:80px}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0a0e1a;color:#fff;line-height:1.6;-webkit-font-smoothing:antialiased}
+
+.topbar{position:sticky;top:0;z-index:50;background:var(--navy);color:#fff;padding:12px 24px;display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid var(--gold)}
+.brand{font-weight:900;letter-spacing:2px;font-size:0.92em}
+.brand .accent{color:var(--gold)}
+.brand .x{color:rgba(255,255,255,0.4);margin:0 8px;font-weight:400}
+.topbar .label{font-size:0.74em;color:rgba(255,255,255,0.7);font-weight:600;letter-spacing:1px;text-transform:uppercase}
+
+.slide{min-height:96vh;padding:64px 40px;display:flex;align-items:center;justify-content:center;position:relative;border-bottom:1px solid rgba(255,255,255,0.05);background:#0a0e1a}
+.slide-inner{max-width:1140px;width:100%;position:relative;z-index:2}
+.slide-num{position:absolute;top:24px;right:34px;font-size:0.72em;letter-spacing:3px;color:rgba(255,255,255,0.45);font-weight:700;z-index:3}
+.slide-kicker{display:inline-block;font-size:0.72em;letter-spacing:3px;color:var(--gold);font-weight:800;text-transform:uppercase;margin-bottom:20px;background:rgba(250,204,21,0.1);border:1px solid rgba(250,204,21,0.3);padding:7px 14px;border-radius:999px}
+.slide h1{font-size:3.4em;font-weight:900;letter-spacing:-0.025em;line-height:1.03;color:#fff;margin-bottom:20px}
+.slide h2{font-size:2.3em;font-weight:900;letter-spacing:-0.02em;line-height:1.08;color:#fff;margin-bottom:18px}
+.slide h3{font-size:1.15em;font-weight:800;color:var(--gold-2);margin:0 0 8px}
+.slide p{color:rgba(255,255,255,0.82);margin-bottom:14px;font-size:1.08em;line-height:1.65}
+.slide p.lead{font-size:1.28em;color:rgba(255,255,255,0.9);font-weight:500}
+.slide strong{color:#fff;font-weight:700}
+.slide .muted{color:rgba(255,255,255,0.6)}
+.slide code{font-family:'JetBrains Mono',monospace;background:rgba(255,255,255,0.08);padding:2px 7px;border-radius:4px;font-size:0.86em;color:var(--gold-2)}
+
+.cover{background:radial-gradient(1200px 700px at 70% -10%,rgba(250,204,21,0.16),transparent 60%),linear-gradient(165deg,#0b1326 0%,#0a0e1a 60%,#080b15 100%);min-height:100vh}
+.cover h1{font-size:4em}
+.cover .sub{font-size:1.3em;color:rgba(255,255,255,0.9);max-width:820px;margin:0 0 34px}
+.chips{display:flex;gap:12px;flex-wrap:wrap}
+.chip{background:rgba(14,26,53,0.6);backdrop-filter:blur(8px);border:1px solid rgba(250,204,21,0.3);border-radius:12px;padding:14px 18px;min-width:160px}
+.chip b{display:block;font-size:0.66em;letter-spacing:1.5px;text-transform:uppercase;color:var(--gold-2);font-weight:800;margin-bottom:5px}
+.chip span{font-size:0.92em;color:#fff;font-weight:500}
+
+.split{display:grid;grid-template-columns:1.05fr 0.95fr;gap:52px;align-items:center;width:100%}
+.split.rev{grid-template-columns:0.95fr 1.05fr}
+.split.rev .col-text{order:2}.split.rev .media{order:1}
+@media(max-width:880px){.split,.split.rev{grid-template-columns:1fr;gap:26px}.split.rev .col-text{order:1}.split.rev .media{order:2}}
+
+.stat-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin:18px 0 0}
+.stat{background:linear-gradient(180deg,rgba(250,204,21,0.08),rgba(255,255,255,0.03));border:1px solid rgba(250,204,21,0.22);border-radius:14px;padding:22px 16px;text-align:center}
+.stat .v{font-size:2.1em;font-weight:900;color:var(--gold);letter-spacing:-0.02em;line-height:1}
+.stat .l{font-size:0.72em;color:rgba(255,255,255,0.7);font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-top:8px}
+
+.feats{display:flex;flex-direction:column;gap:13px;margin-top:8px}
+.feat{display:flex;gap:18px;align-items:flex-start;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.09);border-left:4px solid var(--gold);border-radius:14px;padding:18px 22px}
+.feat .ic{flex:0 0 auto;width:46px;height:46px;border-radius:11px;background:rgba(250,204,21,0.12);display:flex;align-items:center;justify-content:center}
+.feat .ic svg{width:24px;height:24px;stroke:var(--gold-2);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.feat h3{color:#fff;font-size:1.06em;margin-bottom:3px}
+.feat p{margin:0;font-size:0.93em;color:rgba(255,255,255,0.72)}
+
+.callout{border-radius:14px;padding:20px 24px;margin:16px 0;border:1px solid;border-left-width:4px}
+.callout h4{font-size:0.72em;letter-spacing:2px;text-transform:uppercase;font-weight:800;margin-bottom:8px}
+.callout p{margin:0;font-size:0.98em}
+.c-amber{background:rgba(217,119,6,0.1);border-color:rgba(217,119,6,0.4)}.c-amber h4{color:#fcd34d}
+.c-teal{background:rgba(13,148,136,0.1);border-color:rgba(13,148,136,0.42)}.c-teal h4{color:#5eead4}
+.c-green{background:rgba(22,163,74,0.1);border-color:rgba(22,163,74,0.45)}.c-green h4{color:#86efac}
+.c-red{background:rgba(220,38,38,0.1);border-color:rgba(220,38,38,0.45)}.c-red h4{color:#fca5a5}
+
+.tcards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:8px}
+.tcard{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:22px 20px}
+.tcard .n{font-size:0.74em;font-weight:800;color:var(--gold);letter-spacing:1px}
+.tcard .t{font-weight:800;color:#fff;font-size:1.12em;margin:6px 0 10px}
+.tcard p{font-size:0.9em;color:rgba(255,255,255,0.7);margin:0}
+@media(max-width:720px){.tcards{grid-template-columns:1fr}}
+
+ol.steps{margin:6px 0 0 0;padding:0;list-style:none;counter-reset:s}
+ol.steps li{counter-increment:s;position:relative;padding:12px 0 12px 46px;color:rgba(255,255,255,0.82);font-size:1.0em;border-bottom:1px solid rgba(255,255,255,0.06)}
+ol.steps li:last-child{border-bottom:none}
+ol.steps li::before{content:counter(s);position:absolute;left:0;top:9px;width:30px;height:30px;border-radius:50%;background:rgba(250,204,21,0.14);border:1px solid rgba(250,204,21,0.4);color:var(--gold-2);font-weight:800;font-size:0.85em;display:flex;align-items:center;justify-content:center}
+
+ul.bul{list-style:none;margin:8px 0 0;padding:0}
+ul.bul li{position:relative;padding:10px 0 10px 22px;color:rgba(255,255,255,0.85);font-size:1.04em;border-bottom:1px solid rgba(255,255,255,0.06)}
+ul.bul li:last-child{border-bottom:none}
+ul.bul li::before{content:"";position:absolute;left:2px;top:18px;width:7px;height:7px;border-radius:2px;background:var(--gold)}
+ul.bul b{color:var(--gold-2)}
+
+table.t{width:100%;border-collapse:collapse;margin-top:12px;font-size:0.95em}
+table.t th{text-align:left;font-size:0.66em;letter-spacing:1.5px;text-transform:uppercase;color:var(--gold-2);font-weight:800;padding:10px 12px;border-bottom:1px solid rgba(250,204,21,0.3)}
+table.t td{padding:11px 12px;border-bottom:1px solid rgba(255,255,255,0.07);color:rgba(255,255,255,0.85);vertical-align:top}
+table.t tr.win td{background:rgba(250,204,21,0.07)}
+table.t td b{color:#fff}
+
+.decide{background:rgba(250,204,21,0.12);border:1px solid rgba(250,204,21,0.5);border-radius:12px;padding:16px 20px;margin-top:18px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.decide h4{display:flex;align-items:center;gap:9px;font-size:0.72em;letter-spacing:2px;text-transform:uppercase;color:var(--gold);font-weight:800;margin-bottom:6px}
+.decide h4::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--gold);flex:none;box-shadow:0 0 12px rgba(250,204,21,0.7)}
+.decide p{margin:0;font-size:1.02em;color:#fff}
+
+.nav-dots{position:fixed;right:24px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:8px;z-index:40}
+.nav-dots a{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,0.25);display:block;transition:transform 0.15s,background 0.15s}
+.nav-dots a:hover{background:var(--gold);transform:scale(1.4)}
+@media(max-width:880px){.nav-dots{display:none}}
+
+@media(max-width:720px){
+  .slide{padding:46px 22px}
+  .slide h1,.cover h1{font-size:2.3em}
+  .slide h2{font-size:1.7em}
+  .slide p.lead{font-size:1.1em}
+}
+
+footer{background:var(--navy);color:#fff;padding:38px 32px;text-align:center;border-top:3px solid var(--gold)}
+footer .brand{font-size:1.1em;margin-bottom:10px}
+footer .tag{font-size:0.85em;color:rgba(255,255,255,0.7);margin-bottom:20px;font-style:italic}
+footer .contact{font-size:0.85em;color:rgba(255,255,255,0.82);display:flex;gap:24px;justify-content:center;flex-wrap:wrap}
+footer .contact span{color:var(--gold-2);font-weight:700}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">RYUJIN <span class="accent">PLUS ULTRA</span> <span class="x">·</span> FLEET RE-ENGINEERING</div>
+  <div class="label">Internal · 2026-06-18</div>
+</div>
+
+<nav class="nav-dots">
+  <a href="#cover" title="The verdict"></a>
+  <a href="#keep" title="What's world-class"></a>
+  <a href="#leaks" title="Three structural leaks"></a>
+  <a href="#move1" title="Move 1: shipping"></a>
+  <a href="#move2" title="Move 2: dup work"></a>
+  <a href="#move3" title="Moves 3 and 4: infra"></a>
+  <a href="#move4" title="Moves 5 and 6: truth and cost"></a>
+  <a href="#prompts" title="Prompting upgrades"></a>
+  <a href="#sequence" title="The sequence and operator read"></a>
+</nav>
+
+<!-- 01 COVER -->
+<section class="slide cover" id="cover">
+  <span class="slide-num">01 / 09</span>
+  <div class="slide-inner">
+    <div class="slide-kicker">Fleet Operating Review</div>
+    <h1>The fleet builds faster than it ships</h1>
+    <div class="sub">Four research agents read the command files, the failure-mode memory, the live desk state, and Anthropic's own engineering docs. The verdict is the same from every angle. The instrument is world-class. Four leaks bleed most of its value. Six moves close them.</div>
+    <div class="chips">
+      <div class="chip"><b>Researched</b><span>4 parallel agents</span></div>
+      <div class="chip"><b>Evidence</b><span>commands + memory + live fleet + Anthropic</span></div>
+      <div class="chip"><b>Verdict</b><span>Keep the engine, fix the plumbing</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 02 KEEP -->
+<section class="slide" id="keep">
+  <span class="slide-num">02 / 09</span>
+  <div class="slide-inner">
+    <div class="slide-kicker">Keep this</div>
+    <h2>What's already working matches Anthropic's own playbook</h2>
+    <p class="lead">Before we change anything, the parts that are right. Three of them are textbook best practice, validated by Anthropic's published engineering, sometimes stated sharper here than in their docs.</p>
+    <table class="t">
+      <thead><tr><th>What you run</th><th>Why it's right</th></tr></thead>
+      <tbody>
+        <tr><td><b>boris live-verify on prod</b></td><td>Anthropic: "give Claude a check it can run, show evidence not assertions." You say it sharper. Grep lies, LIVE-verified is done. It catches what static review cannot.</td></tr>
+        <tr><td><b>Two machines, two accounts</b></td><td>Real resilience. Building kept shipping through the credit-wall that killed the hosted fleet. Never collapse it.</td></tr>
+        <tr><td><b>The artifact bus</b></td><td>Snapshot, Guild Hall, /api/fleet, WORK_LOG. The recommended filesystem-pointer pattern over lossy chat relay.</td></tr>
+        <tr><td><b>Just-in-time context</b></td><td>The ql 3-file fast path and snapshot-as-pointer are exactly the JIT context discipline Anthropic prescribes.</td></tr>
+      </tbody>
+    </table>
+    <div class="callout c-green"><h4>The point</h4><p>The fixes ahead are all plumbing. None of them touch the engine. Do not re-engineer these away.</p></div>
+  </div>
+</section>
+
+<!-- 03 LEAKS -->
+<section class="slide" id="leaks">
+  <span class="slide-num">03 / 09</span>
+  <div class="slide-inner">
+    <div class="slide-kicker">The diagnosis</div>
+    <h2>Three structural leaks bleed most of the value</h2>
+    <table class="t">
+      <thead><tr><th>Leak</th><th>What it costs</th><th>Evidence</th></tr></thead>
+      <tbody>
+        <tr class="win"><td><b>Built work piles up unshipped</b></td><td>Shipped value sits dark, accrues rebase risk, strategy runs on undeployed state</td><td>17 open PRs. #521 contract-fix unmerged blocks Ablak's close TODAY. Diane got 4 polish PRs in one evening, proposal still unsent.</td></tr>
+        <tr><td><b>Duplicate work across machines</b></td><td>Doubled token spend on both accounts plus your manual dedupe time</td><td>Jun 16: four duplicate PRs in one day (#502/#506, #512/#513, #514/#515) plus Ablak prep done twice.</td></tr>
+        <tr><td><b>Credit-wall single point of failure</b></td><td>The whole hosted fleet produces zero, with no alert</td><td>"Top up credits" a standing red flag across 6 sessions. /api/chat dead 26h-plus.</td></tr>
+      </tbody>
+    </table>
+    <div class="callout c-amber"><h4>The meta-cause under all three</h4><p>The durable fixes keep getting re-learned because the rules live in un-synced, rewritable prompt files. A Jun-16 rewrite silently deleted the ship-gate. That is Move 4.</p></div>
+  </div>
+</section>
+
+<!-- 04 MOVE 1 -->
+<section class="slide" id="move1">
+  <span class="slide-num">04 / 09</span>
+  <div class="slide-inner">
+    <div class="slide-kicker">Move 1 · the number one leak</div>
+    <h2>Make internal shipping automatic so built work stops dying in the queue</h2>
+    <p class="lead">The fleet can build far faster than you can merge. Right now you are the only outlet, and the gate that was supposed to drain internal PRs got deleted in a rewrite.</p>
+    <ul class="bul">
+      <li><b>Root:</b> the Jun-16 router rewrite stripped the autonomous internal-deploy ship-gate from foreman.md. Result: 17 PRs stuck, you as the sole valve.</li>
+      <li><b>Fix A:</b> re-instate the internal ship-gate as a deterministic Stop hook that runs the prod smoke-check. Anthropic's exact pattern. A future rewrite can never strip a hook.</li>
+      <li><b>Fix B:</b> back-pressure. Foreman stops dispatching new builds past about 4 un-deployed READY branches. Drain before you fill.</li>
+      <li><b>Fix C:</b> one deploy-queue card in the Admin pillar showing internal READY-but-undeployed PRs and the client-facing ones waiting on you.</li>
+      <li><b>Keep the wall:</b> internal ships itself, client-facing (proposals, portals, funnels) stays your button.</li>
+    </ul>
+    <div class="decide"><h4>Decide</h4><p>Re-arm the autonomous internal ship-gate as a Stop hook, internal-only, client-facing deploys still yours. Yes drains the 17-PR backlog and keeps it drained.</p></div>
+  </div>
+</section>
+
+<!-- 05 MOVE 2 -->
+<section class="slide" id="move2">
+  <span class="slide-num">05 / 09</span>
+  <div class="slide-inner">
+    <div class="slide-kicker">Move 2</div>
+    <h2>Claim the work, not the order, so two machines stop colliding</h2>
+    <p class="lead">Anthropic names tightly-coupled work on shared code as the single worst fit for multi-agent. That is exactly the floating-picker setup that duped four PRs in a day.</p>
+    <ul class="bul">
+      <li><b>Root:</b> two machines on one queue converge on the same item by identical "highest-value thing" reasoning. The claim-guard protects the order id, not the actual work.</li>
+      <li><b>Fix A:</b> split lanes by disjoint subsystem and files (proposals, leads, infra, sales-ops), not "whoever's free grabs the next order."</li>
+      <li><b>Fix B:</b> atomic claim-on-pull, a compare-and-set on the bus, so two machines physically cannot grab the same work.</li>
+      <li><b>Fix C:</b> every order carries boundaries, the files NOT to touch. Anthropic's named anti-dup fix, and the cheapest one to add.</li>
+    </ul>
+    <div class="decide"><h4>Decide</h4><p>Lanes split by subsystem with a hard work-claim, or keep the floating picker. The lane split is the lower-token, lower-conflict path and ends the recurring dup class.</p></div>
+  </div>
+</section>
+
+<!-- 06 MOVES 3 + 4 -->
+<section class="slide" id="move3">
+  <span class="slide-num">06 / 09</span>
+  <div class="slide-inner">
+    <div class="slide-kicker">Moves 3 and 4 · the infrastructure</div>
+    <h2>Collapse to one bus and turn the hardest rules into hooks</h2>
+    <p class="lead">Two of the leaks share a root: orders and rules both live in OneDrive prose that forks, clobbers, and gets silently rewritten. Make them durable.</p>
+    <ul class="bul">
+      <li><b>One bus:</b> order payloads still live in OneDrive inbox JSON (desk F has 6 forked inboxes, zombie orders 88 to 91 hours old) while state lives on /api/fleet. Move orders onto the Blob bus, retire the OneDrive critical path, add order TTL so zombies auto-cancel, one claims ledger.</li>
+      <li><b>Rules as hooks:</b> your firmest invariants (no edits to sent proposals, no settings.json writes, no-send-without-signoff, the ship-gate) live as prose the model drifts from. Encode them as PreToolUse and Stop hooks. Deterministic, cannot regress in a rewrite.</li>
+      <li><b>Sync and prune:</b> command files are not synced across machines, so foreman already diverged HAL vs Mind-Palace. MEMORY.md is 57KB and only about 46% loads. Sync the command files, prune CLAUDE.md and MEMORY.md to evergreen rules plus pointers, demote procedure into skills.</li>
+    </ul>
+    <div class="decide"><h4>Decide</h4><p>You apply the desk.md and foreman.md bus-rewire edits. The harness blocks me from self-editing the running skill, so this one needs your hand or a permission rule.</p></div>
+  </div>
+</section>
+
+<!-- 07 MOVES 5 + 6 -->
+<section class="slide" id="move4">
+  <span class="slide-num">07 / 09</span>
+  <div class="slide-inner">
+    <div class="slide-kicker">Moves 5 and 6</div>
+    <h2>Verify the metric before acting, and summon the fleet only when it's worth 15x</h2>
+    <p class="lead">Two cheaper disciplines. One stops the fleet acting on lies, the other stops it spending like an audit on a typo.</p>
+    <ul class="bul">
+      <li><b>Ground truth:</b> the snapshot keeps drifting from reality and health reads 10/10 anyway. A false-zero lead count drove a whole "lead-starved" strategy across Operator, Oracle, and Foreman. Make the health check assert section presence and freshness, never let a writer co-mutate a section, and verify a metric on prod before acting on it.</li>
+      <li><b>Right-size:</b> Anthropic measured multi-agent at about 15x the tokens of a single chat, worth it only for high-value breadth. Run the full Operator to Foreman to Desks fan-out for audits, multi-PR waves, and sweeps. A one-line fix is a single Claude, not the loop. Scheduled data refreshes are workflows in code, not agents.</li>
+      <li><b>Credits:</b> the credit-wall is a standing single point of failure with no alarm. Top it up and add a balance check that pings before zero.</li>
+    </ul>
+    <div class="decide"><h4>Decide</h4><p>Top up Anthropic credits to revive the hosted layer (Oracle, the Z-fighters, the do-it-for-me drive). It is the only thing on this deck that cannot be live-verified at $0.</p></div>
+  </div>
+</section>
+
+<!-- 08 PROMPTS -->
+<section class="slide" id="prompts">
+  <span class="slide-num">08 / 09</span>
+  <div class="slide-inner">
+    <div class="slide-kicker">Prompting · orders as code</div>
+    <h2>The order format that makes every task self-finishing</h2>
+    <p class="lead">Most of the above is structure. This is the prompt-level change that makes each desk finish clean without you babysitting it.</p>
+    <ul class="bul">
+      <li><b>Four-part schema on every order:</b> objective, output format, allowed tools and sources, and boundaries (what's out of scope, which files NOT to touch). Anthropic's exact spec. The boundaries line is also the anti-dup fix from Move 2.</li>
+      <li><b>End every order with a verification step:</b> the explicit "prove it works on prod" line. Anthropic calls this the single highest-leverage upgrade to an order format.</li>
+      <li><b>Show evidence, not assertions:</b> make curl output, the exercised endpoint, or a screenshot a required field of done. "Looks done" is not done.</li>
+      <li><b>Machine-readable checklist:</b> a passes true/false JSON the desks update but cannot delete, for multi-session build waves.</li>
+      <li><b>Scope the reviewer:</b> tell the fresh-context reviewer to flag only correctness and requirements gaps, not style. Stops the over-engineering your own rules already warn against.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- 09 SEQUENCE + OPERATOR READ -->
+<section class="slide" id="sequence">
+  <span class="slide-num">09 / 09</span>
+  <div class="slide-inner">
+    <div class="slide-kicker">The sequence · operator read</div>
+    <h2>Do them in this order</h2>
+    <ol class="steps">
+      <li><b>Today.</b> Merge and deploy #521. It unblocks Ablak's contract download before her visit. Two minutes, manual.</li>
+      <li><b>This week.</b> Top up credits and re-arm the ship-gate as a hook. Revives the hosted layer and stops the pileup at once.</li>
+      <li><b>This week.</b> You apply the bus-rewire edits. Collapses the dual channel and kills the zombie orders.</li>
+      <li><b>Ongoing.</b> Lane-split the desks and adopt the four-part order schema. Ends the duplicate-work class.</li>
+      <li><b>Background.</b> Prune MEMORY.md and CLAUDE.md, sync the command files, convert the firm rules to hooks.</li>
+    </ol>
+    <div class="callout c-teal"><h4>Operator read</h4><p>You built a fleet that out-produces one person's ability to ship and verify. The win now is not more desks. It is making the loop finish what it starts: ship itself, claim cleanly, and tell the truth about its own state. The engine is done. Tighten the plumbing.</p></div>
+  </div>
+</section>
+
+<footer>
+  <div class="brand">RYUJIN <span style="color:var(--gold)">PLUS ULTRA</span></div>
+  <div class="tag">Smart systems designed for you, by you.</div>
+  <div class="contact">
+    <span>Fleet Operating Review</span>
+    <span>4-agent deep research</span>
+    <span>2026-06-18</span>
+  </div>
+</footer>
+
+<script src="/scripts/presentation.js?v=8" defer></script>
+</body>
+</html>
