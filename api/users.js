@@ -19,6 +19,37 @@ async function handler(req, res) {
 
   const tenantId = req.tenant.id;
 
+  // Admin-gated password set (also accepts RYUJIN_SERVICE_TOKEN via resolveSession,
+  // which the sessions-table-only requireOwnerOrAdmin does not). Lets an owner/admin
+  // reset a crew member's login password to a known value and optionally update the
+  // login email. The general PUT update path deliberately excludes password; this is
+  // the single explicit, audited place a password may be written outside register.
+  if (req.query.action === 'set-password' && req.method === 'POST') {
+    const session = await resolveSession(req);
+    if (!session || !['owner', 'admin'].includes(session.role)) {
+      return res.status(401).json({ error: 'sign_in_required', code: 'NO_SESSION' });
+    }
+    const { id, password, email } = req.body || {};
+    if (!id) return res.status(400).json({ error: 'Missing id' });
+    const pw = String(password || '');
+    if (pw.length < 6 || pw.length > 128) {
+      return res.status(400).json({ error: 'Password must be 6 to 128 characters' });
+    }
+    const updates = { password_hash: hashPassword(pw) };
+    if (email) updates.email = String(email).toLowerCase().trim();
+    const { data, error } = await supabaseAdmin
+      .from('users')
+      .update(updates)
+      .eq('id', id)
+      .eq('tenant_id', session.tenant_id)
+      .select(SAFE_USER_FIELDS)
+      .single();
+    if (error) return res.status(500).json({ error: error.message });
+    if (!data) return res.status(404).json({ error: 'User not found in tenant' });
+    console.log(`[users/set-password] password set for user ${id} by ${session.user_id} (${session.email})`);
+    return res.json({ ok: true, user: data });
+  }
+
   if (req.method === 'GET') {
     // GATE: the staff directory was readable unauthenticated by tenant slug.
     // Require a valid portal session (any signed-in user in the tenant) or the
