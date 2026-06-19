@@ -102,6 +102,45 @@
 
   .pv2-visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
+  /* Metal panel preview: framed photoreal render of the roof in the active
+     panel profile, above the metal tier cards. Matches the cream + bronze
+     proposal aesthetic. Only ever rendered on a metal ladder. */
+  .pv2 .pv2-panelimg{
+    max-width:680px;
+    margin:0 auto 30px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:10px;
+  }
+  .pv2 .pv2-panelimg__frame{
+    width:100%;
+    border-radius:16px;
+    overflow:hidden;
+    background:#fffdf7;
+    border:1px solid #e6ddc9;
+    padding:8px;
+    box-shadow:0 16px 40px rgba(19,41,75,.10);
+  }
+  .pv2 .pv2-panelimg__img{
+    display:block;
+    width:100%;
+    aspect-ratio:16/9;
+    object-fit:cover;
+    border-radius:10px;
+    background:#efe7d6;
+  }
+  .pv2 .pv2-panelimg__cap{
+    font-size:13px;
+    color:#5c5a54;
+    text-align:center;
+    letter-spacing:.01em;
+  }
+  .pv2 .pv2-panelimg__cap strong{color:#1b3a6b;font-weight:700}
+  @supports not (aspect-ratio:1){
+    .pv2 .pv2-panelimg__img{height:auto}
+  }
+
   /* Save as PDF: a floating action on every proposal. Hidden when printing. */
   .pv2-pdfbtn{
     position:fixed;top:16px;right:16px;z-index:40;
@@ -874,6 +913,15 @@
     stand: 'Standing Seam'
   };
 
+  // Photoreal preview render per metal panel profile. The hero image above the
+  // metal tier cards swaps to the matching render as the customer toggles the
+  // panel profile. Illustrative finish only; actual colour is chosen at signing.
+  var PANEL_IMAGES = {
+    flat: '/proposal-assets/metal/ribbed.jpg',
+    wavy: '/proposal-assets/metal/clay.jpg',
+    stand: '/proposal-assets/metal/standing.jpg'
+  };
+
   // Pre-tax total for a tier, panel-aware. A metal tier carries panelPrices
   // { flat, wavy, stand }; the displayed/charged base follows the active panel.
   // Non-metal tiers (and metal tiers without a persisted SQ) fall back to total.
@@ -1267,6 +1315,34 @@
     return wrap;
   }
 
+  // The metal panel preview: a framed photoreal render of the roof in the
+  // active panel profile, shown ABOVE the metal tier cards. Swaps to the
+  // matching render when the customer toggles the panel selector (selectPanel
+  // re-renders the products body, so this rebuilds with the new selection).
+  // Returns null when the active ladder is not metal, so non-metal paths
+  // (asphalt / Revive) never render an image block and never shift layout.
+  function panelImage() {
+    var ap = activePanels();
+    if (!ap) return null;
+    var sel = state.panelSel || ap.def || 'flat';
+    var src = PANEL_IMAGES[sel];
+    if (!src) return null;
+    var label = PANEL_LABELS[sel] || sel;
+
+    var wrap = el('div', 'pv2-panelimg');
+    var frame = el('div', 'pv2-panelimg__frame');
+    var img = el('img', 'pv2-panelimg__img');
+    img.src = esc(src);
+    img.alt = esc(label + ' metal roof finish');
+    img.loading = 'lazy';
+    img.decoding = 'async';
+    frame.appendChild(img);
+    wrap.appendChild(frame);
+    wrap.appendChild(el('div', 'pv2-panelimg__cap',
+      '<strong>' + esc(label) + '</strong> &middot; illustrative finish, actual colour selected at signing'));
+    return wrap;
+  }
+
   // A single-price view for gutters / repair (one price, scope line items).
   function singlePriceView() {
     var prods = DATA.products || {};
@@ -1370,6 +1446,11 @@
     // ladder. Re-prices all three grade cards live when switched.
     var panelSel = panelSelector();
     if (panelSel) host.appendChild(panelSel);
+
+    // Photoreal preview of the roof in the active panel profile, above the
+    // cards. Null (and so absent) on every non-metal ladder.
+    var panelImg = panelImage();
+    if (panelImg) host.appendChild(panelImg);
 
     // Selectable tier grid for single / good_better_best / two_path / configurator.
     var grid = $('#pv2-tiers');
