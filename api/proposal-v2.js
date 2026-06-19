@@ -36,7 +36,7 @@ import {
 import { calculateRepairQuote } from '../lib/repairQuoteEngine.js';
 import { calculateRejuvenationQuote } from '../lib/rejuvenationQuote.js';
 import { calculateGutterQuote } from '../lib/gutterQuoteEngine.js';
-import { isMetalSlug, getMetalCopy } from '../lib/metalProposalCopy.js';
+import { isMetalSlug, getMetalCopy, METAL_TIER_COPY } from '../lib/metalProposalCopy.js';
 import { requirePortalSessionAndTenant } from '../lib/portalAuth.js';
 
 // ── Brand + rep constants (mirror api/proposal.js verbatim) ──────────────────
@@ -367,13 +367,13 @@ function buildGoodBetterBestTiers(est, offerSlugs, { mergeMetals = true } = {}) 
 }
 
 // Two or more metal-* packages collapse into ONE card with a variant toggle
-// (European Clay vs Flat Panel) instead of widening the grid to a fifth card.
-// Default variant is euro-clay when present: it is the panel the customer
-// asked about; the flat panel is the sharper-price alternative.
+// instead of widening the grid to a fifth card. Default variant is the
+// lowest-priced metal (tiers arrive price-sorted, so metals[0]); the euro-clay
+// and flat-panel slugs were removed, so there is no special-case default lookup.
 function mergeMetalVariants(tiers) {
   const metals = tiers.filter(t => isMetalSlug(t.id));
   if (metals.length < 2) return tiers;
-  const def = metals.find(t => t.id === 'metal-euro-clay') || metals[0];
+  const def = metals[0];
   const merged = { ...def, variants: [def, ...metals.filter(m => m !== def)] };
   const out = tiers.filter(t => !isMetalSlug(t.id));
   out.push(merged);
@@ -467,6 +467,35 @@ function buildAddons(est) {
   return base;
 }
 
+// Build one ProposalData path object for a tier ladder. Resolves the path system
+// from the ladder ('metal' when every grade is metal, else the plan-declared
+// system or `defaultSystem`), attaches per-panel re-pricing on a metal ladder,
+// emits the system-correct scope, and picks a recommended grade. Mutates `tiers`.
+function buildLadderPath(est, tiers, planRaw, defaultLabel, defaultSystem) {
+  const plan = planRaw || {};
+  const isMetal = isMetalTierList(tiers);
+  const system = isMetal ? 'metal' : (plan.system || defaultSystem || 'shingle');
+  let panels = null, defaultPanel = null;
+  if (isMetal) {
+    const panelInfo = decorateMetalPathTiers(est, tiers);
+    if (panelInfo) { panels = panelInfo.panels; defaultPanel = panelInfo.defaultPanel; }
+  }
+  const recommended = plan.recommended || (tiers[Math.floor(tiers.length / 2)]?.id ?? null);
+  const path = {
+    label: plan.label || defaultLabel,
+    system,
+    recommended,
+    tiers,
+    scope: {
+      system,
+      lineItems: scopeForSystem(est, system, { grade: metalGradeForTier(recommended) }),
+      measure: estimateScopeMeasure(est)
+    }
+  };
+  if (panels) { path.panels = panels; path.defaultPanel = defaultPanel; }
+  return path;
+}
+
 // ── Products assembly per product_plan.mode ──────────────────────────────────
 function buildProducts({ est, productPlan, taxRate }) {
   const mode = String(productPlan?.mode || 'good_better_best').toLowerCase();
@@ -487,11 +516,25 @@ function buildProducts({ est, productPlan, taxRate }) {
   };
 
   if (mode === 'good_better_best') {
-    base.tiers = buildGoodBetterBestTiers(est, productPlan?.offer_slugs);
+    // Build the ladder ONCE (unmerged), derive isMetal from it, then collapse
+    // metal variants only when it is NOT an all-metal ladder. A metal
+    // good/better/best ladder keeps every grade as its own card (no variant
+    // merge) so panel re-pricing can attach per grade. mergeMetalVariants() is
+    // exactly what buildGoodBetterBestTiers(..., { mergeMetals: true }) applies,
+    // so the output is identical to the prior two-build path.
+    const tiers = buildGoodBetterBestTiers(est, productPlan?.offer_slugs, { mergeMetals: false });
+    const isMetal = isMetalTierList(tiers);
+    base.tiers = isMetal ? tiers : mergeMetalVariants(tiers);
+    const system = isMetal ? 'metal' : 'shingle';
+    if (isMetal) {
+      const panelInfo = decorateMetalPathTiers(est, base.tiers);
+      if (panelInfo) { base.panels = panelInfo.panels; base.defaultPanel = panelInfo.defaultPanel; }
+      base.scope.system = 'metal';
+    }
     base.recommended = productPlan?.recommended
       || (base.tiers.find(t => t.id === 'platinum')?.id)
       || (base.tiers[Math.floor(base.tiers.length / 2)]?.id ?? null);
-    base.scope.lineItems = scopeLineItemsFromEstimate(est);
+    base.scope.lineItems = scopeForSystem(est, system, { grade: metalGradeForTier(base.recommended) });
     return base;
   }
 
@@ -562,39 +605,26 @@ function buildProducts({ est, productPlan, taxRate }) {
       const pathBPlanRaw = productPlan?.two_path?.pathB || {};
       const pathATiers = buildGoodBetterBestTiers(est, pathAPlanRaw.offer_slugs, { mergeMetals: false });
       const pathBTiers = buildGoodBetterBestTiers(est, pathBPlanRaw.offer_slugs, { mergeMetals: false });
-      const recA = pathAPlanRaw.recommended
-        || (pathATiers[Math.floor(pathATiers.length / 2)]?.id ?? null);
-      const recB = pathBPlanRaw.recommended
-        || (pathBTiers[Math.floor(pathBTiers.length / 2)]?.id ?? null);
+
+      // Resolve each path's system from its own ladder ('metal' when every grade
+      // is a metal-* slug, else 'shingle'), falling back to the plan's declared
+      // system. A metal ladder gets per-panel re-pricing attached to every grade.
+      const pathAObj = buildLadderPath(est, pathATiers, pathAPlanRaw, 'Option A', 'shingle');
+      const pathBObj = buildLadderPath(est, pathBTiers, pathBPlanRaw, 'Option B', 'metal');
+      const recA = pathAObj.recommended;
+      const recB = pathBObj.recommended;
       const defaultPath = String(productPlan?.two_path?.default_path || 'A').toUpperCase() === 'B' ? 'B' : 'A';
 
       base.mode = 'two_path';
       base.tiers = defaultPath === 'A' ? pathATiers : pathBTiers;
       base.recommended = defaultPath === 'A' ? recA : recB;
-      base.twoPath = {
-        defaultPath,
-        pathA: {
-          label: pathAPlanRaw.label || 'Option A',
-          recommended: recA,
-          tiers: pathATiers,
-          scope: {
-            system: pathAPlanRaw.system || 'asphalt',
-            lineItems: scopeLineItemsFromEstimate(est),
-            measure: estimateScopeMeasure(est)
-          }
-        },
-        pathB: {
-          label: pathBPlanRaw.label || 'Option B',
-          recommended: recB,
-          tiers: pathBTiers,
-          scope: {
-            system: pathBPlanRaw.system || 'metal',
-            lineItems: scopeLineItemsFromEstimate(est),
-            measure: estimateScopeMeasure(est)
-          }
-        }
-      };
-      base.scope.lineItems = scopeLineItemsFromEstimate(est);
+      // Surface the default path's panel info at the top level so the renderer
+      // can read panels off DATA.products for the initially shown ladder.
+      const defObj = defaultPath === 'A' ? pathAObj : pathBObj;
+      if (defObj.panels) { base.panels = defObj.panels; base.defaultPanel = defObj.defaultPanel; }
+      base.twoPath = { defaultPath, pathA: pathAObj, pathB: pathBObj };
+      base.scope.lineItems = defObj.scope.lineItems;
+      base.scope.system = defObj.system;
       return base;
     }
 
@@ -635,25 +665,29 @@ function buildProducts({ est, productPlan, taxRate }) {
     base.twoPath = {
       pathA: {
         label: pathAPlan.label || 'Rejuvenation',
+        system: 'rejuvenation',
         tiers: [pathATier],
         scope: {
           system: 'rejuvenation',
+          // Revive carries its own engine line items; scopeForSystem's
+          // rejuvenation stub is the fallback when no engine result exists.
           lineItems: engineLineItemsToScope(reviveResult),
           measure: { sq: measuredSQ > 0 ? measuredSQ : null }
         }
       },
       pathB: {
         label: pathBPlan.label || 'Full Replacement',
+        system: 'shingle',
         recommended: pathBRecommended,
         tiers: pathBTiers,
         scope: {
           system: 'asphalt',
-          lineItems: scopeLineItemsFromEstimate(est),
+          lineItems: scopeForSystem(est, 'shingle'),
           measure: estimateScopeMeasure(est)
         }
       }
     };
-    base.scope.lineItems = scopeLineItemsFromEstimate(est);
+    base.scope.lineItems = scopeForSystem(est, 'shingle');
     return base;
   }
 
@@ -704,6 +738,175 @@ function scopeLineItemsFromEstimate(est) {
   items.push({ label: 'Manufacturer warranty', value: 'Lifetime limited + 10-yr SureStart' });
   items.push({ label: 'Plus Ultra workmanship', value: `${workmanship} + leak-free guarantee` });
   return items;
+}
+
+// ── Metal scope (the core unification fix) ───────────────────────────────────
+// The asphalt scope above is shingle-specific (CertainTeed, ice & water, hip and
+// ridge caps). When the path system is metal, the old code emitted that shingle
+// copy verbatim, which is the defect this fixes. metalScopeLineItemsFromEstimate
+// emits METAL-correct customer-facing line items per grade, sourcing the panel
+// system + warranty copy from lib/metalProposalCopy.js. It never hardcodes
+// shingle copy. Grade is one of 'standard' | 'enhanced' | 'premium'; an unknown
+// grade degrades to standard.
+const METAL_GRADE_COPY = {
+  standard: METAL_TIER_COPY['metal-standard'],
+  enhanced: METAL_TIER_COPY['metal-enhanced'],
+  premium: METAL_TIER_COPY['metal-premium']
+};
+
+function metalScopeLineItemsFromEstimate(est, { grade = 'standard' } = {}) {
+  const g = String(grade || 'standard').toLowerCase();
+  const copy = METAL_GRADE_COPY[g] || METAL_GRADE_COPY.standard;
+  const isEnhanced = g === 'enhanced';
+  const isPremium = g === 'premium';
+  const deckPrep = isEnhanced || isPremium;          // tear-off + deck seal grades
+
+  // Persisted measurements, same fields the shingle scope reads. Never fabricated.
+  const sqVal = Number(est?.roof_area_sqft) > 0 ? (Number(est.roof_area_sqft) / 100).toFixed(1) : null;
+  const eaves = Number(est?.eaves_lf) || 0;
+  const rakes = Number(est?.rakes_lf) || 0;
+  const ridges = Number(est?.ridges_lf) || 0;
+  const valleys = Number(est?.valleys_lf) || 0;
+  const pipes = Number(est?.pipes) || 0;
+
+  // Panel system + install per grade (copy.name carries the grade-correct system).
+  const items = [
+    { label: `${copy.name} metal panel system + install`, value: sqVal ? `${sqVal} SQ included` : 'included' }
+  ];
+
+  // Tear-off / substrate.
+  if (deckPrep) {
+    items.push({ label: 'Full tear-off to deck + deck inspection', value: 'included' });
+    if (isPremium) {
+      items.push({ label: 'New 7/16 OSB roof sheathing (full redeck)', value: 'included' });
+    }
+    items.push({ label: 'Peel-and-stick deck seal', value: 'full deck' });
+  } else {
+    items.push({ label: 'Wood strapping over existing shingles', value: 'fastening + airflow' });
+  }
+
+  // Underlayment: enhanced/premium use high-temp synthetic + Grace ice & water.
+  if (deckPrep) {
+    items.push({ label: 'High-temperature underlayment', value: 'full deck' });
+    items.push({ label: 'Grace ice & water shield', value: eaves ? `${eaves}${valleys ? '+' + valleys : ''} LF eaves+valleys` : 'full deck coverage' });
+  } else {
+    items.push({ label: 'Synthetic underlayment', value: 'full deck' });
+  }
+
+  // Metal perimeter: drip edge + closures / Z-trim, ridge cap/vent, valley metal.
+  items.push({ label: 'Metal drip edge + closures / Z-trim', value: (eaves || rakes) ? `${eaves + rakes} LF perimeter` : 'included' });
+  items.push({ label: isPremium ? 'Custom-bent ridge cap + ridge vent' : 'Metal ridge cap + ridge vent', value: ridges ? `${ridges} LF` : 'included' });
+  items.push({ label: 'Open metal valley', value: valleys ? `${valleys} LF` : 'included where applicable' });
+  items.push({ label: 'Pre-bent chimney + pipe flashings', value: pipes ? `${pipes} penetrations` : 'included' });
+  items.push({ label: 'Screw-and-clip fastening', value: deckPrep ? 'concealed / butyl-sealed at every fastener' : 'butyl tape + sealed at every fastener' });
+
+  // Disposal / QA / warranty.
+  items.push({ label: 'Magnetic cleanup + debris haul', value: 'included' });
+  items.push({ label: '50 to 100+ photo documentation', value: 'every stage via Company Cam' });
+  items.push({ label: 'Manufacturer warranty', value: copy.warrantyLabel || `${copy.warrantyYears}-year` });
+  items.push({ label: 'Plus Ultra workmanship', value: `${copy.warrantyYears}-yr + leak-free guarantee` });
+  return items;
+}
+
+// ── scopeForSystem dispatcher ────────────────────────────────────────────────
+// Routes the scope build by the path's system so the metal path renders METAL
+// line items, not shingle copy. The DEFAULT branch is the existing asphalt
+// scopeLineItemsFromEstimate(est) VERBATIM, so the asphalt path is unchanged.
+//   metal        -> metalScopeLineItemsFromEstimate
+//   rejuvenation -> TODO stub (Revive is a later unit); shingle copy for now
+//   default      -> scopeLineItemsFromEstimate (asphalt, unchanged)
+function scopeForSystem(est, system, opts = {}) {
+  const sys = String(system || 'shingle').toLowerCase();
+  if (sys === 'metal') {
+    return metalScopeLineItemsFromEstimate(est, { grade: opts.grade });
+  }
+  if (sys === 'rejuvenation') {
+    // TODO: Revive (rejuvenation) scope is its own unit. Until then fall through
+    // to the shingle scope so the renderer never shows raw braces or blanks.
+    return scopeLineItemsFromEstimate(est);
+  }
+  return scopeLineItemsFromEstimate(est);
+}
+
+// ── Metal panel re-pricing (divisor method) ──────────────────────────────────
+// Mac's UX: the metal path shows a panel-profile toggle (flat / wavy / stand)
+// ABOVE the Standard/Enhanced/Premium cards. Each card re-prices live by panel.
+// We emit, per metal tier, a panelPrices map { flat, wavy, stand } (PRE-TAX); the
+// renderer applies HST + $25 rounding and the panel default.
+//
+// Cost stack (per SQ), divisor method (Sell = DirectCost / divisor):
+//   panel material $/SQ: flat $230 (Community Barn ribbed/standard),
+//                        wavy $290 (European clay imitation, +30%),
+//                        stand $800 (standing seam).
+//   labour band: moderate $290/SQ baseline, steep $350/SQ (12/12). Labour is
+//   NEVER $0; a metal install always carries crew labour.
+//   Grade divisors: Standard /0.53, Enhanced /0.50, Premium /0.48.
+const METAL_PANEL_MATERIAL_PER_SQ = { flat: 230, wavy: 290, stand: 800 };
+const METAL_MODERATE_LABOUR_PER_SQ = 290;
+const METAL_STEEP_LABOUR_PER_SQ = 350;
+const METAL_GRADE_DIVISOR = { standard: 0.53, enhanced: 0.50, premium: 0.48 };
+const METAL_PANELS = ['flat', 'wavy', 'stand'];
+const METAL_DEFAULT_PANEL = 'flat';
+
+// Pre-tax sell per panel for one grade, on the persisted measured SQ. Returns a
+// { flat, wavy, stand } map of pre-tax dollars, or null when no persisted SQ
+// exists (never fabricate SQ; the renderer/path falls back to package pricing).
+function metalPanelPrices(est, grade) {
+  const measuredSQ = estimateMeasuredSQ(est);
+  if (!(measuredSQ > 0)) return null;
+  const g = String(grade || 'standard').toLowerCase();
+  const divisor = METAL_GRADE_DIVISOR[g] || METAL_GRADE_DIVISOR.standard;
+  const steep = est?.custom_prices?._metal_steep === true || est?.steep === true;
+  const labourPerSQ = steep ? METAL_STEEP_LABOUR_PER_SQ : METAL_MODERATE_LABOUR_PER_SQ;
+  const out = {};
+  for (const panel of METAL_PANELS) {
+    const directPerSQ = (METAL_PANEL_MATERIAL_PER_SQ[panel] || 0) + labourPerSQ;
+    const directCost = directPerSQ * measuredSQ;
+    out[panel] = Math.round(directCost / divisor);   // PRE-TAX
+  }
+  return out;
+}
+
+// Map a metal tier id to its canonical grade ('standard'|'enhanced'|'premium').
+function metalGradeForTier(id) {
+  const s = String(id || '').toLowerCase();
+  if (s.includes('premium')) return 'premium';
+  if (s.includes('enhanced') || s.includes('standing-seam')) return 'enhanced';
+  return 'standard';
+}
+
+// True when every priced tier in the list is a metal-* slug. Used to decide
+// whether a path/ladder is the metal system and should carry panel re-pricing.
+function isMetalTierList(tiers) {
+  return Array.isArray(tiers) && tiers.length > 0 && tiers.every(t => isMetalSlug(t.id));
+}
+
+// Attach per-panel re-pricing to each tier of a metal ladder. Each tier gets a
+// panelPrices map (PRE-TAX), and the tier `total` is re-anchored to the default
+// panel so the data is internally consistent for clients that read `total`
+// directly. Premium carries has_estimated_pricing=true (standing-seam supply is
+// an estimate). Returns the list of panels + the default so the path can expose
+// them. Mutates the tiers in place (they are freshly built per call).
+function decorateMetalPathTiers(est, tiers) {
+  if (!isMetalTierList(est && tiers ? tiers : [])) return null;
+  let priced = false;
+  tiers.forEach(t => {
+    const grade = metalGradeForTier(t.id);
+    const panelPrices = metalPanelPrices(est, grade);
+    if (panelPrices) {
+      t.panelPrices = panelPrices;
+      t.total = panelPrices[METAL_DEFAULT_PANEL];   // PRE-TAX, default panel
+      t.persq = 0;                                  // per-SQ varies by panel now
+      // A re-priced metal tier supersedes any package promo strike.
+      t.originalTotal = null;
+      t.promoLabel = null;
+      priced = true;
+    }
+    if (grade === 'premium') t.has_estimated_pricing = true;
+  });
+  if (!priced) return null;                         // no persisted SQ; leave as-is
+  tiers.sort((a, b) => a.total - b.total);
+  return { panels: METAL_PANELS.slice(), defaultPanel: METAL_DEFAULT_PANEL };
 }
 
 // ── Section resolution (LIVE preview) ────────────────────────────────────────
@@ -1121,4 +1324,9 @@ export async function assembleProposalData(estimateId, templateInput, expectedTe
 }
 
 // Re-export for unit tests / downstream callers that want the assembly seam.
+// metalPanelPrices + metalGradeForTier + METAL_DEFAULT_PANEL are shared with
+// api/proposal-accept.js so the accept path can re-derive the metal panel price
+// SERVER-side (never trusting a client-posted dollar) when no frozen snapshot
+// panelPrices are available.
 export { buildProducts, resolveTokens, buildGoodBetterBestTiers, scopeLineItemsFromEstimate, withHST };
+export { metalPanelPrices, metalGradeForTier, METAL_DEFAULT_PANEL };

@@ -17,6 +17,7 @@ import { supabaseAdmin } from '../lib/supabase.js';
 import { put } from '@vercel/blob';
 import { sendCAPIEvent } from '../lib/meta.js';
 import { notifyLeadEvent } from '../lib/leadNotify.js';
+import { isMetalSlug } from '../lib/metalProposalCopy.js';
 import {
   computeRateHoldExpiry,
   computeRepCallDue,
@@ -274,8 +275,19 @@ export default async function handler(req, res) {
     // Mirrors api/proposal.js + api/proposal-v2-accept.js: pkg.total ?? summary.sellingPrice.
     const pkgs = est.calculated_packages && typeof est.calculated_packages === 'object' ? est.calculated_packages : {};
     const pkg = pkgs[tier.id];
-    const serverTierBase = pkg ? Number(pkg.total ?? pkg.summary?.sellingPrice ?? 0) : 0;
-    if (!pkg || !(serverTierBase > 0)) {
+    const pkgBase = pkg ? Number(pkg.total ?? pkg.summary?.sellingPrice ?? 0) : 0;
+
+    // METAL: the panel-priced base (panelPrices[panel]) is NOT in
+    // calculated_packages. api/proposal-v2-accept.js resolves it SERVER-side
+    // from the frozen snapshot (or recomputes via metalPanelPrices) and passes
+    // it as body.serverTierBase. Honor it ONLY for metal slugs with no real
+    // calculated_packages entry, so a public client can never use it to override
+    // an asphalt package price. Asphalt/shingle ALWAYS uses pkgBase.
+    const metalServerBase = (isMetalSlug(tier.id) && !(pkgBase > 0))
+      ? Number(body.serverTierBase) || 0
+      : 0;
+    const serverTierBase = pkgBase > 0 ? pkgBase : metalServerBase;
+    if (!(serverTierBase > 0)) {
       return res.status(400).json({ error: 'Unknown or unpriced tier for this proposal', tier: tier.id });
     }
     tierBaseTotal = serverTierBase + addonsSum;

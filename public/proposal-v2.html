@@ -119,7 +119,7 @@
      never split across pages, and the sticky total bar becomes a static row. */
   @media print{
     .pv2-pdfbtn,.pv2-modal,.pv2-sig,.pv2-accept__btn,.pv2-total__cta,
-    .pv2-tier__pick,.pv2-switch,.pv2-paths{display:none !important}
+    .pv2-tier__pick,.pv2-switch,.pv2-paths,.pv2-panels{display:none !important}
     body{background:#fff}
     body,.pv2{-webkit-print-color-adjust:exact;print-color-adjust:exact}
     .pv2-total{position:static !important;box-shadow:none !important}
@@ -200,7 +200,10 @@
     tierId: null,
     pathId: null,
     addons: new Set(),
-    variantSel: {}
+    variantSel: {},
+    // panelSel is the active metal panel profile (flat / wavy / stand). It
+    // re-prices every metal tier card live when switched.
+    panelSel: null
   };
 
   /* --------------------------------------------------------------------------
@@ -846,6 +849,46 @@
     return p.tiers || [];
   }
 
+  // The metal panel profiles available for the active products mode and path,
+  // or null when the active ladder is not a metal (panel-priced) one. Reads
+  // panels off the active two-path path first, then the top-level products.
+  function activePanels() {
+    var p = DATA.products || {};
+    if (p.mode === 'two_path' && p.twoPath) {
+      var path = (state.pathId === 'A') ? p.twoPath.pathA : p.twoPath.pathB;
+      if (path && Array.isArray(path.panels) && path.panels.length) {
+        return { panels: path.panels, def: path.defaultPanel || path.panels[0] };
+      }
+      return null;
+    }
+    if (Array.isArray(p.panels) && p.panels.length) {
+      return { panels: p.panels, def: p.defaultPanel || p.panels[0] };
+    }
+    return null;
+  }
+
+  // Human label for a panel slug.
+  var PANEL_LABELS = {
+    flat: 'Standard Ribbed',
+    wavy: 'European Clay',
+    stand: 'Standing Seam'
+  };
+
+  // Pre-tax total for a tier, panel-aware. A metal tier carries panelPrices
+  // { flat, wavy, stand }; the displayed/charged base follows the active panel.
+  // Non-metal tiers (and metal tiers without a persisted SQ) fall back to total.
+  function tierTotal(t) {
+    if (!t) return 0;
+    if (t.panelPrices) {
+      var ap = activePanels();
+      var sel = state.panelSel || (ap && ap.def) || 'flat';
+      var v = t.panelPrices[sel];
+      if (v == null && ap && ap.def != null) v = t.panelPrices[ap.def];
+      if (v != null) return Number(v) || 0;
+    }
+    return Number(t.total) || 0;
+  }
+
   // Resolve the active variant of a multi-variant card. Plain cards pass through.
   function effTier(t) {
     if (!t || !t.variants || !t.variants.length) return t;
@@ -892,7 +935,7 @@
   // Displayed total = base x (1 + tax), rounded to nearest 25.
   function computeTotals() {
     var t = findTier(state.tierId);
-    var base = (t ? (Number(t.total) || 0) : 0) + addonsSubtotal();
+    var base = (t ? tierTotal(t) : 0) + addonsSubtotal();
     var withTax = base * (1 + taxRate());
     var display = round25(withTax);
     return { tier: t, base: base, withTax: withTax, display: display };
@@ -982,9 +1025,24 @@
     var p = DATA.products.twoPath;
     var path = (pathId === 'A') ? p.pathA : p.pathB;
     state.tierId = (path && path.recommended) || (path && path.tiers && path.tiers[0] && path.tiers[0].id) || null;
+    // Reset the panel profile to the new path's default (or clear it when the
+    // new path has no panel ladder) so the metal toggle tracks the active path.
+    var ap = activePanels();
+    state.panelSel = ap ? ap.def : null;
     renderProductsBody();
     recompute();
     logEvent('path_selected', { path: pathId });
+  }
+
+  // Metal panel profile switch. Re-prices every metal card, the sticky total,
+  // and the accept summary. The selected tier stays selected; only its price
+  // (and every card's price) follows the new panel.
+  function selectPanel(panel) {
+    if (state.panelSel === panel) return;
+    state.panelSel = panel;
+    renderProductsBody();
+    recompute();
+    logEvent('panel_selected', { panel: panel });
   }
 
   // Add-on toggle.
@@ -1048,11 +1106,13 @@
     if (v.sub || v.desc) card.appendChild(el('div', 'pv2-tier__sub', esc(resolveVars(v.sub || v.desc))));
 
     // Price shown incl. HST, rounded to 25, with the pre-tax origin honoured.
-    var incHst = round25((Number(v.total) || 0) * (1 + taxRate()));
+    // Metal cards re-price by the active panel profile via tierTotal.
+    var preTax = tierTotal(v);
+    var incHst = round25(preTax * (1 + taxRate()));
 
     // When a discount applies, show the struck pre-discount price plus a bronze
     // promo tag above the live price (originalTotal is the pre-tax list price).
-    if (v.originalTotal != null && Number(v.originalTotal) > Number(v.total)) {
+    if (v.originalTotal != null && Number(v.originalTotal) > preTax) {
       var wasHst = round25((Number(v.originalTotal) || 0) * (1 + taxRate()));
       var wasRow = el('div', 'pv2-tier__was');
       wasRow.appendChild(document.createTextNode(money(wasHst)));
@@ -1062,9 +1122,12 @@
       card.appendChild(wasRow);
     }
 
-    card.appendChild(el('div', 'pv2-tier__price', money(incHst)));
+    // Provisional metal pricing (e.g. standing-seam supply estimate) shows a star.
+    var priceText = money(incHst) + (v.has_estimated_pricing ? ' *' : '');
+    card.appendChild(el('div', 'pv2-tier__price', priceText));
     var pnBits = ['incl. HST'];
     if (v.persq) pnBits.push(money(v.persq) + '/SQ');
+    if (v.has_estimated_pricing) pnBits.push('* Estimated');
     card.appendChild(el('div', 'pv2-tier__pn', esc(pnBits.join(' · '))));
 
     // Monthly payment promoted to its own weighted line on the card.
@@ -1178,6 +1241,32 @@
     return wrap;
   }
 
+  // The metal panel-profile selector: a centered segmented control rendered
+  // ABOVE the Standard / Enhanced / Premium cards on the metal path. Switching
+  // it re-prices all three cards live. Returns null when the active ladder is
+  // not metal (so non-metal ladders never show it).
+  function panelSelector() {
+    var ap = activePanels();
+    if (!ap) return null;
+    if (state.panelSel == null) state.panelSel = ap.def;
+    var wrap = el('div', 'pv2-panels');
+    wrap.setAttribute('role', 'group');
+    wrap.setAttribute('aria-label', 'Metal panel profile');
+    wrap.appendChild(el('div', 'pv2-panels__label', 'Panel profile'));
+    var seg = el('div', 'pv2-panels__seg');
+    ap.panels.forEach(function (panel) {
+      var on = (state.panelSel === panel);
+      var btn = el('button', 'pv2-panels__btn' + (on ? ' is-on' : ''),
+        esc(PANEL_LABELS[panel] || panel));
+      btn.type = 'button';
+      btn.setAttribute('aria-pressed', String(on));
+      btn.addEventListener('click', function () { selectPanel(panel); });
+      seg.appendChild(btn);
+    });
+    wrap.appendChild(seg);
+    return wrap;
+  }
+
   // A single-price view for gutters / repair (one price, scope line items).
   function singlePriceView() {
     var prods = DATA.products || {};
@@ -1276,6 +1365,11 @@
     if (mode === 'configurator') {
       host.appendChild(configuratorView());
     }
+
+    // Metal panel-profile selector, rendered above the tier cards on a metal
+    // ladder. Re-prices all three grade cards live when switched.
+    var panelSel = panelSelector();
+    if (panelSel) host.appendChild(panelSel);
 
     // Selectable tier grid for single / good_better_best / two_path / configurator.
     var grid = $('#pv2-tiers');
@@ -1547,8 +1641,11 @@
       estimateId: DATA.meta && DATA.meta.estimateId,
       instanceSlug: DATA.meta && DATA.meta.instanceSlug,
       tierId: t ? t.id : null,
-      tier: t ? { id: t.id, name: t.name, sub: t.sub, total: t.total } : null,
+      // tier.total is the panel-aware pre-tax base actually charged (the metal
+      // panel toggle changes it); panel records which profile was chosen.
+      tier: t ? { id: t.id, name: t.name, sub: t.sub, total: tierTotal(t) } : null,
       pathId: state.pathId,
+      panel: (t && t.panelPrices) ? state.panelSel : null,
       addons: addonsList,
       addonsSubtotal: addonsSubtotal(),
       baseTotal: totals.base,
