@@ -36,7 +36,7 @@ import {
 import { calculateRepairQuote } from '../lib/repairQuoteEngine.js';
 import { calculateRejuvenationQuote } from '../lib/rejuvenationQuote.js';
 import { calculateGutterQuote } from '../lib/gutterQuoteEngine.js';
-import { isMetalSlug, getMetalCopy, METAL_TIER_COPY } from '../lib/metalProposalCopy.js';
+import { isMetalSlug, getMetalCopy, metalRankOf, METAL_TIER_COPY } from '../lib/metalProposalCopy.js';
 import { requirePortalSessionAndTenant } from '../lib/portalAuth.js';
 
 // ── Brand + rep constants (mirror api/proposal.js verbatim) ──────────────────
@@ -305,14 +305,38 @@ function buildGoodBetterBestTiers(est, offerSlugs, { mergeMetals = true } = {}) 
     est,
     applyPromo: true
   });
+  // Filter set holds each requested slug AND, for metal slugs, its canonical
+  // rank ('metal-standard' etc). A template that requests the DB-offer aliases
+  // (metal-americana / metal-standing-seam) then still matches an estimate that
+  // stored the rank keys (metal-standard / metal-enhanced), and vice versa.
+  // Non-metal slugs stay exact-match, so the asphalt path is unchanged.
   const slugFilter = Array.isArray(offerSlugs) && offerSlugs.length
-    ? new Set(offerSlugs.map(s => String(s).toLowerCase()))
+    ? new Set(offerSlugs.flatMap(s => {
+        const slug = String(s).toLowerCase();
+        const rank = metalRankOf(slug);
+        return rank ? [slug, `metal-${rank}`] : [slug];
+      }))
     : null;
 
   const tiers = [];
+  const seenMetalRanks = new Set();
   for (const [id, norm] of Object.entries(normalized)) {
-    if (slugFilter && !slugFilter.has(id.toLowerCase())) continue;
+    const idLower = id.toLowerCase();
+    const idRank = metalRankOf(idLower);
+    if (slugFilter) {
+      // Metal packages match on canonical rank (alias-tolerant); everything else
+      // matches on the literal slug.
+      const matches = idRank ? slugFilter.has(`metal-${idRank}`) : slugFilter.has(idLower);
+      if (!matches) continue;
+    }
     if (!(norm.preTaxTotal > 0)) continue;
+    // One card per metal rank: if an estimate ever carried both an alias key and
+    // its rank key (e.g. metal-americana + metal-standard), keep only the first
+    // priced one so the ladder never shows two cards of the same install grade.
+    if (idRank) {
+      if (seenMetalRanks.has(idRank)) continue;
+      seenMetalRanks.add(idRank);
+    }
 
     const meta = TIER_CATALOG[id];
     const metalCopy = !meta ? getMetalCopy(id) : null;
@@ -480,7 +504,8 @@ function buildLadderPath(est, tiers, planRaw, defaultLabel, defaultSystem) {
     const panelInfo = decorateMetalPathTiers(est, tiers);
     if (panelInfo) { panels = panelInfo.panels; defaultPanel = panelInfo.defaultPanel; }
   }
-  const recommended = plan.recommended || (tiers[Math.floor(tiers.length / 2)]?.id ?? null);
+  const recommended = resolveRecommendedId(plan.recommended, tiers)
+    || (tiers[Math.floor(tiers.length / 2)]?.id ?? null);
   const path = {
     label: plan.label || defaultLabel,
     system,
@@ -531,7 +556,12 @@ function buildProducts({ est, productPlan, taxRate }) {
       if (panelInfo) { base.panels = panelInfo.panels; base.defaultPanel = panelInfo.defaultPanel; }
       base.scope.system = 'metal';
     }
-    base.recommended = productPlan?.recommended
+    // Resolve the configured recommended slug to an id that actually exists in
+    // the built ladder. A metal template can name a DB-offer alias
+    // (e.g. metal-standing-seam) while the surviving tiers carry rank keys
+    // (metal-enhanced); resolveRecommendedId maps it across the alias so the
+    // recommended card is highlighted instead of pointing at a missing id.
+    base.recommended = resolveRecommendedId(productPlan?.recommended, base.tiers)
       || (base.tiers.find(t => t.id === 'platinum')?.id)
       || (base.tiers[Math.floor(base.tiers.length / 2)]?.id ?? null);
     base.scope.lineItems = scopeForSystem(est, system, { grade: metalGradeForTier(base.recommended) });
@@ -873,6 +903,23 @@ function metalGradeForTier(id) {
   if (s.includes('premium')) return 'premium';
   if (s.includes('enhanced') || s.includes('standing-seam')) return 'enhanced';
   return 'standard';
+}
+
+// Resolve a configured recommended slug to an id that exists in `tiers`. Tries an
+// exact id match first, then (for metal) a canonical-rank match so a template
+// that names a DB-offer alias still highlights the right rank card. Returns null
+// when nothing matches, so the caller can fall back to its default middle tier.
+function resolveRecommendedId(recommended, tiers) {
+  if (!recommended || !Array.isArray(tiers) || !tiers.length) return null;
+  const want = String(recommended).toLowerCase();
+  const exact = tiers.find(t => String(t.id).toLowerCase() === want);
+  if (exact) return exact.id;
+  const wantRank = metalRankOf(want);
+  if (wantRank) {
+    const byRank = tiers.find(t => metalRankOf(String(t.id).toLowerCase()) === wantRank);
+    if (byRank) return byRank.id;
+  }
+  return null;
 }
 
 // True when every priced tier in the list is a metal-* slug. Used to decide
