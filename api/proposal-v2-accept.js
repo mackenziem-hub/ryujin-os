@@ -27,6 +27,11 @@
 
 import { supabaseAdmin } from '../lib/supabase.js';
 import { notifyLeadEvent } from '../lib/leadNotify.js';
+import { isMetalSlug } from '../lib/metalProposalCopy.js';
+// Shared with the assembler so a metal accept can re-derive the panel price
+// SERVER-side when the frozen snapshot does not carry panelPrices. We never
+// trust a client-posted dollar.
+import { metalPanelPrices, metalGradeForTier, METAL_DEFAULT_PANEL } from './proposal-v2.js';
 // Reuse the estimate-backed acceptance pipeline wholesale. This handler runs
 // the share-token auth, migration-038 state machine, GHL updates, owner email,
 // and repair-ticket auto-create. We never duplicate that logic.
@@ -77,17 +82,37 @@ function instanceCustomer(inst) {
   };
 }
 
+// Apply HST + $25 rounding exactly the way proposal-v2.html's renderer does:
+// display = round-to-nearest-$25( preTax × (1 + taxRate) ).
+function withHstRounded(preTax, taxRate) {
+  const rate = Number(taxRate) > 0 && Number(taxRate) < 1 ? Number(taxRate) : 0.15;
+  return Math.round((Number(preTax) || 0) * (1 + rate) / 25) * 25;
+}
+
 // Resolve the accepted total (incl HST where available) from the frozen
 // pricing_snapshot, scoped to the selected tier when the snapshot is tiered.
-function instanceAcceptedTotal(inst, selectedTier) {
+// selectedPanel is the metal panel KEY ('flat'|'wavy'|'stand'), never a price.
+function instanceAcceptedTotal(inst, selectedTier, selectedPanel) {
   const ps = inst.pricing_snapshot && typeof inst.pricing_snapshot === 'object' ? inst.pricing_snapshot : {};
+  const taxRate = ps.taxRate;
   // Tiered snapshot: tiers may be an array of {id,...} (live builder shape) or an
   // object keyed by tier id. Resolve the selected tier from either.
   if (selectedTier && ps.tiers) {
     const t = Array.isArray(ps.tiers)
       ? ps.tiers.find(x => x && x.id === selectedTier)
       : ps.tiers[selectedTier];
-    if (t) return Number(t.totalWithTax ?? t.total_incl_hst ?? t.total) || 0;
+    if (t) {
+      // METAL: the signed number is panelPrices[panel] (PRE-TAX). Apply HST +
+      // $25 rounding the same way the renderer did so the recorded total matches
+      // what the customer saw. Never trust a client dollar.
+      if (t.panelPrices && typeof t.panelPrices === 'object') {
+        const def = ps.defaultPanel || METAL_DEFAULT_PANEL;
+        const panel = selectedPanel || def;
+        const base = Number(t.panelPrices[panel] ?? t.panelPrices[def] ?? t.panelPrices[METAL_DEFAULT_PANEL]);
+        if (base > 0) return withHstRounded(base, taxRate);
+      }
+      return Number(t.totalWithTax ?? t.total_incl_hst ?? t.total) || 0;
+    }
   }
   return Number(ps.totalWithTax ?? ps.total_incl_hst ?? ps.total ?? ps.grandTotal) || 0;
 }
@@ -183,6 +208,74 @@ function buildTierForEstimate(est, selectedTier) {
   return tier;
 }
 
+// Locate the tiers array + the path/products default panel in a frozen instance
+// snapshot. pricing_snapshot mirrors data.products; fall back to data_snapshot.
+function frozenProducts(inst) {
+  const ps = inst?.pricing_snapshot && typeof inst.pricing_snapshot === 'object' ? inst.pricing_snapshot : null;
+  if (ps && (Array.isArray(ps.tiers) || ps.twoPath || ps.panels)) return ps;
+  const ds = inst?.data_snapshot && typeof inst.data_snapshot === 'object' ? inst.data_snapshot : null;
+  if (ds && ds.products && typeof ds.products === 'object') return ds.products;
+  return ps || {};
+}
+
+// Walk a frozen products object for a tier by id, across the top-level ladder,
+// any two_path paths, and variant cards. Returns the tier object or null.
+function findFrozenTier(products, tierId) {
+  if (!products || !tierId) return null;
+  const id = String(tierId);
+  const scan = (tiers) => {
+    if (!Array.isArray(tiers)) return null;
+    for (const t of tiers) {
+      if (!t) continue;
+      if (t.id === id) return t;
+      if (Array.isArray(t.variants)) {
+        const v = t.variants.find(x => x && x.id === id);
+        if (v) return v;
+      }
+    }
+    return null;
+  };
+  return scan(products.tiers)
+    || (products.twoPath && (scan(products.twoPath.a?.tiers) || scan(products.twoPath.b?.tiers)))
+    || null;
+}
+
+// SERVER-AUTHORITATIVE metal total. The signed metal price is the panel-priced
+// pre-tax base (panelPrices[panel]), NOT calculated_packages. Resolve it from
+// the FROZEN snapshot first (the exact number the customer saw + signed); if the
+// instance was never materialized with panelPrices, recompute it server-side via
+// the same metalPanelPrices() formula from the estimate. The posted `panel` is a
+// KEY ('flat'|'wavy'|'stand'), never a dollar; we never trust a client price.
+// Returns the PRE-TAX base, or 0 when it cannot be resolved.
+function resolveMetalAcceptedBase(inst, est, tierId, panelKey) {
+  const products = frozenProducts(inst);
+  const t = findFrozenTier(products, tierId);
+  const def = (products && (products.defaultPanel
+    || (products.twoPath && (products.twoPath.a?.defaultPanel || products.twoPath.b?.defaultPanel))))
+    || METAL_DEFAULT_PANEL;
+  const panel = panelKey || def || METAL_DEFAULT_PANEL;
+
+  // 1. Frozen snapshot panelPrices (preferred): the exact pre-tax base shown.
+  if (t && t.panelPrices && typeof t.panelPrices === 'object') {
+    const v = Number(t.panelPrices[panel] ?? t.panelPrices[def] ?? t.panelPrices[METAL_DEFAULT_PANEL]);
+    if (v > 0) return v;
+  }
+
+  // 2. Fallback: recompute server-side from the estimate (never the client).
+  if (est) {
+    const grade = metalGradeForTier(tierId);
+    const prices = metalPanelPrices(est, grade);
+    if (prices) {
+      const v = Number(prices[panel] ?? prices[def] ?? prices[METAL_DEFAULT_PANEL]);
+      if (v > 0) return v;
+    }
+  }
+
+  // 3. Last resort: the frozen tier.total (already a server-frozen pre-tax base).
+  if (t && Number(t.total) > 0) return Number(t.total);
+  return 0;
+}
+
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
@@ -194,7 +287,15 @@ export default async function handler(req, res) {
   const instanceSlug = String(body.instanceSlug || '').trim();
   const shareToken = String(body.shareToken || '').trim();
   const estimateId = String(body.estimateId || '').trim();
-  const selectedTier = body.selectedTier ? String(body.selectedTier).trim() : null;
+  // Tier id arrives as selectedTier (this endpoint's documented shape) OR as
+  // tierId / tier.id (the proposal-v2.html accept POST). Accept all three.
+  const selectedTier = (() => {
+    const raw = body.selectedTier ?? body.tierId ?? (body.tier && body.tier.id);
+    return raw ? String(raw).trim() : null;
+  })();
+  // Panel is a KEY ('flat'|'wavy'|'stand'), never a price. Used only to look up a
+  // SERVER-side pre-tax base; the dollar is resolved server-authoritatively.
+  const selectedPanel = body.panel ? String(body.panel).trim() : null;
   const selectedAddons = Array.isArray(body.selectedAddons) ? body.selectedAddons : [];
   const signature = typeof body.signature === 'string' ? body.signature : null;
   const acceptedName = body.acceptedName ? String(body.acceptedName).trim() : '';
@@ -258,10 +359,30 @@ export default async function handler(req, res) {
   // ── 3a. ESTIMATE-BACKED → delegate to proposal-accept.js ────────────────
   if (isEstimateBacked) {
     const tier = buildTierForEstimate(est, selectedTier);
+
+    // METAL: the signed price is the panel-priced pre-tax base (panelPrices[panel]),
+    // which does NOT live in calculated_packages. Resolve it SERVER-side from the
+    // frozen snapshot (else recompute) and hand it to the delegate as a trusted
+    // server base so the recorded/email/GHL/contract total matches what the
+    // customer saw and signed. Asphalt/shingle tiers fall through unchanged and
+    // keep recomputing from calculated_packages inside proposal-accept.js.
+    let metalServerBase = 0;
+    if (isMetalSlug(tier.id)) {
+      metalServerBase = resolveMetalAcceptedBase(inst, est, tier.id, selectedPanel);
+      if (metalServerBase > 0) {
+        tier.total = metalServerBase;            // pre-tax base, server-resolved
+        delete tier.totalWithTax;                // let the delegate re-derive HST
+      }
+    }
+
     const syntheticBody = {
       shareToken: estShareToken,                 // estimate's token - the auth
       estimateId: est.id,
       tier,
+      // Trusted server-resolved metal pre-tax base. proposal-accept.js honors
+      // this ONLY for metal slugs with no calculated_packages entry, so a public
+      // client cannot use it to override an asphalt package price.
+      serverTierBase: metalServerBase > 0 ? metalServerBase : undefined,
       selectedAddons,
       signature,
       acceptedAt: now,
@@ -324,7 +445,7 @@ export default async function handler(req, res) {
   }
 
   const customer = instanceCustomer(inst);
-  const total = instanceAcceptedTotal(inst, selectedTier);
+  const total = instanceAcceptedTotal(inst, selectedTier, selectedPanel);
 
   const acceptedPayload = {
     ...body,
