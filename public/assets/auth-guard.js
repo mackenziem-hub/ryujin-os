@@ -144,6 +144,24 @@
     }
   } catch (e) { /* fetch wrap is non-critical chrome; never block the page */ }
 
+  // ── Fleet-wide codex skin (the shared shell component layer) ───────
+  // Same operator-page-marker logic as the palette/badge/drive: loading the
+  // skin here makes the codex shell components available on every operator
+  // page with no per-page edits, and never on a client-facing page. The sheet
+  // is fully namespaced under `.rj-codex`, so it is INERT until a page opts in
+  // by adding class="rj-codex" to its body. Zero blast radius on pages that
+  // have not opted in. Tokens come from ryujin-telltale.css. Non-critical
+  // chrome: any failure is swallowed.
+  try {
+    if (!window.__ryujinSkinInjected) {
+      window.__ryujinSkinInjected = true;
+      var skinCss = document.createElement('link');
+      skinCss.rel = 'stylesheet';
+      skinCss.href = '/assets/ryujin-skin.css';
+      (document.head || document.documentElement).appendChild(skinCss);
+    }
+  } catch (e) { /* skin is non-critical */ }
+
   // ── Fleet-wide Cmd-K command palette ──────────────────────────
   // This script is the operator-page marker (every authed internal page
   // includes it; client-facing renderers do not), so loading the palette
