@@ -23,6 +23,9 @@
 </script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=optional" rel="stylesheet">
 <link rel="stylesheet" href="/assets/ryujin-perf.css">
+<link rel="stylesheet" href="/assets/ryujin-telltale.css">
+<!-- Codex Home is the default front door, so the 3D auto-tour (its backdrop blocks clicks) must not auto-fire. Still reachable via the ? key in 3D View. -->
+<script>try{localStorage.setItem('ry_firstrun_hub','1');}catch(e){}</script>
 <script src="/assets/ryujin-perf.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -3667,5 +3670,149 @@ setTimeout(() => {
 <script src="/assets/quick-create.js" defer></script>
 <script src="/assets/needs-you-now.js" defer></script>
 <script src="/assets/jarvis-dock.js" defer></script>
+<!-- ===================== CODEX HOME (default front door) =====================
+     Additive layer over the untouched 3D engine. Default landing = a codex
+     card grid (most-used work forefront), 3D scene is one toggle away. Direct
+     navigation (not the section-overlay) so it never gets stuck. -->
+<style>
+#codexHome{position:fixed;inset:0;z-index:600;display:flex;flex-direction:column;font-family:var(--rj-font-ui);color:var(--rj-ink);
+  background:radial-gradient(ellipse at 24% 12%,rgba(74,158,255,.10),transparent 56%),radial-gradient(ellipse at 80% 88%,rgba(74,158,255,.06),transparent 58%),linear-gradient(180deg,#0a0c10,#060709);
+  -webkit-font-smoothing:antialiased}
+#codexHome.hidden{display:none}
+#cc-topbar{flex:0 0 auto;display:flex;align-items:center;gap:12px;height:60px;padding:0 20px;border-bottom:1px solid var(--rj-line);background:var(--rj-glass);backdrop-filter:blur(var(--rj-glass-blur));-webkit-backdrop-filter:blur(var(--rj-glass-blur))}
+#cc-topbar .cc-mark{width:30px;height:30px;border-radius:8px;background:radial-gradient(circle at 35% 30%,rgba(200,230,255,.30),rgba(74,158,255,.22) 42%,rgba(5,15,30,.85));box-shadow:0 0 14px var(--rj-accent-glow)}
+#cc-topbar .cc-brand{font-family:var(--rj-font-display);font-weight:800;letter-spacing:2.4px;font-size:13px;color:var(--rj-ink)}
+#cc-topbar .cc-brand .dim{color:var(--rj-ink-dim);font-weight:500;letter-spacing:2px;margin-left:7px}
+#cc-topbar .sp{flex:1}
+#cc-topbar .cc-clock{font-family:var(--rj-font-mono);font-size:11px;color:var(--rj-ink-mid);letter-spacing:.06em;margin-right:4px}
+.cc-tbtn{display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 15px;border-radius:var(--rj-radius-pill);font-family:var(--rj-font-ui);font-weight:700;font-size:12px;letter-spacing:.04em;cursor:pointer;border:1px solid var(--rj-line);background:var(--rj-surface-2);color:var(--rj-ink-mid);transition:color var(--rj-dur),border-color var(--rj-dur),background var(--rj-dur),transform var(--rj-dur-fast)}
+.cc-tbtn:hover{border-color:var(--rj-line-strong);color:var(--rj-ink);background:rgba(74,158,255,.08);transform:translateY(-1px)}
+.cc-tbtn.accent{background:linear-gradient(160deg,#7ab6ff,#4a9eff 50%,#2563eb);color:#04121a;border-color:transparent;box-shadow:0 0 18px var(--rj-accent-glow)}
+.cc-tbtn.icon-only{padding:0;width:38px;justify-content:center}
+.cc-tbtn svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#cc-scroll{flex:1;overflow-y:auto;overflow-x:hidden;padding:34px 28px 52px;scrollbar-width:thin;scrollbar-color:var(--rj-line-strong) transparent}
+#cc-scroll::-webkit-scrollbar{width:9px}#cc-scroll::-webkit-scrollbar-thumb{background:var(--rj-line-strong);border-radius:8px}
+.cc-inner{max-width:1180px;margin:0 auto}
+.cc-eyebrow{font-family:var(--rj-font-mono);font-size:.72rem;letter-spacing:.28em;text-transform:uppercase;color:var(--rj-accent);font-weight:600;margin-bottom:14px;display:flex;align-items:center;gap:.8rem}
+.cc-eyebrow::before{content:"";width:30px;height:1px;background:linear-gradient(90deg,var(--rj-accent),transparent)}
+.cc-ff-row{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:36px}
+.cc-ff{display:flex;flex-direction:column;gap:10px;padding:16px 15px;border-radius:var(--rj-radius);background:var(--rj-glass);border:1px solid var(--rj-line);cursor:pointer;text-decoration:none;color:inherit;box-shadow:var(--rj-shadow-md);transition:transform var(--rj-dur-fast),border-color var(--rj-dur),background var(--rj-dur)}
+.cc-ff:hover{transform:translateY(-3px);border-color:var(--rj-accent);background:var(--rj-surface-2)}
+.cc-ff .ic{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:rgba(74,158,255,.10);border:1px solid rgba(74,158,255,.22);color:var(--rj-accent)}
+.cc-ff .ic svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.cc-ff .nm{font-family:var(--rj-font-display);font-weight:700;font-size:13px;color:var(--rj-ink)}
+.cc-ff .mt{font-family:var(--rj-font-mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--rj-ink-dim)}
+#ccHomeBtn{position:fixed;top:14px;left:18px;z-index:601;display:none;align-items:center;gap:8px;height:38px;padding:0 16px 0 13px;border-radius:var(--rj-radius-pill);background:#fff;color:#0a1424;font-family:var(--rj-font-ui);font-weight:700;font-size:13px;border:none;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.4),0 0 0 1px rgba(255,255,255,.2)}
+#ccHomeBtn.show{display:inline-flex}
+#ccHomeBtn svg{width:16px;height:16px;stroke:#0a1424;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+@media(max-width:900px){.cc-ff-row{grid-template-columns:repeat(2,1fr)}#cc-topbar .cc-clock{display:none}}
+</style>
+
+<button id="ccHomeBtn" title="Back to Home"><svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>HOME</button>
+<div id="codexHome" class="rj-codex">
+  <div id="cc-topbar">
+    <div class="cc-mark"></div>
+    <div class="cc-brand">RYUJIN <span class="dim">· COMMAND CENTER</span></div>
+    <div class="sp"></div>
+    <div class="cc-clock" id="ccClock"></div>
+    <button class="cc-tbtn accent" id="ccOpenAI"><svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> OPEN RYUJIN AI</button>
+    <button class="cc-tbtn" id="ccTo3D" title="Switch to the 3D orbit view"><svg viewBox="0 0 24 24"><path d="M12 2 2 7v10l10 5 10-5V7z"/><path d="M12 12 22 7M12 12v10M12 12 2 7"/></svg> 3D VIEW</button>
+    <button class="cc-tbtn icon-only" id="ccSettings" title="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+  </div>
+  <div id="cc-scroll"><div class="cc-inner">
+    <div class="cc-eyebrow">Jump to work</div>
+    <div class="cc-ff-row" id="ccForefront"></div>
+    <div class="stage-head"><div class="sh-title-wrap"><div class="sh-title">Sectors</div><div class="sh-sub">your business, end to end</div></div></div>
+    <div class="sh-grid" id="ccSectors"></div>
+  </div></div>
+</div>
+
+<script>
+(function ccHome(){
+  // Embedded (inside an orbital iframe) or 8-bit/agent modes never show Home.
+  try { if (window.self !== window.top) return; } catch(e) { return; }
+  if (window.__RY_8BIT__ || window.__RY_AGENT__) return;
+
+  var SVG = {
+    inbox:'<svg viewBox="0 0 24 24"><path d="M4 5h16v11H6l-2 2z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="12" x2="13" y2="12"/></svg>',
+    doc:'<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 14l2 2 4-4"/></svg>',
+    pipe:'<svg viewBox="0 0 24 24"><line x1="4" y1="20" x2="4" y2="13"/><line x1="10" y1="20" x2="10" y2="9"/><line x1="16" y1="20" x2="16" y2="5"/><line x1="22" y1="20" x2="2" y2="20"/></svg>',
+    price:'<svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
+    crm:'<svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+    cal:'<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
+    sales:'<svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>',
+    hq:'<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>',
+    prod:'<svg viewBox="0 0 24 24"><path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M12 12l9-5M12 12v10M12 12L3 7"/></svg>',
+    mkt:'<svg viewBox="0 0 24 24"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>',
+    cust:'<svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+    admin:'<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
+    svc:'<svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.1-2.1z"/></svg>',
+    fin:'<svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>'
+  };
+  // Forefront = where the work and data actually concentrate (measured).
+  var FF = [
+    {nm:'Inbox',     mt:'triage · drafts', url:'inbox.html',            ic:SVG.inbox},
+    {nm:'Proposals', mt:'quote · send',    url:'custom-proposals.html', ic:SVG.doc},
+    {nm:'Pipeline',  mt:'deals · stages',  url:'admin-pipeline.html',   ic:SVG.pipe},
+    {nm:'Pricing',   mt:'rates · margins', url:'admin-pricing.html',    ic:SVG.price},
+    {nm:'CRM',       mt:'contacts · history', url:'crm.html',           ic:SVG.crm},
+    {nm:'Calendar',  mt:'inspections',     url:'calendar.html',         ic:SVG.cal}
+  ];
+  // Sectors ranked by use; Sales + Production repointed to the codex hubs.
+  var SEC = [
+    {t:'SALES',          s:'Pipeline, proposals, follow-ups, customers and transcripts. The revenue engine.', m:'PIPELINE · PROPOSALS · FOLLOW-UPS', url:'sales.html',          ic:SVG.sales},
+    {t:'HQ / DASHBOARD', s:'The daily pulse. Snapshot, briefings, KPIs and what needs you today.',           m:'SNAPSHOT · BRIEFINGS · KPIS',       url:'dashboard-v2.html',   ic:SVG.hq},
+    {t:'PRODUCTION',     s:'Active jobs, crew ops, material readiness and work orders.',                     m:'JOBS · CREW · MATERIALS',           url:'post-production.html',ic:SVG.prod},
+    {t:'MARKETING',      s:'Ads, content, leads, creatives and intelligence.',                               m:'ADS · CONTENT · LEADS',             url:'marketing.html',      ic:SVG.mkt},
+    {t:'CUSTOMER / CRM', s:'Contacts, full history, reviews and referrals.',                                 m:'CONTACTS · HISTORY · REVIEWS',      url:'customer.html',       ic:SVG.cust},
+    {t:'ADMINISTRATION', s:'Pricing engine, team, integrations, files and tenant settings.',                 m:'TENANT · PRICING · TEAM',           url:'administration.html', ic:SVG.admin},
+    {t:'SERVICE',        s:'Service calls, SLAs, warranty and escalations.',                                 m:'CALLS · SLA · WARRANTY',            url:'service.html',        ic:SVG.svc},
+    {t:'FINANCE',        s:'Cashflow, payments, invoices and statements.',                                   m:'CASHFLOW · AR · INVOICES',          url:'finance.html',        ic:SVG.fin}
+  ];
+
+  function go(url){ try { (window.top || window).location.href = url; } catch(e) { window.location.href = url; } }
+
+  var ff = document.getElementById('ccForefront');
+  FF.forEach(function(p){
+    var a = document.createElement('a');
+    a.className = 'cc-ff'; a.href = p.url; a.setAttribute('aria-label', p.nm);
+    a.innerHTML = '<div class="ic">' + p.ic + '</div><div class="nm">' + p.nm + '</div><div class="mt">' + p.mt + '</div>';
+    a.addEventListener('click', function(e){ e.preventDefault(); go(p.url); });
+    ff.appendChild(a);
+  });
+
+  var grid = document.getElementById('ccSectors');
+  SEC.forEach(function(p){
+    var a = document.createElement('a');
+    a.className = 'card'; a.href = p.url; a.style.textDecoration = 'none'; a.setAttribute('tabindex', '0'); a.setAttribute('aria-label', p.t);
+    a.innerHTML =
+      '<span class="bracket tl"></span><span class="bracket br"></span>' +
+      '<div class="card-top"><div class="card-icon">' + p.ic + '</div></div>' +
+      '<div class="card-title">' + p.t + '</div>' +
+      '<div class="card-sub">' + p.s + '</div>' +
+      '<div class="card-meta">' + p.m + '</div>';
+    a.addEventListener('mouseenter', function(){ grid.classList.add('bloom'); [].forEach.call(grid.children, function(c){ c.classList.toggle('lit', c === a); }); });
+    a.addEventListener('mouseleave', function(){ grid.classList.remove('bloom'); [].forEach.call(grid.children, function(c){ c.classList.remove('lit'); }); });
+    a.addEventListener('click', function(e){ e.preventDefault(); go(p.url); });
+    grid.appendChild(a);
+  });
+
+  // 3D toggle: hide Home to reveal the untouched 3D scene + its HUD; Home button brings it back.
+  var home = document.getElementById('codexHome');
+  var homeBtn = document.getElementById('ccHomeBtn');
+  document.getElementById('ccTo3D').addEventListener('click', function(){ home.classList.add('hidden'); homeBtn.classList.add('show'); });
+  homeBtn.addEventListener('click', function(){ home.classList.remove('hidden'); homeBtn.classList.remove('show'); });
+
+  // Delegate AI + settings to the existing HUD controls so their wiring is reused.
+  document.getElementById('ccOpenAI').addEventListener('click', function(){ var b = document.getElementById('btnOpenAI'); if (b) b.click(); });
+  document.getElementById('ccSettings').addEventListener('click', function(){ var b = document.getElementById('btnSettings'); if (b) b.click(); });
+
+  // Clock
+  var clk = document.getElementById('ccClock');
+  function tick(){ try { var d = new Date(); clk.textContent = d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}); } catch(e){} }
+  tick(); setInterval(tick, 30000);
+})();
+</script>
+
 </body>
 </html>
