@@ -53,6 +53,18 @@
   function lit(i){ var g = document.getElementById('shGrid'); if (!g) return; g.classList.add('bloom'); Array.prototype.forEach.call(g.querySelectorAll('.card'), function(c, idx){ c.classList.toggle('lit', idx === i); }); focusIdx = i; }
   function clearBloom(){ var g = document.getElementById('shGrid'); if (!g) return; g.classList.remove('bloom'); Array.prototype.forEach.call(g.querySelectorAll('.card'), function(c){ c.classList.remove('lit'); }); }
 
+  // Clear the lowest fixed bar above the stage. Pages vary: most have only the
+  // topbar (~62px), but marketing stacks a .pillar-tabs row under it (~110px).
+  // Measuring beats a hardcoded padding that crowds the title on the tabbed page.
+  function setStageTop(mount){
+    var top = 62;
+    ['.topbar', '.pillar-tabs'].forEach(function(sel){
+      var el = document.querySelector(sel);
+      if (el) { var r = el.getBoundingClientRect(); if (r.height) top = Math.max(top, r.bottom); }
+    });
+    mount.style.paddingTop = Math.round(top + 18) + 'px';
+  }
+
   function build(){
     var mount = document.getElementById('subhub-stage');
     if (!mount) { console.warn('RyujinSubHub: #subhub-stage not found'); return; }
@@ -100,6 +112,8 @@
     });
 
     wireFinder();
+    setStageTop(mount);
+    window.addEventListener('resize', function(){ setStageTop(mount); });
   }
 
   function wireFinder(){
