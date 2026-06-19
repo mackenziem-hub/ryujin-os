@@ -1,5 +1,5 @@
 // ────────────────────────────────────────────────────────────────────
-// Ryujin Sub-Hub — the codex card grid.
+// Ryujin Sub-Hub - the codex card grid.
 // Renders the shared codex shell components (ryujin-skin.css) into a hub's
 // #subhub-stage from a flat panel config. Used by marketing / post-production /
 // sales (administration runs its own tabbed codex shell inline).
@@ -20,11 +20,16 @@
 
   // Ensure the codex token + component layers are present (these pages do not link them).
   (function ensureAssets(){
-    [['rj-telltale-css','/assets/ryujin-telltale.css'],['rj-skin-css','/assets/ryujin-skin.css']].forEach(function(p){
-      if (document.getElementById(p[0]) || document.querySelector('link[href="'+p[1]+'"]')) return;
-      var l = document.createElement('link'); l.id = p[0]; l.rel = 'stylesheet'; l.href = p[1];
-      (document.head || document.documentElement).appendChild(l);
-    });
+    if (!document.getElementById('rj-telltale-css') && !document.querySelector('link[href="/assets/ryujin-telltale.css"]')) {
+      var t = document.createElement('link'); t.id = 'rj-telltale-css'; t.rel = 'stylesheet'; t.href = '/assets/ryujin-telltale.css';
+      (document.head || document.documentElement).appendChild(t);
+    }
+    // Skin shares auth-guard's window flag so the two injectors never add a duplicate <link>.
+    if (!window.__ryujinSkinInjected && !document.querySelector('link[href="/assets/ryujin-skin.css"]')) {
+      window.__ryujinSkinInjected = true;
+      var s = document.createElement('link'); s.rel = 'stylesheet'; s.href = '/assets/ryujin-skin.css';
+      (document.head || document.documentElement).appendChild(s);
+    }
   })();
 
   function hostStyle(){
