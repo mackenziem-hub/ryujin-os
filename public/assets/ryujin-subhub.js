@@ -1,257 +1,155 @@
 // ────────────────────────────────────────────────────────────────────
-// Ryujin Sub-Hub — flat responsive card grid.
-// Rebuilt from scratch: simple, guaranteed-clickable anchors. No 3D arc.
-// Usage: RyujinSubHub.init({ sector, accent, panels: [{title,sub,meta,url,icon}] })
+// Ryujin Sub-Hub — the codex card grid.
+// Renders the shared codex shell components (ryujin-skin.css) into a hub's
+// #subhub-stage from a flat panel config. Used by marketing / post-production /
+// sales (administration runs its own tabbed codex shell inline).
+//
+// Usage (unchanged contract): RyujinSubHub.init({ sector, subtitle, accent, panels:[{title,sub,meta,url,icon}] })
+//   - accent is accepted for back-compat but IGNORED: the OS uses one blue
+//     accent (var(--rj-accent)) per the de-gamify standard.
+//
+// SCOPING: the codex class goes on the #subhub-stage MOUNT, not <body>, so the
+// shared skin styles the card grid + finder only and never touches each page's
+// own topbar. The token (telltale) + component (skin) layers are injected here
+// because these pages do not link them; both are guarded and safe (telltale is
+// token-only, skin is namespaced under .rj-codex).
 // ────────────────────────────────────────────────────────────────────
 (function(){
   const SH = window.RyujinSubHub = window.RyujinSubHub || {};
-  let cfg = null;
+  let cfg = null, focusIdx = -1, finderOpen = false, closeFinder = function(){};
 
-  function hexToRgb(hex){
-    const m = hex.replace('#','').match(/.{1,2}/g);
-    return m ? parseInt(m[0],16)+','+parseInt(m[1],16)+','+parseInt(m[2],16) : '34,211,238';
-  }
+  // Ensure the codex token + component layers are present (these pages do not link them).
+  (function ensureAssets(){
+    [['rj-telltale-css','/assets/ryujin-telltale.css'],['rj-skin-css','/assets/ryujin-skin.css']].forEach(function(p){
+      if (document.getElementById(p[0]) || document.querySelector('link[href="'+p[1]+'"]')) return;
+      var l = document.createElement('link'); l.id = p[0]; l.rel = 'stylesheet'; l.href = p[1];
+      (document.head || document.documentElement).appendChild(l);
+    });
+  })();
 
-  function injectStyles(accent){
-    if (document.getElementById('sh-styles')) document.getElementById('sh-styles').remove();
-    const rgb = hexToRgb(accent.main);
-    const s = document.createElement('style');
-    s.id = 'sh-styles';
-    s.textContent = `
-    :root{
-      --sh-accent:${accent.main};
-      --sh-accent-deep:${accent.deep};
-      --sh-glow:${accent.glow};
-      --sh-rgb:${rgb};
-    }
-    .sh-stage{
-      position:absolute;inset:0;
-      overflow-y:auto;-webkit-overflow-scrolling:touch;
-      padding:80px 32px 40px;
-    }
-    .sh-caption{text-align:center;margin-bottom:30px;pointer-events:none}
-    .sh-caption h1{
-      font-family:'Orbitron',sans-serif;font-weight:900;font-size:1.9em;letter-spacing:4px;
-      background:linear-gradient(135deg,#fff 20%,var(--sh-accent) 70%,#fff);
-      -webkit-background-clip:text;-webkit-text-fill-color:transparent;
-      filter:drop-shadow(0 0 30px var(--sh-glow));
-    }
-    .sh-caption .sub{
-      margin-top:8px;font-family:'Share Tech Mono',monospace;
-      font-size:0.78em;letter-spacing:2.5px;color:rgba(200,220,255,0.55);
-    }
-
-    .sh-grid{
-      display:grid;
-      grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
-      gap:18px;
-      max-width:1200px;
-      margin:0 auto 40px;
-    }
-
-    .sh-panel{
-      display:block;
-      position:relative;
-      padding:24px 22px;
-      background:linear-gradient(160deg,rgba(18,30,56,0.92),rgba(10,20,40,0.88));
-      border:1px solid rgba(var(--sh-rgb),0.4);
-      border-radius:16px;
-      backdrop-filter:blur(12px);
-      -webkit-backdrop-filter:blur(12px);
-      box-shadow:0 10px 32px rgba(0,0,0,0.45),0 0 24px rgba(var(--sh-rgb),0.15);
-      cursor:pointer;
-      transition:transform 0.25s cubic-bezier(.2,.8,.3,1), box-shadow 0.25s, border-color 0.2s, background 0.25s;
-      text-decoration:none;color:inherit;
-      overflow:hidden;
-      -webkit-tap-highlight-color:transparent;
-    }
-    .sh-panel::before{
-      content:'';position:absolute;top:0;left:0;right:0;height:2px;
-      background:linear-gradient(90deg,transparent 5%,var(--sh-accent) 50%,transparent 95%);
-      opacity:0.9;
-    }
-    .sh-panel::after{
-      content:'';position:absolute;bottom:-2px;right:-2px;
-      width:36px;height:36px;
-      border-bottom:2px solid var(--sh-accent);border-right:2px solid var(--sh-accent);
-      border-radius:0 0 16px 0;
-      opacity:0.55;transition:opacity 0.25s;
-    }
-    .sh-panel:hover, .sh-panel:focus-visible{
-      transform:translateY(-8px);
-      background:linear-gradient(160deg,rgba(30,48,82,0.95),rgba(18,34,66,0.92));
-      border-color:var(--sh-accent);
-      box-shadow:0 22px 56px rgba(0,0,0,0.6),0 0 52px rgba(var(--sh-rgb),0.45),0 0 90px rgba(var(--sh-rgb),0.25);
-      outline:none;
-    }
-    .sh-panel:hover::after{opacity:1}
-    .sh-panel:active{transform:translateY(-4px)}
-
-    .sh-panel-icon{
-      width:56px;height:56px;border-radius:14px;
-      background:rgba(var(--sh-rgb),0.2);
-      border:1px solid var(--sh-accent);
-      display:flex;align-items:center;justify-content:center;
-      color:var(--sh-accent);margin-bottom:16px;
-      transition:all 0.25s;
-      box-shadow:0 0 16px rgba(var(--sh-rgb),0.25);
-    }
-    .sh-panel-icon svg{width:28px;height:28px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-    .sh-panel:hover .sh-panel-icon{
-      background:var(--sh-accent);color:#000;
-      box-shadow:0 0 28px rgba(var(--sh-rgb),0.55);
-    }
-
-    .sh-panel-title{
-      font-family:'Orbitron',sans-serif;
-      font-size:1.15em;font-weight:900;letter-spacing:1.8px;
-      color:#fff;margin-bottom:8px;
-      transition:all 0.25s;
-    }
-    .sh-panel:hover .sh-panel-title{
-      color:#fff;text-shadow:0 0 22px rgba(var(--sh-rgb),0.55);
-    }
-    .sh-panel-sub{
-      font-size:0.95em;
-      color:rgba(220,235,255,0.78);
-      line-height:1.55;
-      margin-bottom:14px;
-    }
-    .sh-panel-meta{
-      padding-top:12px;
-      border-top:1px solid rgba(var(--sh-rgb),0.15);
-      font-family:'Share Tech Mono',monospace;
-      font-size:0.7em;letter-spacing:1.5px;
-      color:var(--sh-accent);
-      text-transform:uppercase;
-    }
-
-    .sh-panel-arrow{
-      position:absolute;top:24px;right:22px;
-      width:28px;height:28px;
-      border-radius:50%;
-      background:rgba(var(--sh-rgb),0.15);
-      border:1px solid rgba(var(--sh-rgb),0.4);
-      display:flex;align-items:center;justify-content:center;
-      color:var(--sh-accent);
-      transition:all 0.25s;
-    }
-    .sh-panel-arrow svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2.5;stroke-linecap:round}
-    .sh-panel:hover .sh-panel-arrow{
-      background:var(--sh-accent);color:#000;
-      transform:translateX(4px);
-    }
-
-    .sh-hint{
-      text-align:center;
-      font-family:'Share Tech Mono',monospace;
-      font-size:0.72em;letter-spacing:2.5px;
-      color:rgba(200,220,255,0.35);
-      padding-bottom:20px;
-      animation:shBreath 3s ease-in-out infinite;
-    }
-    @keyframes shBreath{0%,100%{opacity:1}50%{opacity:0.5}}
-
-    /* Dust particles */
-    .sh-particles{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:1}
-    .sh-dust{position:absolute;width:2px;height:2px;background:var(--sh-accent);border-radius:50%;opacity:0;filter:drop-shadow(0 0 4px var(--sh-accent));animation:shDust 14s linear infinite}
-    @keyframes shDust{
-      0%{opacity:0;transform:translateY(100vh) scale(0.6)}
-      10%{opacity:0.5}
-      90%{opacity:0.2}
-      100%{opacity:0;transform:translateY(-20px) scale(1.1)}
-    }
-
-    /* Mobile */
-    @media (max-width: 700px){
-      .sh-stage{padding:72px 14px 30px}
-      .sh-caption h1{font-size:1.5em;letter-spacing:3px}
-      .sh-caption .sub{font-size:0.7em;letter-spacing:2px}
-      .sh-grid{grid-template-columns:1fr;gap:12px}
-      .sh-panel{padding:20px 18px}
-      .sh-panel-title{font-size:1.05em}
-      .sh-panel-sub{font-size:0.9em}
-    }
-    `;
+  function hostStyle(){
+    if (document.getElementById('sh-codex-host')) return;
+    var s = document.createElement('style'); s.id = 'sh-codex-host';
+    // #subhub-stage keeps its page-set position:absolute;inset:0; we only add scroll + codex rhythm.
+    s.textContent =
+      '#subhub-stage{overflow-y:auto;overflow-x:hidden;padding:88px 28px 44px;scrollbar-width:thin;scrollbar-color:var(--rj-line-strong) transparent}' +
+      '#subhub-stage::-webkit-scrollbar{width:9px}' +
+      '#subhub-stage::-webkit-scrollbar-thumb{background:var(--rj-line-strong);border-radius:8px}' +
+      '#subhub-stage .stage-inner{max-width:1180px;margin:0 auto}' +
+      '@media(max-width:760px){#subhub-stage{padding:80px 14px 30px}}';
     document.head.appendChild(s);
   }
 
   function defaultIcon(){ return '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></svg>'; }
+  var SEARCH_SVG = '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>';
 
-  function createDom(){
-    const mount = document.getElementById('subhub-stage');
+  function nav(url){ if (!url) return; try { (window.top || window).location.href = url; } catch(e){ window.location.href = url; } }
+
+  function lit(i){ var g = document.getElementById('shGrid'); if (!g) return; g.classList.add('bloom'); Array.prototype.forEach.call(g.querySelectorAll('.card'), function(c, idx){ c.classList.toggle('lit', idx === i); }); focusIdx = i; }
+  function clearBloom(){ var g = document.getElementById('shGrid'); if (!g) return; g.classList.remove('bloom'); Array.prototype.forEach.call(g.querySelectorAll('.card'), function(c){ c.classList.remove('lit'); }); }
+
+  function build(){
+    var mount = document.getElementById('subhub-stage');
     if (!mount) { console.warn('RyujinSubHub: #subhub-stage not found'); return; }
-    mount.innerHTML = `
-      <div class="sh-particles" id="sh-particles"></div>
-      <div class="sh-stage">
-        <div class="sh-caption">
-          <h1>${cfg.sector.toUpperCase()}</h1>
-          <div class="sub">${cfg.subtitle || 'Pick a system to work on'}</div>
-        </div>
-        <div class="sh-grid" id="sh-grid"></div>
-        <div class="sh-hint">TAP ANY CARD · RIGHT-CLICK OR ESC TO GO BACK · PRESS / TO SEARCH</div>
-      </div>
-    `;
-    // Build cards
-    const grid = document.getElementById('sh-grid');
-    grid.innerHTML = cfg.panels.map((p, i) => `
-      <a class="sh-panel" href="${p.url}" target="_top" data-idx="${i}" aria-label="${p.title}">
-        <div class="sh-panel-arrow"><svg viewBox="0 0 24 24"><polyline points="9 6 15 12 9 18"/></svg></div>
-        <div class="sh-panel-icon">${p.icon || defaultIcon()}</div>
-        <div class="sh-panel-title">${p.title}</div>
-        <div class="sh-panel-sub">${p.sub || ''}</div>
-        ${p.meta ? `<div class="sh-panel-meta">${p.meta}</div>` : ''}
-      </a>
-    `).join('');
-  }
+    mount.classList.add('rj-codex');   // scope the shared skin to the stage only
+    hostStyle();
+    var n = cfg.panels.length;
+    mount.innerHTML =
+      '<div class="stage-inner">' +
+        '<div class="stage-head">' +
+          '<div class="sh-title-wrap">' +
+            '<div class="sh-title">' + (cfg.sector || '') + '</div>' +
+            '<div class="sh-sub">' + (cfg.subtitle ? cfg.subtitle + ' · ' : '') + n + ' surfaces</div>' +
+            '<div class="sh-sweep" style="width:100%"></div>' +
+          '</div>' +
+          '<button class="sh-search" id="shFind" title="Find a panel">' + SEARCH_SVG + '<span class="txt">find a panel</span><span class="kbd">click</span></button>' +
+        '</div>' +
+        '<div class="sh-grid" id="shGrid"></div>' +
+      '</div>' +
+      '<div class="palette-scrim" id="shPal"><div class="palette" role="dialog" aria-label="Find a panel">' +
+        '<div class="pal-search">' + SEARCH_SVG + '<input id="shPalInput" type="text" placeholder="find a panel" autocomplete="off" spellcheck="false"><span class="pal-esc">ESC</span></div>' +
+        '<div class="pal-list" id="shPalList"></div>' +
+        '<div class="pal-foot"><span>up / down move</span><span>enter open</span><span>esc close</span></div>' +
+      '</div></div>';
 
-  function setupParticles(){
-    const wrap = document.getElementById('sh-particles');
-    if (!wrap) return;
-    for (let i = 0; i < 30; i++) {
-      const d = document.createElement('div');
-      d.className = 'sh-dust';
-      d.style.left = (Math.random() * 100) + '%';
-      d.style.animationDelay = (Math.random() * 14) + 's';
-      d.style.animationDuration = (10 + Math.random() * 10) + 's';
-      wrap.appendChild(d);
-    }
-  }
-
-  // Keyboard nav
-  function wireKeys(){
-    document.addEventListener('keydown', e => {
-      if (e.key === 'Escape') { goBack(); }
-      // Arrow keys move focus between cards
-      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft' || e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        const panels = Array.from(document.querySelectorAll('.sh-panel'));
-        const focused = document.activeElement;
-        let idx = panels.indexOf(focused);
-        if (idx < 0) idx = 0;
-        else {
-          const dir = (e.key === 'ArrowRight' || e.key === 'ArrowDown') ? 1 : -1;
-          idx = (idx + dir + panels.length) % panels.length;
-        }
-        panels[idx]?.focus();
-        e.preventDefault();
-      }
+    var grid = document.getElementById('shGrid');
+    cfg.panels.forEach(function(p, i){
+      var a = document.createElement('a');
+      a.className = 'card';
+      a.href = p.url || '#';
+      a.setAttribute('target', '_top');
+      a.setAttribute('tabindex', '0');
+      a.setAttribute('aria-label', p.title || '');
+      a.style.textDecoration = 'none';
+      a.innerHTML =
+        '<span class="bracket tl"></span><span class="bracket br"></span>' +
+        '<div class="card-top"><div class="card-icon">' + (p.icon || defaultIcon()) + '</div></div>' +
+        '<div class="card-title">' + (p.title || '') + '</div>' +
+        '<div class="card-sub">' + (p.sub || '') + '</div>' +
+        (p.meta ? '<div class="card-meta">' + p.meta + '</div>' : '');
+      a.addEventListener('mouseenter', function(){ lit(i); });
+      a.addEventListener('mouseleave', clearBloom);
+      a.addEventListener('focus', function(){ lit(i); });
+      a.addEventListener('blur', function(){ if (document.activeElement && !grid.contains(document.activeElement)) clearBloom(); });
+      grid.appendChild(a);
     });
-    document.addEventListener('contextmenu', e => { e.preventDefault(); goBack(); });
+
+    wireFinder();
+  }
+
+  function wireFinder(){
+    var scrim = document.getElementById('shPal'), input = document.getElementById('shPalInput'), list = document.getElementById('shPalList');
+    var sel = 0, flat = [];
+    function render(q){
+      list.innerHTML = ''; flat = []; q = (q || '').trim().toLowerCase();
+      cfg.panels.filter(function(p){ return !q || (p.title || '').toLowerCase().indexOf(q) >= 0; }).forEach(function(p){
+        var idx = flat.length; flat.push(p);
+        var row = document.createElement('div');
+        row.className = 'pal-row' + (idx === 0 ? ' sel' : '');
+        row.setAttribute('data-idx', idx);
+        row.innerHTML = '<span class="pal-ic">' + (p.icon || defaultIcon()) + '</span><span class="pal-name">' + (p.title || '') + '</span>';
+        row.addEventListener('click', function(){ nav(p.url); });
+        row.addEventListener('mousemove', function(){ sel = idx; mark(); });
+        list.appendChild(row);
+      });
+      sel = 0; mark();
+    }
+    function mark(){ Array.prototype.forEach.call(list.querySelectorAll('.pal-row'), function(r){ r.classList.toggle('sel', parseInt(r.getAttribute('data-idx'), 10) === sel); }); }
+    function open(){ finderOpen = true; scrim.classList.add('open'); input.value = ''; render(''); setTimeout(function(){ input.focus(); }, 30); }
+    closeFinder = function(){ finderOpen = false; scrim.classList.remove('open'); };
+    document.getElementById('shFind').addEventListener('click', open);
+    scrim.addEventListener('click', function(e){ if (e.target === scrim) closeFinder(); });
+    input.addEventListener('input', function(){ render(input.value); });
+    input.addEventListener('keydown', function(e){
+      if (e.key === 'ArrowDown') { e.preventDefault(); sel = Math.min(sel + 1, flat.length - 1); mark(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); sel = Math.max(sel - 1, 0); mark(); }
+      else if (e.key === 'Enter') { e.preventDefault(); var p = flat[sel]; if (p) nav(p.url); }
+      else if (e.key === 'Escape') { e.preventDefault(); closeFinder(); }
+    });
   }
 
   function goBack(){
-    try {
-      if (window.parent !== window && window.parent.exitSectionOverlay) { window.parent.exitSectionOverlay(); return; }
-    } catch(e){}
-    try { window.top.location.href = 'command-center.html'; }
-    catch(e) { window.location.href = 'command-center.html'; }
+    try { if (window.parent !== window && window.parent.exitSectionOverlay) { window.parent.exitSectionOverlay(); return; } } catch(e){}
+    try { window.top.location.href = 'command-center.html'; } catch(e) { window.location.href = 'command-center.html'; }
+  }
+
+  function wireKeys(){
+    document.addEventListener('keydown', function(e){
+      if (finderOpen) { if (e.key === 'Escape') { e.preventDefault(); closeFinder(); } return; }
+      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+      if (e.key === 'Escape') { e.preventDefault(); goBack(); return; }
+      var cards = Array.prototype.slice.call(document.querySelectorAll('#shGrid .card'));
+      if (!cards.length) return;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); focusIdx = Math.min((focusIdx < 0 ? -1 : focusIdx) + 1, cards.length - 1); cards[focusIdx].focus(); }
+      else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); focusIdx = Math.max((focusIdx < 0 ? 1 : focusIdx) - 1, 0); cards[focusIdx].focus(); }
+    });
+    document.addEventListener('contextmenu', function(e){ e.preventDefault(); goBack(); });
   }
 
   SH.init = function(config){
-    cfg = config;
-    injectStyles(config.accent || { main:'#22d3ee', deep:'#0891b2', glow:'rgba(34,211,238,0.35)' });
-    createDom();
-    setupParticles();
+    cfg = config || { panels: [] };
+    if (!cfg.panels) cfg.panels = [];
+    build();
     wireKeys();
   };
 })();
