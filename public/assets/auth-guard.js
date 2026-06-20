@@ -108,6 +108,32 @@
   // requests that lack it, leaves the existing ...RyujinAuth.headers() calls
   // untouched, passes Request-object inputs through unchanged, and on ANY
   // error falls through to the original fetch with the original arguments.
+  //
+  // ── Stale-session auto-recovery (2026-06-20) ──────────────────────
+  // auth-guard only checks that a token EXISTS above, not that it is still
+  // valid. An expired/invalid token left in storage passes the presence gate,
+  // then every /api call 401s and the page renders dead panels ("Signed out",
+  // stuck "Loading...") with no route back to login. On the first same-origin
+  // /api 401 we verify the session against /api/me (the canonical identity
+  // check) using the UN-wrapped fetch so it cannot recurse; only if /api/me
+  // also 401s do we wipe the token and bounce to login. A quirky single-endpoint
+  // 401 on a still-valid session therefore can never trigger a spurious
+  // redirect. Fires at most once per page load.
+  let _sessionExpiredFired = false;
+  let _sessionCheckInFlight = false;
+  function ryujinMaybeSessionExpired(origFetch) {
+    if (_sessionExpiredFired || _sessionCheckInFlight) return;
+    _sessionCheckInFlight = true;
+    try {
+      origFetch('/api/me', { headers: { Authorization: 'Bearer ' + token } })
+        .then(function (r) {
+          if (r && r.status === 401) { _sessionExpiredFired = true; clearAndRedirect(); }
+        })
+        .catch(function () { /* network blip: do not redirect on uncertainty */ })
+        .then(function () { _sessionCheckInFlight = false; });
+    } catch (e) { _sessionCheckInFlight = false; }
+  }
+
   try {
     if (!window.__ryujinFetchAuthWrapped) {
       window.__ryujinFetchAuthWrapped = true;
@@ -127,16 +153,26 @@
           if (typeof Headers !== 'undefined' && h instanceof Headers) hasAuth = h.has('authorization');
           else if (Array.isArray(h)) hasAuth = h.some((p) => String(p && p[0]).toLowerCase() === 'authorization');
           else if (h && typeof h === 'object') hasAuth = Object.keys(h).some((k) => k.toLowerCase() === 'authorization');
-          if (hasAuth) return _origFetch(input, init);
-          const opts = Object.assign({}, init);
-          if (typeof Headers !== 'undefined' && h instanceof Headers) {
-            const nh = new Headers(h); nh.set('Authorization', 'Bearer ' + token); opts.headers = nh;
-          } else if (Array.isArray(h)) {
-            opts.headers = h.concat([['Authorization', 'Bearer ' + token]]);
+          let _fetchPromise;
+          if (hasAuth) {
+            _fetchPromise = _origFetch(input, init);
           } else {
-            opts.headers = Object.assign({}, h, { Authorization: 'Bearer ' + token });
+            const opts = Object.assign({}, init);
+            if (typeof Headers !== 'undefined' && h instanceof Headers) {
+              const nh = new Headers(h); nh.set('Authorization', 'Bearer ' + token); opts.headers = nh;
+            } else if (Array.isArray(h)) {
+              opts.headers = h.concat([['Authorization', 'Bearer ' + token]]);
+            } else {
+              opts.headers = Object.assign({}, h, { Authorization: 'Bearer ' + token });
+            }
+            _fetchPromise = _origFetch(input, opts);
           }
-          return _origFetch(input, opts);
+          // Same-origin /api response: detect a dead session and force a clean
+          // re-login instead of leaving the page on dead panels.
+          return _fetchPromise.then(function (resp) {
+            try { if (resp && resp.status === 401) ryujinMaybeSessionExpired(_origFetch); } catch (e) {}
+            return resp;
+          });
         } catch (e) {
           return _origFetch(input, init);
         }
