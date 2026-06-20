@@ -15,7 +15,7 @@ const GHL_VERSION = '2021-07-28';
 // e7ea3e84 was 'Closed' but is 'Client Responded'). When the chat brain
 // hallucinates a pipeline/stage name, re-pull and replace these maps.
 
-const PIPELINE_NAMES = {
+export const PIPELINE_NAMES = {
   'OF6SJPdnmQS7KcgRffrb': '10 CM Pipeline',
   'jTAc7D9RMHBb3Gzb5bQz': "Darcy's Pipeline",
   'Kn9x4OuSdLZRdEPDhcf5': 'Hiring Pipeline',
@@ -28,7 +28,7 @@ const PIPELINE_NAMES = {
   'nJqJ681y17CWjkCRzVhH': 'Voice AI'
 };
 
-const PIPELINE_STAGES = {
+export const PIPELINE_STAGES = {
   // 10 CM Pipeline
   '20576ed3-fc88-4810-ac95-e618445a1b12': 'New Lead',
   '6705322a-85e4-4803-9183-00fa4249704c': 'Follow Up 1 Sent',
@@ -217,7 +217,7 @@ async function fetchContactNotes(contactId) {
   }
 }
 
-function enrichOpportunity(opp) {
+export function enrichOpportunity(opp) {
   return {
     id: opp.id,
     name: opp.name,
