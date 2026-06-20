@@ -17,6 +17,7 @@ import { supabaseAdmin } from '../lib/supabase.js';
 import { requirePortalSessionAndTenant } from '../lib/portalAuth.js';
 import { ghlFetch, getConversationMessages, getContactByPhone, ghlDateToIso, normalizeChannel } from '../lib/ghl.js';
 import { PIPELINE_NAMES, PIPELINE_STAGES, enrichOpportunity } from './ghl.js';
+import { list as blobList } from '@vercel/blob';
 
 const LOCATION_ID = (process.env.GHL_LOCATION_ID || 'aHotOUdq9D8m3JPrRz9n').trim();
 
@@ -197,6 +198,17 @@ async function handler(req, res) {
     }
   }
 
+  // ── Research / talking points (Vercel Blob, written by the research worker) ──
+  let research = null;
+  if (ghlContactId) {
+    research = await settle('research', sources, async () => {
+      const { blobs } = await blobList({ prefix: `crm-research-v/${tenantId}/${ghlContactId}.json`, limit: 1 });
+      if (!blobs.length) return null;
+      const r = await fetch(blobs[0].url + '?t=' + Date.now(), { cache: 'no-store' });
+      return r.ok ? r.json() : null;
+    });
+  }
+
   // ── Stats / deal ──────────────────────────────────────────────────────────
   const won = estimates.filter(e => estKind(e) === 'signed');
   const open = estimates.filter(e => ['open', 'draft'].includes(estKind(e)));
@@ -267,7 +279,7 @@ async function handler(req, res) {
     workorders: nativeJobs || [],
     photos: photos || [],
     jobFolders: jobFolders || [],
-    research: null, // wired in Unit 6 (Talking Points)
+    research, // talking points from the research worker (Vercel Blob), or null
     timeline,
     ghlResolvedBy: ghlMatch, // 'link' | 'phone' | 'email' | null — how the GHL contact was matched
     sources,
