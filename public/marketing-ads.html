@@ -261,6 +261,20 @@ function fetchTimeout(url, opts, ms) {
 }
 function isTimeoutError(e) { return !!e && (e.name === 'TimeoutError' || e.name === 'AbortError'); }
 
+// Normalize a campaign list to the fields the rows render. The cached snapshot
+// (and the live build) store conversions as `results` + `resultType` and omit a
+// precomputed `ctr`, so the Leads + CTR columns read 0 without this mapping.
+function normalizeCampaigns(list) {
+  return (list || []).map(c => {
+    const leads = (c.messagingLeads != null) ? c.messagingLeads
+                : (c.leads != null) ? c.leads
+                : (c.results != null) ? c.results : 0;
+    const ctr = (c.ctr != null && c.ctr !== '') ? c.ctr
+              : (c.impressions ? ((c.clicks || 0) / c.impressions) * 100 : 0);
+    return Object.assign({}, c, { leads, ctr, objective: c.objective || c.optimization_goal || c.resultType || null });
+  });
+}
+
 function showBanner(msg, kind='warn', isHtml=false) {
   const slot = document.getElementById('banner-slot');
   if (isHtml) slot.innerHTML = `<div class="banner ${kind}">${msg}</div>`;
@@ -383,7 +397,7 @@ async function load() {
       return;
     }
     const data = await resp.json();
-    cache = data.campaigns || [];
+    cache = normalizeCampaigns(data.campaigns || []);
     document.getElementById('banner-slot').innerHTML = '';
 
     // Token pill
@@ -500,7 +514,42 @@ document.getElementById('btnResume').addEventListener('click', async () => {
   }
 });
 
-load();
+// Default load path: render instantly from the cached snapshot (refreshed by
+// the daily cron) instead of triggering a live Meta Graph pull, which can take
+// 45s+ and blow past the 10s client timeout, leaving the panel dead on arrival.
+// The Refresh button still does a live pull. Falls back to live if no cache.
+async function loadCached() {
+  setTokenPill('', 'loading…');
+  const metricsPromise = fetchTimeout('/api/metrics', { headers: { 'x-tenant-id': TENANT, ...authHeaders() } })
+    .then(r => (r.ok ? r.json() : null))
+    .catch(() => null);
+  try {
+    const resp = await fetchTimeout('/api/snapshot', { headers: { 'x-tenant-id': TENANT, ...authHeaders() } });
+    if (!resp.ok) return load();
+    const snap = await resp.json();
+    const m = snap && snap.sections && snap.sections.metaAds;
+    if (!m || !Array.isArray(m.activeCampaigns)) return load();
+    cache = normalizeCampaigns(m.activeCampaigns);
+    const summary = {
+      activeCampaigns: m.activeCampaignCount,
+      totalCampaigns: m.totalCampaigns,
+      totalSpend: m.totalSpend,
+      totalLeads: m.totalAllLeads,
+      avgCPL: m.avgCPL,
+      alerts: m.alerts || []
+    };
+    renderKpis(summary, await metricsPromise);
+    renderCampaigns(applyFilters());
+    loadedOnce = true;
+    document.getElementById('banner-slot').innerHTML = '';
+    const asOf = m.exportDate || (m.enrichedAt || '').slice(0, 10);
+    setTokenPill('ok', asOf ? `cached · ${asOf}` : 'cached');
+  } catch (e) {
+    return load();
+  }
+}
+
+loadCached();
 </script>
 </body>
 </html>
