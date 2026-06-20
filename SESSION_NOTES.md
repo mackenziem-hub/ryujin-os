@@ -1,3 +1,18 @@
+# Session notes — 2026-06-20 (Mind Palace, with Mac) — Cat daily decks + calendar-workflows deck + Ultraslide-with-Voice-Brief (PRs #573 #575 #577)
+
+**What:** Shipped 3 decks LIVE to the decks panel:
+- **#573 `deck-cat-2026-06-19.html`** — Cat's first daily operator deck (image-forward, 9 slides, from her Jun-19 EOD) + a `deck-cat-2026-06-19` card in `decks.html`.
+- **#575 `deck-calendar-workflows.html`** — systems review of Cat's 3-calendar / 9-workflow build, with deep-links into Automator + the 3 publish decisions.
+- **#577** — embedded **voice brief** into the Jun-19 deck: Higgsfield ElevenLabs TTS (voice Maya, 93s), persistent player (play/pause + clickable waveform scrubber on 96 inline downsampled bars + timer), `public/deck-assets/cat-2026-06-19/brief.mp3`.
+
+**Deploy discipline:** all shipped from clean worktrees off origin/main, curl-verified content on the alias. **Caught a clobber** on #575: a concurrent `briefs.html` update (#576) landed mid-deploy; first deploy shipped a stale briefs.html, caught via `git diff --stat origin/main HEAD`, redeployed clean from origin/main (briefs.html restored to 114 lines). Lesson reinforced: branch + deploy from a clean tree off the LATEST origin/main, verify diff empty before `vercel --prod`, re-verify the alias after.
+
+**Voice recipe:** Higgsfield `generate_audio` model `text2speech_v2_elevenlabs`, voice_type preset, voice Maya `b0f766b7-8703-4bd1-b973-f857c36837b6`, ~4 credits/clip, `job_status` sync poll; mp3 downloaded into repo, waveform JSON downsampled to 96 inline bars. For DAILY autopilot, swap to free browser SpeechSynthesis (Higgsfield costs credits daily).
+
+**Open:** fan out 4 more Cat daily voice decks (Mon-Thu); merge with the concurrent Session Briefs audio library (briefs.html, #576). Full detail: WORK_LOG 2026-06-20, memory project_cat_deck_and_voice_jun20 + reference_higgsfield_voice_brief_tts.
+
+---
+
 # Session notes — 2026-06-16 night (HAL, Oracle -> boris/operator) — warm-book follow-up layer PR #516 (+ leads #514, dup of #515)
 
 **What:** A second HAL session (Oracle then boris/operator loop). Net-new vs the desk-D #515 note below:
