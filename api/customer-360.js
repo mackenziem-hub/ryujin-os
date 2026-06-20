@@ -121,16 +121,22 @@ async function handler(req, res) {
   const jobFolders = await settle('jobFolders', sources, async () => {
     // Match by the GHL link AND by the customer's normalized address, so locally
     // pushed Work Order / Material folders surface even for native customers not
-    // yet linked to a GHL contact (most signed Estimator customers).
-    const ors = [];
-    if (ghlContactId) ors.push(`linked_ghl_contact_id.eq.${ghlContactId}`);
+    // yet linked to a GHL contact (most signed Estimator customers). Two
+    // parameterized .eq() queries merged + deduped — normalizeAddress output has
+    // spaces (e.g. '79 willow'), which a raw .or() filter string can't carry.
+    const found = new Map();
+    if (ghlContactId) {
+      const { data } = await supabaseAdmin.from('job_folders').select('*')
+        .eq('tenant_id', tenantId).eq('linked_ghl_contact_id', ghlContactId);
+      for (const r of (data || [])) found.set(r.id, r);
+    }
     const addrKey = customer?.address ? normalizeAddress(customer.address) : null;
-    if (addrKey && /^[a-z0-9-]+$/i.test(addrKey)) ors.push(`address_key.eq.${addrKey}`);
-    if (!ors.length) return [];
-    const { data } = await supabaseAdmin
-      .from('job_folders').select('*')
-      .eq('tenant_id', tenantId).or(ors.join(','));
-    return data || [];
+    if (addrKey) {
+      const { data } = await supabaseAdmin.from('job_folders').select('*')
+        .eq('tenant_id', tenantId).eq('address_key', addrKey);
+      for (const r of (data || [])) found.set(r.id, r);
+    }
+    return [...found.values()];
   });
   const photos = await settle('photos', sources, async () => {
     if (!customer?.id) return [];
