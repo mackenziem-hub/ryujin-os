@@ -18,6 +18,7 @@ import { requirePortalSessionAndTenant } from '../lib/portalAuth.js';
 import { ghlFetch, getConversationMessages, getContactByPhone, ghlDateToIso, normalizeChannel } from '../lib/ghl.js';
 import { PIPELINE_NAMES, PIPELINE_STAGES, enrichOpportunity } from './ghl.js';
 import { list as blobList } from '@vercel/blob';
+import { normalizeAddress } from './agents/production.js';
 
 const LOCATION_ID = (process.env.GHL_LOCATION_ID || 'aHotOUdq9D8m3JPrRz9n').trim();
 
@@ -118,10 +119,17 @@ async function handler(req, res) {
     return data || [];
   });
   const jobFolders = await settle('jobFolders', sources, async () => {
-    if (!ghlContactId) return [];
+    // Match by the GHL link AND by the customer's normalized address, so locally
+    // pushed Work Order / Material folders surface even for native customers not
+    // yet linked to a GHL contact (most signed Estimator customers).
+    const ors = [];
+    if (ghlContactId) ors.push(`linked_ghl_contact_id.eq.${ghlContactId}`);
+    const addrKey = customer?.address ? normalizeAddress(customer.address) : null;
+    if (addrKey && /^[a-z0-9-]+$/i.test(addrKey)) ors.push(`address_key.eq.${addrKey}`);
+    if (!ors.length) return [];
     const { data } = await supabaseAdmin
       .from('job_folders').select('*')
-      .eq('tenant_id', tenantId).eq('linked_ghl_contact_id', ghlContactId);
+      .eq('tenant_id', tenantId).or(ors.join(','));
     return data || [];
   });
   const photos = await settle('photos', sources, async () => {
