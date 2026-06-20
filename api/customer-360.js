@@ -17,6 +17,8 @@ import { supabaseAdmin } from '../lib/supabase.js';
 import { requirePortalSessionAndTenant } from '../lib/portalAuth.js';
 import { ghlFetch, getConversationMessages, getContactByPhone, ghlDateToIso, normalizeChannel } from '../lib/ghl.js';
 import { PIPELINE_NAMES, PIPELINE_STAGES, enrichOpportunity } from './ghl.js';
+import { list as blobList } from '@vercel/blob';
+import { normalizeAddress } from './agents/production.js';
 
 const LOCATION_ID = (process.env.GHL_LOCATION_ID || 'aHotOUdq9D8m3JPrRz9n').trim();
 
@@ -117,10 +119,17 @@ async function handler(req, res) {
     return data || [];
   });
   const jobFolders = await settle('jobFolders', sources, async () => {
-    if (!ghlContactId) return [];
+    // Match by the GHL link AND by the customer's normalized address, so locally
+    // pushed Work Order / Material folders surface even for native customers not
+    // yet linked to a GHL contact (most signed Estimator customers).
+    const ors = [];
+    if (ghlContactId) ors.push(`linked_ghl_contact_id.eq.${ghlContactId}`);
+    const addrKey = customer?.address ? normalizeAddress(customer.address) : null;
+    if (addrKey && /^[a-z0-9-]+$/i.test(addrKey)) ors.push(`address_key.eq.${addrKey}`);
+    if (!ors.length) return [];
     const { data } = await supabaseAdmin
       .from('job_folders').select('*')
-      .eq('tenant_id', tenantId).eq('linked_ghl_contact_id', ghlContactId);
+      .eq('tenant_id', tenantId).or(ors.join(','));
     return data || [];
   });
   const photos = await settle('photos', sources, async () => {
@@ -197,6 +206,19 @@ async function handler(req, res) {
     }
   }
 
+  // ── Research / talking points (Vercel Blob, written by the research worker) ──
+  let research = null;
+  if (ghlContactId) {
+    research = await settle('research', sources, async () => {
+      const key = `crm-research-v/${tenantId}/${ghlContactId}.json`;
+      const { blobs } = await blobList({ prefix: key, limit: 1 });
+      const exact = blobs.find(b => b.pathname === key); // list() is prefix-based
+      if (!exact) return null;
+      const r = await fetch(exact.url + '?t=' + Date.now(), { cache: 'no-store' });
+      return r.ok ? r.json() : null;
+    });
+  }
+
   // ── Stats / deal ──────────────────────────────────────────────────────────
   const won = estimates.filter(e => estKind(e) === 'signed');
   const open = estimates.filter(e => ['open', 'draft'].includes(estKind(e)));
@@ -267,7 +289,7 @@ async function handler(req, res) {
     workorders: nativeJobs || [],
     photos: photos || [],
     jobFolders: jobFolders || [],
-    research: null, // wired in Unit 6 (Talking Points)
+    research, // talking points from the research worker (Vercel Blob), or null
     timeline,
     ghlResolvedBy: ghlMatch, // 'link' | 'phone' | 'email' | null — how the GHL contact was matched
     sources,
