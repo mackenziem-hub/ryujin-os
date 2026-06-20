@@ -32,8 +32,10 @@ function queueKey(tenantId, ghlId) { return `${QUEUE_PREFIX}${tenantId}/${ghlId}
 
 async function readBlobJson(key) {
   const { blobs } = await list({ prefix: key, limit: 1 });
-  if (!blobs.length) return null;
-  const r = await fetch(blobs[0].url + (blobs[0].url.includes('?') ? '&' : '?') + 't=' + Date.now(), { cache: 'no-store' });
+  // Exact-key match only: list() is prefix-based, never trust blobs[0] blindly.
+  const exact = blobs.find(b => b.pathname === key);
+  if (!exact) return null;
+  const r = await fetch(exact.url + (exact.url.includes('?') ? '&' : '?') + 't=' + Date.now(), { cache: 'no-store' });
   if (!r.ok) return null;
   return r.json();
 }
@@ -97,8 +99,8 @@ async function handler(req, res) {
       if (b.researched_by) clean.researched_by = String(b.researched_by).slice(0, 60);
       try {
         await writeBlobJson(resultKey(tenantId, ghlId), clean);
-        // Clear the queue marker now that it is done.
-        try { const { blobs } = await list({ prefix: queueKey(tenantId, ghlId), limit: 1 }); if (blobs.length) await del(blobs[0].url); } catch { /* best effort */ }
+        // Clear the queue marker now that it is done (exact-key match only).
+        try { const qk = queueKey(tenantId, ghlId); const { blobs } = await list({ prefix: qk, limit: 1 }); const ex = blobs.find(b => b.pathname === qk); if (ex) await del(ex.url); } catch { /* best effort */ }
         return res.status(200).json({ ok: true, research: clean });
       } catch (e) { if (e.code === 413) return bad(res, 413, 'too_large'); return bad(res, 500, 'write_failed', { detail: e.message }); }
     }

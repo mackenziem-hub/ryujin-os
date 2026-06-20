@@ -210,9 +210,11 @@ async function handler(req, res) {
   let research = null;
   if (ghlContactId) {
     research = await settle('research', sources, async () => {
-      const { blobs } = await blobList({ prefix: `crm-research-v/${tenantId}/${ghlContactId}.json`, limit: 1 });
-      if (!blobs.length) return null;
-      const r = await fetch(blobs[0].url + '?t=' + Date.now(), { cache: 'no-store' });
+      const key = `crm-research-v/${tenantId}/${ghlContactId}.json`;
+      const { blobs } = await blobList({ prefix: key, limit: 1 });
+      const exact = blobs.find(b => b.pathname === key); // list() is prefix-based
+      if (!exact) return null;
+      const r = await fetch(exact.url + '?t=' + Date.now(), { cache: 'no-store' });
       return r.ok ? r.json() : null;
     });
   }
