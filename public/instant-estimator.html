@@ -907,11 +907,11 @@ h1,h2,h3{font-family:'Montserrat',sans-serif;letter-spacing:-0.02em;text-wrap:ba
         <div class="pl-note" id="plNote">Personally prepared, usually within one business day.</div>
       </div>
 
-      <!-- LANE 2 · book an inspection (secondary, collapsed: calendar lazy-loads on tap) -->
+      <!-- LANE 2 · book a call (secondary, collapsed: calendar lazy-loads on tap) -->
       <div class="cta-block lane-book" id="bookCalendar">
-        <h3>Book an Inspection</h3>
-        <p>Prefer a visit first? Pick a time this week and we confirm by text.</p>
-        <button class="btn-book-toggle" id="btnBookToggle" type="button" aria-expanded="false" aria-controls="calWrap">Book an Inspection <span class="arrow">→</span></button>
+        <h3>Book a call</h3>
+        <p>Prefer to talk it through first? Pick a time this week and we confirm by text.</p>
+        <button class="btn-book-toggle" id="btnBookToggle" type="button" aria-expanded="false" aria-controls="calWrap">Book a call <span class="arrow">→</span></button>
         <div id="calWrap" style="display:none">
           <div class="cal-embed">
             <iframe data-src="https://link.automator.ai/widget/bookings/inspection-and-service-booking" title="Book your free 20-minute roof inspection" scrolling="no" style="width:100%;min-height:720px;border:none;overflow:hidden;background:#fff" id="ie_booking_widget"></iframe>
@@ -1569,6 +1569,34 @@ h1,h2,h3{font-family:'Montserrat',sans-serif;letter-spacing:-0.02em;text-wrap:ba
   // ── Lock-in: capture contact AFTER the price, fire the lead, reveal booking ──
   // This is where the lead actually fires (phone-first). Email is optional now;
   // the price is already on screen, so the customer commits with the number in view.
+  // ── A/B test: primary capture CTA copy (lockin vs quote) ──────
+  // Same capture mechanic, only the wording differs. 50/50 sticky per visitor.
+  // Every captured lead carries metadata.cta_variant, so the winner is read by
+  // comparing lead counts per variant over the same window.
+  const CTA_VARIANT = (() => {
+    try {
+      let v = localStorage.getItem('ie_cta_variant');
+      if (v !== 'lockin' && v !== 'quote') {
+        v = Math.random() < 0.5 ? 'lockin' : 'quote';
+        localStorage.setItem('ie_cta_variant', v);
+      }
+      return v;
+    } catch (e) { return 'lockin'; }
+  })();
+  (function applyCtaVariant(){
+    if (CTA_VARIANT !== 'quote') return;
+    const card = document.getElementById('lockinCard');
+    if (!card) return;
+    const eb = card.querySelector('.lk-eyebrow');
+    const h  = card.querySelector('.lk-h');
+    const sub = card.querySelector('.lk-sub');
+    const btn = document.getElementById('btnLockIn');
+    if (eb && eb.lastChild) eb.lastChild.textContent = ' Your online quote';
+    if (h) h.textContent = 'Get your online quote';
+    if (sub) sub.textContent = 'Mackenzie builds your full quote with your exact numbers and a short personal video, then texts it to you. Two fields, that is it.';
+    if (btn) btn.innerHTML = 'Request an Online Quote <span class="arrow">→</span>';
+  })();
+
   document.getElementById('btnLockIn').addEventListener('click', async e => {
     const err = document.getElementById('lockErr');
     if (err) err.classList.remove('show');
@@ -1631,6 +1659,7 @@ h1,h2,h3{font-family:'Montserrat',sans-serif;letter-spacing:-0.02em;text-wrap:ba
       attribution: ryAttribution,
       meta_event_id: metaEventId,
       metadata: {
+        cta_variant: CTA_VARIANT,
         sqft: state.sqft, sizePreset: state.sizePreset,
         pitch: state.pitch, complexity: state.complexity,
         chimneyType: state.chimneyType,
