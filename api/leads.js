@@ -337,6 +337,39 @@ async function handler(req, res) {
     const body = req.body || {};
     const { source, name, email, phone, address, city, metadata, meta_event_id, attribution } = body;
 
+    // Partial / abandoned-address capture. The IE fires this the moment a
+    // visitor submits their address (before any name/phone), so a bounce
+    // before lock-in still leaves a retargetable record. No contact is created
+    // and no email/phone is required. Flagged via metadata.partial (the row
+    // keeps an allowed status enum value, so the leads.status CHECK constraint
+    // accepts it); filter metadata.partial to separate these from real leads.
+    // Does not inflate the GHL-sourced lead count (the leads view reads GHL
+    // contacts, not this table).
+    if (body.partial) {
+      if (!req.tenant?.id) return res.status(200).json({ ok: true, skipped: 'no-tenant' });
+      const ap = (attribution && typeof attribution === 'object') ? attribution : {};
+      const ch = (ap.fbclid || /facebook|instagram|meta|\bfb\b/i.test(ap.utm_source || '')) ? 'meta'
+        : (ap.gclid || /google/i.test(ap.utm_source || '')) ? 'google'
+          : (ap.utm_source ? 'other-paid' : 'direct');
+      const { error } = await supabaseAdmin.from('leads').insert({
+        tenant_id: req.tenant.id,
+        source: source || 'instant-estimator',
+        campaign: ap.utm_campaign || null,
+        channel: ch,
+        status: 'new',
+        metadata: {
+          partial: true,
+          address: address || null,
+          city: city || null,
+          postal: body.postal || null,
+          measure: body.measure || null,
+          attribution: ap,
+          session_id: body.session_id || null
+        }
+      });
+      return res.status(200).json({ ok: !error, partial: true, ...(error ? { error: error.message } : {}) });
+    }
+
     if (!email && !phone) {
       return res.status(400).json({ error: 'email or phone required' });
     }
