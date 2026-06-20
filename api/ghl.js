@@ -29,6 +29,9 @@ export const PIPELINE_NAMES = {
 };
 
 export const PIPELINE_STAGES = {
+  // Internal Pipeline (re-pulled from live 2026-06-20: this stage was unmapped,
+  // so the deal bar / snapshot byStage rendered a raw UUID).
+  'e4f6e820-bafc-43fa-8fcc-e18782561dd6': 'Inspection Complete',
   // 10 CM Pipeline
   '20576ed3-fc88-4810-ac95-e618445a1b12': 'New Lead',
   '6705322a-85e4-4803-9183-00fa4249704c': 'Follow Up 1 Sent',
