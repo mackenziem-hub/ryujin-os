@@ -24,6 +24,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { requireTenant } from '../lib/tenant.js';
+import { withSentry } from '../lib/sentry.js';
 import { sendCAPIEvent } from '../lib/meta.js';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { notifyLeadEvent } from '../lib/leadNotify.js';
@@ -701,4 +702,4 @@ async function handler(req, res) {
   return res.status(405).json({ error: 'method not allowed' });
 }
 
-export default requireTenant(handler);
+export default withSentry(requireTenant(handler));

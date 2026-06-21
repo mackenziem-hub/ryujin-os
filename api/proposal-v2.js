@@ -27,6 +27,7 @@
 // renderers stay in lockstep.
 // ----------------------------------------------------------------------------
 import { supabaseAdmin } from '../lib/supabase.js';
+import { withSentry } from '../lib/sentry.js';
 import {
   normalizeCalculatedPackages,
   withHST,
@@ -1058,7 +1059,7 @@ function persistHealedSections(row, sections) {
 // ════════════════════════════════════════════════════════════════════════════
 // HANDLER
 // ════════════════════════════════════════════════════════════════════════════
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   // ── PRIVILEGED: estimate-by-id LIVE preview ────────────────────────────────
@@ -1337,3 +1338,6 @@ export async function assembleProposalData(estimateId, templateInput, expectedTe
 // panelPrices are available.
 export { buildProducts, resolveTokens, buildGoodBetterBestTiers, scopeLineItemsFromEstimate, withHST };
 export { metalPanelPrices, metalGradeForTier, METAL_DEFAULT_PANEL };
+
+// Request handler wrapped with Sentry error reporting (no-op until SENTRY_DSN is set).
+export default withSentry(handler);
