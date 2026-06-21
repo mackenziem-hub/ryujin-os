@@ -755,7 +755,7 @@ async function buildFreshSnapshot() {
     'directives',
     'metaAds', 'googleAds', 'gmail', 'calendar',
     'briefing_morning', 'briefing_afternoon', 'briefing_evening',
-    'watchdog', 'heartbeat', 'tokenRefresh',
+    'watchdog', 'heartbeat', 'canary', 'tokenRefresh',
     'cashflow',
     // Same bug pattern as 2026-04-11 (watchdog wipe) - daily.js writes
     // sections.agentReports (daily Z-fighters); without preservation the
