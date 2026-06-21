@@ -104,6 +104,7 @@ export default async function handler(req, res) {
       .pv2 .pv2-tier.best { transform:none !important; }
       .pv2 .pv2-hero { min-height:0 !important; }
       .pv2 .pv2-hero--photo::after { display:none !important; }
+      .pv2 .pv2-orderform { display:block !important; }
       .pv2 h1, .pv2 h2, .pv2 h3, .pv2 .pv2-eyebrow, .pv2 .pv2-accept__eyebrow { break-after:avoid; page-break-after:avoid; }
       .pv2 .pv2-tier, .pv2 .pv2-finding, .pv2 .pv2-review,
       .pv2 .pv2-why__card, .pv2 .pv2-stat, .pv2 .pv2-addon, .pv2 .pv2-team__person,
