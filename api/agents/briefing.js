@@ -169,7 +169,11 @@ export default async function handler(req, res) {
       openDeals: vegeta?.stats?.open || 0,
       staleLeads: vegeta?.staleLeads || 0,
       overdueTickets: piccolo?.stats?.overdueCount || 0,
-      unreadMessages: krillin?.stats?.unreadCount || 0,
+      // awaitingReplyCount = GHL conversations with unread inbound OR an inbound
+      // newer than our last reply (Krillin). The old krillin.stats.unreadCount
+      // field was never written, so this KPI silently read 0 even with customers
+      // waiting. Field name kept (snapshot/ql consumers read unreadMessages).
+      unreadMessages: krillin?.stats?.awaitingReplyCount ?? 0,
       adROI: vegeta?.adROI?.ratio || null,
     },
 
@@ -202,7 +206,7 @@ export default async function handler(req, res) {
 
     // ④ COMMS & INBOX
     comms: {
-      unreadMessages: krillin?.stats?.unreadCount || 0,
+      unreadMessages: krillin?.stats?.awaitingReplyCount ?? 0,
       newWebLeads: (krillin?.findings || []).some(f => f.includes('new leads')),
       metaAdsAlerts: (krillin?.findings || []).some(f => f.includes('Meta Ads')),
       // Watchdog docket — tier 2 items from email scans
@@ -514,7 +518,7 @@ function buildEditionMarkdown(type, briefing, morningPrev) {
       const dTick = (k.overdueTickets ?? 0) - (pk.overdueTickets ?? 0);
       if (dTick) moves.push(`Overdue tickets ${dTick > 0 ? '+' : ''}${dTick}, now ${k.overdueTickets}`);
       const dMsg = (k.unreadMessages ?? 0) - (pk.unreadMessages ?? 0);
-      if (dMsg) moves.push(`Unread messages ${dMsg > 0 ? '+' : ''}${dMsg}, now ${k.unreadMessages}`);
+      if (dMsg) moves.push(`Awaiting reply ${dMsg > 0 ? '+' : ''}${dMsg}, now ${k.unreadMessages}`);
       L.push(moves.length ? moves.map(m => '- ' + m).join('\n') : '- No KPI movement since this morning.');
     } else {
       L.push('- No morning brief in the snapshot to diff against; numbers below are absolute.');
@@ -526,7 +530,7 @@ function buildEditionMarkdown(type, briefing, morningPrev) {
     `- Signed MTD: ${money(k.signedRevenue)} (${k.kpiSource || 'unknown source'})`,
     `- Proposals out: ${money(k.pendingRevenue)}`,
     `- Open deals: ${k.openDeals ?? 'n/a'} · stale leads: ${k.staleLeads ?? 'n/a'}`,
-    `- Overdue tickets: ${k.overdueTickets ?? 'n/a'} · unread messages: ${k.unreadMessages ?? 'n/a'}`
+    `- Overdue tickets: ${k.overdueTickets ?? 'n/a'} · awaiting reply: ${k.unreadMessages ?? 'n/a'}`
   ].join('\n'));
 
   const top3 = briefing.top3 || [];

@@ -228,6 +228,20 @@ export async function triageMessage({ contactName, channel, messages }) {
 // a hardcoded id that can go stale.
 async function sendOwnerDigest(items, ownerContactId, notifyEmail) {
   if (!items.length) return { sent: false };
+  // Collapse duplicate pings for the same contact + reason before formatting, so
+  // two GHL rows for the same person (e.g. "Ken" and "Ken " with a trailing
+  // space) never show up as two identical lines. First occurrence wins; the
+  // caller still stamps notified_at on EVERY original row so the dropped dup is
+  // not re-pinged next tick.
+  {
+    const seen = new Set();
+    items = items.filter((it) => {
+      const key = `${String(it.contact_name || '').trim().toLowerCase()}|${String(it.notify_reason || it.summary || '').trim().toLowerCase()}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
   const result = { sent: false };
 
   // ── SMS leg (gated by OWNER_SMS_MUTED, unchanged behavior) ──
@@ -605,7 +619,13 @@ export default async function handler(req, res) {
   const allowlist = (Array.isArray(cfg.notify_allowlist) ? cfg.notify_allowlist : [])
     .concat(activeWatches(cfg).filter(w => w.match));
   //  - notify_customers: any existing/booked customer (triage category) pings.
-  const notifyCustomers = cfg.notify_customers === true;
+  //    Default ON (Mac Jun 21): do NOT miss a customer message. A waiting
+  //    customer chasing their own estimate ("did you get the estimate?") triages
+  //    category=customer / notify=false and was silently queued; this surfaces it
+  //    on the 20-min digest (batched, not instant). Cold-lead noise was removed
+  //    from the digest in the same pass, so this adds signal without re-flooding.
+  //    Set inbox_config.notify_customers=false to opt back out.
+  const notifyCustomers = cfg.notify_customers !== false;
   //  - notify_all_leads: every lead-category inbound pings, not just the
   //    present-intent ones. Default ON (true) unless explicitly disabled, so
   //    Plus Ultra catches low-intent leads without a migration to flip a flag.

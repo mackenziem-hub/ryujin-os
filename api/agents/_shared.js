@@ -181,6 +181,10 @@ export async function runVegeta() {
         urgency: 'normal',
         dedupeKey: `${o.id}@${weekBucket}`,
         sms: false,
+        // Email + /inbox.html queue only, never the SMS digest. Cold-lead nudges
+        // are not phone-worthy (Mac Jun 21); the phone is for active leaks, leads,
+        // waiting customers, and closes.
+        inboxNotify: false,
       });
       if (res.inboxInserted) coldNotified++;
     }
