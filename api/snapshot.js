@@ -736,7 +736,7 @@ async function buildFreshSnapshot() {
 
   // Preserve enriched sections that were pushed by external sources or agent crons.
   // - metaAds: live Meta Graph API data (pushed by daily.js and briefing.js)
-  // - googleAds: CSV enrichment via enrich-ads.js (until Google Ads API is approved)
+  // - googleAds: live Google Ads API summary (pushed by api/feeders/google-ads.js cron)
   // - gmail/calendar: pushed by Claude Code MCP sessions
   // - briefing_morning/afternoon/evening: pushed by /api/agents/briefing cron
   // - watchdog: pushed by /api/agents/watchdog cron
