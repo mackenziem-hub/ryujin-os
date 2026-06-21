@@ -23,7 +23,9 @@ const ALLOWED_SLUGS = new Set([
   'proposal-715-rt-11',
   'lefurgey-gutter-proposal',
   'nanoseal-partnership',
-  'handbook-outside-sales'
+  'handbook-outside-sales',
+  'proposals/catherine-ablak-62-charlotte-metal',
+  'proposals/desiree-whirl-67-charlotte-metal'
 ]);
 
 export default async function handler(req, res) {
