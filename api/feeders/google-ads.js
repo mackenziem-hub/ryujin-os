@@ -33,8 +33,9 @@ async function accessToken() {
       grant_type: 'refresh_token',
     }),
   });
+  if (!r.ok) throw new Error(`google token HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`);
   const j = await r.json();
-  if (!j.access_token) throw new Error('google token refresh failed');
+  if (!j.access_token) throw new Error('google token refresh failed: ' + (j.error_description || j.error || 'no access_token'));
   return j.access_token;
 }
 
@@ -50,6 +51,11 @@ async function gaql(query, tok) {
     },
     body: JSON.stringify({ query }),
   });
+  if (!r.ok) {
+    const body = await r.text();
+    let j; try { j = JSON.parse(body); } catch { /* non-JSON error page */ }
+    throw new Error('GAQL HTTP ' + r.status + ': ' + (j?.error ? JSON.stringify(j.error).slice(0, 300) : body.slice(0, 200)));
+  }
   const j = await r.json();
   if (j.error) throw new Error('GAQL: ' + JSON.stringify(j.error).slice(0, 300));
   return j.results || [];
