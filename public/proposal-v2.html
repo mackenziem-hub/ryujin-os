@@ -877,8 +877,8 @@
       [{ v: r.us, best: true }, { v: r.them, best: false }].forEach(function (col) {
         var td = el('td', col.best ? 'is-best' : null);
         var v = col.v;
-        if (v === true || v === 'yes') td.innerHTML = '<span class="pv2-compare__yes">✓</span>';
-        else if (v === false || v === 'no' || v == null || v === '') td.innerHTML = '<span class="pv2-compare__no" aria-label="not included">✕</span>';
+        if (v === true || v === 'yes') td.innerHTML = '<svg class="pv2-compare__yes" viewBox="0 0 24 24" width="17" height="17" aria-label="included"><polyline points="20 6 9 17 4 12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline></svg>';
+        else if (v === false || v === 'no' || v == null || v === '') td.innerHTML = '<svg class="pv2-compare__no" viewBox="0 0 24 24" width="15" height="15" aria-label="not included"><line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"></line><line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"></line></svg>';
         else td.textContent = resolveVars(String(v));
         tr.appendChild(td);
       });
@@ -1607,6 +1607,53 @@
       lock.appendChild(lockPill);
       box.appendChild(lock);
     }
+
+    // Print-only order form. In a saved or printed PDF the interactive picker and
+    // signature pad are gone, so render a checkbox package picker plus signature
+    // lines the customer can mark and sign by hand. Hidden on screen, shown in print.
+    var order = el('div', 'pv2-orderform');
+    order.appendChild(el('div', 'pv2-orderform__title', 'Choose your package and sign'));
+    var fin2 = DATA.products && DATA.products.financing;
+    activeTiers().forEach(function (tt) {
+      var row = el('div', 'pv2-orderform__opt');
+      row.appendChild(el('span', 'pv2-orderform__box'));
+      var label = el('span', 'pv2-orderform__label');
+      var incHst = round25((Number(tt.total) || 0) * (1 + taxRate()));
+      var nm = resolveVars(tt.name) + (tt.sub ? ' (' + resolveVars(tt.sub) + ')' : '');
+      var priceTxt = (fin2 && fin2.enabled)
+        ? money(monthlyFor(incHst, fin2.termMonths)) + '/mo  ·  ' + money(incHst) + ' incl. HST'
+        : money(incHst) + ' incl. HST';
+      label.appendChild(el('span', 'pv2-orderform__name', esc(nm)));
+      label.appendChild(el('span', 'pv2-orderform__price', esc(priceTxt)));
+      row.appendChild(label);
+      order.appendChild(row);
+    });
+    getAddons().forEach(function (a) {
+      var row = el('div', 'pv2-orderform__opt pv2-orderform__opt--addon');
+      row.appendChild(el('span', 'pv2-orderform__box'));
+      var label = el('span', 'pv2-orderform__label');
+      label.appendChild(el('span', 'pv2-orderform__name', esc('Add: ' + resolveVars(a.label))));
+      label.appendChild(el('span', 'pv2-orderform__price',
+        esc(money(round25((Number(a.price) || 0) * (1 + taxRate()))) + ' incl. HST')));
+      row.appendChild(label);
+      order.appendChild(row);
+    });
+    var sigblock = el('div', 'pv2-orderform__sign');
+    var l1 = el('div', 'pv2-orderform__sigline');
+    l1.appendChild(el('span', 'pv2-orderform__siglabel', 'Customer signature'));
+    l1.appendChild(el('span', 'pv2-orderform__rule'));
+    l1.appendChild(el('span', 'pv2-orderform__siglabel', 'Date'));
+    l1.appendChild(el('span', 'pv2-orderform__rule pv2-orderform__rule--date'));
+    sigblock.appendChild(l1);
+    var l2 = el('div', 'pv2-orderform__sigline');
+    l2.appendChild(el('span', 'pv2-orderform__siglabel', 'Plus Ultra Roofing'));
+    l2.appendChild(el('span', 'pv2-orderform__rule'));
+    l2.appendChild(el('span', 'pv2-orderform__siglabel', 'Date'));
+    l2.appendChild(el('span', 'pv2-orderform__rule pv2-orderform__rule--date'));
+    sigblock.appendChild(l2);
+    sigblock.appendChild(el('div', 'pv2-orderform__signname', 'Mackenzie Mazerolle, Owner'));
+    order.appendChild(sigblock);
+    box.appendChild(order);
 
     // Signature pad.
     var sig = el('div', 'pv2-sig');
