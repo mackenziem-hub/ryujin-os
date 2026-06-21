@@ -1171,6 +1171,11 @@ async function renderInstance(instance, res) {
     }
     // Heal price-only snapshots frozen before the block library was seeded.
     snap.sections = await rehydrateSectionsIfEmpty(row, snap);
+    // Surface the live acceptance so the contract page can recover the tier /
+    // panel / addons the customer actually accepted. The snapshot is frozen at
+    // materialize time (before acceptance), so this is read from the live row.
+    snap.accepted_payload = row.accepted_payload || null;
+    snap.product_selection = row.product_selection || null;
     trackInstanceView(row);
     return res.json(snap);
   }
@@ -1216,7 +1221,9 @@ async function renderInstance(instance, res) {
     customer,
     variables,
     sections,
-    products
+    products,
+    accepted_payload: row.accepted_payload || null,
+    product_selection: row.product_selection || null
   };
 
   // Heal price-only instances frozen before the block library was seeded.

@@ -154,17 +154,8 @@
   .pv2-pdfbtn svg{width:15px;height:15px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
   @media (max-width:560px){.pv2-pdfbtn{top:10px;right:10px;padding:9px 14px;font-size:12px}}
 
-  /* Print = the PDF. Interactive chrome goes away, brand colors stay, cards
-     never split across pages, and the sticky total bar becomes a static row. */
-  @media print{
-    .pv2-pdfbtn,.pv2-modal,.pv2-sig,.pv2-accept__btn,.pv2-total__cta,
-    .pv2-tier__pick,.pv2-switch,.pv2-paths,.pv2-panels{display:none !important}
-    body{background:#fff}
-    body,.pv2{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-    .pv2-total{position:static !important;box-shadow:none !important}
-    .pv2-tier,.pv2-review,.pv2-scope__row,.pv2-guarantee,.pv2-why__card,
-    .pv2-letter{break-inside:avoid;page-break-inside:avoid}
-  }
+  /* Print rules live in proposal-v2.css section 17 (the canonical Save-as-PDF
+     stylesheet) so the browser print path and the server PDF stay in step. */
 
   /* Explainer video BELOW the intro (smaller, not boxed in) + book-a-call under the accept (Jun 16). */
   .pv2-intro-video{max-width:440px;margin:14px auto 8px;border-radius:12px;overflow:hidden;background:#0b1b33;box-shadow:0 12px 30px rgba(19,41,75,.16)}
@@ -175,7 +166,6 @@
   .pv2-accept__book-btn:hover{background:#b91c1c;border-color:#b91c1c}
   .pv2-accept__book-wrap{margin-top:14px;border-radius:14px;overflow:hidden}
   .pv2-accept__book-frame{width:100%;min-height:680px;border:none;display:block;background:#0b1b33}
-  @media print{.pv2-intro-video,.pv2-accept__book{display:none !important}}
 </style>
 </head>
 <body class="pv2">
@@ -443,6 +433,39 @@
     return frag;
   }
 
+  /* ---- rejuvenation scorecard --------------------------------------------
+     Graded feasibility table + verdict banner for failed-rejuvenation roofs.
+     Renders only when inspection content carries a scorecard with rows. */
+  function scorecardCard(sc) {
+    var box = el('div', 'pv2-scorecard');
+    var verdict = sc.verdict || {};
+    var vTone = String(verdict.tone || 'fail').toLowerCase();
+    var banner = el('div', 'pv2-scorecard__verdict pv2-scorecard__verdict--' + (vTone === 'pass' ? 'pass' : vTone === 'marginal' ? 'marginal' : 'fail'));
+    banner.appendChild(el('div', 'pv2-scorecard__verdict-eyebrow', esc(resolveVars(verdict.eyebrow || 'Rejuvenation feasibility'))));
+    banner.appendChild(el('div', 'pv2-scorecard__verdict-title', esc(resolveVars(verdict.title || 'Not a candidate for rejuvenation'))));
+    if (verdict.subtitle) banner.appendChild(el('div', 'pv2-scorecard__verdict-sub', esc(resolveVars(verdict.subtitle))));
+    box.appendChild(banner);
+
+    var statusClass = { pass: 'pv2-grade--pass', marginal: 'pv2-grade--marginal', fail: 'pv2-grade--fail' };
+    var rows = Array.isArray(sc.rows) ? sc.rows : [];
+    var table = el('div', 'pv2-scorecard__rows');
+    rows.forEach(function (r) {
+      r = r || {};
+      var st = String(r.status || 'fail').toLowerCase();
+      var row = el('div', 'pv2-scorecard__row');
+      var crit = el('div', 'pv2-scorecard__crit');
+      crit.appendChild(el('div', 'pv2-scorecard__crit-name', esc(resolveVars(r.criterion || ''))));
+      if (r.note) crit.appendChild(el('div', 'pv2-scorecard__crit-note', esc(resolveVars(r.note))));
+      row.appendChild(crit);
+      var pill = el('span', 'pv2-grade ' + (statusClass[st] || 'pv2-grade--fail'),
+        esc(resolveVars(r.statusLabel || st).toUpperCase()));
+      row.appendChild(pill);
+      table.appendChild(row);
+    });
+    box.appendChild(table);
+    return box;
+  }
+
   /* ---- inspection ---------------------------------------------------------
      Annotated evidence photos with color-coded callouts and a findings list. */
   function inspection(content) {
@@ -466,6 +489,11 @@
       nodes.push(summary);
     }
 
+    // Rejuvenation feasibility scorecard, when present (failed-rejuv proposals).
+    if (c.scorecard && Array.isArray(c.scorecard.rows) && c.scorecard.rows.length) {
+      nodes.push(scorecardCard(c.scorecard));
+    }
+
     var grid = el('div', 'pv2-findings');
     (c.findings || c.photos || []).forEach(function (f) {
       var card = el('div', 'pv2-finding');
@@ -476,13 +504,6 @@
         im.alt = esc(resolveVars(f.title || f.caption || 'Inspection finding'));
         im.loading = 'lazy';
         media.appendChild(im);
-      }
-      if (f.pin) {
-        var pinKind = String(f.pin.kind || 'flashing').toLowerCase();
-        var pin = el('span', 'pv2-finding__pin pv2-finding__pin--' + pinKind);
-        if (f.pin.x != null) pin.style.left = String(f.pin.x) + '%';
-        if (f.pin.y != null) pin.style.top = String(f.pin.y) + '%';
-        media.appendChild(pin);
       }
       card.appendChild(media);
       var body = el('div', 'pv2-finding__body');
@@ -1001,10 +1022,17 @@
 
     var bar = $('#pv2-total-pick');
     if (bar) bar.textContent = pickLabel;
-    var amt = $('#pv2-total-amount');
-    if (amt) amt.textContent = money(totals.display);
-
     var fin = DATA.products && DATA.products.financing;
+    var financed = !!(fin && fin.enabled);
+    var termMo = (fin && fin.termMonths) || 120;
+
+    // Hero figure = monthly when financing is on, else the all-in total.
+    var amt = $('#pv2-total-amount');
+    if (amt) {
+      amt.textContent = financed
+        ? money(monthlyFor(totals.display, termMo)) + '/mo'
+        : money(totals.display);
+    }
 
     // Struck pre-discount price + promo tag. Only on the selected tier's own
     // discount, and only when no add-ons are stacked on top (so the strike
@@ -1025,15 +1053,15 @@
       }
     }
 
+    // Sub line names what the hero figure is.
     var sub = $('#pv2-total-sub');
-    if (sub) sub.textContent = 'incl. HST';
+    if (sub) sub.textContent = financed ? ('with financing, ' + termMo + ' mo') : 'incl. HST';
 
-    // Monthly figure on its own weighted line, not a trailing grey clause.
+    // Supporting all-in total, de-emphasized but always honest and visible.
     var moEl = $('#pv2-total-mo');
     if (moEl) {
-      if (fin && fin.enabled) {
-        var m = monthlyFor(totals.display, fin.termMonths);
-        moEl.textContent = money(m) + '/mo with financing, ' + (fin.termMonths || 120) + ' mo';
+      if (financed) {
+        moEl.textContent = 'or ' + money(totals.display) + ' incl. HST';
         moEl.style.display = '';
       } else {
         moEl.style.display = 'none';
@@ -1056,7 +1084,20 @@
     var aPick = $('#pv2-accept-pick');
     if (aPick) aPick.textContent = pickLabel;
     var aAmt = $('#pv2-accept-amount');
-    if (aAmt) aAmt.textContent = money(totals.display) + ' incl. HST';
+    if (aAmt) {
+      aAmt.textContent = financed
+        ? money(monthlyFor(totals.display, termMo)) + '/mo'
+        : money(totals.display) + ' incl. HST';
+    }
+    var aTot = $('#pv2-accept-total');
+    if (aTot) {
+      if (financed) {
+        aTot.textContent = 'or ' + money(totals.display) + ' incl. HST, ' + termMo + ' mo';
+        aTot.style.display = '';
+      } else {
+        aTot.style.display = 'none';
+      }
+    }
   }
 
   // Tier card selection.
@@ -1551,6 +1592,9 @@
     summary.appendChild(pick);
     var amt = el('span', 'pv2-accept__amount'); amt.id = 'pv2-accept-amount';
     summary.appendChild(amt);
+    var tot = el('span', 'pv2-accept__total'); tot.id = 'pv2-accept-total';
+    tot.style.display = 'none';
+    summary.appendChild(tot);
     box.appendChild(summary);
 
     // Price-lock urgency line, resolved from the priceLockDate variable.
@@ -1901,17 +1945,26 @@
     if (!(opts && opts.silent)) logEvent('proposal_viewed', {});
   }
 
-  // The always-on PDF affordance. The browser's print-to-PDF dialog does the
-  // rendering, so the saved file matches the page the customer is looking at.
+  // The always-on PDF affordance. Opens the server-rendered, properly paginated
+  // PDF (api/proposal-v2-pdf.js) so sections never split across a page, instead
+  // of the browser print dialog which screenshots whatever is on screen.
   function mountPdfButton() {
+    var params = new URLSearchParams(location.search);
+    if (params.get('pdf') === '1') return;   // server PDF render: no floating button
     if ($('.pv2-pdfbtn')) return;
+    var slug = (DATA && DATA.meta && DATA.meta.instanceSlug) || params.get('instance') || '';
+    if (!slug) {
+      var m = location.pathname.match(/^\/p\/([^\/?#]+)\/?$/);
+      if (m) slug = decodeURIComponent(m[1]);
+    }
+    if (!slug) return;   // no resolvable slug, nothing to render server-side
     var btn = el('button', 'pv2-pdfbtn');
     btn.type = 'button';
     btn.setAttribute('aria-label', 'Save this proposal as a PDF');
     btn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"></path><polyline points="7 10 12 15 17 10"></polyline><path d="M5 21h14"></path></svg>Save as PDF';
     btn.addEventListener('click', function () {
       logEvent('pdf_save', {});
-      window.print();
+      window.open('/api/proposal-v2-pdf?slug=' + encodeURIComponent(slug), '_blank', 'noopener');
     });
     document.body.appendChild(btn);
   }
@@ -1955,7 +2008,7 @@
         if (!res.ok) throw new Error('Request failed (' + res.status + ')');
         return res.json();
       })
-      .then(function (data) { renderData(data); })
+      .then(function (data) { renderData(data, { silent: params.get('pdf') === '1' }); })
       .catch(function (err) {
         console.error('[proposal-v2] boot failed:', err);
         showError(err && err.message ? err.message : 'Unknown error.');
