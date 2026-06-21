@@ -25,6 +25,7 @@ import { randomBytes } from 'node:crypto';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { assembleProposalData } from './proposal-v2.js';
 import { requireTenant } from '../lib/tenant.js';
+import { withSentry } from '../lib/sentry.js';
 
 function kebab(s) {
   return String(s || '')
@@ -156,4 +157,4 @@ async function handler(req, res) {
   }
 }
 
-export default requireTenant(handler);
+export default withSentry(requireTenant(handler));
