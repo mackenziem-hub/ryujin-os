@@ -144,12 +144,20 @@ if (SVC) {
     const estById = {}, estByName = {};
     if (tenantId) {
       try {
-        const ests = await rest(`estimates?tenant_id=eq.${tenantId}&status=neq.cancelled&select=ghl_opportunity_id,selected_package,final_accepted_total,calculated_packages,customers(full_name)&limit=1000`);
+        const ests = await rest(`estimates?tenant_id=eq.${tenantId}&status=neq.cancelled&select=ghl_opportunity_id,status,proposal_status,selected_package,final_accepted_total,calculated_packages,customers(full_name)&limit=1000`);
+        // Only attribute $ from quotes that actually went out. A draft estimate is
+        // NOT a sent quote — fuzzy-matching one onto a $0 GHL opp inflated dead leads
+        // into "closing-zone" money (e.g. the phantom $15,250 Guy Langis, 2026-06-22).
+        const isSentOrAccepted = (e) =>
+          e.final_accepted_total != null ||
+          ['sent', 'accepted'].includes(String(e.status || '').toLowerCase()) ||
+          ['sent', 'accepted'].includes(String(e.proposal_status || '').toLowerCase());
         for (const e of ests) {
           const cp = e.calculated_packages || {};
           const tier = cp[e.selected_package || 'platinum'] || cp.platinum || cp.gold || {};
           const v = e.final_accepted_total || tier.total || (tier.summary && tier.summary.sellingPrice) || 0;
           if (!v) continue;
+          if (!isSentOrAccepted(e)) continue;
           if (e.ghl_opportunity_id) estById[e.ghl_opportunity_id] = v;
           const nm = firstLast((e.customers || {}).full_name);
           if (nm && v > (estByName[nm] || 0)) estByName[nm] = v;
