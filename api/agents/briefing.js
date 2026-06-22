@@ -317,7 +317,10 @@ export default async function handler(req, res) {
     errors.push('EMAIL NOT CONFIGURED: GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REFRESH_TOKEN missing in Vercel env. Briefing emails cannot send until set.');
   }
   if (!transports.smtp.configured) {
-    errors.push('SMTP DORMANT (separate from briefings): GMAIL_USER + GMAIL_APP_PASSWORD missing in Vercel env, so api/send-email outbound (PR #303) stays dead. One-step: myaccount.google.com > Security > 2-Step Verification > App passwords > generate "Ryujin OS", then: vercel env add GMAIL_USER production / vercel env add GMAIL_APP_PASSWORD production');
+    // Informational ONLY, not an error: the briefing sends via Google OAuth (gmailSend), not SMTP,
+    // so a dormant SMTP transport must NOT flip the heartbeat to alert every morning. Surface it as
+    // a transport note instead of pushing to errors[].
+    transports.smtp.note = 'SMTP DORMANT (separate from briefings): GMAIL_USER + GMAIL_APP_PASSWORD missing in Vercel env, so api/send-email outbound (PR #303) stays dead. One-step: myaccount.google.com > Security > 2-Step Verification > App passwords > generate "Ryujin OS", then: vercel env add GMAIL_USER production / vercel env add GMAIL_APP_PASSWORD production';
   }
   // Podcast slot: config-driven Listen section on every edition. Set
   // BRIEFING_PODCAST_URL (+ optional BRIEFING_PODCAST_TITLE) to the latest

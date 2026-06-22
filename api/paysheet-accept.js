@@ -14,7 +14,7 @@ import { supabaseAdmin } from '../lib/supabase.js';
 import { canTransition } from '../lib/state.js';
 
 const GHL_BASE = 'https://services.leadconnectorhq.com';
-const MACKENZIE_CONTACT = '02IhxZfSwZZAZ2fooVGu';
+const MACKENZIE_CONTACT = 'jadj4Jgz8WE9gqheoFeX';
 
 async function smsMackenzie(message) {
   const token = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();

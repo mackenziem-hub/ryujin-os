@@ -37,7 +37,7 @@ export const config = { maxDuration: 60 };
 const GHL_BASE = 'https://services.leadconnectorhq.com';
 const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
 const GHL_VERSION = '2021-07-28';
-const OWNER_SMS_CONTACT_ID = '02IhxZfSwZZAZ2fooVGu';
+const OWNER_SMS_CONTACT_ID = 'jadj4Jgz8WE9gqheoFeX';
 
 async function sendOwnerSMS(message) {
   if (process.env.OWNER_SMS_MUTED === '1') return { muted: true };
@@ -77,6 +77,11 @@ async function runCollections({ req, res, tenant, slug, dry, startTime }) {
     let cashflow = null;
     try {
       const r = await fetch(`${base}/api/snapshot`, { headers: snapshotHeaders(), signal: AbortSignal.timeout(10000) });
+      // Guard against a transient HTML interstitial (auth wall / deploy window): r.json() on
+      // '<!doctype ...' would throw and lose the whole run.
+      if (!r.ok) throw new Error(`snapshot ${r.status}`);
+      const ct = r.headers.get('content-type') || '';
+      if (!ct.includes('application/json')) throw new Error(`snapshot non-JSON (${r.status}, ${ct.slice(0, 40)})`);
       const snap = await r.json();
       cashflow = snap?.sections?.cashflow || null;
     } catch (e) {
@@ -192,6 +197,8 @@ async function fetchSnapshotSections() {
       signal: AbortSignal.timeout(10000)
     });
     if (!r.ok) return {};
+    const ct = r.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) return {};
     const s = await r.json();
     return s.sections || {};
   } catch { return {}; }

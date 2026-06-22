@@ -1,6 +1,6 @@
 import { resolveSession, isPrivileged } from '../lib/portalAuth.js';
 import { ghlDateToIso } from '../lib/ghl.js';
-import { cleanPipeline } from '../lib/pipelineHygiene.js';
+import { cleanPipeline, dedupeByContact, isTestContact } from '../lib/pipelineHygiene.js';
 
 const GHL_BASE = 'https://services.leadconnectorhq.com';
 const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
@@ -1074,7 +1074,10 @@ export default async function handler(req, res) {
     if (resolvedMode === 'pipeline') {
       // GHL /opportunities/search caps at 100 per request. Paginate via meta.startAfter / startAfterId
       // up to the caller's requested limit (or a hard ceiling to keep request cost bounded).
-      const requested = Math.min(parseInt(limit, 10) || 100, 1000);
+      // clean=1 pages the FULL book so the cleaned counts are complete + stable (not a function of
+      // page size) and returns the test-filtered + deduped set (no test personas, no cross-pipeline dupes).
+      const clean = String(req.query?.clean || '') === '1';
+      const requested = clean ? 1000 : Math.min(parseInt(limit, 10) || 100, 1000);
       const PAGE = 100;
       const baseParams = { location_id: LOCATION_ID };
       if (pipeline) baseParams.pipeline_id = pipeline;
@@ -1116,7 +1119,10 @@ export default async function handler(req, res) {
       // Deduped, test-filtered, sales-qualified figures. `stats` above stays raw
       // (existing consumers rely on it); cleanStats is the trustworthy view that
       // the snapshot/briefing/scan-check-in should read going forward.
-      const { counts: cleanStats } = cleanPipeline(opportunities);
+      const { salesOpen, counts: cleanStats } = cleanPipeline(opportunities);
+      // In clean mode hand back the test-filtered + deduped set so the board never renders a test
+      // persona or a cross-pipeline duplicate; salesOpen is the sales-qualified (Internal) open subset.
+      const outOpps = clean ? dedupeByContact(opportunities.filter(o => !isTestContact(o))) : opportunities;
 
       return res.json({
         mode: 'pipeline',
@@ -1124,7 +1130,9 @@ export default async function handler(req, res) {
         pipelineFilter: pipeline ? (PIPELINE_NAMES[pipeline] || pipeline) : 'all',
         stats,
         cleanStats,
-        opportunities,
+        salesOpen: clean ? salesOpen : undefined,
+        opportunities: outOpps,
+        clean,
         timestamp: new Date().toISOString()
       });
     }

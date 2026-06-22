@@ -3666,7 +3666,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
         } catch (e) { /* fall through */ }
       }
       // Fallback to Mackenzie's contact if no contact found
-      if (!contactId) contactId = '02IhxZfSwZZAZ2fooVGu';
+      if (!contactId) contactId = 'jadj4Jgz8WE9gqheoFeX';
 
       const result = await routeForApproval(
         'create-ghl-task',

@@ -87,7 +87,7 @@ export async function sendFallbackEmail(subject, body) {
 
 // SMS fallback retained for true emergencies (heartbeat dead-man) where email infra may also be down.
 const GHL_BASE_SMS = 'https://services.leadconnectorhq.com';
-const MACKENZIE_CONTACT = '02IhxZfSwZZAZ2fooVGu';
+const MACKENZIE_CONTACT = 'jadj4Jgz8WE9gqheoFeX';
 // Returns {ok, error} so dead-man callers (heartbeat) can report which
 // transports actually fired; null = muted or unconfigured (silent by design).
 // Existing callers that ignore the return are unaffected.

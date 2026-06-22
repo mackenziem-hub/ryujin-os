@@ -9,11 +9,19 @@
 // Cached at the edge for 60s + stale-while-revalidate. Tenant-scoped.
 
 import { getActiveClaims } from '../lib/claims.js';
+import { getTenantBySlug } from '../lib/tenant.js';
 
 const PLUS_ULTRA_TENANT_ID = '84c91cb9-df07-4424-8938-075e9c50cb3b';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function resolveTenantId(req) {
-  return (req.query?.tenant_id || req.headers?.['x-tenant-id'] || PLUS_ULTRA_TENANT_ID).toString().trim();
+// Accept either a tenant UUID or the system-wide tenant SLUG (x-tenant-id: plus-ultra,
+// the same header every other endpoint takes). A slug fed straight into the uuid-typed
+// tenant_id column 500s, so resolve it to the UUID first.
+async function resolveTenantId(req) {
+  const raw = (req.query?.tenant_id || req.headers?.['x-tenant-id'] || PLUS_ULTRA_TENANT_ID).toString().trim();
+  if (UUID_RE.test(raw)) return raw;
+  const t = await getTenantBySlug(raw);
+  return t?.id || PLUS_ULTRA_TENANT_ID;
 }
 
 export default async function handler(req, res) {
@@ -24,7 +32,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'GET') return res.status(405).json({ error: 'GET only' });
 
-  const tenantId = resolveTenantId(req);
+  const tenantId = await resolveTenantId(req);
   const categoryParam = req.query?.category;
   const categories = categoryParam ? String(categoryParam).split(',').map(s => s.trim()).filter(Boolean) : null;
 

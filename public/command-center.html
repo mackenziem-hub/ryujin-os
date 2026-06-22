@@ -2977,9 +2977,19 @@ function hydratePanel(index) {
   if (!pd || pd.hydrated) return;
   pd.hydrated = true;
   const frame = pd.element.querySelector('.panel-frame');
-  if (frame && !frame.src) frame.src = frame.dataset.src;
   const standby = pd.element.querySelector('.panel-standby');
-  if (standby) standby.remove();
+  if (frame && !frame.src && frame.dataset.src) {
+    // Keep the STANDBY placeholder up until the iframe actually finishes loading,
+    // so a slow or auth-redirected embedded page never flashes a blank tile.
+    if (standby) {
+      frame.addEventListener('load', () => { if (standby.parentNode) standby.remove(); }, { once: true });
+      // Safety net: if load never fires (cached / edge case), drop it after 8s.
+      setTimeout(() => { if (standby.parentNode) standby.remove(); }, 8000);
+    }
+    frame.src = frame.dataset.src;
+  } else if (standby) {
+    standby.remove();
+  }
 }
 
 const _lazyCamDir = new THREE.Vector3();
@@ -2998,6 +3008,17 @@ function lazyHydrateVisible(elapsed) {
     if (_lazyCamDir.dot(_lazyToPanel) > 0.92) hydratePanel(i);
   }
 }
+
+// Boot-time hydration fallback (camera-independent). lazyHydrateVisible only
+// fires when the camera points within ~23 degrees of a panel, and the only
+// autonomous camera motion is autoRotate, which is OFF in low-perf mode (lite /
+// narrow viewport / reduced-motion / data-saver). Without this, every off-center
+// panel (Sales, Production, Service, Customer, Finance) would sit on STANDBY
+// forever until the user manually drags onto it, while the centered Dashboard
+// loaded fine. Stagger ~400ms apart so the 8 embedded pages do not all fire
+// their /api/snapshot fetch at once. hydratePanel is idempotent, so panels the
+// camera already hydrated are skipped.
+panelData.forEach((_, i) => setTimeout(() => hydratePanel(i), 700 + i * 400));
 
 // ──────────────────────────────────────────
 // CAMERA ANIMATION
