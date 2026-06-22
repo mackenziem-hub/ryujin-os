@@ -13,7 +13,9 @@ import { snapshotHeaders } from '../../lib/snapshotClient.js';
 const GHL_BASE = 'https://services.leadconnectorhq.com';
 const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
 const GHL_VERSION = '2021-07-28';
-const MACKENZIE_CONTACT_ID = '02IhxZfSwZZAZ2fooVGu';
+// jadj4Jgz8WE9gqheoFeX = Mac's live GHL SMS contact (540-1052, verified 201). The old
+// 02IhxZfSwZZAZ2fooVGu is dead under both tokens, so every watchdog SMS was silently failing.
+const MACKENZIE_CONTACT_ID = 'jadj4Jgz8WE9gqheoFeX';
 
 const WATCHDOG_BLOB_KEY = 'ryujin-watchdog-state.json';
 const LEGACY_WATCHDOG_BLOB_KEY = 'shenron-watchdog-state.json';
@@ -99,6 +101,8 @@ const TIER1_SENDERS = [
   'leadconnector', 'highlevel', 'gohighlevel',
   // Watched customers (immediate ping on reply, by owner request)
   'cohni.omega@gmail.com', // Concepcion Omega, 200 Lonsdale (est #38), awaiting shingle-color confirmation
+  'catherine.sackville2022@gmail.com', // Catherine Ablak, 62 Charlotte metal proposal (est #77), sent Jun 21 — watch for reply
+  'dworrallb@gmail.com', // Desiree Worrall, 67 Charlotte metal proposal (est #98), sent Jun 21 — watch for reply
 ];
 
 const TIER1_SUBJECTS = [
@@ -108,6 +112,8 @@ const TIER1_SUBJECTS = [
   'new lead', 'estimate request', 'quote request', 'booking', 'appointment',
   // Active job keywords
   'job site', 'crew', 'material', 'delivery', 'schedule', 'permit',
+  // Proposal engagement (first-open notification email from /api/proposal-events)
+  'proposal opened',
   // Urgent business
   'urgent', 'asap', 'emergency', 'action required', 'action needed',
   'time sensitive', 'deadline', 'reply needed', 'response needed',
