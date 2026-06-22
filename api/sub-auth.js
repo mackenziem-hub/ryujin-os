@@ -11,6 +11,7 @@
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireTenant } from '../lib/tenant.js';
 import { sendSMS } from '../lib/sms.js';
+import { gmailSend } from '../lib/google.js';
 import { normalizePhone } from '../lib/twilio.js';
 import crypto from 'crypto';
 
@@ -265,11 +266,13 @@ async function handler(req, res) {
     return res.json({ member: { ...data, portal_url } });
   }
 
-  // ── Self-serve: sub requests a fresh magic-link via SMS ──
+  // ── Self-serve: sub requests their magic-link via SMS + email ──
   // POST body: { phone }. Matches by E.164-normalized phone across subcontractors
-  // and sub_crew_members. Rotates the token and texts a new portal URL to the
-  // number on file (NOT to whatever the requester typed; that's the whole
-  // point of the lookup, the sender must already be in our records).
+  // and sub_crew_members. REUSES the live token (mints a fresh one only when none
+  // exists or it has lapsed) so any link the sub already holds keeps working, and
+  // pushes the expiry out 90 days. Delivers to the phone AND the email on file
+  // (never to whatever the requester typed; the sender must already be in our
+  // records). Email is the dependable channel; SMS can be carrier/A2P filtered.
   // Generic 200 response either way to avoid number enumeration.
   if (req.method === 'POST' && action === 'request_link') {
     const { phone } = req.body || {};
@@ -284,11 +287,13 @@ async function handler(req, res) {
     if (now - last < 60_000) return res.json({ ok: true });
     REQUEST_LINK_RATE.set(rateKey, now);
 
+    const NINETY_DAYS = 90 * 24 * 60 * 60 * 1000;
+
     // Find sub by phone. If multiple match (e.g. owner-cell shared with the
     // in-house "Crew" bucket sub), the most recently updated active row wins.
     const { data: subs } = await supabaseAdmin
       .from('subcontractors')
-      .select('id, name, phone')
+      .select('id, name, phone, email, magic_link_token, magic_link_expires_at')
       .eq('tenant_id', tenantId)
       .eq('phone', normalized)
       .eq('active', true)
@@ -298,18 +303,33 @@ async function handler(req, res) {
     let target = null;
     if (subs && subs.length) {
       const sub = subs[0];
-      const token = newToken();
-      const expires = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
-      await supabaseAdmin
+      // Reuse the existing token when it's still valid so links already in the
+      // sub's hands do not die on every request; mint only when missing/expired.
+      const tokenValid = sub.magic_link_token &&
+        (!sub.magic_link_expires_at || new Date(sub.magic_link_expires_at) > new Date(now));
+      const minted = !tokenValid;
+      const token = tokenValid ? sub.magic_link_token : newToken();
+      const expires = new Date(now + NINETY_DAYS);
+      const { error: writeErr } = await supabaseAdmin
         .from('subcontractors')
-        .update({ magic_link_token: token, magic_link_expires_at: expires.toISOString(), updated_at: new Date().toISOString() })
+        .update({ magic_link_token: token, magic_link_expires_at: expires.toISOString(), updated_at: new Date(now).toISOString() })
         .eq('id', sub.id);
-      target = { name: sub.name, phone: sub.phone, token };
+      // If we minted a fresh token but the write failed, the token exists only
+      // in memory and any link we send would 401. Skip delivery; the throttle
+      // lets the sub retry shortly. A failed write on the REUSE path is harmless
+      // (the prior token is still live in the DB), so we still send there.
+      if (writeErr && minted) {
+        console.warn(`[sub-auth.request_link] mint write failed for ${sub.name}, not sending: ${writeErr.message}`);
+      } else {
+        target = { name: sub.name, phone: sub.phone, email: sub.email, token };
+      }
     } else {
-      // Fall back to crew members.
+      // Fall back to crew members. Crew tokens carry no expiry (the validate
+      // path checks active/archived only) and magic_token is NOT NULL, so in
+      // practice we always reuse; the mint branch is belt-and-suspenders.
       const { data: members } = await supabaseAdmin
         .from('sub_crew_members')
-        .select('id, name, phone, sub_id')
+        .select('id, name, phone, sub_id, magic_token')
         .eq('tenant_id', tenantId)
         .eq('phone', normalized)
         .eq('active', true)
@@ -317,36 +337,87 @@ async function handler(req, res) {
         .order('created_at', { ascending: false });
       if (members && members.length) {
         const m = members[0];
-        const token = newToken();
-        await supabaseAdmin
-          .from('sub_crew_members')
-          .update({ magic_token: token })
-          .eq('id', m.id);
-        target = { name: m.name, phone: m.phone, token };
+        const token = m.magic_token || newToken();
+        let writeErr = null;
+        if (!m.magic_token) {
+          ({ error: writeErr } = await supabaseAdmin
+            .from('sub_crew_members')
+            .update({ magic_token: token })
+            .eq('id', m.id));
+        }
+        // sub_crew_members has no email column, so crew get SMS only.
+        if (writeErr) {
+          console.warn(`[sub-auth.request_link] crew mint write failed for ${m.name}, not sending: ${writeErr.message}`);
+        } else {
+          target = { name: m.name, phone: m.phone, email: null, token };
+        }
       }
     }
 
     if (target) {
-      // Use the tenant owner's ryujin_phone_number as outbound sender so the
-      // recipient sees a familiar number (matches the messages.js pattern).
+      const firstName = (target.name || '').split(/\s+/)[0] || 'there';
+      const portalUrl = `https://ryujin-os.vercel.app/sub-portal.html?token=${target.token}`;
+
+      // Deliver on every available channel and AWAIT the sends. A fire-and-forget
+      // send after res.json() can be frozen when the serverless instance suspends,
+      // which is itself a cause of "the link text never came". Each send is
+      // bounded so an unbounded Gmail/Twilio stall can't hold the response open
+      // past the function's duration limit; normal sends are sub-second.
+      const withTimeout = (p, ms, ch) => Promise.race([
+        p,
+        new Promise(resolve => setTimeout(() => resolve({ ch, ok: false, error: `timeout after ${ms}ms` }), ms))
+      ]);
+      const deliveries = [];
+
+      // Channel 1: SMS from the owner's ryujin number (a familiar sender).
       const { data: owner } = await supabaseAdmin
         .from('users')
-        .select('ryujin_phone_number, name')
+        .select('ryujin_phone_number')
         .eq('tenant_id', tenantId)
         .eq('role', 'owner')
         .not('ryujin_phone_number', 'is', null)
         .maybeSingle();
-
       const fromPhone = owner?.ryujin_phone_number || null;
-      if (fromPhone) {
-        const firstName = (target.name || '').split(/\s+/)[0] || 'there';
-        const portalUrl = `https://ryujin-os.vercel.app/sub-portal.html?token=${target.token}`;
-        const smsBody = `Hey ${firstName}, here's your portal link, good for 90 days: ${portalUrl}`;
-        sendSMS({ from: fromPhone, to: target.phone, body: smsBody })
-          .then(r => { if (!r.ok) console.warn(`[sub-auth.request_link] SMS to ${target.name} failed: ${r.error}`); })
-          .catch(e => console.warn(`[sub-auth.request_link] SMS to ${target.name} crashed: ${e.message}`));
-      } else {
-        console.warn(`[sub-auth.request_link] no owner ryujin_phone_number set for tenant ${tenantId}, cannot deliver`);
+      if (fromPhone && target.phone) {
+        const smsBody = `Hey ${firstName}, here's your Plus Ultra portal link, good for 90 days: ${portalUrl}`;
+        deliveries.push(withTimeout(
+          sendSMS({ from: fromPhone, to: target.phone, body: smsBody })
+            .then(r => ({ ch: 'sms', ok: !!r.ok, error: r.error }))
+            .catch(e => ({ ch: 'sms', ok: false, error: e.message })),
+          9000, 'sms'
+        ));
+      }
+
+      // Channel 2: email via the Gmail API (same transport as the daily briefing).
+      // Dodges carrier/A2P filtering, so it is the reliable path. The '@' guard
+      // skips a guaranteed Gmail 400 when the email field holds junk.
+      if (target.email && target.email.includes('@')) {
+        const subject = 'Your Plus Ultra crew portal link';
+        const emailBody = [
+          `Hi ${firstName},`,
+          ``,
+          `Here is your Plus Ultra crew portal link. It works on your phone and stays good for 90 days:`,
+          ``,
+          portalUrl,
+          ``,
+          `Open it any time to see your assigned jobs, pay sheets, and schedule. Bookmark it and it is one tap next time.`,
+          ``,
+          `Plus Ultra Roofing`
+        ].join('\n');
+        deliveries.push(withTimeout(
+          gmailSend(target.email, subject, emailBody)
+            .then(() => ({ ch: 'email', ok: true }))
+            .catch(e => ({ ch: 'email', ok: false, error: e.message })),
+          8000, 'email'
+        ));
+      }
+
+      const results = await Promise.all(deliveries);
+      for (const r of results) {
+        if (!r.ok) console.warn(`[sub-auth.request_link] ${r.ch} to ${target.name} failed: ${r.error}`);
+      }
+      if (!deliveries.length) {
+        console.warn(`[sub-auth.request_link] no delivery channel for ${target.name} (fromPhone=${!!fromPhone}, email=${!!target.email})`);
       }
     }
 
