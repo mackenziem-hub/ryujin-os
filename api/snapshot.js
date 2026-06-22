@@ -13,6 +13,7 @@ import { resolveSession } from '../lib/portalAuth.js';
 import { requireCronOrOwner } from '../lib/cronAuth.js';
 import { snapshotHeaders } from '../lib/snapshotClient.js';
 import { isTestData } from '../lib/leadTestFilter.js';
+import { isTestContact, dedupeByContact } from '../lib/pipelineHygiene.js';
 
 const SNAPSHOT_BLOB_KEY = 'ryujin-snapshot.json';
 const LEGACY_SNAPSHOT_BLOB_KEY = 'shenron-snapshot.json';
@@ -25,20 +26,12 @@ const LEGACY_SNAPSHOT_BLOB_KEY = 'shenron-snapshot.json';
 const SNAPSHOT_VERSIONED_PREFIX = 'ryujin-snapshot-v/';
 
 // Cat-test contact patterns. Catherine's QA personas + system-test threads
-// leak into GHL conversations and pollute every snapshot consumer (Krillin
-// lead-flow alarm, briefing comms section, chat tools). The scan-check-in
-// protocol filters these client-side, but the snapshot itself stays dirty.
-// Patterns are LITERAL phrases ("Cat Test", "Catherine Zeta", "Lead Verify")
-// so a real customer named Catherine/Cat is never matched.
-const CAT_TEST_NAME_PATTERNS = [
-  /\bcat\s*test\b/i, /\bcatherine\s*test\b/i, /\bcat\s*livetest\b/i,
-  /\btest\s*replied\b/i, /\bcatherine[^a-z]{0,3}zeta\b/i,
-  /\blead\s*verify\b/i, /\btest\s*rejuv\b/i, /\btest\s*flow\b/i,
-];
-const isCatTestContact = (name) => {
-  const s = String(name || '');
-  return CAT_TEST_NAME_PATTERNS.some(p => p.test(s));
-};
+// leak into GHL conversations and pipeline opportunities and pollute every
+// snapshot consumer (Krillin lead-flow alarm, briefing comms section, chat
+// tools). The patterns now live in lib/pipelineHygiene.js as the single source
+// of truth (shared with the Vegeta agent + the GHL endpoint); this alias keeps
+// the existing isCatTestContact call sites unchanged.
+const isCatTestContact = isTestContact;
 
 // Compute "tickets" stats from the WORKORDERS table (the real source of
 // truth for active jobs). The legacy `tickets` table went dormant in May
@@ -608,9 +601,15 @@ async function buildFreshSnapshot() {
     };
   }
 
-  // Full pipeline opportunities (top 50 by recency)
+  // Full pipeline opportunities (top 50 by recency). Filter test personas and
+  // dedupe by contact BEFORE slicing so the 50 we surface are 50 real distinct
+  // opportunities, not padded with test rows + cross-pipeline duplicates of the
+  // same human (the form-fill shadow-opp problem). The trusted clean counts ride
+  // on briefing_morning.kpiScouter (Vegeta) and the GHL endpoint's cleanStats.
   if (pipeline?.opportunities) {
-    snapshot.sections.pipeline = pipeline.opportunities
+    snapshot.sections.pipeline = dedupeByContact(
+        pipeline.opportunities.filter(o => !isTestContact(o))
+      )
       .slice(0, 50)
       .map(o => ({
         name: o.name, value: o.value, status: o.status,

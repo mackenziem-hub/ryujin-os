@@ -179,12 +179,15 @@ export default async function handler(req, res) {
 
     // ② PIPELINE PULSE
     pipeline: vegeta ? {
-      // openDeals/totalValue/staleLeads are GHL pipeline counts (labeled so);
-      // money figures come from the metrics contract like kpiScouter, never a
-      // second source that can disagree with it.
+      // openDeals = sales-qualified (Internal Pipeline) open deals, deduped by
+      // contact and test-filtered; staleLeads = active-stage deals untouched 7+
+      // days. Money figures come from the metrics contract like kpiScouter,
+      // never a second source that can disagree with it.
       openDeals: vegeta.stats?.open || 0,
       totalValue: vegeta.stats?.totalValue || 0,
-      ghlNote: 'openDeals/totalValue are raw GHL opportunities (includes stale/test); contract proposalsOut is the trusted money number',
+      distinctLeads: vegeta.stats?.distinctContacts || 0,
+      rawOpenAll: vegeta.stats?.rawOpenAll || 0,
+      ghlNote: 'openDeals/totalValue are sales-qualified + deduped (test-filtered); distinctLeads = raw lead volume across all pipelines; contract proposalsOut is the trusted money number',
       staleLeads: vegeta.staleLeads || 0,
       pendingRevenue: contract ? contract.pipeline.proposalsOut.value : (vegeta.estimatorStats?.pendingRevenue || 0),
       signedRevenue: contract ? contract.signed.mtd.value : (vegeta.estimatorStats?.signedRevenue || 0),

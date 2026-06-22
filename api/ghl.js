@@ -1,5 +1,6 @@
 import { resolveSession, isPrivileged } from '../lib/portalAuth.js';
 import { ghlDateToIso } from '../lib/ghl.js';
+import { cleanPipeline } from '../lib/pipelineHygiene.js';
 
 const GHL_BASE = 'https://services.leadconnectorhq.com';
 const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
@@ -224,10 +225,13 @@ export function enrichOpportunity(opp) {
   return {
     id: opp.id,
     name: opp.name,
-    email: opp.email,
-    phone: opp.phone,
+    // email/phone live on the nested contact object in the GHL search payload;
+    // the old top-level opp.email/opp.phone were always undefined (latent bug).
+    email: opp.email || opp.contact?.email || null,
+    phone: opp.phone || opp.contact?.phone || null,
     value: opp.monetaryValue || 0,
     status: opp.status,
+    contactId: opp.contactId || opp.contact?.id || null,
     pipeline: PIPELINE_NAMES[opp.pipelineId] || opp.pipelineId,
     stage: PIPELINE_STAGES[opp.pipelineStageId] || opp.pipelineStageId,
     source: opp.source,
@@ -1109,11 +1113,17 @@ export default async function handler(req, res) {
         stats.byStage[o.stage] = (stats.byStage[o.stage] || 0) + 1;
       });
 
+      // Deduped, test-filtered, sales-qualified figures. `stats` above stays raw
+      // (existing consumers rely on it); cleanStats is the trustworthy view that
+      // the snapshot/briefing/scan-check-in should read going forward.
+      const { counts: cleanStats } = cleanPipeline(opportunities);
+
       return res.json({
         mode: 'pipeline',
         query: q || null,
         pipelineFilter: pipeline ? (PIPELINE_NAMES[pipeline] || pipeline) : 'all',
         stats,
+        cleanStats,
         opportunities,
         timestamp: new Date().toISOString()
       });
