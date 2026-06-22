@@ -100,11 +100,16 @@ function onWatchedDomain(email) {
   return KEYWORD_GATED_DOMAINS.some(d => email.endsWith('@' + d) || email.endsWith('.' + d));
 }
 
-// Our own outbound -- never ping on a leak we mention in a reply.
+// Our own outbound -- never ping on a leak we mention in a reply, or on our
+// own internal notifications (warranty-claim relays, form auto-mails, etc.).
 const SELF_DOMAINS = ['plusultraroofing.com'];
-const SELF_ADDRESSES = ['plusultraroofing@gmail.com'];
+const SELF_ADDRESSES = ['plusultraroofing@gmail.com', 'plusultraroofinginfo@gmail.com'];
+// Catch-all for any Plus Ultra Gmail alias (plusultraroofing@, ...info@, ...)
+const SELF_GMAIL_RE = /^plusultraroofing[^@]*@gmail\.com$/;
 function isSelf(email) {
-  return SELF_ADDRESSES.includes(email) || SELF_DOMAINS.some(d => email.endsWith('@' + d));
+  return SELF_ADDRESSES.includes(email)
+    || SELF_GMAIL_RE.test(email)
+    || SELF_DOMAINS.some(d => email.endsWith('@' + d));
 }
 
 export async function runGmailWatchFeeder({ tenantSlug = PLUS_ULTRA_SLUG, lookbackDays = DEFAULT_LOOKBACK_DAYS } = {}) {
