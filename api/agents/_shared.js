@@ -13,6 +13,7 @@ import { gmailSend } from '../../lib/google.js';
 import { runCashflow } from './cashflow.js';
 import { snapshotHeaders } from '../../lib/snapshotClient.js';
 import { AGENT_NAMES } from './_names.js';
+import { cleanPipeline } from '../../lib/pipelineHygiene.js';
 import { supabaseAdmin } from '../../lib/supabase.js';
 import { leadNotifyConfig } from '../../lib/inboxWatches.js';
 import { notifyLeadEvent } from '../../lib/leadNotify.js';
@@ -124,36 +125,46 @@ export async function runVegeta() {
   const open = opps.filter(o => o.status === 'open');
   const today = new Date();
 
+  // Clean, deduped, sales-qualified view for the REPORTED KPIs (open deals =
+  // Internal Pipeline open, deduped by contact; stale = active-stage 7-day).
+  // See lib/pipelineHygiene.js. The cold-lead alerter below keeps its own
+  // broader all-pipeline view so going-cold notifications are not suppressed.
+  const { salesOpen, counts } = cleanPipeline(opps, { now: today });
+
   report.stats = {
     totalOpportunities: pipeline.stats?.total || opps.length,
-    open: open.length,
-    totalValue: opps.reduce((s, o) => s + (o.value || 0), 0)
+    open: counts.openDeals,            // sales-qualified, deduped (was raw all-pipeline open)
+    totalValue: counts.salesOpenValue, // value over real open deals (was sum of everything)
+    rawOpenAll: counts.rawOpenAll,     // every open opp pre-filter, for transparency
+    distinctContacts: counts.distinctContacts // distinct humans across all pipelines
   };
+  report.staleLeads = counts.staleLeads; // clean 7-day active-stage count
 
   // Lead-notify context (tenant id + owner-tunable thresholds). One resolve
   // shared by the cold-lead scan and the won stage-diff below.
   const notifyCtx = await resolveLeadNotifyContext();
   const COLD_DAYS = notifyCtx.cold_lead_days; // default 4 (was hardcoded 3)
 
-  // Stale leads (no status change in COLD_DAYS+). Threshold is now config-driven.
-  const stale = open.filter(o => {
+  // Cold leads (no status change in COLD_DAYS+). Broader than the reported
+  // staleLeads KPI on purpose: this drives going-cold alerts across every
+  // pipeline, not just sales-qualified deals.
+  const cold = open.filter(o => {
     if (!o.lastStatusChange) return false;
     const days = (today - new Date(o.lastStatusChange)) / (1000 * 60 * 60 * 24);
     return days >= COLD_DAYS;
   });
-  report.staleLeads = stale.length;
-  if (stale.length > 0) {
-    report.findings.push(`${stale.length} leads stale ${COLD_DAYS}+ days: ${stale.slice(0, 5).map(o => `${o.name} (${o.stage})`).join(', ')}`);
-    // Keep the existing rollup-task behavior (>= 3 stale leads -> one task).
-    if (stale.length >= 3) {
-      report.tasks.push({ title: `Follow up on ${stale.length} stale pipeline leads`, description: `Stale leads: ${stale.map(o => `${o.name} — ${o.stage} — last activity ${o.lastStatusChange}`).join('\n')}`, priority: 'high' });
+  if (cold.length > 0) {
+    report.findings.push(`${cold.length} leads going cold (${COLD_DAYS}+ days): ${cold.slice(0, 5).map(o => `${o.name} (${o.stage})`).join(', ')}`);
+    // Keep the existing rollup-task behavior (>= 3 cold leads -> one task).
+    if (cold.length >= 3) {
+      report.tasks.push({ title: `Follow up on ${cold.length} stale pipeline leads`, description: `Stale leads: ${cold.map(o => `${o.name} — ${o.stage} — last activity ${o.lastStatusChange}`).join('\n')}`, priority: 'high' });
     }
     // Per-lead "going cold" notification (email + inbox ping, no SMS). The
     // dedupeKey is bucketed to a coarse ~7-day window keyed off the lead's own
     // lastStatusChange, so the SAME cold lead does not re-alert on every daily
     // scan; it only re-pings if it is STILL cold a week later (a new bucket).
     let coldNotified = 0;
-    for (const o of stale) {
+    for (const o of cold) {
       if (!o.id) continue;
       // Only alert on leads that RECENTLY crossed cold (within a few days of the
       // threshold), not the entire long-stale backlog. Without this the first run
@@ -244,7 +255,7 @@ export async function runVegeta() {
   }
 
   // High-value open deals
-  const highValue = open.filter(o => (o.value || 0) >= 10000);
+  const highValue = salesOpen.filter(o => (o.value || 0) >= 10000);
   if (highValue.length > 0) {
     report.findings.push(`${highValue.length} deals over $10K: ${highValue.map(o => `${o.name} ($${o.value})`).join(', ')}`);
   }
@@ -261,7 +272,7 @@ export async function runVegeta() {
     };
   }
 
-  report.findings.push(`Pipeline: ${open.length} open opportunities`);
+  report.findings.push(`Pipeline: ${counts.openDeals} open sales-qualified deals (${counts.distinctContacts} distinct leads across all pipelines)`);
   report.findings.push(`Revenue: $${report.estimatorStats?.pendingRevenue || 0} pending, $${report.estimatorStats?.signedRevenue || 0} signed`);
 
   // Ad spend vs SIGNED revenue ROI (not pipeline value — pipeline includes test/lost data)
