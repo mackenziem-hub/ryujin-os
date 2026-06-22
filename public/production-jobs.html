@@ -245,16 +245,21 @@ function bucketize(workorders){
     // without always flipping status to 'complete' (see WO-18 / WO-15 history).
     if (w.status === 'complete' || w.completed_at) {
       completed.push(w);
+    } else if (w.status === 'cancelled') {
+      // API already filters cancelled out of the list query; guard anyway.
     } else if (w.status === 'in_progress') {
       active.push(w);
-    } else if (w.status === 'issued') {
+    } else {
+      // Any other live status (issued, draft, or unknown) is a real job that
+      // must stay findable. Bucket by date so nothing silently vanishes. The
+      // prior code dropped draft work orders, which is how active jobs went
+      // missing from Job Folders. Data gaps still surface via the DQ chips.
+      // Active = in flight or due within 7 days (including overdue);
+      // Pending = scheduled further out or unscheduled.
       const diff = daysBetween(w.start_date);
-      // Active = in flight or due within 7 days (including overdue)
-      // Pending = scheduled further out or unscheduled
       if (diff != null && diff <= 7) active.push(w);
       else pending.push(w);
     }
-    // draft + unknown statuses are intentionally dropped (matches prior 6-column behavior)
   });
 
   // Sort active: overdue first (most overdue at top), then today/tomorrow, then this week
