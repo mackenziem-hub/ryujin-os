@@ -18,6 +18,13 @@
 //      Exact address only -- a domain watch would drown in marketing blasts
 //      (e.g. noreply@qxo.com newsletters vs the rep you are waiting on).
 //      Watches expire (see lib/inboxWatches.js).
+//   3. CONTENT KEYWORDS (tenant_settings.inbox_config.keywords[]) -- "ping me
+//      on any email that mentions this word", regardless of sender. Built for
+//      high-signal roofing terms like "leak": a customer reporting a leak is an
+//      urgent callback no matter who they are or whether they are on the address
+//      list. Matched on subject + snippet with a word-start stem ("leak"
+//      catches leak/leaks/leaking/leaked, not "bleak"). Our own outbound (PU
+//      domains) is excluded and bulk categories are negated so it stays signal.
 //
 // It reuses the inbox_items surface: each surfaced email is inserted as a
 // channel='email', notify=true row, so it shows on /inbox.html AND gets
@@ -93,6 +100,13 @@ function onWatchedDomain(email) {
   return KEYWORD_GATED_DOMAINS.some(d => email.endsWith('@' + d) || email.endsWith('.' + d));
 }
 
+// Our own outbound -- never ping on a leak we mention in a reply.
+const SELF_DOMAINS = ['plusultraroofing.com'];
+const SELF_ADDRESSES = ['plusultraroofing@gmail.com'];
+function isSelf(email) {
+  return SELF_ADDRESSES.includes(email) || SELF_DOMAINS.some(d => email.endsWith('@' + d));
+}
+
 export async function runGmailWatchFeeder({ tenantSlug = PLUS_ULTRA_SLUG, lookbackDays = DEFAULT_LOOKBACK_DAYS } = {}) {
   const report = {
     feeder: 'gmail-watch', tenant: tenantSlug, lookbackDays,
@@ -117,6 +131,17 @@ export async function runGmailWatchFeeder({ tenantSlug = PLUS_ULTRA_SLUG, lookba
     .map(w => ({ ...w, email: String(w.email).toLowerCase().trim() }));
   report.watched_addresses = addressWatches.length;
 
+  // Owner-managed content keywords (kind 3): surface ANY inbound mentioning
+  // these words, from any sender (e.g. "leak"). Stored as plain strings.
+  const keywords = (Array.isArray(settings.inbox_config?.keywords)
+    ? settings.inbox_config.keywords : [])
+    .map(k => String(k || '').trim().toLowerCase()).filter(Boolean);
+  report.keywords = keywords.length;
+  // Word-start stem match so "leak" catches leak/leaks/leaking/leaked, not "bleak".
+  const keywordRe = keywords.length
+    ? new RegExp(`\\b(${keywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\w*`, 'i')
+    : null;
+
   // One query for the gated domains + one per watch address, so senders never
   // compete for the same result page. A failed query logs and moves on rather
   // than killing the whole run.
@@ -126,6 +151,17 @@ export async function runGmailWatchFeeder({ tenantSlug = PLUS_ULTRA_SLUG, lookba
   }
   for (const w of addressWatches) {
     queries.push(`from:${w.email} newer_than:${lookbackDays}d`);
+  }
+  // Content-keyword lane: one combined query across all senders, excluding our
+  // own outbound and bulk categories so it stays high-signal.
+  if (keywords.length) {
+    const kwOr = keywords.map(k => `"${k}"`).join(' OR ');
+    const selfNeg = [...SELF_DOMAINS, ...SELF_ADDRESSES].map(s => `-from:${s}`).join(' ');
+    // -in:sent kills our own outbound regardless of which alias sent it.
+    // promotions/social negated (clear bulk); updates is NOT negated -- a
+    // web-form / portal "roof is leaking" notice often lands there and a leak
+    // must never be filtered out.
+    queries.push(`(${kwOr}) ${selfNeg} -in:sent -category:promotions -category:social newer_than:${lookbackDays}d`);
   }
 
   const messages = [];
@@ -159,6 +195,11 @@ export async function runGmailWatchFeeder({ tenantSlug = PLUS_ULTRA_SLUG, lookba
         // surfaced (skips routine receipts + successful-payout notices).
         if (!SURFACE_KEYWORDS.test(`${m.subject || ''} ${m.snippet || ''}`)) { report.skipped++; continue; }
         kind = 'domain';
+      } else if (keywordRe && !isSelf(fromEmail) && keywordRe.test(`${m.subject || ''} ${m.snippet || ''}`)) {
+        // Re-verify against subject + snippet (Gmail matched full body; snippet
+        // is a body preview, so a keyword buried deep in a long body can be
+        // missed here -- accepted to avoid mis-attributing non-keyword mail).
+        kind = 'keyword';
       } else {
         report.skipped++; continue;
       }
@@ -178,13 +219,21 @@ export async function runGmailWatchFeeder({ tenantSlug = PLUS_ULTRA_SLUG, lookba
       if (existing) { report.skipped++; continue; }
 
       const subject = (m.subject || '(no subject)').trim();
-      const urgency = classifyUrgency(`${subject} ${m.snippet || ''}`);
+      // A keyword hit (e.g. "leak") is an urgent callback by definition.
+      const urgency = kind === 'keyword' ? 'high' : classifyUrgency(`${subject} ${m.snippet || ''}`);
+      const kwMatch = kind === 'keyword'
+        ? (keywordRe.exec(`${subject} ${m.snippet || ''}`)?.[0] || keywords[0])
+        : null;
       const contactName = kind === 'watch'
         ? (fromName || watchHit.match || watchHit.email)
-        : (fromName || 'Stripe');
+        : kind === 'keyword'
+          ? (fromName || fromEmail)
+          : (fromName || 'Stripe');
       const notifyReason = kind === 'watch'
         ? `watching ${contactName}${watchHit.note ? ` (${watchHit.note})` : ''}`
-        : `${contactName}: ${subject}`;
+        : kind === 'keyword'
+          ? `"${kwMatch}" mention from ${contactName}: ${subject}`
+          : `${contactName}: ${subject}`;
 
       const insertRow = {
         tenant_id: tenant.id,
@@ -196,8 +245,8 @@ export async function runGmailWatchFeeder({ tenantSlug = PLUS_ULTRA_SLUG, lookba
         last_message_at: safeIso(m.date),
         last_message_id: m.id,
         state_hash: stateHash,
-        summary: `${kind === 'watch' ? 'Watched email' : 'Stripe email'} from ${contactName}: ${subject}`.slice(0, 500),
-        category: kind === 'watch' ? 'other' : 'finance',
+        summary: `${kind === 'watch' ? 'Watched email' : kind === 'keyword' ? 'Keyword email' : 'Stripe email'} from ${contactName}: ${subject}`.slice(0, 500),
+        category: kind === 'domain' ? 'finance' : 'other',
         urgency,
         notify: true,                         // surfaced = watched -> ping
         notify_reason: notifyReason.slice(0, 160),
