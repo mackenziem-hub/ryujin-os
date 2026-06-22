@@ -1621,6 +1621,22 @@ h1,h2,h3{font-family:'Montserrat',sans-serif;letter-spacing:-0.02em;text-wrap:ba
       return out;
     })();
 
+    // Touch-6 leak fix: the nurture's Material package field is populated from the
+    // estimator values written on the contact at CREATION, and Touch 6 skips when
+    // it is blank. The warm quote (prefetched on step-4 entry) is usually already
+    // current, but a stale quote (user edited via Back, so lastQuoteKey !== curKey)
+    // or an unlanded warm would ship estimator:null and blank the package. Ensure
+    // the quote matches the current inputs BEFORE capture so the package rides
+    // along on creation. Bounded by runCompareQuote's own AbortController and
+    // caught: if the quote still cannot be computed we capture without it, so a
+    // lead is never lost to a quote hiccup (the original phone-first guarantee).
+    if (lastQuoteKey !== curKey) {
+      try {
+        if (prefetchPromise) await prefetchPromise;
+        if (lastQuoteKey !== curKey) await runCompareQuote(measurements);
+      } catch (e) { /* quote unavailable; capture without estimator below */ }
+    }
+
     const leadPayload = {
       source: 'instant-estimator-v3',
       name: state.name,
