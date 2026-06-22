@@ -19,7 +19,7 @@ const USER_MAP = {
 };
 
 // Mackenzie's own contact ID for general tasks not tied to a client
-const MACKENZIE_CONTACT_ID = '02IhxZfSwZZAZ2fooVGu';
+const MACKENZIE_CONTACT_ID = 'jadj4Jgz8WE9gqheoFeX';
 
 async function checkAuth(req) {
   // A real session (DB-backed portal session OR RYUJIN_SERVICE_TOKEN via

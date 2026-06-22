@@ -767,7 +767,7 @@ async function handler(req, res) {
         await fetch('https://services.leadconnectorhq.com/hooks/' + (process.env.AUTOMATOR_HOOK_ID || ''), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contactId: '02IhxZfSwZZAZ2fooVGu', message: msg })
+          body: JSON.stringify({ contactId: 'jadj4Jgz8WE9gqheoFeX', message: msg })
         }).catch(() => {});
       }
     } catch {}

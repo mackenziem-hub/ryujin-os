@@ -12,7 +12,7 @@
 import { supabaseAdmin } from '../lib/supabase.js';
 
 const GHL_BASE = 'https://services.leadconnectorhq.com';
-const MACKENZIE_CONTACT = '02IhxZfSwZZAZ2fooVGu';
+const MACKENZIE_CONTACT = 'jadj4Jgz8WE9gqheoFeX';
 
 // Best-effort SMS to Mac (mirrors paysheet-accept). Degrades silently if the
 // GHL token is missing/expired - never blocks the decision.

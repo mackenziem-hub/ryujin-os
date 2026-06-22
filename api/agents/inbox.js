@@ -31,7 +31,7 @@ import { sendEmail } from '../../lib/email.js';
 const PLUS_ULTRA_SLUG = 'plus-ultra';
 const RYUJIN_BASE = 'https://ryujin-os.vercel.app';
 const INBOX_URL = `${RYUJIN_BASE}/inbox.html`;
-const MACKENZIE_CONTACT_ID = '02IhxZfSwZZAZ2fooVGu'; // GHL contact for the owner SMS digest
+const MACKENZIE_CONTACT_ID = 'jadj4Jgz8WE9gqheoFeX'; // GHL contact for the owner SMS digest
 const CLAUDE_MODEL = 'claude-sonnet-4-6';
 
 // Only triage conversations whose last message landed within this window.

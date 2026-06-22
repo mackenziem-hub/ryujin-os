@@ -13,7 +13,7 @@ import { snapshotHeaders } from '../../lib/snapshotClient.js';
 const GHL_BASE = 'https://services.leadconnectorhq.com';
 const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
 const GHL_VERSION = '2021-07-28';
-const MACKENZIE_CONTACT_ID = '02IhxZfSwZZAZ2fooVGu';
+const MACKENZIE_CONTACT_ID = 'jadj4Jgz8WE9gqheoFeX';
 
 const WATCHDOG_BLOB_KEY = 'ryujin-watchdog-state.json';
 const LEGACY_WATCHDOG_BLOB_KEY = 'shenron-watchdog-state.json';
