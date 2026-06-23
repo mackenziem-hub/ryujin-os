@@ -1,13 +1,11 @@
-// Ryujin OS — Invoice PDF Renderer
+// Ryujin OS — Warranty PDF Renderer
 //
-// GET /api/invoice-pdf?token=<shareToken>[&download=<filename.pdf>]
+// GET /api/warranty-pdf?token=<invoice shareToken>[&download=<filename.pdf>]
 //
-// Renders the public invoice page (/invoice-view.html?token=...) via headless
-// Chromium and streams back a clean PDF. The invoice page is token-driven and
-// fetches its own data, so this just drives it. Light document (no heavy images),
-// so no sharp optimization step is needed. Mirrors api/page-pdf.js.
-//
-// Public endpoint — the share token is the auth (same posture as the page).
+// Renders the public warranty page (/warranty-view.html?token=...) via headless
+// Chromium and streams back a clean PDF. The page is token-driven and pulls its
+// customer + date from the invoice, so this just drives it. Mirrors
+// api/invoice-pdf.js. Public endpoint — the share token is the auth.
 
 import chromium from '@sparticuz/chromium';
 import puppeteer from 'puppeteer-core';
@@ -23,11 +21,10 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'valid token required' });
   }
 
-  // Sanitize download filename to block header injection / path traversal
   const downloadRaw = String(req.query.download || '').trim();
   const downloadName = (downloadRaw && /^[\w\-. ]{1,120}\.pdf$/i.test(downloadRaw))
     ? downloadRaw
-    : 'invoice.pdf';
+    : 'warranty.pdf';
 
   let browser;
   try {
@@ -39,8 +36,7 @@ export default async function handler(req, res) {
     });
 
     const page = await browser.newPage();
-    // pdf=1 so the page can suppress the open beacon during a render if it wants.
-    const url = `${RYUJIN_BASE}/invoice-view.html?token=${encodeURIComponent(token)}&pdf=1`;
+    const url = `${RYUJIN_BASE}/warranty-view.html?token=${encodeURIComponent(token)}&pdf=1`;
     await page.goto(url, { waitUntil: 'networkidle0', timeout: 45000 });
 
     // The page fetches its own data; give the render a beat to populate.
@@ -74,7 +70,7 @@ export default async function handler(req, res) {
     return res.status(200).send(Buffer.from(pdf));
   } catch (err) {
     if (browser) { try { await browser.close(); } catch (_) { /* ignore */ } }
-    console.error('[invoice-pdf] render failed', err?.message);
+    console.error('[warranty-pdf] render failed', err?.message);
     return res.status(500).json({ error: 'PDF render failed', detail: err?.message || String(err) });
   }
 }

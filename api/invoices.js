@@ -98,6 +98,30 @@ async function nextSeq(tenantId) {
   return max + 1;
 }
 
+// Resolve the customer-facing job-photo gallery URL for a customer. The gallery
+// (photos-share.html) is keyed to a project share_token and unions
+// estimate_photos + project_files for that customer, so any project belonging to
+// the customer surfaces the whole job's photos. Returns null when the customer
+// has no project with a live share_token (button simply won't render).
+async function resolvePhotoShareUrl(tenantId, customerId) {
+  if (!customerId) return null;
+  try {
+    const { data } = await supabaseAdmin
+      .from('projects')
+      .select('share_token, created_at')
+      .eq('tenant_id', tenantId)
+      .eq('customer_id', customerId)
+      .not('share_token', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!data || !data.share_token) return null;
+    return `${APP_BASE}/photos-share.html?share=${encodeURIComponent(data.share_token)}`;
+  } catch {
+    return null; // a gallery-link lookup hiccup must never block invoice creation
+  }
+}
+
 // proposal_blocks row -> the invoice object the frontend speaks
 function toInvoice(row) {
   const c = (row.content && typeof row.content === 'object') ? row.content : {};
@@ -247,7 +271,7 @@ export default async function handler(req, res) {
       `View and pay: ${link}`,
       ``,
       `Payment options are on the invoice (e-transfer, cheque, cash, financing, or card).`,
-      `Questions? Call or text (506) 540-1052.`,
+      `Questions? Call or text (506) 616-4607.`,
       ``,
       `Thank you,`,
       `Plus Ultra Roofing`,
@@ -275,14 +299,24 @@ export default async function handler(req, res) {
 
     if (b.estimateId) {
       const { data: est, error: estErr } = await supabaseAdmin.from('estimates')
-        .select('id, tenant_id, estimate_number, final_accepted_total, deposit_amount, deposit_status, selected_package, calculated_packages, customer:customers(full_name, address, city, email, phone, ghl_contact_id)')
+        .select('id, tenant_id, estimate_number, customer_id, final_accepted_total, deposit_amount, deposit_status, selected_package, calculated_packages, customer:customers(full_name, address, city, email, phone, ghl_contact_id)')
         .eq('id', b.estimateId).eq('tenant_id', tenantId).maybeSingle();
       if (estErr) return res.status(500).json({ error: estErr.message });
       if (!est) return res.status(404).json({ error: 'estimate_not_found' });
       const pkgs = (est.calculated_packages && typeof est.calculated_packages === 'object') ? est.calculated_packages : {};
       const tierKey = est.selected_package || 'gold';
       const pkg = pkgs[tierKey] || {};
-      const preTax = round2(Number(est.final_accepted_total) || Number(pkg.total) || Number(pkg.summary?.sellingPrice) || 0);
+      // The deal is an all-in (tax-INCLUSIVE) agreed total: estimates store it in
+      // final_accepted_total / summary.totalWithTax (e.g. $7,500 even). The line
+      // item is PRE-TAX and recomputeTotals adds HST once, so derive pre-tax from
+      // the all-in total -> the invoice total matches the agreed number exactly.
+      // (sellingPrice is pre-tax but the rounding lives on the all-in total, so
+      // rebuilding from it drifts a few cents; using the incl total as pre-tax was
+      // double-taxing every estimate-built invoice.)
+      const inclTotal = round2(Number(est.final_accepted_total) || Number(pkg.summary?.totalWithTax) || 0);
+      const preTax = inclTotal > 0
+        ? round2(inclTotal / (1 + (Number(taxRate) || 0)))
+        : round2(Number(pkg.summary?.sellingPrice) || Number(pkg.total) || 0);
       const depositCents = Number(est.deposit_amount) || 0;
       const depositApplied = est.deposit_status === 'cleared' ? round2(depositCents / 100) : 0;
       const cust = est.customer || {};
@@ -293,8 +327,10 @@ export default async function handler(req, res) {
         property: cust.address || '',
         taxRate,
         depositApplied,
+        photoShareUrl: await resolvePhotoShareUrl(tenantId, est.customer_id),
+        terms: ['Scope and any additional work are per the accepted proposal.'],
         lineItems: [{
-          name: `${titleCase(tierKey)} · Roof Replacement`,
+          name: `${titleCase(tierKey)} - Roof Replacement`,
           desc: '',
           price: preTax, qty: 1, taxable: true,
         }],
@@ -309,6 +345,7 @@ export default async function handler(req, res) {
         property: b.property || cust.address || '',
         taxRate,
         depositApplied: round2(b.depositApplied || 0),
+        photoShareUrl: typeof b.photoShareUrl === 'string' ? b.photoShareUrl : null,
         lineItems: Array.isArray(b.lineItems) && b.lineItems.length
           ? b.lineItems.map((li) => ({ name: String(li.name || ''), desc: String(li.desc || ''), price: Number(li.price) || 0, qty: Number(li.qty) || 1, taxable: li.taxable !== false }))
           : [{ name: '', desc: '', price: 0, qty: 1, taxable: true }],
@@ -367,6 +404,10 @@ export default async function handler(req, res) {
     }
     if (b.depositApplied != null) c.depositApplied = round2(b.depositApplied);
     if (b.paymentOptions && typeof b.paymentOptions === 'object') c.paymentOptions = { ...c.paymentOptions, ...b.paymentOptions };
+    // Photo-gallery link: set to a string, or pass null/'' to clear it.
+    if (b.photoShareUrl !== undefined) c.photoShareUrl = (typeof b.photoShareUrl === 'string' && b.photoShareUrl.trim()) ? b.photoShareUrl.trim() : null;
+    // Terms & Notes: replace with the given array (empty array clears them).
+    if (Array.isArray(b.terms)) c.terms = b.terms.map((t) => String(t || '')).filter((t) => t.trim());
     recomputeTotals(c);
 
     // Mark paid (also records a manual payment ledger row — non-fatal if it fails).
