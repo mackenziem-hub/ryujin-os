@@ -52,22 +52,34 @@ export async function buildAdFunnel(tenantId, base, headers, days = 30) {
   if (lErr) throw new Error('leads: ' + lErr.message);
 
   // 2. Meta spend (durable per-ad/day table) over the same window.
+  const today = new Date().toISOString().slice(0, 10);
   const { data: mi, error: mErr } = await supabaseAdmin
     .from('meta_insights')
     .select('spend_cents')
     .eq('tenant_id', tenantId)
     .eq('level', 'ad')
     .gte('date_start', since)
+    .lte('date_start', today)
     .limit(20000);
   if (mErr) throw new Error('meta_insights: ' + mErr.message);
   const metaSpend = r2((mi || []).reduce((s, m) => s + (m.spend_cents || 0), 0) / 100);
 
   // 3. Snapshot for Google spend (30d rollup) + current pipeline opportunities.
+  // snapshot.googleAds is a FIXED 30d rollup, so it is only meaningful when the
+  // cohort window is also 30d. Null it out for any other window rather than
+  // report a 30d spend against a 7d or 90d lead cohort.
   const snap = await fetch(`${base}/api/snapshot`, { headers }).then((r) => r.json()).catch(() => null);
-  const googleSpend = r2(snap?.sections?.googleAds?.totals30d?.spend || 0);
+  const googleSpend = days === 30 ? r2(snap?.sections?.googleAds?.totals30d?.spend || 0) : null;
 
-  const pipe = await fetch(`${base}/api/ghl?mode=pipeline&limit=1000`, { headers }).then((r) => r.json()).catch(() => null);
-  const opps = pipe?.opportunities || [];
+  // The booked/signed join is the core metric. If the pipeline fetch fails we
+  // FAIL LOUD (throw -> 500 + cron alert) rather than emit a confidently-zero
+  // funnel that reads as "nothing booked." clean=1 test-filters + dedupes by
+  // contact identity so Cat's test personas do not inflate booked/signed counts.
+  const pipe = await fetch(`${base}/api/ghl?mode=pipeline&clean=1&limit=1000`, { headers }).then((r) => r.json()).catch(() => null);
+  if (!pipe || !Array.isArray(pipe.opportunities)) {
+    throw new Error('pipeline fetch failed or returned no opportunities array (cannot compute booked without it)');
+  }
+  const opps = pipe.opportunities;
 
   // Best outcome per contact across their opportunities.
   const outcome = new Map(); // contactId -> { booked, signed }
@@ -112,7 +124,7 @@ export async function buildAdFunnel(tenantId, base, headers, days = 30) {
     };
   }
 
-  const totalSpend = r2(metaSpend + googleSpend);
+  const totalSpend = r2(metaSpend + (googleSpend || 0));
   const totalLeads = Object.values(chan).reduce((a, b) => a + b.leads, 0);
   const totalBooked = Object.values(chan).reduce((a, b) => a + b.booked, 0);
   const totalSigned = Object.values(chan).reduce((a, b) => a + b.signed, 0);
@@ -147,6 +159,14 @@ export default async function handler(req, res) {
       .from('tenants').select('id').eq('slug', slug).maybeSingle();
     if (tErr) throw new Error('tenant lookup: ' + tErr.message);
     if (!ten) return res.status(404).json({ error: `tenant not found: ${slug}` });
+
+    // The booked/signed join reads /api/ghl + /api/snapshot, both hardwired to
+    // Plus Ultra's GHL location (api/ghl.js LOCATION_ID) and x-tenant-id
+    // (lib/snapshotClient.js). Until that path is tenant-aware, refuse other
+    // tenants rather than join tenant X's leads against Plus Ultra's pipeline.
+    if (slug !== 'plus-ultra') {
+      return res.status(400).json({ error: 'ad-funnel is plus-ultra-only until the GHL pipeline + snapshot self-calls are tenant-scoped' });
+    }
 
     const days = Math.min(Math.max(parseInt(req.query?.days || '30', 10) || 30, 1), 365);
     const base = `https://${req.headers.host || 'ryujin-os.vercel.app'}`;
