@@ -1,7 +1,8 @@
 // Ryujin OS  POST /api/send-email
 //
-// Outbound transactional email. Sends via Gmail SMTP using the From: address
-// configured in env (GMAIL_USER). Auth-gated by requireCronOrOwner: only the
+// Outbound transactional email. Sends via the Gmail API (lib/email.js, which
+// wraps gmailSend / OAuth). A `from` only sticks if it is a verified send-as
+// alias on the Gmail account. Auth-gated by requireCronOrOwner: only the
 // Vercel cron secret or an owner/admin session can call this.
 //
 // Body:
