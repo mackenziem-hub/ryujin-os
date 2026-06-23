@@ -129,25 +129,38 @@ async function findByToken(token) {
   return data || null;
 }
 
-async function maybeNotifyOpen(row) {
+// Record an open and, on the FIRST open only, email the owner. A single
+// conditional update (filtered on notifiedOpen=false) both persists the open
+// AND atomically claims the email, so concurrent opens never double-send and
+// the open-tracking write is never clobbered by a separate stale write.
+async function recordOpen(row) {
   const c = row.content || {};
-  if (c.notifiedOpen) return;
-  // Claim the flag atomically so concurrent opens don't double-notify.
-  const claim = { ...c, notifiedOpen: true };
-  const { data: claimed } = await supabaseAdmin
-    .from('proposal_blocks')
-    .update({ content: claim })
-    .eq('id', row.id)
-    .is('content->notifiedOpen', null)
-    .select('id');
-  if (!claimed || claimed.length === 0) return;
+  const nowIso = new Date().toISOString();
+  const firstOpen = !c.notifiedOpen;
+  const patch = { ...c };
+  patch.viewedAt = patch.viewedAt || nowIso;
+  if (patch.status === 'sent') patch.status = 'viewed';
+  patch.history = [...(Array.isArray(c.history) ? c.history : []), { at: nowIso, event: 'opened' }];
+
+  let claimed = true;
+  if (firstOpen) {
+    patch.notifiedOpen = true;
+    const { data } = await supabaseAdmin.from('proposal_blocks')
+      .update({ content: patch }).eq('id', row.id)
+      .eq('content->notifiedOpen', false).select('id');
+    claimed = !!(data && data.length);
+  } else {
+    await supabaseAdmin.from('proposal_blocks').update({ content: patch }).eq('id', row.id).then(() => {}, () => {});
+  }
+  if (!(firstOpen && claimed)) return;
+
   const subject = `INVOICE OPENED · ${c.customer?.name || 'Customer'} · ${c.number || ''}`.trim();
   const lines = [
     `${c.customer?.name || 'A customer'} just opened invoice ${c.number || ''} for the first time.`,
     ``,
     `Property:    ${c.property || c.customer?.address || '—'}`,
     `Balance due: $${Number(c.balanceDue || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
-    `Opened:      ${new Date().toISOString()}`,
+    `Opened:      ${nowIso}`,
     ``,
     `View: ${APP_BASE}/invoice-view.html?token=${c.shareToken}`,
     `— Ryujin OS`,
@@ -172,12 +185,7 @@ export default async function handler(req, res) {
       details: { number: c.number || null, share_token: c.shareToken || null, at: new Date().toISOString() },
     }).then(() => {}, () => {});
     if (req.query.event === 'opened') {
-      const patch = { ...c };
-      patch.viewedAt = patch.viewedAt || new Date().toISOString();
-      if (patch.status === 'sent') patch.status = 'viewed';
-      patch.history = [...(Array.isArray(c.history) ? c.history : []), { at: new Date().toISOString(), event: 'opened' }];
-      await supabaseAdmin.from('proposal_blocks').update({ content: patch }).eq('id', row.id).then(() => {}, () => {});
-      await maybeNotifyOpen(row).catch(() => {});
+      await recordOpen(row).catch(() => {});
     }
     return res.status(204).end();
   }
@@ -244,9 +252,10 @@ export default async function handler(req, res) {
       `Thank you,`,
       `Plus Ultra Roofing`,
     ].join('\n');
-    const result = await gmailSend(to, subject, body);
-    if (!result || result.ok === false) {
-      return res.status(502).json({ error: 'send_failed', detail: result?.error || 'unknown' });
+    try {
+      await gmailSend(to, subject, body); // resolves on 2xx, throws on send failure
+    } catch (e) {
+      return res.status(502).json({ error: 'send_failed', detail: e?.message || 'unknown' });
     }
     const patch = { ...c };
     patch.status = patch.status === 'paid' ? 'paid' : 'sent';
@@ -360,8 +369,10 @@ export default async function handler(req, res) {
     if (b.paymentOptions && typeof b.paymentOptions === 'object') c.paymentOptions = { ...c.paymentOptions, ...b.paymentOptions };
     recomputeTotals(c);
 
-    // Mark paid (also records a manual payment ledger row — non-fatal if it fails)
-    if (b.markPaid) {
+    // Mark paid (also records a manual payment ledger row — non-fatal if it fails).
+    // Only act on the transition into paid so a double-click can't double-insert.
+    const wasPaid = (row.content || {}).status === 'paid';
+    if (b.markPaid && !wasPaid) {
       const nowIso = new Date().toISOString();
       c.status = 'paid';
       c.paidAt = nowIso;
