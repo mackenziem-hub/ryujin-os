@@ -78,6 +78,11 @@ const DECKS = {
     title: 'Ryujin · The AI Layer',
     desc: 'The full AI capability map, inventoried against the live code and adversarially verified: the agentic toolchain that builds Ryujin, the in-product intelligence that runs the business, and an honest live vs in-progress split across 7 domains.',
   },
+  'team-os': {
+    tenant: 'plus-ultra', tag: 'Operations', slides: 9,
+    title: 'Plus Ultra · The Team Operating System',
+    desc: 'The whole-team roles and responsibilities system: who owns what across the crew, the Martell Buy-Back engine, the replacement ladder, and the SOP plus script library. Owner-only.',
+  },
 };
 
 export default async function handler(req, res) {
