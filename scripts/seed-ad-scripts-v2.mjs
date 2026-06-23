@@ -48,16 +48,10 @@ async function main() {
     (d.items || []).forEach((it, i) => items.push({ ...it, _sort: i }));
   }
   console.log(`loaded ${items.length} items from ${FILES.length} files`);
+  const incomingSlugs = new Set(items.map((it) => it.slug));
 
-  // 2) wipe existing adscript rows
-  const existing = await api('GET', '/api/ad-scripts');
-  const rows = existing.scripts || [];
-  console.log(`deleting ${rows.length} existing rows...`);
-  for (const row of rows) {
-    await api('DELETE', `/api/ad-scripts?id=${encodeURIComponent(row.id)}`);
-  }
-
-  // 3) seed each item with v1 + v2, v2 published
+  // 2) upsert all incoming items FIRST (POST upserts by slug), so a mid-run failure
+  //    never leaves the library half-empty. Stale rows are pruned afterward.
   let ok = 0;
   for (const it of items) {
     const body = {
@@ -77,7 +71,19 @@ async function main() {
     ok++;
     process.stdout.write(`  + ${it.group} / ${it.name}\n`);
   }
-  console.log(`\nseeded ${ok}/${items.length} items`);
+  console.log(`seeded ${ok}/${items.length} items`);
+
+  // 3) prune stale rows: anything that was there before and is NOT in the new set
+  //    (the old crammed reference entries + retired slugs). Runs only after all
+  //    POSTs succeeded, so we never delete more than we replaced.
+  const existing = await api('GET', '/api/ad-scripts');
+  const stale = (existing.scripts || []).filter((row) => !incomingSlugs.has(row.slug));
+  console.log(`pruning ${stale.length} stale rows...`);
+  for (const row of stale) {
+    await api('DELETE', `/api/ad-scripts?id=${encodeURIComponent(row.id)}`);
+    process.stdout.write(`  - ${row.name}\n`);
+  }
+  console.log('done');
 }
 
 main().catch((e) => { console.error('FAILED:', e.message); process.exit(1); });
