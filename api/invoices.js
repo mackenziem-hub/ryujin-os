@@ -271,7 +271,7 @@ export default async function handler(req, res) {
       `View and pay: ${link}`,
       ``,
       `Payment options are on the invoice (e-transfer, cheque, cash, financing, or card).`,
-      `Questions? Call or text (506) 540-1052.`,
+      `Questions? Call or text (506) 616-4607.`,
       ``,
       `Thank you,`,
       `Plus Ultra Roofing`,
@@ -306,14 +306,17 @@ export default async function handler(req, res) {
       const pkgs = (est.calculated_packages && typeof est.calculated_packages === 'object') ? est.calculated_packages : {};
       const tierKey = est.selected_package || 'gold';
       const pkg = pkgs[tierKey] || {};
-      // Line item is PRE-TAX (HST is added once by recomputeTotals). The package
-      // sellingPrice/total is the exact pre-tax figure; final_accepted_total is a
-      // tax-INCLUSIVE (and rounded) total, so only fall back to it by stripping
-      // the tax. Using it directly was double-taxing every estimate-built invoice.
-      const sellingPreTax = round2(Number(pkg.summary?.sellingPrice) || Number(pkg.total) || 0);
-      const preTax = sellingPreTax > 0
-        ? sellingPreTax
-        : round2((Number(est.final_accepted_total) || 0) / (1 + (Number(taxRate) || 0)));
+      // The deal is an all-in (tax-INCLUSIVE) agreed total: estimates store it in
+      // final_accepted_total / summary.totalWithTax (e.g. $7,500 even). The line
+      // item is PRE-TAX and recomputeTotals adds HST once, so derive pre-tax from
+      // the all-in total -> the invoice total matches the agreed number exactly.
+      // (sellingPrice is pre-tax but the rounding lives on the all-in total, so
+      // rebuilding from it drifts a few cents; using the incl total as pre-tax was
+      // double-taxing every estimate-built invoice.)
+      const inclTotal = round2(Number(est.final_accepted_total) || Number(pkg.summary?.totalWithTax) || 0);
+      const preTax = inclTotal > 0
+        ? round2(inclTotal / (1 + (Number(taxRate) || 0)))
+        : round2(Number(pkg.summary?.sellingPrice) || Number(pkg.total) || 0);
       const depositCents = Number(est.deposit_amount) || 0;
       const depositApplied = est.deposit_status === 'cleared' ? round2(depositCents / 100) : 0;
       const cust = est.customer || {};
@@ -325,8 +328,9 @@ export default async function handler(req, res) {
         taxRate,
         depositApplied,
         photoShareUrl: await resolvePhotoShareUrl(tenantId, est.customer_id),
+        terms: ['Scope and any additional work are per the accepted proposal.'],
         lineItems: [{
-          name: `${titleCase(tierKey)} · Roof Replacement`,
+          name: `${titleCase(tierKey)} - Roof Replacement`,
           desc: '',
           price: preTax, qty: 1, taxable: true,
         }],
@@ -402,6 +406,8 @@ export default async function handler(req, res) {
     if (b.paymentOptions && typeof b.paymentOptions === 'object') c.paymentOptions = { ...c.paymentOptions, ...b.paymentOptions };
     // Photo-gallery link: set to a string, or pass null/'' to clear it.
     if (b.photoShareUrl !== undefined) c.photoShareUrl = (typeof b.photoShareUrl === 'string' && b.photoShareUrl.trim()) ? b.photoShareUrl.trim() : null;
+    // Terms & Notes: replace with the given array (empty array clears them).
+    if (Array.isArray(b.terms)) c.terms = b.terms.map((t) => String(t || '')).filter((t) => t.trim());
     recomputeTotals(c);
 
     // Mark paid (also records a manual payment ledger row — non-fatal if it fails).

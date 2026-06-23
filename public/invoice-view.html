@@ -258,7 +258,7 @@ a:hover{text-decoration:underline}
           </div>
         </div>
         <div class="contact">
-          <b>(506) 540-1052</b><br>
+          <b>(506) 616-4607</b><br>
           2-6 McDowell Ave, Riverview, NB E1B 4A4<br>
           <a href="https://plusultraroofing.com">plusultraroofing.com</a>
         </div>
@@ -341,7 +341,7 @@ a:hover{text-decoration:underline}
           </div>
           <div class="pm">
             <div class="pm-h"><span class="pm-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16v12H4z"/><path d="M4 10h16"/><path d="M8 15h4"/></svg></span><span class="pm-t">Cheque</span></div>
-            <div class="pm-b">Make payable to <b>Plus Ultra Roofing</b>. Drop off or mail to 2-6 McDowell Ave, Riverview, NB E1B 4A4.</div>
+            <div class="pm-b">Make payable to <b>Plus Ultra Roofing</b>. Let us know when it is ready and we will pick it up.</div>
           </div>
           <div class="pm">
             <div class="pm-h"><span class="pm-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/></svg></span><span class="pm-t">Cash</span></div>
@@ -362,15 +362,13 @@ a:hover{text-decoration:underline}
       <div class="terms">
         <h4>Terms &amp; Notes</h4>
         <ul id="termsList">
-          <li>Scope: Gold · Landmark roof replacement. Proposal: <a href="https://plusultraroofing.com/200-Lonsdale-Roof-Proposal">plusultraroofing.com/200-Lonsdale-Roof-Proposal</a>.</li>
-          <li>First 2 sheets of rotten wood are included. Any additional wood beyond that is confirmed separately before it is added.</li>
-          <li>Deposit, balance, and any additional wood are reconciled on the final invoice after the site check.</li>
+          <li>Scope and any additional work are per the accepted proposal.</li>
         </ul>
       </div>
 
       <div class="thanks">
         <div class="t">Thank you for choosing Plus Ultra Roofing.</div>
-        <div class="s">Questions about this invoice? Call or text (506) 540-1052.</div>
+        <div class="s">Questions about this invoice? Call or text (506) 616-4607.</div>
       </div>
 
       <div class="foot" id="foot">Plus Ultra Roofing · Generated June 23, 2026</div>
@@ -399,6 +397,24 @@ a:hover{text-decoration:underline}
     return mo + ' ' + Number(p[2]) + ', ' + p[0];
   }
   function set(id,v){ var el=document.getElementById(id); if(el) el.textContent=v; }
+  // Build an <li> from a term string, turning http(s) and bare-domain URLs into
+  // safe anchors (text nodes + created elements only, never innerHTML).
+  function linkify(text){
+    var li = document.createElement('li');
+    var re = /(https?:\/\/[^\s]+|(?:www\.|[a-z0-9-]+\.)[a-z]{2,}(?:\/[^\s]*)?)/gi;
+    var last = 0, m;
+    while((m = re.exec(text)) !== null){
+      if(m.index > last) li.appendChild(document.createTextNode(text.slice(last, m.index)));
+      var raw = m[0];
+      var href = /^https?:\/\//i.test(raw) ? raw : 'https://' + raw;
+      var a = document.createElement('a');
+      a.href = href; a.target = '_blank'; a.rel = 'noopener'; a.textContent = raw;
+      li.appendChild(a);
+      last = m.index + raw.length;
+    }
+    if(last < text.length) li.appendChild(document.createTextNode(text.slice(last)));
+    return li;
+  }
 
   function render(inv){
     var STATUS = {
@@ -459,6 +475,20 @@ a:hover{text-decoration:underline}
       var safe = typeof pu === 'string' && (/^https?:\/\//i.test(pu) || pu.charAt(0) === '/');
       if(safe){ photoCta.href = pu; photoCta.style.display=''; }
       else photoCta.style.display='none';
+    }
+
+    // Terms & Notes: per-invoice from inv.terms; hide the block if there are none.
+    var termsList = document.getElementById('termsList');
+    if(termsList){
+      var termsBlk = termsList.closest ? termsList.closest('.terms') : null;
+      var terms = Array.isArray(inv.terms) ? inv.terms.filter(function(t){ return String(t||'').trim(); }) : null;
+      if(terms && terms.length){
+        termsList.innerHTML = '';
+        terms.forEach(function(t){ termsList.appendChild(linkify(String(t))); });
+        if(termsBlk) termsBlk.style.display='';
+      } else if(terms){ // explicit empty array -> hide
+        if(termsBlk) termsBlk.style.display='none';
+      } // null (older invoices) -> keep static sample
     }
 
     var po = inv.paymentOptions || {};
