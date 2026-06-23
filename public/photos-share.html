@@ -50,7 +50,17 @@ header{padding:24px 0 18px}
 .count-line{
   color:var(--ink-muted);font-size:0.84em;letter-spacing:0.5px;text-transform:uppercase;
   font-weight:600;margin-bottom:12px;
+  display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
 }
+.dlall{
+  display:inline-flex;align-items:center;gap:7px;cursor:pointer;
+  font-family:'Inter',sans-serif;font-size:0.82rem;font-weight:700;letter-spacing:0.02em;text-transform:none;
+  color:#fff;background:var(--accent);border:none;padding:9px 15px;border-radius:9px;
+  box-shadow:var(--shadow-sm);transition:transform .15s cubic-bezier(.2,.8,.2,1),opacity .15s;
+}
+.dlall:hover{transform:translateY(-1px)}
+.dlall svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2.2}
+.dlall:disabled{opacity:0.6;cursor:default;transform:none}
 
 /* Grid */
 .gallery{
@@ -235,13 +245,22 @@ async function load(){
       <h1>${esc(project.name || 'Your project')}</h1>
       ${sub ? `<div class="sub">${esc(sub)}</div>` : ''}
     </div>
-    <div class="count-line">${files.length} photo${files.length === 1 ? '' : 's'}</div>
+    <div class="count-line">
+      <span>${files.length} photo${files.length === 1 ? '' : 's'}</span>
+      ${files.length > 1 ? `<button id="dlAll" class="dlall" type="button"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span id="dlAllLabel">Download all</span></button>` : ''}
+    </div>
     <div class="gallery" id="gallery">${gridHtml}</div>
   `;
+
+  galleryFiles = files;
+  galleryProjectName = project.name || 'plus-ultra-roof';
 
   document.getElementById('gallery').querySelectorAll('.photo').forEach(el => {
     el.addEventListener('click', () => openLightbox(parseInt(el.dataset.idx, 10), files));
   });
+
+  const dlAllBtn = document.getElementById('dlAll');
+  if (dlAllBtn) dlAllBtn.addEventListener('click', downloadAll);
 
   // Fire-and-forget event — also triggers the first-open notify on the server
   // (already handled by /api/projects?share=X first-touch tag write).
@@ -256,6 +275,9 @@ async function load(){
 
 let lbIdx = -1;
 let lbFiles = [];
+let galleryFiles = [];
+let galleryProjectName = '';
+let jszipReady = null;
 function openLightbox(i, files){
   lbFiles = files;
   lbIdx = i;
@@ -352,6 +374,71 @@ async function downloadCurrent(){
     window.open(f.url, '_blank', 'noopener');
   } finally {
     if (btn) btn.classList.remove('busy');
+  }
+}
+
+function loadJSZip(){
+  if (window.JSZip) return Promise.resolve();
+  if (jszipReady) return jszipReady;
+  jszipReady = new Promise(function(resolve, reject){
+    var s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+    s.integrity = 'sha512-XMVd28F1oH/O71fzwBnV7HucLxVwtxf26XV8P4wPk26EDxuGZ91N8bsOttmnomcCD3CS5ZMRL50H0GgOHvegtg==';
+    s.crossOrigin = 'anonymous';
+    s.onload = function(){ resolve(); };
+    s.onerror = function(){ jszipReady = null; reject(new Error('zip-load-failed')); };
+    document.head.appendChild(s);
+  });
+  return jszipReady;
+}
+
+async function downloadAll(){
+  const btn = document.getElementById('dlAll');
+  const label = document.getElementById('dlAllLabel');
+  const files = galleryFiles;
+  if (!files.length || (btn && btn.disabled)) return;
+  const setLabel = (t) => { if (label) label.textContent = t; };
+  if (btn) btn.disabled = true;
+  try {
+    setLabel('Preparing...');
+    await loadJSZip();
+    const zip = new JSZip();
+    let ok = 0;
+    for (let i = 0; i < files.length; i++){
+      const f = files[i];
+      if (!f || !f.url) continue;
+      setLabel(`Zipping ${i + 1} of ${files.length}...`);
+      try {
+        const resp = await fetch(f.url, { mode: 'cors' });
+        if (!resp.ok) continue;
+        const blob = await resp.blob();
+        const ext = (f.mime_type && f.mime_type.split('/')[1])
+          || (String(f.url).split('?')[0].split('.').pop()) || 'jpg';
+        let base = (f.filename && f.filename.replace(/\.[^.]+$/, ''))
+          || (f.caption || 'photo').replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase()
+          || 'photo';
+        zip.file(`${String(i + 1).padStart(2, '0')}-${base}.${ext}`, blob);
+        ok++;
+      } catch (e){ /* skip a file that fails, keep going */ }
+    }
+    if (!ok) throw new Error('no-files');
+    setLabel('Compressing...');
+    const out = await zip.generateAsync({ type: 'blob' });
+    const safeName = (galleryProjectName || 'plus-ultra-roof').replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'photos';
+    const obj = URL.createObjectURL(out);
+    const a = document.createElement('a');
+    a.href = obj;
+    a.download = `${safeName}-photos.zip`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(obj), 6000);
+    setLabel(ok < files.length ? `Downloaded ${ok} of ${files.length}` : 'Download all');
+  } catch (e){
+    setLabel('Try again');
+  } finally {
+    if (btn) btn.disabled = false;
+    setTimeout(() => setLabel('Download all'), 4000);
   }
 }
 
