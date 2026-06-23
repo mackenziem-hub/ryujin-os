@@ -753,6 +753,10 @@ async function buildFreshSnapshot() {
     // Intent Ledger write-back leg). Preserve or the hourly rebuild wipes the queue.
     'directives',
     'metaAds', 'googleAds', 'gmail', 'calendar',
+    // adFunnel: per-channel cost-per-booked rollup pushed by api/feeders/ad-funnel.js.
+    // Disjoint key (sits on top of the raw metaAds/googleAds spend dumps). Preserve
+    // or the hourly rebuild wipes it within the hour (the documented preserveKeys footgun).
+    'adFunnel',
     'briefing_morning', 'briefing_afternoon', 'briefing_evening',
     'watchdog', 'heartbeat', 'canary', 'tokenRefresh',
     'cashflow',
