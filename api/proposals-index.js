@@ -140,10 +140,11 @@ async function loadNative(tenantId) {
   // Test filter is name-only on purpose: the customers embed does not select
   // email (matching the proven snapshot query), so adding it risks a column
   // error that would regress native to zero. The name patterns catch test rows.
+  const estIdRows = []; // [{id, row}] so we can attach activity_log opens after the fetch
   try {
     const { data, error } = await supabaseAdmin
       .from('estimates')
-      .select('estimate_number, share_token, status, proposal_mode, calculated_packages, created_at, updated_at, view_count, last_viewed_at, customer:customers(full_name, address, city)')
+      .select('id, estimate_number, share_token, status, proposal_mode, calculated_packages, created_at, updated_at, customer:customers(full_name, address, city)')
       .eq('tenant_id', tenantId)
       .neq('status', 'cancelled')
       .order('updated_at', { ascending: false })
@@ -157,7 +158,7 @@ async function loadNative(tenantId) {
       const tier = cp.gold || cp.platinum || cp.diamond || null;
       const fromPrice = tier ? (tier.total ?? tier.summary?.sellingPrice ?? null) : null;
       const address = [cust.address, cust.city].filter(Boolean).join(', ');
-      out.push({
+      const row = {
         store: 'Ryujin-native',
         customer: name,
         address,
@@ -168,12 +169,36 @@ async function loadNative(tenantId) {
         openUrl: e.share_token ? ('/proposal-client.html?share=' + encodeURIComponent(e.share_token)) : null,
         ref: 'NP-' + (e.estimate_number || e.share_token),
         shareToken: e.share_token || null,
-        views: num(e.view_count) || 0,
-        lastViewedAt: e.last_viewed_at || null,
+        views: 0,
+        lastViewedAt: null,
         _nameKey: norm(name), _addrKey: addrKey(address)
-      });
+      };
+      out.push(row);
+      if (e.id) estIdRows.push({ id: e.id, row });
     }
   } catch (e) { err = 'native(estimates): ' + e.message; }
+
+  // Open-tracking lives in activity_log (one row per proposal_opened event keyed by
+  // entity_id = estimate id), NOT on the estimates table. One grouped read attaches
+  // an opens count + last-opened time per native estimate. Best-effort: a failure
+  // here must never regress the proposal list, so it is fully isolated.
+  if (estIdRows.length) {
+    try {
+      const byId = new Map(estIdRows.map(x => [x.id, x.row]));
+      const { data: ev } = await supabaseAdmin
+        .from('activity_log')
+        .select('entity_id, action, created_at')
+        .in('entity_id', estIdRows.map(x => x.id))
+        .ilike('action', '%opened%')
+        .limit(5000);
+      for (const a of (ev || [])) {
+        const row = byId.get(a.entity_id);
+        if (!row) continue;
+        row.views += 1;
+        if (!row.lastViewedAt || (a.created_at && a.created_at > row.lastViewedAt)) row.lastViewedAt = a.created_at;
+      }
+    } catch (e) { /* opens are a bonus; never break the index */ }
+  }
 
   // UNION: keep the single legacy custom_proposals row (NP-330) so nothing is lost.
   try {
