@@ -26,7 +26,7 @@ const BASE_URL = 'https://ryujin-os.vercel.app';
 // (site up, only proposals dead) or a full outage (site down too).
 const CHECKS = [
   { name: 'rewrite /p/', path: '/p/__canary__', critical: true, auth: false },
-  { name: 'legacy proposal', path: '/proposal-client.html?share=plus-ultra-77', critical: true, auth: false },
+  { name: 'legacy proposal', path: '/proposal-client.html?share=JI639ircHmr2JGEelAhJRO6eAkPBm482', critical: true, auth: false },
   { name: 'snapshot api', path: '/api/snapshot', critical: true, auth: true },
   { name: 'site /login', path: '/login.html', critical: false, auth: false },
 ];

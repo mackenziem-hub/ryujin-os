@@ -38,7 +38,7 @@ console.log(`Prod smoke vs ${BASE}\n`);
 
 // Customer-facing routes (no auth). The /p/ rewrite is the clobber canary.
 await expect200('rewrite /p/__canary__ (proposal links)', '/p/__canary__');
-await expect200('legacy proposal ?share=', '/proposal-client.html?share=plus-ultra-77');
+await expect200('legacy proposal ?share=', '/proposal-client.html?share=JI639ircHmr2JGEelAhJRO6eAkPBm482');
 await expect200('site /login', '/login.html');
 await expect200('decks panel', '/decks.html');
 await expect200('version endpoint', '/api/version');

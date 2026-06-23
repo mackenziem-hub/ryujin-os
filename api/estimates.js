@@ -10,6 +10,7 @@
 // or activity log shows client interaction), `locked_at` is set and future
 // updates are restricted. To make pricing/scope edits, create a NEW estimate
 // (revision) instead.
+import { randomBytes } from 'node:crypto';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requirePortalSessionAndTenant, isPrivileged } from '../lib/portalAuth.js';
 import { captureEstimateSnapshot } from '../lib/estimateSnapshot.js';
@@ -247,24 +248,27 @@ async function handler(req, res) {
 
     if (error) return res.status(500).json({ error: error.message });
 
-    // Generate share token. share_token is UNIQUE in the schema, so a
-    // number-based token can collide if a row already holds it (e.g. imported
-    // rows that squatted a number before migration_095). Check the update
-    // result and fall back to an id-based token instead of silently leaving
-    // the estimate without a share link while reporting one to the caller.
-    let shareToken = `${req.tenant.slug}-${data.estimate_number || data.id.slice(0, 8)}`;
+    // Generate share token. SECURITY (F7): share_token is the ONLY gate on the
+    // public /api/proposal read, so it must be an unguessable secret. A derivable
+    // token (tenant-slug + sequential estimate_number) let anyone enumerate
+    // /api/proposal?share=plus-ultra-1..N and read every customer's PII, pricing,
+    // and signed contract. Mint a 192-bit random token (base64url), matching the
+    // change-orders/invites pattern. estimate_number stays the human display id.
+    let shareToken = randomBytes(24).toString('base64url');
     let { error: tokenErr } = await supabaseAdmin
       .from('estimates')
       .update({ share_token: shareToken })
       .eq('id', data.id);
     if (tokenErr) {
-      console.error('[estimates POST] share_token persist failed, retrying id-based:', tokenErr.message);
-      shareToken = `${req.tenant.slug}-${data.id.slice(0, 8)}`;
+      // Collisions on a 192-bit token are effectively impossible, so a failure
+      // here is a transient DB error. Retry once with a fresh token.
+      console.error('[estimates POST] share_token persist failed, retrying:', tokenErr.message);
+      shareToken = randomBytes(24).toString('base64url');
       ({ error: tokenErr } = await supabaseAdmin
         .from('estimates')
         .update({ share_token: shareToken })
         .eq('id', data.id));
-      if (tokenErr) console.error('[estimates POST] id-based share_token also failed:', tokenErr.message);
+      if (tokenErr) console.error('[estimates POST] share_token retry also failed:', tokenErr.message);
     }
     data.share_token = tokenErr ? null : shareToken;
 
