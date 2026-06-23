@@ -180,8 +180,13 @@ async function loadNative(tenantId) {
 
   // Open-tracking lives in activity_log (one row per proposal_opened event keyed by
   // entity_id = estimate id), NOT on the estimates table. One grouped read attaches
-  // an opens count + last-opened time per native estimate. Best-effort: a failure
-  // here must never regress the proposal list, so it is fully isolated.
+  // a view count + last-viewed time per native estimate. View events come under
+  // MULTIPLE action names: proposal_viewed (the main page-view), proposal_opened,
+  // envelope_opened. Match both 'viewed' and 'opened' so we do not undercount or
+  // report a stale last-seen (matching only '%opened%' missed proposal_viewed and
+  // made recently-active proposals look quiet). beacon_selftest / pdf / video / tier
+  // do not contain those substrings, so a lone self-test stays 0 views. Best-effort:
+  // a failure here must never regress the proposal list, so it is fully isolated.
   if (estIdRows.length) {
     try {
       const byId = new Map(estIdRows.map(x => [x.id, x.row]));
@@ -189,8 +194,8 @@ async function loadNative(tenantId) {
         .from('activity_log')
         .select('entity_id, action, created_at')
         .in('entity_id', estIdRows.map(x => x.id))
-        .ilike('action', '%opened%')
-        .limit(5000);
+        .or('action.ilike.*opened*,action.ilike.*viewed*')
+        .limit(8000);
       for (const a of (ev || [])) {
         const row = byId.get(a.entity_id);
         if (!row) continue;
