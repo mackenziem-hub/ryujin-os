@@ -143,7 +143,7 @@ async function loadNative(tenantId) {
   try {
     const { data, error } = await supabaseAdmin
       .from('estimates')
-      .select('estimate_number, share_token, status, proposal_mode, calculated_packages, created_at, updated_at, customer:customers(full_name, address, city)')
+      .select('estimate_number, share_token, status, proposal_mode, calculated_packages, created_at, updated_at, view_count, last_viewed_at, customer:customers(full_name, address, city)')
       .eq('tenant_id', tenantId)
       .neq('status', 'cancelled')
       .order('updated_at', { ascending: false })
@@ -167,6 +167,9 @@ async function loadNative(tenantId) {
         lastUpdated: e.updated_at || e.created_at || null,
         openUrl: e.share_token ? ('/proposal-client.html?share=' + encodeURIComponent(e.share_token)) : null,
         ref: 'NP-' + (e.estimate_number || e.share_token),
+        shareToken: e.share_token || null,
+        views: num(e.view_count) || 0,
+        lastViewedAt: e.last_viewed_at || null,
         _nameKey: norm(name), _addrKey: addrKey(address)
       });
     }
@@ -294,6 +297,12 @@ function mergeRows(group) {
   const withAddr = group.find(r => r.address);
   const lastUpdated = group.map(r => r.lastUpdated).filter(Boolean).sort().slice(-1)[0] || null;
   const pending = PENDING_BUCKETS.has(best.bucket);
+  // Engagement (open-tracking) lives on Ryujin-native estimate rows only; aggregate
+  // across the group so a multi-source dedupe keeps the highest open count + most
+  // recent view. Estimator OS / GHL rows contribute nothing here (no tracking).
+  const views = Math.max(0, ...group.map(r => num(r.views)));
+  const lastViewedAt = group.map(r => r.lastViewedAt).filter(Boolean).sort().slice(-1)[0] || null;
+  const shareToken = (group.find(r => r.shareToken) || {}).shareToken || null;
   // Follow-up signal: how long this pending quote has sat untouched, plus a
   // value-weighted urgency score so the warm book can be worked highest-dollar
   // x most-stale first. The default sort buries stale quotes (most-recent-first);
@@ -317,6 +326,9 @@ function mergeRows(group) {
     followUpScore,
     stores,
     openUrl: withLink ? withLink.openUrl : null,
+    views,
+    lastViewedAt,
+    shareToken,
     sources: group.map(r => ({ store: r.store, ref: r.ref, status: r.status, fromPrice: r.fromPrice, openUrl: r.openUrl }))
   };
 }
