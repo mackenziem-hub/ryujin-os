@@ -306,7 +306,14 @@ export default async function handler(req, res) {
       const pkgs = (est.calculated_packages && typeof est.calculated_packages === 'object') ? est.calculated_packages : {};
       const tierKey = est.selected_package || 'gold';
       const pkg = pkgs[tierKey] || {};
-      const preTax = round2(Number(est.final_accepted_total) || Number(pkg.total) || Number(pkg.summary?.sellingPrice) || 0);
+      // Line item is PRE-TAX (HST is added once by recomputeTotals). The package
+      // sellingPrice/total is the exact pre-tax figure; final_accepted_total is a
+      // tax-INCLUSIVE (and rounded) total, so only fall back to it by stripping
+      // the tax. Using it directly was double-taxing every estimate-built invoice.
+      const sellingPreTax = round2(Number(pkg.summary?.sellingPrice) || Number(pkg.total) || 0);
+      const preTax = sellingPreTax > 0
+        ? sellingPreTax
+        : round2((Number(est.final_accepted_total) || 0) / (1 + (Number(taxRate) || 0)));
       const depositCents = Number(est.deposit_amount) || 0;
       const depositApplied = est.deposit_status === 'cleared' ? round2(depositCents / 100) : 0;
       const cust = est.customer || {};
