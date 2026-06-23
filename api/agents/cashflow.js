@@ -248,6 +248,24 @@ export async function runCashflow() {
     report.findings.push(`${arExceptions.length} AR exception(s): ${arExceptions.map(x => `${x.type}:${x.customer}`).join(', ')}`);
   }
 
+  // 5c. Auto-reconcile Invoice Studio invoices: flip invoice status -> paid when
+  // the job it belongs to is fully collected. Manual mark-paid covers partials and
+  // the e-transfer/cheque/cash that never hit the Stripe-email path. Non-fatal;
+  // rides inside the existing cashflow section (no new top-level snapshot key).
+  try {
+    const { data: invTenant } = await supabaseAdmin
+      .from('tenants').select('id').eq('slug', PLUS_ULTRA_SLUG).single();
+    if (invTenant?.id) {
+      const inv = await reconcileInvoices(invTenant.id, jobs);
+      report.cashflow.invoices = inv.counts;
+      if (inv.flipped.length) {
+        report.findings.push(`Invoices auto-marked paid: ${inv.flipped.map(f => f.number).join(', ')}`);
+      }
+    }
+  } catch (e) {
+    report.findings.push(`Invoice reconcile skipped: ${e.message}`);
+  }
+
   report.findings.push(`Last 90d: $${totalCollected.toFixed(2)} collected on $${totalContract.toFixed(2)} signed (outstanding: $${totalOutstanding.toFixed(2)})`);
   report.findings.push(`${payments.length - unmatched.length}/${payments.length} payments matched`);
   if (recent.length > 0) report.findings.push(`Last 7d: $${last7Collected.toFixed(2)} across ${recent.length} payment(s)`);
@@ -375,6 +393,51 @@ export async function runCashflow() {
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────
+
+// Flip Invoice Studio invoices (proposal_blocks block_key 'invoice:<slug>') to
+// paid when their estimate's job is fully collected. Idempotent: already-paid or
+// void invoices are skipped. Returns flipped[] + status counts for the snapshot.
+async function reconcileInvoices(tenantId, jobs) {
+  const counts = { draft: 0, sent: 0, viewed: 0, paid: 0, void: 0, outstanding: 0 };
+  const flipped = [];
+  const { data: rows } = await supabaseAdmin
+    .from('proposal_blocks')
+    .select('id, content')
+    .eq('tenant_id', tenantId)
+    .like('block_key', 'invoice:%');
+  if (!rows || !rows.length) return { flipped, counts };
+
+  const jobByEstimate = {};
+  for (const j of jobs) if (j.estimateId) jobByEstimate[String(j.estimateId)] = j;
+
+  for (const row of rows) {
+    const c = row.content || {};
+    const status = c.status || 'draft';
+    const job = c.estimateId ? jobByEstimate[String(c.estimateId)] : null;
+
+    if (job && status !== 'paid' && status !== 'void') {
+      const fullyCollected = (job.balanceRemaining != null)
+        ? job.balanceRemaining <= 0.01
+        : (Number(c.total) > 0 && Number(job.totalCollected) >= Number(c.total) - 0.01);
+      if (fullyCollected) {
+        const nowIso = new Date().toISOString();
+        const last = (job.payments || []).slice(-1)[0];
+        c.status = 'paid';
+        c.paidAt = (last && last.date) || nowIso;
+        c.paymentMethod = c.paymentMethod || 'card';
+        c.history = [...(Array.isArray(c.history) ? c.history : []), { at: nowIso, event: 'auto-marked paid (cashflow)' }];
+        await supabaseAdmin.from('proposal_blocks').update({ content: c }).eq('id', row.id).then(() => {}, () => {});
+        flipped.push({ id: row.id, number: c.number || row.id });
+      }
+    }
+
+    const finalStatus = c.status || 'draft';
+    if (counts[finalStatus] != null) counts[finalStatus]++;
+    if (finalStatus !== 'paid' && finalStatus !== 'void') counts.outstanding += Number(c.balanceDue || 0);
+  }
+  counts.outstanding = Math.round(counts.outstanding * 100) / 100;
+  return { flipped, counts };
+}
 
 function classifyInvoiceType(label) {
   const s = (label || '').toLowerCase();
