@@ -98,6 +98,7 @@ header{padding:24px 0 18px}
   width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;
 }
 .lb-bar button svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2.4}
+.lb-bar button.busy{opacity:0.5;pointer-events:none}
 .lb-bar .pos{font-size:0.9em;color:rgba(255,255,255,0.7);font-feature-settings:'tnum'}
 .lb-stage{flex:1;display:flex;align-items:center;justify-content:center;padding:0 16px;min-height:0}
 .lb-stage img,.lb-stage video{max-width:100%;max-height:100%;object-fit:contain;border-radius:6px}
@@ -267,7 +268,7 @@ function openLightbox(i, files){
     <div class="lb-bar">
       <button id="lbClose" aria-label="Close"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       <div class="pos" id="lbPos"></div>
-      <div style="width:40px"></div>
+      <button id="lbDownload" aria-label="Download photo" title="Download"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
     </div>
     <div class="lb-stage" id="lbStage">
       <button class="lb-nav prev" id="lbPrev" aria-label="Previous"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
@@ -278,6 +279,7 @@ function openLightbox(i, files){
   document.body.appendChild(lb);
 
   document.getElementById('lbClose').addEventListener('click', () => lb.remove());
+  document.getElementById('lbDownload').addEventListener('click', downloadCurrent);
   document.getElementById('lbPrev').addEventListener('click', () => { if (lbIdx > 0){ lbIdx--; renderLb(); }});
   document.getElementById('lbNext').addEventListener('click', () => { if (lbIdx < lbFiles.length - 1){ lbIdx++; renderLb(); }});
 
@@ -321,6 +323,36 @@ function renderLb(){
   next.disabled = lbIdx === lbFiles.length - 1;
   document.getElementById('lbPos').textContent = `${lbIdx + 1} / ${lbFiles.length}`;
   document.getElementById('lbCap').textContent = f.caption || '';
+}
+
+async function downloadCurrent(){
+  const f = lbFiles[lbIdx];
+  if (!f || !f.url) return;
+  const btn = document.getElementById('lbDownload');
+  const ext = (f.mime_type && f.mime_type.split('/')[1])
+    || (String(f.url).split('?')[0].split('.').pop())
+    || 'jpg';
+  const base = (f.caption || 'plus-ultra-roof').replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'photo';
+  const fname = `${base}-${lbIdx + 1}.${ext}`;
+  if (btn) btn.classList.add('busy');
+  try {
+    const resp = await fetch(f.url, { mode: 'cors' });
+    if (!resp.ok) throw new Error('fetch failed');
+    const blob = await resp.blob();
+    const obj = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = obj;
+    a.download = fname;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(obj), 4000);
+  } catch (e) {
+    // Blob fetch blocked (CORS) — open in a new tab so they can save it manually
+    window.open(f.url, '_blank', 'noopener');
+  } finally {
+    if (btn) btn.classList.remove('busy');
+  }
 }
 
 load();
