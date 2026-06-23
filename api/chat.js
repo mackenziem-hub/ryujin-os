@@ -1645,7 +1645,7 @@ const TOOLS = [
         before_photo_url: { type: 'string', description: 'URL of before photo from chat attachment. Auto-linked to estimate as caption=before. Use the URL field of an attachment Mackenzie dropped in this conversation.' },
         after_photo_url: { type: 'string', description: 'URL of after photo from chat attachment. Auto-linked as caption=after + cover.' },
         cover_photo_url: { type: 'string', description: 'URL of cover/hero photo (defaults to after_photo_url if not provided).' },
-        share_token: { type: 'string', description: 'Override the auto-generated share token. Use a slugified customer-address pattern e.g. "plus-ultra-egbuwoku-75rachel".' },
+        share_token: { type: 'string', description: 'Leave unset. The share token is an auto-generated unguessable secret (the only gate on the public proposal link). Do NOT supply a human-readable or slugified value; a guessable token lets anyone enumerate and read customer proposals.' },
         lock: { type: 'boolean', description: 'If true, lock the estimate at the selected tier price (sets locked_at + final_accepted_total). Use for honored legacy quotes or signed proposals.' }
       },
       required: ['customer_name', 'customer_address', 'square_feet', 'pitch']
@@ -3315,7 +3315,15 @@ async function executeTool(name, input, attachments = [], conversationId = null)
 
         // 3a. Optional: override share token + lock + final_accepted_total
         const updates = {};
-        if (input.share_token && input.share_token !== est.share_token) updates.share_token = String(input.share_token);
+        // SECURITY (F7): only honor a share_token override if it is high-entropy.
+        // A guessable override (short, or a slug/number pattern) would reopen the
+        // enumeration hole, so ignore it and keep the random minted token.
+        if (input.share_token && input.share_token !== est.share_token) {
+          const t = String(input.share_token);
+          const strong = t.length >= 20 && !/^plus-ultra-/i.test(t) && !/\s/.test(t);
+          if (strong) updates.share_token = t;
+          else console.warn('[chat] ignoring low-entropy share_token override');
+        }
         if (input.lock === true) {
           updates.locked_at = new Date().toISOString();
           updates.status = 'proposal_sent';

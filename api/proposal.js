@@ -1,10 +1,30 @@
 // Ryujin OS — Public Proposal Data
 // GET /api/proposal?share=<share_token>
-// Returns the shape proposal-client.html expects. Public (no auth): share tokens are
-// the auth. Tracks view count and last_viewed_at on the proposals row (if present).
+// Returns the shape proposal-client.html expects. Public (no session): the share token
+// IS the credential, so it must be an unguessable secret (192-bit random, see
+// api/estimates.js). Tracks view count and last_viewed_at on the proposals row.
 import { supabaseAdmin } from '../lib/supabase.js';
 import { METAL_TIER_COPY, METAL_INCLUDED_ALL, isMetalSlug, getMetalCopy } from '../lib/metalProposalCopy.js';
 import { calculateGutterQuote } from '../lib/gutterQuoteEngine.js';
+
+// SECURITY (F7): the share token is now a random secret, so enumeration is
+// infeasible. This per-IP limiter is defense-in-depth, a speed bump on probing
+// the public resolver. It is per-warm-lambda (not durable) and fails open, so it
+// never blocks a legitimate customer; the random token is the real protection.
+const RL_WINDOW_MS = 60_000;
+const RL_MAX = 60;
+const _rlHits = new Map();
+function rateLimited(req) {
+  try {
+    const ip = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || 'unknown';
+    const now = Date.now();
+    const hits = (_rlHits.get(ip) || []).filter(t => now - t < RL_WINDOW_MS);
+    hits.push(now);
+    if (_rlHits.size > 5000) _rlHits.clear(); // bound memory on a long-lived warm instance
+    _rlHits.set(ip, hits);
+    return hits.length > RL_MAX;
+  } catch { return false; }
+}
 
 // Tier catalog authoritative from Plus Ultra/Sales/pricing_formula_v2.md
 // Manufacturer warranties use CertainTeed published terms (lifetime limited + SureStart).
@@ -300,6 +320,7 @@ async function resolveV2Enabled(tenantId) {
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+  if (rateLimited(req)) return res.status(429).json({ error: 'Too many requests' });
 
   const share = String(req.query.share || '').trim();
   const legacyId = String(req.query.id || '').trim();

@@ -244,17 +244,15 @@ export default async function handler(req, res) {
       .eq('id', user.id);
 
     // Build URL from the request host so it works on preview + prod deploys.
-    // SECURITY: do NOT return resetUrl in the API response — that's an account-takeover
-    // primitive for any known email. Logged server-side so Mac can pull from Vercel
-    // logs until Gmail email-send is wired (TODO: gmailSend from lib/google.js).
+    // SECURITY (F2): never return resetUrl in the API response and never log it.
+    // The token is a one-hour account-takeover primitive; logging it exposes it to
+    // anyone with Vercel log access. Delivery is by email only (gmailSend below).
     const host = req.headers['x-forwarded-host'] || req.headers.host;
     const proto = req.headers['x-forwarded-proto'] || 'https';
     const resetUrl = `${proto}://${host}/reset-password.html?token=${token}`;
-    console.log(`[auth/forgot] Reset URL for ${user.email}: ${resetUrl} (expires ${expires.toISOString()})`);
 
     // Email the link to the account owner. Same server-side Gmail path used by
-    // leads/approve. Swallow send errors so we never leak whether the email
-    // exists; the console log above stays the admin fallback if delivery fails.
+    // leads/approve. Swallow send errors so we never leak whether the email exists.
     try {
       await gmailSend(
         user.email,
