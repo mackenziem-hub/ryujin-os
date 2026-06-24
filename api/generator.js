@@ -2,9 +2,11 @@
 //
 // Operator surface for the weekly Generator drafts. Backed by the same
 // marketing_clips lifecycle that powers manual video uploads, filtered to
-// rows where source_kind='generator'. The publish path is unchanged: hit
-// approve here, the existing marketing-publish?next=1 cron picks it up
-// within 10 minutes and fans out to GHL Social Planner → FB + GBP.
+// rows where source_kind='generator'. Publish model (v2): approve flips the
+// clip awaiting_approval → ready ("Ready for Cat to schedule"). The old
+// marketing-publish?next=1 auto-fanout cron is DISABLED on purpose — Mac
+// approves, Cat schedules by hand (no surprise auto-posts). A manual GHL
+// schedule action is a later phase.
 //
 // Endpoints:
 //   GET  /api/generator?view=queue          - drafts + scheduled + posted (7d)
@@ -18,6 +20,7 @@
 // (owner/admin) so both Mac and Cat can use them.
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requirePortalSessionAndTenant, isPrivileged } from '../lib/portalAuth.js';
+import { sanitizeCaption } from '../lib/captionPrivacy.js';
 
 const BRAND_SLUG = 'plus_ultra';
 const POSTED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
@@ -155,7 +158,11 @@ async function loadSingle(tenantId, id) {
 
 async function approveClip({ tenantId, clipId, captionFinal, brand }) {
   if (!brand) return { error: 'Plus Ultra brand not found for this tenant', status: 500 };
-  const overrides = { [brand.id]: captionFinal };
+  // Hard privacy backstop: this is the text that actually publishes, so strip
+  // any street address before it leaves the building (the prompt is not enough).
+  const safeCaption = sanitizeCaption(captionFinal);
+  if (!safeCaption) return { error: 'Caption is empty after privacy sanitize', status: 400 };
+  const overrides = { [brand.id]: safeCaption };
   // Flip awaiting_approval → ready AND populate caption_overrides in one
   // statement so the next publish sweep immediately picks it up. Mutation
   // scoped to source_kind='generator' to prevent cross-clip writes via
@@ -309,7 +316,9 @@ Return ONLY the new caption. No quotes, no preamble.`;
     const data = await r.json();
     let text = (data?.content?.[0]?.text || '').trim().replace(/^["']|["']$/g, '');
     if (!text) return { error: 'Claude returned empty caption', status: 502 };
-    text = text.replace(/\s*[—–]\s*/g, ', ');
+    // captionPrivacy strips street addresses + em dashes + tidies spacing.
+    text = sanitizeCaption(text);
+    if (!text) return { error: 'Caption empty after privacy sanitize', status: 502 };
 
     const { data: updated, error: upErr } = await supabaseAdmin
       .from('marketing_clips')

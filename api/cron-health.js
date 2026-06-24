@@ -29,7 +29,6 @@ import { resolveSession, isPrivileged } from '../lib/portalAuth.js';
 // show a scheduled job even when it hasn't fired in the last 24h yet.
 const CRONS = [
   { path: '/api/marketing-reconcile',       schedule: '*/15 * * * *',     description: 'Reconcile scheduled marketing posts against GHL' },
-  { path: '/api/marketing-publish?next=1',  schedule: '*/10 * * * *',     description: 'Render the next queued marketing clip' },
   { path: '/api/agents/daily',              schedule: '3 10 * * *',       description: 'Meta token health + 4 daily agent scans (06:03 AT)' },
   { path: '/api/agents/weekly',             schedule: '7 9 * * 1',        description: 'Weekly infra + KPI scan (Mon 05:07 AT)' },
   { path: '/api/agents/briefing?type=morning', schedule: '0 10 * * *',    description: 'Morning briefing email to Mac (06:00 AT)' },
