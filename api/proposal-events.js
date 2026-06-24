@@ -26,7 +26,7 @@ function fmtMoney(n) {
 async function maybeNotifyFirstOpen(estId) {
   const { data: est } = await supabaseAdmin
     .from('estimates')
-    .select('id, tenant_id, estimate_number, share_token, view_count, last_viewed_at, calculated_packages, selected_package, tags, customer:customers(full_name, address, phone, email)')
+    .select('id, tenant_id, estimate_number, share_token, calculated_packages, selected_package, tags, customer:customers(full_name, address, phone, email)')
     .eq('id', estId)
     .single();
   if (!est) return;
@@ -73,7 +73,7 @@ async function maybeNotifyFirstOpen(estId) {
     `Phone:    ${customer.phone || '—'}`,
     `Email:    ${customer.email || '—'}`,
     tierLine,
-    `Opened:   ${est.last_viewed_at || new Date().toISOString()}`,
+    `Opened:   ${new Date().toISOString()}`,
     ``,
     `Client view: ${proposalUrl}`,
     `Back office: ${backofficeUrl}`,
