@@ -64,7 +64,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
 .card{background:rgba(6,10,20,0.55);border:1px solid rgba(34,211,238,0.18);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;transition:border-color 0.18s,transform 0.18s,box-shadow 0.18s}
 .card:hover{border-color:rgba(34,211,238,0.5);box-shadow:0 6px 22px rgba(34,211,238,0.15)}
 .card .thumb{width:100%;aspect-ratio:16/9;background:#0a1220;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
-.card .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.card .thumb img,.card .thumb video{width:100%;height:100%;object-fit:cover;display:block}
+.play-badge{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:46px;height:46px;border-radius:50%;background:rgba(3,8,18,0.62);border:1.5px solid rgba(255,255,255,0.85);color:#fff;display:flex;align-items:center;justify-content:center;font-size:0.95em;padding-left:3px;backdrop-filter:blur(3px);pointer-events:none}
+.row-thumb video{width:100%;height:100%;object-fit:cover;display:block}
+.row-thumb .play-badge{width:26px;height:26px;font-size:0.6em;border-width:1px}
 .card .badge{position:absolute;top:10px;left:10px;font-family:'Inter',sans-serif;font-size:0.58em;letter-spacing:1.8px;padding:5px 10px;border-radius:7px;text-transform:uppercase;backdrop-filter:blur(6px)}
 .badge-draft{background:rgba(251,191,36,0.22);color:#fbbf24;border:1px solid rgba(251,191,36,0.5)}
 .badge-approved{background:rgba(34,211,238,0.22);color:#22d3ee;border:1px solid rgba(34,211,238,0.5)}
@@ -344,12 +347,25 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
     document.getElementById('kpiPosted').textContent = c.posted_last_7d || 0;
   }
 
+  function isVideoUrl(u){ return /\.(mp4|webm|mov|m4v)(\?|$)/i.test(u || ''); }
+
+  // Thumbnail inner: an <img> for photos, or a muted first-frame <video> with a
+  // play badge for the ingested video shorts (an <img> pointed at an .mp4 just
+  // renders broken).
+  function thumbInner(d){
+    if (!d.rendered_url) return '';
+    if (isVideoUrl(d.rendered_url)) {
+      return `<video src="${escapeHtml(d.rendered_url)}#t=0.1" muted preload="metadata" playsinline></video><div class="play-badge">▶</div>`;
+    }
+    return `<img src="${escapeHtml(d.rendered_url)}" alt="">`;
+  }
+
   function renderDraftCard(d){
     const captionId = 'cap-' + d.id;
     return `
       <div class="card" data-id="${d.id}">
         <div class="thumb clickable" onclick="openModal('${d.id}','draft')" title="Click to preview full size">
-          ${d.rendered_url ? `<img src="${escapeHtml(d.rendered_url)}" alt="">` : ''}
+          ${thumbInner(d)}
           <div class="badge badge-draft">Draft</div>
         </div>
         <div class="body">
@@ -373,7 +389,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
     return `
       <div class="card" data-id="${d.id}">
         <div class="thumb clickable" onclick="openModal('${d.id}','approved')" title="Click to preview full size">
-          ${d.rendered_url ? `<img src="${escapeHtml(d.rendered_url)}" alt="">` : ''}
+          ${thumbInner(d)}
           <div class="badge badge-approved">Ready</div>
         </div>
         <div class="body">
@@ -401,7 +417,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
     const modalKind = d.status === 'posted' ? 'posted' : 'scheduled';
     return `
       <div class="row clickable" data-id="${d.id}" onclick="openModal('${d.id}','${modalKind}')" title="Click to preview full size">
-        <div class="row-thumb">${d.rendered_url ? `<img src="${escapeHtml(d.rendered_url)}" alt="">` : ''}</div>
+        <div class="row-thumb">${thumbInner(d)}</div>
         <div class="row-body">
           <div class="row-title">${escapeHtml(d.title || statusLabel)}</div>
           <div class="row-cap">${escapeHtml(d.caption_final || d.caption_suggestion || '')}</div>
