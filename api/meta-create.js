@@ -22,6 +22,7 @@ import {
   createVideoAdCreative,
   createAd,
   updateAdCreative,
+  updateAdStatus,
   deleteObject,
   getPromotePage
 } from '../lib/meta.js';
@@ -31,7 +32,7 @@ export default async function handler(req, res) {
   const auth = await requireCronOrOwner(req);
   if (!auth.ok) return res.status(401).json({ error: auth.error });
 
-  const ACTIONS = ['create_campaign', 'create_adset', 'upload_video', 'video_status', 'create_creative', 'create_ad', 'update_ad_creative', 'delete_object'];
+  const ACTIONS = ['create_campaign', 'create_adset', 'upload_video', 'video_status', 'create_creative', 'create_ad', 'update_ad_creative', 'update_ad_status', 'delete_object'];
 
   if (req.method === 'GET') {
     try {
@@ -89,6 +90,10 @@ export default async function handler(req, res) {
       case 'update_ad_creative':
         if (!b.adId || !b.creativeId) return res.status(400).json({ error: 'Missing adId or creativeId' });
         result = await updateAdCreative(b.adId, b.creativeId);
+        break;
+      case 'update_ad_status':
+        if (!b.adId || !b.status) return res.status(400).json({ error: 'Missing adId or status' });
+        result = await updateAdStatus(b.adId, b.status);
         break;
       case 'delete_object':
         if (!b.id) return res.status(400).json({ error: 'Missing id' });
