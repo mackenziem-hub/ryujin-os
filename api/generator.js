@@ -17,6 +17,10 @@
 //   POST /api/generator?action=run          - manual fire of the weekly generator
 //   POST /api/generator?action=platform_captions - { id, platforms? }, per-platform
 //                                             caption variants for Cat to copy/schedule
+//   POST /api/generator?action=ingest        - { url, title?, caption?, mime?, is_photo?,
+//                                             scheduled_at?, target_platforms? } operator-seeds
+//                                             an awaiting_approval draft from a hosted asset
+//                                             (e.g. the pre-rendered video shorts). DRAFT only.
 //
 // Auth: requirePortalSessionAndTenant. Approve and run require isPrivileged
 // (owner/admin) so both Mac and Cat can use them.
@@ -360,6 +364,48 @@ async function platformCaptionsForClip({ tenantId, clipId, brand, platforms }) {
   return { captions };
 }
 
+// Operator-seeded clip from an already-hosted asset (e.g. the pre-rendered
+// video shorts pushed to Blob). Lands as an awaiting_approval generator draft
+// so it flows through the same preview -> approve -> Ready-for-Cat path as the
+// auto-drafted photo posts. Nothing publishes: this only creates a draft.
+async function ingestClip({ tenantId, brand, url, title, caption, mime, isPhoto, scheduledAt, targetPlatforms }) {
+  if (!url || !/^https:\/\//i.test(String(url))) return { error: 'A https asset url is required', status: 400 };
+  const safeCaption = sanitizeCaption(caption == null ? '' : String(caption));
+  const mimeType = mime ? String(mime) : 'video/mp4';
+  const ext = (String(url).split('?')[0].match(/\.([a-z0-9]+)$/i) || [, 'mp4'])[1];
+  // Guard a bad scheduled_at so it returns JSON 400, not a RangeError 500.
+  const sched = scheduledAt ? new Date(scheduledAt) : null;
+  if (scheduledAt && isNaN(sched)) return { error: 'Invalid scheduled_at', status: 400 };
+  const clipRow = {
+    tenant_id: tenantId,
+    source_url: url,
+    source_filename: `ingest-${Date.now()}.${ext}`,
+    source_mime_type: mimeType,
+    rendered_url: url,
+    thumbnail_url: url,
+    title: String(title || 'Video post').slice(0, 200),
+    description: safeCaption.slice(0, 300),
+    target_platforms: Array.isArray(targetPlatforms) && targetPlatforms.length ? targetPlatforms : ['facebook', 'instagram'],
+    scheduled_at: sched ? sched.toISOString() : null,
+    is_photo: isPhoto === true,
+    status: 'awaiting_approval',
+    source_kind: 'generator',
+    generator_run_id: null,
+    caption_suggestion: safeCaption,
+    caption_overrides: {},
+  };
+  const { data: clip, error } = await supabaseAdmin
+    .from('marketing_clips').insert(clipRow).select('*').single();
+  if (error) return { error: `clip insert: ${error.message}`, status: 500 };
+  // Brand link mirrors the weekly agent. Non-fatal if it fails: the draft
+  // still lists + approves (approve writes caption_overrides keyed by brand).
+  if (brand) {
+    await supabaseAdmin.from('marketing_clip_brands')
+      .insert({ clip_id: clip.id, brand_id: brand.id }).then(() => {}, () => {});
+  }
+  return { clip };
+}
+
 async function runWeeklyGenerator({ req }) {
   const baseUrl = process.env.VERCEL_URL
     ? `https://${process.env.VERCEL_URL}`
@@ -478,6 +524,17 @@ async function handler(req, res) {
       const out = await platformCaptionsForClip({ tenantId, clipId: id, brand, platforms: list });
       if (out.error) return res.status(out.status || 500).json({ error: out.error });
       return res.json({ ok: true, captions: out.captions });
+    }
+    if (action === 'ingest') {
+      if (!isPrivileged(session)) return res.status(403).json({ error: 'Owner or admin required to ingest media' });
+      const { url, title, caption, mime, is_photo, scheduled_at, target_platforms } = req.body || {};
+      const brand = await getPlusUltraBrandId(tenantId);
+      const out = await ingestClip({
+        tenantId, brand, url, title, caption, mime,
+        isPhoto: is_photo === true, scheduledAt: scheduled_at, targetPlatforms: target_platforms,
+      });
+      if (out.error) return res.status(out.status || 500).json({ error: out.error });
+      return res.json({ ingested: true, clip: shapeClip(out.clip) });
     }
     return res.status(400).json({ error: 'Unknown action' });
   }
