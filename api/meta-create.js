@@ -21,6 +21,8 @@ import {
   getVideoStatus,
   createVideoAdCreative,
   createAd,
+  updateAdCreative,
+  deleteObject,
   getPromotePage
 } from '../lib/meta.js';
 import { requireCronOrOwner } from '../lib/cronAuth.js';
@@ -29,7 +31,7 @@ export default async function handler(req, res) {
   const auth = await requireCronOrOwner(req);
   if (!auth.ok) return res.status(401).json({ error: auth.error });
 
-  const ACTIONS = ['create_campaign', 'create_adset', 'upload_video', 'video_status', 'create_creative', 'create_ad'];
+  const ACTIONS = ['create_campaign', 'create_adset', 'upload_video', 'video_status', 'create_creative', 'create_ad', 'update_ad_creative', 'delete_object'];
 
   if (req.method === 'GET') {
     try {
@@ -77,11 +79,20 @@ export default async function handler(req, res) {
         result = await createVideoAdCreative({
           name: b.name, pageId: b.pageId, instagramActorId: b.instagramActorId,
           videoId: b.videoId, thumbnailUrl: b.thumbnailUrl, message: b.message,
-          link: b.link, linkDescription: b.linkDescription, headline: b.headline, ctaType: b.ctaType
+          link: b.link, linkDescription: b.linkDescription, headline: b.headline,
+          ctaType: b.ctaType, displayLink: b.displayLink
         });
         break;
       case 'create_ad':
         result = await createAd({ name: b.name, adsetId: b.adsetId, creativeId: b.creativeId, status: b.status });
+        break;
+      case 'update_ad_creative':
+        if (!b.adId || !b.creativeId) return res.status(400).json({ error: 'Missing adId or creativeId' });
+        result = await updateAdCreative(b.adId, b.creativeId);
+        break;
+      case 'delete_object':
+        if (!b.id) return res.status(400).json({ error: 'Missing id' });
+        result = await deleteObject(b.id);
         break;
       default:
         return res.status(400).json({ error: `Unknown action "${action}"` });
