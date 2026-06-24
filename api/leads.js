@@ -24,6 +24,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { requireTenant } from '../lib/tenant.js';
+import { resolveSession } from '../lib/portalAuth.js';
 import { withSentry } from '../lib/sentry.js';
 import { sendCAPIEvent } from '../lib/meta.js';
 import { supabaseAdmin } from '../lib/supabase.js';
@@ -620,6 +621,14 @@ async function handler(req, res) {
 
   // ── GET: list contacts (lead view) ──
   if (req.method === 'GET') {
+    // PII gate: the contact list (names, emails, phones, addresses) must never be
+    // readable with only the public tenant slug. Require a valid operator session.
+    // Operator pages load auth-guard.js, which injects the Bearer token on every
+    // same-origin /api call, so this is transparent to them. The public POST below
+    // (IE / Revive lead capture from client-facing pages) stays open on requireTenant.
+    const session = await resolveSession(req);
+    if (!session) return res.status(401).json({ error: 'sign_in_required', code: 'NO_SESSION' });
+
     const source = req.query.source;
     const sinceDays = parseInt(req.query.since_days) || 30;
     try {

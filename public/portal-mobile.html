@@ -2330,9 +2330,15 @@ window.__photos = (function(){
   }
 
   async function apiEnsureShare(projectId){
+    // ensure-share is now an authed mutation (it mints a public gallery token), so
+    // send the operator Bearer like the other mutations on this page (state-transition,
+    // file edit/delete). This page hand-rolls auth and does not load auth-guard.js.
+    const tok = localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token');
+    const headers = { 'x-tenant-id': TENANT, 'Content-Type': 'application/json' };
+    if (tok) headers['Authorization'] = `Bearer ${tok}`;
     const r = await fetch(`/api/projects?action=ensure-share&id=${encodeURIComponent(projectId)}`, {
       method: 'POST',
-      headers: { 'x-tenant-id': TENANT, 'Content-Type': 'application/json' },
+      headers,
       body: '{}'
     });
     if (!r.ok) throw new Error(`share failed ${r.status}`);

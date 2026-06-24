@@ -6,6 +6,7 @@
 // PUT    /api/projects              — Update project
 import { supabaseAdmin } from '../lib/supabase.js';
 import { resolveTenant, requireTenant } from '../lib/tenant.js';
+import { resolveSession } from '../lib/portalAuth.js';
 import { gmailSend } from '../lib/google.js';
 
 const NOTIFY_EMAIL = (process.env.NOTIFY_EMAIL || 'mackenzie.m@plusultraroofing.com').trim();
@@ -227,6 +228,24 @@ async function handler(req, res) {
   const tenant = await resolveTenant(req);
   if (!tenant) return res.status(400).json({ error: 'Tenant required' });
   const tenantId = tenant.id;
+
+  // Operator-session gate (security hardening 2026-06-24). Previously every branch
+  // below ran on the tenant header alone, so anyone with the public slug could
+  // transition job state, mint indefinite public photo-gallery tokens (ensure-share),
+  // and rewrite the customer-facing gallery hero/address (PUT). Require a valid
+  // session for all mutations and the bulk list, and bind it to the resolved tenant
+  // (no cross-tenant header spoof). The public `?share=` gallery + client-comment
+  // branches already returned above; `GET ?id=` stays tenant-scoped so the
+  // client-facing customer-showcase page (no session) keeps working.
+  const isMutation = req.method === 'POST' || req.method === 'PUT';
+  const isListRead = req.method === 'GET' && !req.query.id;
+  if (isMutation || isListRead) {
+    const session = await resolveSession(req);
+    if (!session) return res.status(401).json({ error: 'sign_in_required', code: 'NO_SESSION' });
+    if (session.tenant_id && session.tenant_id !== tenantId) {
+      return res.status(403).json({ error: 'tenant_mismatch' });
+    }
+  }
 
   // ── State transition (Start / Pause / Complete / Reset) ──
   // POST /api/projects?action=state-transition  body: { id, transition }

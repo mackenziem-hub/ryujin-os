@@ -21,7 +21,7 @@
 
 import crypto from 'node:crypto';
 import { supabaseAdmin } from '../lib/supabase.js';
-import { requireTenant } from '../lib/tenant.js';
+import { requirePortalSessionAndTenant } from '../lib/portalAuth.js';
 
 const dollarsToCents = (v) => (v == null || v === '' ? null : Math.round(Number(v) * 100));
 const centsToDollars = (v) => (v == null ? null : Number(v) / 100);
@@ -118,7 +118,10 @@ async function handler(req, res) {
       job_id: b.workorder_id || b.job_id || null,
       requested_by: b.requested_by || 'owner',
       source_surface: b.source_surface || 'admin',
-      created_by_user_id: req.user?.id || null,
+      // Stamp the authenticated operator. Guard against the service-token session
+      // (user_id 'service-internal' is not a real users.id and would break the FK).
+      created_by_user_id: (req.session?.user_id && req.session.user_id !== 'service-internal')
+        ? req.session.user_id : null,
       reason: String(b.reason).trim(),
       scope_before: b.scope_before || null,
       scope_after: b.scope_after || null,
@@ -176,4 +179,10 @@ async function handler(req, res) {
   return res.status(405).json({ error: 'Method not allowed' });
 }
 
-export default requireTenant(handler);
+// Authed CRUD only. Previously requireTenant (tenant-header, no auth) left every
+// change order, its dollar deltas, and the live customer/sub accept tokens readable
+// AND mutable by anyone who knew the public tenant slug. The hard gate requires a
+// valid session and binds the tenant to session.tenant_id (no header spoofing). The
+// public customer/sub accept flow lives in change-order-accept.js (token-authed),
+// not here. job.html (the only caller) loads auth-guard.js, which injects the Bearer.
+export default requirePortalSessionAndTenant(handler);
