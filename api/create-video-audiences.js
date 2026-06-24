@@ -31,8 +31,18 @@ export default async function handler(req, res) {
 
     if (req.method !== 'POST') return res.status(405).json({ error: 'GET or POST only' });
 
+    // No filter: build for every active video ad. Explicit videoIds: build for
+    // exactly those, even if the ad is not delivering yet (just-activated / in
+    // review). Video-view audiences are retroactive within the retention window,
+    // so they backfill viewers once delivery starts.
     const filter = (req.body?.videoIds || []).filter(Boolean);
-    const targets = filter.length > 0 ? ads.filter(a => filter.includes(a.videoId)) : ads;
+    let targets;
+    if (filter.length > 0) {
+      const byId = Object.fromEntries(ads.map(a => [a.videoId, a]));
+      targets = filter.map(vid => byId[vid] || { videoId: vid, adId: null, name: `Video ${vid}` });
+    } else {
+      targets = ads;
+    }
 
     const results = [];
     for (const ad of targets) {
