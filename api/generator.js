@@ -75,7 +75,7 @@ async function loadQueue(tenantId) {
       .eq('source_kind', 'generator')
       .eq('status', 'awaiting_approval')
       .order('scheduled_at', { ascending: true })
-      .limit(20),
+      .limit(100),
     supabaseAdmin
       .from('marketing_clips')
       .select('*')
@@ -83,7 +83,7 @@ async function loadQueue(tenantId) {
       .eq('source_kind', 'generator')
       .eq('status', 'ready')
       .order('scheduled_at', { ascending: true })
-      .limit(20),
+      .limit(100),
     supabaseAdmin
       .from('marketing_clips')
       .select('*')
