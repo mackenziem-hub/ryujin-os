@@ -93,6 +93,31 @@ export async function buildAdFunnel(tenantId, base, headers, days = 30) {
     outcome.set(cid, cur);
   }
 
+  // 3b. Estimate-system signed signal. The GHL pipeline stage goes stale because
+  // the team accepts/schedules in the estimate system without dragging the GHL
+  // card forward (e.g. Harmeet: estimate accepted + financed + scheduled, GHL opp
+  // still "Quote Sent" at $0). Reading signed off GHL stage alone makes real,
+  // ad-sourced wins invisible to the ROAS read. Union the customer's
+  // ghl_contact_id from any accepted-or-beyond native estimate into the signed
+  // set so a closed deal cannot hide. Won-set mirrors api/customer-state.js. The
+  // join key (customers.ghl_contact_id) is the same id the leads carry in
+  // metadata.ghl_contact_id, so an estimate-signed contact lines up with its lead.
+  const { data: signedEsts, error: eErr } = await supabaseAdmin
+    .from('estimates')
+    .select('status, customer:customers(ghl_contact_id)')
+    .eq('tenant_id', tenantId)
+    .in('status', ['signed', 'accepted', 'scheduled', 'in_progress', 'complete'])
+    .limit(5000);
+  if (eErr) throw new Error('estimates: ' + eErr.message);
+  for (const e of (signedEsts || [])) {
+    const cid = String(e.customer?.ghl_contact_id || '');
+    if (!cid) continue;
+    const cur = outcome.get(cid) || { booked: false, signed: false };
+    cur.signed = true;
+    cur.booked = true; // signed implies an inspection happened (roofing inspects before signing)
+    outcome.set(cid, cur);
+  }
+
   // 4. Cohort roll-up: classify each windowed lead by its contact's outcome.
   // "booked" = reached an inspection stage OR signed (roofing inspects before signing).
   const chan = {}; // channel -> { leads, booked, signed }
@@ -142,7 +167,7 @@ export async function buildAdFunnel(tenantId, base, headers, days = 30) {
       costPerLead: totalLeads > 0 ? r2(totalSpend / totalLeads) : null,
       costPerBooked: totalBooked > 0 ? r2(totalSpend / totalBooked) : null,
     },
-    note: 'Leads are REAL captured CRM leads (smaller than Meta pixel "lead" events). Booked = a windowed lead whose GHL contact reached an inspection stage or beyond, joined via ghl_contact_id; leads with no matching ad attribution fall to "direct". Google spend is the 30d rollup from snapshot.googleAds. LSA spend is not wired yet (0). Booked is a current-stage cohort read, so a lead booked outside the window can shift counts.',
+    note: 'Leads are REAL captured CRM leads (smaller than Meta pixel "lead" events). Booked = a windowed lead whose GHL contact reached an inspection stage or beyond; signed = that contact has a GHL opp in a signed stage OR an accepted-or-beyond native estimate (the estimate-system signal catches deals closed/financed without the GHL card being dragged forward). Joined via ghl_contact_id; leads with no matching ad attribution fall to "direct". Google spend is the 30d rollup from snapshot.googleAds. LSA spend is not wired yet (0). Booked/signed are current-state cohort reads, so a deal closed outside the window can shift counts.',
   };
 }
 
