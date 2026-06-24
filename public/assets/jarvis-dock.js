@@ -118,7 +118,11 @@
     setAutoOn(isAutoOn()); // sync the AUTO button to the persisted setting
   }
   function syncFabOffset() {
-    document.body.classList.toggle('jarvis-has-fab', !!document.getElementById('ry-fab'));
+    // Dodge whichever bottom-right launcher is present: the legacy chat fab (#ry-fab)
+    // OR the cockpit orb (#ry-cockpit-launcher, z9000 60px). The orb is the current
+    // entry point and fully covered the pill before this; the dodge lifts it to bottom:86px.
+    document.body.classList.toggle('jarvis-has-fab',
+      !!(document.getElementById('ry-fab') || document.getElementById('ry-cockpit-launcher')));
   }
 
   // ── state + transcript rendering ────────────────────────────

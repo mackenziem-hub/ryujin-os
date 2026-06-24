@@ -56,6 +56,7 @@
 
     var css = ''
       + '#rgn{position:fixed;left:14px;bottom:14px;z-index:9000;font-family:Inter,system-ui,sans-serif;}'
+      + '#rgn.rgn-railed{left:calc(var(--sidebar-w,72px) + 14px);}'
       + '#rgn *{box-sizing:border-box;}'
       + '#rgn-pill{display:inline-flex;align-items:center;gap:8px;height:34px;padding:0 12px;border-radius:999px;'
         + 'background:rgba(12,17,25,0.82);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);'
@@ -109,6 +110,14 @@
         + '<span class="here">' + esc(pageLabel()) + '</span>'
       + '</button>';
     (document.body || document.documentElement).appendChild(wrap);
+
+    // If the page has a FIXED left sidebar rail (finance/service/inventory), shift the
+    // pill + its 268px popover clear of it. Guard on position:fixed so an in-flow
+    // .sidebar (e.g. invoices' 312px aside) does not trigger a pointless shift.
+    try {
+      var rail = document.querySelector('.sidebar');
+      if (rail && getComputedStyle(rail).position === 'fixed') wrap.classList.add('rgn-railed');
+    } catch (e) {}
 
     var pill = wrap.querySelector('#rgn-pill');
     function setOpen(o) { wrap.classList.toggle('open', o); pill.setAttribute('aria-expanded', o ? 'true' : 'false'); }
