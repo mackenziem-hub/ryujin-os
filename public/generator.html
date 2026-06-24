@@ -136,6 +136,19 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
 .pm-actions{display:flex;flex-wrap:wrap;gap:9px}
 .pm-actions .btn{flex:1;min-width:100px;font-size:0.66em;padding:11px 14px}
 .pm-pills{display:flex;gap:6px;flex-wrap:wrap}
+.pm-tools{display:flex;flex-wrap:wrap;gap:9px}
+.pm-tools:empty{display:none}
+.btn-tool{background:rgba(160,190,230,0.1);color:#cfe0f2;border-color:rgba(160,190,230,0.28)}
+.btn-tool:hover{background:rgba(160,190,230,0.2);color:#fff;border-color:rgba(160,190,230,0.5)}
+.pm-platforms:empty{display:none}
+.pm-platforms{display:flex;flex-direction:column;gap:9px;margin-top:2px}
+.plat-card{background:rgba(3,8,18,0.6);border:1px solid rgba(34,211,238,0.18);border-radius:9px;padding:10px 12px}
+.plat-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+.plat-name{font-family:'Inter',sans-serif;font-size:0.6em;font-weight:800;letter-spacing:1.6px;text-transform:uppercase;color:#22d3ee}
+.plat-meta{font-family:'JetBrains Mono',monospace;font-size:0.62em;color:rgba(160,190,230,0.6)}
+.plat-copy{font-family:'Inter',sans-serif;font-size:0.58em;letter-spacing:1.2px;text-transform:uppercase;font-weight:700;padding:5px 10px;border-radius:7px;cursor:pointer;background:rgba(34,211,238,0.14);color:#22d3ee;border:1px solid rgba(34,211,238,0.4)}
+.plat-copy:hover{background:rgba(34,211,238,0.26);color:#fff}
+.plat-text{font-size:0.85em;line-height:1.4;color:#e6ecf6;white-space:pre-wrap}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(-6px)}
 #toast.err{border-color:rgba(239,68,68,0.5);color:#ef4444}
 
@@ -231,6 +244,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
       <textarea id="pmCaption" placeholder="Caption draft (edit before approving)"></textarea>
       <div class="pm-pills" id="pmPills"></div>
       <div class="pm-actions" id="pmActions"></div>
+      <div class="pm-tools" id="pmTools"></div>
+      <div class="pm-platforms" id="pmPlatforms"></div>
     </div>
   </div>
 </div>
@@ -587,8 +602,106 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
     }
     document.getElementById('pmActions').innerHTML = actions;
 
+    // Cat's scheduling tools: grab the asset + caption to drop into the
+    // scheduler. Per-platform variants only matter once a caption is locked
+    // (approved/scheduled/posted), so the button shows there.
+    let tools = '';
+    if (item.rendered_url) {
+      const isVid = /\.(mp4|webm|mov|m4v)(\?|$)/i.test(item.rendered_url);
+      tools += `<button class="btn btn-tool" onclick="modalDownload(this)">Download ${isVid ? 'video' : 'image'}</button>`;
+    }
+    tools += `<button class="btn btn-tool" onclick="modalCopyCaption(this)">Copy caption</button>`;
+    if (item.caption_final || item.caption_suggestion) {
+      tools += `<button class="btn btn-tool" onclick="modalPlatformCaptions(this)" title="FB / Instagram / Google Business variants">Per-platform captions</button>`;
+    }
+    document.getElementById('pmTools').innerHTML = tools;
+    document.getElementById('pmPlatforms').innerHTML = '';
+
     document.getElementById('pmPrev').disabled = modalIndex <= 0;
     document.getElementById('pmNext').disabled = modalIndex >= modalList.length - 1;
+  }
+
+  // Slug a title into a safe filename stem.
+  function fileStem(item){
+    const base = (item.title || 'plus-ultra-post').toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
+    return base || 'plus-ultra-post';
+  }
+
+  async function modalDownload(btn){
+    const item = modalList[modalIndex];
+    if (!item || !item.rendered_url) { toast('No asset to download', true); return; }
+    const done = busy(btn, 'Downloading...');
+    try {
+      // Vercel Blob is CORS-open, so we can fetch the bytes and force a save
+      // with a friendly filename rather than opening the raw blob URL.
+      const r = await fetch(item.rendered_url);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const blob = await r.blob();
+      const ext = (item.rendered_url.split('?')[0].match(/\.([a-z0-9]+)$/i) || [, 'jpg'])[1];
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `${fileStem(item)}.${ext}`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      toast('Downloaded.');
+    } catch(e){
+      // Fallback: open in a new tab so the operator can save manually.
+      window.open(item.rendered_url, '_blank', 'noopener');
+      toast('Opened in a new tab (save from there).');
+    } finally { if (done) done(); }
+  }
+
+  async function modalCopyCaption(btn){
+    const text = document.getElementById('pmCaption').value || '';
+    if (!text.trim()) { toast('No caption to copy', true); return; }
+    try {
+      await navigator.clipboard.writeText(text);
+      toast('Caption copied.');
+    } catch(e){
+      const ta = document.getElementById('pmCaption'); ta.select(); document.execCommand('copy');
+      toast('Caption copied.');
+    }
+  }
+
+  async function modalPlatformCaptions(btn){
+    const item = modalList[modalIndex];
+    const reqId = item.id;
+    const wrap = document.getElementById('pmPlatforms');
+    const done = busy(btn, 'Writing variants...');
+    try {
+      const out = await api('/api/generator?action=platform_captions', { method: 'POST', body: { id: item.id } });
+      // Guard against a nav/close during the multi-second LLM call: only paint
+      // if the operator is still on the same post.
+      const cur = modalList[modalIndex];
+      if (!cur || cur.id !== reqId) return;
+      const caps = (out && out.captions) || {};
+      const labels = { facebook: 'Facebook', instagram: 'Instagram', google: 'Google Business' };
+      const order = ['facebook', 'instagram', 'google', 'tiktok', 'youtube'];
+      const keys = order.filter(k => caps[k]);
+      if (!keys.length) { toast('No variants returned', true); return; }
+      wrap.innerHTML = keys.map(k => {
+        const c = caps[k] || {};
+        const cta = c.ctaType ? ` · CTA ${escapeHtml(c.ctaType)}` : '';
+        const len = (c.caption || '').length;
+        return `<div class="plat-card">
+            <div class="plat-head">
+              <span class="plat-name">${escapeHtml(labels[k] || k)}<span class="plat-meta">  ${len} chars${cta}</span></span>
+              <button class="plat-copy" onclick="copyPlatformCaption(this)" data-cap="${escapeHtml(c.caption || '')}">Copy</button>
+            </div>
+            <div class="plat-text">${escapeHtml(c.caption || '')}</div>
+          </div>`;
+      }).join('');
+      toast('Per-platform captions ready.');
+    } catch(e){ toast(e.message, true); }
+    finally { if (done) done(); }
+  }
+
+  async function copyPlatformCaption(btn){
+    const text = btn.getAttribute('data-cap') || '';
+    try { await navigator.clipboard.writeText(text); }
+    catch(e){ /* clipboard blocked, ignore */ }
+    const orig = btn.textContent; btn.textContent = 'Copied'; setTimeout(() => { btn.textContent = orig; }, 1400);
   }
 
   // Keep an unsaved draft edit in local state so nav/close does not silently
@@ -705,6 +818,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
   window.modalSave = modalSave;
   window.modalRegen = modalRegen;
   window.modalReject = modalReject;
+  window.modalDownload = modalDownload;
+  window.modalCopyCaption = modalCopyCaption;
+  window.modalPlatformCaptions = modalPlatformCaptions;
+  window.copyPlatformCaption = copyPlatformCaption;
 
   loadQueue(true);
   pollTimer = setInterval(() => loadQueue(false), POLL_MS);

@@ -15,12 +15,15 @@
 //   DELETE /api/generator?id=X              - reject draft, free media_pool items
 //   POST /api/generator?action=regenerate   - { id }, re-draft caption via Claude
 //   POST /api/generator?action=run          - manual fire of the weekly generator
+//   POST /api/generator?action=platform_captions - { id, platforms? }, per-platform
+//                                             caption variants for Cat to copy/schedule
 //
 // Auth: requirePortalSessionAndTenant. Approve and run require isPrivileged
 // (owner/admin) so both Mac and Cat can use them.
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requirePortalSessionAndTenant, isPrivileged } from '../lib/portalAuth.js';
 import { sanitizeCaption } from '../lib/captionPrivacy.js';
+import { generatePlatformCaptions } from '../lib/captionGenerator.js';
 
 const BRAND_SLUG = 'plus_ultra';
 const POSTED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
@@ -332,6 +335,31 @@ Return ONLY the new caption. No quotes, no preamble.`;
   }
 }
 
+// Per-platform caption variants for Cat's scheduling workspace. Seeds the
+// generatePlatformCaptions LLM with the post's approved (or suggested) caption
+// as the "transcript", then runs every variant back through the privacy
+// backstop. Read-only on the clip — just returns the variants for copy/paste.
+async function platformCaptionsForClip({ tenantId, clipId, brand, platforms }) {
+  const { data: clip } = await supabaseAdmin
+    .from('marketing_clips').select('caption_overrides, caption_suggestion')
+    .eq('id', clipId).eq('tenant_id', tenantId).eq('source_kind', 'generator').maybeSingle();
+  if (!clip) return { error: 'Generator post not found', status: 404 };
+  const overrides = clip.caption_overrides && typeof clip.caption_overrides === 'object' ? clip.caption_overrides : {};
+  const base = (Object.values(overrides)[0] || clip.caption_suggestion || '').trim();
+  if (!base) return { error: 'No caption to adapt yet, approve or write one first', status: 400 };
+
+  let captions;
+  try {
+    captions = await generatePlatformCaptions({ transcript: base, brand, platforms });
+  } catch (e) {
+    return { error: e.message, status: 502 };
+  }
+  for (const k of Object.keys(captions)) {
+    if (captions[k] && captions[k].caption) captions[k].caption = sanitizeCaption(captions[k].caption);
+  }
+  return { captions };
+}
+
 async function runWeeklyGenerator({ req }) {
   const baseUrl = process.env.VERCEL_URL
     ? `https://${process.env.VERCEL_URL}`
@@ -440,6 +468,16 @@ async function handler(req, res) {
       const out = await runWeeklyGenerator({ req });
       if (out.error) return res.status(out.status || 500).json({ error: out.error });
       return res.json({ fired: true, ...out });
+    }
+    if (action === 'platform_captions') {
+      const { id, platforms } = req.body || {};
+      if (!id) return res.status(400).json({ error: 'Missing id' });
+      const brand = await getPlusUltraBrandId(tenantId);
+      if (!brand) return res.status(500).json({ error: 'Plus Ultra brand row missing for this tenant' });
+      const list = Array.isArray(platforms) && platforms.length ? platforms : ['facebook', 'instagram', 'google'];
+      const out = await platformCaptionsForClip({ tenantId, clipId: id, brand, platforms: list });
+      if (out.error) return res.status(out.status || 500).json({ error: out.error });
+      return res.json({ ok: true, captions: out.captions });
     }
     return res.status(400).json({ error: 'Unknown action' });
   }
