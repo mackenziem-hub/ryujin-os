@@ -72,6 +72,12 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:#e0e6f0;o
 .row.complete .date{color:#4ade80}
 .row.complete .total{color:#4ade80}
 
+.row .mchip{font-family:'JetBrains Mono',monospace;font-size:0.66em;font-weight:700;padding:2px 7px;border-radius:6px;letter-spacing:0.5px;margin-top:3px;white-space:nowrap}
+.row .mchip .est{opacity:0.6;font-weight:500}
+.mchip.mg{background:rgba(74,222,128,0.15);color:#4ade80;border:1px solid rgba(74,222,128,0.32)}
+.mchip.ma{background:rgba(251,191,36,0.15);color:#fbbf24;border:1px solid rgba(251,191,36,0.32)}
+.mchip.mr{background:rgba(248,113,113,0.15);color:#f87171;border:1px solid rgba(248,113,113,0.32)}
+
 .row .dq{display:flex;gap:4px;flex-wrap:wrap;margin-top:5px}
 .dq-chip{font-family:'JetBrains Mono',monospace;font-size:0.62em;padding:2px 7px;border-radius:4px;background:rgba(248,113,113,0.14);color:#f87171;border:1px solid rgba(248,113,113,0.32);letter-spacing:1px;font-weight:700;text-transform:uppercase;line-height:1.4}
 
@@ -216,6 +222,14 @@ function rowHtml(w, bucket){
   // closeout-stamped rows. Force the display label when the row landed in the
   // completed bucket.
   const displayStatus = bucket === 'completed' ? 'COMPLETE' : (w.status || 'draft').replace('_',' ').toUpperCase();
+  // Gross-margin chip (server-computed in /api/workorders). Prefer the actual
+  // margin (pay sheet in) over planned; mark planned with "est".
+  const mPct = (w.actual_margin_pct != null) ? w.actual_margin_pct : (w.margin_pct != null ? w.margin_pct : null);
+  const mActual = w.actual_margin_pct != null;
+  const mClass = mPct == null ? '' : (mPct >= 25 ? 'mg' : mPct >= 10 ? 'ma' : 'mr');
+  const marginHtml = mPct != null
+    ? `<div class="mchip ${mClass}" title="${mActual ? 'Actual' : 'Planned'} gross margin">${mPct.toFixed(0)}% margin${mActual ? '' : '<span class="est"> est</span>'}</div>`
+    : '';
   return `
     <a href="${href}" class="row ${cls}" data-search="${esc((w.customer_name || '') + ' ' + (w.address || '') + ' ' + woLabel).toLowerCase()}">
       <div class="date">${esc(dateLabel(w, bucket))}<br><span style="opacity:0.6">${esc(woLabel)}</span></div>
@@ -227,6 +241,7 @@ function rowHtml(w, bucket){
       <div class="meta">
         <div class="tier">${tierLabel}${esc(displayStatus)}</div>
         <div class="total">${fmtMoney(total)}</div>
+        ${marginHtml}
       </div>
       <div class="chev">&rsaquo;</div>
     </a>
