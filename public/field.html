@@ -268,11 +268,14 @@ function njMeasure(){
   const v = document.getElementById('nj_addr').value.trim();
   const box = document.getElementById('nj_measure'); _measure=null;
   clearTimeout(_mt); if(v.length<6){ box.style.display='none'; return; }
+  const q = v;
   _mt = setTimeout(async ()=>{
     box.style.display='block'; box.innerHTML='<span class="spin"></span> measuring roof…';
-    const r = await api('/roof-lookup', { method:'POST', body: JSON.stringify({ address:v }) });
+    const r = await api('/roof-lookup', { method:'POST', body: JSON.stringify({ address:q }) });
+    // Ignore a stale response if the address changed while this was in flight.
+    if(document.getElementById('nj_addr') && document.getElementById('nj_addr').value.trim() !== q) return;
     if(r && r.ok){ _measure=r; box.innerHTML='📐 ~'+r.sq+' SQ · '+r.pitchX12+'/12 pitch · '+r.segments+' planes <span style="color:var(--faint)">('+r.imageryQuality+')</span>'; }
-    else { box.innerHTML='<span style="color:var(--faint)">No rooftop match yet — you can still create the folder.</span>'; }
+    else { _measure=null; box.innerHTML='<span style="color:var(--faint)">No rooftop match yet — you can still create the folder.</span>'; }
   }, 700);
 }
 async function createJob(){
@@ -413,7 +416,7 @@ function setBadge(n){ const b=document.getElementById('msgBadge'); if(n>0){ b.te
 async function renderClock(){
   const w = document.getElementById('clockWrap');
   if(!ME?.id){ w.innerHTML='<div class="empty">Could not load your profile. Reopen the app from the login screen.</div>'; return; }
-  const today = new Date().toISOString().slice(0,10);
+  const n=new Date(); const today=n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0');
   const d = await api('/time?user_id='+ME.id+'&from='+today+'&to='+today);
   const open = (d.entries||[]).find(e=>!e.clock_out);
   let h='';
