@@ -486,13 +486,13 @@ async function renderSchedule(){
   const gc = await api('/google-cal?days='+gcDays);
   const job=(cal.calendar)||{}; const gcb={};
   (gc.events||[]).forEach(e=>{ const dt=e.startTime?new Date(e.startTime):null; if(!dt)return; (gcb[ymd(dt)]=gcb[ymd(dt)]||[]).push(e); });
-  CAL_DATA={job, gc:gcb, configured:!!gc.configured};
+  CAL_DATA={job, gc:gcb, configured:!!gc.configured, gcPast: endDate < todayMid};
   drawCalendar();
 }
 function calHeader(rangeLabel){
   return '<div class="caltop"><div class="calnav"><button onclick="calShift(-1)">&lsaquo;</button><span class="rng">'+esc(rangeLabel)+'</span><button onclick="calShift(1)">&rsaquo;</button></div>'
     +'<div class="caltog"><button class="'+(CAL_VIEW==='week'?'on':'')+'" onclick="calSetView(\'week\')">Week</button><button class="'+(CAL_VIEW==='month'?'on':'')+'" onclick="calSetView(\'month\')">Month</button></div></div>'
-    +'<div class="syncbar"><div class="l"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg>Google Calendar</div><div class="st">'+(CAL_DATA.configured?'● Synced':'shared cal')+'</div></div>';
+    +'<div class="syncbar"><div class="l"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg>Google Calendar</div><div class="st">'+(CAL_DATA.gcPast?'upcoming only':(CAL_DATA.configured?'● Synced':'shared cal'))+'</div></div>';
 }
 function dayPills(key, max){
   let items=[];
@@ -577,20 +577,32 @@ async function sendAI(){
   if(r && r.reply){ aiPush('ai', r.reply); AI_HIST.push({role:'user',content:q},{role:'assistant',content:r.reply}); if(r.action) execAI(r.action); }
   else { aiPush('ai', (r&&r.error)==='sign_in_required' ? 'Your session expired, reopen from the login screen.' : ((r&&r.error)||'I could not reach the assistant. Try again.')); }
 }
+function aiGo(id, upload){ closeAI(); openJob(id); if(upload) setTimeout(()=>{ const pi=document.getElementById('photoInput'); if(pi) pi.click(); }, 700); }
 async function execAI(a){
   try{
-    if(a.type==='navigate' && /^(tasks|jobs|schedule|clock)$/.test(a.tab||'')){ closeAI(); switchTab(a.tab); }
-    else if(a.type==='open_job' && a.query){ const id=await aiResolveJob(a.query); if(id){ closeAI(); openJob(id); } else aiPush('ai','I could not find a job matching "'+esc(a.query)+'". Check the Jobs tab.'); }
-    else if(a.type==='upload' && a.query){ const id=await aiResolveJob(a.query); if(id){ closeAI(); openJob(id); setTimeout(()=>{ const pi=document.getElementById('photoInput'); if(pi) pi.click(); }, 700); } else aiPush('ai','I could not find that job to upload to.'); }
+    if(a.type==='navigate' && /^(tasks|jobs|schedule|clock)$/.test(a.tab||'')){ closeAI(); switchTab(a.tab); return; }
+    if((a.type==='open_job'||a.type==='upload') && a.query){
+      const upload=a.type==='upload';
+      const m=await aiMatches(a.query);
+      if(m.length===1){ aiGo(m[0].id, upload); }
+      else if(m.length>1){ aiOfferMatches(m, upload, a.query); }
+      else aiPush('ai','I could not find a job matching "'+esc(a.query)+'". Check the Jobs tab.');
+    }
   }catch(e){}
 }
-async function aiResolveJob(q){
+async function aiMatches(q){
   const ql=String(q).toLowerCase();
-  let hit=(ALL_JOBS||[]).find(p=>((p.address||'')+' '+(p.name||'')).toLowerCase().includes(ql));
-  if(hit) return hit.id;
-  const d=await api('/projects?limit=5&search='+encodeURIComponent(q));
-  const s=(d.projects||[]).filter(p=>p.status!=='cancelled');
-  return s.length?s[0].id:null;
+  const local=(ALL_JOBS||[]).filter(p=>((p.address||'')+' '+(p.name||'')+' '+(p.customer?.full_name||'')).toLowerCase().includes(ql));
+  const d=await api('/projects?limit=10&search='+encodeURIComponent(q));
+  const server=(d.projects||[]).filter(p=>p.status!=='cancelled');
+  const seen=new Set(local.map(p=>p.id));
+  return local.concat(server.filter(p=>!seen.has(p.id)));
+}
+function aiOfferMatches(list, upload, q){
+  aiPush('ai','A few jobs match "'+esc(q)+'". Which one?');
+  const log=document.getElementById('aiLog'); const c=document.createElement('div'); c.className='ai-chips';
+  list.slice(0,6).forEach(p=>{ const b=document.createElement('div'); b.className='ai-chip'; b.textContent=(p.address||p.name)+(p.customer?.full_name?' · '+p.customer.full_name:''); b.onclick=()=>aiGo(p.id, upload); c.appendChild(b); });
+  log.appendChild(c); log.scrollTop=log.scrollHeight;
 }
 
 // ── BOOT ──
