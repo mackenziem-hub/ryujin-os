@@ -423,7 +423,9 @@ function normalizeJob(wo, ps, status){
                     : (wo && wo.estimate && wo.estimate.final_accepted_total != null
                         ? Number(wo.estimate.final_accepted_total) : null),
     sub_acceptance_status: ps ? ps.sub_acceptance_status : null,
-    state:       ps ? ps.state : null
+    state:       ps ? ps.state : null,
+    margin_pct:        (wo && wo.margin_pct != null) ? wo.margin_pct : null,
+    actual_margin_pct: (wo && wo.actual_margin_pct != null) ? wo.actual_margin_pct : null
   };
 }
 
@@ -520,6 +522,13 @@ function renderActiveJobs(){
     const href = j.woId ? `/job.html?wo=${esc(j.woId)}`
                : j.paysheetId ? `/production-paysheet.html?id=${esc(j.paysheetId)}`
                : '';
+    const mp = (j.actual_margin_pct != null) ? j.actual_margin_pct : j.margin_pct;
+    const mAct = j.actual_margin_pct != null;
+    const mCol = mp == null ? '' : mp >= 25 ? '#4ade80' : mp >= 10 ? '#fbbf24' : '#f87171';
+    const mBg  = mp == null ? '' : mp >= 25 ? 'rgba(74,222,128,0.15)' : mp >= 10 ? 'rgba(251,191,36,0.15)' : 'rgba(248,113,113,0.15)';
+    const marginChip = mp != null
+      ? `<span title="${mAct ? 'Actual' : 'Planned'} gross margin" style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:0.92em;color:${mCol};background:${mBg};border:1px solid ${mCol}55;padding:2px 7px;border-radius:6px">${mp.toFixed(0)}% margin${mAct ? '' : ' est'}</span>`
+      : '';
     return `
       <div class="job-card"${href ? ` onclick="window.open('${href}','_blank')" style="cursor:pointer"` : ''}>
         <div class="head">
@@ -531,7 +540,7 @@ function renderActiveJobs(){
         </div>
         <div class="foot">
           <span class="sub">${esc(sub)}</span>
-          <span class="val">${money(j.total)}</span>
+          <span style="display:flex;align-items:center;gap:8px">${marginChip}<span class="val">${money(j.total)}</span></span>
         </div>
         ${next ? `<div class="next">${esc(next)}</div>` : ''}
       </div>`;

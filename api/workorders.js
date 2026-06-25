@@ -170,7 +170,7 @@ async function handler(req, res) {
 
     let query = supabaseAdmin
       .from('workorders')
-      .select('*, estimate:estimates(estimate_number,share_token,complexity,final_accepted_total), paysheet:paysheets(job_id,status)', { count: 'exact' })
+      .select('*, estimate:estimates(estimate_number,share_token,complexity,final_accepted_total,calculated_packages,selected_package), paysheet:paysheets(job_id,status,subtotal)', { count: 'exact' })
       .eq('tenant_id', tenantId)
       .order('start_date', { ascending: true, nullsFirst: false })
       .order('created_at', { ascending: false })
@@ -180,7 +180,32 @@ async function handler(req, res) {
 
     const { data, error, count } = await query;
     if (error) return res.status(500).json({ error: error.message });
-    return res.json({ workorders: data, total: count });
+
+    // Per-job gross margin for the job-list chips. Computed server-side off the
+    // selected package's cost line items (pre-tax, same basis as job.html's P&L):
+    // planned uses the estimate's labour cost; actual swaps the pay sheet subtotal
+    // in when one exists. The heavy calculated_packages JSON is then stripped so
+    // the list payload stays lean.
+    const rows = (data || []).map(w => {
+      const est = w.estimate;
+      const pk = est && est.calculated_packages ? est.calculated_packages[est.selected_package || 'gold'] : null;
+      if (pk && Number(pk.total) > 0) {
+        const li = Array.isArray(pk.lineItems) ? pk.lineItems.filter(x => x && x.included !== false) : [];
+        const sum = (...c) => li.filter(x => c.includes(String(x.category || '').toLowerCase())).reduce((s, x) => s + (Number(x.total_cost) || 0), 0);
+        const rev = Number(pk.total);
+        const mat = sum('materials', 'material');
+        const lab = sum('labor', 'labour');
+        const oth = sum('disposal', 'warranty', 'other', 'equipment', 'permit', 'rental');
+        const psSub = (w.paysheet && w.paysheet.subtotal != null) ? Number(w.paysheet.subtotal) : null;
+        w.margin_pct = Math.round(((rev - (mat + lab + oth)) / rev) * 1000) / 10;
+        w.actual_margin_pct = (psSub != null && psSub > 0)
+          ? Math.round(((rev - (mat + psSub)) / rev) * 1000) / 10
+          : null;
+      }
+      if (w.estimate && w.estimate.calculated_packages) delete w.estimate.calculated_packages;
+      return w;
+    });
+    return res.json({ workorders: rows, total: count });
   }
 
   if (req.method === 'POST') {
