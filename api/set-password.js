@@ -50,7 +50,14 @@ export default async function handler(req, res) {
     .select('id, name, email, username, role')
     .maybeSingle();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) {
+    // Duplicate email is a predictable admin-fix case (the address already belongs
+    // to another teammate); surface it as a 409 like the other user endpoints.
+    if (error.code === '23505' || /duplicate|unique/i.test(error.message || '')) {
+      return res.status(409).json({ error: 'That email is already used by another teammate.' });
+    }
+    return res.status(500).json({ error: error.message });
+  }
   if (!data) return res.status(404).json({ error: 'User not found in this tenant' });
 
   // Force a clean re-login: revoke any existing sessions for the target user so a
