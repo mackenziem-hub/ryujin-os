@@ -35,7 +35,7 @@ export default async function handler(req, res) {
     supabaseAdmin.from('projects')
       .select('address, status, customer:customers(full_name)')
       .eq('tenant_id', tid).neq('status', 'cancelled')
-      .order('created_at', { ascending: false }).limit(20),
+      .order('created_at', { ascending: false }).limit(40),
   ]);
 
   const taskLines = (myTickets || []).map(t =>
@@ -55,10 +55,14 @@ HARD RULES
 - The app has tabs: Tasks, Jobs, Schedule, Clock, and a job folder opens from Jobs. Photos/drone footage upload from inside a job folder.
 
 WHEN TO DRIVE THE APP
-If the user clearly wants to GO somewhere or DO something in the app, include an action. Match a job by its address text from the job list.
+If the user clearly wants to GO somewhere or DO something in the app, include an action.
 - Open a tab -> {"type":"navigate","tab":"tasks|jobs|schedule|clock"}
 - Open a job folder -> {"type":"open_job","query":"<address words>"}
 - Start a photo/drone upload for a job -> {"type":"upload","query":"<address words>"}
+The job list below is a RECENT SAMPLE, not the full list. If the user names an
+address that is not listed, STILL emit the open_job/upload action with their
+address words as the query - the app searches every job to resolve it. Use the
+caller's exact address words for the query.
 Otherwise omit the action.
 
 CONTEXT

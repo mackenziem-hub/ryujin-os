@@ -478,7 +478,12 @@ async function renderSchedule(){
   if(CAL_VIEW==='week'){ const s=startOfWeek(CAL_ANCHOR); from=ymd(s); const e=new Date(s); e.setDate(s.getDate()+6); to=ymd(e); }
   else { from=ymd(new Date(CAL_ANCHOR.getFullYear(),CAL_ANCHOR.getMonth(),1)); to=ymd(new Date(CAL_ANCHOR.getFullYear(),CAL_ANCHOR.getMonth()+1,0)); }
   const cal = await api('/tickets?view=calendar&from='+from+'&to='+to+(ME?.id?'&assigned_to='+ME.id:''));
-  const gc = await api('/google-cal?days=90');
+  // Align the Google window to the END of the visible range (the ICS feed is
+  // forward/near-term only; cap at 90 days). Past ranges clamp to 1 so we don't
+  // over-fetch, and those cells just show no Google events.
+  const endDate=new Date(to+'T00:00:00'); const todayMid=new Date(); todayMid.setHours(0,0,0,0);
+  const gcDays=Math.min(90, Math.max(1, Math.ceil((endDate-todayMid)/86400000)+1));
+  const gc = await api('/google-cal?days='+gcDays);
   const job=(cal.calendar)||{}; const gcb={};
   (gc.events||[]).forEach(e=>{ const dt=e.startTime?new Date(e.startTime):null; if(!dt)return; (gcb[ymd(dt)]=gcb[ymd(dt)]||[]).push(e); });
   CAL_DATA={job, gc:gcb, configured:!!gc.configured};
