@@ -179,7 +179,11 @@ async function handler(req, res) {
     if (!ev.startTime) return false;
     const startT = new Date(ev.startTime).getTime();
     if (!Number.isFinite(startT)) return false;
-    return startT >= startMs - 86400000 && startT <= endMs;
+    // 1-day buffer on BOTH bounds: from/to are parsed in the server tz, so a
+    // boundary event in the crew's tz could sit a few hours outside the exact
+    // window. The client re-buckets every event by its own local date, so a
+    // slightly wider fetch never over-displays.
+    return startT >= startMs - 86400000 && startT <= endMs + 86400000;
   });
 
   // Drop cancelled. Sort ascending.
