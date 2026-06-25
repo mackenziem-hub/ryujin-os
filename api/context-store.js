@@ -22,7 +22,7 @@ async function handler(req, res) {
   // ── GET ──
   if (req.method === 'GET') {
     if (kind === 'session') {
-      const limit = Math.min(parseInt(req.query.limit) || 25, 200);
+      const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 25, 1), 200);
       let query = supabaseAdmin
         .from('session_entries')
         .select('entry_key, machine, terminal, title, body, created_at, updated_at')
@@ -86,8 +86,11 @@ async function handler(req, res) {
           .eq('tenant_id', tenantId)
           .eq('slug', body.slug)
           .select('slug, is_active')
-          .single();
+          .maybeSingle();
         if (error) return res.status(500).json({ error: error.message });
+        // zero rows = slug never existed for this tenant: a benign no-op, not an
+        // outage. Returning 200 keeps context-push from reporting a fake [FAIL].
+        if (!data) return res.json({ slug: body.slug, is_active: false, noop: true });
         return res.json(data);
       }
 
