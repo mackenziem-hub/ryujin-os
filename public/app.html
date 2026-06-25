@@ -290,12 +290,17 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
   .nav-item svg,.nav-item .ryu-nav-icon-png{width:22px;height:22px}
 
   /* Panel-heavy tabs flow into two columns; sparse tabs stay single (clock/chat).
-     Tasks render their cards into #tasksInner, so the columns live on that wrapper.
+     Tasks list/mine renders cards into #tasksInner, so columns live on that wrapper.
+     The board view (#tasksInner > .board-lanes) is excluded and laid out as a kanban.
      Detail views set data-tab="detail" so they stay a single readable column. */
   #content[data-tab="home"],#content[data-tab="projects"],
-  #content[data-tab="tasks"] #tasksInner{column-count:2;column-gap:18px}
+  #content[data-tab="tasks"] #tasksInner:not(:has(.board-lanes)){column-count:2;column-gap:18px}
   #content[data-tab="home"] > *,#content[data-tab="projects"] > *,
-  #content[data-tab="tasks"] #tasksInner > *{break-inside:avoid}
+  #content[data-tab="tasks"] #tasksInner:not(:has(.board-lanes)) > *{break-inside:avoid}
+  /* Section headers stay full-width across the list masonry */
+  #content[data-tab="tasks"] #tasksInner .section-head{column-span:all}
+  /* Board view: three status lanes side-by-side instead of stacked */
+  #content[data-tab="tasks"] .board-lanes{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;align-items:start}
   /* Full-width hero rows sit above the two-column flow */
   #content[data-tab="home"] .stats-row,#content[data-tab="home"] .view-toggle,
   #content[data-tab="projects"] .view-toggle{column-span:all}
@@ -736,7 +741,7 @@ async function renderBoardView() {
   };
 
   let html = clutterBanner;
-  html += `<div class="board-col active">
+  html += `<div class="board-lanes"><div class="board-col active">
     <div class="board-col-head"><span class="lbl">IN PROGRESS</span><span class="badge badge-active">${active.length}</span></div>
     ${active.length ? active.map(cardHtml).join('') : `<div style="font-size:0.78em;color:var(--text-dim);padding:8px 4px">Nothing in progress</div>`}
   </div>`;
@@ -749,7 +754,7 @@ async function renderBoardView() {
   html += `<div class="board-col done">
     <div class="board-col-head"><span class="lbl">RECENTLY DONE</span><span class="badge badge-done">${done.length}</span></div>
     ${done.length ? done.slice(0,10).map(cardHtml).join('') : `<div style="font-size:0.78em;color:var(--text-dim);padding:8px 4px">No completed tickets yet</div>`}
-  </div>`;
+  </div></div>`;
 
   inner.innerHTML = html;
 }
