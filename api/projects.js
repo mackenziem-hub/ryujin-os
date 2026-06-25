@@ -334,6 +334,10 @@ async function handler(req, res) {
   //    (is_internal=true so they never surface on the client share gallery).
   //    guest_name carries the author label so the list needs no users join. ──
   if (req.query.action === 'notes' && req.method === 'GET') {
+    // Self-gate: the generic isListRead gate above is bypassed when ?id= is also
+    // present, so this internal-notes branch must require its own session.
+    const session = await resolveSession(req);
+    if (!session) return res.status(401).json({ error: 'sign_in_required', code: 'NO_SESSION' });
     const pid = req.query.project_id;
     if (!pid) return res.status(400).json({ error: 'project_id required' });
     const { data, error } = await supabaseAdmin
