@@ -43,9 +43,16 @@ export default async function handler(req, res) {
     .eq('id', id)
     .eq('tenant_id', session.tenant_id)
     .select('id, name, email, username, role')
-    .single();
+    .maybeSingle();
 
   if (error) return res.status(500).json({ error: error.message });
   if (!data) return res.status(404).json({ error: 'User not found in this tenant' });
+
+  // Force a clean re-login: revoke any existing sessions for the target user so a
+  // changed password actually locks out old/compromised devices (a forced reset that
+  // leaves old sessions live defeats the purpose). Fire-and-forget; the password is
+  // already changed even if this cleanup fails.
+  await supabaseAdmin.from('sessions').delete().eq('user_id', id).then(() => {}, () => {});
+
   return res.json({ ok: true, user: data });
 }
