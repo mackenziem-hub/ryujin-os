@@ -10,6 +10,11 @@
 //       no path -> posts the first block of SESSION_CONTEXT.md (the entry just authored)
 //   node --env-file=.env.local scripts/context-push.mjs principle <slug> [<slug> ...]
 //   node --env-file=.env.local scripts/context-push.mjs principle --all   (backfill every genuine-prefix file)
+//   node --env-file=.env.local scripts/context-push.mjs memory             (push MEMORY.md verbatim as the _memory_index row)
+//
+// Exit code is NON-ZERO on a real push failure (missing token / POST / network) so a
+// silently-failed SAVE is detectable before the next LOAD rebuilds from rows. Genuine
+// no-ops and usage errors exit 0.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -30,8 +35,10 @@ const SESSION_FILE = 'C:/Users/Owner/OneDrive/Desktop/Plus Ultra/_brain/SESSION_
 
 if (!SVC) {
   console.error('[FAIL] context_store: missing RYUJIN_SERVICE_TOKEN — cannot push (run with --env-file=.env.local). Local files unchanged.');
-  process.exit(0);
+  process.exit(1);
 }
+
+const MEMORY_INDEX_SLUG = '_memory_index';
 
 async function post(qs, payload) {
   const r = await fetch(`${APP}/api/context-store?${qs}`, {
@@ -55,7 +62,10 @@ function entryKey() {
 // first markdown block of SESSION_CONTEXT.md: skip the DERIVED header comment, take
 // everything up to the first '---' separator, and drop any '> saved-from:' footer.
 function firstBlock(text) {
-  let t = text.replace(/^<!--[\s\S]*?-->\s*/, '');
+  // CRLF-safe: OneDrive sync / a Windows editor / git autocrlf can flip the file to
+  // CRLF; without this the '\n---\n' separator never matches and we would post the
+  // ENTIRE history as one row every save.
+  let t = String(text).replace(/\r\n/g, '\n').replace(/^<!--[\s\S]*?-->\s*/, '');
   const sep = t.indexOf('\n---\n');
   if (sep !== -1) t = t.slice(0, sep);
   return t.replace(/\n>\s*saved-from:[^\n]*\n?/g, '\n').trim();
@@ -76,12 +86,23 @@ function principleTitle(body, slug) {
 
 async function pushSession(arg) {
   let body;
-  if (arg && fs.existsSync(arg)) body = fs.readFileSync(arg, 'utf8');
+  if (arg && fs.existsSync(arg)) body = fs.readFileSync(arg, 'utf8').replace(/\r\n/g, '\n');
   else if (fs.existsSync(SESSION_FILE)) body = firstBlock(fs.readFileSync(SESSION_FILE, 'utf8'));
   if (!body || !body.trim()) { console.error('[FAIL] context_store: no session entry text found to push.'); process.exit(0); }
   const key = entryKey();
   const out = await post('kind=session', { entry_key: key, machine: MACHINE, terminal: TERMINAL, title: titleFrom(body), body });
   console.log(`context-push session OK — entry ${out.entry_key || key} (machine ${MACHINE}).`);
+}
+
+// MEMORY.md is hand-curated (preamble, theme grouping, hooks). It travels verbatim
+// as a single kind='meta' row so context-pull restores it byte-for-byte, never
+// lossily regenerating it from topic rows.
+async function pushMemory() {
+  const fp = path.join(CANON, 'MEMORY.md');
+  if (!fs.existsSync(fp)) { console.error('[FAIL] context_store: MEMORY.md not found.'); process.exit(1); }
+  const body = fs.readFileSync(fp, 'utf8');
+  await post('kind=principle', { slug: MEMORY_INDEX_SLUG, kind: 'meta', title: 'MEMORY.md index', body, source_machine: MACHINE });
+  console.log(`context-push memory OK — MEMORY.md (${body.length} bytes) carried as the _memory_index row (machine ${MACHINE}).`);
 }
 
 async function pushPrinciples(slugs) {
@@ -102,18 +123,21 @@ async function pushPrinciples(slugs) {
     } catch (e) { console.error(`  [FAIL] ${slug}: ${e.message}`); fail++; }
   }
   console.log(`context-push principles OK — ${ok} upserted, ${fail} failed (machine ${MACHINE}).`);
+  if (fail) process.exitCode = 1; // a partial backfill must be detectable
 }
 
 async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
   if (cmd === 'session') await pushSession(rest[0]);
+  else if (cmd === 'memory') await pushMemory();
   else if (cmd === 'principle' || cmd === 'principles') {
     if (!rest.length) { console.error('usage: context-push.mjs principle <slug> [<slug> ...] | --all'); process.exit(0); }
     await pushPrinciples(rest);
   } else {
-    console.error('usage: context-push.mjs session [file] | principle <slug...|--all>');
+    console.error('usage: context-push.mjs session [file] | principle <slug...|--all> | memory');
     process.exit(0);
   }
 }
 
-main().catch((e) => { console.error(`[FAIL] context_store: ${e.message}`); process.exit(0); });
+// non-zero exit on a real push/network failure so a silently-failed SAVE is detectable
+main().catch((e) => { console.error(`[FAIL] context_store: ${e.message}`); process.exit(1); });

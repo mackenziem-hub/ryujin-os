@@ -36,11 +36,13 @@ const EXCLUDE = [
   /-HAL(\b|[-.])/i,           // OneDrive machine forks
   /-Mind-Palace/i,
   /-DESKTOP/i,
-  /_v2(\b|[-.])/i,
   /\(\d+\)/,                  // "name (1).md" OneDrive copies
   /^_?DEPRECATED/i,
   /\.from-/i,                 // already-parked conflict siblings
 ];
+// NOTE: do NOT exclude on a bare "_v2" — it collides with genuine principle slugs
+// (e.g. project_subcontractor_rate_sheet_v2.md is real content, not a machine fork).
+// Machine forks are caught by the -HAL/-Mind-Palace/-DESKTOP/(N) patterns above.
 
 function eligible(name) {
   if (!name.endsWith('.md')) return false;
@@ -93,12 +95,18 @@ console.log(`  identical (skip)          : ${plan.identical.length}`);
 console.log(`  local-newer (keep local)  : ${plan.localNewer.length}`);
 console.log(`  parked (conflict sibling) : ${plan.parked.length}\n`);
 
+// visibility: genuine-prefix source files knocked out by an EXCLUDE rule (so a
+// silently-dropped real principle is never invisible — the _v2 lesson)
+const excludedGenuine = readDirFiles(SRC).filter((n) => n.endsWith('.md') && GENUINE_PREFIX.test(n) && EXCLUDE.some((re) => re.test(n)));
+console.log(`  excluded (filtered out)   : ${excludedGenuine.length}\n`);
+
 if (!APPLY) {
   const sample = (arr) => arr.slice(0, 8).join(', ') + (arr.length > 8 ? ` … (+${arr.length - 8})` : '');
   if (plan.new.length) console.log(`NEW sample      : ${sample(plan.new)}`);
   if (plan.updated.length) console.log(`UPDATED sample  : ${sample(plan.updated)}`);
   if (plan.localNewer.length) console.log(`LOCAL-NEWER     : ${sample(plan.localNewer)}`);
   if (plan.parked.length) console.log(`PARKED sample   : ${sample(plan.parked)}`);
+  if (excludedGenuine.length) console.log(`EXCLUDED sample : ${sample(excludedGenuine)}  (verify none are genuine principles)`);
   console.log(`\nDry-run only. Re-run with --apply to back up + merge.`);
   process.exit(0);
 }
@@ -120,7 +128,12 @@ for (const name of [...plan.new, ...plan.updated]) {
   copied++;
 }
 for (const name of plan.parked) {
-  const parkedName = name.replace(/\.md$/, '.from-claude-memory.md');
+  let parkedName = name.replace(/\.md$/, '.from-claude-memory.md');
+  const target = path.join(CANON, parkedName);
+  // don't clobber a prior unreviewed parked artifact — version it with the run stamp
+  if (fs.existsSync(target) && !fs.readFileSync(target).equals(fs.readFileSync(path.join(SRC, name)))) {
+    parkedName = name.replace(/\.md$/, `.from-claude-memory-${stamp}.md`);
+  }
   fs.copyFileSync(path.join(SRC, name), path.join(CANON, parkedName));
   parked++;
 }

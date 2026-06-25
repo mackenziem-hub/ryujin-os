@@ -1,4 +1,4 @@
--- Migration 083: context_store (session_entries + context_principles)
+-- Migration 101: context_store (session_entries + context_principles)
 --
 -- Cross-machine context spine. The Claude Code session brain (SESSION_CONTEXT.md)
 -- and durable auto-memory (~/.claude/.../memory) were file-only: one rode OneDrive
