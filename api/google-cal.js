@@ -144,7 +144,11 @@ async function handler(req, res) {
   if (userIcs) {
     try {
       const u = new URL(userIcs);
-      if (u.protocol === 'https:' && /(^|\.)calendar\.google\.com$/i.test(u.hostname)) {
+      // Must be Google's host AND an actual iCal feed path (.../calendar/ical/....ics),
+      // not a normal Calendar page URL (which would return HTML, not events).
+      if (u.protocol === 'https:'
+          && /(^|\.)calendar\.google\.com$/i.test(u.hostname)
+          && /^\/calendar\/ical\/.+\.ics$/i.test(u.pathname)) {
         icsUrl = userIcs;
         personal = true;
       }
