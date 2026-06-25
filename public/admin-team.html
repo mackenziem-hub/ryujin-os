@@ -193,6 +193,15 @@ body{font-family:'Inter',system-ui,sans-serif;background:#030611;color:var(--tex
           <div id="c_result" style="font-size:0.78em;margin-top:8px"></div>
         </div>
 
+        <div class="invite-card" style="background:rgba(124,58,237,0.05);border-color:rgba(124,58,237,0.28)">
+          <div class="invite-title" style="color:#a78bfa">Set / reset a teammate's password</div>
+          <div style="font-size:0.74em;color:var(--text-dim);margin-bottom:10px;line-height:1.45">Use this when someone is locked out or never finished setup. Pick the teammate and set a new password. They sign in with the username or email shown.</div>
+          <div class="field"><label>Teammate</label><select id="sp_user"><option value="">Loading team...</option></select></div>
+          <div class="field"><label>New Password</label><input type="text" id="sp_password" placeholder="min 6 chars" autocomplete="off"/></div>
+          <button class="btn primary" style="width:100%;background:linear-gradient(135deg,rgba(124,58,237,0.28),rgba(124,58,237,0.1));color:#a78bfa;border-color:rgba(124,58,237,0.45)" onclick="setTeammatePassword()">SET PASSWORD</button>
+          <div id="sp_result" style="font-size:0.78em;margin-top:8px"></div>
+        </div>
+
         <div style="font-family:'Inter',sans-serif;font-size:0.58em;font-weight:700;letter-spacing:2px;color:var(--text-muted);text-transform:uppercase;margin:10px 4px 6px">Role Definitions</div>
 
         <div class="role-section">
@@ -251,6 +260,46 @@ async function addCrewUser(){
     document.getElementById('c_name').value = ''; document.getElementById('c_username').value = ''; document.getElementById('c_password').value = '';
   } catch(e) { res.style.color = 'var(--red)'; res.textContent = 'Connection error.'; }
 }
+
+// ── Set / reset an existing teammate's password (owner/admin only) ──
+function spEsc(s){ return String(s==null?'':s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+async function loadTeamForPwReset(){
+  var sel = document.getElementById('sp_user');
+  if (!sel) return;
+  var token = ''; try { token = localStorage.getItem('ryujin_token') || ''; } catch(e) {}
+  try {
+    var r = await fetch('/api/users', { headers: Object.assign({ 'x-tenant-id': 'plus-ultra' }, token ? { Authorization: 'Bearer ' + token } : {}) });
+    var d = await r.json();
+    var users = Array.isArray(d) ? d : (d.users || []);
+    if (!r.ok || !users.length) { sel.innerHTML = '<option value="">No teammates found</option>'; return; }
+    sel.innerHTML = users.map(function(u){
+      var who = u.username || u.email || u.id;
+      return '<option value="' + spEsc(u.id) + '">' + spEsc((u.name || who) + ' (' + who + ')') + '</option>';
+    }).join('');
+  } catch(e) { sel.innerHTML = '<option value="">Could not load team</option>'; }
+}
+async function setTeammatePassword(){
+  var res = document.getElementById('sp_result');
+  var id = document.getElementById('sp_user').value;
+  var password = document.getElementById('sp_password').value;
+  if (!id) { res.style.color = 'var(--red)'; res.textContent = 'Pick a teammate.'; return; }
+  if (!password || password.length < 6) { res.style.color = 'var(--red)'; res.textContent = 'Password must be at least 6 characters.'; return; }
+  res.style.color = 'var(--text-dim)'; res.textContent = 'Setting...';
+  var token = ''; try { token = localStorage.getItem('ryujin_token') || ''; } catch(e) {}
+  try {
+    var r = await fetch('/api/set-password', {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json', 'x-tenant-id': 'plus-ultra' }, token ? { Authorization: 'Bearer ' + token } : {}),
+      body: JSON.stringify({ id: id, password: password })
+    });
+    var d = await r.json();
+    if (!r.ok) { res.style.color = 'var(--red)'; res.textContent = d.error || ('Failed (HTTP ' + r.status + ')'); return; }
+    res.style.color = 'var(--green)';
+    res.textContent = 'Password set for ' + ((d.user && d.user.name) ? d.user.name : 'teammate') + '. They can sign in now.';
+    document.getElementById('sp_password').value = '';
+  } catch(e) { res.style.color = 'var(--red)'; res.textContent = 'Connection error.'; }
+}
+document.addEventListener('DOMContentLoaded', loadTeamForPwReset);
 </script>
 <script src="assets/ryujin-mode.js"></script>
 <script src="assets/ryujin-tenant.js"></script>
