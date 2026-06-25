@@ -219,6 +219,10 @@ function taskRow(t, mode){
   if(mode==='avail'){
     return '<div class="task" onclick="claimTask(\''+t.id+'\')"><div class="check" style="border-radius:50%"></div><div class="body"><div class="t">'+esc(t.title)+'</div><div class="s">'+esc(loc||'tap to grab')+'</div></div><span class="chip open">Grab</span></div>';
   }
+  if(mode==='view'){
+    const who = t.assigned_user?.name ? ' · '+t.assigned_user.name : '';
+    return '<div class="task" style="cursor:default"><div class="check '+(done?'done':'')+'"></div><div class="body"><div class="t">'+esc(t.title)+'</div><div class="s">'+esc((loc||'task')+who)+'</div></div>'+(prc?'<span class="chip '+prc+'">'+t.priority+'</span>':statusChip(t.status))+'</div>';
+  }
   return '<div class="task '+(done?'done':'')+'" onclick="toggleTask(\''+t.id+'\','+done+')"><div class="check '+(done?'done':'')+'"></div><div class="body"><div class="t">'+esc(t.title)+'</div><div class="s">'+esc(loc||(t.due_date?'due '+t.due_date:'task'))+'</div></div>'+(prc?'<span class="chip '+prc+'">'+t.priority+'</span>':statusChip(t.status))+'</div>';
 }
 async function claimTask(id){
@@ -343,7 +347,7 @@ async function openJob(id){
   h += notes.map(n=>'<div class="note"><div class="meta"><b>'+esc(n.guest_name||'Crew')+'</b><span>'+ago(n.created_at)+'</span></div><div class="txt">'+esc(n.body)+'</div></div>').join('');
   // tasks
   const jt = (tix.tickets||[]).filter(t=>t.status!=='cancelled');
-  if(jt.length){ h += '<div class="lbl">Tasks on this job <span class="n">'+jt.length+'</span></div>' + jt.map(t=>taskRow(t,'mine')).join(''); }
+  if(jt.length){ h += '<div class="lbl">Tasks on this job <span class="n">'+jt.length+'</span></div>' + jt.map(t=>taskRow(t, (t.assigned_to && t.assigned_to!==ME?.id) ? 'view' : 'mine')).join(''); }
   // customer / linked
   h += '<div class="lbl">Customer &amp; records</div>';
   const ph = pr.customer?.phone;
@@ -389,7 +393,7 @@ async function renderSchedule(){
   const gcalEv = (gc.events||[]);
   if(!days.length && !gcalEv.length){ w.innerHTML = h+'<div class="empty">Nothing scheduled in the next few days.</div>'; return; }
   // group gcal by date
-  const gcByDay={}; gcalEv.forEach(e=>{ const d=(e.startTime||'').slice(0,10); (gcByDay[d]=gcByDay[d]||[]).push(e); });
+  const gcByDay={}; gcalEv.forEach(e=>{ const dt=e.startTime?new Date(e.startTime):null; const d=dt?(dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0')):'unscheduled'; (gcByDay[d]=gcByDay[d]||[]).push(e); });
   const allDays = Array.from(new Set([...days, ...Object.keys(gcByDay)])).sort();
   allDays.forEach(d=>{
     const lbl = new Date(d+'T00:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}).toUpperCase();

@@ -338,6 +338,11 @@ async function handler(req, res) {
     // present, so this internal-notes branch must require its own session.
     const session = await resolveSession(req);
     if (!session) return res.status(401).json({ error: 'sign_in_required', code: 'NO_SESSION' });
+    // Bind to the caller's own tenant so a signed-in user can't read another
+    // tenant's notes by passing that tenant's slug in the header.
+    if (session.tenant_id && session.tenant_id !== tenantId) {
+      return res.status(403).json({ error: 'tenant_mismatch' });
+    }
     const pid = req.query.project_id;
     if (!pid) return res.status(400).json({ error: 'project_id required' });
     const { data, error } = await supabaseAdmin
