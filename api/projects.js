@@ -341,6 +341,7 @@ async function handler(req, res) {
       .select('id, body, guest_name, user_id, created_at')
       .eq('project_id', pid)
       .eq('tenant_id', tenantId)
+      .eq('is_internal', true)
       .order('created_at', { ascending: false });
     if (error) return res.status(500).json({ error: error.message });
     return res.json({ notes: data || [] });
