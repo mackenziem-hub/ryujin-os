@@ -7,6 +7,7 @@
 // DELETE /api/paysheets?id=X             — soft delete (status=cancelled)
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requirePortalSessionAndTenant } from '../lib/portalAuth.js';
+import { syncProjectFromWorkorder } from '../lib/projectSync.js';
 
 async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -73,13 +74,17 @@ async function handler(req, res) {
       const woStatus = PS_TO_WO[updates.status];
       if (woStatus) {
         const { data: linked } = await supabaseAdmin
-          .from('workorders').select('id,status')
+          .from('workorders').select('id,status,start_date,linked_estimate_id,customer_name')
           .eq('tenant_id', tenantId).eq('linked_paysheet_id', id);
         if (linked && linked.length) {
           const woUpdate = { status: woStatus, updated_at: new Date().toISOString() };
           if (woStatus === 'complete') woUpdate.completed_at = new Date().toISOString();
           await supabaseAdmin.from('workorders').update(woUpdate)
             .eq('tenant_id', tenantId).eq('linked_paysheet_id', id);
+          // Carry the change through to the linked project (forward-only, non-fatal).
+          for (const wo of linked) {
+            await syncProjectFromWorkorder(tenantId, { ...wo, status: woStatus });
+          }
         }
       }
     }
