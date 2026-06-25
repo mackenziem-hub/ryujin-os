@@ -330,6 +330,59 @@ async function handler(req, res) {
     return res.json(data);
   }
 
+  // ── Job-folder notes (field app). Reuses the comments table; team-visible
+  //    (is_internal=true so they never surface on the client share gallery).
+  //    guest_name carries the author label so the list needs no users join. ──
+  if (req.query.action === 'notes' && req.method === 'GET') {
+    // Self-gate: the generic isListRead gate above is bypassed when ?id= is also
+    // present, so this internal-notes branch must require its own session.
+    const session = await resolveSession(req);
+    if (!session) return res.status(401).json({ error: 'sign_in_required', code: 'NO_SESSION' });
+    // Bind to the caller's own tenant so a signed-in user can't read another
+    // tenant's notes by passing that tenant's slug in the header.
+    if (session.tenant_id && session.tenant_id !== tenantId) {
+      return res.status(403).json({ error: 'tenant_mismatch' });
+    }
+    const pid = req.query.project_id;
+    if (!pid) return res.status(400).json({ error: 'project_id required' });
+    const { data, error } = await supabaseAdmin
+      .from('comments')
+      .select('id, body, guest_name, user_id, created_at')
+      .eq('project_id', pid)
+      .eq('tenant_id', tenantId)
+      .eq('is_internal', true)
+      .order('created_at', { ascending: false });
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ notes: data || [] });
+  }
+  if (req.query.action === 'add-note' && req.method === 'POST') {
+    const session = await resolveSession(req);
+    const { project_id, body } = (req.body || {});
+    if (!project_id || !body || !String(body).trim()) {
+      return res.status(400).json({ error: 'project_id and body required' });
+    }
+    // Confirm the project lives in this tenant before attaching a note (the generic
+    // mutation gate binds the SESSION to the tenant, but project_id is caller-supplied).
+    const { data: proj } = await supabaseAdmin
+      .from('projects').select('id').eq('id', project_id).eq('tenant_id', tenantId).maybeSingle();
+    if (!proj) return res.status(404).json({ error: 'Project not found' });
+    const uid = session?.user_id && session.user_id !== 'service-internal' ? session.user_id : null;
+    const { data, error } = await supabaseAdmin
+      .from('comments')
+      .insert({
+        project_id,
+        tenant_id: tenantId,
+        body: String(body).trim(),
+        user_id: uid,
+        guest_name: session?.name || 'Crew',
+        is_internal: true
+      })
+      .select('id, body, guest_name, user_id, created_at')
+      .single();
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(201).json(data);
+  }
+
   // ── Ensure share token (idempotent, used by the photo-share button) ──
   if (req.method === 'POST' && req.query.action === 'ensure-share') {
     const projectId = req.query.id;
@@ -391,6 +444,11 @@ async function handler(req, res) {
         `)
         .eq('tenant_id', tenantId)
         .eq('id', id)
+        // This read is reachable with only the tenant slug (customer-showcase, no
+        // session), so the embedded comments must exclude internal crew notes
+        // (is_internal=true). Crew read their notes via the session-gated
+        // ?action=notes path instead.
+        .eq('comments.is_internal', false)
         .single();
 
       if (error) return res.status(404).json({ error: 'Project not found' });
@@ -410,6 +468,15 @@ async function handler(req, res) {
       .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
 
     if (status) query = query.eq('status', status);
+    // Address/name search so the field-app folder browser can reach jobs beyond
+    // the newest page instead of only client-filtering the first batch. Strip
+    // commas/percent so the value can't break the PostgREST or() filter syntax.
+    if (req.query.search) {
+      // Whitelist to word chars, spaces and hyphens so no PostgREST filter
+      // metacharacter ( , % * ( ) \ : " ' ) can break or alter the or() expression.
+      const s = String(req.query.search).replace(/[^\w\s-]/g, ' ').replace(/\s+/g, ' ').trim();
+      if (s) query = query.or(`address.ilike.%${s}%,name.ilike.%${s}%`);
+    }
     // Scoped lookups (e.g. job.html resolving a job's project for the customer
     // share link). Avoids paging the full, newest-first capped list.
     if (customer_id) query = query.eq('customer_id', customer_id);
