@@ -478,21 +478,19 @@ async function renderSchedule(){
   if(CAL_VIEW==='week'){ const s=startOfWeek(CAL_ANCHOR); from=ymd(s); const e=new Date(s); e.setDate(s.getDate()+6); to=ymd(e); }
   else { from=ymd(new Date(CAL_ANCHOR.getFullYear(),CAL_ANCHOR.getMonth(),1)); to=ymd(new Date(CAL_ANCHOR.getFullYear(),CAL_ANCHOR.getMonth()+1,0)); }
   const cal = await api('/tickets?view=calendar&from='+from+'&to='+to+(ME?.id?'&assigned_to='+ME.id:''));
-  // Align the Google window to the END of the visible range (the ICS feed is
-  // forward/near-term only; cap at 90 days). Past ranges clamp to 1 so we don't
-  // over-fetch, and those cells just show no Google events.
-  const endDate=new Date(to+'T00:00:00'); const todayMid=new Date(); todayMid.setHours(0,0,0,0);
-  const gcDays=Math.min(90, Math.max(1, Math.ceil((endDate-todayMid)/86400000)+1));
-  const gc = await api('/google-cal?days='+gcDays);
+  // Google events for the EXACT visible range (the endpoint reads the full ICS,
+  // so this includes the earlier days of the current week/month, not just
+  // forward-from-today).
+  const gc = await api('/google-cal?from='+from+'&to='+to);
   const job=(cal.calendar)||{}; const gcb={};
   (gc.events||[]).forEach(e=>{ const dt=e.startTime?new Date(e.startTime):null; if(!dt)return; (gcb[ymd(dt)]=gcb[ymd(dt)]||[]).push(e); });
-  CAL_DATA={job, gc:gcb, configured:!!gc.configured, gcPast: endDate < todayMid};
+  CAL_DATA={job, gc:gcb, configured:!!gc.configured};
   drawCalendar();
 }
 function calHeader(rangeLabel){
   return '<div class="caltop"><div class="calnav"><button onclick="calShift(-1)">&lsaquo;</button><span class="rng">'+esc(rangeLabel)+'</span><button onclick="calShift(1)">&rsaquo;</button></div>'
     +'<div class="caltog"><button class="'+(CAL_VIEW==='week'?'on':'')+'" onclick="calSetView(\'week\')">Week</button><button class="'+(CAL_VIEW==='month'?'on':'')+'" onclick="calSetView(\'month\')">Month</button></div></div>'
-    +'<div class="syncbar"><div class="l"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg>Google Calendar</div><div class="st">'+(CAL_DATA.gcPast?'upcoming only':(CAL_DATA.configured?'● Synced':'shared cal'))+'</div></div>';
+    +'<div class="syncbar"><div class="l"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg>Google Calendar</div><div class="st">'+(CAL_DATA.configured?'● Synced':'shared cal')+'</div></div>';
 }
 function dayPills(key, max){
   let items=[];
