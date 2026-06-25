@@ -25,6 +25,7 @@ import {
   computeDepositAmountCents,
   ESTIMATE_TIMING
 } from '../lib/state.js';
+import { publicBase } from '../lib/publicUrl.js';
 
 const GHL_BASE = 'https://services.leadconnectorhq.com';
 const GHL_TOKEN = (process.env.GHL_TOKEN || '').trim();
@@ -64,7 +65,7 @@ function fmtMoney(n) {
 }
 
 async function notifyMackenzie({ est, tier, financing, customer, rep, signatureUrl, tierTotalWithTax, acceptedAt, refId, shareToken }) {
-  const proposalUrl = `https://ryujin-os.vercel.app/proposal-client.html?share=${encodeURIComponent(shareToken || '')}`;
+  const proposalUrl = `${publicBase()}/proposal-client.html?share=${encodeURIComponent(shareToken || '')}`;
   const backofficeUrl = `https://ryujin-os.vercel.app/sales-proposal.html?estimate_id=${encodeURIComponent(est.id)}`;
 
   const subject = `PROPOSAL ACCEPTED · ${customer?.name || 'Customer'} · ${tier.name || tier.id} · ${fmtMoney(tierTotalWithTax)}`;
@@ -567,7 +568,7 @@ export default async function handler(req, res) {
       eventName: 'Purchase',
       eventTime: Math.floor(Date.now() / 1000),
       eventId: `purchase_${est.id}`,
-      sourceUrl: `https://ryujin-os.vercel.app/proposal-client.html?share=${encodeURIComponent(est.share_token || '')}`,
+      sourceUrl: `${publicBase()}/proposal-client.html?share=${encodeURIComponent(est.share_token || '')}`,
       userData: {
         ...(pCustomer.email ? { em: pCustomer.email } : {}),
         ...(pCustomer.phone ? { ph: pCustomer.phone } : {}),
