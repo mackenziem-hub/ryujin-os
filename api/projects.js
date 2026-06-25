@@ -472,7 +472,9 @@ async function handler(req, res) {
     // the newest page instead of only client-filtering the first batch. Strip
     // commas/percent so the value can't break the PostgREST or() filter syntax.
     if (req.query.search) {
-      const s = String(req.query.search).replace(/[,%]/g, ' ').trim();
+      // Whitelist to word chars, spaces and hyphens so no PostgREST filter
+      // metacharacter ( , % * ( ) \ : " ' ) can break or alter the or() expression.
+      const s = String(req.query.search).replace(/[^\w\s-]/g, ' ').replace(/\s+/g, ' ').trim();
       if (s) query = query.or(`address.ilike.%${s}%,name.ilike.%${s}%`);
     }
     // Scoped lookups (e.g. job.html resolving a job's project for the customer
