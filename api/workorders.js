@@ -196,11 +196,19 @@ async function handler(req, res) {
         const mat = sum('materials', 'material');
         const lab = sum('labor', 'labour');
         const oth = sum('disposal', 'warranty', 'other', 'equipment', 'permit', 'rental');
-        const psSub = (w.paysheet && w.paysheet.subtotal != null) ? Number(w.paysheet.subtotal) : null;
-        w.margin_pct = Math.round(((rev - (mat + lab + oth)) / rev) * 1000) / 10;
-        w.actual_margin_pct = (psSub != null && psSub > 0)
-          ? Math.round(((rev - (mat + psSub)) / rev) * 1000) / 10
-          : null;
+        const plannedCost = mat + lab + oth;
+        // Only surface a margin when the estimate actually carries a cost
+        // breakdown. Legacy estimates with no cost line items sum to 0 and would
+        // otherwise read a meaningless "100% margin" (revenue minus zero cost),
+        // and the actual would be inflated by a missing material cost. No cost
+        // basis -> no chip, rather than a number that is wrong.
+        if (plannedCost > 0) {
+          const psSub = (w.paysheet && w.paysheet.subtotal != null) ? Number(w.paysheet.subtotal) : null;
+          w.margin_pct = Math.round(((rev - plannedCost) / rev) * 1000) / 10;
+          w.actual_margin_pct = (psSub != null && psSub > 0)
+            ? Math.round(((rev - (mat + psSub)) / rev) * 1000) / 10
+            : null;
+        }
       }
       if (w.estimate && w.estimate.calculated_packages) delete w.estimate.calculated_packages;
       return w;
