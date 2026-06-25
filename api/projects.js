@@ -8,6 +8,7 @@ import { supabaseAdmin } from '../lib/supabase.js';
 import { resolveTenant, requireTenant } from '../lib/tenant.js';
 import { resolveSession } from '../lib/portalAuth.js';
 import { gmailSend } from '../lib/google.js';
+import { syncProjectFromWorkorder, resolveProjectIdFromWorkorder } from '../lib/projectSync.js';
 
 const NOTIFY_EMAIL = (process.env.NOTIFY_EMAIL || 'mackenzie.m@plusultraroofing.com').trim();
 const PHOTO_GALLERY_NOTIFIED_TAG = 'owner:photo_gallery_opened';
@@ -245,6 +246,36 @@ async function handler(req, res) {
     if (session.tenant_id && session.tenant_id !== tenantId) {
       return res.status(403).json({ error: 'tenant_mismatch' });
     }
+  }
+
+  // ── Backfill / reconcile project state from work orders ──
+  // POST /api/projects?action=sync-from-workorders
+  // Walks every non-cancelled work order and advances its linked project's
+  // status + schedule (forward-only, idempotent). Heals the historical
+  // projects-orphan drift and serves as the write-enabled reconciler that the
+  // read-only reconcile agent could only flag. Session-gated above.
+  if (req.method === 'POST' && req.query.action === 'sync-from-workorders') {
+    // dryRun returns the resolved project + match path per WO WITHOUT writing,
+    // so a real sweep can be eyeballed first (especially the weaker name/customer
+    // matches, which never drive a status change anyway).
+    const dryRun = req.query.dryRun === '1' || req.query.dryRun === 'true' || req.body?.dryRun === true;
+    const { data: wos, error } = await supabaseAdmin
+      .from('workorders')
+      .select('id, wo_number, status, start_date, linked_estimate_id, customer_name')
+      .eq('tenant_id', tenantId)
+      .neq('status', 'cancelled');
+    if (error) return res.status(500).json({ error: error.message });
+    const results = [];
+    for (const wo of (wos || [])) {
+      if (dryRun) {
+        const { projectId, resolvedBy } = await resolveProjectIdFromWorkorder(tenantId, wo);
+        if (projectId) results.push({ wo_number: wo.wo_number, wo_status: wo.status, projectId, resolvedBy });
+      } else {
+        const r = await syncProjectFromWorkorder(tenantId, wo);
+        if (r.synced) results.push({ wo_number: wo.wo_number, projectId: r.projectId, resolvedBy: r.resolvedBy, updates: r.updates });
+      }
+    }
+    return res.json({ scanned: (wos || []).length, affected: results.length, dryRun, results });
   }
 
   // ── State transition (Start / Pause / Complete / Reset) ──

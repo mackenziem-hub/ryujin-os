@@ -7,6 +7,7 @@
 // DELETE /api/workorders?id=X            - cancel
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireTenant } from '../lib/tenant.js';
+import { syncProjectFromWorkorder } from '../lib/projectSync.js';
 
 // Fields a client is allowed to set via PUT/PATCH. tenant_id, id, created_at
 // are NEVER editable - changing them would let a client repoint a WO at a
@@ -140,6 +141,14 @@ async function applyUpdate(tenantId, id, rawBody) {
         .eq('tenant_id', tenantId);
     }
   }
+
+  // Propagate the WO's state onto its linked project (forward-only, non-fatal).
+  // A status change advances the project lifecycle; a start_date change seeds the
+  // project schedule. Projects were previously orphaned from this sync loop.
+  if (updates.status || updates.start_date) {
+    await syncProjectFromWorkorder(tenantId, data);
+  }
+
   return { data };
 }
 
@@ -196,10 +205,13 @@ async function handler(req, res) {
   if (req.method === 'DELETE') {
     const { id } = req.query;
     if (!id) return res.status(400).json({ error: 'Missing ?id=' });
-    const { error } = await supabaseAdmin
+    const { data: wo, error } = await supabaseAdmin
       .from('workorders').update({ status: 'cancelled' })
-      .eq('id', id).eq('tenant_id', tenantId);
+      .eq('id', id).eq('tenant_id', tenantId)
+      .select('id,status,start_date,linked_estimate_id,customer_name').maybeSingle();
     if (error) return res.status(500).json({ error: error.message });
+    // Carry the cancellation through to the linked project (forward-only, non-fatal).
+    if (wo) await syncProjectFromWorkorder(tenantId, wo);
     return res.json({ status: 'cancelled', id });
   }
 
