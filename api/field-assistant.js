@@ -31,16 +31,19 @@ export default async function handler(req, res) {
     supabaseAdmin.from('tickets')
       .select('title, status, priority, due_date, project:projects(address)')
       .eq('tenant_id', tid).eq('assigned_to', session.user_id)
-      .in('status', ['open', 'active']).order('due_date', { ascending: true }).limit(20),
+      .in('status', ['open', 'active']).order('due_date', { ascending: true }).limit(50),
     supabaseAdmin.from('projects')
       .select('address, status, customer:customers(full_name)')
       .eq('tenant_id', tid).neq('status', 'cancelled')
       .order('created_at', { ascending: false }).limit(40),
   ]);
 
-  const taskLines = (myTickets || []).map(t =>
+  const baseTasks = (myTickets || []).map(t =>
     `- ${t.title}${t.project?.address ? ' (' + t.project.address + ')' : ''} [${t.status}${t.priority && t.priority !== 'medium' ? ', ' + t.priority : ''}${t.due_date ? ', due ' + t.due_date : ''}]`
-  ).join('\n') || '(none assigned)';
+  ).join('\n');
+  const taskLines = baseTasks
+    ? baseTasks + ((myTickets || []).length >= 50 ? '\n(first 50 shown; more exist — tell them to open the Tasks tab for the full list)' : '')
+    : '(none assigned)';
   const jobLines = (jobs || []).map(p =>
     `- ${p.address}${p.customer?.full_name ? ' — ' + p.customer.full_name : ''} [${p.status}]`
   ).join('\n') || '(none)';
