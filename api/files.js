@@ -193,7 +193,9 @@ async function handler(req, res) {
         .insert({
           project_id,
           tenant_id: tenantId,
-          uploaded_by: body.uploaded_by || null,
+          // uploaded_by is a users.id UUID FK — coerce anything else to null so a
+          // stray name can't 500 the insert.
+          uploaded_by: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(body.uploaded_by || '')) ? body.uploaded_by : null,
           url: String(url),
           thumbnail_url: thumbnail_url || null,
           filename: (filename || 'upload').substring(0, 120),
@@ -291,7 +293,7 @@ async function handler(req, res) {
         .insert({
           project_id: projectId,
           tenant_id: tenantId,
-          uploaded_by: fields.uploaded_by || null,
+          uploaded_by: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(fields.uploaded_by || '')) ? fields.uploaded_by : null,
           url: blob.url,
           thumbnail_url: thumbnailUrl,
           filename: f.fileName,
