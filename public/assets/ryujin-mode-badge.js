@@ -80,6 +80,7 @@
   .rymb-tip b{color:#22d3ee}
   #ry-mode-badge.sandbox .rymb-tip b{color:#facc15}
 
+  body.rymb-has-topbar #ry-mode-badge{top:74px}
   @media (max-width: 700px){
     #ry-mode-badge{top:auto;bottom:12px;right:12px}
     .rymb-xp{min-width:90px}
@@ -104,6 +105,10 @@
     <div class="rymb-tip" id="rymb-tip"></div>
   `;
   document.body.appendChild(wrap);
+
+  // On pages with a fixed 52px topbar (sales/production/marketing), drop the badge
+  // below the bar so it never covers the right-aligned topbar status text.
+  if (document.querySelector('.topbar')) document.body.classList.add('rymb-has-topbar');
 
   function render(){
     const mode = window.RyujinMode.get();

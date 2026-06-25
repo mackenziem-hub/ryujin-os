@@ -26,8 +26,25 @@
 <link rel="stylesheet" href="/assets/ryujin-telltale.css">
 <!-- Link the codex skin directly (do not rely on the auth-guard injector, which did not fire on this page in prod) so the codex Home sector cards are styled. -->
 <link rel="stylesheet" href="/assets/ryujin-skin.css">
-<!-- Codex Home is the default front door, so the 3D auto-tour (its backdrop blocks clicks) must not auto-fire. Still reachable via the ? key in 3D View. -->
+<!-- The 3D command center is the DESKTOP default landing (boot script below adds html.ry-hub-3d pre-paint). Small screens, and a saved HOME choice, stay on the lighter 2D codex Home. The auto-tour stays hard-suppressed via ry_firstrun_hub so 3D-default reintroduces no click-blocking backdrop; the tour is still reachable on the ? key in 3D View. -->
 <script>try{localStorage.setItem('ry_firstrun_hub','1');}catch(e){}</script>
+<script>
+// Hub view default (2026-06-24, Mac): the 3D command center is the preferred
+// DESKTOP landing; small screens stay on the 2D codex Home. A stored choice
+// (ry_hub_view, written when the user toggles) always wins. Set the class here,
+// pre-paint, so there is no 2D->3D flash. Embedded iframes + 8bit/agent modes opt out.
+(function(){
+  try {
+    if (window.self !== window.top) return;
+    var m = localStorage.getItem('ry_ui_mode');
+    if (m === '8bit' || m === 'agent') return;
+    var stored = localStorage.getItem('ry_hub_view');
+    var small = window.matchMedia && window.matchMedia('(max-width: 760px)').matches;
+    var view = (stored === '3d' || stored === 'home') ? stored : (small ? 'home' : '3d');
+    if (view === '3d') document.documentElement.classList.add('ry-hub-3d');
+  } catch(e){}
+})();
+</script>
 <script src="/assets/ryujin-perf.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -282,23 +299,23 @@ body:active { cursor: grabbing; }
   display: none;
   align-items: center;
   gap: 8px;
-  padding: 12px 28px;
-  background: rgba(6,10,20,0.9);
-  border: 1px solid rgba(74,158,255,0.3);
-  border-radius: 12px;
-  color: #4a9eff;
-  font-family: 'Inter', monospace;
-  font-size: 0.75em;
-  font-weight: 600;
-  letter-spacing: 2px;
+  padding: 0 20px;
+  height: 40px;
+  background: #fff;
+  border: none;
+  border-radius: var(--rj-radius-pill, 999px);
+  color: #0a1424;
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
   cursor: pointer;
-  backdrop-filter: blur(12px);
-  box-shadow: 0 0 30px rgba(74,158,255,0.15);
-  transition: all 0.3s;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.2);
+  transition: transform 0.2s, box-shadow 0.2s;
 }
 .back-btn:hover {
-  border-color: rgba(74,158,255,0.5);
-  box-shadow: 0 0 40px rgba(74,158,255,0.25);
+  transform: translateX(-50%) translateY(-1px);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.5), 0 0 0 2px rgba(122,162,222,0.5);
 }
 .back-btn svg {
   width: 16px;
@@ -979,21 +996,23 @@ body.gp-mode * { cursor: none !important; }
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 14px;
-  background: rgba(74,158,255,0.08);
-  border: 1px solid rgba(74,158,255,0.25);
-  border-radius: 8px;
-  color: #4a9eff;
-  font-family: 'Inter', monospace;
-  font-size: 0.75em;
+  padding: 0 14px;
+  height: 34px;
+  background: #fff;
+  border: none;
+  border-radius: var(--rj-radius-pill, 999px);
+  color: #0a1424;
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: 2px;
+  letter-spacing: 0.04em;
   cursor: pointer;
-  transition: all 0.2s;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+  transition: transform 0.2s, box-shadow 0.2s;
 }
 .section-back:hover {
-  background: rgba(74,158,255,0.15);
-  box-shadow: 0 0 14px rgba(74,158,255,0.25);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.4);
 }
 .section-back svg {
   width: 14px; height: 14px;
@@ -3742,6 +3761,11 @@ setTimeout(() => {
 .cc-ff .mt{font-family:var(--rj-font-mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--rj-ink-dim)}
 #ccHomeBtn{position:fixed;top:14px;left:18px;z-index:601;display:none;align-items:center;gap:8px;height:38px;padding:0 16px 0 13px;border-radius:var(--rj-radius-pill);background:#fff;color:#0a1424;font-family:var(--rj-font-ui);font-weight:700;font-size:13px;border:none;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.4),0 0 0 1px rgba(255,255,255,.2)}
 #ccHomeBtn.show{display:inline-flex}
+/* 3D-default landing (desktop): the pre-paint boot script adds html.ry-hub-3d so the
+   2D Codex Home starts hidden and the always-mounted 3D scene + its HUD show, with the
+   white HOME pill as the return affordance. The toggle flips this class + persists. */
+html.ry-hub-3d #codexHome{display:none}
+html.ry-hub-3d #ccHomeBtn{display:inline-flex}
 #ccHomeBtn svg{width:16px;height:16px;stroke:#0a1424;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
 @media(max-width:900px){.cc-ff-row{grid-template-columns:repeat(2,1fr)}#cc-topbar .cc-clock{display:none}}
 </style>
@@ -3835,11 +3859,13 @@ setTimeout(() => {
     grid.appendChild(a);
   });
 
-  // 3D toggle: hide Home to reveal the untouched 3D scene + its HUD; Home button brings it back.
-  var home = document.getElementById('codexHome');
+  // View toggle drives html.ry-hub-3d (the same class the pre-paint boot script sets)
+  // and persists the choice via ry_hub_view so it survives reloads. 3D View reveals the
+  // always-mounted scene + HUD; HOME brings back the 2D codex front door.
   var homeBtn = document.getElementById('ccHomeBtn');
-  document.getElementById('ccTo3D').addEventListener('click', function(){ home.classList.add('hidden'); homeBtn.classList.add('show'); });
-  homeBtn.addEventListener('click', function(){ home.classList.remove('hidden'); homeBtn.classList.remove('show'); });
+  var root = document.documentElement;
+  document.getElementById('ccTo3D').addEventListener('click', function(){ root.classList.add('ry-hub-3d'); try{ localStorage.setItem('ry_hub_view','3d'); }catch(e){} });
+  homeBtn.addEventListener('click', function(){ root.classList.remove('ry-hub-3d'); try{ localStorage.setItem('ry_hub_view','home'); }catch(e){} });
 
   // Delegate AI + settings to the existing HUD controls so their wiring is reused.
   document.getElementById('ccOpenAI').addEventListener('click', function(){ var b = document.getElementById('btnOpenAI'); if (b) b.click(); });
