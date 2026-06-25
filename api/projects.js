@@ -475,7 +475,18 @@ async function handler(req, res) {
       // Whitelist to word chars, spaces and hyphens so no PostgREST filter
       // metacharacter ( , % * ( ) \ : " ' ) can break or alter the or() expression.
       const s = String(req.query.search).replace(/[^\w\s-]/g, ' ').replace(/\s+/g, ' ').trim();
-      if (s) query = query.or(`address.ilike.%${s}%,name.ilike.%${s}%`);
+      if (s) {
+        let orExpr = `address.ilike.%${s}%,name.ilike.%${s}%`;
+        // Also resolve jobs by their customer's name (the field assistant lets
+        // crews say "open Smith's job"). Look up matching customer ids in-tenant
+        // and fold them into the or() so customer-name search works server-side
+        // at any scale, not just over the client's loaded page.
+        const { data: custs } = await supabaseAdmin
+          .from('customers').select('id').eq('tenant_id', tenantId).ilike('full_name', `%${s}%`).limit(50);
+        const ids = (custs || []).map(c => c.id).filter(Boolean);
+        if (ids.length) orExpr += `,customer_id.in.(${ids.join(',')})`;
+        query = query.or(orExpr);
+      }
     }
     // Scoped lookups (e.g. job.html resolving a job's project for the customer
     // share link). Avoids paging the full, newest-first capped list.

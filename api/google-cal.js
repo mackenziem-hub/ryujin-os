@@ -141,10 +141,25 @@ async function handler(req, res) {
     });
   }
 
-  const days = Math.max(1, Math.min(90, parseInt(req.query.days, 10) || 7));
-  const now = new Date();
-  const startMs = now.getTime();
-  const endMs = startMs + days * 86400000;
+  // Window: explicit from/to (YYYY-MM-DD) for a calendar that browses past/future
+  // ranges, else the legacy forward `days` window from now. The ICS holds all
+  // events, so from/to can include recent past (e.g. the start of the current
+  // week). Range is capped at 90 days to bound the response.
+  let startMs, endMs, days = null;
+  const fromQ = req.query.from, toQ = req.query.to;
+  if (fromQ && toQ) {
+    const f = new Date(String(fromQ) + 'T00:00:00');
+    const t = new Date(String(toQ) + 'T23:59:59');
+    if (Number.isFinite(f.getTime()) && Number.isFinite(t.getTime()) && t >= f) {
+      startMs = f.getTime();
+      endMs = Math.min(t.getTime(), startMs + 90 * 86400000);
+    }
+  }
+  if (startMs == null) {
+    days = Math.max(1, Math.min(90, parseInt(req.query.days, 10) || 7));
+    startMs = Date.now();
+    endMs = startMs + days * 86400000;
+  }
 
   let text;
   try {
@@ -164,7 +179,11 @@ async function handler(req, res) {
     if (!ev.startTime) return false;
     const startT = new Date(ev.startTime).getTime();
     if (!Number.isFinite(startT)) return false;
-    return startT >= startMs - 86400000 && startT <= endMs;
+    // 1-day buffer on BOTH bounds: from/to are parsed in the server tz, so a
+    // boundary event in the crew's tz could sit a few hours outside the exact
+    // window. The client re-buckets every event by its own local date, so a
+    // slightly wider fetch never over-displays.
+    return startT >= startMs - 86400000 && startT <= endMs + 86400000;
   });
 
   // Drop cancelled. Sort ascending.
