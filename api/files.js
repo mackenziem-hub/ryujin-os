@@ -167,6 +167,47 @@ async function handler(req, res) {
 
   // ── POST (Upload) ──
   if (req.method === 'POST') {
+    // Register-by-URL (JSON): the browser streamed a large file (drone video)
+    // straight to Vercel Blob via the client upload token, then posts the
+    // resulting Blob URL here so we only create the DB row (no re-streaming
+    // bytes through this function, so no 4.5MB payload limit). Multipart path
+    // below still handles small photos/clips.
+    if ((req.headers['content-type'] || '').includes('application/json')) {
+      let body;
+      try { body = await readJsonBody(req); }
+      catch (e) { return res.status(400).json({ error: 'Invalid JSON body' }); }
+      const { project_id, url, filename, mime_type, file_size, category, thumbnail_url } = body || {};
+      if (!project_id || !url) return res.status(400).json({ error: 'project_id and url required' });
+      // Only accept a Vercel Blob URL, never an arbitrary external link.
+      if (!/^https:\/\/[a-z0-9.-]+\.public\.blob\.vercel-storage\.com\//i.test(String(url))) {
+        return res.status(400).json({ error: 'url must be a Vercel Blob URL' });
+      }
+      if (mime_type && !ALLOWED_TYPES.has(mime_type)) {
+        return res.status(400).json({ error: `Unsupported type: ${mime_type}` });
+      }
+      const { data: project } = await supabaseAdmin
+        .from('projects').select('id').eq('id', project_id).eq('tenant_id', tenantId).single();
+      if (!project) return res.status(404).json({ error: 'Project not found' });
+      const { data: rec, error } = await supabaseAdmin
+        .from('project_files')
+        .insert({
+          project_id,
+          tenant_id: tenantId,
+          uploaded_by: body.uploaded_by || null,
+          url: String(url),
+          thumbnail_url: thumbnail_url || null,
+          filename: (filename || 'upload').substring(0, 120),
+          mime_type: mime_type || 'application/octet-stream',
+          file_size: Number.isFinite(file_size) ? file_size : null,
+          category: category || 'general',
+          client_visible: false
+        })
+        .select('*')
+        .single();
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(201).json({ files: [rec] });
+    }
+
     const { files, fields } = await parseMultipart(req);
     if (files.length === 0) return res.status(400).json({ error: 'No files provided' });
 

@@ -453,16 +453,37 @@ async function saveNote(){
 }
 document.getElementById('photoInput').addEventListener('change', async function(){
   if(!this.files.length || !CUR_JOB) return;
-  const fd = new FormData(); fd.append('project_id', CUR_JOB); fd.append('category','general'); if(ME?.name) fd.append('uploaded_by', ME.name);
-  let big=0; for(const f of this.files){ if(f.size>50*1024*1024){ big++; continue; } fd.append('files', f); }
-  this.value='';
-  if(big) toast(big+' file(s) over 50MB skipped for now — big drone upload lands in the next update');
-  const has = fd.getAll('files').length; if(!has){ return; }
-  toast('<span class="spin"></span> uploading '+has+' file(s)…');
-  try{
-    const t=tok(); const r=await fetch(API+'/files?tenant='+TENANT,{method:'POST',headers:t?{Authorization:'Bearer '+t,'x-tenant-id':TENANT}:{'x-tenant-id':TENANT},body:fd});
-    if(r.ok){ toast('Uploaded'); openJob(CUR_JOB); } else { const e=await r.json().catch(()=>({})); toast(e.error||'Upload failed'); }
-  }catch(e){ toast('Upload failed'); }
+  const files=[...this.files]; this.value=''; const job=CUR_JOB, total=files.length;
+  // Small photos -> multipart (server makes thumbnails + reads EXIF). Videos
+  // (drone footage) and anything over the 50MB function cap -> straight to Blob.
+  const small=[], big=[];
+  files.forEach(f=>{ ((f.type||'').startsWith('video') || f.size>50*1024*1024) ? big.push(f) : small.push(f); });
+  let done=0, failed=0;
+  const prog=()=>toast('<span class="spin"></span> uploading '+(done+failed)+'/'+total+'…');
+  prog();
+  if(small.length){
+    const fd=new FormData(); fd.append('project_id', job); fd.append('category','general'); if(ME?.name) fd.append('uploaded_by', ME.name);
+    small.forEach(f=>fd.append('files', f));
+    try{ const t=tok(); const r=await fetch(API+'/files?tenant='+TENANT,{method:'POST',headers:t?{Authorization:'Bearer '+t,'x-tenant-id':TENANT}:{'x-tenant-id':TENANT},body:fd}); r.ok?(done+=small.length):(failed+=small.length); }
+    catch(e){ failed+=small.length; }
+    prog();
+  }
+  if(big.length){
+    try{
+      const { upload } = await import('https://esm.sh/@vercel/blob@0.27/client');
+      for(const f of big){
+        try{
+          const blob = await upload(f.name, f, { access:'public', handleUploadUrl:'/api/marketing-upload-token?tenant='+TENANT, clientPayload: JSON.stringify({tenant:TENANT}), contentType: f.type||undefined });
+          const t=tok();
+          const r=await fetch(API+'/files?tenant='+TENANT,{ method:'POST', headers: Object.assign({'Content-Type':'application/json','x-tenant-id':TENANT}, t?{Authorization:'Bearer '+t}:{}), body: JSON.stringify({ project_id:job, url:blob.url, filename:f.name, mime_type:f.type, file_size:f.size, category:'general', uploaded_by: ME?.name||null }) });
+          r.ok?done++:failed++;
+        }catch(e){ failed++; }
+        prog();
+      }
+    }catch(e){ failed+=big.length; toast('Big-file upload unavailable right now'); }
+  }
+  toast(failed ? (done+' uploaded, '+failed+' failed') : ('Uploaded '+done+' file'+(done===1?'':'s')));
+  if(CUR_JOB===job) openJob(job);
 });
 
 // ── SCHEDULE ──
