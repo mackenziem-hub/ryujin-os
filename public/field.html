@@ -52,6 +52,8 @@
   .chip.urgent{background:rgba(244,115,107,0.12);color:var(--red);border:1px solid rgba(244,115,107,0.25)}
   .chip.high{background:rgba(240,166,79,0.12);color:var(--amber);border:1px solid rgba(240,166,79,0.25)}
   .chip.done2{background:rgba(255,255,255,0.05);color:var(--faint);border:1px solid var(--border)}
+  .jobsearch{width:100%;padding:12px 14px;background:var(--row);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:var(--sans);font-size:14px;margin-top:8px}
+  .jobsearch:focus{outline:none;border-color:var(--border-hi)}.jobsearch::placeholder{color:var(--faint)}
   .newbtn{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;padding:15px;border:none;border-radius:var(--r);background:var(--accent);color:#04101f;font-family:var(--sans);font-weight:700;font-size:15px;cursor:pointer;margin-bottom:6px}
   .newbtn:hover{filter:brightness(1.07)}.newbtn svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2.4;stroke-linecap:round}
   .folder{display:flex;align-items:center;gap:14px;padding:15px;background:var(--row);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px;cursor:pointer;transition:border-color .15s,background .15s}
@@ -231,19 +233,28 @@ async function toggleTask(id, wasDone){
 }
 
 // ── JOBS ──
+let ALL_JOBS = [];
 async function renderJobs(){
   const w = document.getElementById('jobsWrap');
-  const d = await api('/projects?limit=100');
-  const projects = (d.projects||[]).filter(p=>p.status!=='cancelled');
   let h = '<button class="newbtn" onclick="toggleNew()"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>New Job</button>';
   h += '<div class="panel" id="newpanel"><h3>Create a job folder</h3><p>Just the address. Everything else can come later.</p>'
     + '<label>Address</label><input type="text" id="nj_addr" placeholder="e.g. 15 Bissett Ave, Riverview" oninput="njMeasure()">'
     + '<div class="measure" id="nj_measure"></div>'
     + '<label>Customer name <span class="opt">(optional)</span></label><input type="text" id="nj_cust" placeholder="e.g. Ryan Racho">'
     + '<div class="prow"><button onclick="toggleNew()">Cancel</button><button class="go" id="nj_go" onclick="createJob()">Create folder</button></div></div>';
-  h += '<div class="lbl">Job folders <span class="n">'+projects.length+'</span></div>';
-  h += projects.length ? projects.map(folderRow).join('') : '<div class="empty">No jobs yet. Tap New Job to start one.</div>';
+  h += '<input type="text" class="jobsearch" id="jobSearch" placeholder="Search address or customer…" oninput="filterJobs(this.value)">';
+  h += '<div class="lbl">Job folders <span class="n" id="jobCount">…</span></div>';
+  h += '<div id="folderList"><div class="empty">Loading…</div></div>';
   w.innerHTML = h;
+  const d = await api('/projects?limit=500');
+  ALL_JOBS = (d.projects||[]).filter(p=>p.status!=='cancelled');
+  filterJobs('');
+}
+function filterJobs(q){
+  q = (q||'').trim().toLowerCase();
+  const list = q ? ALL_JOBS.filter(p=>((p.address||'')+' '+(p.name||'')+' '+(p.customer?.full_name||'')+' '+(p.city||'')).toLowerCase().includes(q)) : ALL_JOBS;
+  const c=document.getElementById('jobCount'); if(c) c.textContent=list.length;
+  const fl=document.getElementById('folderList'); if(fl) fl.innerHTML = list.length ? list.map(folderRow).join('') : '<div class="empty">'+(q?'No matching jobs.':'No jobs yet. Tap New Job to start one.')+'</div>';
 }
 function folderRow(p){
   const cust = p.customer?.full_name || p.crew_lead?.name || '';
@@ -293,13 +304,14 @@ async function openJob(id){
   window.scrollTo(0,0);
   const w = document.getElementById('jobWrap');
   w.innerHTML = '<div class="empty">Loading…</div>';
-  const [det, tix, nts] = await Promise.all([
+  const [det, fl, tix, nts] = await Promise.all([
     api('/projects?id='+id),
+    api('/files?project_id='+id),
     api('/tickets?project_id='+id),
     api('/projects?action=notes&project_id='+id)
   ]);
   const pr = (det && det.id) ? det : {};
-  const files = pr.files || [];
+  const files = fl.files || [];
   const addr = pr.address || pr.name || 'Job';
   const cust = pr.customer?.full_name || '';
   const est = pr.estimate || null;
