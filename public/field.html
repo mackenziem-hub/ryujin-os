@@ -255,11 +255,25 @@ async function renderJobs(){
   ALL_JOBS = (d.projects||[]).filter(p=>p.status!=='cancelled');
   filterJobs('');
 }
+let _js=null;
 function filterJobs(q){
-  q = (q||'').trim().toLowerCase();
-  const list = q ? ALL_JOBS.filter(p=>((p.address||'')+' '+(p.name||'')+' '+(p.customer?.full_name||'')+' '+(p.city||'')).toLowerCase().includes(q)) : ALL_JOBS;
-  const c=document.getElementById('jobCount'); if(c) c.textContent=list.length;
-  const fl=document.getElementById('folderList'); if(fl) fl.innerHTML = list.length ? list.map(folderRow).join('') : '<div class="empty">'+(q?'No matching jobs.':'No jobs yet. Tap New Job to start one.')+'</div>';
+  q = (q||'').trim();
+  const c=document.getElementById('jobCount'), fl=document.getElementById('folderList');
+  if(!q){ if(c) c.textContent=ALL_JOBS.length; if(fl) fl.innerHTML = ALL_JOBS.length ? ALL_JOBS.map(folderRow).join('') : '<div class="empty">No jobs yet. Tap New Job to start one.</div>'; return; }
+  const ql=q.toLowerCase();
+  const local = ALL_JOBS.filter(p=>((p.address||'')+' '+(p.name||'')+' '+(p.customer?.full_name||'')+' '+(p.city||'')).toLowerCase().includes(ql));
+  if(c) c.textContent=local.length;
+  if(fl) fl.innerHTML = local.length ? local.map(folderRow).join('') : '<div class="empty">Searching all jobs…</div>';
+  // Server search reaches jobs beyond the loaded page; merge with the instant local hits.
+  clearTimeout(_js); _js=setTimeout(async ()=>{
+    const d = await api('/projects?limit=100&search='+encodeURIComponent(q));
+    const sb=document.getElementById('jobSearch'); if(sb && sb.value.trim()!==q) return;
+    const server=(d.projects||[]).filter(p=>p.status!=='cancelled');
+    const seen=new Set(local.map(p=>p.id));
+    const merged=local.concat(server.filter(p=>!seen.has(p.id)));
+    if(c) c.textContent=merged.length;
+    if(fl) fl.innerHTML = merged.length ? merged.map(folderRow).join('') : '<div class="empty">No matching jobs.</div>';
+  }, 350);
 }
 function folderRow(p){
   const cust = p.customer?.full_name || p.crew_lead?.name || '';
@@ -287,24 +301,23 @@ async function createJob(){
   const custName = document.getElementById('nj_cust').value.trim();
   if(!addr){ toast('Enter an address'); return; }
   const btn=document.getElementById('nj_go'); btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
-  let customer_id=null;
-  if(custName){
-    const c=await api('/customers',{method:'POST',body:JSON.stringify({full_name:custName,address:addr})});
-    if(c&&c.id){ customer_id=c.id; }
-    else { btn.disabled=false; btn.textContent='Create folder'; toast((c&&c.error)||'Could not add that customer. Fix the name or leave it blank.'); return; }
-  }
   const parts = addr.split(',');
   const city = parts.length>1 ? parts[1].trim() : 'Riverview';
   const measure = _measure;
-  const body = { name: addr, address: parts[0].trim(), city, province:'NB', status:'not_started' };
-  if(customer_id) body.customer_id=customer_id;
-  const p = await api('/projects', { method:'POST', body: JSON.stringify(body) });
+  // Create the project FIRST (address-only). If the optional customer link fails
+  // afterward, the folder just stays customer-less rather than leaving an orphan
+  // customer record behind.
+  const p = await api('/projects', { method:'POST', body: JSON.stringify({ name: addr, address: parts[0].trim(), city, province:'NB', status:'not_started' }) });
+  if(!(p && p.id)){ btn.disabled=false; btn.textContent='Create folder'; toast((p&&p.error)||'Could not create the folder.'); return; }
+  if(custName){
+    const c = await api('/customers', { method:'POST', body: JSON.stringify({ full_name:custName, address:addr }) });
+    if(c && c.id){ await api('/projects', { method:'PUT', body: JSON.stringify({ id:p.id, customer_id:c.id }) }); }
+    else { toast('Folder created. You can add the customer from the folder.'); }
+  }
+  if(measure){ await api('/projects?action=add-note', { method:'POST', body: JSON.stringify({ project_id:p.id, body:'Auto roof measure: ~'+measure.sq+' SQ, '+measure.pitchX12+'/12 pitch, '+measure.segments+' planes ('+measure.imageryQuality+' imagery).' }) }); }
   btn.disabled=false; btn.textContent='Create folder';
-  if(p && p.id){
-    if(measure){ await api('/projects?action=add-note', { method:'POST', body: JSON.stringify({ project_id:p.id, body:'Auto roof measure: ~'+measure.sq+' SQ, '+measure.pitchX12+'/12 pitch, '+measure.segments+' planes ('+measure.imageryQuality+' imagery).' }) }); }
-    toast('Folder created'); _measure=null;
-    document.getElementById('nj_addr').value=''; document.getElementById('nj_cust').value=''; openJob(p.id);
-  } else { toast((p&&p.error)||'Could not create'); }
+  toast('Folder created'); _measure=null;
+  document.getElementById('nj_addr').value=''; document.getElementById('nj_cust').value=''; openJob(p.id);
 }
 
 // ── JOB DETAIL ──

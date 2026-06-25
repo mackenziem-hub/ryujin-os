@@ -468,6 +468,13 @@ async function handler(req, res) {
       .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
 
     if (status) query = query.eq('status', status);
+    // Address/name search so the field-app folder browser can reach jobs beyond
+    // the newest page instead of only client-filtering the first batch. Strip
+    // commas/percent so the value can't break the PostgREST or() filter syntax.
+    if (req.query.search) {
+      const s = String(req.query.search).replace(/[,%]/g, ' ').trim();
+      if (s) query = query.or(`address.ilike.%${s}%,name.ilike.%${s}%`);
+    }
     // Scoped lookups (e.g. job.html resolving a job's project for the customer
     // share link). Avoids paging the full, newest-first capped list.
     if (customer_id) query = query.eq('customer_id', customer_id);
