@@ -361,6 +361,11 @@ async function handler(req, res) {
     if (!project_id || !body || !String(body).trim()) {
       return res.status(400).json({ error: 'project_id and body required' });
     }
+    // Confirm the project lives in this tenant before attaching a note (the generic
+    // mutation gate binds the SESSION to the tenant, but project_id is caller-supplied).
+    const { data: proj } = await supabaseAdmin
+      .from('projects').select('id').eq('id', project_id).eq('tenant_id', tenantId).maybeSingle();
+    if (!proj) return res.status(404).json({ error: 'Project not found' });
     const uid = session?.user_id && session.user_id !== 'service-internal' ? session.user_id : null;
     const { data, error } = await supabaseAdmin
       .from('comments')

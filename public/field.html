@@ -334,16 +334,17 @@ async function openJob(id){
   const mapq = encodeURIComponent([addr, pr.city, 'NB'].filter(Boolean).join(', '));
   h += '<div class="jactions"><button onclick="openNoteBox()"><svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg>Add note</button>'
     + '<a class="jactions-a" style="text-decoration:none;flex:1"><button onclick="window.open(\'https://www.google.com/maps/search/?api=1&query='+mapq+'\')" style="width:100%"><svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>Navigate</button></a></div>';
-  // photos
-  h += '<div class="lbl">Photos &amp; footage <span class="n">'+files.length+'</span></div>';
+  // photos (images + video only; PDFs and other docs are not gallery tiles)
+  const media = files.filter(f=>{ const m=f.mime_type||''; return m.startsWith('image')||m.startsWith('video'); });
+  h += '<div class="lbl">Photos &amp; footage <span class="n">'+media.length+'</span></div>';
   h += '<button class="upload" onclick="document.getElementById(\'photoInput\').click()"><div class="uic"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div><div><div class="ut">Upload photos &amp; footage</div><div class="us">Drone clips and site photos go in this folder</div></div></button>';
-  if(files.length){ h += '<div class="grid">' + files.map(f=>{ const vid=(f.mime_type||'').startsWith('video'); return '<div class="thumb">'+(vid?'<video src="'+esc(f.url)+'" muted preload="metadata"></video><span class="vb">▶ video</span>':'<img loading="lazy" src="'+esc(f.thumbnail_url||f.url)+'">')+'</div>'; }).join('') + '</div>'; }
+  if(media.length){ h += '<div class="grid">' + media.map(f=>{ const vid=(f.mime_type||'').startsWith('video'); return '<div class="thumb">'+(vid?'<video src="'+esc(f.url)+'" muted preload="metadata"></video><span class="vb">▶ video</span>':'<img loading="lazy" src="'+esc(f.thumbnail_url||f.url)+'">')+'</div>'; }).join('') + '</div>'; }
   // notes
   const notes = nts.notes || [];
   h += '<div class="lbl">Notes <span class="n">'+notes.length+'</span></div>';
   h += '<div class="panel" id="noteBox"><label>New note</label><textarea id="noteTxt" placeholder="Anything the team should know about this job…"></textarea><div class="prow"><button onclick="closeNoteBox()">Cancel</button><button class="go" onclick="saveNote()">Save note</button></div></div>';
   h += '<button class="addnote" onclick="openNoteBox()"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add a note</button>';
-  if(pr.notes && !notes.length){ h += '<div class="note"><div class="meta"><b>Job</b></div><div class="txt">'+esc(pr.notes)+'</div></div>'; }
+  if(pr.notes){ h += '<div class="note"><div class="meta"><b>Job (original)</b></div><div class="txt">'+esc(pr.notes)+'</div></div>'; }
   h += notes.map(n=>'<div class="note"><div class="meta"><b>'+esc(n.guest_name||'Crew')+'</b><span>'+ago(n.created_at)+'</span></div><div class="txt">'+esc(n.body)+'</div></div>').join('');
   // tasks
   const jt = (tix.tickets||[]).filter(t=>t.status!=='cancelled');
