@@ -32,6 +32,11 @@ export default async function handler(req, res) {
     password_hash: hashPassword(pw),
     reset_token: null,
     reset_token_expires_at: null,
+    // Revoke every alternate auth path, not just the password: a stale magic-login
+    // link (users.magic_token, consumed by /api/auth?action=magic-consume) would
+    // otherwise still mint a session without the new password.
+    magic_token: null,
+    magic_expires_at: null,
   };
   if (email !== undefined && email !== null && String(email).trim() !== '') {
     updates.email = String(email).toLowerCase().trim();
