@@ -9,6 +9,16 @@
 <style>#ry-mode-badge{display:none !important}</style>
 <link rel="manifest" href="/manifest.json">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<script>
+// Opt OUT of the operator-cockpit chrome that auth-guard injects fleet-wide
+// (Ryujin Drive AI overlay, global-nav pill, Cmd-K palette, unread badges,
+// prefetch, skin). This is a crew field app, not the admin OS, and it has its
+// own scoped assistant + nav. Setting these guard flags before auth-guard runs
+// makes its `if(!flag)` injections no-op. Auth REDIRECT still runs.
+window.__ryujinDriveMounted=true; window.__ryujinGlobalNavInjected=true;
+window.__ryujinPaletteInjected=true; window.__ryujinUnreadInjected=true;
+window.__ryujinPrefetchInjected=true; window.__ryujinSkinInjected=true;
+</script>
 <script src="/assets/auth-guard.js"></script>
 <script src="/assets/ryujin-slug.js"></script>
 <style>
@@ -27,9 +37,30 @@
   .bar{position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;padding:0 16px;height:54px;background:rgba(11,12,15,0.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
   .bar .brand{font-weight:700;font-size:14px;letter-spacing:.3px}.bar .brand span{color:var(--blueprint)}
   .bar .right{display:flex;align-items:center;gap:13px}
-  .inbox{position:relative;cursor:pointer;width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border)}
-  .inbox:hover{border-color:var(--border-hi);background:var(--surface-2)}
+  .inbox,.aibtn{position:relative;cursor:pointer;width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border)}
+  .inbox:hover,.aibtn:hover{border-color:var(--border-hi);background:var(--surface-2)}
   .inbox svg{width:18px;height:18px;stroke:var(--dim);fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+  .aibtn svg{width:19px;height:19px;fill:var(--blueprint);stroke:none}
+  .ai-overlay{position:fixed;inset:0;z-index:40;background:rgba(4,6,10,0.6);backdrop-filter:blur(3px);display:none;align-items:flex-end;justify-content:center}
+  .ai-overlay.on{display:flex;animation:fade .15s}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  .ai-sheet{width:100%;max-width:680px;height:78vh;max-height:680px;background:var(--surface);border:1px solid var(--border-hi);border-bottom:none;border-radius:18px 18px 0 0;display:flex;flex-direction:column;overflow:hidden;animation:up .22s cubic-bezier(.2,.9,.3,1)}
+  @keyframes up{from{transform:translateY(40px)}to{transform:none}}
+  .ai-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border)}
+  .ai-head .t{display:flex;align-items:center;gap:9px;font-weight:700;font-size:15px}
+  .ai-head .t svg{width:18px;height:18px;fill:var(--blueprint)}
+  .ai-x{width:30px;height:30px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--dim);cursor:pointer;font-size:15px}
+  .ai-log{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px}
+  .ai-msg{max-width:88%;padding:11px 14px;border-radius:13px;font-size:14px;line-height:1.5}
+  .ai-msg.user{align-self:flex-end;background:var(--accent);color:#04101f;border-bottom-right-radius:4px}
+  .ai-msg.ai{align-self:flex-start;background:var(--row);border:1px solid var(--border);border-bottom-left-radius:4px}
+  .ai-input{display:flex;gap:8px;padding:12px 14px;border-top:1px solid var(--border)}
+  .ai-input input{flex:1;padding:12px 14px;background:var(--bg);border:1px solid var(--border-hi);border-radius:11px;color:var(--text);font-family:var(--sans);font-size:15px}
+  .ai-input input:focus{outline:none;border-color:var(--accent)}
+  .ai-input button{padding:0 18px;border:none;border-radius:11px;background:var(--accent);color:#04101f;font-family:var(--sans);font-weight:700;font-size:14px;cursor:pointer}
+  .ai-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+  .ai-chip{font-size:12px;padding:6px 11px;border-radius:8px;border:1px solid var(--border-hi);background:var(--surface-2);color:var(--dim);cursor:pointer}
+  .ai-chip:hover{border-color:var(--accent);color:var(--accent)}
   .inbox .badge{position:absolute;top:-5px;right:-5px;min-width:17px;height:17px;border-radius:9px;background:var(--red);color:#fff;font-family:var(--mono);font-size:10px;font-weight:700;display:none;align-items:center;justify-content:center;padding:0 4px;border:2px solid var(--bg)}
   .who{font-family:var(--mono);font-size:12px;color:var(--dim);display:flex;align-items:center;gap:7px}
   .who .dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 7px var(--green)}
@@ -117,6 +148,30 @@
   .ev .time{font-family:var(--mono);font-size:12px;color:var(--accent);width:64px;flex-shrink:0;padding-top:1px}
   .ev .body .t{font-weight:600;font-size:14.5px}.ev .body .s{font-size:12.5px;color:var(--dim);margin-top:2px}
   .ev.gcal{border-left:2px solid var(--blueprint)}.ev.job{border-left:2px solid var(--green)}
+  /* calendar */
+  .caltop{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+  .calnav{display:flex;align-items:center;gap:8px}
+  .calnav button{width:32px;height:32px;border-radius:8px;border:1px solid var(--border-hi);background:var(--surface);color:var(--text);cursor:pointer;font-size:16px;line-height:1}
+  .calnav .rng{font-weight:700;font-size:14px;min-width:128px;text-align:center}
+  .caltog{display:flex;gap:2px;background:var(--surface);border:1px solid var(--border-hi);border-radius:9px;padding:3px}
+  .caltog button{padding:6px 14px;border:none;background:transparent;color:var(--dim);font-family:var(--sans);font-weight:600;font-size:13px;border-radius:7px;cursor:pointer}
+  .caltog button.on{background:var(--accent-dim);color:var(--accent)}
+  .weekgrid{display:grid;grid-template-columns:1fr;gap:8px}
+  @media(min-width:760px){.weekgrid{grid-template-columns:repeat(7,1fr);gap:6px}}
+  .wday{background:var(--row);border:1px solid var(--border);border-radius:10px;padding:10px;min-height:64px}
+  .wday.today{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent-dim)}
+  .wday .dh{font-family:var(--mono);font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px;display:flex;justify-content:space-between}
+  .wday.today .dh{color:var(--accent)}
+  .pill{display:block;font-size:11.5px;padding:5px 8px;border-radius:7px;margin-bottom:5px;line-height:1.25;border:1px solid var(--border);background:var(--surface-2);white-space:normal}
+  .pill.job{border-left:2px solid var(--green)}.pill.gcal{border-left:2px solid var(--blueprint)}
+  .pill .pt{font-family:var(--mono);font-size:10px;color:var(--faint)}
+  .monthgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+  .mhead{font-family:var(--mono);font-size:10px;color:var(--faint);text-align:center;padding:4px 0;letter-spacing:.5px}
+  .mcell{aspect-ratio:1;background:var(--row);border:1px solid var(--border);border-radius:8px;padding:5px 6px;cursor:pointer;display:flex;flex-direction:column;gap:3px;overflow:hidden}
+  .mcell.out{opacity:.35}.mcell.today{border-color:var(--accent)}.mcell.sel{background:var(--accent-dim);border-color:var(--accent)}
+  .mcell .mn{font-size:12px;font-weight:600}
+  .mcell .dot{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:2px}
+  .mcell .dot.job{background:var(--green)}.mcell .dot.gcal{background:var(--blueprint)}
   .msg{display:flex;gap:12px;padding:14px 15px;background:var(--row);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px;cursor:pointer}
   .msg:hover{border-color:var(--border-hi)}.msg.unread{border-left:2px solid var(--accent)}
   .av{width:38px;height:38px;border-radius:50%;background:var(--surface-2);border:1px solid var(--border-hi);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;color:var(--dim);flex-shrink:0;text-transform:uppercase}
@@ -143,6 +198,7 @@
 <div class="bar">
   <div class="brand">PLUS&nbsp;ULTRA <span>· FIELD</span></div>
   <div class="right">
+    <div class="aibtn" onclick="openAI()" title="Ask the assistant"><svg viewBox="0 0 24 24"><path d="M12 3l1.7 4.3L18 9l-4.3 1.7L12 15l-1.7-4.3L6 9l4.3-1.7z"/><path d="M18.5 14.5l.6 1.6 1.6.6-1.6.6-.6 1.6-.6-1.6-1.6-.6 1.6-.6z"/></svg></div>
     <div class="inbox" onclick="switchTab('messages')"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg><span class="badge" id="msgBadge">0</span></div>
     <div class="who"><span class="dot"></span><span id="meName">…</span></div>
   </div>
@@ -156,6 +212,15 @@
 <div class="view" id="v-clock"><div class="wrap" id="clockWrap"><div class="empty">Loading…</div></div></div>
 
 <input type="file" id="photoInput" accept="image/*,video/*" multiple capture="environment" style="display:none">
+
+<div class="ai-overlay" id="aiOverlay" onclick="if(event.target===this)closeAI()">
+  <div class="ai-sheet">
+    <div class="ai-head"><div class="t"><svg viewBox="0 0 24 24"><path d="M12 3l1.7 4.3L18 9l-4.3 1.7L12 15l-1.7-4.3L6 9l4.3-1.7z"/></svg>Field Assistant</div><button class="ai-x" onclick="closeAI()">✕</button></div>
+    <div class="ai-log" id="aiLog"></div>
+    <div class="ai-input"><input id="aiInput" placeholder="Ask what you need to do…" onkeydown="if(event.key==='Enter')sendAI()" autocomplete="off"><button onclick="sendAI()">Send</button></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <div class="nav">
@@ -401,28 +466,57 @@ document.getElementById('photoInput').addEventListener('change', async function(
 });
 
 // ── SCHEDULE ──
+let CAL_VIEW='week', CAL_ANCHOR=null, CAL_SEL=null, CAL_DATA={job:{},gc:{},configured:false};
+function ymd(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function startOfWeek(d){ const x=new Date(d); x.setHours(0,0,0,0); x.setDate(x.getDate()-x.getDay()); return x; }
+function calShift(n){ const d=new Date(CAL_ANCHOR); if(CAL_VIEW==='week') d.setDate(d.getDate()+7*n); else d.setMonth(d.getMonth()+n); CAL_ANCHOR=d; CAL_SEL=null; renderSchedule(); }
+function calSetView(v){ if(CAL_VIEW===v) return; CAL_VIEW=v; CAL_SEL=null; renderSchedule(); }
+function calPick(k){ CAL_SEL=(CAL_SEL===k?null:k); drawCalendar(); }
 async function renderSchedule(){
-  const w = document.getElementById('schedWrap');
-  const [cal, gc] = await Promise.all([
-    api('/tickets?view=calendar'+(ME?.id?'&assigned_to='+ME.id:'')),
-    api('/google-cal?days=7')
-  ]);
-  const byDay = (cal.calendar)||{};
-  let h='';
-  h += '<div class="syncbar"><div class="l"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg>Google Calendar</div><div class="st">'+(gc.configured?'● Synced':'not connected')+'</div></div>';
-  const days = Object.keys(byDay).filter(k=>k!=='unscheduled').sort();
-  const gcalEv = (gc.events||[]);
-  if(!days.length && !gcalEv.length){ w.innerHTML = h+'<div class="empty">Nothing scheduled in the next few days.</div>'; return; }
-  // group gcal by date
-  const gcByDay={}; gcalEv.forEach(e=>{ const dt=e.startTime?new Date(e.startTime):null; const d=dt?(dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0')):'unscheduled'; (gcByDay[d]=gcByDay[d]||[]).push(e); });
-  const allDays = Array.from(new Set([...days, ...Object.keys(gcByDay)])).sort();
-  allDays.forEach(d=>{
-    const lbl = new Date(d+'T00:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}).toUpperCase();
-    h += '<div class="day">'+lbl+'</div>';
-    (byDay[d]||[]).forEach(t=>{ h += '<div class="ev job"><div class="time">'+(t.due_date?'task':'')+'</div><div class="body"><div class="t">'+esc(t.title)+'</div><div class="s">'+esc(t.project?.address||t.customer?.full_name||'')+'</div></div></div>'; });
-    (gcByDay[d]||[]).forEach(e=>{ h += '<div class="ev gcal"><div class="time">'+(e.allDay?'all day':timeStr(e.startTime))+'</div><div class="body"><div class="t">'+esc(e.summary||'Event')+'</div><div class="s">'+esc(e.location||'from Google Calendar')+'</div></div></div>'; });
-  });
-  w.innerHTML = h;
+  if(!CAL_ANCHOR) CAL_ANCHOR=new Date();
+  let from, to;
+  if(CAL_VIEW==='week'){ const s=startOfWeek(CAL_ANCHOR); from=ymd(s); const e=new Date(s); e.setDate(s.getDate()+6); to=ymd(e); }
+  else { from=ymd(new Date(CAL_ANCHOR.getFullYear(),CAL_ANCHOR.getMonth(),1)); to=ymd(new Date(CAL_ANCHOR.getFullYear(),CAL_ANCHOR.getMonth()+1,0)); }
+  const cal = await api('/tickets?view=calendar&from='+from+'&to='+to+(ME?.id?'&assigned_to='+ME.id:''));
+  const gc = await api('/google-cal?days=90');
+  const job=(cal.calendar)||{}; const gcb={};
+  (gc.events||[]).forEach(e=>{ const dt=e.startTime?new Date(e.startTime):null; if(!dt)return; (gcb[ymd(dt)]=gcb[ymd(dt)]||[]).push(e); });
+  CAL_DATA={job, gc:gcb, configured:!!gc.configured};
+  drawCalendar();
+}
+function calHeader(rangeLabel){
+  return '<div class="caltop"><div class="calnav"><button onclick="calShift(-1)">&lsaquo;</button><span class="rng">'+esc(rangeLabel)+'</span><button onclick="calShift(1)">&rsaquo;</button></div>'
+    +'<div class="caltog"><button class="'+(CAL_VIEW==='week'?'on':'')+'" onclick="calSetView(\'week\')">Week</button><button class="'+(CAL_VIEW==='month'?'on':'')+'" onclick="calSetView(\'month\')">Month</button></div></div>'
+    +'<div class="syncbar"><div class="l"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg>Google Calendar</div><div class="st">'+(CAL_DATA.configured?'● Synced':'shared cal')+'</div></div>';
+}
+function dayPills(key, max){
+  let items=[];
+  (CAL_DATA.job[key]||[]).forEach(t=>items.push('<span class="pill job">'+esc(t.title)+(t.project?.address?'<span class="pt"> '+esc(t.project.address)+'</span>':'')+'</span>'));
+  (CAL_DATA.gc[key]||[]).forEach(e=>items.push('<span class="pill gcal"><span class="pt">'+(e.allDay?'all day':timeStr(e.startTime))+' </span>'+esc(e.summary||'Event')+'</span>'));
+  if(max && items.length>max){ const extra=items.length-max; items=items.slice(0,max); items.push('<span class="pill" style="text-align:center;color:var(--faint)">+'+extra+' more</span>'); }
+  return items.join('');
+}
+function drawCalendar(){
+  const w=document.getElementById('schedWrap'); const today=ymd(new Date());
+  if(CAL_VIEW==='week'){
+    const start=startOfWeek(CAL_ANCHOR); const end=new Date(start); end.setDate(start.getDate()+6);
+    const rng=start.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' – '+end.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    let h=calHeader(rng)+'<div class="weekgrid">';
+    for(let i=0;i<7;i++){ const d=new Date(start); d.setDate(start.getDate()+i); const k=ymd(d);
+      h+='<div class="wday'+(k===today?' today':'')+'"><div class="dh"><span>'+d.toLocaleDateString('en-US',{weekday:'short'})+'</span><span>'+d.getDate()+'</span></div>'+(dayPills(k)||'<div style="font-size:11px;color:var(--faint)">—</div>')+'</div>'; }
+    w.innerHTML=h+'</div>'; return;
+  }
+  const mo=CAL_ANCHOR.getMonth();
+  const gridStart=startOfWeek(new Date(CAL_ANCHOR.getFullYear(),mo,1));
+  let h=calHeader(CAL_ANCHOR.toLocaleDateString('en-US',{month:'long',year:'numeric'}))+'<div class="monthgrid">';
+  ['S','M','T','W','T','F','S'].forEach(d=>h+='<div class="mhead">'+d+'</div>');
+  for(let i=0;i<42;i++){ const d=new Date(gridStart); d.setDate(gridStart.getDate()+i); const k=ymd(d);
+    const jc=(CAL_DATA.job[k]||[]).length, gn=(CAL_DATA.gc[k]||[]).length;
+    let dots=''; if(jc) dots+='<span class="dot job"></span>'; if(gn) dots+='<span class="dot gcal"></span>';
+    h+='<div class="mcell'+(d.getMonth()!==mo?' out':'')+(k===today?' today':'')+(k===CAL_SEL?' sel':'')+'" onclick="calPick(\''+k+'\')"><div class="mn">'+d.getDate()+'</div><div>'+dots+'</div></div>'; }
+  h+='</div>';
+  if(CAL_SEL){ h+='<div class="day">'+new Date(CAL_SEL+'T00:00:00').toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'}).toUpperCase()+'</div>'; const p=dayPills(CAL_SEL); h+= p?('<div style="margin-top:4px">'+p+'</div>'):'<div class="empty">Nothing on this day.</div>'; }
+  w.innerHTML=h;
 }
 
 // ── MESSAGES ──
@@ -451,6 +545,48 @@ async function renderClock(){
 }
 async function clockIn(){ if(!ME?.id){ toast('No user'); return; } const r=await api('/time',{method:'POST',body:JSON.stringify({user_id:ME.id})}); if(r&&r.id) toast('Clocked in'); else toast((r&&r.error)||'Could not clock in'); renderClock(); }
 async function clockOut(){ if(!ME?.id) return; const r=await api('/time',{method:'PUT',body:JSON.stringify({user_id:ME.id,action:'clock_out'})}); if(r&&r.id) toast('Clocked out'); else toast((r&&r.error)||'Could not clock out'); renderClock(); }
+
+// ── FIELD ASSISTANT ──
+let AI_HIST=[];
+function openAI(){
+  document.getElementById('aiOverlay').classList.add('on');
+  setTimeout(()=>{ const i=document.getElementById('aiInput'); if(i) i.focus(); },60);
+  if(!AI_HIST.length){
+    const greet = 'Hey'+(ME?.name?' '+ME.name.split(' ')[0]:'')+'. Ask me what you need to do today, or tell me to open a job or start an upload.';
+    aiPush('ai', greet);
+    const log=document.getElementById('aiLog'); const c=document.createElement('div'); c.className='ai-chips';
+    ['What do I need to do today?','Open a job','Upload photos to a job'].forEach(t=>{ const b=document.createElement('div'); b.className='ai-chip'; b.textContent=t; b.onclick=()=>{ document.getElementById('aiInput').value=t; sendAI(); }; c.appendChild(b); });
+    log.appendChild(c);
+  }
+}
+function closeAI(){ document.getElementById('aiOverlay').classList.remove('on'); }
+function aiFormat(t){ let s=esc(t); s=s.replace(/\*\*(.+?)\*\*/g,'<b>$1</b>'); s=s.replace(/^[\-\*•]\s+/gm,'• '); s=s.replace(/\n/g,'<br>'); return s; }
+function aiPush(role, text){ const log=document.getElementById('aiLog'); const d=document.createElement('div'); d.className='ai-msg '+role; d.innerHTML=(role==='ai'?aiFormat(text):esc(text)); log.appendChild(d); log.scrollTop=log.scrollHeight; return d; }
+async function sendAI(){
+  const inp=document.getElementById('aiInput'); const q=(inp.value||'').trim(); if(!q) return;
+  inp.value=''; const chips=document.querySelector('.ai-chips'); if(chips) chips.remove();
+  aiPush('user', q);
+  const loading=aiPush('ai','<span class="spin"></span>');
+  const r = await api('/field-assistant', { method:'POST', body: JSON.stringify({ message:q, history:AI_HIST.slice(-6) }) });
+  loading.remove();
+  if(r && r.reply){ aiPush('ai', r.reply); AI_HIST.push({role:'user',content:q},{role:'assistant',content:r.reply}); if(r.action) execAI(r.action); }
+  else { aiPush('ai', (r&&r.error)==='sign_in_required' ? 'Your session expired, reopen from the login screen.' : ((r&&r.error)||'I could not reach the assistant. Try again.')); }
+}
+async function execAI(a){
+  try{
+    if(a.type==='navigate' && /^(tasks|jobs|schedule|clock)$/.test(a.tab||'')){ closeAI(); switchTab(a.tab); }
+    else if(a.type==='open_job' && a.query){ const id=await aiResolveJob(a.query); if(id){ closeAI(); openJob(id); } else aiPush('ai','I could not find a job matching "'+esc(a.query)+'". Check the Jobs tab.'); }
+    else if(a.type==='upload' && a.query){ const id=await aiResolveJob(a.query); if(id){ closeAI(); openJob(id); setTimeout(()=>{ const pi=document.getElementById('photoInput'); if(pi) pi.click(); }, 700); } else aiPush('ai','I could not find that job to upload to.'); }
+  }catch(e){}
+}
+async function aiResolveJob(q){
+  const ql=String(q).toLowerCase();
+  let hit=(ALL_JOBS||[]).find(p=>((p.address||'')+' '+(p.name||'')).toLowerCase().includes(ql));
+  if(hit) return hit.id;
+  const d=await api('/projects?limit=5&search='+encodeURIComponent(q));
+  const s=(d.projects||[]).filter(p=>p.status!=='cancelled');
+  return s.length?s[0].id:null;
+}
 
 // ── BOOT ──
 async function boot(){
