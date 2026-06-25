@@ -184,7 +184,16 @@ async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    const body = req.body || {};
+    const body = { ...(req.body || {}) };
+    // wo_number is assigned by the DB serial sequence (workorders_wo_number_seq),
+    // exactly like api/proposal-accept.js does on signing. Callers used to compute
+    // it client-side (max+1) and pass it in, which raced across concurrent creates
+    // and produced duplicate numbers (the WO-28/29 collision that broke job-by-
+    // number lookups + the 15 Bissett PDF). Strip any caller-supplied value so the
+    // ATOMIC serial default assigns it; migration_102's partial unique index is the
+    // backstop. (migration_102 also resyncs the sequence past the current max,
+    // since the old explicit inserts never advanced it.)
+    delete body.wo_number;
     const row = { tenant_id: tenantId, ...body };
     const { data, error } = await supabaseAdmin.from('workorders').insert(row).select('*').single();
     if (error) return res.status(500).json({ error: error.message });
