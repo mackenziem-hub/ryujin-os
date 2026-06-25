@@ -726,6 +726,55 @@ function render({ customer, estimates, workorders, paysheets, photos, roster, pu
   // Stash the materials data so the COPY/PRINT buttons can grab it post-render.
   window._jobMaterials = mats ? { mats, address: customer.address || '' } : null;
 
+  // 5.7 PROFIT & LOSS — per-job margin. PLANNED reads the estimate's cost line
+  // items (pre-tax); ACTUAL swaps real PO totals for material and the pay sheet
+  // subtotal for labour where they exist. Revenue basis is the pre-tax package
+  // subtotal so margin compares like-for-like with the pre-tax costs. Both modes
+  // are computed; the toggle re-renders the body from window._jobPnl.
+  const pnl = (() => {
+    if (!pkg) return null;
+    const li = Array.isArray(pkg.lineItems) ? pkg.lineItems.filter(x => x && x.included !== false) : [];
+    const sumCat = (...cats) => li
+      .filter(x => cats.includes(String(x.category || '').toLowerCase()))
+      .reduce((s, x) => s + (Number(x.total_cost) || 0), 0);
+    const poMat = (purchaseOrders || []).reduce((s, po) => s + (Number(po.total_amount) || 0), 0);
+    const psSub = activePs ? (Number(activePs.subtotal) || 0) : 0;
+    return {
+      revenue: Number(pkg.total) || 0,
+      contractValue: Number(primaryEst?.final_accepted_total) || Number(pkg.total) || 0,
+      plannedMat: sumCat('materials', 'material'),
+      plannedLab: sumCat('labor', 'labour'),
+      plannedOther: sumCat('disposal', 'warranty', 'other', 'equipment', 'permit', 'rental'),
+      poMat, hasPO: (purchaseOrders || []).length > 0 && poMat > 0,
+      psSub, hasPs: !!activePs && psSub > 0,
+    };
+  })();
+  window._jobPnl = pnl;
+  if (pnl && pnl.revenue > 0) {
+    const startMode = (pnl.hasPO || pnl.hasPs) ? 'actual' : 'planned';
+    const m0 = pnlCompute(pnl, startMode);
+    sections.push(`
+      <style>
+        .pnl-mode{flex:1;padding:8px 10px;border:none;border-radius:7px;background:transparent;color:rgba(200,220,255,0.6);font-family:'Inter',sans-serif;font-size:0.72em;font-weight:800;letter-spacing:1.5px;cursor:pointer;transition:background .18s,color .18s}
+        .pnl-mode:hover{color:rgba(251,146,60,0.9)}
+        .pnl-mode.on{background:rgba(251,146,60,0.16);color:#fb923c;box-shadow:inset 0 0 0 1px rgba(251,146,60,0.3)}
+      </style>
+      <details class="acc" open data-section="pnl">
+        <summary>
+          <div class="title"><svg viewBox="0 0 24 24"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg> PROFIT &amp; LOSS</div>
+          <div class="meta"><span id="pnlChip" style="font-family:'JetBrains Mono',monospace;font-weight:700;padding:2px 9px;border-radius:20px;letter-spacing:0.5px;${marginChipStyle(m0.margin)}">${m0.margin.toFixed(1)}% margin</span><svg class="chev" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
+        </summary>
+        <div class="acc-body">
+          <div style="display:flex;gap:6px;margin-bottom:14px;background:rgba(6,10,20,0.5);border:1px solid rgba(251,146,60,0.16);border-radius:10px;padding:4px">
+            <button type="button" id="pnlModePlanned" onclick="setPnlMode('planned')" class="pnl-mode${startMode === 'planned' ? ' on' : ''}">PLANNED</button>
+            <button type="button" id="pnlModeActual" onclick="setPnlMode('actual')" class="pnl-mode${startMode === 'actual' ? ' on' : ''}">ACTUAL</button>
+          </div>
+          <div id="pnlBody">${pnlBody(pnl, startMode)}</div>
+        </div>
+      </details>
+    `);
+  }
+
   // 6. PHOTOS & VIDEO (interactive grid: delete, cover, mark before/after, inline caption)
   // The grid is mounted as live DOM after innerHTML render so el() builds tiles XSS-safe.
   const _uploadEstId = primaryEst?.id || '';
@@ -1326,6 +1375,93 @@ function printMaterialsText() {
 
 // Inline error banner -- guaranteed visible (alert() can be suppressed
 // inside iframes by Chrome).
+// ─── PROFIT & LOSS ─── compute + render, driven by window._jobPnl (set in render()).
+// Sign-correct money for the readout: the global money() prints "$-1,200" for a
+// negative (over-budget) gross and "-" for zero. P&L needs "-$1,200" and "$0".
+function pmoney(n){
+  const v = Number(n) || 0;
+  const s = '$' + Math.abs(v).toLocaleString('en-CA', { maximumFractionDigits: 0 });
+  return v < 0 ? '-' + s : s;
+}
+function marginChipStyle(m){
+  if (m >= 25) return 'background:rgba(74,222,128,0.16);color:#4ade80;border:1px solid rgba(74,222,128,0.4)';
+  if (m >= 10) return 'background:rgba(251,191,36,0.16);color:#fbbf24;border:1px solid rgba(251,191,36,0.4)';
+  return 'background:rgba(248,113,113,0.16);color:#f87171;border:1px solid rgba(248,113,113,0.42)';
+}
+function pnlCompute(p, mode){
+  let material, labour, other, matNote = '', labNote = '';
+  if (mode === 'actual') {
+    if (p.hasPO) { material = p.poMat; } else { material = p.plannedMat; matNote = 'planned · no PO yet'; }
+    if (p.hasPs) { labour = p.psSub; other = 0; } else { labour = p.plannedLab; other = p.plannedOther; labNote = 'planned · no pay sheet yet'; }
+  } else {
+    material = p.plannedMat; labour = p.plannedLab; other = p.plannedOther;
+  }
+  const cost = material + labour + other;
+  const gross = p.revenue - cost;
+  const margin = p.revenue ? (gross / p.revenue) * 100 : 0;
+  return { material, labour, other, matNote, labNote, cost, gross, margin };
+}
+function pnlBody(p, mode){
+  const c = pnlCompute(p, mode);
+  const rev = p.revenue || 1;
+  const pct = v => Math.max(0, Math.min(100, (v / rev) * 100));
+  const seg = (w, color, label) => w > 0.4 ? `<div title="${esc(label)}" style="width:${w}%;background:${color};height:100%"></div>` : '';
+  const bar = `
+    <div style="display:flex;height:14px;border-radius:7px;overflow:hidden;background:rgba(6,10,20,0.6);border:1px solid rgba(251,146,60,0.14);margin:4px 0 16px">
+      ${seg(pct(c.material), 'linear-gradient(90deg,#22d3ee,#0ea5b7)', 'Material')}
+      ${seg(pct(c.labour), 'linear-gradient(90deg,#fb923c,#ea7a1f)', 'Labour')}
+      ${seg(pct(c.other), 'rgba(160,190,230,0.4)', 'Other')}
+      ${seg(Math.max(0, (c.gross / rev) * 100), 'linear-gradient(90deg,#4ade80,#22c55e)', 'Gross profit')}
+    </div>`;
+  const mc = c.margin >= 25 ? '#4ade80' : c.margin >= 10 ? '#fbbf24' : '#f87171';
+  const row = (label, val, dot, note, strong) => `
+    <div style="display:flex;justify-content:space-between;align-items:baseline;padding:8px 2px;border-bottom:1px solid rgba(251,146,60,0.07)">
+      <div style="display:flex;align-items:center;gap:8px;min-width:0">
+        <span style="width:9px;height:9px;border-radius:2px;background:${dot};display:inline-block;flex:0 0 auto"></span>
+        <span style="color:rgba(230,240,255,0.9);font-weight:${strong ? 700 : 500}">${esc(label)}</span>
+        ${note ? `<span style="font-size:0.72em;color:#fbbf24;font-family:'JetBrains Mono',monospace;letter-spacing:0.3px">${esc(note)}</span>` : ''}
+      </div>
+      <div style="display:flex;align-items:baseline;gap:10px;white-space:nowrap">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:0.72em;color:rgba(160,190,230,0.55)">${Math.round(val / rev * 100)}%</span>
+        <span style="font-family:'Inter',sans-serif;font-weight:${strong ? 800 : 600};color:${strong ? dot : 'rgba(230,240,255,0.92)'}">${pmoney(val)}</span>
+      </div>
+    </div>`;
+  const showContract = p.contractValue && Math.abs(p.contractValue - p.revenue) > 1;
+  return `
+    <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:14px;margin-bottom:6px">
+      <div>
+        <div style="font-family:'Inter',sans-serif;font-size:2.4em;font-weight:900;line-height:1;color:${mc};letter-spacing:-1px">${c.margin.toFixed(1)}<span style="font-size:0.42em;font-weight:700;margin-left:2px">%</span></div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:0.66em;color:rgba(160,190,230,0.6);letter-spacing:2px;margin-top:4px">GROSS MARGIN · ${mode.toUpperCase()}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-family:'Inter',sans-serif;font-size:1.3em;font-weight:800;color:${mc}">${pmoney(c.gross)}</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:0.64em;color:rgba(160,190,230,0.5);letter-spacing:1.5px;margin-top:3px">GROSS PROFIT</div>
+      </div>
+    </div>
+    ${bar}
+    ${row('Revenue (pre-tax)', p.revenue, 'rgba(230,240,255,0.55)', showContract ? 'contract ' + money(p.contractValue) : '', false)}
+    ${row('Material', c.material, '#22d3ee', c.matNote, false)}
+    ${row('Labour' + (mode === 'actual' && p.hasPs ? ' & sub' : ''), c.labour, '#fb923c', c.labNote, false)}
+    ${c.other > 0 ? row('Disposal & other', c.other, 'rgba(160,190,230,0.6)', '', false) : ''}
+    ${row('Gross profit', c.gross, mc, '', true)}
+  `;
+}
+function setPnlMode(mode){
+  const p = window._jobPnl;
+  if (!p) return;
+  const body = document.getElementById('pnlBody');
+  if (body) body.innerHTML = pnlBody(p, mode);
+  const c = pnlCompute(p, mode);
+  const chip = document.getElementById('pnlChip');
+  if (chip) {
+    chip.textContent = c.margin.toFixed(1) + '% margin';
+    chip.setAttribute('style', "font-family:'JetBrains Mono',monospace;font-weight:700;padding:2px 9px;border-radius:20px;letter-spacing:0.5px;" + marginChipStyle(c.margin));
+  }
+  const pb = document.getElementById('pnlModePlanned'), ab = document.getElementById('pnlModeActual');
+  if (pb) pb.classList.toggle('on', mode === 'planned');
+  if (ab) ab.classList.toggle('on', mode === 'actual');
+}
+
 function showUploadErrorBanner(errors, totalFiles, failed) {
   const mount = document.getElementById('photoMount');
   if (!mount) return;
