@@ -247,7 +247,7 @@ async function renderJobs(){
     + '<div class="measure" id="nj_measure"></div>'
     + '<label>Customer name <span class="opt">(optional)</span></label><input type="text" id="nj_cust" placeholder="e.g. Ryan Racho">'
     + '<div class="prow"><button onclick="toggleNew()">Cancel</button><button class="go" id="nj_go" onclick="createJob()">Create folder</button></div></div>';
-  h += '<input type="text" class="jobsearch" id="jobSearch" placeholder="Search address or customer…" oninput="filterJobs(this.value)">';
+  h += '<input type="text" class="jobsearch" id="jobSearch" placeholder="Search jobs by address…" oninput="filterJobs(this.value)">';
   h += '<div class="lbl">Job folders <span class="n" id="jobCount">…</span></div>';
   h += '<div id="folderList"><div class="empty">Loading…</div></div>';
   w.innerHTML = h;
@@ -311,7 +311,12 @@ async function createJob(){
   if(!(p && p.id)){ btn.disabled=false; btn.textContent='Create folder'; toast((p&&p.error)||'Could not create the folder.'); return; }
   if(custName){
     const c = await api('/customers', { method:'POST', body: JSON.stringify({ full_name:custName, address:addr }) });
-    if(c && c.id){ await api('/projects', { method:'PUT', body: JSON.stringify({ id:p.id, customer_id:c.id }) }); }
+    if(c && c.id){
+      const link = await api('/projects', { method:'PUT', body: JSON.stringify({ id:p.id, customer_id:c.id }) });
+      // If the link write fails, best-effort remove the just-created customer so a
+      // transient error doesn't leave an orphan customer record behind.
+      if(!(link && link.id)){ api('/customers?id='+c.id, { method:'DELETE' }); toast('Folder created. Could not attach the customer, add it from the folder.'); }
+    }
     else { toast('Folder created. You can add the customer from the folder.'); }
   }
   if(measure){ await api('/projects?action=add-note', { method:'POST', body: JSON.stringify({ project_id:p.id, body:'Auto roof measure: ~'+measure.sq+' SQ, '+measure.pitchX12+'/12 pitch, '+measure.segments+' planes ('+measure.imageryQuality+' imagery).' }) }); }
