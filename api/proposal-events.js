@@ -14,6 +14,7 @@
 
 import { supabaseAdmin } from '../lib/supabase.js';
 import { gmailSend } from '../lib/google.js';
+import { publicBase } from '../lib/publicUrl.js';
 
 const NOTIFY_EMAIL = (process.env.NOTIFY_EMAIL || 'mackenzie.m@plusultraroofing.com').trim();
 const OPEN_NOTIFIED_TAG = 'owner:open_notified';
@@ -54,7 +55,7 @@ async function maybeNotifyFirstOpen(estId) {
   const customer = est.customer || {};
   const refId = 'PU-' + (est.estimate_number || est.id.slice(0, 8));
   const shareToken = est.share_token || '';
-  const proposalUrl = `https://ryujin-os.vercel.app/proposal-client.html?share=${encodeURIComponent(shareToken)}`;
+  const proposalUrl = `${publicBase()}/proposal-client.html?share=${encodeURIComponent(shareToken)}`;
   const backofficeUrl = `https://ryujin-os.vercel.app/sales-proposal.html?estimate_id=${encodeURIComponent(est.id)}`;
 
   const pkgs = est.calculated_packages || {};

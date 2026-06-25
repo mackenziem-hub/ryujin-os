@@ -14,6 +14,7 @@
 
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireTenant } from '../lib/tenant.js';
+import { publicBase } from '../lib/publicUrl.js';
 
 // Always hit the production alias — preview deployment URLs are behind
 // Vercel SSO and would 401 the self-fetch.
@@ -146,7 +147,7 @@ async function handler(req, res) {
     est.roof_area_sqft ? `Roof area: ${est.roof_area_sqft} sqft.` : '',
     est.roof_pitch ? `Pitch: ${est.roof_pitch}.` : '',
     `Bundled retail: materials + labor + warranty.`,
-    `Full scope detail in Ryujin proposal: https://ryujin-os.vercel.app/proposal-client.html?share=${est.share_token || est.id}`
+    `Full scope detail in Ryujin proposal: ${publicBase()}/proposal-client.html?share=${est.share_token || est.id}`
   ].filter(Boolean).join(' ');
 
   const ghlBody = {
