@@ -1005,6 +1005,19 @@
     return sum;
   }
 
+  // Complete-project savings. A fixed pre-tax credit that applies only when
+  // every add-on is toggled on. Guarded: returns 0 when the proposal carries
+  // no bundleSavings rule, so proposals without it are completely unaffected.
+  function bundleSavingsAmount() {
+    var p = DATA.products || {};
+    var bs = p.bundleSavings;
+    if (!bs || !(Number(bs.amount) > 0)) return 0;
+    var ad = getAddons();
+    if (!ad.length) return 0;
+    var allOn = ad.every(function (a) { return state.addons.has(a.slug); });
+    return allOn ? Number(bs.amount) : 0;
+  }
+
   function selectedAddonsList() {
     return getAddons()
       .filter(function (a) { return state.addons.has(a.slug); })
@@ -1016,7 +1029,7 @@
   // Displayed total = base x (1 + tax), rounded to nearest 25.
   function computeTotals() {
     var t = findTier(state.tierId);
-    var base = (t ? tierTotal(t) : 0) + addonsSubtotal();
+    var base = (t ? tierTotal(t) : 0) + addonsSubtotal() - bundleSavingsAmount();
     var withTax = base * (1 + taxRate());
     var display = round25(withTax);
     return { tier: t, base: base, withTax: withTax, display: display };
@@ -1108,6 +1121,23 @@
         aTot.style.display = '';
       } else {
         aTot.style.display = 'none';
+      }
+    }
+
+    // Complete-project savings line. Shows only when every add-on is on and the
+    // proposal carries a bundleSavings rule; hidden (and a no-op) otherwise.
+    var aSave = $('#pv2-accept-savings');
+    if (aSave) {
+      var savings = bundleSavingsAmount();
+      if (savings > 0) {
+        var bs = (DATA.products && DATA.products.bundleSavings) || {};
+        var saveLabel = bs.label || 'Complete-project savings';
+        aSave.innerHTML = '';
+        aSave.appendChild(el('span', 'pv2-accept__savings-label', esc(resolveVars(saveLabel))));
+        aSave.appendChild(el('span', 'pv2-accept__savings-amount', '− ' + money(savings)));
+        aSave.style.display = '';
+      } else {
+        aSave.style.display = 'none';
       }
     }
   }
@@ -1607,6 +1637,11 @@
     var tot = el('span', 'pv2-accept__total'); tot.id = 'pv2-accept-total';
     tot.style.display = 'none';
     summary.appendChild(tot);
+    // Complete-project savings line. Hidden unless every add-on is toggled on
+    // and the proposal carries a bundleSavings rule (see recompute).
+    var save = el('span', 'pv2-accept__savings'); save.id = 'pv2-accept-savings';
+    save.style.display = 'none';
+    summary.appendChild(save);
     box.appendChild(summary);
 
     // Price-lock urgency line, resolved from the priceLockDate variable.
@@ -1832,6 +1867,7 @@
       panel: (t && t.panelPrices) ? state.panelSel : null,
       addons: addonsList,
       addonsSubtotal: addonsSubtotal(),
+      bundleSavings: bundleSavingsAmount(),
       baseTotal: totals.base,
       totalWithTax: totals.display,
       financing: fin && fin.enabled
