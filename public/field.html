@@ -233,8 +233,9 @@ async function claimTask(id){
 }
 async function toggleTask(id, wasDone){
   if(wasDone) return;
-  await api('/tickets', { method:'PUT', body: JSON.stringify({ id, action:'complete' }) });
-  toast('Task completed'); renderTasks();
+  const r = await api('/tickets', { method:'PUT', body: JSON.stringify({ id, action:'complete' }) });
+  if(r && r.id) toast('Task completed'); else toast((r&&r.error)||'Could not update the task');
+  renderTasks();
 }
 
 // ── JOBS ──
@@ -309,19 +310,20 @@ async function createJob(){
   // customer record behind.
   const p = await api('/projects', { method:'POST', body: JSON.stringify({ name: addr, address: parts[0].trim(), city, province:'NB', status:'not_started' }) });
   if(!(p && p.id)){ btn.disabled=false; btn.textContent='Create folder'; toast((p&&p.error)||'Could not create the folder.'); return; }
+  let resultMsg = 'Folder created';
   if(custName){
     const c = await api('/customers', { method:'POST', body: JSON.stringify({ full_name:custName, address:addr }) });
     if(c && c.id){
       const link = await api('/projects', { method:'PUT', body: JSON.stringify({ id:p.id, customer_id:c.id }) });
       // Rare: customer created but the link write failed. The customer exists and
       // is searchable; surface it so it can be attached from the folder manually.
-      if(!(link && link.id)){ toast('Folder created. The customer "'+custName+'" was saved but not linked yet, attach it from the folder.'); }
+      if(!(link && link.id)){ resultMsg = 'Folder created. Customer "'+custName+'" saved but not linked, attach it from the folder.'; }
     }
-    else { toast('Folder created. You can add the customer from the folder.'); }
+    else { resultMsg = 'Folder created. You can add the customer from the folder.'; }
   }
   if(measure){ await api('/projects?action=add-note', { method:'POST', body: JSON.stringify({ project_id:p.id, body:'Auto roof measure: ~'+measure.sq+' SQ, '+measure.pitchX12+'/12 pitch, '+measure.segments+' planes ('+measure.imageryQuality+' imagery).' }) }); }
   btn.disabled=false; btn.textContent='Create folder';
-  toast('Folder created'); _measure=null;
+  toast(resultMsg); _measure=null;
   document.getElementById('nj_addr').value=''; document.getElementById('nj_cust').value=''; openJob(p.id);
 }
 
