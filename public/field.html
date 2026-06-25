@@ -532,7 +532,11 @@ async function renderSchedule(){
   // Google events for the EXACT visible range (the endpoint reads the full ICS,
   // so this includes the earlier days of the current week/month, not just
   // forward-from-today).
-  const gc = await api('/google-cal?from='+from+'&to='+to+(USER_ICS?'&ics='+encodeURIComponent(USER_ICS):''));
+  // POST when a personal calendar is connected so the secret iCal URL travels in
+  // the body, never in a logged request URL. Plain GET otherwise.
+  const gc = USER_ICS
+    ? await api('/google-cal', { method:'POST', body: JSON.stringify({ from, to, ics: USER_ICS }) })
+    : await api('/google-cal?from='+from+'&to='+to);
   const job=(cal.calendar)||{}; const gcb={};
   (gc.events||[]).forEach(e=>{ const dt=e.startTime?new Date(e.startTime):null; if(!dt)return; (gcb[ymd(dt)]=gcb[ymd(dt)]||[]).push(e); });
   CAL_DATA={job, gc:gcb, configured:!!gc.configured, personal:!!gc.personal};

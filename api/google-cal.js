@@ -125,18 +125,22 @@ function parseIcs(text) {
 
 async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'GET') return res.status(405).json({ error: 'GET only' });
+  if (req.method !== 'GET' && req.method !== 'POST') return res.status(405).json({ error: 'GET or POST' });
 
   const session = await resolveSession(req);
   if (!session) return res.status(401).json({ error: 'sign_in_required' });
 
-  // Per-user personal calendar: the crew member pastes their Google "secret
-  // iCal" URL (kept client-side) and sends it as ?ics=. SSRF-guarded to Google's
+  // Params come from the body on POST (so the personal iCal SECRET never lands in
+  // a URL / browser history / access logs) and from the query on GET.
+  const params = req.method === 'POST' ? (req.body || {}) : req.query;
+
+  // Per-user personal calendar: the crew member pastes their Google "secret iCal"
+  // URL (kept client-side) and POSTs it as `ics`. SSRF-guarded to Google's
   // calendar host so it can never be pointed at an arbitrary/internal URL.
   // Falls back to the tenant-shared env calendar when no personal one is given.
   let icsUrl = (process.env.GOOGLE_CALENDAR_ICS_URL || '').trim();
   let personal = false;
-  const userIcs = String(req.query.ics || '').trim();
+  const userIcs = String(params.ics || '').trim();
   if (userIcs) {
     try {
       const u = new URL(userIcs);
@@ -161,7 +165,7 @@ async function handler(req, res) {
   // events, so from/to can include recent past (e.g. the start of the current
   // week). Range is capped at 90 days to bound the response.
   let startMs, endMs, days = null;
-  const fromQ = req.query.from, toQ = req.query.to;
+  const fromQ = params.from, toQ = params.to;
   if (fromQ && toQ) {
     const f = new Date(String(fromQ) + 'T00:00:00');
     const t = new Date(String(toQ) + 'T23:59:59');
@@ -171,7 +175,7 @@ async function handler(req, res) {
     }
   }
   if (startMs == null) {
-    days = Math.max(1, Math.min(90, parseInt(req.query.days, 10) || 7));
+    days = Math.max(1, Math.min(90, parseInt(params.days, 10) || 7));
     startMs = Date.now();
     endMs = startMs + days * 86400000;
   }
