@@ -509,12 +509,15 @@ document.getElementById('photoInput').addEventListener('change', async function(
 
 // ── SCHEDULE ──
 let CAL_VIEW='week', CAL_ANCHOR=null, CAL_SEL=null, CAL_DATA={job:{},gc:{},configured:false};
-let USER_ICS=''; try{ USER_ICS=localStorage.getItem('ryujin_user_ics')||''; }catch(e){}
+let USER_ICS='';
+// Per-user key so a shared crew tablet never carries one user's calendar secret
+// to the next login. Loaded in boot() once ME is known.
+function icsKey(){ return (ME && ME.id) ? 'ryujin_user_ics_'+ME.id : null; }
 function calConnectToggle(){ const p=document.getElementById('calConnect'); if(p){ p.classList.toggle('on'); const i=document.getElementById('calIcsInput'); if(i&&p.classList.contains('on')){ i.value=USER_ICS; i.focus(); } } }
 function calSaveIcs(){
   const v=(document.getElementById('calIcsInput').value||'').trim();
   if(v && !/^https:\/\/calendar\.google\.com\/calendar\/ical\/.+\.ics(\?.*)?$/i.test(v)){ toast('That is not an iCal feed. Use the "Secret address in iCal format" URL (ends in .ics)'); return; }
-  USER_ICS=v; try{ v?localStorage.setItem('ryujin_user_ics',v):localStorage.removeItem('ryujin_user_ics'); }catch(e){}
+  USER_ICS=v; try{ const k=icsKey(); if(k){ v?localStorage.setItem(k,v):localStorage.removeItem(k); } }catch(e){}
   toast(v?'Your calendar is connected':'Calendar disconnected');
   renderSchedule();
 }
@@ -665,6 +668,7 @@ async function boot(){
   ME = me && me.user ? me.user : null;
   if(!ME){ try{ ME = JSON.parse(localStorage.getItem('ryujin_user')||'null'); }catch(e){} }
   document.getElementById('meName').textContent = ME ? (ME.name||'Field') : 'Field';
+  try{ const k=icsKey(); USER_ICS = k ? (localStorage.getItem(k)||'') : ''; }catch(e){}
   renderTasks();
   api('/messages?box=unread').then(d=>setBadge((d.messages||[]).length||0));
   // Preload jobs so the assistant can resolve a job by customer name (client-side
