@@ -330,6 +330,44 @@ async function handler(req, res) {
     return res.json(data);
   }
 
+  // ── Job-folder notes (field app). Reuses the comments table; team-visible
+  //    (is_internal=true so they never surface on the client share gallery).
+  //    guest_name carries the author label so the list needs no users join. ──
+  if (req.query.action === 'notes' && req.method === 'GET') {
+    const pid = req.query.project_id;
+    if (!pid) return res.status(400).json({ error: 'project_id required' });
+    const { data, error } = await supabaseAdmin
+      .from('comments')
+      .select('id, body, guest_name, user_id, created_at')
+      .eq('project_id', pid)
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false });
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ notes: data || [] });
+  }
+  if (req.query.action === 'add-note' && req.method === 'POST') {
+    const session = await resolveSession(req);
+    const { project_id, body } = (req.body || {});
+    if (!project_id || !body || !String(body).trim()) {
+      return res.status(400).json({ error: 'project_id and body required' });
+    }
+    const uid = session?.user_id && session.user_id !== 'service-internal' ? session.user_id : null;
+    const { data, error } = await supabaseAdmin
+      .from('comments')
+      .insert({
+        project_id,
+        tenant_id: tenantId,
+        body: String(body).trim(),
+        user_id: uid,
+        guest_name: session?.name || 'Crew',
+        is_internal: true
+      })
+      .select('id, body, guest_name, user_id, created_at')
+      .single();
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(201).json(data);
+  }
+
   // ── Ensure share token (idempotent, used by the photo-share button) ──
   if (req.method === 'POST' && req.query.action === 'ensure-share') {
     const projectId = req.query.id;
