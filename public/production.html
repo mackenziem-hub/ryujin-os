@@ -437,13 +437,18 @@ function activeJobList(){
   // 1) Active work orders — the real book of current work
   for (const w of (DATA.workorders || [])){
     const st = String(w.status || '').toLowerCase();
+    // Claim this WO's paysheet UP FRONT, before any skip. A completed/cancelled
+    // job often still has a non-finalized paysheet (e.g. "sent, awaiting sub
+    // click"); if we skipped the WO without claiming it, loop 2 would resurrect
+    // that paysheet as an orphan "active" job and a long-done job (Hope, Lipton)
+    // would hang on the board forever.
+    const ps = w.linked_paysheet_id ? psById.get(w.linked_paysheet_id) : null;
+    if (ps) claimed.add(ps.id);
     let status = null;
     if (st === 'in_progress' || st === 'active') status = 'in_progress';
     else if (st === 'issued' || st === 'scheduled') status = 'scheduled';
     else if (st === 'draft') status = 'scheduled';   // sold but not yet dispatched, show it (mirrors the #622 Job Folders fix), counts as scheduled NOT in-progress
-    else continue;                       // skip complete / cancelled
-    const ps = w.linked_paysheet_id ? psById.get(w.linked_paysheet_id) : null;
-    if (ps) claimed.add(ps.id);
+    else continue;                       // complete / cancelled: paysheet already claimed above so it cannot reappear in loop 2
     jobs.push(normalizeJob(w, ps, status));
   }
 
