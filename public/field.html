@@ -205,15 +205,24 @@ async function renderTasks(){
   const myIds = new Set(myT.map(t=>t.id));
   const avail = (all.tickets||[]).filter(t=>!myIds.has(t.id)&&!t.assigned_to);
   let h = '<div class="lbl">Today <span class="n">'+myT.length+'</span></div>';
-  h += myT.length ? myT.map(taskRow).join('') : '<div class="empty">No tasks assigned to you. Nice.</div>';
-  if(avail.length){ h += '<div class="lbl">Available to grab <span class="n">'+avail.length+'</span></div>' + avail.map(taskRow).join(''); }
+  h += myT.length ? myT.map(t=>taskRow(t,'mine')).join('') : '<div class="empty">No tasks assigned to you. Nice.</div>';
+  if(avail.length){ h += '<div class="lbl">Available to grab <span class="n">'+avail.length+'</span></div>' + avail.map(t=>taskRow(t,'avail')).join(''); }
   w.innerHTML = h;
 }
-function taskRow(t){
-  const pr = t.priority==='urgent'?'urgent':t.priority==='high'?'high':null;
+function taskRow(t, mode){
+  const prc = t.priority==='urgent'?'urgent':t.priority==='high'?'high':null;
   const loc = t.project?.address || t.customer?.address || '';
   const done = t.status==='done';
-  return '<div class="task '+(done?'done':'')+'" onclick="toggleTask(\''+t.id+'\','+done+')"><div class="check '+(done?'done':'')+'"></div><div class="body"><div class="t">'+esc(t.title)+'</div><div class="s">'+esc(loc||(t.due_date?'due '+t.due_date:'task'))+'</div></div>'+(pr?'<span class="chip '+pr+'">'+t.priority+'</span>':statusChip(t.status))+'</div>';
+  if(mode==='avail'){
+    return '<div class="task" onclick="claimTask(\''+t.id+'\')"><div class="check" style="border-radius:50%"></div><div class="body"><div class="t">'+esc(t.title)+'</div><div class="s">'+esc(loc||'tap to grab')+'</div></div><span class="chip open">Grab</span></div>';
+  }
+  return '<div class="task '+(done?'done':'')+'" onclick="toggleTask(\''+t.id+'\','+done+')"><div class="check '+(done?'done':'')+'"></div><div class="body"><div class="t">'+esc(t.title)+'</div><div class="s">'+esc(loc||(t.due_date?'due '+t.due_date:'task'))+'</div></div>'+(prc?'<span class="chip '+prc+'">'+t.priority+'</span>':statusChip(t.status))+'</div>';
+}
+async function claimTask(id){
+  if(!ME?.id){ toast('No user on this session'); return; }
+  const r = await api('/tickets', { method:'PUT', body: JSON.stringify({ id, assigned_to:ME.id, action:'acknowledge' }) });
+  if(r&&r.id) toast('Task claimed'); else toast((r&&r.error)||'Could not claim');
+  renderTasks();
 }
 async function toggleTask(id, wasDone){
   if(wasDone) return;
@@ -264,14 +273,16 @@ async function createJob(){
   if(custName){ const c=await api('/customers',{method:'POST',body:JSON.stringify({full_name:custName,address:addr})}); if(c&&c.id) customer_id=c.id; }
   const parts = addr.split(',');
   const city = parts.length>1 ? parts[1].trim() : 'Riverview';
-  const notes = _measure ? ('Auto roof measure: ~'+_measure.sq+' SQ, '+_measure.pitchX12+'/12 pitch, '+_measure.segments+' planes ('+_measure.imageryQuality+' imagery).') : null;
+  const measure = _measure;
   const body = { name: addr, address: parts[0].trim(), city, province:'NB', status:'not_started' };
   if(customer_id) body.customer_id=customer_id;
-  if(notes) body.notes=notes;
   const p = await api('/projects', { method:'POST', body: JSON.stringify(body) });
   btn.disabled=false; btn.textContent='Create folder';
-  if(p && p.id){ toast('Folder created'); _measure=null; document.getElementById('nj_addr').value=''; document.getElementById('nj_cust').value=''; openJob(p.id); }
-  else { toast((p&&p.error)||'Could not create'); }
+  if(p && p.id){
+    if(measure){ await api('/projects?action=add-note', { method:'POST', body: JSON.stringify({ project_id:p.id, body:'Auto roof measure: ~'+measure.sq+' SQ, '+measure.pitchX12+'/12 pitch, '+measure.segments+' planes ('+measure.imageryQuality+' imagery).' }) }); }
+    toast('Folder created'); _measure=null;
+    document.getElementById('nj_addr').value=''; document.getElementById('nj_cust').value=''; openJob(p.id);
+  } else { toast((p&&p.error)||'Could not create'); }
 }
 
 // ── JOB DETAIL ──
@@ -283,23 +294,21 @@ async function openJob(id){
   window.scrollTo(0,0);
   const w = document.getElementById('jobWrap');
   w.innerHTML = '<div class="empty">Loading…</div>';
-  const [det, full, tix, nts] = await Promise.all([
+  const [det, tix, nts] = await Promise.all([
     api('/projects?id='+id),
-    api('/projects?limit=100'),
     api('/tickets?project_id='+id),
     api('/projects?action=notes&project_id='+id)
   ]);
-  const meta = (full.projects||[]).find(p=>p.id===id) || {};
-  const pr = det.project || {};
-  const files = det.files || [];
-  const addr = pr.address || meta.address || 'Job';
-  const cust = (pr.customer && typeof pr.customer === 'object' ? pr.customer.full_name : pr.customer) || meta.customer?.full_name || '';
-  const est = meta.estimate;
+  const pr = (det && det.id) ? det : {};
+  const files = pr.files || [];
+  const addr = pr.address || pr.name || 'Job';
+  const cust = pr.customer?.full_name || '';
+  const est = pr.estimate || null;
   let h = '<span class="back" onclick="switchTab(\'jobs\')">← Job folders</span>';
   h += '<div class="jhead"><div class="addr">'+esc(addr)+'</div></div>';
   const m=[]; if(cust) m.push('Customer <b>'+esc(cust)+'</b>'); m.push('Status <b>'+esc((pr.status||meta.status||'new').replace('_',' '))+'</b>'); if(est?.estimate_number) m.push('Est <b>'+esc(est.estimate_number)+'</b>');
   h += '<div class="jmeta">'+m.join('')+'</div>';
-  const mapq = encodeURIComponent([addr, pr.city||meta.city, 'NB'].filter(Boolean).join(', '));
+  const mapq = encodeURIComponent([addr, pr.city, 'NB'].filter(Boolean).join(', '));
   h += '<div class="jactions"><button onclick="openNoteBox()"><svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg>Add note</button>'
     + '<a class="jactions-a" style="text-decoration:none;flex:1"><button onclick="window.open(\'https://www.google.com/maps/search/?api=1&query='+mapq+'\')" style="width:100%"><svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>Navigate</button></a></div>';
   // photos
@@ -315,13 +324,14 @@ async function openJob(id){
   h += notes.map(n=>'<div class="note"><div class="meta"><b>'+esc(n.guest_name||'Crew')+'</b><span>'+ago(n.created_at)+'</span></div><div class="txt">'+esc(n.body)+'</div></div>').join('');
   // tasks
   const jt = (tix.tickets||[]).filter(t=>t.status!=='cancelled');
-  if(jt.length){ h += '<div class="lbl">Tasks on this job <span class="n">'+jt.length+'</span></div>' + jt.map(taskRow).join(''); }
+  if(jt.length){ h += '<div class="lbl">Tasks on this job <span class="n">'+jt.length+'</span></div>' + jt.map(t=>taskRow(t,'mine')).join(''); }
   // customer / linked
   h += '<div class="lbl">Customer &amp; records</div>';
-  if(pr.customer || meta.customer){ const ph=meta.customer?.phone; if(ph) h += '<div class="infocard"><div class="l">Phone</div><div class="v"><a href="tel:'+esc(ph)+'">'+esc(ph)+'</a></div></div>'; }
-  if(est?.estimate_number){ h += '<div class="infocard"><div class="l">Estimate</div><div class="v">'+esc(est.estimate_number)+(est.final_accepted_total?' · $'+Number(est.final_accepted_total).toLocaleString():'')+'</div></div>'; }
-  if(meta.share_token){ h += '<div class="infocard"><div class="l">Photo gallery</div><div class="v"><a href="/photos-share.html?share='+esc(meta.share_token)+'" target="_blank">Open customer gallery →</a></div></div>'; }
-  if(!pr.customer && !meta.customer && !est){ h += '<div class="empty">No customer linked yet.</div>'; }
+  const ph = pr.customer?.phone;
+  if(ph) h += '<div class="infocard"><div class="l">Phone</div><div class="v"><a href="tel:'+esc(ph)+'">'+esc(ph)+'</a></div></div>';
+  if(est?.estimate_number){ h += '<div class="infocard"><div class="l">Estimate</div><div class="v">'+esc(est.estimate_number)+(est.status?' · '+esc(est.status):'')+'</div></div>'; }
+  if(pr.share_token){ h += '<div class="infocard"><div class="l">Photo gallery</div><div class="v"><a href="/photos-share.html?share='+esc(pr.share_token)+'" target="_blank">Open customer gallery →</a></div></div>'; }
+  if(!pr.customer && !est){ h += '<div class="empty">No customer linked yet.</div>'; }
   w.innerHTML = h;
 }
 function openNoteBox(){ const b=document.getElementById('noteBox'); if(b){ b.classList.add('on'); document.getElementById('noteTxt').focus(); } }

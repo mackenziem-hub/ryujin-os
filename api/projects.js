@@ -430,6 +430,11 @@ async function handler(req, res) {
         `)
         .eq('tenant_id', tenantId)
         .eq('id', id)
+        // This read is reachable with only the tenant slug (customer-showcase, no
+        // session), so the embedded comments must exclude internal crew notes
+        // (is_internal=true). Crew read their notes via the session-gated
+        // ?action=notes path instead.
+        .eq('comments.is_internal', false)
         .single();
 
       if (error) return res.status(404).json({ error: 'Project not found' });
