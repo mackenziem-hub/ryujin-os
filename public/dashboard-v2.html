@@ -641,12 +641,23 @@ function renderKpis(s) {
 // the rail quietly impersonate live data.
 function renderStaleChip(snap) {
   const chip = document.getElementById('kpiStaleChip');
-  const t = snap && snap.updated_at ? new Date(snap.updated_at).getTime() : NaN;
-  const days = Number.isFinite(t) ? Math.floor((Date.now() - t) / 86400000) : null;
-  const stale = days != null && days >= 1;
+  // Freshness honesty: read the canonical rebuild stamp, NOT updated_at (which
+  // partial agent POSTs bump every few minutes so it always looks fresh and the
+  // old whole-days test never fired). Prefer metrics.asOf (metrics contract v1),
+  // then last_full_rebuild_at, then updated_at as a last resort.
+  const iso = (snap && snap.sections && snap.sections.metrics && snap.sections.metrics.asOf)
+    || (snap && snap.last_full_rebuild_at)
+    || (snap && snap.updated_at)
+    || null;
+  const t = iso ? new Date(iso).getTime() : NaN;
+  const mins = Number.isFinite(t) ? Math.floor((Date.now() - t) / 60000) : null;
+  const stale = mins != null && mins >= 30;
   if (chip) {
     if (stale) {
-      chip.textContent = 'STALE · snapshot ' + days + 'd old';
+      const label = mins >= 1440 ? (Math.floor(mins / 1440) + 'd')
+        : mins >= 60 ? (Math.floor(mins / 60) + 'h')
+        : (mins + 'm');
+      chip.textContent = 'STALE · snapshot ' + label + ' old';
       chip.classList.add('on');
     } else {
       chip.classList.remove('on');

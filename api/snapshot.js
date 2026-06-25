@@ -65,6 +65,7 @@ async function nativeTicketStats() {
     const now = new Date();
     const activeToday = [];
     const completedCustomers = new Set();
+    const abandoned = [];
 
     for (const w of rows) {
       // Normalize status: workorders use 'complete', the consumer enum expects 'done'
@@ -75,16 +76,31 @@ async function nativeTicketStats() {
       const owner = w.sub_crew_lead || 'Unassigned';
       byAssignee[owner] = (byAssignee[owner] || 0) + 1;
 
-      const isActive = !w.completed_at;
+      // Active = a job genuinely in flight. Keyed on STATUS, not on the absence of
+      // completed_at: a finished-on-the-ground WO that was never flipped to
+      // complete keeps completed_at NULL and used to count active forever, and
+      // draft scaffolds (no start_date) also leaked in. Allowlist fixes both.
+      const isActive = rawStatus === 'issued' || rawStatus === 'in_progress';
+      const title = w.customer_name
+        ? `${w.customer_name} (${w.address || `WO-${w.wo_number}`})`
+        : (w.address || `WO-${w.wo_number}`);
+
       if (isActive && w.start_date && new Date(w.start_date) < now) overdueCount++;
       // Completed-job customers: used downstream to relabel stale "Proposal Accepted"
-      // rows in revenue.recentActivity (done jobs that the old 4h re-PUT bumped).
-      if (!isActive && w.customer_name) completedCustomers.add(w.customer_name.trim().toLowerCase());
+      // rows in revenue.recentActivity. Key off the real complete status, not
+      // !isActive (which now also includes drafts).
+      if (rawStatus === 'complete' && w.customer_name) completedCustomers.add(w.customer_name.trim().toLowerCase());
+
+      // Abandoned: issued but more than 7 days past its start date and never
+      // moved to in_progress/complete - a job that fell through the cracks.
+      if (rawStatus === 'issued' && w.start_date) {
+        const daysPast = Math.floor((now - new Date(w.start_date)) / 86400000);
+        if (daysPast > 7) {
+          abandoned.push({ id: w.id, title, wo_number: w.wo_number, start_date: w.start_date, days_past: daysPast, assignee: owner });
+        }
+      }
 
       if (isActive) {
-        const title = w.customer_name
-          ? `${w.customer_name} (${w.address || `WO-${w.wo_number}`})`
-          : (w.address || `WO-${w.wo_number}`);
         activeToday.push({
           id: w.id,
           title,
@@ -105,6 +121,7 @@ async function nativeTicketStats() {
         byAssignee,
         overdueCount,
         activeToday: activeToday.sort((a, b) => (b.days_overdue || 0) - (a.days_overdue || 0)),
+        abandoned: abandoned.sort((a, b) => (b.days_past || 0) - (a.days_past || 0)),
         completedCustomers: [...completedCustomers]
       }
     };
@@ -396,7 +413,8 @@ async function buildFreshSnapshot() {
       byStatus: tickets.stats.byStatus,
       byAssignee: tickets.stats.byAssignee,
       overdueCount: tickets.stats.overdueCount,
-      activeToday: (tickets.stats.activeToday || []).slice(0, 10)
+      activeToday: (tickets.stats.activeToday || []).slice(0, 10),
+      abandoned: (tickets.stats.abandoned || []).slice(0, 10)
     };
   }
 
@@ -813,6 +831,25 @@ async function buildFreshSnapshot() {
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
+  // FORCED REBUILD (GET ?rebuild=1): keeps the live-fetch sections fresh on a
+  // schedule. Vercel crons can only issue GET (PUT force-refresh below is
+  // unreachable by cron), and a bare cron GET has no session so it would 401 at
+  // the read gate. This branch sits ABOVE the read gate, returns only a status
+  // ack (no PII, so it is not a read leak), and is itself gated to the cron
+  // secret / owner / service token. Paired with a */15 cron, live data never
+  // drifts more than ~15 min stale.
+  if (req.method === 'GET' && (req.query.rebuild === '1' || req.query.rebuild === 'true')) {
+    const auth = await requireCronOrOwner(req);
+    if (!auth.ok) return res.status(401).json({ error: auth.error, code: 'REBUILD_FORBIDDEN' });
+    try {
+      const snapshot = await buildFreshSnapshot();
+      await saveSnapshot(snapshot);
+      return res.json({ status: 'rebuilt', via: auth.via, last_full_rebuild_at: snapshot.last_full_rebuild_at });
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
+
   // GATE (read paths): GET and PUT return the full blob, which aggregates
   // customer PII (names, addresses, phone/email) and revenue. They must never
   // be world-readable. The browser cockpit sends the logged-in user's session
@@ -844,15 +881,19 @@ export default async function handler(req, res) {
       // Check if we have a cached snapshot
       let snapshot = await getSnapshot();
 
-      // If the live-fetch sections have not been rebuilt in over an hour, build
-      // fresh. Gate on last_full_rebuild_at (set only by buildFreshSnapshot), NOT
+      // The */15 rebuild cron is the PRIMARY refresher. This on-demand gate is a
+      // looser BACKSTOP (25 min) so a GET landing right on the cron boundary does
+      // not redundantly rebuild, and so a thundering herd of dashboards cannot
+      // each kick a full rebuild during the normal <15-min-fresh window. If the
+      // cron has clearly failed (data >25 min old), an on-demand GET still heals it.
+      // Gate on last_full_rebuild_at (set only by buildFreshSnapshot), NOT
       // updated_at: partial agent POSTs bump updated_at every few minutes, so
       // gating on it meant this rebuild never fired and the live sections froze.
       // A cached blob from before this fix has no last_full_rebuild_at -> the
       // first GET after deploy rebuilds immediately (self-healing).
       const lastFullRebuild = snapshot?.last_full_rebuild_at;
       if (!snapshot || !lastFullRebuild ||
-          (Date.now() - new Date(lastFullRebuild).getTime() > 1 * 60 * 60 * 1000)) {
+          (Date.now() - new Date(lastFullRebuild).getTime() > 25 * 60 * 1000)) {
         snapshot = await buildFreshSnapshot();
         await saveSnapshot(snapshot);
       }
