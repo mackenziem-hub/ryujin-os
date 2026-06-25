@@ -9,6 +9,7 @@ import { resolveTenant, requireTenant } from '../lib/tenant.js';
 import { resolveSession } from '../lib/portalAuth.js';
 import { gmailSend } from '../lib/google.js';
 import { syncProjectFromWorkorder, resolveProjectIdFromWorkorder } from '../lib/projectSync.js';
+import { publicBase } from '../lib/publicUrl.js';
 
 const NOTIFY_EMAIL = (process.env.NOTIFY_EMAIL || 'mackenzie.m@plusultraroofing.com').trim();
 const PHOTO_GALLERY_NOTIFIED_TAG = 'owner:photo_gallery_opened';
@@ -38,7 +39,7 @@ async function maybeNotifyFirstGalleryOpen(project) {
     if (!claimed || claimed.length === 0) return; // Lost the race; someone else is sending
 
     const customerName = project.customer?.full_name || 'Customer';
-    const shareUrl = `https://ryujin-os.vercel.app/photos-share.html?share=${encodeURIComponent(project.share_token || '')}`;
+    const shareUrl = `${publicBase()}/photos-share.html?share=${encodeURIComponent(project.share_token || '')}`;
     const backofficeUrl = `https://ryujin-os.vercel.app/job.html?id=${encodeURIComponent(project.customer_id || '')}`;
 
     const subject = `PHOTO GALLERY OPENED · ${customerName} · ${project.address || project.name}`;
@@ -357,7 +358,11 @@ async function handler(req, res) {
           .eq('id', existing.id)
           .eq('tenant_id', tenantId);
       }
-      return res.json({ id: existing.id, share_token: existing.share_token });
+      return res.json({
+        id: existing.id,
+        share_token: existing.share_token,
+        share_url: `${publicBase()}/photos-share.html?share=${encodeURIComponent(existing.share_token)}`,
+      });
     }
 
     // Either no token or token's expiry has lapsed — mint a fresh one and clear the expiry.
@@ -370,7 +375,10 @@ async function handler(req, res) {
       .select('id, share_token')
       .single();
     if (e2) return res.status(500).json({ error: e2.message });
-    return res.json(updated);
+    return res.json({
+      ...updated,
+      share_url: `${publicBase()}/photos-share.html?share=${encodeURIComponent(updated.share_token)}`,
+    });
   }
 
   // ── GET ──
