@@ -289,14 +289,16 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
   .nav-item.active::before{display:none}
   .nav-item svg,.nav-item .ryu-nav-icon-png{width:22px;height:22px}
 
-  /* Panel-heavy tabs flow into two columns; sparse tabs stay single (clock/chat) */
-  #content[data-tab="home"],#content[data-tab="tasks"],#content[data-tab="projects"]{
-    column-count:2;column-gap:18px}
-  #content[data-tab="home"] > *,#content[data-tab="tasks"] > *,#content[data-tab="projects"] > *,
-  .panel,.task-card,.stat-card,.clock-panel{break-inside:avoid}
+  /* Panel-heavy tabs flow into two columns; sparse tabs stay single (clock/chat).
+     Tasks render their cards into #tasksInner, so the columns live on that wrapper.
+     Detail views set data-tab="detail" so they stay a single readable column. */
+  #content[data-tab="home"],#content[data-tab="projects"],
+  #content[data-tab="tasks"] #tasksInner{column-count:2;column-gap:18px}
+  #content[data-tab="home"] > *,#content[data-tab="projects"] > *,
+  #content[data-tab="tasks"] #tasksInner > *{break-inside:avoid}
   /* Full-width hero rows sit above the two-column flow */
   #content[data-tab="home"] .stats-row,#content[data-tab="home"] .view-toggle,
-  #content[data-tab="tasks"] .view-toggle,#content[data-tab="projects"] .view-toggle{column-span:all}
+  #content[data-tab="projects"] .view-toggle{column-span:all}
   .stats-row{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
 
   /* Use the extra width for the media grid */
@@ -1303,6 +1305,7 @@ window.addEventListener('beforeunload', () => {
 // ═══ Task Detail ═══
 async function showTask(id) {
   const c = document.getElementById('content');
+  c.dataset.tab = 'detail';
   const t = await api(`/tickets?id=${id}`);
   const tmpl = pickTemplate(t);
   // Hydrate the in-memory checklist state from the ticket row (DB wins over local mirror
@@ -1531,6 +1534,7 @@ async function renderProjects(c) {
 
 async function showProject(id) {
   const c = document.getElementById('content');
+  c.dataset.tab = 'detail';
   const p = await api(`/projects?id=${id}`);
   const files = p.files || [];
   const photos = files.filter(f => f.mime_type && (f.mime_type.startsWith('image/') || f.mime_type.startsWith('video/')));
