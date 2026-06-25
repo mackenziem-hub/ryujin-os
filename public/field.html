@@ -201,7 +201,8 @@ function switchTab(tab){
 // ── TASKS ──
 async function renderTasks(){
   const w = document.getElementById('tasksWrap');
-  const mine = await api('/tickets'+(ME?.id?'?assigned_to='+ME.id:''));
+  if(!ME?.id){ w.innerHTML='<div class="empty">Could not load your profile. Reopen the app from the login screen.</div>'; return; }
+  const mine = await api('/tickets?assigned_to='+ME.id);
   const all = await api('/tickets?status=open');
   const myT = (mine.tickets||[]).filter(t=>t.status!=='cancelled'&&t.status!=='done');
   const myIds = new Set(myT.map(t=>t.id));
@@ -280,7 +281,11 @@ async function createJob(){
   if(!addr){ toast('Enter an address'); return; }
   const btn=document.getElementById('nj_go'); btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
   let customer_id=null;
-  if(custName){ const c=await api('/customers',{method:'POST',body:JSON.stringify({full_name:custName,address:addr})}); if(c&&c.id) customer_id=c.id; }
+  if(custName){
+    const c=await api('/customers',{method:'POST',body:JSON.stringify({full_name:custName,address:addr})});
+    if(c&&c.id){ customer_id=c.id; }
+    else { btn.disabled=false; btn.textContent='Create folder'; toast((c&&c.error)||'Could not add that customer. Fix the name or leave it blank.'); return; }
+  }
   const parts = addr.split(',');
   const city = parts.length>1 ? parts[1].trim() : 'Riverview';
   const measure = _measure;
@@ -407,8 +412,9 @@ function setBadge(n){ const b=document.getElementById('msgBadge'); if(n>0){ b.te
 // ── CLOCK ──
 async function renderClock(){
   const w = document.getElementById('clockWrap');
+  if(!ME?.id){ w.innerHTML='<div class="empty">Could not load your profile. Reopen the app from the login screen.</div>'; return; }
   const today = new Date().toISOString().slice(0,10);
-  const d = await api('/time'+(ME?.id?'?user_id='+ME.id+'&from='+today+'&to='+today:'?from='+today+'&to='+today));
+  const d = await api('/time?user_id='+ME.id+'&from='+today+'&to='+today);
   const open = (d.entries||[]).find(e=>!e.clock_out);
   let h='';
   if(open){ h += '<div class="clockcard"><div class="time">'+timeStr(open.clock_in)+'</div><div class="sub">Clocked in since '+timeStr(open.clock_in)+'</div></div><button class="clockbtn out" onclick="clockOut()">Clock out</button>'; }
