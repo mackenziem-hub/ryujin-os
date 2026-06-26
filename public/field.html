@@ -255,7 +255,14 @@ function ago(iso){ if(!iso) return ''; const d=new Date(iso), s=(Date.now()-d.ge
 function timeStr(iso){ if(!iso) return ''; return new Date(iso).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}); }
 function statusChip(s){ const m={active:'active',not_started:'open',pending:'open',open:'open',paused:'high',punch_list:'high',complete:'done2',done:'done2',cancelled:'done2'}; const lbl={not_started:'New',punch_list:'Punch',complete:'Complete'}; return '<span class="chip '+(m[s]||'open')+'">'+esc(lbl[s]||s||'open').replace('_',' ')+'</span>'; }
 
+// ── LIVE PRESENCE ── heartbeat the current view + job + action so Mac's cockpit
+// mirrors the app in real time. Best-effort: a failure here never affects the app.
+let PRES={view:'tasks',context:''};
+function presencePing(action){ try{ const t=tok(); if(!t) return; fetch(API+'/presence?tenant='+TENANT,{method:'POST',headers:{'Content-Type':'application/json','x-tenant-id':TENANT,'Authorization':'Bearer '+t},body:JSON.stringify({view:PRES.view,context:PRES.context,action:action||''})}).catch(()=>{}); }catch(e){} }
+function presenceSet(view,context){ PRES.view=view; if(context!==undefined) PRES.context=context; presencePing(); }
+
 function switchTab(tab){
+  presenceSet(tab,'');
   CUR_TAB = tab;
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
   document.getElementById('v-'+tab).classList.add('on');
@@ -431,6 +438,7 @@ async function openJob(id){
   const pr = (det && det.id) ? det : {};
   const files = fl.files || [];
   const addr = pr.address || pr.name || 'Job';
+  presenceSet('job', addr);
   const cust = pr.customer?.full_name || '';
   const est = pr.estimate || null;
   let h = '<span class="back" onclick="switchTab(\'jobs\')">← Job folders</span>';
@@ -475,6 +483,7 @@ async function saveNote(){
 document.getElementById('photoInput').addEventListener('change', async function(){
   if(!this.files.length || !CUR_JOB) return;
   const files=[...this.files]; this.value=''; const job=CUR_JOB, total=files.length;
+  presencePing('uploading '+total+' photo'+(total===1?'':'s'));
   // Small photos -> multipart (server makes thumbnails + reads EXIF). Videos
   // (drone footage) and anything over the 50MB function cap -> straight to Blob.
   const small=[], big=[];
@@ -605,8 +614,8 @@ async function renderClock(){
   else { const done=(d.entries||[]).find(e=>e.clock_out); h += '<div class="clockcard"><div class="time" style="color:var(--dim)">'+(done?Number(done.total_hours||0).toFixed(2)+' h':'--:--')+'</div><div class="sub">'+(done?'Logged today':'Not clocked in')+'</div></div><button class="clockbtn in" onclick="clockIn()">Clock in</button>'; }
   w.innerHTML = h;
 }
-async function clockIn(){ if(!ME?.id){ toast('No user'); return; } const r=await api('/time',{method:'POST',body:JSON.stringify({user_id:ME.id})}); if(r&&r.id) toast('Clocked in'); else toast((r&&r.error)||'Could not clock in'); renderClock(); }
-async function clockOut(){ if(!ME?.id) return; const r=await api('/time',{method:'PUT',body:JSON.stringify({user_id:ME.id,action:'clock_out'})}); if(r&&r.id) toast('Clocked out'); else toast((r&&r.error)||'Could not clock out'); renderClock(); }
+async function clockIn(){ if(!ME?.id){ toast('No user'); return; } const r=await api('/time',{method:'POST',body:JSON.stringify({user_id:ME.id})}); if(r&&r.id){ toast('Clocked in'); presencePing('clocked in'); } else toast((r&&r.error)||'Could not clock in'); renderClock(); }
+async function clockOut(){ if(!ME?.id) return; const r=await api('/time',{method:'PUT',body:JSON.stringify({user_id:ME.id,action:'clock_out'})}); if(r&&r.id){ toast('Clocked out'); presencePing('clocked out'); } else toast((r&&r.error)||'Could not clock out'); renderClock(); }
 
 // ── FIELD ASSISTANT ──
 let AI_HIST=[];
@@ -669,6 +678,9 @@ async function boot(){
   if(!ME){ try{ ME = JSON.parse(localStorage.getItem('ryujin_user')||'null'); }catch(e){} }
   document.getElementById('meName').textContent = ME ? (ME.name||'Field') : 'Field';
   try{ const k=icsKey(); USER_ICS = k ? (localStorage.getItem(k)||'') : ''; }catch(e){}
+  presenceSet('tasks','');
+  setInterval(()=>presencePing(), 12000);
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) presencePing(); });
   renderTasks();
   api('/messages?box=unread').then(d=>setBadge((d.messages||[]).length||0));
   // Preload jobs so the assistant can resolve a job by customer name (client-side
