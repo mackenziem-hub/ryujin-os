@@ -6,7 +6,7 @@
 // PATCH  /api/workorders                 - partial update (alias of PUT, safe-field allow-listed)
 // DELETE /api/workorders?id=X            - cancel
 import { supabaseAdmin } from '../lib/supabase.js';
-import { requireTenant } from '../lib/tenant.js';
+import { requirePortalSessionAndTenant } from '../lib/portalAuth.js';
 import { syncProjectFromWorkorder } from '../lib/projectSync.js';
 
 // Fields a client is allowed to set via PUT/PATCH. tenant_id, id, created_at
@@ -260,4 +260,4 @@ async function handler(req, res) {
   return res.status(405).json({ error: 'Method not allowed' });
 }
 
-export default requireTenant(handler);
+export default requirePortalSessionAndTenant(handler);

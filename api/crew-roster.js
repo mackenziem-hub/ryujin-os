@@ -3,7 +3,7 @@
 //
 // Used by job.html (Crew & Sub dropdowns), Cat's Queue task assignment,
 // and any UI that needs to pick a crew lead or subcontractor.
-import { requireTenant } from '../lib/tenant.js';
+import { requirePortalSessionAndTenant } from '../lib/portalAuth.js';
 import { getCrewRoster } from '../lib/crewRoster.js';
 
 async function handler(req, res) {
@@ -14,4 +14,4 @@ async function handler(req, res) {
   return res.json(roster);
 }
 
-export default requireTenant(handler);
+export default requirePortalSessionAndTenant(handler);

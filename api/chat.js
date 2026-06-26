@@ -4135,9 +4135,14 @@ async function executeTool(name, input, attachments = [], conversationId = null)
       };
       try {
         const RYUJIN_BASE = (process.env.RYUJIN_BASE_URL || 'https://ryujin-os.vercel.app').trim();
+        const svcToken = (process.env.RYUJIN_SERVICE_TOKEN || '').trim();
         const resp = await fetch(`${RYUJIN_BASE}/api/workorders?tenant=plus-ultra`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-tenant-id': 'plus-ultra' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-tenant-id': 'plus-ultra',
+            ...(svcToken ? { Authorization: 'Bearer ' + svcToken } : {})
+          },
           body: JSON.stringify(woRow)
         });
         if (!resp.ok) return { error: `Work order create failed (HTTP ${resp.status}): ${(await resp.text()).slice(0, 300)}` };

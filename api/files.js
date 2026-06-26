@@ -5,6 +5,7 @@
 // DELETE /api/files?id=X            - Delete a file (Vercel Blob cleanup too)
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireTenant } from '../lib/tenant.js';
+import { requirePortalSessionAndTenant } from '../lib/portalAuth.js';
 import { put, del } from '@vercel/blob';
 import Busboy from 'busboy';
 import exifr from 'exifr';
@@ -398,6 +399,25 @@ async function handler(req, res) {
   return res.status(405).json({ error: 'Method not allowed' });
 }
 
-export default requireTenant(handler);
+// Auth split: customer galleries legitimately read client-visible files with no
+// session (customer-showcase.html, photos-share). Keep ONLY that path public and
+// tenant-scoped. Every other read (by id, by project without client_visible, by
+// category) and every write (POST/PUT/DELETE) requires a real session. Closes the
+// unauthenticated read-by-id + destructive-write exposure without breaking galleries.
+// Public path is ONLY a project-scoped, client-visible listing (the gallery query
+// customer-showcase.html runs). Read-by-id is excluded: the GET ?id= branch returns
+// the row tenant-scoped with NO client_visible filter, so an anonymous id read would
+// leak internal (client_visible=false) files. id reads require a session.
+const publicGalleryRead = (req) =>
+  req.method === 'GET' && req.query &&
+  req.query.client_visible === 'true' &&
+  !!req.query.project_id && !req.query.id;
+
+export default function (req, res) {
+  if (req.method === 'OPTIONS') return handler(req, res);
+  return publicGalleryRead(req)
+    ? requireTenant(handler)(req, res)
+    : requirePortalSessionAndTenant(handler)(req, res);
+}
 
 export const config = { api: { bodyParser: false } };
