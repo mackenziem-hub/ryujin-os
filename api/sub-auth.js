@@ -10,6 +10,7 @@
 
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireTenant } from '../lib/tenant.js';
+import { resolveSession, isPrivileged } from '../lib/portalAuth.js';
 import { sendSMS } from '../lib/sms.js';
 import { gmailSend } from '../lib/google.js';
 import { normalizePhone } from '../lib/twilio.js';
@@ -24,12 +25,44 @@ async function handler(req, res) {
   const tenantId = req.tenant.id;
   const { action, token, sub_id } = req.query;
 
+  // Owner/admin gate for the management actions (list / create / rotate). The
+  // admin shell carries a Bearer session via auth-guard; the service token also
+  // resolves to a synthetic admin. A sub's magic-link ?token is NOT a sessions
+  // row, so it cannot satisfy this (resolveSession returns null for it).
+  const requireOwner = async () => {
+    const session = await resolveSession(req);
+    if (!isPrivileged(session)) { res.status(401).json({ error: 'sign_in_required', code: 'NO_SESSION' }); return false; }
+    return true;
+  };
+
+  // True only if `t` is a LIVE magic-link token (parent sub OR crew member)
+  // belonging to requestedSubId. Mirrors the validate path's active/expiry checks.
+  // Gates ?action=jobs so a sub can only read its OWN jobs, never another sub's.
+  const tokenAuthorizesSub = async (t, requestedSubId) => {
+    if (!t || !requestedSubId) return false;
+    const { data: parent } = await supabaseAdmin
+      .from('subcontractors')
+      .select('id, active, archived_at, magic_link_expires_at')
+      .eq('tenant_id', tenantId).eq('magic_link_token', t).maybeSingle();
+    if (parent && parent.active && !parent.archived_at &&
+        (!parent.magic_link_expires_at || new Date(parent.magic_link_expires_at) > new Date()) &&
+        parent.id === requestedSubId) return true;
+    const { data: member } = await supabaseAdmin
+      .from('sub_crew_members')
+      .select('sub_id, active, archived_at')
+      .eq('tenant_id', tenantId).eq('magic_token', t).maybeSingle();
+    if (member && member.active && !member.archived_at && member.sub_id === requestedSubId) return true;
+    return false;
+  };
+
   // ── Validate magic-link (sub OR crew member) ──
+  // Scoped to action-less calls so a token passed alongside ?action=jobs /
+  // crew_list reaches its own branch instead of being shadowed here.
   // Both branches reject any subcontractor row with archived_at IS NOT NULL.
   // Migration 071 sets active=false at archive time too, so the active
   // check would also catch it; this column is the defense-in-depth gate
   // for any future code path that archives without flipping active.
-  if (req.method === 'GET' && token) {
+  if (req.method === 'GET' && token && !action) {
     const [parentResult, memberResult, settingsResult] = await Promise.all([
       supabaseAdmin
         .from('subcontractors')
@@ -91,6 +124,11 @@ async function handler(req, res) {
 
   // ── Sub's assigned jobs ──
   if (req.method === 'GET' && action === 'jobs' && sub_id) {
+    // Must hold this sub's own live magic-link token (parent or crew). Closes the
+    // unauthenticated read of any sub's work orders + paysheet totals by sub_id.
+    if (!(await tokenAuthorizesSub(token, sub_id))) {
+      return res.status(401).json({ error: 'Invalid or inactive link' });
+    }
     // Curated columns only — never SELECT * here. Sub doesn't see Mac's COGS,
     // customer phone/email, package_tier, or customer-side revenue.
     const { data: workorders } = await supabaseAdmin
@@ -119,6 +157,7 @@ async function handler(req, res) {
 
   // ── Owner: create new sub + issue magic-link ──
   if (req.method === 'POST' && action === 'create') {
+    if (!(await requireOwner())) return;
     const { name, company, phone, email, trade, expires_days = 90 } = req.body || {};
     if (!name) return res.status(400).json({ error: 'name required' });
 
@@ -143,6 +182,7 @@ async function handler(req, res) {
 
   // ── Owner: rotate magic-link ──
   if (req.method === 'POST' && action === 'rotate') {
+    if (!(await requireOwner())) return;
     const { id, expires_days = 90 } = req.body || {};
     if (!id) return res.status(400).json({ error: 'id required' });
 
@@ -163,6 +203,7 @@ async function handler(req, res) {
 
   // ── Owner: list subs ──
   if (req.method === 'GET' && action === 'list') {
+    if (!(await requireOwner())) return;
     const { data } = await supabaseAdmin
       .from('subcontractors')
       .select('*')
