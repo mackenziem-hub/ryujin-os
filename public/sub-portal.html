@@ -504,6 +504,10 @@ function applyBranding(branding){
   }
 }
 
+// Live presence: heartbeat so the office cockpit sees subs in the live view too.
+// Best-effort, token-authed, never affects the portal.
+function subPing(action){ try{ const token=localStorage.getItem('ry_sub_token'); if(!token) return; fetch(`${API}/presence?tenant=${TENANT}`,{method:'POST',headers:{'Content-Type':'application/json','x-tenant-id':TENANT},body:JSON.stringify({ token, view:(STATE&&STATE.view)||'portal', context:(STATE&&STATE.curJob)||'', action:action||'' })}).catch(()=>{}); }catch(e){} }
+
 async function boot(){
   let token = qs('token');
   if (token) localStorage.setItem('ry_sub_token', token);
@@ -530,6 +534,7 @@ async function boot(){
     document.getElementById('who').innerHTML = `<div class="name">${esc(whoName)}</div><div class="meta">${whoMeta}</div>`;
     document.getElementById('brandSub').textContent = 'Crew Portal';
     await loadJobs();
+    subPing(); if(!window._subPresInt) window._subPresInt = setInterval(()=>subPing(), 12000);
   } catch (e) {
     // QA S4 (2026-06-12): only a REAL auth rejection invalidates the link.
     // A network blip on one bar of LTE used to wipe the token and sign the

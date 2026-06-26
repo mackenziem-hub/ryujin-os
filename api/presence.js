@@ -10,11 +10,36 @@
 //   GET  /api/presence   (owner/admin)  -> everyone's live presence
 import { put, list } from '@vercel/blob';
 import { resolveSession, isPrivileged } from '../lib/portalAuth.js';
+import { supabaseAdmin } from '../lib/supabase.js';
 
 const FRESH_MS = 35000; // "online" if the last heartbeat was within 35s
 
 function presenceKey(tenantId, userId) {
   return `presence/${tenantId}/${userId}.json`;
+}
+async function tenantIdForSlug(slug) {
+  const { data } = await supabaseAdmin.from('tenants').select('id').eq('slug', slug).eq('active', true).maybeSingle();
+  return data ? data.id : null;
+}
+// Subs + a sub's installers heartbeat with their magic-link token (no session).
+// Reuse the proven /api/sub-auth resolver; map its kind to a role.
+async function resolveSubActor(token, tenantSlug) {
+  try {
+    const BASE = (process.env.RYUJIN_BASE_URL || 'https://ryujin-os.vercel.app').trim();
+    const r = await fetch(`${BASE}/api/sub-auth?token=${encodeURIComponent(token)}&tenant=${encodeURIComponent(tenantSlug)}`,
+      { headers: { 'x-tenant-id': tenantSlug }, signal: AbortSignal.timeout(8000) });
+    if (!r.ok) return null;
+    const a = await r.json().catch(() => ({}));
+    const auth = a.auth || {}, sub = a.sub || {};
+    const tid = await tenantIdForSlug(tenantSlug);
+    if (!tid) return null;
+    return {
+      userId: auth.member_id || sub.id || ('sub-' + token.slice(0, 8)),
+      name: auth.member_name || sub.name || 'Crew',
+      role: auth.kind === 'crew' ? 'installer' : 'sub',
+      tenantId: tid,
+    };
+  } catch { return null; }
 }
 async function readBody(req) {
   if (req.body && typeof req.body === 'object') return req.body;
@@ -31,19 +56,26 @@ async function handler(req, res) {
   const session = await resolveSession(req).catch(() => null);
 
   if (req.method === 'POST') {
-    if (!session) return res.status(401).json({ error: 'sign_in_required', code: 'NO_SESSION' });
     const body = await readBody(req);
+    let actor = session
+      ? { userId: session.user_id, name: session.name, role: session.role, tenantId: session.tenant_id }
+      : null;
+    if (!actor) {
+      const token = String(body.token || req.query.token || '').trim();
+      if (token) actor = await resolveSubActor(token, String(req.query.tenant || req.headers['x-tenant-id'] || 'plus-ultra').trim());
+    }
+    if (!actor) return res.status(401).json({ error: 'sign_in_required', code: 'NO_SESSION' });
     const entry = {
-      userId: session.user_id,
-      name: session.name || 'Someone',
-      role: session.role || null,
+      userId: actor.userId,
+      name: actor.name || 'Someone',
+      role: actor.role || null,
       view: String(body.view || '').slice(0, 40),
       context: String(body.context || '').slice(0, 90),
       action: String(body.action || '').slice(0, 70),
       at: new Date().toISOString(),
     };
     try {
-      await put(presenceKey(session.tenant_id, session.user_id), JSON.stringify(entry), {
+      await put(presenceKey(actor.tenantId, actor.userId), JSON.stringify(entry), {
         access: 'public', addRandomSuffix: false, contentType: 'application/json',
       });
     } catch {
