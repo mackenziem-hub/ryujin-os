@@ -404,8 +404,14 @@ async function handler(req, res) {
 // tenant-scoped. Every other read (by id, by project without client_visible, by
 // category) and every write (POST/PUT/DELETE) requires a real session. Closes the
 // unauthenticated read-by-id + destructive-write exposure without breaking galleries.
+// Public path is ONLY a project-scoped, client-visible listing (the gallery query
+// customer-showcase.html runs). Read-by-id is excluded: the GET ?id= branch returns
+// the row tenant-scoped with NO client_visible filter, so an anonymous id read would
+// leak internal (client_visible=false) files. id reads require a session.
 const publicGalleryRead = (req) =>
-  req.method === 'GET' && req.query && req.query.client_visible === 'true';
+  req.method === 'GET' && req.query &&
+  req.query.client_visible === 'true' &&
+  !!req.query.project_id && !req.query.id;
 
 export default function (req, res) {
   if (req.method === 'OPTIONS') return handler(req, res);
