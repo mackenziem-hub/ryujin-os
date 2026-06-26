@@ -18,7 +18,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { supabaseAdmin } from '../lib/supabase.js';
-import { requireTenant } from '../lib/tenant.js';
+import { requirePortalSessionAndTenant } from '../lib/portalAuth.js';
 
 async function nextPoNumber(tenantId) {
   const year = new Date().getFullYear();
@@ -202,4 +202,4 @@ async function handler(req, res) {
   return res.status(405).json({ error: 'Method not allowed' });
 }
 
-export default requireTenant(handler);
+export default requirePortalSessionAndTenant(handler);

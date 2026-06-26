@@ -13,7 +13,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { supabaseAdmin } from '../lib/supabase.js';
-import { requireTenant } from '../lib/tenant.js';
+import { requirePortalSessionAndTenant } from '../lib/portalAuth.js';
 
 const COMMISSION_RATES = { 0: 0, 10: 0.10, 15: 0.15, 20: 0.20 };
 const FOLLOWUP_GAP_DAYS = 3;
@@ -165,4 +165,4 @@ async function handler(req, res) {
   });
 }
 
-export default requireTenant(handler);
+export default requirePortalSessionAndTenant(handler);
