@@ -138,6 +138,18 @@ window.__ryujinPrefetchInjected=true; window.__ryujinSkinInjected=true;
   .infocard .l{font-family:var(--mono);font-size:11px;color:var(--faint);letter-spacing:1px;text-transform:uppercase}
   .infocard .v{font-size:15px;margin-top:3px}
   .infocard a{color:var(--accent);text-decoration:none}
+  .propcard{background:var(--surface);border:1px solid var(--border-hi);border-radius:var(--r);padding:14px;margin-bottom:10px}
+  .propcard .psub{font-size:12px;color:var(--faint);line-height:1.5;margin-top:4px}
+  .ptiers{display:flex;gap:8px;margin-bottom:11px}
+  .ptier{flex:1;padding:11px 8px;border-radius:10px;border:1px solid var(--border-hi);background:var(--row);color:var(--dim);cursor:pointer;text-align:center;font-family:var(--sans)}
+  .ptier.sel{border-color:var(--accent);background:var(--accent-dim);color:var(--text)}
+  .ptier .pn{display:block;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--faint)}
+  .ptier.sel .pn{color:var(--accent)}
+  .ptier .pp{display:block;font-size:15px;font-weight:700;margin-top:3px}
+  .propbtn{width:100%;margin-top:10px;padding:13px;border:none;border-radius:9px;font-family:var(--sans);font-weight:700;font-size:14px;color:#04101f;background:var(--accent);cursor:pointer}
+  .propform{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .propform label{font-family:var(--mono);font-size:10px;letter-spacing:1px;color:var(--faint);text-transform:uppercase;display:block;margin-bottom:3px}
+  .propform input,.propform select{width:100%;padding:10px;border-radius:8px;border:1px solid var(--border-hi);background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px}
   .note{background:var(--row);border:1px solid var(--border);border-left:2px solid var(--amber);border-radius:10px;padding:13px 15px;margin-bottom:8px}
   .note .meta{font-family:var(--mono);font-size:11px;color:var(--faint);margin-bottom:5px;display:flex;justify-content:space-between}
   .note .meta b{color:var(--amber);font-weight:600}
@@ -445,6 +457,31 @@ async function openJob(id){
   h += '<div class="lbl">Photos &amp; footage <span class="n">'+media.length+'</span></div>';
   h += '<button class="upload" onclick="document.getElementById(\'photoInput\').click()"><div class="uic"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div><div><div class="ut">Upload photos &amp; footage</div><div class="us">Drone clips and site photos go in this folder</div></div></button>';
   if(media.length){ h += '<div class="grid">' + media.map(f=>{ const vid=(f.mime_type||'').startsWith('video'); return '<div class="thumb">'+(vid?'<video src="'+esc(f.url)+'" muted preload="metadata"></video><span class="vb">▶ video</span>':'<img loading="lazy" src="'+esc(f.thumbnail_url||f.url)+'">')+'</div>'; }).join('') + '</div>'; }
+  // proposal (engine-priced live close)
+  const cp = (est && est.calculated_packages) || null;
+  const ptiers = cp ? ['gold','platinum','diamond'].filter(k=>cp[k] && (cp[k].total||cp[k].totalWithTax||(cp[k].summary&&cp[k].summary.sellingPrice))) : [];
+  h += '<div class="lbl">Proposal</div>';
+  h += '<div class="propcard">';
+  if(ptiers.length){
+    const psel = String(est.selected_package||'platinum').toLowerCase();
+    h += '<div class="ptiers">' + ptiers.map(k=>{ const p=cp[k]; const tot=p.totalWithTax || Math.round((Number(p.total)||0)*1.15/25)*25; const nm=k.charAt(0).toUpperCase()+k.slice(1); return '<div class="ptier'+(k===psel?' sel':'')+'" data-tier="'+k+'" onclick="pickTier(\''+k+'\')"><span class="pn">'+nm+'</span><span class="pp">$'+Number(tot).toLocaleString()+'</span></div>'; }).join('') + '</div>';
+    h += '<div class="prow"><button class="go" onclick="presentSign()">Present &amp; Sign</button><button onclick="propForm(true)">Re-measure</button></div>';
+    h += '<div class="psub">Standard asphalt roofs close on the spot. Discounts, add-ons, metal or hip roofs route to Mac for approval.</div>';
+  } else {
+    h += '<div class="psub">No live pricing yet. Enter the roof measurements to build the proposal and show the customer their options on the spot.</div>';
+    h += '<button class="propbtn" onclick="propForm(true)">Build proposal</button>';
+  }
+  h += '</div>';
+  h += '<div class="panel" id="propPanel"><label style="font-family:var(--mono);font-size:10px;letter-spacing:1px;color:var(--faint);text-transform:uppercase;margin-bottom:8px;display:block">Roof measurements</label><div class="propform">'
+    + fInput('SQ ft (footprint)','pf_sq','number','')
+    + fSelect('Pitch','pf_pitch',['4/12','5/12','6/12','7/12','8/12','9/12','10/12','11/12','12/12'], (est&&est.roof_pitch)||'6/12')
+    + fSelect('Complexity','pf_cx',['simple','medium','complex'],'medium')
+    + fInput('Eaves LF','pf_eaves','number','')
+    + fInput('Valleys LF','pf_valleys','number','')
+    + fInput('Hips LF','pf_hips','number','')
+    + fInput('Pipes','pf_pipes','number','')
+    + fInput('Chimneys','pf_chim','number','')
+    + '</div><div class="prow" style="margin-top:12px"><button onclick="propForm(false)">Cancel</button><button class="go" onclick="genProp()">Generate pricing</button></div></div>';
   // notes
   const notes = nts.notes || [];
   h += '<div class="lbl">Notes <span class="n">'+notes.length+'</span></div>';
@@ -463,6 +500,32 @@ async function openJob(id){
   if(pr.share_token){ h += '<div class="infocard"><div class="l">Photo gallery</div><div class="v"><a href="/photos-share.html?share='+esc(pr.share_token)+'" target="_blank">Open customer gallery →</a></div></div>'; }
   if(!pr.customer && !est){ h += '<div class="empty">No customer linked yet.</div>'; }
   w.innerHTML = h;
+}
+// ── PROPOSAL (engine-priced live close) ──
+function fInput(lbl,id,type,val){ return '<div><label>'+esc(lbl)+'</label><input id="'+id+'" type="'+esc(type)+'" value="'+(val==null?'':esc(val))+'"'+(type==='number'?' inputmode="decimal" min="0"':'')+'></div>'; }
+function fSelect(lbl,id,opts,sel){ return '<div><label>'+esc(lbl)+'</label><select id="'+id+'">'+opts.map(o=>'<option value="'+esc(o)+'"'+(String(o)===String(sel)?' selected':'')+'>'+esc(o)+'</option>').join('')+'</select></div>'; }
+function propForm(on){ const p=document.getElementById('propPanel'); if(p){ p.classList.toggle('on', !!on); if(on) p.scrollIntoView({behavior:'smooth',block:'center'}); } }
+function pickTier(k){ document.querySelectorAll('.ptier').forEach(el=>el.classList.toggle('sel', el.dataset.tier===k)); }
+function selectedTier(){ const el=document.querySelector('.ptier.sel'); return el?el.dataset.tier:null; }
+async function genProp(){
+  const sq=parseFloat((document.getElementById('pf_sq')||{}).value)||0;
+  if(!(sq>0)){ toast('Enter the roof SQ ft first'); return; }
+  const measurements={ squareFeet:sq, pitch:document.getElementById('pf_pitch').value, complexity:document.getElementById('pf_cx').value,
+    eaves_lf:parseFloat(document.getElementById('pf_eaves').value)||0, valleys_lf:parseFloat(document.getElementById('pf_valleys').value)||0,
+    hips_lf:parseFloat(document.getElementById('pf_hips').value)||0, pipes:parseInt(document.getElementById('pf_pipes').value)||0,
+    chimneys:parseInt(document.getElementById('pf_chim').value)||0 };
+  toast('<span class="spin"></span> building pricing…');
+  const r=await api('/field-proposal?action=recompute',{method:'POST',body:JSON.stringify({project_id:CUR_JOB, measurements})});
+  if(r&&r.ok){ toast(r.pricing_pending?'Saved. Add SQ to price it':'Pricing ready'); openJob(CUR_JOB); }
+  else { toast((r&&r.error)||'Could not build pricing'); }
+}
+async function presentSign(){
+  const tier=selectedTier()||'platinum';
+  toast('<span class="spin"></span> preparing proposal…');
+  const r=await api('/field-proposal?action=present-sign',{method:'POST',body:JSON.stringify({project_id:CUR_JOB, selected_tier:tier})});
+  if(r&&r.ok&&r.mode==='closed_on_site'){ toast('Live. Opening for signature'); window.open(r.url,'_blank'); }
+  else if(r&&r.ok&&r.mode==='routed_to_owner'){ toast('Sent to Mac for approval'+(r.approval_code?' · '+r.approval_code:'')); }
+  else { toast((r&&r.error)||'Could not prepare the proposal'); }
 }
 function openNoteBox(){ const b=document.getElementById('noteBox'); if(b){ b.classList.add('on'); document.getElementById('noteTxt').focus(); } }
 function closeNoteBox(){ const b=document.getElementById('noteBox'); if(b) b.classList.remove('on'); }
