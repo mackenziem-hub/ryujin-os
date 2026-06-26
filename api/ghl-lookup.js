@@ -4,7 +4,7 @@
 //
 // Wraps the internal /api/ghl endpoint (which holds the GHL token + pipeline
 // mappings). Only tenants with GHL wired return data.
-import { requireTenant } from '../lib/tenant.js';
+import { requirePortalSessionAndTenant } from '../lib/portalAuth.js';
 
 // Self-call within the same Vercel deployment. Override via RYUJIN_BASE_URL if
 // running multi-region/preview. Legacy SHENRON_URL kept as fallback for the 7-day
@@ -102,4 +102,4 @@ function normalize(c, opportunities) {
   };
 }
 
-export default requireTenant(handler);
+export default requirePortalSessionAndTenant(handler);

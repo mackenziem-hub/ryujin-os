@@ -2,7 +2,7 @@
 // GET /api/ghl-accounts
 // Returns the raw GHL response so we can see account IDs + platform names
 // for the brand-tagging UI. Tenant-gated.
-import { requireTenant } from '../lib/tenant.js';
+import { requirePortalSessionAndTenant } from '../lib/portalAuth.js';
 import { listSocialAccounts, getLocation } from '../lib/ghl.js';
 
 async function handler(req, res) {
@@ -27,4 +27,4 @@ async function handler(req, res) {
   }
 }
 
-export default requireTenant(handler);
+export default requirePortalSessionAndTenant(handler);
