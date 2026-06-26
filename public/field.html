@@ -195,6 +195,16 @@ window.__ryujinPrefetchInjected=true; window.__ryujinSkinInjected=true;
   .msg .body{flex:1;min-width:0}.msg .top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
   .msg .nm{font-weight:700;font-size:14.5px}.msg .tm{font-family:var(--mono);font-size:11px;color:var(--faint);flex-shrink:0}
   .msg .pv{font-size:13px;color:var(--dim);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.msg.unread .pv{color:var(--text)}
+  .oscard{background:linear-gradient(160deg,var(--bp-dim),var(--row));border:1px solid rgba(95,196,230,0.3);border-radius:var(--r);padding:15px 16px;margin-bottom:16px}
+  .oscard .oslbl{display:flex;align-items:center;gap:7px;font-weight:700;font-size:14.5px;color:var(--blueprint)}
+  .oscard .ossub{font-size:12.5px;color:var(--dim);margin:3px 0 11px}
+  .osrow{display:flex;gap:8px}
+  .osrow input{flex:1;padding:12px 13px;background:var(--bg);border:1px solid var(--border-hi);border-radius:10px;color:var(--text);font-family:var(--sans);font-size:14.5px}
+  .osrow input:focus{outline:none;border-color:var(--blueprint)}.osrow input::placeholder{color:var(--faint)}
+  .osrow button{padding:0 18px;border:none;border-radius:10px;background:var(--blueprint);color:#04141a;font-family:var(--sans);font-weight:700;font-size:14px;cursor:pointer}
+  .osresult{font-size:13px;margin-top:9px;min-height:1px;line-height:1.5}
+  .osresult .osok{color:var(--green)}.osresult .osok b{color:var(--text)}
+  .osresult .osnote{color:var(--dim)}
   .clockcard{text-align:center;padding:34px 20px;background:var(--row);border:1px solid var(--border);border-radius:var(--r);margin-bottom:14px}
   .clockcard .time{font-family:var(--mono);font-size:36px;color:var(--green);letter-spacing:1px}
   .clockcard .sub{color:var(--dim);font-size:13px;margin-top:8px}
@@ -659,11 +669,21 @@ async function renderMessages(){
   const d = await api('/messages?box=inbox');
   const msgs = d.messages||[];
   setBadge(d.stats?.unread||0);
-  let h = '<div class="lbl">Inbox <span class="n">'+(d.stats?.unread||0)+' unread</span></div>';
-  h += msgs.length ? msgs.map(m=>{ const nm=m.from_label||m.from_user?.name||'System'; const unread=!m.read_at; return '<div class="msg '+(unread?'unread':'')+'"><div class="av">'+esc((nm[0]||'?'))+'</div><div class="body"><div class="top"><span class="nm">'+esc(nm)+'</span><span class="tm">'+ago(m.created_at)+'</span></div><div class="pv">'+esc(m.body||'')+'</div></div></div>'; }).join('') : '<div class="empty">No messages.</div>';
+  let h = '<div class="oscard"><div class="oslbl"><svg viewBox="0 0 24 24" style="width:15px;height:15px;fill:var(--blueprint)"><path d="M12 3l1.7 4.3L18 9l-4.3 1.7L12 15l-1.7-4.3L6 9l4.3-1.7z"/></svg>Ask the OS</div><div class="ossub">Tell us what you need and it routes to the right person.</div><div class="osrow"><input id="osInput" placeholder="e.g. I need materials for 15 Bissett" onkeydown="if(event.key===\'Enter\')sendOS()" autocomplete="off"><button onclick="sendOS()">Send</button></div><div id="osResult" class="osresult"></div></div>';
+  h += '<div class="lbl">Direct messages <span class="n">'+(d.stats?.unread||0)+' unread</span></div>';
+  h += msgs.length ? msgs.map(m=>{ const nm=m.from_label||m.from_user?.name||'System'; const unread=!m.read_at; return '<div class="msg '+(unread?'unread':'')+'"><div class="av">'+esc((nm[0]||'?'))+'</div><div class="body"><div class="top"><span class="nm">'+esc(nm)+'</span><span class="tm">'+ago(m.created_at)+'</span></div><div class="pv">'+esc(m.body||'')+'</div></div></div>'; }).join('') : '<div class="empty">No direct messages yet.</div>';
   w.innerHTML = h;
 }
 function setBadge(n){ const b=document.getElementById('msgBadge'); if(n>0){ b.textContent=n; b.style.display='flex'; } else b.style.display='none'; }
+async function sendOS(){
+  const inp=document.getElementById('osInput'); if(!inp) return; const q=(inp.value||'').trim(); if(!q) return;
+  const out=document.getElementById('osResult'); out.innerHTML='<span class="spin"></span> routing…'; inp.disabled=true;
+  const r=await api('/os-dispatch',{method:'POST',body:JSON.stringify({message:q})});
+  inp.disabled=false; inp.focus();
+  if(r&&r.ok&&r.routed_to&&r.routed_to.length){ const names=[...new Set(r.routed_to.map(x=>x.name))].join(', '); out.innerHTML='<span class="osok">✓ Sent to <b>'+esc(names)+'</b>. They will be notified.</span>'; inp.value=''; presencePing('asked the OS'); }
+  else if(r&&r.ok){ out.innerHTML='<span class="osnote">'+esc(r.note||'Logged it.')+'</span>'; }
+  else { out.innerHTML='<span class="osnote">'+esc((r&&r.error)||'Could not route that. Try again.')+'</span>'; }
+}
 
 // ── CLOCK ──
 async function renderClock(){
