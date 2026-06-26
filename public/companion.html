@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b0c0f">
+<title>Plus Ultra Companion</title>
+<link rel="manifest" href="/manifest.json">
+<style>
+  :root{ --bg:#0b0c0f; --text:#eceef2; --dim:#9aa2ae; --accent:#5b9dff; --green:#56d68c; --border:#252932; }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%;background:var(--bg);color:var(--text);font-family:Inter,system-ui,-apple-system,sans-serif;overflow:hidden}
+  #app{position:fixed;inset:0;width:100%;height:100%;border:0;display:none;background:var(--bg)}
+  #boot{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:radial-gradient(800px 500px at 50% 30%,rgba(91,157,255,.1),transparent 60%)}
+  #boot .mark{font-weight:800;font-size:19px;letter-spacing:.4px}.mark span{color:#5fc4e6}
+  #boot .sub{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--dim);letter-spacing:1.5px;text-transform:uppercase}
+  .spin{width:26px;height:26px;border:2.5px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:sp .8s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  #boot .msg{font-size:13.5px;color:var(--dim);max-width:300px;text-align:center;line-height:1.5}
+  #boot .btn{padding:12px 22px;border-radius:11px;background:var(--accent);color:#04101f;font-weight:700;font-size:14.5px;border:none;cursor:pointer;text-decoration:none}
+  /* owner/admin Live FAB */
+  #liveFab{position:fixed;right:16px;bottom:74px;z-index:5;display:none;align-items:center;gap:8px;padding:11px 16px;border-radius:999px;background:rgba(8,11,24,.86);backdrop-filter:blur(12px);border:1px solid rgba(86,214,140,.4);color:var(--green);font-weight:700;font-size:13.5px;text-decoration:none;box-shadow:0 12px 34px -12px rgba(0,0,0,.6)}
+  #liveFab .d{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:bk 1.6s infinite}
+  @keyframes bk{50%{opacity:.4}}
+</style>
+</head>
+<body>
+<iframe id="app" title="Plus Ultra Companion" allow="camera;geolocation;microphone"></iframe>
+<a id="liveFab" href="/team-live.html"><span class="d"></span>Team Live</a>
+<div id="boot">
+  <div class="mark">PLUS&nbsp;ULTRA <span>· COMPANION</span></div>
+  <div class="spin" id="spin"></div>
+  <div class="sub" id="bsub">opening your workspace</div>
+  <div class="msg" id="bmsg"></div>
+  <div id="bact"></div>
+</div>
+<script src="/assets/ryujin-slug.js"></script>
+<script>
+const TENANT = window.RYUJIN_TENANT_SLUG || 'plus-ultra';
+function tok(){ try { return localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token') || ''; } catch(e){ return ''; } }
+function qs(k){ try{ return new URLSearchParams(location.search).get(k); }catch(e){ return null; } }
+function fail(msg, href, label){
+  document.getElementById('spin').style.display='none';
+  document.getElementById('bsub').textContent='almost there';
+  document.getElementById('bmsg').textContent=msg;
+  if(href){ const a=document.createElement('a'); a.className='btn'; a.href=href; a.textContent=label||'Continue'; document.getElementById('bact').appendChild(a); }
+}
+function mount(src, role, caps){
+  const f=document.getElementById('app');
+  f.src=src;
+  f.onload=()=>{ document.getElementById('boot').style.display='none'; f.style.display='block'; };
+  // Safety: reveal even if onload is flaky (some embedded SPAs fire late).
+  setTimeout(()=>{ if(getComputedStyle(f).display==='none'){ document.getElementById('boot').style.display='none'; f.style.display='block'; } }, 4000);
+  if(caps && caps.show_dashboard){ document.getElementById('liveFab').style.display='flex'; }
+}
+async function boot(){
+  const token = qs('token');
+  // Resolve identity + role from the shared foundation. Session users carry a
+  // Bearer; subs/installers carry a magic-link token.
+  let res, body=null;
+  try{
+    if(token){
+      res = await fetch('/api/companion-init?token='+encodeURIComponent(token)+'&tenant='+TENANT, { headers:{'x-tenant-id':TENANT} });
+    } else {
+      const t=tok();
+      res = await fetch('/api/companion-init?tenant='+TENANT, { headers: Object.assign({'x-tenant-id':TENANT}, t?{Authorization:'Bearer '+t}:{}) });
+    }
+    body = await res.json().catch(()=>null);
+  }catch(e){ /* network */ }
+
+  if(!res || res.status===401 || !body || !body.ok){
+    // Not signed in: send to the right login for who they are.
+    if(token){ location.replace('/sub-login.html?token='+encodeURIComponent(token)); return; }
+    fail('Sign in to open your Plus Ultra Companion.', '/login.html', 'Log in');
+    return;
+  }
+
+  const role = body.role;
+  const caps = body.capabilities || {};
+  // Magic-link people (subs + a sub’s installers) get the subcontractor app,
+  // which already gates its own tabs by their portal visibility (installer =
+  // media only). Everyone else gets the crew/office field app, role-gated there.
+  if(token || role==='sub' || role==='installer'){
+    mount('/sub-portal.html?token='+encodeURIComponent(token||''), role, caps);
+  } else {
+    mount('/field.html', role, caps);
+  }
+}
+boot();
+</script>
+</body>
+</html>
