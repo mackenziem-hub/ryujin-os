@@ -48,9 +48,8 @@ async function readBody(req) {
 }
 
 async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-tenant-id');
+  // Same-origin only: the apps + cockpit all call from window.location.origin.
+  // No wildcard CORS on this authed, PII-returning endpoint.
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const session = await resolveSession(req).catch(() => null);
@@ -88,9 +87,9 @@ async function handler(req, res) {
     if (!session || !isPrivileged(session)) return res.status(403).json({ error: 'forbidden' });
     let entries = [];
     try {
-      const { blobs } = await list({ prefix: `presence/${session.tenant_id}/`, limit: 60 });
+      const { blobs } = await list({ prefix: `presence/${session.tenant_id}/`, limit: 200 });
       const got = await Promise.allSettled(
-        (blobs || []).map(b => fetch(b.url + '?t=' + Date.now(), { cache: 'no-store' }).then(r => r.json()))
+        (blobs || []).map(b => fetch(b.url + '?t=' + Date.now(), { cache: 'no-store', signal: AbortSignal.timeout(3000) }).then(r => r.json()))
       );
       entries = got.filter(g => g.status === 'fulfilled' && g.value && g.value.userId).map(g => g.value);
     } catch {
