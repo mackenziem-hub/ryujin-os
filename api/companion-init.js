@@ -16,7 +16,7 @@ import { resolveSession } from '../lib/portalAuth.js';
 import { getCapabilities } from '../lib/roleCapabilities.js';
 
 async function tenantIdForSlug(slug) {
-  const { data } = await supabaseAdmin.from('tenants').select('id').eq('slug', slug).maybeSingle();
+  const { data } = await supabaseAdmin.from('tenants').select('id').eq('slug', slug).eq('active', true).maybeSingle();
   return data ? data.id : null;
 }
 
