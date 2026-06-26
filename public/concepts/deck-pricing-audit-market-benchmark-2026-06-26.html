@@ -90,6 +90,8 @@
   .hud .bt.on{background:var(--gold);box-shadow:0 0 10px var(--gold-glow);transform:scale(1.3)}
   .hud .nav{cursor:pointer;color:var(--ink-dim);font-size:1.1rem;user-select:none;transition:.2s;padding:0 .2rem}
   .hud .nav:hover{color:var(--gold)}
+  .hud .play{cursor:pointer;color:var(--gold);font-family:'JetBrains Mono',monospace;font-size:.7rem;font-weight:700;letter-spacing:.1em;user-select:none;padding:0 .2rem;min-width:2.4rem;text-align:center}
+  .hud .play:focus-visible{outline:2px solid var(--gold);outline-offset:3px;border-radius:4px}
   .hud .nav:focus-visible,.hud .bt:focus-visible{outline:2px solid var(--gold);outline-offset:3px;border-radius:4px;color:var(--gold)}
   .brandbar{position:fixed;top:26px;left:7vw;z-index:50;font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.22em;color:var(--ink-dim);text-transform:uppercase}
   .brandbar b{color:var(--gold)}
@@ -296,6 +298,7 @@
   <span class="nav" id="prev" tabindex="0" role="button" aria-label="Previous slide">&lsaquo;</span>
   <span class="counter" id="counter">1 / 11</span>
   <div class="bullets" id="bullets"></div>
+  <span class="play" id="play" tabindex="0" role="button" aria-label="Pause or play autoplay">&#10073;&#10073;</span>
   <span class="nav" id="next" tabindex="0" role="button" aria-label="Next slide">&rsaquo;</span>
 </div>
 
@@ -305,7 +308,10 @@
   const counter = document.getElementById('counter');
   const bulletsWrap = document.getElementById('bullets');
   const progress = document.getElementById('progress');
+  const playBtn = document.getElementById('play');
   let current = 0;
+  let autoTimer = null;
+  const AUTO_MS = 4500;
   slides.forEach((_,i)=>{
     const b=document.createElement('div');b.className='bt';b.dataset.i=i;
     b.addEventListener('click',()=>goTo(i));
@@ -323,7 +329,13 @@
     bullets.forEach((b,i)=>b.classList.toggle('on',i===current));
     progress.style.width=((current+1)/slides.length*100)+'%';
   }
-  function goTo(i){i=Math.max(0,Math.min(slides.length-1,i));slides[i].scrollIntoView({behavior:'smooth'});}
+  function goTo(i){i=Math.max(0,Math.min(slides.length-1,i));slides[i].scrollIntoView({behavior:'smooth'});if(autoTimer)resetAuto();}
+  function tick(){goTo((current+1)%slides.length);}
+  function resetAuto(){clearInterval(autoTimer);autoTimer=setInterval(tick,AUTO_MS);}
+  function startAuto(){resetAuto();playBtn.innerHTML='&#10073;&#10073;';playBtn.setAttribute('aria-label','Pause autoplay');}
+  function stopAuto(){clearInterval(autoTimer);autoTimer=null;playBtn.innerHTML='&#9654;';playBtn.setAttribute('aria-label','Play autoplay');}
+  playBtn.addEventListener('click',()=>{autoTimer?stopAuto():startAuto();});
+  playBtn.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();autoTimer?stopAuto():startAuto();}});
   document.getElementById('next').addEventListener('click',()=>goTo(current+1));
   document.getElementById('prev').addEventListener('click',()=>goTo(current-1));
   window.addEventListener('keydown',(e)=>{
@@ -334,6 +346,7 @@
   });
   slides[0].classList.add('in');
   update();
+  startAuto();
 </script>
 </body>
 </html>
