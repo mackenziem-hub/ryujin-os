@@ -3,7 +3,7 @@
 // GET /api/workorders-pdf?wo=<number> — by wo_number
 // Optional: ?terms=a,b,c overrides the redaction word list (otherwise defaults from pdfRenderer).
 import { supabaseAdmin } from '../lib/supabase.js';
-import { requireTenant } from '../lib/tenant.js';
+import { requirePortalSessionAndTenant } from '../lib/portalAuth.js';
 import { renderWorkOrderPDF } from '../lib/pdfRenderer.js';
 
 async function handler(req, res) {
@@ -37,4 +37,4 @@ async function handler(req, res) {
   }
 }
 
-export default requireTenant(handler);
+export default requirePortalSessionAndTenant(handler);

@@ -17,7 +17,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { supabaseAdmin } from '../lib/supabase.js';
-import { requireTenant } from '../lib/tenant.js';
+import { requirePortalSessionAndTenant } from '../lib/portalAuth.js';
 import { requirePillar } from '../lib/entitlements.js';
 
 async function handler(req, res) {
@@ -140,4 +140,4 @@ async function handler(req, res) {
   return res.status(405).json({ error: 'GET, POST, PATCH only' });
 }
 
-export default requireTenant(requirePillar('customer')(handler));
+export default requirePortalSessionAndTenant(requirePillar('customer')(handler));
