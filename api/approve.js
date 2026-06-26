@@ -16,6 +16,7 @@
 import { supabaseAdmin } from '../lib/supabase.js';
 import { resolveSession, isPrivileged } from '../lib/portalAuth.js';
 import { gmailSend } from '../lib/google.js';
+import { materializeInstance } from '../lib/proposalMaterialize.js';
 
 // External write surfaces the executors call. These mirror the exact paths the
 // chat.js tools + operator pages already use (Estimator OS REST for estimates,
@@ -266,6 +267,23 @@ export async function executePayload(payload, ctx = {}) {
       if (!opportunityId) return { executed: false, error: 'delete_opportunity payload missing opportunityId' };
       await ghlCall(null, opportunityId, null, 'DELETE');
       return { executed: true, details: `Opportunity ${opportunityId} deleted${reason ? ` (${reason})` : ''}` };
+    }
+    case 'send_field_proposal': {
+      // A crew member (Diego) routed a NON-standard on-the-spot close here. Mac
+      // approving = the OWNER freeze, so the crew gate in materializeInstance is
+      // bypassed. Freezes the proposal to /p/<slug> for the customer to accept.
+      const { estimateId, templateSlug, status, productsOverride, variablesPatch, sectionsPatch, slugBase } = payload;
+      if (!estimateId) return { executed: false, error: 'send_field_proposal payload missing estimateId' };
+      const r = await materializeInstance({
+        estimateId,
+        templateInput: templateSlug || 'asphalt-good-better-best',
+        status: status || 'sent',
+        actor: { role: 'owner' },
+        productsOverride, variablesPatch, sectionsPatch, slugBase,
+        expectedTenantId: ctx.tenant_id || null,
+      });
+      if (!r.ok) return { executed: false, error: `send_field_proposal failed: ${r.error || r.message || ('HTTP ' + r.status)}` };
+      return { executed: true, details: `Proposal frozen + sent: /p/${r.slug}` };
     }
     default:
       // Other write tools route through approval but have no executor wired here yet.

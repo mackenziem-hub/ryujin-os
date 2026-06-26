@@ -1,39 +1,23 @@
 // Ryujin OS - Materialize a v2 proposal instance (freeze a sent proposal).
 //
+// Thin HTTP wrapper over lib/proposalMaterialize.js. The freeze logic AND the
+// engine-priced crew authority gate live in that shared lib so api/field-proposal.js
+// (Diego's on-the-spot close) freezes through the exact same chokepoint - a crew
+// member cannot bypass the gate by POSTing here directly.
+//
 // POST /api/proposal-materialize
-//   { estimate, template, status?,
-//     productsOverride?, variablesPatch?, sectionsPatch?, slugBase? }
+//   { estimate, template, status?, productsOverride?, variablesPatch?,
+//     sectionsPatch?, slugBase? }
+// Returns { slug, shareToken, url }. Each call creates a NEW immutable instance
+// (re-materialize = a new slug); the customer is sent /p/<slug>.
 //
-// Assembles the full ProposalData from an estimate + template (the SAME shared
-// assembler the live preview uses) and persists it as a FROZEN proposal_instances
-// snapshot (data_snapshot). Returns { slug, shareToken, url }.
-//
-// Optional explicit shaping, applied AFTER assembly and BEFORE freezing (this is
-// how hand-shaped offers like a shingles|metal two_path land without direct DB
-// writes):
-//   productsOverride  object; its top-level keys REPLACE data.products keys
-//                     wholesale (mode, recommended, tiers, twoPath, scope, ...)
-//   variablesPatch    object; shallow-merged over data.variables
-//   sectionsPatch     [{ type, content }]; replaces the content of the FIRST
-//                     section of that type (unknown types are ignored)
-//   slugBase          string; overrides the kebab base used for the public slug
-//
-// Each call creates a NEW immutable instance (re-materialize = a new version with
-// a new slug). The customer is sent /p/<slug>; api/proposal-v2.js serves the
-// stored snapshot verbatim, so the proposal never changes after it is sent.
-import { randomBytes } from 'node:crypto';
-import { supabaseAdmin } from '../lib/supabase.js';
-import { assembleProposalData } from './proposal-v2.js';
-import { requireTenant } from '../lib/tenant.js';
+// Auth: requirePortalSessionAndTenant. The only browser caller
+// (admin-proposal-builder.html) sends a Bearer session; chat + cron agents use the
+// service token (synthetic admin). Both are non-crew, so the gate is a no-op for
+// them - it only constrains a crew session posting here.
+import { materializeInstance } from '../lib/proposalMaterialize.js';
+import { requirePortalSessionAndTenant } from '../lib/portalAuth.js';
 import { withSentry } from '../lib/sentry.js';
-
-function kebab(s) {
-  return String(s || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 40) || 'proposal';
-}
 
 async function readBody(req) {
   if (req.body && typeof req.body === 'object') return req.body;
@@ -52,109 +36,46 @@ async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
+  // Crew use /api/field-proposal (which enforces the engine-priced gate). They
+  // have no legitimate path through this endpoint - reject before any freeze so a
+  // crew session cannot craft a draft instance that skips the gate.
+  if (req.session?.role === 'crew') {
+    return res.status(403).json({ error: 'crew_uses_field_proposal', code: 'FORBIDDEN' });
+  }
+
   const body = await readBody(req);
   const estimateId = String(body.estimate || body.estimateId || req.query.estimate || '').trim();
   const templateInput = body.template ?? body.templateSlug ?? req.query.template ?? '';
-  // 'sent' freezes it as the live version (legacy links route to it). 'draft'
-  // creates the snapshot without making it the routed default.
-  const status = ['sent', 'draft'].includes(String(body.status || '').trim())
-    ? String(body.status).trim()
-    : 'sent';
 
-  const hasTemplate = (typeof templateInput === 'object' && templateInput)
-    ? Array.isArray(templateInput.sections)
-    : !!String(templateInput).trim();
-  if (!estimateId || !hasTemplate) {
-    return res.status(400).json({ error: 'Need { estimate, template }' });
-  }
+  const result = await materializeInstance({
+    estimateId,
+    templateInput,
+    status: body.status,
+    actor: req.session,
+    productsOverride: body.productsOverride,
+    variablesPatch: body.variablesPatch,
+    sectionsPatch: body.sectionsPatch,
+    slugBase: body.slugBase,
+    expectedTenantId: req.tenant?.id || null,
+  });
 
-  try {
-    const r = await assembleProposalData(estimateId, templateInput);
-    if (!r.ok) return res.status(r.status || 500).json({ error: r.error });
-
-    const { data, est, template, tenantId } = r;
-    if (req.tenant?.id && tenantId && req.tenant.id !== tenantId) {
-      return res.status(403).json({ error: 'Estimate belongs to a different tenant' });
-    }
-
-    // Integrity warning: the template asked for sections but none resolved, so
-    // this freeze would store a price-only proposal (the bug that left existing
-    // instances rendering half a page). Surface it loudly; renderInstance still
-    // auto-heals on view, but a clean send should never freeze empty.
-    if (Array.isArray(template?.sections) && template.sections.length
-        && Array.isArray(data.sections) && !data.sections.length) {
-      console.error('[proposal-materialize] freezing EMPTY sections for estimate',
-        estimateId, 'template', template.slug, '- check proposal_blocks seed for tenant', tenantId);
-    }
-
-    // Explicit shaping (see header). Objects only; anything else is ignored.
-    const isObj = v => v && typeof v === 'object' && !Array.isArray(v);
-    if (isObj(body.productsOverride)) {
-      data.products = { ...(data.products || {}), ...body.productsOverride };
-    }
-    if (isObj(body.variablesPatch)) {
-      data.variables = { ...(data.variables || {}), ...body.variablesPatch };
-    }
-    if (Array.isArray(body.sectionsPatch) && Array.isArray(data.sections)) {
-      for (const patch of body.sectionsPatch) {
-        if (!patch || typeof patch.type !== 'string' || !isObj(patch.content)) continue;
-        const i = data.sections.findIndex(s => s && s.type === patch.type);
-        if (i >= 0) data.sections[i] = { type: patch.type, content: patch.content };
-      }
-    }
-
-    const shareToken = randomBytes(12).toString('hex');
-    const base = kebab(
-      (typeof body.slugBase === 'string' && body.slugBase.trim())
-        ? body.slugBase
-        : (est.customer?.address || data.customer?.address || data.customer?.name || template?.slug)
-    );
-    const slug = `${base}-${shareToken.slice(0, 6)}`;
-
-    // Bake the resolved slug + status into the frozen snapshot's meta.
-    data.meta.instanceSlug = slug;
-    data.meta.status = status;
-
-    const now = new Date().toISOString();
-    const row = {
-      tenant_id: tenantId,
-      slug,
-      share_token: shareToken,
-      estimate_id: estimateId,
-      template_id: template.id || null,
-      customer_id: est.customer?.id || null,
-      ghl_contact_id: est.ghl_contact_id || est.customer?.ghl_contact_id || null,
-      sections: data.sections,
-      product_selection: { mode: data.products?.mode, recommended: data.products?.recommended },
-      variables: data.variables,
-      pricing_snapshot: data.products,
-      data_snapshot: data,
-      renderer_version: 'v2',
-      status,
-      sent_at: status === 'sent' ? now : null,
-      locked_at: now
-    };
-
-    const { data: inserted, error } = await supabaseAdmin
-      .from('proposal_instances')
-      .insert(row)
-      .select('id, slug, share_token, status')
-      .single();
-    if (error) return res.status(500).json({ error: 'Materialize failed', message: error.message });
-
-    return res.json({
-      ok: true,
-      instanceId: inserted.id,
-      slug: inserted.slug,
-      shareToken: inserted.share_token,
-      status: inserted.status,
-      url: `/p/${inserted.slug}`,
-      shareUrl: `/p/${inserted.slug}`
+  if (!result.ok) {
+    return res.status(result.status || 500).json({
+      error: result.error,
+      code: result.code,
+      reason: result.reason,
+      message: result.message,
     });
-  } catch (e) {
-    console.error('[proposal-materialize] error:', e?.message, e?.stack);
-    return res.status(500).json({ error: 'Materialize failed', message: String(e?.message || e) });
   }
+  return res.json({
+    ok: true,
+    instanceId: result.instanceId,
+    slug: result.slug,
+    shareToken: result.shareToken,
+    status: result.status,
+    url: result.url,
+    shareUrl: result.shareUrl,
+  });
 }
 
-export default withSentry(requireTenant(handler));
+export default withSentry(requirePortalSessionAndTenant(handler));

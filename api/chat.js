@@ -7,6 +7,7 @@ import { agentDisplay } from './agents/_names.js';
 import crypto from 'node:crypto';
 import { resolveSession } from '../lib/portalAuth.js';
 import { describeCurrentPage, catalogForPrompt, resolveNavUrl } from '../lib/pageCatalog.js';
+import { shapeCalculatedPackages } from '../lib/quotePackages.js';
 
 // ── ROLE-BASED ACCESS (Phase 5) ──
 // Role slugs: owner (Mac, full Ryujin), admin (Cat, ops EA), sales (Darcy, outside sales), crew (Diego/AJ/Pavanjot, production)
@@ -3234,27 +3235,16 @@ async function executeTool(name, input, attachments = [], conversationId = null)
         // The engine's internal pricePerSQ uses bracket-rounded SQ for sub paysheet
         // routing, which can diverge from actual SQ on multi-plane jobs.
         // Customer-facing per-SQ must reflect what the customer actually has.
+        // Shape the active residential tiers the proposal page expects. persq is
+        // derived from the displayed total / actual roof area (SQ); the engine's
+        // internal pricePerSQ uses bracket-rounded SQ for sub-paysheet routing,
+        // which can diverge from actual SQ on multi-plane jobs. Shared with the
+        // field live proposal via lib/quotePackages.js (one shaper, no drift).
         const actualSQ = canonicalSqFt / 100;
-        const shaped = {};
-        for (const slug of ['gold', 'platinum', 'diamond']) {
-          if (!compare.offers?.[slug]) continue;
-          const s = compare.offers[slug].summary;
-          // Apply custom price override if provided
-          const cp = input.custom_prices && input.custom_prices[slug];
-          const total = (typeof cp === 'number' && cp > 0) ? cp : s.sellingPrice;
-          const taxRate = s.taxLabel === 'GST' ? 0.05 : 0.15;
-          const totalWithTax = (typeof cp === 'number' && cp > 0) ? Math.round(total * (1 + taxRate)) : s.totalWithTax;
-          const persqDisplay = actualSQ > 0 ? Math.round(total / actualSQ) : s.pricePerSQ;
-          shaped[slug] = {
-            total,
-            totalWithTax,
-            persq: persqDisplay,
-            tax: Math.round(total * taxRate),
-            margin: s.netMargin,
-            customPrice: typeof cp === 'number' && cp > 0,
-            lineItems: compare.offers[slug].lineItems
-          };
-        }
+        const shaped = shapeCalculatedPackages(compare, {
+          actualSQ,
+          customPrices: input.custom_prices || null,
+        });
 
         // 2. Create the estimate
         const selected = input.selected_package || 'platinum';
