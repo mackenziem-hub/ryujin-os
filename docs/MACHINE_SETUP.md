@@ -29,6 +29,33 @@ Revoking access: Vercel and GitHub are per person, revoke those directly. The tw
 shared secrets (service key, service token) are shared, so revoking them means
 rotating them for everyone.
 
+## Permission posture: full peer vs scoped operator
+
+The bootstrap writes a starter `.claude/settings.local.json` (gitignored) that controls how
+freely this machine's Claude acts. Design rule: let the reversible work flow, put a confirm
+on the consequential, hard-block the unrecoverable. The risk being managed is an autonomous
+agent making an irreversible mistake, not the operator.
+
+**Full peer (default, recommended for someone who fixes Ryujin as they go):**
+- No prompt (reversible): read, search, edit/write code, git add/commit/branch/checkout,
+  node --check, npm test/run, gh pr create.
+- One confirm (consequential): git push, vercel deploy, gh pr merge, raw `node` scripts
+  (they can hit the database with the service key), curl, psql.
+- Hard-denied (unrecoverable): git push --force, rm -rf.
+- Net: they diagnose, fix, commit, PR, and ship, with a human beat only on the consequential
+  and irreversible steps.
+
+**Scoped operator (less-trusted or temporary helper):**
+- Do not grant Vercel deploy: they work PR-only and you merge + deploy.
+- Tighten `.claude/settings.local.json`: move `Edit`, `Write`, and `git push` from allow to
+  ask; optionally swap the service key for a read-only or no-delete Supabase key (removes the
+  data-destruction ceiling, but the brain scripts need reworking for it).
+
+**One hard rule for any machine:** never run it in `bypassPermissions` mode. The combination
+of god-mode keys (the service key bypasses row-level security across every tenant) and no
+prompts is the only genuinely dangerous configuration. Default or ask mode, plus the
+troubleshoot-ryujin skill's gates, is the safety net.
+
 ## One time: what Mac does
 
 1. Send the operator these three values from his `.env.local`, over a secure

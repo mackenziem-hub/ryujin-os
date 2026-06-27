@@ -116,12 +116,50 @@ and database schema migrations (Mac holds the DDL token). When unsure, ask Mac.
 Write-TextNoBom $claudeLocal ($cl + "`n")
 Say "Wrote CLAUDE.local.md (gitignored)"
 
-# 8) pull the brain once
+# 8) write a starter permission posture (.claude/settings.local.json, gitignored).
+# Full peer for the reversible dev loop (read/edit/commit run freely), a confirm on
+# the consequential and irreversible (push, deploy, raw node/DB, curl), and a hard
+# block on the unrecoverable (force-push, rm -rf). Tune later with /permissions.
+# NEVER run this machine in bypassPermissions mode: god-mode keys plus no prompts is
+# the one genuinely dangerous setup.
+$settingsDir = Join-Path $repoRoot '.claude'
+$settingsFile = Join-Path $settingsDir 'settings.local.json'
+if (-not (Test-Path $settingsFile)) {
+  if (-not (Test-Path $settingsDir)) { New-Item -ItemType Directory -Path $settingsDir | Out-Null }
+  $settings = @'
+{
+  "permissions": {
+    "defaultMode": "default",
+    "allow": [
+      "Read", "Grep", "Glob", "Edit", "Write",
+      "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)",
+      "Bash(git add:*)", "Bash(git commit:*)", "Bash(git branch:*)", "Bash(git checkout:*)",
+      "Bash(git switch:*)", "Bash(git restore:*)", "Bash(git stash:*)", "Bash(git fetch:*)",
+      "Bash(git pull:*)", "Bash(node --check:*)", "Bash(npm test:*)", "Bash(npm run:*)",
+      "Bash(npm ci:*)", "Bash(gh pr create:*)", "Bash(gh pr view:*)", "Bash(gh pr list:*)"
+    ],
+    "ask": [
+      "Bash(git push:*)", "Bash(npx vercel:*)", "Bash(vercel:*)", "Bash(gh pr merge:*)",
+      "Bash(curl:*)", "Bash(psql:*)"
+    ],
+    "deny": [
+      "Bash(git push --force:*)", "Bash(git push -f:*)", "Bash(rm -rf:*)", "Bash(rm -fr:*)"
+    ]
+  }
+}
+'@
+  Write-TextNoBom $settingsFile $settings
+  Say "Wrote .claude/settings.local.json (starter permission posture, gitignored)"
+} else {
+  Say ".claude/settings.local.json already exists, left as-is"
+}
+
+# 9) pull the brain once
 Say ""
 Say "Pulling the shared brain..."
 & node "--env-file=$envFile" (Join-Path $repoRoot 'scripts/context-pull.mjs')
 
-# 9) next steps
+# 10) next steps
 Say ""
 Say "=== Done. Next steps ==="
 Say "1) Deploy access:  npx vercel login        (ask Mac to add you to the ryujin-os Vercel project)"
