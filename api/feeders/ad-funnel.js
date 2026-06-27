@@ -45,7 +45,7 @@ export async function buildAdFunnel(tenantId, base, headers, days = 30) {
   // 1. Real captured leads in the window, grouped by channel + indexed by GHL contact.
   const { data: leads, error: lErr } = await supabaseAdmin
     .from('leads')
-    .select('channel,metadata,created_at')
+    .select('channel,campaign,metadata,created_at')
     .eq('tenant_id', tenantId)
     .gte('created_at', since)
     .limit(5000);
@@ -55,7 +55,7 @@ export async function buildAdFunnel(tenantId, base, headers, days = 30) {
   const today = new Date().toISOString().slice(0, 10);
   const { data: mi, error: mErr } = await supabaseAdmin
     .from('meta_insights')
-    .select('spend_cents')
+    .select('spend_cents,campaign_name')
     .eq('tenant_id', tenantId)
     .eq('level', 'ad')
     .gte('date_start', since)
@@ -63,6 +63,14 @@ export async function buildAdFunnel(tenantId, base, headers, days = 30) {
     .limit(20000);
   if (mErr) throw new Error('meta_insights: ' + mErr.message);
   const metaSpend = r2((mi || []).reduce((s, m) => s + (m.spend_cents || 0), 0) / 100);
+  // Spend grouped by the Meta campaign_name as Meta records it (e.g. "PU | Cold | 10CM | Jun2026").
+  // Kept separate from byCampaign (which keys on the lead's utm_campaign slug) because the two
+  // identifiers do not match until ad UTMs are set to the Meta campaign id/name.
+  const metaSpendByCampaign = Object.create(null);
+  for (const m of (mi || [])) {
+    const name = m.campaign_name || '(unknown)';
+    metaSpendByCampaign[name] = r2((metaSpendByCampaign[name] || 0) + (m.spend_cents || 0) / 100);
+  }
 
   // 3. Snapshot for Google spend (30d rollup) + current pipeline opportunities.
   // snapshot.googleAds is a FIXED 30d rollup, so it is only meaningful when the
@@ -120,16 +128,18 @@ export async function buildAdFunnel(tenantId, base, headers, days = 30) {
 
   // 4. Cohort roll-up: classify each windowed lead by its contact's outcome.
   // "booked" = reached an inspection stage OR signed (roofing inspects before signing).
-  const chan = {}; // channel -> { leads, booked, signed }
-  const bucket = (ch) => (chan[ch] || (chan[ch] = { leads: 0, booked: 0, signed: 0 }));
+  const chan = Object.create(null); // channel -> { leads, booked, signed }
+  const camp = Object.create(null); // utm_campaign (lead.campaign) -> { leads, booked, signed }; null-proto so a utm value like __proto__ cannot pollute or drop a lead
+  const bucket = (map, k) => (map[k] || (map[k] = { leads: 0, booked: 0, signed: 0 }));
   for (const l of (leads || [])) {
-    const ch = l.channel || 'direct';
-    const b = bucket(ch);
-    b.leads += 1;
     const gid = String(l.metadata?.ghl_contact_id || '');
     const st = outcome.get(gid);
-    if (st?.signed) b.signed += 1;
-    if (st?.booked || st?.signed) b.booked += 1;
+    const signed = !!st?.signed;
+    const booked = !!(st?.booked || st?.signed);
+    const cb = bucket(chan, l.channel || 'direct');
+    cb.leads += 1; if (signed) cb.signed += 1; if (booked) cb.booked += 1;
+    const kb = bucket(camp, l.campaign || '(none)');
+    kb.leads += 1; if (signed) kb.signed += 1; if (booked) kb.booked += 1;
   }
 
   // 5. Assemble per-channel block with spend joined in.
@@ -149,6 +159,13 @@ export async function buildAdFunnel(tenantId, base, headers, days = 30) {
     };
   }
 
+  // byCampaign: same cohort counts, keyed on the lead's utm_campaign. No spend join here on
+  // purpose (utm slug != Meta campaign_name); pair it with metaSpendByCampaign by eye until aligned.
+  const byCampaign = Object.create(null);
+  for (const [k, c] of Object.entries(camp)) {
+    byCampaign[k] = { leads: c.leads, booked: c.booked, signed: c.signed };
+  }
+
   const totalSpend = r2(metaSpend + (googleSpend || 0));
   const totalLeads = Object.values(chan).reduce((a, b) => a + b.leads, 0);
   const totalBooked = Object.values(chan).reduce((a, b) => a + b.booked, 0);
@@ -159,6 +176,9 @@ export async function buildAdFunnel(tenantId, base, headers, days = 30) {
     updated_at: new Date().toISOString(),
     windowDays: days,
     byChannel,
+    byCampaign,
+    metaSpendByCampaign,
+    campaignNote: 'byCampaign groups REAL captured leads by their utm_campaign and counts how many booked or signed, which answers which campaign is producing booked inspections. metaSpendByCampaign is spend grouped by the Meta campaign_name. They are reported separately on purpose: a utm_campaign slug (e.g. storm_salisbury, cold_ie_video) is not the Meta campaign_name (e.g. "PU | Cold | 10CM | Jun2026"), so a per-campaign cost-per-booked is NOT auto-joined to avoid a wrong number. To unlock true per-campaign cost-per-booked, set each ad utm_campaign to its Meta campaign id or exact name so the two line up.',
     blended: {
       spend: totalSpend,
       leads: totalLeads,
