@@ -25,7 +25,11 @@ function clean(v) {
 
 const SUPA = clean(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL).replace(/\/+$/, '');
 const KEY = clean(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY);
-const TENANT = process.argv[2] || 'plus-ultra';
+const ARGS = process.argv.slice(2);
+const TENANT = ARGS.find((a) => !a.startsWith('--')) || 'plus-ultra';
+const FULL = ARGS.includes('--full'); // owner escape hatch: pull everything, ignore the per-person filter
+const OPERATOR = clean(process.env.RYUJIN_OPERATOR) || null;
+const ROLE = (clean(process.env.RYUJIN_ROLE) || '').toLowerCase() || null;
 
 // Portable paths: derive from two env vars (set per machine in .env.local),
 // falling back to the original Owner/Plus-Ultra paths so existing machines stay
@@ -74,6 +78,19 @@ function firstBlock(text) {
   return t.replace(/\n>\s*saved-from:[^\n]*\n?/g, '\n').trim();
 }
 
+// per-person visibility: an entry reaches you if it is a broadcast ('all'), you wrote it,
+// or it is addressed to you by name. Unset OPERATOR or --full disables the filter (see all).
+function visibleTo(row) {
+  const aud = row.audience || 'all';
+  if (aud === 'all') return true;
+  if (OPERATOR && row.author === OPERATOR) return true;
+  if (OPERATOR && aud === OPERATOR) return true;
+  return false;
+}
+function firstLine(body) {
+  const m = String(body || '').match(/^#{0,3}\s*(.+\S)\s*$/m);
+  return m ? m[1].trim() : '';
+}
 async function main() {
   // resolve tenant
   let tenantId;
@@ -88,34 +105,57 @@ async function main() {
 
   let sessionN = 0, wrote = 0, skipped = 0, memWritten = false;
 
-  // ── 1) SESSION_CONTEXT.md from newest session_entries ──
+  // ── 1) SESSION_CONTEXT.md from newest session_entries (per-person filtered) ──
   try {
-    const rows = await rest(`session_entries?tenant_id=eq.${tenantId}&select=entry_key,machine,terminal,title,body,created_at&order=created_at.desc&limit=25`);
+    // fetch a wider window than we render so the filter still leaves a full page
+    const rows = await rest(`session_entries?tenant_id=eq.${tenantId}&select=entry_key,machine,terminal,title,body,author,audience,created_at&order=created_at.desc&limit=80`);
     if (Array.isArray(rows) && rows.length) {
-      const blocks = rows.map((r) => {
-        const when = (r.created_at || '').slice(0, 16).replace('T', ' ');
-        return `${(r.body || '').trim()}\n\n> saved-from: ${r.machine || '?'}${r.terminal ? '/' + r.terminal : ''} @ ${when} (entry ${r.entry_key})`;
-      });
-      const rebuilt = `${DERIVED_HEADER}\n\n` + blocks.join('\n\n---\n\n') + '\n';
+      const useFilter = OPERATOR && !FULL; // unset identity or --full => see everything
+      const visible = useFilter ? rows.filter(visibleTo) : rows;
+      const top = visible.slice(0, 25);
 
-      // unpushed-divergence guard: if the local newest block is NOT among the fetched
-      // rows, a SAVE push must have failed silently — do NOT clobber the local work.
-      let diverged = false;
-      if (fs.existsSync(SESSION_FILE)) {
-        const localFirst = firstBlock(fs.readFileSync(SESSION_FILE, 'utf8'));
-        if (localFirst && !rows.some((r) => firstBlock(r.body) === localFirst)) diverged = true;
-      }
-
-      if (diverged) {
-        atomicWrite(SESSION_SIDECAR, rebuilt);
-        console.error('[FAIL] context_store: local SESSION_CONTEXT.md has an UNPUSHED newest session (a SAVE push likely failed) — CONNECTOR GAP. Wrote the DB version to SESSION_CONTEXT.pulled.md and KEPT your local file. Merge + re-push before trusting the rebuild.');
+      if (!top.length) {
+        console.warn('[warn] context_store: no session entries visible to this operator — kept local SESSION_CONTEXT.md (try --full).');
       } else {
-        if (fs.existsSync(SESSION_FILE)) {
-          fs.mkdirSync(SESSION_BACKUP_DIR, { recursive: true });
-          fs.copyFileSync(SESSION_FILE, path.join(SESSION_BACKUP_DIR, `SESSION_CONTEXT_pre-pull_${stamp}.md`));
+        const blocks = top.map((r) => {
+          const when = (r.created_at || '').slice(0, 16).replace('T', ' ');
+          return `${(r.body || '').trim()}\n\n> saved-from: ${r.machine || '?'}${r.terminal ? '/' + r.terminal : ''} @ ${when} (entry ${r.entry_key})`;
+        });
+
+        // owner oversight: a one-line digest of operators' own-stream entries we filtered out
+        let digest = '';
+        if (ROLE === 'owner' && useFilter) {
+          const seen = new Set(); const lines = [];
+          for (const r of rows) {
+            if (visibleTo(r) || !r.author || r.author === OPERATOR || seen.has(r.author)) continue;
+            seen.add(r.author);
+            const when = (r.created_at || '').slice(0, 16).replace('T', ' ');
+            lines.push(`- ${r.author}: ${(r.title || firstLine(r.body) || '(untitled)').slice(0, 90)} (saved ${when})`);
+          }
+          if (lines.length) digest = `\n\n---\n\n## Operator activity (others) - run \`load full\` for detail\n${lines.join('\n')}\n`;
         }
-        atomicWrite(SESSION_FILE, rebuilt);
-        sessionN = rows.length;
+
+        const rebuilt = `${DERIVED_HEADER}\n\n${blocks.join('\n\n---\n\n')}${digest}\n`;
+
+        // unpushed-divergence guard: if the local newest block is NOT among the fetched rows,
+        // a SAVE push must have failed silently — do NOT clobber the local work.
+        let diverged = false;
+        if (fs.existsSync(SESSION_FILE)) {
+          const localFirst = firstBlock(fs.readFileSync(SESSION_FILE, 'utf8'));
+          if (localFirst && !rows.some((r) => firstBlock(r.body) === localFirst)) diverged = true;
+        }
+
+        if (diverged) {
+          atomicWrite(SESSION_SIDECAR, rebuilt);
+          console.error('[FAIL] context_store: local SESSION_CONTEXT.md has an UNPUSHED newest session (a SAVE push likely failed) — CONNECTOR GAP. Wrote the DB version to SESSION_CONTEXT.pulled.md and KEPT your local file. Merge + re-push before trusting the rebuild.');
+        } else {
+          if (fs.existsSync(SESSION_FILE)) {
+            fs.mkdirSync(SESSION_BACKUP_DIR, { recursive: true });
+            fs.copyFileSync(SESSION_FILE, path.join(SESSION_BACKUP_DIR, `SESSION_CONTEXT_pre-pull_${stamp}.md`));
+          }
+          atomicWrite(SESSION_FILE, rebuilt);
+          sessionN = top.length;
+        }
       }
     } else {
       console.warn('[warn] context_store: 0 session_entries rows — keeping local SESSION_CONTEXT.md (not rebuilt). Backfill the table to enable.');
@@ -171,7 +211,7 @@ async function main() {
     console.error(`[FAIL] context_store: context_principles — ${e.message} — CONNECTOR GAP (kept local memory).`);
   }
 
-  console.log(`context-pull OK — session_entries: ${sessionN} rebuilt; principles: ${wrote} written, ${skipped} up-to-date/skipped; MEMORY.md: ${memWritten ? 'updated from row' : 'left local (no _memory_index row yet)'}.`);
+  console.log(`context-pull OK — session_entries: ${sessionN} rebuilt${OPERATOR && !FULL ? ` (filtered for ${OPERATOR}/${ROLE || '?'})` : FULL ? ' (full, unfiltered)' : ''}; principles: ${wrote} written, ${skipped} up-to-date/skipped; MEMORY.md: ${memWritten ? 'updated from row' : 'left local (no _memory_index row yet)'}.`);
 }
 
 main();

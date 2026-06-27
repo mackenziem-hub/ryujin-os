@@ -25,7 +25,7 @@ async function handler(req, res) {
       const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 25, 1), 200);
       let query = supabaseAdmin
         .from('session_entries')
-        .select('entry_key, machine, terminal, title, body, created_at, updated_at')
+        .select('entry_key, machine, terminal, title, body, author, audience, created_at, updated_at')
         .eq('tenant_id', tenantId)
         .order('created_at', { ascending: false })
         .limit(limit);
@@ -65,6 +65,8 @@ async function handler(req, res) {
           entry_key: body.entry_key,
           machine: body.machine || 'unknown',
           terminal: body.terminal || null,
+          author: body.author || null,
+          audience: body.audience || 'all',
           title: body.title || null,
           body: body.body,
           updated_at: new Date().toISOString(),

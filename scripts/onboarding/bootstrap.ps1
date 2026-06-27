@@ -9,6 +9,7 @@
   Run from the repo folder:
     powershell -ExecutionPolicy Bypass -File scripts\onboarding\bootstrap.ps1
 #>
+param([string]$Operator = '', [string]$Role = 'operator')
 $ErrorActionPreference = 'Stop'
 function Say($m){ Write-Host $m }
 function Warn($m){ Write-Host $m -ForegroundColor Yellow }
@@ -69,6 +70,9 @@ function Set-EnvVar($path,$key,$val){
 Set-EnvVar $envFile 'RYUJIN_MEMORY_DIR' $memoryDir
 Set-EnvVar $envFile 'RYUJIN_BRAIN_DIR'  $brainDir
 Say "Wrote RYUJIN_MEMORY_DIR + RYUJIN_BRAIN_DIR into .env.local"
+# per-person spine filter identity (operators stream to self, owners broadcast)
+Set-EnvVar $envFile 'RYUJIN_ROLE' $Role
+if ($Operator -ne '') { Set-EnvVar $envFile 'RYUJIN_OPERATOR' $Operator; Say "Set identity: RYUJIN_OPERATOR=$Operator, RYUJIN_ROLE=$Role" } else { Say "Set RYUJIN_ROLE=$Role (no RYUJIN_OPERATOR -> unfiltered; pass -Operator <name> to enable the per-person filter)" }
 
 # 6) validate the 3 secrets are filled (not placeholders)
 $envText = Get-Content $envFile -Raw
