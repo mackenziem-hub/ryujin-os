@@ -30,8 +30,17 @@ const TENANT = clean(process.env.RYUJIN_TENANT) || 'plus-ultra';
 const MACHINE = os.hostname();
 const TERMINAL = clean(process.env.RYUJIN_DESK) || null;
 
-const CANON = 'C:/Users/Owner/.claude/projects/C--Users-Owner/memory';
-const SESSION_FILE = 'C:/Users/Owner/OneDrive/Desktop/Plus Ultra/_brain/SESSION_CONTEXT.md';
+// Portable paths: derive from two env vars (set per machine in .env.local),
+// falling back to the original Owner/Plus-Ultra paths so existing machines stay
+// byte-for-byte unchanged. A new machine (e.g. Cat's) sets RYUJIN_MEMORY_DIR +
+// RYUJIN_BRAIN_DIR. See docs/MACHINE_SETUP.md.
+function dir(v, fallback) {
+  return (clean(v) || fallback).replace(/\\/g, '/').replace(/\/+$/, '');
+}
+const MEMORY_DIR = dir(process.env.RYUJIN_MEMORY_DIR, 'C:/Users/Owner/.claude/projects/C--Users-Owner/memory');
+const BRAIN_DIR = dir(process.env.RYUJIN_BRAIN_DIR, 'C:/Users/Owner/OneDrive/Desktop/Plus Ultra/_brain');
+const CANON = MEMORY_DIR;
+const SESSION_FILE = `${BRAIN_DIR}/SESSION_CONTEXT.md`;
 
 if (!SVC) {
   console.error('[FAIL] context_store: missing RYUJIN_SERVICE_TOKEN — cannot push (run with --env-file=.env.local). Local files unchanged.');
