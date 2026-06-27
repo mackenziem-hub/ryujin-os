@@ -9,6 +9,7 @@
   Run from the repo folder:
     powershell -ExecutionPolicy Bypass -File scripts\onboarding\bootstrap.ps1
 #>
+param([string]$Operator = '', [string]$Role = 'operator')
 $ErrorActionPreference = 'Stop'
 function Say($m){ Write-Host $m }
 function Warn($m){ Write-Host $m -ForegroundColor Yellow }
@@ -69,6 +70,17 @@ function Set-EnvVar($path,$key,$val){
 Set-EnvVar $envFile 'RYUJIN_MEMORY_DIR' $memoryDir
 Set-EnvVar $envFile 'RYUJIN_BRAIN_DIR'  $brainDir
 Say "Wrote RYUJIN_MEMORY_DIR + RYUJIN_BRAIN_DIR into .env.local"
+# per-person spine filter identity (operators stream to self, owners broadcast).
+# Only write identity when an operator is named; otherwise leave it fully unset =
+# unfiltered (true back-compat). A role with no operator would scope saves to a
+# stream nobody can resolve, so we never set one without the other.
+if ($Operator -ne '') {
+  Set-EnvVar $envFile 'RYUJIN_OPERATOR' $Operator
+  Set-EnvVar $envFile 'RYUJIN_ROLE' $Role
+  Say "Set identity: RYUJIN_OPERATOR=$Operator, RYUJIN_ROLE=$Role"
+} else {
+  Say "No -Operator given -> identity left unset (unfiltered). Pass -Operator <name> -Role owner|operator to enable the per-person filter."
+}
 
 # 6) validate the 3 secrets are filled (not placeholders)
 $envText = Get-Content $envFile -Raw

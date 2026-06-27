@@ -29,6 +29,8 @@ const APP = clean(process.env.RYUJIN_APP_URL) || 'https://ryujin-os.vercel.app';
 const TENANT = clean(process.env.RYUJIN_TENANT) || 'plus-ultra';
 const MACHINE = os.hostname();
 const TERMINAL = clean(process.env.RYUJIN_DESK) || null;
+const OPERATOR = clean(process.env.RYUJIN_OPERATOR) || null;
+const ROLE = (clean(process.env.RYUJIN_ROLE) || '').toLowerCase() || null;
 
 // Portable paths: derive from two env vars (set per machine in .env.local),
 // falling back to the original Owner/Plus-Ultra paths so existing machines stay
@@ -93,14 +95,17 @@ function principleTitle(body, slug) {
   return titleFrom(body) || slug;
 }
 
-async function pushSession(arg) {
+async function pushSession(arg, audienceArg) {
   let body;
   if (arg && fs.existsSync(arg)) body = fs.readFileSync(arg, 'utf8').replace(/\r\n/g, '\n');
   else if (fs.existsSync(SESSION_FILE)) body = firstBlock(fs.readFileSync(SESSION_FILE, 'utf8'));
   if (!body || !body.trim()) { console.error('[FAIL] context_store: no session entry text found to push.'); process.exit(0); }
+  // audience: explicit --audience wins; else default by role (operators keep routine work in
+  // their own stream, owners broadcast). Unset role -> 'all' (back-compat, everyone sees).
+  const audience = audienceArg || ((ROLE === 'operator' && OPERATOR) ? 'self' : 'all');
   const key = entryKey();
-  const out = await post('kind=session', { entry_key: key, machine: MACHINE, terminal: TERMINAL, title: titleFrom(body), body });
-  console.log(`context-push session OK — entry ${out.entry_key || key} (machine ${MACHINE}).`);
+  const out = await post('kind=session', { entry_key: key, machine: MACHINE, terminal: TERMINAL, author: OPERATOR, audience, title: titleFrom(body), body });
+  console.log(`context-push session OK — entry ${out.entry_key || key} (machine ${MACHINE}, author ${OPERATOR || 'unset'}, audience ${audience}).`);
 }
 
 // MEMORY.md is hand-curated (preamble, theme grouping, hooks). It travels verbatim
@@ -137,7 +142,15 @@ async function pushPrinciples(slugs) {
 
 async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
-  if (cmd === 'session') await pushSession(rest[0]);
+  if (cmd === 'session') {
+    // optional `--audience all|self`; first non-flag arg is the entry file path
+    let audienceArg = null; const positional = [];
+    for (let i = 0; i < rest.length; i++) {
+      if (rest[i] === '--audience') audienceArg = (rest[++i] || '').toLowerCase();
+      else positional.push(rest[i]);
+    }
+    await pushSession(positional[0], audienceArg);
+  }
   else if (cmd === 'memory') await pushMemory();
   else if (cmd === 'principle' || cmd === 'principles') {
     if (!rest.length) { console.error('usage: context-push.mjs principle <slug> [<slug> ...] | --all'); process.exit(0); }
