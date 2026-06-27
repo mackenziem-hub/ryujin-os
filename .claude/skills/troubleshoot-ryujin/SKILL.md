@@ -48,6 +48,25 @@ If customers are hitting errors right now (a page is down, bookings failing), th
 - Diagnose fast: most likely cause, with the error text. Propose, do not silently ship.
 - Do not rush an unreviewed fix to production. Mac drives the deploy.
 
+## When you hit a wall you cannot clear (missing access or tools)
+
+Sometimes the blocker is not the code, it is that you lack the access, key, permission, or
+tool to finish. Do NOT grind around it or quietly give up. Surface it to Mac in a tight,
+consistent format so he can widen your tools, then you solve it yourself. Use exactly this:
+
+- **Goal:** what you were trying to do (one line).
+- **Wall:** the exact thing that blocked you (the error text, the permission prompt you could
+  not pass, the missing key or endpoint, the tool you do not have).
+- **Unblock:** the specific access or tool that would fix it (for example "add
+  META_ACCESS_TOKEN to .env.local", "add me to the Vercel project", "a script or skill that
+  does X", "allow Bash(<cmd>) in settings.local.json").
+- **Scope:** one-time, or a recurring need worth building into the repo.
+
+Prefer unblocks that live in the repo (a new script or skill Mac merges and you `git pull`),
+because those stick and help every operator next time. Machine-local keys or permission
+changes are fine too: Mac hands you the value or command and you apply it. After he widens
+it, retry and finish the task yourself.
+
 ## How to talk to a non-technical operator
 
 - Explain in plain English. Lead with the cause and the fix in one or two sentences; keep code detail optional and below.
