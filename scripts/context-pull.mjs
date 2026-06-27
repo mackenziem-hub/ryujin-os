@@ -27,11 +27,20 @@ const SUPA = clean(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_
 const KEY = clean(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY);
 const TENANT = process.argv[2] || 'plus-ultra';
 
-const CANON = 'C:/Users/Owner/.claude/projects/C--Users-Owner/memory';
-const SESSION_FILE = 'C:/Users/Owner/OneDrive/Desktop/Plus Ultra/_brain/SESSION_CONTEXT.md';
-const SESSION_SIDECAR = 'C:/Users/Owner/OneDrive/Desktop/Plus Ultra/_brain/SESSION_CONTEXT.pulled.md';
-const SESSION_BACKUP_DIR = 'C:/Users/Owner/OneDrive/Desktop/Plus Ultra/_brain/_archive/session-context';
-const MEM_BACKUP_ROOT = 'C:/Users/Owner/.claude/projects/C--Users-Owner/memory_backups';
+// Portable paths: derive from two env vars (set per machine in .env.local),
+// falling back to the original Owner/Plus-Ultra paths so existing machines stay
+// byte-for-byte unchanged. A new machine (e.g. Cat's) sets RYUJIN_MEMORY_DIR +
+// RYUJIN_BRAIN_DIR and the spine materializes there. See docs/MACHINE_SETUP.md.
+function dir(v, fallback) {
+  return (clean(v) || fallback).replace(/\\/g, '/').replace(/\/+$/, '');
+}
+const MEMORY_DIR = dir(process.env.RYUJIN_MEMORY_DIR, 'C:/Users/Owner/.claude/projects/C--Users-Owner/memory');
+const BRAIN_DIR = dir(process.env.RYUJIN_BRAIN_DIR, 'C:/Users/Owner/OneDrive/Desktop/Plus Ultra/_brain');
+const CANON = MEMORY_DIR;
+const SESSION_FILE = `${BRAIN_DIR}/SESSION_CONTEXT.md`;
+const SESSION_SIDECAR = `${BRAIN_DIR}/SESSION_CONTEXT.pulled.md`;
+const SESSION_BACKUP_DIR = `${BRAIN_DIR}/_archive/session-context`;
+const MEM_BACKUP_ROOT = path.join(MEMORY_DIR, '..', 'memory_backups');
 const MEMORY_INDEX_SLUG = '_memory_index';
 const DERIVED_HEADER = '<!-- DERIVED — rebuilt from Supabase (context-pull) at LOAD. Do not hand-edit; author via SAVE/context-push so changes land as rows and propagate cross-machine. -->';
 
@@ -50,6 +59,7 @@ const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 
 // atomic write: never leaves a half-written/truncated file if the process dies mid-write
 function atomicWrite(fp, content) {
+  fs.mkdirSync(path.dirname(fp), { recursive: true });
   const tmp = `${fp}.tmp-${stamp}`;
   fs.writeFileSync(tmp, content);
   fs.renameSync(tmp, fp);
