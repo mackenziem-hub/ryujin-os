@@ -33,8 +33,15 @@ foreach ($tool in 'node','git') {
   Say ("Found {0}: {1}" -f $tool, (& $tool --version))
 }
 
+# 2b) Node must be >= 20.6 for the --env-file flag the spine scripts rely on
+$nodeVer = ((& node -v) -replace '^v','')
+$nv = $nodeVer.Split('.')
+if (([int]$nv[0] -lt 20) -or ([int]$nv[0] -eq 20 -and [int]$nv[1] -lt 6)) {
+  Die "Node $nodeVer is too old. 'node --env-file' needs Node 20.6 or newer. Install the current LTS from https://nodejs.org"
+}
+
 # 3) compute this machine's brain paths
-$slug = ($repoRoot -replace '[:\\/]','-')           # Claude Code project-dir slug
+$slug = ($repoRoot -replace '[^A-Za-z0-9]','-')      # Claude Code project-dir slug: ALL non-alnum -> dash
 $userHome = ($env:USERPROFILE -replace '\\','/')
 $memoryDir = "$userHome/.claude/projects/$slug/memory"
 $brainDir  = "$userHome/ryujin-brain"
