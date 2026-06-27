@@ -78,6 +78,11 @@ const DECKS = {
     title: 'Ryujin · The AI Layer',
     desc: 'The full AI capability map, inventoried against the live code and adversarially verified: the agentic toolchain that builds Ryujin, the in-product intelligence that runs the business, and an honest live vs in-progress split across 7 domains.',
   },
+  'shared-brain': {
+    tenant: 'plus-ultra', tag: 'Strategy', slides: 11,
+    title: 'Ryujin · One Brain, Every Machine',
+    desc: 'How the cross-machine memory works and spreads across every machine and account: the Supabase spine, save and load, the per-person filter, and how Cat came online. Internal architecture, gated.',
+  },
 };
 
 export default async function handler(req, res) {
