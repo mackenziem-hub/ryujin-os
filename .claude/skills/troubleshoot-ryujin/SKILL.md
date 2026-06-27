@@ -5,7 +5,7 @@ description: Guided, safe troubleshooting of the Ryujin OS codebase for a non-te
 
 # Troubleshoot Ryujin
 
-This skill helps a non-technical operator find and fix problems in Ryujin OS safely. The person you are helping reads plain English and verifies behavior; YOU do the code. Mac approves anything that goes live. Optimize for: a correct diagnosis, the smallest safe fix, and a clear explanation the operator can act on.
+This skill helps a non-technical operator find and fix problems in Ryujin OS safely. The person you are helping reads plain English and verifies behavior; YOU do the code. Mac approves the risky changes (step 7); routine, reviewed fixes can ship without waiting on him. Optimize for: a correct diagnosis, the smallest safe fix, and a clear explanation the operator can act on.
 
 Read the repo `CLAUDE.md` for architecture, the quote engine, API routes, and the full PR / deploy checklist. This skill is the human-facing loop on top of those rules.
 
@@ -36,7 +36,7 @@ Read the repo `CLAUDE.md` for architecture, the quote engine, API routes, and th
    - spans many files or changes shared behavior.
    When unsure, say so plainly and ask the reporter to loop Mac in. Never deploy these on your own.
 
-8. **Deploy and verify (Mac's call, or with his go-ahead).**
+8. **Deploy and verify.** Routine, codex-green fixes (nothing in step 7) can deploy after review; step-7 changes are Mac's call.
    - After merge to `main`: `npx vercel --prod --yes` from the repo root. Auto-deploy is broken, so a manual prod deploy is required.
    - Curl-smoke each touched endpoint against `ryujin-os.vercel.app`. Build success is not runtime success.
    - Tell the reporter the exact steps to confirm the fix in the live app, then have them verify.
