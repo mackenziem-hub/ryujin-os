@@ -102,7 +102,7 @@ async function pushSession(arg, audienceArg) {
   if (!body || !body.trim()) { console.error('[FAIL] context_store: no session entry text found to push.'); process.exit(0); }
   // audience: explicit --audience wins; else default by role (operators keep routine work in
   // their own stream, owners broadcast). Unset role -> 'all' (back-compat, everyone sees).
-  const audience = audienceArg || (ROLE === 'operator' ? 'self' : 'all');
+  const audience = audienceArg || ((ROLE === 'operator' && OPERATOR) ? 'self' : 'all');
   const key = entryKey();
   const out = await post('kind=session', { entry_key: key, machine: MACHINE, terminal: TERMINAL, author: OPERATOR, audience, title: titleFrom(body), body });
   console.log(`context-push session OK — entry ${out.entry_key || key} (machine ${MACHINE}, author ${OPERATOR || 'unset'}, audience ${audience}).`);

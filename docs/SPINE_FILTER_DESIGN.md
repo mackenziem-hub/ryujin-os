@@ -82,6 +82,14 @@ shared). No regression.
 - Post-migration e2e: push a `self` entry as an operator, confirm an owner's normal load
   excludes it (digest only), the operator's load includes it, and `--full` shows all.
 
+## Known limitations
+
+- The unpushed-divergence guard checks the newest ~80 rows. For a filtered operator whose
+  newest visible entry has aged out behind 80+ newer entries from others, the guard can
+  raise a false CONNECTOR GAP (non-destructive: it keeps the local file, writes the sidecar,
+  and self-heals on the next save). Unlikely with few operators; revisit the window or a
+  targeted existence check if operator count grows.
+
 ## Out of scope (future)
 
 - Per-role filtering of `context_principles` (today all load for everyone).
