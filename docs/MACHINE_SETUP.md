@@ -106,7 +106,9 @@ be blocked on the new machine too. Workarounds:
 - "MEMORY.md is not auto-loading": confirm `RYUJIN_MEMORY_DIR` matches this
   machine's real Claude Code project memory dir. Claude creates
   `<home>/.claude/projects/<project-slug>/memory` on first run in a folder; the
-  slug is the folder path with `:` `\` `/` replaced by `-`. Launch Claude Code in
+  slug is the folder path with every non-alphanumeric character replaced by `-`
+  (for example `C:\Users\cat.PU\Code\ryujin-os` becomes
+  `C--Users-cat-PU-Code-ryujin-os`). Launch Claude Code in
   the repo folder so the slug matches what the bootstrap computed.
 - "context-pull prints [FAIL] context_store": a connector gap. Check the three
   secrets in `.env.local` are correct and that the machine is online.
