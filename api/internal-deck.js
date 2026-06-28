@@ -83,6 +83,11 @@ const DECKS = {
     title: 'Ryujin · One Brain, Every Machine',
     desc: 'How the cross-machine memory works and spreads across every machine and account: the Supabase spine, save and load, the per-person filter, and how Cat came online. Internal architecture, gated.',
   },
+  'memory-system': {
+    tenant: 'plus-ultra', tag: 'Strategy', slides: 9,
+    title: 'The Memory System · Why Load Went Stale',
+    desc: 'The memory and intelligence system end to end, the three silent failures that fogged the load (a brief that failed quietly, agents nothing watched, and a total blind spot for messages), the fix shipped today, and the roadmap to make messages first-class.',
+  },
 };
 
 export default async function handler(req, res) {
