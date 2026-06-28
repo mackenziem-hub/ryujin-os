@@ -27,6 +27,7 @@
 
 import { supabaseAdmin } from '../lib/supabase.js';
 import { notifyLeadEvent } from '../lib/leadNotify.js';
+import { fireSignFanout } from '../lib/fireSignFanout.js';
 import { isMetalSlug } from '../lib/metalProposalCopy.js';
 // Shared with the assembler so a metal accept can re-derive the panel price
 // SERVER-side when the frozen snapshot does not carry panelPrices. We never
@@ -507,6 +508,20 @@ export default async function handler(req, res) {
   fireGhlStandalone({ inst, customer, total, selectedTier })
     .then(r => console.log('[proposal-v2-accept] ghl standalone result', r))
     .catch(e => console.error('[proposal-v2-accept] ghl standalone failed', e?.message));
+
+  // Sign choreography (intercom fan-out) for a standalone proposal signing.
+  // Awaited (Vercel freezes the lambda after res.json) but fail-soft + idempotent,
+  // so it can never break the acceptance. estimate_id may be null here (standalone);
+  // executeSignFanout UUID-guards it.
+  await fireSignFanout({
+    tenantId: inst.tenant_id,
+    customer: customer.name || null,
+    address: customer.address || null,
+    phone: customer.phone || null,
+    total: total || null,
+    estimateId: inst.estimate_id || null,
+    scopeSummary: selectedTier || null,
+  });
 
   return res.status(200).json({
     ok: true,
