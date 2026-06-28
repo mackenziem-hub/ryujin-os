@@ -447,17 +447,22 @@ export default async function handler(req, res) {
     }
   }
 
-  // === DELETE: Remove opportunity ===
+  // === DELETE: Remove an opportunity (default) or a contact (?type=contact) ===
+  // Owner/admin only (gated above). Contact delete is used to prune duplicate /
+  // empty CRM records; snapshot the record before calling, GHL has no undo.
   if (req.method === 'DELETE') {
-    const { id: oppId } = req.query;
-    if (!oppId) {
-      return res.status(400).json({ error: 'Missing id query parameter. Pass the opportunity ID to delete.' });
+    const { id: delId, type: delType } = req.query;
+    if (!delId) {
+      return res.status(400).json({ error: 'Missing id query parameter. Pass the id to delete.' });
     }
+    const isContact = String(delType || '').toLowerCase() === 'contact';
+    const ghlPath = isContact ? `/contacts/${delId}` : `/opportunities/${delId}`;
     try {
-      await ghlFetch(`/opportunities/${oppId}`, {}, { method: 'DELETE' });
+      await ghlFetch(ghlPath, {}, { method: 'DELETE' });
       return res.json({
         action: 'deleted',
-        id: oppId,
+        resource: isContact ? 'contact' : 'opportunity',
+        id: delId,
         timestamp: new Date().toISOString()
       });
     } catch (err) {
