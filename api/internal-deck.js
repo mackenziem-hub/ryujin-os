@@ -88,6 +88,11 @@ const DECKS = {
     title: 'The Memory System · Why Load Went Stale',
     desc: 'The memory and intelligence system end to end, the three silent failures that fogged the load (a brief that failed quietly, agents nothing watched, and a total blind spot for messages), the fix shipped today, and the roadmap to make messages first-class.',
   },
+  'intercom': {
+    tenant: 'plus-ultra', tag: 'Operations', slides: 10,
+    title: 'The Intercom · Companion OS, Configured',
+    desc: 'What shipped today and how the Companion intercom is wired: one event fans out the right work to the right people. The event-to-action map, the sign choreography (all 4 proposal paths incl Revive), quote-requested, the files + hooks, the fail-soft/idempotent safety design, and the supporting memory + cross-machine work.',
+  },
 };
 
 export default async function handler(req, res) {
