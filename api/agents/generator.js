@@ -299,7 +299,7 @@ async function insertDraft({ tenant, brand, candidate, mediaUrl, captionText, ca
   return { clip };
 }
 
-async function runGenerator({ targetCount = TARGET_COUNT, dryRun = false } = {}) {
+async function runGenerator({ targetCount = TARGET_COUNT, dryRun = false, trigger = 'cron_daily' } = {}) {
   const startTime = Date.now();
   const tenant = await getTenant();
   const brand = await getBrand(tenant.id);
@@ -364,7 +364,7 @@ async function runGenerator({ targetCount = TARGET_COUNT, dryRun = false } = {})
     // NOT `payload` (a direct insert with `payload` silently 42703'd and the
     // fail-soft .then swallowed it, leaving generator permanently "dark").
     await logAgentRun({
-      tenantId: tenant.id, agentSlug: 'generator', startedAt: startTime,
+      tenantId: tenant.id, agentSlug: 'generator', startedAt: startTime, trigger,
       status: 'success', summary: 'skipped: queue_deep',
       output: { skipped: 'queue_deep', queue_until: new Date(lastMs).toISOString(), warnings },
     });
@@ -435,7 +435,7 @@ async function runGenerator({ targetCount = TARGET_COUNT, dryRun = false } = {})
 
   // Heartbeat via the shared logger (agent_runs uses `output`, not `payload`).
   await logAgentRun({
-    tenantId: tenant.id, agentSlug: 'generator', startedAt: startTime,
+    tenantId: tenant.id, agentSlug: 'generator', startedAt: startTime, trigger,
     status: drafts.length ? 'success' : 'partial',
     summary: `${drafts.length}/${candidates.length} drafts scheduled`,
     output: { drafts, warnings, stats, run_id: runId, target_count: targetCount },
@@ -452,13 +452,30 @@ export default async function handler(req, res) {
   const auth = checkAuth(req);
   if (!auth.ok) return res.status(401).json({ error: 'Unauthorized' });
 
+  // trigger must stay within the agent_runs CHECK ('cron_daily','manual','api');
+  // generator is weekly, but 'cron_daily' is the only allowed cron value, so a
+  // manual fire is the only distinction we can record without a schema change.
+  const startTime = Date.now();
+  const isManual = req.query.manual === '1' || req.query.manual === 'true';
+  const trigger = isManual ? 'manual' : 'cron_daily';
+  const dryRun = req.query.dryRun === '1' || req.query.dry === '1';
   try {
     const targetCount = Math.max(1, Math.min(8, parseInt(req.query.count, 10) || TARGET_COUNT));
-    const dryRun = req.query.dryRun === '1' || req.query.dry === '1';
-    const result = await runGenerator({ targetCount, dryRun });
+    const result = await runGenerator({ targetCount, dryRun, trigger });
     return res.json({ via: auth.via, ...result });
   } catch (e) {
     console.error('[generator] run failed:', e);
+    // A throw past tenant resolution (run-row insert, render, pickCandidates)
+    // would otherwise 500 with NO agent_runs row, leaving the freshness alarm
+    // blind to a failing generator for its full ~8-day WINDOW. Log a best-effort
+    // error heartbeat so the failure surfaces as a loud [ERR] line. Skip for dry
+    // runs (they intentionally touch nothing).
+    if (!dryRun) {
+      try {
+        const t = await getTenant();
+        await logAgentRun({ tenantId: t.id, agentSlug: 'generator', startedAt: startTime, trigger, status: 'error', error: e.message, summary: 'generator run failed' });
+      } catch (logErr) { console.error('[generator] error-heartbeat failed:', logErr?.message); }
+    }
     return res.status(500).json({ error: e.message });
   }
 }

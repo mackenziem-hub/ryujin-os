@@ -335,35 +335,59 @@ if (SVC) {
 // turns silent degradation into a loud [STALE]/[ERR] line at every load.
 // briefing/daily/cashflow/watchdog/heartbeat/weekly/memory became observable
 // once migration_106 + logAgentRun shipped (2026-06-28); they log heartbeat rows
-// now. The lookback MUST exceed the largest WINDOW below (generator/weekly run on
+// now.
+//
+// Hours-overdue threshold per agent (just past its cron interval in vercel.json).
+const WINDOW = {
+  inbox: 1, production: 1, cashflow: 6, watchdog: 14, briefing: 18,
+  reconcile: 26, questscan: 26, daily: 26, heartbeat: 26, memory: 26,
+  sales: 26, marketing: 26, ops: 26, finance: 26, customer: 26, service: 26, strategy: 26, inventory: 26,
+  generator: 200, weekly: 200,
+};
+// The staleness lookback MUST exceed the largest WINDOW (generator/weekly run on
 // an ~8-day cadence) or a healthy long-cadence agent falls outside the query and
-// is forever mislabeled "dark" — the original 3-day lookback did exactly that.
-const LOOKBACK_DAYS = 10;
+// is forever mislabeled "dark" (the original 3-day lookback did exactly that).
+// Derive it from WINDOW so a future WINDOW bump cannot silently desync the two.
+const LOOKBACK_DAYS = Math.ceil(Math.max(...Object.values(WINDOW)) / 24) + 2;
+// Recent-error window is intentionally SHORTER than the staleness lookback: an
+// already-recovered error should not keep printing as a live [ERR] at every load
+// for the full 10 days (cry-wolf). Keep it tight.
+const ERR_LOOKBACK_DAYS = 3;
 if (tenantId) {
   try {
-    const since = new Date(Date.now() - LOOKBACK_DAYS * 864e5).toISOString();
-    const runs = await rest(`agent_runs?tenant_id=eq.${tenantId}&started_at=gte.${since}&select=agent_slug,status,started_at,error_message&order=started_at.desc&limit=2000`);
     const now = Date.now();
-    // Hours-overdue threshold per agent (just past its cron interval in vercel.json).
-    const WINDOW = {
-      inbox: 1, production: 1, cashflow: 6, watchdog: 14, briefing: 18,
-      reconcile: 26, questscan: 26, daily: 26, heartbeat: 26, memory: 26,
-      sales: 26, marketing: 26, ops: 26, finance: 26, customer: 26, service: 26, strategy: 26, inventory: 26,
-      generator: 200, weekly: 200,
-    };
+    const since = new Date(now - LOOKBACK_DAYS * 864e5).toISOString();
+    const errCutoff = now - ERR_LOOKBACK_DAYS * 864e5;
+    // High-frequency agents (inbox ~72/day) can flood the lookback window; a flat
+    // capped desc query evicts the OLDEST rows first, which are exactly the
+    // long-cadence (generator/weekly) heartbeats up to ~8 days old. So pull those
+    // slugs in a dedicated query that volume can never crowd out, alongside the
+    // main pull and the tenant_settings flags (all independent -> run in parallel).
+    const longCadence = Object.entries(WINDOW).filter(([, h]) => h > 48).map(([a]) => a);
+    const [runs, longRuns, tsRows] = await Promise.all([
+      rest(`agent_runs?tenant_id=eq.${tenantId}&started_at=gte.${since}&select=agent_slug,status,started_at,error_message&order=started_at.desc&limit=2000`),
+      longCadence.length
+        ? rest(`agent_runs?tenant_id=eq.${tenantId}&agent_slug=in.(${longCadence.join(',')})&started_at=gte.${since}&select=agent_slug,status,started_at,error_message&order=started_at.desc&limit=50`)
+        : Promise.resolve([]),
+      rest(`tenant_settings?tenant_id=eq.${tenantId}&select=*&limit=1`).catch(() => []),
+    ]);
     // Per-agent enablement: a tenant can turn an agent OFF
     // (tenant_settings.<slug>_agent_enabled === false). A disabled agent is not
     // stale, it is intentionally off -> show [off], never [STALE], so the alarm
     // does not cry wolf (e.g. questscan is disabled for plus-ultra).
-    let tset = {};
-    try { const ts = await rest(`tenant_settings?tenant_id=eq.${tenantId}&select=*&limit=1`); tset = (ts && ts[0]) || {}; } catch { /* non-fatal: no flags -> nothing disabled */ }
+    const tset = (tsRows && tsRows[0]) || {};
     const isDisabled = (a) => tset[`${a}_agent_enabled`] === false;
-    const lastSuccess = {}; const errs = [];
-    for (const r of runs) {
+    const lastSuccess = {}; const errs = []; const errSeen = new Set();
+    // Merge both pulls; take the MAX timestamp per agent so order across the two
+    // arrays does not matter, and dedup errors that appear in both.
+    for (const r of [...longRuns, ...runs]) {
       const a = r.agent_slug;
       const failed = /error|fail/i.test(r.status || '');
-      if (!failed && !lastSuccess[a]) lastSuccess[a] = r.started_at;
-      if (failed && r.error_message) errs.push({ a, when: r.started_at, msg: r.error_message });
+      if (!failed && (!lastSuccess[a] || new Date(r.started_at) > new Date(lastSuccess[a]))) lastSuccess[a] = r.started_at;
+      if (failed && r.error_message && new Date(r.started_at).getTime() >= errCutoff) {
+        const key = `${a}|${r.started_at}`;
+        if (!errSeen.has(key)) { errSeen.add(key); errs.push({ a, when: r.started_at, msg: r.error_message }); }
+      }
     }
     const stale = []; const off = [];
     for (const [a, winH] of Object.entries(WINDOW)) {
@@ -379,7 +403,7 @@ if (tenantId) {
       recentErrors: errs.slice(0, 6).map(e => ({ agent: e.a, when: e.when, msg: String(e.msg).slice(0, 120) }))
     });
     console.log(`\n## Data freshness: ${stale.length ? stale.length + ' agent(s) stale/dark' : 'all enabled cron agents fresh'}${errs.length ? ' · ' + errs.length + ' recent error(s)' : ''}${off.length ? ' · ' + off.length + ' off' : ''}`);
-    for (const s of stale) console.log(`  [STALE] ${s.a} — ${s.never ? `no successful run in ${LOOKBACK_DAYS}d (dark)` : fmtH(s.ageH) + ' since last success'}`);
+    for (const s of stale) console.log(`  [STALE] ${s.a}: ${s.never ? `no successful run in ${LOOKBACK_DAYS}d (dark)` : fmtH(s.ageH) + ' since last success'}`);
     for (const e of errs.slice(0, 6)) console.log(`  [ERR] ${e.a} (${String(e.when).slice(0, 16)}): ${String(e.msg).replace(/\s+/g, ' ').slice(0, 100)}`);
     if (off.length) console.log(`  [off] ${off.join(', ')} (disabled via tenant_settings, not monitored)`);
     if (!stale.length && !errs.length) console.log('  (all enabled cron agents reporting on time, no recent errors)');
