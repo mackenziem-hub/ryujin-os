@@ -14,6 +14,7 @@ import { gmailSearch, gmailReadMessage } from '../../lib/google.js';
 import { supabaseAdmin } from '../../lib/supabase.js';
 import { requireCronOrOwner } from '../../lib/cronAuth.js';
 import { snapshotHeaders } from '../../lib/snapshotClient.js';
+import { logAgentRun } from '../../lib/agents/logAgentRun.js';
 import { matchPaymentToEstimate, dedupeEstimatePool } from '../../lib/paymentMatcher.js';
 
 const ESTIMATOR_BASE = 'https://estimator-os.replit.app/api';
@@ -461,8 +462,17 @@ export default async function handler(req, res) {
   }
   const auth = await requireCronOrOwner(req);
   if (!auth.ok) return res.status(401).json({ error: auth.error });
+  const startTime = Date.now();
+  const trigger = req.method === 'GET' ? 'manual' : 'cron_daily';
+  let tenantId = null;
+  try {
+    const { data: t } = await supabaseAdmin.from('tenants').select('id').eq('slug', PLUS_ULTRA_SLUG).single();
+    tenantId = t?.id || null;
+  } catch { /* best-effort */ }
   try {
     const report = await runCashflow();
+    // Observability heartbeat (migration_106 allows the 'cashflow' slug).
+    await logAgentRun({ tenantId, agentSlug: 'cashflow', trigger, status: 'success', summary: 'cashflow + AR scan complete', startedAt: startTime });
     return res.json({
       agent: 'cashflow',
       role: 'Finance & AR',
@@ -473,6 +483,7 @@ export default async function handler(req, res) {
     });
   } catch (err) {
     console.error('[Cashflow] FAILED:', err.message);
+    await logAgentRun({ tenantId, agentSlug: 'cashflow', trigger, status: 'error', error: err.message, startedAt: startTime });
     return res.status(500).json({ agent: 'cashflow', error: err.message });
   }
 }

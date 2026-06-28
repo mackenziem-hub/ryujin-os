@@ -205,6 +205,41 @@ if (SVC) {
   out.sources.ghl_hot_pipeline = { status: 'skipped', error: 'no RYUJIN_SERVICE_TOKEN' };
 }
 
+// 3d) INBOX / MESSAGES — the queue the load was BLIND to (the "messages weak
+// where they should be strongest" gap, 2026-06-28). The inbox agent triages
+// customer messages + lead events into inbox_items and SMS-digests the urgent
+// ones, but the LOAD never surfaced any of it, so the freshest, most
+// time-sensitive signal (a new lead, a leak, "CPL up 91%") was invisible until
+// someone opened inbox.html. Now it shows here, ordered with everything else by
+// what moves money. Reads inbox_items direct (service key); fails loud.
+if (tenantId) {
+  try {
+    const items = await rest(`inbox_items?tenant_id=eq.${tenantId}&status=eq.needs_review&select=contact_name,notify,notify_reason,category,urgency,channel,source,last_message_at,created_at&order=last_message_at.desc&limit=400`);
+    const now = Date.now();
+    const ageH = (t) => t ? ((now - new Date(t)) / 3.6e6) : null;
+    const fmtAge = (h) => h == null ? '?' : (h >= 48 ? Math.round(h / 24) + 'd' : h.toFixed(1) + 'h');
+    const needs = items.length;
+    const notifyOpen = items.filter(i => i.notify);
+    const top = notifyOpen.slice(0, 10); // owner-flagged, newest-first
+    const oldest = items.reduce((m, i) => (!m || (i.created_at && i.created_at < m)) ? (i.created_at || m) : m, null);
+    const bySource = items.reduce((m, i) => (m[i.source || '?'] = (m[i.source || '?'] || 0) + 1, m), {});
+    ok('inbox', {
+      needsReview: needs,
+      notifyOpen: notifyOpen.length,
+      oldestDays: oldest ? +(ageH(oldest) / 24).toFixed(1) : null,
+      bySource,
+      top: top.map(i => ({ contact: i.contact_name, category: i.category, urgency: i.urgency, channel: i.channel, reason: i.notify_reason, ageH: ageH(i.last_message_at) }))
+    });
+    const backlogFlag = needs > 40 ? `  ⚠ BACKLOG ${needs} unreviewed (oldest ${oldest ? fmtAge(ageH(oldest)) : '?'}) — drain-sweep should clear it` : '';
+    console.log(`\n## Inbox / messages: ${notifyOpen.length} owner-flagged · ${needs} unreviewed total${backlogFlag}`);
+    for (const i of top) {
+      console.log(`  [NOTIFY] ${i.urgency || '-'}/${i.category || '-'} (${fmtAge(ageH(i.last_message_at))}) ${i.contact_name || '?'} — ${String(i.notify_reason || '').replace(/\s+/g, ' ').slice(0, 60)}`);
+    }
+    if (!notifyOpen.length && needs) console.log(`  (no owner-flagged items; ${needs} routine unreviewed)`);
+    if (!needs) console.log('  (inbox clear)');
+  } catch (e) { fail('inbox', e); console.log(`\n[FAIL] inbox: ${out.sources.inbox.error}`); }
+}
+
 // 3b) Finance snapshot (audit blind spot: surface AR / payables / collected on every load).
 // All queries fail-soft (table-missing / column drift only drops this section, never the scan).
 if (tenantId) {
@@ -280,13 +315,62 @@ if (SVC) {
     const brief = bm && bm.briefMarkdown;
     const cash = s.cashflow || (s.sections && s.sections.cashflow);
     const briefStamp = bm && (bm.generated_at || bm.timestamp);
-    ok('snapshot', { hasBrief: !!brief, briefAgeMin: briefStamp ? Math.round((Date.now() - new Date(briefStamp)) / 60000) : null, hasCashflow: !!cash });
-    console.log(`\n## Daily snapshot: brief=${brief ? 'present' : 'MISSING'} cashflow=${cash ? 'present' : 'MISSING'}`);
+    const briefAgeMin = briefStamp ? Math.round((Date.now() - new Date(briefStamp)) / 60000) : null;
+    const briefStale = briefAgeMin != null && briefAgeMin > 18 * 60; // >18h = missed a morning briefing cron
+    ok('snapshot', { hasBrief: !!brief, briefAgeMin, briefStale, hasCashflow: !!cash });
+    const ageLabel = briefAgeMin != null ? ` (${(briefAgeMin / 60).toFixed(1)}h old${briefStale ? ' [STALE]' : ''})` : '';
+    console.log(`\n## Daily snapshot: brief=${brief ? 'present' : 'MISSING'}${ageLabel} cashflow=${cash ? 'present' : 'MISSING'}`);
     if (brief) console.log(brief.split('\n').slice(0, 8).map(l => '  ' + l).join('\n'));
   } catch (e) { fail('snapshot', e); console.log(`\n[FAIL] snapshot: ${out.sources.snapshot.error}`); }
 } else {
   out.sources.snapshot = { status: 'skipped', error: 'no RYUJIN_SERVICE_TOKEN' };
   console.log(`\n## Daily snapshot: SKIPPED (no RYUJIN_SERVICE_TOKEN in .env.local)`);
+}
+
+// 6) DATA FRESHNESS — the durable staleness alarm (2026-06-28). "Fail loud" was
+// only ever wired for the load-scan's OWN pulls, never for the cron agents that
+// produce the brief/snapshot/cashflow. So when an upstream agent silently
+// degraded (dead calendar auth, a failed snapshot read, a never-firing cron),
+// the load kept printing thin output with no flag. This reads agent_runs and
+// turns silent degradation into a loud [STALE]/[ERR] line at every load.
+// NOTE: briefing/daily/cashflow/watchdog/heartbeat/weekly/memory only become
+// observable once migration_106 + logAgentRun ship; until then they show "dark",
+// which is the honest state (they were never in agent_runs at all).
+if (tenantId) {
+  try {
+    const since = new Date(Date.now() - 3 * 864e5).toISOString();
+    const runs = await rest(`agent_runs?tenant_id=eq.${tenantId}&started_at=gte.${since}&select=agent_slug,status,started_at,error_message&order=started_at.desc&limit=1000`);
+    const now = Date.now();
+    // Hours-overdue threshold per agent (just past its cron interval in vercel.json).
+    const WINDOW = {
+      inbox: 1, production: 1, cashflow: 6, watchdog: 14, briefing: 18,
+      reconcile: 26, questscan: 26, daily: 26, heartbeat: 26, memory: 26,
+      sales: 26, marketing: 26, ops: 26, finance: 26, customer: 26, service: 26, strategy: 26, inventory: 26,
+      generator: 200, weekly: 200,
+    };
+    const lastSuccess = {}; const errs = [];
+    for (const r of runs) {
+      const a = r.agent_slug;
+      const failed = /error|fail/i.test(r.status || '');
+      if (!failed && !lastSuccess[a]) lastSuccess[a] = r.started_at;
+      if (failed && r.error_message) errs.push({ a, when: r.started_at, msg: r.error_message });
+    }
+    const stale = [];
+    for (const [a, winH] of Object.entries(WINDOW)) {
+      const last = lastSuccess[a];
+      const ageH = last ? (now - new Date(last)) / 3.6e6 : null;
+      if (last == null || ageH > winH) stale.push({ a, ageH, never: last == null });
+    }
+    const fmtH = (h) => h == null ? '?' : (h >= 48 ? Math.round(h / 24) + 'd' : h.toFixed(1) + 'h');
+    ok('freshness', {
+      staleAgents: stale.map(s => ({ agent: s.a, ageHours: s.ageH == null ? null : +s.ageH.toFixed(1), never: s.never })),
+      recentErrors: errs.slice(0, 6).map(e => ({ agent: e.a, when: e.when, msg: String(e.msg).slice(0, 120) }))
+    });
+    console.log(`\n## Data freshness: ${stale.length ? stale.length + ' agent(s) stale/dark' : 'all cron agents fresh'}${errs.length ? ' · ' + errs.length + ' recent error(s)' : ''}`);
+    for (const s of stale) console.log(`  [STALE] ${s.a} — ${s.never ? 'no successful run in 3d (dark)' : fmtH(s.ageH) + ' since last success'}`);
+    for (const e of errs.slice(0, 6)) console.log(`  [ERR] ${e.a} (${String(e.when).slice(0, 16)}): ${String(e.msg).replace(/\s+/g, ' ').slice(0, 100)}`);
+    if (!stale.length && !errs.length) console.log('  (all cron agents reporting on time, no recent errors)');
+  } catch (e) { fail('freshness', e); console.log(`\n[FAIL] freshness: ${out.sources.freshness.error}`); }
 }
 
 // Summary line of any FAILED sources (the "fail loud" contract)

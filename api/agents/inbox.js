@@ -381,9 +381,86 @@ async function bridgeSubPortalMessages({ tenantId, runId }) {
   return out;
 }
 
+// ── Drain sweep ───────────────────────────────────────────────────────────
+// The needs_review queue self-refilled into a 200+ item, month-old graveyard:
+// feeders (lead_event, GHL triage) regenerate "new lead / going cold" rows every
+// tick, nobody opens inbox.html, and email items cannot be actioned in-app.
+// Nothing aged or deduped them, so the load (and the owner) drowned in stale
+// alerts. This sweep runs every tick and keeps the queue to what is actually
+// actionable WITHOUT ever dropping an un-fired alert.
+//   1. Age out: alerts already SMS-pinged 7+ days ago, and non-alert rows 10+
+//      days old, are stale -> superseded.
+//   2. Dedupe: per (contact, category) keep the newest needs_review row;
+//      supersede older non-alert or already-pinged dupes.
+// HARD INVARIANT: a notify=true row with notified_at IS NULL (alert not yet
+// fired) is NEVER superseded here. The SMS digest contract stays intact.
+async function drainStaleInbox(tenantId) {
+  const result = { agedOut: 0, deduped: 0 };
+  const nowIso = new Date().toISOString();
+  const pingedCutoff = new Date(Date.now() - 7 * 864e5).toISOString();   // alert TTL
+  const routineCutoff = new Date(Date.now() - 10 * 864e5).toISOString(); // non-alert TTL
+  try {
+    // 1a. Pinged-but-unactioned alerts older than the alert TTL.
+    const a1 = await supabaseAdmin
+      .from('inbox_items')
+      .update({ status: 'superseded', updated_at: nowIso })
+      .eq('tenant_id', tenantId)
+      .eq('status', 'needs_review')
+      .not('notified_at', 'is', null)
+      .lt('notified_at', pingedCutoff)
+      .select('id');
+    result.agedOut += (a1.data?.length || 0);
+
+    // 1b. Non-alert rows older than the routine TTL.
+    const a2 = await supabaseAdmin
+      .from('inbox_items')
+      .update({ status: 'superseded', updated_at: nowIso })
+      .eq('tenant_id', tenantId)
+      .eq('status', 'needs_review')
+      .eq('notify', false)
+      .lt('created_at', routineCutoff)
+      .select('id');
+    result.agedOut += (a2.data?.length || 0);
+
+    // 2. Dedupe: newest needs_review per (contact, category) wins.
+    const { data: open } = await supabaseAdmin
+      .from('inbox_items')
+      .select('id, contact_name, ghl_contact_id, category, notify, notified_at')
+      .eq('tenant_id', tenantId)
+      .eq('status', 'needs_review')
+      .order('last_message_at', { ascending: false });
+    const seen = new Set();
+    const toSupersede = [];
+    for (const r of (open || [])) {
+      const key = `${r.ghl_contact_id || r.contact_name || '?'}::${r.category || '?'}`;
+      if (!seen.has(key)) { seen.add(key); continue; } // newest in group: keep
+      if (!(r.notify && !r.notified_at)) toSupersede.push(r.id); // never drop an un-fired alert
+    }
+    for (let i = 0; i < toSupersede.length; i += 100) {
+      await supabaseAdmin
+        .from('inbox_items')
+        .update({ status: 'superseded', updated_at: nowIso })
+        .in('id', toSupersede.slice(i, i + 100));
+    }
+    result.deduped = toSupersede.length;
+  } catch (e) {
+    result.error = e.message;
+  }
+  return result;
+}
+
 // ── Main scan for one tenant ──
 async function runInbox({ tenantId, runId, startTime, allowlist = [], notifyCustomers = false, notifyAllLeads = false, ownerContactId = null, notifyEmail = null, budget = null }) {
   const result = { scanned: 0, triaged: 0, inserted: 0, notify: 0, allowlisted: 0, customerNotify: 0, leadNotify: 0, bridged: 0, skipped: 0, errors: [] };
+
+  // Drain the stale/duplicate backlog before scanning so the queue reflects
+  // what is actually actionable (never drops an un-fired alert). Best-effort.
+  try {
+    result.drained = await drainStaleInbox(tenantId);
+    if (result.drained.agedOut || result.drained.deduped) {
+      console.log(`[Inbox] drain sweep: aged out ${result.drained.agedOut}, deduped ${result.drained.deduped}`);
+    }
+  } catch (e) { result.errors.push(`drain: ${e.message}`); }
 
   let convos = [];
   try {

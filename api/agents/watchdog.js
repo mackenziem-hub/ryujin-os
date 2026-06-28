@@ -9,6 +9,8 @@ import { gmailSearch, gmailReadMessage } from '../../lib/google.js';
 import { put, list } from '@vercel/blob';
 import { requireCronOrOwner } from '../../lib/cronAuth.js';
 import { snapshotHeaders } from '../../lib/snapshotClient.js';
+import { logAgentRun } from '../../lib/agents/logAgentRun.js';
+import { supabaseAdmin } from '../../lib/supabase.js';
 
 const GHL_BASE = 'https://services.leadconnectorhq.com';
 const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
@@ -252,6 +254,10 @@ export default async function handler(req, res) {
   const startTime = Date.now();
   console.log('[Watchdog] Starting scan...');
 
+  // Tenant for the agent_runs heartbeat (migration_106 allows 'watchdog').
+  let tenantId = null;
+  try { const { data: t } = await supabaseAdmin.from('tenants').select('id').eq('slug', 'plus-ultra').single(); tenantId = t?.id || null; } catch { /* best-effort */ }
+
   const state = await getState();
   const alerts = [];
   const newAlertedIds = [...(state.alertedIds || [])];
@@ -356,6 +362,7 @@ export default async function handler(req, res) {
     const duration = Date.now() - startTime;
     console.log(`[Watchdog] Complete in ${duration}ms — ${unread.length} scanned, T1:${tier1.length} T2:${tier2.length}`);
 
+    await logAgentRun({ tenantId, agentSlug: 'watchdog', trigger: 'cron_daily', status: 'success', summary: `${unread.length} scanned, T1:${tier1.length} T2:${tier2.length}`, startedAt: startTime });
     return res.json({
       status: 'ok',
       ranAt: new Date().toISOString(),
@@ -387,6 +394,7 @@ export default async function handler(req, res) {
       lastError: e.message
     });
 
+    await logAgentRun({ tenantId, agentSlug: 'watchdog', trigger: 'cron_daily', status: 'error', error: e.message, startedAt: startTime });
     return res.status(500).json({ error: e.message, duration: `${Date.now() - startTime}ms` });
   }
 }

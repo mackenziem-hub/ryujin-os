@@ -5,6 +5,8 @@
 import { runVegeta, runPiccolo, runKrillin, runGohan, runBulma, runTrunks, fetchJSON, sendFallbackEmail } from './_shared.js';
 import { requireCronOrOwner } from '../../lib/cronAuth.js';
 import { snapshotHeaders } from '../../lib/snapshotClient.js';
+import { logAgentRun } from '../../lib/agents/logAgentRun.js';
+import { supabaseAdmin } from '../../lib/supabase.js';
 
 const AGENT_TIMEOUT = 25000;
 function withTimeout(promise, ms, label) {
@@ -146,6 +148,12 @@ export default async function handler(req, res) {
 
   const duration = Date.now() - startTime;
   console.log(`[Memory Agent] Complete in ${duration}ms — ${Object.keys(memoryUpdates).length} agents updated`);
+
+  // Observability heartbeat (migration_106 allows 'memory'). Best-effort.
+  try {
+    const { data: t } = await supabaseAdmin.from('tenants').select('id').eq('slug', 'plus-ultra').single();
+    await logAgentRun({ tenantId: t?.id, agentSlug: 'memory', trigger: 'cron_daily', status: errors.length >= 3 ? 'partial' : 'success', summary: `${Object.keys(memoryUpdates).length} agents updated`, error: errors.length ? errors.join(' | ') : null, startedAt: startTime });
+  } catch { /* best-effort */ }
 
   res.json({
     agent: 'Memory',

@@ -9,6 +9,8 @@ import { runVegeta, runPiccolo, runKrillin, runGohan, sendFallbackEmail } from '
 import { buildMetaAdsSnapshot, checkTokenHealth, auditAdSetConfig } from '../../lib/meta.js';
 import { requireCronOrOwner } from '../../lib/cronAuth.js';
 import { snapshotHeaders } from '../../lib/snapshotClient.js';
+import { logAgentRun } from '../../lib/agents/logAgentRun.js';
+import { supabaseAdmin } from '../../lib/supabase.js';
 
 const BASE_URL = 'https://ryujin-os.vercel.app';
 const AGENT_TIMEOUT = 25000; // 25s per agent
@@ -160,6 +162,21 @@ export default async function handler(req, res) {
   } catch (e) {
     console.error(`[Z Fighter Daily] Snapshot persistence failed: ${e.message}`);
   }
+
+  // Observability heartbeat: log to agent_runs so the load-scan freshness alarm
+  // can see the daily agent (migration_106 allows the 'daily' slug). Best-effort.
+  try {
+    const { data: t } = await supabaseAdmin.from('tenants').select('id').eq('slug', 'plus-ultra').single();
+    await logAgentRun({
+      tenantId: t?.id,
+      agentSlug: 'daily',
+      trigger: req.query?.type || req.query?.manual ? 'manual' : 'cron_daily',
+      status: errors.length > 0 ? 'partial' : 'success',
+      summary: `daily: ${recommendations.length} recs, ${Object.values(reports).filter(Boolean).length} agents`,
+      error: errors.length ? errors.join(' | ') : null,
+      startedAt: startTime,
+    });
+  } catch { /* best-effort */ }
 
   res.json({
     status: errors.length > 0 ? 'partial' : 'complete',
