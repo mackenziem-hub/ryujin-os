@@ -606,6 +606,18 @@ async function handler(req, res) {
     }
     if (leadsError) console.warn(`[leads] leads capture: ${leadsError} (contact ${contactId})`);
 
+    // QUOTE REQUESTED (intercom front-of-funnel): a real quote-request source
+    // (Instant Estimator / Revive estimator) means Cat + Mac prepare the video
+    // proposal presentation -> fire one "Prepare video proposal" task to Cat.
+    // Guarded to the quote-request sources so soft leads (PDF downloads, etc.)
+    // do not create proposal tasks. Fail-soft + idempotent (never breaks intake).
+    if (source === 'instant-estimator-v3' || source === 'revive-estimator-v1') {
+      try {
+        const { fireQuoteRequested } = await import('../lib/fireQuoteRequested.js');
+        await fireQuoteRequested({ tenantId: req.tenant?.id, customer: name, address, phone, source });
+      } catch (e) { console.warn('[leads] quote-requested fanout failed (non-fatal):', e.message); }
+    }
+
     return res.status(201).json({
       ok: true,
       contact_id: contactId,
