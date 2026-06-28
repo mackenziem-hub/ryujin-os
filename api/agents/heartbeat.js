@@ -9,6 +9,8 @@ import { gmailSend } from '../../lib/google.js';
 import { requireCronOrOwner } from '../../lib/cronAuth.js';
 import { snapshotHeaders } from '../../lib/snapshotClient.js';
 import { sendFallbackSMS } from './_shared.js';
+import { logAgentRun } from '../../lib/agents/logAgentRun.js';
+import { supabaseAdmin } from '../../lib/supabase.js';
 
 const BASE_URL = 'https://ryujin-os.vercel.app';
 // White-label: no hardcoded recipient fallback (set in Vercel env for the live
@@ -42,6 +44,10 @@ export default async function handler(req, res) {
   const checks = [];
   const failures = [];
 
+  // Tenant for the agent_runs heartbeat row (migration_106 allows 'heartbeat').
+  let tenantId = null;
+  try { const { data: t } = await supabaseAdmin.from('tenants').select('id').eq('slug', 'plus-ultra').single(); tenantId = t?.id || null; } catch { /* best-effort */ }
+
   // ── 1. Fetch snapshot ──
   let snapshot;
   try {
@@ -53,6 +59,7 @@ export default async function handler(req, res) {
     // leads (email infra may be down too) and email follows only if configured.
     await sendFallbackSMS(`[Ryujin Heartbeat] Snapshot API unreachable: ${e.message}. Whole system may be down.`);
     await sendFallbackAlert(`Heartbeat fail — snapshot unreachable`, `Snapshot API unreachable: ${e.message}\n\nWhole system may be down. Check Vercel logs.`);
+    await logAgentRun({ tenantId, agentSlug: 'heartbeat', trigger: 'cron_daily', status: 'error', error: `snapshot dead: ${e.message}`, startedAt: startTime });
     return res.status(500).json({ status: 'snapshot_dead', error: e.message });
   }
 
@@ -153,6 +160,7 @@ export default async function handler(req, res) {
   const duration = Date.now() - startTime;
   console.log(`[Heartbeat] ${failures.length === 0 ? 'OK' : 'ALERT'} in ${duration}ms — ${failures.length} failures`);
 
+  await logAgentRun({ tenantId, agentSlug: 'heartbeat', trigger: 'cron_daily', status: failures.length === 0 ? 'success' : 'partial', summary: `${failures.length} failures`, error: failures.length ? `${failures.length} system check failure(s)` : null, startedAt: startTime });
   return res.json({
     status: failures.length === 0 ? 'ok' : 'alert',
     duration: `${duration}ms`,

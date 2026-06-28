@@ -22,12 +22,60 @@ import { pendingConversations, importantUnreadEmails, carryforwardFromSnapshot }
 import { runSystemsCheck } from '../../lib/systemsCheck.js';
 import { buildBriefMarkdown } from '../../lib/briefMarkdown.js';
 import { requireCronOrOwner } from '../../lib/cronAuth.js';
+import { logAgentRun } from '../../lib/agents/logAgentRun.js';
+import { supabaseAdmin } from '../../lib/supabase.js';
 
 const BASE_URL = 'https://ryujin-os.vercel.app';
 
 const GHL_BASE = 'https://services.leadconnectorhq.com';
 const GHL_TOKEN = (process.env.GHL_TOKEN || process.env.GHL_API_KEY || '').trim();
 const GHL_VERSION = '2021-07-28';
+
+// Top stale-money priorities from the live GHL pipeline: the highest-$ OPEN
+// deals not already won/dead. Mirrors the load-scan classification so the brief
+// names real money ("Chase El Rody $18,075, 50d in stage") instead of
+// collapsing to raw, duplicated task titles. Fail-soft: returns [] on any error.
+function ghlAuthHeaders() {
+  const svc = (process.env.RYUJIN_SERVICE_TOKEN || '').trim();
+  return { 'x-tenant-id': 'plus-ultra', ...(svc ? { Authorization: `Bearer ${svc}` } : {}) };
+}
+
+async function fetchMoneyPriorities(baseUrl) {
+  try {
+    const r = await fetch(`${baseUrl}/api/ghl?mode=pipeline&limit=500`, { headers: ghlAuthHeaders() });
+    if (!r.ok) return [];
+    const j = await r.json();
+    const EXCLUDE = new Set(["Darcy's Pipeline", 'Hiring Pipeline', 'Recruiting Pipeline', 'Operations Pipeline']);
+    const deadOrWon = /lost|dnd|unresponsive|not a fit|telemarketer|\bwon\b|signed|deposit|invoice|paid|completed|in progress/i;
+    const opps = (j.opportunities || [])
+      .filter(o => o.status === 'open' && !EXCLUDE.has(o.pipeline) && (o.value || 0) > 0 && !deadOrWon.test(o.stage || ''))
+      .map(o => ({ name: o.name, value: o.value, ageDays: o.lastStatusChange ? Math.round((Date.now() - new Date(o.lastStatusChange)) / 864e5) : null }))
+      .sort((a, b) => b.value - a.value);
+    return opps.slice(0, 3).map(o => `Chase ${o.name} - $${o.value.toLocaleString()}${o.ageDays != null ? ` (${o.ageDays}d in stage)` : ''}`);
+  } catch {
+    return [];
+  }
+}
+
+// Top 3 for the structured brief: money priorities (live pipeline) first, then
+// sales-task recommendations with case-insensitive de-duplication so near-dupe
+// titles ("Quote required" / "Quote Required") collapse to one.
+function buildTop3Structured(moneyPriorities, allRecommendations) {
+  const out = [];
+  const seen = new Set();
+  const keyOf = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  for (const m of moneyPriorities) {
+    const k = keyOf(m);
+    if (!k || seen.has(k)) continue; seen.add(k);
+    out.push({ action: m, agent: 'Pipeline', priority: 'top_priority', context: 'live GHL pipeline' });
+  }
+  for (const r of allRecommendations) {
+    const k = keyOf(r.title);
+    if (!k || seen.has(k)) continue; seen.add(k);
+    out.push({ action: r.title, agent: r.agent, priority: r.priority, context: r.description });
+  }
+  return out.slice(0, 3).map((t, i) => ({ rank: i + 1, ...t }));
+}
 
 export default async function handler(req, res) {
   const auth = await requireCronOrOwner(req);
@@ -47,6 +95,14 @@ export default async function handler(req, res) {
   console.log(`[Z Fighter Briefing] Generating ${type} briefing...`);
 
   const errors = [];
+
+  // Resolve tenant for the agent_runs heartbeat (observability — see logAgentRun).
+  // Best-effort: a failure here must never break the brief.
+  let tenantId = null;
+  try {
+    const t = await supabaseAdmin.from('tenants').select('id').eq('slug', 'plus-ultra').single();
+    tenantId = t.data?.id || null;
+  } catch { /* non-fatal */ }
 
   // Refresh Meta Ads data before agents run (same as daily.js)
   try {
@@ -94,6 +150,23 @@ export default async function handler(req, res) {
   } catch (e) {
     errors.push(`GHL tasks fetch failed: ${e.message}`);
   }
+
+  // Live bookings + real money: Google Calendar can silently die (it did, which
+  // is why the brief said "Empty calendar" while a confirmed booking sat in
+  // GHL), and raw task titles are not priorities. Both fail-soft.
+  let ghlAppointments = [];
+  try {
+    const ar = await fetch(`${BASE_URL}/api/ghl?mode=appointments&days=2`, { headers: ghlAuthHeaders() });
+    if (ar.ok) {
+      const aj = await ar.json();
+      // Keep only TODAY's bookings for the "Today" section (AT calendar date);
+      // the full next-48h view lives in the load-scan, not the daily brief.
+      const todayAT = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
+      ghlAppointments = (aj.appointments || []).filter(a => a.status !== 'cancelled' && String(a.startTime || '').slice(0, 10) === todayAT);
+    }
+  } catch (e) { errors.push(`GHL appointments fetch failed: ${e.message}`); }
+  const moneyPriorities = await fetchMoneyPriorities(BASE_URL);
+  const calendarFailed = errors.some(e => e.startsWith('Calendar:'));
 
   // Compile all recommendations across agents
   const allRecommendations = [];
@@ -220,30 +293,34 @@ export default async function handler(req, res) {
       } : null
     },
 
-    // ⑤ TODAY'S CALENDAR (sorted by start time)
-    calendar: todayEvents?.items?.length > 0 ? todayEvents.items
-      .map(e => ({
+    // ⑤ TODAY'S CALENDAR — Google events + live GHL bookings, sorted by start.
+    // GHL bookings are merged so a confirmed inspection still shows even when
+    // Google Calendar auth is dead (the "Empty calendar" false-negative).
+    calendar: [
+      ...((todayEvents?.items || []).map(e => ({
         summary: e.summary,
         start: e.start?.dateTime || e.start?.date || null,
         end: e.end?.dateTime || e.end?.date || null,
-        location: e.location || null
+        location: e.location || null,
+        source: 'google'
+      }))),
+      ...ghlAppointments.map(a => ({
+        summary: `${a.title || 'Appointment'}${a.contactName ? ' - ' + a.contactName : ''}`,
+        start: a.startTime || null,
+        end: a.endTime || null,
+        location: null,
+        status: a.status,
+        source: 'GHL'
       }))
-      .sort((a, b) => {
-        const ta = a.start ? new Date(a.start).getTime() : 0;
-        const tb = b.start ? new Date(b.start).getTime() : 0;
-        return ta - tb;
-      }) : [],
+    ].sort((a, b) => {
+      const ta = a.start ? new Date(a.start).getTime() : 0;
+      const tb = b.start ? new Date(b.start).getTime() : 0;
+      return ta - tb;
+    }),
+    calendarError: calendarFailed,
 
-    // ⑥ TODAY'S TOP 3 — distilled from all findings
-    // Pick the top 3 most impactful actions (Martell: "What are the 3 things
-    // that if I do today, everything else becomes easier or unnecessary?")
-    top3: allRecommendations.slice(0, 3).map((r, i) => ({
-      rank: i + 1,
-      action: r.title,
-      agent: r.agent,
-      priority: r.priority,
-      context: r.description
-    })),
+    // ⑥ TODAY'S TOP 3 — money first (live pipeline), then deduped sales tasks.
+    top3: buildTop3Structured(moneyPriorities, allRecommendations),
 
     // Full findings for reference
     allFindings: [
@@ -370,11 +447,18 @@ export default async function handler(req, res) {
     const totalSpend = bySource.reduce((s, c) => s + c.spend, 0);
     const totalLeads = bySource.reduce((s, c) => s + c.leads, 0);
 
-    // Top 3: prefer carryforward from yesterday's session, else top-priority recommendations
-    const carry = carryforwardFromSnapshot(snapshot);
-    const top3 = carry.length > 0
-      ? carry.slice(0, 3).map(item => typeof item === 'string' ? item : item.title || item.action || JSON.stringify(item))
-      : allRecommendations.slice(0, 3).map(r => r.title);
+    // Top 3: money first (live pipeline), then deduped sales tasks, then carry-
+    // forward fills any remaining slot. A stale carry-forward can no longer
+    // crowd out real money, and a case-insensitive dedupe collapses near-dupes
+    // ("Quote required" / "Quote Required").
+    const carry = carryforwardFromSnapshot(snapshot)
+      .map(item => typeof item === 'string' ? item : item.title || item.action || '')
+      .filter(Boolean);
+    const _t3seen = new Set();
+    const _t3key = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const top3 = [...moneyPriorities, ...allRecommendations.map(r => r.title), ...carry]
+      .filter(s => { const k = _t3key(s); if (!k || _t3seen.has(k)) return false; _t3seen.add(k); return true; })
+      .slice(0, 3);
 
     // Pipeline pulse from snapshot.revenue
     const rev = snapshot?.sections?.revenue || {};
@@ -389,6 +473,7 @@ export default async function handler(req, res) {
 
     const briefCtx = {
       calendar: briefing.calendar,
+      calendarError: briefing.calendarError,
       top3,
       pendingConvs,
       unreadEmails,
@@ -498,6 +583,20 @@ export default async function handler(req, res) {
   briefing.briefWriteOk = briefWriteOk;
 
   console.log(`[Z Fighter Briefing] ${type} complete: ${allRecommendations.length} actions, email: ${emailSent}, status: ${briefStatus}, briefWrite: ${briefWriteOk}`);
+
+  // Observability heartbeat: log this run to agent_runs so the load-scan
+  // freshness alarm can see the briefing agent. It was invisible before -
+  // migration_106 widened the CHECK to allow the 'briefing' slug. Best-effort:
+  // logAgentRun never throws, so it cannot break the brief.
+  await logAgentRun({
+    tenantId,
+    agentSlug: 'briefing',
+    trigger: req.query?.type ? 'manual' : 'cron_daily',
+    status: errors.length ? 'partial' : 'success',
+    summary: `${type} brief: ${allRecommendations.length} actions, email ${emailSent}, write ${briefWriteOk}`,
+    error: errors.length ? errors.join(' | ') : null,
+    startedAt: startTime,
+  });
 
   res.json(briefing);
 }
