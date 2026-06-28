@@ -323,16 +323,20 @@ async function renderTasks(){
   const mine = await api('/tickets?assigned_to='+ME.id);
   const all = await api('/tickets?status=open');
   const mineRows = (mine.tickets||[]).filter(t=>t.status!=='cancelled');
-  const myT = mineRows.filter(t=>t.status!=='done');
+  // Group my tickets by the supported statuses: open -> To do, active -> In progress, done -> Completed.
+  // Any other non-done status (e.g. the allowed-but-unused 'blocked') falls into To do so nothing is hidden.
+  const toDo = mineRows.filter(t=>t.status!=='active'&&t.status!=='done');
+  const inProgress = mineRows.filter(t=>t.status==='active');
   const myDone = mineRows.filter(t=>t.status==='done');
   const myIds = new Set(mineRows.map(t=>t.id));
   const avail = (all.tickets||[]).filter(t=>!myIds.has(t.id)&&!t.assigned_to);
   // Cache rows so the details panel renders instantly; openTask refreshes from the single GET.
   TASKS = {}; [...mineRows, ...avail].forEach(t=>{ TASKS[t.id]=t; });
-  let h = '<div class="lbl">Today <span class="n">'+myT.length+'</span></div>';
-  h += myT.length ? myT.map(t=>taskRow(t,'mine')).join('') : '<div class="empty">No tasks assigned to you. Nice.</div>';
-  if(avail.length){ h += '<div class="lbl">Available to grab <span class="n">'+avail.length+'</span></div>' + avail.map(t=>taskRow(t,'avail')).join(''); }
-  if(myDone.length){ h += '<div class="lbl">Completed <span class="n">'+myDone.length+'</span></div>' + myDone.map(t=>taskRow(t,'mine')).join(''); }
+  const section = (title,list,mode)=> list.length ? '<div class="lbl">'+title+' <span class="n">'+list.length+'</span></div>'+list.map(t=>taskRow(t,mode)).join('') : '';
+  let h = section('To do', toDo, 'mine') + section('In progress', inProgress, 'mine');
+  if(!toDo.length && !inProgress.length) h += '<div class="empty">No tasks assigned to you. Nice.</div>';
+  h += section('Available to grab', avail, 'avail');
+  h += section('Completed', myDone, 'mine');
   w.innerHTML = h;
 }
 function taskRow(t, mode){
