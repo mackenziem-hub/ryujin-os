@@ -57,5 +57,26 @@ export default async function handler(req, res) {
     console.error('[rejuv-accept] notify failed:', e?.message);
   }
 
+  // Revive signs follow the SAME intercom flow as roofing (Mac, 2026-06-28):
+  // fire the standard sign choreography (Work order -> Mac+Cat+Diego, Schedule
+  // -> Cat, Pre-site inspection -> Diego, Draft-subcontractor-paysheet -> Cat).
+  // AJ is NOT involved (departed; see aj_is_arielle). No estimate_id (Revive
+  // proposals are static pages). Fail-soft + idempotent: never breaks the accept.
+  try {
+    const { fireSignFanout } = await import('../lib/fireSignFanout.js');
+    const total = Number(String(amount || '').replace(/[^0-9.]/g, '')) || null;
+    await fireSignFanout({
+      tenantId: tenant.id,
+      customer: clean(name),
+      address: clean(address),
+      phone: clean(contact) || null,
+      total,
+      estimateId: null,
+      scopeSummary: job ? `Revive: ${clean(job)}` : 'Revive',
+    });
+  } catch (e) {
+    console.warn('[rejuv-accept] sign fanout failed (non-fatal):', e.message);
+  }
+
   return res.status(200).json({ ok: true });
 }
