@@ -17,6 +17,7 @@ import { supabaseAdmin } from '../lib/supabase.js';
 import { put } from '@vercel/blob';
 import { sendCAPIEvent } from '../lib/meta.js';
 import { notifyLeadEvent } from '../lib/leadNotify.js';
+import { fireSignFanout } from '../lib/fireSignFanout.js';
 import { isMetalSlug } from '../lib/metalProposalCopy.js';
 import {
   computeRateHoldExpiry,
@@ -598,6 +599,23 @@ export default async function handler(req, res) {
     console.error('[proposal-accept] purchase CAPI failed', purchaseResult.reason?.message);
   } else {
     console.log('[proposal-accept] purchase CAPI sent', tierTotalWithTax);
+  }
+
+  // Sign choreography (the intercom fan-out) for REPLACEMENT signings: Work order
+  // -> Mac+Cat+Diego, Schedule task -> Cat, Pre-site inspection -> Diego, Draft-
+  // Ryan's-paysheet task -> Cat. Guarded on !isRepair because repairs already get
+  // their own service_tickets scheduling above (no double-fire). Fail-soft +
+  // idempotent: the acceptance is already saved, so this can never break it.
+  if (!isRepair) {
+    await fireSignFanout({
+      tenantId: est.tenant_id,
+      customer: customerPayload.name || est.customer?.full_name || null,
+      address: est.customer?.address || null,
+      phone: customerPayload.phone || est.customer?.phone || null,
+      total: tierTotalWithTax,
+      estimateId: est.id,
+      scopeSummary: tier?.name || tier?.id || null,
+    });
   }
 
   return res.status(200).json({
