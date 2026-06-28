@@ -348,6 +348,13 @@ if (tenantId) {
       sales: 26, marketing: 26, ops: 26, finance: 26, customer: 26, service: 26, strategy: 26, inventory: 26,
       generator: 200, weekly: 200,
     };
+    // Per-agent enablement: a tenant can turn an agent OFF
+    // (tenant_settings.<slug>_agent_enabled === false). A disabled agent is not
+    // stale, it is intentionally off -> show [off], never [STALE], so the alarm
+    // does not cry wolf (e.g. questscan is disabled for plus-ultra).
+    let tset = {};
+    try { const ts = await rest(`tenant_settings?tenant_id=eq.${tenantId}&select=*&limit=1`); tset = (ts && ts[0]) || {}; } catch { /* non-fatal: no flags -> nothing disabled */ }
+    const isDisabled = (a) => tset[`${a}_agent_enabled`] === false;
     const lastSuccess = {}; const errs = [];
     for (const r of runs) {
       const a = r.agent_slug;
@@ -355,8 +362,9 @@ if (tenantId) {
       if (!failed && !lastSuccess[a]) lastSuccess[a] = r.started_at;
       if (failed && r.error_message) errs.push({ a, when: r.started_at, msg: r.error_message });
     }
-    const stale = [];
+    const stale = []; const off = [];
     for (const [a, winH] of Object.entries(WINDOW)) {
+      if (isDisabled(a)) { off.push(a); continue; } // intentionally off, not stale
       const last = lastSuccess[a];
       const ageH = last ? (now - new Date(last)) / 3.6e6 : null;
       if (last == null || ageH > winH) stale.push({ a, ageH, never: last == null });
@@ -364,12 +372,14 @@ if (tenantId) {
     const fmtH = (h) => h == null ? '?' : (h >= 48 ? Math.round(h / 24) + 'd' : h.toFixed(1) + 'h');
     ok('freshness', {
       staleAgents: stale.map(s => ({ agent: s.a, ageHours: s.ageH == null ? null : +s.ageH.toFixed(1), never: s.never })),
+      disabledAgents: off,
       recentErrors: errs.slice(0, 6).map(e => ({ agent: e.a, when: e.when, msg: String(e.msg).slice(0, 120) }))
     });
-    console.log(`\n## Data freshness: ${stale.length ? stale.length + ' agent(s) stale/dark' : 'all cron agents fresh'}${errs.length ? ' · ' + errs.length + ' recent error(s)' : ''}`);
+    console.log(`\n## Data freshness: ${stale.length ? stale.length + ' agent(s) stale/dark' : 'all enabled cron agents fresh'}${errs.length ? ' · ' + errs.length + ' recent error(s)' : ''}${off.length ? ' · ' + off.length + ' off' : ''}`);
     for (const s of stale) console.log(`  [STALE] ${s.a} — ${s.never ? 'no successful run in 3d (dark)' : fmtH(s.ageH) + ' since last success'}`);
     for (const e of errs.slice(0, 6)) console.log(`  [ERR] ${e.a} (${String(e.when).slice(0, 16)}): ${String(e.msg).replace(/\s+/g, ' ').slice(0, 100)}`);
-    if (!stale.length && !errs.length) console.log('  (all cron agents reporting on time, no recent errors)');
+    if (off.length) console.log(`  [off] ${off.join(', ')} (disabled via tenant_settings, not monitored)`);
+    if (!stale.length && !errs.length) console.log('  (all enabled cron agents reporting on time, no recent errors)');
   } catch (e) { fail('freshness', e); console.log(`\n[FAIL] freshness: ${out.sources.freshness.error}`); }
 }
 
