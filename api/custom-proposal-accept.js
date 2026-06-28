@@ -203,6 +203,36 @@ export default async function handler(req, res) {
     console.warn('[custom-proposal-accept] notify issues:', notifyRes.errors.join('; '));
   }
 
+  // SIGN CHOREOGRAPHY (the intercom fan-out): the moment a job signs, the right
+  // work auto-fires to the right people so everyone is already in place -- Work
+  // order -> Mac+Cat+Diego, Schedule task -> Cat, Pre-site inspection -> Diego,
+  // Draft-Ryan's-paysheet task -> Cat. Best-effort + FAIL-SOFT: the acceptance is
+  // already saved above, so a fan-out problem must NEVER fail the signing.
+  // executeSignFanout is idempotent (skips if this job already fanned out).
+  try {
+    const { executeSignFanout } = await import('../lib/signFanout.js');
+    let tenantSlug = 'plus-ultra';
+    try {
+      const { data: t } = await supabaseAdmin.from('tenants').select('slug').eq('id', proposal._tenant_id).single();
+      if (t?.slug) tenantSlug = t.slug;
+    } catch { /* default plus-ultra */ }
+    const { data: us } = await supabaseAdmin.from('users').select('id,name').eq('tenant_id', proposal._tenant_id);
+    const byFirst = (n) => ((us || []).find(u => String(u.name || '').toLowerCase().startsWith(n)) || {}).id || null;
+    const people = { ryan: byFirst('ryan'), diego: byFirst('diego'), cat: byFirst('cath') || byFirst('cat'), mac: byFirst('mac') };
+    const fan = await executeSignFanout({
+      customer: proposal.customer, address: proposal.address, phone: proposal.phone,
+      total_incl_hst: proposal.total_incl_hst, scope_summary: proposal.scope_summary,
+      estimate_id: proposal.quote_id || null,
+    }, people, {
+      baseUrl: 'https://ryujin-os.vercel.app',
+      serviceToken: (process.env.RYUJIN_SERVICE_TOKEN || '').trim(),
+      tenant: tenantSlug,
+    });
+    console.log('[custom-proposal-accept] sign fanout:', JSON.stringify(fan.skipped ? { skipped: fan.skipped } : (fan.created || []).map(c => `${c.kind}->${c.to}:${c.id || c.error}`)));
+  } catch (e) {
+    console.warn('[custom-proposal-accept] sign fanout failed (non-fatal):', e.message);
+  }
+
   return res.status(200).json({
     ok: true,
     message: 'Acceptance recorded. Mackenzie will be in touch shortly.',
