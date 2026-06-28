@@ -20,6 +20,7 @@
 // Manual fire:
 //   POST /api/agents/generator?manual=1   (still requires auth)
 import { supabaseAdmin } from '../../lib/supabase.js';
+import { logAgentRun } from '../../lib/agents/logAgentRun.js';
 import { renderBeforeAfterPair } from '../../lib/beforeAfterRenderer.js';
 import { shortCaption, vscoreFromTags } from '../../lib/generatorCaption.js';
 import { SHOWCASE_SCORE_FLOOR } from '../../lib/visionGrader.js';
@@ -299,6 +300,7 @@ async function insertDraft({ tenant, brand, candidate, mediaUrl, captionText, ca
 }
 
 async function runGenerator({ targetCount = TARGET_COUNT, dryRun = false } = {}) {
+  const startTime = Date.now();
   const tenant = await getTenant();
   const brand = await getBrand(tenant.id);
 
@@ -358,11 +360,14 @@ async function runGenerator({ targetCount = TARGET_COUNT, dryRun = false } = {})
   // Queue already covers the horizon, skip to avoid double-booking slots the
   // backlog owns and unbounded queue growth. The staged drafts keep posting.
   if (queueDeep) {
-    await supabaseAdmin.from('agent_runs').insert({
-      tenant_id: tenant.id, agent_slug: 'generator',
-      payload: { skipped: 'queue_deep', queue_until: new Date(lastMs).toISOString() },
-      status: 'success',
-    }).select('id').single().then(() => null, () => null);
+    // Heartbeat via the shared logger: agent_runs has an `output` jsonb column,
+    // NOT `payload` (a direct insert with `payload` silently 42703'd and the
+    // fail-soft .then swallowed it, leaving generator permanently "dark").
+    await logAgentRun({
+      tenantId: tenant.id, agentSlug: 'generator', startedAt: startTime,
+      status: 'success', summary: 'skipped: queue_deep',
+      output: { skipped: 'queue_deep', queue_until: new Date(lastMs).toISOString(), warnings },
+    });
     return { skipped: 'queue_deep', queue_until: new Date(lastMs).toISOString(), warnings };
   }
 
@@ -428,12 +433,13 @@ async function runGenerator({ targetCount = TARGET_COUNT, dryRun = false } = {})
     caption_model: captionModel,
   }).eq('id', runId);
 
-  await supabaseAdmin.from('agent_runs').insert({
-    tenant_id: tenant.id,
-    agent_slug: 'generator',
-    payload: { drafts, warnings, stats, run_id: runId, target_count: targetCount },
+  // Heartbeat via the shared logger (agent_runs uses `output`, not `payload`).
+  await logAgentRun({
+    tenantId: tenant.id, agentSlug: 'generator', startedAt: startTime,
     status: drafts.length ? 'success' : 'partial',
-  }).select('id').single().then(() => null, e => console.error('[generator] agent_runs insert:', e?.message));
+    summary: `${drafts.length}/${candidates.length} drafts scheduled`,
+    output: { drafts, warnings, stats, run_id: runId, target_count: targetCount },
+  });
 
   return { run_id: runId, drafts, warnings, stats, candidates_considered: candidates.length };
 }

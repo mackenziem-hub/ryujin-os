@@ -333,13 +333,16 @@ if (SVC) {
 // degraded (dead calendar auth, a failed snapshot read, a never-firing cron),
 // the load kept printing thin output with no flag. This reads agent_runs and
 // turns silent degradation into a loud [STALE]/[ERR] line at every load.
-// NOTE: briefing/daily/cashflow/watchdog/heartbeat/weekly/memory only become
-// observable once migration_106 + logAgentRun ship; until then they show "dark",
-// which is the honest state (they were never in agent_runs at all).
+// briefing/daily/cashflow/watchdog/heartbeat/weekly/memory became observable
+// once migration_106 + logAgentRun shipped (2026-06-28); they log heartbeat rows
+// now. The lookback MUST exceed the largest WINDOW below (generator/weekly run on
+// an ~8-day cadence) or a healthy long-cadence agent falls outside the query and
+// is forever mislabeled "dark" — the original 3-day lookback did exactly that.
+const LOOKBACK_DAYS = 10;
 if (tenantId) {
   try {
-    const since = new Date(Date.now() - 3 * 864e5).toISOString();
-    const runs = await rest(`agent_runs?tenant_id=eq.${tenantId}&started_at=gte.${since}&select=agent_slug,status,started_at,error_message&order=started_at.desc&limit=1000`);
+    const since = new Date(Date.now() - LOOKBACK_DAYS * 864e5).toISOString();
+    const runs = await rest(`agent_runs?tenant_id=eq.${tenantId}&started_at=gte.${since}&select=agent_slug,status,started_at,error_message&order=started_at.desc&limit=2000`);
     const now = Date.now();
     // Hours-overdue threshold per agent (just past its cron interval in vercel.json).
     const WINDOW = {
@@ -376,7 +379,7 @@ if (tenantId) {
       recentErrors: errs.slice(0, 6).map(e => ({ agent: e.a, when: e.when, msg: String(e.msg).slice(0, 120) }))
     });
     console.log(`\n## Data freshness: ${stale.length ? stale.length + ' agent(s) stale/dark' : 'all enabled cron agents fresh'}${errs.length ? ' · ' + errs.length + ' recent error(s)' : ''}${off.length ? ' · ' + off.length + ' off' : ''}`);
-    for (const s of stale) console.log(`  [STALE] ${s.a} — ${s.never ? 'no successful run in 3d (dark)' : fmtH(s.ageH) + ' since last success'}`);
+    for (const s of stale) console.log(`  [STALE] ${s.a} — ${s.never ? `no successful run in ${LOOKBACK_DAYS}d (dark)` : fmtH(s.ageH) + ' since last success'}`);
     for (const e of errs.slice(0, 6)) console.log(`  [ERR] ${e.a} (${String(e.when).slice(0, 16)}): ${String(e.msg).replace(/\s+/g, ' ').slice(0, 100)}`);
     if (off.length) console.log(`  [off] ${off.join(', ')} (disabled via tenant_settings, not monitored)`);
     if (!stale.length && !errs.length) console.log('  (all enabled cron agents reporting on time, no recent errors)');
