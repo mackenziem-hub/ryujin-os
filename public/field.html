@@ -167,6 +167,23 @@ window.__ryujinPrefetchInjected=true; window.__ryujinSkinInjected=true;
   .mic svg{width:16px;height:16px;fill:none;stroke:var(--blueprint);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
   .mic.rec{background:rgba(239,68,68,.14);border-color:#ef4444;color:#ef4444;animation:micpulse 1.3s ease-in-out infinite} .mic.rec svg{stroke:#ef4444}
   @keyframes micpulse{0%,100%{opacity:1}50%{opacity:.62}}
+  /* Rapid-fire in-app camera */
+  .cammodal{position:fixed;inset:0;z-index:300;background:#000;display:none;flex-direction:column}
+  .cammodal.on{display:flex}
+  .cammodal video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
+  .cambar{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;padding:16px;gap:10px}
+  .cambar .cdone{background:rgba(0,0,0,.55);color:#fff;border:1px solid rgba(255,255,255,.35);border-radius:11px;padding:10px 18px;font-family:var(--sans);font-weight:700;font-size:15px;cursor:pointer}
+  .cambar .ccount{font-family:var(--mono);background:rgba(0,0,0,.55);color:#fff;padding:7px 13px;border-radius:20px;font-size:13px}
+  .camfoot{position:relative;z-index:2;margin-top:auto;display:flex;flex-direction:column;align-items:center;gap:13px;padding:0 14px 32px}
+  .camstrip{display:flex;gap:7px;width:100%;overflow-x:auto;min-height:0}
+  .camstrip:empty{display:none}
+  .camthumb{position:relative;width:52px;height:52px;flex-shrink:0;border-radius:8px;overflow:hidden;border:2px solid rgba(255,255,255,.55)}
+  .camthumb img{width:100%;height:100%;object-fit:cover}
+  .camthumb .ust{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.42);color:#fff;font-size:13px}
+  .shutter{width:74px;height:74px;border-radius:50%;background:#fff;border:5px solid rgba(255,255,255,.45);cursor:pointer;transition:transform .07s,background .12s;flex-shrink:0}
+  .shutter:active{transform:scale(.91)}
+  .shutter.flash{background:var(--accent)}
+  .camhint{color:rgba(255,255,255,.7);font-size:12px;font-family:var(--mono)}
   .takebtn{width:100%;padding:13px;border:1px solid var(--border-hi);border-radius:var(--r);background:var(--surface);color:var(--text);font-family:var(--sans);font-weight:600;font-size:14px;cursor:pointer;margin-bottom:14px;display:flex;align-items:center;justify-content:center;gap:9px}
   .takebtn svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}
@@ -280,6 +297,12 @@ window.__ryujinPrefetchInjected=true; window.__ryujinSkinInjected=true;
 
 <input type="file" id="photoInput" accept="image/*,video/*" multiple style="display:none">
 <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none">
+<div class="cammodal" id="camModal">
+  <video id="camVideo" autoplay playsinline muted></video>
+  <div class="cambar"><button class="cdone" onclick="closeCamera()">Done</button><span class="ccount"><span id="camCount">0</span> shot</span></div>
+  <div class="camfoot"><div class="camstrip" id="camStrip"></div><button class="shutter" id="camShutter" onclick="snapPhoto()" aria-label="Take photo"></button><div class="camhint">Tap to shoot. Camera stays ready for the next one.</div></div>
+</div>
+<canvas id="camCanvas" style="display:none"></canvas>
 
 <div class="ai-overlay" id="aiOverlay" onclick="if(event.target===this)closeAI()">
   <div class="ai-sheet">
@@ -660,7 +683,7 @@ async function openJob(id){
   // photos (images + video only; PDFs and other docs are not gallery tiles)
   const media = files.filter(f=>{ const m=f.mime_type||''; return m.startsWith('image')||m.startsWith('video'); });
   h += '<div class="lbl">Photos &amp; footage <span class="n">'+media.length+'</span></div>';
-  h += '<button class="upload cam" onclick="document.getElementById(\'cameraInput\').click()"><div class="uic"><svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg></div><div><div class="ut">Take a photo</div><div class="us">Snap site photos straight from your phone camera</div></div></button>';
+  h += '<button class="upload cam" onclick="openCamera()"><div class="uic"><svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg></div><div><div class="ut">Take photos</div><div class="us">Live camera, rapid fire. Shoot one after another into the bin</div></div></button>';
   h += '<button class="upload" onclick="document.getElementById(\'photoInput\').click()"><div class="uic"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div><div><div class="ut">Upload photos &amp; footage</div><div class="us">Drone clips and bulk photos from your gallery</div></div></button>';
   if(media.length){ h += '<div class="grid">' + media.map(f=>{ const vid=(f.mime_type||'').startsWith('video'); return '<div class="thumb">'+(vid?'<video src="'+esc(f.url)+'" muted preload="metadata"></video><span class="vb">▶ video</span>':'<img loading="lazy" src="'+esc(f.thumbnail_url||f.url)+'">')+'</div>'; }).join('') + '</div>'; }
   // notes
@@ -723,6 +746,62 @@ async function uploadJobFiles(input){
 }
 document.getElementById('photoInput').addEventListener('change', function(){ uploadJobFiles(this); });
 document.getElementById('cameraInput').addEventListener('change', function(){ uploadJobFiles(this); });
+
+// ── RAPID-FIRE CAMERA ──
+// Live in-app camera (getUserMedia) that stays open so crew fire shot after shot.
+// Each frame is captured to canvas and uploaded in the background while the camera
+// stays ready. Falls back to the native single-capture input if getUserMedia is
+// blocked or unavailable (older devices, denied permission).
+let _camStream=null, _camJob=null, _camCount=0;
+async function openCamera(){
+  if(!CUR_JOB){ return; }
+  _camJob=CUR_JOB; _camCount=0;
+  document.getElementById('camCount').textContent='0';
+  document.getElementById('camStrip').innerHTML='';
+  document.getElementById('camModal').classList.add('on');
+  try{
+    _camStream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:'environment' } }, audio:false });
+    const v=document.getElementById('camVideo'); v.srcObject=_camStream; await v.play().catch(()=>{});
+  }catch(e){
+    closeCamera();
+    toast('Live camera unavailable, opening the camera app.');
+    document.getElementById('cameraInput').click();
+  }
+}
+function closeCamera(){
+  document.getElementById('camModal').classList.remove('on');
+  if(_camStream){ _camStream.getTracks().forEach(t=>t.stop()); _camStream=null; }
+  const v=document.getElementById('camVideo'); if(v) v.srcObject=null;
+  // Refresh the folder so the new shots show in the bin.
+  if(_camCount>0 && CUR_JOB===_camJob) openJob(_camJob);
+}
+async function snapPhoto(){
+  const v=document.getElementById('camVideo'); if(!v||!v.videoWidth) return;
+  const c=document.getElementById('camCanvas'); c.width=v.videoWidth; c.height=v.videoHeight;
+  c.getContext('2d').drawImage(v,0,0,c.width,c.height);
+  const sh=document.getElementById('camShutter'); sh.classList.add('flash'); setTimeout(()=>sh.classList.remove('flash'),110);
+  if(navigator.vibrate) try{ navigator.vibrate(28); }catch(e){}
+  const blob = await new Promise(res=>c.toBlob(res,'image/jpeg',0.9));
+  if(!blob) return;
+  _camCount++; const cc=document.getElementById('camCount'); if(cc) cc.textContent=_camCount;
+  const url=URL.createObjectURL(blob);
+  const strip=document.getElementById('camStrip');
+  const t=document.createElement('div'); t.className='camthumb'; t.innerHTML='<img src="'+url+'"><span class="ust"><span class="spin"></span></span>';
+  if(strip) strip.prepend(t);
+  const job=_camJob;
+  uploadCameraShot(blob, 'photo-'+Date.now()+'.jpg', job).then(ok=>{
+    const u=t.querySelector('.ust'); if(u){ u.textContent = ok?'✓':'!'; if(ok) setTimeout(()=>u.remove(),700); }
+  });
+}
+async function uploadCameraShot(blob, fname, job){
+  try{
+    const fd=new FormData(); fd.append('project_id', job); fd.append('category','general'); if(ME?.id) fd.append('uploaded_by', ME.id);
+    fd.append('files', blob, fname);
+    const t=tok();
+    const r=await fetch(API+'/files?tenant='+TENANT,{ method:'POST', headers: t?{Authorization:'Bearer '+t,'x-tenant-id':TENANT}:{'x-tenant-id':TENANT}, body:fd });
+    return r.ok;
+  }catch(e){ return false; }
+}
 
 // Open the SIMPLE in-app folder for a scheduled work order. The Up next strip and
 // the Schedule calendar carry a WO id, not a project id, so resolve the WO to its
