@@ -424,11 +424,14 @@ async function renderJobs(){
 // opens the full digital folder (job.html?wo=) with its scope + materials.
 async function renderUpNext(){
   const box = document.getElementById('upnext'); if(!box) return;
-  const d = await api('/workorders?limit=50');
   const today = ymd(new Date());
   const tmrw = ymd(new Date(Date.now()+86400000));
+  // ?from=today so upcoming jobs are returned even when the tenant has many past
+  // work orders (the endpoint orders start_date ascending, so future rows would
+  // otherwise fall past the page limit).
+  const d = await api('/workorders?from='+today+'&limit=12');
   const wos = (d.workorders||[])
-    .filter(w=>w.status!=='cancelled' && w.start_date && ymd(new Date(w.start_date+'T00:00:00')) >= today)
+    .filter(w=>w.status!=='cancelled' && w.start_date)
     .sort((a,b)=>String(a.start_date).localeCompare(String(b.start_date)))
     .slice(0,4);
   if(!wos.length){ box.innerHTML=''; return; }

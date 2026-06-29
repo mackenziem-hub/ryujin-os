@@ -25,9 +25,17 @@ export default async function handler(req, res) {
   if (!message) return res.status(400).json({ error: 'message required' });
   const history = Array.isArray(req.body && req.body.history) ? req.body.history.slice(-6) : [];
 
+  // Atlantic-time today/tomorrow so "tomorrow's job" resolves against start_date.
+  const dfmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Moncton', year: 'numeric', month: '2-digit', day: '2-digit' });
+  const todayStr = dfmt.format(new Date());
+  const tmrwStr = dfmt.format(new Date(Date.now() + 86400000));
+
   // ── Scope: only this crew member's tasks + the tenant's jobs + scheduled work ──
+  // Upcoming and recent-past work orders are queried separately so the page limit
+  // never drops future rows (start_date-ascending would push them past the limit).
   const tid = session.tenant_id;
-  const [{ data: myTickets }, { data: jobs }, { data: workorders }] = await Promise.all([
+  const woCols = 'wo_number, customer_name, address, start_date, status, shingle_product, sub_crew_lead';
+  const [{ data: myTickets }, { data: jobs }, { data: upcomingWos }, { data: pastWos }] = await Promise.all([
     supabaseAdmin.from('tickets')
       .select('title, status, priority, due_date, project:projects(address)')
       .eq('tenant_id', tid).eq('assigned_to', session.user_id)
@@ -36,16 +44,13 @@ export default async function handler(req, res) {
       .select('address, status, customer:customers(full_name)')
       .eq('tenant_id', tid).neq('status', 'cancelled')
       .order('created_at', { ascending: false }).limit(40),
-    supabaseAdmin.from('workorders')
-      .select('wo_number, customer_name, address, start_date, status, shingle_product, sub_crew_lead')
-      .eq('tenant_id', tid).neq('status', 'cancelled').not('start_date', 'is', null)
-      .order('start_date', { ascending: true }).limit(60),
+    supabaseAdmin.from('workorders').select(woCols)
+      .eq('tenant_id', tid).neq('status', 'cancelled').gte('start_date', todayStr)
+      .order('start_date', { ascending: true }).limit(15),
+    supabaseAdmin.from('workorders').select(woCols)
+      .eq('tenant_id', tid).neq('status', 'cancelled').lt('start_date', todayStr)
+      .order('start_date', { ascending: false }).limit(6),
   ]);
-
-  // Atlantic-time today/tomorrow so "tomorrow's job" resolves against start_date.
-  const dfmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Moncton', year: 'numeric', month: '2-digit', day: '2-digit' });
-  const todayStr = dfmt.format(new Date());
-  const tmrwStr = dfmt.format(new Date(Date.now() + 86400000));
 
   const baseTasks = (myTickets || []).map(t =>
     `- ${t.title}${t.project?.address ? ' (' + t.project.address + ')' : ''} [${t.status}${t.priority && t.priority !== 'medium' ? ', ' + t.priority : ''}${t.due_date ? ', due ' + t.due_date : ''}]`
@@ -59,13 +64,11 @@ export default async function handler(req, res) {
 
   // Scheduled work orders, upcoming first. These carry the materials/scope and are
   // what the digital job folder (open_folder) shows.
-  const upcoming = (workorders || []).filter(w => w.start_date >= todayStr);
-  const recentPast = (workorders || []).filter(w => w.start_date < todayStr).slice(-6).reverse();
   const woLine = w => {
     const when = w.start_date === todayStr ? 'TODAY' : w.start_date === tmrwStr ? 'TOMORROW' : w.start_date;
     return `- WO#${w.wo_number} ${w.address || w.customer_name || ''}${w.customer_name ? ' — ' + w.customer_name : ''} [starts ${when}${w.shingle_product ? ', ' + w.shingle_product : ''}${w.sub_crew_lead ? ', crew: ' + w.sub_crew_lead : ''}]`;
   };
-  const woLines = [...upcoming.map(woLine), ...recentPast.map(woLine)].join('\n') || '(none scheduled)';
+  const woLines = [...(upcomingWos || []), ...(pastWos || [])].map(woLine).join('\n') || '(none scheduled)';
 
   const firstName = (session.name || 'there').split(' ')[0];
   const system = `You are the Plus Ultra Roofing field assistant, helping ${session.name || 'a crew member'} (role: ${session.role || 'crew'}) inside the mobile field app.
