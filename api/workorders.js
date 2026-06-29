@@ -157,13 +157,18 @@ async function handler(req, res) {
   const tenantId = req.tenant.id;
 
   if (req.method === 'GET') {
-    const { id, status, limit = 100, offset = 0 } = req.query;
+    const { id, wo_number, status, limit = 100, offset = 0, from } = req.query;
 
-    if (id) {
-      const { data, error } = await supabaseAdmin
+    if (id || wo_number) {
+      // Direct single lookup by UUID or visible WO number. Lets deep-links (the
+      // field "Up next" strip, AI open_folder) resolve a work order regardless of
+      // how many others exist — no page-limited scan.
+      let q = supabaseAdmin
         .from('workorders')
         .select('*, estimate:estimates(estimate_number,share_token,complexity,final_accepted_total), paysheet:paysheets(job_id,status,total)')
-        .eq('tenant_id', tenantId).eq('id', id).single();
+        .eq('tenant_id', tenantId);
+      q = id ? q.eq('id', id) : q.eq('wo_number', wo_number);
+      const { data, error } = await q.single();
       if (error) return res.status(404).json({ error: 'Work order not found' });
       return res.json(data);
     }
@@ -177,6 +182,10 @@ async function handler(req, res) {
       .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
     if (status) query = query.eq('status', status);
     else query = query.neq('status', 'cancelled');
+    // ?from=YYYY-MM-DD — only work orders starting on/after this date. Lets callers
+    // (e.g. the field "Up next" strip) get UPCOMING jobs even past the page limit,
+    // since the default start_date-ascending order otherwise drops future rows.
+    if (from) query = query.gte('start_date', from);
 
     const { data, error, count } = await query;
     if (error) return res.status(500).json({ error: error.message });

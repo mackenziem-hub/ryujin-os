@@ -341,6 +341,7 @@ async function loadJob(){
 
   try {
     let customer = null;
+    let resolvedWo = null; // the WO a ?wo deep-link resolved to, carried into render
     if (custId) {
       const r = await fetch('/api/customers?id=' + encodeURIComponent(custId), { headers });
       if (r.ok) customer = await r.json();
@@ -349,11 +350,14 @@ async function loadJob(){
     // ?wo= resolution: prefer workorder.customer_id, fall back to
     // linked_estimate_id -> estimate.customer_id walk.
     if (!customer && woParam) {
-      const wR0 = await fetch('/api/workorders?limit=200', { headers });
-      const allWos0 = wR0.ok ? (await wR0.json()).workorders || [] : [];
-      // ?wo accepts either the workorder UUID (internal links) or the visible
-      // WO number (AI open_job deep-links + how a human reads a WO).
-      const matchWo = allWos0.find(w => w.id === woParam || String(w.wo_number) === String(woParam));
+      // Direct lookup so a ?wo deep-link resolves no matter how many work orders
+      // exist (a page-limited scan dropped upcoming rows past the limit). ?wo
+      // accepts the workorder UUID (internal links) or the visible WO number
+      // (field "Up next" + AI open_folder deep-links).
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(woParam);
+      const wR0 = await fetch('/api/workorders?' + (isUuid ? 'id=' : 'wo_number=') + encodeURIComponent(woParam), { headers });
+      const matchWo = wR0.ok ? await wR0.json() : null;
+      resolvedWo = matchWo;
       let resolvedCustomerId = matchWo?.customer_id || null;
       if (!resolvedCustomerId && matchWo?.linked_estimate_id) {
         const eR = await fetch('/api/estimates?id=' + encodeURIComponent(matchWo.linked_estimate_id), { headers });
@@ -397,6 +401,11 @@ async function loadJob(){
       (w.customer_name || '').toLowerCase().includes(lastName) ||
       estimates.some(e => e.id === w.linked_estimate_id)
     );
+    // A ?wo deep-link is resolved directly (not page-limited); make sure that WO
+    // drives the render even if it sits past the capped customer-WO scan.
+    if (resolvedWo && resolvedWo.id && !workorders.some(w => w.id === resolvedWo.id)) {
+      workorders.unshift(resolvedWo);
+    }
     const paysheets = allPss.filter(p =>
       (p.customer_name || '').toLowerCase().includes(lastName)
     );
