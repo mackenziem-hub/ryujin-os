@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#06080f">
+<title>Cost Explorer · Plus Ultra Roofing</title>
+<link rel="icon" href="/apple-touch-icon.png">
+<script src="/assets/auth-guard.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-0:#06080f;--bg-1:#0a0e1a;--bg-2:#0e1426;
+    --ink:#f3f6ff;--ink-soft:#aab4cf;--ink-dim:#7d8aac;
+    --gold:#f3c969;--gold-deep:#d8a838;--gold-glow:rgba(243,201,105,.35);
+    --green:#4fd28b;--green-glow:rgba(79,210,139,.32);--amber:#f3b14f;--red:#ff6b6b;--blue:#5b8cff;--blue-glow:rgba(91,140,255,.3);
+    --line:rgba(255,255,255,.08);--glass:rgba(255,255,255,.045);--glass-2:rgba(255,255,255,.07);
+    --shadow:0 30px 90px -28px rgba(0,0,0,.85);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%}
+  body{background:var(--bg-0);color:var(--ink);font-family:'Inter',system-ui,sans-serif;overflow:hidden;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:-1;
+    background:radial-gradient(900px 620px at 80% 4%,rgba(243,201,105,.10),transparent 60%),radial-gradient(820px 640px at 6% 96%,rgba(91,140,255,.13),transparent 58%),linear-gradient(160deg,var(--bg-1),var(--bg-0) 62%,#04060d);
+    animation:drift 28s ease-in-out infinite alternate}
+  @keyframes drift{from{transform:translateY(0)}to{transform:translateY(-16px)}}
+  @media(prefers-reduced-motion:reduce){body::before{animation:none}}
+  .mono{font-family:'JetBrains Mono',monospace}
+  .num{font-family:'Sora',sans-serif;font-variant-numeric:tabular-nums;letter-spacing:-.02em;font-weight:700}
+  .dim{color:var(--ink-dim)}
+
+  .topbar{position:fixed;top:0;left:0;right:0;height:58px;z-index:40;display:flex;align-items:center;justify-content:space-between;
+    padding:0 clamp(16px,3vw,30px);background:rgba(8,11,24,.66);backdrop-filter:blur(16px);border-bottom:1px solid var(--line)}
+  .brand{display:flex;align-items:center;gap:10px;font-family:'Sora';font-weight:700;font-size:1rem}
+  .brand .pip{width:8px;height:8px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 4px var(--gold-glow)}
+  .brand .u{color:var(--gold)} .brand .sep{color:var(--ink-dim);font-weight:400;margin:0 2px}
+  .jobsel{display:flex;align-items:center;gap:10px}
+  .jobsel .lab{font-family:'JetBrains Mono';font-size:.62rem;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-dim)}
+  .jobsel select{font-family:'Inter';font-weight:600;font-size:.85rem;color:var(--ink);background:var(--glass-2);border:1px solid var(--line);border-radius:9px;padding:7px 12px;cursor:pointer}
+
+  .stage{position:fixed;inset:58px 0 0 0;overflow:hidden}
+  svg.links{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+  .node{position:absolute;transform:translate(-50%,-50%);cursor:pointer;user-select:none;
+    transition:left .5s cubic-bezier(.16,1,.3,1),top .5s cubic-bezier(.16,1,.3,1),opacity .35s}
+  .node .bubble{border-radius:16px;border:1px solid var(--line);background:var(--glass);backdrop-filter:blur(12px);
+    padding:13px 16px;text-align:center;box-shadow:inset 0 1px 0 rgba(255,255,255,.05);transition:transform .2s,border-color .2s,box-shadow .2s;min-width:108px}
+  .node:hover .bubble{transform:translateY(-2px);border-color:rgba(255,255,255,.2)}
+  .node:focus-visible{outline:none}
+  .node:focus-visible .bubble{border-color:var(--gold);box-shadow:0 0 0 2px var(--gold)}
+  .node.sel .bubble{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold),0 18px 40px -22px var(--gold-glow)}
+  .node .nlabel{font-family:'JetBrains Mono';font-size:.58rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);margin-bottom:5px}
+  .node .nval{font-family:'Sora';font-weight:700;font-size:1.15rem;font-variant-numeric:tabular-nums}
+  .node.branch .bubble{min-width:138px}
+  .node.branch.material .nval{color:var(--gold)} .node.branch.labor .nval{color:var(--blue)}
+  .node.branch.overhead .nval{color:var(--amber)} .node.branch.net .nval{color:var(--green)}
+  .node .rangebar{margin-top:9px;height:6px;border-radius:999px;background:rgba(255,255,255,.09);position:relative;overflow:hidden}
+  .node .rangebar .fill{position:absolute;left:0;top:0;bottom:0;border-radius:999px;background:linear-gradient(90deg,var(--gold-deep),var(--gold))}
+  .node.branch.net .rangebar .fill{background:linear-gradient(90deg,var(--amber),var(--green))}
+  .node.child .nval{font-size:.92rem;color:var(--ink)}
+  .node.child .bubble{min-width:96px;padding:9px 12px;background:rgba(255,255,255,.035)}
+
+  .core{position:absolute;transform:translate(-50%,-50%);z-index:20;width:300px;text-align:center}
+  .core .ring{position:absolute;inset:-26px;border-radius:50%;border:1px solid rgba(243,201,105,.18);box-shadow:0 0 80px -30px var(--gold-glow) inset;pointer-events:none}
+  .core .tierseg{display:inline-flex;background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:11px;padding:4px;gap:3px;margin-bottom:12px}
+  .core .tierseg button{font-family:'Inter';font-weight:700;font-size:.72rem;color:var(--ink-soft);background:transparent;border:0;border-radius:8px;padding:7px 13px;cursor:pointer;transition:.16s;letter-spacing:.02em}
+  .core .tierseg button[aria-pressed=true]{color:#241c05;background:linear-gradient(180deg,var(--gold),var(--gold-deep))}
+  .core .tierseg button:not([aria-pressed=true]):hover{color:#fff}
+  .core .tierseg button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+  .core .totlab{font-family:'JetBrains Mono';font-size:.6rem;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-dim)}
+  .core .total{font-family:'Sora';font-weight:800;font-size:2.9rem;font-variant-numeric:tabular-nums;letter-spacing:-.03em;line-height:1;margin:3px 0 2px;
+    background:linear-gradient(180deg,#fff,var(--gold) 160%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .core .hst{font-size:.74rem;color:var(--ink-dim);margin-bottom:14px}
+  .core .rangewrap{padding:0 6px}
+  .core .rangelabels{display:flex;justify-content:space-between;font-family:'JetBrains Mono';font-size:.58rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-dim);margin-bottom:6px}
+  .core input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:6px;border-radius:999px;outline:none;cursor:pointer;
+    background:linear-gradient(90deg,var(--amber),var(--green)) no-repeat;background-color:rgba(255,255,255,.1);background-size:var(--fill,60%) 100%}
+  .core input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;margin-top:-7px;background:#fff;border:3px solid var(--gold);box-shadow:0 4px 14px rgba(0,0,0,.55)}
+  .core input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:#fff;border:3px solid var(--gold)}
+  .core input[type=range]:focus-visible{outline:2px solid var(--gold);outline-offset:4px}
+  .core .netline{margin-top:12px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:.82rem;color:var(--ink-soft)}
+  .core .netline b{font-family:'Sora';font-weight:700}
+  .core .netline .nd{color:var(--green)} .core .netline .nd.warn{color:var(--amber)} .core .netline .nd.floor{color:var(--red)}
+
+  .detail{position:fixed;top:74px;right:16px;width:312px;max-height:calc(100vh - 90px);z-index:30;overflow:auto;
+    background:rgba(10,14,26,.85);backdrop-filter:blur(18px);border:1px solid var(--line);border-radius:18px;padding:20px;box-shadow:var(--shadow);
+    transform:translateX(20px);opacity:0;pointer-events:none;transition:.3s cubic-bezier(.16,1,.3,1)}
+  .detail.on{transform:none;opacity:1;pointer-events:auto}
+  .detail .crumb{font-family:'JetBrains Mono';font-size:.62rem;letter-spacing:.1em;color:var(--ink-dim);margin-bottom:12px}
+  .detail .crumb b{color:var(--gold)}
+  .detail h2{font-family:'Sora';font-weight:700;font-size:1.3rem;letter-spacing:-.02em}
+  .detail .dval{font-family:'Sora';font-weight:800;font-size:2.1rem;font-variant-numeric:tabular-nums;margin:4px 0 16px;letter-spacing:-.02em}
+  .detail .kv{display:flex;flex-direction:column;gap:11px}
+  .detail .kv .drow{border:1px solid var(--line);border-radius:11px;padding:11px 13px;background:rgba(255,255,255,.03)}
+  .detail .kv .k{font-family:'JetBrains Mono';font-size:.58rem;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-dim);margin-bottom:4px}
+  .detail .kv .v{font-size:.92rem;color:var(--ink);line-height:1.4}
+  .detail .kids{margin-top:16px;display:flex;flex-direction:column;gap:7px}
+  .detail .kids .kid{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer;transition:.16s;background:rgba(255,255,255,.025);width:100%;text-align:left;font:inherit;color:inherit}
+  .detail .kids .kid:hover,.detail .kids .kid:focus-visible{background:rgba(255,255,255,.06);border-color:rgba(243,201,105,.35);outline:none}
+  .detail .kids .kid .kl{font-size:.86rem;color:var(--ink-soft)} .detail .kids .kid:hover .kl{color:#fff}
+  .detail .kids .kid .kv2{font-family:'Sora';font-weight:600;font-variant-numeric:tabular-nums;font-size:.9rem}
+  .detail .backlink{margin-top:14px;display:inline-flex;align-items:center;gap:7px;font-family:'JetBrains Mono';font-size:.7rem;color:var(--ink-soft);background:none;border:0;cursor:pointer;padding:4px 0}
+  .detail .backlink:hover,.detail .backlink:focus-visible{color:var(--gold);outline:none}
+  .detail .hint{margin-top:14px;font-family:'JetBrains Mono';font-size:.66rem;color:var(--ink-dim);line-height:1.5}
+  .detail .closebtn{position:absolute;top:14px;right:14px;width:26px;height:26px;border-radius:8px;border:1px solid var(--line);background:var(--glass-2);color:var(--ink-soft);cursor:pointer;font-size:1rem;line-height:1}
+  .detail .closebtn:hover,.detail .closebtn:focus-visible{color:#fff;border-color:rgba(255,255,255,.25);outline:none}
+  .legend{position:fixed;left:16px;bottom:14px;z-index:30;display:flex;gap:14px;flex-wrap:wrap;font-family:'JetBrains Mono';font-size:.62rem;color:var(--ink-soft)}
+  .legend span{display:flex;align-items:center;gap:6px} .legend i{width:9px;height:9px;border-radius:3px;display:inline-block}
+  .hinttap{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:25;font-family:'JetBrains Mono';font-size:.66rem;color:var(--ink-soft);text-align:center;max-width:80vw}
+  .loading{position:fixed;inset:58px 0 0 0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;z-index:50;color:var(--ink-soft);font-family:'JetBrains Mono';font-size:.8rem}
+  .loading .spin{width:34px;height:34px;border-radius:50%;border:2px solid rgba(255,255,255,.12);border-top-color:var(--gold);animation:sp .8s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  @media(prefers-reduced-motion:reduce){.loading .spin{animation:none}}
+  @media(max-width:760px){.detail{left:16px;right:16px;width:auto;top:auto;bottom:14px;max-height:46vh}.legend{display:none}.core{width:248px}.core .total{font-size:2.3rem}.hinttap{display:none}}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand"><span class="pip"></span>Plus <span class="u">Ultra</span><span class="sep">·</span>Cost Explorer</div>
+  <div class="jobsel"><span class="lab">Job</span>
+    <select id="jobSel" aria-label="Select job"></select>
+  </div>
+</div>
+
+<div class="loading" id="loading"><div class="spin"></div><span id="loadMsg">Loading cost model</span></div>
+
+<div class="stage" id="stage" hidden>
+  <svg class="links" id="links" aria-hidden="true"></svg>
+  <div class="core" id="core">
+    <div class="ring"></div>
+    <div class="tierseg" id="tierseg" role="group" aria-label="Pricing tier">
+      <button data-tier="gold" aria-pressed="true">Gold</button>
+      <button data-tier="platinum" aria-pressed="false">Platinum</button>
+      <button data-tier="diamond" aria-pressed="false">Diamond</button>
+    </div>
+    <div class="totlab">Total job price</div>
+    <div class="total num" id="total">$0</div>
+    <div class="hst" id="hst"></div>
+    <div class="rangewrap">
+      <div class="rangelabels"><span>Floor · $500/day</span><span>Lead</span></div>
+      <input type="range" id="range" min="0" max="100" value="100" aria-label="Price between floor and lead">
+    </div>
+    <div class="netline">Net to you <b class="nd" id="netDay">$0/day</b><span id="netTot" class="dim">· $0</span></div>
+  </div>
+</div>
+
+<aside class="detail" id="detail" aria-live="polite">
+  <button class="closebtn" id="closeDetail" aria-label="Close detail">&times;</button>
+  <div class="crumb" id="crumb"></div>
+  <h2 id="dTitle"></h2>
+  <div class="dval num" id="dVal"></div>
+  <div class="kv" id="dKv"></div>
+  <div class="kids" id="dKids"></div>
+  <div id="dBack"></div>
+  <div class="hint" id="dHint"></div>
+</aside>
+
+<div class="legend">
+  <span><i style="background:var(--gold)"></i>Material</span>
+  <span><i style="background:var(--blue)"></i>Labor</span>
+  <span><i style="background:var(--amber)"></i>Overhead</span>
+  <span><i style="background:var(--green)"></i>Net to you</span>
+</div>
+<div class="hinttap">Tap a branch to drill in · switch tiers up top · slide Floor to Lead to flex the price</div>
+
+<script>
+const HST=0.15;
+const TITLES={material:'Material',labor:'Labor',overhead:'Overhead',net:'Net to you'};
+const COLOR={material:'material',labor:'labor',overhead:'overhead',net:'net'};
+const BRANCHES=['material','labor','overhead','net'];
+const ANGLE={material:-145,labor:-35,overhead:145,net:35};
+function money(n){return '$'+Math.round(n).toLocaleString('en-US');}
+
+let DATA=null, job='atis', tier='gold', sellPct=100, panel=null; // panel = {kind:'branch'|'child', key, idx}
+
+function tenant(){ try{return localStorage.getItem('ryujin_tenant')||'plus-ultra';}catch(e){return 'plus-ultra';} }
+function authHeaders(){ const h={'x-tenant-id':tenant()}; try{ if(window.RyujinAuth&&RyujinAuth.headers) Object.assign(h,RyujinAuth.headers()); }catch(e){} return h; }
+
+async function load(){
+  try{
+    const r=await fetch('/api/cost-tree?job='+encodeURIComponent(job),{headers:authHeaders()});
+    if(r.status===401){ if(window.RyujinAuth) RyujinAuth.clearAndRedirect(); else location.href='/login.html'; return; }
+    if(r.status===403){ showError('This tool is owner and admin only.'); return; }
+    if(!r.ok){ showError('Could not load the cost model ('+r.status+').'); return; }
+    const j=await r.json();
+    DATA=j.tree;
+    const sel=document.getElementById('jobSel');
+    sel.innerHTML=(j.jobs||[{id:job,label:job}]).map(o=>'<option value="'+o.id+'"'+(o.id===job?' selected':'')+'>'+o.label+'</option>').join('');
+    document.getElementById('loading').hidden=true;
+    document.getElementById('stage').hidden=false;
+    render();
+  }catch(e){ showError('Network error loading the cost model.'); }
+}
+function showError(msg){ document.getElementById('loading').innerHTML='<span style="color:var(--amber)">'+msg+'</span>'; }
+
+function curT(){ return DATA.tiers[tier]; }
+function hardCost(){ const t=curT(); return t.material+t.labor+t.overhead; }
+function sellNow(){ const t=curT(); return Math.round(t.floor+(t.lead-t.floor)*(sellPct/100)); }
+function netNow(){ return sellNow()-hardCost(); }
+function netDay(){ return netNow()/DATA.days; }
+function branchValue(key){ return key==='net'?netNow():curT()[key]; }
+function subNet(i){ if(i===0)return money(netDay())+'/day'; if(i===1)return Math.round(netNow()/sellNow()*100)+'%'; return money(sellNow()-curT().floor); }
+function tierName(){ return tier.charAt(0).toUpperCase()+tier.slice(1); }
+
+function layout(){
+  const stage=document.getElementById('stage');
+  const W=stage.clientWidth,H=stage.clientHeight,cx=W/2,cy=H/2;
+  const R1=Math.min(W,H)*0.30+70, kx=(W>H?1.22:1.0);
+  const pos={};
+  BRANCHES.forEach(key=>{ const a=ANGLE[key]*Math.PI/180; pos[key]={x:cx+Math.cos(a)*R1*kx,y:cy+Math.sin(a)*R1,a}; });
+  return {W,H,cx,cy,R1,kx,pos};
+}
+function clampX(x,W){ return Math.max(82,Math.min(W-82,x)); }
+function clampY(y,H){ return Math.max(60,Math.min(H-60,y)); }
+
+function makeNode(cls,x,y,html,onActivate,label){
+  const n=document.createElement('div');
+  n.className=cls; n.style.left=x+'px'; n.style.top=y+'px';
+  n.tabIndex=0; n.setAttribute('role','button'); if(label)n.setAttribute('aria-label',label);
+  n.innerHTML=html;
+  n.addEventListener('click',e=>{e.stopPropagation();onActivate();});
+  n.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){e.preventDefault();onActivate();} });
+  return n;
+}
+
+function render(){
+  if(!DATA) return;
+  const stage=document.getElementById('stage');
+  [...stage.querySelectorAll('.node')].forEach(n=>n.remove());
+  const svg=document.getElementById('links'); svg.innerHTML='';
+  const L=layout(), t=curT();
+
+  const core=document.getElementById('core');
+  core.style.left=L.cx+'px'; core.style.top=L.cy+'px';
+  document.getElementById('total').textContent=money(sellNow());
+  document.getElementById('hst').textContent=money(sellNow()*(1+HST))+' with HST';
+  const nd=netDay(),ndEl=document.getElementById('netDay');
+  ndEl.textContent=money(nd)+'/day';
+  ndEl.className='nd'+(nd<499?' floor':nd<800?' warn':'');
+  document.getElementById('netTot').textContent='· '+money(netNow());
+  document.getElementById('range').style.setProperty('--fill',sellPct+'%');
+
+  BRANCHES.forEach(key=>{
+    const p=L.pos[key], x=clampX(p.x,L.W), y=clampY(p.y,L.H);
+    const val=branchValue(key), sel=(panel&&panel.key===key)?' sel':'';
+    let rb;
+    if(key==='net'){
+      const fl=t.floor-hardCost(),ld=t.lead-hardCost();
+      const pct=ld>fl?((netNow()-fl)/(ld-fl))*100:100;
+      rb='<div class="rangebar"><div class="fill" style="width:'+Math.max(4,Math.min(100,pct)).toFixed(0)+'%"></div></div>';
+    }else{
+      rb='<div class="rangebar"><div class="fill" style="width:'+Math.round(val/sellNow()*100)+'%"></div></div>';
+    }
+    const html='<div class="bubble"><div class="nlabel">'+TITLES[key]+'</div><div class="nval num">'+money(val)+'</div>'+rb+'</div>';
+    stage.appendChild(makeNode('node branch '+COLOR[key]+sel,x,y,html,()=>toggleBranch(key),TITLES[key]+' '+money(val)+', drill in'));
+    drawLink(svg,L.cx,L.cy,x,y,key,false);
+
+    if(panel&&panel.key===key){
+      const kids=DATA.children[key],n=kids.length,spread=Math.min(150,26*n);
+      kids.forEach((k,i)=>{
+        const baseA=Math.atan2(y-L.cy,x-L.cx),off=((i-(n-1)/2)/(n||1))*(spread*Math.PI/180),a=baseA+off,r=112;
+        const cxp=clampX(x+Math.cos(a)*r*(L.W>L.H?1.12:1),L.W),cyp=clampY(y+Math.sin(a)*r,L.H);
+        const kv=k[1]==null?subNet(i):money(branchValue(key)*k[1]);
+        const html2='<div class="bubble"><div class="nlabel">'+k[0]+'</div><div class="nval num">'+kv+'</div></div>';
+        stage.appendChild(makeNode('node child',cxp,cyp,html2,()=>openChild(key,i),k[0]+' '+kv));
+        drawLink(svg,x,y,cxp,cyp,key,true);
+      });
+    }
+  });
+}
+
+function drawLink(svg,x1,y1,x2,y2,key,thin){
+  const cols={material:'#d8a838',labor:'#5b8cff',overhead:'#f3b14f',net:'#4fd28b'};
+  const mx=(x1+x2)/2,my=(y1+y2)/2;
+  const path=document.createElementNS('http://www.w3.org/2000/svg','path');
+  path.setAttribute('d','M'+x1+' '+y1+' Q '+mx+' '+y1+' '+mx+' '+my+' T '+x2+' '+y2);
+  path.setAttribute('fill','none'); path.setAttribute('stroke',cols[key]||'#fff');
+  path.setAttribute('stroke-opacity',thin?'0.28':'0.5'); path.setAttribute('stroke-width',thin?'1':'1.6');
+  svg.appendChild(path);
+}
+
+function toggleBranch(key){ if(panel&&panel.kind==='branch'&&panel.key===key){closePanel();} else {openBranch(key);} }
+function openBranch(key){ panel={kind:'branch',key}; render(); drawPanel(); }
+function openChild(key,i){ panel={kind:'child',key,idx:i}; render(); drawPanel(); }
+function closePanel(){ panel=null; render(); document.getElementById('detail').classList.remove('on'); }
+
+function drawPanel(){
+  if(!panel)return;
+  const d=document.getElementById('detail');
+  if(panel.kind==='branch') fillBranch(panel.key); else fillChild(panel.key,panel.idx);
+  d.classList.add('on');
+}
+function fillBranch(key){
+  document.getElementById('crumb').innerHTML='<b>'+tierName()+'</b> · '+TITLES[key];
+  document.getElementById('dTitle').textContent=TITLES[key];
+  document.getElementById('dVal').textContent=money(branchValue(key));
+  const share=Math.round(branchValue(key)/sellNow()*100);
+  const note={material:'Real product cost, fixed. Priced from the merchant database at the active tier shingle.',
+    labor:'What the crew is actually paid (the sub paysheet) plus the on-site supervisor. Fixed.',
+    overhead:'Your real lean overhead, not the book 35%. True daily burn plus customer acquisition.',
+    net:'What you keep after real cost. Flexes with the Floor to Lead slider, never below $500/day.'}[key];
+  document.getElementById('dKv').innerHTML='<div class="drow"><div class="k">Share of price</div><div class="v">'+share+'% of '+money(sellNow())+'</div></div><div class="drow"><div class="k">What this is</div><div class="v">'+note+'</div></div>';
+  const kids=DATA.children[key];
+  document.getElementById('dKids').innerHTML=kids.map((k,i)=>{
+    const kv=k[1]==null?subNet(i):money(branchValue(key)*k[1]);
+    return '<button class="kid" data-key="'+key+'" data-i="'+i+'"><span class="kl">'+k[0]+'</span><span class="kv2">'+kv+'</span></button>';
+  }).join('');
+  document.getElementById('dBack').innerHTML='';
+  document.getElementById('dHint').textContent='Tap any line to see its quantity, coverage, and where the number came from.';
+}
+function fillChild(key,i){
+  const k=DATA.children[key][i];
+  document.getElementById('crumb').innerHTML='<b>'+tierName()+'</b> · '+TITLES[key]+' · '+k[0];
+  document.getElementById('dTitle').textContent=k[0];
+  document.getElementById('dVal').textContent=(k[1]==null?subNet(i):money(branchValue(key)*k[1]));
+  document.getElementById('dKv').innerHTML=
+    '<div class="drow"><div class="k">Quantity</div><div class="v">'+k[2]+'</div></div>'+
+    '<div class="drow"><div class="k">Coverage / basis</div><div class="v">'+k[3]+'</div></div>'+
+    '<div class="drow"><div class="k">Source</div><div class="v">'+k[4]+'</div></div>';
+  document.getElementById('dKids').innerHTML='';
+  document.getElementById('dBack').innerHTML='<button class="backlink" id="backBtn">&larr; back to '+TITLES[key]+' · '+money(branchValue(key))+'</button>';
+  document.getElementById('backBtn').addEventListener('click',()=>openBranch(key));
+  document.getElementById('dHint').textContent='';
+}
+
+// events
+document.getElementById('tierseg').addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b)return; e.stopPropagation();
+  tier=b.dataset.tier; sellPct=100;
+  [...document.querySelectorAll('#tierseg button')].forEach(x=>x.setAttribute('aria-pressed',x===b?'true':'false'));
+  document.getElementById('range').value=100;
+  render(); drawPanel();
+});
+document.getElementById('range').addEventListener('input',e=>{ e.stopPropagation(); sellPct=+e.target.value; render(); drawPanel(); });
+document.getElementById('range').addEventListener('click',e=>e.stopPropagation());
+document.getElementById('core').addEventListener('click',e=>e.stopPropagation());
+document.getElementById('dKids').addEventListener('click',e=>{ const b=e.target.closest('.kid'); if(b)openChild(b.dataset.key,+b.dataset.i); });
+document.getElementById('closeDetail').addEventListener('click',()=>closePanel());
+document.getElementById('stage').addEventListener('click',e=>{ if(e.target===document.getElementById('stage'))closePanel(); });
+document.getElementById('jobSel').addEventListener('change',e=>{
+  job=e.target.value; tier='gold'; sellPct=100; panel=null;
+  document.getElementById('range').value=100;
+  [...document.querySelectorAll('#tierseg button')].forEach(x=>x.setAttribute('aria-pressed',x.dataset.tier==='gold'?'true':'false'));
+  document.getElementById('detail').classList.remove('on');
+  load();
+});
+let rz; window.addEventListener('resize',()=>{ clearTimeout(rz); rz=setTimeout(render,120); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&panel)closePanel(); });
+load();
+</script>
+</body>
+</html>
