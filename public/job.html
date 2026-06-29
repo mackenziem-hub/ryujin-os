@@ -1361,10 +1361,13 @@ async function copyCustomerPhotoLink(customer, estimates, btn) {
       method: 'POST', headers: { ...ah(), 'Content-Type': 'application/json' }, body: '{}',
     });
     if (!sr.ok) throw new Error('ensure-share HTTP ' + sr.status);
-    const token = (await sr.json()).share_token;
+    const srJson = await sr.json();
+    const token = srJson.share_token;
     if (!token) throw new Error('no share token returned');
-    // 3. Copy + open the customer gallery URL.
-    const url = location.origin + '/photos-share.html?share=' + encodeURIComponent(token);
+    // 3. Copy + open the customer gallery URL. Prefer the API-built share_url so
+    // the link honors a tenant's branded domain (APP_BASE_URL); fall back to the
+    // current origin if an older API response omits it.
+    const url = (srJson && srJson.share_url) ? srJson.share_url : (location.origin + '/photos-share.html?share=' + encodeURIComponent(token));
     try { await navigator.clipboard.writeText(url); } catch (e) { /* clipboard may be blocked; link still opens */ }
     window.open(url, '_blank', 'noopener,noreferrer');
     photoToast('Customer photo link copied');
