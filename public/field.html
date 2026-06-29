@@ -213,6 +213,18 @@ window.__ryujinPrefetchInjected=true; window.__ryujinSkinInjected=true;
   .lbx-foot button svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
   .lbx-foot button.danger{color:var(--red);border-color:rgba(244,115,107,.4)}
   @media(prefers-reduced-motion:reduce){.lightbox,.selbar,.thumb .thx,.markup{transition:none}}
+  /* smooth photo bin: tile-out animation, upload placeholders, undo bar */
+  @keyframes thumbOut{to{opacity:0;transform:scale(.78)}}
+  @keyframes thumbIn{from{opacity:0;transform:scale(.8)}to{opacity:1;transform:scale(1)}}
+  .thumb.removing{animation:thumbOut .22s cubic-bezier(.4,0,1,1) forwards;pointer-events:none}
+  .thumb.adding{animation:thumbIn .26s cubic-bezier(.22,1,.36,1)}
+  .thumb.uploading{pointer-events:none}
+  .thumb .uploadingov{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(8,10,16,.52);z-index:3}
+  .undobar{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 96px);transform:translateX(-50%) translateY(16px);z-index:260;display:flex;align-items:center;gap:14px;padding:11px 12px 11px 18px;background:rgba(20,22,27,.97);backdrop-filter:blur(12px);border:1px solid var(--border-hi);border-radius:13px;box-shadow:0 12px 32px rgba(0,0,0,.45);opacity:0;visibility:hidden;transition:opacity .2s ease-out,transform .2s ease-out,visibility .2s;max-width:calc(100vw - 28px)}
+  .undobar.on{opacity:1;visibility:visible;transform:translateX(-50%) translateY(0)}
+  .undobar span{font-size:14px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .undobar button{padding:8px 15px;border-radius:9px;border:none;background:var(--accent);color:#04101f;font-family:var(--sans);font-weight:700;font-size:13px;cursor:pointer;flex-shrink:0}
+  @media(prefers-reduced-motion:reduce){.thumb.removing{animation:none;opacity:0}.thumb.adding{animation:none}.undobar{transition:none}}
   /* photo caption (per-photo note) shown in the lightbox + a dot on captioned tiles */
   .lbx-cap{position:absolute;left:0;right:0;bottom:0;padding:14px 16px;background:linear-gradient(to top,rgba(5,6,9,.92),transparent);color:var(--text);font-size:14px;line-height:1.45;text-align:left}
   .thumb .ndot{position:absolute;bottom:5px;left:5px;width:9px;height:9px;border-radius:50%;background:var(--amber);box-shadow:0 0 0 2px rgba(8,10,16,.6);z-index:2}
@@ -319,7 +331,7 @@ window.__ryujinPrefetchInjected=true; window.__ryujinSkinInjected=true;
   .td-actions button{flex:1;padding:13px;border-radius:10px;font-family:var(--sans);font-weight:700;font-size:14px;cursor:pointer;border:1px solid var(--border-hi);background:transparent;color:var(--dim)}
   .td-actions button.go{background:var(--green);color:#04140a;border-color:var(--green)}
   .td-actions button.warn{background:var(--accent-dim);color:var(--accent);border-color:rgba(91,157,255,0.3)}
-  .toast{position:fixed;bottom:96px;left:50%;transform:translateX(-50%);background:#04101f;color:var(--accent);border:1px solid var(--accent);padding:10px 18px;border-radius:10px;font-family:var(--mono);font-size:12px;display:none;z-index:30;max-width:90%;text-align:center}
+  .toast{position:fixed;bottom:148px;left:50%;transform:translateX(-50%);background:#04101f;color:var(--accent);border:1px solid var(--accent);padding:10px 18px;border-radius:10px;font-family:var(--mono);font-size:12px;display:none;z-index:280;max-width:90%;text-align:center}
   .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--border-hi);border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px}
   @keyframes sp{to{transform:rotate(360deg)}}
   @media(min-width:900px){.wrap{padding:24px 20px}#v-jobs .wrap,#v-tasks .wrap{max-width:760px}}
@@ -358,6 +370,7 @@ window.__ryujinPrefetchInjected=true; window.__ryujinSkinInjected=true;
 </div>
 <canvas id="camCanvas" style="display:none"></canvas>
 <div class="selbar" id="selBar"><button onclick="exitSelMode()">Cancel</button><span class="sc" id="selCount">0 selected</span><button class="del" onclick="deleteSelected()">Delete</button></div>
+<div class="undobar" id="undoBar" role="status" aria-live="polite" aria-atomic="true"><span id="undoMsg"></span><button onclick="undoDeletes()">Undo</button></div>
 <div class="lightbox" id="lightbox">
   <div class="lbx-top"><button onclick="closeLightbox()" aria-label="Close">&times;</button></div>
   <div class="lbx-stage" id="lbxStage"></div>
@@ -480,7 +493,8 @@ function switchTab(tab){
   presenceSet(tab,'');
   CUR_TAB = tab;
   // Leaving a view drops any photo select-mode + lightbox so the top select bar
-  // or the lightbox never floats over the next tab.
+  // or the lightbox never floats over the next tab, and commits any pending delete.
+  if(_delBatch) commitDeletes();
   exitSelMode(); closeLightbox();
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
   document.getElementById('v-'+tab).classList.add('on');
@@ -728,7 +742,11 @@ async function createJob(){
 // (job.html), one tap away for owner/admin/manager via the footer link.
 async function openJob(id){
   CUR_JOB = id;
-  // A fresh render rebuilds the photo grid, so any prior select-mode is stale.
+  // A fresh render rebuilds the photo grid, so finalize any pending delete (its
+  // tile nodes are about to be destroyed) and clear stale select-mode. AWAIT the
+  // commit so the server DELETEs land before this function's own /files re-fetch,
+  // otherwise the GET can read the not-yet-deleted rows and resurrect the photo.
+  if(_delBatch) await commitDeletes();
   exitSelMode();
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
   document.getElementById('v-job').classList.add('on');
@@ -765,11 +783,11 @@ async function openJob(id){
     + '<a class="jactions-a" style="text-decoration:none;flex:1"><button onclick="window.open(\'https://www.google.com/maps/search/?api=1&query='+mapq+'\')" style="width:100%"><svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>Navigate</button></a></div>';
   // photos (images + video only; PDFs and other docs are not gallery tiles)
   const media = files.filter(f=>{ const m=f.mime_type||''; return m.startsWith('image')||m.startsWith('video'); });
-  h += '<div class="lbl">Photos &amp; footage <span class="n">'+media.length+'</span></div>';
+  h += '<div class="lbl">Photos &amp; footage <span class="n" id="photoCount">'+media.length+'</span></div>';
   h += '<button class="upload cam" onclick="openCamera()"><div class="uic"><svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg></div><div><div class="ut">Take photos</div><div class="us">Live camera, rapid fire. Shoot one after another into the bin</div></div></button>';
   h += '<button class="upload" onclick="document.getElementById(\'photoInput\').click()"><div class="uic"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div><div><div class="ut">Upload photos &amp; footage</div><div class="us">Drone clips and bulk photos from your gallery</div></div></button>';
   CUR_MEDIA = media;
-  if(media.length){ h += '<div class="grid" id="photoGrid">' + media.map((f,i)=>{ const vid=(f.mime_type||'').startsWith('video'); const inner=vid?'<video src="'+esc(f.url)+'" muted preload="metadata"></video><span class="vb">▶</span>':'<img loading="lazy" src="'+esc(f.thumbnail_url||f.url)+'">'; return '<div class="thumb" data-fid="'+esc(f.id)+'" onpointerdown="thumbHoldStart(event,'+i+')" onpointermove="thumbHoldMove(event)" onpointerup="thumbHoldEnd()" onpointercancel="thumbHoldEnd()" onpointerleave="thumbHoldEnd()" onclick="thumbTap(event,'+i+')" oncontextmenu="return false">'+inner+'<button class="thx" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();delPhoto(\''+esc(f.id)+'\')" aria-label="Delete photo">&times;</button><span class="tcheck"></span>'+(f.caption?'<span class="ndot" title="Has a note"></span>':'')+'</div>'; }).join('') + '</div>'; }
+  h += '<div class="grid" id="photoGrid">' + media.map(tileHTML).join('') + '</div>';
   // notes
   const notes = nts.notes || [];
   h += '<div class="lbl">Notes <span class="n">'+notes.length+'</span></div>';
@@ -801,13 +819,13 @@ async function uploadJobFiles(input){
   presencePing('uploading '+total+' photo'+(total===1?'':'s'));
   const small=[], big=[];
   files.forEach(f=>{ ((f.type||'').startsWith('video') || f.size>50*1024*1024) ? big.push(f) : small.push(f); });
-  let done=0, failed=0;
+  let done=0, failed=0; const created=[];
   const prog=()=>toast('<span class="spin"></span> uploading '+(done+failed)+'/'+total+'…');
   prog();
   if(small.length){
     const fd=new FormData(); fd.append('project_id', job); fd.append('category','general'); if(ME?.id) fd.append('uploaded_by', ME.id);
     small.forEach(f=>fd.append('files', f));
-    try{ const t=tok(); const r=await fetch(API+'/files?tenant='+TENANT,{method:'POST',headers:t?{Authorization:'Bearer '+t,'x-tenant-id':TENANT}:{'x-tenant-id':TENANT},body:fd}); r.ok?(done+=small.length):(failed+=small.length); }
+    try{ const t=tok(); const r=await fetch(API+'/files?tenant='+TENANT,{method:'POST',headers:t?{Authorization:'Bearer '+t,'x-tenant-id':TENANT}:{'x-tenant-id':TENANT},body:fd}); if(r.ok){ const j=await r.json().catch(()=>({})); (j.files||[]).forEach(x=>created.push(x)); done+=small.length; } else failed+=small.length; }
     catch(e){ failed+=small.length; }
     prog();
   }
@@ -819,14 +837,17 @@ async function uploadJobFiles(input){
           const blob = await upload(f.name, f, { access:'public', handleUploadUrl:'/api/marketing-upload-token?tenant='+TENANT, clientPayload: JSON.stringify({tenant:TENANT}), contentType: f.type||undefined });
           const t=tok();
           const r=await fetch(API+'/files?tenant='+TENANT,{ method:'POST', headers: Object.assign({'Content-Type':'application/json','x-tenant-id':TENANT}, t?{Authorization:'Bearer '+t}:{}), body: JSON.stringify({ project_id:job, url:blob.url, filename:f.name, mime_type:f.type, file_size:f.size, category:'general', uploaded_by: ME?.id||null }) });
-          r.ok?done++:failed++;
+          if(r.ok){ const j=await r.json().catch(()=>({})); (j.files||[]).forEach(x=>created.push(x)); done++; } else failed++;
         }catch(e){ failed++; }
         prog();
       }
     }catch(e){ failed+=big.length; toast('Big-file upload unavailable right now'); }
   }
   toast(failed ? (done+' uploaded, '+failed+' failed') : ('Uploaded '+done+' file'+(done===1?'':'s')));
-  if(CUR_JOB===job) openJob(job);
+  // Smooth: drop the new tiles into the open grid instead of reloading the folder.
+  // If the server reported successes but returned fewer file objects than uploaded,
+  // reconcile from the source of truth rather than trusting the partial list.
+  if(CUR_JOB===job){ if(done && created.length>=done) addPhotoTiles(created); else if(done) openJob(job); }
 }
 document.getElementById('photoInput').addEventListener('change', function(){ uploadJobFiles(this); });
 document.getElementById('cameraInput').addEventListener('change', function(){ uploadJobFiles(this); });
@@ -836,10 +857,10 @@ document.getElementById('cameraInput').addEventListener('change', function(){ up
 // Each frame is captured to canvas and uploaded in the background while the camera
 // stays ready. Falls back to the native single-capture input if getUserMedia is
 // blocked or unavailable (older devices, denied permission).
-let _camStream=null, _camJob=null, _camCount=0;
+let _camStream=null, _camJob=null, _camCount=0, _camCreated=[];
 async function openCamera(){
   if(!CUR_JOB){ return; }
-  _camJob=CUR_JOB; _camCount=0;
+  _camJob=CUR_JOB; _camCount=0; _camCreated=[];
   document.getElementById('camCount').textContent='0';
   document.getElementById('camStrip').innerHTML='';
   document.getElementById('camModal').classList.add('on');
@@ -856,8 +877,9 @@ function closeCamera(){
   document.getElementById('camModal').classList.remove('on');
   if(_camStream){ _camStream.getTracks().forEach(t=>t.stop()); _camStream=null; }
   const v=document.getElementById('camVideo'); if(v) v.srcObject=null;
-  // Refresh the folder so the new shots show in the bin.
-  if(_camCount>0 && CUR_JOB===_camJob) openJob(_camJob);
+  // Drop the new shots into the open grid in place (no full folder reload).
+  if(CUR_JOB===_camJob && _camCreated.length) addPhotoTiles(_camCreated);
+  _camCreated=[];
 }
 async function snapPhoto(){
   const v=document.getElementById('camVideo'); if(!v||!v.videoWidth) return;
@@ -873,8 +895,11 @@ async function snapPhoto(){
   const t=document.createElement('div'); t.className='camthumb'; t.innerHTML='<img src="'+url+'"><span class="ust"><span class="spin"></span></span>';
   if(strip) strip.prepend(t);
   const job=_camJob;
-  uploadCameraShot(blob, 'photo-'+Date.now()+'.jpg', job).then(ok=>{
-    const u=t.querySelector('.ust'); if(u){ u.textContent = ok?'✓':'!'; if(ok) setTimeout(()=>u.remove(),700); }
+  uploadCameraShot(blob, 'photo-'+Date.now()+'.jpg', job).then(file=>{
+    // Append each shot as it resolves (dedup-safe) so a shot still uploading when
+    // Done is tapped still lands in the bin; closeCamera's flush is a backstop.
+    if(file){ _camCreated.push(file); if(CUR_JOB===job) addPhotoTiles([file]); }
+    const u=t.querySelector('.ust'); if(u){ u.textContent = file?'✓':'!'; if(file) setTimeout(()=>u.remove(),700); }
   });
 }
 async function uploadCameraShot(blob, fname, job){
@@ -883,24 +908,74 @@ async function uploadCameraShot(blob, fname, job){
     fd.append('files', blob, fname);
     const t=tok();
     const r=await fetch(API+'/files?tenant='+TENANT,{ method:'POST', headers: t?{Authorization:'Bearer '+t,'x-tenant-id':TENANT}:{'x-tenant-id':TENANT}, body:fd });
-    return r.ok;
+    if(!r.ok) return null;
+    const j=await r.json().catch(()=>({}));
+    return (j.files && j.files[0]) || null;
   }catch(e){ return false; }
 }
 
-// ── PHOTO BIN: tap-to-enlarge lightbox, delete (X), long-press multi-select ──
+// ── PHOTO BIN: tiles, lightbox, multi-select, smooth delete with undo ──
 let LBX_I=0, _hold=null, _holdXY=null, _suppressTap=false, PSEL_MODE=false; const PSEL=new Set();
+function idxOf(id){ return CUR_MEDIA.findIndex(f=>f && f.id===id); }
 function selThumb(id){ const g=document.getElementById('photoGrid'); if(!g) return null; const sel=(window.CSS&&CSS.escape)?CSS.escape(id):id; return g.querySelector('.thumb[data-fid="'+sel+'"]'); }
-function thumbHoldStart(e,i){ _suppressTap=false; _holdXY={x:e.clientX,y:e.clientY}; _hold=setTimeout(()=>{ _hold=null; if(!PSEL_MODE) enterSelMode(); const f=CUR_MEDIA[i]; if(f) selectPhoto(f.id,true); _suppressTap=true; if(navigator.vibrate)try{navigator.vibrate(22)}catch(_){}; }, 450); }
+// Tile markup keyed by file id (not array index) so tiles add/remove in place.
+function tileHTML(f){ const vid=(f.mime_type||'').startsWith('video'); const inner=vid?'<video src="'+esc(f.url)+'" muted preload="metadata"></video><span class="vb">▶</span>':'<img loading="lazy" src="'+esc(f.thumbnail_url||f.url)+'">'; const id=esc(f.id); return '<div class="thumb" data-fid="'+id+'" onpointerdown="thumbHoldStart(event,\''+id+'\')" onpointermove="thumbHoldMove(event)" onpointerup="thumbHoldEnd()" onpointercancel="thumbHoldEnd()" onpointerleave="thumbHoldEnd()" onclick="thumbTap(event,\''+id+'\')" oncontextmenu="return false">'+inner+'<button class="thx" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();delPhoto(\''+id+'\')" aria-label="Delete photo">&times;</button><span class="tcheck"></span>'+(f.caption?'<span class="ndot" title="Has a note"></span>':'')+'</div>'; }
+function updatePhotoCount(){ const c=document.getElementById('photoCount'); if(c) c.textContent=CUR_MEDIA.length; }
+// Append newly uploaded photos to the open grid in place (no full folder reload).
+function addPhotoTiles(newFiles){ const list=(newFiles||[]).filter(f=>f&&f.id&&idxOf(f.id)<0&&!selThumb(f.id)); if(!list.length) return; const grid=document.getElementById('photoGrid'); if(!grid){ if(CUR_JOB) openJob(CUR_JOB); return; } list.forEach(f=>{ CUR_MEDIA.push(f); grid.insertAdjacentHTML('beforeend', tileHTML(f)); const node=selThumb(f.id); if(node){ node.classList.add('adding'); node.addEventListener('animationend',()=>node.classList.remove('adding'),{once:true}); setTimeout(()=>node.classList.remove('adding'),420); } }); updatePhotoCount(); }
+function thumbHoldStart(e,id){ _suppressTap=false; _holdXY={x:e.clientX,y:e.clientY}; _hold=setTimeout(()=>{ _hold=null; if(!PSEL_MODE) enterSelMode(); selectPhoto(id,true); _suppressTap=true; if(navigator.vibrate)try{navigator.vibrate(22)}catch(_){}; }, 450); }
 function thumbHoldMove(e){ if(_hold && _holdXY && (Math.abs(e.clientX-_holdXY.x)>10 || Math.abs(e.clientY-_holdXY.y)>10)) thumbHoldEnd(); }
 function thumbHoldEnd(){ if(_hold){ clearTimeout(_hold); _hold=null; } }
-function thumbTap(e,i){ if(_suppressTap){ _suppressTap=false; return; } const f=CUR_MEDIA[i]; if(!f) return; if(PSEL_MODE){ togglePhotoSel(f.id); return; } openLightbox(i); }
+function thumbTap(e,id){ if(_suppressTap){ _suppressTap=false; return; } const idx=idxOf(id); if(idx<0) return; if(PSEL_MODE){ togglePhotoSel(id); return; } openLightbox(idx); }
 function enterSelMode(){ PSEL_MODE=true; PSEL.clear(); const g=document.getElementById('photoGrid'); if(g) g.classList.add('selmode'); updateSelBar(); }
 function exitSelMode(){ PSEL_MODE=false; PSEL.clear(); const g=document.getElementById('photoGrid'); if(g){ g.classList.remove('selmode'); g.querySelectorAll('.thumb.sel').forEach(t=>t.classList.remove('sel')); } const b=document.getElementById('selBar'); if(b) b.classList.remove('on'); }
 function selectPhoto(id,on){ const t=selThumb(id); if(on){ PSEL.add(id); if(t)t.classList.add('sel'); } else { PSEL.delete(id); if(t)t.classList.remove('sel'); } if(PSEL_MODE && PSEL.size===0){ exitSelMode(); return; } updateSelBar(); }
 function togglePhotoSel(id){ selectPhoto(id, !PSEL.has(id)); }
 function updateSelBar(){ const b=document.getElementById('selBar'); if(!b) return; b.classList.toggle('on', PSEL_MODE); const c=document.getElementById('selCount'); if(c) c.textContent=PSEL.size+' selected'; }
-async function delPhoto(id){ if(!confirm('Delete this photo? This cannot be undone.')) return; const r=await api('/files?id='+encodeURIComponent(id),{method:'DELETE'}); if(r && !r.error){ toast('Photo deleted'); if(CUR_JOB) openJob(CUR_JOB); } else { toast((r&&r.error)||'Could not delete'); } }
-async function deleteSelected(){ const ids=[...PSEL]; if(!ids.length) return; if(!confirm('Delete '+ids.length+' photo'+(ids.length>1?'s':'')+'? This cannot be undone.')) return; toast('<span class="spin"></span> deleting '+ids.length+'…'); let ok=0; for(const id of ids){ try{ const r=await api('/files?id='+encodeURIComponent(id),{method:'DELETE'}); if(r && !r.error) ok++; }catch(e){} } exitSelMode(); toast(ok ? ('Deleted '+ok+' photo'+(ok===1?'':'s')) : 'Could not delete the photos'); if(CUR_JOB) openJob(CUR_JOB); }
+// Smooth delete: optimistically remove the tile + model, show an Undo bar, and only
+// hit the server after the undo window. No confirm dialog, no folder reload.
+let _delBatch=null, _delTimer=null;
+function softDeletePhotos(ids){
+  ids=(ids||[]).filter(id=>idxOf(id)>=0);
+  if(!ids.length) return;
+  if(_delBatch) commitDeletes();
+  const items=ids.map(id=>{ const idx=idxOf(id); return { id, idx, file:CUR_MEDIA[idx], node:selThumb(id) }; }).filter(x=>x.idx>=0 && x.file);
+  if(!items.length) return;
+  items.forEach(r=>{ if(r.node){ r.node.classList.add('removing'); setTimeout(()=>{ if(r.node.parentNode && r.node.classList.contains('removing')) r.node.style.display='none'; }, 230); } });
+  items.slice().sort((a,b)=>b.idx-a.idx).forEach(r=>CUR_MEDIA.splice(r.idx,1));
+  updatePhotoCount();
+  _delBatch=items;
+  _delTimer=setTimeout(commitDeletes, 5000);
+  showUndoBar(items.length+' photo'+(items.length>1?'s':'')+' deleted');
+}
+function showUndoBar(msg){ const b=document.getElementById('undoBar'); if(!b) return; const m=document.getElementById('undoMsg'); if(m) m.textContent=msg; b.classList.add('on'); }
+function hideUndoBar(){ const b=document.getElementById('undoBar'); if(b) b.classList.remove('on'); }
+function undoDeletes(){
+  if(!_delBatch) return;
+  clearTimeout(_delTimer); _delTimer=null;
+  const items=_delBatch; _delBatch=null;
+  const sorted=items.slice().sort((a,b)=>a.idx-b.idx);
+  sorted.forEach(r=>{ if(r.node){ r.node.classList.remove('removing'); r.node.style.display=''; } CUR_MEDIA.splice(Math.min(r.idx,CUR_MEDIA.length),0,r.file); });
+  updatePhotoCount();
+  hideUndoBar();
+  // If the lightbox is open (an undo of a lightbox delete), re-sync it to the
+  // restored photo so a following delete/note/markup acts on what is shown.
+  const lb=document.getElementById('lightbox');
+  if(lb && lb.classList.contains('on')){ LBX_I=Math.min(sorted[0].idx, CUR_MEDIA.length-1); renderLbx(); }
+}
+async function commitDeletes(){
+  if(!_delBatch) return;
+  const items=_delBatch; _delBatch=null;
+  if(_delTimer){ clearTimeout(_delTimer); _delTimer=null; }
+  hideUndoBar();
+  let failed=0;
+  for(const r of items){ if(r.node && r.node.parentNode) r.node.remove(); try{ const res=await api('/files?id='+encodeURIComponent(r.id),{method:'DELETE'}); if(res && res.error) failed++; }catch(e){ failed++; } }
+  // A server delete that failed leaves the photo on the server but gone from the UI;
+  // reconcile from the source of truth so it does not silently reappear later.
+  if(failed){ toast(failed+' photo'+(failed>1?'s':'')+' could not be deleted, restoring'); if(CUR_JOB) openJob(CUR_JOB); }
+}
+function delPhoto(id){ softDeletePhotos([id]); }
+function deleteSelected(){ const ids=[...PSEL]; exitSelMode(); softDeletePhotos(ids); }
 function openLightbox(i){ LBX_I=i; renderLbx(); document.getElementById('lightbox').classList.add('on'); }
 function renderLbx(){
   const f=CUR_MEDIA[LBX_I]; if(!f){ closeLightbox(); return; }
@@ -952,17 +1027,17 @@ function mkSetColor(c,btn){ MK_color=c; document.getElementById('mkColors').quer
 function mkUndo(){ MK_ops.pop(); MK_draw=null; mkRender(); }
 function closeMarkup(){ document.getElementById('markup').classList.remove('on'); MK_ops=[]; MK_draw=null; MK_img=null; }
 async function saveMarkup(){
-  const f=CUR_MEDIA[LBX_I]; if(!f) return; const cv=document.getElementById('mkCanvas');
+  const f=CUR_MEDIA[LBX_I]; if(!f) return; const job=CUR_JOB; const cv=document.getElementById('mkCanvas');
   if(!MK_ops.length){ toast('Add a mark first, or Cancel'); return; }
   toast('<span class="spin"></span> saving markup…');
   let blob; try{ blob=await new Promise((res,rej)=>{ try{ cv.toBlob(b=>res(b),'image/jpeg',0.92); }catch(err){ rej(err); } }); }
   catch(err){ toast('Could not export the marked-up photo'); return; }
   if(!blob){ toast('Could not save the markup'); return; }
-  const ok=await uploadCameraShot(blob, 'markup-'+Date.now()+'.jpg', CUR_JOB);
-  if(ok){ toast('Markup saved as a new photo'); closeMarkup(); closeLightbox(); if(CUR_JOB) openJob(CUR_JOB); }
+  const file=await uploadCameraShot(blob, 'markup-'+Date.now()+'.jpg', job);
+  if(file){ toast('Markup saved as a new photo'); closeMarkup(); closeLightbox(); if(CUR_JOB===job) addPhotoTiles([file]); }
   else { toast('Could not upload the marked-up photo'); }
 }
-async function delPhotoFromLbx(){ const f=CUR_MEDIA[LBX_I]; if(!f) return; if(!confirm('Delete this photo? This cannot be undone.')) return; const r=await api('/files?id='+encodeURIComponent(f.id),{method:'DELETE'}); if(r && !r.error){ toast('Photo deleted'); closeLightbox(); if(CUR_JOB) openJob(CUR_JOB); } else { toast((r&&r.error)||'Could not delete'); } }
+function delPhotoFromLbx(){ const f=CUR_MEDIA[LBX_I]; if(!f) return; softDeletePhotos([f.id]); if(!CUR_MEDIA.length){ closeLightbox(); return; } if(LBX_I>=CUR_MEDIA.length) LBX_I=CUR_MEDIA.length-1; renderLbx(); }
 document.addEventListener('keydown', e=>{
   const mk=document.getElementById('markup'); if(mk && mk.classList.contains('on')){ if(e.key==='Escape') closeMarkup(); return; }
   const note=document.getElementById('lbxNote'); if(note && note.classList.contains('on')){ if(e.key==='Escape') closeLbxNote(); return; }
