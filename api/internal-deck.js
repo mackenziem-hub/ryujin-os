@@ -93,6 +93,11 @@ const DECKS = {
     title: 'The Intercom · Companion OS, Configured',
     desc: 'What shipped today and how the Companion intercom is wired: one event fans out the right work to the right people. The event-to-action map, the sign choreography (all 4 proposal paths incl Revive), quote-requested, the files + hooks, the fail-soft/idempotent safety design, and the supporting memory + cross-machine work.',
   },
+  'ad-doctrine': {
+    tenant: 'plus-ultra', tag: 'Marketing', slides: 13,
+    title: 'The Ad Account · Diagnosed and Fixed',
+    desc: 'The Meta deep-dive: why the cost-per-lead alarm kept crying wolf (winners paused into cold tests, plus 7-day attribution lag), the real numbers ($20 lifetime CPL, ~10x signed ROAS, $15K average job), what works (Instant Estimator + Revive statics), the six changes made today (5 cold tests to 3 lead engines), the doctrine and weekly cadence, the attribution gap, and Harmeet starting tomorrow.',
+  },
 };
 
 export default async function handler(req, res) {
