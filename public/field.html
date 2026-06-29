@@ -336,6 +336,26 @@ window.__ryujinPrefetchInjected=true; window.__ryujinSkinInjected=true;
 const API = window.location.origin + '/api';
 const TENANT = window.RYUJIN_TENANT_SLUG || 'plus-ultra';
 let ME = null, CUR_TAB = 'tasks', CUR_JOB = null, TASKS = {};
+let CAPS = null, ROLE = null;
+// One app for the whole company; the tools you see are gated by your role's
+// capabilities (lib/roleCapabilities.js, served via /api/companion-init). The
+// server still re-checks scope on every endpoint, so this is the UI gate only.
+const TAB_CAP = { tasks:'show_tasks', jobs:'show_jobs', schedule:'show_schedule', clock:'show_clock', messages:'show_inbox', workorders:'show_workorders', paysheets:'show_paysheets' };
+function can(k){ return !CAPS || !!CAPS[k]; }
+function applyCaps(){
+  if(!CAPS) return;
+  document.querySelectorAll('.nav button[data-tab]').forEach(b=>{
+    const tab=b.dataset.tab; if(tab==='ai') return;
+    const key=TAB_CAP[tab];
+    b.style.display = (key && !CAPS[key]) ? 'none' : '';
+  });
+  const ib=document.querySelector('.bar .inbox'); if(ib) ib.style.display = CAPS.show_inbox ? '' : 'none';
+}
+function firstVisibleTab(){
+  const order=['tasks','jobs','schedule','clock','messages','workorders','paysheets'];
+  for(const t of order){ const b=document.querySelector('.nav button[data-tab="'+t+'"]'); if(b && b.style.display!=='none') return t; }
+  return 'jobs';
+}
 let TEAM = null, ACTIVE_THREAD = null, REPLY = {}, MY_ID = null;
 
 function tok(){ try { return localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token') || ''; } catch(e){ return ''; } }
@@ -991,16 +1011,18 @@ async function boot(){
   checkUpdate();
   setInterval(()=>checkUpdate(false), 120000);
   document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) checkUpdate(false); });
-  const me = await api('/auth?action=me');
-  ME = me && me.user ? me.user : null;
+  // Identity + capabilities in one call: same app for everyone, tools gated by role.
+  let ci=null; try{ ci=await api('/companion-init'); }catch(e){}
+  if(ci && ci.ok){ ME={ id:ci.user&&ci.user.id, name:ci.user&&ci.user.name, email:ci.user&&ci.user.email }; CAPS=ci.capabilities||null; ROLE=ci.role||null; }
+  if(!ME || !ME.id){ const me = await api('/auth?action=me'); if(me && me.user) ME = me.user; }
   if(!ME){ try{ ME = JSON.parse(localStorage.getItem('ryujin_user')||'null'); }catch(e){} }
   document.getElementById('meName').textContent = ME ? (ME.name||'Field') : 'Field';
+  applyCaps();
   try{ const k=icsKey(); USER_ICS = k ? (localStorage.getItem(k)||'') : ''; }catch(e){}
-  presenceSet('tasks','');
   setInterval(()=>presencePing(), 12000);
   document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) presencePing(); });
-  renderTasks();
-  api('/messages?box=unread').then(d=>setBadge((d.messages||[]).length||0));
+  switchTab(firstVisibleTab());
+  if(can('show_inbox')) api('/messages?box=unread').then(d=>setBadge((d.messages||[]).length||0));
   // Preload jobs so the assistant can resolve a job by customer name (client-side
   // match includes customers) from a fresh session, before Jobs is ever opened.
   if(!(ALL_JOBS && ALL_JOBS.length)){ api('/projects?limit=500').then(d=>{ ALL_JOBS=(d.projects||[]).filter(p=>p.status!=='cancelled'); }); }
