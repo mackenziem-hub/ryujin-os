@@ -521,7 +521,12 @@ async function renderUpNext(){
     const wd = ymd(new Date(w.start_date+'T00:00:00'));
     const when = wd===today ? 'TODAY' : wd===tmrw ? 'TOMORROW' : new Date(w.start_date+'T00:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}).toUpperCase();
     const hot = wd===today || wd===tmrw;
-    return '<div class="folder" onclick="window.location.href=\'/job.html?wo='+encodeURIComponent(w.id||w.wo_number)+'\'"><div class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg></div><div class="body"><div class="addr">'+esc(w.address||w.customer_name||'Job')+'</div><div class="cust">'+esc([w.customer_name,w.shingle_product].filter(Boolean).join(' · ')||'Scheduled')+'</div></div><div class="right"><span class="chip '+(hot?'active':'open')+'">'+when+'</span></div></div>';
+    // Multi-day jobs (estimated_duration_days > 1) show their end date so crew see
+    // a job runs across days, e.g. a 2-day job starting Monday reads "TODAY / thru TUE".
+    const dur = Number(w.estimated_duration_days)||0;
+    let endLabel='';
+    if(dur>1){ const e=new Date(w.start_date+'T00:00:00'); e.setDate(e.getDate()+dur-1); endLabel=e.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}).toUpperCase(); }
+    return '<div class="folder" onclick="window.location.href=\'/job.html?wo='+encodeURIComponent(w.id||w.wo_number)+'\'"><div class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg></div><div class="body"><div class="addr">'+esc(w.address||w.customer_name||'Job')+'</div><div class="cust">'+esc([w.customer_name,w.shingle_product].filter(Boolean).join(' · ')||'Scheduled')+'</div></div><div class="right"><span class="chip '+(hot?'active':'open')+'">'+when+'</span>'+(endLabel?'<span style="font-family:var(--mono);font-size:10px;color:var(--faint);margin-top:3px">thru '+endLabel+'</span>':'')+'</div></div>';
   }).join('');
   box.innerHTML = h;
 }
