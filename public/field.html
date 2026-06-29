@@ -933,8 +933,21 @@ function aiOfferMatches(list, upload, q){
   log.appendChild(c); log.scrollTop=log.scrollHeight;
 }
 
+// ── AUTO-UPDATE ── never let a crew device sit on a stale cached build. Compare
+// this document's ETag (a content hash that changes every deploy) against the
+// live one and reload when it differs, on a timer + whenever the tab refocuses.
+// Skips the reload while a sheet is open or text is half-typed so it never yanks
+// anyone mid-task; the next check (or the next refocus) catches it.
+let BOOT_TAG = null;
+async function liveTag(){ try{ const r=await fetch(location.pathname,{method:'HEAD',cache:'no-store'}); return r.headers.get('etag')||r.headers.get('last-modified'); }catch(e){ return null; } }
+function updBusy(){ try{ if(document.querySelector('.ai-overlay.on')) return true; for(const el of document.querySelectorAll('textarea,input')){ const t=(el.type||'').toLowerCase(); if(t==='file'||t==='checkbox'||t==='radio'||t==='hidden') continue; if((el.value||'').trim()) return true; } }catch(e){} return false; }
+async function checkUpdate(force){ const t=await liveTag(); if(!t) return; if(!BOOT_TAG){ BOOT_TAG=t; return; } if(t!==BOOT_TAG && (force||!updBusy())) location.reload(); }
+
 // ── BOOT ──
 async function boot(){
+  checkUpdate();
+  setInterval(()=>checkUpdate(false), 120000);
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) checkUpdate(false); });
   const me = await api('/auth?action=me');
   ME = me && me.user ? me.user : null;
   if(!ME){ try{ ME = JSON.parse(localStorage.getItem('ryujin_user')||'null'); }catch(e){} }

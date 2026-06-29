@@ -88,6 +88,17 @@ async function boot(){
   }
 }
 boot();
+
+// ── AUTO-UPDATE ── the shell self-heals the same way the inner app does: compare
+// this document's ETag to the live one and reload when a new build ships. Peek into
+// the same-origin app iframe so we never reload while someone is mid-task in it.
+let BOOT_TAG=null;
+async function liveTag(){ try{ const r=await fetch(location.pathname,{method:'HEAD',cache:'no-store'}); return r.headers.get('etag')||r.headers.get('last-modified'); }catch(e){ return null; } }
+function appBusy(){ try{ const d=document.getElementById('app').contentDocument; if(!d) return false; if(d.querySelector('.ai-overlay.on')) return true; for(const el of d.querySelectorAll('textarea,input')){ const t=(el.type||'').toLowerCase(); if(t==='file'||t==='checkbox'||t==='radio'||t==='hidden') continue; if((el.value||'').trim()) return true; } }catch(e){} return false; }
+async function checkUpdate(){ const t=await liveTag(); if(!t) return; if(!BOOT_TAG){ BOOT_TAG=t; return; } if(t!==BOOT_TAG && !appBusy()) location.reload(); }
+checkUpdate();
+setInterval(checkUpdate, 120000);
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) checkUpdate(); });
 </script>
 </body>
 </html>
