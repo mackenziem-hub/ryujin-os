@@ -66,7 +66,7 @@ export default async function handler(req, res) {
   // what the digital job folder (open_folder) shows.
   const woLine = w => {
     const when = w.start_date === todayStr ? 'TODAY' : w.start_date === tmrwStr ? 'TOMORROW' : w.start_date;
-    return `- WO#${w.wo_number} ${w.address || w.customer_name || ''}${w.customer_name ? ' — ' + w.customer_name : ''} [starts ${when}${w.shingle_product ? ', ' + w.shingle_product : ''}${w.sub_crew_lead ? ', crew: ' + w.sub_crew_lead : ''}]`;
+    return `- WO#${w.wo_number} ${w.address || w.customer_name || ''}${w.customer_name ? ' - ' + w.customer_name : ''} [starts ${when}${w.shingle_product ? ', ' + w.shingle_product : ''}${w.sub_crew_lead ? ', crew: ' + w.sub_crew_lead : ''}]`;
   };
   const woLines = [...(upcomingWos || []), ...(pastWos || [])].map(woLine).join('\n') || '(none scheduled)';
 
@@ -83,7 +83,7 @@ HARD RULES
 WHEN TO DRIVE THE APP
 If the user clearly wants to GO somewhere or DO something in the app, include an action.
 - Open a tab -> {"type":"navigate","tab":"tasks|jobs|schedule|clock"}
-- Open the full digital job folder (materials, scope, photos, paysheet) -> {"type":"open_folder","wo":"<wo_number>"}
+- Open the full digital job folder (materials, scope, photos, paysheet) -> {"type":"open_folder","wo":"<wo number digits only, e.g. 29, not WO#29>"}
 - Open a basic job folder by address -> {"type":"open_job","query":"<address words>"}
 - Start a photo/drone upload for a job -> {"type":"upload","query":"<address words>"}
 For anything about MATERIALS, scope, "what do I need for <job>", or a specific
