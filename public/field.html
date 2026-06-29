@@ -168,6 +168,7 @@ window.__ryujinPrefetchInjected=true; window.__ryujinSkinInjected=true;
   .upload .uic svg{width:22px;height:22px;stroke:var(--accent);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
   .upload .ut{font-weight:700;font-size:14.5px}.upload .us{font-size:12px;color:var(--dim);margin-top:1px}
   .upload.cam .uic{background:var(--bp-dim)} .upload.cam .uic svg{stroke:var(--blueprint)}
+  .upload.dragover{border-color:var(--accent);border-style:solid;background:var(--accent-dim)}
   .mic{display:inline-flex;align-items:center;gap:7px;padding:0 14px;border:1px solid var(--border-hi);border-radius:11px;background:var(--surface);color:var(--blueprint);font-family:var(--sans);font-weight:700;font-size:14px;cursor:pointer}
   .mic svg{width:16px;height:16px;fill:none;stroke:var(--blueprint);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
   .mic.rec{background:rgba(239,68,68,.14);border-color:#ef4444;color:#ef4444;animation:micpulse 1.3s ease-in-out infinite} .mic.rec svg{stroke:#ef4444}
@@ -790,7 +791,7 @@ async function openJob(id){
   const media = files.filter(f=>{ const m=f.mime_type||''; return m.startsWith('image')||m.startsWith('video'); });
   h += '<div class="lbl">Photos &amp; footage <span class="n" id="photoCount">'+media.length+'</span></div>';
   h += '<button class="upload cam" onclick="openCamera()"><div class="uic"><svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg></div><div><div class="ut">Take photos</div><div class="us">Live camera, rapid fire. Shoot one after another into the bin</div></div></button>';
-  h += '<button class="upload" onclick="document.getElementById(\'photoInput\').click()"><div class="uic"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div><div><div class="ut">Upload photos &amp; footage</div><div class="us">Drone clips and bulk photos from your gallery</div></div></button>';
+  h += '<button class="upload" onclick="document.getElementById(\'photoInput\').click()" ondragover="dragOverUp(event)" ondragleave="dragLeaveUp(event)" ondrop="dropFiles(event)"><div class="uic"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div><div><div class="ut">Upload photos &amp; footage</div><div class="us">Pick a batch from your gallery, or drag files here on a computer</div></div></button>';
   CUR_MEDIA = media;
   h += '<div class="grid" id="photoGrid">' + media.map(tileHTML).join('') + '</div>';
   // notes
@@ -815,12 +816,18 @@ async function saveNote(){
   const r = await api('/projects?action=add-note', { method:'POST', body: JSON.stringify({ project_id:CUR_JOB, body:txt }) });
   if(r && r.id){ toast('Note saved'); openJob(CUR_JOB); } else { toast((r&&r.error)||'Could not save note'); }
 }
-// Photo/footage upload, shared by the gallery picker (#photoInput, multiple) and
-// the camera capture (#cameraInput). Small images go multipart (server thumbnails +
-// EXIF); videos (drone) and anything over the 50MB function cap go straight to Blob.
-async function uploadJobFiles(input){
-  if(!input.files.length || !CUR_JOB) return;
-  const files=[...input.files]; input.value=''; const job=CUR_JOB, total=files.length;
+// Photo/footage upload, shared by the gallery picker (#photoInput, multiple), the
+// camera capture (#cameraInput), and desktop drag-and-drop. Small images go
+// multipart (server thumbnails + EXIF); videos (drone) and anything over the 50MB
+// function cap go straight to Blob.
+function uploadJobFiles(input){ if(input && input.files){ const files=[...input.files]; input.value=''; uploadFiles(files); } }
+// Drag-and-drop onto the upload tile (desktop: drop a batch of drone files).
+function dropFiles(e){ e.preventDefault(); e.stopPropagation(); if(e.currentTarget) e.currentTarget.classList.remove('dragover'); const files = (e.dataTransfer && e.dataTransfer.files) ? [...e.dataTransfer.files] : []; if(files.length) uploadFiles(files); }
+function dragOverUp(e){ e.preventDefault(); e.stopPropagation(); if(e.dataTransfer) try{ e.dataTransfer.dropEffect='copy'; }catch(_){} if(e.currentTarget) e.currentTarget.classList.add('dragover'); }
+function dragLeaveUp(e){ if(e.currentTarget) e.currentTarget.classList.remove('dragover'); }
+async function uploadFiles(files){
+  if(!files || !files.length || !CUR_JOB) return;
+  const job=CUR_JOB, total=files.length;
   presencePing('uploading '+total+' photo'+(total===1?'':'s'));
   const small=[], big=[];
   files.forEach(f=>{ ((f.type||'').startsWith('video') || f.size>50*1024*1024) ? big.push(f) : small.push(f); });
