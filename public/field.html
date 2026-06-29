@@ -162,6 +162,11 @@ window.__ryujinPrefetchInjected=true; window.__ryujinSkinInjected=true;
   .upload .uic{width:42px;height:42px;border-radius:10px;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;flex-shrink:0}
   .upload .uic svg{width:22px;height:22px;stroke:var(--accent);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
   .upload .ut{font-weight:700;font-size:14.5px}.upload .us{font-size:12px;color:var(--dim);margin-top:1px}
+  .upload.cam .uic{background:var(--bp-dim)} .upload.cam .uic svg{stroke:var(--blueprint)}
+  .mic{display:inline-flex;align-items:center;gap:7px;padding:0 14px;border:1px solid var(--border-hi);border-radius:11px;background:var(--surface);color:var(--blueprint);font-family:var(--sans);font-weight:700;font-size:14px;cursor:pointer}
+  .mic svg{width:16px;height:16px;fill:none;stroke:var(--blueprint);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  .mic.rec{background:rgba(239,68,68,.14);border-color:#ef4444;color:#ef4444;animation:micpulse 1.3s ease-in-out infinite} .mic.rec svg{stroke:#ef4444}
+  @keyframes micpulse{0%,100%{opacity:1}50%{opacity:.62}}
   .takebtn{width:100%;padding:13px;border:1px solid var(--border-hi);border-radius:var(--r);background:var(--surface);color:var(--text);font-family:var(--sans);font-weight:600;font-size:14px;cursor:pointer;margin-bottom:14px;display:flex;align-items:center;justify-content:center;gap:9px}
   .takebtn svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}
@@ -273,7 +278,8 @@ window.__ryujinPrefetchInjected=true; window.__ryujinSkinInjected=true;
 <div class="view" id="v-messages"><div class="wrap" id="msgWrap"><div class="empty">Loading…</div></div></div>
 <div class="view" id="v-clock"><div class="wrap" id="clockWrap"><div class="empty">Loading…</div></div></div>
 
-<input type="file" id="photoInput" accept="image/*,video/*" multiple capture="environment" style="display:none">
+<input type="file" id="photoInput" accept="image/*,video/*" multiple style="display:none">
+<input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none">
 
 <div class="ai-overlay" id="aiOverlay" onclick="if(event.target===this)closeAI()">
   <div class="ai-sheet">
@@ -510,7 +516,7 @@ async function renderUpNext(){
     const dur = Number(w.estimated_duration_days)||0;
     let endLabel='';
     if(dur>1){ const e=new Date(w.start_date+'T00:00:00'); e.setDate(e.getDate()+dur-1); endLabel=e.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}).toUpperCase(); }
-    return '<div class="folder" onclick="window.location.href=\'/job.html?wo='+encodeURIComponent(w.id||w.wo_number)+'\'"><div class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg></div><div class="body"><div class="addr">'+esc(w.address||w.customer_name||'Job')+'</div><div class="cust">'+esc([w.customer_name,w.shingle_product].filter(Boolean).join(' · ')||'Scheduled')+'</div></div><div class="right"><span class="chip '+(hot?'active':'open')+'">'+when+'</span>'+(endLabel?'<span style="font-family:var(--mono);font-size:10px;color:var(--faint);margin-top:3px">thru '+endLabel+'</span>':'')+'</div></div>';
+    return '<div class="folder" onclick="openJobByWo(\''+(w.id||w.wo_number)+'\')"><div class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg></div><div class="body"><div class="addr">'+esc(w.address||w.customer_name||'Job')+'</div><div class="cust">'+esc([w.customer_name,w.shingle_product].filter(Boolean).join(' · ')||'Scheduled')+'</div></div><div class="right"><span class="chip '+(hot?'active':'open')+'">'+when+'</span>'+(endLabel?'<span style="font-family:var(--mono);font-size:10px;color:var(--faint);margin-top:3px">thru '+endLabel+'</span>':'')+'</div></div>';
   }).join('');
   box.innerHTML = h;
 }
@@ -654,12 +660,13 @@ async function openJob(id){
   // photos (images + video only; PDFs and other docs are not gallery tiles)
   const media = files.filter(f=>{ const m=f.mime_type||''; return m.startsWith('image')||m.startsWith('video'); });
   h += '<div class="lbl">Photos &amp; footage <span class="n">'+media.length+'</span></div>';
-  h += '<button class="upload" onclick="document.getElementById(\'photoInput\').click()"><div class="uic"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div><div><div class="ut">Upload photos &amp; footage</div><div class="us">Drone clips and site photos go in this folder</div></div></button>';
+  h += '<button class="upload cam" onclick="document.getElementById(\'cameraInput\').click()"><div class="uic"><svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg></div><div><div class="ut">Take a photo</div><div class="us">Snap site photos straight from your phone camera</div></div></button>';
+  h += '<button class="upload" onclick="document.getElementById(\'photoInput\').click()"><div class="uic"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div><div><div class="ut">Upload photos &amp; footage</div><div class="us">Drone clips and bulk photos from your gallery</div></div></button>';
   if(media.length){ h += '<div class="grid">' + media.map(f=>{ const vid=(f.mime_type||'').startsWith('video'); return '<div class="thumb">'+(vid?'<video src="'+esc(f.url)+'" muted preload="metadata"></video><span class="vb">▶ video</span>':'<img loading="lazy" src="'+esc(f.thumbnail_url||f.url)+'">')+'</div>'; }).join('') + '</div>'; }
   // notes
   const notes = nts.notes || [];
   h += '<div class="lbl">Notes <span class="n">'+notes.length+'</span></div>';
-  h += '<div class="panel" id="noteBox"><label>New note</label><textarea id="noteTxt" placeholder="Anything the team should know about this job…"></textarea><div class="prow"><button onclick="closeNoteBox()">Cancel</button><button class="go" onclick="saveNote()">Save note</button></div></div>';
+  h += '<div class="panel" id="noteBox"><label>New note</label><textarea id="noteTxt" placeholder="Type, or tap the mic to dictate…"></textarea><div class="prow"><button onclick="closeNoteBox()">Cancel</button><button class="mic" id="micBtn" onclick="toggleDictate()"><svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>Dictate</button><button class="go" onclick="saveNote()">Save note</button></div></div>';
   h += '<button class="addnote" onclick="openNoteBox()"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add a note</button>';
   if(pr.notes){ h += '<div class="note"><div class="meta"><b>Job (original)</b></div><div class="txt">'+esc(pr.notes)+'</div></div>'; }
   h += notes.map(n=>'<div class="note"><div class="meta"><b>'+esc(n.guest_name||'Crew')+'</b><span>'+ago(n.created_at)+'</span></div><div class="txt">'+esc(n.body)+'</div></div>').join('');
@@ -678,12 +685,13 @@ async function saveNote(){
   const r = await api('/projects?action=add-note', { method:'POST', body: JSON.stringify({ project_id:CUR_JOB, body:txt }) });
   if(r && r.id){ toast('Note saved'); openJob(CUR_JOB); } else { toast((r&&r.error)||'Could not save note'); }
 }
-document.getElementById('photoInput').addEventListener('change', async function(){
-  if(!this.files.length || !CUR_JOB) return;
-  const files=[...this.files]; this.value=''; const job=CUR_JOB, total=files.length;
+// Photo/footage upload, shared by the gallery picker (#photoInput, multiple) and
+// the camera capture (#cameraInput). Small images go multipart (server thumbnails +
+// EXIF); videos (drone) and anything over the 50MB function cap go straight to Blob.
+async function uploadJobFiles(input){
+  if(!input.files.length || !CUR_JOB) return;
+  const files=[...input.files]; input.value=''; const job=CUR_JOB, total=files.length;
   presencePing('uploading '+total+' photo'+(total===1?'':'s'));
-  // Small photos -> multipart (server makes thumbnails + reads EXIF). Videos
-  // (drone footage) and anything over the 50MB function cap -> straight to Blob.
   const small=[], big=[];
   files.forEach(f=>{ ((f.type||'').startsWith('video') || f.size>50*1024*1024) ? big.push(f) : small.push(f); });
   let done=0, failed=0;
@@ -712,7 +720,42 @@ document.getElementById('photoInput').addEventListener('change', async function(
   }
   toast(failed ? (done+' uploaded, '+failed+' failed') : ('Uploaded '+done+' file'+(done===1?'':'s')));
   if(CUR_JOB===job) openJob(job);
-});
+}
+document.getElementById('photoInput').addEventListener('change', function(){ uploadJobFiles(this); });
+document.getElementById('cameraInput').addEventListener('change', function(){ uploadJobFiles(this); });
+
+// Open the SIMPLE in-app folder for a scheduled work order. The Up next strip and
+// the Schedule calendar carry a WO id, not a project id, so resolve the WO to its
+// project server-side, then open the photo-first folder. Fall back to the full
+// digital folder only when no project is linked yet.
+async function openJobByWo(woId){
+  if(!woId) return;
+  try{
+    const r = await api('/projects?resolve_wo='+encodeURIComponent(woId));
+    if(r && r.project_id){ openJob(r.project_id); return; }
+  }catch(e){}
+  window.location.href='/job.html?wo='+encodeURIComponent(woId);
+}
+
+// Voice dictation in the note box (Web Speech API). Where the browser lacks it
+// (some iOS Safari builds), the textarea still accepts OS-level dictation / Wispr,
+// so point the user there instead of failing silently.
+let _dict=null, _dictOn=false;
+function toggleDictate(){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const ta = document.getElementById('noteTxt'); const btn = document.getElementById('micBtn');
+  if(!ta) return;
+  if(!SR){ toast('In-app dictation is not supported on this browser. You can still use your keyboard mic or Wispr right in the note.'); ta.focus(); return; }
+  if(_dictOn && _dict){ _dict.stop(); return; }
+  _dict = new SR(); _dict.lang='en-CA'; _dict.interimResults=true; _dict.continuous=true;
+  const base = ta.value ? ta.value.replace(/\s*$/,'')+' ' : '';
+  let finalTxt='';
+  _dict.onresult=(e)=>{ let interim=''; for(let i=e.resultIndex;i<e.results.length;i++){ const r=e.results[i]; r.isFinal ? (finalTxt+=r[0].transcript+' ') : (interim+=r[0].transcript); } ta.value=base+finalTxt+interim; };
+  _dict.onerror=(e)=>{ if(e&&e.error&&e.error!=='aborted') toast('Mic: '+e.error); };
+  _dict.onend=()=>{ _dictOn=false; if(btn) btn.classList.remove('rec'); };
+  try{ _dict.start(); _dictOn=true; if(btn) btn.classList.add('rec'); ta.focus(); }
+  catch(e){ toast('Could not start the mic'); }
+}
 
 // ── SCHEDULE ──
 let CAL_VIEW='week', CAL_ANCHOR=null, CAL_SEL=null, CAL_DATA={job:{},gc:{},wo:{},configured:false};
@@ -770,7 +813,7 @@ function calHeader(rangeLabel){
 }
 function dayPills(key, max){
   let items=[];
-  (CAL_DATA.wo[key]||[]).forEach(w=>items.push('<span class="pill job" onclick="event.stopPropagation();window.location.href=\'/job.html?wo='+encodeURIComponent(w.id||w.wo_number)+'\'" style="cursor:pointer">'+esc(w.address||w.customer_name||'Job')+(w.customer_name&&w.address?'<span class="pt"> '+esc(w.customer_name)+'</span>':'')+'</span>'));
+  (CAL_DATA.wo[key]||[]).forEach(w=>items.push('<span class="pill job" onclick="event.stopPropagation();openJobByWo(\''+(w.id||w.wo_number)+'\')" style="cursor:pointer">'+esc(w.address||w.customer_name||'Job')+(w.customer_name&&w.address?'<span class="pt"> '+esc(w.customer_name)+'</span>':'')+'</span>'));
   (CAL_DATA.job[key]||[]).forEach(t=>items.push('<span class="pill job">'+esc(t.title)+(t.project?.address?'<span class="pt"> '+esc(t.project.address)+'</span>':'')+'</span>'));
   (CAL_DATA.gc[key]||[]).forEach(e=>items.push('<span class="pill gcal"><span class="pt">'+(e.allDay?'all day':timeStr(e.startTime))+' </span>'+esc(e.summary||'Event')+'</span>'));
   if(max && items.length>max){ const extra=items.length-max; items=items.slice(0,max); items.push('<span class="pill" style="text-align:center;color:var(--faint)">+'+extra+' more</span>'); }

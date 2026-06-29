@@ -430,6 +430,25 @@ async function handler(req, res) {
   if (req.method === 'GET') {
     const { id, status, customer_id, estimate_id, limit = 50, offset = 0 } = req.query;
 
+    // ── Resolve a work order to its linked project ──
+    // The field app's Up next strip and Schedule calendar carry a WO id but open
+    // the project's photo-first folder, so they need the project id. Reuses the
+    // same matching the project/work-order sync relies on (estimate link first,
+    // then customer, then address).
+    if (req.query.resolve_wo) {
+      const woKey = String(req.query.resolve_wo).trim();
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(woKey);
+      let woQ = supabaseAdmin
+        .from('workorders')
+        .select('id, wo_number, status, start_date, linked_estimate_id, customer_name, address')
+        .eq('tenant_id', tenantId);
+      woQ = isUuid ? woQ.eq('id', woKey) : woQ.eq('wo_number', woKey);
+      const { data: wo } = await woQ.maybeSingle();
+      if (!wo) return res.json({ project_id: null });
+      const { projectId } = await resolveProjectIdFromWorkorder(tenantId, wo);
+      return res.json({ project_id: projectId || null });
+    }
+
     if (id) {
       const { data, error } = await supabaseAdmin
         .from('projects')
