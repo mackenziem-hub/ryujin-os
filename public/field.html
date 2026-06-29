@@ -170,6 +170,20 @@ window.__ryujinPrefetchInjected=true; window.__ryujinSkinInjected=true;
   .upload.cam .uic{background:var(--bp-dim)} .upload.cam .uic svg{stroke:var(--blueprint)}
   .upload.dragover{border-color:var(--accent);border-style:solid;background:var(--accent-dim)}
   .showall{width:100%;margin-top:9px;padding:12px;border:1px solid var(--border-hi);border-radius:var(--r);background:var(--surface);color:var(--accent);font-family:var(--sans);font-weight:600;font-size:13.5px;cursor:pointer}
+  /* Documents section: work order, pay sheet, EagleView, files */
+  .doccard{background:var(--row);border:1px solid var(--border);border-radius:var(--r);padding:13px 15px;margin-bottom:8px}
+  .doccard .docrow{display:flex;justify-content:space-between;align-items:center;gap:10px}
+  .doccard .dt{font-weight:700;font-size:14.5px;color:var(--text)}
+  .doccard .dchip{font-family:var(--mono);font-size:10px;letter-spacing:.5px;text-transform:uppercase;color:var(--dim);background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:3px 7px;white-space:nowrap}
+  .doccard .docmeta{font-size:12.5px;color:var(--dim);margin-top:5px}
+  .doccard .scopewrap{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+  .doccard .scopechip{font-size:11.5px;color:var(--text);background:var(--surface-2);border:1px solid var(--border);border-radius:7px;padding:4px 8px}
+  .doccard .psrow{display:flex;justify-content:space-between;gap:12px;font-size:13px;color:var(--dim);padding:6px 0;border-top:1px solid var(--border);margin-top:6px}
+  .doccard .psrow span:last-child{font-family:var(--mono);color:var(--text);white-space:nowrap}
+  .doccard .psrow.tot{font-weight:700}.doccard .psrow.tot span{color:var(--text)}
+  .doclink{display:flex;align-items:center;gap:10px;padding:13px 15px;margin-bottom:8px;background:var(--row);border:1px solid var(--border);border-radius:var(--r);color:var(--text);text-decoration:none;font-size:14px;font-weight:600}
+  .doclink:hover{border-color:var(--accent)}
+  .doclink svg{width:18px;height:18px;fill:none;stroke:var(--accent);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
   .mic{display:inline-flex;align-items:center;gap:7px;padding:0 14px;border:1px solid var(--border-hi);border-radius:11px;background:var(--surface);color:var(--blueprint);font-family:var(--sans);font-weight:700;font-size:14px;cursor:pointer}
   .mic svg{width:16px;height:16px;fill:none;stroke:var(--blueprint);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
   .mic.rec{background:rgba(239,68,68,.14);border-color:#ef4444;color:#ef4444;animation:micpulse 1.3s ease-in-out infinite} .mic.rec svg{stroke:#ef4444}
@@ -761,11 +775,12 @@ async function openJob(id){
   window.scrollTo(0,0);
   const w = document.getElementById('jobWrap');
   w.innerHTML = '<div class="empty">Loading…</div>';
-  const [det, fl, nts, wod] = await Promise.all([
+  const [det, fl, nts, wod, jdoc] = await Promise.all([
     api('/projects?id='+id),
     api('/files?project_id='+id),
     api('/projects?action=notes&project_id='+id),
-    api('/workorders?limit=200')
+    api('/workorders?limit=200'),
+    api('/job-docs?project_id='+id)
   ]);
   const pr = (det && det.id) ? det : {};
   const files = fl.files || [];
@@ -807,6 +822,32 @@ async function openJob(id){
   h += '<button class="addnote" onclick="openNoteBox()"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add a note</button>';
   if(pr.notes){ h += '<div class="note"><div class="meta"><b>Job (original)</b></div><div class="txt">'+esc(pr.notes)+'</div></div>'; }
   h += notes.map(n=>'<div class="note"><div class="meta"><b>'+esc(n.guest_name||'Crew')+'</b><span>'+ago(n.created_at)+'</span></div><div class="txt">'+esc(n.body)+'</div></div>').join('');
+  // ── Documents: work order, pay sheet (role-sanitized server-side), EagleView, files ──
+  const jd = (jdoc && !jdoc.error) ? jdoc : {};
+  const docFiles = files.filter(f=>{ const m=f.mime_type||''; return m==='application/pdf' || f.category==='document'; });
+  if(wo || jd.paysheet || jd.eagleViewUrl || docFiles.length){
+    h += '<div class="lbl">Documents</div>';
+    if(wo){
+      const scope = Array.isArray(wo.scope_items) ? wo.scope_items.map(s=> typeof s==='string'?s:((s&&(s.item||s.description))||'')).filter(Boolean) : [];
+      const meta=[woColor?('Color '+esc(woColor)):'', wo.total_sq?(esc(wo.total_sq)+' SQ'):'', wo.roof_pitch?(esc(wo.roof_pitch)+' pitch'):''].filter(Boolean).join(' · ');
+      h += '<div class="doccard"><div class="docrow"><span class="dt">Work order'+(wo.wo_number?(' #'+esc(wo.wo_number)):'')+'</span><span class="dchip">'+esc(String(wo.status||'issued').replace(/_/g,' '))+'</span></div>'
+        + (meta?'<div class="docmeta">'+meta+'</div>':'')
+        + (scope.length?'<div class="scopewrap">'+scope.map(s=>'<span class="scopechip">'+esc(s)+'</span>').join('')+'</div>':'')
+        + '</div>';
+    }
+    if(jd.paysheet){
+      const ps=jd.paysheet; const rows=[].concat(ps.labour_breakdown||[], ps.add_ons||[], ps.surcharges||[]);
+      h += '<div class="doccard"><div class="docrow"><span class="dt">'+(jd.priv?'Pay sheet':'Your pay sheet')+'</span>'+(ps.status?'<span class="dchip">'+esc(String(ps.status).replace(/_/g,' '))+'</span>':'')+'</div>';
+      h += rows.map(r=>{ const q=r.qty_sq?(' · '+esc(r.qty_sq)+' SQ'):(r.qty?(' · '+esc(r.qty)):''); return '<div class="psrow"><span>'+esc(r.description||'Item')+q+'</span><span>$'+Number(r.total||0).toLocaleString()+'</span></div>'; }).join('');
+      h += '<div class="psrow sub"><span>Subtotal</span><span>$'+Number(ps.subtotal||0).toLocaleString()+'</span></div>'
+         + '<div class="psrow sub"><span>HST</span><span>$'+Number(ps.hst||0).toLocaleString()+'</span></div>'
+         + '<div class="psrow tot"><span>Total</span><span>$'+Number(ps.total||0).toLocaleString()+'</span></div></div>';
+    }
+    if(jd.eagleViewUrl){
+      h += '<a class="doclink" href="'+esc(jd.eagleViewUrl)+'" target="_blank" rel="noopener"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>EagleView report'+(jd.eagleViewLabel?(' · '+esc(jd.eagleViewLabel)):'')+'</a>';
+    }
+    docFiles.forEach(f=>{ h += '<a class="doclink" href="'+esc(f.url)+'" target="_blank" rel="noopener"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'+esc(f.filename||'Document')+'</a>'; });
+  }
   // Owner/admin/manager keep the rich digital folder (scope, materials, paysheet,
   // P&L, proposal close) one tap away; crew/sub stay on this clean photo-first folder.
   if(pr.customer_id && ['owner','admin','manager'].includes(String(ROLE||'').toLowerCase())){
