@@ -12,10 +12,12 @@ import { handleUpload } from '@vercel/blob/client';
 import { resolveTenant } from '../lib/tenant.js';
 
 const ALLOWED_CONTENT_TYPES = [
-  'video/mp4', 'video/quicktime', 'video/webm', 'video/x-m4v',
-  'image/jpeg', 'image/png', 'image/heic', 'image/heif', 'image/webp',
+  'video/mp4', 'video/quicktime', 'video/webm', 'video/x-m4v', 'video/3gpp',
+  'video/x-matroska', 'video/x-msvideo', 'video/mpeg', 'video/x-ms-wmv', 'video/avi',
+  'image/jpeg', 'image/png', 'image/heic', 'image/heif', 'image/webp', 'image/gif',
+  'application/octet-stream', // some drone/phone files report no specific mime
 ];
-const MAX_BYTES = 500 * 1024 * 1024; // 500 MB ceiling — generous for selfie videos
+const MAX_BYTES = 2 * 1024 * 1024 * 1024; // 2 GB ceiling, drone 4K clips run large
 
 async function readJson(req) {
   if (req.body && typeof req.body === 'object') return req.body;

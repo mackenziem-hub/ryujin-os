@@ -825,37 +825,59 @@ function uploadJobFiles(input){ if(input && input.files){ const files=[...input.
 function dropFiles(e){ e.preventDefault(); e.stopPropagation(); if(e.currentTarget) e.currentTarget.classList.remove('dragover'); const files = (e.dataTransfer && e.dataTransfer.files) ? [...e.dataTransfer.files] : []; if(files.length) uploadFiles(files); }
 function dragOverUp(e){ e.preventDefault(); e.stopPropagation(); if(e.dataTransfer) try{ e.dataTransfer.dropEffect='copy'; }catch(_){} if(e.currentTarget) e.currentTarget.classList.add('dragover'); }
 function dragLeaveUp(e){ if(e.currentTarget) e.currentTarget.classList.remove('dragover'); }
+// Many drone/phone files arrive with an empty File.type; infer the mime from the
+// extension so videos route to Blob, pass the upload-token content gate, register
+// with a real mime, and render as a video tile (not octet-stream).
+function guessMime(f){
+  const t=((f&&f.type)||'').toLowerCase(); if(t) return t;
+  const n=((f&&f.name)||'').toLowerCase(); const ext=n.slice(n.lastIndexOf('.')+1);
+  const map={ mp4:'video/mp4', mov:'video/quicktime', m4v:'video/x-m4v', webm:'video/webm', '3gp':'video/3gpp', mkv:'video/x-matroska', avi:'video/x-msvideo', wmv:'video/x-ms-wmv', mpeg:'video/mpeg', mpg:'video/mpeg', jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png', gif:'image/gif', heic:'image/heic', heif:'image/heif', webp:'image/webp' };
+  return map[ext]||'';
+}
 async function uploadFiles(files){
   if(!files || !files.length || !CUR_JOB) return;
   const job=CUR_JOB, total=files.length;
-  presencePing('uploading '+total+' photo'+(total===1?'':'s'));
+  presencePing('uploading '+total+' file'+(total===1?'':'s'));
   const small=[], big=[];
-  files.forEach(f=>{ ((f.type||'').startsWith('video') || f.size>50*1024*1024) ? big.push(f) : small.push(f); });
-  let done=0, failed=0; const created=[];
+  // Vercel functions cap the request body at ~4.5MB, so only small photos take the
+  // multipart path (server thumbnails + EXIF). Videos and anything over 4MB stream
+  // straight to Blob, which has no such limit.
+  files.forEach(f=>{ const m=guessMime(f); (m.startsWith('video') || f.size>4*1024*1024) ? big.push(f) : small.push(f); });
+  let done=0, failed=0, lastErr=''; const created=[];
   const prog=()=>toast('<span class="spin"></span> uploading '+(done+failed)+'/'+total+'…');
   prog();
   if(small.length){
-    const fd=new FormData(); fd.append('project_id', job); fd.append('category','general'); if(ME?.id) fd.append('uploaded_by', ME.id);
-    small.forEach(f=>fd.append('files', f));
-    try{ const t=tok(); const r=await fetch(API+'/files?tenant='+TENANT,{method:'POST',headers:t?{Authorization:'Bearer '+t,'x-tenant-id':TENANT}:{'x-tenant-id':TENANT},body:fd}); if(r.ok){ const j=await r.json().catch(()=>({})); (j.files||[]).forEach(x=>created.push(x)); done+=small.length; } else failed+=small.length; }
-    catch(e){ failed+=small.length; }
-    prog();
+    // Chunk the multipart batch so a group of photos never exceeds the 4.5MB body cap.
+    const CHUNK=4*1024*1024; let batch=[], bsize=0;
+    const flush=async()=>{
+      if(!batch.length) return; const grp=batch; batch=[]; bsize=0;
+      const fd=new FormData(); fd.append('project_id', job); fd.append('category','general'); if(ME?.id) fd.append('uploaded_by', ME.id);
+      grp.forEach(f=>fd.append('files', f));
+      try{ const t=tok(); const r=await fetch(API+'/files?tenant='+TENANT,{method:'POST',headers:t?{Authorization:'Bearer '+t,'x-tenant-id':TENANT}:{'x-tenant-id':TENANT},body:fd}); if(r.ok){ const j=await r.json().catch(()=>({})); (j.files||[]).forEach(x=>created.push(x)); done+=grp.length; } else { failed+=grp.length; const ej=await r.json().catch(()=>({})); if(ej&&ej.error) lastErr=ej.error; } }
+      catch(e){ failed+=grp.length; lastErr=(e&&e.message)||String(e); }
+      prog();
+    };
+    for(const f of small){ if(bsize+f.size>CHUNK && batch.length) await flush(); batch.push(f); bsize+=f.size; }
+    await flush();
   }
   if(big.length){
-    try{
-      const { upload } = await import('https://esm.sh/@vercel/blob@0.27/client');
+    let mod=null;
+    try{ mod = await import('https://esm.sh/@vercel/blob@0.27/client'); }
+    catch(e){ failed+=big.length; lastErr='upload library unavailable (connection?)'; }
+    if(mod){
       for(const f of big){
+        const mime=guessMime(f)||'application/octet-stream';
         try{
-          const blob = await upload(f.name, f, { access:'public', handleUploadUrl:'/api/marketing-upload-token?tenant='+TENANT, clientPayload: JSON.stringify({tenant:TENANT}), contentType: f.type||undefined });
+          const blob = await mod.upload(f.name, f, { access:'public', handleUploadUrl:'/api/marketing-upload-token?tenant='+TENANT, clientPayload: JSON.stringify({tenant:TENANT}), contentType: mime });
           const t=tok();
-          const r=await fetch(API+'/files?tenant='+TENANT,{ method:'POST', headers: Object.assign({'Content-Type':'application/json','x-tenant-id':TENANT}, t?{Authorization:'Bearer '+t}:{}), body: JSON.stringify({ project_id:job, url:blob.url, filename:f.name, mime_type:f.type, file_size:f.size, category:'general', uploaded_by: ME?.id||null }) });
-          if(r.ok){ const j=await r.json().catch(()=>({})); (j.files||[]).forEach(x=>created.push(x)); done++; } else failed++;
-        }catch(e){ failed++; }
+          const r=await fetch(API+'/files?tenant='+TENANT,{ method:'POST', headers: Object.assign({'Content-Type':'application/json','x-tenant-id':TENANT}, t?{Authorization:'Bearer '+t}:{}), body: JSON.stringify({ project_id:job, url:blob.url, filename:f.name, mime_type:mime, file_size:f.size, category:'general', uploaded_by: ME?.id||null }) });
+          if(r.ok){ const j=await r.json().catch(()=>({})); (j.files||[]).forEach(x=>created.push(x)); done++; } else { failed++; const ej=await r.json().catch(()=>({})); if(ej&&ej.error) lastErr=ej.error; }
+        }catch(e){ failed++; lastErr=(e&&e.message)||String(e); }
         prog();
       }
-    }catch(e){ failed+=big.length; toast('Big-file upload unavailable right now'); }
+    }
   }
-  toast(failed ? (done+' uploaded, '+failed+' failed') : ('Uploaded '+done+' file'+(done===1?'':'s')));
+  toast(failed ? (done+' done, '+failed+' failed'+(lastErr?(': '+String(lastErr).slice(0,70)):'')) : ('Uploaded '+done+' file'+(done===1?'':'s')));
   // Smooth: drop the new tiles into the open grid instead of reloading the folder.
   // If the server reported successes but returned fewer file objects than uploaded,
   // reconcile from the source of truth rather than trusting the partial list.
