@@ -7,6 +7,7 @@
 // PUT    /api/tickets                — Update ticket (acknowledge, complete, reassign)
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requirePortalSessionAndTenant } from '../lib/portalAuth.js';
+import { sendPushToUser } from '../lib/webpush.js';
 
 async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -175,6 +176,11 @@ async function handler(req, res) {
       action: 'created',
       details: { title: body.title, assigned_to: body.assigned_to, due_date: body.due_date }
     });
+
+    // Web push the assignee that a task landed (fail-soft; no-op until VAPID set).
+    if (data.assigned_to) {
+      try { await sendPushToUser(tenantId, data.assigned_to, { title: 'New task', body: String(body.title || 'You have a new task').slice(0, 90), url: '/companion.html', tag: 'task-' + data.id }); } catch (e) {}
+    }
 
     return res.status(201).json(data);
   }

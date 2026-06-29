@@ -1247,7 +1247,19 @@ async function sendCompose(){
   if(r.thread_id){ openThread(r.thread_id); } else { renderMessages(); }
 }
 function toggleMenu(e){ if(e) e.stopPropagation(); const m=document.getElementById('acctMenu'); if(!m) return; m.classList.toggle('on'); }
-function signOut(){ try{ localStorage.removeItem('ryujin_token'); localStorage.removeItem('ryujin_user'); sessionStorage.removeItem('ryujin_token'); sessionStorage.removeItem('ryujin_user'); }catch(e){} location.href='/login.html'; }
+async function signOut(){
+  // Drop the push subscription BEFORE clearing the token (the DELETE needs auth),
+  // so a signed-out user stops receiving notifications on a shared device.
+  try{
+    if('serviceWorker' in navigator && 'PushManager' in window){
+      const reg = await navigator.serviceWorker.getRegistration();
+      const sub = reg && await reg.pushManager.getSubscription();
+      if(sub){ try{ await api('/push?endpoint='+encodeURIComponent(sub.endpoint), {method:'DELETE'}); }catch(_){} try{ await sub.unsubscribe(); }catch(_){} }
+    }
+  }catch(_){}
+  try{ localStorage.removeItem('ryujin_token'); localStorage.removeItem('ryujin_user'); localStorage.removeItem('ryujin_push_key'); sessionStorage.removeItem('ryujin_token'); sessionStorage.removeItem('ryujin_user'); }catch(e){}
+  location.href='/login.html';
+}
 document.addEventListener('click', ()=>{ const m=document.getElementById('acctMenu'); if(m) m.classList.remove('on'); });
 function setBadge(n){ ['msgBadge','navMsgBadge'].forEach(id=>{ const b=document.getElementById(id); if(!b) return; if(n>0){ b.textContent=n; b.style.display='flex'; } else b.style.display='none'; }); }
 async function sendOS(){
@@ -1342,11 +1354,35 @@ async function checkUpdate(force){ const t=await liveTag(); if(!t) return; if(!B
 
 // ── ALERTS: in-app notify + sound + vibration + app badge for new tasks/messages ──
 // Foreground (app open or recently backgrounded). True phone-locked push is web-push.
-let _seenMsg=new Set(), _seenTask=new Set(), _alertReady=false, _audioCtx=null;
+let _seenMsg=new Set(), _seenTask=new Set(), _alertReady=false, _audioCtx=null, _pushActive=false;
 function primeAlerts(){
   try{ _audioCtx = _audioCtx || new (window.AudioContext||window.webkitAudioContext)(); if(_audioCtx.state==='suspended') _audioCtx.resume(); }catch(_){}
-  if('Notification' in window && Notification.permission==='default'){ try{ Notification.requestPermission(); }catch(_){} }
+  if('Notification' in window){
+    if(Notification.permission==='granted'){ subscribePush(); }
+    else if(Notification.permission==='default'){ try{ Notification.requestPermission().then(p=>{ if(p==='granted') subscribePush(); }); }catch(_){} }
+  }
 }
+// Register a Web Push subscription so notifications arrive even when the app is
+// closed. No-op until VAPID is configured server-side (publicKey null) or until
+// the user grants notification permission.
+async function subscribePush(){
+  try{
+    if(!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window) || Notification.permission!=='granted') return;
+    const cfg = await api('/push?action=config');
+    const key = cfg && cfg.publicKey; if(!key) return; // VAPID not configured yet
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    // If the server's VAPID key rotated since we last subscribed, the old sub is
+    // dead (push service rejects it). Drop it and re-subscribe with the new key.
+    let lastKey=null; try{ lastKey=localStorage.getItem('ryujin_push_key'); }catch(_){}
+    if(sub && lastKey && lastKey!==key){ try{ await sub.unsubscribe(); }catch(_){} sub=null; }
+    if(!sub){ sub = await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey: _urlB64ToU8(key) }); }
+    const j = sub.toJSON(); if(!j || !j.endpoint || !j.keys) return;
+    const r = await api('/push', { method:'POST', body: JSON.stringify({ subscription:{ endpoint:j.endpoint, keys:j.keys } }) });
+    if(r && r.ok){ _pushActive=true; try{ localStorage.setItem('ryujin_push_key', key); }catch(_){} }
+  }catch(e){}
+}
+function _urlB64ToU8(b64){ const pad='='.repeat((4-b64.length%4)%4); const s=(b64+pad).replace(/-/g,'+').replace(/_/g,'/'); const raw=atob(s); const a=new Uint8Array(raw.length); for(let i=0;i<raw.length;i++) a[i]=raw.charCodeAt(i); return a; }
 function playDing(){
   try{
     _audioCtx = _audioCtx || new (window.AudioContext||window.webkitAudioContext)();
@@ -1361,14 +1397,21 @@ function setAppBadgeCount(n){ try{ if(navigator.setAppBadge){ n>0?navigator.setA
 function setTaskBadge(n){ const b=document.getElementById('navTaskBadge'); if(!b) return; if(n>0){ b.textContent=n>99?'99+':n; b.style.display='flex'; } else b.style.display='none'; }
 function fireAlert(items){
   if(!items.length) return;
-  if(navigator.vibrate) try{ navigator.vibrate([70,40,70]); }catch(_){}
-  playDing();
   const it=items[0], more=items.length>1?(' +'+(items.length-1)+' more'):'';
   const title = it.kind==='message' ? ('New message'+(it.from?' from '+it.from:'')) : 'New task';
   const body = ((it.body||'').slice(0,90))+more;
-  if(document.hidden && 'Notification' in window && Notification.permission==='granted'){
-    try{ const n=new Notification(title,{ body, icon:'/brand/plus-ultra/favicon-mark.png', badge:'/brand/plus-ultra/favicon-mark.png', tag:'pu-field-alert', renotify:true }); n.onclick=()=>{ try{ window.focus(); }catch(_){} try{ n.close(); }catch(_){} }; }catch(_){}
-  } else { toast(title); }
+  if(!document.hidden){
+    // Foreground: in-app ding + buzz + toast.
+    if(navigator.vibrate) try{ navigator.vibrate([70,40,70]); }catch(_){}
+    playDing(); toast(title); return;
+  }
+  // Backgrounded: when push is active the service worker owns the OS notification
+  // (no double-notify). Without push (no VAPID yet) fall back to a page notification.
+  if(_pushActive) return;
+  if('Notification' in window && Notification.permission==='granted'){
+    if(navigator.vibrate) try{ navigator.vibrate([70,40,70]); }catch(_){}
+    try{ const n=new Notification(title,{ body, icon:'/brand/plus-ultra/favicon-mark.png', tag:'pu-field-alert', renotify:true }); n.onclick=()=>{ try{ window.focus(); }catch(_){} try{ n.close(); }catch(_){} }; }catch(_){}
+  }
 }
 async function alertPoll(){
   if(!ME || !ME.id) return;
@@ -1396,6 +1439,7 @@ async function alertPoll(){
 async function boot(){
   if('serviceWorker' in navigator){ try{ navigator.serviceWorker.register('/sw.js').catch(()=>{}); }catch(e){} }
   document.addEventListener('pointerdown', primeAlerts, {once:true});
+  subscribePush();
   checkUpdate();
   setInterval(()=>checkUpdate(false), 120000);
   document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) checkUpdate(false); });
