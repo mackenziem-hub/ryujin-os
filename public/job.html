@@ -490,13 +490,13 @@ function render({ customer, estimates, workorders, paysheets, photos, roster, pu
         <div class="hero-contact">
           ${customer.phone ? `<div><a href="tel:${esc(customer.phone)}">${esc(customer.phone)}</a></div>` : ''}
           ${customer.email ? `<div><a href="mailto:${esc(customer.email)}">${esc(customer.email)}</a></div>` : ''}
-          ${customer.ghl_contact_id ? `<div style="margin-top:4px;font-size:0.82em;color:rgba(200,220,255,0.5)">GHL ${esc(customer.ghl_contact_id.slice(0,10))}...</div>` : ''}
+          ${PRIV && customer.ghl_contact_id ? `<div style="margin-top:4px;font-size:0.82em;color:rgba(200,220,255,0.5)">GHL ${esc(customer.ghl_contact_id.slice(0,10))}...</div>` : ''}
         </div>
       </div>
       <div class="hero-stats">
         <div class="hero-stat"><div class="lbl">Tier</div><div class="val">${(tier||'').toUpperCase()}</div></div>
         <div class="hero-stat"><div class="lbl">Size</div><div class="val">${sq}</div></div>
-        <div class="hero-stat"><div class="lbl">Deal Value</div><div class="val">${money(total)}</div></div>
+        ${PRIV ? `<div class="hero-stat"><div class="lbl">Deal Value</div><div class="val">${money(total)}</div></div>` : ''}
         <div class="hero-stat"><div class="lbl">Work Order</div><div class="val">${activeWo ? 'WO-' + activeWo.wo_number : DASH}</div></div>
         <div class="hero-stat"><div class="lbl">Pay Sheet</div><div class="val">${activePs ? esc(activePs.job_id) : DASH}</div></div>
         <div class="hero-stat"><div class="lbl">Start Date</div><div class="val">${activeWo?.start_date || 'TBD'}</div></div>
@@ -528,7 +528,7 @@ function render({ customer, estimates, workorders, paysheets, photos, roster, pu
   `);
 
   // 2. ESTIMATE
-  sections.push(`
+  if (PRIV) sections.push(`
     <details class="acc" open data-section="estimate">
       <summary>
         <div class="title"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> ESTIMATE</div>
@@ -716,7 +716,7 @@ function render({ customer, estimates, workorders, paysheets, photos, roster, pu
               `).join('')}
             </div>
           ` : '').join('')}
-          ${poCount ? `
+          ${(PRIV && poCount) ? `
             <div style="margin-top:14px;padding-top:10px;border-top:1px solid rgba(251,146,60,0.22)">
               <div style="font-family:'JetBrains Mono',monospace;font-size:0.68em;color:#22d3ee;letter-spacing:1.5px;margin-bottom:8px">PURCHASE ORDERS (ORDERED)</div>
               ${purchaseOrders.map(po => {
@@ -773,7 +773,9 @@ function render({ customer, estimates, workorders, paysheets, photos, roster, pu
     };
   })();
   window._jobPnl = pnl;
-  if (pnl && pnl.revenue > 0) {
+  // Financials are owner/admin only. A crew member or subcontractor must never see
+  // the company's margin, revenue, or cost breakdown on a job.
+  if (PRIV && pnl && pnl.revenue > 0) {
     const startMode = (pnl.hasPO || pnl.hasPs) ? 'actual' : 'planned';
     const m0 = pnlCompute(pnl, startMode);
     sections.push(`
@@ -859,7 +861,7 @@ function render({ customer, estimates, workorders, paysheets, photos, roster, pu
   `);
 
   // 6.6 CHANGE ORDERS (full-duplex customer/sub accept; record + log only)
-  sections.push(`
+  if (PRIV) sections.push(`
     <details class="acc" open data-section="changeorders">
       <summary>
         <div class="title"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg> CHANGE ORDERS</div>
@@ -925,7 +927,7 @@ function render({ customer, estimates, workorders, paysheets, photos, roster, pu
   `);
 
   // 8. COMMS HISTORY (placeholder)
-  sections.push(`
+  if (PRIV) sections.push(`
     <details class="acc" data-section="comms">
       <summary>
         <div class="title"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg> COMMS HISTORY</div>
