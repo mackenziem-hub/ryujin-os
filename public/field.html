@@ -169,6 +169,7 @@ window.__ryujinPrefetchInjected=true; window.__ryujinSkinInjected=true;
   .upload .ut{font-weight:700;font-size:14.5px}.upload .us{font-size:12px;color:var(--dim);margin-top:1px}
   .upload.cam .uic{background:var(--bp-dim)} .upload.cam .uic svg{stroke:var(--blueprint)}
   .upload.dragover{border-color:var(--accent);border-style:solid;background:var(--accent-dim)}
+  .showall{width:100%;margin-top:9px;padding:12px;border:1px solid var(--border-hi);border-radius:var(--r);background:var(--surface);color:var(--accent);font-family:var(--sans);font-weight:600;font-size:13.5px;cursor:pointer}
   .mic{display:inline-flex;align-items:center;gap:7px;padding:0 14px;border:1px solid var(--border-hi);border-radius:11px;background:var(--surface);color:var(--blueprint);font-family:var(--sans);font-weight:700;font-size:14px;cursor:pointer}
   .mic svg{width:16px;height:16px;fill:none;stroke:var(--blueprint);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
   .mic.rec{background:rgba(239,68,68,.14);border-color:#ef4444;color:#ef4444;animation:micpulse 1.3s ease-in-out infinite} .mic.rec svg{stroke:#ef4444}
@@ -792,8 +793,13 @@ async function openJob(id){
   h += '<div class="lbl">Photos &amp; footage <span class="n" id="photoCount">'+media.length+'</span></div>';
   h += '<button class="upload cam" onclick="openCamera()"><div class="uic"><svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg></div><div><div class="ut">Take photos</div><div class="us">Live camera, rapid fire. Shoot one after another into the bin</div></div></button>';
   h += '<button class="upload" onclick="document.getElementById(\'photoInput\').click()" ondragover="dragOverUp(event)" ondragleave="dragLeaveUp(event)" ondrop="dropFiles(event)"><div class="uic"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div><div><div class="ut">Upload photos &amp; footage</div><div class="us">Pick a batch from your gallery, or drag files here on a computer</div></div></button>';
+  // Newest first so fresh uploads sit at the top, and only render a first page so a
+  // folder with 100+ full-res photos does not choke a phone (rest via Show all).
+  media.sort((a,b)=> new Date(b.uploaded_at||b.captured_at||b.created_at||0) - new Date(a.uploaded_at||a.captured_at||a.created_at||0));
   CUR_MEDIA = media;
-  h += '<div class="grid" id="photoGrid">' + media.map(tileHTML).join('') + '</div>';
+  const GRID_CAP = 36;
+  h += '<div class="grid" id="photoGrid">' + media.slice(0, GRID_CAP).map(tileHTML).join('') + '</div>';
+  if(media.length > GRID_CAP){ h += '<button class="showall" id="showAllBtn" onclick="showAllPhotos()">Show all '+media.length+' photos</button>'; }
   // notes
   const notes = nts.notes || [];
   h += '<div class="lbl">Notes <span class="n">'+notes.length+'</span></div>';
@@ -957,7 +963,8 @@ function selThumb(id){ const g=document.getElementById('photoGrid'); if(!g) retu
 function tileHTML(f){ const vid=(f.mime_type||'').startsWith('video'); const inner=vid?'<video src="'+esc(f.url)+'" muted preload="metadata"></video><span class="vb">▶</span>':'<img loading="lazy" src="'+esc(f.thumbnail_url||f.url)+'">'; const id=esc(f.id); return '<div class="thumb" data-fid="'+id+'" onpointerdown="thumbHoldStart(event,\''+id+'\')" onpointermove="thumbHoldMove(event)" onpointerup="thumbHoldEnd()" onpointercancel="thumbHoldEnd()" onpointerleave="thumbHoldEnd()" onclick="thumbTap(event,\''+id+'\')" oncontextmenu="return false">'+inner+'<button class="thx" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();delPhoto(\''+id+'\')" aria-label="Delete photo">&times;</button><span class="tcheck"></span>'+(f.caption?'<span class="ndot" title="Has a note"></span>':'')+'</div>'; }
 function updatePhotoCount(){ const c=document.getElementById('photoCount'); if(c) c.textContent=CUR_MEDIA.length; }
 // Append newly uploaded photos to the open grid in place (no full folder reload).
-function addPhotoTiles(newFiles){ const list=(newFiles||[]).filter(f=>f&&f.id&&idxOf(f.id)<0&&!selThumb(f.id)); if(!list.length) return; const grid=document.getElementById('photoGrid'); if(!grid){ if(CUR_JOB) openJob(CUR_JOB); return; } list.forEach(f=>{ CUR_MEDIA.push(f); grid.insertAdjacentHTML('beforeend', tileHTML(f)); const node=selThumb(f.id); if(node){ node.classList.add('adding'); node.addEventListener('animationend',()=>node.classList.remove('adding'),{once:true}); setTimeout(()=>node.classList.remove('adding'),420); } }); updatePhotoCount(); }
+function addPhotoTiles(newFiles){ const list=(newFiles||[]).filter(f=>f&&f.id&&idxOf(f.id)<0&&!selThumb(f.id)); if(!list.length) return; const grid=document.getElementById('photoGrid'); if(!grid){ if(CUR_JOB) openJob(CUR_JOB); return; } list.slice().reverse().forEach(f=>CUR_MEDIA.unshift(f)); grid.insertAdjacentHTML('afterbegin', list.map(tileHTML).join('')); list.forEach(f=>{ const node=selThumb(f.id); if(node){ node.classList.add('adding'); node.addEventListener('animationend',()=>node.classList.remove('adding'),{once:true}); setTimeout(()=>node.classList.remove('adding'),420); } }); updatePhotoCount(); }
+function showAllPhotos(){ const grid=document.getElementById('photoGrid'); if(!grid) return; const missing=CUR_MEDIA.filter(f=>!selThumb(f.id)); if(missing.length) grid.insertAdjacentHTML('beforeend', missing.map(tileHTML).join('')); const b=document.getElementById('showAllBtn'); if(b) b.remove(); }
 function thumbHoldStart(e,id){ _suppressTap=false; _holdXY={x:e.clientX,y:e.clientY}; _hold=setTimeout(()=>{ _hold=null; if(!PSEL_MODE) enterSelMode(); selectPhoto(id,true); _suppressTap=true; if(navigator.vibrate)try{navigator.vibrate(22)}catch(_){}; }, 450); }
 function thumbHoldMove(e){ if(_hold && _holdXY && (Math.abs(e.clientX-_holdXY.x)>10 || Math.abs(e.clientY-_holdXY.y)>10)) thumbHoldEnd(); }
 function thumbHoldEnd(){ if(_hold){ clearTimeout(_hold); _hold=null; } }
