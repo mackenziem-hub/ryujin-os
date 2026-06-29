@@ -773,7 +773,7 @@ document.getElementById('photoInput').addEventListener('change', async function(
 });
 
 // ── SCHEDULE ──
-let CAL_VIEW='week', CAL_ANCHOR=null, CAL_SEL=null, CAL_DATA={job:{},gc:{},configured:false};
+let CAL_VIEW='week', CAL_ANCHOR=null, CAL_SEL=null, CAL_DATA={job:{},gc:{},wo:{},configured:false};
 let USER_ICS='';
 // Per-user key so a shared crew tablet never carries one user's calendar secret
 // to the next login. Loaded in boot() once ME is known.
@@ -805,9 +805,19 @@ async function renderSchedule(){
   const gc = USER_ICS
     ? await api('/google-cal', { method:'POST', body: JSON.stringify({ from, to, ics: USER_ICS }) })
     : await api('/google-cal?from='+from+'&to='+to);
+  // Scheduled work orders are the real job calendar. Place each on every day it
+  // spans (start_date through start_date + duration - 1) so a 2-day job shows on
+  // both days. Not assignee-filtered: WOs are assigned to sub/crew entities, not
+  // user ids, so the whole crew sees the job board.
+  const wod = await api('/workorders?from='+from+'&limit=80');
+  const wob={};
+  (wod.workorders||[]).filter(w=>w.status!=='cancelled' && w.start_date).forEach(w=>{
+    const dur=Math.max(1, Number(w.estimated_duration_days)||1);
+    for(let i=0;i<dur;i++){ const d=new Date(w.start_date+'T00:00:00'); d.setDate(d.getDate()+i); const k=ymd(d); if(k<from||k>to) continue; (wob[k]=wob[k]||[]).push(w); }
+  });
   const job=(cal.calendar)||{}; const gcb={};
   (gc.events||[]).forEach(e=>{ const dt=e.startTime?new Date(e.startTime):null; if(!dt)return; (gcb[ymd(dt)]=gcb[ymd(dt)]||[]).push(e); });
-  CAL_DATA={job, gc:gcb, configured:!!gc.configured, personal:!!gc.personal};
+  CAL_DATA={job, gc:gcb, wo:wob, configured:!!gc.configured, personal:!!gc.personal};
   drawCalendar();
 }
 function calHeader(rangeLabel){
@@ -818,6 +828,7 @@ function calHeader(rangeLabel){
 }
 function dayPills(key, max){
   let items=[];
+  (CAL_DATA.wo[key]||[]).forEach(w=>items.push('<span class="pill job" onclick="event.stopPropagation();window.location.href=\'/job.html?wo='+encodeURIComponent(w.id||w.wo_number)+'\'" style="cursor:pointer">'+esc(w.address||w.customer_name||'Job')+(w.customer_name&&w.address?'<span class="pt"> '+esc(w.customer_name)+'</span>':'')+'</span>'));
   (CAL_DATA.job[key]||[]).forEach(t=>items.push('<span class="pill job">'+esc(t.title)+(t.project?.address?'<span class="pt"> '+esc(t.project.address)+'</span>':'')+'</span>'));
   (CAL_DATA.gc[key]||[]).forEach(e=>items.push('<span class="pill gcal"><span class="pt">'+(e.allDay?'all day':timeStr(e.startTime))+' </span>'+esc(e.summary||'Event')+'</span>'));
   if(max && items.length>max){ const extra=items.length-max; items=items.slice(0,max); items.push('<span class="pill" style="text-align:center;color:var(--faint)">+'+extra+' more</span>'); }
@@ -838,7 +849,7 @@ function drawCalendar(){
   let h=calHeader(CAL_ANCHOR.toLocaleDateString('en-US',{month:'long',year:'numeric'}))+'<div class="monthgrid">';
   ['S','M','T','W','T','F','S'].forEach(d=>h+='<div class="mhead">'+d+'</div>');
   for(let i=0;i<42;i++){ const d=new Date(gridStart); d.setDate(gridStart.getDate()+i); const k=ymd(d);
-    const jc=(CAL_DATA.job[k]||[]).length, gn=(CAL_DATA.gc[k]||[]).length;
+    const jc=(CAL_DATA.job[k]||[]).length+(CAL_DATA.wo[k]||[]).length, gn=(CAL_DATA.gc[k]||[]).length;
     let dots=''; if(jc) dots+='<span class="dot job"></span>'; if(gn) dots+='<span class="dot gcal"></span>';
     h+='<div class="mcell'+(d.getMonth()!==mo?' out':'')+(k===today?' today':'')+(k===CAL_SEL?' sel':'')+'" onclick="calPick(\''+k+'\')"><div class="mn">'+d.getDate()+'</div><div>'+dots+'</div></div>'; }
   h+='</div>';
