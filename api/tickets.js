@@ -179,7 +179,7 @@ async function handler(req, res) {
 
     // Web push the assignee that a task landed (fail-soft; no-op until VAPID set).
     if (data.assigned_to) {
-      try { await sendPushToUser(tenantId, data.assigned_to, { title: 'New task', body: String(body.title || 'You have a new task').slice(0, 90), url: '/companion.html', tag: 'task' }); } catch (e) {}
+      try { await sendPushToUser(tenantId, data.assigned_to, { title: 'New task', body: String(body.title || 'You have a new task').slice(0, 90), url: '/companion.html', tag: 'task-' + data.id }); } catch (e) {}
     }
 
     return res.status(201).json(data);

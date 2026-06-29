@@ -1,11 +1,11 @@
-// api/push.js — Web Push subscription management for the field crew app.
+// api/push.js - Web Push subscription management for the field crew app.
 // GET  /api/push?action=config  -> { publicKey }   (client needs it to subscribe)
 // POST /api/push  { subscription: { endpoint, keys:{p256dh,auth} } }  -> store/upsert
 // DELETE /api/push?endpoint=... -> remove (unsubscribe)
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireTenant } from '../lib/tenant.js';
 import { resolveSession } from '../lib/portalAuth.js';
-import { vapidPublicKey } from '../lib/webpush.js';
+import { vapidPublicKey, isAllowedPushEndpoint } from '../lib/webpush.js';
 
 async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -26,6 +26,11 @@ async function handler(req, res) {
     if (!sub || !sub.endpoint || !sub.keys || !sub.keys.p256dh || !sub.keys.auth) {
       return res.status(400).json({ error: 'invalid subscription' });
     }
+    // SSRF guard: the endpoint becomes a server-side fetch target, so only accept
+    // real push services, never an arbitrary/internal URL.
+    if (!isAllowedPushEndpoint(sub.endpoint)) {
+      return res.status(400).json({ error: 'unsupported push endpoint' });
+    }
     const row = {
       tenant_id: session.tenant_id,
       user_id: session.user_id,
@@ -44,7 +49,7 @@ async function handler(req, res) {
 
   if (req.method === 'DELETE') {
     const ep = req.query.endpoint || (req.body && req.body.endpoint);
-    if (ep) { try { await supabaseAdmin.from('push_subscriptions').delete().eq('endpoint', ep).eq('tenant_id', session.tenant_id); } catch (e) {} }
+    if (ep) { try { await supabaseAdmin.from('push_subscriptions').delete().eq('endpoint', ep).eq('tenant_id', session.tenant_id).eq('user_id', session.user_id); } catch (e) {} }
     return res.json({ ok: true });
   }
 

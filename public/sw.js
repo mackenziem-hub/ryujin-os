@@ -46,10 +46,12 @@ self.addEventListener('push', (event) => {
     data: { url: data.url || '/companion.html' },
   };
   event.waitUntil((async () => {
-    // If the app is open and visible, its in-app alert (ding/vibrate/toast) covers
-    // it; skip the system notification to avoid a double-notify.
+    // Suppress only when the FIELD app itself is the visible surface (its in-app
+    // alert covers it). A different same-origin tab being visible must NOT swallow
+    // the push, or the notification is silently lost.
     const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    if (wins.some(c => c.focused || c.visibilityState === 'visible')) return;
+    const fieldVisible = wins.some(c => (c.focused || c.visibilityState === 'visible') && /\/(field|companion)\.html/.test(c.url));
+    if (fieldVisible) return;
     await self.registration.showNotification(title, opts);
   })());
 });
@@ -59,8 +61,12 @@ self.addEventListener('notificationclick', (event) => {
   const url = (event.notification.data && event.notification.data.url) || '/companion.html';
   event.waitUntil((async () => {
     const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    for (const c of all) {
-      if (c.url.startsWith(self.location.origin) && 'focus' in c) { try { await c.focus(); return; } catch (e) {} }
+    // Prefer an already-open field/companion client and send it to the target;
+    // else any same-origin client; else open a new window.
+    const pref = all.find(c => /\/(field|companion)\.html/.test(c.url)) || all.find(c => c.url.startsWith(self.location.origin));
+    if (pref) {
+      try { if ('navigate' in pref && !pref.url.endsWith(url)) await pref.navigate(url); } catch (e) {}
+      try { await pref.focus(); return; } catch (e) {}
     }
     if (self.clients.openWindow) return self.clients.openWindow(url);
   })());

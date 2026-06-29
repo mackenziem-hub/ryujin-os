@@ -277,7 +277,7 @@ async function handler(req, res) {
       const preview = String(body.body || '').slice(0, 90);
       await Promise.all(
         recipients.filter(uid => uid && uid !== me?.id).map(uid =>
-          sendPushToUser(tenantId, uid, { title: 'Message from ' + senderName, body: preview, url: '/companion.html', tag: 'msg' }).catch(() => null)
+          sendPushToUser(tenantId, uid, { title: 'Message from ' + senderName, body: preview, url: '/companion.html', tag: 'msg-' + ((data[0] && data[0].thread_id) || '') }).catch(() => null)
         )
       );
     } catch (e) {}
