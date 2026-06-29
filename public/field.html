@@ -184,6 +184,35 @@ window.__ryujinPrefetchInjected=true; window.__ryujinSkinInjected=true;
   .shutter:active{transform:scale(.91)}
   .shutter.flash{background:var(--accent)}
   .camhint{color:rgba(255,255,255,.7);font-size:12px;font-family:var(--mono)}
+  /* Photo bin: per-tile delete X + long-press multi-select */
+  .thumb .thx{position:absolute;top:5px;right:5px;width:27px;height:27px;border-radius:50%;border:none;background:rgba(8,10,16,.72);color:#fff;font-size:17px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;backdrop-filter:blur(4px);z-index:2;transition:transform .1s ease-out}
+  .thumb .thx:active{transform:scale(.88)}
+  .thumb .tcheck{position:absolute;top:6px;left:6px;width:22px;height:22px;border-radius:50%;border:2px solid rgba(255,255,255,.85);background:rgba(8,10,16,.45);display:none;z-index:2}
+  .thumb.sel{outline:3px solid var(--accent);outline-offset:-3px}
+  .grid.selmode .thumb .thx{display:none}
+  .grid.selmode .thumb .tcheck{display:block}
+  .grid.selmode .thumb.sel .tcheck{background:var(--accent);border-color:var(--accent)}
+  .grid.selmode .thumb.sel .tcheck::after{content:"";position:absolute;left:6px;top:2px;width:5px;height:10px;border:solid #04101f;border-width:0 2px 2px 0;transform:rotate(45deg)}
+  /* Contextual select bar: top-mounted so it never collides with the bottom nav */
+  .selbar{position:fixed;top:0;left:0;right:0;z-index:60;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:calc(env(safe-area-inset-top,0px) + 11px) 14px 11px;background:rgba(11,12,15,.93);backdrop-filter:blur(12px);border-bottom:1px solid var(--border-hi);transform:translateY(-100%);transition:transform .2s cubic-bezier(.22,1,.36,1)}
+  .selbar.on{transform:translateY(0)}
+  .selbar .sc{font-family:var(--mono);font-size:13px;color:var(--text)}
+  .selbar button{padding:9px 15px;border-radius:10px;font-family:var(--sans);font-weight:700;font-size:14px;cursor:pointer;border:1px solid var(--border-hi);background:transparent;color:var(--text)}
+  .selbar button.del{background:var(--red);border-color:var(--red);color:#fff}
+  /* Lightbox */
+  .lightbox{position:fixed;inset:0;z-index:200;display:flex;flex-direction:column;background:rgba(5,6,9,.95);backdrop-filter:blur(8px);opacity:0;visibility:hidden;transition:opacity .18s ease-out,visibility .18s}
+  .lightbox.on{opacity:1;visibility:visible}
+  .lbx-top{display:flex;justify-content:flex-end;align-items:center;padding:calc(env(safe-area-inset-top,0px) + 12px) 14px 0;z-index:2}
+  .lbx-top button{width:40px;height:40px;border-radius:50%;border:1px solid rgba(255,255,255,.22);background:rgba(0,0,0,.4);color:#fff;font-size:21px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .lbx-stage{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;position:relative;padding:8px}
+  .lbx-stage img,.lbx-stage video{max-width:100%;max-height:100%;object-fit:contain;border-radius:8px}
+  .lbx-nav{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:50%;border:none;background:rgba(0,0,0,.5);color:#fff;font-size:24px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .lbx-nav.prev{left:8px}.lbx-nav.next{right:8px}
+  .lbx-foot{display:flex;gap:10px;justify-content:center;padding:14px 16px calc(env(safe-area-inset-bottom,0px) + 22px)}
+  .lbx-foot button{flex:1;max-width:190px;padding:13px;border-radius:11px;border:1px solid var(--border-hi);background:var(--surface);color:var(--text);font-family:var(--sans);font-weight:700;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px}
+  .lbx-foot button svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  .lbx-foot button.danger{color:var(--red);border-color:rgba(244,115,107,.4)}
+  @media(prefers-reduced-motion:reduce){.lightbox,.selbar,.thumb .thx{transition:none}}
   .takebtn{width:100%;padding:13px;border:1px solid var(--border-hi);border-radius:var(--r);background:var(--surface);color:var(--text);font-family:var(--sans);font-weight:600;font-size:14px;cursor:pointer;margin-bottom:14px;display:flex;align-items:center;justify-content:center;gap:9px}
   .takebtn svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}
@@ -303,6 +332,12 @@ window.__ryujinPrefetchInjected=true; window.__ryujinSkinInjected=true;
   <div class="camfoot"><div class="camstrip" id="camStrip"></div><button class="shutter" id="camShutter" onclick="snapPhoto()" aria-label="Take photo"></button><div class="camhint">Tap to shoot. Camera stays ready for the next one.</div></div>
 </div>
 <canvas id="camCanvas" style="display:none"></canvas>
+<div class="selbar" id="selBar"><button onclick="exitSelMode()">Cancel</button><span class="sc" id="selCount">0 selected</span><button class="del" onclick="deleteSelected()">Delete</button></div>
+<div class="lightbox" id="lightbox">
+  <div class="lbx-top"><button onclick="closeLightbox()" aria-label="Close">&times;</button></div>
+  <div class="lbx-stage" id="lbxStage"></div>
+  <div class="lbx-foot" id="lbxFoot"></div>
+</div>
 
 <div class="ai-overlay" id="aiOverlay" onclick="if(event.target===this)closeAI()">
   <div class="ai-sheet">
@@ -354,7 +389,7 @@ window.__ryujinPrefetchInjected=true; window.__ryujinSkinInjected=true;
 <script>
 const API = window.location.origin + '/api';
 const TENANT = window.RYUJIN_TENANT_SLUG || 'plus-ultra';
-let ME = null, CUR_TAB = 'tasks', CUR_JOB = null, TASKS = {};
+let ME = null, CUR_TAB = 'tasks', CUR_JOB = null, TASKS = {}, CUR_MEDIA = [];
 let CAPS = null, ROLE = null;
 // One app for the whole company; the tools you see are gated by your role's
 // capabilities (lib/roleCapabilities.js, served via /api/companion-init). The
@@ -401,6 +436,9 @@ function presenceSet(view,context){ PRES.view=view; if(context!==undefined) PRES
 function switchTab(tab){
   presenceSet(tab,'');
   CUR_TAB = tab;
+  // Leaving a view drops any photo select-mode + lightbox so the top select bar
+  // or the lightbox never floats over the next tab.
+  exitSelMode(); closeLightbox();
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
   document.getElementById('v-'+tab).classList.add('on');
   document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('on', b.dataset.tab===tab));
@@ -647,6 +685,8 @@ async function createJob(){
 // (job.html), one tap away for owner/admin/manager via the footer link.
 async function openJob(id){
   CUR_JOB = id;
+  // A fresh render rebuilds the photo grid, so any prior select-mode is stale.
+  exitSelMode();
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
   document.getElementById('v-job').classList.add('on');
   document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('on', b.dataset.tab==='jobs'));
@@ -685,7 +725,8 @@ async function openJob(id){
   h += '<div class="lbl">Photos &amp; footage <span class="n">'+media.length+'</span></div>';
   h += '<button class="upload cam" onclick="openCamera()"><div class="uic"><svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg></div><div><div class="ut">Take photos</div><div class="us">Live camera, rapid fire. Shoot one after another into the bin</div></div></button>';
   h += '<button class="upload" onclick="document.getElementById(\'photoInput\').click()"><div class="uic"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div><div><div class="ut">Upload photos &amp; footage</div><div class="us">Drone clips and bulk photos from your gallery</div></div></button>';
-  if(media.length){ h += '<div class="grid">' + media.map(f=>{ const vid=(f.mime_type||'').startsWith('video'); return '<div class="thumb">'+(vid?'<video src="'+esc(f.url)+'" muted preload="metadata"></video><span class="vb">▶ video</span>':'<img loading="lazy" src="'+esc(f.thumbnail_url||f.url)+'">')+'</div>'; }).join('') + '</div>'; }
+  CUR_MEDIA = media;
+  if(media.length){ h += '<div class="grid" id="photoGrid">' + media.map((f,i)=>{ const vid=(f.mime_type||'').startsWith('video'); const inner=vid?'<video src="'+esc(f.url)+'" muted preload="metadata"></video><span class="vb">▶</span>':'<img loading="lazy" src="'+esc(f.thumbnail_url||f.url)+'">'; return '<div class="thumb" data-fid="'+esc(f.id)+'" onpointerdown="thumbHoldStart(event,'+i+')" onpointermove="thumbHoldMove(event)" onpointerup="thumbHoldEnd()" onpointercancel="thumbHoldEnd()" onpointerleave="thumbHoldEnd()" onclick="thumbTap(event,'+i+')" oncontextmenu="return false">'+inner+'<button class="thx" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();delPhoto(\''+esc(f.id)+'\')" aria-label="Delete photo">&times;</button><span class="tcheck"></span></div>'; }).join('') + '</div>'; }
   // notes
   const notes = nts.notes || [];
   h += '<div class="lbl">Notes <span class="n">'+notes.length+'</span></div>';
@@ -802,6 +843,27 @@ async function uploadCameraShot(blob, fname, job){
     return r.ok;
   }catch(e){ return false; }
 }
+
+// ── PHOTO BIN: tap-to-enlarge lightbox, delete (X), long-press multi-select ──
+let LBX_I=0, _hold=null, _holdXY=null, _suppressTap=false, PSEL_MODE=false; const PSEL=new Set();
+function selThumb(id){ const g=document.getElementById('photoGrid'); if(!g) return null; const sel=(window.CSS&&CSS.escape)?CSS.escape(id):id; return g.querySelector('.thumb[data-fid="'+sel+'"]'); }
+function thumbHoldStart(e,i){ _suppressTap=false; _holdXY={x:e.clientX,y:e.clientY}; _hold=setTimeout(()=>{ _hold=null; if(!PSEL_MODE) enterSelMode(); const f=CUR_MEDIA[i]; if(f) selectPhoto(f.id,true); _suppressTap=true; if(navigator.vibrate)try{navigator.vibrate(22)}catch(_){}; }, 450); }
+function thumbHoldMove(e){ if(_hold && _holdXY && (Math.abs(e.clientX-_holdXY.x)>10 || Math.abs(e.clientY-_holdXY.y)>10)) thumbHoldEnd(); }
+function thumbHoldEnd(){ if(_hold){ clearTimeout(_hold); _hold=null; } }
+function thumbTap(e,i){ if(_suppressTap){ _suppressTap=false; return; } const f=CUR_MEDIA[i]; if(!f) return; if(PSEL_MODE){ togglePhotoSel(f.id); return; } openLightbox(i); }
+function enterSelMode(){ PSEL_MODE=true; PSEL.clear(); const g=document.getElementById('photoGrid'); if(g) g.classList.add('selmode'); updateSelBar(); }
+function exitSelMode(){ PSEL_MODE=false; PSEL.clear(); const g=document.getElementById('photoGrid'); if(g){ g.classList.remove('selmode'); g.querySelectorAll('.thumb.sel').forEach(t=>t.classList.remove('sel')); } const b=document.getElementById('selBar'); if(b) b.classList.remove('on'); }
+function selectPhoto(id,on){ const t=selThumb(id); if(on){ PSEL.add(id); if(t)t.classList.add('sel'); } else { PSEL.delete(id); if(t)t.classList.remove('sel'); } if(PSEL_MODE && PSEL.size===0){ exitSelMode(); return; } updateSelBar(); }
+function togglePhotoSel(id){ selectPhoto(id, !PSEL.has(id)); }
+function updateSelBar(){ const b=document.getElementById('selBar'); if(!b) return; b.classList.toggle('on', PSEL_MODE); const c=document.getElementById('selCount'); if(c) c.textContent=PSEL.size+' selected'; }
+async function delPhoto(id){ if(!confirm('Delete this photo? This cannot be undone.')) return; const r=await api('/files?id='+encodeURIComponent(id),{method:'DELETE'}); if(r && !r.error){ toast('Photo deleted'); if(CUR_JOB) openJob(CUR_JOB); } else { toast((r&&r.error)||'Could not delete'); } }
+async function deleteSelected(){ const ids=[...PSEL]; if(!ids.length) return; if(!confirm('Delete '+ids.length+' photo'+(ids.length>1?'s':'')+'? This cannot be undone.')) return; toast('<span class="spin"></span> deleting '+ids.length+'…'); let ok=0; for(const id of ids){ try{ const r=await api('/files?id='+encodeURIComponent(id),{method:'DELETE'}); if(r && !r.error) ok++; }catch(e){} } exitSelMode(); toast(ok ? ('Deleted '+ok+' photo'+(ok===1?'':'s')) : 'Could not delete the photos'); if(CUR_JOB) openJob(CUR_JOB); }
+function openLightbox(i){ LBX_I=i; renderLbx(); document.getElementById('lightbox').classList.add('on'); }
+function renderLbx(){ const f=CUR_MEDIA[LBX_I]; if(!f){ closeLightbox(); return; } const stage=document.getElementById('lbxStage'); const vid=(f.mime_type||'').startsWith('video'); stage.innerHTML=(vid?'<video src="'+esc(f.url)+'" controls autoplay playsinline></video>':'<img src="'+esc(f.url)+'" alt="Job photo">')+(CUR_MEDIA.length>1?'<button class="lbx-nav prev" onclick="lbxNav(-1)" aria-label="Previous photo">&lsaquo;</button><button class="lbx-nav next" onclick="lbxNav(1)" aria-label="Next photo">&rsaquo;</button>':''); const foot=document.getElementById('lbxFoot'); if(foot) foot.innerHTML='<button class="danger" onclick="delPhotoFromLbx()"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>Delete</button>'; }
+function lbxNav(d){ const n=CUR_MEDIA.length; if(!n) return; LBX_I=(LBX_I+d+n)%n; renderLbx(); }
+function closeLightbox(){ const lb=document.getElementById('lightbox'); if(lb) lb.classList.remove('on'); const s=document.getElementById('lbxStage'); if(s) s.innerHTML=''; }
+async function delPhotoFromLbx(){ const f=CUR_MEDIA[LBX_I]; if(!f) return; if(!confirm('Delete this photo? This cannot be undone.')) return; const r=await api('/files?id='+encodeURIComponent(f.id),{method:'DELETE'}); if(r && !r.error){ toast('Photo deleted'); closeLightbox(); if(CUR_JOB) openJob(CUR_JOB); } else { toast((r&&r.error)||'Could not delete'); } }
+document.addEventListener('keydown', e=>{ const lb=document.getElementById('lightbox'); if(lb && lb.classList.contains('on')){ if(e.key==='Escape') closeLightbox(); else if(e.key==='ArrowLeft' && CUR_MEDIA.length>1) lbxNav(-1); else if(e.key==='ArrowRight' && CUR_MEDIA.length>1) lbxNav(1); return; } if(PSEL_MODE && e.key==='Escape') exitSelMode(); });
 
 // Open the SIMPLE in-app folder for a scheduled work order. The Up next strip and
 // the Schedule calendar carry a WO id, not a project id, so resolve the WO to its
