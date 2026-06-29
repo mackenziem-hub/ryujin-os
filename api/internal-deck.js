@@ -33,6 +33,11 @@ import { supabaseAdmin } from '../lib/supabase.js';
 // + the metadata the catalog's gated list returns. The HTML body itself lives in
 // api/_decks/deck-<slug>.html.
 const DECKS = {
+  'finance-snapshot-jun29': {
+    tenant: 'plus-ultra', tag: 'Finance', slides: 9,
+    title: 'Money Position · Jun 29 2026',
+    desc: 'Full AR and AP reconciled live: $40.6K owed to you, $14.2K you owe, +$26.4K net. The Ryan paysheet detail, the Yasiel chimney fix, the QXO position after the $12K payment, and the collect-first move.',
+  },
   'diego-account': {
     tenant: 'plus-ultra', tag: 'Operations', slides: 5,
     title: 'Diego\'s Account · What It Can and Cannot Do',
