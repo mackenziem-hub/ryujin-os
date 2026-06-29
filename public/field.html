@@ -556,11 +556,12 @@ function folderRow(p){
   const cid = p.customer?.id || p.customer_id || '';
   return '<div class="folder" onclick="openFolder(\''+cid+'\',\''+p.id+'\')"><div class="ic"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><line x1="3" y1="11" x2="21" y2="11" stroke-dasharray="2 2"/><line x1="9" y1="11" x2="9" y2="19" stroke-dasharray="2 2"/></svg></div><div class="body"><div class="addr">'+esc(p.address||p.name||'Job')+'</div><div class="cust">'+esc(sub||'No customer yet')+'</div></div><div class="right">'+statusChip(p.status)+'</div></div>';
 }
-// Open the full digital job folder (job.html: work-order scope + computed materials,
-// photos, paysheet, P&L — gated server-side). Prefer the customer deep-link so the
-// folder resolves the linked work order; fall back to the in-app thin folder.
+// Job-folder taps open the SIMPLE in-app folder (photos + footage upload, notes,
+// proposal) — the photo-first surface field crew use to push site photos and drone
+// clips up fast. The heavy digital folder (job.html: WO scope, computed materials,
+// paysheet, P&L) stays one tap away for owner/admin/manager via the footer link
+// inside the folder, and from Up next / the calendar / the Production board.
 function openFolder(custId, projId){
-  if(custId){ window.location.href = '/job.html?id=' + encodeURIComponent(custId); return; }
   openJob(projId);
 }
 function toggleNew(){ const p=document.getElementById('newpanel'); if(p){ p.classList.toggle('on'); if(p.classList.contains('on')) document.getElementById('nj_addr').focus(); } }
@@ -700,6 +701,11 @@ async function openJob(id){
   if(est?.estimate_number){ h += '<div class="infocard"><div class="l">Estimate</div><div class="v">'+esc(est.estimate_number)+(est.status?' · '+esc(est.status):'')+'</div></div>'; }
   if(pr.share_token){ h += '<div class="infocard"><div class="l">Photo gallery</div><div class="v"><a href="/photos-share.html?share='+esc(pr.share_token)+'" target="_blank">Open customer gallery →</a></div></div>'; }
   if(!pr.customer && !est){ h += '<div class="empty">No customer linked yet.</div>'; }
+  // Owner/admin/manager keep the rich digital folder (WO scope, materials, paysheet,
+  // P&L) one tap away; crew/sub stay on this clean photo-first folder.
+  if(pr.customer?.id && ['owner','admin','manager'].includes(String(ROLE||'').toLowerCase())){
+    h += '<a href="/job.html?id='+encodeURIComponent(pr.customer.id)+'" style="display:block;margin-top:18px;padding:13px;text-align:center;border:1px solid var(--border-hi);border-radius:var(--r);color:var(--dim);text-decoration:none;font-size:13px">Open full digital folder · scope, materials, P&amp;L &rarr;</a>';
+  }
   w.innerHTML = h;
 }
 // ── PROPOSAL (engine-priced live close) ──
