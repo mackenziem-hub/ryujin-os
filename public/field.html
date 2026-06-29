@@ -83,6 +83,16 @@ window.__ryujinPrefetchInjected=true; window.__ryujinSkinInjected=true;
   .compose-to-fixed{font-family:var(--sans);font-size:15px;color:var(--text)}.compose-to-fixed b{color:var(--accent)}
   #composeBody{width:100%;min-height:150px;resize:vertical;padding:13px 14px;background:var(--bg);border:1px solid var(--border-hi);border-radius:11px;color:var(--text);font-family:var(--sans);font-size:15px;line-height:1.5}
   #composeBody:focus,.compose-field select:focus{outline:none;border-color:var(--accent)}
+  .thread-log{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:11px}
+  .tmsg{max-width:80%;padding:9px 13px;border-radius:14px;font-size:14.5px;line-height:1.45;word-break:break-word}
+  .tmsg .twho{font-family:var(--mono);font-size:10px;letter-spacing:.6px;text-transform:uppercase;opacity:.7;margin-bottom:3px}
+  .tmsg .twhen{font-family:var(--mono);font-size:10px;opacity:.55;margin-top:4px}
+  .tmsg.them{align-self:flex-start;background:var(--row);border:1px solid var(--border);border-bottom-left-radius:5px}
+  .tmsg.me{align-self:flex-end;background:var(--accent);color:#04101f;border-bottom-right-radius:5px}
+  .tmsg.me .twho,.tmsg.me .twhen{opacity:.75}
+  #threadReplyBar input{flex:1;padding:12px 14px;background:var(--bg);border:1px solid var(--border-hi);border-radius:11px;color:var(--text);font-family:var(--sans);font-size:15px}
+  #threadReplyBar input:focus{outline:none;border-color:var(--accent)}
+  #threadReplyBar button{padding:0 18px;border:none;border-radius:11px;background:var(--accent);color:#04101f;font-family:var(--sans);font-weight:700;font-size:14px;cursor:pointer}
   .wrap{max-width:760px;margin:0 auto;padding:18px 16px}
   .view{display:none}.view.on{display:block}
   .lbl{font-family:var(--mono);font-size:11px;letter-spacing:1.5px;color:var(--faint);text-transform:uppercase;margin:18px 4px 9px;display:flex;justify-content:space-between}
@@ -294,13 +304,20 @@ window.__ryujinPrefetchInjected=true; window.__ryujinSkinInjected=true;
 
 <div class="ai-overlay" id="composeOverlay" onclick="if(event.target===this)closeCompose()">
   <div class="ai-sheet" style="height:auto;max-height:82vh">
-    <div class="ai-head"><div class="t"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg><span id="composeTitle">New message</span></div><button class="ai-x" onclick="closeCompose()">✕</button></div>
+    <div class="ai-head"><div class="t"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>New message</div><button class="ai-x" onclick="closeCompose()">✕</button></div>
     <div class="compose-body">
-      <div class="compose-field" id="composeToWrap"><label>To</label><select id="composeTo"><option value="">Loading…</option></select></div>
-      <div class="compose-to-fixed" id="composeToFixed" style="display:none"></div>
+      <div class="compose-field"><label>To</label><select id="composeTo"><option value="">Loading…</option></select></div>
       <textarea id="composeBody" placeholder="Write a message…"></textarea>
     </div>
     <div class="ai-input" style="border-top:1px solid var(--border)"><button id="composeSend" onclick="sendCompose()" style="flex:1">Send</button></div>
+  </div>
+</div>
+
+<div class="ai-overlay" id="threadOverlay" onclick="if(event.target===this)closeThread()">
+  <div class="ai-sheet">
+    <div class="ai-head"><div class="t"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg><span id="threadWith">Thread</span></div><button class="ai-x" onclick="closeThread()">✕</button></div>
+    <div class="thread-log" id="threadLog"></div>
+    <div class="ai-input" id="threadReplyBar" style="display:none"><input id="threadReply" placeholder="Reply…" onkeydown="if(event.key==='Enter')sendThreadReply()" autocomplete="off"><button id="threadSend" onclick="sendThreadReply()">Send</button></div>
   </div>
 </div>
 
@@ -319,7 +336,7 @@ window.__ryujinPrefetchInjected=true; window.__ryujinSkinInjected=true;
 const API = window.location.origin + '/api';
 const TENANT = window.RYUJIN_TENANT_SLUG || 'plus-ultra';
 let ME = null, CUR_TAB = 'tasks', CUR_JOB = null, TASKS = {};
-let TEAM = null, MSG_CACHE = {}, COMPOSE = {};
+let TEAM = null, ACTIVE_THREAD = null, REPLY = {}, MY_ID = null;
 
 function tok(){ try { return localStorage.getItem('ryujin_token') || sessionStorage.getItem('ryujin_token') || ''; } catch(e){ return ''; } }
 async function api(path, opts){
@@ -798,56 +815,82 @@ function drawCalendar(){
   w.innerHTML=h;
 }
 
-// ── MESSAGES ──
+// ── MESSAGES (threaded) ──
+// Inbox is a thread list: every message belongs to a thread_id, so the list
+// collapses to one row per conversation (latest message wins). Tapping a row
+// opens the full back-and-forth; replying stays in the same thread. New messages
+// start a fresh thread you can return to.
+function meId(fallback){ const id=(ME && ME.id) || fallback || MY_ID || null; if(id) MY_ID=id; return id; }
 async function renderMessages(){
   const w = document.getElementById('msgWrap');
-  const d = await api('/messages?box=inbox');
+  const d = await api('/messages?box=all&limit=300');
   const msgs = d.messages||[];
-  setBadge(d.stats?.unread||0);
-  MSG_CACHE = {};
-  let h = '<div class="lbl">Direct messages <span class="n">'+(d.stats?.unread||0)+' unread</span></div>';
+  const mid = meId(d.me && d.me.id);
+  setBadge(msgs.filter(m=>!m.read_at && m.to_user_id===mid).length);
+  const byThread = new Map();
+  for(const m of msgs){ const c=byThread.get(m.thread_id); if(!c || new Date(m.created_at)>new Date(c.created_at)) byThread.set(m.thread_id,m); }
+  const threads = [...byThread.values()].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+  let h = '<div class="lbl">Messages</div>';
   h += '<button class="newmsg" onclick="openCompose()"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>New message</button>';
-  h += msgs.length ? msgs.map(m=>{ MSG_CACHE[m.id]=m; const nm=m.from_label||m.from_user?.name||'System'; const unread=!m.read_at; return '<div class="msg '+(unread?'unread':'')+'" onclick="replyTo(\''+m.id+'\')"><div class="av">'+esc((nm[0]||'?'))+'</div><div class="body"><div class="top"><span class="nm">'+esc(nm)+'</span><span class="tm">'+ago(m.created_at)+'</span></div><div class="pv">'+esc(m.body||'')+'</div></div></div>'; }).join('') : '<div class="empty">No direct messages yet. Tap New message to start one.</div>';
+  h += threads.length ? threads.map(m=>{
+    const fromMe = m.from_user_id===mid;
+    const other = fromMe ? (m.to_user?.name||'Recipient') : (m.from_user?.name||m.from_label||'System');
+    const unread = !m.read_at && m.to_user_id===mid;
+    const preview = (fromMe?'You: ':'')+(m.body||'');
+    return '<div class="msg '+(unread?'unread':'')+'" onclick="openThread(\''+m.thread_id+'\')"><div class="av">'+esc((other[0]||'?').toUpperCase())+'</div><div class="body"><div class="top"><span class="nm">'+esc(other)+'</span><span class="tm">'+ago(m.created_at)+'</span></div><div class="pv">'+esc(preview.slice(0,140))+'</div></div></div>';
+  }).join('') : '<div class="empty">No messages yet. Tap New message to start a thread.</div>';
   w.innerHTML = h;
 }
-async function loadTeam(){ if(TEAM) return TEAM; const d=await api('/users'); TEAM=((d&&d.users)||[]).filter(u=>u.id && (!ME||u.id!==ME.id)); return TEAM; }
+async function openThread(threadId){
+  ACTIVE_THREAD = threadId;
+  document.getElementById('threadOverlay').classList.add('on');
+  const log=document.getElementById('threadLog'); log.innerHTML='<div class="empty">Loading…</div>';
+  const bar=document.getElementById('threadReplyBar'); bar.style.display='none';
+  const d=await api('/messages?thread_id='+encodeURIComponent(threadId));
+  const mid=meId(d.me && d.me.id);
+  const msgs=(d.messages||[]).slice().sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+  if(!msgs.length){ log.innerHTML='<div class="empty">Empty thread.</div>'; return; }
+  const head=msgs[0];
+  const otherName = head.from_user_id===mid ? (head.to_user?.name||'Recipient') : (head.from_user?.name||head.from_label||'System');
+  const otherId = head.from_user_id===mid ? head.to_user_id : head.from_user_id;
+  document.getElementById('threadWith').textContent = otherName;
+  log.innerHTML = msgs.map(m=>{ const fromMe=m.from_user_id===mid; const who=fromMe?'You':(m.from_user?.name||m.from_label||'System'); return '<div class="tmsg '+(fromMe?'me':'them')+'"><div class="twho">'+esc(who)+'</div><div class="tbody">'+esc(m.body||'')+'</div><div class="twhen">'+ago(m.created_at)+'</div></div>'; }).join('');
+  log.scrollTop=log.scrollHeight;
+  for(const m of msgs){ if(!m.read_at && m.to_user_id===mid){ api('/messages?id='+m.id,{method:'PATCH',body:JSON.stringify({read:true})}); } }
+  REPLY = { to:otherId, head:head.id, thread:threadId };
+  if(otherId){ bar.style.display='flex'; const inp=document.getElementById('threadReply'); inp.value=''; setTimeout(()=>inp.focus(),60); }
+}
+function closeThread(){ document.getElementById('threadOverlay').classList.remove('on'); ACTIVE_THREAD=null; if(CUR_TAB==='messages') renderMessages(); }
+async function sendThreadReply(){
+  const inp=document.getElementById('threadReply'); const text=(inp.value||'').trim(); if(!text) return;
+  if(!REPLY.to){ toast('No one to reply to in this thread.'); return; }
+  const btn=document.getElementById('threadSend'); btn.disabled=true;
+  const r=await api('/messages',{ method:'POST', body:JSON.stringify({ to_user_id:REPLY.to, body:text, reply_to:REPLY.head, thread_id:REPLY.thread }) });
+  btn.disabled=false;
+  if(r && r.error){ toast(r.error); return; }
+  inp.value=''; openThread(REPLY.thread);
+}
+async function loadTeam(){ if(TEAM) return TEAM; const d=await api('/users'); TEAM=((d&&d.users)||[]).filter(u=>u.id && u.id!==meId()); return TEAM; }
 async function openCompose(){
-  COMPOSE = { replyTo:null, toUserId:null };
-  document.getElementById('composeTitle').textContent='New message';
-  document.getElementById('composeToWrap').style.display='';
-  document.getElementById('composeToFixed').style.display='none';
   document.getElementById('composeBody').value='';
   const sel=document.getElementById('composeTo'); sel.innerHTML='<option value="">Loading…</option>';
   document.getElementById('composeOverlay').classList.add('on');
   const team=await loadTeam();
   sel.innerHTML = team.length ? team.map(u=>'<option value="'+u.id+'">'+esc(u.name||u.email||'User')+(u.role?' · '+u.role:'')+'</option>').join('') : '<option value="">No teammates found</option>';
 }
-function replyTo(id){
-  const m=MSG_CACHE[id]; if(!m) return;
-  const fromId=m.from_user_id; const nm=m.from_label||m.from_user?.name||'System';
-  if(!fromId){ toast('That is an automated message, no one to reply to.'); return; }
-  COMPOSE = { replyTo:m.id, toUserId:fromId };
-  document.getElementById('composeTitle').textContent='Reply';
-  document.getElementById('composeToWrap').style.display='none';
-  const fx=document.getElementById('composeToFixed'); fx.style.display=''; fx.innerHTML='<label>To</label><b>'+esc(nm)+'</b>';
-  document.getElementById('composeBody').value='';
-  document.getElementById('composeOverlay').classList.add('on');
-  setTimeout(()=>{ const b=document.getElementById('composeBody'); if(b) b.focus(); },60);
-}
 function closeCompose(){ document.getElementById('composeOverlay').classList.remove('on'); }
 async function sendCompose(){
   const btn=document.getElementById('composeSend');
   const bodyTxt=(document.getElementById('composeBody').value||'').trim();
   if(!bodyTxt){ toast('Write a message first.'); return; }
-  let toId = COMPOSE.replyTo ? COMPOSE.toUserId : document.getElementById('composeTo').value;
+  const toId = document.getElementById('composeTo').value;
   if(!toId){ toast('Pick who to send to.'); return; }
   btn.disabled=true; btn.textContent='Sending…';
-  const payload={ to_user_id:toId, body:bodyTxt };
-  if(COMPOSE.replyTo) payload.reply_to=COMPOSE.replyTo;
-  const r=await api('/messages',{ method:'POST', body:JSON.stringify(payload) });
+  const r=await api('/messages',{ method:'POST', body:JSON.stringify({ to_user_id:toId, body:bodyTxt }) });
   btn.disabled=false; btn.textContent='Send';
   if(r && r.error){ toast(r.error); return; }
-  closeCompose(); toast('Message sent.'); renderMessages();
+  closeCompose();
+  if(r.thread_id){ openThread(r.thread_id); } else { renderMessages(); }
 }
 function toggleMenu(e){ if(e) e.stopPropagation(); const m=document.getElementById('acctMenu'); if(!m) return; m.classList.toggle('on'); }
 function signOut(){ try{ localStorage.removeItem('ryujin_token'); localStorage.removeItem('ryujin_user'); sessionStorage.removeItem('ryujin_token'); sessionStorage.removeItem('ryujin_user'); }catch(e){} location.href='/login.html'; }
