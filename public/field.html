@@ -436,6 +436,9 @@ function presenceSet(view,context){ PRES.view=view; if(context!==undefined) PRES
 function switchTab(tab){
   presenceSet(tab,'');
   CUR_TAB = tab;
+  // Leaving a view drops any photo select-mode + lightbox so the top select bar
+  // or the lightbox never floats over the next tab.
+  exitSelMode(); closeLightbox();
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
   document.getElementById('v-'+tab).classList.add('on');
   document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('on', b.dataset.tab===tab));
@@ -682,6 +685,8 @@ async function createJob(){
 // (job.html), one tap away for owner/admin/manager via the footer link.
 async function openJob(id){
   CUR_JOB = id;
+  // A fresh render rebuilds the photo grid, so any prior select-mode is stale.
+  exitSelMode();
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
   document.getElementById('v-job').classList.add('on');
   document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('on', b.dataset.tab==='jobs'));
@@ -721,7 +726,7 @@ async function openJob(id){
   h += '<button class="upload cam" onclick="openCamera()"><div class="uic"><svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg></div><div><div class="ut">Take photos</div><div class="us">Live camera, rapid fire. Shoot one after another into the bin</div></div></button>';
   h += '<button class="upload" onclick="document.getElementById(\'photoInput\').click()"><div class="uic"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div><div><div class="ut">Upload photos &amp; footage</div><div class="us">Drone clips and bulk photos from your gallery</div></div></button>';
   CUR_MEDIA = media;
-  if(media.length){ h += '<div class="grid" id="photoGrid">' + media.map((f,i)=>{ const vid=(f.mime_type||'').startsWith('video'); const inner=vid?'<video src="'+esc(f.url)+'" muted preload="metadata"></video><span class="vb">▶</span>':'<img loading="lazy" src="'+esc(f.thumbnail_url||f.url)+'">'; return '<div class="thumb" data-fid="'+esc(f.id)+'" onpointerdown="thumbHoldStart(event,'+i+')" onpointerup="thumbHoldEnd()" onpointercancel="thumbHoldEnd()" onpointerleave="thumbHoldEnd()" onclick="thumbTap(event,'+i+')" oncontextmenu="return false">'+inner+'<button class="thx" onclick="event.stopPropagation();delPhoto(\''+esc(f.id)+'\')" aria-label="Delete photo">&times;</button><span class="tcheck"></span></div>'; }).join('') + '</div>'; }
+  if(media.length){ h += '<div class="grid" id="photoGrid">' + media.map((f,i)=>{ const vid=(f.mime_type||'').startsWith('video'); const inner=vid?'<video src="'+esc(f.url)+'" muted preload="metadata"></video><span class="vb">▶</span>':'<img loading="lazy" src="'+esc(f.thumbnail_url||f.url)+'">'; return '<div class="thumb" data-fid="'+esc(f.id)+'" onpointerdown="thumbHoldStart(event,'+i+')" onpointermove="thumbHoldMove(event)" onpointerup="thumbHoldEnd()" onpointercancel="thumbHoldEnd()" onpointerleave="thumbHoldEnd()" onclick="thumbTap(event,'+i+')" oncontextmenu="return false">'+inner+'<button class="thx" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();delPhoto(\''+esc(f.id)+'\')" aria-label="Delete photo">&times;</button><span class="tcheck"></span></div>'; }).join('') + '</div>'; }
   // notes
   const notes = nts.notes || [];
   h += '<div class="lbl">Notes <span class="n">'+notes.length+'</span></div>';
@@ -840,9 +845,10 @@ async function uploadCameraShot(blob, fname, job){
 }
 
 // ── PHOTO BIN: tap-to-enlarge lightbox, delete (X), long-press multi-select ──
-let LBX_I=0, _hold=null, _suppressTap=false, PSEL_MODE=false; const PSEL=new Set();
+let LBX_I=0, _hold=null, _holdXY=null, _suppressTap=false, PSEL_MODE=false; const PSEL=new Set();
 function selThumb(id){ const g=document.getElementById('photoGrid'); if(!g) return null; const sel=(window.CSS&&CSS.escape)?CSS.escape(id):id; return g.querySelector('.thumb[data-fid="'+sel+'"]'); }
-function thumbHoldStart(e,i){ _suppressTap=false; _hold=setTimeout(()=>{ _hold=null; if(!PSEL_MODE) enterSelMode(); const f=CUR_MEDIA[i]; if(f) selectPhoto(f.id,true); _suppressTap=true; if(navigator.vibrate)try{navigator.vibrate(22)}catch(_){}; }, 450); }
+function thumbHoldStart(e,i){ _suppressTap=false; _holdXY={x:e.clientX,y:e.clientY}; _hold=setTimeout(()=>{ _hold=null; if(!PSEL_MODE) enterSelMode(); const f=CUR_MEDIA[i]; if(f) selectPhoto(f.id,true); _suppressTap=true; if(navigator.vibrate)try{navigator.vibrate(22)}catch(_){}; }, 450); }
+function thumbHoldMove(e){ if(_hold && _holdXY && (Math.abs(e.clientX-_holdXY.x)>10 || Math.abs(e.clientY-_holdXY.y)>10)) thumbHoldEnd(); }
 function thumbHoldEnd(){ if(_hold){ clearTimeout(_hold); _hold=null; } }
 function thumbTap(e,i){ if(_suppressTap){ _suppressTap=false; return; } const f=CUR_MEDIA[i]; if(!f) return; if(PSEL_MODE){ togglePhotoSel(f.id); return; } openLightbox(i); }
 function enterSelMode(){ PSEL_MODE=true; PSEL.clear(); const g=document.getElementById('photoGrid'); if(g) g.classList.add('selmode'); updateSelBar(); }
@@ -851,13 +857,13 @@ function selectPhoto(id,on){ const t=selThumb(id); if(on){ PSEL.add(id); if(t)t.
 function togglePhotoSel(id){ selectPhoto(id, !PSEL.has(id)); }
 function updateSelBar(){ const b=document.getElementById('selBar'); if(!b) return; b.classList.toggle('on', PSEL_MODE); const c=document.getElementById('selCount'); if(c) c.textContent=PSEL.size+' selected'; }
 async function delPhoto(id){ if(!confirm('Delete this photo? This cannot be undone.')) return; const r=await api('/files?id='+encodeURIComponent(id),{method:'DELETE'}); if(r && !r.error){ toast('Photo deleted'); if(CUR_JOB) openJob(CUR_JOB); } else { toast((r&&r.error)||'Could not delete'); } }
-async function deleteSelected(){ const ids=[...PSEL]; if(!ids.length) return; if(!confirm('Delete '+ids.length+' photo'+(ids.length>1?'s':'')+'? This cannot be undone.')) return; toast('<span class="spin"></span> deleting '+ids.length+'…'); let ok=0; for(const id of ids){ try{ const r=await api('/files?id='+encodeURIComponent(id),{method:'DELETE'}); if(r && !r.error) ok++; }catch(e){} } exitSelMode(); toast('Deleted '+ok+' photo'+(ok===1?'':'s')); if(CUR_JOB) openJob(CUR_JOB); }
+async function deleteSelected(){ const ids=[...PSEL]; if(!ids.length) return; if(!confirm('Delete '+ids.length+' photo'+(ids.length>1?'s':'')+'? This cannot be undone.')) return; toast('<span class="spin"></span> deleting '+ids.length+'…'); let ok=0; for(const id of ids){ try{ const r=await api('/files?id='+encodeURIComponent(id),{method:'DELETE'}); if(r && !r.error) ok++; }catch(e){} } exitSelMode(); toast(ok ? ('Deleted '+ok+' photo'+(ok===1?'':'s')) : 'Could not delete the photos'); if(CUR_JOB) openJob(CUR_JOB); }
 function openLightbox(i){ LBX_I=i; renderLbx(); document.getElementById('lightbox').classList.add('on'); }
-function renderLbx(){ const f=CUR_MEDIA[LBX_I]; if(!f) return; const stage=document.getElementById('lbxStage'); const vid=(f.mime_type||'').startsWith('video'); stage.innerHTML=(vid?'<video src="'+esc(f.url)+'" controls autoplay playsinline></video>':'<img src="'+esc(f.url)+'" alt="Job photo">')+(CUR_MEDIA.length>1?'<button class="lbx-nav prev" onclick="lbxNav(-1)" aria-label="Previous photo">&lsaquo;</button><button class="lbx-nav next" onclick="lbxNav(1)" aria-label="Next photo">&rsaquo;</button>':''); const foot=document.getElementById('lbxFoot'); if(foot) foot.innerHTML='<button class="danger" onclick="delPhotoFromLbx()"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>Delete</button>'; }
+function renderLbx(){ const f=CUR_MEDIA[LBX_I]; if(!f){ closeLightbox(); return; } const stage=document.getElementById('lbxStage'); const vid=(f.mime_type||'').startsWith('video'); stage.innerHTML=(vid?'<video src="'+esc(f.url)+'" controls autoplay playsinline></video>':'<img src="'+esc(f.url)+'" alt="Job photo">')+(CUR_MEDIA.length>1?'<button class="lbx-nav prev" onclick="lbxNav(-1)" aria-label="Previous photo">&lsaquo;</button><button class="lbx-nav next" onclick="lbxNav(1)" aria-label="Next photo">&rsaquo;</button>':''); const foot=document.getElementById('lbxFoot'); if(foot) foot.innerHTML='<button class="danger" onclick="delPhotoFromLbx()"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>Delete</button>'; }
 function lbxNav(d){ const n=CUR_MEDIA.length; if(!n) return; LBX_I=(LBX_I+d+n)%n; renderLbx(); }
 function closeLightbox(){ const lb=document.getElementById('lightbox'); if(lb) lb.classList.remove('on'); const s=document.getElementById('lbxStage'); if(s) s.innerHTML=''; }
 async function delPhotoFromLbx(){ const f=CUR_MEDIA[LBX_I]; if(!f) return; if(!confirm('Delete this photo? This cannot be undone.')) return; const r=await api('/files?id='+encodeURIComponent(f.id),{method:'DELETE'}); if(r && !r.error){ toast('Photo deleted'); closeLightbox(); if(CUR_JOB) openJob(CUR_JOB); } else { toast((r&&r.error)||'Could not delete'); } }
-document.addEventListener('keydown', e=>{ const lb=document.getElementById('lightbox'); if(lb && lb.classList.contains('on')){ if(e.key==='Escape') closeLightbox(); else if(e.key==='ArrowLeft') lbxNav(-1); else if(e.key==='ArrowRight') lbxNav(1); return; } if(PSEL_MODE && e.key==='Escape') exitSelMode(); });
+document.addEventListener('keydown', e=>{ const lb=document.getElementById('lightbox'); if(lb && lb.classList.contains('on')){ if(e.key==='Escape') closeLightbox(); else if(e.key==='ArrowLeft' && CUR_MEDIA.length>1) lbxNav(-1); else if(e.key==='ArrowRight' && CUR_MEDIA.length>1) lbxNav(1); return; } if(PSEL_MODE && e.key==='Escape') exitSelMode(); });
 
 // Open the SIMPLE in-app folder for a scheduled work order. The Up next strip and
 // the Schedule calendar carry a WO id, not a project id, so resolve the WO to its
