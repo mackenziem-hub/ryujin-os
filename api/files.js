@@ -13,7 +13,9 @@ import exifr from 'exifr';
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB (video support)
 const ALLOWED_TYPES = new Set([
   'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif',
-  'video/mp4', 'video/quicktime', 'video/webm',
+  'video/mp4', 'video/quicktime', 'video/webm', 'video/x-m4v', 'video/3gpp',
+  'video/x-matroska', 'video/x-msvideo', 'video/mpeg', 'video/x-ms-wmv', 'video/avi',
+  'application/octet-stream',
   'application/pdf'
 ]);
 
