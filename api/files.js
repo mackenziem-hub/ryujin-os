@@ -5,10 +5,24 @@
 // DELETE /api/files?id=X            - Delete a file (Vercel Blob cleanup too)
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireTenant } from '../lib/tenant.js';
-import { requirePortalSessionAndTenant } from '../lib/portalAuth.js';
+import { requirePortalSessionAndTenant, resolveSession, isPrivileged } from '../lib/portalAuth.js';
 import { put, del } from '@vercel/blob';
 import Busboy from 'busboy';
 import exifr from 'exifr';
+import sharp from 'sharp';
+
+// Generate a small JPEG thumbnail from an image buffer and store it on Blob, so
+// large folders load light instead of pulling full-res originals. Fail-soft: any
+// error returns null and the grid falls back to the full image.
+async function makeThumb(srcBuffer, tenantSlug, projectId, baseName) {
+  try {
+    const thumb = await sharp(srcBuffer).rotate().resize(480, 480, { fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 70 }).toBuffer();
+    const clean = String(baseName || 'thumb').replace(/[^\w.\-]/g, '_').substring(0, 60);
+    const path = `${tenantSlug}/projects/${projectId}/thumbs/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${clean}.jpg`;
+    const b = await put(path, thumb, { access: 'public', contentType: 'image/jpeg' });
+    return b.url;
+  } catch (e) { return null; }
+}
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB (video support)
 const ALLOWED_TYPES = new Set([
@@ -169,6 +183,32 @@ async function handler(req, res) {
   }
 
   // ── POST (Upload) ──
+  if (req.method === 'POST' && req.query.action === 'backfill-thumbs') {
+    // Generate thumbnails for existing images that have none (heavy legacy folders
+    // like 224 Route 530). Privileged-only; capped per call, returns remaining so
+    // it can be called repeatedly until drained.
+    const session = await resolveSession(req);
+    if (!session || !isPrivileged(session)) return res.status(403).json({ error: 'admin_only' });
+    const project_id = req.query.project_id;
+    if (!project_id) return res.status(400).json({ error: 'project_id required' });
+    const { data: all } = await supabaseAdmin
+      .from('project_files')
+      .select('id, url, mime_type, filename')
+      .eq('tenant_id', tenantId).eq('project_id', project_id).is('thumbnail_url', null);
+    const imgs = (all || []).filter(f => String(f.mime_type || '').startsWith('image/'));
+    const batch = imgs.slice(0, 20);
+    let thumbed = 0;
+    for (const f of batch) {
+      try {
+        const resp = await fetch(String(f.url));
+        if (!resp.ok) continue;
+        const t = await makeThumb(Buffer.from(await resp.arrayBuffer()), req.tenant.slug, project_id, f.filename || 'photo');
+        if (t) { await supabaseAdmin.from('project_files').update({ thumbnail_url: t }).eq('id', f.id); thumbed++; }
+      } catch (e) {}
+    }
+    return res.json({ processed: batch.length, thumbed, remaining: imgs.length - thumbed });
+  }
+
   if (req.method === 'POST') {
     // Register-by-URL (JSON): the browser streamed a large file (drone video)
     // straight to Vercel Blob via the client upload token, then posts the
@@ -191,6 +231,15 @@ async function handler(req, res) {
       const { data: project } = await supabaseAdmin
         .from('projects').select('id').eq('id', project_id).eq('tenant_id', tenantId).single();
       if (!project) return res.status(404).json({ error: 'Project not found' });
+      // Server-side thumbnail for images uploaded straight to Blob (drone/large
+      // photos otherwise have none, which makes 100+ photo folders heavy on phones).
+      let thumbUrl = thumbnail_url || null;
+      if (!thumbUrl && String(mime_type || '').startsWith('image/')) {
+        try {
+          const resp = await fetch(String(url));
+          if (resp.ok) thumbUrl = await makeThumb(Buffer.from(await resp.arrayBuffer()), req.tenant.slug, project_id, filename || 'photo');
+        } catch (e) {}
+      }
       const { data: rec, error } = await supabaseAdmin
         .from('project_files')
         .insert({
@@ -200,7 +249,7 @@ async function handler(req, res) {
           // stray name can't 500 the insert.
           uploaded_by: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(body.uploaded_by || '')) ? body.uploaded_by : null,
           url: String(url),
-          thumbnail_url: thumbnail_url || null,
+          thumbnail_url: thumbUrl,
           filename: (filename || 'upload').substring(0, 120),
           mime_type: mime_type || 'application/octet-stream',
           file_size: Number.isFinite(file_size) ? file_size : null,
@@ -260,21 +309,19 @@ async function handler(req, res) {
         contentType: f.mimeType
       });
 
-      // Upload paired client-generated thumbnail if present (image uploads only)
+      // Thumbnail: prefer a client-generated one if present, else generate server
+      // side from the original buffer (the field app does not send client thumbs).
       let thumbnailUrl = null;
       const thumb = thumbsByIndex.get(i);
       if (thumb && !thumb.truncated && thumb.buffer.length > 0) {
         try {
           const thumbPath = `${req.tenant.slug}/projects/${projectId}/thumbs/${ts}-${i}-${clean}.jpg`;
-          const thumbBlob = await put(thumbPath, thumb.buffer, {
-            access: 'public',
-            contentType: thumb.mimeType || 'image/jpeg'
-          });
+          const thumbBlob = await put(thumbPath, thumb.buffer, { access: 'public', contentType: thumb.mimeType || 'image/jpeg' });
           thumbnailUrl = thumbBlob.url;
-        } catch (e) {
-          // Thumb is a nice-to-have; never fail the original upload over it
-          console.warn('[files] thumbnail upload failed:', e?.message);
-        }
+        } catch (e) { console.warn('[files] client thumbnail upload failed:', e?.message); }
+      }
+      if (!thumbnailUrl && (f.mimeType || '').startsWith('image/')) {
+        thumbnailUrl = await makeThumb(f.buffer, req.tenant.slug, projectId, clean);
       }
 
       // EXIF: only for images, server-side fallback. Photos taken via the rear-camera capture
