@@ -22,11 +22,23 @@ export default async function handler(req, res) {
   if (!session) return res.status(401).json({ error: 'sign_in_required', code: 'NO_SESSION' });
   if (!isPrivileged(session)) return res.status(403).json({ error: 'Owner or admin role required' });
 
-  const { id, password, email } = req.body || {};
+  const { id, password, email, username } = req.body || {};
   if (!id || !password) return res.status(400).json({ error: 'id and password are required' });
   const pw = String(password);
   if (pw.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
   if (pw.length > 128) return res.status(400).json({ error: 'Password too long' });
+
+  // Optional username (first-name login). Same admin gate as the password set,
+  // since the only other write path (PUT /api/users) needs a browser owner
+  // session and isn't reachable by the service token. Crew/workforce accounts
+  // log in by username; without one they can only log in by full email.
+  let normUsername;
+  if (username !== undefined && username !== null && String(username).trim() !== '') {
+    normUsername = String(username).toLowerCase().trim();
+    if (!/^[a-z0-9._-]{2,32}$/.test(normUsername)) {
+      return res.status(400).json({ error: 'Username must be 2-32 chars: letters, numbers, dot, dash, underscore' });
+    }
+  }
 
   const updates = {
     password_hash: hashPassword(pw),
@@ -41,6 +53,7 @@ export default async function handler(req, res) {
   if (email !== undefined && email !== null && String(email).trim() !== '') {
     updates.email = String(email).toLowerCase().trim();
   }
+  if (normUsername) updates.username = normUsername;
 
   const { data, error } = await supabaseAdmin
     .from('users')
@@ -54,7 +67,7 @@ export default async function handler(req, res) {
     // Duplicate email is a predictable admin-fix case (the address already belongs
     // to another teammate); surface it as a 409 like the other user endpoints.
     if (error.code === '23505' || /duplicate|unique/i.test(error.message || '')) {
-      return res.status(409).json({ error: 'That email is already used by another teammate.' });
+      return res.status(409).json({ error: 'That email or username is already used by another teammate.' });
     }
     return res.status(500).json({ error: error.message });
   }
