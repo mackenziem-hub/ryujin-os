@@ -935,12 +935,12 @@ function openMarkup(){
   document.getElementById('mkTools').querySelectorAll('button[data-tool]').forEach(b=>b.classList.toggle('on', b.dataset.tool==='pen'));
   _mkCtx=document.getElementById('mkCanvas').getContext('2d');
   MK_img=new Image(); MK_img.crossOrigin='anonymous';
-  MK_img.onload=()=>{ mkFit(); mkRender(); };
+  MK_img.onload=()=>{ requestAnimationFrame(()=>{ mkFit(); mkRender(); }); };
   MK_img.onerror=()=>{ toast('Could not load the photo for markup'); closeMarkup(); };
   MK_img.src=f.url;
   document.getElementById('markup').classList.add('on');
 }
-function mkFit(){ const cv=document.getElementById('mkCanvas'), st=document.getElementById('mkStage'); const iw=MK_img.naturalWidth||1, ih=MK_img.naturalHeight||1; _mkScale=Math.min((st.clientWidth-12)/iw,(st.clientHeight-12)/ih,1)||1; cv.width=iw; cv.height=ih; cv.style.width=Math.round(iw*_mkScale)+'px'; cv.style.height=Math.round(ih*_mkScale)+'px'; }
+function mkFit(){ const cv=document.getElementById('mkCanvas'), st=document.getElementById('mkStage'); const iw=MK_img.naturalWidth||1, ih=MK_img.naturalHeight||1; const aw=Math.max(1, st.clientWidth-12), ah=Math.max(1, st.clientHeight-12); _mkScale=Math.max(0.05, Math.min(aw/iw, ah/ih, 1)); cv.width=iw; cv.height=ih; cv.style.width=Math.round(iw*_mkScale)+'px'; cv.style.height=Math.round(ih*_mkScale)+'px'; }
 function mkRender(prev){ if(!_mkCtx||!MK_img) return; const ctx=_mkCtx, w=ctx.canvas.width, h=ctx.canvas.height; ctx.clearRect(0,0,w,h); ctx.drawImage(MK_img,0,0,w,h); const all=prev?MK_ops.concat([prev]):MK_ops; for(const op of all) mkDrawOp(ctx,op); }
 function mkDrawOp(ctx,op){ ctx.strokeStyle=op.color; ctx.fillStyle=op.color; ctx.lineWidth=Math.max(3, ctx.canvas.width/180); ctx.lineCap='round'; ctx.lineJoin='round'; if(op.tool==='pen'){ ctx.beginPath(); op.pts.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)); ctx.stroke(); } else if(op.tool==='rect'){ ctx.strokeRect(op.x0,op.y0,op.x1-op.x0,op.y1-op.y0); } else if(op.tool==='circle'){ ctx.beginPath(); ctx.ellipse((op.x0+op.x1)/2,(op.y0+op.y1)/2,Math.abs(op.x1-op.x0)/2,Math.abs(op.y1-op.y0)/2,0,0,Math.PI*2); ctx.stroke(); } else if(op.tool==='text'){ const fs=Math.max(20,ctx.canvas.width/24); ctx.font='700 '+fs+'px Inter,system-ui,sans-serif'; ctx.textBaseline='top'; ctx.fillText(op.text,op.x0,op.y0); } }
 function mkPos(e){ const cv=document.getElementById('mkCanvas'), r=cv.getBoundingClientRect(); return { x:(e.clientX-r.left)/_mkScale, y:(e.clientY-r.top)/_mkScale }; }
