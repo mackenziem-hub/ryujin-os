@@ -847,8 +847,9 @@ async function uploadFiles(files){
   const prog=()=>toast('<span class="spin"></span> uploading '+(done+failed)+'/'+total+'…');
   prog();
   if(small.length){
-    // Chunk the multipart batch so a group of photos never exceeds the 4.5MB body cap.
-    const CHUNK=4*1024*1024; let batch=[], bsize=0;
+    // Chunk the multipart batch so no request exceeds the 4.5MB body cap or the
+    // server's 20-file busboy limit. Any number of photos uploads across chunks.
+    const CHUNK=4*1024*1024, MAXN=10; let batch=[], bsize=0;
     const flush=async()=>{
       if(!batch.length) return; const grp=batch; batch=[]; bsize=0;
       const fd=new FormData(); fd.append('project_id', job); fd.append('category','general'); if(ME?.id) fd.append('uploaded_by', ME.id);
@@ -857,7 +858,7 @@ async function uploadFiles(files){
       catch(e){ failed+=grp.length; lastErr=(e&&e.message)||String(e); }
       prog();
     };
-    for(const f of small){ if(bsize+f.size>CHUNK && batch.length) await flush(); batch.push(f); bsize+=f.size; }
+    for(const f of small){ if((bsize+f.size>CHUNK || batch.length>=MAXN) && batch.length) await flush(); batch.push(f); bsize+=f.size; }
     await flush();
   }
   if(big.length){
