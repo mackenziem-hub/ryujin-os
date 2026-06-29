@@ -24,6 +24,7 @@
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireTenant } from '../lib/tenant.js';
 import { sendSMS, smsPreview } from '../lib/sms.js';
+import { sendPushToUser } from '../lib/webpush.js';
 
 async function resolveCurrentUser(req) {
   const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim()
@@ -268,6 +269,18 @@ async function handler(req, res) {
           .catch(e => console.warn(`[messages] SMS to ${u.name} crashed: ${e.message}`));
       }
     } catch (e) { console.warn('[messages] notify block error:', e.message); }
+
+    // Web push to each recipient (awaited so it completes before the function
+    // returns; fail-soft; no-op until VAPID is configured).
+    try {
+      const senderName = me?.name || body.from_label || 'Team';
+      const preview = String(body.body || '').slice(0, 90);
+      await Promise.all(
+        recipients.filter(uid => uid && uid !== me?.id).map(uid =>
+          sendPushToUser(tenantId, uid, { title: 'Message from ' + senderName, body: preview, url: '/companion.html', tag: 'msg' }).catch(() => null)
+        )
+      );
+    } catch (e) {}
 
     // Return all rows + a thread_id so the client can pivot to thread-view immediately.
     const threadId = data[0]?.thread_id || sharedThreadId;

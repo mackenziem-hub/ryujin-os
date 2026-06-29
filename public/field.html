@@ -1345,8 +1345,29 @@ async function checkUpdate(force){ const t=await liveTag(); if(!t) return; if(!B
 let _seenMsg=new Set(), _seenTask=new Set(), _alertReady=false, _audioCtx=null;
 function primeAlerts(){
   try{ _audioCtx = _audioCtx || new (window.AudioContext||window.webkitAudioContext)(); if(_audioCtx.state==='suspended') _audioCtx.resume(); }catch(_){}
-  if('Notification' in window && Notification.permission==='default'){ try{ Notification.requestPermission(); }catch(_){} }
+  if('Notification' in window){
+    if(Notification.permission==='granted'){ subscribePush(); }
+    else if(Notification.permission==='default'){ try{ Notification.requestPermission().then(p=>{ if(p==='granted') subscribePush(); }); }catch(_){} }
+  }
 }
+// Register a Web Push subscription so notifications arrive even when the app is
+// closed. No-op until VAPID is configured server-side (publicKey null) or until
+// the user grants notification permission.
+async function subscribePush(){
+  try{
+    if(!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window) || Notification.permission!=='granted') return;
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if(!sub){
+      const cfg = await api('/push?action=config');
+      const key = cfg && cfg.publicKey; if(!key) return;
+      sub = await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey: _urlB64ToU8(key) });
+    }
+    const j = sub.toJSON(); if(!j || !j.endpoint || !j.keys) return;
+    await api('/push', { method:'POST', body: JSON.stringify({ subscription:{ endpoint:j.endpoint, keys:j.keys } }) });
+  }catch(e){}
+}
+function _urlB64ToU8(b64){ const pad='='.repeat((4-b64.length%4)%4); const s=(b64+pad).replace(/-/g,'+').replace(/_/g,'/'); const raw=atob(s); const a=new Uint8Array(raw.length); for(let i=0;i<raw.length;i++) a[i]=raw.charCodeAt(i); return a; }
 function playDing(){
   try{
     _audioCtx = _audioCtx || new (window.AudioContext||window.webkitAudioContext)();
@@ -1396,6 +1417,7 @@ async function alertPoll(){
 async function boot(){
   if('serviceWorker' in navigator){ try{ navigator.serviceWorker.register('/sw.js').catch(()=>{}); }catch(e){} }
   document.addEventListener('pointerdown', primeAlerts, {once:true});
+  subscribePush();
   checkUpdate();
   setInterval(()=>checkUpdate(false), 120000);
   document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) checkUpdate(false); });
