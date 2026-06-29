@@ -4,7 +4,7 @@
 // tools and Mackenzie's voice). This one is scoped to the signed-in crew member:
 // it only ever sees THEIR assigned tasks + the tenant's jobs, answers in two or
 // three plain sentences, and can drive the field UI by returning a single client
-// action ({navigate|open_job|upload}) that field.html executes.
+// action ({navigate|open_folder|open_job|upload}) that field.html executes.
 import { supabaseAdmin } from '../lib/supabase.js';
 import { resolveSession } from '../lib/portalAuth.js';
 
@@ -25,9 +25,9 @@ export default async function handler(req, res) {
   if (!message) return res.status(400).json({ error: 'message required' });
   const history = Array.isArray(req.body && req.body.history) ? req.body.history.slice(-6) : [];
 
-  // ── Scope: only this crew member's tasks + the tenant's jobs ──
+  // ── Scope: only this crew member's tasks + the tenant's jobs + scheduled work ──
   const tid = session.tenant_id;
-  const [{ data: myTickets }, { data: jobs }] = await Promise.all([
+  const [{ data: myTickets }, { data: jobs }, { data: workorders }] = await Promise.all([
     supabaseAdmin.from('tickets')
       .select('title, status, priority, due_date, project:projects(address)')
       .eq('tenant_id', tid).eq('assigned_to', session.user_id)
@@ -36,7 +36,16 @@ export default async function handler(req, res) {
       .select('address, status, customer:customers(full_name)')
       .eq('tenant_id', tid).neq('status', 'cancelled')
       .order('created_at', { ascending: false }).limit(40),
+    supabaseAdmin.from('workorders')
+      .select('wo_number, customer_name, address, start_date, status, shingle_product, sub_crew_lead')
+      .eq('tenant_id', tid).neq('status', 'cancelled').not('start_date', 'is', null)
+      .order('start_date', { ascending: true }).limit(60),
   ]);
+
+  // Atlantic-time today/tomorrow so "tomorrow's job" resolves against start_date.
+  const dfmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Moncton', year: 'numeric', month: '2-digit', day: '2-digit' });
+  const todayStr = dfmt.format(new Date());
+  const tmrwStr = dfmt.format(new Date(Date.now() + 86400000));
 
   const baseTasks = (myTickets || []).map(t =>
     `- ${t.title}${t.project?.address ? ' (' + t.project.address + ')' : ''} [${t.status}${t.priority && t.priority !== 'medium' ? ', ' + t.priority : ''}${t.due_date ? ', due ' + t.due_date : ''}]`
@@ -48,6 +57,16 @@ export default async function handler(req, res) {
     `- ${p.address}${p.customer?.full_name ? ' — ' + p.customer.full_name : ''} [${p.status}]`
   ).join('\n') || '(none)';
 
+  // Scheduled work orders, upcoming first. These carry the materials/scope and are
+  // what the digital job folder (open_folder) shows.
+  const upcoming = (workorders || []).filter(w => w.start_date >= todayStr);
+  const recentPast = (workorders || []).filter(w => w.start_date < todayStr).slice(-6).reverse();
+  const woLine = w => {
+    const when = w.start_date === todayStr ? 'TODAY' : w.start_date === tmrwStr ? 'TOMORROW' : w.start_date;
+    return `- WO#${w.wo_number} ${w.address || w.customer_name || ''}${w.customer_name ? ' — ' + w.customer_name : ''} [starts ${when}${w.shingle_product ? ', ' + w.shingle_product : ''}${w.sub_crew_lead ? ', crew: ' + w.sub_crew_lead : ''}]`;
+  };
+  const woLines = [...upcoming.map(woLine), ...recentPast.map(woLine)].join('\n') || '(none scheduled)';
+
   const firstName = (session.name || 'there').split(' ')[0];
   const system = `You are the Plus Ultra Roofing field assistant, helping ${session.name || 'a crew member'} (role: ${session.role || 'crew'}) inside the mobile field app.
 
@@ -56,21 +75,27 @@ HARD RULES
 - Plain text only. No markdown headers, no tables, no code blocks. A simple "- " bullet is fine.
 - You ONLY know what is in CONTEXT below: ${firstName}'s own assigned tasks and the job list. Do not invent tasks, jobs, prices, or customer details. If asked something outside this, say you can only help with their tasks, jobs, photos, schedule and clock.
 - The app has tabs: Tasks, Jobs, Schedule, Clock, and a job folder opens from Jobs. Photos/drone footage upload from inside a job folder.
+- Today is ${todayStr}. Tomorrow is ${tmrwStr}. Use the SCHEDULED WORK ORDERS list to answer "what's tomorrow's job", "today's job", or anything about scheduled jobs.
 
 WHEN TO DRIVE THE APP
 If the user clearly wants to GO somewhere or DO something in the app, include an action.
 - Open a tab -> {"type":"navigate","tab":"tasks|jobs|schedule|clock"}
-- Open a job folder -> {"type":"open_job","query":"<address words>"}
+- Open the full digital job folder (materials, scope, photos, paysheet) -> {"type":"open_folder","wo":"<wo_number>"}
+- Open a basic job folder by address -> {"type":"open_job","query":"<address words>"}
 - Start a photo/drone upload for a job -> {"type":"upload","query":"<address words>"}
-The job list below is a RECENT SAMPLE, not the full list. If the user names an
-address that is not listed, STILL emit the open_job/upload action with their
-address words as the query - the app searches every job to resolve it. Use the
-caller's exact address words for the query.
-Otherwise omit the action.
+For anything about MATERIALS, scope, "what do I need for <job>", or a specific
+scheduled job (e.g. "tomorrow's job", "the Harmeet job"), use open_folder with the
+matching WO# from the SCHEDULED WORK ORDERS list - that folder is where the
+materials and scope live. The job list is a RECENT SAMPLE; if the user names an
+address not listed, still emit open_job with their address words as the query - the
+app searches every job. Otherwise omit the action.
 
 CONTEXT
 ${firstName}'s tasks:
 ${taskLines}
+
+Scheduled work orders (upcoming first; these hold the materials/scope):
+${woLines}
 
 Jobs (newest first):
 ${jobLines}
