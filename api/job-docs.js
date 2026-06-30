@@ -49,17 +49,40 @@ async function handler(req, res) {
   if (!project) return res.status(404).json({ error: 'Project not found' });
 
   let eagleViewUrl = null, eagleViewLabel = null, estimateNumber = null, workOrderNumber = null;
-  let linkedPaysheetId = null, woSubLead = null;
+  let linkedPaysheetId = null, woSubLead = null, materialList = null;
 
   if (project.estimate_id) {
     const { data: est } = await supabaseAdmin
-      .from('estimates').select('id, estimate_number, custom_prices')
+      .from('estimates').select('id, estimate_number, custom_prices, calculated_packages, selected_package')
       .eq('id', project.estimate_id).eq('tenant_id', tenantId).maybeSingle();
     if (est) {
       estimateNumber = est.estimate_number;
       const cp = est.custom_prices || {};
       eagleViewUrl = cp._eagleview_pdf_url || null;   // public Blob, operational, safe for all
       eagleViewLabel = cp._eagleview_label || null;
+
+      // Material list from the selected package's material line items. Crew/sub get
+      // QUANTITIES ONLY (operational - what to load on the truck); owner/admin also
+      // get costs. Allowlisted fields so no cost/margin can leak to a sub via a new field.
+      const pkgs = est.calculated_packages || {};
+      const sel = est.selected_package || 'platinum';
+      // Resolve the actual package key used so the card label never lies (e.g. a
+      // 'diamond' selection that was only ever calculated as platinum).
+      const selKey = pkgs[sel] ? sel : (pkgs.platinum ? 'platinum' : (pkgs.gold ? 'gold' : Object.keys(pkgs)[0]));
+      const pkg = (selKey && pkgs[selKey]) || null;
+      const lineItems = pkg && Array.isArray(pkg.lineItems) ? pkg.lineItems : [];
+      const mats = lineItems.filter(
+        (li) => li && li.included !== false && String(li.category || '').toLowerCase() === 'materials'
+      );
+      if (mats.length) {
+        materialList = {
+          package: selKey,
+          items: mats.map((li) => priv
+            ? { item: li.label, quantity: li.quantity ?? null, unit: li.unit || '', unitCost: li.unit_cost ?? null, totalCost: li.total_cost ?? null }
+            : { item: li.label, quantity: li.quantity ?? null, unit: li.unit || '' }),
+          ...(priv ? { totalCost: Math.round(mats.reduce((s, li) => s + (Number(li.total_cost) || 0), 0) * 100) / 100 } : {}),
+        };
+      }
     }
     const { data: wos } = await supabaseAdmin
       .from('workorders').select('id, wo_number, linked_paysheet_id, sub_crew_lead')
@@ -92,7 +115,7 @@ async function handler(req, res) {
     }
   }
 
-  return res.json({ role, priv, estimateNumber, workOrderNumber, eagleViewUrl, eagleViewLabel, paysheet });
+  return res.json({ role, priv, estimateNumber, workOrderNumber, eagleViewUrl, eagleViewLabel, paysheet, materialList });
 }
 
 export default requirePortalSessionAndTenant(handler);
