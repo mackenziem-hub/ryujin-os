@@ -86,7 +86,6 @@ const TIER_CATALOG = {
     perks: [
       'CertainTeed Landmark shingles',
       'Lifetime limited manufacturer warranty',
-      '10-yr SureStart full coverage (certified installer)',
       '15-yr Plus Ultra workmanship warranty',
       'Full tear-off + synthetic underlayment',
       'Ice & water shield at eaves + valleys',
