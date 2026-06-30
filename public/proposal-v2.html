@@ -375,7 +375,7 @@
   /* Standard assets injected into every proposal: the explainer video (now
      rendered before the packages) and the book-a-call calendar by the accept. */
   var EXPLAINER_VIDEO_URL = 'https://oyhn4tqzifmqqj0o.public.blob.vercel-storage.com/proposals/explainer-roof-system-v2.mp4';
-  var EXPLAINER_VIDEO_POSTER = 'https://oyhn4tqzifmqqj0o.public.blob.vercel-storage.com/proposals/explainer-roof-system-poster.jpg';
+  var EXPLAINER_VIDEO_POSTER = 'https://oyhn4tqzifmqqj0o.public.blob.vercel-storage.com/proposals/explainer-roof-system-poster-v2.jpg';
   var BOOKING_CALENDAR_URL = 'https://link.automator.ai/widget/booking/yiIwpQdoHSVnXa0ToyGK';
   var bookingScriptInjected = false;
   function loadBookingWidgetScript() {
@@ -458,12 +458,17 @@
      The roof-system anatomy talk, mounted right before the products so the
      customer understands what goes into the roof before seeing the packages.
      The chapter strip seeks the HTML5 video so they can jump to a topic. */
+  var EXPLAINER_SUMMARY = 'A few minutes on everything that goes into a roof beyond the shingles: the underlayment, the flashing, the ice and water shield, the ventilation, and the install details that decide how long it lasts, plus how the warranties actually work. Watch the whole thing, or jump to a chapter below.';
   var EXPLAINER_CHAPTERS = [
-    { label: 'Intro', t: 0 }, { label: 'Roof system', t: 16 },
-    { label: 'Underlayment', t: 74 }, { label: 'Flashing & valleys', t: 114 },
-    { label: 'Hip & ridge', t: 154 }, { label: 'Proper install', t: 194 },
-    { label: 'Ice & water shield', t: 294 }, { label: 'Warranty', t: 354 },
-    { label: 'Wrap-up', t: 470 }
+    { label: 'Intro', t: 0, summary: 'Who we are and what this walkthrough covers.' },
+    { label: 'The roof system', t: 16, summary: 'A roof is a system of layers working together, not just the shingles you see.' },
+    { label: 'Underlayment', t: 74, summary: 'The water-resistant layer over the deck that backs up the shingles.' },
+    { label: 'Flashing & valleys', t: 114, summary: 'The metal that seals walls, chimneys, and valleys, where most leaks actually start.' },
+    { label: 'Hip & ridge', t: 154, summary: 'The capping along the peaks and hips, and how the ridge breathes.' },
+    { label: 'Proper install', t: 194, summary: 'Correct nailing and nail placement, and why workmanship is what makes it last.' },
+    { label: 'Ice & water shield', t: 294, summary: 'The self-sealing membrane at the eaves that protects against ice dams and wind-driven rain.' },
+    { label: 'Warranty', t: 354, summary: 'The manufacturer and workmanship warranties and what each one covers.' },
+    { label: 'Wrap-up', t: 470, summary: 'The bottom line and what happens next.' }
   ];
   function explainerVideoBlock() {
     if (!EXPLAINER_VIDEO_URL) return null;
@@ -499,6 +504,33 @@
       strip.appendChild(b);
     });
     nodes.push(strip);
+
+    // Summary dropdown: an overall summary plus a clickable per-chapter summary
+    // list (each row seeks the video), so they can read what is covered or jump in.
+    var sum = el('details', 'pv2-vidsum');
+    sum.appendChild(el('summary', 'pv2-vidsum__toggle', 'Video summary'));
+    sum.appendChild(el('p', 'pv2-vidsum__lede', esc(EXPLAINER_SUMMARY)));
+    var sumList = el('div', 'pv2-vidsum__list');
+    EXPLAINER_CHAPTERS.forEach(function (ch) {
+      if (!ch.summary) return;
+      var mm = Math.floor(ch.t / 60), ss = ch.t % 60;
+      var row = el('button', 'pv2-vidsum__row');
+      row.type = 'button';
+      row.innerHTML = '<span class="pv2-vidsum__t">' + mm + ':' + (ss < 10 ? '0' : '') + ss +
+        '</span><span class="pv2-vidsum__txt"><strong>' + esc(ch.label) + '.</strong> ' + esc(ch.summary) + '</span>';
+      row.addEventListener('click', function () {
+        try {
+          vid.currentTime = ch.t;
+          var pr = vid.play();
+          if (pr && pr.catch) pr.catch(function () {});
+        } catch (e) { /* seeking is best-effort */ }
+        if (vidBox.scrollIntoView) vidBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+      sumList.appendChild(row);
+    });
+    sum.appendChild(sumList);
+    nodes.push(sum);
+
     var sec = band(nodes, { tint: true });
     sec.classList.add('pv2-explainer-band');
     return sec;
