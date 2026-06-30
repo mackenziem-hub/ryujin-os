@@ -144,28 +144,41 @@ async function handler(req, res) {
   if (req.method === 'POST') {
     const body = req.body || {};
 
-    const { data, error } = await supabaseAdmin
-      .from('tickets')
-      .insert({
-        tenant_id: tenantId,
-        title: body.title,
-        description: body.description,
-        estimate_id: body.estimate_id || null,
-        customer_id: body.customer_id || null,
-        project_id: body.project_id || null,
-        assigned_to: body.assigned_to || null,
-        priority: body.priority || 'medium',
-        // All new tickets default to 'open'. Workflow ('open' → 'active' → 'done')
-        // transitions via PUT, not POST. The previous ternary was identical on
-        // both branches and surfaced no distinction — kept the same final
-        // value, removed the dead code.
-        status: 'open',
-        due_date: body.due_date || null,
-        tags: body.tags || [],
-        notes: body.notes || []
-      })
-      .select('*')
-      .single();
+    // ticket_number comes from a serial sequence shared with the other create
+    // paths (approve.js, webhook-ticket.js), so we keep relying on the default
+    // here rather than writing an explicit number (an explicit value does not
+    // advance the sequence and would desync those sequence-based paths). If the
+    // sequence ever falls behind max(ticket_number) for a tenant, nextval hands
+    // back an already-used number and the insert fails on
+    // tickets_tenant_number_unique. A failed insert still consumes the sequence
+    // value, so retrying re-calls nextval and walks past the gap, self-healing
+    // the drift in-handler instead of surfacing a duplicate-key 500.
+    let data = null, error = null;
+    for (let attempt = 0; attempt < 8; attempt++) {
+      ({ data, error } = await supabaseAdmin
+        .from('tickets')
+        .insert({
+          tenant_id: tenantId,
+          title: body.title,
+          description: body.description,
+          estimate_id: body.estimate_id || null,
+          customer_id: body.customer_id || null,
+          project_id: body.project_id || null,
+          assigned_to: body.assigned_to || null,
+          priority: body.priority || 'medium',
+          // New tickets start 'open'; 'open' -> 'active' -> 'done' transitions
+          // happen via PUT, not POST.
+          status: 'open',
+          due_date: body.due_date || null,
+          tags: body.tags || [],
+          notes: body.notes || []
+        })
+        .select('*')
+        .single());
+
+      if (!error) break;
+      if (error.code !== '23505') break; // only the ticket_number collision is retryable
+    }
 
     if (error) return res.status(500).json({ error: error.message });
 
