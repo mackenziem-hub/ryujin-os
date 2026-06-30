@@ -14,6 +14,110 @@ import { publicBase } from '../lib/publicUrl.js';
 const NOTIFY_EMAIL = (process.env.NOTIFY_EMAIL || 'mackenzie.m@plusultraroofing.com').trim();
 const PHOTO_GALLERY_NOTIFIED_TAG = 'owner:photo_gallery_opened';
 
+// ── Lifecycle stage derivation (drives the field-app Jobs sort + crew/sub gating) ──
+// The lifecycle is spread across project.status (production state) + the linked
+// estimate's sold/sent status + the schedule. Ladder:
+//   draft -> quoted -> signed -> scheduled -> in_production -> complete
+// A pre-sale "booked" stage lives in GHL/inspection, not on the project row, so it
+// is not derived here; in-house crew see all stages regardless.
+function deriveStage(p) {
+  const ps = String(p.status || '').toLowerCase();
+  if (ps === 'complete') return 'complete';
+  if (ps === 'active' || ps === 'paused' || ps === 'punch_list') return 'in_production';
+  const es = String(p.estimate?.status || '').toLowerCase();
+  if (es === 'accepted') return p.scheduled_start ? 'scheduled' : 'signed';
+  if (es === 'proposal_sent') return 'quoted';
+  return 'draft';
+}
+
+const normPhone = (s) => String(s || '').replace(/\D/g, '').slice(-10);
+// In-house pseudo-subs that must NOT cause an in-house user to be assignment-gated.
+const IN_HOUSE_SUB_NAMES = new Set(['plus ultra crew', 'mackenzie mazerolle']);
+
+// Resolve the set of project ids a non-office (crew/sub) session may see, or null
+// when the session is in-house staff so they are NOT assignment-filtered (see all).
+//
+// SECURITY: this gate FAILS CLOSED. An external subcontractor must never see a job
+// that is not assigned to their sub. Order matters:
+//   1. Match the user to an ACTIVE subcontractor record (phone, then exact first-name
+//      token). A positive match = external sub and TAKES PRECEDENCE over email domain,
+//      so a sub provisioned with a company-domain login is still gated.
+//   2. No sub match + email domain == the tenant owner's domain = in-house -> see all.
+//   3. Neither -> fail closed (empty Set = sees none, never all).
+// Any DB error returns an empty Set, never null. A sub on a work order is by
+// definition a sold/assigned job, so the WO assignment is the gate (no stage floor).
+// NOTE: the caller fetches one large page then filters here; correct while the
+// tenant's project count stays within that page (Plus Ultra ~31, field-app page 500).
+async function externalSubProjectFilter(session, tenantId) {
+  try {
+    const { data: u, error: uErr } = await supabaseAdmin
+      .from('users').select('id, name, phone, email').eq('id', session.user_id).maybeSingle();
+    if (uErr) return new Set(); // cannot load identity -> fail closed
+
+    // 1. Resolve an ACTIVE external subcontractor for this user (phone, then exact
+    //    first-name token), BEFORE the email-domain signal.
+    const { data: subs, error: sErr } = await supabaseAdmin
+      .from('subcontractors').select('id, name, phone, active, archived_at').eq('tenant_id', tenantId);
+    if (sErr) return new Set();
+    const candidates = (subs || []).filter(
+      (s) => s && s.active !== false && !s.archived_at &&
+        !IN_HOUSE_SUB_NAMES.has(String(s.name || '').trim().toLowerCase())
+    );
+    const uPhone = normPhone(u?.phone);
+    let sub = uPhone ? candidates.find((s) => normPhone(s.phone) === uPhone) : null;
+    if (!sub) {
+      // Exact first-name TOKEN match (word boundary), never a substring -> 'ryan'
+      // must not bind to a sub named 'Bryan'.
+      const fn = String(u?.name || session.name || '').trim().toLowerCase().split(/\s+/)[0];
+      if (fn.length >= 3) {
+        sub = candidates.find((s) => String(s.name || '').toLowerCase().split(/[^a-z0-9]+/).includes(fn)) || null;
+      }
+    }
+
+    if (sub) {
+      // External sub -> only their assigned jobs: estimate-linked projects (batch) +
+      // the canonical WO->project resolver (estimate->customer->address) for work
+      // orders with no estimate link (field-app address-only jobs).
+      const { data: wos, error: wErr } = await supabaseAdmin
+        .from('workorders')
+        .select('id, wo_number, status, start_date, linked_estimate_id, customer_name, address')
+        .eq('tenant_id', tenantId).eq('subcontractor_id', sub.id);
+      if (wErr) return new Set();
+      const ids = new Set();
+      const estIds = [...new Set((wos || []).map((w) => w.linked_estimate_id).filter(Boolean))];
+      if (estIds.length) {
+        const { data: byEst, error: eErr } = await supabaseAdmin
+          .from('projects').select('id').eq('tenant_id', tenantId).in('estimate_id', estIds);
+        if (eErr) return new Set();
+        for (const p of (byEst || [])) ids.add(p.id);
+      }
+      for (const wo of (wos || [])) {
+        if (wo.linked_estimate_id) continue;
+        try {
+          const { projectId } = await resolveProjectIdFromWorkorder(tenantId, wo);
+          if (projectId) ids.add(projectId);
+        } catch { /* skip this WO; never widen visibility on error */ }
+      }
+      return ids;
+    }
+
+    // 2. No sub record -> positive in-house signal (staff email domain) -> see all.
+    const email = String(u?.email || session.email || '').toLowerCase();
+    const emailDomain = email.includes('@') ? email.split('@').pop() : '';
+    const { data: owner, error: oErr } = await supabaseAdmin
+      .from('users').select('email').eq('tenant_id', tenantId).eq('role', 'owner').limit(1).maybeSingle();
+    if (oErr) return new Set(); // cannot establish staff domain -> fail closed
+    const ownerEmail = String(owner?.email || '').toLowerCase();
+    const staffDomain = ownerEmail.includes('@') ? ownerEmail.split('@').pop() : '';
+    if (staffDomain && emailDomain && emailDomain === staffDomain) return null; // in-house -> see all
+
+    // 3. Neither a known sub nor a recognized staff member -> fail closed.
+    return new Set();
+  } catch {
+    return new Set(); // any unexpected failure -> fail closed (see none)
+  }
+}
+
 // Fire once per project the first time its photo-share URL is hit. Mirrors the
 // proposal-events first-open pattern: idempotency via a tag on projects.tags.
 async function maybeNotifyFirstGalleryOpen(project) {
@@ -239,10 +343,11 @@ async function handler(req, res) {
   // (no cross-tenant header spoof). The public `?share=` gallery + client-comment
   // branches already returned above; `GET ?id=` stays tenant-scoped so the
   // client-facing customer-showcase page (no session) keeps working.
+  let session = null;
   const isMutation = req.method === 'POST' || req.method === 'PUT';
   const isListRead = req.method === 'GET' && !req.query.id;
   if (isMutation || isListRead) {
-    const session = await resolveSession(req);
+    session = await resolveSession(req);
     if (!session) return res.status(401).json({ error: 'sign_in_required', code: 'NO_SESSION' });
     if (session.tenant_id && session.tenant_id !== tenantId) {
       return res.status(403).json({ error: 'tenant_mismatch' });
@@ -488,7 +593,7 @@ async function handler(req, res) {
         *,
         customer:customers(full_name, address, phone),
         crew_lead:users!projects_crew_lead_id_fkey(id, name, avatar_url),
-        estimate:estimates!projects_estimate_id_fkey(estimate_number, final_accepted_total)
+        estimate:estimates!projects_estimate_id_fkey(estimate_number, status, final_accepted_total)
       `, { count: 'exact' })
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false })
@@ -544,11 +649,26 @@ async function handler(req, res) {
       return {
         ...p,
         live: (p.status || '').toLowerCase() === 'active',
+        stage: deriveStage(p),
         crew,
       };
     });
 
-    return res.json({ projects: enriched, total: count });
+    // Field-app Jobs visibility gate. Office roles (owner/admin/manager/estimator)
+    // and in-house crew see everything; an EXTERNAL subcontractor sees ONLY the jobs
+    // assigned to their sub via a work order (never another customer's job). Applied
+    // post-query in JS so the SQL above stays shared with every other caller, and the
+    // count returned reflects what the caller can actually see.
+    let visible = enriched;
+    let visibleTotal = count; // unfiltered callers keep the true DB count
+    const role = String(session?.role || '').toLowerCase();
+    const OFFICE_ROLES = new Set(['owner', 'admin', 'manager', 'estimator']);
+    if (session && session.user_id !== 'service-internal' && !OFFICE_ROLES.has(role)) {
+      const subSet = await externalSubProjectFilter(session, tenantId);
+      if (subSet) { visible = enriched.filter((p) => subSet.has(p.id)); visibleTotal = visible.length; }
+    }
+
+    return res.json({ projects: visible, total: visibleTotal });
   }
 
   // ── POST ──
