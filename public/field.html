@@ -856,8 +856,9 @@ async function openJob(id){
   h += notes.map(n=>'<div class="note"><div class="meta"><b>'+esc(n.guest_name||'Crew')+'</b><span>'+ago(n.created_at)+'</span></div><div class="txt">'+esc(n.body)+'</div></div>').join('');
   // ── Documents: work order, pay sheet (role-sanitized server-side), EagleView, files ──
   const jd = (jdoc && !jdoc.error) ? jdoc : {};
+  CUR_DOCS = { addr, cust, est: est && est.estimate_number, wo, paysheet: jd.paysheet, materialList: jd.materialList, priv: jd.priv };
   const docFiles = files.filter(f=>{ const m=f.mime_type||''; return m==='application/pdf' || f.category==='document'; });
-  if(wo || jd.paysheet || jd.eagleViewUrl || docFiles.length){
+  if(wo || jd.paysheet || jd.materialList || jd.eagleViewUrl || docFiles.length){
     h += '<div class="lbl">Documents</div>';
     if(wo){
       const stat = String(wo.status||'issued').replace(/_/g,' ');
@@ -876,6 +877,7 @@ async function openJob(id){
         + (meas.length?'<div class="docsub">Measurements</div><div class="measgrid">'+meas.map(x=>'<div class="meas"><span class="ml">'+esc(x[0])+'</span><span class="mv">'+Number(x[1])+(x[2]?(' '+x[2]):'')+'</span></div>').join('')+'</div>':'')
         + (scope.length?'<div class="docsub">Scope of work</div><ul class="docscope">'+scope.map(s=>'<li class="'+(s.included?'':'off')+'"><svg viewBox="0 0 24 24">'+(s.included?'<polyline points="20 6 9 17 4 12"/>':'<line x1="5" y1="12" x2="19" y2="12"/>')+'</svg><span>'+esc(s.item)+(s.qty?(' ('+esc(s.qty)+')'):'')+'</span></li>').join('')+'</ul>':'')
         + (wo.special_notes?'<div class="docsub">Notes</div><div class="docnote">'+esc(wo.special_notes)+'</div>':'')
+        + docPdfBtn('wo')
         + '</div>';
     }
     if(jd.paysheet){
@@ -891,10 +893,21 @@ async function openJob(id){
           + '<div class="psrow"><span>Subtotal</span><span class="psa">$'+Number(ps.subtotal||0).toLocaleString()+'</span></div>'
           + '<div class="psrow"><span>HST</span><span class="psa">$'+Number(ps.hst||0).toLocaleString()+'</span></div>'
           + '<div class="psrow grand"><span>Total</span><span class="psa">$'+Number(ps.total||0).toLocaleString()+'</span></div>'
-        + '</div></div>';
+        + '</div>'
+        + docPdfBtn('ps')
+        + '</div>';
+    }
+    if(jd.materialList && Array.isArray(jd.materialList.items) && jd.materialList.items.length){
+      const ml=jd.materialList;
+      h += '<div class="doccard"><div class="docrow"><span class="dt">Material list</span>'+(ml.package?'<span class="dchip s-issued">'+esc(ml.package)+'</span>':'')+'</div>'
+        + '<div class="psgrp">Materials'+(jd.priv?'':' &middot; quantities')+'</div>'
+        + ml.items.map(it=>'<div class="psrow"><span class="psd">'+esc(it.item||'Item')+(it.quantity!=null?'<i>'+esc(it.quantity)+(it.unit?(' '+esc(it.unit)):'')+'</i>':'')+'</span>'+((jd.priv&&it.totalCost!=null)?'<span class="psa">$'+Number(it.totalCost).toLocaleString()+'</span>':'')+'</div>').join('')
+        + ((jd.priv&&ml.totalCost!=null)?'<div class="pstot"><div class="psrow grand"><span>Total materials</span><span class="psa">$'+Number(ml.totalCost).toLocaleString()+'</span></div></div>':'')
+        + docPdfBtn('mat')
+        + '</div>';
     }
     if(jd.eagleViewUrl){
-      h += '<a class="doclink" href="'+esc(jd.eagleViewUrl)+'" target="_blank" rel="noopener"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>EagleView report'+(jd.eagleViewLabel?(' · '+esc(jd.eagleViewLabel)):'')+'</a>';
+      h += '<a class="doclink" href="'+esc(jd.eagleViewUrl)+'" target="_blank" rel="noopener"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>EagleView report'+(jd.eagleViewLabel?(' &middot; '+esc(jd.eagleViewLabel)):'')+' &middot; open / download</a>';
     }
     docFiles.forEach(f=>{ h += '<a class="doclink" href="'+esc(f.url)+'" target="_blank" rel="noopener"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'+esc(f.filename||'Document')+'</a>'; });
   }
@@ -904,6 +917,66 @@ async function openJob(id){
     h += '<a href="/job.html?id='+encodeURIComponent(pr.customer_id)+'" style="display:block;margin-top:18px;padding:13px;text-align:center;border:1px solid var(--border-hi);border-radius:var(--r);color:var(--dim);text-decoration:none;font-size:13px">Open full digital folder · scope, materials, P&amp;L &rarr;</a>';
   }
   w.innerHTML = h;
+}
+// ── Document PDF export ── open a clean branded print window for the WO / pay sheet /
+// material list and auto-trigger the browser's print -> Save as PDF. Zero new deps;
+// works on phone + desktop. CUR_DOCS is set when a job folder renders so the button
+// onclick can rebuild the doc from data at click time.
+let CUR_DOCS = null;
+function pdfMoney(n){ return '$'+Number(n||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function openPrintWindow(title, inner){
+  const w = window.open('', '_blank');
+  if(!w){ toast('Allow pop-ups to download the PDF'); return; }
+  const css = '*{box-sizing:border-box}body{font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#111;margin:0;padding:28px;background:#fff}'
+    + '.ph{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #0b1e4d;padding-bottom:12px;margin-bottom:16px}'
+    + '.ph .b{font-weight:800;font-size:18px;color:#0b1e4d;letter-spacing:.3px}.ph .s{font-size:11px;color:#555;text-align:right}'
+    + 'h1{font-size:16px;margin:8px 0 2px}.sub{color:#555;font-size:12px;margin-bottom:8px}'
+    + 'h2{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#0b1e4d;border-bottom:1px solid #ddd;padding-bottom:4px;margin:18px 0 8px}'
+    + 'table{width:100%;border-collapse:collapse;font-size:12.5px}td,th{text-align:left;padding:6px 4px;border-bottom:1px solid #eee}th{color:#555;font-weight:600;font-size:11px;text-transform:uppercase}'
+    + 'td.r,th.r{text-align:right}tr.tot td{border-top:2px solid #0b1e4d;border-bottom:none;padding-top:8px;font-weight:800}'
+    + '.kv{display:grid;grid-template-columns:1fr 1fr;gap:0 24px;font-size:12.5px;margin-bottom:8px}.kv div{display:flex;justify-content:space-between;border-bottom:1px solid #f0f0f0;padding:4px 0}.kv .l{color:#666}'
+    + 'ul{margin:6px 0;padding-left:18px;font-size:12.5px}li{margin:3px 0}li.off{color:#999;text-decoration:line-through}'
+    + '.note{font-size:12.5px;background:#f7f8fa;border:1px solid #eee;border-radius:6px;padding:8px;white-space:pre-wrap}'
+    + '@media print{body{padding:0}}';
+  const header = '<div class="ph"><div><div class="b">PLUS ULTRA ROOFING</div><div class="s" style="text-align:left">(506) 616-4607 &middot; plusultraroofing@gmail.com</div></div><div class="s">'+new Date().toLocaleDateString()+'</div></div>';
+  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>'+title+'</title><style>'+css+'</style></head><body>'+header+inner+'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print();},350);};</scr'+'ipt></body></html>');
+  w.document.close();
+}
+function printDoc(kind){
+  const d = CUR_DOCS; if(!d) return;
+  const head = '<h1>'+esc(d.addr||'Job')+'</h1><div class="sub">'+[d.cust?('Customer: '+esc(d.cust)):'', d.est?('Estimate '+esc(d.est)):''].filter(Boolean).join(' &middot; ')+'</div>';
+  if(kind==='wo'){
+    const wo=d.wo; if(!wo) return;
+    let inner = head + '<h1>Work Order'+(wo.wo_number?(' #'+esc(wo.wo_number)):'')+'</h1>';
+    const facts=[ wo.start_date?['Start',fmtWoDate(wo.start_date)]:null, Number(wo.estimated_duration_days)?['Duration',wo.estimated_duration_days+(Number(wo.estimated_duration_days)===1?' day':' days')]:null, (wo.shingle_product||wo.shingle_color)?['Shingle',[wo.shingle_product,wo.shingle_color].filter(Boolean).join(' / ')]:null, Number(wo.total_sq)?['Roof size',wo.total_sq+' SQ']:null, wo.roof_pitch?['Pitch',wo.roof_pitch]:null ].filter(Boolean);
+    if(facts.length) inner += '<h2>Details</h2><div class="kv">'+facts.map(f=>'<div><span class="l">'+esc(f[0])+'</span><span>'+esc(f[1])+'</span></div>').join('')+'</div>';
+    const meas=[['Eaves',wo.eaves_lf,'LF'],['Rakes',wo.rakes_lf,'LF'],['Ridges',wo.ridges_lf,'LF'],['Valleys',wo.valleys_lf,'LF'],['Hips',wo.hips_lf,'LF'],['Walls',wo.walls_lf,'LF'],['Pipes',wo.pipes,''],['Vents',wo.vents,''],['Chimneys',wo.chimneys,'']].filter(x=>Number(x[1])>0);
+    if(meas.length) inner += '<h2>Measurements</h2><div class="kv">'+meas.map(x=>'<div><span class="l">'+esc(x[0])+'</span><span>'+Number(x[1])+(x[2]?(' '+x[2]):'')+'</span></div>').join('')+'</div>';
+    const scope=Array.isArray(wo.scope_items)?wo.scope_items.map(s=>typeof s==='string'?{item:s,included:true}:{item:(s&&(s.item||s.description))||'',included:s&&s.included!==false,qty:s&&s.qty}).filter(s=>s.item):[];
+    if(scope.length) inner += '<h2>Scope of work</h2><ul>'+scope.map(s=>'<li class="'+(s.included?'':'off')+'">'+esc(s.item)+(s.qty?(' ('+esc(s.qty)+')'):'')+'</li>').join('')+'</ul>';
+    if(wo.special_notes) inner += '<h2>Notes</h2><div class="note">'+esc(wo.special_notes)+'</div>';
+    openPrintWindow('Work Order'+(wo.wo_number?(' '+esc(wo.wo_number)):''), inner);
+  } else if(kind==='ps'){
+    const ps=d.paysheet; if(!ps) return;
+    const rows=(label,arr)=> (Array.isArray(arr)&&arr.length)?'<tr><td colspan="3" style="font-weight:700;color:#0b1e4d;padding-top:10px;border-bottom:none">'+esc(label)+'</td></tr>'+arr.map(r=>{const q=r.qty_sq?(esc(r.qty_sq)+' SQ'):(r.qty?(esc(r.qty)+(r.unit?(' '+esc(r.unit)):'')):''); return '<tr><td>'+esc(r.description||r.label||'Item')+'</td><td>'+q+'</td><td class="r">'+pdfMoney(r.total)+'</td></tr>';}).join(''):'';
+    const inner = head + '<h1>Pay Sheet</h1><table><thead><tr><th>Item</th><th>Qty</th><th class="r">Amount</th></tr></thead><tbody>'
+      + rows('Labour',ps.labour_breakdown)+rows('Add-ons',ps.add_ons)+rows('Surcharges',ps.surcharges)
+      + '<tr><td>Subtotal</td><td></td><td class="r">'+pdfMoney(ps.subtotal)+'</td></tr>'
+      + '<tr><td>HST</td><td></td><td class="r">'+pdfMoney(ps.hst)+'</td></tr>'
+      + '<tr class="tot"><td>Total</td><td></td><td class="r">'+pdfMoney(ps.total)+'</td></tr></tbody></table>';
+    openPrintWindow('Pay Sheet', inner);
+  } else if(kind==='mat'){
+    const ml=d.materialList; if(!ml||!Array.isArray(ml.items)) return;
+    const inner = head + '<h1>Material List</h1><table><thead><tr><th>Material</th><th class="r">Qty</th>'+(d.priv?'<th class="r">Cost</th>':'')+'</tr></thead><tbody>'
+      + ml.items.map(it=>'<tr><td>'+esc(it.item||'')+'</td><td class="r">'+(it.quantity!=null?esc(it.quantity):'')+(it.unit?(' '+esc(it.unit)):'')+'</td>'+(d.priv?'<td class="r">'+(it.totalCost!=null?pdfMoney(it.totalCost):'')+'</td>':'')+'</tr>').join('')
+      + (d.priv&&ml.totalCost!=null?'<tr class="tot"><td>Total materials</td><td></td><td class="r">'+pdfMoney(ml.totalCost)+'</td></tr>':'')
+      + '</tbody></table>';
+    openPrintWindow('Material List', inner);
+  }
+}
+function docPdfBtn(kind){
+  return '<button onclick="printDoc(\''+kind+'\')" style="margin-top:12px;width:100%;padding:11px;border:1px solid var(--border-hi,#2a2f3a);border-radius:10px;background:rgba(255,255,255,.04);color:var(--text);font:inherit;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:7px;cursor:pointer">'
+    + '<svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Download PDF</button>';
 }
 function openNoteBox(){ const b=document.getElementById('noteBox'); if(b){ b.classList.add('on'); document.getElementById('noteTxt').focus(); } }
 function closeNoteBox(){ const b=document.getElementById('noteBox'); if(b) b.classList.remove('on'); }
