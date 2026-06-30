@@ -186,6 +186,7 @@ async function loadNative(tenantId) {
       const { data: insts } = await supabaseAdmin
         .from('proposal_instances')
         .select('estimate_id, slug, created_at')
+        .eq('tenant_id', tenantId)
         .in('estimate_id', estIdRows.map(x => x.id))
         .order('created_at', { ascending: false });
       const seen = new Set();

@@ -1186,7 +1186,7 @@ async function renderInstance(instance, res) {
   // Legacy/fallback: assemble from the structured columns. Fall back to the bare
   // row columns when an older snapshot didn't nest them.
   const branding = row.branding_snapshot || row.branding || { ...TENANT_BRANDING_DEFAULT };
-  const rep = row.rep_snapshot || row.rep || repPublic(REPS.darcy);
+  const rep = row.rep_snapshot || row.rep || repPublic(REPS.mackenzie);
   const customer = row.customer_snapshot || row.customer || { name: '', address: '', phone: '', email: '', coverImage: null };
   const variables = row.variables || {};
   const sections = Array.isArray(row.sections) ? row.sections : [];

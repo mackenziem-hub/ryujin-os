@@ -97,7 +97,7 @@ export default async function handler(req, res) {
     await page.addStyleTag({ content: `
       .pv2-pdfbtn, .pv2-modal, .pv2-sig, .pv2-accept__btn, .pv2-total__cta,
       .pv2-tier__pick, .pv2-switch, .pv2-paths, .pv2-panels,
-      .pv2-intro-video, .pv2-accept__book, video { display:none !important; }
+      .pv2-intro-video, .pv2-accept__book, .pv2-hero__book, video { display:none !important; }
       .pv2 { background:#fff !important; }
       body, .pv2 { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; }
       .pv2 .pv2-total { position:static !important; box-shadow:none !important; }
