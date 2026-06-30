@@ -160,12 +160,23 @@
   /* Explainer video BELOW the intro (smaller, not boxed in) + book-a-call under the accept (Jun 16). */
   .pv2-intro-video{max-width:440px;margin:14px auto 8px;border-radius:12px;overflow:hidden;background:#0b1b33;box-shadow:0 12px 30px rgba(19,41,75,.16)}
   .pv2-intro-video video{display:block;width:100%;height:auto}
-  .pv2-accept__book{margin:22px auto 4px;max-width:540px;text-align:center}
-  .pv2-accept__book-copy{color:#dfe6f2;font-size:14px;line-height:1.55;margin:0 0 14px}
-  .pv2-accept__book-btn{background:#dc2626;color:#fff;border:1.5px solid #dc2626;border-radius:10px;padding:13px 22px;font-family:inherit;font-weight:700;font-size:14px;letter-spacing:.01em;cursor:pointer;transition:background .15s ease,border-color .15s ease}
-  .pv2-accept__book-btn:hover{background:#b91c1c;border-color:#b91c1c}
-  .pv2-accept__book-wrap{margin-top:14px;border-radius:14px;overflow:hidden}
-  .pv2-accept__book-frame{width:100%;min-height:680px;border:none;display:block;background:#0b1b33}
+  /* Standalone Book-a-Call CTA, sits ABOVE the navy accept box: red, animated arrows. */
+  .pv2-bookcta{max-width:640px;margin:0 auto 22px;text-align:center}
+  .pv2-bookcta__row{display:flex;align-items:center;justify-content:center;gap:12px}
+  .pv2-bookcta__btn{background:#c62828;color:#fff;border:0;border-radius:12px;padding:14px 26px;font-family:inherit;font-weight:700;font-size:14.5px;line-height:1.3;letter-spacing:.005em;cursor:pointer;max-width:430px;box-shadow:0 10px 26px rgba(198,40,40,.34);animation:pv2-bookpulse 2.4s ease-in-out infinite;transition:background .15s ease,transform .15s ease}
+  .pv2-bookcta__btn:hover{background:#a81f1f;transform:translateY(-1px)}
+  .pv2-bookcta__cal{margin-right:4px}
+  .pv2-bookcta__arrow{color:#c62828;font-size:26px;font-weight:700;line-height:1;letter-spacing:-3px;flex:none}
+  .pv2-bookcta__arrow--l{animation:pv2-arrowL 1.1s ease-in-out infinite}
+  .pv2-bookcta__arrow--r{animation:pv2-arrowR 1.1s ease-in-out infinite}
+  .pv2-bookcta.is-open .pv2-bookcta__arrow{display:none}
+  .pv2-bookcta__wrap{margin-top:14px;border-radius:14px;overflow:hidden;box-shadow:0 12px 30px rgba(19,41,75,.18)}
+  .pv2-bookcta__frame{width:100%;min-height:680px;border:none;display:block;background:#0b1b33}
+  @keyframes pv2-bookpulse{0%,100%{box-shadow:0 10px 26px rgba(198,40,40,.30)}50%{box-shadow:0 13px 36px rgba(198,40,40,.55)}}
+  @keyframes pv2-arrowL{0%,100%{transform:translateX(0);opacity:.55}50%{transform:translateX(6px);opacity:1}}
+  @keyframes pv2-arrowR{0%,100%{transform:translateX(0);opacity:.55}50%{transform:translateX(-6px);opacity:1}}
+  @media (max-width:560px){.pv2-bookcta__arrow{font-size:18px}.pv2-bookcta__btn{font-size:13.5px;padding:13px 18px}}
+  @media (prefers-reduced-motion:reduce){.pv2-bookcta__btn,.pv2-bookcta__arrow--l,.pv2-bookcta__arrow--r{animation:none}}
   /* Per-tier cost breakdown accordion (SumoQuote-style: materials + labour + fees). */
   .pv2-bd{margin-top:14px;border-top:1px solid #e6ddc9;padding-top:8px;text-align:left}
   .pv2-bd__toggle{cursor:pointer;font-size:13px;font-weight:600;color:#13294b;list-style:none;display:flex;align-items:center;gap:7px;padding:5px 0}
@@ -1775,36 +1786,6 @@
     sigblock.appendChild(el('div', 'pv2-orderform__signname', 'Mackenzie Mazerolle, Owner'));
     order.appendChild(sigblock);
 
-    // Secondary close path, surfaced just above the signing block: book a free
-    // 30-minute phone call. Lazy-loads the calendar on tap, then injects the
-    // Automator embed script so the iframe auto-resizes (otherwise it pins at its
-    // min-height as a white box, the same failure mode fixed on the IE).
-    var book = el('div', 'pv2-accept__book');
-    book.appendChild(el('p', 'pv2-accept__book-copy',
-      'Prefer to talk it through first? Book a free 30-minute phone call going over your proposal and any questions you may have.'));
-    var bookBtn = el('button', 'pv2-accept__book-btn', 'Book a Phone Call');
-    bookBtn.type = 'button';
-    var bookWrap = el('div', 'pv2-accept__book-wrap');
-    bookWrap.style.display = 'none';
-    var bookFrame = document.createElement('iframe');
-    bookFrame.className = 'pv2-accept__book-frame';
-    bookFrame.dataset.src = BOOKING_CALENDAR_URL;
-    bookFrame.setAttribute('scrolling', 'no');
-    bookFrame.title = 'Book a free 30-minute call';
-    bookWrap.appendChild(bookFrame);
-    bookBtn.addEventListener('click', function () {
-      if (!bookFrame.src && bookFrame.dataset.src) {
-        bookFrame.src = bookFrame.dataset.src;
-        loadBookingWidgetScript();
-      }
-      bookWrap.style.display = '';
-      bookBtn.style.display = 'none';
-      if (bookWrap.scrollIntoView) bookWrap.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    });
-    book.appendChild(bookBtn);
-    book.appendChild(bookWrap);
-    box.appendChild(book);
-
     box.appendChild(order);
 
     // Signature pad.
@@ -1844,7 +1825,37 @@
     });
     box.appendChild(trust);
 
-    var section = band(box);
+    // Standalone Book-a-Call CTA, ABOVE the navy lock-in box so it reads before
+    // the customer commits. Red, with attention arrows converging + gentle motion.
+    var bookCta = el('div', 'pv2-bookcta');
+    var bookRow = el('div', 'pv2-bookcta__row');
+    bookRow.appendChild(el('span', 'pv2-bookcta__arrow pv2-bookcta__arrow--l', '›››'));
+    var bookBtn = el('button', 'pv2-bookcta__btn');
+    bookBtn.type = 'button';
+    bookBtn.innerHTML = '<span class="pv2-bookcta__cal" aria-hidden="true">📅</span> Click this to schedule a phone call on my calendar';
+    bookRow.appendChild(bookBtn);
+    bookRow.appendChild(el('span', 'pv2-bookcta__arrow pv2-bookcta__arrow--r', '‹‹‹'));
+    bookCta.appendChild(bookRow);
+    var bookWrap = el('div', 'pv2-bookcta__wrap');
+    bookWrap.style.display = 'none';
+    var bookFrame = document.createElement('iframe');
+    bookFrame.className = 'pv2-bookcta__frame';
+    bookFrame.dataset.src = BOOKING_CALENDAR_URL;
+    bookFrame.setAttribute('scrolling', 'no');
+    bookFrame.title = 'Book a free 30-minute call';
+    bookWrap.appendChild(bookFrame);
+    bookBtn.addEventListener('click', function () {
+      if (!bookFrame.src && bookFrame.dataset.src) {
+        bookFrame.src = bookFrame.dataset.src;
+        loadBookingWidgetScript();
+      }
+      bookWrap.style.display = '';
+      bookCta.classList.add('is-open');
+      if (bookWrap.scrollIntoView) bookWrap.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    bookCta.appendChild(bookWrap);
+
+    var section = band([bookCta, box]);
     requestAnimationFrame(function () {
       initSignature();
       recompute();
