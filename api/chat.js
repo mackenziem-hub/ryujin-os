@@ -1597,7 +1597,7 @@ const TOOLS = [
         customer_city: { type: 'string', description: 'Default Riverview' },
         customer_province: { type: 'string', description: 'Default NB' },
         ghl_contact_id: { type: 'string', description: 'GHL contactId if known — stored on estimate for later linking' },
-        sales_owner: { type: 'string', enum: ['mackenzie', 'darcy'], description: 'Which rep owns this lead. Controls rep card, signed letter, intro video on the proposal. Default: darcy (since he handles most sales).' },
+        sales_owner: { type: 'string', enum: ['mackenzie', 'darcy'], description: 'Which rep owns this lead. Controls rep card, signed letter, intro video on the proposal. Default: mackenzie (the owner). Darcy is no longer on proposals; only set darcy for a legacy deal.' },
         square_feet: { type: 'number', description: '2D footprint sqft, OR an already-pitched roof area when area_is_pitch_adjusted is true. By default the engine applies the pitch multiplier itself, so pass the raw 2D footprint and do NOT pre-adjust. An EagleView "Total Roof Area" is the sloped surface (already pitch-adjusted): pass that value WITH area_is_pitch_adjusted:true. Use this OR `planes` — when planes is provided it overrides square_feet+pitch.' },
         area_is_pitch_adjusted: { type: 'boolean', description: 'Set TRUE when square_feet is already the pitched/actual roof area rather than the 2D footprint — i.e. an EagleView "Total Roof Area" number. The engine then skips its pitch multiplier so the roof is not measured twice (the double-pitch bug, +8% at 5/12 up to +41% at 12/12). Leave false/omit when you have the true 2D footprint, or when using `planes` (plane sqft are always raw 2D).' },
         pitch: { type: 'string', description: 'Dominant pitch e.g. "8/12". Still required even with area_is_pitch_adjusted — it sets the labor band. Use for single-pitch roofs. For mixed-pitch (e.g. main 5/12 + steep rakes 12/12) use `planes` instead so each section gets the correct labor band rate.' },
@@ -3249,7 +3249,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
         // 2. Create the estimate
         const selected = input.selected_package || 'platinum';
         const tagList = Array.from(new Set([
-          `sales_owner:${input.sales_owner || 'darcy'}`,
+          `sales_owner:${input.sales_owner || 'mackenzie'}`,
           ...(Array.isArray(input.tags) ? input.tags : [])
         ]));
         const createBody = {
@@ -3368,7 +3368,7 @@ async function executeTool(name, input, attachments = [], conversationId = null)
           share_url: shareUrl,
           ...(shareUrl ? {} : { warning: 'share link unavailable: share_token failed to persist; use admin_url and regenerate the token' }),
           admin_url: adminUrl,
-          rep: input.sales_owner || 'darcy',
+          rep: input.sales_owner || 'mackenzie',
           tiers: {
             gold: shaped.gold ? { price: shaped.gold.total, persq: shaped.gold.persq } : null,
             platinum: shaped.platinum ? { price: shaped.platinum.total, persq: shaped.platinum.persq } : null,

@@ -302,7 +302,9 @@ function resolveRepFromEstimate(est) {
   if (isMac(legacyKey)) return REPS.mackenzie;
   if (legacyKey.includes('darcy')) return REPS.darcy;
 
-  return REPS.darcy;
+  // Default rep is the owner now that Darcy is off proposals (Jun 30). An explicit
+  // sales_owner:darcy tag still resolves to Darcy above for any legacy deal.
+  return REPS.mackenzie;
 }
 
 // True when the tenant has opted the v2 proposal renderer on.
@@ -932,7 +934,7 @@ function legacyRep(salesOwner) {
   const o = String(salesOwner || '').toLowerCase();
   if (o.includes('mack')) return REPS.mackenzie;
   if (o.includes('darcy')) return REPS.darcy;
-  return REPS.darcy;
+  return REPS.mackenzie;
 }
 
 function buildLegacyProposalData(estOs) {
