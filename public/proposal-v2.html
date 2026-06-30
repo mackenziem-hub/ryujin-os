@@ -262,10 +262,7 @@
     variantSel: {},
     // panelSel is the active metal panel profile (flat / wavy / stand). It
     // re-prices every metal tier card live when switched.
-    panelSel: null,
-    // colorSel maps a tier id to the chosen shingle colour name. Price-neutral:
-    // the customer's pick is recorded and surfaced on accept, it never re-prices.
-    colorSel: {}
+    panelSel: null
   };
 
   /* --------------------------------------------------------------------------
@@ -1359,6 +1356,10 @@
     tot('Subtotal', b.subtotal, false);
     tot('HST (15%)', b.hst, false);
     tot('Total', b.total, true);
+    // Stop the toggle click from bubbling to the card's select handler, which
+    // re-renders the cards and would snap this dropdown shut (looked dead).
+    det.addEventListener('click', function (e) { e.stopPropagation(); });
+    det.addEventListener('keydown', function (e) { e.stopPropagation(); });
     return det;
   }
 
@@ -1366,74 +1367,56 @@
   // Flat Panel toggle); v is the active variant and supplies every displayed
   // field plus the selectable id, so price, monthly, perks and the accept
   // payload all follow the toggle.
-  /* CertainTeed shingle colours by tier line (Gold = Landmark, Platinum =
-     Landmark Pro, Diamond = Grand Manor). Names are the real catalogue colours;
-     the hex is a close on-screen approximation. The customer's pick is recorded
-     and shown on accept, never priced. Final colour is confirmed at signing. */
-  var SHINGLE_COLORS = {
-    gold: [
-      { n: 'Weathered Wood', h: '#6f6253' }, { n: 'Charcoal Black', h: '#2f3033' },
-      { n: 'Driftwood', h: '#7c6f57' }, { n: 'Georgetown Gray', h: '#6c7075' },
-      { n: 'Burnt Sienna', h: '#7a4a3a' }, { n: 'Hunter Green', h: '#3b4a3b' },
-      { n: 'Colonial Slate', h: '#5a5b5e' }, { n: 'Heather Blend', h: '#5e5550' }
-    ],
-    platinum: [
-      { n: 'Moire Black', h: '#26272b' }, { n: 'Cobblestone Gray', h: '#74777b' },
-      { n: 'Colonial Slate', h: '#565a60' }, { n: 'Driftwood', h: '#7e7059' },
-      { n: 'Burnt Sienna', h: '#7c473a' }, { n: 'Heather Blend', h: '#5b524f' },
-      { n: 'Pewter', h: '#8a8d90' }, { n: 'Weathered Wood', h: '#6e6051' },
-      { n: 'Hunter Green', h: '#37472f' }, { n: 'Shenandoah', h: '#6a5448' }
-    ],
-    diamond: [
-      { n: 'Black Pearl', h: '#222327' }, { n: 'Colonial Slate', h: '#54585e' },
-      { n: 'Stonegate Gray', h: '#787b7f' }, { n: 'Brownstone', h: '#6e5a49' },
-      { n: 'Sherwood Forest', h: '#374a37' }, { n: 'Gatehouse Slate', h: '#4c4f55' },
-      { n: 'Tudor Brown', h: '#4f3f33' }, { n: 'Weathered Wood', h: '#6c5f50' }
-    ]
-  };
-  function colorsForTier(v) {
-    var id = String(v.id || '').toLowerCase();
-    if (SHINGLE_COLORS[id]) return SHINGLE_COLORS[id];
-    var nm = String(v.name || '').toLowerCase();
-    if (nm.indexOf('diamond') >= 0) return SHINGLE_COLORS.diamond;
-    if (nm.indexOf('platinum') >= 0) return SHINGLE_COLORS.platinum;
-    if (nm.indexOf('gold') >= 0) return SHINGLE_COLORS.gold;
-    return null;
-  }
-  // A collapsible per-tier colour swatch picker. Price-neutral: a pick updates
-  // the active swatch + label in place (no recompute) and is read on accept.
-  function buildColorPicker(v) {
-    var cols = colorsForTier(v);
-    if (!cols || !cols.length) return null;
-    if (!state.colorSel[v.id]) state.colorSel[v.id] = cols[0].n;
-    var wrap = el('details', 'pv2-color');
-    var sum = el('summary', 'pv2-color__toggle',
-      'Shingle colour: <span class="pv2-color__cur">' + esc(state.colorSel[v.id]) + '</span>');
-    wrap.appendChild(sum);
-    var grid = el('div', 'pv2-color__grid');
-    cols.forEach(function (c) {
-      var sw = el('button', 'pv2-color__sw' + (c.n === state.colorSel[v.id] ? ' is-on' : ''));
-      sw.type = 'button';
-      sw.title = c.n;
-      sw.setAttribute('aria-label', c.n);
-      sw.style.background = c.h;
-      sw.addEventListener('click', function (e) {
-        e.preventDefault(); e.stopPropagation();
-        state.colorSel[v.id] = c.n;
-        var sibs = grid.querySelectorAll('.pv2-color__sw');
-        for (var i = 0; i < sibs.length; i++) sibs[i].classList.remove('is-on');
-        sw.classList.add('is-on');
-        var cur = sum.querySelector('.pv2-color__cur');
-        if (cur) cur.textContent = c.n;
+  /* Shingle colour chart. The real CertainTeed colour chart image, shown in a
+     collapsible section after the packages and expandable to a full-screen HD
+     view (the pattern the older proposals used). One chart for the asphalt
+     lines; final colour is confirmed at signing. */
+  var COLOR_CHART_URL = '/brand/plus-ultra/colors/color-chart.jpg';
+
+  // Lazy full-screen image viewer (built once, reused). Click anywhere to close.
+  function openLightbox(src, alt) {
+    var lb = $('#pv2-lightbox');
+    if (!lb) {
+      lb = el('div', 'pv2-lightbox');
+      lb.id = 'pv2-lightbox';
+      lb.setAttribute('role', 'dialog');
+      lb.setAttribute('aria-modal', 'true');
+      lb.innerHTML = '<button class="pv2-lightbox__close" type="button" aria-label="Close">&times;</button>' +
+        '<img class="pv2-lightbox__img" alt="">';
+      lb.addEventListener('click', function () { lb.classList.remove('is-open'); });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') lb.classList.remove('is-open');
       });
-      grid.appendChild(sw);
+      document.body.appendChild(lb);
+    }
+    var img = lb.querySelector('.pv2-lightbox__img');
+    img.src = src; img.alt = alt || '';
+    lb.classList.add('is-open');
+  }
+
+  function colorChartBlock() {
+    var nodes = [];
+    nodes.push(sectionHead({
+      eyebrow: 'Colours',
+      title: 'Pick your shingle colour.',
+      lede: 'The full CertainTeed colour range for your shingle. Open the chart for the high-resolution version. Your final colour is confirmed at signing, and physical samples are available on request.'
+    }));
+    var frame = el('button', 'pv2-colorchart__frame');
+    frame.type = 'button';
+    frame.setAttribute('aria-label', 'Open the colour chart full size');
+    var img = el('img', 'pv2-colorchart__img');
+    img.src = COLOR_CHART_URL;
+    img.alt = 'CertainTeed shingle colour chart';
+    img.loading = 'lazy';
+    frame.appendChild(img);
+    frame.appendChild(el('span', 'pv2-colorchart__zoom', 'Tap to view full size'));
+    frame.addEventListener('click', function () {
+      openLightbox(COLOR_CHART_URL, 'CertainTeed shingle colour chart');
     });
-    wrap.appendChild(grid);
-    wrap.appendChild(el('p', 'pv2-color__note', 'Final colour confirmed at signing.'));
-    // Keep colour clicks from bubbling up and selecting the whole tier card.
-    wrap.addEventListener('click', function (e) { e.stopPropagation(); });
-    wrap.addEventListener('keydown', function (e) { e.stopPropagation(); });
-    return wrap;
+    nodes.push(frame);
+    var sec = band(nodes, { tint: true });
+    sec.classList.add('pv2-colorchart-band');
+    return sec;
   }
 
   function tierCard(t, recommended) {
@@ -1529,9 +1512,6 @@
     if (v.breakdown && ((v.breakdown.materials && v.breakdown.materials.length) || (v.breakdown.labor && v.breakdown.labor.length))) {
       card.appendChild(buildBreakdown(v.breakdown));
     }
-
-    var colorPicker = buildColorPicker(v);
-    if (colorPicker) card.appendChild(colorPicker);
 
     var pick = el('div', 'pv2-tier__pick');
     var btn = el('button', 'pv2-tier__pickbtn',
@@ -2115,7 +2095,7 @@
       tierId: t ? t.id : null,
       // tier.total is the panel-aware pre-tax base actually charged (the metal
       // panel toggle changes it); panel records which profile was chosen.
-      tier: t ? { id: t.id, name: t.name, sub: t.sub, total: tierTotal(t), color: state.colorSel[t.id] || null } : null,
+      tier: t ? { id: t.id, name: t.name, sub: t.sub, total: tierTotal(t) } : null,
       pathId: state.pathId,
       panel: (t && t.panelPrices) ? state.panelSel : null,
       addons: addonsList,
@@ -2207,14 +2187,15 @@
     root.innerHTML = '';
 
     var sections = Array.isArray(DATA.sections) ? DATA.sections : [];
-    var videoMounted = false, galleryMounted = false;
+    var videoMounted = false, galleryMounted = false, chartMounted = false;
     function mountVideoOnce() { if (videoMounted) return; videoMounted = true; mount(explainerVideoBlock()); }
     function mountGalleryOnce() { if (galleryMounted) return; galleryMounted = true; mount(projectGalleryBlock()); }
+    function mountChartOnce() { if (chartMounted) return; chartMounted = true; mount(colorChartBlock()); }
 
     sections.forEach(function (s) {
       if (!s || !s.type) return;
-      // Explainer video sits right before the packages; the photo gallery sits
-      // right before the accept block.
+      // Explainer video sits right before the packages; the colour chart right
+      // after them; the photo gallery right before the accept block.
       if (s.type === 'products') mountVideoOnce();
       if (s.type === 'accept') mountGalleryOnce();
       var comp = SECTION_COMPONENTS[s.type];
@@ -2229,6 +2210,7 @@
       } catch (err) {
         console.error('[proposal-v2] failed to render section:', s.type, err);
       }
+      if (s.type === 'products') mountChartOnce();
     });
 
     // If the data carried products but no products section was listed, append
@@ -2236,6 +2218,7 @@
     if (DATA.products && !sections.some(function (s) { return s.type === 'products'; })) {
       mountVideoOnce();
       mount(products({}, ctx));
+      mountChartOnce();
     }
     if (DATA.products && !sections.some(function (s) { return s.type === 'accept'; })) {
       mountGalleryOnce();
