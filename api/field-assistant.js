@@ -4,7 +4,7 @@
 // tools and Mackenzie's voice). This one is scoped to the signed-in crew member:
 // it only ever sees THEIR assigned tasks + the tenant's jobs, answers in two or
 // three plain sentences, and can drive the field UI by returning a single client
-// action ({navigate|open_folder|open_job|upload}) that field.html executes.
+// action ({navigate|open_folder|open_job|upload|route}) that field.html executes.
 import { supabaseAdmin } from '../lib/supabase.js';
 import { resolveSession } from '../lib/portalAuth.js';
 
@@ -71,12 +71,18 @@ export default async function handler(req, res) {
   const woLines = [...(upcomingWos || []), ...(pastWos || [])].map(woLine).join('\n') || '(none scheduled)';
 
   const firstName = (session.name || 'there').split(' ')[0];
-  const system = `You are the Plus Ultra Roofing field assistant, helping ${session.name || 'a crew member'} (role: ${session.role || 'crew'}) inside the mobile field app.
+  const role = (session.role || 'crew').toLowerCase();
+  const privileged = ['owner', 'admin', 'manager'].includes(role);
+  const system = `You are the Plus Ultra Roofing field assistant, helping ${session.name || 'a crew member'} (role: ${role}) inside the mobile field app. You are the only assistant ${firstName} needs here.
 
 HARD RULES
 - Be brief. Two or three short sentences, or a tight bullet list. Never a wall of text, never restate everything.
 - Plain text only. No markdown headers, no tables, no code blocks. A simple "- " bullet is fine.
-- You ONLY know what is in CONTEXT below: ${firstName}'s own assigned tasks and the job list. Do not invent tasks, jobs, prices, or customer details. If asked something outside this, say you can only help with their tasks, jobs, photos, schedule and clock.
+- You ONLY know what is in CONTEXT below. Do not invent tasks, jobs, prices, or customer details.
+${privileged
+  ? `- ${firstName} is an owner/manager: speak freely about anything in CONTEXT (their jobs, schedule, crews, status). If they want something the field app does not cover, say so in one plain sentence and stop.`
+  : `- If asked for anything beyond ${firstName}'s own tasks, jobs, photos, schedule and clock (pricing, margins, other people's pay, company financials, customer contracts), reply only: "I can only help with your tasks, jobs, photos, schedule and clock." Nothing more.`}
+- NEVER tell ${firstName} to go to, open, check, or "ask" the Command Center, admin panel, Jarvis, "the OS", or any other app, page, or surface. You handle it here or you say it is out of scope in one plain sentence. Never redirect them elsewhere.
 - The app has tabs: Tasks, Jobs, Schedule, Clock, and a job folder opens from Jobs. Photos/drone footage upload from inside a job folder.
 - Today is ${todayStr}. Tomorrow is ${tmrwStr}. Use the SCHEDULED WORK ORDERS list to answer "what's tomorrow's job", "today's job", or anything about scheduled jobs.
 
@@ -86,6 +92,7 @@ If the user clearly wants to GO somewhere or DO something in the app, include an
 - Open the full digital job folder (materials, scope, photos, paysheet) -> {"type":"open_folder","wo":"<wo number digits only, e.g. 29, not WO#29>"}
 - Open a basic job folder by address -> {"type":"open_job","query":"<address words>"}
 - Start a photo/drone upload for a job -> {"type":"upload","query":"<address words>"}
+- Get something done that needs another person (order or deliver materials, schedule or move a job, ask the office, flag a site problem) -> {"type":"route","text":"<their request, in their own words>"}. Tell them in one short line you will send it to the right person.
 For anything about MATERIALS, scope, "what do I need for <job>", or a specific
 scheduled job (e.g. "tomorrow's job", "the Harmeet job"), use open_folder with the
 matching WO# from the SCHEDULED WORK ORDERS list - that folder is where the
