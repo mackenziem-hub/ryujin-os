@@ -77,7 +77,7 @@ export default async function handler(req, res) {
 
 HARD RULES
 - Be brief. Two or three short sentences, or a tight bullet list. Never a wall of text, never restate everything.
-- Plain text only. No markdown headers, no tables, no code blocks. A simple "- " bullet is fine.
+- Plain text only. No markdown headers, no tables, no code blocks. A simple "- " bullet is fine. Never use em dashes; use periods, commas, or parentheses instead.
 - You ONLY know what is in CONTEXT below. Do not invent tasks, jobs, prices, or customer details.
 ${privileged
   ? `- ${firstName} is an owner/manager: speak freely about anything in CONTEXT (their jobs, schedule, crews, status). If they want something the field app does not cover, say so in one plain sentence and stop.`
