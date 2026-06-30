@@ -166,6 +166,19 @@
   .pv2-accept__book-btn:hover{background:#b91c1c;border-color:#b91c1c}
   .pv2-accept__book-wrap{margin-top:14px;border-radius:14px;overflow:hidden}
   .pv2-accept__book-frame{width:100%;min-height:680px;border:none;display:block;background:#0b1b33}
+  /* Per-tier cost breakdown accordion (SumoQuote-style: materials + labour + fees). */
+  .pv2-bd{margin-top:14px;border-top:1px solid #e6ddc9;padding-top:8px;text-align:left}
+  .pv2-bd__toggle{cursor:pointer;font-size:13px;font-weight:600;color:#13294b;list-style:none;display:flex;align-items:center;gap:7px;padding:5px 0}
+  .pv2-bd__toggle::-webkit-details-marker{display:none}
+  .pv2-bd__toggle::before{content:'+';font-weight:700;color:#b08d57;font-size:15px;line-height:1}
+  .pv2-bd[open] .pv2-bd__toggle::before{content:'\2212'}
+  .pv2-bd__group{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#b08d57;margin:11px 0 4px}
+  .pv2-bd__row{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;color:#3a4250;padding:3px 0;line-height:1.4}
+  .pv2-bd__label{flex:1}
+  .pv2-bd__detail{display:block;font-size:11px;color:#8a93a3}
+  .pv2-bd__amt{white-space:nowrap;font-variant-numeric:tabular-nums}
+  .pv2-bd__row--sub{font-weight:600;color:#13294b;border-top:1px dashed #e6ddc9;margin-top:4px;padding-top:6px}
+  .pv2-bd__row--grand{font-weight:700;color:#13294b;border-top:1.5px solid #13294b;margin-top:6px;padding-top:7px;font-size:13.5px}
 </style>
 <!-- Sentry browser error telemetry. INERT until a DSN is pasted below (the DSN is public, safe to commit). On activation you can also replace this whole block with the Loader snippet Sentry gives you when you create the project. -->
 <script>
@@ -1201,6 +1214,48 @@
     logEvent('addon_toggled', { slug: slug, on: state.addons.has(slug) });
   }
 
+  // Expandable per-tier cost breakdown: a material list + labor (with margin baked
+  // into the labor rates) + fees, mirroring the old SumoQuote format. Reads
+  // tier.breakdown = { materials:[{label,detail,amount}], materialsTotal,
+  // labor:[...], laborTotal, subtotal, hst, total }. Customer-safe: bundled retail
+  // line items only, never hard cost or margin.
+  function buildBreakdown(b) {
+    var det = el('details', 'pv2-bd');
+    det.appendChild(el('summary', 'pv2-bd__toggle', 'See the full breakdown'));
+    function group(title, rows, total) {
+      if (!rows || !rows.length) return;
+      det.appendChild(el('div', 'pv2-bd__group', title));
+      rows.forEach(function (r) {
+        var row = el('div', 'pv2-bd__row');
+        var l = el('div', 'pv2-bd__label');
+        l.appendChild(document.createTextNode(resolveVars(r.label || '')));
+        if (r.detail) l.appendChild(el('span', 'pv2-bd__detail', esc(resolveVars(r.detail))));
+        row.appendChild(l);
+        row.appendChild(el('div', 'pv2-bd__amt', money(r.amount)));
+        det.appendChild(row);
+      });
+      if (total != null) {
+        var t = el('div', 'pv2-bd__row pv2-bd__row--sub');
+        t.appendChild(el('div', 'pv2-bd__label', title + ' subtotal'));
+        t.appendChild(el('div', 'pv2-bd__amt', money(total)));
+        det.appendChild(t);
+      }
+    }
+    group('Materials', b.materials, b.materialsTotal);
+    group('Labour', b.labor, b.laborTotal);
+    function tot(label, amt, grand) {
+      if (amt == null) return;
+      var r = el('div', 'pv2-bd__row' + (grand ? ' pv2-bd__row--grand' : ''));
+      r.appendChild(el('div', 'pv2-bd__label', label));
+      r.appendChild(el('div', 'pv2-bd__amt', money(amt)));
+      det.appendChild(r);
+    }
+    tot('Subtotal', b.subtotal, false);
+    tot('HST (15%)', b.hst, false);
+    tot('Total', b.total, true);
+    return det;
+  }
+
   // Build one tier card. A card may carry variants (the metal European Clay vs
   // Flat Panel toggle); v is the active variant and supplies every displayed
   // field plus the selectable id, so price, monthly, perks and the accept
@@ -1273,7 +1328,6 @@
     var priceText = money(incHst) + (v.has_estimated_pricing ? ' *' : '');
     card.appendChild(el('div', 'pv2-tier__price', priceText));
     var pnBits = ['incl. HST'];
-    if (v.persq) pnBits.push(money(v.persq) + '/SQ');
     if (v.has_estimated_pricing) pnBits.push('* Estimated');
     card.appendChild(el('div', 'pv2-tier__pn', esc(pnBits.join(' · '))));
 
@@ -1294,6 +1348,10 @@
         ul.appendChild(el('li', null, esc(resolveVars(typeof perk === 'string' ? perk : perk.label))));
       });
       card.appendChild(ul);
+    }
+
+    if (v.breakdown && ((v.breakdown.materials && v.breakdown.materials.length) || (v.breakdown.labor && v.breakdown.labor.length))) {
+      card.appendChild(buildBreakdown(v.breakdown));
     }
 
     var pick = el('div', 'pv2-tier__pick');
