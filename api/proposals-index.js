@@ -178,6 +178,27 @@ async function loadNative(tenantId) {
     }
   } catch (e) { err = 'native(estimates): ' + e.message; }
 
+  // Canonical customer link: prefer the v2 /p/<slug> page when a materialized
+  // instance exists. Overwrites the legacy v1 openUrl set above. Best-effort.
+  if (estIdRows.length) {
+    try {
+      const byId = new Map(estIdRows.map(x => [x.id, x.row]));
+      const { data: insts } = await supabaseAdmin
+        .from('proposal_instances')
+        .select('estimate_id, slug, created_at')
+        .eq('tenant_id', tenantId)
+        .in('estimate_id', estIdRows.map(x => x.id))
+        .order('created_at', { ascending: false });
+      const seen = new Set();
+      for (const i of (insts || [])) {
+        if (!i.estimate_id || !i.slug || seen.has(i.estimate_id)) continue;
+        seen.add(i.estimate_id);
+        const row = byId.get(i.estimate_id);
+        if (row) row.openUrl = '/p/' + i.slug;
+      }
+    } catch (e) { /* keep legacy openUrl on failure */ }
+  }
+
   // Open-tracking lives in activity_log (one row per proposal_opened event keyed by
   // entity_id = estimate id), NOT on the estimates table. One grouped read attaches
   // a view count + last-viewed time per native estimate. View events come under

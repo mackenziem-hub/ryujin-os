@@ -140,7 +140,9 @@ function resolveRepFromEstimate(est) {
   if (isMac(legacyKey)) return REPS.mackenzie;
   if (legacyKey.includes('darcy')) return REPS.darcy;
 
-  return REPS.darcy;
+  // Default rep is the owner now that Darcy is off proposals (Jun 30). An explicit
+  // sales_owner:darcy tag still resolves to Darcy above for any legacy deal.
+  return REPS.mackenzie;
 }
 
 // Trim a rep down to the public ProposalData.rep shape.
@@ -1184,7 +1186,7 @@ async function renderInstance(instance, res) {
   // Legacy/fallback: assemble from the structured columns. Fall back to the bare
   // row columns when an older snapshot didn't nest them.
   const branding = row.branding_snapshot || row.branding || { ...TENANT_BRANDING_DEFAULT };
-  const rep = row.rep_snapshot || row.rep || repPublic(REPS.darcy);
+  const rep = row.rep_snapshot || row.rep || repPublic(REPS.mackenzie);
   const customer = row.customer_snapshot || row.customer || { name: '', address: '', phone: '', email: '', coverImage: null };
   const variables = row.variables || {};
   const sections = Array.isArray(row.sections) ? row.sections : [];

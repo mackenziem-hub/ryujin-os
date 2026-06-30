@@ -145,12 +145,30 @@ async function nativeProposalStats() {
     if (!tenant) return null;
     const { data: rows } = await supabaseAdmin
       .from('estimates')
-      .select('estimate_number, share_token, status, proposal_mode, calculated_packages, created_at, updated_at, customer:customers(full_name, address, city)')
+      .select('id, estimate_number, share_token, status, proposal_mode, calculated_packages, created_at, updated_at, customer:customers(full_name, address, city)')
       .eq('tenant_id', tenant.id)
       .neq('status', 'cancelled')
       .order('created_at', { ascending: false })
       .limit(20);
     if (!rows) return null;
+
+    // Canonical customer link is the v2 /p/<slug> page when a materialized instance
+    // exists; fall back to the legacy v1 share link only when there is none.
+    const instByEst = {};
+    try {
+      const estIds = rows.map(e => e.id).filter(Boolean);
+      if (estIds.length) {
+        const { data: insts } = await supabaseAdmin
+          .from('proposal_instances')
+          .select('estimate_id, slug, created_at')
+          .eq('tenant_id', tenant.id)
+          .in('estimate_id', estIds)
+          .order('created_at', { ascending: false });
+        for (const i of (insts || [])) {
+          if (i.estimate_id && i.slug && !instByEst[i.estimate_id]) instByEst[i.estimate_id] = i.slug;
+        }
+      }
+    } catch (e) { /* best-effort: fall back to the legacy link below */ }
 
     const proposals = rows.map(e => {
       const cp = e.calculated_packages || {};
@@ -166,7 +184,7 @@ async function nativeProposalStats() {
         customer: cust.full_name || 'Unknown',
         address: [cust.address, cust.city].filter(Boolean).join(', '),
         fromPrice,
-        url: e.share_token ? ('/proposal-client.html?share=' + encodeURIComponent(e.share_token)) : null,
+        url: instByEst[e.id] ? ('/p/' + instByEst[e.id]) : (e.share_token ? ('/proposal-client.html?share=' + encodeURIComponent(e.share_token)) : null),
         createdAt: e.created_at,
         updatedAt: e.updated_at
       };
