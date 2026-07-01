@@ -42,13 +42,11 @@ const OPP_ROUTING = {
   'instant-estimator-v3': {
     pipelineId: 'eJm8vgBePJStA1QdZqmA',           // Instant Estimator
     pipelineStageId: '1e82765c-2ef2-4810-bcbf-9d6a926dba7b' // New IE Submission
-  },
-  // Revive (rejuvenation) estimator lands on the same kanban; the
-  // 'Revive Estimator Submission' tag is what splits the GHL nurture.
-  'revive-estimator-v1': {
-    pipelineId: 'eJm8vgBePJStA1QdZqmA',           // Instant Estimator
-    pipelineStageId: '1e82765c-2ef2-4810-bcbf-9d6a926dba7b' // New IE Submission
   }
+  // Revive (revive-estimator-v1) intentionally has NO opp route. The GHL Revive
+  // Rejuvenation workflow (fired by the 'Revive Estimator Submission' tag) is the
+  // sole owner of the Revive opportunity. Routing it here created a duplicate
+  // Instant Estimator card. The source tag + Automator nurture still fire below.
 };
 
 // Automator.ai follow-up workflows fire on a CONTACT TAG, not on pipeline
